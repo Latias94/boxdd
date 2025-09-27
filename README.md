@@ -1,5 +1,7 @@
 # boxdd — Rust bindings for Box2D
 
+![boxdd](screenshots/boxdd.gif)
+
 Crates
 - `boxdd-sys`: low-level FFI built from the official Box2D v3 C API via a git submodule.
 - `boxdd`: safe, ergonomic layer providing modular APIs for world, bodies, shapes, joints,
