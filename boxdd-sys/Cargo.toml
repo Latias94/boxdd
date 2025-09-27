@@ -1,0 +1,28 @@
+[package]
+name = "boxdd-sys"
+version = "0.1.0"
+edition = "2024"
+description = "Low-level FFI bindings for Box2D built from upstream via submodule"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Latias94/boxdd"
+homepage = "https://github.com/Latias94/boxdd"
+links = "box2d"
+build = "build.rs"
+readme = "README.md"
+
+[package.metadata.docs.rs]
+all-features = false
+no-default-features = true
+features = []
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = []
+build-from-source = []
+
+[build-dependencies]
+cc = "1"
+bindgen = "0.72"
+
+[dependencies]
+mint = "0.5"

@@ -1,0 +1,33 @@
+[package]
+name = "boxdd"
+version = "0.1.0"
+edition = "2024"
+description = "Safe, ergonomic Rust bindings for Box2D"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Latias94/boxdd"
+homepage = "https://github.com/Latias94/boxdd"
+readme = "README.md"
+
+[dependencies]
+boxdd-sys = { path = "../boxdd-sys" }
+thiserror = "2"
+
+[features]
+default = []
+# Build the ImGui + Glow testbed example when this feature is enabled
+imgui-glow-testbed = []
+
+[dev-dependencies]
+dear-imgui = "0.2"
+dear-imgui-winit = "0.2"
+dear-imgui-glow = "0.2"
+winit = "0.30"
+glow = "0.16"
+glutin = "0.32"
+glutin-winit = "0.5"
+env_logger = "0.11"
+
+[[example]]
+name = "testbed_imgui_glow"
+path = "examples/testbed_imgui_glow.rs"
+required-features = ["imgui-glow-testbed"]

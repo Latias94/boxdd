@@ -1,0 +1,3 @@
+[submodule "boxdd-sys/third-party/box2d"]
+	path = boxdd-sys/third-party/box2d
+	url = https://github.com/erincatto/box2d

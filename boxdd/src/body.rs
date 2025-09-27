@@ -1,0 +1,224 @@
+use std::marker::PhantomData;
+
+use crate::types::{BodyId, Vec2};
+use crate::world::World;
+use boxdd_sys::ffi;
+use std::ffi::{CStr, CString};
+use std::os::raw::c_void;
+
+/// Body types.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum BodyType {
+    Static,
+    Kinematic,
+    Dynamic,
+}
+
+impl From<BodyType> for ffi::b2BodyType {
+    fn from(t: BodyType) -> Self {
+        match t {
+            BodyType::Static => ffi::b2BodyType_b2_staticBody,
+            BodyType::Kinematic => ffi::b2BodyType_b2_kinematicBody,
+            BodyType::Dynamic => ffi::b2BodyType_b2_dynamicBody,
+        }
+    }
+}
+
+/// Body definition wrapper with builder API.
+#[derive(Clone, Debug)]
+pub struct BodyDef(pub(crate) ffi::b2BodyDef);
+
+impl Default for BodyDef {
+    fn default() -> Self {
+        let def = unsafe { ffi::b2DefaultBodyDef() };
+        Self(def)
+    }
+}
+
+/// Fluent builder for `BodyDef`.
+#[derive(Clone, Debug)]
+pub struct BodyBuilder {
+    def: BodyDef,
+}
+
+impl BodyBuilder {
+    pub fn new() -> Self {
+        Self {
+            def: BodyDef::default(),
+        }
+    }
+    pub fn body_type(mut self, t: BodyType) -> Self {
+        self.def.0.type_ = t.into();
+        self
+    }
+    pub fn position<V: Into<ffi::b2Vec2>>(mut self, p: V) -> Self {
+        self.def.0.position = p.into();
+        self
+    }
+    pub fn angle(mut self, radians: f32) -> Self {
+        // Build a rotation from angle
+        let (s, c) = radians.sin_cos();
+        self.def.0.rotation = ffi::b2Rot { c, s };
+        self
+    }
+    pub fn linear_velocity<V: Into<ffi::b2Vec2>>(mut self, v: V) -> Self {
+        self.def.0.linearVelocity = v.into();
+        self
+    }
+    pub fn angular_velocity(mut self, v: f32) -> Self {
+        self.def.0.angularVelocity = v;
+        self
+    }
+    pub fn linear_damping(mut self, v: f32) -> Self {
+        self.def.0.linearDamping = v;
+        self
+    }
+    pub fn angular_damping(mut self, v: f32) -> Self {
+        self.def.0.angularDamping = v;
+        self
+    }
+    pub fn gravity_scale(mut self, v: f32) -> Self {
+        self.def.0.gravityScale = v;
+        self
+    }
+    pub fn enable_sleep(mut self, flag: bool) -> Self {
+        self.def.0.enableSleep = flag;
+        self
+    }
+    pub fn awake(mut self, flag: bool) -> Self {
+        self.def.0.isAwake = flag;
+        self
+    }
+    pub fn bullet(mut self, flag: bool) -> Self {
+        self.def.0.isBullet = flag;
+        self
+    }
+    pub fn enabled(mut self, flag: bool) -> Self {
+        self.def.0.isEnabled = flag;
+        self
+    }
+
+    pub fn build(self) -> BodyDef {
+        self.def
+    }
+}
+
+impl From<BodyDef> for BodyBuilder {
+    fn from(def: BodyDef) -> Self {
+        Self { def }
+    }
+}
+
+/// A body handle with lifetime tied to the owning world.
+pub struct Body<'w> {
+    pub(crate) id: BodyId,
+    _world: PhantomData<&'w World>,
+}
+
+impl<'w> Body<'w> {
+    pub(crate) fn new(id: BodyId) -> Self {
+        Self {
+            id,
+            _world: PhantomData,
+        }
+    }
+
+    pub fn id(&self) -> BodyId {
+        self.id
+    }
+
+    // Queries
+    pub fn position(&self) -> Vec2 {
+        Vec2::from(unsafe { ffi::b2Body_GetPosition(self.id) })
+    }
+    pub fn linear_velocity(&self) -> Vec2 {
+        Vec2::from(unsafe { ffi::b2Body_GetLinearVelocity(self.id) })
+    }
+    pub fn angular_velocity(&self) -> f32 {
+        unsafe { ffi::b2Body_GetAngularVelocity(self.id) }
+    }
+    pub fn transform(&self) -> ffi::b2Transform {
+        unsafe { ffi::b2Body_GetTransform(self.id) }
+    }
+    pub fn transform_ex(&self) -> crate::Transform {
+        crate::Transform::from(self.transform())
+    }
+
+    // Mutations
+    pub fn set_position_and_rotation<V: Into<ffi::b2Vec2>>(&mut self, p: V, angle_radians: f32) {
+        let (s, c) = angle_radians.sin_cos();
+        let rot = ffi::b2Rot { c, s };
+        unsafe { ffi::b2Body_SetTransform(self.id, p.into(), rot) };
+    }
+    pub fn set_linear_velocity<V: Into<ffi::b2Vec2>>(&mut self, v: V) {
+        unsafe { ffi::b2Body_SetLinearVelocity(self.id, v.into()) }
+    }
+    pub fn set_angular_velocity(&mut self, w: f32) {
+        unsafe { ffi::b2Body_SetAngularVelocity(self.id, w) }
+    }
+
+    pub fn contact_data(&self) -> Vec<ffi::b2ContactData> {
+        let cap = 64;
+        let mut vec: Vec<ffi::b2ContactData> = Vec::with_capacity(cap);
+        let written = unsafe { ffi::b2Body_GetContactData(self.id, vec.as_mut_ptr(), cap as i32) };
+        unsafe { vec.set_len(written.max(0) as usize) };
+        vec
+    }
+
+    // Forces/impulses
+    pub fn apply_force<V: Into<ffi::b2Vec2>>(&mut self, force: V, point: V, wake: bool) {
+        let f = force.into();
+        let p = point.into();
+        unsafe { ffi::b2Body_ApplyForce(self.id, f, p, wake) };
+    }
+    pub fn apply_force_to_center<V: Into<ffi::b2Vec2>>(&mut self, force: V, wake: bool) {
+        let f = force.into();
+        unsafe { ffi::b2Body_ApplyForceToCenter(self.id, f, wake) };
+    }
+    pub fn apply_torque(&mut self, torque: f32, wake: bool) {
+        unsafe { ffi::b2Body_ApplyTorque(self.id, torque, wake) }
+    }
+    pub fn apply_linear_impulse<V: Into<ffi::b2Vec2>>(&mut self, impulse: V, point: V, wake: bool) {
+        let i = impulse.into();
+        let p = point.into();
+        unsafe { ffi::b2Body_ApplyLinearImpulse(self.id, i, p, wake) };
+    }
+    pub fn apply_linear_impulse_to_center<V: Into<ffi::b2Vec2>>(&mut self, impulse: V, wake: bool) {
+        let i = impulse.into();
+        unsafe { ffi::b2Body_ApplyLinearImpulseToCenter(self.id, i, wake) };
+    }
+    pub fn apply_angular_impulse(&mut self, impulse: f32, wake: bool) {
+        unsafe { ffi::b2Body_ApplyAngularImpulse(self.id, impulse, wake) }
+    }
+
+    // Names and user data (raw pointer)
+    pub fn set_name(&mut self, name: &str) {
+        if let Ok(cs) = CString::new(name) {
+            unsafe { ffi::b2Body_SetName(self.id, cs.as_ptr()) }
+        }
+    }
+    pub fn name(&self) -> Option<String> {
+        let ptr = unsafe { ffi::b2Body_GetName(self.id) };
+        if ptr.is_null() {
+            None
+        } else {
+            Some(
+                unsafe { CStr::from_ptr(ptr) }
+                    .to_string_lossy()
+                    .into_owned(),
+            )
+        }
+    }
+    pub fn set_user_data_ptr(&mut self, p: *mut c_void) {
+        unsafe { ffi::b2Body_SetUserData(self.id, p) }
+    }
+    pub fn user_data_ptr(&self) -> *mut c_void {
+        unsafe { ffi::b2Body_GetUserData(self.id) }
+    }
+}
+
+impl<'w> Drop for Body<'w> {
+    fn drop(&mut self) {
+        unsafe { ffi::b2DestroyBody(self.id) };
+    }
+}

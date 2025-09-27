@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "boxdd",
+    "boxdd-sys",
+]
+resolver = "2"
