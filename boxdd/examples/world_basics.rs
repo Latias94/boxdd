@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .enable_contact_events(true)
         .build();
     let boxp = shapes::box_polygon(0.5, 0.5);
-    let mut ids = Vec::new();
+    let mut ids = Vec::with_capacity(6);
     for i in 0..6 {
         let id = world.create_body_id(
             BodyBuilder::new()
@@ -40,6 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for _ in 0..120 {
         world.step(1.0 / 60.0, 4);
     }
+    // Safe: ids has 6 bodies pushed above
     let y1 = world.body_position(*ids.last().unwrap()).y;
 
     // Flip gravity and step again
@@ -47,6 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for _ in 0..120 {
         world.step(1.0 / 60.0, 4);
     }
+    // Safe: ids remains non-empty
     let y2 = world.body_position(*ids.last().unwrap()).y;
 
     // Collect contact stats

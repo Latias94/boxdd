@@ -146,8 +146,8 @@ impl JointBaseBuilder {
         let tb = body_b.transform();
         let wa: ffi::b2Vec2 = world_a.into().into();
         let wb: ffi::b2Vec2 = world_b.into().into();
-        let la = crate::core::math::world_to_local_point(ta.into(), wa);
-        let lb = crate::core::math::world_to_local_point(tb.into(), wb);
+        let la = crate::core::math::world_to_local_point(ta, wa);
+        let lb = crate::core::math::world_to_local_point(tb, wb);
         let ident = ffi::b2Transform {
             p: ffi::b2Vec2 { x: 0.0, y: 0.0 },
             q: ffi::b2Rot { c: 1.0, s: 0.0 },
@@ -163,7 +163,6 @@ impl JointBaseBuilder {
     pub fn build(self) -> JointBase {
         self.base
     }
-
     /// Set local frames using world anchors and a shared world axis (X-axis of joint frame).
     /// This computes localFrameA/B.rotation so that their X-axis aligns with the given world axis,
     /// and localFrameA/B.position to the given world anchor points.
@@ -186,12 +185,18 @@ impl JointBaseBuilder {
         let wb: ffi::b2Vec2 = anchor_b_world.into().into();
         let axis_w: ffi::b2Vec2 = axis_world.into().into();
         // Local frames: positions from anchors, rotations from world axis
-        let la = crate::core::math::world_to_local_point(ta.into(), wa);
-        let lb = crate::core::math::world_to_local_point(tb.into(), wb);
-        let ra = crate::core::math::world_axis_to_local_rot(ta.into(), axis_w);
-        let rb = crate::core::math::world_axis_to_local_rot(tb.into(), axis_w);
+        let la = crate::core::math::world_to_local_point(ta, wa);
+        let lb = crate::core::math::world_to_local_point(tb, wb);
+        let ra = crate::core::math::world_axis_to_local_rot(ta, axis_w);
+        let rb = crate::core::math::world_axis_to_local_rot(tb, axis_w);
         self.base.0.localFrameA = ffi::b2Transform { p: la, q: ra };
         self.base.0.localFrameB = ffi::b2Transform { p: lb, q: rb };
         self
+    }
+}
+
+impl Default for JointBaseBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }

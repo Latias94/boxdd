@@ -6,8 +6,10 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     let box_poly = bd::shapes::box_polygon(0.5, 0.5);
     let sdef = bd::ShapeDef::builder().density(1.0).build();
     for i in 0..rows {
-        for j in 0..(columns - i) {
-            let x = (j as f32) * 1.1 - ((columns - i) as f32) * 0.55;
+        // Use saturating_sub to avoid usize underflow if rows > columns
+        let width = columns.saturating_sub(i);
+        for j in 0..width {
+            let x = (j as f32) * 1.1 - (width as f32) * 0.55;
             let y = 0.5 + (i as f32) * 1.05 + 2.0;
             let b = app.world.create_body_id(
                 bd::BodyBuilder::new()

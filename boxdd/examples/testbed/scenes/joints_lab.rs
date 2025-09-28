@@ -410,12 +410,9 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
 }
 
 pub fn tick(app: &mut super::PhysicsApp) {
-    match app.jl_mode {
-        6 => {
-            // filter joint scene uses contact hit accumulation
-            let ce = app.world.contact_events();
-            app.fj_hits += ce.hit.len();
-        }
-        _ => {}
+    if app.jl_mode == 6 {
+        // filter joint scene uses contact hit accumulation
+        let ce = app.world.contact_events();
+        app.fj_hits += ce.hit.len();
     }
 }

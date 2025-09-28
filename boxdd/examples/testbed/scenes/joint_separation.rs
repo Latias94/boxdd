@@ -29,6 +29,7 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
     }
 }
 
+#[allow(dead_code)]
 pub fn tick(app: &mut super::PhysicsApp) {
     // Compute min/max separation across joints each frame
     let mut min_lin = f32::MAX;

@@ -5,7 +5,7 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     let sdef = bd::ShapeDef::builder().density(1.0).build();
     let n = app.bench_bodies.max(10) as usize;
     let cols = (n as f32).sqrt().ceil() as usize;
-    let rows = (n + cols - 1) / cols;
+    let rows = n.div_ceil(cols);
     let mut spawned = 0usize;
     for r in 0..rows {
         for c in 0..cols {

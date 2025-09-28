@@ -41,7 +41,9 @@ fn run_once(
 
     // Spawn a deterministic field of dynamic boxes and circles
     let sdef = ShapeDef::builder().density(1.0).build();
-    let mut bodies = Vec::new();
+    let box_poly = shapes::box_polygon(0.25, 0.25);
+    let circ = shapes::circle([0.0_f32, 0.0], 0.25);
+    let mut bodies = Vec::with_capacity(200);
     for _ in 0..200 {
         let x = (rng.next_f32() - 0.5) * 20.0;
         let y = 1.0 + rng.next_f32() * 10.0;
@@ -53,9 +55,9 @@ fn run_once(
                 .build(),
         );
         if t == 0 {
-            let _ = world.create_polygon_shape_for(id, &sdef, &shapes::box_polygon(0.25, 0.25));
+            let _ = world.create_polygon_shape_for(id, &sdef, &box_poly);
         } else {
-            let _ = world.create_circle_shape_for(id, &sdef, &shapes::circle([0.0_f32, 0.0], 0.25));
+            let _ = world.create_circle_shape_for(id, &sdef, &circ);
         }
         bodies.push(id);
     }

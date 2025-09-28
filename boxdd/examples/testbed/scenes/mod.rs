@@ -93,6 +93,13 @@ pub mod shape_editing {
 pub mod collision_tools {
     include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/collision_tools.rs"));
 }
+// Extra samples ported from top-level examples
+pub mod doohickey {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/doohickey.rs"));
+}
+pub mod issues {
+    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/issues.rs"));
+}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Scene {
@@ -124,6 +131,8 @@ pub enum Scene {
     Materials,
     ShapeEditing,
     CollisionTools,
+    Doohickey,
+    Issues,
 }
 
 pub struct PhysicsApp {
@@ -190,6 +199,8 @@ pub struct PhysicsApp {
     pub sensor_half_thickness: f32,
     pub sensor_mover_start_y: f32,
     pub sensor_radius: f32,
+    // Issues scene
+    pub issues_visitors: i32,
     // Contacts
     pub contact_box_half: f32,
     pub contact_speed: f32,
@@ -508,6 +519,7 @@ impl PhysicsApp {
             sensor_half_thickness: 0.3,
             sensor_mover_start_y: 3.0,
             sensor_radius: 0.25,
+            issues_visitors: 10,
             contact_box_half: 0.5,
             contact_speed: 2.0,
             contact_gap: 1.5,
@@ -824,6 +836,7 @@ impl PhysicsApp {
             Scene::BreakableJoint => breakable_joint::tick(self),
             Scene::Materials => materials::tick(self),
             Scene::JointsLab => joints_lab::tick(self),
+            Scene::Issues => issues::tick(self),
             _ => {}
         }
     }
@@ -882,6 +895,8 @@ impl PhysicsApp {
                 "Joints: Breakable",
                 "Materials: Conveyor & Rolling",
                 "Shape Editing",
+                "Doohickey",
+                "Issues",
             ];
             let mut idx = self.scene_index();
             if let Some(_c) = ui.begin_combo("Scene", names[idx]) {
@@ -944,6 +959,8 @@ impl PhysicsApp {
                 Scene::BreakableJoint => breakable_joint::ui_params(self, ui),
                 Scene::Materials => materials::ui_params(self, ui),
                 Scene::ShapeEditing => shape_editing::ui_params(self, ui),
+                Scene::Doohickey => doohickey::ui_params(self, ui),
+                Scene::Issues => issues::ui_params(self, ui),
             }
             ui.separator();
             ui.text("Debug Draw");
@@ -974,8 +991,7 @@ impl PhysicsApp {
     /// Draw small scene-specific overlays on top of world debug draw.
     pub fn debug_overlay(&self, ui: &imgui::Ui) {
         // Currently only used by the Manifold scene.
-        match self.scene {
-            Scene::Manifold => {
+        if self.scene == Scene::Manifold {
                 let dl = ui.get_foreground_draw_list();
                 let ds = ui.io().display_size();
                 let origin = [ds[0] * 0.5, ds[1] * 0.5];
@@ -999,8 +1015,6 @@ impl PhysicsApp {
                 let q = w2s(self.mf_point_x + nx * len, self.mf_point_y + ny * len);
                 dl.add_line(p, q, 0xffffff00u32).thickness(2.0).build();
             }
-            _ => {}
-        }
     }
 
     pub fn build_scene(&mut self) {
@@ -1044,6 +1058,8 @@ impl PhysicsApp {
             Scene::WorldTuning => world_lab::build(self, ground),
             Scene::Materials => materials::build(self, ground),
             Scene::ShapeEditing => shape_editing::build(self, ground),
+            Scene::Doohickey => doohickey::build(self, ground),
+            Scene::Issues => issues::build(self, ground),
         }
     }
 
@@ -1086,6 +1102,8 @@ impl PhysicsApp {
             Scene::BreakableJoint => 25,
             Scene::Materials => 26,
             Scene::ShapeEditing => 27,
+            Scene::Doohickey => 28,
+            Scene::Issues => 29,
         }
     }
 
@@ -1119,6 +1137,8 @@ impl PhysicsApp {
             25 => Scene::BreakableJoint,
             26 => Scene::Materials,
             27 => Scene::ShapeEditing,
+            28 => Scene::Doohickey,
+            29 => Scene::Issues,
             _ => Scene::Pyramid,
         }
     }

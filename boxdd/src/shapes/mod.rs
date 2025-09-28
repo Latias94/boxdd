@@ -94,7 +94,13 @@ impl<'b, 'w> Shape<'b, 'w> {
     }
 
     // Opaque user pointer (engine-owned)
-    pub fn set_user_data_ptr(&mut self, p: *mut core::ffi::c_void) {
+    /// Set an opaque user data pointer on this shape.
+    ///
+    /// # Safety
+    /// The caller must ensure that `p` is valid for as long as the engine may
+    /// read it and that any aliasing/lifetime constraints are upheld. Box2D stores this
+    /// pointer and may access it during simulation callbacks.
+    pub unsafe fn set_user_data_ptr(&mut self, p: *mut core::ffi::c_void) {
         unsafe { ffi::b2Shape_SetUserData(self.id, p) }
     }
     pub fn user_data_ptr(&self) -> *mut core::ffi::c_void {

@@ -3,7 +3,7 @@ use dear_imgui as imgui;
 
 // Bodies Lab: Set Velocity, Kinematic Platform, Wake Touching
 
-pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
+pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     match app.bl_mode {
         // Set Velocity
         0 => {
@@ -82,6 +82,7 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
     }
 }
 
+#[allow(dead_code)]
 pub fn tick(app: &mut super::PhysicsApp) {
     match app.bl_mode {
         0 => {
@@ -121,11 +122,11 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
             if ui.slider("Speed", -10.0, 10.0, &mut sp) { app.bk_speed = sp; }
         }
         2 => {
-            if ui.button("Wake Touching (platform)") {
-                if let Some(id) = app.wt_ground_body {
-                    unsafe { boxdd_sys::ffi::b2Body_WakeTouching(id) };
-                    app.wt_wakes += 1;
-                }
+            if ui.button("Wake Touching (platform)")
+                && let Some(id) = app.wt_ground_body
+            {
+                unsafe { boxdd_sys::ffi::b2Body_WakeTouching(id) };
+                app.wt_wakes += 1;
             }
             ui.text(format!("Wake Touching: triggered {} times", app.wt_wakes));
         }

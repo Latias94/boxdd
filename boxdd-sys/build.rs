@@ -17,6 +17,9 @@ fn main() {
     let profile = env::var("PROFILE").unwrap_or_else(|_| "release".into());
     let is_debug = profile == "debug";
 
+    // Detect features (via cfg) and environment toggles
+    let feat_prebuilt: bool = cfg!(feature = "prebuilt");
+
     // Detect pregenerated bindings and docs.rs
     let pregenerated = manifest_dir.join("src").join("bindings_pregenerated.rs");
     let has_pregenerated = pregenerated.exists();
@@ -24,8 +27,9 @@ fn main() {
         println!("cargo:rustc-cfg=has_pregenerated");
     }
     let is_docsrs = env::var("DOCS_RS").is_ok() || env::var("CARGO_CFG_DOCSRS").is_ok();
+    // For docs.rs, prefer pregenerated if present; otherwise generate
 
-    // Generate bindings for the upstream C API unless we are on docs.rs with pregenerated present
+    // Generate bindings for the upstream C API unless we're explicitly preferring pregenerated and it exists
     if !(is_docsrs && has_pregenerated) {
         generate_bindings(&manifest_dir, &out_dir);
     }
@@ -37,7 +41,13 @@ fn main() {
     }
 
     // Build Box2D + our C wrapper into a single static lib
-    build_box2d_and_wrapper(&manifest_dir, &target_env, &target_os, is_debug);
+    build_box2d_and_wrapper(
+        &manifest_dir,
+        &target_env,
+        &target_os,
+        is_debug,
+        feat_prebuilt,
+    );
 }
 
 fn generate_bindings(manifest_dir: &Path, out_dir: &Path) {
@@ -66,7 +76,13 @@ fn generate_bindings(manifest_dir: &Path, out_dir: &Path) {
         .expect("Couldn't write bindings!");
 }
 
-fn build_box2d_and_wrapper(manifest_dir: &Path, target_env: &str, target_os: &str, is_debug: bool) {
+fn build_box2d_and_wrapper(
+    manifest_dir: &Path,
+    target_env: &str,
+    target_os: &str,
+    is_debug: bool,
+    feat_prebuilt: bool,
+) {
     let third_party = manifest_dir.join("third-party");
     let box2d_root = third_party.join("box2d");
     let box2d_include = box2d_root.join("include");
@@ -79,20 +95,19 @@ fn build_box2d_and_wrapper(manifest_dir: &Path, target_env: &str, target_os: &st
         );
     }
 
-    // Allow skipping native build (bindings-only regeneration)
-    if env::var("BOXDD_SYS_SKIP_CC")
-        .map(|v| v == "1")
-        .unwrap_or(false)
-    {
-        println!("cargo:warning=BOXDD_SYS_SKIP_CC=1: skipping native C build");
-        return;
-    }
-
-    // Allow linking against a prebuilt static library if provided
-    if let Ok(libdir) = env::var("BOX2D_LIB_DIR") {
-        println!("cargo:rustc-link-search=native={}", libdir);
-        println!("cargo:rustc-link-lib=static=box2d");
-        return;
+    // If prebuilt feature is enabled, link against a precompiled library and return
+    if feat_prebuilt {
+        if let Ok(libdir) = env::var("BOX2D_LIB_DIR") {
+            println!("cargo:rustc-link-search=native={}", libdir);
+            println!("cargo:rustc-link-lib=static=box2d");
+            return;
+        } else {
+            println!(
+                "cargo:warning=prebuilt feature enabled but BOX2D_LIB_DIR is not set; attempting system search for 'box2d'"
+            );
+            println!("cargo:rustc-link-lib=static=box2d");
+            return;
+        }
     }
 
     let mut build = cc::Build::new();
@@ -153,10 +168,10 @@ fn collect_cpp_files(dir: &Path, out: &mut Vec<PathBuf>) {
             let path = entry.path();
             if path.is_dir() {
                 collect_cpp_files(&path, out);
-            } else if let Some(ext) = path.extension() {
-                if ext == "c" {
-                    out.push(path);
-                }
+            } else if let Some(ext) = path.extension()
+                && ext == "c"
+            {
+                out.push(path);
             }
         }
     }

@@ -3,7 +3,9 @@ use dear_imgui as imgui;
 
 // Collision Tools: unify Ray, Overlap, Shape Cast, TOI into one scene with a mode toggle.
 
+#[allow(dead_code)]
 fn rect_points(hx: f32, hy: f32) -> [[f32; 2]; 4] { [[-hx, -hy], [hx, -hy], [hx, hy], [-hx, hy]] }
+#[allow(dead_code)]
 fn box_pts(h: f32) -> [[f32; 2]; 4] { [[-h, -h], [h, -h], [h, h], [-h, h]] }
 
 pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
@@ -43,6 +45,7 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
     }
 }
 
+#[allow(dead_code)]
 pub fn tick(app: &mut super::PhysicsApp) {
     match app.ct_mode {
         0 => {
@@ -151,7 +154,7 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
             let mut dy = app.sc_ty;
             let mut r = app.sc_radius;
             let changed = ui.slider("Pos Y", 0.0, 10.0, &mut y)
-                || ui.slider("Angle (rad)", -3.14, 3.14, &mut ang)
+                || ui.slider("Angle (rad)", -std::f32::consts::PI, std::f32::consts::PI, &mut ang)
                 || ui.slider("Cast dX", -5.0, 5.0, &mut dx)
                 || ui.slider("Cast dY", -10.0, 0.0, &mut dy)
                 || ui.slider("Radius", 0.0, 0.25, &mut r);
@@ -176,7 +179,7 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
             let mut r = app.toi_radius;
             let changed = ui.slider("Start X", -5.0, 5.0, &mut sx)
                 || ui.slider("Start Y", 0.0, 10.0, &mut sy)
-                || ui.slider("Angle (rad)", -3.14, 3.14, &mut ang)
+                || ui.slider("Angle (rad)", -std::f32::consts::PI, std::f32::consts::PI, &mut ang)
                 || ui.slider("dX", -10.0, 10.0, &mut dx)
                 || ui.slider("dY", -10.0, 10.0, &mut dy)
                 || ui.slider("Radius", 0.0, 0.25, &mut r);

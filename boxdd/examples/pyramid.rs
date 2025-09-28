@@ -18,8 +18,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sdef = ShapeDef::builder().density(1.0).build();
     let mut bodies: Vec<BodyId> = Vec::new();
     for i in 0..rows {
-        for j in 0..(columns - i) {
-            let x = (j as f32) * 1.1 - ((columns - i) as f32) * 0.55;
+        // Avoid usize underflow when rows > columns
+        let width = columns.saturating_sub(i);
+        for j in 0..width {
+            let x = (j as f32) * 1.1 - (width as f32) * 0.55;
             let y = 0.5 + (i as f32) * 1.05 + 2.0;
             let b = world.create_body_id(BodyBuilder::new().position([x, y]).build());
             let _s = world.create_polygon_shape_for(b, &sdef, &box_poly);

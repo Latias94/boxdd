@@ -14,8 +14,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Common defs
     let bdef_dyn = BodyBuilder::new().body_type(BodyType::Dynamic);
-    let mut filt = boxdd::filter::Filter::default();
-    filt.group_index = -1;
+    let filt = boxdd::filter::Filter {
+        group_index: -1,
+        ..Default::default()
+    };
     let sdef_rr = ShapeDef::builder()
         .material(SurfaceMaterial::default().rolling_resistance(0.1))
         .filter_ex(filt)

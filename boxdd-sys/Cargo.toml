@@ -9,6 +9,20 @@ homepage = "https://github.com/Latias94/boxdd"
 links = "box2d"
 build = "build.rs"
 readme = "README.md"
+documentation = "https://docs.rs/boxdd-sys"
+keywords = ["box2d", "physics", "ffi", "bindings", "game"]
+categories = ["external-ffi-bindings", "game-engines"]
+
+# Keep the crate slim on crates.io
+include = [
+    "Cargo.toml",
+    "README.md",
+    "build.rs",
+    "src/**",
+    # Only what we need from upstream for C build
+    "third-party/box2d/include/**",
+    "third-party/box2d/src/**",
+]
 
 [package.metadata.docs.rs]
 all-features = false
@@ -17,8 +31,11 @@ features = []
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = []
+default = ["build-from-source"]
+# Build vendored Box2D C sources with cc; always generate bindings via bindgen (native builds).
 build-from-source = []
+# Link against a prebuilt static 'box2d' (requires BOX2D_LIB_DIR or a system lib); still generates bindings.
+prebuilt = []
 
 [build-dependencies]
 cc = "1"

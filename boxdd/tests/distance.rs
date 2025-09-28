@@ -34,17 +34,13 @@ fn segment_and_shape_distance_and_toi() {
     let input = ffi::b2DistanceInput {
         proxyA: unsafe { ffi::b2MakeProxy(vas.as_ptr(), vas.len() as i32, 0.0) },
         proxyB: unsafe { ffi::b2MakeProxy(vbs.as_ptr(), vbs.len() as i32, 0.0) },
-        transformA: unsafe {
-            core::mem::transmute(ffi::b2Transform {
-                p: ffi::b2Vec2 { x: 0.0, y: 0.0 },
-                q: ffi::b2Rot { c: 1.0, s: 0.0 },
-            })
+        transformA: ffi::b2Transform {
+            p: ffi::b2Vec2 { x: 0.0, y: 0.0 },
+            q: ffi::b2Rot { c: 1.0, s: 0.0 },
         },
-        transformB: unsafe {
-            core::mem::transmute(ffi::b2Transform {
-                p: ffi::b2Vec2 { x: 0.0, y: 0.0 },
-                q: ffi::b2Rot { c: 1.0, s: 0.0 },
-            })
+        transformB: ffi::b2Transform {
+            p: ffi::b2Vec2 { x: 0.0, y: 0.0 },
+            q: ffi::b2Rot { c: 1.0, s: 0.0 },
         },
         useRadii: false,
     };

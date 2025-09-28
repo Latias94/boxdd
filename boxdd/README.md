@@ -1,4 +1,4 @@
-# boxdd — Safe, ergonomic Rust bindings for Box2D v3
+# boxdd - Safe, ergonomic Rust bindings for Box2D v3
 
 Overview
 - Thin, modular safe layer over the official Box2D v3 C API.
@@ -54,4 +54,18 @@ Debug Draw
 
 License
 - MIT OR Apache-2.0.
+
+Build Modes
+- Default (from source): builds vendored Box2D C sources via `cc` and generates bindings via bindgen.
+  - `cargo build -p boxdd` (or explicitly: `--features build-from-source`)
+- Prebuilt: link a precompiled static library instead of building C sources.
+  - `cargo build -p boxdd --features prebuilt`
+  - Set `BOX2D_LIB_DIR=/path/to/lib` to locate `box2d` (e.g. `libbox2d.a` or `box2d.lib`).
+  - Without `BOX2D_LIB_DIR`, the linker searches system paths for `box2d`.
+- Docs.rs/offline: docs build uses pregenerated bindings when present and skips native C build.
+  - CI simulates this with `DOCS_RS=1 cargo doc -p boxdd-sys --no-deps`.
+
+Notes
+- Local builds require a C toolchain and libclang for bindgen (LLVM). On Windows (MSVC), install LLVM and set `LIBCLANG_PATH` if needed.
+- To force from-source even when `BOX2D_LIB_DIR` is set, use `--features build-from-source` or `BOXDD_SYS_FORCE_BUILD=1`.
 

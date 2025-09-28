@@ -72,7 +72,7 @@ fn aabb_ray_cast(
         }
     }
 
-    if tmin < 0.0 || tmin > 1.0 {
+    if !(0.0..=1.0).contains(&tmin) {
         return (false, 0.0, p1, normal);
     }
     let point = ffi::b2Vec2 {

@@ -40,7 +40,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _bshape = world.create_circle_shape_for(bullet, &sdef, &circ);
     world.set_body_linear_velocity(bullet, [60.0_f32, 0.0]);
 
-    let mut hit_frames = 0;
     let mut begin_frames = 0;
     let mut hit_events = 0usize;
     let steps = 240;

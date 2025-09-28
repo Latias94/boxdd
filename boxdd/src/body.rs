@@ -126,6 +126,12 @@ impl From<BodyDef> for BodyBuilder {
     }
 }
 
+impl Default for BodyBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// A body handle with lifetime tied to the owning world.
 pub struct Body<'w> {
     pub(crate) id: BodyId,
@@ -232,7 +238,13 @@ impl<'w> Body<'w> {
             )
         }
     }
-    pub fn set_user_data_ptr(&mut self, p: *mut c_void) {
+    /// Set an opaque user data pointer on this body.
+    ///
+    /// # Safety
+    /// The caller must ensure that `p` is either null or points to a valid object
+    /// for the entire time the body may access it, and that any lifetimes/aliasing rules
+    /// are upheld. Box2D treats this as an opaque pointer and may store/use it across steps.
+    pub unsafe fn set_user_data_ptr(&mut self, p: *mut c_void) {
         unsafe { ffi::b2Body_SetUserData(self.id, p) }
     }
     pub fn user_data_ptr(&self) -> *mut c_void {

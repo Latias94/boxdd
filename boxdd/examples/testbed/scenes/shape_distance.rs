@@ -2,6 +2,7 @@ use boxdd as bd;
 use dear_imgui as imgui;
 use boxdd_sys::ffi;
 
+#[allow(dead_code)]
 fn rect_points(hx: f32, hy: f32) -> [ffi::b2Vec2; 4] {
     [
         ffi::b2Vec2 { x: -hx, y: -hy },
@@ -13,6 +14,7 @@ fn rect_points(hx: f32, hy: f32) -> [ffi::b2Vec2; 4] {
 
 pub fn build(_app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {}
 
+#[allow(dead_code)]
 pub fn tick(app: &mut super::PhysicsApp) {
     // Build two proxies and compute GJK distance
     let a_pts = rect_points(app.sd_a_hx, app.sd_a_hy);
@@ -54,13 +56,13 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
     let changed =
         ui.slider("A.x", -10.0, 10.0, &mut ax) ||
         ui.slider("A.y", -10.0, 10.0, &mut ay) ||
-        ui.slider("A.angle", -3.14, 3.14, &mut aa) ||
+        ui.slider("A.angle", -std::f32::consts::PI, std::f32::consts::PI, &mut aa) ||
         ui.slider("A.hx", 0.05, 5.0, &mut ahx) ||
         ui.slider("A.hy", 0.05, 5.0, &mut ahy) ||
         ui.slider("A.radius", 0.0, 0.5, &mut ar) ||
         ui.slider("B.x", -10.0, 10.0, &mut bx) ||
         ui.slider("B.y", -10.0, 10.0, &mut by) ||
-        ui.slider("B.angle", -3.14, 3.14, &mut ba) ||
+        ui.slider("B.angle", -std::f32::consts::PI, std::f32::consts::PI, &mut ba) ||
         ui.slider("B.hx", 0.05, 5.0, &mut bhx) ||
         ui.slider("B.hy", 0.05, 5.0, &mut bhy) ||
         ui.slider("B.radius", 0.0, 0.5, &mut br);

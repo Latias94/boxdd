@@ -57,22 +57,16 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
         app.ml_lock_rot = lr;
         apply_locks(app);
     }
-    if ui.button("Impulse +X") {
-        if let Some(id) = app.ml_body {
-            unsafe { boxdd_sys::ffi::b2Body_ApplyLinearImpulseToCenter(id, boxdd_sys::ffi::b2Vec2 { x: 15.0, y: 0.0 }, true) };
-        }
+    if ui.button("Impulse +X") && let Some(id) = app.ml_body {
+        unsafe { boxdd_sys::ffi::b2Body_ApplyLinearImpulseToCenter(id, boxdd_sys::ffi::b2Vec2 { x: 15.0, y: 0.0 }, true) };
     }
     ui.same_line();
-    if ui.button("Impulse +Y") {
-        if let Some(id) = app.ml_body {
-            unsafe { boxdd_sys::ffi::b2Body_ApplyLinearImpulseToCenter(id, boxdd_sys::ffi::b2Vec2 { x: 0.0, y: 15.0 }, true) };
-        }
+    if ui.button("Impulse +Y") && let Some(id) = app.ml_body {
+        unsafe { boxdd_sys::ffi::b2Body_ApplyLinearImpulseToCenter(id, boxdd_sys::ffi::b2Vec2 { x: 0.0, y: 15.0 }, true) };
     }
     ui.same_line();
-    if ui.button("Spin") {
-        if let Some(id) = app.ml_body {
-            unsafe { boxdd_sys::ffi::b2Body_ApplyAngularImpulse(id, 8.0, true) };
-        }
+    if ui.button("Spin") && let Some(id) = app.ml_body {
+        unsafe { boxdd_sys::ffi::b2Body_ApplyAngularImpulse(id, 8.0, true) };
     }
     ui.text("Motion Locks: toggle constraints and apply impulses");
 }

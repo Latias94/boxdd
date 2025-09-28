@@ -22,8 +22,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Common body/shape defs
     let mut bodies: Vec<BodyId> = Vec::with_capacity(sides);
     let bdef = BodyBuilder::new().body_type(BodyType::Dynamic);
-    let mut filt = boxdd::filter::Filter::default();
-    filt.group_index = -1;
+    let filt = boxdd::filter::Filter {
+        group_index: -1,
+        ..Default::default()
+    };
     let sdef = ShapeDef::builder()
         .material(SurfaceMaterial::default().friction(0.3))
         .filter_ex(filt)

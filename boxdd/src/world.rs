@@ -5,6 +5,14 @@ use crate::types::{BodyId, JointId, ShapeId, Vec2};
 use boxdd_sys::ffi;
 use std::ffi::CString;
 
+type ShapeFilterFn = fn(crate::types::ShapeId, crate::types::ShapeId) -> bool;
+type PreSolveFn = fn(
+    crate::types::ShapeId,
+    crate::types::ShapeId,
+    crate::types::Vec2,
+    crate::types::Vec2,
+) -> bool;
+
 /// Error type for world creation and operations.
 #[non_exhaustive]
 #[derive(Debug, thiserror::Error)]
@@ -116,6 +124,30 @@ impl WorldBuilder {
 /// A simulation world; RAII owns the underlying world id and cleans up on drop.
 pub struct World {
     id: ffi::b2WorldId,
+    // Optional user callbacks stored as heap allocations so we can pass stable
+    // pointers as FFI callback context.
+    custom_filter: Option<Box<CustomFilterCtx>>,
+    pre_solve: Option<Box<PreSolveCtx>>,
+}
+
+// Internal callback context holding user closures. These must be Send + Sync
+// because Box2D may invoke them from worker threads.
+struct CustomFilterCtx {
+    cb: Box<dyn Fn(crate::types::ShapeId, crate::types::ShapeId) -> bool + Send + Sync + 'static>,
+}
+
+struct PreSolveCtx {
+    cb: Box<
+        dyn Fn(
+                crate::types::ShapeId,
+                crate::types::ShapeId,
+                crate::types::Vec2,
+                crate::types::Vec2,
+            ) -> bool
+            + Send
+            + Sync
+            + 'static,
+    >,
 }
 
 impl World {
@@ -126,7 +158,11 @@ impl World {
         let world_id = unsafe { ffi::b2CreateWorld(&raw) };
         let ok = unsafe { ffi::b2World_IsValid(world_id) };
         if ok {
-            Ok(Self { id: world_id })
+            Ok(Self {
+                id: world_id,
+                custom_filter: None,
+                pre_solve: None,
+            })
         } else {
             Err(Error::CreateFailed)
         }
@@ -263,6 +299,96 @@ impl World {
     }
     pub fn maximum_linear_speed(&self) -> f32 {
         unsafe { ffi::b2World_GetMaximumLinearSpeed(self.raw()) }
+    }
+
+    // --- Collision/solve callbacks ---------------------------------------------------------
+    /// Register a thread-safe custom filter closure. This is called when a contact pair is
+    /// considered for collision if either shape has custom filtering enabled.
+    /// Return false to disable the collision.
+    pub fn set_custom_filter<F>(&mut self, f: F)
+    where
+        F: Fn(crate::types::ShapeId, crate::types::ShapeId) -> bool + Send + Sync + 'static,
+    {
+        // Store the closure so its address is stable and lifetime tied to the world.
+        let ctx = Box::new(CustomFilterCtx { cb: Box::new(f) });
+        // SAFETY: callback shims only cast the context pointer back to CustomFilterCtx and
+        // invoke the Rust closure. They must be extern "C" and thread-safe.
+        unsafe extern "C" fn filter_cb(
+            a: ffi::b2ShapeId,
+            b: ffi::b2ShapeId,
+            context: *mut core::ffi::c_void,
+        ) -> bool {
+            // SAFETY: context is provided by set_custom_filter and points to CustomFilterCtx
+            let ctx = unsafe { &*(context as *const CustomFilterCtx) };
+            (ctx.cb)(a, b)
+        }
+        let ctx_ptr: *mut core::ffi::c_void = (&*ctx) as *const CustomFilterCtx as *mut _;
+        unsafe { ffi::b2World_SetCustomFilterCallback(self.raw(), Some(filter_cb), ctx_ptr) };
+        self.custom_filter = Some(ctx);
+    }
+
+    /// Clear the custom filter callback and release associated resources.
+    pub fn clear_custom_filter(&mut self) {
+        unsafe { ffi::b2World_SetCustomFilterCallback(self.raw(), None, core::ptr::null_mut()) };
+        self.custom_filter = None;
+    }
+
+    /// Register a thread-safe pre-solve closure. This is called after contact update (when enabled
+    /// on shapes) and before the solver. Return false to disable the contact this step.
+    pub fn set_pre_solve<F>(&mut self, f: F)
+    where
+        F: Fn(
+                crate::types::ShapeId,
+                crate::types::ShapeId,
+                crate::types::Vec2,
+                crate::types::Vec2,
+            ) -> bool
+            + Send
+            + Sync
+            + 'static,
+    {
+        let ctx = Box::new(PreSolveCtx { cb: Box::new(f) });
+        unsafe extern "C" fn presolve_cb(
+            a: ffi::b2ShapeId,
+            b: ffi::b2ShapeId,
+            point: ffi::b2Vec2,
+            normal: ffi::b2Vec2,
+            context: *mut core::ffi::c_void,
+        ) -> bool {
+            // SAFETY: context is provided by set_pre_solve and points to PreSolveCtx
+            let ctx = unsafe { &*(context as *const PreSolveCtx) };
+            (ctx.cb)(
+                a,
+                b,
+                crate::types::Vec2::from(point),
+                crate::types::Vec2::from(normal),
+            )
+        }
+        let ctx_ptr: *mut core::ffi::c_void = (&*ctx) as *const PreSolveCtx as *mut _;
+        unsafe { ffi::b2World_SetPreSolveCallback(self.raw(), Some(presolve_cb), ctx_ptr) };
+        self.pre_solve = Some(ctx);
+    }
+
+    /// Clear the pre-solve callback and release associated resources.
+    pub fn clear_pre_solve(&mut self) {
+        unsafe { ffi::b2World_SetPreSolveCallback(self.raw(), None, core::ptr::null_mut()) };
+        self.pre_solve = None;
+    }
+
+    /// Compatibility helper: set or clear the custom filter using a plain function pointer.
+    pub fn set_custom_filter_callback(&mut self, cb: Option<ShapeFilterFn>) {
+        match cb {
+            Some(func) => self.set_custom_filter(func),
+            None => self.clear_custom_filter(),
+        }
+    }
+
+    /// Compatibility helper: set or clear the pre-solve using a plain function pointer.
+    pub fn set_pre_solve_callback(&mut self, cb: Option<PreSolveFn>) {
+        match cb {
+            Some(func) => self.set_pre_solve(func),
+            None => self.clear_pre_solve(),
+        }
     }
 
     // Convenience joints built from world anchors and axis using body ids

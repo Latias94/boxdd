@@ -26,11 +26,14 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
         .world
         .create_revolute_joint_world_id(ground, planks[0], left_anchor);
     app.created_joints += 1;
+    // Right end: safe index using saturating_sub to avoid underflow if constraints change
     let _ = app
         .world
-        .create_revolute_joint_world_id(ground, planks[plank_count - 1], right_anchor);
+        .create_revolute_joint_world_id(ground, planks[plank_count.saturating_sub(1)], right_anchor);
     app.created_joints += 1;
-    for i in 0..(plank_count - 1) {
+    // Internal joints: use saturating_sub to protect 0/1 plank edge cases
+    let joint_count = plank_count.saturating_sub(1);
+    for i in 0..joint_count {
         let a = planks[i];
         let b = planks[i + 1];
         let anchor = app.world.body_position(a);

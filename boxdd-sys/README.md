@@ -19,11 +19,13 @@ git submodule update --init --recursive
 cargo build -p boxdd-sys
 ```
 
-## Modes & env
-- Default: vendored C sources + bindgen (requires C toolchain + libclang)
-- Docs.rs: bindings only (skips compiling C; uses pregenerated bindings when present)
-- Link prebuilt static library: `BOX2D_LIB_DIR=/path/to/lib` (ABI/CRT/arch and version must match)
-- Regenerate pregenerated bindings (run from repo root):
+## Build modes
+- Default (feature `build-from-source`): build vendored C sources via `cc` and generate bindings via bindgen.
+- Prebuilt (feature `prebuilt`): link a precompiled static library `box2d` instead of compiling C sources.
+  - Set `BOX2D_LIB_DIR=/path/to/lib` to locate the library; otherwise the linker searches system paths.
+- Docs.rs: uses pregenerated bindings when present and skips native C build.
+
+## Regenerate pregenerated bindings (for docs.rs)
 
 ```bash
 python tools/update_submodule_and_bindings.py --profile release

@@ -3,6 +3,7 @@
 #![allow(non_upper_case_globals)]
 
 pub mod ffi {
+    #![allow(clippy::approx_constant)]
     #[cfg(has_pregenerated)]
     include!("bindings_pregenerated.rs");
     #[cfg(not(has_pregenerated))]

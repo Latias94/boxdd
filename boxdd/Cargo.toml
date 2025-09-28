@@ -2,14 +2,20 @@
 name = "boxdd"
 version = "0.1.0"
 edition = "2024"
-description = "Safe, ergonomic Rust bindings for Box2D"
+description = "Safe, ergonomic Rust bindings for Box2D v3"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Latias94/boxdd"
 homepage = "https://github.com/Latias94/boxdd"
 readme = "README.md"
+documentation = "https://docs.rs/boxdd"
+keywords = ["box2d", "physics", "game", "simulation"]
+categories = ["game-engines"]
+
+# Keep the crate size reasonable; examples are available in the repo
+exclude = ["examples/**"]
 
 [dependencies]
-boxdd-sys = { path = "../boxdd-sys" }
+boxdd-sys = { version = "0.1", path = "../boxdd-sys" }
 thiserror = "2"
 mint = "0.5"
 smallvec = "1"
@@ -18,6 +24,10 @@ smallvec = "1"
 default = []
 # Build the ImGui + Glow testbed example when this feature is enabled
 imgui-glow-testbed = []
+
+# Build modes for the sys crate (forwarded)
+prebuilt = ["boxdd-sys/prebuilt"]
+build-from-source = ["boxdd-sys/build-from-source"]
 
 [dev-dependencies]
 dear-imgui = "0.2"

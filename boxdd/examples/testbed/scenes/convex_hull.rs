@@ -33,6 +33,7 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     }
 }
 
+#[allow(dead_code)]
 pub fn tick(_app: &mut super::PhysicsApp) {}
 
 pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {

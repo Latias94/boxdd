@@ -5,7 +5,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Ground body with a chain walkway (sine wave)
     let ground = world.create_body_id(BodyBuilder::new().build());
-    let mut pts: Vec<Vec2> = Vec::new();
+    let mut pts: Vec<Vec2> = Vec::with_capacity(41);
     for i in -20..=20 {
         let x = i as f32 * 0.5;
         let y = (x * 0.6).sin() * 0.4;
@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Spawn some dynamic boxes that will roll along the walkway
     let sdef = ShapeDef::builder().density(1.0).build();
     let poly = shapes::box_polygon(0.2, 0.2);
-    let mut ids = Vec::new();
+    let mut ids = Vec::with_capacity(10);
     for i in 0..10 {
         let x = -4.0 + i as f32 * 0.8;
         let b = world.create_body_id(BodyBuilder::new().position([x, 3.0_f32]).build());

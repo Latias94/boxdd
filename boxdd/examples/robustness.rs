@@ -21,15 +21,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Thin wall made of segments at x=10
     let wall = world.create_body_id(BodyBuilder::new().build());
+    let sdef_hit = ShapeDef::builder().enable_hit_events(true).build();
     for i in 0..20 {
         let y1 = i as f32 * 0.5;
         let y2 = y1 + 0.5;
         let seg = shapes::segment([10.0_f32, y1], [10.0_f32, y2]);
-        let _ = world.create_segment_shape_for(
-            wall,
-            &ShapeDef::builder().enable_hit_events(true).build(),
-            &seg,
-        );
+        let _ = world.create_segment_shape_for(wall, &sdef_hit, &seg);
     }
 
     // Bullet: fast circle aimed at the wall
@@ -88,7 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Slender stack
     let sdef = ShapeDef::builder().density(1.0).build();
     let mut upright = 0usize;
-    let mut ids = Vec::new();
+    let mut ids = Vec::with_capacity(10);
     for i in 0..10 {
         let id = world.create_body_id(
             BodyBuilder::new()

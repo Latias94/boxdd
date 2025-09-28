@@ -1,4 +1,3 @@
-use boxdd as bd;
 use dear_imgui as imgui;
 use dear_imgui_glow::GlowRenderer;
 use dear_imgui_winit::WinitPlatform;
@@ -226,18 +225,18 @@ impl TestbedWindow {
             .platform
             .prepare_frame(&self.window, &mut self.imgui.context);
         let ui = self.imgui.context.frame();
-        self.physics.ui(&ui);
+        self.physics.ui(ui);
 
         // Debug draw
         let mut dd = ImguiDebugDraw {
-            ui: &ui,
+            ui,
             pixels_per_meter: self.physics.pixels_per_meter,
         };
         let opts = self.physics.debug_draw_options();
         self.physics.world.debug_draw(&mut dd, opts);
 
         // Scene-specific overlays (drawn after debug draw so they stay on top)
-        self.physics.debug_overlay(&ui);
+        self.physics.debug_overlay(ui);
 
         // Clear + render
         let gl = self.imgui.renderer.gl_context().unwrap();
@@ -247,12 +246,10 @@ impl TestbedWindow {
             gl.clear(glow::COLOR_BUFFER_BIT);
             gl.disable(glow::FRAMEBUFFER_SRGB);
         }
-        self.imgui
-            .platform
-            .prepare_render_with_ui(&ui, &self.window);
+        self.imgui.platform.prepare_render_with_ui(ui, &self.window);
         let draw_data = self.imgui.context.render();
         self.imgui.renderer.new_frame()?;
-        self.imgui.renderer.render(&draw_data)?;
+        self.imgui.renderer.render(draw_data)?;
         self.surface.swap_buffers(&self.context)?;
         Ok(())
     }

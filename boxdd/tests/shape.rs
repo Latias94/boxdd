@@ -43,15 +43,15 @@ fn shape_mass_aabb_point_raycast() {
     let mut pts = [ffi::b2Vec2 { x: 0.0, y: 0.0 }; 2 * N];
     let mut angle = -0.5 * core::f32::consts::PI;
     let d = core::f32::consts::PI / (N as f32 - 1.0);
-    for i in 0..N {
-        pts[i].x = 1.0 + capsule.radius * angle.cos();
-        pts[i].y = capsule.radius * angle.sin();
+    for p in pts.iter_mut().take(N) {
+        p.x = 1.0 + capsule.radius * angle.cos();
+        p.y = capsule.radius * angle.sin();
         angle += d;
     }
     angle = 0.5 * core::f32::consts::PI;
-    for i in N..(2 * N) {
-        pts[i].x = -1.0 + capsule.radius * angle.cos();
-        pts[i].y = capsule.radius * angle.sin();
+    for p in pts.iter_mut().skip(N).take(N) {
+        p.x = -1.0 + capsule.radius * angle.cos();
+        p.y = capsule.radius * angle.sin();
         angle += d;
     }
     let hull = unsafe { ffi::b2ComputeHull(pts.as_ptr(), (2 * N) as i32) };
