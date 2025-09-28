@@ -36,68 +36,85 @@ impl Default for BodyDef {
 }
 
 /// Fluent builder for `BodyDef`.
+///
+/// Chain methods to configure a body and finish with `build()`. This maps
+/// to the upstream `b2BodyDef` fields.
 #[derive(Clone, Debug)]
 pub struct BodyBuilder {
     def: BodyDef,
 }
 
 impl BodyBuilder {
+    /// Start a new builder with default `BodyDef`.
     pub fn new() -> Self {
         Self {
             def: BodyDef::default(),
         }
     }
+    /// Set the body type (static, kinematic, dynamic).
     pub fn body_type(mut self, t: BodyType) -> Self {
         self.def.0.type_ = t.into();
         self
     }
-    pub fn position<V: Into<ffi::b2Vec2>>(mut self, p: V) -> Self {
-        self.def.0.position = p.into();
+    /// Initial world-space position.
+    pub fn position<V: Into<Vec2>>(mut self, p: V) -> Self {
+        self.def.0.position = ffi::b2Vec2::from(p.into());
         self
     }
+    /// Initial rotation in radians.
     pub fn angle(mut self, radians: f32) -> Self {
         // Build a rotation from angle
         let (s, c) = radians.sin_cos();
         self.def.0.rotation = ffi::b2Rot { c, s };
         self
     }
-    pub fn linear_velocity<V: Into<ffi::b2Vec2>>(mut self, v: V) -> Self {
-        self.def.0.linearVelocity = v.into();
+    /// Initial linear velocity (m/s).
+    pub fn linear_velocity<V: Into<Vec2>>(mut self, v: V) -> Self {
+        self.def.0.linearVelocity = ffi::b2Vec2::from(v.into());
         self
     }
+    /// Initial angular velocity (rad/s).
     pub fn angular_velocity(mut self, v: f32) -> Self {
         self.def.0.angularVelocity = v;
         self
     }
+    /// Linear damping (drag-like term).
     pub fn linear_damping(mut self, v: f32) -> Self {
         self.def.0.linearDamping = v;
         self
     }
+    /// Angular damping.
     pub fn angular_damping(mut self, v: f32) -> Self {
         self.def.0.angularDamping = v;
         self
     }
+    /// Per-body gravity scale (1 = normal gravity).
     pub fn gravity_scale(mut self, v: f32) -> Self {
         self.def.0.gravityScale = v;
         self
     }
+    /// Allow body to go to sleep.
     pub fn enable_sleep(mut self, flag: bool) -> Self {
         self.def.0.enableSleep = flag;
         self
     }
+    /// Awake/asleep flag at creation.
     pub fn awake(mut self, flag: bool) -> Self {
         self.def.0.isAwake = flag;
         self
     }
+    /// Treat as bullet (CCD).
     pub fn bullet(mut self, flag: bool) -> Self {
         self.def.0.isBullet = flag;
         self
     }
+    /// Enable/disable simulation for this body.
     pub fn enabled(mut self, flag: bool) -> Self {
         self.def.0.isEnabled = flag;
         self
     }
 
+    #[must_use]
     pub fn build(self) -> BodyDef {
         self.def
     }
@@ -145,46 +162,52 @@ impl<'w> Body<'w> {
     }
 
     // Mutations
-    pub fn set_position_and_rotation<V: Into<ffi::b2Vec2>>(&mut self, p: V, angle_radians: f32) {
+    pub fn set_position_and_rotation<V: Into<Vec2>>(&mut self, p: V, angle_radians: f32) {
         let (s, c) = angle_radians.sin_cos();
         let rot = ffi::b2Rot { c, s };
-        unsafe { ffi::b2Body_SetTransform(self.id, p.into(), rot) };
+        let pos: ffi::b2Vec2 = p.into().into();
+        unsafe { ffi::b2Body_SetTransform(self.id, pos, rot) };
     }
-    pub fn set_linear_velocity<V: Into<ffi::b2Vec2>>(&mut self, v: V) {
-        unsafe { ffi::b2Body_SetLinearVelocity(self.id, v.into()) }
+    pub fn set_linear_velocity<V: Into<Vec2>>(&mut self, v: V) {
+        let vel: ffi::b2Vec2 = v.into().into();
+        unsafe { ffi::b2Body_SetLinearVelocity(self.id, vel) }
     }
     pub fn set_angular_velocity(&mut self, w: f32) {
         unsafe { ffi::b2Body_SetAngularVelocity(self.id, w) }
     }
 
     pub fn contact_data(&self) -> Vec<ffi::b2ContactData> {
-        let cap = 64;
+        let cap = unsafe { ffi::b2Body_GetContactCapacity(self.id) }.max(0) as usize;
+        if cap == 0 {
+            return Vec::new();
+        }
         let mut vec: Vec<ffi::b2ContactData> = Vec::with_capacity(cap);
-        let written = unsafe { ffi::b2Body_GetContactData(self.id, vec.as_mut_ptr(), cap as i32) };
-        unsafe { vec.set_len(written.max(0) as usize) };
+        let wrote = unsafe { ffi::b2Body_GetContactData(self.id, vec.as_mut_ptr(), cap as i32) }
+            .max(0) as usize;
+        unsafe { vec.set_len(wrote.min(cap)) };
         vec
     }
 
     // Forces/impulses
-    pub fn apply_force<V: Into<ffi::b2Vec2>>(&mut self, force: V, point: V, wake: bool) {
-        let f = force.into();
-        let p = point.into();
+    pub fn apply_force<V: Into<Vec2>>(&mut self, force: V, point: V, wake: bool) {
+        let f: ffi::b2Vec2 = force.into().into();
+        let p: ffi::b2Vec2 = point.into().into();
         unsafe { ffi::b2Body_ApplyForce(self.id, f, p, wake) };
     }
-    pub fn apply_force_to_center<V: Into<ffi::b2Vec2>>(&mut self, force: V, wake: bool) {
-        let f = force.into();
+    pub fn apply_force_to_center<V: Into<Vec2>>(&mut self, force: V, wake: bool) {
+        let f: ffi::b2Vec2 = force.into().into();
         unsafe { ffi::b2Body_ApplyForceToCenter(self.id, f, wake) };
     }
     pub fn apply_torque(&mut self, torque: f32, wake: bool) {
         unsafe { ffi::b2Body_ApplyTorque(self.id, torque, wake) }
     }
-    pub fn apply_linear_impulse<V: Into<ffi::b2Vec2>>(&mut self, impulse: V, point: V, wake: bool) {
-        let i = impulse.into();
-        let p = point.into();
+    pub fn apply_linear_impulse<V: Into<Vec2>>(&mut self, impulse: V, point: V, wake: bool) {
+        let i: ffi::b2Vec2 = impulse.into().into();
+        let p: ffi::b2Vec2 = point.into().into();
         unsafe { ffi::b2Body_ApplyLinearImpulse(self.id, i, p, wake) };
     }
-    pub fn apply_linear_impulse_to_center<V: Into<ffi::b2Vec2>>(&mut self, impulse: V, wake: bool) {
-        let i = impulse.into();
+    pub fn apply_linear_impulse_to_center<V: Into<Vec2>>(&mut self, impulse: V, wake: bool) {
+        let i: ffi::b2Vec2 = impulse.into().into();
         unsafe { ffi::b2Body_ApplyLinearImpulseToCenter(self.id, i, wake) };
     }
     pub fn apply_angular_impulse(&mut self, impulse: f32, wake: bool) {
@@ -219,6 +242,9 @@ impl<'w> Body<'w> {
 
 impl<'w> Drop for Body<'w> {
     fn drop(&mut self) {
-        unsafe { ffi::b2DestroyBody(self.id) };
+        // Avoid double-destroy if already invalidated via ID-style API
+        if unsafe { ffi::b2Body_IsValid(self.id) } {
+            unsafe { ffi::b2DestroyBody(self.id) };
+        }
     }
 }

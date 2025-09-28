@@ -11,6 +11,8 @@ readme = "README.md"
 [dependencies]
 boxdd-sys = { path = "../boxdd-sys" }
 thiserror = "2"
+mint = "0.5"
+smallvec = "1"
 
 [features]
 default = []

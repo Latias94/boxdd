@@ -8,9 +8,9 @@
 //!   from those slices.
 //! - The underlying buffers are managed by Box2D and can be invalidated by the next `World::step`.
 //!
+use crate::Transform;
 use crate::types::{BodyId, JointId, ShapeId, Vec2};
 use crate::world::World;
-use crate::Transform;
 use boxdd_sys::ffi;
 
 #[derive(Clone, Debug)]

@@ -1,4 +1,4 @@
-use boxdd::{shapes, BodyBuilder, QueryFilter, ShapeDef, Vec2, World, WorldDef};
+use boxdd::{BodyBuilder, QueryFilter, ShapeDef, Vec2, World, WorldDef, shapes};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut world = World::new(WorldDef::builder().gravity(Vec2::new(0.0, -9.8)).build())?;

@@ -75,7 +75,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let c = world.counters();
     println!(
         "events_summary: move={} sensor(b={},e={}) contact(b={},e={},hit={}) joints={} counters bodies={} shapes={} contacts={} joints={} islands={}",
-        moves, sens_beg, sens_end, con_beg, con_end, con_hit, joint_ev, c.body_count, c.shape_count, c.contact_count, c.joint_count, c.island_count
+        moves,
+        sens_beg,
+        sens_end,
+        con_beg,
+        con_end,
+        con_hit,
+        joint_ev,
+        c.body_count,
+        c.shape_count,
+        c.contact_count,
+        c.joint_count,
+        c.island_count
     );
     Ok(())
 }

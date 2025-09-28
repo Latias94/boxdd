@@ -1,4 +1,4 @@
-use boxdd::{shapes, BodyBuilder, DebugDraw, DebugDrawOptions, ShapeDef, Vec2, World, WorldDef};
+use boxdd::{BodyBuilder, DebugDraw, DebugDrawOptions, ShapeDef, Vec2, World, WorldDef, shapes};
 
 struct Printer;
 

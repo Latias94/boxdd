@@ -1,5 +1,5 @@
 use boxdd::{
-    shapes, BodyBuilder, PrismaticJointDef, ShapeDef, Vec2, WheelJointDef, World, WorldDef,
+    BodyBuilder, PrismaticJointDef, ShapeDef, Vec2, WheelJointDef, World, WorldDef, shapes,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

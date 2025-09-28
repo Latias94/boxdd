@@ -1,4 +1,4 @@
-use boxdd::{shapes, Aabb, BodyBuilder, QueryFilter, ShapeDef, Vec2, World, WorldDef};
+use boxdd::{Aabb, BodyBuilder, QueryFilter, ShapeDef, Vec2, World, WorldDef, shapes};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let def = WorldDef::builder().gravity(Vec2::new(0.0, -9.8)).build();

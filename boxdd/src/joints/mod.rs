@@ -5,9 +5,9 @@
 //!   the underlying joint on drop.
 //! - ID style: `World::create_*_joint_id(&def) -> b2JointId` returning the raw id for storage.
 //!
-//! Convenience builders exist for composing joint defs in world space (see `World::distance`,
-//! `World::weld`, `World::motor_joint`, `World::filter_joint`) and for building frames from world
-//! anchors/axes.
+//! The `World` convenience builders (`revolute`, `prismatic`, `wheel`, `distance`, `weld`,
+//! `motor_joint`, `filter_joint`) help compose joints in world space and build local frames
+//! from world anchors/axes.
 use std::marker::PhantomData;
 
 use crate::body::Body;
@@ -35,11 +35,17 @@ impl<'w> Joint<'w> {
 
 impl<'w> Drop for Joint<'w> {
     fn drop(&mut self) {
-        unsafe { ffi::b2DestroyJoint(self.id, true) };
+        if unsafe { ffi::b2Joint_IsValid(self.id) } {
+            unsafe { ffi::b2DestroyJoint(self.id, true) };
+        }
     }
 }
 
 /// Base joint definition builder for common properties.
+///
+/// This configures `b2JointDef` fields shared by all joint types. Typically
+/// you construct a specific joint def (e.g. `RevoluteJointDef`) with this as
+/// its `base`.
 #[derive(Clone, Debug)]
 pub struct JointBase(pub(crate) ffi::b2JointDef);
 
@@ -59,22 +65,26 @@ pub struct JointBaseBuilder {
 }
 
 impl JointBaseBuilder {
+    /// Create a new base with identity local frames.
     pub fn new() -> Self {
         Self {
             base: JointBase::default(),
         }
     }
+    /// Attach two bodies using RAII wrappers.
     pub fn bodies<'w>(mut self, a: &Body<'w>, b: &Body<'w>) -> Self {
         self.base.0.bodyIdA = a.id;
         self.base.0.bodyIdB = b.id;
         self
     }
+    /// Attach two bodies by raw ids.
     pub fn bodies_by_id(mut self, a: BodyId, b: BodyId) -> Self {
         self.base.0.bodyIdA = a;
         self.base.0.bodyIdB = b;
         self
     }
-    pub fn local_frames<VA: Into<ffi::b2Vec2>, VB: Into<ffi::b2Vec2>>(
+    /// Set local frames from positions and angles (radians).
+    pub fn local_frames<VA: Into<crate::types::Vec2>, VB: Into<crate::types::Vec2>>(
         mut self,
         pos_a: VA,
         angle_a: f32,
@@ -84,11 +94,11 @@ impl JointBaseBuilder {
         let (sa, ca) = angle_a.sin_cos();
         let (sb, cb) = angle_b.sin_cos();
         self.base.0.localFrameA = ffi::b2Transform {
-            p: pos_a.into(),
+            p: ffi::b2Vec2::from(pos_a.into()),
             q: ffi::b2Rot { c: ca, s: sa },
         };
         self.base.0.localFrameB = ffi::b2Transform {
-            p: pos_b.into(),
+            p: ffi::b2Vec2::from(pos_b.into()),
             q: ffi::b2Rot { c: cb, s: sb },
         };
         self
@@ -97,18 +107,22 @@ impl JointBaseBuilder {
         self.base.0.collideConnected = flag;
         self
     }
+    /// Force threshold for joint events.
     pub fn force_threshold(mut self, v: f32) -> Self {
         self.base.0.forceThreshold = v;
         self
     }
+    /// Torque threshold for joint events.
     pub fn torque_threshold(mut self, v: f32) -> Self {
         self.base.0.torqueThreshold = v;
         self
     }
+    /// Advanced constraint tuning frequency in Hertz.
     pub fn constraint_hertz(mut self, v: f32) -> Self {
         self.base.0.constraintHertz = v;
         self
     }
+    /// Advanced constraint damping ratio.
     pub fn constraint_damping_ratio(mut self, v: f32) -> Self {
         self.base.0.constraintDampingRatio = v;
         self
@@ -123,7 +137,7 @@ impl JointBaseBuilder {
         self
     }
     /// Set local anchor positions from world points (rotation remains identity).
-    pub fn local_points_from_world<'w, V: Into<ffi::b2Vec2>>(
+    pub fn local_points_from_world<'w, V: Into<crate::types::Vec2>>(
         mut self,
         body_a: &Body<'w>,
         world_a: V,
@@ -132,29 +146,10 @@ impl JointBaseBuilder {
     ) -> Self {
         let ta = body_a.transform();
         let tb = body_b.transform();
-        let wa = world_a.into();
-        let wb = world_b.into();
-        // inv transform: R^T * (p - t.p)
-        let la = {
-            let dx = wa.x - ta.p.x;
-            let dy = wa.y - ta.p.y;
-            let c = ta.q.c;
-            let s = ta.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
-        let lb = {
-            let dx = wb.x - tb.p.x;
-            let dy = wb.y - tb.p.y;
-            let c = tb.q.c;
-            let s = tb.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
+        let wa: ffi::b2Vec2 = world_a.into().into();
+        let wb: ffi::b2Vec2 = world_b.into().into();
+        let la = crate::core::math::world_to_local_point(ta.into(), wa);
+        let lb = crate::core::math::world_to_local_point(tb.into(), wb);
         let ident = ffi::b2Transform {
             p: ffi::b2Vec2 { x: 0.0, y: 0.0 },
             q: ffi::b2Rot { c: 1.0, s: 0.0 },
@@ -183,52 +178,22 @@ impl JointBaseBuilder {
         anchor_b_world: VB,
     ) -> Self
     where
-        VA: Into<ffi::b2Vec2>,
-        VB: Into<ffi::b2Vec2>,
-        AX: Into<ffi::b2Vec2>,
+        VA: Into<crate::types::Vec2>,
+        VB: Into<crate::types::Vec2>,
+        AX: Into<crate::types::Vec2>,
     {
         let ta = body_a.transform();
         let tb = body_b.transform();
-        let wa = anchor_a_world.into();
-        let wb = anchor_b_world.into();
-        let axis_w = axis_world.into();
-        // Local positions
-        let la = {
-            let dx = wa.x - ta.p.x;
-            let dy = wa.y - ta.p.y;
-            let c = ta.q.c;
-            let s = ta.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
-        let lb = {
-            let dx = wb.x - tb.p.x;
-            let dy = wb.y - tb.p.y;
-            let c = tb.q.c;
-            let s = tb.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
-        // Local rotations: align local X with world axis
-        let angle_world = axis_w.y.atan2(axis_w.x);
-        let angle_a = ta.q.s.atan2(ta.q.c);
-        let angle_b = tb.q.s.atan2(tb.q.c);
-        let local_a = angle_world - angle_a;
-        let local_b = angle_world - angle_b;
-        let (sa, ca) = local_a.sin_cos();
-        let (sb, cb) = local_b.sin_cos();
-        self.base.0.localFrameA = ffi::b2Transform {
-            p: la,
-            q: ffi::b2Rot { c: ca, s: sa },
-        };
-        self.base.0.localFrameB = ffi::b2Transform {
-            p: lb,
-            q: ffi::b2Rot { c: cb, s: sb },
-        };
+        let wa: ffi::b2Vec2 = anchor_a_world.into().into();
+        let wb: ffi::b2Vec2 = anchor_b_world.into().into();
+        let axis_w: ffi::b2Vec2 = axis_world.into().into();
+        // Local frames: positions from anchors, rotations from world axis
+        let la = crate::core::math::world_to_local_point(ta.into(), wa);
+        let lb = crate::core::math::world_to_local_point(tb.into(), wb);
+        let ra = crate::core::math::world_axis_to_local_rot(ta.into(), axis_w);
+        let rb = crate::core::math::world_axis_to_local_rot(tb.into(), axis_w);
+        self.base.0.localFrameA = ffi::b2Transform { p: la, q: ra };
+        self.base.0.localFrameB = ffi::b2Transform { p: lb, q: rb };
         self
     }
 }
@@ -293,13 +258,13 @@ impl DistanceJointDef {
     }
 
     /// Convenience: compute length from two world points.
-    pub fn length_from_world_points<VA: Into<ffi::b2Vec2>, VB: Into<ffi::b2Vec2>>(
+    pub fn length_from_world_points<VA: Into<crate::types::Vec2>, VB: Into<crate::types::Vec2>>(
         mut self,
         a: VA,
         b: VB,
     ) -> Self {
-        let a = a.into();
-        let b = b.into();
+        let a: ffi::b2Vec2 = a.into().into();
+        let b: ffi::b2Vec2 = b.into().into();
         let dx = b.x - a.x;
         let dy = b.y - a.y;
         self.0.length = (dx * dx + dy * dy).sqrt();
@@ -516,8 +481,8 @@ impl MotorJointDef {
         def.base = base.0;
         Self(def)
     }
-    pub fn linear_velocity<V: Into<ffi::b2Vec2>>(mut self, v: V) -> Self {
-        self.0.linearVelocity = v.into();
+    pub fn linear_velocity<V: Into<crate::types::Vec2>>(mut self, v: V) -> Self {
+        self.0.linearVelocity = ffi::b2Vec2::from(v.into());
         self
     }
     pub fn max_velocity_force(mut self, v: f32) -> Self {
@@ -645,6 +610,25 @@ impl World {
 /// ```
 
 // Convenience builders
+/// Builder for a revolute (hinge) joint in world space.
+///
+/// Configure anchors/limits/motor and finish with `build()` to create the joint.
+///
+/// Example
+/// ```no_run
+/// use boxdd::{World, WorldDef, BodyBuilder, ShapeDef, shapes, Vec2};
+/// let mut world = World::new(WorldDef::builder().gravity([0.0,-9.8]).build()).unwrap();
+/// let a = world.create_body_id(BodyBuilder::new().position([0.0, 2.0]).build());
+/// let b = world.create_body_id(BodyBuilder::new().position([1.0, 2.0]).build());
+/// let sdef = ShapeDef::builder().density(1.0).build();
+/// world.create_polygon_shape_for(a, &sdef, &shapes::box_polygon(0.5,0.5));
+/// world.create_polygon_shape_for(b, &sdef, &shapes::box_polygon(0.5,0.5));
+/// let mut joint = world.revolute(a, b)
+///     .anchor_world(world.body_position(a))
+///     .with_limit_and_motor_deg(-30.0, 30.0, 10.0, 90.0)
+///     .build();
+/// # let _ = joint.id();
+/// ```
 pub struct RevoluteJointBuilder<'w> {
     world: &'w mut World,
     body_a: ffi::b2BodyId,
@@ -654,8 +638,9 @@ pub struct RevoluteJointBuilder<'w> {
 }
 
 impl<'w> RevoluteJointBuilder<'w> {
-    pub fn anchor_world<V: Into<ffi::b2Vec2>>(mut self, a: V) -> Self {
-        self.anchor_world = Some(a.into());
+    /// Set world-space anchor (defaults to body A position).
+    pub fn anchor_world<V: Into<crate::types::Vec2>>(mut self, a: V) -> Self {
+        self.anchor_world = Some(ffi::b2Vec2::from(a.into()));
         self
     }
     pub fn limit(mut self, lower_rad: f32, upper_rad: f32) -> Self {
@@ -686,6 +671,7 @@ impl<'w> RevoluteJointBuilder<'w> {
             .motor_speed_deg(speed_deg_per_s);
         self
     }
+    /// Enable spring with given `hertz` and `damping_ratio`.
     pub fn spring(mut self, hertz: f32, damping_ratio: f32) -> Self {
         self.def = self
             .def
@@ -788,31 +774,14 @@ impl<'w> RevoluteJointBuilder<'w> {
         self
     }
 
+    #[must_use]
     pub fn build(mut self) -> Joint<'w> {
         // Default anchor = body A position
         let ta = unsafe { ffi::b2Body_GetTransform(self.body_a) };
         let tb = unsafe { ffi::b2Body_GetTransform(self.body_b) };
         let aw = self.anchor_world.unwrap_or(ta.p);
-        let la = {
-            let dx = aw.x - ta.p.x;
-            let dy = aw.y - ta.p.y;
-            let c = ta.q.c;
-            let s = ta.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
-        let lb = {
-            let dx = aw.x - tb.p.x;
-            let dy = aw.y - tb.p.y;
-            let c = tb.q.c;
-            let s = tb.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
+        let la = crate::core::math::world_to_local_point(ta, aw);
+        let lb = crate::core::math::world_to_local_point(tb, aw);
         let base = JointBaseBuilder::new()
             .bodies_by_id(self.body_a, self.body_b)
             .local_frames_raw(
@@ -841,17 +810,19 @@ pub struct PrismaticJointBuilder<'w> {
 }
 
 impl<'w> PrismaticJointBuilder<'w> {
-    pub fn anchors_world<VA: Into<ffi::b2Vec2>, VB: Into<ffi::b2Vec2>>(
+    /// Set world-space anchors for A and B.
+    pub fn anchors_world<VA: Into<crate::types::Vec2>, VB: Into<crate::types::Vec2>>(
         mut self,
         a: VA,
         b: VB,
     ) -> Self {
-        self.anchor_a_world = Some(a.into());
-        self.anchor_b_world = Some(b.into());
+        self.anchor_a_world = Some(ffi::b2Vec2::from(a.into()));
+        self.anchor_b_world = Some(ffi::b2Vec2::from(b.into()));
         self
     }
-    pub fn axis_world<V: Into<ffi::b2Vec2>>(mut self, axis: V) -> Self {
-        self.axis_world = Some(axis.into());
+    /// Set world-space axis this joint slides along.
+    pub fn axis_world<V: Into<crate::types::Vec2>>(mut self, axis: V) -> Self {
+        self.axis_world = Some(ffi::b2Vec2::from(axis.into()));
         self
     }
     pub fn limit(mut self, lower: f32, upper: f32) -> Self {
@@ -935,6 +906,7 @@ impl<'w> PrismaticJointBuilder<'w> {
         self
     }
 
+    #[must_use]
     pub fn build(mut self) -> Joint<'w> {
         // Defaults: anchors = body positions, axis = x
         let ta = unsafe { ffi::b2Body_GetTransform(self.body_a) };
@@ -942,42 +914,15 @@ impl<'w> PrismaticJointBuilder<'w> {
         let aw = self.anchor_a_world.unwrap_or(ta.p);
         let bw = self.anchor_b_world.unwrap_or(tb.p);
         let axis = self.axis_world.unwrap_or(ffi::b2Vec2 { x: 1.0, y: 0.0 });
-        let la = {
-            let dx = aw.x - ta.p.x;
-            let dy = aw.y - ta.p.y;
-            let c = ta.q.c;
-            let s = ta.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
-        let lb = {
-            let dx = bw.x - tb.p.x;
-            let dy = bw.y - tb.p.y;
-            let c = tb.q.c;
-            let s = tb.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
-        let angle_w = axis.y.atan2(axis.x);
-        let angle_a = ta.q.s.atan2(ta.q.c);
-        let angle_b = tb.q.s.atan2(tb.q.c);
-        let (sa, ca) = (angle_w - angle_a).sin_cos();
-        let (sb, cb) = (angle_w - angle_b).sin_cos();
+        let la = crate::core::math::world_to_local_point(ta, aw);
+        let lb = crate::core::math::world_to_local_point(tb, bw);
+        let ra = crate::core::math::world_axis_to_local_rot(ta, axis);
+        let rb = crate::core::math::world_axis_to_local_rot(tb, axis);
         let base = JointBaseBuilder::new()
             .bodies_by_id(self.body_a, self.body_b)
             .local_frames_raw(
-                ffi::b2Transform {
-                    p: la,
-                    q: ffi::b2Rot { c: ca, s: sa },
-                },
-                ffi::b2Transform {
-                    p: lb,
-                    q: ffi::b2Rot { c: cb, s: sb },
-                },
+                ffi::b2Transform { p: la, q: ra },
+                ffi::b2Transform { p: lb, q: rb },
             )
             .build();
         self.def.0.base = base.0;
@@ -996,17 +941,19 @@ pub struct WheelJointBuilder<'w> {
 }
 
 impl<'w> WheelJointBuilder<'w> {
-    pub fn anchors_world<VA: Into<ffi::b2Vec2>, VB: Into<ffi::b2Vec2>>(
+    /// Set world-space anchors for A and B.
+    pub fn anchors_world<VA: Into<crate::types::Vec2>, VB: Into<crate::types::Vec2>>(
         mut self,
         a: VA,
         b: VB,
     ) -> Self {
-        self.anchor_a_world = Some(a.into());
-        self.anchor_b_world = Some(b.into());
+        self.anchor_a_world = Some(ffi::b2Vec2::from(a.into()));
+        self.anchor_b_world = Some(ffi::b2Vec2::from(b.into()));
         self
     }
-    pub fn axis_world<V: Into<ffi::b2Vec2>>(mut self, axis: V) -> Self {
-        self.axis_world = Some(axis.into());
+    /// Set wheel axis in world space.
+    pub fn axis_world<V: Into<crate::types::Vec2>>(mut self, axis: V) -> Self {
+        self.axis_world = Some(ffi::b2Vec2::from(axis.into()));
         self
     }
     pub fn limit(mut self, lower: f32, upper: f32) -> Self {
@@ -1137,6 +1084,7 @@ impl<'w> WheelJointBuilder<'w> {
         self
     }
 
+    #[must_use]
     pub fn build(mut self) -> Joint<'w> {
         // Defaults: anchors = body positions, axis = x
         let ta = unsafe { ffi::b2Body_GetTransform(self.body_a) };
@@ -1144,42 +1092,15 @@ impl<'w> WheelJointBuilder<'w> {
         let aw = self.anchor_a_world.unwrap_or(ta.p);
         let bw = self.anchor_b_world.unwrap_or(tb.p);
         let axis = self.axis_world.unwrap_or(ffi::b2Vec2 { x: 1.0, y: 0.0 });
-        let la = {
-            let dx = aw.x - ta.p.x;
-            let dy = aw.y - ta.p.y;
-            let c = ta.q.c;
-            let s = ta.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
-        let lb = {
-            let dx = bw.x - tb.p.x;
-            let dy = bw.y - tb.p.y;
-            let c = tb.q.c;
-            let s = tb.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
-        let angle_w = axis.y.atan2(axis.x);
-        let angle_a = ta.q.s.atan2(ta.q.c);
-        let angle_b = tb.q.s.atan2(tb.q.c);
-        let (sa, ca) = (angle_w - angle_a).sin_cos();
-        let (sb, cb) = (angle_w - angle_b).sin_cos();
+        let la = crate::core::math::world_to_local_point(ta, aw);
+        let lb = crate::core::math::world_to_local_point(tb, bw);
+        let ra = crate::core::math::world_axis_to_local_rot(ta, axis);
+        let rb = crate::core::math::world_axis_to_local_rot(tb, axis);
         let base = JointBaseBuilder::new()
             .bodies_by_id(self.body_a, self.body_b)
             .local_frames_raw(
-                ffi::b2Transform {
-                    p: la,
-                    q: ffi::b2Rot { c: ca, s: sa },
-                },
-                ffi::b2Transform {
-                    p: lb,
-                    q: ffi::b2Rot { c: cb, s: sb },
-                },
+                ffi::b2Transform { p: la, q: ra },
+                ffi::b2Transform { p: lb, q: rb },
             )
             .build();
         self.def.0.base = base.0;
@@ -1236,25 +1157,30 @@ pub struct DistanceJointBuilder<'w> {
 }
 
 impl<'w> DistanceJointBuilder<'w> {
-    pub fn anchors_world<VA: Into<ffi::b2Vec2>, VB: Into<ffi::b2Vec2>>(
+    /// Set world-space anchors for A and B.
+    pub fn anchors_world<VA: Into<crate::types::Vec2>, VB: Into<crate::types::Vec2>>(
         mut self,
         a: VA,
         b: VB,
     ) -> Self {
-        self.anchor_a_world = Some(a.into());
-        self.anchor_b_world = Some(b.into());
+        self.anchor_a_world = Some(ffi::b2Vec2::from(a.into()));
+        self.anchor_b_world = Some(ffi::b2Vec2::from(b.into()));
         self
     }
+    /// Set desired distance (meters).
     pub fn length(mut self, len: f32) -> Self {
         self.def = self.def.length(len);
         self
     }
-    pub fn length_from_world_points<VA: Into<ffi::b2Vec2>, VB: Into<ffi::b2Vec2>>(
+    /// Compute desired distance from two world points.
+    pub fn length_from_world_points<VA: Into<crate::types::Vec2>, VB: Into<crate::types::Vec2>>(
         mut self,
         a: VA,
         b: VB,
     ) -> Self {
-        self.def = self.def.length_from_world_points(a.into(), b.into());
+        self.def = self
+            .def
+            .length_from_world_points(ffi::b2Vec2::from(a.into()), ffi::b2Vec2::from(b.into()));
         self
     }
     pub fn limit(mut self, min_len: f32, max_len: f32) -> Self {
@@ -1334,32 +1260,15 @@ impl<'w> DistanceJointBuilder<'w> {
         self
     }
 
+    #[must_use]
     pub fn build(mut self) -> Joint<'w> {
         // Compute frames from anchors; default to body positions
         let ta = unsafe { ffi::b2Body_GetTransform(self.body_a) };
         let tb = unsafe { ffi::b2Body_GetTransform(self.body_b) };
         let aw = self.anchor_a_world.unwrap_or(ta.p);
         let bw = self.anchor_b_world.unwrap_or(tb.p);
-        let la = {
-            let dx = aw.x - ta.p.x;
-            let dy = aw.y - ta.p.y;
-            let c = ta.q.c;
-            let s = ta.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
-        let lb = {
-            let dx = bw.x - tb.p.x;
-            let dy = bw.y - tb.p.y;
-            let c = tb.q.c;
-            let s = tb.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
+        let la = crate::core::math::world_to_local_point(ta, aw);
+        let lb = crate::core::math::world_to_local_point(tb, bw);
         let base = JointBaseBuilder::new()
             .bodies_by_id(self.body_a, self.body_b)
             .local_frames_raw(
@@ -1388,8 +1297,9 @@ pub struct WeldJointBuilder<'w> {
 }
 
 impl<'w> WeldJointBuilder<'w> {
-    pub fn anchor_world<V: Into<ffi::b2Vec2>>(mut self, a: V) -> Self {
-        self.anchor_world = Some(a.into());
+    /// Set world-space anchor (defaults to body A position).
+    pub fn anchor_world<V: Into<crate::types::Vec2>>(mut self, a: V) -> Self {
+        self.anchor_world = Some(ffi::b2Vec2::from(a.into()));
         self
     }
     pub fn linear_stiffness(mut self, hertz: f32, damping_ratio: f32) -> Self {
@@ -1422,30 +1332,13 @@ impl<'w> WeldJointBuilder<'w> {
         self
     }
 
+    #[must_use]
     pub fn build(mut self) -> Joint<'w> {
         let ta = unsafe { ffi::b2Body_GetTransform(self.body_a) };
         let tb = unsafe { ffi::b2Body_GetTransform(self.body_b) };
         let aw = self.anchor_world.unwrap_or(ta.p);
-        let la = {
-            let dx = aw.x - ta.p.x;
-            let dy = aw.y - ta.p.y;
-            let c = ta.q.c;
-            let s = ta.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
-        let lb = {
-            let dx = aw.x - tb.p.x;
-            let dy = aw.y - tb.p.y;
-            let c = tb.q.c;
-            let s = tb.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
+        let la = crate::core::math::world_to_local_point(ta, aw);
+        let lb = crate::core::math::world_to_local_point(tb, aw);
         let base = JointBaseBuilder::new()
             .bodies_by_id(self.body_a, self.body_b)
             .local_frames_raw(
@@ -1473,8 +1366,8 @@ pub struct MotorJointBuilder<'w> {
 }
 
 impl<'w> MotorJointBuilder<'w> {
-    pub fn linear_velocity<V: Into<ffi::b2Vec2>>(mut self, v: V) -> Self {
-        self.def = self.def.linear_velocity(v.into());
+    pub fn linear_velocity<V: Into<crate::types::Vec2>>(mut self, v: V) -> Self {
+        self.def = self.def.linear_velocity(ffi::b2Vec2::from(v.into()));
         self
     }
     pub fn angular_velocity(mut self, w: f32) -> Self {
@@ -1502,6 +1395,7 @@ impl<'w> MotorJointBuilder<'w> {
         self
     }
 
+    #[must_use]
     pub fn build(mut self) -> Joint<'w> {
         // Default frames: identity (base only needs bodies)
         let base = JointBaseBuilder::new()
@@ -1513,6 +1407,8 @@ impl<'w> MotorJointBuilder<'w> {
 }
 
 // Filter joint convenience builder (minimal)
+/// Builder for a filter joint that disables collision between two bodies
+/// while keeping them in the same island.
 pub struct FilterJointBuilder<'w> {
     world: &'w mut World,
     body_a: BodyId,
@@ -1521,10 +1417,12 @@ pub struct FilterJointBuilder<'w> {
 }
 
 impl<'w> FilterJointBuilder<'w> {
+    /// Whether the attached bodies should collide with each other.
     pub fn collide_connected(mut self, flag: bool) -> Self {
         self.def.0.base.collideConnected = flag;
         self
     }
+    #[must_use]
     pub fn build(mut self) -> Joint<'w> {
         let base = JointBaseBuilder::new()
             .bodies_by_id(self.body_a, self.body_b)
@@ -1620,6 +1518,220 @@ impl World {
         unsafe { ffi::b2CreateFilterJoint(self.raw(), &def.0) }
     }
     pub fn destroy_joint_id(&mut self, id: JointId, wake_bodies: bool) {
-        unsafe { ffi::b2DestroyJoint(id, wake_bodies) };
+        if unsafe { ffi::b2Joint_IsValid(id) } {
+            unsafe { ffi::b2DestroyJoint(id, wake_bodies) };
+        }
+    }
+}
+
+// Runtime joint control APIs (by joint type)
+impl World {
+    // Distance joint
+    #[inline]
+    pub fn distance_set_length(&mut self, id: JointId, length: f32) {
+        unsafe { ffi::b2DistanceJoint_SetLength(id, length) }
+    }
+    #[inline]
+    pub fn distance_enable_spring(&mut self, id: JointId, enable: bool) {
+        unsafe { ffi::b2DistanceJoint_EnableSpring(id, enable) }
+    }
+    #[inline]
+    pub fn distance_set_spring_hertz(&mut self, id: JointId, hertz: f32) {
+        unsafe { ffi::b2DistanceJoint_SetSpringHertz(id, hertz) }
+    }
+    #[inline]
+    pub fn distance_set_spring_damping_ratio(&mut self, id: JointId, damping_ratio: f32) {
+        unsafe { ffi::b2DistanceJoint_SetSpringDampingRatio(id, damping_ratio) }
+    }
+    #[inline]
+    pub fn distance_enable_limit(&mut self, id: JointId, enable: bool) {
+        unsafe { ffi::b2DistanceJoint_EnableLimit(id, enable) }
+    }
+    #[inline]
+    pub fn distance_set_length_range(&mut self, id: JointId, min_length: f32, max_length: f32) {
+        unsafe { ffi::b2DistanceJoint_SetLengthRange(id, min_length, max_length) }
+    }
+    #[inline]
+    pub fn distance_enable_motor(&mut self, id: JointId, enable: bool) {
+        unsafe { ffi::b2DistanceJoint_EnableMotor(id, enable) }
+    }
+    #[inline]
+    pub fn distance_set_motor_speed(&mut self, id: JointId, speed: f32) {
+        unsafe { ffi::b2DistanceJoint_SetMotorSpeed(id, speed) }
+    }
+    #[inline]
+    pub fn distance_set_max_motor_force(&mut self, id: JointId, force: f32) {
+        unsafe { ffi::b2DistanceJoint_SetMaxMotorForce(id, force) }
+    }
+
+    // Prismatic joint
+    #[inline]
+    pub fn prismatic_enable_spring(&mut self, id: JointId, enable: bool) {
+        unsafe { ffi::b2PrismaticJoint_EnableSpring(id, enable) }
+    }
+    #[inline]
+    pub fn prismatic_set_spring_hertz(&mut self, id: JointId, hertz: f32) {
+        unsafe { ffi::b2PrismaticJoint_SetSpringHertz(id, hertz) }
+    }
+    #[inline]
+    pub fn prismatic_set_spring_damping_ratio(&mut self, id: JointId, damping_ratio: f32) {
+        unsafe { ffi::b2PrismaticJoint_SetSpringDampingRatio(id, damping_ratio) }
+    }
+    #[inline]
+    pub fn prismatic_set_target_translation(&mut self, id: JointId, translation: f32) {
+        unsafe { ffi::b2PrismaticJoint_SetTargetTranslation(id, translation) }
+    }
+    #[inline]
+    pub fn prismatic_enable_limit(&mut self, id: JointId, enable: bool) {
+        unsafe { ffi::b2PrismaticJoint_EnableLimit(id, enable) }
+    }
+    #[inline]
+    pub fn prismatic_set_limits(&mut self, id: JointId, lower: f32, upper: f32) {
+        unsafe { ffi::b2PrismaticJoint_SetLimits(id, lower, upper) }
+    }
+    #[inline]
+    pub fn prismatic_enable_motor(&mut self, id: JointId, enable: bool) {
+        unsafe { ffi::b2PrismaticJoint_EnableMotor(id, enable) }
+    }
+    #[inline]
+    pub fn prismatic_set_motor_speed(&mut self, id: JointId, speed: f32) {
+        unsafe { ffi::b2PrismaticJoint_SetMotorSpeed(id, speed) }
+    }
+    #[inline]
+    pub fn prismatic_set_max_motor_force(&mut self, id: JointId, force: f32) {
+        unsafe { ffi::b2PrismaticJoint_SetMaxMotorForce(id, force) }
+    }
+
+    // Revolute joint
+    #[inline]
+    pub fn revolute_enable_spring(&mut self, id: JointId, enable: bool) {
+        unsafe { ffi::b2RevoluteJoint_EnableSpring(id, enable) }
+    }
+    #[inline]
+    pub fn revolute_set_spring_hertz(&mut self, id: JointId, hertz: f32) {
+        unsafe { ffi::b2RevoluteJoint_SetSpringHertz(id, hertz) }
+    }
+    #[inline]
+    pub fn revolute_set_spring_damping_ratio(&mut self, id: JointId, damping_ratio: f32) {
+        unsafe { ffi::b2RevoluteJoint_SetSpringDampingRatio(id, damping_ratio) }
+    }
+    #[inline]
+    pub fn revolute_set_target_angle(&mut self, id: JointId, angle: f32) {
+        unsafe { ffi::b2RevoluteJoint_SetTargetAngle(id, angle) }
+    }
+    #[inline]
+    pub fn revolute_enable_limit(&mut self, id: JointId, enable: bool) {
+        unsafe { ffi::b2RevoluteJoint_EnableLimit(id, enable) }
+    }
+    #[inline]
+    pub fn revolute_set_limits(&mut self, id: JointId, lower: f32, upper: f32) {
+        unsafe { ffi::b2RevoluteJoint_SetLimits(id, lower, upper) }
+    }
+    #[inline]
+    pub fn revolute_enable_motor(&mut self, id: JointId, enable: bool) {
+        unsafe { ffi::b2RevoluteJoint_EnableMotor(id, enable) }
+    }
+    #[inline]
+    pub fn revolute_set_motor_speed(&mut self, id: JointId, speed: f32) {
+        unsafe { ffi::b2RevoluteJoint_SetMotorSpeed(id, speed) }
+    }
+    #[inline]
+    pub fn revolute_set_max_motor_torque(&mut self, id: JointId, torque: f32) {
+        unsafe { ffi::b2RevoluteJoint_SetMaxMotorTorque(id, torque) }
+    }
+
+    // Weld joint
+    #[inline]
+    pub fn weld_set_linear_hertz(&mut self, id: JointId, hertz: f32) {
+        unsafe { ffi::b2WeldJoint_SetLinearHertz(id, hertz) }
+    }
+    #[inline]
+    pub fn weld_set_linear_damping_ratio(&mut self, id: JointId, damping_ratio: f32) {
+        unsafe { ffi::b2WeldJoint_SetLinearDampingRatio(id, damping_ratio) }
+    }
+    #[inline]
+    pub fn weld_set_angular_hertz(&mut self, id: JointId, hertz: f32) {
+        unsafe { ffi::b2WeldJoint_SetAngularHertz(id, hertz) }
+    }
+    #[inline]
+    pub fn weld_set_angular_damping_ratio(&mut self, id: JointId, damping_ratio: f32) {
+        unsafe { ffi::b2WeldJoint_SetAngularDampingRatio(id, damping_ratio) }
+    }
+
+    // Wheel joint
+    #[inline]
+    pub fn wheel_enable_spring(&mut self, id: JointId, enable: bool) {
+        unsafe { ffi::b2WheelJoint_EnableSpring(id, enable) }
+    }
+    #[inline]
+    pub fn wheel_set_spring_hertz(&mut self, id: JointId, hertz: f32) {
+        unsafe { ffi::b2WheelJoint_SetSpringHertz(id, hertz) }
+    }
+    #[inline]
+    pub fn wheel_set_spring_damping_ratio(&mut self, id: JointId, damping_ratio: f32) {
+        unsafe { ffi::b2WheelJoint_SetSpringDampingRatio(id, damping_ratio) }
+    }
+    #[inline]
+    pub fn wheel_enable_limit(&mut self, id: JointId, enable: bool) {
+        unsafe { ffi::b2WheelJoint_EnableLimit(id, enable) }
+    }
+    #[inline]
+    pub fn wheel_set_limits(&mut self, id: JointId, lower: f32, upper: f32) {
+        unsafe { ffi::b2WheelJoint_SetLimits(id, lower, upper) }
+    }
+    #[inline]
+    pub fn wheel_enable_motor(&mut self, id: JointId, enable: bool) {
+        unsafe { ffi::b2WheelJoint_EnableMotor(id, enable) }
+    }
+    #[inline]
+    pub fn wheel_set_motor_speed(&mut self, id: JointId, speed: f32) {
+        unsafe { ffi::b2WheelJoint_SetMotorSpeed(id, speed) }
+    }
+    #[inline]
+    pub fn wheel_set_max_motor_torque(&mut self, id: JointId, torque: f32) {
+        unsafe { ffi::b2WheelJoint_SetMaxMotorTorque(id, torque) }
+    }
+
+    // Motor joint
+    #[inline]
+    pub fn motor_set_linear_velocity<V: Into<crate::types::Vec2>>(&mut self, id: JointId, v: V) {
+        let vv: ffi::b2Vec2 = v.into().into();
+        unsafe { ffi::b2MotorJoint_SetLinearVelocity(id, vv) }
+    }
+    #[inline]
+    pub fn motor_set_angular_velocity(&mut self, id: JointId, w: f32) {
+        unsafe { ffi::b2MotorJoint_SetAngularVelocity(id, w) }
+    }
+    #[inline]
+    pub fn motor_set_max_velocity_force(&mut self, id: JointId, f: f32) {
+        unsafe { ffi::b2MotorJoint_SetMaxVelocityForce(id, f) }
+    }
+    #[inline]
+    pub fn motor_set_max_velocity_torque(&mut self, id: JointId, t: f32) {
+        unsafe { ffi::b2MotorJoint_SetMaxVelocityTorque(id, t) }
+    }
+    #[inline]
+    pub fn motor_set_linear_hertz(&mut self, id: JointId, hertz: f32) {
+        unsafe { ffi::b2MotorJoint_SetLinearHertz(id, hertz) }
+    }
+    #[inline]
+    pub fn motor_set_linear_damping_ratio(&mut self, id: JointId, damping: f32) {
+        unsafe { ffi::b2MotorJoint_SetLinearDampingRatio(id, damping) }
+    }
+    #[inline]
+    pub fn motor_set_angular_hertz(&mut self, id: JointId, hertz: f32) {
+        unsafe { ffi::b2MotorJoint_SetAngularHertz(id, hertz) }
+    }
+    #[inline]
+    pub fn motor_set_angular_damping_ratio(&mut self, id: JointId, damping: f32) {
+        unsafe { ffi::b2MotorJoint_SetAngularDampingRatio(id, damping) }
+    }
+    #[inline]
+    pub fn motor_set_max_spring_force(&mut self, id: JointId, f: f32) {
+        unsafe { ffi::b2MotorJoint_SetMaxSpringForce(id, f) }
+    }
+    #[inline]
+    pub fn motor_set_max_spring_torque(&mut self, id: JointId, t: f32) {
+        unsafe { ffi::b2MotorJoint_SetMaxSpringTorque(id, t) }
     }
 }

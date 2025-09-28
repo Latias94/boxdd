@@ -1,3 +1,8 @@
+//! Shapes API
+//!
+//! Safe wrappers around Box2D shapes. Shapes are attached to bodies and can be
+//! modified at runtime. Use `ShapeDef` and `Body::create_*_shape` helpers to
+//! create shapes.
 use std::marker::PhantomData;
 pub mod chain;
 
@@ -52,11 +57,58 @@ impl<'b, 'w> Shape<'b, 'w> {
         unsafe { ffi::b2Shape_SetFilter(self.id, f.into()) }
     }
 
+    // Material and physical properties
+    pub fn is_sensor(&self) -> bool {
+        unsafe { ffi::b2Shape_IsSensor(self.id) }
+    }
+    pub fn set_density(&mut self, density: f32, update_body_mass: bool) {
+        unsafe { ffi::b2Shape_SetDensity(self.id, density, update_body_mass) }
+    }
+    pub fn density(&self) -> f32 {
+        unsafe { ffi::b2Shape_GetDensity(self.id) }
+    }
+    pub fn set_friction(&mut self, friction: f32) {
+        unsafe { ffi::b2Shape_SetFriction(self.id, friction) }
+    }
+    pub fn friction(&self) -> f32 {
+        unsafe { ffi::b2Shape_GetFriction(self.id) }
+    }
+    pub fn set_restitution(&mut self, restitution: f32) {
+        unsafe { ffi::b2Shape_SetRestitution(self.id, restitution) }
+    }
+    pub fn restitution(&self) -> f32 {
+        unsafe { ffi::b2Shape_GetRestitution(self.id) }
+    }
+    pub fn set_user_material(&mut self, material: u64) {
+        unsafe { ffi::b2Shape_SetUserMaterial(self.id, material) }
+    }
+    pub fn user_material(&self) -> u64 {
+        unsafe { ffi::b2Shape_GetUserMaterial(self.id) }
+    }
+    pub fn set_surface_material(&mut self, material: &SurfaceMaterial) {
+        unsafe { ffi::b2Shape_SetSurfaceMaterial(self.id, &material.0) }
+    }
+    pub fn surface_material(&self) -> SurfaceMaterial {
+        SurfaceMaterial(unsafe { ffi::b2Shape_GetSurfaceMaterial(self.id) })
+    }
+
+    // Opaque user pointer (engine-owned)
+    pub fn set_user_data_ptr(&mut self, p: *mut core::ffi::c_void) {
+        unsafe { ffi::b2Shape_SetUserData(self.id, p) }
+    }
+    pub fn user_data_ptr(&self) -> *mut core::ffi::c_void {
+        unsafe { ffi::b2Shape_GetUserData(self.id) }
+    }
+
     pub fn contact_data(&self) -> Vec<ffi::b2ContactData> {
-        let cap = 64;
+        let cap = unsafe { ffi::b2Shape_GetContactCapacity(self.id) }.max(0) as usize;
+        if cap == 0 {
+            return Vec::new();
+        }
         let mut vec: Vec<ffi::b2ContactData> = Vec::with_capacity(cap);
-        let written = unsafe { ffi::b2Shape_GetContactData(self.id, vec.as_mut_ptr(), cap as i32) };
-        unsafe { vec.set_len(written.max(0) as usize) };
+        let wrote = unsafe { ffi::b2Shape_GetContactData(self.id, vec.as_mut_ptr(), cap as i32) }
+            .max(0) as usize;
+        unsafe { vec.set_len(wrote.min(cap)) };
         vec
     }
 
@@ -74,8 +126,9 @@ impl<'b, 'w> Shape<'b, 'w> {
             return Vec::new();
         }
         let mut ids: Vec<ShapeId> = Vec::with_capacity(cap as usize);
-        let wrote = unsafe { ffi::b2Shape_GetSensorData(self.id, ids.as_mut_ptr(), cap) };
-        unsafe { ids.set_len(wrote.max(0) as usize) };
+        let wrote =
+            unsafe { ffi::b2Shape_GetSensorData(self.id, ids.as_mut_ptr(), cap) }.max(0) as usize;
+        unsafe { ids.set_len(wrote.min(cap as usize)) };
         ids
     }
 
@@ -91,7 +144,9 @@ impl<'b, 'w> Shape<'b, 'w> {
 impl<'b, 'w> Drop for Shape<'b, 'w> {
     fn drop(&mut self) {
         // Update body mass on shape destroy by default
-        unsafe { ffi::b2DestroyShape(self.id, true) };
+        if unsafe { ffi::b2Shape_IsValid(self.id) } {
+            unsafe { ffi::b2DestroyShape(self.id, true) };
+        }
     }
 }
 
@@ -156,80 +211,96 @@ pub struct ShapeDefBuilder {
 }
 
 impl ShapeDefBuilder {
+    /// Set the surface material (friction, restitution, etc.).
     pub fn material(mut self, mat: SurfaceMaterial) -> Self {
         self.def.0.material = mat.0;
         self
     }
+    /// Density in kg/m². Affects mass.
     pub fn density(mut self, v: f32) -> Self {
         self.def.0.density = v;
         self
     }
+    /// Low-level filter (category/mask/group).
     pub fn filter(mut self, f: ffi::b2Filter) -> Self {
         self.def.0.filter = f;
         self
     }
+    /// High-level filter wrapper.
     pub fn filter_ex(mut self, f: Filter) -> Self {
         self.def.0.filter = f.into();
         self
     }
+    /// Enable user-provided filtering callback.
     pub fn enable_custom_filtering(mut self, flag: bool) -> Self {
         self.def.0.enableCustomFiltering = flag;
         self
     }
+    /// Mark as sensor (no collision response).
     pub fn sensor(mut self, flag: bool) -> Self {
         self.def.0.isSensor = flag;
         self
     }
+    /// Emit sensor begin/end touch events.
     pub fn enable_sensor_events(mut self, flag: bool) -> Self {
         self.def.0.enableSensorEvents = flag;
         self
     }
+    /// Emit contact begin/end events.
     pub fn enable_contact_events(mut self, flag: bool) -> Self {
         self.def.0.enableContactEvents = flag;
         self
     }
+    /// Emit impact hit events when above threshold.
     pub fn enable_hit_events(mut self, flag: bool) -> Self {
         self.def.0.enableHitEvents = flag;
         self
     }
+    /// Emit pre-solve events (advanced).
     pub fn enable_pre_solve_events(mut self, flag: bool) -> Self {
         self.def.0.enablePreSolveEvents = flag;
         self
     }
+    /// Invoke user callback on contact creation.
     pub fn invoke_contact_creation(mut self, flag: bool) -> Self {
         self.def.0.invokeContactCreation = flag;
         self
     }
+    /// Recompute body mass when adding/removing this shape.
     pub fn update_body_mass(mut self, flag: bool) -> Self {
         self.def.0.updateBodyMass = flag;
         self
     }
+    #[must_use]
     pub fn build(self) -> ShapeDef {
         self.def
     }
 }
 
 /// Circle primitive helper
-pub fn circle<V: Into<ffi::b2Vec2>>(center: V, radius: f32) -> ffi::b2Circle {
+#[inline]
+pub fn circle<V: Into<crate::types::Vec2>>(center: V, radius: f32) -> ffi::b2Circle {
     ffi::b2Circle {
-        center: center.into(),
+        center: ffi::b2Vec2::from(center.into()),
         radius,
     }
 }
 
 /// Segment primitive helper
-pub fn segment<V: Into<ffi::b2Vec2>>(p1: V, p2: V) -> ffi::b2Segment {
+#[inline]
+pub fn segment<V: Into<crate::types::Vec2>>(p1: V, p2: V) -> ffi::b2Segment {
     ffi::b2Segment {
-        point1: p1.into(),
-        point2: p2.into(),
+        point1: ffi::b2Vec2::from(p1.into()),
+        point2: ffi::b2Vec2::from(p2.into()),
     }
 }
 
 /// Capsule primitive helper
-pub fn capsule<V: Into<ffi::b2Vec2>>(c1: V, c2: V, radius: f32) -> ffi::b2Capsule {
+#[inline]
+pub fn capsule<V: Into<crate::types::Vec2>>(c1: V, c2: V, radius: f32) -> ffi::b2Capsule {
     ffi::b2Capsule {
-        center1: c1.into(),
-        center2: c2.into(),
+        center1: ffi::b2Vec2::from(c1.into()),
+        center2: ffi::b2Vec2::from(c2.into()),
         radius,
     }
 }
@@ -242,9 +313,12 @@ pub fn box_polygon(half_width: f32, half_height: f32) -> ffi::b2Polygon {
 pub fn polygon_from_points<I, P>(points: I, radius: f32) -> Option<ffi::b2Polygon>
 where
     I: IntoIterator<Item = P>,
-    P: Into<ffi::b2Vec2>,
+    P: Into<crate::types::Vec2>,
 {
-    let pts: Vec<ffi::b2Vec2> = points.into_iter().map(Into::into).collect();
+    let pts: Vec<ffi::b2Vec2> = points
+        .into_iter()
+        .map(|p| ffi::b2Vec2::from(p.into()))
+        .collect();
     if pts.is_empty() {
         return None;
     }
@@ -313,19 +387,19 @@ impl<'w> Body<'w> {
         };
         self.create_circle_shape(def, &c)
     }
-    pub fn create_segment_simple<'b, V: Into<ffi::b2Vec2>>(
+    pub fn create_segment_simple<'b, V: Into<crate::types::Vec2>>(
         &'b mut self,
         def: &ShapeDef,
         p1: V,
         p2: V,
     ) -> Shape<'b, 'w> {
         let seg = ffi::b2Segment {
-            point1: p1.into(),
-            point2: p2.into(),
+            point1: ffi::b2Vec2::from(p1.into()),
+            point2: ffi::b2Vec2::from(p2.into()),
         };
         self.create_segment_shape(def, &seg)
     }
-    pub fn create_capsule_simple<'b, V: Into<ffi::b2Vec2>>(
+    pub fn create_capsule_simple<'b, V: Into<crate::types::Vec2>>(
         &'b mut self,
         def: &ShapeDef,
         c1: V,
@@ -333,8 +407,8 @@ impl<'w> Body<'w> {
         radius: f32,
     ) -> Shape<'b, 'w> {
         let cap = ffi::b2Capsule {
-            center1: c1.into(),
-            center2: c2.into(),
+            center1: ffi::b2Vec2::from(c1.into()),
+            center2: ffi::b2Vec2::from(c2.into()),
             radius,
         };
         self.create_capsule_shape(def, &cap)
@@ -347,9 +421,10 @@ impl<'w> Body<'w> {
     ) -> Option<Shape<'b, 'w>>
     where
         I: IntoIterator<Item = P>,
-        P: Into<ffi::b2Vec2>,
+        P: Into<crate::types::Vec2>,
     {
         let poly = crate::shapes::polygon_from_points(points, radius)?;
         Some(self.create_polygon_shape(def, &poly))
     }
 }
+// Shapes: module note moved to top-level doc above.

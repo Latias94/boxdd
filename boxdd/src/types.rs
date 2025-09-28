@@ -15,18 +15,45 @@ impl Vec2 {
 }
 
 impl From<ffi::b2Vec2> for Vec2 {
+    #[inline]
     fn from(v: ffi::b2Vec2) -> Self {
         Self { x: v.x, y: v.y }
     }
 }
 
 impl From<Vec2> for ffi::b2Vec2 {
+    #[inline]
     fn from(v: Vec2) -> Self {
         ffi::b2Vec2 { x: v.x, y: v.y }
     }
 }
 
-// Mint interop is provided at the sys layer (impl From<mint::Vector2<f32>> for ffi::b2Vec2)
+// Conversions from common 2D types to Vec2 for ergonomic APIs
+impl From<[f32; 2]> for Vec2 {
+    #[inline]
+    fn from(a: [f32; 2]) -> Self {
+        Self { x: a[0], y: a[1] }
+    }
+}
+impl From<(f32, f32)> for Vec2 {
+    #[inline]
+    fn from(t: (f32, f32)) -> Self {
+        Self { x: t.0, y: t.1 }
+    }
+}
+
+impl From<mint::Vector2<f32>> for Vec2 {
+    #[inline]
+    fn from(v: mint::Vector2<f32>) -> Self {
+        Self { x: v.x, y: v.y }
+    }
+}
+impl From<mint::Point2<f32>> for Vec2 {
+    #[inline]
+    fn from(p: mint::Point2<f32>) -> Self {
+        Self { x: p.x, y: p.y }
+    }
+}
 
 // Public id aliases to avoid exposing `ffi::` in user-facing API/docstrings.
 pub type BodyId = ffi::b2BodyId;

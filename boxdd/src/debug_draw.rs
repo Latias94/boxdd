@@ -11,7 +11,7 @@
 //! use std::ffi::CStr;
 //! struct Printer;
 //! impl DebugDraw for Printer {
-//!     fn draw_polygon(&mut self, vertices: &[ffi::b2Vec2], color: i32) {
+//!     fn draw_polygon(&mut self, vertices: &[Vec2], color: i32) {
 //!         println!("poly {} color={:#x}", vertices.len(), color);
 //!     }
 //! }
@@ -20,10 +20,11 @@
 //! let mut drawer = Printer;
 //! world.debug_draw(&mut drawer, DebugDrawOptions::default());
 //! ```
+use crate::Transform;
 use crate::types::Vec2;
 use crate::world::World;
-use crate::Transform;
 use boxdd_sys::ffi;
+use smallvec::SmallVec;
 use std::ffi::CStr;
 
 // Safe debug draw trait (no ffi types)
@@ -141,9 +142,12 @@ impl World {
             color: i32,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = &mut *(context as *mut DebugCtx);
-            let src = core::slice::from_raw_parts(vertices, count as usize);
-            let verts: Vec<Vec2> = src.iter().copied().map(Vec2::from).collect();
+            let ctx = unsafe { &mut *(context as *mut DebugCtx) };
+            let src = unsafe { core::slice::from_raw_parts(vertices, count as usize) };
+            let mut verts: SmallVec<[Vec2; 8]> = SmallVec::with_capacity(src.len().min(8));
+            for v in src.iter().copied() {
+                verts.push(Vec2::from(v));
+            }
             ctx.drawer.draw_polygon(&verts, color);
         }
         unsafe extern "C" fn draw_solid_polygon_cb(
@@ -154,9 +158,12 @@ impl World {
             color: i32,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = &mut *(context as *mut DebugCtx);
-            let src = core::slice::from_raw_parts(vertices, count as usize);
-            let verts: Vec<Vec2> = src.iter().copied().map(Vec2::from).collect();
+            let ctx = unsafe { &mut *(context as *mut DebugCtx) };
+            let src = unsafe { core::slice::from_raw_parts(vertices, count as usize) };
+            let mut verts: SmallVec<[Vec2; 8]> = SmallVec::with_capacity(src.len().min(8));
+            for v in src.iter().copied() {
+                verts.push(Vec2::from(v));
+            }
             ctx.drawer
                 .draw_solid_polygon(Transform::from(transform), &verts, radius, color);
         }
@@ -166,7 +173,7 @@ impl World {
             color: i32,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = &mut *(context as *mut DebugCtx);
+            let ctx = unsafe { &mut *(context as *mut DebugCtx) };
             ctx.drawer.draw_circle(Vec2::from(center), radius, color);
         }
         unsafe extern "C" fn draw_solid_circle_cb(
@@ -175,7 +182,7 @@ impl World {
             color: i32,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = &mut *(context as *mut DebugCtx);
+            let ctx = unsafe { &mut *(context as *mut DebugCtx) };
             ctx.drawer
                 .draw_solid_circle(Transform::from(transform), radius, color);
         }
@@ -186,7 +193,7 @@ impl World {
             color: i32,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = &mut *(context as *mut DebugCtx);
+            let ctx = unsafe { &mut *(context as *mut DebugCtx) };
             ctx.drawer
                 .draw_solid_capsule(Vec2::from(p1), Vec2::from(p2), radius, color);
         }
@@ -196,7 +203,7 @@ impl World {
             color: i32,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = &mut *(context as *mut DebugCtx);
+            let ctx = unsafe { &mut *(context as *mut DebugCtx) };
             ctx.drawer
                 .draw_segment(Vec2::from(p1), Vec2::from(p2), color);
         }
@@ -204,7 +211,7 @@ impl World {
             transform: ffi::b2Transform,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = &mut *(context as *mut DebugCtx);
+            let ctx = unsafe { &mut *(context as *mut DebugCtx) };
             ctx.drawer.draw_transform(Transform::from(transform));
         }
         unsafe extern "C" fn draw_point_cb(
@@ -213,7 +220,7 @@ impl World {
             color: i32,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = &mut *(context as *mut DebugCtx);
+            let ctx = unsafe { &mut *(context as *mut DebugCtx) };
             ctx.drawer.draw_point(Vec2::from(p), size, color);
         }
         unsafe extern "C" fn draw_string_cb(
@@ -222,7 +229,7 @@ impl World {
             color: i32,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = &mut *(context as *mut DebugCtx);
+            let ctx = unsafe { &mut *(context as *mut DebugCtx) };
             if !s.is_null() {
                 let cs = unsafe { CStr::from_ptr(s) };
                 ctx.drawer
@@ -272,8 +279,8 @@ impl World {
             color: i32,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = &mut *(context as *mut RawDebugCtx);
-            let slice = core::slice::from_raw_parts(vertices, count as usize);
+            let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
+            let slice = unsafe { core::slice::from_raw_parts(vertices, count as usize) };
             ctx.drawer.draw_polygon(slice, color);
         }
         unsafe extern "C" fn draw_solid_polygon_cb(
@@ -284,8 +291,8 @@ impl World {
             color: i32,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = &mut *(context as *mut RawDebugCtx);
-            let slice = core::slice::from_raw_parts(vertices, count as usize);
+            let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
+            let slice = unsafe { core::slice::from_raw_parts(vertices, count as usize) };
             ctx.drawer
                 .draw_solid_polygon(transform, slice, radius, color);
         }
@@ -295,7 +302,7 @@ impl World {
             color: i32,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = &mut *(context as *mut RawDebugCtx);
+            let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
             ctx.drawer.draw_circle(center, radius, color);
         }
         unsafe extern "C" fn draw_solid_circle_cb(
@@ -304,7 +311,7 @@ impl World {
             color: i32,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = &mut *(context as *mut RawDebugCtx);
+            let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
             ctx.drawer.draw_solid_circle(transform, radius, color);
         }
         unsafe extern "C" fn draw_solid_capsule_cb(
@@ -314,7 +321,7 @@ impl World {
             color: i32,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = &mut *(context as *mut RawDebugCtx);
+            let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
             ctx.drawer.draw_solid_capsule(p1, p2, radius, color);
         }
         unsafe extern "C" fn draw_segment_cb(
@@ -323,14 +330,14 @@ impl World {
             color: i32,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = &mut *(context as *mut RawDebugCtx);
+            let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
             ctx.drawer.draw_segment(p1, p2, color);
         }
         unsafe extern "C" fn draw_transform_cb(
             transform: ffi::b2Transform,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = &mut *(context as *mut RawDebugCtx);
+            let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
             ctx.drawer.draw_transform(transform);
         }
         unsafe extern "C" fn draw_point_cb(
@@ -339,7 +346,7 @@ impl World {
             color: i32,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = &mut *(context as *mut RawDebugCtx);
+            let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
             ctx.drawer.draw_point(p, size, color);
         }
         unsafe extern "C" fn draw_string_cb(
@@ -348,7 +355,7 @@ impl World {
             color: i32,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = &mut *(context as *mut RawDebugCtx);
+            let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
             if !s.is_null() {
                 let cs = unsafe { CStr::from_ptr(s) };
                 ctx.drawer.draw_string(p, cs, color);

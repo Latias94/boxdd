@@ -19,6 +19,7 @@ impl Default for Filter {
 }
 
 impl From<Filter> for ffi::b2Filter {
+    #[inline]
     fn from(f: Filter) -> Self {
         Self {
             categoryBits: f.category_bits,
@@ -29,6 +30,7 @@ impl From<Filter> for ffi::b2Filter {
 }
 
 impl From<ffi::b2Filter> for Filter {
+    #[inline]
     fn from(f: ffi::b2Filter) -> Self {
         Self {
             category_bits: f.categoryBits,

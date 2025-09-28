@@ -33,12 +33,10 @@ impl<'b, 'w> Chain<'b, 'w> {
             return Vec::new();
         }
         let mut vec: Vec<ShapeId> = Vec::with_capacity(count);
-        // Safety: create temporary buffer to be filled by C, then set_len to returned count
-        unsafe {
-            vec.set_len(count);
-            let written = ffi::b2Chain_GetSegments(self.id, vec.as_mut_ptr(), count as i32);
-            vec.set_len(written.max(0) as usize);
-        }
+        // Safety: create temporary buffer to be filled by C, then set_len to returned count (clamped)
+        let wrote = unsafe { ffi::b2Chain_GetSegments(self.id, vec.as_mut_ptr(), count as i32) }
+            .max(0) as usize;
+        unsafe { vec.set_len(wrote.min(count)) };
         vec
     }
 
@@ -53,7 +51,9 @@ impl<'b, 'w> Chain<'b, 'w> {
 
 impl<'b, 'w> Drop for Chain<'b, 'w> {
     fn drop(&mut self) {
-        unsafe { ffi::b2DestroyChain(self.id) }
+        if unsafe { ffi::b2Chain_IsValid(self.id) } {
+            unsafe { ffi::b2DestroyChain(self.id) }
+        }
     }
 }
 
@@ -92,9 +92,12 @@ impl ChainDefBuilder {
     pub fn points<I, P>(mut self, points: I) -> Self
     where
         I: IntoIterator<Item = P>,
-        P: Into<ffi::b2Vec2>,
+        P: Into<crate::types::Vec2>,
     {
-        self.inner.points = points.into_iter().map(Into::into).collect();
+        self.inner.points = points
+            .into_iter()
+            .map(|p| ffi::b2Vec2::from(p.into()))
+            .collect();
         self.inner.def.points = if self.inner.points.is_empty() {
             core::ptr::null()
         } else {
@@ -132,6 +135,7 @@ impl ChainDefBuilder {
         }
         self
     }
+    #[must_use]
     pub fn build(mut self) -> ChainDef {
         if self.inner.def.count == 0 {
             // ensure sane default

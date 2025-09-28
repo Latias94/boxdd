@@ -25,4 +25,3 @@ cc = "1"
 bindgen = "0.72"
 
 [dependencies]
-mint = "0.5"

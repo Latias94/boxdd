@@ -1,11 +1,12 @@
+use crate::Transform;
 use crate::body::{Body, BodyDef, BodyType};
 use crate::shapes::ShapeDef;
 use crate::types::{BodyId, JointId, ShapeId, Vec2};
-use crate::Transform;
 use boxdd_sys::ffi;
 use std::ffi::CString;
 
 /// Error type for world creation and operations.
+#[non_exhaustive]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("failed to create Box2D world")]
@@ -35,6 +36,9 @@ impl WorldDef {
 }
 
 /// Fluent builder for `WorldDef`.
+///
+/// Chain configuration calls and finish with `build()`. All fields map 1:1 to
+/// the upstream `b2WorldDef`.
 #[derive(Clone, Debug)]
 pub struct WorldBuilder {
     def: WorldDef,
@@ -47,51 +51,63 @@ impl From<WorldDef> for WorldBuilder {
 }
 
 impl WorldBuilder {
-    pub fn gravity<V: Into<ffi::b2Vec2>>(mut self, g: V) -> Self {
-        self.def.0.gravity = g.into();
+    /// Set gravity vector in meters per second squared.
+    pub fn gravity<V: Into<Vec2>>(mut self, g: V) -> Self {
+        self.def.0.gravity = ffi::b2Vec2::from(g.into());
         self
     }
+    /// Restitution threshold (m/s) under which collisions don't bounce.
     pub fn restitution_threshold(mut self, v: f32) -> Self {
         self.def.0.restitutionThreshold = v;
         self
     }
+    /// Impulse magnitude that generates hit events.
     pub fn hit_event_threshold(mut self, v: f32) -> Self {
         self.def.0.hitEventThreshold = v;
         self
     }
+    /// Contact solver target stiffness in Hertz.
     pub fn contact_hertz(mut self, v: f32) -> Self {
         self.def.0.contactHertz = v;
         self
     }
+    /// Contact damping ratio (non-dimensional).
     pub fn contact_damping_ratio(mut self, v: f32) -> Self {
         self.def.0.contactDampingRatio = v;
         self
     }
+    /// Velocity used by continuous collision detection.
     pub fn contact_speed(mut self, v: f32) -> Self {
         self.def.0.contactSpeed = v;
         self
     }
+    /// Maximum linear speed clamp for bodies.
     pub fn maximum_linear_speed(mut self, v: f32) -> Self {
         self.def.0.maximumLinearSpeed = v;
         self
     }
+    /// Enable/disable sleeping globally.
     pub fn enable_sleep(mut self, flag: bool) -> Self {
         self.def.0.enableSleep = flag;
         self
     }
+    /// Enable/disable continuous collision detection globally.
     pub fn enable_continuous(mut self, flag: bool) -> Self {
         self.def.0.enableContinuous = flag;
         self
     }
+    /// Enable/disable contact softening.
     pub fn enable_contact_softening(mut self, flag: bool) -> Self {
         self.def.0.enableContactSoftening = flag;
         self
     }
+    /// Number of worker threads Box2D may use.
     pub fn worker_count(mut self, n: i32) -> Self {
         self.def.0.workerCount = n;
         self
     }
 
+    #[must_use]
     pub fn build(self) -> WorldDef {
         self.def
     }
@@ -123,8 +139,9 @@ impl World {
     }
 
     /// Set gravity vector.
-    pub fn set_gravity(&mut self, g: Vec2) {
-        unsafe { ffi::b2World_SetGravity(self.id, g.into()) };
+    pub fn set_gravity<V: Into<Vec2>>(&mut self, g: V) {
+        let gv: ffi::b2Vec2 = g.into().into();
+        unsafe { ffi::b2World_SetGravity(self.id, gv) };
     }
 
     /// Get current gravity vector.
@@ -152,8 +169,9 @@ impl World {
         Vec2::from(unsafe { ffi::b2Body_GetPosition(body) })
     }
     /// Set a body's linear velocity by id.
-    pub fn set_body_linear_velocity<V: Into<ffi::b2Vec2>>(&mut self, body: BodyId, v: V) {
-        unsafe { ffi::b2Body_SetLinearVelocity(body, v.into()) }
+    pub fn set_body_linear_velocity<V: Into<Vec2>>(&mut self, body: BodyId, v: V) {
+        let vv: ffi::b2Vec2 = v.into().into();
+        unsafe { ffi::b2Body_SetLinearVelocity(body, vv) }
     }
     /// Set a body's angular velocity by id.
     pub fn set_body_angular_velocity(&mut self, body: BodyId, w: f32) {
@@ -236,35 +254,17 @@ impl World {
     }
 
     // Convenience joints built from world anchors and axis using body ids
-    pub fn create_revolute_joint_world<VA: Into<ffi::b2Vec2>>(
+    pub fn create_revolute_joint_world<VA: Into<Vec2>>(
         &mut self,
         body_a: BodyId,
         body_b: BodyId,
         anchor_world: VA,
     ) -> crate::joints::Joint<'_> {
-        let aw = anchor_world.into();
+        let aw: ffi::b2Vec2 = anchor_world.into().into();
         let ta = unsafe { ffi::b2Body_GetTransform(body_a) };
         let tb = unsafe { ffi::b2Body_GetTransform(body_b) };
-        let la = {
-            let dx = aw.x - ta.p.x;
-            let dy = aw.y - ta.p.y;
-            let c = ta.q.c;
-            let s = ta.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
-        let lb = {
-            let dx = aw.x - tb.p.x;
-            let dy = aw.y - tb.p.y;
-            let c = tb.q.c;
-            let s = tb.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
+        let la = crate::core::math::world_to_local_point(ta, aw);
+        let lb = crate::core::math::world_to_local_point(tb, aw);
         let base = crate::joints::JointBaseBuilder::new()
             .bodies_by_id(body_a, body_b)
             .local_frames_raw(
@@ -282,35 +282,17 @@ impl World {
         self.create_revolute_joint(&def)
     }
 
-    pub fn create_revolute_joint_world_id<VA: Into<ffi::b2Vec2>>(
+    pub fn create_revolute_joint_world_id<VA: Into<Vec2>>(
         &mut self,
         body_a: BodyId,
         body_b: BodyId,
         anchor_world: VA,
     ) -> JointId {
-        let aw = anchor_world.into();
+        let aw: ffi::b2Vec2 = anchor_world.into().into();
         let ta = unsafe { ffi::b2Body_GetTransform(body_a) };
         let tb = unsafe { ffi::b2Body_GetTransform(body_b) };
-        let la = {
-            let dx = aw.x - ta.p.x;
-            let dy = aw.y - ta.p.y;
-            let c = ta.q.c;
-            let s = ta.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
-        let lb = {
-            let dx = aw.x - tb.p.x;
-            let dy = aw.y - tb.p.y;
-            let c = tb.q.c;
-            let s = tb.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
+        let la = crate::core::math::world_to_local_point(ta, aw);
+        let lb = crate::core::math::world_to_local_point(tb, aw);
         let base = crate::joints::JointBaseBuilder::new()
             .bodies_by_id(body_a, body_b)
             .local_frames_raw(
@@ -328,11 +310,7 @@ impl World {
         self.create_revolute_joint_id(&def)
     }
 
-    pub fn create_prismatic_joint_world<
-        VA: Into<ffi::b2Vec2>,
-        VB: Into<ffi::b2Vec2>,
-        AX: Into<ffi::b2Vec2>,
-    >(
+    pub fn create_prismatic_joint_world<VA: Into<Vec2>, VB: Into<Vec2>, AX: Into<Vec2>>(
         &mut self,
         body_a: BodyId,
         body_b: BodyId,
@@ -342,56 +320,25 @@ impl World {
     ) -> crate::joints::Joint<'_> {
         let ta = unsafe { ffi::b2Body_GetTransform(body_a) };
         let tb = unsafe { ffi::b2Body_GetTransform(body_b) };
-        let wa = anchor_a_world.into();
-        let wb = anchor_b_world.into();
-        let axis = axis_world.into();
-        let la = {
-            let dx = wa.x - ta.p.x;
-            let dy = wa.y - ta.p.y;
-            let c = ta.q.c;
-            let s = ta.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
-        let lb = {
-            let dx = wb.x - tb.p.x;
-            let dy = wb.y - tb.p.y;
-            let c = tb.q.c;
-            let s = tb.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
-        let angle_w = axis.y.atan2(axis.x);
-        let angle_a = ta.q.s.atan2(ta.q.c);
-        let angle_b = tb.q.s.atan2(tb.q.c);
-        let (sa, ca) = (angle_w - angle_a).sin_cos();
-        let (sb, cb) = (angle_w - angle_b).sin_cos();
+        let wa: ffi::b2Vec2 = anchor_a_world.into().into();
+        let wb: ffi::b2Vec2 = anchor_b_world.into().into();
+        let axis: ffi::b2Vec2 = axis_world.into().into();
+        let la = crate::core::math::world_to_local_point(ta, wa);
+        let lb = crate::core::math::world_to_local_point(tb, wb);
+        let ra = crate::core::math::world_axis_to_local_rot(ta, axis);
+        let rb = crate::core::math::world_axis_to_local_rot(tb, axis);
         let base = crate::joints::JointBaseBuilder::new()
             .bodies_by_id(body_a, body_b)
             .local_frames_raw(
-                ffi::b2Transform {
-                    p: la,
-                    q: ffi::b2Rot { c: ca, s: sa },
-                },
-                ffi::b2Transform {
-                    p: lb,
-                    q: ffi::b2Rot { c: cb, s: sb },
-                },
+                ffi::b2Transform { p: la, q: ra },
+                ffi::b2Transform { p: lb, q: rb },
             )
             .build();
         let def = crate::joints::PrismaticJointDef::new(base);
         self.create_prismatic_joint(&def)
     }
 
-    pub fn create_prismatic_joint_world_id<
-        VA: Into<ffi::b2Vec2>,
-        VB: Into<ffi::b2Vec2>,
-        AX: Into<ffi::b2Vec2>,
-    >(
+    pub fn create_prismatic_joint_world_id<VA: Into<Vec2>, VB: Into<Vec2>, AX: Into<Vec2>>(
         &mut self,
         body_a: ffi::b2BodyId,
         body_b: ffi::b2BodyId,
@@ -401,56 +348,25 @@ impl World {
     ) -> JointId {
         let ta = unsafe { ffi::b2Body_GetTransform(body_a) };
         let tb = unsafe { ffi::b2Body_GetTransform(body_b) };
-        let wa = anchor_a_world.into();
-        let wb = anchor_b_world.into();
-        let axis = axis_world.into();
-        let la = {
-            let dx = wa.x - ta.p.x;
-            let dy = wa.y - ta.p.y;
-            let c = ta.q.c;
-            let s = ta.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
-        let lb = {
-            let dx = wb.x - tb.p.x;
-            let dy = wb.y - tb.p.y;
-            let c = tb.q.c;
-            let s = tb.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
-        let angle_w = axis.y.atan2(axis.x);
-        let angle_a = ta.q.s.atan2(ta.q.c);
-        let angle_b = tb.q.s.atan2(tb.q.c);
-        let (sa, ca) = (angle_w - angle_a).sin_cos();
-        let (sb, cb) = (angle_w - angle_b).sin_cos();
+        let wa: ffi::b2Vec2 = anchor_a_world.into().into();
+        let wb: ffi::b2Vec2 = anchor_b_world.into().into();
+        let axis: ffi::b2Vec2 = axis_world.into().into();
+        let la = crate::core::math::world_to_local_point(ta, wa);
+        let lb = crate::core::math::world_to_local_point(tb, wb);
+        let ra = crate::core::math::world_axis_to_local_rot(ta, axis);
+        let rb = crate::core::math::world_axis_to_local_rot(tb, axis);
         let base = crate::joints::JointBaseBuilder::new()
             .bodies_by_id(body_a, body_b)
             .local_frames_raw(
-                ffi::b2Transform {
-                    p: la,
-                    q: ffi::b2Rot { c: ca, s: sa },
-                },
-                ffi::b2Transform {
-                    p: lb,
-                    q: ffi::b2Rot { c: cb, s: sb },
-                },
+                ffi::b2Transform { p: la, q: ra },
+                ffi::b2Transform { p: lb, q: rb },
             )
             .build();
         let def = crate::joints::PrismaticJointDef::new(base);
         self.create_prismatic_joint_id(&def)
     }
 
-    pub fn create_wheel_joint_world<
-        VA: Into<ffi::b2Vec2>,
-        VB: Into<ffi::b2Vec2>,
-        AX: Into<ffi::b2Vec2>,
-    >(
+    pub fn create_wheel_joint_world<VA: Into<Vec2>, VB: Into<Vec2>, AX: Into<Vec2>>(
         &mut self,
         body_a: BodyId,
         body_b: BodyId,
@@ -460,56 +376,25 @@ impl World {
     ) -> crate::joints::Joint<'_> {
         let ta = unsafe { ffi::b2Body_GetTransform(body_a) };
         let tb = unsafe { ffi::b2Body_GetTransform(body_b) };
-        let wa = anchor_a_world.into();
-        let wb = anchor_b_world.into();
-        let axis = axis_world.into();
-        let la = {
-            let dx = wa.x - ta.p.x;
-            let dy = wa.y - ta.p.y;
-            let c = ta.q.c;
-            let s = ta.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
-        let lb = {
-            let dx = wb.x - tb.p.x;
-            let dy = wb.y - tb.p.y;
-            let c = tb.q.c;
-            let s = tb.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
-        let angle_w = axis.y.atan2(axis.x);
-        let angle_a = ta.q.s.atan2(ta.q.c);
-        let angle_b = tb.q.s.atan2(tb.q.c);
-        let (sa, ca) = (angle_w - angle_a).sin_cos();
-        let (sb, cb) = (angle_w - angle_b).sin_cos();
+        let wa: ffi::b2Vec2 = anchor_a_world.into().into();
+        let wb: ffi::b2Vec2 = anchor_b_world.into().into();
+        let axis: ffi::b2Vec2 = axis_world.into().into();
+        let la = crate::core::math::world_to_local_point(ta, wa);
+        let lb = crate::core::math::world_to_local_point(tb, wb);
+        let ra = crate::core::math::world_axis_to_local_rot(ta, axis);
+        let rb = crate::core::math::world_axis_to_local_rot(tb, axis);
         let base = crate::joints::JointBaseBuilder::new()
             .bodies_by_id(body_a, body_b)
             .local_frames_raw(
-                ffi::b2Transform {
-                    p: la,
-                    q: ffi::b2Rot { c: ca, s: sa },
-                },
-                ffi::b2Transform {
-                    p: lb,
-                    q: ffi::b2Rot { c: cb, s: sb },
-                },
+                ffi::b2Transform { p: la, q: ra },
+                ffi::b2Transform { p: lb, q: rb },
             )
             .build();
         let def = crate::joints::WheelJointDef::new(base);
         self.create_wheel_joint(&def)
     }
 
-    pub fn create_wheel_joint_world_id<
-        VA: Into<ffi::b2Vec2>,
-        VB: Into<ffi::b2Vec2>,
-        AX: Into<ffi::b2Vec2>,
-    >(
+    pub fn create_wheel_joint_world_id<VA: Into<Vec2>, VB: Into<Vec2>, AX: Into<Vec2>>(
         &mut self,
         body_a: ffi::b2BodyId,
         body_b: ffi::b2BodyId,
@@ -519,45 +404,18 @@ impl World {
     ) -> JointId {
         let ta = unsafe { ffi::b2Body_GetTransform(body_a) };
         let tb = unsafe { ffi::b2Body_GetTransform(body_b) };
-        let wa = anchor_a_world.into();
-        let wb = anchor_b_world.into();
-        let axis = axis_world.into();
-        let la = {
-            let dx = wa.x - ta.p.x;
-            let dy = wa.y - ta.p.y;
-            let c = ta.q.c;
-            let s = ta.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
-        let lb = {
-            let dx = wb.x - tb.p.x;
-            let dy = wb.y - tb.p.y;
-            let c = tb.q.c;
-            let s = tb.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
-        let angle_w = axis.y.atan2(axis.x);
-        let angle_a = ta.q.s.atan2(ta.q.c);
-        let angle_b = tb.q.s.atan2(tb.q.c);
-        let (sa, ca) = (angle_w - angle_a).sin_cos();
-        let (sb, cb) = (angle_w - angle_b).sin_cos();
+        let wa: ffi::b2Vec2 = anchor_a_world.into().into();
+        let wb: ffi::b2Vec2 = anchor_b_world.into().into();
+        let axis: ffi::b2Vec2 = axis_world.into().into();
+        let la = crate::core::math::world_to_local_point(ta, wa);
+        let lb = crate::core::math::world_to_local_point(tb, wb);
+        let ra = crate::core::math::world_axis_to_local_rot(ta, axis);
+        let rb = crate::core::math::world_axis_to_local_rot(tb, axis);
         let base = crate::joints::JointBaseBuilder::new()
             .bodies_by_id(body_a, body_b)
             .local_frames_raw(
-                ffi::b2Transform {
-                    p: la,
-                    q: ffi::b2Rot { c: ca, s: sa },
-                },
-                ffi::b2Transform {
-                    p: lb,
-                    q: ffi::b2Rot { c: cb, s: sb },
-                },
+                ffi::b2Transform { p: la, q: ra },
+                ffi::b2Transform { p: lb, q: rb },
             )
             .build();
         let def = crate::joints::WheelJointDef::new(base);
@@ -565,37 +423,34 @@ impl World {
     }
 
     /// Helper: build a joint base from two world anchor points.
-    pub fn joint_base_from_world_points<VA: Into<ffi::b2Vec2>, VB: Into<ffi::b2Vec2>>(
+    /// Build `JointBase` from two world anchor points.
+    ///
+    /// Example
+    /// ```no_run
+    /// use boxdd::{World, WorldDef, BodyBuilder, ShapeDef, shapes, Vec2};
+    /// let mut world = World::new(WorldDef::builder().gravity([0.0,-9.8]).build()).unwrap();
+    /// let a = world.create_body_id(BodyBuilder::new().position([-1.0,2.0]).build());
+    /// let b = world.create_body_id(BodyBuilder::new().position([ 1.0,2.0]).build());
+    /// let sdef = ShapeDef::builder().density(1.0).build();
+    /// world.create_polygon_shape_for(a, &sdef, &shapes::box_polygon(0.5,0.5));
+    /// world.create_polygon_shape_for(b, &sdef, &shapes::box_polygon(0.5,0.5));
+    /// let base = world.joint_base_from_world_points(a, b, world.body_position(a), world.body_position(b));
+    /// # let _ = base;
+    /// ```
+    pub fn joint_base_from_world_points<VA: Into<Vec2>, VB: Into<Vec2>>(
         &self,
         body_a: BodyId,
         body_b: BodyId,
         anchor_a_world: VA,
         anchor_b_world: VB,
     ) -> crate::joints::JointBase {
+        // Build JointBase from two world anchor points.
         let ta = unsafe { ffi::b2Body_GetTransform(body_a) };
         let tb = unsafe { ffi::b2Body_GetTransform(body_b) };
-        let wa = anchor_a_world.into();
-        let wb = anchor_b_world.into();
-        let la = {
-            let dx = wa.x - ta.p.x;
-            let dy = wa.y - ta.p.y;
-            let c = ta.q.c;
-            let s = ta.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
-        let lb = {
-            let dx = wb.x - tb.p.x;
-            let dy = wb.y - tb.p.y;
-            let c = tb.q.c;
-            let s = tb.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
+        let wa: ffi::b2Vec2 = anchor_a_world.into().into();
+        let wb: ffi::b2Vec2 = anchor_b_world.into().into();
+        let la = crate::core::math::world_to_local_point(ta, wa);
+        let lb = crate::core::math::world_to_local_point(tb, wb);
         crate::joints::JointBaseBuilder::new()
             .bodies_by_id(body_a, body_b)
             .local_frames_raw(
@@ -612,11 +467,22 @@ impl World {
     }
 
     /// Helper: build a joint base from two world anchors and a shared world axis (X-axis of joint frames).
-    pub fn joint_base_from_world_with_axis<
-        VA: Into<ffi::b2Vec2>,
-        VB: Into<ffi::b2Vec2>,
-        AX: Into<ffi::b2Vec2>,
-    >(
+    /// Build `JointBase` from world anchors and a shared world axis (X-axis of local frames).
+    ///
+    /// Example
+    /// ```no_run
+    /// use boxdd::{World, WorldDef, BodyBuilder, ShapeDef, shapes, Vec2};
+    /// let mut world = World::new(WorldDef::builder().gravity([0.0,-9.8]).build()).unwrap();
+    /// let a = world.create_body_id(BodyBuilder::new().position([0.0,2.0]).build());
+    /// let b = world.create_body_id(BodyBuilder::new().position([1.0,2.0]).build());
+    /// let sdef = ShapeDef::builder().density(1.0).build();
+    /// world.create_polygon_shape_for(a, &sdef, &shapes::box_polygon(0.5,0.5));
+    /// world.create_polygon_shape_for(b, &sdef, &shapes::box_polygon(0.5,0.5));
+    /// let axis = Vec2::new(1.0, 0.0);
+    /// let base = world.joint_base_from_world_with_axis(a, b, world.body_position(a), world.body_position(b), axis);
+    /// # let _ = base;
+    /// ```
+    pub fn joint_base_from_world_with_axis<VA: Into<Vec2>, VB: Into<Vec2>, AX: Into<Vec2>>(
         &self,
         body_a: BodyId,
         body_b: BodyId,
@@ -624,47 +490,21 @@ impl World {
         anchor_b_world: VB,
         axis_world: AX,
     ) -> crate::joints::JointBase {
+        // Build JointBase from world anchors and a shared world axis (X-axis of local frames).
         let ta = unsafe { ffi::b2Body_GetTransform(body_a) };
         let tb = unsafe { ffi::b2Body_GetTransform(body_b) };
-        let wa = anchor_a_world.into();
-        let wb = anchor_b_world.into();
-        let axis = axis_world.into();
-        let la = {
-            let dx = wa.x - ta.p.x;
-            let dy = wa.y - ta.p.y;
-            let c = ta.q.c;
-            let s = ta.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
-        let lb = {
-            let dx = wb.x - tb.p.x;
-            let dy = wb.y - tb.p.y;
-            let c = tb.q.c;
-            let s = tb.q.s;
-            ffi::b2Vec2 {
-                x: c * dx + s * dy,
-                y: -s * dx + c * dy,
-            }
-        };
-        let angle_w = axis.y.atan2(axis.x);
-        let angle_a = ta.q.s.atan2(ta.q.c);
-        let angle_b = tb.q.s.atan2(tb.q.c);
-        let (sa, ca) = (angle_w - angle_a).sin_cos();
-        let (sb, cb) = (angle_w - angle_b).sin_cos();
+        let wa: ffi::b2Vec2 = anchor_a_world.into().into();
+        let wb: ffi::b2Vec2 = anchor_b_world.into().into();
+        let axis: ffi::b2Vec2 = axis_world.into().into();
+        let la = crate::core::math::world_to_local_point(ta, wa);
+        let lb = crate::core::math::world_to_local_point(tb, wb);
+        let ra = crate::core::math::world_axis_to_local_rot(ta, axis);
+        let rb = crate::core::math::world_axis_to_local_rot(tb, axis);
         crate::joints::JointBaseBuilder::new()
             .bodies_by_id(body_a, body_b)
             .local_frames_raw(
-                ffi::b2Transform {
-                    p: la,
-                    q: ffi::b2Rot { c: ca, s: sa },
-                },
-                ffi::b2Transform {
-                    p: lb,
-                    q: ffi::b2Rot { c: cb, s: sb },
-                },
+                ffi::b2Transform { p: la, q: ra },
+                ffi::b2Transform { p: lb, q: rb },
             )
             .build()
     }
@@ -703,7 +543,9 @@ impl World {
         unsafe { ffi::b2CreatePolygonShape(body, &def.0, p) }
     }
     pub fn destroy_shape_id(&mut self, shape: ShapeId, update_body_mass: bool) {
-        unsafe { ffi::b2DestroyShape(shape, update_body_mass) };
+        if unsafe { ffi::b2Shape_IsValid(shape) } {
+            unsafe { ffi::b2DestroyShape(shape, update_body_mass) };
+        }
     }
 
     // Chain API (ID-style)
@@ -715,7 +557,9 @@ impl World {
         unsafe { ffi::b2CreateChain(body, &def.def) }
     }
     pub fn destroy_chain_id(&mut self, chain: ffi::b2ChainId) {
-        unsafe { ffi::b2DestroyChain(chain) };
+        if unsafe { ffi::b2Chain_IsValid(chain) } {
+            unsafe { ffi::b2DestroyChain(chain) };
+        }
     }
 
     // Sensor helpers (ID-style)
@@ -730,8 +574,9 @@ impl World {
             return Vec::new();
         }
         let mut ids: Vec<ShapeId> = Vec::with_capacity(cap as usize);
-        let wrote = unsafe { ffi::b2Shape_GetSensorData(shape, ids.as_mut_ptr(), cap) };
-        unsafe { ids.set_len(wrote.max(0) as usize) };
+        let wrote =
+            unsafe { ffi::b2Shape_GetSensorData(shape, ids.as_mut_ptr(), cap) }.max(0) as usize;
+        unsafe { ids.set_len(wrote.min(cap as usize)) };
         ids
     }
     /// Get overlapped shapes for a sensor shape id, filtered to valid (non-destroyed) ids.

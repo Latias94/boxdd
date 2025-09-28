@@ -236,6 +236,8 @@ dependencies = [
  "glow",
  "glutin",
  "glutin-winit",
+ "mint",
+ "smallvec",
  "thiserror 2.0.16",
  "winit",
 ]
@@ -246,7 +248,6 @@ version = "0.1.0"
 dependencies = [
  "bindgen",
  "cc",
- "mint",
 ]
 
 [[package]]

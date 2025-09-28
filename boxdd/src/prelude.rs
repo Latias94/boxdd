@@ -1,4 +1,5 @@
 pub use crate::{
+    Body, BodyBuilder, BodyDef, BodyType, World, WorldBuilder, WorldDef,
     debug_draw::{DebugDraw, DebugDrawOptions},
     joints::{
         DistanceJointDef, FilterJointDef, Joint, JointBase, JointBaseBuilder, MotorJointDef,
@@ -6,11 +7,9 @@ pub use crate::{
     },
     query::{Aabb, QueryFilter, RayResult},
     shapes::{
-        self,
+        self, Shape, ShapeDef, ShapeDefBuilder, SurfaceMaterial,
         chain::{Chain, ChainDef, ChainDefBuilder},
-        Shape, ShapeDef, ShapeDefBuilder, SurfaceMaterial,
     },
     types::{BodyId, JointId, ShapeId, Vec2},
     world::Counters,
-    Body, BodyBuilder, BodyDef, BodyType, World, WorldBuilder, WorldDef,
 };
