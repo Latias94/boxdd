@@ -69,7 +69,7 @@ fn generate_bindings(manifest_dir: &Path, out_dir: &Path) {
 fn build_box2d_and_wrapper(
     manifest_dir: &Path,
     target_env: &str,
-    _target_os: &str,
+    target_os: &str,
     is_debug: bool,
 ) {
     let third_party = manifest_dir.join("third-party");
@@ -136,6 +136,13 @@ fn build_box2d_and_wrapper(
     } else {
         // GCC/Clang: prefer C11 where available
         build.flag_if_supported("-std=c11");
+
+        // On Linux, expose POSIX clock_gettime and ensure pthread is available
+        if target_os == "linux" {
+            build.define("_POSIX_C_SOURCE", Some("199309L"));
+            build.flag_if_supported("-pthread");
+            println!("cargo:rustc-link-lib=pthread");
+        }
     }
 
     // Compile into static lib named `box2d`
