@@ -6,6 +6,11 @@ use super::{Joint, JointBase, JointBaseBuilder};
 
 // Prismatic joint
 #[derive(Clone, Debug)]
+/// Prismatic (slider) joint definition (maps to `b2PrismaticJointDef`).
+///
+/// Constrains two bodies to slide along an axis with optional limits, motor,
+/// and spring (stiffness/damping). Use with `World::create_prismatic_joint(_id)`
+/// or `World::prismatic(...).build()`.
 pub struct PrismaticJointDef(pub(crate) ffi::b2PrismaticJointDef);
 
 impl PrismaticJointDef {
@@ -14,34 +19,42 @@ impl PrismaticJointDef {
         def.base = base.0;
         Self(def)
     }
+    /// Enable/disable spring along the prismatic axis.
     pub fn enable_spring(mut self, flag: bool) -> Self {
         self.0.enableSpring = flag;
         self
     }
+    /// Spring stiffness in Hertz.
     pub fn hertz(mut self, v: f32) -> Self {
         self.0.hertz = v;
         self
     }
+    /// Spring damping ratio [0,1].
     pub fn damping_ratio(mut self, v: f32) -> Self {
         self.0.dampingRatio = v;
         self
     }
+    /// Lower translation limit (meters).
     pub fn lower_translation(mut self, v: f32) -> Self {
         self.0.lowerTranslation = v;
         self
     }
+    /// Upper translation limit (meters).
     pub fn upper_translation(mut self, v: f32) -> Self {
         self.0.upperTranslation = v;
         self
     }
+    /// Enable/disable translation limits.
     pub fn enable_limit(mut self, flag: bool) -> Self {
         self.0.enableLimit = flag;
         self
     }
+    /// Enable/disable motor along the axis.
     pub fn enable_motor(mut self, flag: bool) -> Self {
         self.0.enableMotor = flag;
         self
     }
+    /// Maximum motor force (N) along the axis.
     pub fn max_motor_torque(mut self, v: f32) -> Self {
         // Upstream names this as max motor force for prismatic joints
         self.0.maxMotorForce = v;
@@ -52,6 +65,7 @@ impl PrismaticJointDef {
         self.0.maxMotorForce = v;
         self
     }
+    /// Motor speed (m/s) along the axis.
     pub fn motor_speed(mut self, v: f32) -> Self {
         self.0.motorSpeed = v;
         self
@@ -64,6 +78,7 @@ impl PrismaticJointDef {
 }
 
 /// Builder for a prismatic joint in world space.
+/// Fluent builder for prismatic joints using world anchors and axis.
 pub struct PrismaticJointBuilder<'w> {
     pub(crate) world: &'w mut World,
     pub(crate) body_a: BodyId,
@@ -75,6 +90,7 @@ pub struct PrismaticJointBuilder<'w> {
 }
 
 impl<'w> PrismaticJointBuilder<'w> {
+    /// Set world-space anchors for A and B.
     pub fn anchors_world<VA: Into<crate::types::Vec2>, VB: Into<crate::types::Vec2>>(
         mut self,
         a: VA,
@@ -84,10 +100,12 @@ impl<'w> PrismaticJointBuilder<'w> {
         self.anchor_b_world = Some(ffi::b2Vec2::from(b.into()));
         self
     }
+    /// Set prismatic axis in world space.
     pub fn axis_world<V: Into<crate::types::Vec2>>(mut self, axis: V) -> Self {
         self.axis_world = Some(ffi::b2Vec2::from(axis.into()));
         self
     }
+    /// Enable limits with lower/upper translation (meters).
     pub fn limit(mut self, lower: f32, upper: f32) -> Self {
         self.def = self
             .def
@@ -96,6 +114,7 @@ impl<'w> PrismaticJointBuilder<'w> {
             .upper_translation(upper);
         self
     }
+    /// Enable motor with maximum force (N) and speed (m/s).
     pub fn motor(mut self, max_force: f32, speed: f32) -> Self {
         self.def = self
             .def
@@ -104,6 +123,7 @@ impl<'w> PrismaticJointBuilder<'w> {
             .motor_speed(speed);
         self
     }
+    /// Enable motor with maximum force (N) and speed (deg/s).
     pub fn motor_deg(mut self, max_force: f32, speed_deg: f32) -> Self {
         self.def = self
             .def
@@ -112,6 +132,7 @@ impl<'w> PrismaticJointBuilder<'w> {
             .motor_speed_deg(speed_deg);
         self
     }
+    /// Enable spring with stiffness (Hz) and damping ratio.
     pub fn spring(mut self, hertz: f32, damping_ratio: f32) -> Self {
         self.def = self
             .def
@@ -120,11 +141,15 @@ impl<'w> PrismaticJointBuilder<'w> {
             .damping_ratio(damping_ratio);
         self
     }
+    /// Allow bodies to collide while connected.
     pub fn collide_connected(mut self, flag: bool) -> Self {
         self.def.0.base.collideConnected = flag;
         self
     }
     /// Stiffness on both linear and angular degrees of freedom.
+    ///
+    /// - linear_hz/angular_hz: stiffness (Hz), typical 4–20
+    /// - linear_dr/angular_dr: damping ratio [0, 1], typical 0.1–0.7
     pub fn with_stiffness(
         mut self,
         linear_hz: f32,

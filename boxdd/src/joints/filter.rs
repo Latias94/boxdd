@@ -6,6 +6,8 @@ use super::{Joint, JointBase};
 
 // Filter joint (no params beyond base)
 #[derive(Clone, Debug)]
+/// Filter joint definition (maps to `b2FilterJointDef`). A lightweight joint
+/// used primarily for contact filtering scenarios.
 pub struct FilterJointDef(pub(crate) ffi::b2FilterJointDef);
 
 impl FilterJointDef {
@@ -17,6 +19,7 @@ impl FilterJointDef {
 }
 
 /// Builder for a filter joint that disables collision between two bodies while keeping them in the same island.
+/// Fluent builder for filter joints.
 pub struct FilterJointBuilder<'w> {
     pub(crate) world: &'w mut World,
     pub(crate) body_a: BodyId,

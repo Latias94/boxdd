@@ -233,6 +233,9 @@ impl ShapeDefBuilder {
         self
     }
     /// Enable user-provided filtering callback.
+    ///
+    /// Note: To receive custom filter calls you must also register a world-level
+    /// callback via `World::set_custom_filter_callback`.
     pub fn enable_custom_filtering(mut self, flag: bool) -> Self {
         self.def.0.enableCustomFiltering = flag;
         self
@@ -258,6 +261,9 @@ impl ShapeDefBuilder {
         self
     }
     /// Emit pre-solve events (advanced).
+    ///
+    /// Note: To receive pre-solve events you must also register a world-level
+    /// callback via `World::set_pre_solve_callback`.
     pub fn enable_pre_solve_events(mut self, flag: bool) -> Self {
         self.def.0.enablePreSolveEvents = flag;
         self

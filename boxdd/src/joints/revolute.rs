@@ -6,6 +6,11 @@ use super::{Joint, JointBase, JointBaseBuilder};
 
 // Revolute joint
 #[derive(Clone, Debug)]
+/// Revolute (hinge) joint definition (maps to `b2RevoluteJointDef`).
+///
+/// Allows rotation around an anchor with optional angular limits, motor, and
+/// spring (stiffness/damping). Use with `World::create_revolute_joint(_id)` or
+/// `World::revolute(...).build()`.
 pub struct RevoluteJointDef(pub(crate) ffi::b2RevoluteJointDef);
 
 impl RevoluteJointDef {
@@ -71,6 +76,7 @@ impl RevoluteJointDef {
 }
 
 /// Builder for a revolute (hinge) joint in world space.
+/// Fluent builder for revolute joints using a world anchor.
 pub struct RevoluteJointBuilder<'w> {
     pub(crate) world: &'w mut World,
     pub(crate) body_a: BodyId,
@@ -99,7 +105,7 @@ impl<'w> RevoluteJointBuilder<'w> {
         self.def = self.def.limit_deg(lower_deg, upper_deg);
         self
     }
-    /// Motor (N·m, rad/s).
+    /// Enable motor with maximum torque (N·m) and speed (rad/s).
     pub fn motor(mut self, max_torque: f32, speed: f32) -> Self {
         self.def = self
             .def
@@ -108,7 +114,7 @@ impl<'w> RevoluteJointBuilder<'w> {
             .motor_speed(speed);
         self
     }
-    /// Motor (N·m, deg/s).
+    /// Enable motor with maximum torque (N·m) and speed (deg/s).
     pub fn motor_deg(mut self, max_torque: f32, speed_deg: f32) -> Self {
         self.def = self
             .def
@@ -132,6 +138,8 @@ impl<'w> RevoluteJointBuilder<'w> {
     }
 
     /// Convenience: enable limit and motor together.
+    /// - lower/upper: radians; -pi..pi typical
+    /// - max_torque: N·m; speed: rad/s
     pub fn with_limit_and_motor(
         mut self,
         lower: f32,
@@ -144,6 +152,8 @@ impl<'w> RevoluteJointBuilder<'w> {
         self
     }
     /// Convenience: enable limit and motor together (motor speed in degrees/sec).
+    /// - lower/upper: radians; -pi..pi typical
+    /// - max_torque: N·m; speed_deg: deg/s
     pub fn with_limit_and_motor_deg(
         mut self,
         lower: f32,
@@ -156,6 +166,8 @@ impl<'w> RevoluteJointBuilder<'w> {
         self
     }
     /// Convenience: enable limit and spring together.
+    /// - lower/upper: radians; -pi..pi typical
+    /// - hertz: stiffness (Hz), typical 4–20; damping_ratio: [0,1], typical 0.1–0.7
     pub fn with_limit_and_spring(
         mut self,
         lower: f32,
@@ -168,6 +180,7 @@ impl<'w> RevoluteJointBuilder<'w> {
         self
     }
     /// Convenience: enable motor and spring together.
+    /// - max_torque: N·m; speed: rad/s; hertz: Hz; damping_ratio: [0,1]
     pub fn with_motor_and_spring(
         mut self,
         max_torque: f32,
@@ -180,6 +193,7 @@ impl<'w> RevoluteJointBuilder<'w> {
         self
     }
     /// Convenience: enable motor and spring together (motor speed in degrees/sec).
+    /// - max_torque: N·m; speed_deg: deg/s; hertz: Hz; damping_ratio: [0,1]
     pub fn with_motor_and_spring_deg(
         mut self,
         max_torque: f32,
@@ -192,6 +206,8 @@ impl<'w> RevoluteJointBuilder<'w> {
         self
     }
     /// Convenience: enable limit, motor, and spring together.
+    /// - lower/upper: radians; -pi..pi typical
+    /// - max_torque: N·m; speed: rad/s; hertz: Hz; damping_ratio: [0,1]
     pub fn with_limit_motor_spring(
         mut self,
         lower: f32,
@@ -207,6 +223,8 @@ impl<'w> RevoluteJointBuilder<'w> {
         self
     }
     /// Convenience: enable limit, motor (deg/s), and spring together.
+    /// - lower/upper: radians; -pi..pi typical
+    /// - max_torque: N·m; speed_deg: deg/s; hertz: Hz; damping_ratio: [0,1]
     pub fn with_limit_motor_spring_deg(
         mut self,
         lower: f32,

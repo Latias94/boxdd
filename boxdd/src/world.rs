@@ -231,6 +231,18 @@ impl World {
     pub fn is_continuous_enabled(&self) -> bool {
         unsafe { ffi::b2World_IsContinuousEnabled(self.raw()) }
     }
+    /// Enable or disable constraint warm starting at runtime.
+    ///
+    /// Warm starting seeds the solver with accumulated impulses from the previous
+    /// step to improve stability and convergence. Disabling this is only useful
+    /// for experiments and will significantly reduce stability in most scenes.
+    pub fn enable_warm_starting(&mut self, flag: bool) {
+        unsafe { ffi::b2World_EnableWarmStarting(self.raw(), flag) }
+    }
+    /// Returns true if constraint warm starting is enabled.
+    pub fn is_warm_starting_enabled(&self) -> bool {
+        unsafe { ffi::b2World_IsWarmStartingEnabled(self.raw()) }
+    }
     pub fn set_restitution_threshold(&mut self, value: f32) {
         unsafe { ffi::b2World_SetRestitutionThreshold(self.raw(), value) }
     }

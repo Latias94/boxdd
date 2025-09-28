@@ -66,12 +66,7 @@ fn generate_bindings(manifest_dir: &Path, out_dir: &Path) {
         .expect("Couldn't write bindings!");
 }
 
-fn build_box2d_and_wrapper(
-    manifest_dir: &Path,
-    target_env: &str,
-    target_os: &str,
-    is_debug: bool,
-) {
+fn build_box2d_and_wrapper(manifest_dir: &Path, target_env: &str, target_os: &str, is_debug: bool) {
     let third_party = manifest_dir.join("third-party");
     let box2d_root = third_party.join("box2d");
     let box2d_include = box2d_root.join("include");

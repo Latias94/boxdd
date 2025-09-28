@@ -6,7 +6,7 @@
 //!
 //! Example
 //! ```no_run
-//! use boxdd::{World, WorldDef, DebugDraw, DebugDrawOptions};
+//! use boxdd::{World, WorldDef, DebugDraw, DebugDrawOptions, Vec2};
 //! use boxdd_sys::ffi;
 //! use std::ffi::CStr;
 //! struct Printer;

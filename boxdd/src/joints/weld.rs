@@ -6,6 +6,8 @@ use super::{Joint, JointBase, JointBaseBuilder};
 
 // Weld joint
 #[derive(Clone, Debug)]
+/// Weld joint definition (maps to `b2WeldJointDef`). Rigidly attaches two
+/// bodies at an anchor with optional soft-constraint tuning.
 pub struct WeldJointDef(pub(crate) ffi::b2WeldJointDef);
 
 impl WeldJointDef {
@@ -14,18 +16,22 @@ impl WeldJointDef {
         def.base = base.0;
         Self(def)
     }
+    /// Linear stiffness (Hz) for weld constraint.
     pub fn linear_hertz(mut self, v: f32) -> Self {
         self.0.linearHertz = v;
         self
     }
+    /// Angular stiffness (Hz) for weld constraint.
     pub fn angular_hertz(mut self, v: f32) -> Self {
         self.0.angularHertz = v;
         self
     }
+    /// Linear damping ratio [0,1].
     pub fn linear_damping_ratio(mut self, v: f32) -> Self {
         self.0.linearDampingRatio = v;
         self
     }
+    /// Angular damping ratio [0,1].
     pub fn angular_damping_ratio(mut self, v: f32) -> Self {
         self.0.angularDampingRatio = v;
         self
@@ -33,6 +39,7 @@ impl WeldJointDef {
 }
 
 // Weld joint convenience builder
+/// Fluent builder for weld joints using a world anchor.
 pub struct WeldJointBuilder<'w> {
     pub(crate) world: &'w mut World,
     pub(crate) body_a: BodyId,

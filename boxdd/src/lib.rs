@@ -13,10 +13,13 @@
 //! use boxdd::{World, WorldDef, BodyBuilder, ShapeDef, shapes, Vec2};
 //! let def = WorldDef::builder().gravity(Vec2::new(0.0, -9.8)).build();
 //! let mut world = World::new(def).unwrap();
-//! let mut body = world.create_body(BodyBuilder::new().position([0.0, 2.0]).build());
-//! let sdef = ShapeDef::builder().density(1.0).build();
-//! let poly = shapes::box_polygon(0.5, 0.5);
-//! let _shape = body.create_polygon_shape(&sdef, &poly);
+//! {
+//!     // Limit the borrow of `world` by scoping the body wrapper.
+//!     let mut body = world.create_body(BodyBuilder::new().position([0.0, 2.0]).build());
+//!     let sdef = ShapeDef::builder().density(1.0).build();
+//!     let poly = shapes::box_polygon(0.5, 0.5);
+//!     let _shape = body.create_polygon_shape(&sdef, &poly);
+//! }
 //! world.step(1.0/60.0, 4);
 //! ```
 //!
@@ -48,8 +51,10 @@ pub mod joints;
 pub mod prelude;
 pub mod query;
 pub mod shapes;
+pub mod tuning;
 pub mod types;
 pub mod world;
+pub mod world_extras;
 pub mod core {
     pub mod math;
 }
