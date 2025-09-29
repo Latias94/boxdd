@@ -36,9 +36,30 @@ default = ["build-from-source"]
 build-from-source = []
 # Link against a prebuilt static 'box2d' (requires BOX2D_LIB_DIR or a system lib); still generates bindings.
 prebuilt = []
+dynamic-link = []
+pkg-config = ["dep:pkg-config"]
+package-bin = ["dep:flate2", "dep:tar"]
+## Optional performance/debug features (match upstream options)
+# Enable AVX2 SIMD optimizations (x86_64 only); ignored if `disable-simd` is also set.
+simd-avx2 = []
+# Disable all SIMD; takes precedence over `simd-avx2`.
+disable-simd = []
+# Enable heavy internal validation (assertions and checks)
+validate = []
 
 [build-dependencies]
 cc = "1"
 bindgen = "0.72"
+pkg-config = { version = "0.3", optional = true }
+flate2 = "1"
+tar = "0.4"
+reqwest = { version = "0.12", features = ["blocking", "http2", "rustls-tls"], default-features = false }
 
 [dependencies]
+flate2 = { version = "1", optional = true }
+tar = { version = "0.4", optional = true }
+
+[[bin]]
+name = "package"
+path = "bin/package/main.rs"
+required-features = ["package-bin"]

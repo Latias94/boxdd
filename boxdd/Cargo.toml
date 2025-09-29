@@ -19,6 +19,10 @@ boxdd-sys = { version = "0.1", path = "../boxdd-sys" }
 thiserror = "2"
 mint = "0.5"
 smallvec = "1"
+serde = { version = "1", features = ["derive"], optional = true }
+cgmath = { version = "0.18", optional = true }
+nalgebra = { version = "0.34", optional = true }
+glam = { version = "0.30", optional = true }
 
 [features]
 default = []
@@ -28,8 +32,25 @@ imgui-glow-testbed = []
 # Build modes for the sys crate (forwarded)
 prebuilt = ["boxdd-sys/prebuilt"]
 build-from-source = ["boxdd-sys/build-from-source"]
+dynamic-link = ["boxdd-sys/dynamic-link"]
+pkg-config = ["boxdd-sys/pkg-config"]
 
-[dev-dependencies]
+# Optional integration features
+# Enable serde for basic value/config types (Vec2, Rot, Transform, etc.)
+serde = ["dep:serde"]
+# Alias to match prior art naming
+serialize = ["serde"]
+# Interop with common math libraries
+cgmath = ["dep:cgmath"]
+nalgebra = ["dep:nalgebra"]
+glam = ["dep:glam"]
+
+# Performance / debug features (forwarded to sys)
+simd-avx2 = ["boxdd-sys/simd-avx2"]
+disable-simd = ["boxdd-sys/disable-simd"]
+validate = ["boxdd-sys/validate"]
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 dear-imgui = "0.2"
 dear-imgui-winit = "0.2"
 dear-imgui-glow = "0.2"
@@ -39,7 +60,15 @@ glutin = "0.32"
 glutin-winit = "0.5"
 env_logger = "0.11"
 
+[dev-dependencies]
+serde_json = "1"
+
 [[example]]
 name = "testbed_imgui_glow"
 path = "examples/testbed_imgui_glow.rs"
 required-features = ["imgui-glow-testbed"]
+
+[[example]]
+name = "scene_serialize"
+path = "examples/scene_serialize.rs"
+required-features = ["serialize"]

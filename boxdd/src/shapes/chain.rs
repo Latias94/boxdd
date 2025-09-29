@@ -81,6 +81,14 @@ impl ChainDef {
             inner: Self::default(),
         }
     }
+    #[cfg(feature = "serialize")]
+    pub fn points_vec(&self) -> Vec<ffi::b2Vec2> {
+        self.points.clone()
+    }
+    #[cfg(feature = "serialize")]
+    pub fn materials_vec(&self) -> Vec<ffi::b2SurfaceMaterial> {
+        self.materials.clone()
+    }
 }
 
 #[derive(Clone, Debug)]

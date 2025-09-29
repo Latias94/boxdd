@@ -1,6 +1,7 @@
 use boxdd_sys::ffi;
 
 /// A simple 2D vector in meters.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct Vec2 {
     pub x: f32,
@@ -52,6 +53,80 @@ impl From<mint::Point2<f32>> for Vec2 {
     #[inline]
     fn from(p: mint::Point2<f32>) -> Self {
         Self { x: p.x, y: p.y }
+    }
+}
+
+// Optional conversions with common math libraries
+#[cfg(feature = "cgmath")]
+impl From<cgmath::Vector2<f32>> for Vec2 {
+    #[inline]
+    fn from(v: cgmath::Vector2<f32>) -> Self {
+        Self { x: v.x, y: v.y }
+    }
+}
+#[cfg(feature = "cgmath")]
+impl From<Vec2> for cgmath::Vector2<f32> {
+    #[inline]
+    fn from(v: Vec2) -> Self {
+        cgmath::Vector2 { x: v.x, y: v.y }
+    }
+}
+#[cfg(feature = "cgmath")]
+impl From<cgmath::Point2<f32>> for Vec2 {
+    #[inline]
+    fn from(p: cgmath::Point2<f32>) -> Self {
+        Self { x: p.x, y: p.y }
+    }
+}
+#[cfg(feature = "cgmath")]
+impl From<Vec2> for cgmath::Point2<f32> {
+    #[inline]
+    fn from(v: Vec2) -> Self {
+        cgmath::Point2 { x: v.x, y: v.y }
+    }
+}
+
+#[cfg(feature = "nalgebra")]
+impl From<nalgebra::Vector2<f32>> for Vec2 {
+    #[inline]
+    fn from(v: nalgebra::Vector2<f32>) -> Self {
+        Self { x: v.x, y: v.y }
+    }
+}
+#[cfg(feature = "nalgebra")]
+impl From<Vec2> for nalgebra::Vector2<f32> {
+    #[inline]
+    fn from(v: Vec2) -> Self {
+        nalgebra::Vector2::new(v.x, v.y)
+    }
+}
+#[cfg(feature = "nalgebra")]
+impl From<nalgebra::Point2<f32>> for Vec2 {
+    #[inline]
+    fn from(p: nalgebra::Point2<f32>) -> Self {
+        Self { x: p.x, y: p.y }
+    }
+}
+#[cfg(feature = "nalgebra")]
+impl From<Vec2> for nalgebra::Point2<f32> {
+    #[inline]
+    fn from(v: Vec2) -> Self {
+        nalgebra::Point2::new(v.x, v.y)
+    }
+}
+
+#[cfg(feature = "glam")]
+impl From<glam::Vec2> for Vec2 {
+    #[inline]
+    fn from(v: glam::Vec2) -> Self {
+        Self { x: v.x, y: v.y }
+    }
+}
+#[cfg(feature = "glam")]
+impl From<Vec2> for glam::Vec2 {
+    #[inline]
+    fn from(v: Vec2) -> Self {
+        glam::Vec2::new(v.x, v.y)
     }
 }
 

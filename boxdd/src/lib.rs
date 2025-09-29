@@ -50,6 +50,8 @@ pub mod filter;
 pub mod joints;
 pub mod prelude;
 pub mod query;
+#[cfg(feature = "serialize")]
+pub mod serialize;
 pub mod shapes;
 pub mod tuning;
 pub mod types;

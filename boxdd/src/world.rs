@@ -43,6 +43,114 @@ impl WorldDef {
     }
 }
 
+// serde for WorldDef via config representation
+#[cfg(feature = "serde")]
+impl serde::Serialize for WorldDef {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(serde::Serialize)]
+        struct Repr {
+            gravity: crate::types::Vec2,
+            restitution_threshold: f32,
+            hit_event_threshold: f32,
+            contact_hertz: f32,
+            contact_damping_ratio: f32,
+            contact_speed: f32,
+            maximum_linear_speed: f32,
+            enable_sleep: bool,
+            enable_continuous: bool,
+            enable_contact_softening: bool,
+            worker_count: i32,
+        }
+        let r = Repr {
+            gravity: crate::types::Vec2::from(self.0.gravity),
+            restitution_threshold: self.0.restitutionThreshold,
+            hit_event_threshold: self.0.hitEventThreshold,
+            contact_hertz: self.0.contactHertz,
+            contact_damping_ratio: self.0.contactDampingRatio,
+            contact_speed: self.0.contactSpeed,
+            maximum_linear_speed: self.0.maximumLinearSpeed,
+            enable_sleep: self.0.enableSleep,
+            enable_continuous: self.0.enableContinuous,
+            enable_contact_softening: self.0.enableContactSoftening,
+            worker_count: self.0.workerCount,
+        };
+        r.serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for WorldDef {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct Repr {
+            #[serde(default)]
+            gravity: Option<crate::types::Vec2>,
+            #[serde(default)]
+            restitution_threshold: Option<f32>,
+            #[serde(default)]
+            hit_event_threshold: Option<f32>,
+            #[serde(default)]
+            contact_hertz: Option<f32>,
+            #[serde(default)]
+            contact_damping_ratio: Option<f32>,
+            #[serde(default)]
+            contact_speed: Option<f32>,
+            #[serde(default)]
+            maximum_linear_speed: Option<f32>,
+            #[serde(default)]
+            enable_sleep: Option<bool>,
+            #[serde(default)]
+            enable_continuous: Option<bool>,
+            #[serde(default)]
+            enable_contact_softening: Option<bool>,
+            #[serde(default)]
+            worker_count: Option<i32>,
+        }
+        let r = Repr::deserialize(deserializer)?;
+        let mut b = WorldDef::default();
+        if let Some(g) = r.gravity {
+            b.0.gravity = ffi::b2Vec2::from(g);
+        }
+        if let Some(v) = r.restitution_threshold {
+            b.0.restitutionThreshold = v;
+        }
+        if let Some(v) = r.hit_event_threshold {
+            b.0.hitEventThreshold = v;
+        }
+        if let Some(v) = r.contact_hertz {
+            b.0.contactHertz = v;
+        }
+        if let Some(v) = r.contact_damping_ratio {
+            b.0.contactDampingRatio = v;
+        }
+        if let Some(v) = r.contact_speed {
+            b.0.contactSpeed = v;
+        }
+        if let Some(v) = r.maximum_linear_speed {
+            b.0.maximumLinearSpeed = v;
+        }
+        if let Some(v) = r.enable_sleep {
+            b.0.enableSleep = v;
+        }
+        if let Some(v) = r.enable_continuous {
+            b.0.enableContinuous = v;
+        }
+        if let Some(v) = r.enable_contact_softening {
+            b.0.enableContactSoftening = v;
+        }
+        if let Some(v) = r.worker_count {
+            b.0.workerCount = v;
+        }
+        Ok(b)
+    }
+}
+
 /// Fluent builder for `WorldDef`.
 ///
 /// Chain configuration calls and finish with `build()`. All fields map 1:1 to
@@ -128,6 +236,12 @@ pub struct World {
     // pointers as FFI callback context.
     custom_filter: Option<Box<CustomFilterCtx>>,
     pre_solve: Option<Box<PreSolveCtx>>,
+    #[cfg(feature = "serialize")]
+    bodies_registry: Vec<ffi::b2BodyId>,
+    #[cfg(feature = "serialize")]
+    chains_registry: Vec<(ffi::b2ChainId, ChainCreateMeta)>,
+    #[cfg(feature = "serialize")]
+    shape_flags_registry: Vec<(ffi::b2ShapeId, ShapeFlagsRecord)>,
 }
 
 // Internal callback context holding user closures. These must be Send + Sync
@@ -150,6 +264,58 @@ struct PreSolveCtx {
     >,
 }
 
+#[cfg(feature = "serialize")]
+#[derive(Clone)]
+pub struct ChainCreateRecord {
+    pub body: ffi::b2BodyId,
+    pub is_loop: bool,
+    pub filter: ffi::b2Filter,
+    pub enable_sensor_events: bool,
+    pub points: Vec<ffi::b2Vec2>,
+    pub materials: Vec<ffi::b2SurfaceMaterial>,
+}
+
+#[cfg(feature = "serialize")]
+#[derive(Clone)]
+struct ChainCreateMeta {
+    body: ffi::b2BodyId,
+    is_loop: bool,
+    filter: ffi::b2Filter,
+    enable_sensor_events: bool,
+    points: Vec<ffi::b2Vec2>,
+    materials: Vec<ffi::b2SurfaceMaterial>,
+}
+
+#[cfg(feature = "serialize")]
+impl ChainCreateMeta {
+    fn from_def(body: ffi::b2BodyId, def: &crate::shapes::chain::ChainDef) -> Self {
+        Self {
+            body,
+            is_loop: def.def.isLoop,
+            filter: def.def.filter,
+            enable_sensor_events: def.def.enableSensorEvents,
+            points: def.points_vec(),
+            materials: def.materials_vec(),
+        }
+    }
+    fn to_record(&self) -> ChainCreateRecord {
+        ChainCreateRecord {
+            body: self.body,
+            is_loop: self.is_loop,
+            filter: self.filter,
+            enable_sensor_events: self.enable_sensor_events,
+            points: self.points.clone(),
+            materials: self.materials.clone(),
+        }
+    }
+}
+
+#[cfg(feature = "serialize")]
+#[inline]
+fn eq_chain(a: ffi::b2ChainId, b: ffi::b2ChainId) -> bool {
+    a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
+}
+
 impl World {
     /// Create a world from a definition.
     pub fn new(def: WorldDef) -> Result<Self, Error> {
@@ -162,6 +328,12 @@ impl World {
                 id: world_id,
                 custom_filter: None,
                 pre_solve: None,
+                #[cfg(feature = "serialize")]
+                bodies_registry: Vec::new(),
+                #[cfg(feature = "serialize")]
+                chains_registry: Vec::new(),
+                #[cfg(feature = "serialize")]
+                shape_flags_registry: Vec::new(),
             })
         } else {
             Err(Error::CreateFailed)
@@ -188,6 +360,40 @@ impl World {
     /// Expose raw id for advanced use-cases.
     pub fn raw(&self) -> ffi::b2WorldId {
         self.id
+    }
+
+    /// Enumerate known body ids created via this wrapper. Invalid/destroyed ids are filtered out.
+    #[cfg(feature = "serialize")]
+    pub fn body_ids(&self) -> Vec<BodyId> {
+        let mut out = Vec::new();
+        for &bid in &self.bodies_registry {
+            if unsafe { ffi::b2Body_IsValid(bid) } {
+                out.push(bid);
+            }
+        }
+        out
+    }
+
+    /// Return chain creation records captured via ID-style creation.
+    #[cfg(feature = "serialize")]
+    pub fn chain_records(&self) -> Vec<ChainCreateRecord> {
+        self.chains_registry
+            .iter()
+            .map(|(_, m)| m.to_record())
+            .collect()
+    }
+
+    /// Return recorded shape flags for ID-style created shapes.
+    #[cfg(feature = "serialize")]
+    pub fn shape_flags(&self, sid: ffi::b2ShapeId) -> Option<ShapeFlagsRecord> {
+        self.shape_flags_registry.iter().find_map(|(id, rec)| {
+            if id.index1 == sid.index1 && id.world0 == sid.world0 && id.generation == sid.generation
+            {
+                Some(*rec)
+            } else {
+                None
+            }
+        })
     }
 
     /// World counters snapshot (sizes, tree heights, etc.).
@@ -240,13 +446,22 @@ impl World {
     pub fn create_body<'w>(&'w mut self, def: BodyDef) -> Body<'w> {
         let raw = def.0;
         let id = unsafe { ffi::b2CreateBody(self.id, &raw) };
+        #[cfg(feature = "serialize")]
+        {
+            self.bodies_registry.push(id);
+        }
         Body::new(id)
     }
 
     /// ID-style body creation. Prefer when you don't want RAII wrappers.
     pub fn create_body_id(&mut self, def: BodyDef) -> BodyId {
         let raw = def.0;
-        unsafe { ffi::b2CreateBody(self.id, &raw) }
+        let id = unsafe { ffi::b2CreateBody(self.id, &raw) };
+        #[cfg(feature = "serialize")]
+        {
+            self.bodies_registry.push(id);
+        }
+        id
     }
 
     /// Destroy a body by id.
@@ -654,7 +869,10 @@ impl World {
         def: &ShapeDef,
         c: &ffi::b2Circle,
     ) -> ShapeId {
-        unsafe { ffi::b2CreateCircleShape(body, &def.0, c) }
+        let sid = unsafe { ffi::b2CreateCircleShape(body, &def.0, c) };
+        #[cfg(feature = "serialize")]
+        self.record_shape_flags(sid, &def.0);
+        sid
     }
     pub fn create_segment_shape_for(
         &mut self,
@@ -662,7 +880,10 @@ impl World {
         def: &ShapeDef,
         s: &ffi::b2Segment,
     ) -> ShapeId {
-        unsafe { ffi::b2CreateSegmentShape(body, &def.0, s) }
+        let sid = unsafe { ffi::b2CreateSegmentShape(body, &def.0, s) };
+        #[cfg(feature = "serialize")]
+        self.record_shape_flags(sid, &def.0);
+        sid
     }
     pub fn create_capsule_shape_for(
         &mut self,
@@ -670,7 +891,10 @@ impl World {
         def: &ShapeDef,
         c: &ffi::b2Capsule,
     ) -> ShapeId {
-        unsafe { ffi::b2CreateCapsuleShape(body, &def.0, c) }
+        let sid = unsafe { ffi::b2CreateCapsuleShape(body, &def.0, c) };
+        #[cfg(feature = "serialize")]
+        self.record_shape_flags(sid, &def.0);
+        sid
     }
     pub fn create_polygon_shape_for(
         &mut self,
@@ -678,11 +902,22 @@ impl World {
         def: &ShapeDef,
         p: &ffi::b2Polygon,
     ) -> ShapeId {
-        unsafe { ffi::b2CreatePolygonShape(body, &def.0, p) }
+        let sid = unsafe { ffi::b2CreatePolygonShape(body, &def.0, p) };
+        #[cfg(feature = "serialize")]
+        self.record_shape_flags(sid, &def.0);
+        sid
     }
     pub fn destroy_shape_id(&mut self, shape: ShapeId, update_body_mass: bool) {
         if unsafe { ffi::b2Shape_IsValid(shape) } {
             unsafe { ffi::b2DestroyShape(shape, update_body_mass) };
+        }
+        #[cfg(feature = "serialize")]
+        {
+            self.shape_flags_registry.retain(|(id, _)| {
+                !(id.index1 == shape.index1
+                    && id.world0 == shape.world0
+                    && id.generation == shape.generation)
+            });
         }
     }
 
@@ -692,11 +927,21 @@ impl World {
         body: BodyId,
         def: &crate::shapes::chain::ChainDef,
     ) -> ffi::b2ChainId {
-        unsafe { ffi::b2CreateChain(body, &def.def) }
+        let cid = unsafe { ffi::b2CreateChain(body, &def.def) };
+        #[cfg(feature = "serialize")]
+        {
+            let meta = ChainCreateMeta::from_def(body, def);
+            self.chains_registry.push((cid, meta));
+        }
+        cid
     }
     pub fn destroy_chain_id(&mut self, chain: ffi::b2ChainId) {
         if unsafe { ffi::b2Chain_IsValid(chain) } {
             unsafe { ffi::b2DestroyChain(chain) };
+        }
+        #[cfg(feature = "serialize")]
+        {
+            self.chains_registry.retain(|(id, _)| !eq_chain(*id, chain));
         }
     }
 
@@ -763,6 +1008,38 @@ impl From<ffi::b2Counters> for Counters {
             byte_count: c.byteCount,
             task_count: c.taskCount,
             color_counts: c.colorCounts,
+        }
+    }
+}
+#[cfg(feature = "serialize")]
+#[derive(Copy, Clone)]
+pub struct ShapeFlagsRecord {
+    pub enable_custom_filtering: bool,
+    pub enable_sensor_events: bool,
+    pub enable_contact_events: bool,
+    pub enable_hit_events: bool,
+    pub enable_pre_solve_events: bool,
+    pub invoke_contact_creation: bool,
+}
+
+#[cfg(feature = "serialize")]
+impl World {
+    fn record_shape_flags(&mut self, sid: ffi::b2ShapeId, def: &ffi::b2ShapeDef) {
+        let rec = ShapeFlagsRecord {
+            enable_custom_filtering: def.enableCustomFiltering,
+            enable_sensor_events: def.enableSensorEvents,
+            enable_contact_events: def.enableContactEvents,
+            enable_hit_events: def.enableHitEvents,
+            enable_pre_solve_events: def.enablePreSolveEvents,
+            invoke_contact_creation: def.invokeContactCreation,
+        };
+        // Replace if existing
+        if let Some(slot) = self.shape_flags_registry.iter_mut().find(|(id, _)| {
+            id.index1 == sid.index1 && id.world0 == sid.world0 && id.generation == sid.generation
+        }) {
+            *slot = (sid, rec);
+        } else {
+            self.shape_flags_registry.push((sid, rec));
         }
     }
 }

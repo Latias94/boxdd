@@ -290,6 +290,158 @@ impl ShapeDefBuilder {
     }
 }
 
+// serde for SurfaceMaterial and ShapeDef via lightweight representations
+#[cfg(feature = "serde")]
+impl serde::Serialize for SurfaceMaterial {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(serde::Serialize)]
+        struct Repr {
+            friction: f32,
+            restitution: f32,
+            rolling_resistance: f32,
+            tangent_speed: f32,
+            user_material_id: u64,
+            custom_color: u32,
+        }
+        let r = Repr {
+            friction: self.0.friction,
+            restitution: self.0.restitution,
+            rolling_resistance: self.0.rollingResistance,
+            tangent_speed: self.0.tangentSpeed,
+            user_material_id: self.0.userMaterialId,
+            custom_color: self.0.customColor,
+        };
+        r.serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for SurfaceMaterial {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct Repr {
+            #[serde(default)]
+            friction: f32,
+            #[serde(default)]
+            restitution: f32,
+            #[serde(default)]
+            rolling_resistance: f32,
+            #[serde(default)]
+            tangent_speed: f32,
+            #[serde(default)]
+            user_material_id: u64,
+            #[serde(default)]
+            custom_color: u32,
+        }
+        let r = Repr::deserialize(deserializer)?;
+        let mut sm = SurfaceMaterial::default();
+        sm = sm
+            .friction(r.friction)
+            .restitution(r.restitution)
+            .rolling_resistance(r.rolling_resistance)
+            .tangent_speed(r.tangent_speed)
+            .user_material_id(r.user_material_id)
+            .custom_color(r.custom_color);
+        Ok(sm)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for ShapeDef {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(serde::Serialize)]
+        struct Repr {
+            material: SurfaceMaterial,
+            density: f32,
+            filter: Filter,
+            enable_custom_filtering: bool,
+            is_sensor: bool,
+            enable_sensor_events: bool,
+            enable_contact_events: bool,
+            enable_hit_events: bool,
+            enable_pre_solve_events: bool,
+            invoke_contact_creation: bool,
+            update_body_mass: bool,
+        }
+        let r = Repr {
+            material: SurfaceMaterial(self.0.material),
+            density: self.0.density,
+            filter: Filter::from(self.0.filter),
+            enable_custom_filtering: self.0.enableCustomFiltering,
+            is_sensor: self.0.isSensor,
+            enable_sensor_events: self.0.enableSensorEvents,
+            enable_contact_events: self.0.enableContactEvents,
+            enable_hit_events: self.0.enableHitEvents,
+            enable_pre_solve_events: self.0.enablePreSolveEvents,
+            invoke_contact_creation: self.0.invokeContactCreation,
+            update_body_mass: self.0.updateBodyMass,
+        };
+        r.serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for ShapeDef {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct Repr {
+            #[serde(default)]
+            material: Option<SurfaceMaterial>,
+            #[serde(default)]
+            density: f32,
+            #[serde(default)]
+            filter: Option<Filter>,
+            #[serde(default)]
+            enable_custom_filtering: bool,
+            #[serde(default)]
+            is_sensor: bool,
+            #[serde(default)]
+            enable_sensor_events: bool,
+            #[serde(default)]
+            enable_contact_events: bool,
+            #[serde(default)]
+            enable_hit_events: bool,
+            #[serde(default)]
+            enable_pre_solve_events: bool,
+            #[serde(default)]
+            invoke_contact_creation: bool,
+            #[serde(default)]
+            update_body_mass: bool,
+        }
+        let r = Repr::deserialize(deserializer)?;
+        let mut b = ShapeDef::builder();
+        if let Some(mat) = r.material {
+            b = b.material(mat);
+        }
+        if let Some(f) = r.filter {
+            b = b.filter_ex(f);
+        }
+        b = b
+            .density(r.density)
+            .enable_custom_filtering(r.enable_custom_filtering)
+            .sensor(r.is_sensor)
+            .enable_sensor_events(r.enable_sensor_events)
+            .enable_contact_events(r.enable_contact_events)
+            .enable_hit_events(r.enable_hit_events)
+            .enable_pre_solve_events(r.enable_pre_solve_events)
+            .invoke_contact_creation(r.invoke_contact_creation)
+            .update_body_mass(r.update_body_mass);
+        Ok(b.build())
+    }
+}
+
 /// Circle primitive helper
 #[inline]
 pub fn circle<V: Into<crate::types::Vec2>>(center: V, radius: f32) -> ffi::b2Circle {

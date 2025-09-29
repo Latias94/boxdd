@@ -1,5 +1,6 @@
 use boxdd_sys::ffi;
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Filter {
     pub category_bits: u64,

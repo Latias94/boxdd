@@ -53,6 +53,66 @@ impl From<ffi::b2Rot> for Rot {
     }
 }
 
+// serde support for Rot as angle (radians)
+#[cfg(feature = "serde")]
+impl serde::Serialize for Rot {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_f32(self.angle())
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Rot {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let angle = f32::deserialize(deserializer)?;
+        Ok(Rot::from_radians(angle))
+    }
+}
+
+// Interop with common math libraries for rotations
+#[cfg(feature = "cgmath")]
+impl From<Rot> for cgmath::Basis2<f32> {
+    #[inline]
+    fn from(r: Rot) -> Self {
+        use cgmath::Rotation2;
+        cgmath::Basis2::from_angle(cgmath::Rad(r.angle()))
+    }
+}
+
+#[cfg(feature = "cgmath")]
+impl<'a> From<&'a cgmath::Basis2<f32>> for Rot {
+    #[inline]
+    fn from(b: &'a cgmath::Basis2<f32>) -> Self {
+        let col_y = b.as_ref().y; // rotation's Y axis
+        Rot(ffi::b2Rot {
+            c: col_y.y,
+            s: col_y.x,
+        })
+    }
+}
+
+#[cfg(feature = "nalgebra")]
+impl From<Rot> for nalgebra::UnitComplex<f32> {
+    #[inline]
+    fn from(r: Rot) -> Self {
+        nalgebra::UnitComplex::new(r.angle())
+    }
+}
+
+#[cfg(feature = "nalgebra")]
+impl<'a> From<&'a nalgebra::UnitComplex<f32>> for Rot {
+    #[inline]
+    fn from(r: &'a nalgebra::UnitComplex<f32>) -> Self {
+        Rot::from_radians(r.angle())
+    }
+}
+
 #[repr(transparent)]
 #[derive(Copy, Clone, Debug)]
 pub struct Transform(pub(crate) ffi::b2Transform);
@@ -104,6 +164,63 @@ impl From<ffi::b2Transform> for Transform {
     #[inline]
     fn from(t: ffi::b2Transform) -> Self {
         Self(t)
+    }
+}
+
+// serde support for Transform as { pos, angle } (radians)
+#[cfg(feature = "serde")]
+impl serde::Serialize for Transform {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(serde::Serialize)]
+        struct Repr {
+            pos: super::super::types::Vec2,
+            angle: f32,
+        }
+        let r = Repr {
+            pos: self.position(),
+            angle: self.rotation().angle(),
+        };
+        r.serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Transform {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct Repr {
+            pos: super::super::types::Vec2,
+            angle: f32,
+        }
+        let r = Repr::deserialize(deserializer)?;
+        Ok(Transform::from_pos_angle(r.pos, r.angle))
+    }
+}
+
+// Interop with nalgebra isometry
+#[cfg(feature = "nalgebra")]
+impl<'a> From<&'a Transform> for nalgebra::Isometry2<f32> {
+    #[inline]
+    fn from(t: &'a Transform) -> Self {
+        let p = t.position();
+        let rot = nalgebra::UnitComplex::new(t.rotation().angle());
+        nalgebra::Isometry2::from_parts(nalgebra::Translation2::new(p.x, p.y), rot)
+    }
+}
+
+#[cfg(feature = "nalgebra")]
+impl<'a> From<&'a nalgebra::Isometry2<f32>> for Transform {
+    #[inline]
+    fn from(i: &'a nalgebra::Isometry2<f32>) -> Self {
+        let v = i.translation.vector;
+        let angle = i.rotation.angle();
+        Transform::from_pos_angle(Vec2 { x: v.x, y: v.y }, angle)
     }
 }
 

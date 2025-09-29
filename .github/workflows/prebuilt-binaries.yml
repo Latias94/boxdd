@@ -1,0 +1,119 @@
+name: Build Prebuilt Binaries (boxdd-sys)
+
+on:
+  push:
+    tags:
+      - 'boxdd-sys-v*'
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Git tag to build (e.g., v0.1.0)'
+        required: false
+        type: string
+      branch:
+        description: 'Branch to build (e.g., main). If provided, builds latest commit and uploads artifacts.'
+        required: false
+        type: string
+        default: main
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-prebuilt:
+    name: boxdd-sys ${{ matrix.target }}${{ matrix.crt && format(' ({0})', matrix.crt) || '' }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          # macOS (Intel)
+          - target: x86_64-apple-darwin
+            os: macos-13
+          # macOS (Apple Silicon)
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          # Windows (MD)
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            crt: md
+          # Windows (MT)
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            crt: mt
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          ref: ${{ inputs.tag || inputs.branch || github.ref }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ format('{0}-{1}', matrix.target, matrix.crt || 'none') }}
+
+      - name: Install LLVM/Clang (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config llvm-dev libclang-dev clang
+
+      - name: Install LLVM (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install llvm || true
+          echo "LIBCLANG_PATH=$(brew --prefix llvm)/lib" >> $GITHUB_ENV
+
+      - name: Install LLVM (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install -y llvm
+          echo "LIBCLANG_PATH=C:\\Program Files\\LLVM\\bin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Select static CRT (Windows MT)
+        if: ${{ runner.os == 'Windows' && matrix.crt == 'mt' }}
+        shell: pwsh
+        run: echo "RUSTFLAGS=-C target-feature=+crt-static" >> $env:GITHUB_ENV
+
+      - name: Build boxdd-sys (Release)
+        run: cargo build -p boxdd-sys --release --target ${{ matrix.target }}
+        env:
+          TARGET: ${{ matrix.target }}
+
+      - name: Package boxdd-sys static library + headers
+        run: cargo run -p boxdd-sys --features package-bin --bin package --release --target ${{ matrix.target }}
+        env:
+          BOXDD_SYS_PACKAGE_DIR: ${{ github.workspace }}/packages
+          TARGET: ${{ matrix.target }}
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        if: inputs.tag || github.event_name == 'release' || startsWith(github.ref, 'refs/tags/')
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          files: ${{ github.workspace }}/packages/*.tar.gz
+
+      - name: Upload artifact (branch builds)
+        if: inputs.branch && !inputs.tag && github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt-${{ matrix.target }}${{ matrix.crt && format('-{0}', matrix.crt) || '' }}-${{ inputs.branch }}-${{ github.sha }}
+          path: ${{ github.workspace }}/packages/*.tar.gz
+          if-no-files-found: error
+

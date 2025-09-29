@@ -7,6 +7,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_void;
 
 /// Body types.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum BodyType {
     Static,
@@ -123,6 +124,90 @@ impl BodyBuilder {
 impl From<BodyDef> for BodyBuilder {
     fn from(def: BodyDef) -> Self {
         Self { def }
+    }
+}
+
+// serde support for BodyDef via a transparent config struct
+#[cfg(feature = "serde")]
+impl serde::Serialize for BodyDef {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(serde::Serialize)]
+        struct Repr {
+            body_type: super::body::BodyType,
+            position: crate::types::Vec2,
+            angle: f32,
+            linear_velocity: crate::types::Vec2,
+            angular_velocity: f32,
+            linear_damping: f32,
+            angular_damping: f32,
+            gravity_scale: f32,
+            enable_sleep: bool,
+            awake: bool,
+            bullet: bool,
+            enabled: bool,
+        }
+        let angle = self.0.rotation.s.atan2(self.0.rotation.c);
+        let r = Repr {
+            body_type: match self.0.type_ {
+                x if x == ffi::b2BodyType_b2_staticBody => BodyType::Static,
+                x if x == ffi::b2BodyType_b2_kinematicBody => BodyType::Kinematic,
+                _ => BodyType::Dynamic,
+            },
+            position: crate::types::Vec2::from(self.0.position),
+            angle,
+            linear_velocity: crate::types::Vec2::from(self.0.linearVelocity),
+            angular_velocity: self.0.angularVelocity,
+            linear_damping: self.0.linearDamping,
+            angular_damping: self.0.angularDamping,
+            gravity_scale: self.0.gravityScale,
+            enable_sleep: self.0.enableSleep,
+            awake: self.0.isAwake,
+            bullet: self.0.isBullet,
+            enabled: self.0.isEnabled,
+        };
+        r.serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for BodyDef {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct Repr {
+            body_type: super::body::BodyType,
+            position: crate::types::Vec2,
+            angle: f32,
+            linear_velocity: crate::types::Vec2,
+            angular_velocity: f32,
+            linear_damping: f32,
+            angular_damping: f32,
+            gravity_scale: f32,
+            enable_sleep: bool,
+            awake: bool,
+            bullet: bool,
+            enabled: bool,
+        }
+        let r = Repr::deserialize(deserializer)?;
+        let b = BodyBuilder::new()
+            .body_type(r.body_type)
+            .position(r.position)
+            .angle(r.angle)
+            .linear_velocity(r.linear_velocity)
+            .angular_velocity(r.angular_velocity)
+            .linear_damping(r.linear_damping)
+            .angular_damping(r.angular_damping)
+            .gravity_scale(r.gravity_scale)
+            .enable_sleep(r.enable_sleep)
+            .awake(r.awake)
+            .bullet(r.bullet)
+            .enabled(r.enabled);
+        Ok(b.build())
     }
 }
 

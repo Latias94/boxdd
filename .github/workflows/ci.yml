@@ -73,3 +73,126 @@ jobs:
         run: |
           # Verify docs build path that skips native C build and uses pregenerated bindings
           cargo doc -p boxdd-sys --no-deps
+
+  features:
+    name: Feature Matrix (ubuntu-latest)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features: [
+          "",
+          "serde",
+          "serialize",
+          "cgmath",
+          "nalgebra",
+          "glam",
+          "serde cgmath nalgebra",
+          "serde glam",
+          "serialize glam",
+          "serialize cgmath nalgebra",
+        ]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install LLVM/Clang
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm-dev libclang-dev build-essential libc6-dev
+
+      - name: cargo check (boxdd with features="${{ matrix.features }}")
+        shell: bash
+        run: |
+          set -euxo pipefail
+          FEATS='${{ matrix.features }}'
+          if [ -z "$FEATS" ]; then
+            cargo check -p boxdd --quiet
+          else
+            cargo check -p boxdd --features "$FEATS" --quiet
+          fi
+
+  wasm:
+    name: WASM Checks (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add wasm targets
+        run: |
+          rustup target add wasm32-unknown-unknown
+          rustup target add wasm32-wasip1
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-wasm-
+
+      - name: cargo check (boxdd-sys, wasm32-unknown-unknown)
+        run: |
+          cargo check -p boxdd-sys --target wasm32-unknown-unknown --quiet
+
+      - name: cargo check (boxdd-sys, wasm32-wasip1)
+        run: |
+          cargo check -p boxdd-sys --target wasm32-wasip1 --quiet
+
+  wasm-strict:
+    name: WASM Strict Bindings (conditional)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add wasm targets
+        run: |
+          rustup target add wasm32-unknown-unknown
+          rustup target add wasm32-wasip1
+
+      - name: Strict check (only if pregenerated or sysroot present)
+        env:
+          BOXDD_SYS_STRICT_WASM_BINDINGS: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          has_pregen="$(test -f boxdd-sys/src/wasm_bindings_pregenerated.rs && echo yes || echo no)"
+          if [ "$has_pregen" = "yes" ] || [ -n "${WASI_SDK_PATH:-}" ] || [ -n "${EMSDK:-}" ]; then
+            echo "Strict mode enabled with available wasm bindings/sysroot; running checks."
+            cargo check -p boxdd-sys --target wasm32-unknown-unknown --quiet || exit 1
+            cargo check -p boxdd-sys --target wasm32-wasip1 --quiet || exit 1
+          else
+            echo "Skipping strict wasm checks (no pregenerated bindings and no sysroot configured)."
+          fi
