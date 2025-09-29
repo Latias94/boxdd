@@ -1,6 +1,6 @@
 <div align="center">
 
-# boxdd-sys — Low-level FFI for Box2D v3 (C API)
+# boxdd-sys - Low-level FFI for Box2D v3 (C API)
 
 [![Crates.io](https://img.shields.io/crates/v/boxdd-sys.svg?style=flat-square)](https://crates.io/crates/boxdd-sys)
 [![Docs](https://docs.rs/boxdd-sys/badge.svg)](https://docs.rs/boxdd-sys)
@@ -22,7 +22,7 @@ High-level wrappers live in the companion crate `boxdd`.
   - Skip native C build: `BOXDD_SYS_SKIP_CC=1` (fast Rust-only iteration).
 - Docs.rs/offline: uses pregenerated bindings when present and skips native C build.
 
-### System linking helpers
+## System Linking Helpers
 - `dynamic-link` feature: prefer dynamic linking (`dylib=box2d`) when using prebuilt/system libs.
 - `pkg-config` feature: probe system-installed `box2d` via `pkg-config` when no explicit lib dir/URL is provided.
 
@@ -49,5 +49,10 @@ High-level wrappers live in the companion crate `boxdd`.
 - Requires a C toolchain and libclang (bindgen).
 - Windows (MSVC) and Unix toolchains supported.
 
+## Acknowledgments
+- Thanks to the Rust Box2D bindings project for prior art and inspiration: https://github.com/Bastacyclop/rust_box2d
+- Huge thanks to the upstream Box2D project by Erin Catto: https://github.com/erincatto/box2d
+
 ## License
 - MIT OR Apache-2.0. Upstream Box2D v3 is MIT-licensed.
+
