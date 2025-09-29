@@ -30,7 +30,7 @@ impl PrismaticJointDef {
         self.0.hertz = v;
         self
     }
-    /// Spring damping ratio [0,1].
+    /// Spring damping ratio \[0,1].
     pub fn damping_ratio(mut self, v: f32) -> Self {
         self.0.dampingRatio = v;
         self
@@ -150,7 +150,7 @@ impl<'w> PrismaticJointBuilder<'w> {
     /// Stiffness on both linear and angular degrees of freedom.
     ///
     /// - linear_hz/angular_hz: stiffness (Hz), typical 4–20
-    /// - linear_dr/angular_dr: damping ratio [0, 1], typical 0.1–0.7
+    /// - linear_dr/angular_dr: damping ratio \[0, 1], typical 0.1–0.7
     pub fn with_stiffness(
         mut self,
         linear_hz: f32,

@@ -45,7 +45,7 @@ impl DistanceJointDef {
         self.0.hertz = v;
         self
     }
-    /// Spring damping ratio [0,1].
+    /// Spring damping ratio \[0,1].
     pub fn damping_ratio(mut self, v: f32) -> Self {
         self.0.dampingRatio = v;
         self
@@ -190,7 +190,7 @@ impl<'w> DistanceJointBuilder<'w> {
     ///
     /// - min_len/max_len: meters
     /// - hertz: stiffness (Hz), typical 4–20
-    /// - damping_ratio: [0, 1], typical 0.1–0.7
+    /// - damping_ratio: \[0, 1], typical 0.1–0.7
     pub fn with_limit_and_spring(
         mut self,
         min_len: f32,
@@ -207,7 +207,7 @@ impl<'w> DistanceJointBuilder<'w> {
     /// - max_force: Newtons
     /// - speed: meters/second
     /// - hertz: stiffness (Hz), typical 4–20
-    /// - damping_ratio: [0, 1], typical 0.1–0.7
+    /// - damping_ratio: \[0, 1], typical 0.1–0.7
     pub fn with_motor_and_spring(
         mut self,
         max_force: f32,
@@ -225,7 +225,7 @@ impl<'w> DistanceJointBuilder<'w> {
     /// - max_force: Newtons
     /// - speed: meters/second
     /// - hertz: stiffness (Hz), typical 4–20
-    /// - damping_ratio: [0, 1], typical 0.1–0.7
+    /// - damping_ratio: \[0, 1], typical 0.1–0.7
     pub fn with_limit_motor_spring(
         mut self,
         min_len: f32,

@@ -166,7 +166,7 @@ impl<'w> WheelJointBuilder<'w> {
     }
     /// Convenience: enable limit and spring together.
     /// - lower/upper: meters
-    /// - hertz: stiffness (Hz), typical 4–20; damping_ratio: [0,1], typical 0.1–0.7
+    /// - hertz: stiffness (Hz), typical 4–20; damping_ratio: \[0,1], typical 0.1–0.7
     pub fn with_limit_and_spring(
         mut self,
         lower: f32,
@@ -179,7 +179,7 @@ impl<'w> WheelJointBuilder<'w> {
         self
     }
     /// Convenience: enable motor and spring together.
-    /// - max_torque: N·m; speed: rad/s; hertz: Hz; damping_ratio: [0,1]
+    /// - max_torque: N·m; speed: rad/s; hertz: Hz; damping_ratio: \[0,1]
     pub fn with_motor_and_spring(
         mut self,
         max_torque: f32,
@@ -192,7 +192,7 @@ impl<'w> WheelJointBuilder<'w> {
         self
     }
     /// Convenience: enable motor and spring together (motor speed in degrees/sec).
-    /// - max_torque: N·m; speed_deg: deg/s; hertz: Hz; damping_ratio: [0,1]
+    /// - max_torque: N·m; speed_deg: deg/s; hertz: Hz; damping_ratio: \[0,1]
     pub fn with_motor_and_spring_deg(
         mut self,
         max_torque: f32,
@@ -206,7 +206,7 @@ impl<'w> WheelJointBuilder<'w> {
     }
     /// Convenience: enable limit, motor, and spring together.
     /// - lower/upper: meters
-    /// - max_torque: N·m; speed: rad/s; hertz: Hz; damping_ratio: [0,1]
+    /// - max_torque: N·m; speed: rad/s; hertz: Hz; damping_ratio: \[0,1]
     pub fn with_limit_motor_spring(
         mut self,
         lower: f32,
@@ -223,7 +223,7 @@ impl<'w> WheelJointBuilder<'w> {
     }
     /// Convenience: enable limit, motor (deg/s), and spring together.
     /// - lower/upper: meters
-    /// - max_torque: N·m; speed_deg: deg/s; hertz: Hz; damping_ratio: [0,1]
+    /// - max_torque: N·m; speed_deg: deg/s; hertz: Hz; damping_ratio: \[0,1]
     pub fn with_limit_motor_spring_deg(
         mut self,
         lower: f32,

@@ -1,4 +1,3 @@
-#![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(rustdoc::broken_intra_doc_links)]
 //! boxdd: Safe, ergonomic Rust bindings for Box2D (v3 C API)
 //!
@@ -90,6 +89,7 @@ pub mod filter;
 pub mod joints;
 pub mod prelude;
 pub mod query;
+#[cfg(feature = "serialize")]
 #[cfg(feature = "serialize")]
 #[cfg_attr(docsrs, doc(cfg(feature = "serialize")))]
 pub mod serialize;
