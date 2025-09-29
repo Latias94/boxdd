@@ -64,6 +64,27 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 ## Examples
 - The `examples/` folder covers worlds/bodies/shapes, joints, queries/casts, events/sensors, CCD, and debug draw.
 
+## Events
+- Three access styles:
+  - By value: `world.contact_events()`/`sensor_events()`/`body_events()`/`joint_events()` return owned data for storage or cross-frame use.
+  - Zero‑copy views: `with_*_events_view(...)` iterate without exposing FFI types and without allocations (recommended for per‑frame processing).
+  - Raw slices: `with_*_events(...)` expose FFI slices for power users; valid only within the callback.
+- Example (zero‑copy views):
+```rust
+use boxdd::prelude::*;
+let mut world = World::new(WorldDef::default()).unwrap();
+world.with_contact_events_view(|begin, end, hit| {
+    let _ = (begin.count(), end.count(), hit.count());
+});
+world.with_sensor_events_view(|beg, end| {
+    let _ = (beg.count(), end.count());
+});
+world.with_body_events_view(|moves| {
+    for m in moves { let _ = (m.body_id(), m.fell_asleep()); }
+});
+world.with_joint_events_view(|j| { let _ = j.count(); });
+```
+
 ## Notes
 - Vendored C sources + pregenerated bindings by default (no LLVM needed on CI). To force bindgen: set `BOXDD_SYS_FORCE_BINDGEN=1` and ensure `libclang` is available. On Windows/MSVC, set `LIBCLANG_PATH` if needed.
 - On docs.rs, the native C build is skipped.

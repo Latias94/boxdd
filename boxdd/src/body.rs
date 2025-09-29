@@ -37,6 +37,8 @@ impl Default for BodyDef {
 }
 
 /// Fluent builder for `BodyDef`.
+#[doc(alias = "body_builder")]
+#[doc(alias = "bodybuilder")]
 ///
 /// Chain methods to configure a body and finish with `build()`. This maps
 /// to the upstream `b2BodyDef` fields.

@@ -22,6 +22,8 @@ pub enum Error {
 }
 
 /// World definition builder for constructing a simulation world.
+#[doc(alias = "world_def")]
+#[doc(alias = "worlddef")]
 #[derive(Clone, Debug)]
 pub struct WorldDef(ffi::b2WorldDef);
 
@@ -155,6 +157,8 @@ impl<'de> serde::Deserialize<'de> for WorldDef {
 ///
 /// Chain configuration calls and finish with `build()`. All fields map 1:1 to
 /// the upstream `b2WorldDef`.
+#[doc(alias = "world_builder")]
+#[doc(alias = "worldbuilder")]
 #[derive(Clone, Debug)]
 pub struct WorldBuilder {
     def: WorldDef,

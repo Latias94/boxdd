@@ -1,3 +1,4 @@
+#![allow(rustdoc::broken_intra_doc_links)]
 use crate::types::BodyId;
 use crate::world::World;
 use boxdd_sys::ffi;

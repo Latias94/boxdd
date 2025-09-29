@@ -1,3 +1,4 @@
+#![allow(rustdoc::broken_intra_doc_links)]
 use crate::types::BodyId;
 use crate::world::World;
 use boxdd_sys::ffi;
@@ -29,7 +30,7 @@ impl WheelJointDef {
         self.0.hertz = v;
         self
     }
-    /// Spring damping ratio [0,1].
+    /// Spring damping ratio \[0,1].
     pub fn damping_ratio(mut self, v: f32) -> Self {
         self.0.dampingRatio = v;
         self

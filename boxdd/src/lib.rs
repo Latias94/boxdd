@@ -1,3 +1,5 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![allow(rustdoc::broken_intra_doc_links)]
 //! boxdd: Safe, ergonomic Rust bindings for Box2D (v3 C API)
 //!
 //! Highlights
@@ -42,6 +44,44 @@
 //! Modules
 //! - `world`, `body`, `shapes`, `joints`, `query`, `events`, `debug_draw`, `prelude`.
 //!   Import `boxdd::prelude::*` for the most common types.
+//!
+//! Queries (AABB + Ray Cast)
+//! ```no_run
+//! use boxdd::{World, WorldDef, BodyBuilder, ShapeDef, shapes, Vec2, Aabb, QueryFilter};
+//! let mut world = World::new(WorldDef::builder().gravity([0.0,-9.8]).build()).unwrap();
+//! let b = world.create_body_id(BodyBuilder::new().position([0.0, 2.0]).build());
+//! let sdef = ShapeDef::builder().density(1.0).build();
+//! world.create_polygon_shape_for(b, &sdef, &shapes::box_polygon(0.5, 0.5));
+//! // AABB overlap
+//! let hits = world.overlap_aabb(Aabb::from_center_half_extents([0.0, 1.0], [1.0, 1.5]), QueryFilter::default());
+//! assert!(!hits.is_empty());
+//! // Ray (closest)
+//! let r = world.cast_ray_closest(Vec2::new(0.0, 5.0), Vec2::new(0.0, -10.0), QueryFilter::default());
+//! if r.hit { let _ = (r.point, r.normal, r.fraction); }
+//! ```
+//!
+//! Feature Flags
+//! - `serialize`: scene snapshot helpers (save/apply world config; build/restore minimal full-scene snapshot).
+//! - `pkg-config`: allow linking against a system `box2d` via pkg-config.
+//! - `cgmath` / `nalgebra` / `glam`: conversions with their 2D math types.
+//!
+//! Events
+//! - Three access styles:
+//!   - By value: `world.contact_events()`/`sensor_events()`/`body_events()`/`joint_events()` return owned data for storage or cross‑frame use.
+//!   - Zero‑copy views: `with_*_events_view(...)` iterate without exposing FFI types and without allocations (recommended per‑frame).
+//!   - Raw slices: `with_*_events(...)` expose FFI slices (advanced); data valid only within the callback.
+//!
+//! Example (zero‑copy views)
+//! ```no_run
+//! use boxdd::prelude::*;
+//! let mut world = World::new(WorldDef::default()).unwrap();
+//! world.with_contact_events_view(|begin, end, hit| {
+//!     let _ = (begin.count(), end.count(), hit.count());
+//! });
+//! world.with_sensor_events_view(|beg, end| { let _ = (beg.count(), end.count()); });
+//! world.with_body_events_view(|moves| { for m in moves { let _ = (m.body_id(), m.fell_asleep()); } });
+//! world.with_joint_events_view(|j| { let _ = j.count(); });
+//! ```
 
 pub mod body;
 pub mod debug_draw;
@@ -51,6 +91,7 @@ pub mod joints;
 pub mod prelude;
 pub mod query;
 #[cfg(feature = "serialize")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serialize")))]
 pub mod serialize;
 pub mod shapes;
 pub mod tuning;

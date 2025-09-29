@@ -45,6 +45,12 @@ disable-simd = ["boxdd-sys/disable-simd"]
 validate = ["boxdd-sys/validate"]
 pkg-config = ["boxdd-sys/pkg-config"]
 
+[package.metadata.docs.rs]
+all-features = false
+no-default-features = false
+features = []
+rustdoc-args = ["--cfg", "docsrs"]
+
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 dear-imgui = "0.2"
 dear-imgui-winit = "0.2"

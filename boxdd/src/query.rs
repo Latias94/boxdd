@@ -11,6 +11,7 @@ use crate::world::World;
 use boxdd_sys::ffi;
 
 /// Axis-aligned bounding box
+#[doc(alias = "aabb")]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Aabb {
     pub lower: Vec2,
@@ -48,6 +49,7 @@ impl Aabb {
 }
 
 /// Filter for queries
+#[doc(alias = "query_filter")]
 #[derive(Copy, Clone, Debug)]
 pub struct QueryFilter(pub(crate) ffi::b2QueryFilter);
 
@@ -69,6 +71,7 @@ impl QueryFilter {
 }
 
 /// Result of a closest ray cast
+#[doc(alias = "ray_result")]
 #[derive(Copy, Clone, Debug)]
 pub struct RayResult {
     pub shape_id: ShapeId,

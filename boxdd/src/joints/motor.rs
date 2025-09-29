@@ -42,7 +42,7 @@ impl MotorJointDef {
         self.0.linearHertz = v;
         self
     }
-    /// Linear damping ratio [0,1].
+    /// Linear damping ratio \[0,1].
     pub fn linear_damping_ratio(mut self, v: f32) -> Self {
         self.0.linearDampingRatio = v;
         self
@@ -57,7 +57,7 @@ impl MotorJointDef {
         self.0.angularHertz = v;
         self
     }
-    /// Angular damping ratio [0,1].
+    /// Angular damping ratio \[0,1].
     pub fn angular_damping_ratio(mut self, v: f32) -> Self {
         self.0.angularDampingRatio = v;
         self

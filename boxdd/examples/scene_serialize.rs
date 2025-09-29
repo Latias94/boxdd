@@ -20,7 +20,7 @@ fn main() {
 
     // Add a simple chain (polyline) to body A via ID-style API so it is captured by snapshot
     let chain_def = boxdd::shapes::chain::ChainDef::builder()
-        .points([[-0.5, 0.0], [0.0, 0.5], [0.5, 0.0]].into_iter())
+        .points([[-0.5, 0.0], [0.0, 0.5], [0.5, 0.0]])
         .is_loop(false)
         .build();
     let _chain = world.create_chain_for_id(a, &chain_def);

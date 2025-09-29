@@ -195,6 +195,8 @@ impl SurfaceMaterial {
 }
 
 /// Shape definition with Builder pattern.
+#[doc(alias = "shape_def")]
+#[doc(alias = "shapedef")]
 #[derive(Clone, Debug)]
 pub struct ShapeDef(pub(crate) ffi::b2ShapeDef);
 
@@ -212,6 +214,8 @@ impl ShapeDef {
     }
 }
 
+#[doc(alias = "shape_builder")]
+#[doc(alias = "shapebuilder")]
 #[derive(Clone, Debug)]
 pub struct ShapeDefBuilder {
     def: ShapeDef,
