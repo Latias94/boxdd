@@ -11,20 +11,18 @@
 Builds upstream Box2D v3 C sources from `third-party/box2d` and exposes raw FFI in `boxdd_sys::ffi`.
 High-level wrappers live in the companion crate `boxdd`.
 
-## Build Modes
-- Default (from source): builds vendored C via `cc` and generates bindings with bindgen.
-- Prebuilt (optional): link a precompiled static `box2d` instead of building C.
-  - Enable with the `prebuilt` feature or `BOXDD_SYS_USE_PREBUILT=1` (allows auto-download from Releases).
-  - Directory: `BOXDD_SYS_LIB_DIR=/path/to/lib` (or legacy `BOX2D_LIB_DIR`).
-  - URL: `BOXDD_SYS_PREBUILT_URL=https://.../(libbox2d.a|box2d.lib|*.tar.gz)`.
-  - Release auto-download: tries `boxdd-prebuilt-<ver>-<target>-static[-md|mt].tar.gz` on GitHub Releases.
-  - Force from-source: `BOXDD_SYS_FORCE_BUILD=1`.
-  - Skip native C build: `BOXDD_SYS_SKIP_CC=1` (fast Rust-only iteration).
-- Docs.rs/offline: uses pregenerated bindings when present and skips native C build.
+## Build
+- From source: builds vendored Box2D C via `cc`.
+- System library (optional): link an existing `box2d` installed on the system.
+  - Env: set `BOX2D_LIB_DIR=/path/to/lib` and optionally `BOXDD_SYS_LINK_KIND=static|dylib`.
+  - Feature: enable `pkg-config` and ensure `box2d` is available via the system.
+- Bindings: uses pregenerated bindings by default to avoid requiring LLVM on CI.
+  - Note: crate features that affect the C build (e.g. `simd-avx2`, `disable-simd`, `validate`) are ignored when linking a system library. Set `BOXDD_SYS_STRICT_FEATURES=1` to fail the build if such features are enabled.
+  - Force bindgen: set `BOXDD_SYS_FORCE_BINDGEN=1` and ensure `libclang` is available.
+- Docs.rs/offline: uses pregenerated bindings and skips native C build.
 
-## System Linking Helpers
-- `dynamic-link` feature: prefer dynamic linking (`dylib=box2d`) when using prebuilt/system libs.
-- `pkg-config` feature: probe system-installed `box2d` via `pkg-config` when no explicit lib dir/URL is provided.
+## System Linking
+- Supported via env or `pkg-config` (see above). No prebuilt download is provided by this crate.
 
 ## WASM (experimental)
 - Targets
@@ -40,13 +38,8 @@ High-level wrappers live in the companion crate `boxdd`.
 - `disable-simd`: disable all SIMD; overrides `simd-avx2`.
 - `validate`: enable internal validation checks.
 
-## Prebuilt Artifacts (CI)
-- Workflow: `.github/workflows/prebuilt-binaries.yml`.
-- Artifact name: `boxdd-prebuilt-<ver>-<target>-static[-md|mt].tar.gz` containing `lib/` and `include/box2d/`.
-- Tags: `boxdd-sys-v*`.
-
 ## Notes
-- Requires a C toolchain and libclang (bindgen).
+- Requires a C toolchain. Bindgen requires `libclang` only when forced (`BOXDD_SYS_FORCE_BINDGEN=1`).
 - Windows (MSVC) and Unix toolchains supported.
 
 ## Acknowledgments
@@ -55,4 +48,3 @@ High-level wrappers live in the companion crate `boxdd`.
 
 ## License
 - MIT OR Apache-2.0. Upstream Box2D v3 is MIT-licensed.
-

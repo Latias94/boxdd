@@ -40,11 +40,12 @@ world.step(1.0/60.0, 4);
 - Note: chain shapes are captured when created via ID-style API (`World::create_chain_for_id`).
 
 ## Build Modes
-- Default (from source): builds vendored Box2D C sources via `cc` and generates bindings with bindgen.
-  - Example: `cargo build -p boxdd` (or explicitly `--features build-from-source`).
-- Prebuilt: link a precompiled static library instead of building C sources.
-  - Example: `cargo build -p boxdd --features prebuilt`.
-  - Library directory: set `BOX2D_LIB_DIR=/path/to/lib` (contains `libbox2d.a` or `box2d.lib`). Without it, the system linker search is used.
+- From source: builds vendored Box2D C sources via `cc` and uses pregenerated bindings by default.
+  - Example: `cargo build -p boxdd`.
+- System library (optional): link an existing `box2d` installed on the system.
+  - Via env: set `BOX2D_LIB_DIR=/path/to/lib` and optionally `BOXDD_SYS_LINK_KIND=static|dylib`.
+  - Via feature: enable `pkg-config` and provide `box2d` through your system's package manager.
+  - Note: crate features that affect C build (e.g. `simd-avx2`, `disable-simd`, `validate`) are ignored in system mode. Set `BOXDD_SYS_STRICT_FEATURES=1` to fail the build if such features are enabled.
 
 ## Getting Started
 
@@ -64,9 +65,8 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 - The `examples/` folder covers worlds/bodies/shapes, joints, queries/casts, events/sensors, CCD, and debug draw.
 
 ## Notes
-- Vendored C sources + bindgen (requires a C toolchain and libclang). On Windows/MSVC, set `LIBCLANG_PATH` if needed.
-- Optional: link a prebuilt static library via `BOX2D_LIB_DIR=/path/to/lib`
-- On docs.rs, the native build is skipped
+- Vendored C sources + pregenerated bindings by default (no LLVM needed on CI). To force bindgen: set `BOXDD_SYS_FORCE_BINDGEN=1` and ensure `libclang` is available. On Windows/MSVC, set `LIBCLANG_PATH` if needed.
+- On docs.rs, the native C build is skipped.
 
 ## Documentation
 - Local: `cargo doc --open`

@@ -271,10 +271,7 @@ version = "0.1.0"
 dependencies = [
  "bindgen",
  "cc",
- "flate2",
  "pkg-config",
- "reqwest",
- "tar",
 ]
 
 [[package]]

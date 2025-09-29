@@ -29,12 +29,6 @@ default = []
 # Build the ImGui + Glow testbed example when this feature is enabled
 imgui-glow-testbed = []
 
-# Build modes for the sys crate (forwarded)
-prebuilt = ["boxdd-sys/prebuilt"]
-build-from-source = ["boxdd-sys/build-from-source"]
-dynamic-link = ["boxdd-sys/dynamic-link"]
-pkg-config = ["boxdd-sys/pkg-config"]
-
 # Optional integration features
 # Enable serde for basic value/config types (Vec2, Rot, Transform, etc.)
 serde = ["dep:serde"]
@@ -49,6 +43,7 @@ glam = ["dep:glam"]
 simd-avx2 = ["boxdd-sys/simd-avx2"]
 disable-simd = ["boxdd-sys/disable-simd"]
 validate = ["boxdd-sys/validate"]
+pkg-config = ["boxdd-sys/pkg-config"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 dear-imgui = "0.2"
