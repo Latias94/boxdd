@@ -19,9 +19,13 @@ include = [
     "README.md",
     "build.rs",
     "src/**",
-    # Only what we need from upstream for C build
-    "third-party/box2d/include/**",
-    "third-party/box2d/src/**",
+    # Only headers from upstream include/
+    "third-party/box2d/include/**/*.h",
+    # C sources and local headers from upstream src/
+    "third-party/box2d/src/**/*.c",
+    "third-party/box2d/src/**/*.h",
+    # Upstream license file (Box2D is MIT-licensed)
+    "third-party/box2d/LICENSE",
 ]
 
 [package.metadata.docs.rs]

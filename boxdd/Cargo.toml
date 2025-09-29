@@ -11,8 +11,8 @@ documentation = "https://docs.rs/boxdd"
 keywords = ["box2d", "physics", "game", "simulation"]
 categories = ["game-engines"]
 
-# Keep the crate size reasonable; examples are available in the repo
-exclude = ["examples/**"]
+# Keep the crate size reasonable; exclude examples and tests from the crate package
+exclude = ["examples/**", "tests/**"]
 
 [dependencies]
 boxdd-sys = { version = "0.1", path = "../boxdd-sys" }

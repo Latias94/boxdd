@@ -657,7 +657,7 @@ fn body_def_from_runtime(id: ffi::b2BodyId) -> crate::body::BodyDef {
     let ang_damp = unsafe { ffi::b2Body_GetAngularDamping(id) };
     let gscale = unsafe { ffi::b2Body_GetGravityScale(id) };
     // Defaults for flags not queryable via getters
-    let def = crate::body::BodyBuilder::new()
+    crate::body::BodyBuilder::new()
         .body_type(bt)
         .position(pos)
         .angle(angle)
@@ -666,8 +666,7 @@ fn body_def_from_runtime(id: ffi::b2BodyId) -> crate::body::BodyDef {
         .linear_damping(lin_damp)
         .angular_damping(ang_damp)
         .gravity_scale(gscale)
-        .build();
-    def
+        .build()
 }
 
 fn shapes_from_body(world: &World, body: ffi::b2BodyId) -> Vec<ShapeInstance> {

@@ -58,15 +58,16 @@ fn main() {
 
     // If wasm and have wasm-specific pregenerated, copy to OUT_DIR
     let mut used_wasm_pregenerated = false;
-    if target_arch == "wasm32" && has_wasm_pregenerated {
-        if let Ok(s) = std::fs::read_to_string(&wasm_pregenerated) {
-            let _ = std::fs::write(out_dir.join("bindings.rs"), s);
-            used_wasm_pregenerated = true;
-            println!(
-                "cargo:warning=Using wasm pregenerated bindings: {}",
-                wasm_pregenerated.display()
-            );
-        }
+    if target_arch == "wasm32"
+        && has_wasm_pregenerated
+        && let Ok(s) = std::fs::read_to_string(&wasm_pregenerated)
+    {
+        let _ = std::fs::write(out_dir.join("bindings.rs"), s);
+        used_wasm_pregenerated = true;
+        println!(
+            "cargo:warning=Using wasm pregenerated bindings: {}",
+            wasm_pregenerated.display()
+        );
     }
 
     // Run bindgen only if needed or explicitly requested
@@ -245,7 +246,7 @@ fn try_link_system(_target_arch: &str) -> bool {
     if let Ok(dir) = env::var("BOX2D_LIB_DIR") {
         println!("cargo:rustc-link-search=native={}", dir);
         if let Some(kind) = link_kind_from_env() {
-            println!("cargo:rustc-link-lib={}={}", kind, "box2d");
+            println!("cargo:rustc-link-lib={}=box2d", kind);
         } else {
             println!("cargo:rustc-link-lib=box2d");
         }
@@ -255,7 +256,11 @@ fn try_link_system(_target_arch: &str) -> bool {
     // pkg-config path when enabled
     #[cfg(feature = "pkg-config")]
     {
-        if pkg_config::Config::new().cargo_metadata(true).probe("box2d").is_ok() {
+        if pkg_config::Config::new()
+            .cargo_metadata(true)
+            .probe("box2d")
+            .is_ok()
+        {
             warn_or_error_system_ignores_features();
             return true;
         }
@@ -269,10 +274,10 @@ fn collect_c_files(dir: &Path, out: &mut Vec<PathBuf>) {
             let path = entry.path();
             if path.is_dir() {
                 collect_c_files(&path, out);
-            } else if let Some(ext) = path.extension() {
-                if ext == "c" {
-                    out.push(path);
-                }
+            } else if let Some(ext) = path.extension()
+                && ext == "c"
+            {
+                out.push(path);
             }
         }
     }
