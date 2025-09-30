@@ -99,9 +99,9 @@ dependencies = [
 
 [[package]]
 name = "anstyle"
-version = "1.0.11"
+version = "1.0.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "862ed96ca487e809f1c8e5a8447f6ee2cf102f846893800b20cebdf541fc6bbd"
+checksum = "5192cca8006f1fd4f7237516f40fa183bb07f8fbdfedaa0036de5ea9b0b45e78"
 
 [[package]]
 name = "anstyle-parse"
@@ -248,8 +248,8 @@ version = "0.1.0"
 dependencies = [
  "boxdd-sys",
  "cgmath",
- "dear-imgui",
  "dear-imgui-glow",
+ "dear-imgui-rs",
  "dear-imgui-winit",
  "env_logger",
  "glam 0.30.8",
@@ -483,22 +483,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
-name = "dear-imgui"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d80f63bcbc4deee4c34105dc4574595e1e72fdcdcf82bac949ba92c4287fd51"
-dependencies = [
- "bitflags 2.9.4",
- "cfg-if",
- "dear-imgui-sys",
- "mint",
- "parking_lot",
- "thiserror 2.0.17",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "dear-imgui-build-support"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -511,21 +495,37 @@ dependencies = [
 
 [[package]]
 name = "dear-imgui-glow"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc94fab1eb2b974f3d0329ab0806db8148430a9cb707cda810accfd06f07aa17"
+checksum = "8d444669237a7f88432d09754f02c95b9f1b5caafa4926ac3a547fe123c4c954"
 dependencies = [
- "dear-imgui",
+ "dear-imgui-rs",
  "glow",
  "memoffset",
  "thiserror 2.0.17",
 ]
 
 [[package]]
-name = "dear-imgui-sys"
-version = "0.2.0"
+name = "dear-imgui-rs"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed3cfb57930235c512d7ab4386118dd7f82181f5969c7bd63c64976345158d1c"
+checksum = "587cb5149782a0e45088d890d792489aa9fe79a9a77e5ed2aac48d99502fc702"
+dependencies = [
+ "bitflags 2.9.4",
+ "cfg-if",
+ "dear-imgui-sys",
+ "mint",
+ "parking_lot",
+ "thiserror 2.0.17",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "dear-imgui-sys"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "81f8f1904734088f5961731111e365c9cb8a0f6aa0e939faa27a18fe1be9bd4d"
 dependencies = [
  "bindgen",
  "cc",
@@ -540,11 +540,11 @@ dependencies = [
 
 [[package]]
 name = "dear-imgui-winit"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "262acaef22147cfea915bc08494dd2a3b40bf873c72eda89a529f99cafa8de4c"
+checksum = "429cb62285ce31ca0d1edc39138a38996dd5118285b1cc2ea70685388a094c07"
 dependencies = [
- "dear-imgui",
+ "dear-imgui-rs",
  "instant",
  "web-sys",
  "winit",
@@ -3765,9 +3765,9 @@ dependencies = [
 
 [[package]]
 name = "zeroize"
-version = "1.8.1"
+version = "1.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ced3678a2879b30306d323f4542626697a464a97c0a07c9aebf7ebca65cd4dde"
+checksum = "b97154e67e32c85465826e8bcc1c59429aaaf107c1e4a9e53c8d8ccd5eff88d0"
 
 [[package]]
 name = "zerotrie"

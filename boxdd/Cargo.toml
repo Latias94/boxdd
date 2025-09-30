@@ -52,9 +52,9 @@ features = []
 rustdoc-args = ["--cfg", "docsrs"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-dear-imgui = "0.2"
-dear-imgui-winit = "0.2"
-dear-imgui-glow = "0.2"
+dear-imgui-rs = "0.3"
+dear-imgui-winit = "0.3"
+dear-imgui-glow = "0.3"
 winit = "0.30"
 glow = "0.16"
 glutin = "0.32"
