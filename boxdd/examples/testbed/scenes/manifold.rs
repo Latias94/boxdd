@@ -1,5 +1,5 @@
 use boxdd as bd;
-use dear_imgui as imgui;
+use dear_imgui_rs as imgui;
 
 // Basic manifold viewer: two convex polygons with adjustable pose and size.
 // We sample world contact hit events to display an estimated normal and point.

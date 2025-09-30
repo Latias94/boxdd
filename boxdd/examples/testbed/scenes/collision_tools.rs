@@ -1,5 +1,5 @@
 use boxdd as bd;
-use dear_imgui as imgui;
+use dear_imgui_rs as imgui;
 
 // Collision Tools: unify Ray, Overlap, Shape Cast, TOI into one scene with a mode toggle.
 

@@ -72,7 +72,7 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     app.created_joints += 1;
 }
 
-use dear_imgui as imgui;
+use dear_imgui_rs as imgui;
 pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
     let mut hz = app.car_hz;
     let mut dr = app.car_dr;

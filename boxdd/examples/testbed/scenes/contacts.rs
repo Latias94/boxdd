@@ -40,7 +40,7 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
         .set_body_linear_velocity(b2, [0.0_f32, -app.contact_speed]);
 }
 
-use dear_imgui as imgui;
+use dear_imgui_rs as imgui;
 pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
     let mut half = app.contact_box_half;
     let mut sp = app.contact_speed;

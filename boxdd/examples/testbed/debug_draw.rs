@@ -1,5 +1,5 @@
 use boxdd as bd;
-use dear_imgui as imgui;
+use dear_imgui_rs as imgui;
 
 pub struct ImguiDebugDraw<'a> {
     pub ui: &'a imgui::Ui,

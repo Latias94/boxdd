@@ -1,5 +1,5 @@
 use boxdd as bd;
-use dear_imgui as imgui;
+use dear_imgui_rs as imgui;
 
 // Continuous Lab: Bullet, Ghost Bumps, Restitution Threshold, Pinball, Segment Slide
 

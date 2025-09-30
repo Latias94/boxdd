@@ -1,5 +1,5 @@
 use boxdd as bd;
-use dear_imgui as imgui;
+use dear_imgui_rs as imgui;
 
 fn gen_points(n: usize, radius: f32) -> Vec<[f32; 2]> {
     // Deterministic pseudo-random points roughly on a circle with slight jitter

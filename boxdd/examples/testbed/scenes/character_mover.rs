@@ -1,5 +1,5 @@
 use boxdd as bd;
-use dear_imgui as imgui;
+use dear_imgui_rs as imgui;
 
 pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     // Ground + a step obstacle

@@ -49,7 +49,7 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
     }
 }
 
-use dear_imgui as imgui;
+use dear_imgui_rs as imgui;
 pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
     let mut n = app.bridge_planks;
     if ui.slider("Planks", 4, 60, &mut n) {

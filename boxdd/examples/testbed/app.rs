@@ -1,5 +1,5 @@
-use dear_imgui as imgui;
 use dear_imgui_glow::GlowRenderer;
+use dear_imgui_rs as imgui;
 use dear_imgui_winit::WinitPlatform;
 use glow::HasContext as _;
 use glutin::display::{GetGlDisplay, GlDisplay};

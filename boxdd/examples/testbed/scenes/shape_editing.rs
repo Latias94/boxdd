@@ -1,5 +1,5 @@
 use boxdd as bd;
-use dear_imgui as imgui;
+use dear_imgui_rs as imgui;
 
 // Shape Editing: demonstrate runtime shape replacement on a body (box / rounded box).
 

@@ -1,5 +1,5 @@
 use boxdd as bd;
-use dear_imgui as imgui;
+use dear_imgui_rs as imgui;
 
 // Breakable joint: uses joint base force/torque thresholds and listens for joint events.
 

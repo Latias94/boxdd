@@ -24,7 +24,7 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     }
 }
 
-use dear_imgui as imgui;
+use dear_imgui_rs as imgui;
 pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
     let mut r = app.pyramid_rows;
     let mut c = app.pyramid_cols;

@@ -1,7 +1,7 @@
 // Central physics app + scene routing for the ImGui testbed
 use boxdd as bd;
 use boxdd_sys::ffi;
-use dear_imgui as imgui;
+use dear_imgui_rs as imgui;
 
 // Re-export per-scene modules for callers
 pub mod shapes {

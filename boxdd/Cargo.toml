@@ -1,6 +1,6 @@
 [package]
 name = "boxdd"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Safe, ergonomic Rust bindings for Box2D v3"
 license = "MIT OR Apache-2.0"

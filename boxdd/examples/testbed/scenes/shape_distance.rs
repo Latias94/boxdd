@@ -1,5 +1,5 @@
 use boxdd as bd;
-use dear_imgui as imgui;
+use dear_imgui_rs as imgui;
 use boxdd_sys::ffi;
 
 #[allow(dead_code)]

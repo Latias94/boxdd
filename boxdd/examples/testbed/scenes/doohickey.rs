@@ -1,5 +1,5 @@
 use boxdd as bd;
-use dear_imgui as imgui;
+use dear_imgui_rs as imgui;
 
 // Doohickey: two wheels, two bars, revolute motors and a prismatic slider
 

@@ -1,5 +1,5 @@
 use boxdd as bd;
-use dear_imgui as imgui;
+use dear_imgui_rs as imgui;
 
 // Bodies Lab: Set Velocity, Kinematic Platform, Wake Touching
 
