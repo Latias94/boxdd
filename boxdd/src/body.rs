@@ -657,6 +657,7 @@ impl OwnedBody {
     /// are upheld. Box2D treats this as an opaque pointer and may store/use it across steps.
     pub unsafe fn set_user_data_ptr(&mut self, p: *mut c_void) {
         self.assert_valid();
+        let _ = self.core.clear_body_user_data(self.id);
         unsafe { ffi::b2Body_SetUserData(self.id, p) }
     }
 
@@ -666,6 +667,7 @@ impl OwnedBody {
     /// Same safety contract as `set_user_data_ptr`.
     pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut c_void) -> ApiResult<()> {
         self.check_valid()?;
+        let _ = self.core.clear_body_user_data(self.id);
         unsafe { ffi::b2Body_SetUserData(self.id, p) }
         Ok(())
     }
@@ -679,6 +681,93 @@ impl OwnedBody {
         Ok(unsafe { ffi::b2Body_GetUserData(self.id) })
     }
 
+    /// Set typed user data on this body.
+    ///
+    /// This stores a `Box<T>` internally and sets Box2D's user data pointer to it. The allocation
+    /// is automatically freed when cleared or when the body is destroyed.
+    pub fn set_user_data<T: 'static>(&mut self, value: T) {
+        self.assert_valid();
+        let p = self.core.set_body_user_data(self.id, value);
+        unsafe { ffi::b2Body_SetUserData(self.id, p) };
+    }
+
+    pub fn try_set_user_data<T: 'static>(&mut self, value: T) -> ApiResult<()> {
+        self.check_valid()?;
+        let p = self.core.set_body_user_data(self.id, value);
+        unsafe { ffi::b2Body_SetUserData(self.id, p) };
+        Ok(())
+    }
+
+    /// Clear typed user data on this body. Returns whether any typed data was present.
+    pub fn clear_user_data(&mut self) -> bool {
+        self.assert_valid();
+        let had = self.core.clear_body_user_data(self.id);
+        if had {
+            unsafe { ffi::b2Body_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        had
+    }
+
+    pub fn try_clear_user_data(&mut self) -> ApiResult<bool> {
+        self.check_valid()?;
+        let had = self.core.clear_body_user_data(self.id);
+        if had {
+            unsafe { ffi::b2Body_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        Ok(had)
+    }
+
+    pub fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
+        self.assert_valid();
+        self.core
+            .try_with_body_user_data(self.id, f)
+            .expect("user data type mismatch")
+    }
+
+    pub fn try_with_user_data<T: 'static, R>(
+        &self,
+        f: impl FnOnce(&T) -> R,
+    ) -> ApiResult<Option<R>> {
+        self.check_valid()?;
+        self.core.try_with_body_user_data(self.id, f)
+    }
+
+    pub fn with_user_data_mut<T: 'static, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
+        self.assert_valid();
+        self.core
+            .try_with_body_user_data_mut(self.id, f)
+            .expect("user data type mismatch")
+    }
+
+    pub fn try_with_user_data_mut<T: 'static, R>(
+        &mut self,
+        f: impl FnOnce(&mut T) -> R,
+    ) -> ApiResult<Option<R>> {
+        self.check_valid()?;
+        self.core.try_with_body_user_data_mut(self.id, f)
+    }
+
+    pub fn take_user_data<T: 'static>(&mut self) -> Option<T> {
+        self.assert_valid();
+        let v = self
+            .core
+            .take_body_user_data::<T>(self.id)
+            .expect("user data type mismatch");
+        if v.is_some() {
+            unsafe { ffi::b2Body_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        v
+    }
+
+    pub fn try_take_user_data<T: 'static>(&mut self) -> ApiResult<Option<T>> {
+        self.check_valid()?;
+        let v = self.core.take_body_user_data::<T>(self.id)?;
+        if v.is_some() {
+            unsafe { ffi::b2Body_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        Ok(v)
+    }
+
     /// Disarm RAII and return the raw id for manual lifetime management.
     pub fn into_id(mut self) -> BodyId {
         self.destroy_on_drop = false;
@@ -688,13 +777,15 @@ impl OwnedBody {
     /// Destroy the body immediately and disarm drop.
     pub fn destroy(mut self) {
         if self.destroy_on_drop && unsafe { ffi::b2Body_IsValid(self.id) } {
-            if crate::core::callback_state::in_callback() {
+            if crate::core::callback_state::in_callback() || self.core.events_buffers_are_borrowed()
+            {
                 self.core
                     .defer_destroy(crate::core::world_core::DeferredDestroy::Body(self.id));
             } else {
                 #[cfg(feature = "serialize")]
                 self.core.cleanup_before_destroy_body(self.id);
                 unsafe { ffi::b2DestroyBody(self.id) };
+                let _ = self.core.clear_body_user_data(self.id);
             }
         }
         self.destroy_on_drop = false;
@@ -710,13 +801,15 @@ impl Drop for OwnedBody {
             .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
         debug_assert!(prev > 0, "owned body counter underflow");
         if self.destroy_on_drop && unsafe { ffi::b2Body_IsValid(self.id) } {
-            if crate::core::callback_state::in_callback() {
+            if crate::core::callback_state::in_callback() || self.core.events_buffers_are_borrowed()
+            {
                 self.core
                     .defer_destroy(crate::core::world_core::DeferredDestroy::Body(self.id));
             } else {
                 #[cfg(feature = "serialize")]
                 self.core.cleanup_before_destroy_body(self.id);
                 unsafe { ffi::b2DestroyBody(self.id) };
+                let _ = self.core.clear_body_user_data(self.id);
             }
         }
     }
@@ -1574,6 +1667,7 @@ impl<'w> Body<'w> {
     /// are upheld. Box2D treats this as an opaque pointer and may store/use it across steps.
     pub unsafe fn set_user_data_ptr(&mut self, p: *mut c_void) {
         self.assert_valid();
+        let _ = self.core.clear_body_user_data(self.id);
         unsafe { ffi::b2Body_SetUserData(self.id, p) }
     }
 
@@ -1583,6 +1677,7 @@ impl<'w> Body<'w> {
     /// Same safety contract as `set_user_data_ptr`.
     pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut c_void) -> ApiResult<()> {
         self.check_valid()?;
+        let _ = self.core.clear_body_user_data(self.id);
         unsafe { ffi::b2Body_SetUserData(self.id, p) }
         Ok(())
     }
@@ -1594,6 +1689,93 @@ impl<'w> Body<'w> {
     pub fn try_user_data_ptr(&self) -> ApiResult<*mut c_void> {
         self.check_valid()?;
         Ok(unsafe { ffi::b2Body_GetUserData(self.id) })
+    }
+
+    /// Set typed user data on this body.
+    ///
+    /// This stores a `Box<T>` internally and sets Box2D's user data pointer to it. The allocation
+    /// is automatically freed when cleared or when the body is destroyed.
+    pub fn set_user_data<T: 'static>(&mut self, value: T) {
+        self.assert_valid();
+        let p = self.core.set_body_user_data(self.id, value);
+        unsafe { ffi::b2Body_SetUserData(self.id, p) };
+    }
+
+    pub fn try_set_user_data<T: 'static>(&mut self, value: T) -> ApiResult<()> {
+        self.check_valid()?;
+        let p = self.core.set_body_user_data(self.id, value);
+        unsafe { ffi::b2Body_SetUserData(self.id, p) };
+        Ok(())
+    }
+
+    /// Clear typed user data on this body. Returns whether any typed data was present.
+    pub fn clear_user_data(&mut self) -> bool {
+        self.assert_valid();
+        let had = self.core.clear_body_user_data(self.id);
+        if had {
+            unsafe { ffi::b2Body_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        had
+    }
+
+    pub fn try_clear_user_data(&mut self) -> ApiResult<bool> {
+        self.check_valid()?;
+        let had = self.core.clear_body_user_data(self.id);
+        if had {
+            unsafe { ffi::b2Body_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        Ok(had)
+    }
+
+    pub fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
+        self.assert_valid();
+        self.core
+            .try_with_body_user_data(self.id, f)
+            .expect("user data type mismatch")
+    }
+
+    pub fn try_with_user_data<T: 'static, R>(
+        &self,
+        f: impl FnOnce(&T) -> R,
+    ) -> ApiResult<Option<R>> {
+        self.check_valid()?;
+        self.core.try_with_body_user_data(self.id, f)
+    }
+
+    pub fn with_user_data_mut<T: 'static, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
+        self.assert_valid();
+        self.core
+            .try_with_body_user_data_mut(self.id, f)
+            .expect("user data type mismatch")
+    }
+
+    pub fn try_with_user_data_mut<T: 'static, R>(
+        &mut self,
+        f: impl FnOnce(&mut T) -> R,
+    ) -> ApiResult<Option<R>> {
+        self.check_valid()?;
+        self.core.try_with_body_user_data_mut(self.id, f)
+    }
+
+    pub fn take_user_data<T: 'static>(&mut self) -> Option<T> {
+        self.assert_valid();
+        let v = self
+            .core
+            .take_body_user_data::<T>(self.id)
+            .expect("user data type mismatch");
+        if v.is_some() {
+            unsafe { ffi::b2Body_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        v
+    }
+
+    pub fn try_take_user_data<T: 'static>(&mut self) -> ApiResult<Option<T>> {
+        self.check_valid()?;
+        let v = self.core.take_body_user_data::<T>(self.id)?;
+        if v.is_some() {
+            unsafe { ffi::b2Body_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        Ok(v)
     }
 
     /// Borrow the raw id for ID-style APIs.

@@ -258,6 +258,87 @@ pub struct WorldHandle {
     _not_send_sync: core::marker::PhantomData<Rc<()>>,
 }
 
+/// A lightweight, thread-safe context passed to Box2D callbacks.
+///
+/// This type intentionally exposes only APIs that do not call into Box2D while the world is locked.
+#[derive(Clone)]
+pub struct CallbackWorld {
+    core: Arc<WorldCore>,
+}
+
+impl CallbackWorld {
+    pub(crate) fn new(core: Arc<WorldCore>) -> Self {
+        Self { core }
+    }
+
+    pub fn with_body_user_data<T: 'static + Sync, R>(
+        &self,
+        id: BodyId,
+        f: impl FnOnce(&T) -> R,
+    ) -> Option<R> {
+        self.core
+            .try_with_body_user_data(id, f)
+            .expect("user data type mismatch")
+    }
+
+    pub fn try_with_body_user_data<T: 'static + Sync, R>(
+        &self,
+        id: BodyId,
+        f: impl FnOnce(&T) -> R,
+    ) -> crate::error::ApiResult<Option<R>> {
+        self.core.try_with_body_user_data(id, f)
+    }
+
+    pub fn with_shape_user_data<T: 'static + Sync, R>(
+        &self,
+        id: ShapeId,
+        f: impl FnOnce(&T) -> R,
+    ) -> Option<R> {
+        self.core
+            .try_with_shape_user_data(id, f)
+            .expect("user data type mismatch")
+    }
+
+    pub fn try_with_shape_user_data<T: 'static + Sync, R>(
+        &self,
+        id: ShapeId,
+        f: impl FnOnce(&T) -> R,
+    ) -> crate::error::ApiResult<Option<R>> {
+        self.core.try_with_shape_user_data(id, f)
+    }
+
+    pub fn with_joint_user_data<T: 'static + Sync, R>(
+        &self,
+        id: JointId,
+        f: impl FnOnce(&T) -> R,
+    ) -> Option<R> {
+        self.core
+            .try_with_joint_user_data(id, f)
+            .expect("user data type mismatch")
+    }
+
+    pub fn try_with_joint_user_data<T: 'static + Sync, R>(
+        &self,
+        id: JointId,
+        f: impl FnOnce(&T) -> R,
+    ) -> crate::error::ApiResult<Option<R>> {
+        self.core.try_with_joint_user_data(id, f)
+    }
+
+    pub fn with_world_user_data<T: 'static + Sync, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
+        self.core
+            .try_with_world_user_data(f)
+            .expect("user data type mismatch")
+    }
+
+    pub fn try_with_world_user_data<T: 'static + Sync, R>(
+        &self,
+        f: impl FnOnce(&T) -> R,
+    ) -> crate::error::ApiResult<Option<R>> {
+        self.core.try_with_world_user_data(f)
+    }
+}
+
 impl WorldHandle {
     /// Expose raw world id for advanced use-cases.
     pub fn raw(&self) -> ffi::b2WorldId {
@@ -361,6 +442,77 @@ impl World {
 
     pub(crate) fn core_arc(&self) -> Arc<WorldCore> {
         Arc::clone(&self.core)
+    }
+
+    // --- Typed user data ---------------------------------------------------------
+    /// Set typed user data on this world.
+    ///
+    /// This stores a `Box<T>` internally and sets Box2D's user data pointer to it. The allocation
+    /// is automatically freed when cleared or when the world is dropped.
+    pub fn set_user_data<T: 'static>(&mut self, value: T) {
+        crate::core::callback_state::assert_not_in_callback();
+        let p = self.core.set_world_user_data(value);
+        unsafe { ffi::b2World_SetUserData(self.raw(), p) };
+    }
+
+    pub fn try_set_user_data<T: 'static>(&mut self, value: T) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        let p = self.core.set_world_user_data(value);
+        unsafe { ffi::b2World_SetUserData(self.raw(), p) };
+        Ok(())
+    }
+
+    /// Clear typed user data on this world. Returns whether any data was present.
+    pub fn clear_user_data(&mut self) -> bool {
+        crate::core::callback_state::assert_not_in_callback();
+        let had = unsafe { !ffi::b2World_GetUserData(self.raw()).is_null() };
+        unsafe { ffi::b2World_SetUserData(self.raw(), core::ptr::null_mut()) };
+        self.core.clear_world_user_data();
+        had
+    }
+
+    pub fn try_clear_user_data(&mut self) -> crate::error::ApiResult<bool> {
+        crate::core::callback_state::check_not_in_callback()?;
+        let had = unsafe { !ffi::b2World_GetUserData(self.raw()).is_null() };
+        unsafe { ffi::b2World_SetUserData(self.raw(), core::ptr::null_mut()) };
+        self.core.clear_world_user_data();
+        Ok(had)
+    }
+
+    pub fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
+        crate::core::callback_state::assert_not_in_callback();
+        self.core
+            .try_with_world_user_data(f)
+            .expect("user data type mismatch")
+    }
+
+    pub fn try_with_user_data<T: 'static, R>(
+        &self,
+        f: impl FnOnce(&T) -> R,
+    ) -> crate::error::ApiResult<Option<R>> {
+        crate::core::callback_state::check_not_in_callback()?;
+        self.core.try_with_world_user_data(f)
+    }
+
+    pub fn take_user_data<T: 'static>(&mut self) -> Option<T> {
+        crate::core::callback_state::assert_not_in_callback();
+        let v = self
+            .core
+            .take_world_user_data::<T>()
+            .expect("user data type mismatch");
+        if v.is_some() {
+            unsafe { ffi::b2World_SetUserData(self.raw(), core::ptr::null_mut()) };
+        }
+        v
+    }
+
+    pub fn try_take_user_data<T: 'static>(&mut self) -> crate::error::ApiResult<Option<T>> {
+        crate::core::callback_state::check_not_in_callback()?;
+        let v = self.core.take_world_user_data::<T>()?;
+        if v.is_some() {
+            unsafe { ffi::b2World_SetUserData(self.raw(), core::ptr::null_mut()) };
+        }
+        Ok(v)
     }
 
     /// Create a cheap, cloneable handle to this world.
@@ -978,6 +1130,7 @@ impl World {
             #[cfg(feature = "serialize")]
             self.core.cleanup_before_destroy_body(id);
             unsafe { ffi::b2DestroyBody(id) };
+            let _ = self.core.clear_body_user_data(id);
         }
     }
 
@@ -986,6 +1139,7 @@ impl World {
         #[cfg(feature = "serialize")]
         self.core.cleanup_before_destroy_body(id);
         unsafe { ffi::b2DestroyBody(id) };
+        let _ = self.core.clear_body_user_data(id);
         Ok(())
     }
 
@@ -1003,10 +1157,7 @@ impl World {
     pub fn joint<'w>(&'w mut self, id: JointId) -> Option<crate::joints::Joint<'w>> {
         crate::core::callback_state::assert_not_in_callback();
         if unsafe { ffi::b2Joint_IsValid(id) } {
-            Some(crate::joints::Joint {
-                id,
-                _world: core::marker::PhantomData,
-            })
+            Some(crate::joints::Joint::new(self.core_arc(), id))
         } else {
             None
         }
@@ -1097,11 +1248,14 @@ impl World {
     /// considered for collision if either shape has custom filtering enabled.
     /// Return false to disable the collision.
     ///
-    /// Note: Box2D runs this callback while the world is locked. Calling into `boxdd` APIs from
-    /// inside the closure will panic (to avoid re-entrant mutation of Box2D internals).
-    pub fn set_custom_filter<F>(&mut self, f: F)
+    /// Note: Box2D runs this callback while the world is locked. Use the provided `CallbackWorld`
+    /// context for operations that must be safe under this constraint (e.g. typed user data).
+    pub fn set_custom_filter_with_ctx<F>(&mut self, f: F)
     where
-        F: Fn(crate::types::ShapeId, crate::types::ShapeId) -> bool + Send + Sync + 'static,
+        F: Fn(&CallbackWorld, crate::types::ShapeId, crate::types::ShapeId) -> bool
+            + Send
+            + Sync
+            + 'static,
     {
         crate::core::callback_state::assert_not_in_callback();
         // Store the closure so its address is stable and lifetime tied to the world.
@@ -1130,7 +1284,8 @@ impl World {
             }
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let _g = crate::core::callback_state::CallbackGuard::enter();
-                (ctx.cb)(a, b)
+                let cw = CallbackWorld::new(Arc::clone(&core));
+                (ctx.cb)(&cw, a, b)
             })) {
                 Ok(v) => v,
                 Err(payload) => {
@@ -1156,6 +1311,14 @@ impl World {
             .expect("custom_filter mutex poisoned") = Some(ctx);
     }
 
+    /// Backwards-compatible custom filter API without a callback context.
+    pub fn set_custom_filter<F>(&mut self, f: F)
+    where
+        F: Fn(crate::types::ShapeId, crate::types::ShapeId) -> bool + Send + Sync + 'static,
+    {
+        self.set_custom_filter_with_ctx(move |_, a, b| f(a, b))
+    }
+
     /// Clear the custom filter callback and release associated resources.
     pub fn clear_custom_filter(&mut self) {
         crate::core::callback_state::assert_not_in_callback();
@@ -1170,11 +1333,12 @@ impl World {
     /// Register a thread-safe pre-solve closure. This is called after contact update (when enabled
     /// on shapes) and before the solver. Return false to disable the contact this step.
     ///
-    /// Note: Box2D runs this callback while the world is locked. Calling into `boxdd` APIs from
-    /// inside the closure will panic (to avoid re-entrant mutation of Box2D internals).
-    pub fn set_pre_solve<F>(&mut self, f: F)
+    /// Note: Box2D runs this callback while the world is locked. Use the provided `CallbackWorld`
+    /// context for operations that must be safe under this constraint (e.g. typed user data).
+    pub fn set_pre_solve_with_ctx<F>(&mut self, f: F)
     where
         F: Fn(
+                &CallbackWorld,
                 crate::types::ShapeId,
                 crate::types::ShapeId,
                 crate::types::Vec2,
@@ -1210,7 +1374,9 @@ impl World {
             }
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let _g = crate::core::callback_state::CallbackGuard::enter();
+                let cw = CallbackWorld::new(Arc::clone(&core));
                 (ctx.cb)(
+                    &cw,
                     a,
                     b,
                     crate::types::Vec2::from(point),
@@ -1239,6 +1405,22 @@ impl World {
             .pre_solve
             .lock()
             .expect("pre_solve mutex poisoned") = Some(ctx);
+    }
+
+    /// Backwards-compatible pre-solve API without a callback context.
+    pub fn set_pre_solve<F>(&mut self, f: F)
+    where
+        F: Fn(
+                crate::types::ShapeId,
+                crate::types::ShapeId,
+                crate::types::Vec2,
+                crate::types::Vec2,
+            ) -> bool
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.set_pre_solve_with_ctx(move |_, a, b, p, n| f(a, b, p, n))
     }
 
     /// Clear the pre-solve callback and release associated resources.
@@ -1631,6 +1813,7 @@ impl World {
         crate::core::callback_state::assert_not_in_callback();
         if unsafe { ffi::b2Shape_IsValid(shape) } {
             unsafe { ffi::b2DestroyShape(shape, update_body_mass) };
+            let _ = self.core.clear_shape_user_data(shape);
         }
         #[cfg(feature = "serialize")]
         {

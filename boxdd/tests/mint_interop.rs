@@ -68,4 +68,3 @@ fn transform_try_from_mint_rejects_scaled() {
     let err = Transform::try_from(m).unwrap_err();
     assert_eq!(err, TransformFromMintError::NotPureRotation);
 }
-

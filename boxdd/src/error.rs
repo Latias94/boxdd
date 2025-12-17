@@ -26,4 +26,7 @@ pub enum ApiError {
 
     #[error("string contains an interior NUL byte")]
     NulByteInString,
+
+    #[error("user data type mismatch")]
+    UserDataTypeMismatch,
 }

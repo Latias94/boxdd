@@ -93,12 +93,12 @@
 //! ```no_run
 //! use boxdd::prelude::*;
 //! let mut world = World::new(WorldDef::default()).unwrap();
-//! unsafe { world.with_contact_events_view(|begin, end, hit| {
+//! world.with_contact_events_view(|begin, end, hit| {
 //!     let _ = (begin.count(), end.count(), hit.count());
-//! })};
-//! unsafe { world.with_sensor_events_view(|beg, end| { let _ = (beg.count(), end.count()); })};
-//! unsafe { world.with_body_events_view(|moves| { for m in moves { let _ = (m.body_id(), m.fell_asleep()); } })};
-//! unsafe { world.with_joint_events_view(|j| { let _ = j.count(); })};
+//! });
+//! world.with_sensor_events_view(|beg, end| { let _ = (beg.count(), end.count()); });
+//! world.with_body_events_view(|moves| { for m in moves { let _ = (m.body_id(), m.fell_asleep()); } });
+//! world.with_joint_events_view(|j| { let _ = j.count(); });
 //! ```
 
 pub mod body;
@@ -127,6 +127,7 @@ pub mod core {
     pub mod math;
     #[cfg(feature = "serialize")]
     pub(crate) mod serialize_registry;
+    pub(crate) mod user_data;
     pub(crate) mod world_core;
 }
 
@@ -157,5 +158,6 @@ pub use shapes::chain::{Chain, ChainDef, ChainDefBuilder, OwnedChain};
 pub use shapes::{OwnedShape, Shape, ShapeDef, ShapeDefBuilder, SurfaceMaterial};
 pub use types::Vec2;
 pub use world::{
-    OutstandingOwnedHandles, OwnedHandleCounts, World, WorldBuilder, WorldDef, WorldHandle,
+    CallbackWorld, OutstandingOwnedHandles, OwnedHandleCounts, World, WorldBuilder, WorldDef,
+    WorldHandle,
 };

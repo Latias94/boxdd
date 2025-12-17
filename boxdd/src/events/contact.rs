@@ -188,46 +188,50 @@ impl World {
 
     /// Zero-copy view over contact events without exposing raw FFI types.
     ///
-    /// # Safety
-    /// This borrows internal Box2D buffers. While `f` runs, you must not perform any operation
-    /// that can mutate those buffers (including dropping `Owned*` handles that may destroy objects).
+    /// While `f` runs, dropping `Owned*` handles does not destroy bodies/shapes immediately; the
+    /// destruction is deferred until after the view ends to keep the borrowed buffers valid.
     ///
     /// Example
     /// ```rust
     /// use boxdd::prelude::*;
     /// let mut world = World::new(WorldDef::default()).unwrap();
-    /// unsafe { world.with_contact_events_view(|begin, end, hit| {
+    /// world.with_contact_events_view(|begin, end, hit| {
     ///     let nb = begin.count();
     ///     let ne = end.count();
     ///     let nh = hit.count();
     ///     assert!(nb + ne + nh >= 0);
-    /// })};
+    /// });
     /// ```
-    pub unsafe fn with_contact_events_view<T>(
+    pub fn with_contact_events_view<T>(
         &self,
         f: impl FnOnce(BeginIter<'_>, EndIter<'_>, HitIter<'_>) -> T,
     ) -> T {
         crate::core::callback_state::assert_not_in_callback();
-        let raw = unsafe { ffi::b2World_GetContactEvents(self.raw()) };
-        let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
-            unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
-        } else {
-            &[][..]
+        let out = {
+            let _borrow = self.core_arc().borrow_event_buffers();
+            let raw = unsafe { ffi::b2World_GetContactEvents(self.raw()) };
+            let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
+            } else {
+                &[][..]
+            };
+            let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
+            } else {
+                &[][..]
+            };
+            let hit = if raw.hitCount > 0 && !raw.hitEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.hitEvents, raw.hitCount as usize) }
+            } else {
+                &[][..]
+            };
+            f(
+                BeginIter(begin.iter()),
+                EndIter(end.iter()),
+                HitIter(hit.iter()),
+            )
         };
-        let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
-            unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
-        } else {
-            &[][..]
-        };
-        let hit = if raw.hitCount > 0 && !raw.hitEvents.is_null() {
-            unsafe { core::slice::from_raw_parts(raw.hitEvents, raw.hitCount as usize) }
-        } else {
-            &[][..]
-        };
-        f(
-            BeginIter(begin.iter()),
-            EndIter(end.iter()),
-            HitIter(hit.iter()),
-        )
+        self.core_arc().process_deferred_destroys();
+        out
     }
 }

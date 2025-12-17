@@ -151,7 +151,8 @@ impl OwnedChain {
 
     pub fn destroy(mut self) {
         if self.destroy_on_drop && unsafe { ffi::b2Chain_IsValid(self.id) } {
-            if crate::core::callback_state::in_callback() {
+            if crate::core::callback_state::in_callback() || self.core.events_buffers_are_borrowed()
+            {
                 self.core
                     .defer_destroy(crate::core::world_core::DeferredDestroy::Chain(self.id));
             } else {
@@ -173,7 +174,8 @@ impl Drop for OwnedChain {
             .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
         debug_assert!(prev > 0, "owned chain counter underflow");
         if self.destroy_on_drop && unsafe { ffi::b2Chain_IsValid(self.id) } {
-            if crate::core::callback_state::in_callback() {
+            if crate::core::callback_state::in_callback() || self.core.events_buffers_are_borrowed()
+            {
                 self.core
                     .defer_destroy(crate::core::world_core::DeferredDestroy::Chain(self.id));
             } else {

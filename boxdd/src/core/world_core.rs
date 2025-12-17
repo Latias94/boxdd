@@ -4,25 +4,30 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
+pub(crate) type CustomFilterCb = dyn Fn(&crate::world::CallbackWorld, crate::types::ShapeId, crate::types::ShapeId) -> bool
+    + Send
+    + Sync
+    + 'static;
+
+pub(crate) type PreSolveCb = dyn Fn(
+        &crate::world::CallbackWorld,
+        crate::types::ShapeId,
+        crate::types::ShapeId,
+        crate::types::Vec2,
+        crate::types::Vec2,
+    ) -> bool
+    + Send
+    + Sync
+    + 'static;
+
 pub(crate) struct CustomFilterCtx {
     pub(crate) core: Weak<WorldCore>,
-    pub(crate) cb:
-        Box<dyn Fn(crate::types::ShapeId, crate::types::ShapeId) -> bool + Send + Sync + 'static>,
+    pub(crate) cb: Box<CustomFilterCb>,
 }
 
 pub(crate) struct PreSolveCtx {
     pub(crate) core: Weak<WorldCore>,
-    pub(crate) cb: Box<
-        dyn Fn(
-                crate::types::ShapeId,
-                crate::types::ShapeId,
-                crate::types::Vec2,
-                crate::types::Vec2,
-            ) -> bool
-            + Send
-            + Sync
-            + 'static,
-    >,
+    pub(crate) cb: Box<PreSolveCb>,
 }
 
 pub(crate) struct WorldCore {
@@ -32,6 +37,8 @@ pub(crate) struct WorldCore {
     pub(crate) callback_panicked: AtomicBool,
     pub(crate) callback_panic: Mutex<Option<Box<dyn Any + Send + 'static>>>,
     pub(crate) deferred_destroys: Mutex<Vec<DeferredDestroy>>,
+    pub(crate) user_data: Mutex<crate::core::user_data::UserDataStore>,
+    pub(crate) borrowed_event_buffers: AtomicUsize,
     #[cfg(feature = "serialize")]
     pub(crate) registries: Mutex<crate::core::serialize_registry::Registries>,
     pub(crate) owned_bodies: AtomicUsize,
@@ -39,6 +46,13 @@ pub(crate) struct WorldCore {
     pub(crate) owned_joints: AtomicUsize,
     pub(crate) owned_chains: AtomicUsize,
 }
+
+// SAFETY: `WorldCore` contains only thread-safe primitives (atomics, mutexes) and is used as a
+// ref-counted lifetime anchor. Box2D itself is not thread-safe; the public API prevents sending
+// `World` / owned handles across threads. `CallbackWorld` exposes only operations that do not call
+// into Box2D while the world is locked.
+unsafe impl Send for WorldCore {}
+unsafe impl Sync for WorldCore {}
 
 #[derive(Clone, Debug)]
 pub(crate) enum DeferredDestroy {
@@ -63,6 +77,8 @@ impl WorldCore {
             callback_panicked: AtomicBool::new(false),
             callback_panic: Mutex::new(None),
             deferred_destroys: Mutex::new(Vec::new()),
+            user_data: Mutex::new(crate::core::user_data::UserDataStore::default()),
+            borrowed_event_buffers: AtomicUsize::new(0),
             #[cfg(feature = "serialize")]
             registries: Mutex::new(crate::core::serialize_registry::Registries::default()),
             owned_bodies: AtomicUsize::new(0),
@@ -86,6 +102,17 @@ impl WorldCore {
             .lock()
             .expect("deferred_destroys mutex poisoned")
             .push(d);
+    }
+
+    pub(crate) fn events_buffers_are_borrowed(&self) -> bool {
+        self.borrowed_event_buffers.load(Ordering::Relaxed) > 0
+    }
+
+    pub(crate) fn borrow_event_buffers(self: &Arc<Self>) -> BorrowedEventBuffersGuard {
+        self.borrowed_event_buffers.fetch_add(1, Ordering::Relaxed);
+        BorrowedEventBuffersGuard {
+            core: Arc::clone(self),
+        }
     }
 
     pub(crate) fn process_deferred_destroys(&self) {
@@ -113,6 +140,13 @@ impl WorldCore {
                         }
                         unsafe { ffi::b2DestroyBody(id) };
                     }
+                    let old = self
+                        .user_data
+                        .lock()
+                        .expect("user_data mutex poisoned")
+                        .bodies
+                        .remove(&crate::core::user_data::IdKey::from(id));
+                    drop(old);
                 }
                 DeferredDestroy::Shape {
                     id,
@@ -128,11 +162,25 @@ impl WorldCore {
                                 .remove_shape_flags(id);
                         }
                     }
+                    let old = self
+                        .user_data
+                        .lock()
+                        .expect("user_data mutex poisoned")
+                        .shapes
+                        .remove(&crate::core::user_data::IdKey::from(id));
+                    drop(old);
                 }
                 DeferredDestroy::Joint { id, wake_bodies } => {
                     if unsafe { ffi::b2Joint_IsValid(id) } {
                         unsafe { ffi::b2DestroyJoint(id, wake_bodies) };
                     }
+                    let old = self
+                        .user_data
+                        .lock()
+                        .expect("user_data mutex poisoned")
+                        .joints
+                        .remove(&crate::core::user_data::IdKey::from(id));
+                    drop(old);
                 }
                 DeferredDestroy::Chain(id) => {
                     if unsafe { ffi::b2Chain_IsValid(id) } {
@@ -146,6 +194,318 @@ impl WorldCore {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    pub(crate) fn clear_world_user_data(&self) -> bool {
+        let old = self
+            .user_data
+            .lock()
+            .expect("user_data mutex poisoned")
+            .world
+            .take();
+        let had = old.is_some();
+        drop(old);
+        had
+    }
+
+    pub(crate) fn clear_body_user_data(&self, id: ffi::b2BodyId) -> bool {
+        let old = self
+            .user_data
+            .lock()
+            .expect("user_data mutex poisoned")
+            .bodies
+            .remove(&crate::core::user_data::IdKey::from(id));
+        let had = old.is_some();
+        drop(old);
+        had
+    }
+
+    pub(crate) fn clear_shape_user_data(&self, id: ffi::b2ShapeId) -> bool {
+        let old = self
+            .user_data
+            .lock()
+            .expect("user_data mutex poisoned")
+            .shapes
+            .remove(&crate::core::user_data::IdKey::from(id));
+        let had = old.is_some();
+        drop(old);
+        had
+    }
+
+    pub(crate) fn clear_joint_user_data(&self, id: ffi::b2JointId) -> bool {
+        let old = self
+            .user_data
+            .lock()
+            .expect("user_data mutex poisoned")
+            .joints
+            .remove(&crate::core::user_data::IdKey::from(id));
+        let had = old.is_some();
+        drop(old);
+        had
+    }
+
+    pub(crate) fn set_world_user_data<T: 'static>(&self, value: T) -> *mut core::ffi::c_void {
+        let new = crate::core::user_data::ErasedUserData::new(value);
+        let ptr = new.as_ptr();
+        let old = {
+            let mut s = self.user_data.lock().expect("user_data mutex poisoned");
+            s.world.replace(new)
+        };
+        drop(old);
+        ptr
+    }
+
+    pub(crate) fn set_body_user_data<T: 'static>(
+        &self,
+        id: ffi::b2BodyId,
+        value: T,
+    ) -> *mut core::ffi::c_void {
+        let key = crate::core::user_data::IdKey::from(id);
+        let new = crate::core::user_data::ErasedUserData::new(value);
+        let ptr = new.as_ptr();
+        let old = {
+            let mut s = self.user_data.lock().expect("user_data mutex poisoned");
+            s.bodies.insert(key, new)
+        };
+        drop(old);
+        ptr
+    }
+
+    pub(crate) fn set_shape_user_data<T: 'static>(
+        &self,
+        id: ffi::b2ShapeId,
+        value: T,
+    ) -> *mut core::ffi::c_void {
+        let key = crate::core::user_data::IdKey::from(id);
+        let new = crate::core::user_data::ErasedUserData::new(value);
+        let ptr = new.as_ptr();
+        let old = {
+            let mut s = self.user_data.lock().expect("user_data mutex poisoned");
+            s.shapes.insert(key, new)
+        };
+        drop(old);
+        ptr
+    }
+
+    pub(crate) fn set_joint_user_data<T: 'static>(
+        &self,
+        id: ffi::b2JointId,
+        value: T,
+    ) -> *mut core::ffi::c_void {
+        let key = crate::core::user_data::IdKey::from(id);
+        let new = crate::core::user_data::ErasedUserData::new(value);
+        let ptr = new.as_ptr();
+        let old = {
+            let mut s = self.user_data.lock().expect("user_data mutex poisoned");
+            s.joints.insert(key, new)
+        };
+        drop(old);
+        ptr
+    }
+
+    pub(crate) fn try_with_world_user_data<T: 'static, R>(
+        &self,
+        f: impl FnOnce(&T) -> R,
+    ) -> crate::error::ApiResult<Option<R>> {
+        let s = self.user_data.lock().expect("user_data mutex poisoned");
+        let Some(e) = s.world.as_ref() else {
+            return Ok(None);
+        };
+        if !e.matches::<T>() {
+            return Err(crate::error::ApiError::UserDataTypeMismatch);
+        }
+        Ok(Some(e.with_ref(f).expect("type checked")))
+    }
+
+    pub(crate) fn try_with_body_user_data<T: 'static, R>(
+        &self,
+        id: ffi::b2BodyId,
+        f: impl FnOnce(&T) -> R,
+    ) -> crate::error::ApiResult<Option<R>> {
+        let key = crate::core::user_data::IdKey::from(id);
+        let s = self.user_data.lock().expect("user_data mutex poisoned");
+        let Some(e) = s.bodies.get(&key) else {
+            return Ok(None);
+        };
+        if !e.matches::<T>() {
+            return Err(crate::error::ApiError::UserDataTypeMismatch);
+        }
+        Ok(Some(e.with_ref(f).expect("type checked")))
+    }
+
+    pub(crate) fn try_with_shape_user_data<T: 'static, R>(
+        &self,
+        id: ffi::b2ShapeId,
+        f: impl FnOnce(&T) -> R,
+    ) -> crate::error::ApiResult<Option<R>> {
+        let key = crate::core::user_data::IdKey::from(id);
+        let s = self.user_data.lock().expect("user_data mutex poisoned");
+        let Some(e) = s.shapes.get(&key) else {
+            return Ok(None);
+        };
+        if !e.matches::<T>() {
+            return Err(crate::error::ApiError::UserDataTypeMismatch);
+        }
+        Ok(Some(e.with_ref(f).expect("type checked")))
+    }
+
+    pub(crate) fn try_with_joint_user_data<T: 'static, R>(
+        &self,
+        id: ffi::b2JointId,
+        f: impl FnOnce(&T) -> R,
+    ) -> crate::error::ApiResult<Option<R>> {
+        let key = crate::core::user_data::IdKey::from(id);
+        let s = self.user_data.lock().expect("user_data mutex poisoned");
+        let Some(e) = s.joints.get(&key) else {
+            return Ok(None);
+        };
+        if !e.matches::<T>() {
+            return Err(crate::error::ApiError::UserDataTypeMismatch);
+        }
+        Ok(Some(e.with_ref(f).expect("type checked")))
+    }
+
+    pub(crate) fn try_with_body_user_data_mut<T: 'static, R>(
+        &self,
+        id: ffi::b2BodyId,
+        f: impl FnOnce(&mut T) -> R,
+    ) -> crate::error::ApiResult<Option<R>> {
+        let key = crate::core::user_data::IdKey::from(id);
+        let mut s = self.user_data.lock().expect("user_data mutex poisoned");
+        let Some(e) = s.bodies.get_mut(&key) else {
+            return Ok(None);
+        };
+        if !e.matches::<T>() {
+            return Err(crate::error::ApiError::UserDataTypeMismatch);
+        }
+        Ok(Some(e.with_mut(f).expect("type checked")))
+    }
+
+    pub(crate) fn try_with_shape_user_data_mut<T: 'static, R>(
+        &self,
+        id: ffi::b2ShapeId,
+        f: impl FnOnce(&mut T) -> R,
+    ) -> crate::error::ApiResult<Option<R>> {
+        let key = crate::core::user_data::IdKey::from(id);
+        let mut s = self.user_data.lock().expect("user_data mutex poisoned");
+        let Some(e) = s.shapes.get_mut(&key) else {
+            return Ok(None);
+        };
+        if !e.matches::<T>() {
+            return Err(crate::error::ApiError::UserDataTypeMismatch);
+        }
+        Ok(Some(e.with_mut(f).expect("type checked")))
+    }
+
+    pub(crate) fn try_with_joint_user_data_mut<T: 'static, R>(
+        &self,
+        id: ffi::b2JointId,
+        f: impl FnOnce(&mut T) -> R,
+    ) -> crate::error::ApiResult<Option<R>> {
+        let key = crate::core::user_data::IdKey::from(id);
+        let mut s = self.user_data.lock().expect("user_data mutex poisoned");
+        let Some(e) = s.joints.get_mut(&key) else {
+            return Ok(None);
+        };
+        if !e.matches::<T>() {
+            return Err(crate::error::ApiError::UserDataTypeMismatch);
+        }
+        Ok(Some(e.with_mut(f).expect("type checked")))
+    }
+
+    pub(crate) fn take_world_user_data<T: 'static>(&self) -> crate::error::ApiResult<Option<T>> {
+        let old = self
+            .user_data
+            .lock()
+            .expect("user_data mutex poisoned")
+            .world
+            .take();
+        let Some(old) = old else { return Ok(None) };
+        match old.try_into_value::<T>() {
+            Ok(v) => Ok(Some(v)),
+            Err(old) => {
+                self.user_data
+                    .lock()
+                    .expect("user_data mutex poisoned")
+                    .world = Some(old);
+                Err(crate::error::ApiError::UserDataTypeMismatch)
+            }
+        }
+    }
+
+    pub(crate) fn take_body_user_data<T: 'static>(
+        &self,
+        id: ffi::b2BodyId,
+    ) -> crate::error::ApiResult<Option<T>> {
+        let key = crate::core::user_data::IdKey::from(id);
+        let old = self
+            .user_data
+            .lock()
+            .expect("user_data mutex poisoned")
+            .bodies
+            .remove(&key);
+        let Some(old) = old else { return Ok(None) };
+        match old.try_into_value::<T>() {
+            Ok(v) => Ok(Some(v)),
+            Err(old) => {
+                self.user_data
+                    .lock()
+                    .expect("user_data mutex poisoned")
+                    .bodies
+                    .insert(key, old);
+                Err(crate::error::ApiError::UserDataTypeMismatch)
+            }
+        }
+    }
+
+    pub(crate) fn take_shape_user_data<T: 'static>(
+        &self,
+        id: ffi::b2ShapeId,
+    ) -> crate::error::ApiResult<Option<T>> {
+        let key = crate::core::user_data::IdKey::from(id);
+        let old = self
+            .user_data
+            .lock()
+            .expect("user_data mutex poisoned")
+            .shapes
+            .remove(&key);
+        let Some(old) = old else { return Ok(None) };
+        match old.try_into_value::<T>() {
+            Ok(v) => Ok(Some(v)),
+            Err(old) => {
+                self.user_data
+                    .lock()
+                    .expect("user_data mutex poisoned")
+                    .shapes
+                    .insert(key, old);
+                Err(crate::error::ApiError::UserDataTypeMismatch)
+            }
+        }
+    }
+
+    pub(crate) fn take_joint_user_data<T: 'static>(
+        &self,
+        id: ffi::b2JointId,
+    ) -> crate::error::ApiResult<Option<T>> {
+        let key = crate::core::user_data::IdKey::from(id);
+        let old = self
+            .user_data
+            .lock()
+            .expect("user_data mutex poisoned")
+            .joints
+            .remove(&key);
+        let Some(old) = old else { return Ok(None) };
+        match old.try_into_value::<T>() {
+            Ok(v) => Ok(Some(v)),
+            Err(old) => {
+                self.user_data
+                    .lock()
+                    .expect("user_data mutex poisoned")
+                    .joints
+                    .insert(key, old);
+                Err(crate::error::ApiError::UserDataTypeMismatch)
             }
         }
     }
@@ -204,8 +564,23 @@ impl WorldCore {
     }
 }
 
+pub(crate) struct BorrowedEventBuffersGuard {
+    core: Arc<WorldCore>,
+}
+
+impl Drop for BorrowedEventBuffersGuard {
+    fn drop(&mut self) {
+        let prev = self
+            .core
+            .borrowed_event_buffers
+            .fetch_sub(1, Ordering::Relaxed);
+        debug_assert!(prev > 0, "borrowed_event_buffers counter underflow");
+    }
+}
+
 impl Drop for WorldCore {
     fn drop(&mut self) {
+        self.clear_world_user_data();
         let _guard = crate::core::box2d_lock::lock();
         // SAFETY: `WorldCore` owns the Box2D world id; only the last Arc drops it.
         unsafe { ffi::b2DestroyWorld(self.id) };

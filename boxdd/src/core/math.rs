@@ -353,10 +353,7 @@ impl From<Transform> for mint::RowMatrix3x2<f32> {
         Self {
             x: mint::Vector2 { x: c, y: -s },
             y: mint::Vector2 { x: s, y: c },
-            z: mint::Vector2 {
-                x: t.p.x,
-                y: t.p.y,
-            },
+            z: mint::Vector2 { x: t.p.x, y: t.p.y },
         }
     }
 }
@@ -430,7 +427,11 @@ impl From<Transform> for mint::RowMatrix2x3<f32> {
                 y: -s,
                 z: t.p.x,
             },
-            y: mint::Vector3 { x: s, y: c, z: t.p.y },
+            y: mint::Vector3 {
+                x: s,
+                y: c,
+                z: t.p.y,
+            },
         }
     }
 }

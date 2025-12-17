@@ -29,8 +29,6 @@ pub use revolute::{RevoluteJointBuilder, RevoluteJointDef};
 pub use weld::{WeldJointBuilder, WeldJointDef};
 pub use wheel::{WheelJointBuilder, WheelJointDef};
 
-use std::marker::PhantomData;
-
 use crate::error::ApiResult;
 use crate::types::{BodyId, JointId, Vec2};
 use crate::world::World;
@@ -143,10 +141,7 @@ impl World {
         crate::core::callback_state::assert_not_in_callback();
         assert_joint_def_bodies_valid(&def.0.base);
         let id = unsafe { ffi::b2CreateDistanceJoint(self.raw(), &def.0) };
-        Joint {
-            id,
-            _world: PhantomData,
-        }
+        Joint::new(self.core_arc(), id)
     }
     pub fn create_distance_joint_id(&mut self, def: &DistanceJointDef) -> JointId {
         crate::core::callback_state::assert_not_in_callback();
@@ -164,10 +159,7 @@ impl World {
     ) -> ApiResult<Joint<'w>> {
         check_joint_def_bodies_valid(&def.0.base)?;
         let id = unsafe { ffi::b2CreateDistanceJoint(self.raw(), &def.0) };
-        Ok(Joint {
-            id,
-            _world: PhantomData,
-        })
+        Ok(Joint::new(self.core_arc(), id))
     }
     pub fn try_create_distance_joint_id(&mut self, def: &DistanceJointDef) -> ApiResult<JointId> {
         check_joint_def_bodies_valid(&def.0.base)?;
@@ -185,10 +177,7 @@ impl World {
         crate::core::callback_state::assert_not_in_callback();
         assert_joint_def_bodies_valid(&def.0.base);
         let id = unsafe { ffi::b2CreateRevoluteJoint(self.raw(), &def.0) };
-        Joint {
-            id,
-            _world: PhantomData,
-        }
+        Joint::new(self.core_arc(), id)
     }
     pub fn create_revolute_joint_id(&mut self, def: &RevoluteJointDef) -> JointId {
         crate::core::callback_state::assert_not_in_callback();
@@ -206,10 +195,7 @@ impl World {
     ) -> ApiResult<Joint<'w>> {
         check_joint_def_bodies_valid(&def.0.base)?;
         let id = unsafe { ffi::b2CreateRevoluteJoint(self.raw(), &def.0) };
-        Ok(Joint {
-            id,
-            _world: PhantomData,
-        })
+        Ok(Joint::new(self.core_arc(), id))
     }
     pub fn try_create_revolute_joint_id(&mut self, def: &RevoluteJointDef) -> ApiResult<JointId> {
         check_joint_def_bodies_valid(&def.0.base)?;
@@ -227,10 +213,7 @@ impl World {
         crate::core::callback_state::assert_not_in_callback();
         assert_joint_def_bodies_valid(&def.0.base);
         let id = unsafe { ffi::b2CreatePrismaticJoint(self.raw(), &def.0) };
-        Joint {
-            id,
-            _world: PhantomData,
-        }
+        Joint::new(self.core_arc(), id)
     }
     pub fn create_prismatic_joint_id(&mut self, def: &PrismaticJointDef) -> JointId {
         crate::core::callback_state::assert_not_in_callback();
@@ -248,10 +231,7 @@ impl World {
     ) -> ApiResult<Joint<'w>> {
         check_joint_def_bodies_valid(&def.0.base)?;
         let id = unsafe { ffi::b2CreatePrismaticJoint(self.raw(), &def.0) };
-        Ok(Joint {
-            id,
-            _world: PhantomData,
-        })
+        Ok(Joint::new(self.core_arc(), id))
     }
     pub fn try_create_prismatic_joint_id(&mut self, def: &PrismaticJointDef) -> ApiResult<JointId> {
         check_joint_def_bodies_valid(&def.0.base)?;
@@ -269,10 +249,7 @@ impl World {
         crate::core::callback_state::assert_not_in_callback();
         assert_joint_def_bodies_valid(&def.0.base);
         let id = unsafe { ffi::b2CreateWheelJoint(self.raw(), &def.0) };
-        Joint {
-            id,
-            _world: PhantomData,
-        }
+        Joint::new(self.core_arc(), id)
     }
     pub fn create_wheel_joint_id(&mut self, def: &WheelJointDef) -> JointId {
         crate::core::callback_state::assert_not_in_callback();
@@ -287,10 +264,7 @@ impl World {
     pub fn try_create_wheel_joint<'w>(&'w mut self, def: &WheelJointDef) -> ApiResult<Joint<'w>> {
         check_joint_def_bodies_valid(&def.0.base)?;
         let id = unsafe { ffi::b2CreateWheelJoint(self.raw(), &def.0) };
-        Ok(Joint {
-            id,
-            _world: PhantomData,
-        })
+        Ok(Joint::new(self.core_arc(), id))
     }
     pub fn try_create_wheel_joint_id(&mut self, def: &WheelJointDef) -> ApiResult<JointId> {
         check_joint_def_bodies_valid(&def.0.base)?;
@@ -305,10 +279,7 @@ impl World {
         crate::core::callback_state::assert_not_in_callback();
         assert_joint_def_bodies_valid(&def.0.base);
         let id = unsafe { ffi::b2CreateWeldJoint(self.raw(), &def.0) };
-        Joint {
-            id,
-            _world: PhantomData,
-        }
+        Joint::new(self.core_arc(), id)
     }
     pub fn create_weld_joint_id(&mut self, def: &WeldJointDef) -> JointId {
         crate::core::callback_state::assert_not_in_callback();
@@ -323,10 +294,7 @@ impl World {
     pub fn try_create_weld_joint<'w>(&'w mut self, def: &WeldJointDef) -> ApiResult<Joint<'w>> {
         check_joint_def_bodies_valid(&def.0.base)?;
         let id = unsafe { ffi::b2CreateWeldJoint(self.raw(), &def.0) };
-        Ok(Joint {
-            id,
-            _world: PhantomData,
-        })
+        Ok(Joint::new(self.core_arc(), id))
     }
     pub fn try_create_weld_joint_id(&mut self, def: &WeldJointDef) -> ApiResult<JointId> {
         check_joint_def_bodies_valid(&def.0.base)?;
@@ -341,10 +309,7 @@ impl World {
         crate::core::callback_state::assert_not_in_callback();
         assert_joint_def_bodies_valid(&def.0.base);
         let id = unsafe { ffi::b2CreateMotorJoint(self.raw(), &def.0) };
-        Joint {
-            id,
-            _world: PhantomData,
-        }
+        Joint::new(self.core_arc(), id)
     }
     pub fn create_motor_joint_id(&mut self, def: &MotorJointDef) -> JointId {
         crate::core::callback_state::assert_not_in_callback();
@@ -359,10 +324,7 @@ impl World {
     pub fn try_create_motor_joint<'w>(&'w mut self, def: &MotorJointDef) -> ApiResult<Joint<'w>> {
         check_joint_def_bodies_valid(&def.0.base)?;
         let id = unsafe { ffi::b2CreateMotorJoint(self.raw(), &def.0) };
-        Ok(Joint {
-            id,
-            _world: PhantomData,
-        })
+        Ok(Joint::new(self.core_arc(), id))
     }
     pub fn try_create_motor_joint_id(&mut self, def: &MotorJointDef) -> ApiResult<JointId> {
         check_joint_def_bodies_valid(&def.0.base)?;
@@ -377,10 +339,7 @@ impl World {
         crate::core::callback_state::assert_not_in_callback();
         assert_joint_def_bodies_valid(&def.0.base);
         let id = unsafe { ffi::b2CreateFilterJoint(self.raw(), &def.0) };
-        Joint {
-            id,
-            _world: PhantomData,
-        }
+        Joint::new(self.core_arc(), id)
     }
     pub fn create_filter_joint_id(&mut self, def: &FilterJointDef) -> JointId {
         crate::core::callback_state::assert_not_in_callback();
@@ -395,10 +354,7 @@ impl World {
     pub fn try_create_filter_joint<'w>(&'w mut self, def: &FilterJointDef) -> ApiResult<Joint<'w>> {
         check_joint_def_bodies_valid(&def.0.base)?;
         let id = unsafe { ffi::b2CreateFilterJoint(self.raw(), &def.0) };
-        Ok(Joint {
-            id,
-            _world: PhantomData,
-        })
+        Ok(Joint::new(self.core_arc(), id))
     }
     pub fn try_create_filter_joint_id(&mut self, def: &FilterJointDef) -> ApiResult<JointId> {
         check_joint_def_bodies_valid(&def.0.base)?;
@@ -413,12 +369,14 @@ impl World {
         crate::core::callback_state::assert_not_in_callback();
         if unsafe { ffi::b2Joint_IsValid(id) } {
             unsafe { ffi::b2DestroyJoint(id, wake_bodies) };
+            let _ = self.core_arc().clear_joint_user_data(id);
         }
     }
 
     pub fn try_destroy_joint_id(&mut self, id: JointId, wake_bodies: bool) -> ApiResult<()> {
         check_joint_valid(id)?;
         unsafe { ffi::b2DestroyJoint(id, wake_bodies) };
+        let _ = self.core_arc().clear_joint_user_data(id);
         Ok(())
     }
 }

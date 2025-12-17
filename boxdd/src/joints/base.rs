@@ -7,13 +7,20 @@ use crate::error::ApiResult;
 use crate::types::{BodyId, JointId, Vec2};
 use crate::world::World;
 use boxdd_sys::ffi;
+use std::fmt;
 use std::os::raw::c_void;
 
 /// A scoped joint handle tied to a mutable borrow of the world.
-#[derive(Debug)]
 pub struct Joint<'w> {
     pub(crate) id: ffi::b2JointId,
+    pub(crate) core: Arc<crate::core::world_core::WorldCore>,
     pub(crate) _world: PhantomData<&'w World>,
+}
+
+impl fmt::Debug for Joint<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Joint").field("id", &self.id).finish()
+    }
 }
 
 /// A RAII-owned joint that is destroyed on drop.
@@ -150,6 +157,7 @@ impl OwnedJoint {
     /// The caller must ensure that `p` is valid for as long as Box2D may read it.
     pub unsafe fn set_user_data_ptr(&mut self, p: *mut c_void) {
         self.assert_valid();
+        let _ = self.core.clear_joint_user_data(self.id);
         unsafe { ffi::b2Joint_SetUserData(self.id, p) }
     }
     /// Set an opaque user data pointer on this joint.
@@ -158,6 +166,7 @@ impl OwnedJoint {
     /// Same safety contract as `set_user_data_ptr`.
     pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut c_void) -> ApiResult<()> {
         self.check_valid()?;
+        let _ = self.core.clear_joint_user_data(self.id);
         unsafe { ffi::b2Joint_SetUserData(self.id, p) }
         Ok(())
     }
@@ -169,6 +178,93 @@ impl OwnedJoint {
     pub fn try_user_data_ptr(&self) -> ApiResult<*mut c_void> {
         self.check_valid()?;
         Ok(unsafe { ffi::b2Joint_GetUserData(self.id) })
+    }
+
+    /// Set typed user data on this joint.
+    ///
+    /// This stores a `Box<T>` internally and sets Box2D's user data pointer to it. The allocation
+    /// is automatically freed when cleared or when the joint is destroyed.
+    pub fn set_user_data<T: 'static>(&mut self, value: T) {
+        self.assert_valid();
+        let p = self.core.set_joint_user_data(self.id, value);
+        unsafe { ffi::b2Joint_SetUserData(self.id, p) };
+    }
+
+    pub fn try_set_user_data<T: 'static>(&mut self, value: T) -> ApiResult<()> {
+        self.check_valid()?;
+        let p = self.core.set_joint_user_data(self.id, value);
+        unsafe { ffi::b2Joint_SetUserData(self.id, p) };
+        Ok(())
+    }
+
+    /// Clear typed user data on this joint. Returns whether any typed data was present.
+    pub fn clear_user_data(&mut self) -> bool {
+        self.assert_valid();
+        let had = self.core.clear_joint_user_data(self.id);
+        if had {
+            unsafe { ffi::b2Joint_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        had
+    }
+
+    pub fn try_clear_user_data(&mut self) -> ApiResult<bool> {
+        self.check_valid()?;
+        let had = self.core.clear_joint_user_data(self.id);
+        if had {
+            unsafe { ffi::b2Joint_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        Ok(had)
+    }
+
+    pub fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
+        self.assert_valid();
+        self.core
+            .try_with_joint_user_data(self.id, f)
+            .expect("user data type mismatch")
+    }
+
+    pub fn try_with_user_data<T: 'static, R>(
+        &self,
+        f: impl FnOnce(&T) -> R,
+    ) -> ApiResult<Option<R>> {
+        self.check_valid()?;
+        self.core.try_with_joint_user_data(self.id, f)
+    }
+
+    pub fn with_user_data_mut<T: 'static, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
+        self.assert_valid();
+        self.core
+            .try_with_joint_user_data_mut(self.id, f)
+            .expect("user data type mismatch")
+    }
+
+    pub fn try_with_user_data_mut<T: 'static, R>(
+        &mut self,
+        f: impl FnOnce(&mut T) -> R,
+    ) -> ApiResult<Option<R>> {
+        self.check_valid()?;
+        self.core.try_with_joint_user_data_mut(self.id, f)
+    }
+
+    pub fn take_user_data<T: 'static>(&mut self) -> Option<T> {
+        self.assert_valid();
+        let v = self
+            .core
+            .take_joint_user_data::<T>(self.id)
+            .expect("user data type mismatch");
+        if v.is_some() {
+            unsafe { ffi::b2Joint_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        v
+    }
+
+    pub fn try_take_user_data<T: 'static>(&mut self) -> ApiResult<Option<T>> {
+        self.check_valid()?;
+        let v = self.core.take_joint_user_data::<T>(self.id)?;
+        if v.is_some() {
+            unsafe { ffi::b2Joint_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        Ok(v)
     }
 
     pub fn wake_bodies_on_drop(mut self, flag: bool) -> Self {
@@ -183,7 +279,8 @@ impl OwnedJoint {
 
     pub fn destroy(mut self, wake_bodies: bool) {
         if self.destroy_on_drop && unsafe { ffi::b2Joint_IsValid(self.id) } {
-            if crate::core::callback_state::in_callback() {
+            if crate::core::callback_state::in_callback() || self.core.events_buffers_are_borrowed()
+            {
                 self.core
                     .defer_destroy(crate::core::world_core::DeferredDestroy::Joint {
                         id: self.id,
@@ -191,6 +288,7 @@ impl OwnedJoint {
                     });
             } else {
                 unsafe { ffi::b2DestroyJoint(self.id, wake_bodies) };
+                let _ = self.core.clear_joint_user_data(self.id);
             }
         }
         self.destroy_on_drop = false;
@@ -206,7 +304,8 @@ impl Drop for OwnedJoint {
             .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
         debug_assert!(prev > 0, "owned joint counter underflow");
         if self.destroy_on_drop && unsafe { ffi::b2Joint_IsValid(self.id) } {
-            if crate::core::callback_state::in_callback() {
+            if crate::core::callback_state::in_callback() || self.core.events_buffers_are_borrowed()
+            {
                 self.core
                     .defer_destroy(crate::core::world_core::DeferredDestroy::Joint {
                         id: self.id,
@@ -214,12 +313,21 @@ impl Drop for OwnedJoint {
                     });
             } else {
                 unsafe { ffi::b2DestroyJoint(self.id, self.wake_bodies_on_drop) };
+                let _ = self.core.clear_joint_user_data(self.id);
             }
         }
     }
 }
 
 impl<'w> Joint<'w> {
+    pub(crate) fn new(core: Arc<crate::core::world_core::WorldCore>, id: JointId) -> Self {
+        Self {
+            id,
+            core,
+            _world: PhantomData,
+        }
+    }
+
     #[inline]
     fn assert_valid(&self) {
         crate::core::debug_checks::assert_joint_valid(self.id);
@@ -329,6 +437,7 @@ impl<'w> Joint<'w> {
     /// The caller must ensure that `p` is valid for as long as Box2D may read it.
     pub unsafe fn set_user_data_ptr(&mut self, p: *mut c_void) {
         self.assert_valid();
+        let _ = self.core.clear_joint_user_data(self.id);
         unsafe { ffi::b2Joint_SetUserData(self.id, p) }
     }
     /// Set an opaque user data pointer on this joint.
@@ -337,6 +446,7 @@ impl<'w> Joint<'w> {
     /// Same safety contract as `set_user_data_ptr`.
     pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut c_void) -> ApiResult<()> {
         self.check_valid()?;
+        let _ = self.core.clear_joint_user_data(self.id);
         unsafe { ffi::b2Joint_SetUserData(self.id, p) }
         Ok(())
     }
@@ -350,11 +460,99 @@ impl<'w> Joint<'w> {
         Ok(unsafe { ffi::b2Joint_GetUserData(self.id) })
     }
 
+    /// Set typed user data on this joint.
+    ///
+    /// This stores a `Box<T>` internally and sets Box2D's user data pointer to it. The allocation
+    /// is automatically freed when cleared or when the joint is destroyed.
+    pub fn set_user_data<T: 'static>(&mut self, value: T) {
+        self.assert_valid();
+        let p = self.core.set_joint_user_data(self.id, value);
+        unsafe { ffi::b2Joint_SetUserData(self.id, p) };
+    }
+
+    pub fn try_set_user_data<T: 'static>(&mut self, value: T) -> ApiResult<()> {
+        self.check_valid()?;
+        let p = self.core.set_joint_user_data(self.id, value);
+        unsafe { ffi::b2Joint_SetUserData(self.id, p) };
+        Ok(())
+    }
+
+    /// Clear typed user data on this joint. Returns whether any typed data was present.
+    pub fn clear_user_data(&mut self) -> bool {
+        self.assert_valid();
+        let had = self.core.clear_joint_user_data(self.id);
+        if had {
+            unsafe { ffi::b2Joint_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        had
+    }
+
+    pub fn try_clear_user_data(&mut self) -> ApiResult<bool> {
+        self.check_valid()?;
+        let had = self.core.clear_joint_user_data(self.id);
+        if had {
+            unsafe { ffi::b2Joint_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        Ok(had)
+    }
+
+    pub fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
+        self.assert_valid();
+        self.core
+            .try_with_joint_user_data(self.id, f)
+            .expect("user data type mismatch")
+    }
+
+    pub fn try_with_user_data<T: 'static, R>(
+        &self,
+        f: impl FnOnce(&T) -> R,
+    ) -> ApiResult<Option<R>> {
+        self.check_valid()?;
+        self.core.try_with_joint_user_data(self.id, f)
+    }
+
+    pub fn with_user_data_mut<T: 'static, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
+        self.assert_valid();
+        self.core
+            .try_with_joint_user_data_mut(self.id, f)
+            .expect("user data type mismatch")
+    }
+
+    pub fn try_with_user_data_mut<T: 'static, R>(
+        &mut self,
+        f: impl FnOnce(&mut T) -> R,
+    ) -> ApiResult<Option<R>> {
+        self.check_valid()?;
+        self.core.try_with_joint_user_data_mut(self.id, f)
+    }
+
+    pub fn take_user_data<T: 'static>(&mut self) -> Option<T> {
+        self.assert_valid();
+        let v = self
+            .core
+            .take_joint_user_data::<T>(self.id)
+            .expect("user data type mismatch");
+        if v.is_some() {
+            unsafe { ffi::b2Joint_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        v
+    }
+
+    pub fn try_take_user_data<T: 'static>(&mut self) -> ApiResult<Option<T>> {
+        self.check_valid()?;
+        let v = self.core.take_joint_user_data::<T>(self.id)?;
+        if v.is_some() {
+            unsafe { ffi::b2Joint_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        Ok(v)
+    }
+
     /// Destroy this joint immediately.
     pub fn destroy(self, wake_bodies: bool) {
         crate::core::callback_state::assert_not_in_callback();
         if unsafe { ffi::b2Joint_IsValid(self.id) } {
             unsafe { ffi::b2DestroyJoint(self.id, wake_bodies) };
+            let _ = self.core.clear_joint_user_data(self.id);
         }
     }
 
@@ -362,6 +560,7 @@ impl<'w> Joint<'w> {
         self.check_valid()?;
         if unsafe { ffi::b2Joint_IsValid(self.id) } {
             unsafe { ffi::b2DestroyJoint(self.id, wake_bodies) };
+            let _ = self.core.clear_joint_user_data(self.id);
         }
         Ok(())
     }

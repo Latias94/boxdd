@@ -73,29 +73,33 @@ impl World {
         f(slice)
     }
 
-    /// Zero-copy safe view over body move events without exposing raw FFI types.
-    /// Borrowed data is valid only within the closure; do not store references.
+    /// Zero-copy view over body move events without exposing raw FFI types.
+    ///
+    /// While `f` runs, dropping `Owned*` handles does not destroy bodies/shapes/joints immediately;
+    /// the destruction is deferred until after the view ends to keep the borrowed buffers valid.
     ///
     /// Example
     /// ```rust
     /// use boxdd::prelude::*;
     /// let mut world = World::new(WorldDef::default()).unwrap();
-    /// unsafe { world.with_body_events_view(|it| {
+    /// world.with_body_events_view(|it| {
     ///     for e in it { let _ = (e.body_id(), e.fell_asleep()); }
-    /// })};
+    /// });
     /// ```
     ///
-    /// # Safety
-    /// This borrows internal Box2D buffers. While `f` runs, you must not perform any operation
-    /// that can mutate those buffers (including dropping `Owned*` handles that may destroy objects).
-    pub unsafe fn with_body_events_view<T>(&self, f: impl FnOnce(BodyMoveIter<'_>) -> T) -> T {
+    pub fn with_body_events_view<T>(&self, f: impl FnOnce(BodyMoveIter<'_>) -> T) -> T {
         crate::core::callback_state::assert_not_in_callback();
-        let raw = unsafe { ffi::b2World_GetBodyEvents(self.raw()) };
-        let slice = if raw.moveCount > 0 && !raw.moveEvents.is_null() {
-            unsafe { core::slice::from_raw_parts(raw.moveEvents, raw.moveCount as usize) }
-        } else {
-            &[][..]
+        let out = {
+            let _borrow = self.core_arc().borrow_event_buffers();
+            let raw = unsafe { ffi::b2World_GetBodyEvents(self.raw()) };
+            let slice = if raw.moveCount > 0 && !raw.moveEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.moveEvents, raw.moveCount as usize) }
+            } else {
+                &[][..]
+            };
+            f(BodyMoveIter(slice.iter()))
         };
-        f(BodyMoveIter(slice.iter()))
+        self.core_arc().process_deferred_destroys();
+        out
     }
 }

@@ -1,6 +1,7 @@
 pub use crate::{
-    ApiError, ApiResult, Body, BodyBuilder, BodyDef, BodyType, OutstandingOwnedHandles, OwnedBody,
-    OwnedHandleCounts, World, WorldBuilder, WorldDef, WorldHandle,
+    ApiError, ApiResult, Body, BodyBuilder, BodyDef, BodyType, CallbackWorld,
+    OutstandingOwnedHandles, OwnedBody, OwnedHandleCounts, World, WorldBuilder, WorldDef,
+    WorldHandle,
     debug_draw::{DebugDraw, DebugDrawCmd, DebugDrawOptions},
     joints::{
         DistanceJointDef, FilterJointDef, Joint, JointBase, JointBaseBuilder, MotorJointDef,

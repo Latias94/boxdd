@@ -480,6 +480,7 @@ where
 
 /// Axis-aligned bounding box
 #[doc(alias = "aabb")]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Aabb {
@@ -590,7 +591,53 @@ impl Default for QueryFilter {
     }
 }
 
+#[cfg(feature = "serde")]
+impl serde::Serialize for QueryFilter {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(serde::Serialize)]
+        struct Repr {
+            category_bits: u64,
+            mask_bits: u64,
+        }
+        Repr {
+            category_bits: self.0.categoryBits,
+            mask_bits: self.0.maskBits,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for QueryFilter {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct Repr {
+            category_bits: u64,
+            mask_bits: u64,
+        }
+        let r = Repr::deserialize(deserializer)?;
+        Ok(Self(ffi::b2QueryFilter {
+            categoryBits: r.category_bits,
+            maskBits: r.mask_bits,
+        }))
+    }
+}
+
 impl QueryFilter {
+    pub fn category_bits(&self) -> u64 {
+        self.0.categoryBits
+    }
+
+    pub fn mask_bits(&self) -> u64 {
+        self.0.maskBits
+    }
+
     pub fn mask(mut self, bits: u64) -> Self {
         self.0.maskBits = bits;
         self

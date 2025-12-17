@@ -120,34 +120,38 @@ impl World {
 
     /// Zero-copy view over sensor events without exposing raw FFI types.
     ///
-    /// # Safety
-    /// This borrows internal Box2D buffers. While `f` runs, you must not perform any operation
-    /// that can mutate those buffers (including dropping `Owned*` handles that may destroy objects).
+    /// While `f` runs, dropping `Owned*` handles does not destroy bodies/shapes/joints immediately;
+    /// the destruction is deferred until after the view ends to keep the borrowed buffers valid.
     ///
     /// Example
     /// ```rust
     /// use boxdd::prelude::*;
     /// let mut world = World::new(WorldDef::default()).unwrap();
-    /// unsafe { world.with_sensor_events_view(|beg, end| {
+    /// world.with_sensor_events_view(|beg, end| {
     ///     let _ = (beg.count(), end.count());
-    /// })};
+    /// });
     /// ```
-    pub unsafe fn with_sensor_events_view<T>(
+    pub fn with_sensor_events_view<T>(
         &self,
         f: impl FnOnce(SensorBeginIter<'_>, SensorEndIter<'_>) -> T,
     ) -> T {
         crate::core::callback_state::assert_not_in_callback();
-        let raw = unsafe { ffi::b2World_GetSensorEvents(self.raw()) };
-        let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
-            unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
-        } else {
-            &[][..]
+        let out = {
+            let _borrow = self.core_arc().borrow_event_buffers();
+            let raw = unsafe { ffi::b2World_GetSensorEvents(self.raw()) };
+            let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
+            } else {
+                &[][..]
+            };
+            let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
+            } else {
+                &[][..]
+            };
+            f(SensorBeginIter(begin.iter()), SensorEndIter(end.iter()))
         };
-        let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
-            unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
-        } else {
-            &[][..]
-        };
-        f(SensorBeginIter(begin.iter()), SensorEndIter(end.iter()))
+        self.core_arc().process_deferred_destroys();
+        out
     }
 }

@@ -414,6 +414,7 @@ impl OwnedShape {
     /// pointer and may access it during simulation callbacks.
     pub unsafe fn set_user_data_ptr(&mut self, p: *mut c_void) {
         self.assert_valid();
+        let _ = self.core.clear_shape_user_data(self.id);
         unsafe { ffi::b2Shape_SetUserData(self.id, p) }
     }
     /// Set an opaque user data pointer on this shape.
@@ -422,6 +423,7 @@ impl OwnedShape {
     /// Same safety contract as `set_user_data_ptr`.
     pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut c_void) -> ApiResult<()> {
         self.check_valid()?;
+        let _ = self.core.clear_shape_user_data(self.id);
         unsafe { ffi::b2Shape_SetUserData(self.id, p) }
         Ok(())
     }
@@ -433,6 +435,93 @@ impl OwnedShape {
     pub fn try_user_data_ptr(&self) -> ApiResult<*mut c_void> {
         self.check_valid()?;
         Ok(unsafe { ffi::b2Shape_GetUserData(self.id) })
+    }
+
+    /// Set typed user data on this shape.
+    ///
+    /// This stores a `Box<T>` internally and sets Box2D's user data pointer to it. The allocation
+    /// is automatically freed when cleared or when the shape is destroyed.
+    pub fn set_user_data<T: 'static>(&mut self, value: T) {
+        self.assert_valid();
+        let p = self.core.set_shape_user_data(self.id, value);
+        unsafe { ffi::b2Shape_SetUserData(self.id, p) };
+    }
+
+    pub fn try_set_user_data<T: 'static>(&mut self, value: T) -> ApiResult<()> {
+        self.check_valid()?;
+        let p = self.core.set_shape_user_data(self.id, value);
+        unsafe { ffi::b2Shape_SetUserData(self.id, p) };
+        Ok(())
+    }
+
+    /// Clear typed user data on this shape. Returns whether any typed data was present.
+    pub fn clear_user_data(&mut self) -> bool {
+        self.assert_valid();
+        let had = self.core.clear_shape_user_data(self.id);
+        if had {
+            unsafe { ffi::b2Shape_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        had
+    }
+
+    pub fn try_clear_user_data(&mut self) -> ApiResult<bool> {
+        self.check_valid()?;
+        let had = self.core.clear_shape_user_data(self.id);
+        if had {
+            unsafe { ffi::b2Shape_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        Ok(had)
+    }
+
+    pub fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
+        self.assert_valid();
+        self.core
+            .try_with_shape_user_data(self.id, f)
+            .expect("user data type mismatch")
+    }
+
+    pub fn try_with_user_data<T: 'static, R>(
+        &self,
+        f: impl FnOnce(&T) -> R,
+    ) -> ApiResult<Option<R>> {
+        self.check_valid()?;
+        self.core.try_with_shape_user_data(self.id, f)
+    }
+
+    pub fn with_user_data_mut<T: 'static, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
+        self.assert_valid();
+        self.core
+            .try_with_shape_user_data_mut(self.id, f)
+            .expect("user data type mismatch")
+    }
+
+    pub fn try_with_user_data_mut<T: 'static, R>(
+        &mut self,
+        f: impl FnOnce(&mut T) -> R,
+    ) -> ApiResult<Option<R>> {
+        self.check_valid()?;
+        self.core.try_with_shape_user_data_mut(self.id, f)
+    }
+
+    pub fn take_user_data<T: 'static>(&mut self) -> Option<T> {
+        self.assert_valid();
+        let v = self
+            .core
+            .take_shape_user_data::<T>(self.id)
+            .expect("user data type mismatch");
+        if v.is_some() {
+            unsafe { ffi::b2Shape_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        v
+    }
+
+    pub fn try_take_user_data<T: 'static>(&mut self) -> ApiResult<Option<T>> {
+        self.check_valid()?;
+        let v = self.core.take_shape_user_data::<T>(self.id)?;
+        if v.is_some() {
+            unsafe { ffi::b2Shape_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        Ok(v)
     }
 
     pub fn update_body_mass_on_drop(mut self, flag: bool) -> Self {
@@ -449,7 +538,8 @@ impl OwnedShape {
     /// Destroy the shape immediately and disarm drop.
     pub fn destroy(mut self, update_body_mass: bool) {
         if self.destroy_on_drop && unsafe { ffi::b2Shape_IsValid(self.id) } {
-            if crate::core::callback_state::in_callback() {
+            if crate::core::callback_state::in_callback() || self.core.events_buffers_are_borrowed()
+            {
                 self.core
                     .defer_destroy(crate::core::world_core::DeferredDestroy::Shape {
                         id: self.id,
@@ -457,6 +547,7 @@ impl OwnedShape {
                     });
             } else {
                 unsafe { ffi::b2DestroyShape(self.id, update_body_mass) };
+                let _ = self.core.clear_shape_user_data(self.id);
                 #[cfg(feature = "serialize")]
                 self.core.remove_shape_flags(self.id);
             }
@@ -474,7 +565,8 @@ impl Drop for OwnedShape {
             .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
         debug_assert!(prev > 0, "owned shape counter underflow");
         if self.destroy_on_drop && unsafe { ffi::b2Shape_IsValid(self.id) } {
-            if crate::core::callback_state::in_callback() {
+            if crate::core::callback_state::in_callback() || self.core.events_buffers_are_borrowed()
+            {
                 self.core
                     .defer_destroy(crate::core::world_core::DeferredDestroy::Shape {
                         id: self.id,
@@ -482,6 +574,7 @@ impl Drop for OwnedShape {
                     });
             } else {
                 unsafe { ffi::b2DestroyShape(self.id, self.update_body_mass_on_drop) };
+                let _ = self.core.clear_shape_user_data(self.id);
                 #[cfg(feature = "serialize")]
                 self.core.remove_shape_flags(self.id);
             }
@@ -787,6 +880,7 @@ impl<'w> Shape<'w> {
     /// pointer and may access it during simulation callbacks.
     pub unsafe fn set_user_data_ptr(&mut self, p: *mut core::ffi::c_void) {
         self.assert_valid();
+        let _ = self.core.clear_shape_user_data(self.id);
         unsafe { ffi::b2Shape_SetUserData(self.id, p) }
     }
     /// Set an opaque user data pointer on this shape.
@@ -795,6 +889,7 @@ impl<'w> Shape<'w> {
     /// Same safety contract as `set_user_data_ptr`.
     pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut core::ffi::c_void) -> ApiResult<()> {
         self.check_valid()?;
+        let _ = self.core.clear_shape_user_data(self.id);
         unsafe { ffi::b2Shape_SetUserData(self.id, p) }
         Ok(())
     }
@@ -806,6 +901,93 @@ impl<'w> Shape<'w> {
     pub fn try_user_data_ptr(&self) -> ApiResult<*mut core::ffi::c_void> {
         self.check_valid()?;
         Ok(unsafe { ffi::b2Shape_GetUserData(self.id) })
+    }
+
+    /// Set typed user data on this shape.
+    ///
+    /// This stores a `Box<T>` internally and sets Box2D's user data pointer to it. The allocation
+    /// is automatically freed when cleared or when the shape is destroyed.
+    pub fn set_user_data<T: 'static>(&mut self, value: T) {
+        self.assert_valid();
+        let p = self.core.set_shape_user_data(self.id, value);
+        unsafe { ffi::b2Shape_SetUserData(self.id, p) };
+    }
+
+    pub fn try_set_user_data<T: 'static>(&mut self, value: T) -> ApiResult<()> {
+        self.check_valid()?;
+        let p = self.core.set_shape_user_data(self.id, value);
+        unsafe { ffi::b2Shape_SetUserData(self.id, p) };
+        Ok(())
+    }
+
+    /// Clear typed user data on this shape. Returns whether any typed data was present.
+    pub fn clear_user_data(&mut self) -> bool {
+        self.assert_valid();
+        let had = self.core.clear_shape_user_data(self.id);
+        if had {
+            unsafe { ffi::b2Shape_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        had
+    }
+
+    pub fn try_clear_user_data(&mut self) -> ApiResult<bool> {
+        self.check_valid()?;
+        let had = self.core.clear_shape_user_data(self.id);
+        if had {
+            unsafe { ffi::b2Shape_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        Ok(had)
+    }
+
+    pub fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
+        self.assert_valid();
+        self.core
+            .try_with_shape_user_data(self.id, f)
+            .expect("user data type mismatch")
+    }
+
+    pub fn try_with_user_data<T: 'static, R>(
+        &self,
+        f: impl FnOnce(&T) -> R,
+    ) -> ApiResult<Option<R>> {
+        self.check_valid()?;
+        self.core.try_with_shape_user_data(self.id, f)
+    }
+
+    pub fn with_user_data_mut<T: 'static, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
+        self.assert_valid();
+        self.core
+            .try_with_shape_user_data_mut(self.id, f)
+            .expect("user data type mismatch")
+    }
+
+    pub fn try_with_user_data_mut<T: 'static, R>(
+        &mut self,
+        f: impl FnOnce(&mut T) -> R,
+    ) -> ApiResult<Option<R>> {
+        self.check_valid()?;
+        self.core.try_with_shape_user_data_mut(self.id, f)
+    }
+
+    pub fn take_user_data<T: 'static>(&mut self) -> Option<T> {
+        self.assert_valid();
+        let v = self
+            .core
+            .take_shape_user_data::<T>(self.id)
+            .expect("user data type mismatch");
+        if v.is_some() {
+            unsafe { ffi::b2Shape_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        v
+    }
+
+    pub fn try_take_user_data<T: 'static>(&mut self) -> ApiResult<Option<T>> {
+        self.check_valid()?;
+        let v = self.core.take_shape_user_data::<T>(self.id)?;
+        if v.is_some() {
+            unsafe { ffi::b2Shape_SetUserData(self.id, core::ptr::null_mut()) };
+        }
+        Ok(v)
     }
 
     pub fn contact_data(&self) -> Vec<ffi::b2ContactData> {
@@ -889,6 +1071,7 @@ impl<'w> Shape<'w> {
         crate::core::callback_state::assert_not_in_callback();
         if unsafe { ffi::b2Shape_IsValid(self.id) } {
             unsafe { ffi::b2DestroyShape(self.id, update_body_mass) };
+            let _ = self.core.clear_shape_user_data(self.id);
             #[cfg(feature = "serialize")]
             self.core.remove_shape_flags(self.id);
         }
@@ -898,6 +1081,7 @@ impl<'w> Shape<'w> {
         self.check_valid()?;
         if unsafe { ffi::b2Shape_IsValid(self.id) } {
             unsafe { ffi::b2DestroyShape(self.id, update_body_mass) };
+            let _ = self.core.clear_shape_user_data(self.id);
             #[cfg(feature = "serialize")]
             self.core.remove_shape_flags(self.id);
         }

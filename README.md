@@ -32,7 +32,7 @@ world.step(1.0/60.0, 4);
 ```
 
 ## Features (optional)
-- `serde`: serialization for `Vec2`, `Rot` (radians), `Transform` ({ pos, angle }) and config types.
+- `serde`: serialization for core value/config types (`Vec2`, `Rot`, `Transform`, `Aabb`, `QueryFilter`, etc.).
 - `serialize`: snapshot helpers (save/apply world config; take/rebuild minimal full-scene snapshot).
 - `mint`: lightweight math interop types (`mint::Vector2`, `mint::Point2`, and 2D affine matrices for `Transform`).
 - `cgmath`, `nalgebra`, `glam`: conversions with their 2D types (e.g. `Vector2/Point2`, `UnitComplex/Isometry2`, `glam::Vec2`).
@@ -72,22 +72,22 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 ## Events
 - Three access styles:
   - By value: `world.contact_events()`/`sensor_events()`/`body_events()`/`joint_events()` return owned data for storage or cross-frame use.
-  - Zero‑copy views: `unsafe { with_*_events_view(...) }` iterate without allocations (borrows internal buffers).
+  - Zero‑copy views: `with_*_events_view(...)` iterate without allocations (borrows internal buffers).
   - Raw slices: `unsafe { with_*_events(...) }` expose FFI slices (borrows internal buffers).
 - Example (zero‑copy views):
 ```rust
 use boxdd::prelude::*;
 let mut world = World::new(WorldDef::default()).unwrap();
-unsafe { world.with_contact_events_view(|begin, end, hit| {
+world.with_contact_events_view(|begin, end, hit| {
     let _ = (begin.count(), end.count(), hit.count());
-})};
-unsafe { world.with_sensor_events_view(|beg, end| {
+});
+world.with_sensor_events_view(|beg, end| {
     let _ = (beg.count(), end.count());
-})};
-unsafe { world.with_body_events_view(|moves| {
+});
+world.with_body_events_view(|moves| {
     for m in moves { let _ = (m.body_id(), m.fell_asleep()); }
-})};
-unsafe { world.with_joint_events_view(|j| { let _ = j.count(); })};
+});
+world.with_joint_events_view(|j| { let _ = j.count(); });
 ```
 
 ## Notes
