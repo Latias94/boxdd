@@ -30,6 +30,7 @@ impl<'a> Iterator for JointEventIter<'a> {
 
 impl World {
     pub fn joint_events(&self) -> Vec<JointEvent> {
+        crate::core::callback_state::assert_not_in_callback();
         let raw = unsafe { ffi::b2World_GetJointEvents(self.raw()) };
         if raw.count <= 0 || raw.jointEvents.is_null() {
             return Vec::new();
@@ -42,7 +43,14 @@ impl World {
             .collect()
     }
 
-    pub fn with_joint_events<T>(&self, f: impl FnOnce(&[ffi::b2JointEvent]) -> T) -> T {
+    /// Low-level raw view over joint events (borrows Box2D's internal buffers).
+    ///
+    /// # Safety
+    /// The returned slice borrows internal Box2D buffers. While `f` runs, you must not perform
+    /// any operation that can mutate those buffers (e.g. stepping the world, destroying joints,
+    /// or dropping `Owned*` handles that may trigger destruction).
+    pub unsafe fn with_joint_events<T>(&self, f: impl FnOnce(&[ffi::b2JointEvent]) -> T) -> T {
+        crate::core::callback_state::assert_not_in_callback();
         let raw = unsafe { ffi::b2World_GetJointEvents(self.raw()) };
         let slice = if raw.count > 0 && !raw.jointEvents.is_null() {
             unsafe { core::slice::from_raw_parts(raw.jointEvents, raw.count as usize) }
@@ -59,9 +67,14 @@ impl World {
     /// ```rust
     /// use boxdd::prelude::*;
     /// let mut world = World::new(WorldDef::default()).unwrap();
-    /// world.with_joint_events_view(|it| { let _ = it.count(); });
+    /// unsafe { world.with_joint_events_view(|it| { let _ = it.count(); })};
     /// ```
-    pub fn with_joint_events_view<T>(&self, f: impl FnOnce(JointEventIter<'_>) -> T) -> T {
+    ///
+    /// # Safety
+    /// This borrows internal Box2D buffers. While `f` runs, you must not perform any operation
+    /// that can mutate those buffers (including dropping `Owned*` handles that may destroy objects).
+    pub unsafe fn with_joint_events_view<T>(&self, f: impl FnOnce(JointEventIter<'_>) -> T) -> T {
+        crate::core::callback_state::assert_not_in_callback();
         let raw = unsafe { ffi::b2World_GetJointEvents(self.raw()) };
         let slice = if raw.count > 0 && !raw.jointEvents.is_null() {
             unsafe { core::slice::from_raw_parts(raw.jointEvents, raw.count as usize) }

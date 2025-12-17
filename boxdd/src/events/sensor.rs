@@ -69,6 +69,7 @@ pub struct SensorEvents {
 
 impl World {
     pub fn sensor_events(&self) -> SensorEvents {
+        crate::core::callback_state::assert_not_in_callback();
         let raw = unsafe { ffi::b2World_GetSensorEvents(self.raw()) };
         let mut begin = Vec::new();
         let mut end = Vec::new();
@@ -90,10 +91,17 @@ impl World {
         SensorEvents { begin, end }
     }
 
-    pub fn with_sensor_events<T>(
+    /// Low-level raw view over sensor events (borrows Box2D's internal buffers).
+    ///
+    /// # Safety
+    /// The returned slices borrow internal Box2D buffers. While `f` runs, you must not perform
+    /// any operation that can mutate those buffers (e.g. stepping the world, destroying bodies/shapes,
+    /// or dropping `Owned*` handles that may trigger destruction).
+    pub unsafe fn with_sensor_events<T>(
         &self,
         f: impl FnOnce(&[ffi::b2SensorBeginTouchEvent], &[ffi::b2SensorEndTouchEvent]) -> T,
     ) -> T {
+        crate::core::callback_state::assert_not_in_callback();
         // Low-level raw view exposing FFI slices; valid only within this call.
         // Prefer `with_sensor_events_view` to avoid leaking FFI types.
         let raw = unsafe { ffi::b2World_GetSensorEvents(self.raw()) };
@@ -110,21 +118,25 @@ impl World {
         f(begin, end)
     }
 
-    /// Zero-copy safe view over sensor events without exposing raw FFI types.
-    /// Borrowed data is valid only within the closure; do not store references.
+    /// Zero-copy view over sensor events without exposing raw FFI types.
+    ///
+    /// # Safety
+    /// This borrows internal Box2D buffers. While `f` runs, you must not perform any operation
+    /// that can mutate those buffers (including dropping `Owned*` handles that may destroy objects).
     ///
     /// Example
     /// ```rust
     /// use boxdd::prelude::*;
     /// let mut world = World::new(WorldDef::default()).unwrap();
-    /// world.with_sensor_events_view(|beg, end| {
+    /// unsafe { world.with_sensor_events_view(|beg, end| {
     ///     let _ = (beg.count(), end.count());
-    /// });
+    /// })};
     /// ```
-    pub fn with_sensor_events_view<T>(
+    pub unsafe fn with_sensor_events_view<T>(
         &self,
         f: impl FnOnce(SensorBeginIter<'_>, SensorEndIter<'_>) -> T,
     ) -> T {
+        crate::core::callback_state::assert_not_in_callback();
         let raw = unsafe { ffi::b2World_GetSensorEvents(self.raw()) };
         let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
             unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }

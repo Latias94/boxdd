@@ -233,7 +233,8 @@ impl TestbedWindow {
             pixels_per_meter: self.physics.pixels_per_meter,
         };
         let opts = self.physics.debug_draw_options();
-        self.physics.world.debug_draw(&mut dd, opts);
+        // SAFETY: debug draw callbacks must not mutate the world.
+        unsafe { self.physics.world.debug_draw(&mut dd, opts) };
 
         // Scene-specific overlays (drawn after debug draw so they stay on top)
         self.physics.debug_overlay(ui);

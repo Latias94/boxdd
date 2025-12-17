@@ -1,15 +1,22 @@
 pub use crate::{
-    Body, BodyBuilder, BodyDef, BodyType, World, WorldBuilder, WorldDef,
-    debug_draw::{DebugDraw, DebugDrawOptions},
+    ApiError, ApiResult, Body, BodyBuilder, BodyDef, BodyType, OutstandingOwnedHandles, OwnedBody,
+    OwnedHandleCounts, World, WorldBuilder, WorldDef, WorldHandle,
+    debug_draw::{DebugDraw, DebugDrawCmd, DebugDrawOptions},
     joints::{
         DistanceJointDef, FilterJointDef, Joint, JointBase, JointBaseBuilder, MotorJointDef,
-        PrismaticJointDef, RevoluteJointDef, WeldJointDef, WheelJointDef,
+        OwnedJoint, PrismaticJointDef, RevoluteJointDef, WeldJointDef, WheelJointDef,
     },
     query::{Aabb, QueryFilter, RayResult},
     shapes::{
-        self, Shape, ShapeDef, ShapeDefBuilder, SurfaceMaterial,
-        chain::{Chain, ChainDef, ChainDefBuilder},
+        self, OwnedShape, Shape, ShapeDef, ShapeDefBuilder, SurfaceMaterial,
+        chain::{Chain, ChainDef, ChainDefBuilder, OwnedChain},
     },
-    types::{BodyId, JointId, ShapeId, Vec2},
+    types::{BodyId, ChainId, JointId, MassData, ShapeId, Vec2},
     world::Counters,
 };
+
+#[cfg(feature = "unchecked")]
+pub use crate::unchecked::*;
+
+#[cfg(feature = "glam")]
+pub use crate::TransformFromGlamError;

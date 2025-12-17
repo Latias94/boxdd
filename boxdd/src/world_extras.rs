@@ -51,6 +51,7 @@ pub trait WorldExplosionExt {
 
 impl WorldExplosionExt for World {
     fn explode(&mut self, def: &ExplosionDef) {
+        crate::core::callback_state::assert_not_in_callback();
         unsafe { ffi::b2World_Explode(self.raw(), &def.0) }
     }
 }

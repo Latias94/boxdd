@@ -115,6 +115,7 @@ pub struct ContactEvents {
 
 impl World {
     pub fn contact_events(&self) -> ContactEvents {
+        crate::core::callback_state::assert_not_in_callback();
         let raw = unsafe { ffi::b2World_GetContactEvents(self.raw()) };
         let mut begin = Vec::new();
         let mut end = Vec::new();
@@ -148,7 +149,13 @@ impl World {
         ContactEvents { begin, end, hit }
     }
 
-    pub fn with_contact_events<T>(
+    /// Low-level raw view over contact events (borrows Box2D's internal buffers).
+    ///
+    /// # Safety
+    /// The returned slices borrow internal Box2D buffers. While `f` runs, you must not perform
+    /// any operation that can mutate those buffers (e.g. stepping the world, destroying bodies/shapes,
+    /// or dropping `Owned*` handles that may trigger destruction).
+    pub unsafe fn with_contact_events<T>(
         &self,
         f: impl FnOnce(
             &[ffi::b2ContactBeginTouchEvent],
@@ -156,6 +163,7 @@ impl World {
             &[ffi::b2ContactHitEvent],
         ) -> T,
     ) -> T {
+        crate::core::callback_state::assert_not_in_callback();
         // Low-level raw view over contact events.
         // Exposes FFI slices directly; they are only valid within this call.
         // Prefer `with_contact_events_view` for a safe, FFI-opaque interface.
@@ -178,24 +186,28 @@ impl World {
         f(begin, end, hit)
     }
 
-    /// Zero-copy safe view over contact events without exposing raw FFI types.
-    /// The borrowed data is valid only within the closure; do not store references.
+    /// Zero-copy view over contact events without exposing raw FFI types.
+    ///
+    /// # Safety
+    /// This borrows internal Box2D buffers. While `f` runs, you must not perform any operation
+    /// that can mutate those buffers (including dropping `Owned*` handles that may destroy objects).
     ///
     /// Example
     /// ```rust
     /// use boxdd::prelude::*;
     /// let mut world = World::new(WorldDef::default()).unwrap();
-    /// world.with_contact_events_view(|begin, end, hit| {
+    /// unsafe { world.with_contact_events_view(|begin, end, hit| {
     ///     let nb = begin.count();
     ///     let ne = end.count();
     ///     let nh = hit.count();
     ///     assert!(nb + ne + nh >= 0);
-    /// });
+    /// })};
     /// ```
-    pub fn with_contact_events_view<T>(
+    pub unsafe fn with_contact_events_view<T>(
         &self,
         f: impl FnOnce(BeginIter<'_>, EndIter<'_>, HitIter<'_>) -> T,
     ) -> T {
+        crate::core::callback_state::assert_not_in_callback();
         let raw = unsafe { ffi::b2World_GetContactEvents(self.raw()) };
         let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
             unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }

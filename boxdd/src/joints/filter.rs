@@ -2,7 +2,8 @@ use crate::types::BodyId;
 use crate::world::World;
 use boxdd_sys::ffi;
 
-use super::{Joint, JointBase};
+use super::{Joint, JointBase, OwnedJoint};
+use crate::error::ApiResult;
 
 // Filter joint (no params beyond base)
 #[derive(Clone, Debug)]
@@ -35,10 +36,43 @@ impl<'w> FilterJointBuilder<'w> {
     }
     #[must_use]
     pub fn build(mut self) -> Joint<'w> {
+        crate::core::debug_checks::assert_body_valid(self.body_a);
+        crate::core::debug_checks::assert_body_valid(self.body_b);
         let base = super::JointBaseBuilder::new()
             .bodies_by_id(self.body_a, self.body_b)
             .build();
         self.def.0.base = base.0;
         self.world.create_filter_joint(&self.def)
+    }
+
+    pub fn try_build(mut self) -> ApiResult<Joint<'w>> {
+        crate::core::debug_checks::check_body_valid(self.body_a)?;
+        crate::core::debug_checks::check_body_valid(self.body_b)?;
+        let base = super::JointBaseBuilder::new()
+            .bodies_by_id(self.body_a, self.body_b)
+            .build();
+        self.def.0.base = base.0;
+        self.world.try_create_filter_joint(&self.def)
+    }
+
+    #[must_use]
+    pub fn build_owned(mut self) -> OwnedJoint {
+        crate::core::debug_checks::assert_body_valid(self.body_a);
+        crate::core::debug_checks::assert_body_valid(self.body_b);
+        let base = super::JointBaseBuilder::new()
+            .bodies_by_id(self.body_a, self.body_b)
+            .build();
+        self.def.0.base = base.0;
+        self.world.create_filter_joint_owned(&self.def)
+    }
+
+    pub fn try_build_owned(mut self) -> ApiResult<OwnedJoint> {
+        crate::core::debug_checks::check_body_valid(self.body_a)?;
+        crate::core::debug_checks::check_body_valid(self.body_b)?;
+        let base = super::JointBaseBuilder::new()
+            .bodies_by_id(self.body_a, self.body_b)
+            .build();
+        self.def.0.base = base.0;
+        self.world.try_create_filter_joint_owned(&self.def)
     }
 }

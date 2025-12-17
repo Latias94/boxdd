@@ -5,17 +5,34 @@
 //! - Thin safe layer on top of the official Box2D v3 C API.
 //! - Modular API: world, bodies, shapes, joints, queries, events, debug draw.
 //! - Ergonomics: builder patterns, world-space helpers, mint integration.
-//! - Two usage styles:
-//!   - RAII wrappers (Rust lifetimes, Drop auto-destroys ids).
-//!   - ID-style (return raw ids; easy to store and pass around without borrow issues).
+//! - Three usage styles:
+//!   - Owned handles: `OwnedBody`/`OwnedShape`/`OwnedJoint`/`OwnedChain` (Drop destroys; easy to store).
+//!   - Scoped handles: `Body<'_>`/`Shape<'_>`/`Joint<'_>`/`Chain<'_>` (dropping only releases the world borrow).
+//!   - ID-style: raw ids (`BodyId`/`ShapeId`/`JointId`/`ChainId`) for maximum flexibility.
+//! - Safe handle methods validate ids and panic on invalid ids (prevents UB if an id becomes stale).
+//!   For recoverable failures (invalid ids / calling during Box2D callbacks), use `try_*` APIs returning `ApiResult<T>`.
+//! - Threading: `World` and owned handles are `!Send`/`!Sync`. Run physics on one thread; in async runtimes prefer
+//!   `spawn_local`/`LocalSet`, or create the world inside a dedicated physics thread and communicate via channels.
 //!
-//! Quickstart (RAII)
+//! Quickstart (owned handles)
+//! ```no_run
+//! use boxdd::{World, WorldDef, BodyBuilder, ShapeDef, shapes, Vec2};
+//! let def = WorldDef::builder().gravity(Vec2::new(0.0, -9.8)).build();
+//! let mut world = World::new(def).unwrap();
+//! let body = world.create_body_owned(BodyBuilder::new().position([0.0, 2.0]).build());
+//! let sdef = ShapeDef::builder().density(1.0).build();
+//! let poly = shapes::box_polygon(0.5, 0.5);
+//! let _shape = world.create_polygon_shape_for_owned(body.id(), &sdef, &poly);
+//! world.step(1.0/60.0, 4);
+//! ```
+//!
+//! Quickstart (scoped handles)
 //! ```no_run
 //! use boxdd::{World, WorldDef, BodyBuilder, ShapeDef, shapes, Vec2};
 //! let def = WorldDef::builder().gravity(Vec2::new(0.0, -9.8)).build();
 //! let mut world = World::new(def).unwrap();
 //! {
-//!     // Limit the borrow of `world` by scoping the body wrapper.
+//!     // Limit the borrow of `world` by scoping the body handle.
 //!     let mut body = world.create_body(BodyBuilder::new().position([0.0, 2.0]).build());
 //!     let sdef = ShapeDef::builder().density(1.0).build();
 //!     let poly = shapes::box_polygon(0.5, 0.5);
@@ -63,48 +80,63 @@
 //! - `serialize`: scene snapshot helpers (save/apply world config; build/restore minimal full-scene snapshot).
 //! - `pkg-config`: allow linking against a system `box2d` via pkg-config.
 //! - `cgmath` / `nalgebra` / `glam`: conversions with their 2D math types.
+//! - `bytemuck`: `Pod`/`Zeroable` for core math types (`Vec2`, `Rot`, `Transform`, `Aabb`) for zero-copy interop.
 //!
 //! Events
 //! - Three access styles:
 //!   - By value: `world.contact_events()`/`sensor_events()`/`body_events()`/`joint_events()` return owned data for storage or cross‑frame use.
-//!   - Zero‑copy views: `with_*_events_view(...)` iterate without exposing FFI types and without allocations (recommended per‑frame).
-//!   - Raw slices: `with_*_events(...)` expose FFI slices (advanced); data valid only within the callback.
+//!   - Zero‑copy views: `unsafe { with_*_events_view(...) }` iterate without allocations (borrows internal buffers).
+//!   - Raw slices: `unsafe { with_*_events(...) }` expose FFI slices (borrows internal buffers).
 //!
 //! Example (zero‑copy views)
 //! ```no_run
 //! use boxdd::prelude::*;
 //! let mut world = World::new(WorldDef::default()).unwrap();
-//! world.with_contact_events_view(|begin, end, hit| {
+//! unsafe { world.with_contact_events_view(|begin, end, hit| {
 //!     let _ = (begin.count(), end.count(), hit.count());
-//! });
-//! world.with_sensor_events_view(|beg, end| { let _ = (beg.count(), end.count()); });
-//! world.with_body_events_view(|moves| { for m in moves { let _ = (m.body_id(), m.fell_asleep()); } });
-//! world.with_joint_events_view(|j| { let _ = j.count(); });
+//! })};
+//! unsafe { world.with_sensor_events_view(|beg, end| { let _ = (beg.count(), end.count()); })};
+//! unsafe { world.with_body_events_view(|moves| { for m in moves { let _ = (m.body_id(), m.fell_asleep()); } })};
+//! unsafe { world.with_joint_events_view(|j| { let _ = j.count(); })};
 //! ```
 
 pub mod body;
 pub mod debug_draw;
+pub mod error;
 pub mod events;
 pub mod filter;
 pub mod joints;
 pub mod prelude;
 pub mod query;
 #[cfg(feature = "serialize")]
-#[cfg(feature = "serialize")]
 #[cfg_attr(docsrs, doc(cfg(feature = "serialize")))]
 pub mod serialize;
 pub mod shapes;
 pub mod tuning;
 pub mod types;
+#[cfg(feature = "unchecked")]
+#[cfg_attr(docsrs, doc(cfg(feature = "unchecked")))]
+pub mod unchecked;
 pub mod world;
 pub mod world_extras;
 pub mod core {
+    pub(crate) mod box2d_lock;
+    pub(crate) mod callback_state;
+    pub(crate) mod debug_checks;
     pub mod math;
+    #[cfg(feature = "serialize")]
+    pub(crate) mod serialize_registry;
+    pub(crate) mod world_core;
 }
 
+pub use body::OwnedBody;
 pub use body::{Body, BodyBuilder, BodyDef, BodyType};
+#[cfg(feature = "glam")]
+#[cfg_attr(docsrs, doc(cfg(feature = "glam")))]
+pub use core::math::TransformFromGlamError;
 pub use core::math::{Rot, Transform};
-pub use debug_draw::{DebugDraw, DebugDrawOptions};
+pub use debug_draw::{DebugDraw, DebugDrawCmd, DebugDrawOptions};
+pub use error::{ApiError, ApiResult};
 pub use events::{
     BodyMoveEvent, ContactBeginTouchEvent, ContactEndTouchEvent, ContactEvents, ContactHitEvent,
     JointEvent, SensorBeginTouchEvent, SensorEndTouchEvent, SensorEvents,
@@ -117,7 +149,9 @@ pub use joints::{
     WheelJointDef,
 };
 pub use query::{Aabb, QueryFilter, RayResult};
-pub use shapes::chain::{Chain, ChainDef, ChainDefBuilder};
-pub use shapes::{Shape, ShapeDef, ShapeDefBuilder, SurfaceMaterial};
+pub use shapes::chain::{Chain, ChainDef, ChainDefBuilder, OwnedChain};
+pub use shapes::{OwnedShape, Shape, ShapeDef, ShapeDefBuilder, SurfaceMaterial};
 pub use types::Vec2;
-pub use world::{World, WorldBuilder, WorldDef};
+pub use world::{
+    OutstandingOwnedHandles, OwnedHandleCounts, World, WorldBuilder, WorldDef, WorldHandle,
+};

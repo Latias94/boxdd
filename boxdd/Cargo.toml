@@ -23,11 +23,15 @@ serde = { version = "1", features = ["derive"], optional = true }
 cgmath = { version = "0.18", optional = true }
 nalgebra = { version = "0.34", optional = true }
 glam = { version = "0.30", optional = true }
+bytemuck = { version = "1.23", optional = true }
 
 [features]
 default = []
 # Build the ImGui + Glow testbed example when this feature is enabled
 imgui-glow-testbed = []
+
+# Expose additional `unsafe` unchecked APIs for hot paths.
+unchecked = []
 
 # Optional integration features
 # Enable serde for basic value/config types (Vec2, Rot, Transform, etc.)
@@ -38,6 +42,7 @@ serialize = ["serde"]
 cgmath = ["dep:cgmath"]
 nalgebra = ["dep:nalgebra"]
 glam = ["dep:glam"]
+bytemuck = ["dep:bytemuck"]
 
 # Performance / debug features (forwarded to sys)
 simd-avx2 = ["boxdd-sys/simd-avx2"]

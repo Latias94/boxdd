@@ -186,56 +186,52 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
         // Update conveyor belts in-place (material)
         if speed_changed || belt_mu_changed || belt_re_changed {
             if let Some(sid) = app.mat_belt_left {
-                unsafe {
-                    let mut m = boxdd_sys::ffi::b2Shape_GetSurfaceMaterial(sid);
-                    m.tangentSpeed = app.mat_conv_speed;
-                    m.friction = app.mat_belt_friction;
-                    m.restitution = app.mat_belt_restitution;
-                    boxdd_sys::ffi::b2Shape_SetSurfaceMaterial(sid, &m);
-                }
+                let m = app
+                    .world
+                    .shape_surface_material(sid)
+                    .tangent_speed(app.mat_conv_speed)
+                    .friction(app.mat_belt_friction)
+                    .restitution(app.mat_belt_restitution);
+                app.world.shape_set_surface_material(sid, &m);
             }
             if let Some(sid) = app.mat_belt_right {
-                unsafe {
-                    let mut m = boxdd_sys::ffi::b2Shape_GetSurfaceMaterial(sid);
-                    m.tangentSpeed = -app.mat_conv_speed;
-                    m.friction = app.mat_belt_friction;
-                    m.restitution = app.mat_belt_restitution;
-                    boxdd_sys::ffi::b2Shape_SetSurfaceMaterial(sid, &m);
-                }
+                let m = app
+                    .world
+                    .shape_surface_material(sid)
+                    .tangent_speed(-app.mat_conv_speed)
+                    .friction(app.mat_belt_friction)
+                    .restitution(app.mat_belt_restitution);
+                app.world.shape_set_surface_material(sid, &m);
             }
         }
         // Update belt transforms (position/angle)
         if belt_pos_changed || belt_ang_changed {
             if let Some(bid) = app.mat_belt_left_body {
-                unsafe {
-                    let ang = app.mat_belt_left_angle_deg * std::f32::consts::PI / 180.0;
-                    let (s, c) = ang.sin_cos();
-                    let rot = boxdd_sys::ffi::b2Rot { c, s };
-                    let pos = boxdd_sys::ffi::b2Vec2 { x: app.mat_belt_left_x, y: app.mat_belt_left_y };
-                    boxdd_sys::ffi::b2Body_SetTransform(bid, pos, rot);
-                }
+                let ang = app.mat_belt_left_angle_deg * std::f32::consts::PI / 180.0;
+                app.world.set_body_position_and_rotation(
+                    bid,
+                    [app.mat_belt_left_x, app.mat_belt_left_y],
+                    ang,
+                );
             }
             if let Some(bid) = app.mat_belt_right_body {
-                unsafe {
-                    let ang = app.mat_belt_right_angle_deg * std::f32::consts::PI / 180.0;
-                    let (s, c) = ang.sin_cos();
-                    let rot = boxdd_sys::ffi::b2Rot { c, s };
-                    let pos = boxdd_sys::ffi::b2Vec2 { x: app.mat_belt_right_x, y: app.mat_belt_right_y };
-                    boxdd_sys::ffi::b2Body_SetTransform(bid, pos, rot);
-                }
+                let ang = app.mat_belt_right_angle_deg * std::f32::consts::PI / 180.0;
+                app.world.set_body_position_and_rotation(
+                    bid,
+                    [app.mat_belt_right_x, app.mat_belt_right_y],
+                    ang,
+                );
             }
         }
         // Update rolling resistance for spawned shapes in-place
         if rr_changed || shp_mu_changed || shp_re_changed {
             for &sid in &app.mat_shapes {
-                if unsafe { boxdd_sys::ffi::b2Shape_IsValid(sid) } {
-                    unsafe {
-                        let mut m = boxdd_sys::ffi::b2Shape_GetSurfaceMaterial(sid);
-                        m.rollingResistance = app.mat_roll_res;
-                        m.friction = app.mat_shape_friction;
-                        m.restitution = app.mat_shape_restitution;
-                        boxdd_sys::ffi::b2Shape_SetSurfaceMaterial(sid, &m);
-                    }
+                if let Ok(m0) = app.world.try_shape_surface_material(sid) {
+                    let m = m0
+                        .rolling_resistance(app.mat_roll_res)
+                        .friction(app.mat_shape_friction)
+                        .restitution(app.mat_shape_restitution);
+                    let _ = app.world.try_shape_set_surface_material(sid, &m);
                 }
             }
         }
@@ -243,10 +239,10 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
         if belt_geo_changed {
             let poly = bd::shapes::box_polygon(app.mat_belt_half_len, app.mat_belt_thickness);
             if let Some(sid) = app.mat_belt_left {
-                unsafe { boxdd_sys::ffi::b2Shape_SetPolygon(sid, &poly) };
+                app.world.shape_set_polygon(sid, &poly);
             }
             if let Some(sid) = app.mat_belt_right {
-                unsafe { boxdd_sys::ffi::b2Shape_SetPolygon(sid, &poly) };
+                app.world.shape_set_polygon(sid, &poly);
             }
         }
     }
@@ -272,11 +268,11 @@ pub fn tick(app: &mut super::PhysicsApp) {
     if app.mat_shapes.is_empty() {
         return;
     }
-    let wind = boxdd_sys::ffi::b2Vec2 { x: app.mat_wind_x, y: app.mat_wind_y };
+    let wind = bd::Vec2::new(app.mat_wind_x, app.mat_wind_y);
     let drag = app.mat_drag;
     let lift = app.mat_lift;
     let wake = app.mat_wake;
     for &sid in &app.mat_shapes {
-        unsafe { boxdd_sys::ffi::b2Shape_ApplyWindForce(sid, wind, drag, lift, wake) };
+        app.world.shape_apply_wind(sid, wind, drag, lift, wake);
     }
 }

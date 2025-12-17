@@ -7,6 +7,7 @@ pub const B2_HASH_INIT: u32 = 5381;
 pub const B2_PI: f64 = 3.14159265359;
 pub const B2_MAX_POLYGON_VERTICES: u32 = 8;
 pub const B2_DEFAULT_CATEGORY_BITS: u32 = 1;
+pub const B2_DEFAULT_MASK_BITS: i32 = -1;
 #[doc = " Prototype for user allocation function\n @param size the allocation size in bytes\n @param alignment the required alignment, guaranteed to be a power of 2"]
 pub type b2AllocFcn = ::std::option::Option<
     unsafe extern "C" fn(
@@ -14,8 +15,10 @@ pub type b2AllocFcn = ::std::option::Option<
         alignment: ::std::os::raw::c_int,
     ) -> *mut ::std::os::raw::c_void,
 >;
-#[doc = " Prototype for user free function\n @param mem the memory previously allocated through `b2AllocFcn`"]
-pub type b2FreeFcn = ::std::option::Option<unsafe extern "C" fn(mem: *mut ::std::os::raw::c_void)>;
+#[doc = " Prototype for user free function\n @param mem the memory previously allocated through `b2AllocFcn`\n @param size the allocation size in bytes"]
+pub type b2FreeFcn = ::std::option::Option<
+    unsafe extern "C" fn(mem: *mut ::std::os::raw::c_void, size: ::std::os::raw::c_uint),
+>;
 #[doc = " Prototype for the user assert callback. Return 0 to skip the debugger break."]
 pub type b2AssertFcn = ::std::option::Option<
     unsafe extern "C" fn(
@@ -24,6 +27,9 @@ pub type b2AssertFcn = ::std::option::Option<
         lineNumber: ::std::os::raw::c_int,
     ) -> ::std::os::raw::c_int,
 >;
+#[doc = " Prototype for user log callback. Used to log warnings."]
+pub type b2LogFcn =
+    ::std::option::Option<unsafe extern "C" fn(message: *const ::std::os::raw::c_char)>;
 unsafe extern "C" {
     #[doc = " This allows the user to override the allocation functions. These should be\n set during application startup."]
     pub fn b2SetAllocator(allocFcn: b2AllocFcn, freeFcn: b2FreeFcn);
@@ -33,8 +39,12 @@ unsafe extern "C" {
     pub fn b2GetByteCount() -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
-    #[doc = " Override the default assert callback\n @param assertFcn a non-null assert callback"]
+    #[doc = " Override the default assert function\n @param assertFcn a non-null assert callback"]
     pub fn b2SetAssertFcn(assertFcn: b2AssertFcn);
+}
+unsafe extern "C" {
+    #[doc = " Override the default log function\n @param logFcn a non-null log callback"]
+    pub fn b2SetLogFcn(logFcn: b2LogFcn);
 }
 #[doc = " Version numbering scheme.\n See https://semver.org/"]
 #[repr(C)]
@@ -644,7 +654,7 @@ pub const b2TOIState_b2_toiStateOverlapped: b2TOIState = 2;
 pub const b2TOIState_b2_toiStateHit: b2TOIState = 3;
 pub const b2TOIState_b2_toiStateSeparated: b2TOIState = 4;
 #[doc = " Describes the TOI output"]
-pub type b2TOIState = ::std::os::raw::c_int;
+pub type b2TOIState = ::std::os::raw::c_uint;
 #[doc = " Time of impact output"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -678,7 +688,7 @@ pub struct b2ManifoldPoint {
     pub normalImpulse: f32,
     #[doc = " The friction impulse"]
     pub tangentImpulse: f32,
-    #[doc = " The total normal impulse applied across sub-stepping and restitution. This is important\n to identify speculative contact points that had an interaction in the time step."]
+    #[doc = " The total normal impulse applied across sub-stepping and restitution. This is important\n to identify speculative contact points that had an interaction in the time step.\n This includes the warm starting impulse, the sub-step delta impulse, and the restitution\n impulse."]
     pub totalNormalImpulse: f32,
     #[doc = " Relative normal velocity pre-solve. Used for hit events. If the normal impulse is\n zero then there was no hit. Negative means shapes are approaching."]
     pub normalVelocity: f32,
@@ -1218,7 +1228,7 @@ pub const b2BodyType_b2_dynamicBody: b2BodyType = 2;
 #[doc = " number of body types"]
 pub const b2BodyType_b2_bodyTypeCount: b2BodyType = 3;
 #[doc = " The body simulation type.\n Each body is one of these three types. The type determines how the body behaves in the simulation.\n @ingroup body"]
-pub type b2BodyType = ::std::os::raw::c_int;
+pub type b2BodyType = ::std::os::raw::c_uint;
 #[doc = " Motion locks to restrict the body movement"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -1262,7 +1272,7 @@ pub struct b2BodyDef {
     pub enableSleep: bool,
     #[doc = " Is this body initially awake or sleeping?"]
     pub isAwake: bool,
-    #[doc = " Treat this body as high speed object that performs continuous collision detection\n against dynamic and kinematic bodies, but not other bullet bodies.\n @warning Bullets should be used sparingly. They are not a solution for general dynamic-versus-dynamic\n continuous collision."]
+    #[doc = " Treat this body as a high speed object that performs continuous collision detection\n against dynamic and kinematic bodies, but not other bullet bodies.\n @warning Bullets should be used sparingly. They are not a solution for general dynamic-versus-dynamic\n continuous collision. They do not guarantee accurate collision if both bodies are fast moving because\n the bullet does a continuous check after all non-bullet bodies have moved. You could get unlucky and have\n the bullet body end a time step very close to a non-bullet body and the non-bullet body then moves over\n the bullet body. In continuous collision, initial overlap is ignored to avoid freezing bodies in place.\n I do not recommend using them for game projectiles if precise collision timing is needed. Instead consider\n using a ray or shape cast. You can use a marching ray or shape cast for projectile that moves over time.\n If you want a fast moving projectile to collide with a fast moving target, you need to consider the relative\n movement in your ray or shape cast. This is out of the scope of Box2D.\n So what are good use cases for bullets? Pinball games or games with dynamic containers that hold other objects.\n It should be a use case where it doesn't break the game if there is a collision missed, but the having them\n captured improves the quality of the game."]
     pub isBullet: bool,
     #[doc = " Used to disable a body. A disabled body does not move or collide."]
     pub isEnabled: bool,
@@ -1316,7 +1326,7 @@ pub const b2ShapeType_b2_chainSegmentShape: b2ShapeType = 4;
 #[doc = " The number of shape types"]
 pub const b2ShapeType_b2_shapeTypeCount: b2ShapeType = 5;
 #[doc = " Shape type\n @ingroup shape"]
-pub type b2ShapeType = ::std::os::raw::c_int;
+pub type b2ShapeType = ::std::os::raw::c_uint;
 #[doc = " Surface materials allow chain shapes to have per segment surface properties.\n @ingroup shape"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -1364,7 +1374,7 @@ pub struct b2ShapeDef {
     pub enablePreSolveEvents: bool,
     #[doc = " When shapes are created they will scan the environment for collision the next time step. This can significantly slow down\n static body creation when there are many static shapes.\n This is flag is ignored for dynamic and kinematic shapes which always invoke contact creation."]
     pub invokeContactCreation: bool,
-    #[doc = " Should the body update the mass properties when this shape is created. Default is true."]
+    #[doc = " Should the body update the mass properties when this shape is created. Default is true.\n Warning: if this is true, you MUST call b2Body_ApplyMassFromShapes before simulating the world."]
     pub updateBodyMass: bool,
     #[doc = " Used internally to detect a valid definition. DO NOT SET."]
     pub internalValue: ::std::os::raw::c_int,
@@ -1385,7 +1395,7 @@ pub struct b2ChainDef {
     pub count: ::std::os::raw::c_int,
     #[doc = " Surface materials for each segment. These are cloned."]
     pub materials: *const b2SurfaceMaterial,
-    #[doc = " The material count. Must be 1 or count. This allows you to provide one\n material for all segments or a unique material per segment."]
+    #[doc = " The material count. Must be 1 or count. This allows you to provide one\n material for all segments or a unique material per segment. For open\n chains, the material on the ghost segments are place holders."]
     pub materialCount: ::std::os::raw::c_int,
     #[doc = " Contact filtering data."]
     pub filter: b2Filter,
@@ -1452,7 +1462,7 @@ pub const b2JointType_b2_revoluteJoint: b2JointType = 4;
 pub const b2JointType_b2_weldJoint: b2JointType = 5;
 pub const b2JointType_b2_wheelJoint: b2JointType = 6;
 #[doc = " Joint type enumeration\n\n This is useful because all joint types use b2JointId and sometimes you\n want to get the type of a joint.\n @ingroup joint"]
-pub type b2JointType = ::std::os::raw::c_int;
+pub type b2JointType = ::std::os::raw::c_uint;
 #[doc = " Base joint definition used by all joint types.\n The local frames are measured from the body's origin rather than the center of mass because:\n 1. you might not know where the center of mass will be\n 2. if you add/remove shapes from a body and recompute the mass, the joints will be broken"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -1500,9 +1510,9 @@ pub struct b2DistanceJointDef {
     pub dampingRatio: f32,
     #[doc = " Enable/disable the joint limit"]
     pub enableLimit: bool,
-    #[doc = " Minimum length. Clamped to a stable minimum value."]
+    #[doc = " Minimum length for limit. Clamped to a stable minimum value."]
     pub minLength: f32,
-    #[doc = " Maximum length. Must be greater than or equal to the minimum length."]
+    #[doc = " Maximum length for limit. Must be greater than or equal to the minimum length."]
     pub maxLength: f32,
     #[doc = " Enable/disable the joint motor"]
     pub enableMotor: bool,
@@ -1593,7 +1603,7 @@ pub struct b2PrismaticJointDef {
     pub internalValue: ::std::os::raw::c_int,
 }
 unsafe extern "C" {
-    #[doc = " Use this to initialize your joint definition\n @ingroupd prismatic_joint"]
+    #[doc = " Use this to initialize your joint definition\n @ingroup prismatic_joint"]
     pub fn b2DefaultPrismaticJointDef() -> b2PrismaticJointDef;
 }
 #[doc = " Revolute joint definition\n A point on body B is fixed to a point on body A. Allows relative rotation.\n @ingroup revolute_joint"]
@@ -1761,6 +1771,8 @@ pub struct b2ContactHitEvent {
     pub shapeIdA: b2ShapeId,
     #[doc = " Id of the second shape"]
     pub shapeIdB: b2ShapeId,
+    #[doc = " Id of the contact.\n\t@warning this contact may have been destroyed\n\t@see b2Contact_IsValid"]
+    pub contactId: b2ContactId,
     #[doc = " Point where the shapes hit at the beginning of the time step.\n This is a mid-point between the two surfaces. It could be at speculative\n point where the two shapes were not touching at the beginning of the time step."]
     pub point: b2Vec2,
     #[doc = " Normal vector pointing from shape A to shape B"]
@@ -2015,7 +2027,7 @@ pub const b2HexColor_b2_colorBox2DBlue: b2HexColor = 3190463;
 pub const b2HexColor_b2_colorBox2DGreen: b2HexColor = 9226532;
 pub const b2HexColor_b2_colorBox2DYellow: b2HexColor = 16772748;
 #[doc = " These colors are used for debug draw and mostly match the named SVG colors.\n See https://www.rapidtables.com/web/color/index.html\n https://johndecember.com/html/spec/colorsvg.html\n https://upload.wikimedia.org/wikipedia/commons/2/2b/SVG_Recognized_color_keyword_names.svg"]
-pub type b2HexColor = ::std::os::raw::c_int;
+pub type b2HexColor = ::std::os::raw::c_uint;
 #[doc = " This struct holds callbacks you can implement to draw a Box2D world.\n This structure should be zero initialized.\n @ingroup world"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -2069,7 +2081,7 @@ pub struct b2DebugDraw {
         ),
     >,
     #[doc = " Draw a line segment."]
-    pub DrawSegmentFcn: ::std::option::Option<
+    pub DrawLineFcn: ::std::option::Option<
         unsafe extern "C" fn(
             p1: b2Vec2,
             p2: b2Vec2,
@@ -2118,7 +2130,7 @@ pub struct b2DebugDraw {
     #[doc = " Option to draw body names"]
     pub drawBodyNames: bool,
     #[doc = " Option to draw contact points"]
-    pub drawContacts: bool,
+    pub drawContactPoints: bool,
     #[doc = " Option to visualize the graph coloring used for contacts and joints"]
     pub drawGraphColors: bool,
     #[doc = " Option to draw contact feature ids"]
@@ -2454,8 +2466,13 @@ unsafe extern "C" {
     pub fn b2Body_SetAngularVelocity(bodyId: b2BodyId, angularVelocity: f32);
 }
 unsafe extern "C" {
-    #[doc = " Set the velocity to reach the given transform after a given time step.\n The result will be close but maybe not exact. This is meant for kinematic bodies.\n The target is not applied if the velocity would be below the sleep threshold.\n This will automatically wake the body if asleep."]
-    pub fn b2Body_SetTargetTransform(bodyId: b2BodyId, target: b2Transform, timeStep: f32);
+    #[doc = " Set the velocity to reach the given transform after a given time step.\n The result will be close but maybe not exact. This is meant for kinematic bodies.\n The target is not applied if the velocity would be below the sleep threshold and\n the body is currently asleep.\n @param bodyId The body id\n @param target The target transform for the body\n @param timeStep The time step of the next call to b2World_Step\n @param wake Option to wake the body or not"]
+    pub fn b2Body_SetTargetTransform(
+        bodyId: b2BodyId,
+        target: b2Transform,
+        timeStep: f32,
+        wake: bool,
+    );
 }
 unsafe extern "C" {
     #[doc = " Get the linear velocity of a local point attached to a body. Usually in meters per second."]
@@ -2518,7 +2535,7 @@ unsafe extern "C" {
     pub fn b2Body_GetMassData(bodyId: b2BodyId) -> b2MassData;
 }
 unsafe extern "C" {
-    #[doc = " This update the mass properties to the sum of the mass properties of the shapes.\n This normally does not need to be called unless you called SetMassData to override\n the mass and you later want to reset the mass.\n You may also use this when automatic mass computation has been disabled.\n You should call this regardless of body type.\n Note that sensor shapes may have mass."]
+    #[doc = " This updates the mass properties to the sum of the mass properties of the shapes.\n This normally does not need to be called unless you called SetMassData to override\n the mass and you later want to reset the mass.\n You may also use this when automatic mass computation has been disabled.\n You should call this regardless of body type.\n Note that sensor shapes may have mass."]
     pub fn b2Body_ApplyMassFromShapes(bodyId: b2BodyId);
 }
 unsafe extern "C" {
@@ -2670,7 +2687,7 @@ unsafe extern "C" {
     ) -> b2ShapeId;
 }
 unsafe extern "C" {
-    #[doc = " Create a capsule shape and attach it to a body. The shape definition and geometry are fully cloned.\n Contacts are not created until the next time step.\n @return the shape id for accessing the shape"]
+    #[doc = " Create a capsule shape and attach it to a body. The shape definition and geometry are fully cloned.\n Contacts are not created until the next time step.\n @return the shape id for accessing the shape, this will be b2_nullShapeId if the length is too small."]
     pub fn b2CreateCapsuleShape(
         bodyId: b2BodyId,
         def: *const b2ShapeDef,
@@ -2885,13 +2902,8 @@ unsafe extern "C" {
     pub fn b2Shape_GetClosestPoint(shapeId: b2ShapeId, target: b2Vec2) -> b2Vec2;
 }
 unsafe extern "C" {
-    pub fn b2Shape_ApplyWindForce(
-        shapeId: b2ShapeId,
-        wind: b2Vec2,
-        drag: f32,
-        lift: f32,
-        wake: bool,
-    );
+    #[doc = " Apply a wind force to the body for this shape using the density of air. This considers\n the projected area of the shape in the wind direction. This also considers\n the relative velocity of the shape.\n @param shapeId the shape id\n @param wind the wind velocity in world space\n @param drag the drag coefficient, the force that opposes the relative velocity\n @param lift the lift coefficient, the force that is perpendicular to the relative velocity\n @param wake should this wake the body"]
+    pub fn b2Shape_ApplyWind(shapeId: b2ShapeId, wind: b2Vec2, drag: f32, lift: f32, wake: bool);
 }
 unsafe extern "C" {
     #[doc = " Create a chain shape\n @see b2ChainDef for details"]

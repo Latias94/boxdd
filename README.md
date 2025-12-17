@@ -17,6 +17,7 @@
 ## Highlights
 - Safe, ergonomic Rust wrapper over the official Box2D v3 C API.
 - Mint interop by default: any `Into<Vec2>` accepts `mint::Vector2<f32>`, `mint::Point2<f32>`, arrays/tuples.
+- Two error-handling styles: panic-on-misuse by default, plus `try_*` APIs returning `ApiResult<T>` for recoverable errors.
 
 ## Quickstart
 ```rust
@@ -24,9 +25,9 @@ use boxdd::{World, WorldDef, BodyBuilder, ShapeDef, shapes, Vec2};
 
 let def = WorldDef::builder().gravity(Vec2::new(0.0, -9.8)).build();
 let mut world = World::new(def).unwrap();
-let mut body = world.create_body(BodyBuilder::new().position([0.0, 2.0]).build());
+let body = world.create_body_owned(BodyBuilder::new().position([0.0, 2.0]).build());
 let poly = shapes::box_polygon(0.5, 0.5);
-let _shape = body.create_polygon_shape(&ShapeDef::default(), &poly);
+let _shape = world.create_polygon_shape_for_owned(body.id(), &ShapeDef::default(), &poly);
 world.step(1.0/60.0, 4);
 ```
 
@@ -34,10 +35,13 @@ world.step(1.0/60.0, 4);
 - `serde`: serialization for `Vec2`, `Rot` (radians), `Transform` ({ pos, angle }) and config types.
 - `serialize`: snapshot helpers (save/apply world config; take/rebuild minimal full-scene snapshot).
 - `cgmath`, `nalgebra`, `glam`: conversions with their 2D types (e.g. `Vector2/Point2`, `UnitComplex/Isometry2`, `glam::Vec2`).
+- `bytemuck`: enable `Pod`/`Zeroable` for core math types (`Vec2`, `Rot`, `Transform`, `Aabb`) for zero-copy interop.
+- `unchecked`: exposes extra `unsafe` unchecked APIs for hot paths (skips id validity checks; you must guarantee ids are valid).
 
 ## Snapshots
 - Enable `serialize` and see example `examples/scene_serialize.rs` for a minimal scene round-trip.
-- Note: chain shapes are captured when created via ID-style API (`World::create_chain_for_id`).
+- Note: chain shapes are captured when created via this wrapper (`World::create_chain_for_id` / `Body::create_chain`).
+- Note: `ShapeDef` flags that have no runtime getters are captured for shapes created via this wrapper.
 
 ## Build Modes
 - From source: builds vendored Box2D C sources via `cc` and uses pregenerated bindings by default.
@@ -67,27 +71,29 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 ## Events
 - Three access styles:
   - By value: `world.contact_events()`/`sensor_events()`/`body_events()`/`joint_events()` return owned data for storage or cross-frame use.
-  - Zero‑copy views: `with_*_events_view(...)` iterate without exposing FFI types and without allocations (recommended for per‑frame processing).
-  - Raw slices: `with_*_events(...)` expose FFI slices for power users; valid only within the callback.
+  - Zero‑copy views: `unsafe { with_*_events_view(...) }` iterate without allocations (borrows internal buffers).
+  - Raw slices: `unsafe { with_*_events(...) }` expose FFI slices (borrows internal buffers).
 - Example (zero‑copy views):
 ```rust
 use boxdd::prelude::*;
 let mut world = World::new(WorldDef::default()).unwrap();
-world.with_contact_events_view(|begin, end, hit| {
+unsafe { world.with_contact_events_view(|begin, end, hit| {
     let _ = (begin.count(), end.count(), hit.count());
-});
-world.with_sensor_events_view(|beg, end| {
+})};
+unsafe { world.with_sensor_events_view(|beg, end| {
     let _ = (beg.count(), end.count());
-});
-world.with_body_events_view(|moves| {
+})};
+unsafe { world.with_body_events_view(|moves| {
     for m in moves { let _ = (m.body_id(), m.fell_asleep()); }
-});
-world.with_joint_events_view(|j| { let _ = j.count(); });
+})};
+unsafe { world.with_joint_events_view(|j| { let _ = j.count(); })};
 ```
 
 ## Notes
 - Vendored C sources + pregenerated bindings by default (no LLVM needed on CI). To force bindgen: set `BOXDD_SYS_FORCE_BINDGEN=1` and ensure `libclang` is available. On Windows/MSVC, set `LIBCLANG_PATH` if needed.
 - On docs.rs, the native C build is skipped.
+- Safe handle methods validate ids and panic on invalid ids (prevents UB if an id becomes stale). For recoverable failures (invalid ids / calling during Box2D callbacks), use `try_*` APIs.
+- Threading: `World` and owned handles are `!Send`/`!Sync`. Run physics on one thread; in async runtimes prefer `spawn_local`/`LocalSet`, or create the world inside a dedicated physics thread and communicate via channels.
 
 ## Documentation
 - Local: `cargo doc --open`

@@ -247,6 +247,7 @@ name = "boxdd"
 version = "0.1.1"
 dependencies = [
  "boxdd-sys",
+ "bytemuck",
  "cgmath",
  "dear-imgui-glow",
  "dear-imgui-rs",

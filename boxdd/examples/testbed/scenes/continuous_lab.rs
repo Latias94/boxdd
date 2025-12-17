@@ -128,18 +128,17 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
                 app.world.create_polygon_shape_for(l, &bd::ShapeDef::builder().density(1.0).build(), &bd::shapes::box_polygon(1.4, 0.15));
                 app.created_shapes += 1;
                 let lj = app.world.create_revolute_joint_world_id(ground, l, [-5.5, -1.2]);
-                unsafe {
-                    boxdd_sys::ffi::b2RevoluteJoint_EnableLimit(lj, true);
-                    let to_rad = std::f32::consts::PI / 180.0;
-                    boxdd_sys::ffi::b2RevoluteJoint_SetLimits(
-                        lj,
-                        app.pb_left_lower_deg * to_rad,
-                        app.pb_left_upper_deg * to_rad,
-                    );
-                    boxdd_sys::ffi::b2RevoluteJoint_EnableMotor(lj, true);
-                    boxdd_sys::ffi::b2RevoluteJoint_SetMotorSpeed(lj, 0.0);
-                    boxdd_sys::ffi::b2RevoluteJoint_SetMaxMotorTorque(lj, app.pb_flipper_torque);
-                }
+                app.world.revolute_enable_limit(lj, true);
+                let to_rad = std::f32::consts::PI / 180.0;
+                app.world.revolute_set_limits(
+                    lj,
+                    app.pb_left_lower_deg * to_rad,
+                    app.pb_left_upper_deg * to_rad,
+                );
+                app.world.revolute_enable_motor(lj, true);
+                app.world.revolute_set_motor_speed(lj, 0.0);
+                app.world
+                    .revolute_set_max_motor_torque(lj, app.pb_flipper_torque);
                 app.pb_left_joint = Some(lj);
                 let r = app
                     .world
@@ -148,18 +147,17 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
                 app.world.create_polygon_shape_for(r, &bd::ShapeDef::builder().density(1.0).build(), &bd::shapes::box_polygon(1.4, 0.15));
                 app.created_shapes += 1;
                 let rj = app.world.create_revolute_joint_world_id(ground, r, [5.5, -1.2]);
-                unsafe {
-                    boxdd_sys::ffi::b2RevoluteJoint_EnableLimit(rj, true);
-                    let to_rad = std::f32::consts::PI / 180.0;
-                    boxdd_sys::ffi::b2RevoluteJoint_SetLimits(
-                        rj,
-                        app.pb_right_lower_deg * to_rad,
-                        app.pb_right_upper_deg * to_rad,
-                    );
-                    boxdd_sys::ffi::b2RevoluteJoint_EnableMotor(rj, true);
-                    boxdd_sys::ffi::b2RevoluteJoint_SetMotorSpeed(rj, 0.0);
-                    boxdd_sys::ffi::b2RevoluteJoint_SetMaxMotorTorque(rj, app.pb_flipper_torque);
-                }
+                app.world.revolute_enable_limit(rj, true);
+                let to_rad = std::f32::consts::PI / 180.0;
+                app.world.revolute_set_limits(
+                    rj,
+                    app.pb_right_lower_deg * to_rad,
+                    app.pb_right_upper_deg * to_rad,
+                );
+                app.world.revolute_enable_motor(rj, true);
+                app.world.revolute_set_motor_speed(rj, 0.0);
+                app.world
+                    .revolute_set_max_motor_torque(rj, app.pb_flipper_torque);
                 app.pb_right_joint = Some(rj);
                 app.pb_left_flipper = Some(l);
                 app.pb_right_flipper = Some(r);
@@ -196,12 +194,8 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
             let cap = bd::shapes::capsule([-1.2, 0.0], [1.2, 0.0], 0.08);
             app.world.create_capsule_shape_for(b, &sdef_dyn, &cap);
             app.created_shapes += 1;
-            unsafe {
-                boxdd_sys::ffi::b2Body_SetLinearVelocity(
-                    b,
-                    boxdd_sys::ffi::b2Vec2 { x: dirx * app.ss_speed, y: diry * app.ss_speed },
-                )
-            };
+            app.world
+                .set_body_linear_velocity(b, [dirx * app.ss_speed, diry * app.ss_speed]);
         }
         _ => {}
     }
@@ -220,10 +214,10 @@ pub fn tick(app: &mut super::PhysicsApp) {
             let ls = if app.pb_hold_left { speed_rad } else { 0.0 };
             let rs = if app.pb_hold_right { -speed_rad } else { 0.0 };
             if let Some(j) = app.pb_left_joint {
-                unsafe { boxdd_sys::ffi::b2RevoluteJoint_SetMotorSpeed(j, ls) };
+                app.world.revolute_set_motor_speed(j, ls);
             }
             if let Some(j) = app.pb_right_joint {
-                unsafe { boxdd_sys::ffi::b2RevoluteJoint_SetMotorSpeed(j, rs) };
+                app.world.revolute_set_motor_speed(j, rs);
             }
         }
         _ => {}
@@ -327,30 +321,26 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
                 } else if (torque - app.pb_flipper_torque).abs() > f32::EPSILON {
                     app.pb_flipper_torque = torque;
                     if let Some(j) = app.pb_left_joint {
-                        unsafe { boxdd_sys::ffi::b2RevoluteJoint_SetMaxMotorTorque(j, torque) };
+                        app.world.revolute_set_max_motor_torque(j, torque);
                     }
                     if let Some(j) = app.pb_right_joint {
-                        unsafe { boxdd_sys::ffi::b2RevoluteJoint_SetMaxMotorTorque(j, torque) };
+                        app.world.revolute_set_max_motor_torque(j, torque);
                     }
                 }
                 let to_rad = std::f32::consts::PI / 180.0;
                 if let Some(j) = app.pb_left_joint {
-                    unsafe {
-                        boxdd_sys::ffi::b2RevoluteJoint_SetLimits(
-                            j,
-                            app.pb_left_lower_deg * to_rad,
-                            app.pb_left_upper_deg * to_rad,
-                        )
-                    };
+                    app.world.revolute_set_limits(
+                        j,
+                        app.pb_left_lower_deg * to_rad,
+                        app.pb_left_upper_deg * to_rad,
+                    );
                 }
                 if let Some(j) = app.pb_right_joint {
-                    unsafe {
-                        boxdd_sys::ffi::b2RevoluteJoint_SetLimits(
-                            j,
-                            app.pb_right_lower_deg * to_rad,
-                            app.pb_right_upper_deg * to_rad,
-                        )
-                    };
+                    app.world.revolute_set_limits(
+                        j,
+                        app.pb_right_lower_deg * to_rad,
+                        app.pb_right_upper_deg * to_rad,
+                    );
                 }
             }
             if ui.button("Spawn Ball") {
@@ -369,7 +359,7 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
                 let sdef = bd::ShapeDef::builder().material(mat).density(1.0).build();
                 app.world.create_circle_shape_for(b, &sdef, &bd::shapes::circle([0.0, 0.0], app.pb_ball_radius));
                 app.created_shapes += 1;
-                unsafe { boxdd_sys::ffi::b2Body_SetLinearVelocity(b, boxdd_sys::ffi::b2Vec2 { x: 6.0, y: -2.0 }) };
+                app.world.set_body_linear_velocity(b, [6.0, -2.0]);
                 app.pb_ball_count += 1;
             }
         }
@@ -388,4 +378,3 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
         _ => {}
     }
 }
-

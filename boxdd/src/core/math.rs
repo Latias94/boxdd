@@ -1,16 +1,19 @@
 use crate::types::Vec2;
 use boxdd_sys::ffi;
 
-#[repr(transparent)]
+#[repr(C)]
 #[derive(Copy, Clone, Debug)]
-pub struct Rot(pub(crate) ffi::b2Rot);
+pub struct Rot {
+    pub(crate) c: f32,
+    pub(crate) s: f32,
+}
 
 impl Rot {
-    pub const IDENTITY: Self = Self(ffi::b2Rot { c: 1.0, s: 0.0 });
+    pub const IDENTITY: Self = Self { c: 1.0, s: 0.0 };
     #[inline]
     pub fn from_radians(rad: f32) -> Self {
         let (s, c) = rad.sin_cos();
-        Self(ffi::b2Rot { c, s })
+        Self { c, s }
     }
     #[inline]
     pub fn from_degrees(deg: f32) -> Self {
@@ -18,12 +21,12 @@ impl Rot {
     }
     #[inline]
     pub fn angle(self) -> f32 {
-        self.0.s.atan2(self.0.c)
+        self.s.atan2(self.c)
     }
     #[inline]
     pub fn rotate_vec(self, v: Vec2) -> Vec2 {
-        let c = self.0.c;
-        let s = self.0.s;
+        let c = self.c;
+        let s = self.s;
         Vec2 {
             x: c * v.x - s * v.y,
             y: s * v.x + c * v.y,
@@ -31,8 +34,8 @@ impl Rot {
     }
     #[inline]
     pub fn inv_rotate_vec(self, v: Vec2) -> Vec2 {
-        let c = self.0.c;
-        let s = self.0.s;
+        let c = self.c;
+        let s = self.s;
         Vec2 {
             x: c * v.x + s * v.y,
             y: -s * v.x + c * v.y,
@@ -43,13 +46,13 @@ impl Rot {
 impl From<Rot> for ffi::b2Rot {
     #[inline]
     fn from(r: Rot) -> Self {
-        r.0
+        ffi::b2Rot { c: r.c, s: r.s }
     }
 }
 impl From<ffi::b2Rot> for Rot {
     #[inline]
     fn from(r: ffi::b2Rot) -> Self {
-        Self(r)
+        Self { c: r.c, s: r.s }
     }
 }
 
@@ -90,10 +93,10 @@ impl<'a> From<&'a cgmath::Basis2<f32>> for Rot {
     #[inline]
     fn from(b: &'a cgmath::Basis2<f32>) -> Self {
         let col_y = b.as_ref().y; // rotation's Y axis
-        Rot(ffi::b2Rot {
+        Rot {
             c: col_y.y,
             s: col_y.x,
-        })
+        }
     }
 }
 
@@ -113,57 +116,162 @@ impl<'a> From<&'a nalgebra::UnitComplex<f32>> for Rot {
     }
 }
 
-#[repr(transparent)]
+#[repr(C)]
 #[derive(Copy, Clone, Debug)]
-pub struct Transform(pub(crate) ffi::b2Transform);
+pub struct Transform {
+    pub(crate) p: Vec2,
+    pub(crate) q: Rot,
+}
 
 impl Transform {
-    pub const IDENTITY: Self = Self(ffi::b2Transform {
-        p: ffi::b2Vec2 { x: 0.0, y: 0.0 },
-        q: ffi::b2Rot { c: 1.0, s: 0.0 },
-    });
+    pub const IDENTITY: Self = Self {
+        p: Vec2 { x: 0.0, y: 0.0 },
+        q: Rot::IDENTITY,
+    };
     #[inline]
     pub fn from_pos_angle<P: Into<Vec2>>(p: P, angle_radians: f32) -> Self {
-        let pv: ffi::b2Vec2 = p.into().into();
-        Self(ffi::b2Transform {
-            p: pv,
-            q: Rot::from_radians(angle_radians).into(),
-        })
+        Self {
+            p: p.into(),
+            q: Rot::from_radians(angle_radians),
+        }
     }
     #[inline]
     pub fn position(self) -> Vec2 {
-        Vec2::from(self.0.p)
+        self.p
     }
     #[inline]
     pub fn rotation(self) -> Rot {
-        Rot(self.0.q)
+        self.q
     }
     #[inline]
     pub fn transform_point(self, v: Vec2) -> Vec2 {
-        let r = Rot(self.0.q).rotate_vec(v);
+        let r = self.q.rotate_vec(v);
         Vec2 {
-            x: r.x + self.0.p.x,
-            y: r.y + self.0.p.y,
+            x: r.x + self.p.x,
+            y: r.y + self.p.y,
         }
     }
     #[inline]
     pub fn inv_transform_point(self, v: Vec2) -> Vec2 {
-        let dx = v.x - self.0.p.x;
-        let dy = v.y - self.0.p.y;
-        Rot(self.0.q).inv_rotate_vec(Vec2 { x: dx, y: dy })
+        let dx = v.x - self.p.x;
+        let dy = v.y - self.p.y;
+        self.q.inv_rotate_vec(Vec2 { x: dx, y: dy })
     }
 }
 
 impl From<Transform> for ffi::b2Transform {
     #[inline]
     fn from(t: Transform) -> Self {
-        t.0
+        ffi::b2Transform {
+            p: t.p.into(),
+            q: t.q.into(),
+        }
     }
 }
 impl From<ffi::b2Transform> for Transform {
     #[inline]
     fn from(t: ffi::b2Transform) -> Self {
-        Self(t)
+        Self {
+            p: Vec2::from(t.p),
+            q: Rot::from(t.q),
+        }
+    }
+}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl bytemuck::Zeroable for Rot {}
+#[cfg(feature = "bytemuck")]
+unsafe impl bytemuck::Pod for Rot {}
+#[cfg(feature = "bytemuck")]
+unsafe impl bytemuck::Zeroable for Transform {}
+#[cfg(feature = "bytemuck")]
+unsafe impl bytemuck::Pod for Transform {}
+
+#[cfg(feature = "bytemuck")]
+const _: () = {
+    assert!(core::mem::size_of::<Rot>() == 8);
+    assert!(core::mem::align_of::<Rot>() == 4);
+    assert!(core::mem::size_of::<Transform>() == 16);
+    assert!(core::mem::align_of::<Transform>() == 4);
+};
+
+#[cfg(feature = "glam")]
+impl From<Rot> for glam::Mat2 {
+    #[inline]
+    fn from(r: Rot) -> Self {
+        let x = glam::Vec2::new(r.c, r.s);
+        let y = glam::Vec2::new(-r.s, r.c);
+        glam::Mat2::from_cols(x, y)
+    }
+}
+
+#[cfg(feature = "glam")]
+impl From<Transform> for glam::Affine2 {
+    #[inline]
+    fn from(t: Transform) -> Self {
+        glam::Affine2::from_mat2_translation(t.q.into(), t.p.into())
+    }
+}
+
+#[cfg(feature = "glam")]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, thiserror::Error)]
+pub enum TransformFromGlamError {
+    #[error("non-finite value in glam::Affine2")]
+    NonFinite,
+    #[error("glam::Affine2 is not a pure rotation + translation")]
+    NotPureRotation,
+}
+
+#[cfg(feature = "glam")]
+impl TryFrom<glam::Affine2> for Transform {
+    type Error = TransformFromGlamError;
+
+    #[inline]
+    fn try_from(a: glam::Affine2) -> Result<Self, Self::Error> {
+        let t = a.translation;
+        let x = a.matrix2.x_axis;
+        let y = a.matrix2.y_axis;
+
+        if !(t.is_finite() && x.is_finite() && y.is_finite()) {
+            return Err(TransformFromGlamError::NonFinite);
+        }
+
+        // We only accept pure rotations (orthonormal basis with determinant +1).
+        // This rejects scale/shear/mirror transforms.
+        let eps = 1.0e-4;
+        let x_len2 = x.length_squared();
+        let y_len2 = y.length_squared();
+        if (x_len2 - 1.0).abs() > eps || (y_len2 - 1.0).abs() > eps {
+            return Err(TransformFromGlamError::NotPureRotation);
+        }
+        if x.dot(y).abs() > eps {
+            return Err(TransformFromGlamError::NotPureRotation);
+        }
+        let det = x.x * y.y - x.y * y.x;
+        if (det - 1.0).abs() > 5.0e-4 {
+            return Err(TransformFromGlamError::NotPureRotation);
+        }
+
+        // Our convention: columns are [c, s] and [-s, c]
+        let expected_y = glam::Vec2::new(-x.y, x.x);
+        if (y - expected_y).length_squared() > 1.0e-6 {
+            return Err(TransformFromGlamError::NotPureRotation);
+        }
+
+        Ok(Transform {
+            p: t.into(),
+            q: Rot { c: x.x, s: x.y },
+        })
+    }
+}
+
+#[cfg(feature = "glam")]
+impl TryFrom<&glam::Affine2> for Transform {
+    type Error = TransformFromGlamError;
+
+    #[inline]
+    fn try_from(a: &glam::Affine2) -> Result<Self, Self::Error> {
+        Self::try_from(*a)
     }
 }
 

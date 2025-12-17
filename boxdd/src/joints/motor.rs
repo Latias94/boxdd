@@ -2,7 +2,8 @@ use crate::types::BodyId;
 use crate::world::World;
 use boxdd_sys::ffi;
 
-use super::{Joint, JointBase, JointBaseBuilder};
+use super::{Joint, JointBase, JointBaseBuilder, OwnedJoint};
+use crate::error::ApiResult;
 
 // Motor joint
 #[derive(Clone, Debug)]
@@ -117,11 +118,44 @@ impl<'w> MotorJointBuilder<'w> {
 
     #[must_use]
     pub fn build(mut self) -> Joint<'w> {
+        crate::core::debug_checks::assert_body_valid(self.body_a);
+        crate::core::debug_checks::assert_body_valid(self.body_b);
         // Default frames: identity (base only needs bodies)
         let base = JointBaseBuilder::new()
             .bodies_by_id(self.body_a, self.body_b)
             .build();
         self.def.0.base = base.0;
         self.world.create_motor_joint(&self.def)
+    }
+
+    pub fn try_build(mut self) -> ApiResult<Joint<'w>> {
+        crate::core::debug_checks::check_body_valid(self.body_a)?;
+        crate::core::debug_checks::check_body_valid(self.body_b)?;
+        let base = JointBaseBuilder::new()
+            .bodies_by_id(self.body_a, self.body_b)
+            .build();
+        self.def.0.base = base.0;
+        self.world.try_create_motor_joint(&self.def)
+    }
+
+    #[must_use]
+    pub fn build_owned(mut self) -> OwnedJoint {
+        crate::core::debug_checks::assert_body_valid(self.body_a);
+        crate::core::debug_checks::assert_body_valid(self.body_b);
+        let base = JointBaseBuilder::new()
+            .bodies_by_id(self.body_a, self.body_b)
+            .build();
+        self.def.0.base = base.0;
+        self.world.create_motor_joint_owned(&self.def)
+    }
+
+    pub fn try_build_owned(mut self) -> ApiResult<OwnedJoint> {
+        crate::core::debug_checks::check_body_valid(self.body_a)?;
+        crate::core::debug_checks::check_body_valid(self.body_b)?;
+        let base = JointBaseBuilder::new()
+            .bodies_by_id(self.body_a, self.body_b)
+            .build();
+        self.def.0.base = base.0;
+        self.world.try_create_motor_joint_owned(&self.def)
     }
 }

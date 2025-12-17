@@ -37,8 +37,8 @@ pub fn tick(app: &mut super::PhysicsApp) {
     let mut min_ang = f32::MAX;
     let mut max_ang = f32::MIN;
     for &jid in &app.js_joint_ids {
-        let lin = unsafe { boxdd_sys::ffi::b2Joint_GetLinearSeparation(jid) };
-        let ang = unsafe { boxdd_sys::ffi::b2Joint_GetAngularSeparation(jid) };
+        let lin = app.world.joint_linear_separation(jid);
+        let ang = app.world.joint_angular_separation(jid);
         min_lin = min_lin.min(lin);
         max_lin = max_lin.max(lin);
         min_ang = min_ang.min(ang);

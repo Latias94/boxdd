@@ -38,7 +38,7 @@ fn shape_flags_snapshot_recorded() {
     let mut world = World::new(def).expect("create world");
     let a = world.create_body_id(BodyBuilder::new().position([0.0, 1.0]).build());
 
-    // Enable various flags on the ShapeDef and create via ID-style API so flags are recorded.
+    // Enable various flags on the ShapeDef so they are recorded for snapshot.
     let sdef = ShapeDef::builder()
         .density(1.0)
         .sensor(true)
@@ -57,6 +57,52 @@ fn shape_flags_snapshot_recorded() {
 
     let scene = boxdd::serialize::SceneSnapshot::take(&world);
     // Find a circle shape and inspect serialized def flags.
+    let mut found = false;
+    for b in &scene.bodies {
+        for sh in &b.shapes {
+            if let boxdd::serialize::ShapeGeom::Circle { .. } = sh.geom {
+                let val = serde_json::to_value(&sh.def).expect("serde shape def to value");
+                assert_eq!(val["is_sensor"], true);
+                assert_eq!(val["enable_custom_filtering"], true);
+                assert_eq!(val["enable_sensor_events"], true);
+                assert_eq!(val["enable_contact_events"], true);
+                assert_eq!(val["enable_hit_events"], true);
+                assert_eq!(val["enable_pre_solve_events"], true);
+                assert_eq!(val["invoke_contact_creation"], true);
+                found = true;
+                break;
+            }
+        }
+    }
+    assert!(found, "did not find circle shape with expected flags");
+}
+
+#[test]
+fn shape_flags_snapshot_recorded_for_scoped_shapes() {
+    let def = WorldDef::builder().gravity(Vec2::new(0.0, -9.8)).build();
+    let mut world = World::new(def).expect("create world");
+
+    {
+        let mut body = world.create_body(BodyBuilder::new().position([0.0, 1.0]).build());
+
+        let sdef = ShapeDef::builder()
+            .density(1.0)
+            .sensor(true)
+            .enable_custom_filtering(true)
+            .enable_sensor_events(true)
+            .enable_contact_events(true)
+            .enable_hit_events(true)
+            .enable_pre_solve_events(true)
+            .invoke_contact_creation(true)
+            .build();
+        let circle = boxdd_sys::ffi::b2Circle {
+            center: Vec2::new(0.0, 0.0).into(),
+            radius: 0.25,
+        };
+        let _ = body.create_circle_shape(&sdef, &circle);
+    }
+
+    let scene = boxdd::serialize::SceneSnapshot::take(&world);
     let mut found = false;
     for b in &scene.bodies {
         for sh in &b.shapes {

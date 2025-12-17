@@ -29,17 +29,15 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
     app.created_shapes += 1;
 
     // Distance joint between A and B; thresholds will be set after creation
-    let j = app
+    let mut j = app
         .world
         .distance(a, b)
         .anchors_world([-1.5, 4.0], [1.5, 4.0])
         .length(4.0)
         .build();
     app.created_joints += 1;
-    unsafe {
-        boxdd_sys::ffi::b2Joint_SetForceThreshold(j.id(), app.bj_force_thres);
-        boxdd_sys::ffi::b2Joint_SetTorqueThreshold(j.id(), app.bj_torque_thres);
-    }
+    j.set_force_threshold(app.bj_force_thres);
+    j.set_torque_threshold(app.bj_torque_thres);
 }
 
 pub fn tick(app: &mut super::PhysicsApp) {
@@ -68,8 +66,9 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
         if let Some(h) = hits.first() {
             // Convert hit shape to body id
             let sid = h.shape_id;
-            let bid = unsafe { boxdd_sys::ffi::b2Shape_GetBody(sid) };
-            unsafe { boxdd_sys::ffi::b2Body_ApplyLinearImpulseToCenter(bid, boxdd_sys::ffi::b2Vec2 { x: 50.0, y: 0.0 }, true) };
+            let bid = app.world.shape_body_id(sid);
+            app.world
+                .body_apply_linear_impulse_to_center(bid, [50.0, 0.0], true);
         }
     }
     ui.text(format!("Breakable: joint events seen={}", app.bj_broken));

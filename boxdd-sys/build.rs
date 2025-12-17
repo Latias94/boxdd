@@ -32,6 +32,8 @@ fn main() {
     println!("cargo:rerun-if-env-changed=BOXDD_SYS_STRICT_FEATURES");
     println!("cargo:rerun-if-env-changed=EMSDK");
     println!("cargo:rerun-if-env-changed=WASI_SDK_PATH");
+    println!("cargo:rerun-if-env-changed=DOCS_RS");
+    println!("cargo:rerun-if-env-changed=CARGO_CFG_DOCSRS");
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
@@ -74,6 +76,13 @@ fn main() {
     let force_bindgen = parse_bool_env("BOXDD_SYS_FORCE_BINDGEN");
     if force_bindgen || (!has_pregenerated && !is_docsrs && !used_wasm_pregenerated) {
         generate_bindings(&manifest_dir, &out_dir);
+    }
+
+    // docs.rs: do not attempt to build/link native C sources.
+    // Rustdoc only needs the Rust bindings to compile; the final link step happens in binaries/tests.
+    if is_docsrs {
+        println!("cargo:warning=DOCS_RS detected: skipping native Box2D C build");
+        return;
     }
 
     // Build C sources unless explicitly skipped

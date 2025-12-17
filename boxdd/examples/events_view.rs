@@ -52,21 +52,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for _ in 0..60 {
         world.step(1.0 / 60.0, 8);
 
-        // Zero-copy views
-        world.with_body_events_view(|moves| {
-            for m in moves {
-                let _ = (m.body_id(), m.fell_asleep());
-            }
-        });
-        world.with_sensor_events_view(|beg, end| {
-            let _ = (beg.count(), end.count());
-        });
-        world.with_contact_events_view(|b, e, h| {
-            let _ = (b.count(), e.count(), h.count());
-        });
-        world.with_joint_events_view(|j| {
-            let _ = j.count();
-        });
+        // Zero-copy views (unsafe: borrows internal Box2D buffers)
+        unsafe {
+            world.with_body_events_view(|moves| {
+                for m in moves {
+                    let _ = (m.body_id(), m.fell_asleep());
+                }
+            });
+            world.with_sensor_events_view(|beg, end| {
+                let _ = (beg.count(), end.count());
+            });
+            world.with_contact_events_view(|b, e, h| {
+                let _ = (b.count(), e.count(), h.count());
+            });
+            world.with_joint_events_view(|j| {
+                let _ = j.count();
+            });
+        }
     }
     Ok(())
 }

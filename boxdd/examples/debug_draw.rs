@@ -3,16 +3,16 @@ use boxdd::{BodyBuilder, DebugDraw, DebugDrawOptions, ShapeDef, Vec2, World, Wor
 struct Printer;
 
 impl DebugDraw for Printer {
-    fn draw_polygon(&mut self, vertices: &[boxdd::Vec2], color: i32) {
+    fn draw_polygon(&mut self, vertices: &[boxdd::Vec2], color: u32) {
         println!("polygon {} verts color={:#x}", vertices.len(), color);
     }
-    fn draw_segment(&mut self, p1: boxdd::Vec2, p2: boxdd::Vec2, _color: i32) {
+    fn draw_segment(&mut self, p1: boxdd::Vec2, p2: boxdd::Vec2, _color: u32) {
         println!(
             "segment ({:.2},{:.2})->({:.2},{:.2})",
             p1.x, p1.y, p2.x, p2.y
         );
     }
-    fn draw_string(&mut self, p: boxdd::Vec2, s: &str, _color: i32) {
+    fn draw_string(&mut self, p: boxdd::Vec2, s: &str, _color: u32) {
         println!("label at ({:.2},{:.2}): {}", p.x, p.y, s);
     }
 }
@@ -38,7 +38,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts = DebugDrawOptions::default();
     for _ in 0..3 {
         world.step(1.0 / 60.0, 4);
-        world.debug_draw(&mut drawer, opts);
+        // SAFETY: `Printer` does not mutate the world during callbacks.
+        unsafe { world.debug_draw(&mut drawer, opts) };
     }
     Ok(())
 }

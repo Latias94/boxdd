@@ -125,7 +125,7 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
             if ui.button("Wake Touching (platform)")
                 && let Some(id) = app.wt_ground_body
             {
-                unsafe { boxdd_sys::ffi::b2Body_WakeTouching(id) };
+                app.world.body_wake_touching(id);
                 app.wt_wakes += 1;
             }
             ui.text(format!("Wake Touching: triggered {} times", app.wt_wakes));
@@ -133,4 +133,3 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
         _ => {}
     }
 }
-

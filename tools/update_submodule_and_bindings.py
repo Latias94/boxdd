@@ -26,6 +26,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 
 def run(cmd, cwd=None, env=None, dry=False):
@@ -40,7 +41,7 @@ def run(cmd, cwd=None, env=None, dry=False):
         return e.returncode
 
 
-def find_bindings(target_dir: Path, profile: str, crate: str) -> Path | None:
+def find_bindings(target_dir: Path, profile: str, crate: str) -> Optional[Path]:
     build_dir = target_dir / profile / "build"
     if not build_dir.exists():
         return None
@@ -53,7 +54,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Update submodule and pregenerate bindings for boxdd-sys")
     parser.add_argument("--profile", default="debug", choices=["debug", "release"], help="Cargo profile")
     parser.add_argument("--submodules", default="update", choices=["update", "skip"], help="Whether to update submodules")
-    parser.add_argument("--wasm-target", default=None, choices=[None, "emscripten", "wasi"], help="Generate wasm-specific pregenerated bindings for the given target")
+    parser.add_argument("--wasm-target", default=None, choices=["emscripten", "wasi"], help="Generate wasm-specific pregenerated bindings for the given target")
     parser.add_argument("--dry-run", action="store_true", help="Print commands only")
     args = parser.parse_args()
 
@@ -75,6 +76,8 @@ def main() -> int:
     # Build to generate bindings, but skip native C build to speed up
     env = os.environ.copy()
     env["BOXDD_SYS_SKIP_CC"] = "1"
+    # Ensure bindgen runs even when pregenerated bindings already exist.
+    env["BOXDD_SYS_FORCE_BINDGEN"] = "1"
     profile_flag = ["--release"] if args.profile == "release" else []
 
     # Optionally build for wasm target to emit wasm-specific bindings

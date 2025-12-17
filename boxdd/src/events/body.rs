@@ -39,6 +39,7 @@ impl<'a> Iterator for BodyMoveIter<'a> {
 
 impl World {
     pub fn body_events(&self) -> Vec<BodyMoveEvent> {
+        crate::core::callback_state::assert_not_in_callback();
         let raw = unsafe { ffi::b2World_GetBodyEvents(self.raw()) };
         if raw.moveCount <= 0 || raw.moveEvents.is_null() {
             return Vec::new();
@@ -55,7 +56,14 @@ impl World {
     }
 
     // Zero-copy visitor (closure style). Data is only valid within the call.
-    pub fn with_body_events<T>(&self, f: impl FnOnce(&[ffi::b2BodyMoveEvent]) -> T) -> T {
+    /// Low-level raw view over body events (borrows Box2D's internal buffers).
+    ///
+    /// # Safety
+    /// The returned slice borrows internal Box2D buffers. While `f` runs, you must not perform
+    /// any operation that can mutate those buffers (e.g. stepping the world, destroying bodies/shapes,
+    /// or dropping `Owned*` handles that may trigger destruction).
+    pub unsafe fn with_body_events<T>(&self, f: impl FnOnce(&[ffi::b2BodyMoveEvent]) -> T) -> T {
+        crate::core::callback_state::assert_not_in_callback();
         let raw = unsafe { ffi::b2World_GetBodyEvents(self.raw()) };
         let slice = if raw.moveCount > 0 && !raw.moveEvents.is_null() {
             unsafe { core::slice::from_raw_parts(raw.moveEvents, raw.moveCount as usize) }
@@ -72,11 +80,16 @@ impl World {
     /// ```rust
     /// use boxdd::prelude::*;
     /// let mut world = World::new(WorldDef::default()).unwrap();
-    /// world.with_body_events_view(|it| {
+    /// unsafe { world.with_body_events_view(|it| {
     ///     for e in it { let _ = (e.body_id(), e.fell_asleep()); }
-    /// });
+    /// })};
     /// ```
-    pub fn with_body_events_view<T>(&self, f: impl FnOnce(BodyMoveIter<'_>) -> T) -> T {
+    ///
+    /// # Safety
+    /// This borrows internal Box2D buffers. While `f` runs, you must not perform any operation
+    /// that can mutate those buffers (including dropping `Owned*` handles that may destroy objects).
+    pub unsafe fn with_body_events_view<T>(&self, f: impl FnOnce(BodyMoveIter<'_>) -> T) -> T {
+        crate::core::callback_state::assert_not_in_callback();
         let raw = unsafe { ffi::b2World_GetBodyEvents(self.raw()) };
         let slice = if raw.moveCount > 0 && !raw.moveEvents.is_null() {
             unsafe { core::slice::from_raw_parts(raw.moveEvents, raw.moveCount as usize) }

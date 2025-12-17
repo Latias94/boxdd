@@ -22,10 +22,8 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     app.ml_body = Some(b);
 
     // Apply initial velocity so locks are visible
-    unsafe {
-        boxdd_sys::ffi::b2Body_SetLinearVelocity(b, boxdd_sys::ffi::b2Vec2 { x: 5.0, y: 0.0 });
-        boxdd_sys::ffi::b2Body_SetAngularVelocity(b, 2.0);
-    }
+    app.world.set_body_linear_velocity(b, [5.0, 0.0]);
+    app.world.set_body_angular_velocity(b, 2.0);
 
     // Apply current locks
     apply_locks(app);
@@ -33,14 +31,12 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
 
 fn apply_locks(app: &mut super::PhysicsApp) {
     if let Some(bid) = app.ml_body {
-        unsafe {
-            let locks = boxdd_sys::ffi::b2MotionLocks {
-                linearX: app.ml_lock_x,
-                linearY: app.ml_lock_y,
-                angularZ: app.ml_lock_rot,
-            };
-            boxdd_sys::ffi::b2Body_SetMotionLocks(bid, locks);
-        }
+        let locks = boxdd_sys::ffi::b2MotionLocks {
+            linearX: app.ml_lock_x,
+            linearY: app.ml_lock_y,
+            angularZ: app.ml_lock_rot,
+        };
+        app.world.set_body_motion_locks(bid, locks);
     }
 }
 
@@ -58,15 +54,17 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
         apply_locks(app);
     }
     if ui.button("Impulse +X") && let Some(id) = app.ml_body {
-        unsafe { boxdd_sys::ffi::b2Body_ApplyLinearImpulseToCenter(id, boxdd_sys::ffi::b2Vec2 { x: 15.0, y: 0.0 }, true) };
+        app.world
+            .body_apply_linear_impulse_to_center(id, [15.0, 0.0], true);
     }
     ui.same_line();
     if ui.button("Impulse +Y") && let Some(id) = app.ml_body {
-        unsafe { boxdd_sys::ffi::b2Body_ApplyLinearImpulseToCenter(id, boxdd_sys::ffi::b2Vec2 { x: 0.0, y: 15.0 }, true) };
+        app.world
+            .body_apply_linear_impulse_to_center(id, [0.0, 15.0], true);
     }
     ui.same_line();
     if ui.button("Spin") && let Some(id) = app.ml_body {
-        unsafe { boxdd_sys::ffi::b2Body_ApplyAngularImpulse(id, 8.0, true) };
+        app.world.body_apply_angular_impulse(id, 8.0, true);
     }
     ui.text("Motion Locks: toggle constraints and apply impulses");
 }

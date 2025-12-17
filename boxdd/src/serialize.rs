@@ -1,8 +1,6 @@
 //! Serializable snapshots for configs and selected runtime state.
 //!
-//! This module is only compiled when the `serde` feature is enabled.
-
-#![cfg(feature = "serde")]
+//! This module is only compiled when the `serialize` feature is enabled.
 
 use crate::{body::BodyType, types::Vec2, world::World};
 use boxdd_sys::ffi;
@@ -71,6 +69,7 @@ pub struct BodySnapshot {
 
 impl BodySnapshot {
     pub fn take(world: &World, id: ffi::b2BodyId) -> Self {
+        crate::core::debug_checks::assert_body_valid(id);
         let rot = unsafe { ffi::b2Body_GetRotation(id) };
         Self {
             body_type: match unsafe { ffi::b2Body_GetType(id) } {
@@ -89,6 +88,7 @@ impl BodySnapshot {
     }
 
     pub fn apply(&self, world: &mut World, id: ffi::b2BodyId) {
+        crate::core::debug_checks::assert_body_valid(id);
         world.set_body_type(id, self.body_type);
         // set transform (position + angle)
         let (s, c) = self.angle.sin_cos();
@@ -232,12 +232,14 @@ pub enum JointParams {
 
 impl SceneSnapshot {
     pub fn take(world: &World) -> Self {
+        crate::core::callback_state::assert_not_in_callback();
         let cfg = WorldConfigSnapshot::take(world);
         // Build body list from registry (only tracks bodies created via this wrapper)
         let body_ids = world.body_ids();
         let mut bodies = Vec::new();
 
         for &bid in &body_ids {
+            crate::core::debug_checks::assert_body_valid(bid);
             // BodyDef from runtime
             let def = body_def_from_runtime(bid);
             // Optional name
@@ -274,6 +276,9 @@ impl SceneSnapshot {
 
         let mut joints = Vec::new();
         for j in joint_list {
+            if !unsafe { ffi::b2Joint_IsValid(j) } {
+                continue;
+            }
             let a = unsafe { ffi::b2Joint_GetBodyA(j) };
             let b = unsafe { ffi::b2Joint_GetBodyB(j) };
             let ia = find_body_index(&body_ids, a);
@@ -373,7 +378,7 @@ impl SceneSnapshot {
             });
         }
 
-        // Chains via world registry (ID-style creation only)
+        // Chains via registry (captured at creation time).
         let mut chains: Vec<ChainRecord> = Vec::new();
         for cr in world.chain_records() {
             if let Some(bi) = find_body_index(&body_ids, cr.body) {
@@ -464,6 +469,30 @@ impl SceneSnapshot {
                 }
             }
             map.push(id);
+        }
+
+        // Create chains (captured via ID-style chain creation records).
+        for cr in &self.chains {
+            let body = map.get(cr.body as usize).copied();
+            let Some(body) = body else {
+                continue;
+            };
+            let mut b = crate::shapes::chain::ChainDef::builder()
+                .points(cr.points.iter().copied())
+                .is_loop(cr.is_loop)
+                .filter(cr.filter.into())
+                .enable_sensor_events(cr.enable_sensor_events);
+            match &cr.materials {
+                None => {}
+                Some(ChainMaterials::Single(m)) => {
+                    b = b.single_material(m);
+                }
+                Some(ChainMaterials::Multiple(ms)) => {
+                    b = b.materials(ms);
+                }
+            }
+            let def = b.build();
+            let _ = world.create_chain_for_id(body, &def);
         }
 
         // Create joints (base frames only; type-specific parameters defaulted)
@@ -640,6 +669,7 @@ impl SceneSnapshot {
 }
 
 fn body_def_from_runtime(id: ffi::b2BodyId) -> crate::body::BodyDef {
+    crate::core::debug_checks::assert_body_valid(id);
     let btype = unsafe { ffi::b2Body_GetType(id) };
     let bt = if btype == ffi::b2BodyType_b2_staticBody {
         BodyType::Static
@@ -670,6 +700,7 @@ fn body_def_from_runtime(id: ffi::b2BodyId) -> crate::body::BodyDef {
 }
 
 fn shapes_from_body(world: &World, body: ffi::b2BodyId) -> Vec<ShapeInstance> {
+    crate::core::debug_checks::assert_body_valid(body);
     let mut out = Vec::new();
     let count = unsafe { ffi::b2Body_GetShapeCount(body) }.max(0) as usize;
     if count == 0 {
@@ -680,6 +711,9 @@ fn shapes_from_body(world: &World, body: ffi::b2BodyId) -> Vec<ShapeInstance> {
         unsafe { ffi::b2Body_GetShapes(body, arr.as_mut_ptr(), count as i32) }.max(0) as usize;
     unsafe { arr.set_len(wrote.min(count)) };
     for sid in arr {
+        if !unsafe { ffi::b2Shape_IsValid(sid) } {
+            continue;
+        }
         let st = unsafe { ffi::b2Shape_GetType(sid) };
         // Build ShapeDef from runtime properties
         let mat = unsafe { ffi::b2Shape_GetSurfaceMaterial(sid) };
@@ -693,7 +727,7 @@ fn shapes_from_body(world: &World, body: ffi::b2BodyId) -> Vec<ShapeInstance> {
         if is_sensor {
             builder = builder.sensor(true);
         }
-        // Additional flags captured at creation for ID-style shapes
+        // Additional flags captured at creation (some flags have no runtime getters).
         #[cfg(feature = "serialize")]
         if let Some(flags) = world.shape_flags(sid) {
             if flags.enable_custom_filtering {

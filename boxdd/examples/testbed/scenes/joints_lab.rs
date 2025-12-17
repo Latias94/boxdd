@@ -138,9 +138,10 @@ fn build_wheel(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
     if app.wheel_enable_spring {
         builder = builder.spring(app.wheel_hz, app.wheel_dr);
     }
-    let _j = builder.build();
-    app.created_joints += 1;
-    drop(_j);
+    {
+        let _j = builder.build();
+        app.created_joints += 1;
+    }
     let _ = app
         .world
         .prismatic(ground, chassis)
@@ -301,18 +302,10 @@ fn build_weld(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
         .with_stiffness(app.wj_hz, app.wj_dr, app.wj_hz, app.wj_dr)
         .build();
     app.created_joints += 1;
-    unsafe {
-        boxdd_sys::ffi::b2Body_ApplyLinearImpulseToCenter(
-            a,
-            boxdd_sys::ffi::b2Vec2 { x: -10.0, y: 0.0 },
-            true,
-        );
-        boxdd_sys::ffi::b2Body_ApplyLinearImpulseToCenter(
-            b,
-            boxdd_sys::ffi::b2Vec2 { x: 10.0, y: 0.0 },
-            true,
-        );
-    }
+    app.world
+        .body_apply_linear_impulse_to_center(a, [-10.0, 0.0], true);
+    app.world
+        .body_apply_linear_impulse_to_center(b, [10.0, 0.0], true);
 }
 fn ui_weld(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
     let mut hz = app.wj_hz;

@@ -8,106 +8,336 @@ pub mod chain;
 pub mod helpers;
 
 use crate::body::Body;
+use crate::error::ApiResult;
 use crate::filter::Filter;
-use crate::types::ShapeId;
+use crate::types::{BodyId, ChainId, ShapeId, Vec2};
+use crate::world::World;
 use boxdd_sys::ffi;
+use std::os::raw::c_void;
+use std::rc::Rc;
+use std::sync::Arc;
 
-/// A shape owned by a body within a world.
-pub struct Shape<'b, 'w> {
+/// A scoped shape handle tied to a mutable borrow of the world.
+pub struct Shape<'w> {
     pub(crate) id: ShapeId,
-    _owner: PhantomData<&'b Body<'w>>, // ensure Body outlives Shape
+    #[allow(dead_code)]
+    pub(crate) core: Arc<crate::core::world_core::WorldCore>,
+    _world: PhantomData<&'w World>,
 }
 
-impl<'b, 'w> Shape<'b, 'w> {
+/// A RAII-owned shape that is destroyed on drop.
+pub struct OwnedShape {
+    id: ShapeId,
+    core: Arc<crate::core::world_core::WorldCore>,
+    destroy_on_drop: bool,
+    update_body_mass_on_drop: bool,
+    _not_send: PhantomData<Rc<()>>,
+}
+
+impl OwnedShape {
+    pub(crate) fn new(core: Arc<crate::core::world_core::WorldCore>, id: ShapeId) -> Self {
+        core.owned_shapes
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Self {
+            id,
+            core,
+            destroy_on_drop: true,
+            update_body_mass_on_drop: true,
+            _not_send: PhantomData,
+        }
+    }
+
     pub fn id(&self) -> ShapeId {
         self.id
     }
 
-    // Getters
+    pub fn world_id(&self) -> ffi::b2WorldId {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_GetWorld(self.id) }
+    }
+
+    pub fn try_world_id(&self) -> ApiResult<ffi::b2WorldId> {
+        self.check_valid()?;
+        Ok(unsafe { ffi::b2Shape_GetWorld(self.id) })
+    }
+
+    pub fn parent_chain_id(&self) -> Option<ChainId> {
+        self.assert_valid();
+        let cid = unsafe { ffi::b2Shape_GetParentChain(self.id) };
+        if unsafe { ffi::b2Chain_IsValid(cid) } {
+            Some(cid)
+        } else {
+            None
+        }
+    }
+
+    pub fn try_parent_chain_id(&self) -> ApiResult<Option<ChainId>> {
+        self.check_valid()?;
+        let cid = unsafe { ffi::b2Shape_GetParentChain(self.id) };
+        if unsafe { ffi::b2Chain_IsValid(cid) } {
+            Ok(Some(cid))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn is_valid(&self) -> bool {
+        crate::core::callback_state::assert_not_in_callback();
+        unsafe { ffi::b2Shape_IsValid(self.id) }
+    }
+
+    pub fn try_is_valid(&self) -> ApiResult<bool> {
+        crate::core::callback_state::check_not_in_callback()?;
+        Ok(unsafe { ffi::b2Shape_IsValid(self.id) })
+    }
+
+    #[inline]
+    fn assert_valid(&self) {
+        crate::core::debug_checks::assert_shape_valid(self.id);
+    }
+
+    #[inline]
+    fn check_valid(&self) -> ApiResult<()> {
+        crate::core::debug_checks::check_shape_valid(self.id)
+    }
+
+    /// Borrow the raw id for ID-style APIs.
+    pub fn as_id(&self) -> ShapeId {
+        self.id
+    }
+
+    pub fn is_sensor(&self) -> bool {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_IsSensor(self.id) }
+    }
+
+    pub fn try_is_sensor(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(unsafe { ffi::b2Shape_IsSensor(self.id) })
+    }
+
+    pub fn shape_type(&self) -> ffi::b2ShapeType {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_GetType(self.id) }
+    }
+
+    pub fn try_shape_type(&self) -> ApiResult<ffi::b2ShapeType> {
+        self.check_valid()?;
+        Ok(unsafe { ffi::b2Shape_GetType(self.id) })
+    }
+
+    pub fn body_id(&self) -> BodyId {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_GetBody(self.id) }
+    }
+
+    pub fn try_body_id(&self) -> ApiResult<BodyId> {
+        self.check_valid()?;
+        Ok(unsafe { ffi::b2Shape_GetBody(self.id) })
+    }
+
+    // Geometry
     pub fn circle(&self) -> ffi::b2Circle {
+        self.assert_valid();
         unsafe { ffi::b2Shape_GetCircle(self.id) }
     }
     pub fn segment(&self) -> ffi::b2Segment {
+        self.assert_valid();
         unsafe { ffi::b2Shape_GetSegment(self.id) }
     }
     pub fn capsule(&self) -> ffi::b2Capsule {
+        self.assert_valid();
         unsafe { ffi::b2Shape_GetCapsule(self.id) }
     }
     pub fn polygon(&self) -> ffi::b2Polygon {
+        self.assert_valid();
         unsafe { ffi::b2Shape_GetPolygon(self.id) }
     }
 
-    // Setters
+    /// Return the closest point on this shape to `target` (in world coordinates).
+    pub fn closest_point<V: Into<Vec2>>(&self, target: V) -> Vec2 {
+        self.assert_valid();
+        let t: ffi::b2Vec2 = target.into().into();
+        Vec2::from(unsafe { ffi::b2Shape_GetClosestPoint(self.id, t) })
+    }
+
+    pub fn try_closest_point<V: Into<Vec2>>(&self, target: V) -> ApiResult<Vec2> {
+        self.check_valid()?;
+        let t: ffi::b2Vec2 = target.into().into();
+        Ok(Vec2::from(unsafe {
+            ffi::b2Shape_GetClosestPoint(self.id, t)
+        }))
+    }
+
+    /// Apply wind force/torque approximation to the shape.
+    pub fn apply_wind<V: Into<Vec2>>(&mut self, wind: V, drag: f32, lift: f32, wake: bool) {
+        self.assert_valid();
+        let w: ffi::b2Vec2 = wind.into().into();
+        unsafe { ffi::b2Shape_ApplyWind(self.id, w, drag, lift, wake) }
+    }
+
+    pub fn try_apply_wind<V: Into<Vec2>>(
+        &mut self,
+        wind: V,
+        drag: f32,
+        lift: f32,
+        wake: bool,
+    ) -> ApiResult<()> {
+        self.check_valid()?;
+        let w: ffi::b2Vec2 = wind.into().into();
+        unsafe { ffi::b2Shape_ApplyWind(self.id, w, drag, lift, wake) }
+        Ok(())
+    }
+
     pub fn set_circle(&mut self, c: &ffi::b2Circle) {
+        self.assert_valid();
         unsafe { ffi::b2Shape_SetCircle(self.id, c) }
     }
+    pub fn try_set_circle(&mut self, c: &ffi::b2Circle) -> ApiResult<()> {
+        self.check_valid()?;
+        unsafe { ffi::b2Shape_SetCircle(self.id, c) }
+        Ok(())
+    }
     pub fn set_segment(&mut self, s: &ffi::b2Segment) {
+        self.assert_valid();
         unsafe { ffi::b2Shape_SetSegment(self.id, s) }
     }
+    pub fn try_set_segment(&mut self, s: &ffi::b2Segment) -> ApiResult<()> {
+        self.check_valid()?;
+        unsafe { ffi::b2Shape_SetSegment(self.id, s) }
+        Ok(())
+    }
     pub fn set_capsule(&mut self, c: &ffi::b2Capsule) {
+        self.assert_valid();
         unsafe { ffi::b2Shape_SetCapsule(self.id, c) }
     }
+    pub fn try_set_capsule(&mut self, c: &ffi::b2Capsule) -> ApiResult<()> {
+        self.check_valid()?;
+        unsafe { ffi::b2Shape_SetCapsule(self.id, c) }
+        Ok(())
+    }
     pub fn set_polygon(&mut self, p: &ffi::b2Polygon) {
+        self.assert_valid();
         unsafe { ffi::b2Shape_SetPolygon(self.id, p) }
+    }
+    pub fn try_set_polygon(&mut self, p: &ffi::b2Polygon) -> ApiResult<()> {
+        self.check_valid()?;
+        unsafe { ffi::b2Shape_SetPolygon(self.id, p) }
+        Ok(())
     }
 
     pub fn filter(&self) -> Filter {
+        self.assert_valid();
         Filter::from(unsafe { ffi::b2Shape_GetFilter(self.id) })
     }
+    pub fn try_filter(&self) -> ApiResult<Filter> {
+        self.check_valid()?;
+        Ok(Filter::from(unsafe { ffi::b2Shape_GetFilter(self.id) }))
+    }
     pub fn set_filter(&mut self, f: Filter) {
+        self.assert_valid();
         unsafe { ffi::b2Shape_SetFilter(self.id, f.into()) }
     }
-
-    // Material and physical properties
-    pub fn is_sensor(&self) -> bool {
-        unsafe { ffi::b2Shape_IsSensor(self.id) }
+    pub fn try_set_filter(&mut self, f: Filter) -> ApiResult<()> {
+        self.check_valid()?;
+        unsafe { ffi::b2Shape_SetFilter(self.id, f.into()) }
+        Ok(())
     }
+
     pub fn set_density(&mut self, density: f32, update_body_mass: bool) {
+        self.assert_valid();
         unsafe { ffi::b2Shape_SetDensity(self.id, density, update_body_mass) }
     }
+    pub fn try_set_density(&mut self, density: f32, update_body_mass: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        unsafe { ffi::b2Shape_SetDensity(self.id, density, update_body_mass) }
+        Ok(())
+    }
     pub fn density(&self) -> f32 {
+        self.assert_valid();
         unsafe { ffi::b2Shape_GetDensity(self.id) }
     }
-    pub fn set_friction(&mut self, friction: f32) {
-        unsafe { ffi::b2Shape_SetFriction(self.id, friction) }
-    }
-    pub fn friction(&self) -> f32 {
-        unsafe { ffi::b2Shape_GetFriction(self.id) }
-    }
-    pub fn set_restitution(&mut self, restitution: f32) {
-        unsafe { ffi::b2Shape_SetRestitution(self.id, restitution) }
-    }
-    pub fn restitution(&self) -> f32 {
-        unsafe { ffi::b2Shape_GetRestitution(self.id) }
-    }
-    pub fn set_user_material(&mut self, material: u64) {
-        unsafe { ffi::b2Shape_SetUserMaterial(self.id, material) }
-    }
-    pub fn user_material(&self) -> u64 {
-        unsafe { ffi::b2Shape_GetUserMaterial(self.id) }
-    }
-    pub fn set_surface_material(&mut self, material: &SurfaceMaterial) {
-        unsafe { ffi::b2Shape_SetSurfaceMaterial(self.id, &material.0) }
-    }
-    pub fn surface_material(&self) -> SurfaceMaterial {
-        SurfaceMaterial(unsafe { ffi::b2Shape_GetSurfaceMaterial(self.id) })
+    pub fn try_density(&self) -> ApiResult<f32> {
+        self.check_valid()?;
+        Ok(unsafe { ffi::b2Shape_GetDensity(self.id) })
     }
 
-    // Opaque user pointer (engine-owned)
-    /// Set an opaque user data pointer on this shape.
-    ///
-    /// # Safety
-    /// The caller must ensure that `p` is valid for as long as the engine may
-    /// read it and that any aliasing/lifetime constraints are upheld. Box2D stores this
-    /// pointer and may access it during simulation callbacks.
-    pub unsafe fn set_user_data_ptr(&mut self, p: *mut core::ffi::c_void) {
-        unsafe { ffi::b2Shape_SetUserData(self.id, p) }
+    pub fn set_friction(&mut self, friction: f32) {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_SetFriction(self.id, friction) }
     }
-    pub fn user_data_ptr(&self) -> *mut core::ffi::c_void {
-        unsafe { ffi::b2Shape_GetUserData(self.id) }
+    pub fn try_set_friction(&mut self, friction: f32) -> ApiResult<()> {
+        self.check_valid()?;
+        unsafe { ffi::b2Shape_SetFriction(self.id, friction) }
+        Ok(())
+    }
+    pub fn friction(&self) -> f32 {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_GetFriction(self.id) }
+    }
+    pub fn try_friction(&self) -> ApiResult<f32> {
+        self.check_valid()?;
+        Ok(unsafe { ffi::b2Shape_GetFriction(self.id) })
+    }
+
+    pub fn set_restitution(&mut self, restitution: f32) {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_SetRestitution(self.id, restitution) }
+    }
+    pub fn try_set_restitution(&mut self, restitution: f32) -> ApiResult<()> {
+        self.check_valid()?;
+        unsafe { ffi::b2Shape_SetRestitution(self.id, restitution) }
+        Ok(())
+    }
+    pub fn restitution(&self) -> f32 {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_GetRestitution(self.id) }
+    }
+    pub fn try_restitution(&self) -> ApiResult<f32> {
+        self.check_valid()?;
+        Ok(unsafe { ffi::b2Shape_GetRestitution(self.id) })
+    }
+
+    pub fn set_user_material(&mut self, material: u64) {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_SetUserMaterial(self.id, material) }
+    }
+    pub fn try_set_user_material(&mut self, material: u64) -> ApiResult<()> {
+        self.check_valid()?;
+        unsafe { ffi::b2Shape_SetUserMaterial(self.id, material) }
+        Ok(())
+    }
+    pub fn user_material(&self) -> u64 {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_GetUserMaterial(self.id) }
+    }
+    pub fn try_user_material(&self) -> ApiResult<u64> {
+        self.check_valid()?;
+        Ok(unsafe { ffi::b2Shape_GetUserMaterial(self.id) })
+    }
+
+    pub fn set_surface_material(&mut self, material: &SurfaceMaterial) {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_SetSurfaceMaterial(self.id, &material.0) }
+    }
+    pub fn try_set_surface_material(&mut self, material: &SurfaceMaterial) -> ApiResult<()> {
+        self.check_valid()?;
+        unsafe { ffi::b2Shape_SetSurfaceMaterial(self.id, &material.0) }
+        Ok(())
+    }
+    pub fn surface_material(&self) -> SurfaceMaterial {
+        self.assert_valid();
+        SurfaceMaterial(unsafe { ffi::b2Shape_GetSurfaceMaterial(self.id) })
+    }
+    pub fn try_surface_material(&self) -> ApiResult<SurfaceMaterial> {
+        self.check_valid()?;
+        Ok(SurfaceMaterial(unsafe {
+            ffi::b2Shape_GetSurfaceMaterial(self.id)
+        }))
     }
 
     pub fn contact_data(&self) -> Vec<ffi::b2ContactData> {
+        self.assert_valid();
         let cap = unsafe { ffi::b2Shape_GetContactCapacity(self.id) }.max(0) as usize;
         if cap == 0 {
             return Vec::new();
@@ -119,15 +349,32 @@ impl<'b, 'w> Shape<'b, 'w> {
         vec
     }
 
-    /// Get the maximum capacity required for retrieving all the overlapped shapes on this sensor shape.
-    /// Returns 0 if this shape is not a sensor.
+    pub fn try_contact_data(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
+        self.check_valid()?;
+        let cap = unsafe { ffi::b2Shape_GetContactCapacity(self.id) }.max(0) as usize;
+        if cap == 0 {
+            return Ok(Vec::new());
+        }
+        let mut vec: Vec<ffi::b2ContactData> = Vec::with_capacity(cap);
+        let wrote = unsafe { ffi::b2Shape_GetContactData(self.id, vec.as_mut_ptr(), cap as i32) }
+            .max(0) as usize;
+        unsafe { vec.set_len(wrote.min(cap)) };
+        Ok(vec)
+    }
+
+    /// Get the maximum capacity required for retrieving all overlapped shapes on this sensor shape.
     pub fn sensor_capacity(&self) -> i32 {
+        self.assert_valid();
         unsafe { ffi::b2Shape_GetSensorCapacity(self.id) }
     }
 
-    /// Get overlapped shapes for this sensor shape. If this is not a sensor, returns empty.
-    /// Note: overlaps may contain destroyed shapes; use `sensor_overlaps_valid` to filter.
+    pub fn try_sensor_capacity(&self) -> ApiResult<i32> {
+        self.check_valid()?;
+        Ok(unsafe { ffi::b2Shape_GetSensorCapacity(self.id) })
+    }
+
     pub fn sensor_overlaps(&self) -> Vec<ShapeId> {
+        self.assert_valid();
         let cap = self.sensor_capacity();
         if cap <= 0 {
             return Vec::new();
@@ -139,6 +386,494 @@ impl<'b, 'w> Shape<'b, 'w> {
         ids
     }
 
+    pub fn try_sensor_overlaps(&self) -> ApiResult<Vec<ShapeId>> {
+        self.check_valid()?;
+        let cap = unsafe { ffi::b2Shape_GetSensorCapacity(self.id) };
+        if cap <= 0 {
+            return Ok(Vec::new());
+        }
+        let mut ids: Vec<ShapeId> = Vec::with_capacity(cap as usize);
+        let wrote =
+            unsafe { ffi::b2Shape_GetSensorData(self.id, ids.as_mut_ptr(), cap) }.max(0) as usize;
+        unsafe { ids.set_len(wrote.min(cap as usize)) };
+        Ok(ids)
+    }
+
+    pub fn sensor_overlaps_valid(&self) -> Vec<ShapeId> {
+        self.sensor_overlaps()
+            .into_iter()
+            .filter(|&sid| unsafe { ffi::b2Shape_IsValid(sid) })
+            .collect()
+    }
+
+    /// Set an opaque user data pointer on this shape.
+    ///
+    /// # Safety
+    /// The caller must ensure that `p` is valid for as long as the engine may
+    /// read it and that any aliasing/lifetime constraints are upheld. Box2D stores this
+    /// pointer and may access it during simulation callbacks.
+    pub unsafe fn set_user_data_ptr(&mut self, p: *mut c_void) {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_SetUserData(self.id, p) }
+    }
+    /// Set an opaque user data pointer on this shape.
+    ///
+    /// # Safety
+    /// Same safety contract as `set_user_data_ptr`.
+    pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut c_void) -> ApiResult<()> {
+        self.check_valid()?;
+        unsafe { ffi::b2Shape_SetUserData(self.id, p) }
+        Ok(())
+    }
+    pub fn user_data_ptr(&self) -> *mut c_void {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_GetUserData(self.id) }
+    }
+
+    pub fn try_user_data_ptr(&self) -> ApiResult<*mut c_void> {
+        self.check_valid()?;
+        Ok(unsafe { ffi::b2Shape_GetUserData(self.id) })
+    }
+
+    pub fn update_body_mass_on_drop(mut self, flag: bool) -> Self {
+        self.update_body_mass_on_drop = flag;
+        self
+    }
+
+    /// Disarm RAII and return the raw id for manual lifetime management.
+    pub fn into_id(mut self) -> ShapeId {
+        self.destroy_on_drop = false;
+        self.id
+    }
+
+    /// Destroy the shape immediately and disarm drop.
+    pub fn destroy(mut self, update_body_mass: bool) {
+        if self.destroy_on_drop && unsafe { ffi::b2Shape_IsValid(self.id) } {
+            if crate::core::callback_state::in_callback() {
+                self.core
+                    .defer_destroy(crate::core::world_core::DeferredDestroy::Shape {
+                        id: self.id,
+                        update_body_mass,
+                    });
+            } else {
+                unsafe { ffi::b2DestroyShape(self.id, update_body_mass) };
+                #[cfg(feature = "serialize")]
+                self.core.remove_shape_flags(self.id);
+            }
+        }
+        self.destroy_on_drop = false;
+    }
+}
+
+impl Drop for OwnedShape {
+    fn drop(&mut self) {
+        let _ = self.core.id;
+        let prev = self
+            .core
+            .owned_shapes
+            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+        debug_assert!(prev > 0, "owned shape counter underflow");
+        if self.destroy_on_drop && unsafe { ffi::b2Shape_IsValid(self.id) } {
+            if crate::core::callback_state::in_callback() {
+                self.core
+                    .defer_destroy(crate::core::world_core::DeferredDestroy::Shape {
+                        id: self.id,
+                        update_body_mass: self.update_body_mass_on_drop,
+                    });
+            } else {
+                unsafe { ffi::b2DestroyShape(self.id, self.update_body_mass_on_drop) };
+                #[cfg(feature = "serialize")]
+                self.core.remove_shape_flags(self.id);
+            }
+        }
+    }
+}
+
+impl<'w> Shape<'w> {
+    pub(crate) fn new(core: Arc<crate::core::world_core::WorldCore>, id: ShapeId) -> Self {
+        Self {
+            id,
+            core,
+            _world: PhantomData,
+        }
+    }
+
+    #[inline]
+    fn assert_valid(&self) {
+        crate::core::debug_checks::assert_shape_valid(self.id);
+    }
+
+    #[inline]
+    fn check_valid(&self) -> ApiResult<()> {
+        crate::core::debug_checks::check_shape_valid(self.id)
+    }
+
+    pub fn id(&self) -> ShapeId {
+        self.id
+    }
+
+    pub fn world_id(&self) -> ffi::b2WorldId {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_GetWorld(self.id) }
+    }
+
+    pub fn try_world_id(&self) -> ApiResult<ffi::b2WorldId> {
+        self.check_valid()?;
+        Ok(unsafe { ffi::b2Shape_GetWorld(self.id) })
+    }
+
+    pub fn parent_chain_id(&self) -> Option<ChainId> {
+        self.assert_valid();
+        let cid = unsafe { ffi::b2Shape_GetParentChain(self.id) };
+        if unsafe { ffi::b2Chain_IsValid(cid) } {
+            Some(cid)
+        } else {
+            None
+        }
+    }
+
+    pub fn try_parent_chain_id(&self) -> ApiResult<Option<ChainId>> {
+        self.check_valid()?;
+        let cid = unsafe { ffi::b2Shape_GetParentChain(self.id) };
+        if unsafe { ffi::b2Chain_IsValid(cid) } {
+            Ok(Some(cid))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn is_valid(&self) -> bool {
+        crate::core::callback_state::assert_not_in_callback();
+        unsafe { ffi::b2Shape_IsValid(self.id) }
+    }
+
+    pub fn try_is_valid(&self) -> ApiResult<bool> {
+        crate::core::callback_state::check_not_in_callback()?;
+        Ok(unsafe { ffi::b2Shape_IsValid(self.id) })
+    }
+
+    pub fn shape_type(&self) -> ffi::b2ShapeType {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_GetType(self.id) }
+    }
+
+    pub fn try_shape_type(&self) -> ApiResult<ffi::b2ShapeType> {
+        self.check_valid()?;
+        Ok(unsafe { ffi::b2Shape_GetType(self.id) })
+    }
+
+    pub fn body_id(&self) -> BodyId {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_GetBody(self.id) }
+    }
+
+    pub fn try_body_id(&self) -> ApiResult<BodyId> {
+        self.check_valid()?;
+        Ok(unsafe { ffi::b2Shape_GetBody(self.id) })
+    }
+
+    // Getters
+    pub fn circle(&self) -> ffi::b2Circle {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_GetCircle(self.id) }
+    }
+    pub fn segment(&self) -> ffi::b2Segment {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_GetSegment(self.id) }
+    }
+    pub fn capsule(&self) -> ffi::b2Capsule {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_GetCapsule(self.id) }
+    }
+    pub fn polygon(&self) -> ffi::b2Polygon {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_GetPolygon(self.id) }
+    }
+
+    /// Return the closest point on this shape to `target` (in world coordinates).
+    pub fn closest_point<V: Into<Vec2>>(&self, target: V) -> Vec2 {
+        self.assert_valid();
+        let t: ffi::b2Vec2 = target.into().into();
+        Vec2::from(unsafe { ffi::b2Shape_GetClosestPoint(self.id, t) })
+    }
+
+    pub fn try_closest_point<V: Into<Vec2>>(&self, target: V) -> ApiResult<Vec2> {
+        self.check_valid()?;
+        let t: ffi::b2Vec2 = target.into().into();
+        Ok(Vec2::from(unsafe {
+            ffi::b2Shape_GetClosestPoint(self.id, t)
+        }))
+    }
+
+    /// Apply wind force/torque approximation to the shape.
+    pub fn apply_wind<V: Into<Vec2>>(&mut self, wind: V, drag: f32, lift: f32, wake: bool) {
+        self.assert_valid();
+        let w: ffi::b2Vec2 = wind.into().into();
+        unsafe { ffi::b2Shape_ApplyWind(self.id, w, drag, lift, wake) }
+    }
+
+    pub fn try_apply_wind<V: Into<Vec2>>(
+        &mut self,
+        wind: V,
+        drag: f32,
+        lift: f32,
+        wake: bool,
+    ) -> ApiResult<()> {
+        self.check_valid()?;
+        let w: ffi::b2Vec2 = wind.into().into();
+        unsafe { ffi::b2Shape_ApplyWind(self.id, w, drag, lift, wake) }
+        Ok(())
+    }
+
+    // Setters
+    pub fn set_circle(&mut self, c: &ffi::b2Circle) {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_SetCircle(self.id, c) }
+    }
+    pub fn try_set_circle(&mut self, c: &ffi::b2Circle) -> ApiResult<()> {
+        self.check_valid()?;
+        unsafe { ffi::b2Shape_SetCircle(self.id, c) }
+        Ok(())
+    }
+    pub fn set_segment(&mut self, s: &ffi::b2Segment) {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_SetSegment(self.id, s) }
+    }
+    pub fn try_set_segment(&mut self, s: &ffi::b2Segment) -> ApiResult<()> {
+        self.check_valid()?;
+        unsafe { ffi::b2Shape_SetSegment(self.id, s) }
+        Ok(())
+    }
+    pub fn set_capsule(&mut self, c: &ffi::b2Capsule) {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_SetCapsule(self.id, c) }
+    }
+    pub fn try_set_capsule(&mut self, c: &ffi::b2Capsule) -> ApiResult<()> {
+        self.check_valid()?;
+        unsafe { ffi::b2Shape_SetCapsule(self.id, c) }
+        Ok(())
+    }
+    pub fn set_polygon(&mut self, p: &ffi::b2Polygon) {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_SetPolygon(self.id, p) }
+    }
+    pub fn try_set_polygon(&mut self, p: &ffi::b2Polygon) -> ApiResult<()> {
+        self.check_valid()?;
+        unsafe { ffi::b2Shape_SetPolygon(self.id, p) }
+        Ok(())
+    }
+
+    pub fn filter(&self) -> Filter {
+        self.assert_valid();
+        Filter::from(unsafe { ffi::b2Shape_GetFilter(self.id) })
+    }
+    pub fn try_filter(&self) -> ApiResult<Filter> {
+        self.check_valid()?;
+        Ok(Filter::from(unsafe { ffi::b2Shape_GetFilter(self.id) }))
+    }
+    pub fn set_filter(&mut self, f: Filter) {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_SetFilter(self.id, f.into()) }
+    }
+    pub fn try_set_filter(&mut self, f: Filter) -> ApiResult<()> {
+        self.check_valid()?;
+        unsafe { ffi::b2Shape_SetFilter(self.id, f.into()) }
+        Ok(())
+    }
+
+    // Material and physical properties
+    pub fn is_sensor(&self) -> bool {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_IsSensor(self.id) }
+    }
+    pub fn try_is_sensor(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(unsafe { ffi::b2Shape_IsSensor(self.id) })
+    }
+    pub fn set_density(&mut self, density: f32, update_body_mass: bool) {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_SetDensity(self.id, density, update_body_mass) }
+    }
+    pub fn try_set_density(&mut self, density: f32, update_body_mass: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        unsafe { ffi::b2Shape_SetDensity(self.id, density, update_body_mass) }
+        Ok(())
+    }
+    pub fn density(&self) -> f32 {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_GetDensity(self.id) }
+    }
+    pub fn try_density(&self) -> ApiResult<f32> {
+        self.check_valid()?;
+        Ok(unsafe { ffi::b2Shape_GetDensity(self.id) })
+    }
+    pub fn set_friction(&mut self, friction: f32) {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_SetFriction(self.id, friction) }
+    }
+    pub fn try_set_friction(&mut self, friction: f32) -> ApiResult<()> {
+        self.check_valid()?;
+        unsafe { ffi::b2Shape_SetFriction(self.id, friction) }
+        Ok(())
+    }
+    pub fn friction(&self) -> f32 {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_GetFriction(self.id) }
+    }
+    pub fn try_friction(&self) -> ApiResult<f32> {
+        self.check_valid()?;
+        Ok(unsafe { ffi::b2Shape_GetFriction(self.id) })
+    }
+    pub fn set_restitution(&mut self, restitution: f32) {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_SetRestitution(self.id, restitution) }
+    }
+    pub fn try_set_restitution(&mut self, restitution: f32) -> ApiResult<()> {
+        self.check_valid()?;
+        unsafe { ffi::b2Shape_SetRestitution(self.id, restitution) }
+        Ok(())
+    }
+    pub fn restitution(&self) -> f32 {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_GetRestitution(self.id) }
+    }
+    pub fn try_restitution(&self) -> ApiResult<f32> {
+        self.check_valid()?;
+        Ok(unsafe { ffi::b2Shape_GetRestitution(self.id) })
+    }
+    pub fn set_user_material(&mut self, material: u64) {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_SetUserMaterial(self.id, material) }
+    }
+    pub fn try_set_user_material(&mut self, material: u64) -> ApiResult<()> {
+        self.check_valid()?;
+        unsafe { ffi::b2Shape_SetUserMaterial(self.id, material) }
+        Ok(())
+    }
+    pub fn user_material(&self) -> u64 {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_GetUserMaterial(self.id) }
+    }
+    pub fn try_user_material(&self) -> ApiResult<u64> {
+        self.check_valid()?;
+        Ok(unsafe { ffi::b2Shape_GetUserMaterial(self.id) })
+    }
+    pub fn set_surface_material(&mut self, material: &SurfaceMaterial) {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_SetSurfaceMaterial(self.id, &material.0) }
+    }
+    pub fn try_set_surface_material(&mut self, material: &SurfaceMaterial) -> ApiResult<()> {
+        self.check_valid()?;
+        unsafe { ffi::b2Shape_SetSurfaceMaterial(self.id, &material.0) }
+        Ok(())
+    }
+    pub fn surface_material(&self) -> SurfaceMaterial {
+        self.assert_valid();
+        SurfaceMaterial(unsafe { ffi::b2Shape_GetSurfaceMaterial(self.id) })
+    }
+    pub fn try_surface_material(&self) -> ApiResult<SurfaceMaterial> {
+        self.check_valid()?;
+        Ok(SurfaceMaterial(unsafe {
+            ffi::b2Shape_GetSurfaceMaterial(self.id)
+        }))
+    }
+
+    // Opaque user pointer (engine-owned)
+    /// Set an opaque user data pointer on this shape.
+    ///
+    /// # Safety
+    /// The caller must ensure that `p` is valid for as long as the engine may
+    /// read it and that any aliasing/lifetime constraints are upheld. Box2D stores this
+    /// pointer and may access it during simulation callbacks.
+    pub unsafe fn set_user_data_ptr(&mut self, p: *mut core::ffi::c_void) {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_SetUserData(self.id, p) }
+    }
+    /// Set an opaque user data pointer on this shape.
+    ///
+    /// # Safety
+    /// Same safety contract as `set_user_data_ptr`.
+    pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut core::ffi::c_void) -> ApiResult<()> {
+        self.check_valid()?;
+        unsafe { ffi::b2Shape_SetUserData(self.id, p) }
+        Ok(())
+    }
+    pub fn user_data_ptr(&self) -> *mut core::ffi::c_void {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_GetUserData(self.id) }
+    }
+
+    pub fn try_user_data_ptr(&self) -> ApiResult<*mut core::ffi::c_void> {
+        self.check_valid()?;
+        Ok(unsafe { ffi::b2Shape_GetUserData(self.id) })
+    }
+
+    pub fn contact_data(&self) -> Vec<ffi::b2ContactData> {
+        self.assert_valid();
+        let cap = unsafe { ffi::b2Shape_GetContactCapacity(self.id) }.max(0) as usize;
+        if cap == 0 {
+            return Vec::new();
+        }
+        let mut vec: Vec<ffi::b2ContactData> = Vec::with_capacity(cap);
+        let wrote = unsafe { ffi::b2Shape_GetContactData(self.id, vec.as_mut_ptr(), cap as i32) }
+            .max(0) as usize;
+        unsafe { vec.set_len(wrote.min(cap)) };
+        vec
+    }
+
+    pub fn try_contact_data(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
+        self.check_valid()?;
+        let cap = unsafe { ffi::b2Shape_GetContactCapacity(self.id) }.max(0) as usize;
+        if cap == 0 {
+            return Ok(Vec::new());
+        }
+        let mut vec: Vec<ffi::b2ContactData> = Vec::with_capacity(cap);
+        let wrote = unsafe { ffi::b2Shape_GetContactData(self.id, vec.as_mut_ptr(), cap as i32) }
+            .max(0) as usize;
+        unsafe { vec.set_len(wrote.min(cap)) };
+        Ok(vec)
+    }
+
+    /// Get the maximum capacity required for retrieving all the overlapped shapes on this sensor shape.
+    /// Returns 0 if this shape is not a sensor.
+    pub fn sensor_capacity(&self) -> i32 {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_GetSensorCapacity(self.id) }
+    }
+
+    pub fn try_sensor_capacity(&self) -> ApiResult<i32> {
+        self.check_valid()?;
+        Ok(unsafe { ffi::b2Shape_GetSensorCapacity(self.id) })
+    }
+
+    /// Get overlapped shapes for this sensor shape. If this is not a sensor, returns empty.
+    /// Note: overlaps may contain destroyed shapes; use `sensor_overlaps_valid` to filter.
+    pub fn sensor_overlaps(&self) -> Vec<ShapeId> {
+        self.assert_valid();
+        let cap = self.sensor_capacity();
+        if cap <= 0 {
+            return Vec::new();
+        }
+        let mut ids: Vec<ShapeId> = Vec::with_capacity(cap as usize);
+        let wrote =
+            unsafe { ffi::b2Shape_GetSensorData(self.id, ids.as_mut_ptr(), cap) }.max(0) as usize;
+        unsafe { ids.set_len(wrote.min(cap as usize)) };
+        ids
+    }
+
+    pub fn try_sensor_overlaps(&self) -> ApiResult<Vec<ShapeId>> {
+        self.check_valid()?;
+        let cap = unsafe { ffi::b2Shape_GetSensorCapacity(self.id) };
+        if cap <= 0 {
+            return Ok(Vec::new());
+        }
+        let mut ids: Vec<ShapeId> = Vec::with_capacity(cap as usize);
+        let wrote =
+            unsafe { ffi::b2Shape_GetSensorData(self.id, ids.as_mut_ptr(), cap) }.max(0) as usize;
+        unsafe { ids.set_len(wrote.min(cap as usize)) };
+        Ok(ids)
+    }
+
     /// Get overlapped shapes and filter out invalid (destroyed) shape ids.
     pub fn sensor_overlaps_valid(&self) -> Vec<ShapeId> {
         self.sensor_overlaps()
@@ -146,14 +881,27 @@ impl<'b, 'w> Shape<'b, 'w> {
             .filter(|&sid| unsafe { ffi::b2Shape_IsValid(sid) })
             .collect()
     }
-}
 
-impl<'b, 'w> Drop for Shape<'b, 'w> {
-    fn drop(&mut self) {
-        // Update body mass on shape destroy by default
+    /// Destroy this shape immediately.
+    ///
+    /// After destruction, any previously stored `ShapeId` referring to this shape becomes invalid.
+    pub fn destroy(self, update_body_mass: bool) {
+        crate::core::callback_state::assert_not_in_callback();
         if unsafe { ffi::b2Shape_IsValid(self.id) } {
-            unsafe { ffi::b2DestroyShape(self.id, true) };
+            unsafe { ffi::b2DestroyShape(self.id, update_body_mass) };
+            #[cfg(feature = "serialize")]
+            self.core.remove_shape_flags(self.id);
         }
+    }
+
+    pub fn try_destroy(self, update_body_mass: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        if unsafe { ffi::b2Shape_IsValid(self.id) } {
+            unsafe { ffi::b2DestroyShape(self.id, update_body_mass) };
+            #[cfg(feature = "serialize")]
+            self.core.remove_shape_flags(self.id);
+        }
+        Ok(())
     }
 }
 
@@ -470,82 +1218,66 @@ pub use helpers::{box_polygon, capsule, polygon_from_points};
 // With sys-level mint conversions, polygon_from_points accepts mint::Vector2<f32> directly.
 
 impl<'w> Body<'w> {
-    pub fn create_circle_shape<'b>(
-        &'b mut self,
-        def: &ShapeDef,
-        c: &ffi::b2Circle,
-    ) -> Shape<'b, 'w> {
+    pub fn create_circle_shape(&mut self, def: &ShapeDef, c: &ffi::b2Circle) -> Shape<'w> {
+        crate::core::debug_checks::assert_body_valid(self.id);
         let id = unsafe { ffi::b2CreateCircleShape(self.id, &def.0, c) };
-        Shape {
-            id,
-            _owner: PhantomData,
-        }
+        #[cfg(feature = "serialize")]
+        self.core.record_shape_flags(id, &def.0);
+        Shape::new(Arc::clone(&self.core), id)
     }
-    pub fn create_segment_shape<'b>(
-        &'b mut self,
-        def: &ShapeDef,
-        s: &ffi::b2Segment,
-    ) -> Shape<'b, 'w> {
+    pub fn create_segment_shape(&mut self, def: &ShapeDef, s: &ffi::b2Segment) -> Shape<'w> {
+        crate::core::debug_checks::assert_body_valid(self.id);
         let id = unsafe { ffi::b2CreateSegmentShape(self.id, &def.0, s) };
-        Shape {
-            id,
-            _owner: PhantomData,
-        }
+        #[cfg(feature = "serialize")]
+        self.core.record_shape_flags(id, &def.0);
+        Shape::new(Arc::clone(&self.core), id)
     }
-    pub fn create_capsule_shape<'b>(
-        &'b mut self,
-        def: &ShapeDef,
-        c: &ffi::b2Capsule,
-    ) -> Shape<'b, 'w> {
+    pub fn create_capsule_shape(&mut self, def: &ShapeDef, c: &ffi::b2Capsule) -> Shape<'w> {
+        crate::core::debug_checks::assert_body_valid(self.id);
         let id = unsafe { ffi::b2CreateCapsuleShape(self.id, &def.0, c) };
-        Shape {
-            id,
-            _owner: PhantomData,
-        }
+        #[cfg(feature = "serialize")]
+        self.core.record_shape_flags(id, &def.0);
+        Shape::new(Arc::clone(&self.core), id)
     }
-    pub fn create_polygon_shape<'b>(
-        &'b mut self,
-        def: &ShapeDef,
-        p: &ffi::b2Polygon,
-    ) -> Shape<'b, 'w> {
+    pub fn create_polygon_shape(&mut self, def: &ShapeDef, p: &ffi::b2Polygon) -> Shape<'w> {
+        crate::core::debug_checks::assert_body_valid(self.id);
         let id = unsafe { ffi::b2CreatePolygonShape(self.id, &def.0, p) };
-        Shape {
-            id,
-            _owner: PhantomData,
-        }
+        #[cfg(feature = "serialize")]
+        self.core.record_shape_flags(id, &def.0);
+        Shape::new(Arc::clone(&self.core), id)
     }
 
     // Convenience creators
-    pub fn create_box<'b>(&'b mut self, def: &ShapeDef, half_w: f32, half_h: f32) -> Shape<'b, 'w> {
+    pub fn create_box(&mut self, def: &ShapeDef, half_w: f32, half_h: f32) -> Shape<'w> {
         let poly = unsafe { ffi::b2MakeBox(half_w, half_h) };
         self.create_polygon_shape(def, &poly)
     }
-    pub fn create_circle_simple<'b>(&'b mut self, def: &ShapeDef, radius: f32) -> Shape<'b, 'w> {
+    pub fn create_circle_simple(&mut self, def: &ShapeDef, radius: f32) -> Shape<'w> {
         let c = ffi::b2Circle {
             center: ffi::b2Vec2 { x: 0.0, y: 0.0 },
             radius,
         };
         self.create_circle_shape(def, &c)
     }
-    pub fn create_segment_simple<'b, V: Into<crate::types::Vec2>>(
-        &'b mut self,
+    pub fn create_segment_simple<V: Into<crate::types::Vec2>>(
+        &mut self,
         def: &ShapeDef,
         p1: V,
         p2: V,
-    ) -> Shape<'b, 'w> {
+    ) -> Shape<'w> {
         let seg = ffi::b2Segment {
             point1: ffi::b2Vec2::from(p1.into()),
             point2: ffi::b2Vec2::from(p2.into()),
         };
         self.create_segment_shape(def, &seg)
     }
-    pub fn create_capsule_simple<'b, V: Into<crate::types::Vec2>>(
-        &'b mut self,
+    pub fn create_capsule_simple<V: Into<crate::types::Vec2>>(
+        &mut self,
         def: &ShapeDef,
         c1: V,
         c2: V,
         radius: f32,
-    ) -> Shape<'b, 'w> {
+    ) -> Shape<'w> {
         let cap = ffi::b2Capsule {
             center1: ffi::b2Vec2::from(c1.into()),
             center2: ffi::b2Vec2::from(c2.into()),
@@ -553,12 +1285,12 @@ impl<'w> Body<'w> {
         };
         self.create_capsule_shape(def, &cap)
     }
-    pub fn create_polygon_from_points<'b, I, P>(
-        &'b mut self,
+    pub fn create_polygon_from_points<I, P>(
+        &mut self,
         def: &ShapeDef,
         points: I,
         radius: f32,
-    ) -> Option<Shape<'b, 'w>>
+    ) -> Option<Shape<'w>>
     where
         I: IntoIterator<Item = P>,
         P: Into<crate::types::Vec2>,
