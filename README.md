@@ -16,7 +16,7 @@
 
 ## Highlights
 - Safe, ergonomic Rust wrapper over the official Box2D v3 C API.
-- Mint interop by default: any `Into<Vec2>` accepts `mint::Vector2<f32>`, `mint::Point2<f32>`, arrays/tuples.
+- Mint interop (feature: `mint`): any `Into<Vec2>` accepts `mint::Vector2<f32>`, `mint::Point2<f32>`, arrays/tuples.
 - Two error-handling styles: panic-on-misuse by default, plus `try_*` APIs returning `ApiResult<T>` for recoverable errors.
 
 ## Quickstart
@@ -34,6 +34,7 @@ world.step(1.0/60.0, 4);
 ## Features (optional)
 - `serde`: serialization for `Vec2`, `Rot` (radians), `Transform` ({ pos, angle }) and config types.
 - `serialize`: snapshot helpers (save/apply world config; take/rebuild minimal full-scene snapshot).
+- `mint`: lightweight math interop types (`mint::Vector2`, `mint::Point2`, and 2D affine matrices for `Transform`).
 - `cgmath`, `nalgebra`, `glam`: conversions with their 2D types (e.g. `Vector2/Point2`, `UnitComplex/Isometry2`, `glam::Vec2`).
 - `bytemuck`: enable `Pod`/`Zeroable` for core math types (`Vec2`, `Rot`, `Transform`, `Aabb`) for zero-copy interop.
 - `unchecked`: exposes extra `unsafe` unchecked APIs for hot paths (skips id validity checks; you must guarantee ids are valid).
