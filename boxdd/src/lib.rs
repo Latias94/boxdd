@@ -53,9 +53,11 @@
 //! world.step(1.0/60.0, 4);
 //! ```
 //!
-//! `mint` integration (feature: `mint`)
-//! - `Vec2` accepts `mint::Vector2<f32>`, `mint::Point2<f32>`, `[f32; 2]`, `(f32, f32)` anywhere `Into<Vec2>` is used.
-//! - Returned vectors can be converted back using `From` to mint types.
+//! Math interop (optional features)
+//! - `Vec2` always accepts `[f32; 2]` and `(f32, f32)` anywhere `Into<Vec2>` is used.
+//! - With `mint`, `cgmath`, `nalgebra`, or `glam` enabled, `Vec2` also accepts those crates'
+//!   2D vector/point types via `From`/`Into`.
+//! - Returned vectors can be converted back using `From` to the corresponding math types.
 //!
 //! Modules
 //! - `world`, `body`, `shapes`, `joints`, `query`, `events`, `debug_draw`, `prelude`.

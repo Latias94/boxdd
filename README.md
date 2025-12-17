@@ -16,7 +16,7 @@
 
 ## Highlights
 - Safe, ergonomic Rust wrapper over the official Box2D v3 C API.
-- Mint interop (feature: `mint`): any `Into<Vec2>` accepts `mint::Vector2<f32>`, `mint::Point2<f32>`, arrays/tuples.
+- Math interop (features: `mint`/`cgmath`/`nalgebra`/`glam`): any `Into<Vec2>` accepts the corresponding 2D vector/point types, plus arrays/tuples.
 - Two error-handling styles: panic-on-misuse by default, plus `try_*` APIs returning `ApiResult<T>` for recoverable errors.
 
 ## Quickstart

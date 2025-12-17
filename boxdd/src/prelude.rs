@@ -2,7 +2,7 @@ pub use crate::{
     ApiError, ApiResult, Body, BodyBuilder, BodyDef, BodyType, CallbackWorld,
     OutstandingOwnedHandles, OwnedBody, OwnedHandleCounts, World, WorldBuilder, WorldDef,
     WorldHandle,
-    debug_draw::{DebugDraw, DebugDrawCmd, DebugDrawOptions},
+    debug_draw::{DebugDraw, DebugDrawCmd, DebugDrawOptions, HexColor, RawDebugDraw},
     joints::{
         DistanceJointDef, FilterJointDef, Joint, JointBase, JointBaseBuilder, MotorJointDef,
         OwnedJoint, PrismaticJointDef, RevoluteJointDef, WeldJointDef, WheelJointDef,
@@ -14,6 +14,7 @@ pub use crate::{
     },
     types::{BodyId, ChainId, JointId, MassData, ShapeId, Vec2},
     world::Counters,
+    {Rot, Transform},
 };
 
 #[cfg(feature = "unchecked")]

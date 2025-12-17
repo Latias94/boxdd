@@ -580,6 +580,70 @@ impl From<(glam::Vec2, glam::Vec2)> for Aabb {
     }
 }
 
+#[cfg(feature = "cgmath")]
+impl From<Aabb> for (cgmath::Point2<f32>, cgmath::Point2<f32>) {
+    #[inline]
+    fn from(a: Aabb) -> Self {
+        (a.lower.into(), a.upper.into())
+    }
+}
+
+#[cfg(feature = "cgmath")]
+impl From<(cgmath::Point2<f32>, cgmath::Point2<f32>)> for Aabb {
+    #[inline]
+    fn from((lower, upper): (cgmath::Point2<f32>, cgmath::Point2<f32>)) -> Self {
+        Self::new(lower, upper)
+    }
+}
+
+#[cfg(feature = "cgmath")]
+impl From<Aabb> for (cgmath::Vector2<f32>, cgmath::Vector2<f32>) {
+    #[inline]
+    fn from(a: Aabb) -> Self {
+        (a.lower.into(), a.upper.into())
+    }
+}
+
+#[cfg(feature = "cgmath")]
+impl From<(cgmath::Vector2<f32>, cgmath::Vector2<f32>)> for Aabb {
+    #[inline]
+    fn from((lower, upper): (cgmath::Vector2<f32>, cgmath::Vector2<f32>)) -> Self {
+        Self::new(lower, upper)
+    }
+}
+
+#[cfg(feature = "nalgebra")]
+impl From<Aabb> for (nalgebra::Point2<f32>, nalgebra::Point2<f32>) {
+    #[inline]
+    fn from(a: Aabb) -> Self {
+        (a.lower.into(), a.upper.into())
+    }
+}
+
+#[cfg(feature = "nalgebra")]
+impl From<(nalgebra::Point2<f32>, nalgebra::Point2<f32>)> for Aabb {
+    #[inline]
+    fn from((lower, upper): (nalgebra::Point2<f32>, nalgebra::Point2<f32>)) -> Self {
+        Self::new(lower, upper)
+    }
+}
+
+#[cfg(feature = "nalgebra")]
+impl From<Aabb> for (nalgebra::Vector2<f32>, nalgebra::Vector2<f32>) {
+    #[inline]
+    fn from(a: Aabb) -> Self {
+        (a.lower.into(), a.upper.into())
+    }
+}
+
+#[cfg(feature = "nalgebra")]
+impl From<(nalgebra::Vector2<f32>, nalgebra::Vector2<f32>)> for Aabb {
+    #[inline]
+    fn from((lower, upper): (nalgebra::Vector2<f32>, nalgebra::Vector2<f32>)) -> Self {
+        Self::new(lower, upper)
+    }
+}
+
 /// Filter for queries
 #[doc(alias = "query_filter")]
 #[derive(Copy, Clone, Debug)]

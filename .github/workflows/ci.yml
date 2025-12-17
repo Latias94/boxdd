@@ -40,6 +40,8 @@ jobs:
           cargo test --features unchecked
           cargo test --features mint
           cargo test --features bytemuck
+          cargo test --features cgmath
+          cargo test --features nalgebra
           cargo test --features glam
           cargo test --features "bytemuck glam"
 
