@@ -153,8 +153,9 @@ impl World {
     ///
     /// # Safety
     /// The returned slices borrow internal Box2D buffers. While `f` runs, you must not perform
-    /// any operation that can mutate those buffers (e.g. stepping the world, destroying bodies/shapes,
-    /// or dropping `Owned*` handles that may trigger destruction).
+    /// any operation that can mutate those buffers (e.g. stepping the world or destroying bodies).
+    ///
+    /// Dropping `Owned*` handles inside `f` is OK; destruction is deferred until after this call.
     pub unsafe fn with_contact_events<T>(
         &self,
         f: impl FnOnce(
@@ -164,26 +165,31 @@ impl World {
         ) -> T,
     ) -> T {
         crate::core::callback_state::assert_not_in_callback();
-        // Low-level raw view over contact events.
-        // Exposes FFI slices directly; they are only valid within this call.
-        // Prefer `with_contact_events_view` for a safe, FFI-opaque interface.
-        let raw = unsafe { ffi::b2World_GetContactEvents(self.raw()) };
-        let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
-            unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
-        } else {
-            &[][..]
+        let out = {
+            let _borrow = self.core_arc().borrow_event_buffers();
+            // Low-level raw view over contact events.
+            // Exposes FFI slices directly; they are only valid within this call.
+            // Prefer `with_contact_events_view` for a safe, FFI-opaque interface.
+            let raw = unsafe { ffi::b2World_GetContactEvents(self.raw()) };
+            let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
+            } else {
+                &[][..]
+            };
+            let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
+            } else {
+                &[][..]
+            };
+            let hit = if raw.hitCount > 0 && !raw.hitEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.hitEvents, raw.hitCount as usize) }
+            } else {
+                &[][..]
+            };
+            f(begin, end, hit)
         };
-        let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
-            unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
-        } else {
-            &[][..]
-        };
-        let hit = if raw.hitCount > 0 && !raw.hitEvents.is_null() {
-            unsafe { core::slice::from_raw_parts(raw.hitEvents, raw.hitCount as usize) }
-        } else {
-            &[][..]
-        };
-        f(begin, end, hit)
+        self.core_arc().process_deferred_destroys();
+        out
     }
 
     /// Zero-copy view over contact events without exposing raw FFI types.

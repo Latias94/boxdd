@@ -91,7 +91,8 @@ world.with_joint_events_view(|j| { let _ = j.count(); });
 ```
 
 ## Notes
-- Vendored C sources + pregenerated bindings by default (no LLVM needed on CI). To force bindgen: set `BOXDD_SYS_FORCE_BINDGEN=1` and ensure `libclang` is available. On Windows/MSVC, set `LIBCLANG_PATH` if needed.
+- Vendored C sources + pregenerated bindings by default (no LLVM needed on CI).
+  - To force bindgen: enable the `boxdd-sys/bindgen` feature, set `BOXDD_SYS_FORCE_BINDGEN=1`, and ensure `libclang` is available. On Windows/MSVC, set `LIBCLANG_PATH` if needed.
 - On docs.rs, the native C build is skipped.
 - Safe handle methods validate ids and panic on invalid ids (prevents UB if an id becomes stale). For recoverable failures (invalid ids / calling during Box2D callbacks), use `try_*` APIs.
 - Threading: `World` and owned handles are `!Send`/`!Sync`. Run physics on one thread; in async runtimes prefer `spawn_local`/`LocalSet`, or create the world inside a dedicated physics thread and communicate via channels.

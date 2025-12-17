@@ -47,17 +47,23 @@ impl World {
     ///
     /// # Safety
     /// The returned slice borrows internal Box2D buffers. While `f` runs, you must not perform
-    /// any operation that can mutate those buffers (e.g. stepping the world, destroying joints,
-    /// or dropping `Owned*` handles that may trigger destruction).
+    /// any operation that can mutate those buffers (e.g. stepping the world or destroying joints).
+    ///
+    /// Dropping `Owned*` handles inside `f` is OK; destruction is deferred until after this call.
     pub unsafe fn with_joint_events<T>(&self, f: impl FnOnce(&[ffi::b2JointEvent]) -> T) -> T {
         crate::core::callback_state::assert_not_in_callback();
-        let raw = unsafe { ffi::b2World_GetJointEvents(self.raw()) };
-        let slice = if raw.count > 0 && !raw.jointEvents.is_null() {
-            unsafe { core::slice::from_raw_parts(raw.jointEvents, raw.count as usize) }
-        } else {
-            &[][..]
+        let out = {
+            let _borrow = self.core_arc().borrow_event_buffers();
+            let raw = unsafe { ffi::b2World_GetJointEvents(self.raw()) };
+            let slice = if raw.count > 0 && !raw.jointEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.jointEvents, raw.count as usize) }
+            } else {
+                &[][..]
+            };
+            f(slice)
         };
-        f(slice)
+        self.core_arc().process_deferred_destroys();
+        out
     }
 
     /// Zero-copy view over joint events without exposing raw FFI types.

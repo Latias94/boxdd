@@ -95,27 +95,33 @@ impl World {
     ///
     /// # Safety
     /// The returned slices borrow internal Box2D buffers. While `f` runs, you must not perform
-    /// any operation that can mutate those buffers (e.g. stepping the world, destroying bodies/shapes,
-    /// or dropping `Owned*` handles that may trigger destruction).
+    /// any operation that can mutate those buffers (e.g. stepping the world or destroying bodies).
+    ///
+    /// Dropping `Owned*` handles inside `f` is OK; destruction is deferred until after this call.
     pub unsafe fn with_sensor_events<T>(
         &self,
         f: impl FnOnce(&[ffi::b2SensorBeginTouchEvent], &[ffi::b2SensorEndTouchEvent]) -> T,
     ) -> T {
         crate::core::callback_state::assert_not_in_callback();
-        // Low-level raw view exposing FFI slices; valid only within this call.
-        // Prefer `with_sensor_events_view` to avoid leaking FFI types.
-        let raw = unsafe { ffi::b2World_GetSensorEvents(self.raw()) };
-        let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
-            unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
-        } else {
-            &[][..]
+        let out = {
+            let _borrow = self.core_arc().borrow_event_buffers();
+            // Low-level raw view exposing FFI slices; valid only within this call.
+            // Prefer `with_sensor_events_view` to avoid leaking FFI types.
+            let raw = unsafe { ffi::b2World_GetSensorEvents(self.raw()) };
+            let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
+            } else {
+                &[][..]
+            };
+            let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
+            } else {
+                &[][..]
+            };
+            f(begin, end)
         };
-        let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
-            unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
-        } else {
-            &[][..]
-        };
-        f(begin, end)
+        self.core_arc().process_deferred_destroys();
+        out
     }
 
     /// Zero-copy view over sensor events without exposing raw FFI types.

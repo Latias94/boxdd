@@ -4,7 +4,7 @@
 //! Highlights
 //! - Thin safe layer on top of the official Box2D v3 C API.
 //! - Modular API: world, bodies, shapes, joints, queries, events, debug draw.
-//! - Ergonomics: builder patterns, world-space helpers, mint integration.
+//! - Ergonomics: builder patterns, world-space helpers, optional `mint` integration.
 //! - Three usage styles:
 //!   - Owned handles: `OwnedBody`/`OwnedShape`/`OwnedJoint`/`OwnedChain` (Drop destroys; easy to store).
 //!   - Scoped handles: `Body<'_>`/`Shape<'_>`/`Joint<'_>`/`Chain<'_>` (dropping only releases the world borrow).
