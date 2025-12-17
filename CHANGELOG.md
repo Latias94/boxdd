@@ -20,6 +20,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Breaking: `World::debug_draw` / `World::debug_draw_raw` are now safe APIs (the old `unsafe` call sites must be updated).
 - `with_*_events_view` are safe and automatically defer destruction while borrowing Box2D event buffers.
 - Docs and README wording aligned around general “math interop” (not only `mint`).
+ - Dependency: `boxdd` now requires `boxdd-sys >= 0.2.1` (CI packaging fixes live in `boxdd-sys 0.2.1`).
 
 ### Fixed
 - Guarded raw `unsafe with_*_events` to defer destruction while borrowing Box2D event buffers.
