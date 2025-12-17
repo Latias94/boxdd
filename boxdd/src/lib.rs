@@ -53,8 +53,8 @@
 //! world.step(1.0/60.0, 4);
 //! ```
 //!
-//! mint integration
-//! - `b2Vec2` accepts `mint::Vector2<f32>`, `mint::Point2<f32>`, `[f32; 2]`, `(f32, f32)` anywhere `Into<b2Vec2>` is used.
+//! `mint` integration (feature: `mint`)
+//! - `Vec2` accepts `mint::Vector2<f32>`, `mint::Point2<f32>`, `[f32; 2]`, `(f32, f32)` anywhere `Into<Vec2>` is used.
 //! - Returned vectors can be converted back using `From` to mint types.
 //!
 //! Modules
@@ -79,6 +79,7 @@
 //! Feature Flags
 //! - `serialize`: scene snapshot helpers (save/apply world config; build/restore minimal full-scene snapshot).
 //! - `pkg-config`: allow linking against a system `box2d` via pkg-config.
+//! - `mint`: lightweight math interop types (`mint::Vector2`, `mint::Point2`, and 2D affine matrices for `Transform`).
 //! - `cgmath` / `nalgebra` / `glam`: conversions with their 2D math types.
 //! - `bytemuck`: `Pod`/`Zeroable` for core math types (`Vec2`, `Rot`, `Transform`, `Aabb`) for zero-copy interop.
 //!
@@ -134,6 +135,9 @@ pub use body::{Body, BodyBuilder, BodyDef, BodyType};
 #[cfg(feature = "glam")]
 #[cfg_attr(docsrs, doc(cfg(feature = "glam")))]
 pub use core::math::TransformFromGlamError;
+#[cfg(feature = "mint")]
+#[cfg_attr(docsrs, doc(cfg(feature = "mint")))]
+pub use core::math::TransformFromMintError;
 pub use core::math::{Rot, Transform};
 pub use debug_draw::{DebugDraw, DebugDrawCmd, DebugDrawOptions};
 pub use error::{ApiError, ApiResult};

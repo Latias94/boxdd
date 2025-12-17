@@ -20,3 +20,6 @@ pub use crate::unchecked::*;
 
 #[cfg(feature = "glam")]
 pub use crate::TransformFromGlamError;
+
+#[cfg(feature = "mint")]
+pub use crate::TransformFromMintError;

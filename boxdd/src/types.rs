@@ -55,16 +55,34 @@ impl From<(f32, f32)> for Vec2 {
     }
 }
 
+#[cfg(feature = "mint")]
 impl From<mint::Vector2<f32>> for Vec2 {
     #[inline]
     fn from(v: mint::Vector2<f32>) -> Self {
         Self { x: v.x, y: v.y }
     }
 }
+#[cfg(feature = "mint")]
 impl From<mint::Point2<f32>> for Vec2 {
     #[inline]
     fn from(p: mint::Point2<f32>) -> Self {
         Self { x: p.x, y: p.y }
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<Vec2> for mint::Vector2<f32> {
+    #[inline]
+    fn from(v: Vec2) -> Self {
+        Self { x: v.x, y: v.y }
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<Vec2> for mint::Point2<f32> {
+    #[inline]
+    fn from(v: Vec2) -> Self {
+        Self { x: v.x, y: v.y }
     }
 }
 

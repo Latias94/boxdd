@@ -528,6 +528,38 @@ impl Aabb {
     }
 }
 
+#[cfg(feature = "mint")]
+impl From<Aabb> for (mint::Point2<f32>, mint::Point2<f32>) {
+    #[inline]
+    fn from(a: Aabb) -> Self {
+        (a.lower.into(), a.upper.into())
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<(mint::Point2<f32>, mint::Point2<f32>)> for Aabb {
+    #[inline]
+    fn from((lower, upper): (mint::Point2<f32>, mint::Point2<f32>)) -> Self {
+        Self::new(lower, upper)
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<Aabb> for (mint::Vector2<f32>, mint::Vector2<f32>) {
+    #[inline]
+    fn from(a: Aabb) -> Self {
+        (a.lower.into(), a.upper.into())
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<(mint::Vector2<f32>, mint::Vector2<f32>)> for Aabb {
+    #[inline]
+    fn from((lower, upper): (mint::Vector2<f32>, mint::Vector2<f32>)) -> Self {
+        Self::new(lower, upper)
+    }
+}
+
 #[cfg(feature = "glam")]
 impl From<Aabb> for (glam::Vec2, glam::Vec2) {
     #[inline]

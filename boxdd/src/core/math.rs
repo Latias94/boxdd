@@ -275,6 +275,166 @@ impl TryFrom<&glam::Affine2> for Transform {
     }
 }
 
+#[cfg(feature = "mint")]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, thiserror::Error)]
+pub enum TransformFromMintError {
+    #[error("non-finite value in mint transform matrix")]
+    NonFinite,
+    #[error("mint matrix is not a pure rotation + translation")]
+    NotPureRotation,
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<mint::RowMatrix3x2<f32>> for Transform {
+    type Error = TransformFromMintError;
+
+    #[inline]
+    fn try_from(m: mint::RowMatrix3x2<f32>) -> Result<Self, Self::Error> {
+        let a = m.x.x;
+        let b = m.x.y;
+        let c = m.y.x;
+        let d = m.y.y;
+        let tx = m.z.x;
+        let ty = m.z.y;
+
+        if !(a.is_finite()
+            && b.is_finite()
+            && c.is_finite()
+            && d.is_finite()
+            && tx.is_finite()
+            && ty.is_finite())
+        {
+            return Err(TransformFromMintError::NonFinite);
+        }
+
+        // We only accept pure rotations (orthonormal basis with determinant +1).
+        let eps = 1.0e-4;
+        let row0_len2 = a * a + b * b;
+        let row1_len2 = c * c + d * d;
+        if (row0_len2 - 1.0).abs() > eps || (row1_len2 - 1.0).abs() > eps {
+            return Err(TransformFromMintError::NotPureRotation);
+        }
+        if (a * c + b * d).abs() > eps {
+            return Err(TransformFromMintError::NotPureRotation);
+        }
+        let det = a * d - b * c;
+        if (det - 1.0).abs() > 5.0e-4 {
+            return Err(TransformFromMintError::NotPureRotation);
+        }
+
+        // Expected form: [[c, -s], [s, c]].
+        if (b + c).abs() > 1.0e-4 || (d - a).abs() > 1.0e-4 {
+            return Err(TransformFromMintError::NotPureRotation);
+        }
+
+        Ok(Transform {
+            p: Vec2 { x: tx, y: ty },
+            q: Rot { c: a, s: c },
+        })
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<&mint::RowMatrix3x2<f32>> for Transform {
+    type Error = TransformFromMintError;
+
+    #[inline]
+    fn try_from(m: &mint::RowMatrix3x2<f32>) -> Result<Self, Self::Error> {
+        Self::try_from(*m)
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<Transform> for mint::RowMatrix3x2<f32> {
+    #[inline]
+    fn from(t: Transform) -> Self {
+        let c = t.q.c;
+        let s = t.q.s;
+        Self {
+            x: mint::Vector2 { x: c, y: -s },
+            y: mint::Vector2 { x: s, y: c },
+            z: mint::Vector2 {
+                x: t.p.x,
+                y: t.p.y,
+            },
+        }
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<mint::RowMatrix2x3<f32>> for Transform {
+    type Error = TransformFromMintError;
+
+    #[inline]
+    fn try_from(m: mint::RowMatrix2x3<f32>) -> Result<Self, Self::Error> {
+        let a = m.x.x;
+        let b = m.x.y;
+        let c = m.y.x;
+        let d = m.y.y;
+        let tx = m.x.z;
+        let ty = m.y.z;
+
+        if !(a.is_finite()
+            && b.is_finite()
+            && c.is_finite()
+            && d.is_finite()
+            && tx.is_finite()
+            && ty.is_finite())
+        {
+            return Err(TransformFromMintError::NonFinite);
+        }
+
+        let eps = 1.0e-4;
+        let row0_len2 = a * a + b * b;
+        let row1_len2 = c * c + d * d;
+        if (row0_len2 - 1.0).abs() > eps || (row1_len2 - 1.0).abs() > eps {
+            return Err(TransformFromMintError::NotPureRotation);
+        }
+        if (a * c + b * d).abs() > eps {
+            return Err(TransformFromMintError::NotPureRotation);
+        }
+        let det = a * d - b * c;
+        if (det - 1.0).abs() > 5.0e-4 {
+            return Err(TransformFromMintError::NotPureRotation);
+        }
+        if (b + c).abs() > 1.0e-4 || (d - a).abs() > 1.0e-4 {
+            return Err(TransformFromMintError::NotPureRotation);
+        }
+
+        Ok(Transform {
+            p: Vec2 { x: tx, y: ty },
+            q: Rot { c: a, s: c },
+        })
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<&mint::RowMatrix2x3<f32>> for Transform {
+    type Error = TransformFromMintError;
+
+    #[inline]
+    fn try_from(m: &mint::RowMatrix2x3<f32>) -> Result<Self, Self::Error> {
+        Self::try_from(*m)
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<Transform> for mint::RowMatrix2x3<f32> {
+    #[inline]
+    fn from(t: Transform) -> Self {
+        let c = t.q.c;
+        let s = t.q.s;
+        Self {
+            x: mint::Vector3 {
+                x: c,
+                y: -s,
+                z: t.p.x,
+            },
+            y: mint::Vector3 { x: s, y: c, z: t.p.y },
+        }
+    }
+}
+
 // serde support for Transform as { pos, angle } (radians)
 #[cfg(feature = "serde")]
 impl serde::Serialize for Transform {

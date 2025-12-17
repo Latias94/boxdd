@@ -38,6 +38,7 @@ jobs:
           cargo test
           cargo test --features serialize
           cargo test --features unchecked
+          cargo test --features mint
           cargo test --features bytemuck
           cargo test --features glam
           cargo test --features "bytemuck glam"
