@@ -37,6 +37,7 @@ High-level wrappers live in the companion crate `boxdd`.
 - `simd-avx2`: enable AVX2 on x86_64.
 - `disable-simd`: disable all SIMD; overrides `simd-avx2`.
 - `validate`: enable internal validation checks.
+- `package-bin`: enable the internal `bin/package` helper used by CI to package prebuilt artifacts.
 
 ## Notes
 - Requires a C toolchain. Bindgen requires `libclang` only when forced (`BOXDD_SYS_FORCE_BINDGEN=1`).

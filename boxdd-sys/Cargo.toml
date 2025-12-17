@@ -1,6 +1,6 @@
 [package]
 name = "boxdd-sys"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 description = "Low-level FFI bindings for Box2D built from upstream via submodule"
 license = "MIT OR Apache-2.0"
@@ -19,6 +19,8 @@ include = [
     "README.md",
     "build.rs",
     "src/**",
+    # Internal helper binary used by CI to package prebuilt artifacts.
+    "bin/**",
     # Only headers from upstream include/
     "third-party/box2d/include/**/*.h",
     # C sources and local headers from upstream src/
@@ -41,6 +43,8 @@ build-from-source = []
 pkg-config = ["dep:pkg-config"]
 # Enable bindgen-based regeneration of bindings (requires libclang).
 bindgen = ["dep:bindgen"]
+# Enable the internal `bin/package` helper used by CI to produce prebuilt artifacts.
+package-bin = ["dep:flate2", "dep:tar"]
 ## Optional performance/debug features (match upstream options)
 # Enable AVX2 SIMD optimizations (x86_64 only); ignored if `disable-simd` is also set.
 simd-avx2 = []
@@ -55,3 +59,10 @@ bindgen = { version = "0.72", optional = true }
 pkg-config = { version = "0.3", optional = true }
 
 [dependencies]
+flate2 = { version = "1", optional = true }
+tar = { version = "0.4", optional = true }
+
+[[bin]]
+name = "package"
+path = "bin/package/main.rs"
+required-features = ["package-bin"]

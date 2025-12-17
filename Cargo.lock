@@ -268,11 +268,13 @@ dependencies = [
 
 [[package]]
 name = "boxdd-sys"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "bindgen",
  "cc",
+ "flate2",
  "pkg-config",
+ "tar",
 ]
 
 [[package]]

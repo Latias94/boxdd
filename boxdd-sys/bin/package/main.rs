@@ -77,10 +77,10 @@ fn compose_manifest_bytes(
         "{} prebuilt\nversion={}\ntarget={}\nlink={}\ncrt={}",
         crate_short, version, target, link_type, crt
     );
-    if let Some(f) = features {
-        if !f.is_empty() {
-            let _ = writeln!(&mut buf, "features={}", f);
-        }
+    if let Some(f) = features
+        && !f.is_empty()
+    {
+        let _ = writeln!(&mut buf, "features={}", f);
     }
     buf
 }
@@ -90,10 +90,22 @@ fn locate_sys_out_dir(workspace_root: &Path, target: &str) -> Result<PathBuf, St
     let target_dir = env::var("CARGO_TARGET_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|_| workspace_root.join("target"));
-    let build_root = target_dir.join(target).join(&profile).join("build");
-    if !build_root.exists() {
-        return Err(format!("Build root not found at {}", build_root.display()));
-    }
+    // When `--target <triple>` is used, cargo outputs under `target/<triple>/<profile>/...`.
+    // When no `--target` is used, cargo outputs under `target/<profile>/...`.
+    let build_root_target = target_dir.join(target).join(&profile).join("build");
+    let build_root_host = target_dir.join(&profile).join("build");
+    let build_root = if build_root_target.exists() {
+        build_root_target
+    } else if build_root_host.exists() {
+        build_root_host
+    } else {
+        return Err(format!(
+            "Build root not found at {} (or {})",
+            build_root_target.display(),
+            build_root_host.display()
+        ));
+    };
+
     let mut candidates: Vec<PathBuf> = match std::fs::read_dir(&build_root) {
         Ok(rd) => rd
             .filter_map(|e| e.ok())

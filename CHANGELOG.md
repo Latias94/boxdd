@@ -29,3 +29,9 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ### Notes
 - No upstream Box2D revision change in this release (version bump aligned with `boxdd`).
+
+## [boxdd-sys 0.2.1] - 2025-12-17
+
+### Fixed
+- CI packaging: add `package-bin` feature and declare the internal `package` binary so `prebuilt-binaries.yml` works.
+- CI runner: switch Intel macOS builds from `macos-13` (retired) to `macos-15-intel`.
