@@ -72,10 +72,24 @@ fn main() {
         );
     }
 
-    // Run bindgen only if needed or explicitly requested
+    // Run bindgen only if needed or explicitly requested.
+    // Note: bindgen is an optional build dependency behind the `bindgen` feature to avoid requiring libclang
+    // for normal builds that use pregenerated bindings.
     let force_bindgen = parse_bool_env("BOXDD_SYS_FORCE_BINDGEN");
     if force_bindgen || (!has_pregenerated && !is_docsrs && !used_wasm_pregenerated) {
+        #[cfg(feature = "bindgen")]
         generate_bindings(&manifest_dir, &out_dir);
+        #[cfg(not(feature = "bindgen"))]
+        {
+            if force_bindgen {
+                panic!(
+                    "BOXDD_SYS_FORCE_BINDGEN=1 but the `boxdd-sys` crate was built without the `bindgen` feature"
+                );
+            }
+            panic!(
+                "pregenerated bindings are missing and the `boxdd-sys` crate was built without the `bindgen` feature"
+            );
+        }
     }
 
     // docs.rs: do not attempt to build/link native C sources.
@@ -118,6 +132,7 @@ fn main() {
     }
 }
 
+#[cfg(feature = "bindgen")]
 fn generate_bindings(manifest_dir: &Path, out_dir: &Path) {
     let header = manifest_dir
         .join("third-party")
@@ -141,6 +156,12 @@ fn generate_bindings(manifest_dir: &Path, out_dir: &Path) {
     bindings
         .write_to_file(&out)
         .expect("Couldn't write bindings!");
+}
+
+#[cfg(not(feature = "bindgen"))]
+#[allow(dead_code)]
+fn generate_bindings(_manifest_dir: &Path, _out_dir: &Path) {
+    unreachable!("generate_bindings is only available with the `bindgen` feature enabled");
 }
 
 fn build_box2d_from_source(manifest_dir: &Path, target_env: &str, target_os: &str, is_debug: bool) {

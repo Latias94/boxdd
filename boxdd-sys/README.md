@@ -18,7 +18,7 @@ High-level wrappers live in the companion crate `boxdd`.
   - Feature: enable `pkg-config` and ensure `box2d` is available via the system.
 - Bindings: uses pregenerated bindings by default to avoid requiring LLVM on CI.
   - Note: crate features that affect the C build (e.g. `simd-avx2`, `disable-simd`, `validate`) are ignored when linking a system library. Set `BOXDD_SYS_STRICT_FEATURES=1` to fail the build if such features are enabled.
-  - Force bindgen: set `BOXDD_SYS_FORCE_BINDGEN=1` and ensure `libclang` is available.
+  - Force bindgen: enable the `bindgen` feature, set `BOXDD_SYS_FORCE_BINDGEN=1`, and ensure `libclang` is available.
 - Docs.rs/offline: uses pregenerated bindings and skips native C build.
 
 ## System Linking

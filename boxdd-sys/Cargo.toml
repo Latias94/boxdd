@@ -39,6 +39,8 @@ default = ["build-from-source"]
 # Always build vendored Box2D C sources with cc. No prebuilt linking path.
 build-from-source = []
 pkg-config = ["dep:pkg-config"]
+# Enable bindgen-based regeneration of bindings (requires libclang).
+bindgen = ["dep:bindgen"]
 ## Optional performance/debug features (match upstream options)
 # Enable AVX2 SIMD optimizations (x86_64 only); ignored if `disable-simd` is also set.
 simd-avx2 = []
@@ -49,7 +51,7 @@ validate = []
 
 [build-dependencies]
 cc = "1"
-bindgen = "0.72"
+bindgen = { version = "0.72", optional = true }
 pkg-config = { version = "0.3", optional = true }
 
 [dependencies]

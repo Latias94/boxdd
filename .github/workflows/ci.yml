@@ -7,6 +7,38 @@ on:
     branches: [ main, master ]
 
 jobs:
+  lint:
+    name: Lint + Test (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: rustfmt
+        run: cargo fmt --all -- --check
+
+      - name: clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: tests (core)
+        run: |
+          cargo test
+          cargo test --features serialize
+          cargo test --features unchecked
+          cargo test --features bytemuck
+          cargo test --features glam
+          cargo test --features "bytemuck glam"
+
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -26,38 +58,8 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Cache cargo registry + target
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-
-      - name: Install LLVM/Clang (Ubuntu)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang llvm-dev libclang-dev build-essential
-          # Ensure pthreads linkage is available
-          sudo apt-get install -y libc6-dev
-
-      - name: Install LLVM/Clang (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          brew update
-          brew install llvm || true
-          echo "LIBCLANG_PATH=$(brew --prefix llvm)/lib" >> $GITHUB_ENV
-
-      - name: Install LLVM/Clang (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: powershell
-        run: |
-          choco install llvm -y --no-progress
-          echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
 
       - name: Build
         run: cargo build --workspace --all-targets --verbose
@@ -87,9 +89,15 @@ jobs:
           "cgmath",
           "nalgebra",
           "glam",
+          "bytemuck",
+          "bytemuck glam",
           "serde cgmath nalgebra",
           "serde glam",
+          "serde bytemuck",
+          "serde bytemuck glam",
           "serialize glam",
+          "serialize bytemuck",
+          "serialize bytemuck glam",
           "serialize cgmath nalgebra",
         ]
 
@@ -102,21 +110,8 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo registry + target
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-
-      - name: Install LLVM/Clang
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang llvm-dev libclang-dev build-essential libc6-dev
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
 
       - name: cargo check (boxdd with features="${{ matrix.features }}")
         shell: bash
@@ -146,16 +141,8 @@ jobs:
           rustup target add wasm32-unknown-unknown
           rustup target add wasm32-wasip1
 
-      - name: Cache cargo registry + target
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-wasm-
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
 
       - name: cargo check (boxdd-sys, wasm32-unknown-unknown)
         run: |

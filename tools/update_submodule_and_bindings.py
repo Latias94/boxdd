@@ -82,7 +82,12 @@ def main() -> int:
 
     # Optionally build for wasm target to emit wasm-specific bindings
     if args.wasm_target is None:
-        rc = run(["cargo", "build", "-p", "boxdd-sys", *profile_flag], cwd=str(repo_root), env=env, dry=args.dry_run)
+        rc = run(
+            ["cargo", "build", "-p", "boxdd-sys", "--features", "bindgen", *profile_flag],
+            cwd=str(repo_root),
+            env=env,
+            dry=args.dry_run,
+        )
         if rc != 0:
             return rc
         target_dir = Path(env.get("CARGO_TARGET_DIR", repo_root / "target"))
@@ -122,7 +127,22 @@ def main() -> int:
             env["BINDGEN_EXTRA_CLANG_ARGS_wasm32_wasip1"] = extra
             target_triple = "wasm32-wasip1"
 
-        rc = run(["cargo", "build", "-p", "boxdd-sys", *profile_flag, "--target", target_triple], cwd=str(repo_root), env=env, dry=args.dry_run)
+        rc = run(
+            [
+                "cargo",
+                "build",
+                "-p",
+                "boxdd-sys",
+                "--features",
+                "bindgen",
+                *profile_flag,
+                "--target",
+                target_triple,
+            ],
+            cwd=str(repo_root),
+            env=env,
+            dry=args.dry_run,
+        )
         if rc != 0:
             return rc
         target_dir = Path(env.get("CARGO_TARGET_DIR", repo_root / "target")) / target_triple
