@@ -1407,7 +1407,8 @@ pub fn segment<V: Into<crate::types::Vec2>>(p1: V, p2: V) -> ffi::b2Segment {
 /// Helper constructors (re-exported): `capsule`, `box_polygon`, `polygon_from_points`.
 pub use helpers::{box_polygon, capsule, polygon_from_points};
 
-// With `mint` conversions enabled, `polygon_from_points` accepts `mint::Vector2<f32>` directly.
+// With math interop enabled (`mint`/`cgmath`/`nalgebra`/`glam`), `polygon_from_points` accepts the
+// corresponding 2D vector/point types via `Into<Vec2>`.
 
 impl<'w> Body<'w> {
     pub fn create_circle_shape(&mut self, def: &ShapeDef, c: &ffi::b2Circle) -> Shape<'w> {

@@ -2,7 +2,7 @@
 //!
 //! - AABB overlap: collect matching shape ids.
 //! - Ray casts: closest or all hits along a path.
-//! - Shape overlap / casting: build a temporary proxy from points + radius (accepts mint vectors).
+//! - Shape overlap / casting: build a temporary proxy from points + radius (accepts `Into<Vec2>` points).
 //! - Offset proxies: apply translation + rotation to the proxy for queries in local frames.
 //!
 //! Note: Box2D proxies support at most `B2_MAX_POLYGON_VERTICES` points (8). Extra points are ignored.

@@ -135,6 +135,9 @@ pub mod core {
 
 pub use body::OwnedBody;
 pub use body::{Body, BodyBuilder, BodyDef, BodyType};
+#[cfg(feature = "cgmath")]
+#[cfg_attr(docsrs, doc(cfg(feature = "cgmath")))]
+pub use core::math::TransformFromCgmathError;
 #[cfg(feature = "glam")]
 #[cfg_attr(docsrs, doc(cfg(feature = "glam")))]
 pub use core::math::TransformFromGlamError;

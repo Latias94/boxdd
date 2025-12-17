@@ -100,6 +100,111 @@ impl<'a> From<&'a cgmath::Basis2<f32>> for Rot {
     }
 }
 
+#[cfg(feature = "cgmath")]
+impl From<Transform> for cgmath::Matrix3<f32> {
+    #[inline]
+    fn from(t: Transform) -> Self {
+        use cgmath::Vector3;
+        let c = t.q.c;
+        let s = t.q.s;
+        cgmath::Matrix3 {
+            // Column-major affine 2D transform:
+            // [ c -s tx ]
+            // [ s  c ty ]
+            // [ 0  0  1 ]
+            x: Vector3::new(c, s, 0.0),
+            y: Vector3::new(-s, c, 0.0),
+            z: Vector3::new(t.p.x, t.p.y, 1.0),
+        }
+    }
+}
+
+#[cfg(feature = "cgmath")]
+impl From<&Transform> for cgmath::Matrix3<f32> {
+    #[inline]
+    fn from(t: &Transform) -> Self {
+        (*t).into()
+    }
+}
+
+#[cfg(feature = "cgmath")]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, thiserror::Error)]
+pub enum TransformFromCgmathError {
+    #[error("non-finite value in cgmath::Matrix3")]
+    NonFinite,
+    #[error("cgmath::Matrix3 is not a pure rotation + translation")]
+    NotPureRotation,
+}
+
+#[cfg(feature = "cgmath")]
+impl TryFrom<cgmath::Matrix3<f32>> for Transform {
+    type Error = TransformFromCgmathError;
+
+    #[inline]
+    fn try_from(m: cgmath::Matrix3<f32>) -> Result<Self, Self::Error> {
+        let x = m.x;
+        let y = m.y;
+        let z = m.z;
+
+        if !(x.x.is_finite()
+            && x.y.is_finite()
+            && x.z.is_finite()
+            && y.x.is_finite()
+            && y.y.is_finite()
+            && y.z.is_finite()
+            && z.x.is_finite()
+            && z.y.is_finite()
+            && z.z.is_finite())
+        {
+            return Err(TransformFromCgmathError::NonFinite);
+        }
+
+        // Reject non-affine 2D transforms.
+        let eps = 1.0e-4;
+        if x.z.abs() > eps || y.z.abs() > eps || (z.z - 1.0).abs() > eps {
+            return Err(TransformFromCgmathError::NotPureRotation);
+        }
+
+        // We only accept pure rotations (orthonormal basis with determinant +1).
+        let x_len2 = x.x * x.x + x.y * x.y;
+        let y_len2 = y.x * y.x + y.y * y.y;
+        if (x_len2 - 1.0).abs() > eps || (y_len2 - 1.0).abs() > eps {
+            return Err(TransformFromCgmathError::NotPureRotation);
+        }
+        if (x.x * y.x + x.y * y.y).abs() > eps {
+            return Err(TransformFromCgmathError::NotPureRotation);
+        }
+        let det = x.x * y.y - x.y * y.x;
+        if (det - 1.0).abs() > 5.0e-4 {
+            return Err(TransformFromCgmathError::NotPureRotation);
+        }
+
+        // Our convention: columns are [c, s] and [-s, c]
+        let expected_y_x = -x.y;
+        let expected_y_y = x.x;
+        let dy_x = y.x - expected_y_x;
+        let dy_y = y.y - expected_y_y;
+        if dy_x * dy_x + dy_y * dy_y > 1.0e-6 {
+            return Err(TransformFromCgmathError::NotPureRotation);
+        }
+
+        Ok(Transform {
+            p: Vec2 { x: z.x, y: z.y },
+            q: Rot { c: x.x, s: x.y },
+        })
+    }
+}
+
+#[cfg(feature = "cgmath")]
+impl TryFrom<&cgmath::Matrix3<f32>> for Transform {
+    type Error = TransformFromCgmathError;
+
+    #[inline]
+    fn try_from(m: &cgmath::Matrix3<f32>) -> Result<Self, Self::Error> {
+        Self::try_from(*m)
+    }
+}
+
 #[cfg(feature = "nalgebra")]
 impl From<Rot> for nalgebra::UnitComplex<f32> {
     #[inline]
