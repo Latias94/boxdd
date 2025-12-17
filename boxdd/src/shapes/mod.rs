@@ -412,6 +412,8 @@ impl OwnedShape {
     /// The caller must ensure that `p` is valid for as long as the engine may
     /// read it and that any aliasing/lifetime constraints are upheld. Box2D stores this
     /// pointer and may access it during simulation callbacks.
+    ///
+    /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn set_user_data_ptr(&mut self, p: *mut c_void) {
         self.assert_valid();
         let _ = self.core.clear_shape_user_data(self.id);
@@ -421,6 +423,8 @@ impl OwnedShape {
     ///
     /// # Safety
     /// Same safety contract as `set_user_data_ptr`.
+    ///
+    /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut c_void) -> ApiResult<()> {
         self.check_valid()?;
         let _ = self.core.clear_shape_user_data(self.id);
@@ -878,6 +882,8 @@ impl<'w> Shape<'w> {
     /// The caller must ensure that `p` is valid for as long as the engine may
     /// read it and that any aliasing/lifetime constraints are upheld. Box2D stores this
     /// pointer and may access it during simulation callbacks.
+    ///
+    /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn set_user_data_ptr(&mut self, p: *mut core::ffi::c_void) {
         self.assert_valid();
         let _ = self.core.clear_shape_user_data(self.id);
@@ -887,6 +893,8 @@ impl<'w> Shape<'w> {
     ///
     /// # Safety
     /// Same safety contract as `set_user_data_ptr`.
+    ///
+    /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut core::ffi::c_void) -> ApiResult<()> {
         self.check_valid()?;
         let _ = self.core.clear_shape_user_data(self.id);
@@ -1177,7 +1185,7 @@ impl ShapeDefBuilder {
     /// Enable user-provided filtering callback.
     ///
     /// Note: To receive custom filter calls you must also register a world-level
-    /// callback via `World::set_custom_filter_callback`.
+    /// callback via `World::set_custom_filter_callback` or `World::set_custom_filter_with_ctx`.
     pub fn enable_custom_filtering(mut self, flag: bool) -> Self {
         self.def.0.enableCustomFiltering = flag;
         self
@@ -1205,7 +1213,7 @@ impl ShapeDefBuilder {
     /// Emit pre-solve events (advanced).
     ///
     /// Note: To receive pre-solve events you must also register a world-level
-    /// callback via `World::set_pre_solve_callback`.
+    /// callback via `World::set_pre_solve_callback` or `World::set_pre_solve_with_ctx`.
     pub fn enable_pre_solve_events(mut self, flag: bool) -> Self {
         self.def.0.enablePreSolveEvents = flag;
         self

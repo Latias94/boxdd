@@ -155,6 +155,8 @@ impl OwnedJoint {
     ///
     /// # Safety
     /// The caller must ensure that `p` is valid for as long as Box2D may read it.
+    ///
+    /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn set_user_data_ptr(&mut self, p: *mut c_void) {
         self.assert_valid();
         let _ = self.core.clear_joint_user_data(self.id);
@@ -164,6 +166,8 @@ impl OwnedJoint {
     ///
     /// # Safety
     /// Same safety contract as `set_user_data_ptr`.
+    ///
+    /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut c_void) -> ApiResult<()> {
         self.check_valid()?;
         let _ = self.core.clear_joint_user_data(self.id);
@@ -435,6 +439,8 @@ impl<'w> Joint<'w> {
     ///
     /// # Safety
     /// The caller must ensure that `p` is valid for as long as Box2D may read it.
+    ///
+    /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn set_user_data_ptr(&mut self, p: *mut c_void) {
         self.assert_valid();
         let _ = self.core.clear_joint_user_data(self.id);
@@ -444,6 +450,8 @@ impl<'w> Joint<'w> {
     ///
     /// # Safety
     /// Same safety contract as `set_user_data_ptr`.
+    ///
+    /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut c_void) -> ApiResult<()> {
         self.check_valid()?;
         let _ = self.core.clear_joint_user_data(self.id);

@@ -402,9 +402,10 @@ impl World {
 
     /// Flush deferred destroys scheduled from Box2D callbacks.
     ///
-    /// Most users don't need to call this because `World::step` and debug draw helpers flush
-    /// automatically. This is useful if you drop `Owned*` handles during callbacks but want to
-    /// reclaim resources without stepping the simulation again.
+    /// Most users don't need to call this because `World::step`, event view helpers
+    /// (`with_*_events_view`), and debug draw helpers flush automatically. This is useful if you
+    /// drop `Owned*` handles during callbacks but want to reclaim resources without stepping the
+    /// simulation again.
     pub fn flush_deferred_destroys(&mut self) {
         crate::core::callback_state::assert_not_in_callback();
         self.core.process_deferred_destroys();

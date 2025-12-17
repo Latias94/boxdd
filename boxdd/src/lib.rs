@@ -86,7 +86,7 @@
 //! Events
 //! - Three access styles:
 //!   - By value: `world.contact_events()`/`sensor_events()`/`body_events()`/`joint_events()` return owned data for storage or cross‑frame use.
-//!   - Zero‑copy views: `unsafe { with_*_events_view(...) }` iterate without allocations (borrows internal buffers).
+//!   - Zero‑copy views: `with_*_events_view(...)` iterate without allocations (borrows internal buffers).
 //!   - Raw slices: `unsafe { with_*_events(...) }` expose FFI slices (borrows internal buffers).
 //!
 //! Example (zero‑copy views)

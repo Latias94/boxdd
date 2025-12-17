@@ -655,6 +655,8 @@ impl OwnedBody {
     /// The caller must ensure that `p` is either null or points to a valid object
     /// for the entire time the body may access it, and that any lifetimes/aliasing rules
     /// are upheld. Box2D treats this as an opaque pointer and may store/use it across steps.
+    ///
+    /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn set_user_data_ptr(&mut self, p: *mut c_void) {
         self.assert_valid();
         let _ = self.core.clear_body_user_data(self.id);
@@ -665,6 +667,8 @@ impl OwnedBody {
     ///
     /// # Safety
     /// Same safety contract as `set_user_data_ptr`.
+    ///
+    /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut c_void) -> ApiResult<()> {
         self.check_valid()?;
         let _ = self.core.clear_body_user_data(self.id);
@@ -1665,6 +1669,8 @@ impl<'w> Body<'w> {
     /// The caller must ensure that `p` is either null or points to a valid object
     /// for the entire time the body may access it, and that any lifetimes/aliasing rules
     /// are upheld. Box2D treats this as an opaque pointer and may store/use it across steps.
+    ///
+    /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn set_user_data_ptr(&mut self, p: *mut c_void) {
         self.assert_valid();
         let _ = self.core.clear_body_user_data(self.id);
@@ -1675,6 +1681,8 @@ impl<'w> Body<'w> {
     ///
     /// # Safety
     /// Same safety contract as `set_user_data_ptr`.
+    ///
+    /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut c_void) -> ApiResult<()> {
         self.check_valid()?;
         let _ = self.core.clear_body_user_data(self.id);
