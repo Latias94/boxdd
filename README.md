@@ -101,6 +101,9 @@ world.with_joint_events_view(|j| { let _ = j.count(); });
 - Local: `cargo doc --open`
 - Online: https://docs.rs/boxdd
 
+## Changelog
+- See `CHANGELOG.md`.
+
 ## Acknowledgments
 - Thanks to the Rust Box2D bindings project for prior art and inspiration: https://github.com/Bastacyclop/rust_box2d
 - Huge thanks to the upstream Box2D project by Erin Catto: https://github.com/erincatto/box2d
