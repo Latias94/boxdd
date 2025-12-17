@@ -257,17 +257,16 @@ impl World {
         }
 
         let mut c = Collector { cmds: Vec::new() };
-        // SAFETY: `Collector` is internal and does not mutate the world during callbacks.
-        unsafe { self.debug_draw(&mut c, opts) };
+        self.debug_draw(&mut c, opts);
         c.cmds
     }
 
     // Safe wrapper: converts to Vec2/Transform and &str
     ///
-    /// # Safety
     /// Box2D invokes the draw callbacks while traversing internal world state. During this call,
-    /// the `drawer` must not mutate the world (including indirectly via dropping `Owned*` handles).
-    pub unsafe fn debug_draw(&mut self, drawer: &mut impl DebugDraw, opts: DebugDrawOptions) {
+    /// any attempt to call into the Box2D world through `boxdd` will panic, since the world is
+    /// considered locked by Box2D.
+    pub fn debug_draw(&mut self, drawer: &mut impl DebugDraw, opts: DebugDrawOptions) {
         crate::core::callback_state::assert_not_in_callback();
         let mut panicked = false;
         let mut panic: Option<Box<dyn Any + Send + 'static>> = None;
@@ -518,14 +517,10 @@ impl World {
 
     // Raw path: zero-copy FFI types to trait
     ///
-    /// # Safety
     /// Box2D invokes the draw callbacks while traversing internal world state. During this call,
-    /// the `drawer` must not mutate the world (including indirectly via dropping `Owned*` handles).
-    pub unsafe fn debug_draw_raw(
-        &mut self,
-        drawer: &mut impl RawDebugDraw,
-        opts: DebugDrawOptions,
-    ) {
+    /// any attempt to call into the Box2D world through `boxdd` will panic, since the world is
+    /// considered locked by Box2D.
+    pub fn debug_draw_raw(&mut self, drawer: &mut impl RawDebugDraw, opts: DebugDrawOptions) {
         crate::core::callback_state::assert_not_in_callback();
         let mut panicked = false;
         let mut panic: Option<Box<dyn Any + Send + 'static>> = None;

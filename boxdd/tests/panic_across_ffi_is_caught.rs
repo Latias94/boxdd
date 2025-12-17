@@ -68,7 +68,7 @@ fn debug_draw_panic_is_caught_and_resumed() {
     let _ = world.create_polygon_shape_for(body, &sdef, &poly);
     let mut drawer = Panicker;
     let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        unsafe { world.debug_draw(&mut drawer, DebugDrawOptions::default()) };
+        world.debug_draw(&mut drawer, DebugDrawOptions::default());
     }));
     assert!(r.is_err());
 }
@@ -98,7 +98,7 @@ fn debug_draw_reentrant_boxdd_call_panics() {
     let _ = world.create_polygon_shape_for(body_id, &sdef, &poly);
 
     let mut drawer = Reenter { body };
-    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         world.debug_draw(&mut drawer, DebugDrawOptions::default());
     }));
     assert!(r.is_err());

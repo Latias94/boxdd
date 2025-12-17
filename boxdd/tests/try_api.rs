@@ -46,9 +46,7 @@ fn try_calls_from_debug_draw_return_in_callback() {
     let _ = world.create_polygon_shape_for(body_id, &sdef, &poly);
 
     let mut drawer = Drawer { body, err: None };
-    unsafe {
-        world.debug_draw(&mut drawer, DebugDrawOptions::default());
-    }
+    world.debug_draw(&mut drawer, DebugDrawOptions::default());
     assert_eq!(drawer.err, Some(ApiError::InCallback));
 }
 
@@ -93,9 +91,7 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
         world: world.handle(),
         errs: Vec::new(),
     };
-    unsafe {
-        world.debug_draw(&mut drawer, DebugDrawOptions::default());
-    }
+    world.debug_draw(&mut drawer, DebugDrawOptions::default());
     assert_eq!(
         drawer.errs,
         vec![ApiError::InCallback, ApiError::InCallback]
@@ -152,9 +148,7 @@ fn try_body_mutations_from_debug_draw_return_in_callback() {
     let _ = world.create_polygon_shape_for(body_id, &sdef, &poly);
 
     let mut drawer = Drawer { body, errs: vec![] };
-    unsafe {
-        world.debug_draw(&mut drawer, DebugDrawOptions::default());
-    }
+    world.debug_draw(&mut drawer, DebugDrawOptions::default());
     assert_eq!(
         drawer.errs,
         vec![ApiError::InCallback, ApiError::InCallback]

@@ -38,8 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts = DebugDrawOptions::default();
     for _ in 0..3 {
         world.step(1.0 / 60.0, 4);
-        // SAFETY: `Printer` does not mutate the world during callbacks.
-        unsafe { world.debug_draw(&mut drawer, opts) };
+        world.debug_draw(&mut drawer, opts);
     }
     Ok(())
 }
