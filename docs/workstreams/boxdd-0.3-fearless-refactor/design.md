@@ -154,6 +154,7 @@ These seams are worth keeping only if:
 - keep callback-sensitive event-buffer borrowing on a single internal path so deferred-destroy behavior cannot diverge across body/contact/sensor/joint views
 - apply the same single-source rule to geometry-specific world helpers when circle/segment/capsule/polygon entrypoints are mechanically identical apart from the Box2D function they call
 - keep intentional raw seams such as `debug_draw_raw` only when they share the same panic forwarding, callback lock semantics, and regression coverage as the safe path
+- continue the same private-helper consolidation on joint handles when owned/scoped variants still repeat the same state, threshold, and user-data FFI plumbing
 - audit the remaining intentional raw boundaries such as debug draw/raw color hooks and raw event/debug escape hatches, and confirm each one is still worth keeping
 - continue value-type cleanup for remaining raw Box2D structs that still leak through public APIs
 - continue auditing intentional raw seams such as debug draw/raw color paths and raw event/debug hooks so the kept escape hatches stay explicit and justified

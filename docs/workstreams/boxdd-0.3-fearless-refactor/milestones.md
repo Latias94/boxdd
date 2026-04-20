@@ -55,6 +55,7 @@ Scope:
 - consolidate world-level shape create/edit helper families so geometry-type additions cannot drift across create/owned/try setter variants
 - consolidate shared debug-draw callback bridging so safe/raw draw paths cannot drift in panic forwarding, callback locking, or option wiring
 - document the remaining intentional raw escape hatches and keep callback-sensitive raw paths under regression tests
+- consolidate the remaining high-churn joint-handle internals so scoped and owned joint handles share the same helper path for user data and threshold/state accessors
 
 Exit criteria:
 
@@ -66,6 +67,7 @@ Exit criteria:
 - world-level shape create/edit families no longer duplicate the same geometry-to-FFI plumbing for each geometry type
 - safe/raw debug-draw paths no longer duplicate the same callback panic bridge and option wiring, and the remaining raw path has direct regression coverage
 - the remaining intentional raw surfaces are explicitly documented instead of being discovered only by source spelunking
+- joint handles no longer duplicate the same user-data and threshold/state FFI plumbing across owned/scoped variants
 
 ## M4: Advanced Wrapper Coverage
 

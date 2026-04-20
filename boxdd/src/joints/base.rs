@@ -3,6 +3,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::body::Body;
+use crate::core::world_core::WorldCore;
 use crate::error::ApiResult;
 use crate::types::{BodyId, JointId, Vec2};
 use crate::world::World;
@@ -26,14 +27,113 @@ impl fmt::Debug for Joint<'_> {
 /// A RAII-owned joint that is destroyed on drop.
 pub struct OwnedJoint {
     id: JointId,
-    core: Arc<crate::core::world_core::WorldCore>,
+    core: Arc<WorldCore>,
     destroy_on_drop: bool,
     wake_bodies_on_drop: bool,
     _not_send: PhantomData<Rc<()>>,
 }
 
+#[inline]
+fn joint_is_valid_impl(id: JointId) -> bool {
+    unsafe { ffi::b2Joint_IsValid(id) }
+}
+
+#[inline]
+fn joint_linear_separation_impl(id: JointId) -> f32 {
+    unsafe { ffi::b2Joint_GetLinearSeparation(id) }
+}
+
+#[inline]
+fn joint_angular_separation_impl(id: JointId) -> f32 {
+    unsafe { ffi::b2Joint_GetAngularSeparation(id) }
+}
+
+#[inline]
+fn joint_constraint_force_impl(id: JointId) -> Vec2 {
+    Vec2::from(unsafe { ffi::b2Joint_GetConstraintForce(id) })
+}
+
+#[inline]
+fn joint_constraint_torque_impl(id: JointId) -> f32 {
+    unsafe { ffi::b2Joint_GetConstraintTorque(id) }
+}
+
+#[inline]
+fn joint_force_threshold_impl(id: JointId) -> f32 {
+    unsafe { ffi::b2Joint_GetForceThreshold(id) }
+}
+
+#[inline]
+fn joint_set_force_threshold_impl(id: JointId, threshold: f32) {
+    unsafe { ffi::b2Joint_SetForceThreshold(id, threshold) }
+}
+
+#[inline]
+fn joint_torque_threshold_impl(id: JointId) -> f32 {
+    unsafe { ffi::b2Joint_GetTorqueThreshold(id) }
+}
+
+#[inline]
+fn joint_set_torque_threshold_impl(id: JointId, threshold: f32) {
+    unsafe { ffi::b2Joint_SetTorqueThreshold(id, threshold) }
+}
+
+unsafe fn joint_set_user_data_ptr_impl(
+    world_core: &WorldCore,
+    id: JointId,
+    user_data: *mut c_void,
+) {
+    let _ = world_core.clear_joint_user_data(id);
+    unsafe { ffi::b2Joint_SetUserData(id, user_data) }
+}
+
+#[inline]
+fn joint_user_data_ptr_impl(id: JointId) -> *mut c_void {
+    unsafe { ffi::b2Joint_GetUserData(id) }
+}
+
+fn joint_set_user_data_impl<T: 'static>(world_core: &WorldCore, id: JointId, value: T) {
+    let user_data = world_core.set_joint_user_data(id, value);
+    unsafe { ffi::b2Joint_SetUserData(id, user_data) };
+}
+
+fn joint_clear_user_data_impl(world_core: &WorldCore, id: JointId) -> bool {
+    let had = world_core.clear_joint_user_data(id);
+    if had {
+        unsafe { ffi::b2Joint_SetUserData(id, core::ptr::null_mut()) };
+    }
+    had
+}
+
+fn joint_with_user_data_impl<T: 'static, R>(
+    world_core: &WorldCore,
+    id: JointId,
+    f: impl FnOnce(&T) -> R,
+) -> ApiResult<Option<R>> {
+    world_core.try_with_joint_user_data(id, f)
+}
+
+fn joint_with_user_data_mut_impl<T: 'static, R>(
+    world_core: &WorldCore,
+    id: JointId,
+    f: impl FnOnce(&mut T) -> R,
+) -> ApiResult<Option<R>> {
+    world_core.try_with_joint_user_data_mut(id, f)
+}
+
+fn joint_take_user_data_impl<T: 'static>(
+    world_core: &WorldCore,
+    id: JointId,
+) -> ApiResult<Option<T>> {
+    let value = world_core.take_joint_user_data::<T>(id)?;
+    if value.is_some() {
+        unsafe { ffi::b2Joint_SetUserData(id, core::ptr::null_mut()) };
+    }
+    Ok(value)
+}
+
 impl OwnedJoint {
-    pub(crate) fn new(core: Arc<crate::core::world_core::WorldCore>, id: JointId) -> Self {
+    pub(crate) fn new(core: Arc<WorldCore>, id: JointId) -> Self {
         core.owned_joints
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Self {
@@ -51,12 +151,12 @@ impl OwnedJoint {
 
     pub fn is_valid(&self) -> bool {
         crate::core::callback_state::assert_not_in_callback();
-        unsafe { ffi::b2Joint_IsValid(self.id) }
+        joint_is_valid_impl(self.id)
     }
 
     pub fn try_is_valid(&self) -> ApiResult<bool> {
         crate::core::callback_state::check_not_in_callback()?;
-        Ok(unsafe { ffi::b2Joint_IsValid(self.id) })
+        Ok(joint_is_valid_impl(self.id))
     }
 
     #[inline]
@@ -76,78 +176,76 @@ impl OwnedJoint {
 
     pub fn linear_separation(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Joint_GetLinearSeparation(self.id) }
+        joint_linear_separation_impl(self.id)
     }
 
     pub fn try_linear_separation(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Joint_GetLinearSeparation(self.id) })
+        Ok(joint_linear_separation_impl(self.id))
     }
 
     pub fn angular_separation(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Joint_GetAngularSeparation(self.id) }
+        joint_angular_separation_impl(self.id)
     }
 
     pub fn try_angular_separation(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Joint_GetAngularSeparation(self.id) })
+        Ok(joint_angular_separation_impl(self.id))
     }
 
     pub fn constraint_force(&self) -> Vec2 {
         self.assert_valid();
-        Vec2::from(unsafe { ffi::b2Joint_GetConstraintForce(self.id) })
+        joint_constraint_force_impl(self.id)
     }
 
     pub fn try_constraint_force(&self) -> ApiResult<Vec2> {
         self.check_valid()?;
-        Ok(Vec2::from(unsafe {
-            ffi::b2Joint_GetConstraintForce(self.id)
-        }))
+        Ok(joint_constraint_force_impl(self.id))
     }
 
     pub fn constraint_torque(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Joint_GetConstraintTorque(self.id) }
+        joint_constraint_torque_impl(self.id)
     }
 
     pub fn try_constraint_torque(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Joint_GetConstraintTorque(self.id) })
+        Ok(joint_constraint_torque_impl(self.id))
     }
 
     pub fn force_threshold(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Joint_GetForceThreshold(self.id) }
+        joint_force_threshold_impl(self.id)
     }
     pub fn try_force_threshold(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Joint_GetForceThreshold(self.id) })
+        Ok(joint_force_threshold_impl(self.id))
     }
     pub fn set_force_threshold(&mut self, threshold: f32) {
         self.assert_valid();
-        unsafe { ffi::b2Joint_SetForceThreshold(self.id, threshold) }
+        joint_set_force_threshold_impl(self.id, threshold)
     }
     pub fn try_set_force_threshold(&mut self, threshold: f32) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Joint_SetForceThreshold(self.id, threshold) }
+        joint_set_force_threshold_impl(self.id, threshold);
         Ok(())
     }
     pub fn torque_threshold(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Joint_GetTorqueThreshold(self.id) }
+        joint_torque_threshold_impl(self.id)
     }
     pub fn try_torque_threshold(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Joint_GetTorqueThreshold(self.id) })
+        Ok(joint_torque_threshold_impl(self.id))
     }
     pub fn set_torque_threshold(&mut self, threshold: f32) {
         self.assert_valid();
-        unsafe { ffi::b2Joint_SetTorqueThreshold(self.id, threshold) }
+        joint_set_torque_threshold_impl(self.id, threshold)
     }
     pub fn try_set_torque_threshold(&mut self, threshold: f32) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Joint_SetTorqueThreshold(self.id, threshold) }
+        joint_set_torque_threshold_impl(self.id, threshold);
         Ok(())
     }
 
@@ -159,8 +257,7 @@ impl OwnedJoint {
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn set_user_data_ptr(&mut self, p: *mut c_void) {
         self.assert_valid();
-        let _ = self.core.clear_joint_user_data(self.id);
-        unsafe { ffi::b2Joint_SetUserData(self.id, p) }
+        unsafe { joint_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
     }
     /// Set an opaque user data pointer on this joint.
     ///
@@ -170,18 +267,17 @@ impl OwnedJoint {
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut c_void) -> ApiResult<()> {
         self.check_valid()?;
-        let _ = self.core.clear_joint_user_data(self.id);
-        unsafe { ffi::b2Joint_SetUserData(self.id, p) }
+        unsafe { joint_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
         Ok(())
     }
     pub fn user_data_ptr(&self) -> *mut c_void {
         self.assert_valid();
-        unsafe { ffi::b2Joint_GetUserData(self.id) }
+        joint_user_data_ptr_impl(self.id)
     }
 
     pub fn try_user_data_ptr(&self) -> ApiResult<*mut c_void> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Joint_GetUserData(self.id) })
+        Ok(joint_user_data_ptr_impl(self.id))
     }
 
     /// Set typed user data on this joint.
@@ -190,41 +286,29 @@ impl OwnedJoint {
     /// is automatically freed when cleared or when the joint is destroyed.
     pub fn set_user_data<T: 'static>(&mut self, value: T) {
         self.assert_valid();
-        let p = self.core.set_joint_user_data(self.id, value);
-        unsafe { ffi::b2Joint_SetUserData(self.id, p) };
+        joint_set_user_data_impl(self.core.as_ref(), self.id, value);
     }
 
     pub fn try_set_user_data<T: 'static>(&mut self, value: T) -> ApiResult<()> {
         self.check_valid()?;
-        let p = self.core.set_joint_user_data(self.id, value);
-        unsafe { ffi::b2Joint_SetUserData(self.id, p) };
+        joint_set_user_data_impl(self.core.as_ref(), self.id, value);
         Ok(())
     }
 
     /// Clear typed user data on this joint. Returns whether any typed data was present.
     pub fn clear_user_data(&mut self) -> bool {
         self.assert_valid();
-        let had = self.core.clear_joint_user_data(self.id);
-        if had {
-            unsafe { ffi::b2Joint_SetUserData(self.id, core::ptr::null_mut()) };
-        }
-        had
+        joint_clear_user_data_impl(self.core.as_ref(), self.id)
     }
 
     pub fn try_clear_user_data(&mut self) -> ApiResult<bool> {
         self.check_valid()?;
-        let had = self.core.clear_joint_user_data(self.id);
-        if had {
-            unsafe { ffi::b2Joint_SetUserData(self.id, core::ptr::null_mut()) };
-        }
-        Ok(had)
+        Ok(joint_clear_user_data_impl(self.core.as_ref(), self.id))
     }
 
     pub fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
         self.assert_valid();
-        self.core
-            .try_with_joint_user_data(self.id, f)
-            .expect("user data type mismatch")
+        joint_with_user_data_impl(self.core.as_ref(), self.id, f).expect("user data type mismatch")
     }
 
     pub fn try_with_user_data<T: 'static, R>(
@@ -232,13 +316,12 @@ impl OwnedJoint {
         f: impl FnOnce(&T) -> R,
     ) -> ApiResult<Option<R>> {
         self.check_valid()?;
-        self.core.try_with_joint_user_data(self.id, f)
+        joint_with_user_data_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn with_user_data_mut<T: 'static, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
         self.assert_valid();
-        self.core
-            .try_with_joint_user_data_mut(self.id, f)
+        joint_with_user_data_mut_impl(self.core.as_ref(), self.id, f)
             .expect("user data type mismatch")
     }
 
@@ -247,28 +330,17 @@ impl OwnedJoint {
         f: impl FnOnce(&mut T) -> R,
     ) -> ApiResult<Option<R>> {
         self.check_valid()?;
-        self.core.try_with_joint_user_data_mut(self.id, f)
+        joint_with_user_data_mut_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn take_user_data<T: 'static>(&mut self) -> Option<T> {
         self.assert_valid();
-        let v = self
-            .core
-            .take_joint_user_data::<T>(self.id)
-            .expect("user data type mismatch");
-        if v.is_some() {
-            unsafe { ffi::b2Joint_SetUserData(self.id, core::ptr::null_mut()) };
-        }
-        v
+        joint_take_user_data_impl(self.core.as_ref(), self.id).expect("user data type mismatch")
     }
 
     pub fn try_take_user_data<T: 'static>(&mut self) -> ApiResult<Option<T>> {
         self.check_valid()?;
-        let v = self.core.take_joint_user_data::<T>(self.id)?;
-        if v.is_some() {
-            unsafe { ffi::b2Joint_SetUserData(self.id, core::ptr::null_mut()) };
-        }
-        Ok(v)
+        joint_take_user_data_impl(self.core.as_ref(), self.id)
     }
 
     pub fn wake_bodies_on_drop(mut self, flag: bool) -> Self {
@@ -324,7 +396,7 @@ impl Drop for OwnedJoint {
 }
 
 impl<'w> Joint<'w> {
-    pub(crate) fn new(core: Arc<crate::core::world_core::WorldCore>, id: JointId) -> Self {
+    pub(crate) fn new(core: Arc<WorldCore>, id: JointId) -> Self {
         Self {
             id,
             core,
@@ -348,90 +420,88 @@ impl<'w> Joint<'w> {
 
     pub fn is_valid(&self) -> bool {
         crate::core::callback_state::assert_not_in_callback();
-        unsafe { ffi::b2Joint_IsValid(self.id) }
+        joint_is_valid_impl(self.id)
     }
 
     pub fn try_is_valid(&self) -> ApiResult<bool> {
         crate::core::callback_state::check_not_in_callback()?;
-        Ok(unsafe { ffi::b2Joint_IsValid(self.id) })
+        Ok(joint_is_valid_impl(self.id))
     }
     pub fn linear_separation(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Joint_GetLinearSeparation(self.id) }
+        joint_linear_separation_impl(self.id)
     }
 
     pub fn try_linear_separation(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Joint_GetLinearSeparation(self.id) })
+        Ok(joint_linear_separation_impl(self.id))
     }
 
     pub fn angular_separation(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Joint_GetAngularSeparation(self.id) }
+        joint_angular_separation_impl(self.id)
     }
 
     pub fn try_angular_separation(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Joint_GetAngularSeparation(self.id) })
+        Ok(joint_angular_separation_impl(self.id))
     }
 
     pub fn constraint_force(&self) -> Vec2 {
         self.assert_valid();
-        Vec2::from(unsafe { ffi::b2Joint_GetConstraintForce(self.id) })
+        joint_constraint_force_impl(self.id)
     }
 
     pub fn try_constraint_force(&self) -> ApiResult<Vec2> {
         self.check_valid()?;
-        Ok(Vec2::from(unsafe {
-            ffi::b2Joint_GetConstraintForce(self.id)
-        }))
+        Ok(joint_constraint_force_impl(self.id))
     }
 
     pub fn constraint_torque(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Joint_GetConstraintTorque(self.id) }
+        joint_constraint_torque_impl(self.id)
     }
 
     pub fn try_constraint_torque(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Joint_GetConstraintTorque(self.id) })
+        Ok(joint_constraint_torque_impl(self.id))
     }
 
     pub fn force_threshold(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Joint_GetForceThreshold(self.id) }
+        joint_force_threshold_impl(self.id)
     }
     pub fn set_force_threshold(&mut self, threshold: f32) {
         self.assert_valid();
-        unsafe { ffi::b2Joint_SetForceThreshold(self.id, threshold) }
+        joint_set_force_threshold_impl(self.id, threshold)
     }
 
     pub fn try_force_threshold(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Joint_GetForceThreshold(self.id) })
+        Ok(joint_force_threshold_impl(self.id))
     }
     pub fn try_set_force_threshold(&mut self, threshold: f32) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Joint_SetForceThreshold(self.id, threshold) }
+        joint_set_force_threshold_impl(self.id, threshold);
         Ok(())
     }
 
     pub fn torque_threshold(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Joint_GetTorqueThreshold(self.id) }
+        joint_torque_threshold_impl(self.id)
     }
     pub fn set_torque_threshold(&mut self, threshold: f32) {
         self.assert_valid();
-        unsafe { ffi::b2Joint_SetTorqueThreshold(self.id, threshold) }
+        joint_set_torque_threshold_impl(self.id, threshold)
     }
 
     pub fn try_torque_threshold(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Joint_GetTorqueThreshold(self.id) })
+        Ok(joint_torque_threshold_impl(self.id))
     }
     pub fn try_set_torque_threshold(&mut self, threshold: f32) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Joint_SetTorqueThreshold(self.id, threshold) }
+        joint_set_torque_threshold_impl(self.id, threshold);
         Ok(())
     }
 
@@ -443,8 +513,7 @@ impl<'w> Joint<'w> {
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn set_user_data_ptr(&mut self, p: *mut c_void) {
         self.assert_valid();
-        let _ = self.core.clear_joint_user_data(self.id);
-        unsafe { ffi::b2Joint_SetUserData(self.id, p) }
+        unsafe { joint_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
     }
     /// Set an opaque user data pointer on this joint.
     ///
@@ -454,18 +523,17 @@ impl<'w> Joint<'w> {
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut c_void) -> ApiResult<()> {
         self.check_valid()?;
-        let _ = self.core.clear_joint_user_data(self.id);
-        unsafe { ffi::b2Joint_SetUserData(self.id, p) }
+        unsafe { joint_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
         Ok(())
     }
     pub fn user_data_ptr(&self) -> *mut c_void {
         self.assert_valid();
-        unsafe { ffi::b2Joint_GetUserData(self.id) }
+        joint_user_data_ptr_impl(self.id)
     }
 
     pub fn try_user_data_ptr(&self) -> ApiResult<*mut c_void> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Joint_GetUserData(self.id) })
+        Ok(joint_user_data_ptr_impl(self.id))
     }
 
     /// Set typed user data on this joint.
@@ -474,41 +542,29 @@ impl<'w> Joint<'w> {
     /// is automatically freed when cleared or when the joint is destroyed.
     pub fn set_user_data<T: 'static>(&mut self, value: T) {
         self.assert_valid();
-        let p = self.core.set_joint_user_data(self.id, value);
-        unsafe { ffi::b2Joint_SetUserData(self.id, p) };
+        joint_set_user_data_impl(self.core.as_ref(), self.id, value);
     }
 
     pub fn try_set_user_data<T: 'static>(&mut self, value: T) -> ApiResult<()> {
         self.check_valid()?;
-        let p = self.core.set_joint_user_data(self.id, value);
-        unsafe { ffi::b2Joint_SetUserData(self.id, p) };
+        joint_set_user_data_impl(self.core.as_ref(), self.id, value);
         Ok(())
     }
 
     /// Clear typed user data on this joint. Returns whether any typed data was present.
     pub fn clear_user_data(&mut self) -> bool {
         self.assert_valid();
-        let had = self.core.clear_joint_user_data(self.id);
-        if had {
-            unsafe { ffi::b2Joint_SetUserData(self.id, core::ptr::null_mut()) };
-        }
-        had
+        joint_clear_user_data_impl(self.core.as_ref(), self.id)
     }
 
     pub fn try_clear_user_data(&mut self) -> ApiResult<bool> {
         self.check_valid()?;
-        let had = self.core.clear_joint_user_data(self.id);
-        if had {
-            unsafe { ffi::b2Joint_SetUserData(self.id, core::ptr::null_mut()) };
-        }
-        Ok(had)
+        Ok(joint_clear_user_data_impl(self.core.as_ref(), self.id))
     }
 
     pub fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
         self.assert_valid();
-        self.core
-            .try_with_joint_user_data(self.id, f)
-            .expect("user data type mismatch")
+        joint_with_user_data_impl(self.core.as_ref(), self.id, f).expect("user data type mismatch")
     }
 
     pub fn try_with_user_data<T: 'static, R>(
@@ -516,13 +572,12 @@ impl<'w> Joint<'w> {
         f: impl FnOnce(&T) -> R,
     ) -> ApiResult<Option<R>> {
         self.check_valid()?;
-        self.core.try_with_joint_user_data(self.id, f)
+        joint_with_user_data_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn with_user_data_mut<T: 'static, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
         self.assert_valid();
-        self.core
-            .try_with_joint_user_data_mut(self.id, f)
+        joint_with_user_data_mut_impl(self.core.as_ref(), self.id, f)
             .expect("user data type mismatch")
     }
 
@@ -531,28 +586,17 @@ impl<'w> Joint<'w> {
         f: impl FnOnce(&mut T) -> R,
     ) -> ApiResult<Option<R>> {
         self.check_valid()?;
-        self.core.try_with_joint_user_data_mut(self.id, f)
+        joint_with_user_data_mut_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn take_user_data<T: 'static>(&mut self) -> Option<T> {
         self.assert_valid();
-        let v = self
-            .core
-            .take_joint_user_data::<T>(self.id)
-            .expect("user data type mismatch");
-        if v.is_some() {
-            unsafe { ffi::b2Joint_SetUserData(self.id, core::ptr::null_mut()) };
-        }
-        v
+        joint_take_user_data_impl(self.core.as_ref(), self.id).expect("user data type mismatch")
     }
 
     pub fn try_take_user_data<T: 'static>(&mut self) -> ApiResult<Option<T>> {
         self.check_valid()?;
-        let v = self.core.take_joint_user_data::<T>(self.id)?;
-        if v.is_some() {
-            unsafe { ffi::b2Joint_SetUserData(self.id, core::ptr::null_mut()) };
-        }
-        Ok(v)
+        joint_take_user_data_impl(self.core.as_ref(), self.id)
     }
 
     /// Destroy this joint immediately.

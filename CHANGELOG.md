@@ -58,6 +58,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Internal: world-level circle/segment/capsule/polygon shape create/edit helpers now share single internal definitions instead of repeating identical geometry-to-FFI plumbing per shape type.
 - Internal: safe and raw debug-draw paths now share callback panic forwarding and option wiring helpers, and `debug_draw_raw` has dedicated panic/in-callback regression coverage.
 - Docs/tests: the remaining intentional raw escape hatches are now explicitly documented in the 0.3 workstream, and raw event/debug callback paths have dedicated regression coverage.
+- Internal: `Joint` / `OwnedJoint` now share private helpers for common state accessors, threshold controls, and raw/typed user-data plumbing, reducing one of the last large owned/scoped duplication pockets.
 - Breaking: raw world-id escape hatches now use explicit naming: `World::raw` / `WorldHandle::raw` moved to `world_id_raw`, and body/shape/chain `world_id` accessors moved to `world_id_raw` / `try_world_id_raw`.
 - Breaking: `DebugDraw` / `RawDebugDraw` color parameters and collected command colors now use crate-owned `HexColor` instead of leaking `ffi::b2HexColor`.
 
