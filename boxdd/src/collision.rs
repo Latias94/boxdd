@@ -208,9 +208,9 @@ pub struct SegmentDistanceResult {
     pub distance_squared: f32,
 }
 
-impl From<ffi::b2SegmentDistanceResult> for SegmentDistanceResult {
+impl SegmentDistanceResult {
     #[inline]
-    fn from(raw: ffi::b2SegmentDistanceResult) -> Self {
+    pub fn from_raw(raw: ffi::b2SegmentDistanceResult) -> Self {
         Self {
             closest1: raw.closest1.into(),
             closest2: raw.closest2.into(),
@@ -240,11 +240,9 @@ impl CastOutput {
         iterations: 0,
         hit: false,
     };
-}
 
-impl From<ffi::b2CastOutput> for CastOutput {
     #[inline]
-    fn from(raw: ffi::b2CastOutput) -> Self {
+    pub fn from_raw(raw: ffi::b2CastOutput) -> Self {
         Self {
             normal: raw.normal.into(),
             point: raw.point.into(),
@@ -317,9 +315,9 @@ pub struct DistanceOutput {
     pub simplex_count: i32,
 }
 
-impl From<ffi::b2DistanceOutput> for DistanceOutput {
+impl DistanceOutput {
     #[inline]
-    fn from(raw: ffi::b2DistanceOutput) -> Self {
+    pub fn from_raw(raw: ffi::b2DistanceOutput) -> Self {
         Self {
             point_a: raw.pointA.into(),
             point_b: raw.pointB.into(),
@@ -502,10 +500,10 @@ pub enum ToiState {
     Separated = ffi::b2TOIState_b2_toiStateSeparated,
 }
 
-impl From<ffi::b2TOIState> for ToiState {
+impl ToiState {
     #[inline]
-    fn from(state: ffi::b2TOIState) -> Self {
-        match state {
+    pub const fn from_raw(raw: ffi::b2TOIState) -> Self {
+        match raw {
             ffi::b2TOIState_b2_toiStateFailed => Self::Failed,
             ffi::b2TOIState_b2_toiStateOverlapped => Self::Overlapped,
             ffi::b2TOIState_b2_toiStateHit => Self::Hit,
@@ -525,11 +523,11 @@ pub struct ToiOutput {
     pub fraction: f32,
 }
 
-impl From<ffi::b2TOIOutput> for ToiOutput {
+impl ToiOutput {
     #[inline]
-    fn from(raw: ffi::b2TOIOutput) -> Self {
+    pub fn from_raw(raw: ffi::b2TOIOutput) -> Self {
         Self {
-            state: raw.state.into(),
+            state: ToiState::from_raw(raw.state),
             point: raw.point.into(),
             normal: raw.normal.into(),
             fraction: raw.fraction,
@@ -545,33 +543,34 @@ where
     P2: Into<Vec2>,
     Q2: Into<Vec2>,
 {
-    unsafe {
+    SegmentDistanceResult::from_raw(unsafe {
         ffi::b2SegmentDistance(
             p1.into().into(),
             q1.into().into(),
             p2.into().into(),
             q2.into().into(),
         )
-    }
-    .into()
+    })
 }
 
 /// Compute the closest distance between two shape proxies.
 pub fn shape_distance(input: DistanceInput, cache: &mut SimplexCache) -> DistanceOutput {
     let raw_input: ffi::b2DistanceInput = input.into();
-    unsafe { ffi::b2ShapeDistance(&raw_input, cache.raw_mut(), core::ptr::null_mut(), 0) }.into()
+    DistanceOutput::from_raw(unsafe {
+        ffi::b2ShapeDistance(&raw_input, cache.raw_mut(), core::ptr::null_mut(), 0)
+    })
 }
 
 /// Cast shape B against shape A.
 pub fn shape_cast(input: ShapeCastPairInput) -> CastOutput {
     let raw_input: ffi::b2ShapeCastPairInput = input.into();
-    unsafe { ffi::b2ShapeCast(&raw_input) }.into()
+    CastOutput::from_raw(unsafe { ffi::b2ShapeCast(&raw_input) })
 }
 
 /// Compute the time of impact between two moving shape proxies.
 pub fn time_of_impact(input: ToiInput) -> ToiOutput {
     let raw_input: ffi::b2TOIInput = input.into();
-    unsafe { ffi::b2TimeOfImpact(&raw_input) }.into()
+    ToiOutput::from_raw(unsafe { ffi::b2TimeOfImpact(&raw_input) })
 }
 
 /// Compute the contact manifold between two circles.
@@ -789,7 +788,7 @@ impl Aabb {
     /// Check whether this AABB is valid for Box2D queries.
     #[inline]
     pub fn is_valid(self) -> bool {
-        unsafe { ffi::b2IsValidAABB(self.into()) }
+        unsafe { ffi::b2IsValidAABB(self.into_raw()) }
     }
 
     /// Ray cast against this AABB using Box2D-style `origin + translation`.

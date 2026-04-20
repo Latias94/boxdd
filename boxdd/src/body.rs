@@ -244,12 +244,12 @@ fn body_apply_mass_from_shapes_impl(id: BodyId) {
 
 #[inline]
 fn body_type_impl(id: BodyId) -> BodyType {
-    BodyType::from(unsafe { ffi::b2Body_GetType(id) })
+    BodyType::from_raw(unsafe { ffi::b2Body_GetType(id) })
 }
 
 #[inline]
 fn body_set_type_impl(id: BodyId, body_type: BodyType) {
-    unsafe { ffi::b2Body_SetType(id, body_type.into()) }
+    unsafe { ffi::b2Body_SetType(id, body_type.into_raw()) }
 }
 
 #[inline]
@@ -1125,19 +1125,19 @@ pub enum BodyType {
     Dynamic,
 }
 
-impl From<BodyType> for ffi::b2BodyType {
-    fn from(t: BodyType) -> Self {
-        match t {
+impl BodyType {
+    #[inline]
+    pub const fn into_raw(self) -> ffi::b2BodyType {
+        match self {
             BodyType::Static => ffi::b2BodyType_b2_staticBody,
             BodyType::Kinematic => ffi::b2BodyType_b2_kinematicBody,
             BodyType::Dynamic => ffi::b2BodyType_b2_dynamicBody,
         }
     }
-}
 
-impl From<ffi::b2BodyType> for BodyType {
-    fn from(t: ffi::b2BodyType) -> Self {
-        match t {
+    #[inline]
+    pub const fn from_raw(raw: ffi::b2BodyType) -> Self {
+        match raw {
             x if x == ffi::b2BodyType_b2_staticBody => BodyType::Static,
             x if x == ffi::b2BodyType_b2_kinematicBody => BodyType::Kinematic,
             _ => BodyType::Dynamic,
@@ -1176,7 +1176,7 @@ impl BodyBuilder {
     }
     /// Set the body type (static, kinematic, dynamic).
     pub fn body_type(mut self, t: BodyType) -> Self {
-        self.def.0.type_ = t.into();
+        self.def.0.type_ = t.into_raw();
         self
     }
     /// Initial world-space position.

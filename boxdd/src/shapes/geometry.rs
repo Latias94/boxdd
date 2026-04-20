@@ -77,7 +77,7 @@ impl Circle {
     #[inline]
     pub fn aabb(self, transform: Transform) -> Aabb {
         let raw = self.into_raw();
-        unsafe { ffi::b2ComputeCircleAABB(&raw, transform.into()) }.into()
+        Aabb::from_raw(unsafe { ffi::b2ComputeCircleAABB(&raw, transform.into()) })
     }
 
     #[inline]
@@ -94,7 +94,7 @@ impl Circle {
     ) -> CastOutput {
         let raw = self.into_raw();
         let input = make_ray_input(origin, translation);
-        unsafe { ffi::b2RayCastCircle(&raw, &input) }.into()
+        CastOutput::from_raw(unsafe { ffi::b2RayCastCircle(&raw, &input) })
     }
 }
 
@@ -137,7 +137,7 @@ impl Segment {
     #[inline]
     pub fn aabb(self, transform: Transform) -> Aabb {
         let raw = self.into_raw();
-        unsafe { ffi::b2ComputeSegmentAABB(&raw, transform.into()) }.into()
+        Aabb::from_raw(unsafe { ffi::b2ComputeSegmentAABB(&raw, transform.into()) })
     }
 
     #[inline]
@@ -149,7 +149,7 @@ impl Segment {
     ) -> CastOutput {
         let raw = self.into_raw();
         let input = make_ray_input(origin, translation);
-        unsafe { ffi::b2RayCastSegment(&raw, &input, one_sided) }.into()
+        CastOutput::from_raw(unsafe { ffi::b2RayCastSegment(&raw, &input, one_sided) })
     }
 }
 
@@ -290,7 +290,7 @@ impl Capsule {
     #[inline]
     pub fn aabb(self, transform: Transform) -> Aabb {
         let raw = self.into_raw();
-        unsafe { ffi::b2ComputeCapsuleAABB(&raw, transform.into()) }.into()
+        Aabb::from_raw(unsafe { ffi::b2ComputeCapsuleAABB(&raw, transform.into()) })
     }
 
     #[inline]
@@ -307,7 +307,7 @@ impl Capsule {
     ) -> CastOutput {
         let raw = self.into_raw();
         let input = make_ray_input(origin, translation);
-        unsafe { ffi::b2RayCastCapsule(&raw, &input) }.into()
+        CastOutput::from_raw(unsafe { ffi::b2RayCastCapsule(&raw, &input) })
     }
 }
 
@@ -409,7 +409,7 @@ impl Polygon {
     #[inline]
     pub fn aabb(self, transform: Transform) -> Aabb {
         let raw = self.into_raw();
-        unsafe { ffi::b2ComputePolygonAABB(&raw, transform.into()) }.into()
+        Aabb::from_raw(unsafe { ffi::b2ComputePolygonAABB(&raw, transform.into()) })
     }
 
     #[inline]
@@ -426,7 +426,7 @@ impl Polygon {
     ) -> CastOutput {
         let raw = self.into_raw();
         let input = make_ray_input(origin, translation);
-        unsafe { ffi::b2RayCastPolygon(&raw, &input) }.into()
+        CastOutput::from_raw(unsafe { ffi::b2RayCastPolygon(&raw, &input) })
     }
 }
 

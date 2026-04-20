@@ -1,5 +1,6 @@
 use boxdd::prelude::*;
 use boxdd::shapes;
+use boxdd::world::Counters;
 
 fn same_world_id(a: boxdd_sys::ffi::b2WorldId, b: boxdd_sys::ffi::b2WorldId) -> bool {
     a.index1 == b.index1 && a.generation == b.generation
@@ -107,4 +108,61 @@ fn mass_data_and_motion_locks_round_trip_through_explicit_raw_conversions() {
 
     let locks = MotionLocks::new(true, false, true);
     assert_eq!(MotionLocks::from_raw(locks.into_raw()), locks);
+}
+
+#[test]
+fn body_type_and_counters_use_explicit_raw_conversions() {
+    assert_eq!(
+        BodyType::from_raw(boxdd_sys::ffi::b2BodyType_b2_staticBody),
+        BodyType::Static
+    );
+    assert_eq!(
+        BodyType::from_raw(boxdd_sys::ffi::b2BodyType_b2_kinematicBody),
+        BodyType::Kinematic
+    );
+    assert_eq!(
+        BodyType::from_raw(boxdd_sys::ffi::b2BodyType_b2_dynamicBody),
+        BodyType::Dynamic
+    );
+
+    assert_eq!(
+        BodyType::Static.into_raw(),
+        boxdd_sys::ffi::b2BodyType_b2_staticBody
+    );
+    assert_eq!(
+        BodyType::Kinematic.into_raw(),
+        boxdd_sys::ffi::b2BodyType_b2_kinematicBody
+    );
+    assert_eq!(
+        BodyType::Dynamic.into_raw(),
+        boxdd_sys::ffi::b2BodyType_b2_dynamicBody
+    );
+
+    let raw = boxdd_sys::ffi::b2Counters {
+        bodyCount: 1,
+        shapeCount: 2,
+        contactCount: 3,
+        jointCount: 4,
+        islandCount: 5,
+        stackUsed: 6,
+        staticTreeHeight: 7,
+        treeHeight: 8,
+        byteCount: 9,
+        taskCount: 10,
+        colorCounts: core::array::from_fn(|i| i as i32),
+    };
+    let counters = Counters::from_raw(raw);
+
+    assert_eq!(counters.body_count, 1);
+    assert_eq!(counters.shape_count, 2);
+    assert_eq!(counters.contact_count, 3);
+    assert_eq!(counters.joint_count, 4);
+    assert_eq!(counters.island_count, 5);
+    assert_eq!(counters.stack_used, 6);
+    assert_eq!(counters.static_tree_height, 7);
+    assert_eq!(counters.tree_height, 8);
+    assert_eq!(counters.byte_count, 9);
+    assert_eq!(counters.task_count, 10);
+    assert_eq!(counters.color_counts[0], 0);
+    assert_eq!(counters.color_counts[23], 23);
 }

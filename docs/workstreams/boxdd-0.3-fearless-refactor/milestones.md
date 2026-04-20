@@ -108,14 +108,16 @@ Exit criteria:
 
 ## M7: Remaining Raw Surface Audit
 
-Status: planned
+Status: in progress
 
 Scope:
 
 - review remaining public raw escape hatches such as `world_id`, raw event slices, and debug draw hooks
+- make remaining crate-owned value types cross the raw boundary explicitly where the wrapper owns the vocabulary
 - finish any obviously missing value-type/productization gaps left after the main `0.3` wrapper passes
 
 Exit criteria:
 
 - the remaining raw public surface is either clearly intentional or scheduled for removal
+- crate-owned value types no longer rely on implicit raw conversions except for documented input-side or raw-escape-hatch exceptions
 - the next completeness pass has a short, explicit backlog instead of scattered notes

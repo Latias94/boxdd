@@ -40,7 +40,7 @@ impl WorldUncheckedExt for World {
         unsafe { ffi::b2Body_SetAngularVelocity(body, w) }
     }
     unsafe fn set_body_type_unchecked(&mut self, body: BodyId, t: BodyType) {
-        unsafe { ffi::b2Body_SetType(body, t.into()) }
+        unsafe { ffi::b2Body_SetType(body, t.into_raw()) }
     }
 
     unsafe fn shape_body_unchecked(&self, shape: ShapeId) -> BodyId {
@@ -86,10 +86,10 @@ impl<'w> BodyUncheckedExt for Body<'w> {
         unsafe { ffi::b2Body_SetAngularVelocity(self.id, w) }
     }
     unsafe fn body_type_unchecked(&self) -> BodyType {
-        BodyType::from(unsafe { ffi::b2Body_GetType(self.id) })
+        BodyType::from_raw(unsafe { ffi::b2Body_GetType(self.id) })
     }
     unsafe fn set_body_type_unchecked(&mut self, t: BodyType) {
-        unsafe { ffi::b2Body_SetType(self.id, t.into()) }
+        unsafe { ffi::b2Body_SetType(self.id, t.into_raw()) }
     }
     unsafe fn set_gravity_scale_unchecked(&mut self, v: f32) {
         unsafe { ffi::b2Body_SetGravityScale(self.id, v) }
@@ -120,10 +120,10 @@ impl BodyUncheckedExt for OwnedBody {
         unsafe { ffi::b2Body_SetAngularVelocity(self.id(), w) }
     }
     unsafe fn body_type_unchecked(&self) -> BodyType {
-        BodyType::from(unsafe { ffi::b2Body_GetType(self.id()) })
+        BodyType::from_raw(unsafe { ffi::b2Body_GetType(self.id()) })
     }
     unsafe fn set_body_type_unchecked(&mut self, t: BodyType) {
-        unsafe { ffi::b2Body_SetType(self.id(), t.into()) }
+        unsafe { ffi::b2Body_SetType(self.id(), t.into_raw()) }
     }
     unsafe fn set_gravity_scale_unchecked(&mut self, v: f32) {
         unsafe { ffi::b2Body_SetGravityScale(self.id(), v) }

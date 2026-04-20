@@ -124,9 +124,9 @@ FFI boundaries actually exist.
 - unify standalone collision geometry helpers with shape-construction helper types
 - `World` / `WorldHandle` duplication review
 - owned / scoped handle duplication review outside the hottest paths
-- audit remaining public implicit raw conversions on crate-owned value types such as `BodyType`, query outputs, collision outputs, and counters
+- audit the remaining input-side raw conversion seams (`DistanceInput`, `ShapeCastPairInput`, `Sweep`, `ToiInput`) and confirm whether they should also move to explicit `into_raw()` APIs
 - continue value-type cleanup for remaining raw Box2D structs that still leak through public APIs
-- continue auditing crate-owned value types that still use implicit raw conversions where explicit `*_raw`/`from_raw` APIs would be clearer
+- continue auditing intentional raw seams such as debug draw/raw color paths and raw event/debug hooks so the kept escape hatches stay explicit and justified
 
 ## Release Strategy
 

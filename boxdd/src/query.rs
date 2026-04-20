@@ -109,7 +109,7 @@ unsafe extern "C" fn collect_mover_plane_result_cb(
     let plane = unsafe { *plane };
     ctx.push(MoverPlaneResult {
         shape_id,
-        plane: plane.plane.into(),
+        plane: Plane::from_raw(plane.plane),
         point: plane.point.into(),
         hit: plane.hit,
     })
@@ -130,7 +130,7 @@ fn overlap_aabb_into_impl(
     unsafe {
         let _ = ffi::b2World_OverlapAABB(
             world,
-            aabb.into(),
+            aabb.into_raw(),
             filter.0,
             Some(collect_shape_id_cb),
             &mut ctx as *mut _ as *mut _,
@@ -154,7 +154,7 @@ fn cast_ray_closest_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
     let o: ffi::b2Vec2 = origin.into().into();
     let t: ffi::b2Vec2 = translation.into().into();
     let raw = unsafe { ffi::b2World_CastRayClosest(world, o, t, filter.0) };
-    RayResult::from(raw)
+    RayResult::from_raw(raw)
 }
 
 fn cast_ray_all_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
@@ -502,25 +502,23 @@ const _: () = {
     assert!(core::mem::align_of::<Aabb>() == 4);
 };
 
-impl From<Aabb> for ffi::b2AABB {
-    fn from(a: Aabb) -> Self {
-        ffi::b2AABB {
-            lowerBound: a.lower.into(),
-            upperBound: a.upper.into(),
-        }
-    }
-}
-
-impl From<ffi::b2AABB> for Aabb {
-    fn from(a: ffi::b2AABB) -> Self {
-        Self {
-            lower: a.lowerBound.into(),
-            upper: a.upperBound.into(),
-        }
-    }
-}
-
 impl Aabb {
+    #[inline]
+    pub fn from_raw(raw: ffi::b2AABB) -> Self {
+        Self {
+            lower: raw.lowerBound.into(),
+            upper: raw.upperBound.into(),
+        }
+    }
+
+    #[inline]
+    pub fn into_raw(self) -> ffi::b2AABB {
+        ffi::b2AABB {
+            lowerBound: self.lower.into(),
+            upperBound: self.upper.into(),
+        }
+    }
+
     /// Create an AABB from lower and upper points.
     #[inline]
     pub fn new<L: Into<Vec2>, U: Into<Vec2>>(lower: L, upper: U) -> Self {
@@ -735,14 +733,15 @@ pub struct RayResult {
     pub hit: bool,
 }
 
-impl From<ffi::b2RayResult> for RayResult {
-    fn from(r: ffi::b2RayResult) -> Self {
+impl RayResult {
+    #[inline]
+    pub fn from_raw(raw: ffi::b2RayResult) -> Self {
         Self {
-            shape_id: r.shapeId,
-            point: r.point.into(),
-            normal: r.normal.into(),
-            fraction: r.fraction,
-            hit: r.hit,
+            shape_id: raw.shapeId,
+            point: raw.point.into(),
+            normal: raw.normal.into(),
+            fraction: raw.fraction,
+            hit: raw.hit,
         }
     }
 }
@@ -765,24 +764,20 @@ impl Plane {
             offset,
         }
     }
-}
 
-impl From<ffi::b2Plane> for Plane {
     #[inline]
-    fn from(plane: ffi::b2Plane) -> Self {
+    pub fn from_raw(raw: ffi::b2Plane) -> Self {
         Self {
-            normal: plane.normal.into(),
-            offset: plane.offset,
+            normal: raw.normal.into(),
+            offset: raw.offset,
         }
     }
-}
 
-impl From<Plane> for ffi::b2Plane {
     #[inline]
-    fn from(plane: Plane) -> Self {
-        Self {
-            normal: plane.normal.into(),
-            offset: plane.offset,
+    pub fn into_raw(self) -> ffi::b2Plane {
+        ffi::b2Plane {
+            normal: self.normal.into(),
+            offset: self.offset,
         }
     }
 }
@@ -859,28 +854,24 @@ impl CollisionPlane {
     pub fn rigid(plane: Plane) -> Self {
         Self::new(plane, Self::RIGID_PUSH_LIMIT, true)
     }
-}
 
-impl From<ffi::b2CollisionPlane> for CollisionPlane {
     #[inline]
-    fn from(plane: ffi::b2CollisionPlane) -> Self {
+    pub fn from_raw(raw: ffi::b2CollisionPlane) -> Self {
         Self {
-            plane: plane.plane.into(),
-            push_limit: plane.pushLimit,
-            push: plane.push,
-            clip_velocity: plane.clipVelocity,
+            plane: Plane::from_raw(raw.plane),
+            push_limit: raw.pushLimit,
+            push: raw.push,
+            clip_velocity: raw.clipVelocity,
         }
     }
-}
 
-impl From<CollisionPlane> for ffi::b2CollisionPlane {
     #[inline]
-    fn from(plane: CollisionPlane) -> Self {
-        Self {
-            plane: plane.plane.into(),
-            pushLimit: plane.push_limit,
-            push: plane.push,
-            clipVelocity: plane.clip_velocity,
+    pub fn into_raw(self) -> ffi::b2CollisionPlane {
+        ffi::b2CollisionPlane {
+            plane: self.plane.into_raw(),
+            pushLimit: self.push_limit,
+            push: self.push,
+            clipVelocity: self.clip_velocity,
         }
     }
 }
@@ -903,12 +894,12 @@ pub struct PlaneSolverResult {
     pub iteration_count: i32,
 }
 
-impl From<ffi::b2PlaneSolverResult> for PlaneSolverResult {
+impl PlaneSolverResult {
     #[inline]
-    fn from(result: ffi::b2PlaneSolverResult) -> Self {
+    pub fn from_raw(raw: ffi::b2PlaneSolverResult) -> Self {
         Self {
-            translation: result.translation.into(),
-            iteration_count: result.iterationCount,
+            translation: raw.translation.into(),
+            iteration_count: raw.iterationCount,
         }
     }
 }
@@ -946,7 +937,7 @@ pub fn solve_planes<V: Into<Vec2>>(
             planes.len() as i32,
         )
     };
-    raw.into()
+    PlaneSolverResult::from_raw(raw)
 }
 
 /// Clip a velocity or movement vector against solved collision planes.

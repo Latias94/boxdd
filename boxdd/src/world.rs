@@ -692,13 +692,13 @@ impl World {
     pub fn counters(&self) -> Counters {
         crate::core::callback_state::assert_not_in_callback();
         let c = unsafe { ffi::b2World_GetCounters(self.raw()) };
-        Counters::from(c)
+        Counters::from_raw(c)
     }
 
     pub fn try_counters(&self) -> crate::error::ApiResult<Counters> {
         crate::core::callback_state::check_not_in_callback()?;
         let c = unsafe { ffi::b2World_GetCounters(self.raw()) };
-        Ok(Counters::from(c))
+        Ok(Counters::from_raw(c))
     }
 
     /// Get a body's transform safely from its id.
@@ -1085,12 +1085,12 @@ impl World {
     /// Set a body's type by id.
     pub fn set_body_type(&mut self, body: BodyId, t: BodyType) {
         crate::core::debug_checks::assert_body_valid(body);
-        unsafe { ffi::b2Body_SetType(body, t.into()) }
+        unsafe { ffi::b2Body_SetType(body, t.into_raw()) }
     }
 
     pub fn try_set_body_type(&mut self, body: BodyId, t: BodyType) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
-        unsafe { ffi::b2Body_SetType(body, t.into()) }
+        unsafe { ffi::b2Body_SetType(body, t.into_raw()) }
         Ok(())
     }
 
@@ -2379,20 +2379,21 @@ pub struct Counters {
     pub color_counts: [i32; 24],
 }
 
-impl From<ffi::b2Counters> for Counters {
-    fn from(c: ffi::b2Counters) -> Self {
+impl Counters {
+    #[inline]
+    pub fn from_raw(raw: ffi::b2Counters) -> Self {
         Self {
-            body_count: c.bodyCount,
-            shape_count: c.shapeCount,
-            contact_count: c.contactCount,
-            joint_count: c.jointCount,
-            island_count: c.islandCount,
-            stack_used: c.stackUsed,
-            static_tree_height: c.staticTreeHeight,
-            tree_height: c.treeHeight,
-            byte_count: c.byteCount,
-            task_count: c.taskCount,
-            color_counts: c.colorCounts,
+            body_count: raw.bodyCount,
+            shape_count: raw.shapeCount,
+            contact_count: raw.contactCount,
+            joint_count: raw.jointCount,
+            island_count: raw.islandCount,
+            stack_used: raw.stackUsed,
+            static_tree_height: raw.staticTreeHeight,
+            tree_height: raw.treeHeight,
+            byte_count: raw.byteCount,
+            task_count: raw.taskCount,
+            color_counts: raw.colorCounts,
         }
     }
 }

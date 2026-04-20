@@ -53,3 +53,27 @@ fn mover_queries_and_solver_are_safe_and_reusable() {
     let clipped = clip_vector([0.0_f32, -1.0], &collision_planes);
     assert!(clipped.y >= -1.0e-4);
 }
+
+#[test]
+fn mover_value_types_use_explicit_raw_conversions() {
+    let plane = Plane::new([0.0_f32, 1.0], 2.5);
+    assert_eq!(Plane::from_raw(plane.into_raw()), plane);
+
+    let collision_plane = CollisionPlane {
+        plane,
+        push_limit: 3.0,
+        push: 0.25,
+        clip_velocity: true,
+    };
+    assert_eq!(
+        CollisionPlane::from_raw(collision_plane.into_raw()),
+        collision_plane
+    );
+
+    let result = PlaneSolverResult::from_raw(boxdd_sys::ffi::b2PlaneSolverResult {
+        translation: boxdd_sys::ffi::b2Vec2 { x: 0.5, y: -0.25 },
+        iterationCount: 4,
+    });
+    assert_eq!(result.translation, Vec2::new(0.5, -0.25));
+    assert_eq!(result.iteration_count, 4);
+}
