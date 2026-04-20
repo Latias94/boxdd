@@ -56,7 +56,7 @@ Exit criteria:
 
 ## M4: Advanced Wrapper Coverage
 
-Status: planned
+Status: in progress
 
 Scope:
 

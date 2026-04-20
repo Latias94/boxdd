@@ -99,10 +99,10 @@ result is simpler and easier to audit.
 - safe plane / collision-plane / solver result types
 - `solve_planes` and `clip_vector` safe entry points
 - docs and examples that show the intended mover flow
+- typed friction / restitution callbacks
 
 ### Planned follow-up audit items
 
-- typed friction / restitution callbacks
 - broader safe geometry / collision helpers around currently raw-only upstream features
 - `World` / `WorldHandle` duplication review
 - owned / scoped handle duplication review outside the hottest paths

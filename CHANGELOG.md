@@ -17,6 +17,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Workstream documentation under `docs/workstreams/query-buffer-reuse/` to track the 0.3 allocation-hotpath refactor plan, milestones, and cleanup backlog.
 - Safe character mover APIs covering collision-plane collection and solver helpers: `collide_mover`, `collide_mover_into`, `solve_planes`, and `clip_vector`.
 - A broader 0.3 umbrella workstream under `docs/workstreams/boxdd-0.3-fearless-refactor/` to track the rest of the fearless refactor plan.
+- Typed world-level material mixing callbacks for friction and restitution using `MaterialMixInput` and `user_material_id`.
 
 ### Changed
 - Query internals now share reusable collection helpers instead of duplicating callback-to-`Vec` plumbing across each query entrypoint.
@@ -24,6 +25,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Contact, sensor, and chain segment extraction now share a common FFI-backed `Vec` fill helper instead of repeating `with_capacity + set_len` logic across handle types.
 - Sensor valid-filter paths now reuse a single caller-owned buffer and filter in place instead of allocating a second `Vec`.
 - Examples and crate docs now show both reusable-buffer hot paths and the safe character mover workflow.
+- World-level callback coverage now treats material mixing as a first-class safe API beside custom filter and pre-solve.
 
 ## [boxdd 0.2.0] - 2025-12-17
 

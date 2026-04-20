@@ -17,13 +17,14 @@
 - [x] Update the mover example to demonstrate the full safe workflow instead of only `cast_mover`.
 - [x] Add mover-focused tests, including reusable-buffer behavior for plane collection.
 - [x] Update `CHANGELOG.md` to reflect the expanded `0.3.0` scope.
+- [x] Add typed safe friction / restitution mixing callbacks with panic forwarding and `user_material_id` inputs.
+- [x] Add tests for material mixing callbacks, including panic propagation.
 
 ## Next
 
 - [ ] Audit whether debug draw command collection should gain reusable-buffer APIs.
 - [ ] Review remaining `World` / `WorldHandle` query duplication and decide whether selective consolidation is worth it.
 - [ ] Audit remaining owned/scoped handle duplication outside the already-refactored hot paths.
-- [ ] Design typed safe friction / restitution callback APIs comparable in quality to custom filter and pre-solve.
 - [ ] Identify geometry / collision helpers that still force users into raw `boxdd_sys::ffi`.
 
 ## Release Checklist

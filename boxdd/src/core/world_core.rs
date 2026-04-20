@@ -20,6 +20,11 @@ pub(crate) type PreSolveCb = dyn Fn(
     + Sync
     + 'static;
 
+pub(crate) type MaterialMixCb = dyn Fn(crate::world::MaterialMixInput, crate::world::MaterialMixInput) -> f32
+    + Send
+    + Sync
+    + 'static;
+
 pub(crate) struct CustomFilterCtx {
     pub(crate) core: Weak<WorldCore>,
     pub(crate) cb: Box<CustomFilterCb>,
@@ -30,10 +35,18 @@ pub(crate) struct PreSolveCtx {
     pub(crate) cb: Box<PreSolveCb>,
 }
 
+pub(crate) struct MaterialMixCtx {
+    pub(crate) core: Weak<WorldCore>,
+    pub(crate) cb: Box<MaterialMixCb>,
+}
+
 pub(crate) struct WorldCore {
     pub(crate) id: ffi::b2WorldId,
     pub(crate) custom_filter: Mutex<Option<Box<CustomFilterCtx>>>,
     pub(crate) pre_solve: Mutex<Option<Box<PreSolveCtx>>>,
+    pub(crate) material_mix_slot: Mutex<Option<usize>>,
+    pub(crate) friction_mix: Mutex<Option<Box<MaterialMixCtx>>>,
+    pub(crate) restitution_mix: Mutex<Option<Box<MaterialMixCtx>>>,
     pub(crate) callback_panicked: AtomicBool,
     pub(crate) callback_panic: Mutex<Option<Box<dyn Any + Send + 'static>>>,
     pub(crate) deferred_destroys: Mutex<Vec<DeferredDestroy>>,
@@ -74,6 +87,9 @@ impl WorldCore {
             id,
             custom_filter: Mutex::new(None),
             pre_solve: Mutex::new(None),
+            material_mix_slot: Mutex::new(None),
+            friction_mix: Mutex::new(None),
+            restitution_mix: Mutex::new(None),
             callback_panicked: AtomicBool::new(false),
             callback_panic: Mutex::new(None),
             deferred_destroys: Mutex::new(Vec::new()),
@@ -581,6 +597,16 @@ impl Drop for BorrowedEventBuffersGuard {
 impl Drop for WorldCore {
     fn drop(&mut self) {
         self.clear_world_user_data();
+        if let Some(slot) = self
+            .material_mix_slot
+            .lock()
+            .expect("material_mix_slot mutex poisoned")
+            .take()
+        {
+            crate::core::material_mix_registry::set_friction_ptr(slot, core::ptr::null_mut());
+            crate::core::material_mix_registry::set_restitution_ptr(slot, core::ptr::null_mut());
+            crate::core::material_mix_registry::release_slot(slot);
+        }
         let _guard = crate::core::box2d_lock::lock();
         // SAFETY: `WorldCore` owns the Box2D world id; only the last Arc drops it.
         unsafe { ffi::b2DestroyWorld(self.id) };

@@ -29,4 +29,7 @@ pub enum ApiError {
 
     #[error("user data type mismatch")]
     UserDataTypeMismatch,
+
+    #[error("no free callback slot is available for material mixing callbacks")]
+    CallbackSlotsExhausted,
 }

@@ -1,5 +1,5 @@
 pub use crate::{
-    ApiError, ApiResult, Body, BodyBuilder, BodyDef, BodyType, CallbackWorld,
+    ApiError, ApiResult, Body, BodyBuilder, BodyDef, BodyType, CallbackWorld, MaterialMixInput,
     OutstandingOwnedHandles, OwnedBody, OwnedHandleCounts, World, WorldBuilder, WorldDef,
     WorldHandle,
     debug_draw::{DebugDraw, DebugDrawCmd, DebugDrawOptions, HexColor, RawDebugDraw},

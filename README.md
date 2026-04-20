@@ -20,6 +20,7 @@
 - Two error-handling styles: panic-on-misuse by default, plus `try_*` APIs returning `ApiResult<T>` for recoverable errors.
 - Hot-path query and state-extraction APIs expose `*_into` variants so games can reuse `Vec` buffers across frames instead of reallocating.
 - Character mover helpers cover the full safe workflow: `cast_mover`, `collide_mover`, `solve_planes`, and `clip_vector`.
+- Typed world-level friction and restitution mixing callbacks expose `user_material_id` without dropping to raw `ffi`.
 
 ## Quickstart
 ```rust
@@ -79,6 +80,11 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 - The safe wrapper now covers Box2D's geometric character mover pipeline.
 - Use `world.cast_mover(...)` to test motion, `world.collide_mover(...)` or `world.collide_mover_into(...)` to collect planes, `boxdd::solve_planes(...)` to solve them, and `boxdd::clip_vector(...)` to clip velocity against solved planes.
 - See `examples/character_mover.rs` for a minimal end-to-end usage example.
+
+## Material Mixing Callbacks
+- `world.set_friction_callback(...)` and `world.set_restitution_callback(...)` expose Box2D's material mixing hooks as safe typed closures.
+- Each callback receives two `MaterialMixInput` values containing the incoming coefficient and `user_material_id`.
+- These callbacks may run on Box2D worker threads, so they must stay thread-safe and should be treated as pure mixing functions.
 
 ## Events
 - Three access styles:

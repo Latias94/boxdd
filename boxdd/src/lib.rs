@@ -7,6 +7,7 @@
 //! - Ergonomics: builder patterns, world-space helpers, optional `mint` integration.
 //! - Hot-path friendly APIs: keep the convenience `Vec`-returning methods, or reuse caller-owned buffers with `*_into`.
 //! - Character mover helpers: cast movers, collect collision planes, solve planes, and clip velocity without raw FFI.
+//! - Typed material mixing callbacks for friction and restitution using `user_material_id`.
 //! - Three usage styles:
 //!   - Owned handles: `OwnedBody`/`OwnedShape`/`OwnedJoint`/`OwnedChain` (Drop destroys; easy to store).
 //!   - Scoped handles: `Body<'_>`/`Shape<'_>`/`Joint<'_>`/`Chain<'_>` (dropping only releases the world borrow).
@@ -101,6 +102,19 @@
 //! let _ = solved.translation;
 //! ```
 //!
+//! Material Mixing Callbacks
+//! ```no_run
+//! use boxdd::{MaterialMixInput, World, WorldDef};
+//! let mut world = World::new(WorldDef::default()).unwrap();
+//! world.set_friction_callback(|a: MaterialMixInput, b: MaterialMixInput| {
+//!     if a.user_material_id == 1 || b.user_material_id == 1 {
+//!         0.0
+//!     } else {
+//!         (a.coefficient * b.coefficient).sqrt()
+//!     }
+//! });
+//! ```
+//!
 //! Feature Flags
 //! - `serialize`: scene snapshot helpers (save/apply world config; build/restore minimal full-scene snapshot).
 //! - `pkg-config`: allow linking against a system `box2d` via pkg-config.
@@ -150,6 +164,7 @@ pub mod core {
     pub(crate) mod callback_state;
     pub(crate) mod debug_checks;
     pub(crate) mod ffi_vec;
+    pub(crate) mod material_mix_registry;
     pub mod math;
     #[cfg(feature = "serialize")]
     pub(crate) mod serialize_registry;
@@ -190,6 +205,6 @@ pub use shapes::chain::{Chain, ChainDef, ChainDefBuilder, OwnedChain};
 pub use shapes::{OwnedShape, Shape, ShapeDef, ShapeDefBuilder, SurfaceMaterial};
 pub use types::Vec2;
 pub use world::{
-    CallbackWorld, OutstandingOwnedHandles, OwnedHandleCounts, World, WorldBuilder, WorldDef,
-    WorldHandle,
+    CallbackWorld, MaterialMixInput, OutstandingOwnedHandles, OwnedHandleCounts, World,
+    WorldBuilder, WorldDef, WorldHandle,
 };

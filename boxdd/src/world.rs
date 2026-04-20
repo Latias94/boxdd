@@ -1,6 +1,6 @@
 use crate::Transform;
 use crate::body::{Body, BodyDef, BodyType};
-use crate::core::world_core::{CustomFilterCtx, PreSolveCtx, WorldCore};
+use crate::core::world_core::{CustomFilterCtx, MaterialMixCtx, PreSolveCtx, WorldCore};
 use crate::shapes::{ShapeDef, SurfaceMaterial};
 use crate::types::{BodyId, ChainId, JointId, MassData, ShapeId, Vec2};
 use boxdd_sys::ffi;
@@ -15,6 +15,26 @@ type PreSolveFn = fn(
     crate::types::Vec2,
     crate::types::Vec2,
 ) -> bool;
+
+/// Input passed to world-level friction and restitution mixing callbacks.
+///
+/// `coefficient` is the shape's friction or restitution coefficient, depending on the callback.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct MaterialMixInput {
+    pub coefficient: f32,
+    pub user_material_id: u64,
+}
+
+impl MaterialMixInput {
+    #[inline]
+    pub const fn new(coefficient: f32, user_material_id: u64) -> Self {
+        Self {
+            coefficient,
+            user_material_id,
+        }
+    }
+}
 
 fn retain_valid_shape_ids(ids: &mut Vec<ShapeId>) {
     ids.retain(|sid| unsafe { ffi::b2Shape_IsValid(*sid) });
@@ -383,6 +403,37 @@ impl WorldHandle {
 pub use crate::core::serialize_registry::{ChainCreateRecord, ShapeFlagsRecord};
 
 impl World {
+    fn ensure_material_mix_slot(&self) -> crate::error::ApiResult<usize> {
+        let mut slot = self
+            .core
+            .material_mix_slot
+            .lock()
+            .expect("material_mix_slot mutex poisoned");
+        if let Some(slot) = *slot {
+            return Ok(slot);
+        }
+
+        let Some(new_slot) = crate::core::material_mix_registry::acquire_slot() else {
+            return Err(crate::error::ApiError::CallbackSlotsExhausted);
+        };
+        *slot = Some(new_slot);
+        Ok(new_slot)
+    }
+
+    fn maybe_release_material_mix_slot(&self) {
+        let mut slot = self
+            .core
+            .material_mix_slot
+            .lock()
+            .expect("material_mix_slot mutex poisoned");
+        if let Some(slot_index) = *slot
+            && !crate::core::material_mix_registry::has_any_callback(slot_index)
+        {
+            crate::core::material_mix_registry::release_slot(slot_index);
+            *slot = None;
+        }
+    }
+
     /// Create a world from a definition.
     pub fn new(def: WorldDef) -> Result<Self, Error> {
         let _guard = crate::core::box2d_lock::lock();
@@ -1484,6 +1535,140 @@ impl World {
             Some(func) => self.set_pre_solve(func),
             None => self.clear_pre_solve(),
         }
+    }
+
+    /// Register a thread-safe friction mixing callback.
+    ///
+    /// This callback may run on Box2D worker threads and intentionally receives no world context.
+    /// Use `user_material_id` to implement table-driven material behavior.
+    ///
+    /// The callback must not attempt to modify Box2D state or unsafely mutate shared application
+    /// state.
+    pub fn set_friction_callback<F>(&mut self, f: F)
+    where
+        F: Fn(MaterialMixInput, MaterialMixInput) -> f32 + Send + Sync + 'static,
+    {
+        self.try_set_friction_callback(f)
+            .expect("no free callback slot is available for material mixing callbacks");
+    }
+
+    pub fn try_set_friction_callback<F>(&mut self, f: F) -> crate::error::ApiResult<()>
+    where
+        F: Fn(MaterialMixInput, MaterialMixInput) -> f32 + Send + Sync + 'static,
+    {
+        crate::core::callback_state::check_not_in_callback()?;
+        let slot = self.ensure_material_mix_slot()?;
+        let ctx = Box::new(MaterialMixCtx {
+            core: Arc::downgrade(&self.core),
+            cb: Box::new(f),
+        });
+        let ptr = (&*ctx) as *const MaterialMixCtx as *mut MaterialMixCtx;
+        crate::core::material_mix_registry::set_friction_ptr(slot, ptr);
+        *self
+            .core
+            .friction_mix
+            .lock()
+            .expect("friction_mix mutex poisoned") = Some(ctx);
+        unsafe {
+            ffi::b2World_SetFrictionCallback(
+                self.raw(),
+                crate::core::material_mix_registry::friction_callback(slot),
+            );
+        }
+        Ok(())
+    }
+
+    /// Clear the friction mixing callback and restore Box2D's default mixing rule.
+    pub fn clear_friction_callback(&mut self) {
+        crate::core::callback_state::assert_not_in_callback();
+        if let Some(slot) = *self
+            .core
+            .material_mix_slot
+            .lock()
+            .expect("material_mix_slot mutex poisoned")
+        {
+            unsafe { ffi::b2World_SetFrictionCallback(self.raw(), None) };
+            crate::core::material_mix_registry::set_friction_ptr(slot, core::ptr::null_mut());
+            *self
+                .core
+                .friction_mix
+                .lock()
+                .expect("friction_mix mutex poisoned") = None;
+            self.maybe_release_material_mix_slot();
+        }
+    }
+
+    pub fn try_clear_friction_callback(&mut self) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        self.clear_friction_callback();
+        Ok(())
+    }
+
+    /// Register a thread-safe restitution mixing callback.
+    ///
+    /// This callback may run on Box2D worker threads and intentionally receives no world context.
+    /// Use `user_material_id` to implement table-driven material behavior.
+    ///
+    /// The callback must not attempt to modify Box2D state or unsafely mutate shared application
+    /// state.
+    pub fn set_restitution_callback<F>(&mut self, f: F)
+    where
+        F: Fn(MaterialMixInput, MaterialMixInput) -> f32 + Send + Sync + 'static,
+    {
+        self.try_set_restitution_callback(f)
+            .expect("no free callback slot is available for material mixing callbacks");
+    }
+
+    pub fn try_set_restitution_callback<F>(&mut self, f: F) -> crate::error::ApiResult<()>
+    where
+        F: Fn(MaterialMixInput, MaterialMixInput) -> f32 + Send + Sync + 'static,
+    {
+        crate::core::callback_state::check_not_in_callback()?;
+        let slot = self.ensure_material_mix_slot()?;
+        let ctx = Box::new(MaterialMixCtx {
+            core: Arc::downgrade(&self.core),
+            cb: Box::new(f),
+        });
+        let ptr = (&*ctx) as *const MaterialMixCtx as *mut MaterialMixCtx;
+        crate::core::material_mix_registry::set_restitution_ptr(slot, ptr);
+        *self
+            .core
+            .restitution_mix
+            .lock()
+            .expect("restitution_mix mutex poisoned") = Some(ctx);
+        unsafe {
+            ffi::b2World_SetRestitutionCallback(
+                self.raw(),
+                crate::core::material_mix_registry::restitution_callback(slot),
+            );
+        }
+        Ok(())
+    }
+
+    /// Clear the restitution mixing callback and restore Box2D's default mixing rule.
+    pub fn clear_restitution_callback(&mut self) {
+        crate::core::callback_state::assert_not_in_callback();
+        if let Some(slot) = *self
+            .core
+            .material_mix_slot
+            .lock()
+            .expect("material_mix_slot mutex poisoned")
+        {
+            unsafe { ffi::b2World_SetRestitutionCallback(self.raw(), None) };
+            crate::core::material_mix_registry::set_restitution_ptr(slot, core::ptr::null_mut());
+            *self
+                .core
+                .restitution_mix
+                .lock()
+                .expect("restitution_mix mutex poisoned") = None;
+            self.maybe_release_material_mix_slot();
+        }
+    }
+
+    pub fn try_clear_restitution_callback(&mut self) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        self.clear_restitution_callback();
+        Ok(())
     }
 
     // Convenience joints built from world anchors and axis using body ids
