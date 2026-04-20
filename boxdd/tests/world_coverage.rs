@@ -72,6 +72,24 @@ fn world_runtime_coverage_safe_api() {
     world.set_pre_solve_callback(Some(always_true_pre));
     world.set_custom_filter_callback(None);
     world.set_pre_solve_callback(None);
+    world
+        .try_set_custom_filter_with_ctx(|_, _, _| true)
+        .unwrap();
+    world
+        .try_set_pre_solve_with_ctx(|_, _, _, _, _| true)
+        .unwrap();
+    world.try_set_custom_filter(always_true_filter).unwrap();
+    world.try_set_pre_solve(always_true_pre).unwrap();
+    world.try_clear_custom_filter().unwrap();
+    world.try_clear_pre_solve().unwrap();
+    world
+        .try_set_custom_filter_callback(Some(always_true_filter))
+        .unwrap();
+    world
+        .try_set_pre_solve_callback(Some(always_true_pre))
+        .unwrap();
+    world.try_set_custom_filter_callback(None).unwrap();
+    world.try_set_pre_solve_callback(None).unwrap();
 
     assert_eq!(world.awake_body_count(), 0);
 

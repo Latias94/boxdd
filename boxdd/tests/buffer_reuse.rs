@@ -1,4 +1,4 @@
-use boxdd::{prelude::*, shapes};
+use boxdd::{ContactEvents, SensorEvents, prelude::*, shapes};
 
 #[test]
 fn body_and_shape_contact_data_into_reuses_buffer() {
@@ -284,6 +284,185 @@ fn debug_draw_collect_into_reuses_command_and_vertex_buffers() {
         .expect("expected a polygon debug draw command");
 
     assert_eq!(reused_vertices_ptr, vertices_ptr);
+}
+
+#[test]
+fn world_event_snapshots_into_reuse_buffers() {
+    {
+        let mut world = World::new(WorldDef::builder().gravity([0.0_f32, -10.0]).build()).unwrap();
+        let moving_body = world.create_body_id(
+            BodyBuilder::new()
+                .body_type(BodyType::Dynamic)
+                .position([0.0_f32, 4.0])
+                .linear_velocity([1.0_f32, 0.0])
+                .build(),
+        );
+        let _moving_shape = world.create_circle_shape_for(
+            moving_body,
+            &ShapeDef::builder().density(1.0).build(),
+            &shapes::circle([0.0_f32, 0.0], 0.35),
+        );
+
+        let mut body_events = Vec::with_capacity(8);
+        let body_events_ptr = body_events.as_ptr();
+
+        let body_baseline = loop {
+            world.step(1.0 / 60.0, 4);
+            let baseline = world.body_events();
+            if !baseline.is_empty() {
+                break baseline;
+            }
+        };
+
+        world.body_events_into(&mut body_events);
+        assert_eq!(body_events.len(), body_baseline.len());
+        assert_eq!(body_events.as_ptr(), body_events_ptr);
+        world.try_body_events_into(&mut body_events).unwrap();
+        assert_eq!(body_events.len(), body_baseline.len());
+    }
+
+    {
+        let mut world = World::new(WorldDef::builder().gravity([0.0_f32, -10.0]).build()).unwrap();
+        let b1 = world.create_body_id(
+            BodyBuilder::new()
+                .body_type(BodyType::Dynamic)
+                .position([0.0_f32, 2.0])
+                .build(),
+        );
+        let b2 = world.create_body_id(
+            BodyBuilder::new()
+                .body_type(BodyType::Dynamic)
+                .position([0.0_f32, 3.5])
+                .build(),
+        );
+        let sdef = ShapeDef::builder()
+            .density(1.0)
+            .enable_contact_events(true)
+            .enable_hit_events(true)
+            .build();
+        let _s1 = world.create_polygon_shape_for(b1, &sdef, &shapes::box_polygon(0.5, 0.5));
+        let _s2 = world.create_polygon_shape_for(b2, &sdef, &shapes::box_polygon(0.5, 0.5));
+        world.set_body_linear_velocity(b1, [0.0_f32, 2.0]);
+        world.set_body_linear_velocity(b2, [0.0_f32, -2.0]);
+
+        let mut contact_events = ContactEvents {
+            begin: Vec::with_capacity(8),
+            end: Vec::with_capacity(8),
+            hit: Vec::with_capacity(8),
+        };
+        let contact_begin_ptr = contact_events.begin.as_ptr();
+        let contact_end_ptr = contact_events.end.as_ptr();
+        let contact_hit_ptr = contact_events.hit.as_ptr();
+
+        let contact_baseline = loop {
+            world.step(1.0 / 60.0, 4);
+            let baseline = world.contact_events();
+            if !baseline.begin.is_empty() {
+                break baseline;
+            }
+        };
+
+        world.contact_events_into(&mut contact_events);
+        assert_eq!(contact_events.begin.len(), contact_baseline.begin.len());
+        assert_eq!(contact_events.end.len(), contact_baseline.end.len());
+        assert_eq!(contact_events.hit.len(), contact_baseline.hit.len());
+        assert_eq!(contact_events.begin.as_ptr(), contact_begin_ptr);
+        assert_eq!(contact_events.end.as_ptr(), contact_end_ptr);
+        assert_eq!(contact_events.hit.as_ptr(), contact_hit_ptr);
+        world.try_contact_events_into(&mut contact_events).unwrap();
+        assert_eq!(contact_events.begin.len(), contact_baseline.begin.len());
+    }
+
+    {
+        let mut world = World::new(WorldDef::builder().build()).unwrap();
+        let wall = world.create_body_id(
+            BodyBuilder::new()
+                .body_type(BodyType::Static)
+                .position([1.5_f32, 11.0])
+                .build(),
+        );
+        let wall_shape_def = ShapeDef::builder().enable_sensor_events(true).build();
+        let _wall_shape =
+            world.create_polygon_shape_for(wall, &wall_shape_def, &shapes::box_polygon(0.5, 10.0));
+
+        let bullet = world.create_body_id(
+            BodyBuilder::new()
+                .body_type(BodyType::Dynamic)
+                .bullet(true)
+                .gravity_scale(0.0)
+                .position([7.39814_f32, 4.0])
+                .linear_velocity([-20.0_f32, 0.0])
+                .build(),
+        );
+        let bullet_shape_def = ShapeDef::builder()
+            .sensor(true)
+            .enable_sensor_events(true)
+            .build();
+        let circle = shapes::circle([0.0_f32, 0.0], 0.1);
+        let _bullet_shape = world.create_circle_shape_for(bullet, &bullet_shape_def, &circle);
+
+        let mut sensor_events = SensorEvents {
+            begin: Vec::with_capacity(8),
+            end: Vec::with_capacity(8),
+        };
+        let sensor_begin_ptr = sensor_events.begin.as_ptr();
+        let sensor_end_ptr = sensor_events.end.as_ptr();
+
+        let sensor_baseline = loop {
+            world.step(1.0 / 60.0, 4);
+            let baseline = world.sensor_events();
+            if !baseline.begin.is_empty() {
+                break baseline;
+            }
+        };
+
+        world.sensor_events_into(&mut sensor_events);
+        assert_eq!(sensor_events.begin.len(), sensor_baseline.begin.len());
+        assert_eq!(sensor_events.end.len(), sensor_baseline.end.len());
+        assert_eq!(sensor_events.begin.as_ptr(), sensor_begin_ptr);
+        assert_eq!(sensor_events.end.as_ptr(), sensor_end_ptr);
+        world.try_sensor_events_into(&mut sensor_events).unwrap();
+        assert_eq!(sensor_events.begin.len(), sensor_baseline.begin.len());
+    }
+
+    {
+        let mut world = World::new(WorldDef::builder().gravity([0.0_f32, -10.0]).build()).unwrap();
+        let joint_body_a = world.create_body_id(
+            BodyBuilder::new()
+                .body_type(BodyType::Dynamic)
+                .position([3.0_f32, 2.0])
+                .build(),
+        );
+        let joint_body_b = world.create_body_id(
+            BodyBuilder::new()
+                .body_type(BodyType::Dynamic)
+                .position([5.0_f32, 2.0])
+                .build(),
+        );
+        let mut joint = world
+            .distance(joint_body_a, joint_body_b)
+            .length(0.5)
+            .spring(8.0, 0.25)
+            .build_owned();
+        joint.set_force_threshold(0.0);
+
+        let mut joint_events = Vec::with_capacity(8);
+        let joint_events_ptr = joint_events.as_ptr();
+        let mut joint_baseline = Vec::new();
+        for _ in 0..240 {
+            world.step(1.0 / 60.0, 4);
+            joint_baseline = world.joint_events();
+            if !joint_baseline.is_empty() {
+                break;
+            }
+        }
+
+        world.joint_events_into(&mut joint_events);
+        assert_eq!(joint_events.len(), joint_baseline.len());
+        assert_eq!(joint_events.as_ptr(), joint_events_ptr);
+        world.try_joint_events_into(&mut joint_events).unwrap();
+        assert_eq!(joint_events.len(), joint_baseline.len());
+    }
 }
 
 #[test]

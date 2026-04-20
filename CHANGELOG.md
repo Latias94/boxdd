@@ -36,6 +36,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - World runtime extras for `Profile` timings, `ExplosionDef`, `World::explode` / `try_explode`, and speculative collision control.
 - `BodyBuilder::allow_fast_rotation`, computed body AABB helpers across `Body`, `OwnedBody`, and `World::body_aabb`, plus read-only `WorldHandle` runtime getters for gravity/counters/profile/awake-count/runtime-tuning state.
 - Recoverable rotation round-tripping for `mint::RowMatrix2/ColumnMatrix2` and `glam::Mat2`, via `Rot::try_from(...)`, `RotFromMintError`, and `RotFromGlamError`.
+- Reusable-buffer world event snapshot APIs: `body_events_into`, `contact_events_into`, `sensor_events_into`, `joint_events_into`, plus matching `try_*` variants for recoverable callback-sensitive event reads.
 
 ### Changed
 - Query internals now share reusable collection helpers instead of duplicating callback-to-`Vec` plumbing across each query entrypoint.
@@ -75,6 +76,10 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Internal: `mint` and `glam` rotation validation now follow the same pure-rotation acceptance rules as `Transform` conversion, removing another asymmetry in the math interop surface.
 - Internal: world-level joint runtime helpers now share the same private implementation path as owned/scoped joint handles, including type-specific joint family validation, reducing completeness drift across the three joint API styles.
 - World-level runtime tuning helpers now expose matching `try_*` variants for callback-sensitive controls instead of forcing panic-only access on that slice.
+- World-level custom filter / pre-solve registration now exposes matching `try_*` variants, including the compatibility `*_callback` helpers, and the panic / recoverable paths share the same internal callback-registration plumbing.
+- Events docs now cover by-value, reusable-buffer, zero-copy, and raw access styles explicitly, and `ContactEvents` / `SensorEvents` implement `Default` for caller-owned buffer reuse.
+- Docs/design: `WorldHandle` intentionally does not mirror event-buffer APIs in `0.3.0`; event reads stay on `World` because they are coupled to completed-step buffers and deferred-destroy flushing semantics.
+- Breaking: serialize-time chain metadata now stays on crate-owned vocabulary: `World::chain_records()` returns `Filter`, `Vec<Vec2>`, and `ChainMaterialsRecord`, and the old public `ChainDef` raw clone helpers are no longer exposed.
 - Breaking: raw world-id escape hatches now use explicit naming: `World::raw` / `WorldHandle::raw` moved to `world_id_raw`, and body/shape/chain `world_id` accessors moved to `world_id_raw` / `try_world_id_raw`.
 - Breaking: `DebugDraw` / `RawDebugDraw` color parameters and collected command colors now use crate-owned `HexColor` instead of leaking `ffi::b2HexColor`.
 - Docs: crate docs and README now spell out the threading / async model (`worker_count` vs `World: !Send/!Sync`) and the intended panic-by-default vs `try_*` error-handling split.

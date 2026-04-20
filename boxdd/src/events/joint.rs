@@ -29,19 +29,42 @@ impl<'a> Iterator for JointEventIter<'a> {
     }
 }
 
+fn joint_events_into_impl(world: ffi::b2WorldId, out: &mut Vec<JointEvent>) {
+    let raw = unsafe { ffi::b2World_GetJointEvents(world) };
+    let slice = if raw.count > 0 && !raw.jointEvents.is_null() {
+        unsafe { core::slice::from_raw_parts(raw.jointEvents, raw.count as usize) }
+    } else {
+        &[][..]
+    };
+    super::map_snapshot_into(out, slice, |e| JointEvent {
+        joint_id: e.jointId,
+    });
+}
+
 impl World {
     pub fn joint_events(&self) -> Vec<JointEvent> {
         crate::core::callback_state::assert_not_in_callback();
-        let raw = unsafe { ffi::b2World_GetJointEvents(self.raw()) };
-        if raw.count <= 0 || raw.jointEvents.is_null() {
-            return Vec::new();
-        }
-        let s = unsafe { core::slice::from_raw_parts(raw.jointEvents, raw.count as usize) };
-        s.iter()
-            .map(|e| JointEvent {
-                joint_id: e.jointId,
-            })
-            .collect()
+        let mut out = Vec::new();
+        joint_events_into_impl(self.raw(), &mut out);
+        out
+    }
+
+    pub fn joint_events_into(&self, out: &mut Vec<JointEvent>) {
+        crate::core::callback_state::assert_not_in_callback();
+        joint_events_into_impl(self.raw(), out);
+    }
+
+    pub fn try_joint_events(&self) -> crate::error::ApiResult<Vec<JointEvent>> {
+        crate::core::callback_state::check_not_in_callback()?;
+        let mut out = Vec::new();
+        joint_events_into_impl(self.raw(), &mut out);
+        Ok(out)
+    }
+
+    pub fn try_joint_events_into(&self, out: &mut Vec<JointEvent>) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        joint_events_into_impl(self.raw(), out);
+        Ok(())
     }
 
     /// Low-level raw view over joint events (borrows Box2D's internal buffers).

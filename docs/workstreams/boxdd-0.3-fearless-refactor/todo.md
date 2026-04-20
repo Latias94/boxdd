@@ -21,6 +21,11 @@
 - [x] Close the body/world-handle follow-up gaps: `BodyBuilder::allow_fast_rotation`, computed body AABB across owned/scoped/id views, and read-only `WorldHandle` mirrors for runtime diagnostics/tuning getters.
 - [x] Close the `mint` rotation round-trip gap so crate-owned `Rot` values support recoverable inbound conversion from row/column-major `mint` rotation matrices.
 - [x] Close the remaining obvious rotation interop asymmetry by adding recoverable inbound conversion from `glam::Mat2` to crate-owned `Rot`, and add round-trip coverage for `cgmath` / `nalgebra` rotation adapters.
+- [x] Close the remaining callback-registration symmetry gap so custom filter / pre-solve setup and compatibility `*_callback` helpers expose matching `try_*` variants instead of forcing panic-only mutation.
+- [x] Audit the remaining upstream world-level C API helpers and record that `b2World_DumpMemoryStats` / `b2World_RebuildStaticTree` stay intentionally unwrapped for `0.3.0` because they are debug/internal-only seams, not core safe-wrapper surface area.
+- [x] Add reusable-buffer and recoverable `try_*` snapshot APIs for world body/contact/sensor/joint events so callers can keep owned event data without per-frame allocation churn.
+- [x] Record the `World` vs `WorldHandle` event split as an intentional `0.3.0` design decision: event reads stay on `World`, and any future `WorldHandle` mirror should start with owned snapshots only.
+- [x] Narrow the serialize-time chain metadata seam so `ChainDef` raw point/material helpers stay crate-private and `World::chain_records()` returns crate-owned `Filter` / `Vec2` / material-layout values instead of raw `ffi` collections.
 
 ## In Progress
 

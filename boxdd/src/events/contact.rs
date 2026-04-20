@@ -106,47 +106,73 @@ pub struct ContactHitEvent {
     pub approach_speed: f32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct ContactEvents {
     pub begin: Vec<ContactBeginTouchEvent>,
     pub end: Vec<ContactEndTouchEvent>,
     pub hit: Vec<ContactHitEvent>,
 }
 
+fn contact_events_into_impl(world: ffi::b2WorldId, out: &mut ContactEvents) {
+    let raw = unsafe { ffi::b2World_GetContactEvents(world) };
+    let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
+        unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
+    } else {
+        &[][..]
+    };
+    let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
+        unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
+    } else {
+        &[][..]
+    };
+    let hit = if raw.hitCount > 0 && !raw.hitEvents.is_null() {
+        unsafe { core::slice::from_raw_parts(raw.hitEvents, raw.hitCount as usize) }
+    } else {
+        &[][..]
+    };
+
+    super::map_snapshot_into(&mut out.begin, begin, |e| ContactBeginTouchEvent {
+        shape_a: e.shapeIdA,
+        shape_b: e.shapeIdB,
+        contact_id: e.contactId,
+    });
+    super::map_snapshot_into(&mut out.end, end, |e| ContactEndTouchEvent {
+        shape_a: e.shapeIdA,
+        shape_b: e.shapeIdB,
+    });
+    super::map_snapshot_into(&mut out.hit, hit, |e| ContactHitEvent {
+        shape_a: e.shapeIdA,
+        shape_b: e.shapeIdB,
+        point: e.point.into(),
+        normal: e.normal.into(),
+        approach_speed: e.approachSpeed,
+    });
+}
+
 impl World {
     pub fn contact_events(&self) -> ContactEvents {
         crate::core::callback_state::assert_not_in_callback();
-        let raw = unsafe { ffi::b2World_GetContactEvents(self.raw()) };
-        let mut begin = Vec::new();
-        let mut end = Vec::new();
-        let mut hit = Vec::new();
-        if raw.beginCount > 0 && !raw.beginEvents.is_null() {
-            let s =
-                unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) };
-            begin.extend(s.iter().map(|e| ContactBeginTouchEvent {
-                shape_a: e.shapeIdA,
-                shape_b: e.shapeIdB,
-                contact_id: e.contactId,
-            }));
-        }
-        if raw.endCount > 0 && !raw.endEvents.is_null() {
-            let s = unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) };
-            end.extend(s.iter().map(|e| ContactEndTouchEvent {
-                shape_a: e.shapeIdA,
-                shape_b: e.shapeIdB,
-            }));
-        }
-        if raw.hitCount > 0 && !raw.hitEvents.is_null() {
-            let s = unsafe { core::slice::from_raw_parts(raw.hitEvents, raw.hitCount as usize) };
-            hit.extend(s.iter().map(|e| ContactHitEvent {
-                shape_a: e.shapeIdA,
-                shape_b: e.shapeIdB,
-                point: e.point.into(),
-                normal: e.normal.into(),
-                approach_speed: e.approachSpeed,
-            }));
-        }
-        ContactEvents { begin, end, hit }
+        let mut out = ContactEvents::default();
+        contact_events_into_impl(self.raw(), &mut out);
+        out
+    }
+
+    pub fn contact_events_into(&self, out: &mut ContactEvents) {
+        crate::core::callback_state::assert_not_in_callback();
+        contact_events_into_impl(self.raw(), out);
+    }
+
+    pub fn try_contact_events(&self) -> crate::error::ApiResult<ContactEvents> {
+        crate::core::callback_state::check_not_in_callback()?;
+        let mut out = ContactEvents::default();
+        contact_events_into_impl(self.raw(), &mut out);
+        Ok(out)
+    }
+
+    pub fn try_contact_events_into(&self, out: &mut ContactEvents) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        contact_events_into_impl(self.raw(), out);
+        Ok(())
     }
 
     /// Low-level raw view over contact events (borrows Box2D's internal buffers).

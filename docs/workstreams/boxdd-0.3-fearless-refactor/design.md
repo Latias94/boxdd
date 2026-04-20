@@ -38,6 +38,9 @@ The main gaps are:
 - the threading / async model is correct but still too easy to misread unless users inspect the source
 - math interop coverage is useful but still uneven, especially around `mint` rotation / transform forms
 - the panic-vs-`try_*` error-handling strategy is sound but not explicit enough at the crate boundary
+- callback registration on `World` has historically been asymmetric: material-mixing callbacks gained recoverable `try_*` setup, while custom filter / pre-solve registration lagged behind on panic-only helpers
+- owned world event snapshots have a safe zero-copy story via visitors, but until now the owned-copy path still forced fresh allocations unless users reworked their loop around borrowed views
+- `WorldHandle` mirrors many read-only runtime helpers, but event APIs are different because they depend on step-local world buffers and deferred-destroy flush timing
 
 If we do not address these now, the likely outcome is a sequence of small additive
 patches that preserve avoidable duplication and keep advanced users half inside the safe
@@ -150,10 +153,13 @@ These seams are worth keeping only if:
 - live shape runtime completeness cleanup so AABB / point test / ray cast / mass data / event toggles stay aligned across owned/scoped/id styles
 - body runtime completeness cleanup so rotation / sleeping / awake-enabled-bullet-name state / attached ids / computed body AABB / fast-rotation setup stay aligned across owned/scoped/id styles
 - joint runtime completeness cleanup so common joint metadata plus type-specific distance/prismatic/revolute/weld/wheel/motor state/control stay aligned across owned/scoped/id styles, and wrong-family `try_*` calls return `ApiError::InvalidJointType`
-- world runtime extras cleanup so diagnostics/tuning helpers like `Profile`, explosions, speculative collision, and callback-sensitive tuning toggles live on the same main safe surface with matching `try_*` coverage and mirrored read-only access on `WorldHandle`
+- world runtime extras cleanup so diagnostics/tuning helpers like `Profile`, explosions, speculative collision, and callback-sensitive tuning toggles plus callback-registration helpers live on the same main safe surface with matching `try_*` coverage and mirrored read-only access on `WorldHandle`
 - math-interop completeness cleanup so `mint` stays a first-class bridge instead of a partially-covered feature, including recoverable inbound conversion for crate-owned rotation values
 - explicit threading / async documentation and examples that preserve the current `!Send` / `!Sync` design instead of weakening it
 - clearer crate-level error-handling guidance for panic-by-default vs `try_*` usage
+- reusable-buffer event snapshot APIs so callers that need owned event data can still avoid per-frame allocation churn without dropping to raw or borrowed-only views
+- serialize-time chain metadata cleanup so `ChainDef` helpers and `World::chain_records()` stay on crate-owned `Filter` / `Vec2` / `SurfaceMaterial` vocabulary instead of leaking raw `ffi` collections back into the public surface
+- keep event APIs centered on `World` unless a future use-case justifies a narrower `WorldHandle` mirror for owned snapshots only
 
 ### Planned follow-up audit items
 
@@ -164,12 +170,38 @@ These seams are worth keeping only if:
 - continue the completeness audit after shipping the live-shape runtime wrappers, especially for any remaining body/joint/world-handle runtime gaps
 - keep world-space joint builders behaviorally coherent when runtime-computed frames or body ids are filled, so base flags such as `collide_connected` are not silently lost
 - keep callback-sensitive event-buffer borrowing on a single internal path so deferred-destroy behavior cannot diverge across body/contact/sensor/joint views
+- keep callback-registration plumbing on a single internal path so panic-by-default and recoverable `try_*` callback setup stay behaviorally aligned
 - apply the same single-source rule to geometry-specific world helpers when circle/segment/capsule/polygon entrypoints are mechanically identical apart from the Box2D function they call
 - keep intentional raw seams such as `debug_draw_raw` only when they share the same panic forwarding, callback lock semantics, and regression coverage as the safe path
 - continue the same private-helper consolidation on joint handles when owned/scoped variants still repeat the same state, threshold, and user-data FFI plumbing
 - audit the remaining intentional raw boundaries such as debug draw/raw color hooks and raw event/debug escape hatches, and confirm each one is still worth keeping
 - continue value-type cleanup for remaining raw Box2D structs that still leak through public APIs
 - continue auditing intentional raw seams such as debug draw/raw color paths and raw event/debug hooks so the kept escape hatches stay explicit and justified
+- keep serialize-time chain capture on crate-owned value/layout types so scene/snapshot helpers do not re-leak raw Box2D point/material collections through convenience records
+- keep `WorldHandle` event mirroring intentionally narrow: do not add borrowed/raw event-buffer APIs there unless a concrete use-case proves the added surface is worth the lifecycle complexity
+
+## Current Intentional Omissions
+
+After the latest world-level completeness pass, the remaining upstream `b2World_*`
+functions not wrapped on the main safe surface are intentionally low priority:
+
+- `b2World_DumpMemoryStats`, which writes a fixed debug file (`box2d_memory.txt`) and
+  does not fit the normal ergonomic/runtime API story
+- `b2World_RebuildStaticTree`, which upstream explicitly labels as internal testing
+
+These do not block `0.3.0` completeness for the main safe wrapper. If a real production
+use-case appears later, they can be revisited deliberately instead of being added just
+to chase one-to-one API parity.
+
+Another intentional omission for `0.3.0` is broader `WorldHandle` event mirroring.
+The crate keeps event snapshot/view APIs on `World` because they are bound to:
+
+- the completed step's world-owned event buffers
+- deferred-destroy flushing that happens around borrowed event-buffer access
+- a shorter, more stateful lifecycle than the rest of `WorldHandle`'s cheap stored-query role
+
+If a later release adds `WorldHandle` event support, the preferred starting point is owned
+snapshot helpers (`*_events` / `*_events_into` / `try_*`) only, not borrowed/raw event views.
 
 ## Release Strategy
 

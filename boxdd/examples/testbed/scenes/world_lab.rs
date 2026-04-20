@@ -1,5 +1,5 @@
 use boxdd as bd;
-use bd::world_extras::{ExplosionDef, WorldExplosionExt};
+use bd::world_extras::ExplosionDef;
 use dear_imgui_rs as imgui;
 
 // World Lab: Tuning + Explosion

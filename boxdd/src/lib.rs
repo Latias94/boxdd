@@ -170,15 +170,20 @@
 //! - At runtime boundaries, prefer `try_*` APIs and handle `ApiError` explicitly.
 //!
 //! Events
-//! - Three access styles:
+//! - Four access styles:
 //!   - By value: `world.contact_events()`/`sensor_events()`/`body_events()`/`joint_events()` return owned data for storage or cross‑frame use.
+//!   - Reusable buffers: `*_events_into(...)` reuse caller-owned owned-event storage across frames.
 //!   - Zero‑copy views: `with_*_events_view(...)` iterate without allocations (borrows internal buffers).
 //!   - Raw slices: `unsafe { with_*_events(...) }` expose FFI slices (borrows internal buffers).
+//! - Event APIs intentionally live on `World`, not `WorldHandle`, because they are tied to the
+//!   completed step's world-local event buffers and deferred-destroy flushing behavior.
 //!
-//! Example (zero‑copy views)
+//! Example (reusable buffers + zero‑copy views)
 //! ```no_run
-//! use boxdd::prelude::*;
+//! use boxdd::{ContactEvents, World, WorldDef};
 //! let mut world = World::new(WorldDef::default()).unwrap();
+//! let mut contact_events = ContactEvents::default();
+//! world.contact_events_into(&mut contact_events);
 //! world.with_contact_events_view(|begin, end, hit| {
 //!     let _ = (begin.count(), end.count(), hit.count());
 //! });

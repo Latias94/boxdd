@@ -388,27 +388,21 @@ impl SceneSnapshot {
         let mut chains: Vec<ChainRecord> = Vec::new();
         for cr in world.chain_records() {
             if let Some(bi) = find_body_index(&body_ids, cr.body) {
-                let materials: Option<ChainMaterials> = if cr.materials.is_empty() {
-                    None
-                } else if cr.materials.len() == 1 {
-                    Some(ChainMaterials::Single(crate::shapes::SurfaceMaterial(
-                        cr.materials[0],
-                    )))
-                } else {
-                    Some(ChainMaterials::Multiple(
-                        cr.materials
-                            .iter()
-                            .cloned()
-                            .map(crate::shapes::SurfaceMaterial)
-                            .collect(),
-                    ))
+                let materials = match cr.materials {
+                    crate::world::ChainMaterialsRecord::Default => None,
+                    crate::world::ChainMaterialsRecord::Single(material) => {
+                        Some(ChainMaterials::Single(material))
+                    }
+                    crate::world::ChainMaterialsRecord::Multiple(materials) => {
+                        Some(ChainMaterials::Multiple(materials))
+                    }
                 };
                 chains.push(ChainRecord {
                     body: bi,
                     is_loop: cr.is_loop,
-                    filter: crate::filter::Filter::from_raw(cr.filter),
+                    filter: cr.filter,
                     enable_sensor_events: cr.enable_sensor_events,
-                    points: cr.points.iter().cloned().map(Vec2::from).collect(),
+                    points: cr.points,
                     materials,
                 });
             }

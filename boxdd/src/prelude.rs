@@ -1,8 +1,12 @@
 pub use crate::{
-    ApiError, ApiResult, Body, BodyBuilder, BodyDef, BodyType, CallbackWorld, MaterialMixInput,
-    OutstandingOwnedHandles, OwnedBody, OwnedHandleCounts, World, WorldBuilder, WorldDef,
-    WorldHandle,
+    ApiError, ApiResult, Body, BodyBuilder, BodyDef, BodyType, CallbackWorld, Filter,
+    MaterialMixInput, OutstandingOwnedHandles, OwnedBody, OwnedHandleCounts, World, WorldBuilder,
+    WorldDef, WorldHandle,
     debug_draw::{DebugDraw, DebugDrawCmd, DebugDrawOptions, HexColor, RawDebugDraw},
+    events::{
+        BodyMoveEvent, ContactBeginTouchEvent, ContactEndTouchEvent, ContactEvents,
+        ContactHitEvent, JointEvent, SensorBeginTouchEvent, SensorEndTouchEvent, SensorEvents,
+    },
     joints::{
         ConstraintTuning, DistanceJointDef, FilterJointDef, Joint, JointBase, JointBaseBuilder,
         JointType, MotorJointDef, OwnedJoint, PrismaticJointDef, RevoluteJointDef, WeldJointDef,

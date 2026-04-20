@@ -153,6 +153,92 @@ fn world_maximum_linear_speed_impl(world: ffi::b2WorldId) -> f32 {
     unsafe { ffi::b2World_GetMaximumLinearSpeed(world) }
 }
 
+unsafe extern "C" fn custom_filter_callback(
+    a: ffi::b2ShapeId,
+    b: ffi::b2ShapeId,
+    context: *mut core::ffi::c_void,
+) -> bool {
+    // SAFETY: context is provided by the custom-filter registration helpers and points to
+    // `CustomFilterCtx` for the lifetime of the registered callback.
+    let ctx = unsafe { &*(context as *const CustomFilterCtx) };
+    let core = match ctx.core.upgrade() {
+        Some(c) => c,
+        None => return true,
+    };
+    if core
+        .callback_panicked
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        return true;
+    }
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _g = crate::core::callback_state::CallbackGuard::enter();
+        let cw = CallbackWorld::new(Arc::clone(&core));
+        (ctx.cb)(&cw, a, b)
+    })) {
+        Ok(v) => v,
+        Err(payload) => {
+            if !core
+                .callback_panicked
+                .swap(true, std::sync::atomic::Ordering::SeqCst)
+            {
+                *core
+                    .callback_panic
+                    .lock()
+                    .expect("callback_panic mutex poisoned") = Some(payload);
+            }
+            true
+        }
+    }
+}
+
+unsafe extern "C" fn pre_solve_callback(
+    a: ffi::b2ShapeId,
+    b: ffi::b2ShapeId,
+    point: ffi::b2Vec2,
+    normal: ffi::b2Vec2,
+    context: *mut core::ffi::c_void,
+) -> bool {
+    // SAFETY: context is provided by the pre-solve registration helpers and points to
+    // `PreSolveCtx` for the lifetime of the registered callback.
+    let ctx = unsafe { &*(context as *const PreSolveCtx) };
+    let core = match ctx.core.upgrade() {
+        Some(c) => c,
+        None => return true,
+    };
+    if core
+        .callback_panicked
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        return true;
+    }
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _g = crate::core::callback_state::CallbackGuard::enter();
+        let cw = CallbackWorld::new(Arc::clone(&core));
+        (ctx.cb)(
+            &cw,
+            a,
+            b,
+            crate::types::Vec2::from(point),
+            crate::types::Vec2::from(normal),
+        )
+    })) {
+        Ok(v) => v,
+        Err(payload) => {
+            if !core
+                .callback_panicked
+                .swap(true, std::sync::atomic::Ordering::SeqCst)
+            {
+                *core
+                    .callback_panic
+                    .lock()
+                    .expect("callback_panic mutex poisoned") = Some(payload);
+            }
+            true
+        }
+    }
+}
+
 /// Error type for world creation and operations.
 #[non_exhaustive]
 #[derive(Debug, thiserror::Error)]
@@ -392,6 +478,10 @@ pub struct World {
 /// Unlike `&World`, this does not borrow the world, which makes it convenient to store inside other
 /// objects (e.g. debug draw implementations). It is still `!Send`/`!Sync` to match Box2D's thread
 /// safety guarantees.
+///
+/// `WorldHandle` intentionally focuses on stored read-only queries/diagnostics. Step-local event
+/// snapshot/view APIs remain on [`World`] because they are tied to Box2D's completed-step event
+/// buffers plus deferred-destroy flushing behavior.
 #[derive(Clone)]
 pub struct WorldHandle {
     core: Arc<WorldCore>,
@@ -591,7 +681,9 @@ impl WorldHandle {
 }
 
 #[cfg(feature = "serialize")]
-pub use crate::core::serialize_registry::{ChainCreateRecord, ShapeFlagsRecord};
+pub use crate::core::serialize_registry::{
+    ChainCreateRecord, ChainMaterialsRecord, ShapeFlagsRecord,
+};
 
 impl World {
     fn ensure_material_mix_slot(&self) -> crate::error::ApiResult<usize> {
@@ -623,6 +715,80 @@ impl World {
             crate::core::material_mix_registry::release_slot(slot_index);
             *slot = None;
         }
+    }
+
+    fn set_custom_filter_with_ctx_impl<F>(&mut self, f: F)
+    where
+        F: Fn(&CallbackWorld, crate::types::ShapeId, crate::types::ShapeId) -> bool
+            + Send
+            + Sync
+            + 'static,
+    {
+        let ctx = Box::new(CustomFilterCtx {
+            core: Arc::downgrade(&self.core),
+            cb: Box::new(f),
+        });
+        self.install_custom_filter_ctx(ctx);
+    }
+
+    fn install_custom_filter_ctx(&mut self, ctx: Box<CustomFilterCtx>) {
+        let ctx_ptr: *mut core::ffi::c_void = (&*ctx) as *const CustomFilterCtx as *mut _;
+        unsafe {
+            ffi::b2World_SetCustomFilterCallback(self.raw(), Some(custom_filter_callback), ctx_ptr)
+        };
+        *self
+            .core
+            .custom_filter
+            .lock()
+            .expect("custom_filter mutex poisoned") = Some(ctx);
+    }
+
+    fn clear_custom_filter_impl(&mut self) {
+        unsafe { ffi::b2World_SetCustomFilterCallback(self.raw(), None, core::ptr::null_mut()) };
+        *self
+            .core
+            .custom_filter
+            .lock()
+            .expect("custom_filter mutex poisoned") = None;
+    }
+
+    fn set_pre_solve_with_ctx_impl<F>(&mut self, f: F)
+    where
+        F: Fn(
+                &CallbackWorld,
+                crate::types::ShapeId,
+                crate::types::ShapeId,
+                crate::types::Vec2,
+                crate::types::Vec2,
+            ) -> bool
+            + Send
+            + Sync
+            + 'static,
+    {
+        let ctx = Box::new(PreSolveCtx {
+            core: Arc::downgrade(&self.core),
+            cb: Box::new(f),
+        });
+        self.install_pre_solve_ctx(ctx);
+    }
+
+    fn install_pre_solve_ctx(&mut self, ctx: Box<PreSolveCtx>) {
+        let ctx_ptr: *mut core::ffi::c_void = (&*ctx) as *const PreSolveCtx as *mut _;
+        unsafe { ffi::b2World_SetPreSolveCallback(self.raw(), Some(pre_solve_callback), ctx_ptr) };
+        *self
+            .core
+            .pre_solve
+            .lock()
+            .expect("pre_solve mutex poisoned") = Some(ctx);
+    }
+
+    fn clear_pre_solve_impl(&mut self) {
+        unsafe { ffi::b2World_SetPreSolveCallback(self.raw(), None, core::ptr::null_mut()) };
+        *self
+            .core
+            .pre_solve
+            .lock()
+            .expect("pre_solve mutex poisoned") = None;
     }
 
     /// Create a world from a definition.
@@ -867,7 +1033,7 @@ impl World {
             .body_ids()
     }
 
-    /// Return chain creation records captured at creation time.
+    /// Return chain creation records captured at creation time using crate-owned value types.
     #[cfg(feature = "serialize")]
     pub fn chain_records(&self) -> Vec<ChainCreateRecord> {
         crate::core::callback_state::assert_not_in_callback();
@@ -1869,57 +2035,19 @@ impl World {
             + 'static,
     {
         crate::core::callback_state::assert_not_in_callback();
-        // Store the closure so its address is stable and lifetime tied to the world.
-        let ctx = Box::new(CustomFilterCtx {
-            core: Arc::downgrade(&self.core),
-            cb: Box::new(f),
-        });
-        // SAFETY: callback shims only cast the context pointer back to CustomFilterCtx and
-        // invoke the Rust closure. They must be extern "C" and thread-safe.
-        unsafe extern "C" fn filter_cb(
-            a: ffi::b2ShapeId,
-            b: ffi::b2ShapeId,
-            context: *mut core::ffi::c_void,
-        ) -> bool {
-            // SAFETY: context is provided by set_custom_filter and points to CustomFilterCtx
-            let ctx = unsafe { &*(context as *const CustomFilterCtx) };
-            let core = match ctx.core.upgrade() {
-                Some(c) => c,
-                None => return true,
-            };
-            if core
-                .callback_panicked
-                .load(std::sync::atomic::Ordering::Relaxed)
-            {
-                return true;
-            }
-            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _g = crate::core::callback_state::CallbackGuard::enter();
-                let cw = CallbackWorld::new(Arc::clone(&core));
-                (ctx.cb)(&cw, a, b)
-            })) {
-                Ok(v) => v,
-                Err(payload) => {
-                    if !core
-                        .callback_panicked
-                        .swap(true, std::sync::atomic::Ordering::SeqCst)
-                    {
-                        *core
-                            .callback_panic
-                            .lock()
-                            .expect("callback_panic mutex poisoned") = Some(payload);
-                    }
-                    true
-                }
-            }
-        }
-        let ctx_ptr: *mut core::ffi::c_void = (&*ctx) as *const CustomFilterCtx as *mut _;
-        unsafe { ffi::b2World_SetCustomFilterCallback(self.raw(), Some(filter_cb), ctx_ptr) };
-        *self
-            .core
-            .custom_filter
-            .lock()
-            .expect("custom_filter mutex poisoned") = Some(ctx);
+        self.set_custom_filter_with_ctx_impl(f);
+    }
+
+    pub fn try_set_custom_filter_with_ctx<F>(&mut self, f: F) -> crate::error::ApiResult<()>
+    where
+        F: Fn(&CallbackWorld, crate::types::ShapeId, crate::types::ShapeId) -> bool
+            + Send
+            + Sync
+            + 'static,
+    {
+        crate::core::callback_state::check_not_in_callback()?;
+        self.set_custom_filter_with_ctx_impl(f);
+        Ok(())
     }
 
     /// Backwards-compatible custom filter API without a callback context.
@@ -1927,18 +2055,29 @@ impl World {
     where
         F: Fn(crate::types::ShapeId, crate::types::ShapeId) -> bool + Send + Sync + 'static,
     {
-        self.set_custom_filter_with_ctx(move |_, a, b| f(a, b))
+        crate::core::callback_state::assert_not_in_callback();
+        self.set_custom_filter_with_ctx_impl(move |_, a, b| f(a, b))
+    }
+
+    pub fn try_set_custom_filter<F>(&mut self, f: F) -> crate::error::ApiResult<()>
+    where
+        F: Fn(crate::types::ShapeId, crate::types::ShapeId) -> bool + Send + Sync + 'static,
+    {
+        crate::core::callback_state::check_not_in_callback()?;
+        self.set_custom_filter_with_ctx_impl(move |_, a, b| f(a, b));
+        Ok(())
     }
 
     /// Clear the custom filter callback and release associated resources.
     pub fn clear_custom_filter(&mut self) {
         crate::core::callback_state::assert_not_in_callback();
-        unsafe { ffi::b2World_SetCustomFilterCallback(self.raw(), None, core::ptr::null_mut()) };
-        *self
-            .core
-            .custom_filter
-            .lock()
-            .expect("custom_filter mutex poisoned") = None;
+        self.clear_custom_filter_impl();
+    }
+
+    pub fn try_clear_custom_filter(&mut self) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        self.clear_custom_filter_impl();
+        Ok(())
     }
 
     /// Register a thread-safe pre-solve closure. This is called after contact update (when enabled
@@ -1960,62 +2099,25 @@ impl World {
             + 'static,
     {
         crate::core::callback_state::assert_not_in_callback();
-        let ctx = Box::new(PreSolveCtx {
-            core: Arc::downgrade(&self.core),
-            cb: Box::new(f),
-        });
-        unsafe extern "C" fn presolve_cb(
-            a: ffi::b2ShapeId,
-            b: ffi::b2ShapeId,
-            point: ffi::b2Vec2,
-            normal: ffi::b2Vec2,
-            context: *mut core::ffi::c_void,
-        ) -> bool {
-            // SAFETY: context is provided by set_pre_solve and points to PreSolveCtx
-            let ctx = unsafe { &*(context as *const PreSolveCtx) };
-            let core = match ctx.core.upgrade() {
-                Some(c) => c,
-                None => return true,
-            };
-            if core
-                .callback_panicked
-                .load(std::sync::atomic::Ordering::Relaxed)
-            {
-                return true;
-            }
-            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _g = crate::core::callback_state::CallbackGuard::enter();
-                let cw = CallbackWorld::new(Arc::clone(&core));
-                (ctx.cb)(
-                    &cw,
-                    a,
-                    b,
-                    crate::types::Vec2::from(point),
-                    crate::types::Vec2::from(normal),
-                )
-            })) {
-                Ok(v) => v,
-                Err(payload) => {
-                    if !core
-                        .callback_panicked
-                        .swap(true, std::sync::atomic::Ordering::SeqCst)
-                    {
-                        *core
-                            .callback_panic
-                            .lock()
-                            .expect("callback_panic mutex poisoned") = Some(payload);
-                    }
-                    true
-                }
-            }
-        }
-        let ctx_ptr: *mut core::ffi::c_void = (&*ctx) as *const PreSolveCtx as *mut _;
-        unsafe { ffi::b2World_SetPreSolveCallback(self.raw(), Some(presolve_cb), ctx_ptr) };
-        *self
-            .core
-            .pre_solve
-            .lock()
-            .expect("pre_solve mutex poisoned") = Some(ctx);
+        self.set_pre_solve_with_ctx_impl(f);
+    }
+
+    pub fn try_set_pre_solve_with_ctx<F>(&mut self, f: F) -> crate::error::ApiResult<()>
+    where
+        F: Fn(
+                &CallbackWorld,
+                crate::types::ShapeId,
+                crate::types::ShapeId,
+                crate::types::Vec2,
+                crate::types::Vec2,
+            ) -> bool
+            + Send
+            + Sync
+            + 'static,
+    {
+        crate::core::callback_state::check_not_in_callback()?;
+        self.set_pre_solve_with_ctx_impl(f);
+        Ok(())
     }
 
     /// Backwards-compatible pre-solve API without a callback context.
@@ -2031,36 +2133,79 @@ impl World {
             + Sync
             + 'static,
     {
-        self.set_pre_solve_with_ctx(move |_, a, b, p, n| f(a, b, p, n))
+        crate::core::callback_state::assert_not_in_callback();
+        self.set_pre_solve_with_ctx_impl(move |_, a, b, p, n| f(a, b, p, n))
+    }
+
+    pub fn try_set_pre_solve<F>(&mut self, f: F) -> crate::error::ApiResult<()>
+    where
+        F: Fn(
+                crate::types::ShapeId,
+                crate::types::ShapeId,
+                crate::types::Vec2,
+                crate::types::Vec2,
+            ) -> bool
+            + Send
+            + Sync
+            + 'static,
+    {
+        crate::core::callback_state::check_not_in_callback()?;
+        self.set_pre_solve_with_ctx_impl(move |_, a, b, p, n| f(a, b, p, n));
+        Ok(())
     }
 
     /// Clear the pre-solve callback and release associated resources.
     pub fn clear_pre_solve(&mut self) {
         crate::core::callback_state::assert_not_in_callback();
-        unsafe { ffi::b2World_SetPreSolveCallback(self.raw(), None, core::ptr::null_mut()) };
-        *self
-            .core
-            .pre_solve
-            .lock()
-            .expect("pre_solve mutex poisoned") = None;
+        self.clear_pre_solve_impl();
+    }
+
+    pub fn try_clear_pre_solve(&mut self) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        self.clear_pre_solve_impl();
+        Ok(())
     }
 
     /// Compatibility helper: set or clear the custom filter using a plain function pointer.
     pub fn set_custom_filter_callback(&mut self, cb: Option<ShapeFilterFn>) {
         crate::core::callback_state::assert_not_in_callback();
         match cb {
-            Some(func) => self.set_custom_filter(func),
-            None => self.clear_custom_filter(),
+            Some(func) => self.set_custom_filter_with_ctx_impl(move |_, a, b| func(a, b)),
+            None => self.clear_custom_filter_impl(),
         }
+    }
+
+    pub fn try_set_custom_filter_callback(
+        &mut self,
+        cb: Option<ShapeFilterFn>,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        match cb {
+            Some(func) => self.set_custom_filter_with_ctx_impl(move |_, a, b| func(a, b)),
+            None => self.clear_custom_filter_impl(),
+        }
+        Ok(())
     }
 
     /// Compatibility helper: set or clear the pre-solve using a plain function pointer.
     pub fn set_pre_solve_callback(&mut self, cb: Option<PreSolveFn>) {
         crate::core::callback_state::assert_not_in_callback();
         match cb {
-            Some(func) => self.set_pre_solve(func),
-            None => self.clear_pre_solve(),
+            Some(func) => self.set_pre_solve_with_ctx_impl(move |_, a, b, p, n| func(a, b, p, n)),
+            None => self.clear_pre_solve_impl(),
         }
+    }
+
+    pub fn try_set_pre_solve_callback(
+        &mut self,
+        cb: Option<PreSolveFn>,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        match cb {
+            Some(func) => self.set_pre_solve_with_ctx_impl(move |_, a, b, p, n| func(a, b, p, n)),
+            None => self.clear_pre_solve_impl(),
+        }
+        Ok(())
     }
 
     /// Register a thread-safe friction mixing callback.
@@ -3138,6 +3283,75 @@ mod tests {
         );
         assert_eq!(
             world.try_explode(&explosion).unwrap_err(),
+            crate::ApiError::InCallback
+        );
+    }
+
+    #[test]
+    fn try_world_callback_registration_returns_in_callback() {
+        fn always_true_filter(_a: ShapeId, _b: ShapeId) -> bool {
+            true
+        }
+
+        fn always_true_pre(
+            _a: ShapeId,
+            _b: ShapeId,
+            _p: crate::types::Vec2,
+            _n: crate::types::Vec2,
+        ) -> bool {
+            true
+        }
+
+        let mut world = World::new(WorldDef::default()).unwrap();
+        let _g = crate::core::callback_state::CallbackGuard::enter();
+
+        assert_eq!(
+            world
+                .try_set_custom_filter_with_ctx(|_, _, _| true)
+                .unwrap_err(),
+            crate::ApiError::InCallback
+        );
+        assert_eq!(
+            world.try_set_custom_filter(always_true_filter).unwrap_err(),
+            crate::ApiError::InCallback
+        );
+        assert_eq!(
+            world.try_clear_custom_filter().unwrap_err(),
+            crate::ApiError::InCallback
+        );
+        assert_eq!(
+            world
+                .try_set_custom_filter_callback(Some(always_true_filter))
+                .unwrap_err(),
+            crate::ApiError::InCallback
+        );
+        assert_eq!(
+            world.try_set_custom_filter_callback(None).unwrap_err(),
+            crate::ApiError::InCallback
+        );
+
+        assert_eq!(
+            world
+                .try_set_pre_solve_with_ctx(|_, _, _, _, _| true)
+                .unwrap_err(),
+            crate::ApiError::InCallback
+        );
+        assert_eq!(
+            world.try_set_pre_solve(always_true_pre).unwrap_err(),
+            crate::ApiError::InCallback
+        );
+        assert_eq!(
+            world.try_clear_pre_solve().unwrap_err(),
+            crate::ApiError::InCallback
+        );
+        assert_eq!(
+            world
+                .try_set_pre_solve_callback(Some(always_true_pre))
+                .unwrap_err(),
+            crate::ApiError::InCallback
+        );
+        assert_eq!(
+            world.try_set_pre_solve_callback(None).unwrap_err(),
             crate::ApiError::InCallback
         );
     }

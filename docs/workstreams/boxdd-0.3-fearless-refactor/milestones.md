@@ -52,6 +52,7 @@ Scope:
 - consolidate the most mechanical `Shape` / `OwnedShape`, `Body` / `OwnedBody`, and `Chain` / `OwnedChain` internals behind shared private helpers
 - consolidate the most mechanical joint creation entrypoints so joint-type additions cannot drift across scoped/id/owned/try variants
 - consolidate event-buffer borrow / cleanup plumbing so all event-view APIs share the same lifetime and deferred-destroy path
+- add reusable-buffer event snapshot getters so owned event extraction does not force fresh allocations beside the existing zero-copy views
 - consolidate world-level shape create/edit helper families so geometry-type additions cannot drift across create/owned/try setter variants
 - consolidate shared debug-draw callback bridging so safe/raw draw paths cannot drift in panic forwarding, callback locking, or option wiring
 - document the remaining intentional raw escape hatches and keep callback-sensitive raw paths under regression tests
@@ -64,6 +65,7 @@ Exit criteria:
 - high-churn owned/scoped handle pairs no longer duplicate the same FFI access logic across every hot-path accessor
 - joint creation families no longer duplicate per-type create/owned/id/try plumbing or callback-state handling
 - event-view APIs no longer duplicate the borrow-event-buffers / process-deferred-destroys template in every module
+- owned event snapshots no longer force fresh allocation when callers need persistent copies instead of borrowed event views
 - world-level shape create/edit families no longer duplicate the same geometry-to-FFI plumbing for each geometry type
 - safe/raw debug-draw paths no longer duplicate the same callback panic bridge and option wiring, and the remaining raw path has direct regression coverage
 - the remaining intentional raw surfaces are explicitly documented instead of being discovered only by source spelunking
@@ -130,12 +132,14 @@ Scope:
 - audit thread-model / async guidance so `worker_count`, worker-thread callbacks, and `World: !Send/!Sync` are documented together
 - audit math interop completeness so `mint` stays aligned with the crate-owned `Vec2` / `Rot` / `Transform` / `Aabb` vocabulary
 - clarify panic-by-default vs `try_*` error-handling guidance at the crate boundary
+- make the `World` vs `WorldHandle` event API split explicit so it is treated as an intentional lifecycle/design choice instead of an accidental completeness gap
+- remove the remaining serialize-time chain metadata leaks so `ChainDef` / `World::chain_records()` stop exposing raw `ffi::b2Vec2` / `b2SurfaceMaterial` collections where crate-owned value types already exist
 - productize live shape runtime wrappers for AABB, point tests, ray casts, computed mass data, and runtime event toggles across owned/scoped/id APIs
 - productize the body runtime completeness slice around rotation, sleeping/awake/enabled/bullet/name state, attached ids, and body-level event toggles
 - productize the first joint runtime completeness slice around joint metadata, constraint tuning, local frames, and wake helpers across owned/scoped/id APIs
 - productize the type-specific joint runtime completeness slice around distance/prismatic/revolute/weld/wheel/motor getters/setters across owned/scoped/id APIs
 - make typed joint `try_*` APIs reject wrong joint families with `ApiError::InvalidJointType` instead of depending on upstream asserts
-- productize remaining world runtime extras such as `Profile`, explosions, speculative collision control, and matching `try_*` coverage for callback-sensitive world tuning
+- productize remaining world runtime extras such as `Profile`, explosions, speculative collision control, and matching `try_*` coverage for callback-sensitive world tuning and callback registration
 - close the body/world-handle follow-up pass so `allow_fast_rotation`, computed body AABB, and read-only world runtime getters no longer require raw `ffi` or handle-style-specific workarounds
 - keep world-space joint builders coherent when they compute body ids / local frames at build time so previously configured base flags are preserved
 
@@ -146,6 +150,8 @@ Exit criteria:
 - the next completeness pass has a short, explicit backlog instead of scattered notes
 - thread-model guidance no longer implies that internal worker threads make the public world API thread-safe
 - math interop documentation and tests cover the intended `mint` bridge story explicitly
+- the `WorldHandle` event surface is either explicitly documented as intentionally narrow or expanded with a concrete lifecycle story; it is no longer ambiguous
+- serialize-time chain capture no longer exposes raw point/material/filter storage when crate-owned value/layout types already define the public vocabulary
 - crate-owned `Rot` no longer has a one-way-only `mint` story; row/column-major rotation matrices round-trip with recoverable validation
 - common live-shape runtime queries and toggles no longer require raw `ffi` or an upstream-only mental model
 - common body runtime controls and attached-id enumeration no longer require handle-only workarounds or ad-hoc allocations
@@ -153,4 +159,4 @@ Exit criteria:
 - common joint runtime metadata and control no longer require raw `ffi` or per-handle-style workarounds
 - type-specific joint runtime state and control no longer require world-only helpers, raw `ffi`, or upstream joint-family knowledge
 - wrong-family typed joint `try_*` misuse reports `ApiError::InvalidJointType` instead of depending on Box2D assert builds
-- common world runtime diagnostics/tuning extras no longer hide in side modules or panic-only seams when recoverable `try_*` behavior is appropriate
+- common world runtime diagnostics/tuning extras and callback-registration helpers no longer hide in side modules or panic-only seams when recoverable `try_*` behavior is appropriate

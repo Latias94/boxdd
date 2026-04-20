@@ -1,6 +1,10 @@
 use boxdd_sys::ffi;
 
-use crate::types::{BodyId, ChainId, ShapeId};
+use crate::{
+    Filter,
+    shapes::SurfaceMaterial,
+    types::{BodyId, ChainId, ShapeId, Vec2},
+};
 
 #[derive(Copy, Clone, Debug)]
 pub struct ShapeFlagsRecord {
@@ -12,35 +16,62 @@ pub struct ShapeFlagsRecord {
     pub invoke_contact_creation: bool,
 }
 
-#[derive(Clone)]
+/// Recorded chain material configuration captured at chain creation time.
+#[derive(Clone, Debug)]
+pub enum ChainMaterialsRecord {
+    /// Use Box2D's default chain material.
+    Default,
+    /// Use one material for the entire chain.
+    Single(SurfaceMaterial),
+    /// Use one material per chain segment.
+    Multiple(Vec<SurfaceMaterial>),
+}
+
+impl ChainMaterialsRecord {
+    fn from_raw_slice(materials: &[ffi::b2SurfaceMaterial]) -> Self {
+        match materials {
+            [] => Self::Default,
+            [material] => Self::Single(SurfaceMaterial(*material)),
+            _ => Self::Multiple(materials.iter().copied().map(SurfaceMaterial).collect()),
+        }
+    }
+}
+
+/// Recorded chain creation parameters captured by `World::chain_records()`.
+#[derive(Clone, Debug)]
 pub struct ChainCreateRecord {
-    pub body: ffi::b2BodyId,
+    pub body: BodyId,
     pub is_loop: bool,
-    pub filter: ffi::b2Filter,
+    pub filter: Filter,
     pub enable_sensor_events: bool,
-    pub points: Vec<ffi::b2Vec2>,
-    pub materials: Vec<ffi::b2SurfaceMaterial>,
+    pub points: Vec<Vec2>,
+    pub materials: ChainMaterialsRecord,
 }
 
 #[derive(Clone)]
 pub(crate) struct ChainCreateMeta {
-    pub(crate) body: ffi::b2BodyId,
+    pub(crate) body: BodyId,
     pub(crate) is_loop: bool,
-    pub(crate) filter: ffi::b2Filter,
+    pub(crate) filter: Filter,
     pub(crate) enable_sensor_events: bool,
-    pub(crate) points: Vec<ffi::b2Vec2>,
-    pub(crate) materials: Vec<ffi::b2SurfaceMaterial>,
+    pub(crate) points: Vec<Vec2>,
+    pub(crate) materials: ChainMaterialsRecord,
 }
 
 impl ChainCreateMeta {
-    pub(crate) fn from_def(body: ffi::b2BodyId, def: &crate::shapes::chain::ChainDef) -> Self {
+    pub(crate) fn from_def(body: BodyId, def: &crate::shapes::chain::ChainDef) -> Self {
         Self {
             body,
             is_loop: def.def.isLoop,
-            filter: def.def.filter,
+            filter: Filter::from_raw(def.def.filter),
             enable_sensor_events: def.def.enableSensorEvents,
-            points: def.points_vec(),
-            materials: def.materials_vec(),
+            points: def
+                .points_raw_slice()
+                .iter()
+                .copied()
+                .map(Vec2::from)
+                .collect(),
+            materials: ChainMaterialsRecord::from_raw_slice(def.materials_raw_slice()),
         }
     }
 

@@ -61,34 +61,59 @@ pub struct SensorEndTouchEvent {
     pub visitor_shape: ShapeId,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct SensorEvents {
     pub begin: Vec<SensorBeginTouchEvent>,
     pub end: Vec<SensorEndTouchEvent>,
 }
 
+fn sensor_events_into_impl(world: ffi::b2WorldId, out: &mut SensorEvents) {
+    let raw = unsafe { ffi::b2World_GetSensorEvents(world) };
+    let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
+        unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
+    } else {
+        &[][..]
+    };
+    let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
+        unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
+    } else {
+        &[][..]
+    };
+
+    super::map_snapshot_into(&mut out.begin, begin, |e| SensorBeginTouchEvent {
+        sensor_shape: e.sensorShapeId,
+        visitor_shape: e.visitorShapeId,
+    });
+    super::map_snapshot_into(&mut out.end, end, |e| SensorEndTouchEvent {
+        sensor_shape: e.sensorShapeId,
+        visitor_shape: e.visitorShapeId,
+    });
+}
+
 impl World {
     pub fn sensor_events(&self) -> SensorEvents {
         crate::core::callback_state::assert_not_in_callback();
-        let raw = unsafe { ffi::b2World_GetSensorEvents(self.raw()) };
-        let mut begin = Vec::new();
-        let mut end = Vec::new();
-        if raw.beginCount > 0 && !raw.beginEvents.is_null() {
-            let s =
-                unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) };
-            begin.extend(s.iter().map(|e| SensorBeginTouchEvent {
-                sensor_shape: e.sensorShapeId,
-                visitor_shape: e.visitorShapeId,
-            }));
-        }
-        if raw.endCount > 0 && !raw.endEvents.is_null() {
-            let s = unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) };
-            end.extend(s.iter().map(|e| SensorEndTouchEvent {
-                sensor_shape: e.sensorShapeId,
-                visitor_shape: e.visitorShapeId,
-            }));
-        }
-        SensorEvents { begin, end }
+        let mut out = SensorEvents::default();
+        sensor_events_into_impl(self.raw(), &mut out);
+        out
+    }
+
+    pub fn sensor_events_into(&self, out: &mut SensorEvents) {
+        crate::core::callback_state::assert_not_in_callback();
+        sensor_events_into_impl(self.raw(), out);
+    }
+
+    pub fn try_sensor_events(&self) -> crate::error::ApiResult<SensorEvents> {
+        crate::core::callback_state::check_not_in_callback()?;
+        let mut out = SensorEvents::default();
+        sensor_events_into_impl(self.raw(), &mut out);
+        Ok(out)
+    }
+
+    pub fn try_sensor_events_into(&self, out: &mut SensorEvents) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        sensor_events_into_impl(self.raw(), out);
+        Ok(())
     }
 
     /// Low-level raw view over sensor events (borrows Box2D's internal buffers).

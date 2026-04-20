@@ -38,22 +38,47 @@ impl<'a> Iterator for BodyMoveIter<'a> {
     }
 }
 
+fn body_events_into_impl(world: ffi::b2WorldId, out: &mut Vec<BodyMoveEvent>) {
+    let raw = unsafe { ffi::b2World_GetBodyEvents(world) };
+    let slice = if raw.moveCount > 0 && !raw.moveEvents.is_null() {
+        unsafe { core::slice::from_raw_parts(raw.moveEvents, raw.moveCount as usize) }
+    } else {
+        &[][..]
+    };
+    super::map_snapshot_into(out, slice, |e| BodyMoveEvent {
+        body_id: e.bodyId,
+        transform: Transform::from(e.transform),
+        fell_asleep: e.fellAsleep,
+    });
+}
+
 impl World {
     pub fn body_events(&self) -> Vec<BodyMoveEvent> {
         crate::core::callback_state::assert_not_in_callback();
-        let raw = unsafe { ffi::b2World_GetBodyEvents(self.raw()) };
-        if raw.moveCount <= 0 || raw.moveEvents.is_null() {
-            return Vec::new();
-        }
-        let slice = unsafe { core::slice::from_raw_parts(raw.moveEvents, raw.moveCount as usize) };
-        slice
-            .iter()
-            .map(|e| BodyMoveEvent {
-                body_id: e.bodyId,
-                transform: Transform::from(e.transform),
-                fell_asleep: e.fellAsleep,
-            })
-            .collect()
+        let mut out = Vec::new();
+        body_events_into_impl(self.raw(), &mut out);
+        out
+    }
+
+    pub fn body_events_into(&self, out: &mut Vec<BodyMoveEvent>) {
+        crate::core::callback_state::assert_not_in_callback();
+        body_events_into_impl(self.raw(), out);
+    }
+
+    pub fn try_body_events(&self) -> crate::error::ApiResult<Vec<BodyMoveEvent>> {
+        crate::core::callback_state::check_not_in_callback()?;
+        let mut out = Vec::new();
+        body_events_into_impl(self.raw(), &mut out);
+        Ok(out)
+    }
+
+    pub fn try_body_events_into(
+        &self,
+        out: &mut Vec<BodyMoveEvent>,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        body_events_into_impl(self.raw(), out);
+        Ok(())
     }
 
     // Zero-copy visitor (closure style). Data is only valid within the call.
