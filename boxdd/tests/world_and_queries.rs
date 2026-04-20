@@ -129,6 +129,87 @@ fn world_handle_queries_match_world_queries() {
     );
 
     let handle = world.handle();
+    world.enable_sleeping(false);
+    world.enable_continuous(false);
+    world.enable_warm_starting(false);
+    world.set_restitution_threshold(0.75);
+    world.set_hit_event_threshold(1.25);
+    world.set_maximum_linear_speed(18.0);
+    world.step(1.0 / 60.0, 4);
+
+    assert_eq!(handle.gravity(), world.gravity());
+    assert_eq!(handle.try_gravity().unwrap(), world.gravity());
+
+    let world_counters = world.counters();
+    let handle_counters = handle.counters();
+    let try_handle_counters = handle.try_counters().unwrap();
+    assert_eq!(handle_counters.body_count, world_counters.body_count);
+    assert_eq!(handle_counters.shape_count, world_counters.shape_count);
+    assert_eq!(handle_counters.contact_count, world_counters.contact_count);
+    assert_eq!(handle_counters.joint_count, world_counters.joint_count);
+    assert_eq!(handle_counters.task_count, world_counters.task_count);
+    assert_eq!(try_handle_counters.body_count, handle_counters.body_count);
+    assert_eq!(try_handle_counters.shape_count, handle_counters.shape_count);
+
+    let world_profile = world.profile();
+    assert_eq!(handle.profile(), world_profile);
+    assert_eq!(handle.try_profile().unwrap(), world_profile);
+    assert_eq!(handle.awake_body_count(), world.awake_body_count());
+    assert_eq!(
+        handle.try_awake_body_count().unwrap(),
+        world.try_awake_body_count().unwrap()
+    );
+    assert_eq!(handle.is_sleeping_enabled(), world.is_sleeping_enabled());
+    assert_eq!(
+        handle.try_is_sleeping_enabled().unwrap(),
+        world.try_is_sleeping_enabled().unwrap()
+    );
+    assert_eq!(
+        handle.is_continuous_enabled(),
+        world.is_continuous_enabled()
+    );
+    assert_eq!(
+        handle.try_is_continuous_enabled().unwrap(),
+        world.try_is_continuous_enabled().unwrap()
+    );
+    assert_eq!(
+        handle.is_warm_starting_enabled(),
+        world.is_warm_starting_enabled()
+    );
+    assert_eq!(
+        handle.try_is_warm_starting_enabled().unwrap(),
+        world.try_is_warm_starting_enabled().unwrap()
+    );
+    assert!(approx_eq(
+        handle.restitution_threshold(),
+        world.restitution_threshold(),
+        1e-6
+    ));
+    assert!(approx_eq(
+        handle.try_restitution_threshold().unwrap(),
+        world.try_restitution_threshold().unwrap(),
+        1e-6
+    ));
+    assert!(approx_eq(
+        handle.hit_event_threshold(),
+        world.hit_event_threshold(),
+        1e-6
+    ));
+    assert!(approx_eq(
+        handle.try_hit_event_threshold().unwrap(),
+        world.try_hit_event_threshold().unwrap(),
+        1e-6
+    ));
+    assert!(approx_eq(
+        handle.maximum_linear_speed(),
+        world.maximum_linear_speed(),
+        1e-6
+    ));
+    assert!(approx_eq(
+        handle.try_maximum_linear_speed().unwrap(),
+        world.try_maximum_linear_speed().unwrap(),
+        1e-6
+    ));
 
     let world_overlap = world.overlap_polygon_points_with_offset(
         [

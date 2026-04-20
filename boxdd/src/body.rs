@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use crate::core::world_core::WorldCore;
 use crate::error::{ApiError, ApiResult};
+use crate::query::Aabb;
 use crate::types::{BodyId, ContactData, JointId, MassData, ShapeId, Vec2};
 use crate::world::World;
 use boxdd_sys::ffi;
@@ -104,6 +105,11 @@ fn body_transform_raw_impl(id: BodyId) -> ffi::b2Transform {
 #[inline]
 fn body_transform_impl(id: BodyId) -> crate::Transform {
     body_transform_raw_impl(id).into()
+}
+
+#[inline]
+pub(crate) fn body_aabb_impl(id: BodyId) -> Aabb {
+    Aabb::from_raw(unsafe { ffi::b2Body_ComputeAABB(id) })
 }
 
 #[inline]
@@ -596,6 +602,16 @@ impl OwnedBody {
     pub fn try_transform_raw(&self) -> ApiResult<ffi::b2Transform> {
         self.check_valid()?;
         Ok(body_transform_raw_impl(self.id))
+    }
+
+    pub fn aabb(&self) -> Aabb {
+        self.assert_valid();
+        body_aabb_impl(self.id)
+    }
+
+    pub fn try_aabb(&self) -> ApiResult<Aabb> {
+        self.check_valid()?;
+        Ok(body_aabb_impl(self.id))
     }
 
     pub fn local_point<V: Into<Vec2>>(&self, world_point: V) -> Vec2 {
@@ -1473,6 +1489,11 @@ impl BodyBuilder {
         self.def.0.isBullet = flag;
         self
     }
+    /// Allow high angular speed without Box2D's default clamp.
+    pub fn allow_fast_rotation(mut self, flag: bool) -> Self {
+        self.def.0.allowFastRotation = flag;
+        self
+    }
     /// Enable/disable simulation for this body.
     pub fn enabled(mut self, flag: bool) -> Self {
         self.def.0.isEnabled = flag;
@@ -1511,6 +1532,7 @@ impl serde::Serialize for BodyDef {
             enable_sleep: bool,
             awake: bool,
             bullet: bool,
+            allow_fast_rotation: bool,
             enabled: bool,
         }
         let angle = self.0.rotation.s.atan2(self.0.rotation.c);
@@ -1530,6 +1552,7 @@ impl serde::Serialize for BodyDef {
             enable_sleep: self.0.enableSleep,
             awake: self.0.isAwake,
             bullet: self.0.isBullet,
+            allow_fast_rotation: self.0.allowFastRotation,
             enabled: self.0.isEnabled,
         };
         r.serialize(serializer)
@@ -1555,6 +1578,7 @@ impl<'de> serde::Deserialize<'de> for BodyDef {
             enable_sleep: bool,
             awake: bool,
             bullet: bool,
+            allow_fast_rotation: bool,
             enabled: bool,
         }
         let r = Repr::deserialize(deserializer)?;
@@ -1570,6 +1594,7 @@ impl<'de> serde::Deserialize<'de> for BodyDef {
             .enable_sleep(r.enable_sleep)
             .awake(r.awake)
             .bullet(r.bullet)
+            .allow_fast_rotation(r.allow_fast_rotation)
             .enabled(r.enabled);
         Ok(b.build())
     }
@@ -1578,6 +1603,23 @@ impl<'de> serde::Deserialize<'de> for BodyDef {
 impl Default for BodyBuilder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BodyBuilder;
+
+    #[test]
+    fn body_builder_allow_fast_rotation_sets_raw_field() {
+        assert!(!BodyBuilder::new().build().0.allowFastRotation);
+        assert!(
+            BodyBuilder::new()
+                .allow_fast_rotation(true)
+                .build()
+                .0
+                .allowFastRotation
+        );
     }
 }
 
@@ -1700,6 +1742,16 @@ impl<'w> Body<'w> {
     pub fn try_transform_raw(&self) -> ApiResult<ffi::b2Transform> {
         self.check_valid()?;
         Ok(body_transform_raw_impl(self.id))
+    }
+
+    pub fn aabb(&self) -> Aabb {
+        self.assert_valid();
+        body_aabb_impl(self.id)
+    }
+
+    pub fn try_aabb(&self) -> ApiResult<Aabb> {
+        self.check_valid()?;
+        Ok(body_aabb_impl(self.id))
     }
 
     pub fn local_point<V: Into<Vec2>>(&self, world_point: V) -> Vec2 {

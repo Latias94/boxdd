@@ -10,7 +10,8 @@
 //! - Linear slop (`B2_LINEAR_SLOP`): small collision/constraint tolerance.
 //!   Not directly exposed; part of solver internals. Affects contact stability.
 //! - Speculative distance (`B2_SPECULATIVE_DISTANCE`): reduces jitter with
-//!   limited speculative collision. Not directly exposed.
+//!   limited speculative collision. Runtime access is exposed through
+//!   `World::enable_speculative`.
 //! - AABB margin (`B2_AABB_MARGIN`): fattening of dynamic-tree proxies to avoid
 //!   frequent broadphase updates. Not directly exposed.
 //! - Max rotation per step (`B2_MAX_ROTATION`): large cap to prevent numerical
@@ -38,6 +39,8 @@
 //! - Sleeping and continuous collision detection
 //!   - `WorldBuilder::enable_sleep`, `World::enable_sleeping`, `World::is_sleeping_enabled`
 //!   - `WorldBuilder::enable_continuous`, `World::enable_continuous`, `World::is_continuous_enabled`
+//! - Speculative collision
+//!   - `World::enable_speculative`
 //! - Maximum linear speed
 //!   - `WorldBuilder::maximum_linear_speed`, `World::set_maximum_linear_speed`,
 //!     `World::maximum_linear_speed`

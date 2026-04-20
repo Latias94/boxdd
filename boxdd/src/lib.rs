@@ -12,6 +12,7 @@
 //! - Live shapes expose safe runtime helpers for AABB, point tests, direct ray casts, computed mass data, and runtime event toggles.
 //! - Bodies expose safe runtime helpers for rotation, sleep/awake/enabled/bullet/name controls, attached shape/joint enumeration, and body-level contact/hit event toggles.
 //! - Joints expose safe runtime helpers for joint kind, connected body ids, `collide_connected`, constraint tuning, local frames, wake controls, and type-specific runtime state across distance/prismatic/revolute/weld/wheel/motor families.
+//! - World runtime helpers expose counters, per-stage `Profile` timings, explosion control, and `try_*` access for callback-sensitive tuning toggles.
 //! - Core value types such as `ShapeType`, `MassData`, and contact manifolds are crate-owned instead of leaking raw Box2D structs.
 //! - Typed material mixing callbacks for friction and restitution using `user_material_id`.
 //! - Three usage styles:
@@ -267,6 +268,7 @@ pub use types::{
     MotionLocks, ShapeId, Vec2,
 };
 pub use world::{
-    CallbackWorld, MaterialMixInput, OutstandingOwnedHandles, OwnedHandleCounts, World,
+    CallbackWorld, MaterialMixInput, OutstandingOwnedHandles, OwnedHandleCounts, Profile, World,
     WorldBuilder, WorldDef, WorldHandle,
 };
+pub use world_extras::ExplosionDef;

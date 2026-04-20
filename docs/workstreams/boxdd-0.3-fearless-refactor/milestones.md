@@ -135,6 +135,8 @@ Scope:
 - productize the first joint runtime completeness slice around joint metadata, constraint tuning, local frames, and wake helpers across owned/scoped/id APIs
 - productize the type-specific joint runtime completeness slice around distance/prismatic/revolute/weld/wheel/motor getters/setters across owned/scoped/id APIs
 - make typed joint `try_*` APIs reject wrong joint families with `ApiError::InvalidJointType` instead of depending on upstream asserts
+- productize remaining world runtime extras such as `Profile`, explosions, speculative collision control, and matching `try_*` coverage for callback-sensitive world tuning
+- close the body/world-handle follow-up pass so `allow_fast_rotation`, computed body AABB, and read-only world runtime getters no longer require raw `ffi` or handle-style-specific workarounds
 - keep world-space joint builders coherent when they compute body ids / local frames at build time so previously configured base flags are preserved
 
 Exit criteria:
@@ -146,6 +148,8 @@ Exit criteria:
 - math interop documentation and tests cover the intended `mint` bridge story explicitly
 - common live-shape runtime queries and toggles no longer require raw `ffi` or an upstream-only mental model
 - common body runtime controls and attached-id enumeration no longer require handle-only workarounds or ad-hoc allocations
+- computed body AABB, fast-rotation setup, and read-only world runtime getters are available on the main safe surface without `World`/`WorldHandle` drift
 - common joint runtime metadata and control no longer require raw `ffi` or per-handle-style workarounds
 - type-specific joint runtime state and control no longer require world-only helpers, raw `ffi`, or upstream joint-family knowledge
 - wrong-family typed joint `try_*` misuse reports `ApiError::InvalidJointType` instead of depending on Box2D assert builds
+- common world runtime diagnostics/tuning extras no longer hide in side modules or panic-only seams when recoverable `try_*` behavior is appropriate

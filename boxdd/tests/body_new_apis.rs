@@ -248,3 +248,35 @@ fn body_runtime_controls_and_enumeration_are_available_across_handle_and_world_a
     assert_eq!(world_joint_buf.as_ptr(), world_joint_buf_ptr);
     assert_eq!(world_joint_buf.len(), 1);
 }
+
+#[test]
+fn body_aabb_helpers_match_owned_scoped_and_world_views() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let owned_body = world.create_body_owned(
+        BodyBuilder::new()
+            .body_type(BodyType::Dynamic)
+            .position([2.0_f32, 3.0])
+            .build(),
+    );
+    let body_id = owned_body.id();
+
+    let shape_id = world.create_circle_shape_for(
+        body_id,
+        &ShapeDef::builder().density(1.0).build(),
+        &shapes::circle([0.0_f32, 0.0], 0.5),
+    );
+
+    let expected = world.shape_aabb(shape_id);
+
+    assert_eq!(owned_body.aabb(), expected);
+    assert_eq!(owned_body.try_aabb().unwrap(), expected);
+
+    {
+        let body = world.body(body_id).expect("body should still be valid");
+        assert_eq!(body.aabb(), expected);
+        assert_eq!(body.try_aabb().unwrap(), expected);
+    }
+
+    assert_eq!(world.body_aabb(body_id), expected);
+    assert_eq!(world.try_body_aabb(body_id).unwrap(), expected);
+}

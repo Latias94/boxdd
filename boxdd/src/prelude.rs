@@ -21,7 +21,8 @@ pub use crate::{
         BodyId, ChainId, ContactData, ContactId, JointId, Manifold, ManifoldPoint, MassData,
         MotionLocks, ShapeId, Vec2,
     },
-    world::Counters,
+    world::{Counters, Profile},
+    world_extras::ExplosionDef,
     {Rot, Transform},
 };
 

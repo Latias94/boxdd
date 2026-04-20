@@ -261,6 +261,7 @@ fn try_body_runtime_helpers_invalid_id_returns_err() {
         body.try_rotation_raw().unwrap_err(),
         ApiError::InvalidBodyId
     );
+    assert_eq!(body.try_aabb().unwrap_err(), ApiError::InvalidBodyId);
     assert_eq!(
         body.try_is_sleep_enabled().unwrap_err(),
         ApiError::InvalidBodyId
@@ -308,6 +309,10 @@ fn try_body_runtime_helpers_invalid_id_returns_err() {
 
     assert_eq!(
         world.try_body_rotation(body_id).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        world.try_body_aabb(body_id).unwrap_err(),
         ApiError::InvalidBodyId
     );
     assert_eq!(

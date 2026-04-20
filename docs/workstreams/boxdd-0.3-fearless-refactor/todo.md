@@ -17,6 +17,8 @@
 - [x] Productize the first joint runtime completeness slice: joint type/body ids, `collide_connected`, constraint tuning, local frames, and wake helpers across `Joint`, `OwnedJoint`, and `World::joint_*`.
 - [x] Fix world-space joint builders so runtime-computed body ids/local frames preserve previously configured base flags such as `collide_connected`.
 - [x] Productize the type-specific joint runtime completeness slice: distance/prismatic/revolute/weld/wheel/motor getters/setters across `Joint`, `OwnedJoint`, and `World`, and return `ApiError::InvalidJointType` for wrong-family `try_*` calls.
+- [x] Productize the remaining world runtime extras slice: `Profile` timings, `ExplosionDef`/`World::explode`, speculative collision control, and matching `try_*` coverage for callback-sensitive world tuning helpers.
+- [x] Close the body/world-handle follow-up gaps: `BodyBuilder::allow_fast_rotation`, computed body AABB across owned/scoped/id views, and read-only `WorldHandle` mirrors for runtime diagnostics/tuning getters.
 
 ## In Progress
 

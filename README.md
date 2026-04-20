@@ -21,6 +21,7 @@
 - Explicit threading model: `worker_count` enables Box2D's internal parallelism, while `World` and owned handles remain pinned to one thread/task.
 - Hot-path query, debug-draw collection, and state-extraction APIs expose `*_into` variants so games can reuse `Vec` buffers across frames instead of reallocating.
 - Character mover helpers cover the full safe workflow: `cast_mover`, `collide_mover`, `solve_planes`, and `clip_vector`.
+- World runtime helpers cover counters, per-stage `Profile` timings, speculative-collision toggles, and safe explosion control.
 - Standalone collision geometry helpers cover shape proxies, GJK distance, contact manifolds, chain-segment manifolds, shape cast, TOI, and `Aabb::is_valid` / `Aabb::ray_cast` without raw `ffi`.
 - Shape creation and editing now use crate-owned geometry values, and chain segments can be inspected through the crate-owned `ChainSegment` type.
 - Live shape runtime helpers now cover `aabb`, `test_point`, direct `ray_cast`, computed `mass_data`, and runtime event toggles without raw `ffi`.
@@ -67,6 +68,13 @@ world.step(1.0/60.0, 4);
 - The default safe APIs panic on misuse such as stale ids or calling Box2D while the world is locked in a callback. This keeps the common path terse and avoids Rust-level UB.
 - At engine/runtime boundaries, prefer `try_*` APIs and handle `ApiError` explicitly.
 - `ApiError` covers stale ids, callback-locked access, invalid typed-joint family use, invalid chain defs, interior NUL strings, typed user-data mismatches, and material-callback slot exhaustion.
+- World-level runtime tuning and explosion helpers now also expose `try_*` variants when callback locking should be handled recoverably.
+
+## World Runtime Extras
+- `world.counters()` and `world.profile()` expose simulation size counters and last-step timing breakdowns without dropping to raw `ffi`.
+- `ExplosionDef` and `world.explode(...)` / `world.try_explode(...)` now expose Box2D's explosion API directly on the main safe surface.
+- Runtime tuning controls such as sleeping, continuous collision, warm starting, speculative collision, restitution threshold, hit threshold, contact tuning, and maximum linear speed now have matching `try_*` coverage.
+- `BodyBuilder::allow_fast_rotation(...)`, computed body AABB helpers (`Body::aabb()`, `OwnedBody::aabb()`, `World::body_aabb(...)`), and read-only `WorldHandle` runtime getters keep more of the upstream runtime surface on the main safe API.
 
 ## Snapshots
 - Enable `serialize` and see example `examples/scene_serialize.rs` for a minimal scene round-trip.

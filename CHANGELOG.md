@@ -33,6 +33,8 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Body runtime wrappers for rotation, sleep/awake/enabled/bullet/name controls, attached `shapes/joints` enumeration with reusable-buffer `*_into` variants, and body-level contact/hit event toggles across `Body`, `OwnedBody`, and `World::body_*`.
 - Joint runtime wrappers for joint type/body ids, `collide_connected`, constraint tuning, local frames, wake helpers, and type-specific distance/prismatic/revolute/weld/wheel/motor getters/setters across `Joint`, `OwnedJoint`, and `World`.
 - `ApiError::InvalidJointType` for recoverable `try_*` typed-joint runtime misuse when a valid joint is accessed through the wrong family surface.
+- World runtime extras for `Profile` timings, `ExplosionDef`, `World::explode` / `try_explode`, and speculative collision control.
+- `BodyBuilder::allow_fast_rotation`, computed body AABB helpers across `Body`, `OwnedBody`, and `World::body_aabb`, plus read-only `WorldHandle` runtime getters for gravity/counters/profile/awake-count/runtime-tuning state.
 
 ### Changed
 - Query internals now share reusable collection helpers instead of duplicating callback-to-`Vec` plumbing across each query entrypoint.
@@ -68,7 +70,9 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Internal: `Joint` / `OwnedJoint` now share private helpers for common state accessors, threshold controls, and raw/typed user-data plumbing, reducing one of the last large owned/scoped duplication pockets.
 - Internal: world-level shape runtime helpers now share the same private implementation path as owned/scoped shape handles, reducing completeness drift across the three shape API styles.
 - Internal: the new body runtime completeness slice shares single private helper paths for attached-shape/joint enumeration and body runtime controls instead of duplicating FFI plumbing across owned/scoped/id styles.
+- Internal: computed body AABB and read-only `World` / `WorldHandle` runtime getters now share single helper paths, reducing one of the remaining handle-style drift pockets in the 0.3 runtime surface.
 - Internal: world-level joint runtime helpers now share the same private implementation path as owned/scoped joint handles, including type-specific joint family validation, reducing completeness drift across the three joint API styles.
+- World-level runtime tuning helpers now expose matching `try_*` variants for callback-sensitive controls instead of forcing panic-only access on that slice.
 - Breaking: raw world-id escape hatches now use explicit naming: `World::raw` / `WorldHandle::raw` moved to `world_id_raw`, and body/shape/chain `world_id` accessors moved to `world_id_raw` / `try_world_id_raw`.
 - Breaking: `DebugDraw` / `RawDebugDraw` color parameters and collected command colors now use crate-owned `HexColor` instead of leaking `ffi::b2HexColor`.
 - Docs: crate docs and README now spell out the threading / async model (`worker_count` vs `World: !Send/!Sync`) and the intended panic-by-default vs `try_*` error-handling split.
