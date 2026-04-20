@@ -2,7 +2,7 @@ use crate::Transform;
 use crate::body::{Body, BodyDef, BodyType};
 use crate::core::world_core::{CustomFilterCtx, MaterialMixCtx, PreSolveCtx, WorldCore};
 use crate::shapes::{ShapeDef, SurfaceMaterial};
-use crate::types::{BodyId, ChainId, JointId, MassData, ShapeId, Vec2};
+use crate::types::{BodyId, ChainId, JointId, MassData, MotionLocks, ShapeId, Vec2};
 use boxdd_sys::ffi;
 use std::ffi::CString;
 use std::rc::Rc;
@@ -981,32 +981,29 @@ impl World {
     }
 
     /// Get the current motion locks for a body.
-    pub fn body_motion_locks(&self, body: BodyId) -> ffi::b2MotionLocks {
+    pub fn body_motion_locks(&self, body: BodyId) -> MotionLocks {
         crate::core::debug_checks::assert_body_valid(body);
-        unsafe { ffi::b2Body_GetMotionLocks(body) }
+        unsafe { ffi::b2Body_GetMotionLocks(body) }.into()
     }
 
-    pub fn try_body_motion_locks(
-        &self,
-        body: BodyId,
-    ) -> crate::error::ApiResult<ffi::b2MotionLocks> {
+    pub fn try_body_motion_locks(&self, body: BodyId) -> crate::error::ApiResult<MotionLocks> {
         crate::core::debug_checks::check_body_valid(body)?;
-        Ok(unsafe { ffi::b2Body_GetMotionLocks(body) })
+        Ok(unsafe { ffi::b2Body_GetMotionLocks(body) }.into())
     }
 
     /// Set motion locks (translation/rotation constraints) for a body.
-    pub fn set_body_motion_locks(&mut self, body: BodyId, locks: ffi::b2MotionLocks) {
+    pub fn set_body_motion_locks(&mut self, body: BodyId, locks: MotionLocks) {
         crate::core::debug_checks::assert_body_valid(body);
-        unsafe { ffi::b2Body_SetMotionLocks(body, locks) }
+        unsafe { ffi::b2Body_SetMotionLocks(body, locks.into()) }
     }
 
     pub fn try_set_body_motion_locks(
         &mut self,
         body: BodyId,
-        locks: ffi::b2MotionLocks,
+        locks: MotionLocks,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
-        unsafe { ffi::b2Body_SetMotionLocks(body, locks) }
+        unsafe { ffi::b2Body_SetMotionLocks(body, locks.into()) }
         Ok(())
     }
 

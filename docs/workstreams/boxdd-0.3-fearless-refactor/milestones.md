@@ -41,18 +41,19 @@ Exit criteria:
 
 ## M3: Surface Coherence Audit
 
-Status: planned
+Status: in progress
 
 Scope:
 
 - review remaining allocation-sensitive APIs
+- reusable-buffer audit and cleanup for debug draw command collection
 - review `World` / `WorldHandle` duplication
 - review owned/scoped handle duplication outside the hottest paths
 
 Exit criteria:
 
 - the remaining duplication backlog is explicitly categorized as worth keeping or worth removing
-- no obvious per-frame allocation trap remains undocumented
+- no obvious per-frame allocation trap remains undocumented or unaddressed on the main safe surface
 
 ## M4: Advanced Wrapper Coverage
 
@@ -108,7 +109,7 @@ Status: planned
 Scope:
 
 - review remaining public raw escape hatches such as `world_id`, raw event slices, and debug draw hooks
-- decide whether standalone manifold-generation helpers (`b2Collide*`) should become safe collision APIs
+- finish any obviously missing value-type/productization gaps left after the main `0.3` wrapper passes
 
 Exit criteria:
 

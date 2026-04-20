@@ -16,6 +16,8 @@ const MAX_POLYGON_INPUT_POINTS: usize = MAX_POLYGON_VERTICES + 1;
 const _: () = {
     assert!(core::mem::size_of::<Vec2>() == core::mem::size_of::<ffi::b2Vec2>());
     assert!(core::mem::align_of::<Vec2>() == core::mem::align_of::<ffi::b2Vec2>());
+    assert!(core::mem::size_of::<ChainSegment>() == core::mem::size_of::<ffi::b2ChainSegment>());
+    assert!(core::mem::align_of::<ChainSegment>() == core::mem::align_of::<ffi::b2ChainSegment>());
 };
 
 #[inline]
@@ -151,6 +153,96 @@ impl From<ffi::b2Segment> for Segment {
         Self {
             point1: segment.point1.into(),
             point2: segment.point2.into(),
+        }
+    }
+}
+
+/// One-sided chain segment geometry with ghost vertices on both ends.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ChainSegment {
+    pub ghost1: Vec2,
+    pub segment: Segment,
+    pub ghost2: Vec2,
+    #[cfg_attr(feature = "serde", serde(skip, default))]
+    chain_id: i32,
+}
+
+impl ChainSegment {
+    #[inline]
+    pub fn new<G1, P1, P2, G2>(ghost1: G1, point1: P1, point2: P2, ghost2: G2) -> Self
+    where
+        G1: Into<Vec2>,
+        P1: Into<Vec2>,
+        P2: Into<Vec2>,
+        G2: Into<Vec2>,
+    {
+        Self {
+            ghost1: ghost1.into(),
+            segment: Segment::new(point1, point2),
+            ghost2: ghost2.into(),
+            chain_id: 0,
+        }
+    }
+
+    #[inline]
+    pub fn from_segment<G1: Into<Vec2>, G2: Into<Vec2>>(
+        ghost1: G1,
+        segment: Segment,
+        ghost2: G2,
+    ) -> Self {
+        Self {
+            ghost1: ghost1.into(),
+            segment,
+            ghost2: ghost2.into(),
+            chain_id: 0,
+        }
+    }
+
+    #[inline]
+    pub fn chain_id_raw(self) -> i32 {
+        self.chain_id
+    }
+}
+
+impl fmt::Debug for ChainSegment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ChainSegment")
+            .field("ghost1", &self.ghost1)
+            .field("segment", &self.segment)
+            .field("ghost2", &self.ghost2)
+            .field("chain_id_raw", &self.chain_id)
+            .finish()
+    }
+}
+
+impl PartialEq for ChainSegment {
+    fn eq(&self, other: &Self) -> bool {
+        self.ghost1 == other.ghost1 && self.segment == other.segment && self.ghost2 == other.ghost2
+    }
+}
+
+impl From<ChainSegment> for ffi::b2ChainSegment {
+    #[inline]
+    fn from(segment: ChainSegment) -> Self {
+        Self {
+            ghost1: segment.ghost1.into(),
+            segment: segment.segment.into(),
+            ghost2: segment.ghost2.into(),
+            chainId: segment.chain_id,
+        }
+    }
+}
+
+impl From<ffi::b2ChainSegment> for ChainSegment {
+    #[inline]
+    fn from(segment: ffi::b2ChainSegment) -> Self {
+        Self {
+            ghost1: segment.ghost1.into(),
+            segment: segment.segment.into(),
+            ghost2: segment.ghost2.into(),
+            chain_id: segment.chainId,
         }
     }
 }
@@ -379,6 +471,18 @@ pub fn circle<C: Into<Vec2>>(center: C, radius: f32) -> Circle {
 #[inline]
 pub fn segment<P1: Into<Vec2>, P2: Into<Vec2>>(point1: P1, point2: P2) -> Segment {
     Segment::new(point1, point2)
+}
+
+/// Chain segment helper.
+#[inline]
+pub fn chain_segment<G1, P1, P2, G2>(ghost1: G1, point1: P1, point2: P2, ghost2: G2) -> ChainSegment
+where
+    G1: Into<Vec2>,
+    P1: Into<Vec2>,
+    P2: Into<Vec2>,
+    G2: Into<Vec2>,
+{
+    ChainSegment::new(ghost1, point1, point2, ghost2)
 }
 
 /// Capsule helper.

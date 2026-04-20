@@ -19,8 +19,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 pub use geometry::{
-    Capsule, Circle, MAX_POLYGON_VERTICES, Polygon, Segment, box_polygon, capsule, circle,
-    polygon_from_points, segment,
+    Capsule, ChainSegment, Circle, MAX_POLYGON_VERTICES, Polygon, Segment, box_polygon, capsule,
+    chain_segment, circle, polygon_from_points, segment,
 };
 
 /// Shape kinds reported by Box2D.
@@ -292,6 +292,10 @@ impl OwnedShape {
     pub fn segment(&self) -> Segment {
         self.assert_valid();
         unsafe { ffi::b2Shape_GetSegment(self.id) }.into()
+    }
+    pub fn chain_segment(&self) -> ChainSegment {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_GetChainSegment(self.id) }.into()
     }
     pub fn capsule(&self) -> Capsule {
         self.assert_valid();
@@ -865,6 +869,10 @@ impl<'w> Shape<'w> {
     pub fn segment(&self) -> Segment {
         self.assert_valid();
         unsafe { ffi::b2Shape_GetSegment(self.id) }.into()
+    }
+    pub fn chain_segment(&self) -> ChainSegment {
+        self.assert_valid();
+        unsafe { ffi::b2Shape_GetChainSegment(self.id) }.into()
     }
     pub fn capsule(&self) -> Capsule {
         self.assert_valid();

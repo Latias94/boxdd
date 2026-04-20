@@ -17,8 +17,10 @@
 //! }
 //! # let def = WorldDef::builder().build();
 //! # let mut world = World::new(def).unwrap();
+//! let mut cmds = Vec::new();
+//! world.debug_draw_collect_into(&mut cmds, DebugDrawOptions::default());
 //! let mut drawer = Printer;
-//! for cmd in world.debug_draw_collect(DebugDrawOptions::default()) {
+//! for cmd in cmds {
 //!     let _ = cmd;
 //! }
 //! ```
@@ -186,79 +188,158 @@ struct RawDebugCtx<'a> {
     panic: &'a mut Option<Box<dyn Any + Send + 'static>>,
 }
 
+struct CollectDebugDraw<'a> {
+    cmds: &'a mut Vec<DebugDrawCmd>,
+    len: usize,
+}
+
+impl<'a> CollectDebugDraw<'a> {
+    fn new(cmds: &'a mut Vec<DebugDrawCmd>) -> Self {
+        Self { cmds, len: 0 }
+    }
+
+    fn finish(self) {
+        self.cmds.truncate(self.len);
+    }
+
+    fn replace_or_push(&mut self, cmd: DebugDrawCmd) {
+        if let Some(slot) = self.cmds.get_mut(self.len) {
+            *slot = cmd;
+        } else {
+            self.cmds.push(cmd);
+        }
+        self.len += 1;
+    }
+}
+
+impl DebugDraw for CollectDebugDraw<'_> {
+    fn draw_polygon(&mut self, vertices: &[Vec2], color: HexColor) {
+        match self.cmds.get_mut(self.len) {
+            Some(DebugDrawCmd::Polygon {
+                vertices: stored,
+                color: stored_color,
+            }) => {
+                stored.clear();
+                stored.extend_from_slice(vertices);
+                *stored_color = color;
+                self.len += 1;
+            }
+            _ => self.replace_or_push(DebugDrawCmd::Polygon {
+                vertices: vertices.to_vec(),
+                color,
+            }),
+        }
+    }
+
+    fn draw_solid_polygon(
+        &mut self,
+        transform: Transform,
+        vertices: &[Vec2],
+        radius: f32,
+        color: HexColor,
+    ) {
+        match self.cmds.get_mut(self.len) {
+            Some(DebugDrawCmd::SolidPolygon {
+                transform: stored_transform,
+                vertices: stored_vertices,
+                radius: stored_radius,
+                color: stored_color,
+            }) => {
+                *stored_transform = transform;
+                stored_vertices.clear();
+                stored_vertices.extend_from_slice(vertices);
+                *stored_radius = radius;
+                *stored_color = color;
+                self.len += 1;
+            }
+            _ => self.replace_or_push(DebugDrawCmd::SolidPolygon {
+                transform,
+                vertices: vertices.to_vec(),
+                radius,
+                color,
+            }),
+        }
+    }
+
+    fn draw_circle(&mut self, center: Vec2, radius: f32, color: HexColor) {
+        self.replace_or_push(DebugDrawCmd::Circle {
+            center,
+            radius,
+            color,
+        });
+    }
+
+    fn draw_solid_circle(&mut self, transform: Transform, radius: f32, color: HexColor) {
+        self.replace_or_push(DebugDrawCmd::SolidCircle {
+            transform,
+            radius,
+            color,
+        });
+    }
+
+    fn draw_solid_capsule(&mut self, p1: Vec2, p2: Vec2, radius: f32, color: HexColor) {
+        self.replace_or_push(DebugDrawCmd::SolidCapsule {
+            p1,
+            p2,
+            radius,
+            color,
+        });
+    }
+
+    fn draw_segment(&mut self, p1: Vec2, p2: Vec2, color: HexColor) {
+        self.replace_or_push(DebugDrawCmd::Segment { p1, p2, color });
+    }
+
+    fn draw_transform(&mut self, transform: Transform) {
+        self.replace_or_push(DebugDrawCmd::Transform(transform));
+    }
+
+    fn draw_point(&mut self, p: Vec2, size: f32, color: HexColor) {
+        self.replace_or_push(DebugDrawCmd::Point { p, size, color });
+    }
+
+    fn draw_string(&mut self, p: Vec2, s: &str, color: HexColor) {
+        match self.cmds.get_mut(self.len) {
+            Some(DebugDrawCmd::String {
+                p: stored_p,
+                s: stored_s,
+                color: stored_color,
+            }) => {
+                *stored_p = p;
+                stored_s.clear();
+                stored_s.push_str(s);
+                *stored_color = color;
+                self.len += 1;
+            }
+            _ => self.replace_or_push(DebugDrawCmd::String {
+                p,
+                s: s.to_owned(),
+                color,
+            }),
+        }
+    }
+}
+
 impl World {
     /// Collect debug draw commands into a vector (fully safe).
     ///
     /// This calls into Box2D debug draw but does not invoke user code during the draw.
     pub fn debug_draw_collect(&mut self, opts: DebugDrawOptions) -> Vec<DebugDrawCmd> {
         crate::core::callback_state::assert_not_in_callback();
-        struct Collector {
-            cmds: Vec<DebugDrawCmd>,
-        }
-        impl DebugDraw for Collector {
-            fn draw_polygon(&mut self, vertices: &[Vec2], color: HexColor) {
-                self.cmds.push(DebugDrawCmd::Polygon {
-                    vertices: vertices.to_vec(),
-                    color,
-                });
-            }
-            fn draw_solid_polygon(
-                &mut self,
-                transform: Transform,
-                vertices: &[Vec2],
-                radius: f32,
-                color: HexColor,
-            ) {
-                self.cmds.push(DebugDrawCmd::SolidPolygon {
-                    transform,
-                    vertices: vertices.to_vec(),
-                    radius,
-                    color,
-                });
-            }
-            fn draw_circle(&mut self, center: Vec2, radius: f32, color: HexColor) {
-                self.cmds.push(DebugDrawCmd::Circle {
-                    center,
-                    radius,
-                    color,
-                });
-            }
-            fn draw_solid_circle(&mut self, transform: Transform, radius: f32, color: HexColor) {
-                self.cmds.push(DebugDrawCmd::SolidCircle {
-                    transform,
-                    radius,
-                    color,
-                });
-            }
-            fn draw_solid_capsule(&mut self, p1: Vec2, p2: Vec2, radius: f32, color: HexColor) {
-                self.cmds.push(DebugDrawCmd::SolidCapsule {
-                    p1,
-                    p2,
-                    radius,
-                    color,
-                });
-            }
-            fn draw_segment(&mut self, p1: Vec2, p2: Vec2, color: HexColor) {
-                self.cmds.push(DebugDrawCmd::Segment { p1, p2, color });
-            }
-            fn draw_transform(&mut self, transform: Transform) {
-                self.cmds.push(DebugDrawCmd::Transform(transform));
-            }
-            fn draw_point(&mut self, p: Vec2, size: f32, color: HexColor) {
-                self.cmds.push(DebugDrawCmd::Point { p, size, color });
-            }
-            fn draw_string(&mut self, p: Vec2, s: &str, color: HexColor) {
-                self.cmds.push(DebugDrawCmd::String {
-                    p,
-                    s: s.to_owned(),
-                    color,
-                });
-            }
-        }
+        let mut cmds = Vec::new();
+        self.debug_draw_collect_into(&mut cmds, opts);
+        cmds
+    }
 
-        let mut c = Collector { cmds: Vec::new() };
-        self.debug_draw(&mut c, opts);
-        c.cmds
+    /// Collect debug draw commands into a caller-owned buffer.
+    ///
+    /// This reuses the outer command buffer and, when the command sequence stays
+    /// stable, also reuses nested polygon vertex and string storage.
+    pub fn debug_draw_collect_into(&mut self, out: &mut Vec<DebugDrawCmd>, opts: DebugDrawOptions) {
+        crate::core::callback_state::assert_not_in_callback();
+        let mut collector = CollectDebugDraw::new(out);
+        self.debug_draw(&mut collector, opts);
+        collector.finish();
     }
 
     // Safe wrapper: converts to Vec2/Transform and &str

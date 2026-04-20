@@ -6,6 +6,10 @@ fn approx_eq(a: f32, b: f32, eps: f32) -> bool {
     (a - b).abs() <= eps
 }
 
+fn same_chain_id(a: ChainId, b: ChainId) -> bool {
+    a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
+}
+
 #[test]
 fn shape_closest_point_and_apply_wind_smoke() {
     let mut world = World::new(WorldDef::default()).unwrap();
@@ -68,4 +72,31 @@ fn shape_geometry_roundtrip_uses_safe_value_types() {
     let updated = poly_shape.polygon();
     assert_eq!(updated.count(), 4);
     assert!(approx_eq(updated.vertices()[0].x.abs(), 1.0, 1.0e-6));
+
+    let chain = world.create_chain_for_owned(
+        body,
+        &boxdd::shapes::chain::ChainDef::builder()
+            .points([
+                Vec2::new(-2.0, 0.0),
+                Vec2::new(-1.0, 0.0),
+                Vec2::new(1.0, 0.0),
+                Vec2::new(2.0, 0.0),
+            ])
+            .build(),
+    );
+    let segment_shape_id = chain.segments()[0];
+    let segment_shape = world
+        .shape(segment_shape_id)
+        .expect("chain segment shape should exist");
+    assert_eq!(segment_shape.shape_type(), ShapeType::ChainSegment);
+    assert!(
+        segment_shape
+            .parent_chain_id()
+            .is_some_and(|parent| same_chain_id(parent, chain.id()))
+    );
+
+    let chain_segment = segment_shape.chain_segment();
+    assert!(chain_segment.ghost1.x <= chain_segment.segment.point1.x);
+    assert!(chain_segment.segment.point1.x < chain_segment.segment.point2.x);
+    assert!(chain_segment.segment.point2.x <= chain_segment.ghost2.x);
 }

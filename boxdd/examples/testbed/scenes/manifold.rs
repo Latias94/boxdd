@@ -39,66 +39,52 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
 }
 
 pub fn tick(app: &mut super::PhysicsApp) {
-    // Build transforms from UI state (kinematic bodies).
-    let (sa, ca) = app.mf_a_angle.sin_cos();
-    let (sb, cb) = app.mf_b_angle.sin_cos();
-    let xf_a = boxdd_sys::ffi::b2Transform {
-        p: boxdd_sys::ffi::b2Vec2 { x: app.mf_a_x, y: app.mf_a_y },
-        q: boxdd_sys::ffi::b2Rot { c: ca, s: sa },
-    };
-    let xf_b = boxdd_sys::ffi::b2Transform {
-        p: boxdd_sys::ffi::b2Vec2 { x: app.mf_b_x, y: app.mf_b_y },
-        q: boxdd_sys::ffi::b2Rot { c: cb, s: sb },
-    };
+    let xf_a = bd::Transform::from_pos_angle([app.mf_a_x, app.mf_a_y], app.mf_a_angle);
+    let xf_b = bd::Transform::from_pos_angle([app.mf_b_x, app.mf_b_y], app.mf_b_angle);
 
     let poly_a = bd::shapes::box_polygon(app.mf_a_hx, app.mf_a_hy);
-    let mut m = boxdd_sys::ffi::b2Manifold {
-        normal: boxdd_sys::ffi::b2Vec2 { x: 0.0, y: 0.0 },
-        rollingImpulse: 0.0,
-        points: [unsafe { core::mem::zeroed() }, unsafe { core::mem::zeroed() }],
-        pointCount: 0,
-    };
-    match app.mf_mode {
+    let m = match app.mf_mode {
         0 => {
-            // Poly vs Poly
             let poly_b = bd::shapes::box_polygon(app.mf_b_hx, app.mf_b_hy);
-            m = unsafe { boxdd_sys::ffi::b2CollidePolygons(&poly_a, xf_a, &poly_b, xf_b) };
+            bd::collide_polygons(poly_a, xf_a, poly_b, xf_b)
         }
         1 => {
-            // Poly vs Circle (B is circle)
             let circle_b = bd::shapes::circle([0.0, 0.0], app.mf_b_radius);
-            m = unsafe { boxdd_sys::ffi::b2CollidePolygonAndCircle(&poly_a, xf_a, &circle_b, xf_b) };
+            bd::collide_polygon_and_circle(poly_a, xf_a, circle_b, xf_b)
         }
         2 => {
-            // Poly vs Capsule (B is capsule). Use B half X as half length.
             let half_len = app.mf_b_hx.max(0.1);
             let cap_b = bd::shapes::capsule([-half_len, 0.0], [half_len, 0.0], app.mf_b_radius);
-            m = unsafe { boxdd_sys::ffi::b2CollidePolygonAndCapsule(&poly_a, xf_a, &cap_b, xf_b) };
+            bd::collide_polygon_and_capsule(poly_a, xf_a, cap_b, xf_b)
         }
         3 => {
-            // Poly vs Segment (B is segment)
             let seg_half = app.mf_seg_half.max(0.1);
             let seg = bd::shapes::segment([-seg_half, 0.0], [seg_half, 0.0]);
-            m = unsafe { boxdd_sys::ffi::b2CollideSegmentAndPolygon(&seg, xf_b, &poly_a, xf_a) };
+            bd::collide_segment_and_polygon(seg, xf_b, poly_a, xf_a)
         }
         4 => {
-            // Capsule vs Segment (approx as Segment vs Capsule)
             let seg_half = app.mf_seg_half.max(0.1);
             let seg = bd::shapes::segment([-seg_half, 0.0], [seg_half, 0.0]);
-            let cap = bd::shapes::capsule([-app.mf_b_hx.max(0.1), 0.0], [app.mf_b_hx.max(0.1), 0.0], app.mf_b_radius);
-            m = unsafe { boxdd_sys::ffi::b2CollideSegmentAndCapsule(&seg, xf_b, &cap, xf_b) };
+            let cap = bd::shapes::capsule(
+                [-app.mf_b_hx.max(0.1), 0.0],
+                [app.mf_b_hx.max(0.1), 0.0],
+                app.mf_b_radius,
+            );
+            bd::collide_segment_and_capsule(seg, xf_b, cap, xf_b)
         }
-        _ => {}
-    }
-    app.mf_contacts = m.pointCount.max(0) as usize;
+        _ => bd::Manifold::default(),
+    };
+
+    let points = m.points();
+    app.mf_contacts = points.len();
     app.mf_normal_x = m.normal.x;
     app.mf_normal_y = m.normal.y;
-    if app.mf_contacts > 0 {
-        app.mf_point_x = m.points[0].point.x;
-        app.mf_point_y = m.points[0].point.y;
-        app.mf_sep1 = m.points[0].separation;
-        app.mf_impulse1 = m.points[0].normalImpulse;
-        app.mf_total_impulse1 = m.points[0].totalNormalImpulse;
+    if let Some(point) = points.first() {
+        app.mf_point_x = point.point.x;
+        app.mf_point_y = point.point.y;
+        app.mf_sep1 = point.separation;
+        app.mf_impulse1 = point.normal_impulse;
+        app.mf_total_impulse1 = point.total_normal_impulse;
     } else {
         app.mf_point_x = 0.0;
         app.mf_point_y = 0.0;
@@ -106,12 +92,12 @@ pub fn tick(app: &mut super::PhysicsApp) {
         app.mf_impulse1 = 0.0;
         app.mf_total_impulse1 = 0.0;
     }
-    if app.mf_contacts > 1 {
-        app.mf_point2_x = m.points[1].point.x;
-        app.mf_point2_y = m.points[1].point.y;
-        app.mf_sep2 = m.points[1].separation;
-        app.mf_impulse2 = m.points[1].normalImpulse;
-        app.mf_total_impulse2 = m.points[1].totalNormalImpulse;
+    if let Some(point) = points.get(1) {
+        app.mf_point2_x = point.point.x;
+        app.mf_point2_y = point.point.y;
+        app.mf_sep2 = point.separation;
+        app.mf_impulse2 = point.normal_impulse;
+        app.mf_total_impulse2 = point.total_normal_impulse;
     } else {
         app.mf_point2_x = 0.0;
         app.mf_point2_y = 0.0;

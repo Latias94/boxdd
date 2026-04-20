@@ -30,6 +30,7 @@ coherent as it should be for a flagship safe Box2D binding.
 The main gaps are:
 
 - gameplay hot paths still need auditing beyond the initial query buffer reuse work
+- debug draw command collection still needs the same reusable-buffer treatment as the main query APIs
 - the character mover flow is incomplete unless users drop to `boxdd_sys::ffi`
 - some safe APIs still duplicate the same implementation patterns across handle styles
 - the crate lacks a clearer release-level refactor plan that ties these efforts together
@@ -90,6 +91,7 @@ result is simpler and easier to audit.
 
 - reusable-buffer query APIs
 - reusable-buffer contact / sensor / chain extraction APIs
+- reusable-buffer debug draw command collection
 - shared FFI `Vec` fill helpers
 - hot-path docs, tests, examples, version bump, changelog updates
 
@@ -106,7 +108,6 @@ result is simpler and easier to audit.
 ### Planned follow-up audit items
 
 - unify standalone collision geometry helpers with shape-construction helper types
-- review whether standalone manifold-generation helpers (`b2Collide*`) should move into the safe collision surface
 - `World` / `WorldHandle` duplication review
 - owned / scoped handle duplication review outside the hottest paths
 - continue value-type cleanup for remaining raw Box2D structs that still leak through public APIs

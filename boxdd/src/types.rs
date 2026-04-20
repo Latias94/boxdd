@@ -210,6 +210,49 @@ impl From<MassData> for ffi::b2MassData {
     }
 }
 
+/// Per-body motion lock flags.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct MotionLocks {
+    pub linear_x: bool,
+    pub linear_y: bool,
+    pub angular_z: bool,
+}
+
+impl MotionLocks {
+    #[inline]
+    pub const fn new(linear_x: bool, linear_y: bool, angular_z: bool) -> Self {
+        Self {
+            linear_x,
+            linear_y,
+            angular_z,
+        }
+    }
+}
+
+impl From<ffi::b2MotionLocks> for MotionLocks {
+    #[inline]
+    fn from(raw: ffi::b2MotionLocks) -> Self {
+        Self {
+            linear_x: raw.linearX,
+            linear_y: raw.linearY,
+            angular_z: raw.angularZ,
+        }
+    }
+}
+
+impl From<MotionLocks> for ffi::b2MotionLocks {
+    #[inline]
+    fn from(raw: MotionLocks) -> Self {
+        Self {
+            linearX: raw.linear_x,
+            linearY: raw.linear_y,
+            angularZ: raw.angular_z,
+        }
+    }
+}
+
 /// Maximum number of contact points supported by a Box2D manifold in 2D.
 pub const MAX_MANIFOLD_POINTS: usize = 2;
 
@@ -346,6 +389,8 @@ impl From<ContactData> for ffi::b2ContactData {
 const _: () = {
     assert!(core::mem::size_of::<MassData>() == core::mem::size_of::<ffi::b2MassData>());
     assert!(core::mem::align_of::<MassData>() == core::mem::align_of::<ffi::b2MassData>());
+    assert!(core::mem::size_of::<MotionLocks>() == core::mem::size_of::<ffi::b2MotionLocks>());
+    assert!(core::mem::align_of::<MotionLocks>() == core::mem::align_of::<ffi::b2MotionLocks>());
     assert!(core::mem::size_of::<ManifoldPoint>() == core::mem::size_of::<ffi::b2ManifoldPoint>());
     assert!(
         core::mem::align_of::<ManifoldPoint>() == core::mem::align_of::<ffi::b2ManifoldPoint>()

@@ -53,5 +53,10 @@ fn world_runtime_coverage_safe_api() {
 
     assert_eq!(world.awake_body_count(), 0);
 
+    let body = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+    let locks = MotionLocks::new(true, false, true);
+    world.set_body_motion_locks(body, locks);
+    assert_eq!(world.body_motion_locks(body), locks);
+
     world.step(1.0, 1);
 }

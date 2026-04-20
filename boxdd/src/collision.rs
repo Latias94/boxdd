@@ -1,13 +1,15 @@
 //! Standalone low-level collision geometry helpers.
 //!
-//! This module wraps Box2D's point-cloud collision algorithms without exposing raw FFI
+//! This module wraps Box2D's standalone collision algorithms without exposing raw FFI
 //! structs. It is intentionally more explicit than the high-level `World` query API and
-//! is useful when you want to run geometric tests without a world instance.
+//! is useful when you want to run geometric tests or contact-manifold generation without
+//! a world instance.
 
 use crate::{
     core::math::{Rot, Transform},
     query::Aabb,
-    types::Vec2,
+    shapes::{Capsule, ChainSegment, Circle, Polygon, Segment},
+    types::{Manifold, Vec2},
 };
 use boxdd_sys::ffi;
 use core::fmt;
@@ -570,6 +572,217 @@ pub fn shape_cast(input: ShapeCastPairInput) -> CastOutput {
 pub fn time_of_impact(input: ToiInput) -> ToiOutput {
     let raw_input: ffi::b2TOIInput = input.into();
     unsafe { ffi::b2TimeOfImpact(&raw_input) }.into()
+}
+
+/// Compute the contact manifold between two circles.
+#[doc(alias = "b2CollideCircles")]
+pub fn collide_circles(
+    circle_a: Circle,
+    transform_a: Transform,
+    circle_b: Circle,
+    transform_b: Transform,
+) -> Manifold {
+    let raw_a: ffi::b2Circle = circle_a.into();
+    let raw_b: ffi::b2Circle = circle_b.into();
+    unsafe { ffi::b2CollideCircles(&raw_a, transform_a.into(), &raw_b, transform_b.into()) }.into()
+}
+
+/// Compute the contact manifold between a capsule and a circle.
+#[doc(alias = "b2CollideCapsuleAndCircle")]
+pub fn collide_capsule_and_circle(
+    capsule_a: Capsule,
+    transform_a: Transform,
+    circle_b: Circle,
+    transform_b: Transform,
+) -> Manifold {
+    let raw_a: ffi::b2Capsule = capsule_a.into();
+    let raw_b: ffi::b2Circle = circle_b.into();
+    unsafe {
+        ffi::b2CollideCapsuleAndCircle(&raw_a, transform_a.into(), &raw_b, transform_b.into())
+    }
+    .into()
+}
+
+/// Compute the contact manifold between a segment and a circle.
+#[doc(alias = "b2CollideSegmentAndCircle")]
+pub fn collide_segment_and_circle(
+    segment_a: Segment,
+    transform_a: Transform,
+    circle_b: Circle,
+    transform_b: Transform,
+) -> Manifold {
+    let raw_a: ffi::b2Segment = segment_a.into();
+    let raw_b: ffi::b2Circle = circle_b.into();
+    unsafe {
+        ffi::b2CollideSegmentAndCircle(&raw_a, transform_a.into(), &raw_b, transform_b.into())
+    }
+    .into()
+}
+
+/// Compute the contact manifold between a polygon and a circle.
+#[doc(alias = "b2CollidePolygonAndCircle")]
+pub fn collide_polygon_and_circle(
+    polygon_a: Polygon,
+    transform_a: Transform,
+    circle_b: Circle,
+    transform_b: Transform,
+) -> Manifold {
+    let raw_a: ffi::b2Polygon = polygon_a.into();
+    let raw_b: ffi::b2Circle = circle_b.into();
+    unsafe {
+        ffi::b2CollidePolygonAndCircle(&raw_a, transform_a.into(), &raw_b, transform_b.into())
+    }
+    .into()
+}
+
+/// Compute the contact manifold between two capsules.
+#[doc(alias = "b2CollideCapsules")]
+pub fn collide_capsules(
+    capsule_a: Capsule,
+    transform_a: Transform,
+    capsule_b: Capsule,
+    transform_b: Transform,
+) -> Manifold {
+    let raw_a: ffi::b2Capsule = capsule_a.into();
+    let raw_b: ffi::b2Capsule = capsule_b.into();
+    unsafe { ffi::b2CollideCapsules(&raw_a, transform_a.into(), &raw_b, transform_b.into()) }.into()
+}
+
+/// Compute the contact manifold between a segment and a capsule.
+#[doc(alias = "b2CollideSegmentAndCapsule")]
+pub fn collide_segment_and_capsule(
+    segment_a: Segment,
+    transform_a: Transform,
+    capsule_b: Capsule,
+    transform_b: Transform,
+) -> Manifold {
+    let raw_a: ffi::b2Segment = segment_a.into();
+    let raw_b: ffi::b2Capsule = capsule_b.into();
+    unsafe {
+        ffi::b2CollideSegmentAndCapsule(&raw_a, transform_a.into(), &raw_b, transform_b.into())
+    }
+    .into()
+}
+
+/// Compute the contact manifold between a polygon and a capsule.
+#[doc(alias = "b2CollidePolygonAndCapsule")]
+pub fn collide_polygon_and_capsule(
+    polygon_a: Polygon,
+    transform_a: Transform,
+    capsule_b: Capsule,
+    transform_b: Transform,
+) -> Manifold {
+    let raw_a: ffi::b2Polygon = polygon_a.into();
+    let raw_b: ffi::b2Capsule = capsule_b.into();
+    unsafe {
+        ffi::b2CollidePolygonAndCapsule(&raw_a, transform_a.into(), &raw_b, transform_b.into())
+    }
+    .into()
+}
+
+/// Compute the contact manifold between two polygons.
+#[doc(alias = "b2CollidePolygons")]
+pub fn collide_polygons(
+    polygon_a: Polygon,
+    transform_a: Transform,
+    polygon_b: Polygon,
+    transform_b: Transform,
+) -> Manifold {
+    let raw_a: ffi::b2Polygon = polygon_a.into();
+    let raw_b: ffi::b2Polygon = polygon_b.into();
+    unsafe { ffi::b2CollidePolygons(&raw_a, transform_a.into(), &raw_b, transform_b.into()) }.into()
+}
+
+/// Compute the contact manifold between a segment and a polygon.
+#[doc(alias = "b2CollideSegmentAndPolygon")]
+pub fn collide_segment_and_polygon(
+    segment_a: Segment,
+    transform_a: Transform,
+    polygon_b: Polygon,
+    transform_b: Transform,
+) -> Manifold {
+    let raw_a: ffi::b2Segment = segment_a.into();
+    let raw_b: ffi::b2Polygon = polygon_b.into();
+    unsafe {
+        ffi::b2CollideSegmentAndPolygon(&raw_a, transform_a.into(), &raw_b, transform_b.into())
+    }
+    .into()
+}
+
+/// Compute the contact manifold between a chain segment and a circle.
+#[doc(alias = "b2CollideChainSegmentAndCircle")]
+pub fn collide_chain_segment_and_circle(
+    segment_a: ChainSegment,
+    transform_a: Transform,
+    circle_b: Circle,
+    transform_b: Transform,
+) -> Manifold {
+    let raw_a: ffi::b2ChainSegment = segment_a.into();
+    let raw_b: ffi::b2Circle = circle_b.into();
+    unsafe {
+        ffi::b2CollideChainSegmentAndCircle(&raw_a, transform_a.into(), &raw_b, transform_b.into())
+    }
+    .into()
+}
+
+/// Compute the contact manifold between a chain segment and a capsule.
+///
+/// Provide `cache` when repeatedly colliding against nearby rounded shapes to
+/// warm-start the internal edge solver.
+#[doc(alias = "b2CollideChainSegmentAndCapsule")]
+pub fn collide_chain_segment_and_capsule(
+    segment_a: ChainSegment,
+    transform_a: Transform,
+    capsule_b: Capsule,
+    transform_b: Transform,
+    cache: Option<&mut SimplexCache>,
+) -> Manifold {
+    let raw_a: ffi::b2ChainSegment = segment_a.into();
+    let raw_b: ffi::b2Capsule = capsule_b.into();
+    let cache_ptr = match cache {
+        Some(cache) => cache.raw_mut(),
+        None => core::ptr::null_mut(),
+    };
+    unsafe {
+        ffi::b2CollideChainSegmentAndCapsule(
+            &raw_a,
+            transform_a.into(),
+            &raw_b,
+            transform_b.into(),
+            cache_ptr,
+        )
+    }
+    .into()
+}
+
+/// Compute the contact manifold between a chain segment and a polygon.
+///
+/// Provide `cache` when repeatedly colliding against nearby rounded polygons to
+/// warm-start the internal edge solver.
+#[doc(alias = "b2CollideChainSegmentAndPolygon")]
+pub fn collide_chain_segment_and_polygon(
+    segment_a: ChainSegment,
+    transform_a: Transform,
+    polygon_b: Polygon,
+    transform_b: Transform,
+    cache: Option<&mut SimplexCache>,
+) -> Manifold {
+    let raw_a: ffi::b2ChainSegment = segment_a.into();
+    let raw_b: ffi::b2Polygon = polygon_b.into();
+    let cache_ptr = match cache {
+        Some(cache) => cache.raw_mut(),
+        None => core::ptr::null_mut(),
+    };
+    unsafe {
+        ffi::b2CollideChainSegmentAndPolygon(
+            &raw_a,
+            transform_a.into(),
+            &raw_b,
+            transform_b.into(),
+            cache_ptr,
+        )
+    }
+    .into()
 }
 
 impl Aabb {

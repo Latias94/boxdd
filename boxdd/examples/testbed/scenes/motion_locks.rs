@@ -31,11 +31,7 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
 
 fn apply_locks(app: &mut super::PhysicsApp) {
     if let Some(bid) = app.ml_body {
-        let locks = boxdd_sys::ffi::b2MotionLocks {
-            linearX: app.ml_lock_x,
-            linearY: app.ml_lock_y,
-            angularZ: app.ml_lock_rot,
-        };
+        let locks = bd::MotionLocks::new(app.ml_lock_x, app.ml_lock_y, app.ml_lock_rot);
         app.world.set_body_motion_locks(bid, locks);
     }
 }

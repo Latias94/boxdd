@@ -18,11 +18,12 @@
 - Safe, ergonomic Rust wrapper over the official Box2D v3 C API.
 - Math interop (features: `mint`/`cgmath`/`nalgebra`/`glam`): any `Into<Vec2>` accepts the corresponding 2D vector/point types, plus arrays/tuples.
 - Two error-handling styles: panic-on-misuse by default, plus `try_*` APIs returning `ApiResult<T>` for recoverable errors.
-- Hot-path query and state-extraction APIs expose `*_into` variants so games can reuse `Vec` buffers across frames instead of reallocating.
+- Hot-path query, debug-draw collection, and state-extraction APIs expose `*_into` variants so games can reuse `Vec` buffers across frames instead of reallocating.
 - Character mover helpers cover the full safe workflow: `cast_mover`, `collide_mover`, `solve_planes`, and `clip_vector`.
-- Standalone collision geometry helpers cover shape proxies, GJK distance, shape cast, TOI, and `Aabb::is_valid` / `Aabb::ray_cast` without raw `ffi`.
-- Shape creation and editing now use crate-owned geometry values: `Circle`, `Segment`, `Capsule`, and `Polygon`.
+- Standalone collision geometry helpers cover shape proxies, GJK distance, contact manifolds, chain-segment manifolds, shape cast, TOI, and `Aabb::is_valid` / `Aabb::ray_cast` without raw `ffi`.
+- Shape creation and editing now use crate-owned geometry values, and chain segments can be inspected through the crate-owned `ChainSegment` type.
 - Shape classification, mass properties, and contact extraction now use crate-owned value types such as `ShapeType`, `MassData`, `ContactData`, and `Manifold`.
+- Body motion constraints use the crate-owned `MotionLocks` type instead of raw Box2D flags.
 - Typed world-level friction and restitution mixing callbacks expose `user_material_id` without dropping to raw `ffi`.
 
 ## Quickstart
@@ -77,7 +78,7 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 
 ## Hot Path APIs
 - Convenience methods like `world.overlap_aabb(...)` and `world.cast_ray_all(...)` still return owned `Vec`s for one-off use.
-- For per-frame hot paths, prefer reusable-buffer variants such as `world.overlap_aabb_into(...)`, `world.cast_ray_all_into(...)`, `shape.sensor_overlaps_into(...)`, `body.contact_data_into(...)`, and `chain.segments_into(...)`.
+- For per-frame hot paths, prefer reusable-buffer variants such as `world.overlap_aabb_into(...)`, `world.cast_ray_all_into(...)`, `world.debug_draw_collect_into(...)`, `shape.sensor_overlaps_into(...)`, `body.contact_data_into(...)`, and `chain.segments_into(...)`.
 - `body.contact_data_into(...)` and `shape.contact_data_into(...)` now fill `Vec<ContactData>`; explicit raw escape hatches are available as `contact_data_into_raw(...)` if you truly need the upstream FFI layout.
 
 ## Character Mover APIs
@@ -88,6 +89,7 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 ## Collision Geometry APIs
 - `boxdd::collision` exposes Box2D's standalone low-level geometry algorithms as safe Rust value types.
 - Use `ShapeProxy`, `SimplexCache`, `DistanceInput`, `ShapeCastPairInput`, `Sweep`, and `ToiInput` with `shape_distance(...)`, `shape_cast(...)`, and `time_of_impact(...)`.
+- Standalone manifold helpers such as `collide_polygons(...)`, `collide_polygon_and_circle(...)`, `collide_segment_and_capsule(...)`, and `collide_chain_segment_and_polygon(...)` now return the safe `Manifold` type.
 - `Aabb::is_valid()` and `Aabb::ray_cast(origin, translation)` now cover common AABB validation and ray-cast needs without reaching for `boxdd_sys::ffi`.
 - These advanced APIs are intentionally not in the prelude, so collision-heavy code can import them explicitly.
 

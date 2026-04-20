@@ -7,8 +7,8 @@
 //! - Ergonomics: builder patterns, world-space helpers, optional `mint` integration.
 //! - Hot-path friendly APIs: keep the convenience `Vec`-returning methods, or reuse caller-owned buffers with `*_into`.
 //! - Character mover helpers: cast movers, collect collision planes, solve planes, and clip velocity without raw FFI.
-//! - Standalone collision geometry helpers: shape proxies, GJK distance, shape cast, TOI, and AABB validation/ray cast.
-//! - Shape geometry uses crate-owned values (`Circle`, `Segment`, `Capsule`, `Polygon`) across helpers, shape editing, and creation.
+//! - Standalone collision geometry helpers: shape proxies, GJK distance, manifolds, shape cast, TOI, and AABB validation/ray cast.
+//! - Shape geometry uses crate-owned values (`Circle`, `Segment`, `ChainSegment`, `Capsule`, `Polygon`) across helpers, shape editing, and creation.
 //! - Core value types such as `ShapeType`, `MassData`, and contact manifolds are crate-owned instead of leaking raw Box2D structs.
 //! - Typed material mixing callbacks for friction and restitution using `user_material_id`.
 //! - Three usage styles:
@@ -204,6 +204,10 @@ pub use body::{Body, BodyBuilder, BodyDef, BodyType};
 pub use collision::{
     CastOutput, DistanceInput, DistanceOutput, MAX_SHAPE_PROXY_POINTS, SegmentDistanceResult,
     ShapeCastPairInput, ShapeProxy, SimplexCache, Sweep, ToiInput, ToiOutput, ToiState,
+    collide_capsule_and_circle, collide_capsules, collide_chain_segment_and_capsule,
+    collide_chain_segment_and_circle, collide_chain_segment_and_polygon, collide_circles,
+    collide_polygon_and_capsule, collide_polygon_and_circle, collide_polygons,
+    collide_segment_and_capsule, collide_segment_and_circle, collide_segment_and_polygon,
     segment_distance, shape_cast, shape_distance, time_of_impact,
 };
 #[cfg(feature = "cgmath")]
@@ -235,12 +239,12 @@ pub use query::{
 };
 pub use shapes::chain::{Chain, ChainDef, ChainDefBuilder, OwnedChain};
 pub use shapes::{
-    Capsule, Circle, MAX_POLYGON_VERTICES, OwnedShape, Polygon, Segment, Shape, ShapeDef,
-    ShapeDefBuilder, ShapeType, SurfaceMaterial,
+    Capsule, ChainSegment, Circle, MAX_POLYGON_VERTICES, OwnedShape, Polygon, Segment, Shape,
+    ShapeDef, ShapeDefBuilder, ShapeType, SurfaceMaterial,
 };
 pub use types::{
-    BodyId, ChainId, ContactData, ContactId, JointId, Manifold, ManifoldPoint, MassData, ShapeId,
-    Vec2,
+    BodyId, ChainId, ContactData, ContactId, JointId, Manifold, ManifoldPoint, MassData,
+    MotionLocks, ShapeId, Vec2,
 };
 pub use world::{
     CallbackWorld, MaterialMixInput, OutstandingOwnedHandles, OwnedHandleCounts, World,

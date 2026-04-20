@@ -12,13 +12,13 @@ pub use crate::{
         clip_vector, solve_planes,
     },
     shapes::{
-        self, Capsule, Circle, MAX_POLYGON_VERTICES, OwnedShape, Polygon, Segment, Shape, ShapeDef,
-        ShapeDefBuilder, ShapeType, SurfaceMaterial,
+        self, Capsule, ChainSegment, Circle, MAX_POLYGON_VERTICES, OwnedShape, Polygon, Segment,
+        Shape, ShapeDef, ShapeDefBuilder, ShapeType, SurfaceMaterial,
         chain::{Chain, ChainDef, ChainDefBuilder, OwnedChain},
     },
     types::{
         BodyId, ChainId, ContactData, ContactId, JointId, Manifold, ManifoldPoint, MassData,
-        ShapeId, Vec2,
+        MotionLocks, ShapeId, Vec2,
     },
     world::Counters,
     {Rot, Transform},

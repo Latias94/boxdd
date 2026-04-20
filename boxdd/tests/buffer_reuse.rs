@@ -200,6 +200,66 @@ fn chain_segments_into_reuses_buffer() {
 }
 
 #[test]
+fn debug_draw_collect_into_reuses_command_and_vertex_buffers() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body = world.create_body_id(BodyBuilder::new().build());
+    let _shape = world.create_polygon_shape_for_owned(
+        body,
+        &ShapeDef::default(),
+        &shapes::box_polygon(0.75, 0.5),
+    );
+
+    let opts = DebugDrawOptions {
+        draw_joints: false,
+        draw_joint_extras: false,
+        draw_bounds: false,
+        draw_mass: false,
+        draw_body_names: false,
+        draw_contacts: false,
+        draw_graph_colors: false,
+        draw_contact_features: false,
+        draw_contact_normals: false,
+        draw_contact_forces: false,
+        draw_friction_forces: false,
+        draw_islands: false,
+        ..DebugDrawOptions::default()
+    };
+
+    let baseline = world.debug_draw_collect(opts);
+    assert!(!baseline.is_empty());
+
+    let mut cmds = Vec::with_capacity(baseline.len() + 4);
+    let cmds_ptr = cmds.as_ptr();
+    world.debug_draw_collect_into(&mut cmds, opts);
+    assert_eq!(cmds.len(), baseline.len());
+    assert_eq!(cmds.as_ptr(), cmds_ptr);
+
+    let vertices_ptr = cmds
+        .iter()
+        .find_map(|cmd| match cmd {
+            DebugDrawCmd::Polygon { vertices, .. }
+            | DebugDrawCmd::SolidPolygon { vertices, .. } => Some(vertices.as_ptr()),
+            _ => None,
+        })
+        .expect("expected a polygon debug draw command");
+
+    world.debug_draw_collect_into(&mut cmds, opts);
+    assert_eq!(cmds.len(), baseline.len());
+    assert_eq!(cmds.as_ptr(), cmds_ptr);
+
+    let reused_vertices_ptr = cmds
+        .iter()
+        .find_map(|cmd| match cmd {
+            DebugDrawCmd::Polygon { vertices, .. }
+            | DebugDrawCmd::SolidPolygon { vertices, .. } => Some(vertices.as_ptr()),
+            _ => None,
+        })
+        .expect("expected a polygon debug draw command");
+
+    assert_eq!(reused_vertices_ptr, vertices_ptr);
+}
+
+#[test]
 fn shape_type_uses_safe_enum_and_explicit_raw_escape_hatch() {
     let mut world = World::new(WorldDef::default()).unwrap();
     let body = world.create_body_id(BodyBuilder::new().build());

@@ -28,11 +28,14 @@
 - [x] Move standalone shape geometry tests to the new safe geometry values.
 - [x] Replace leaked raw value types on hot paths: `ShapeType`, `MassData`, `ContactData`, `Manifold`, and `ManifoldPoint`.
 - [x] Rename raw shape/contact escape hatches explicitly with `*_raw` suffixes.
+- [x] Productize standalone manifold collision helpers for circle/capsule/segment/polygon geometry in `boxdd::collision`.
+- [x] Move the testbed manifold viewer over to the public safe collision API.
+- [x] Replace `ffi::b2MotionLocks` with crate-owned `MotionLocks`.
+- [x] Add a crate-owned `ChainSegment` geometry type and productize chain-segment manifold collision helpers.
+- [x] Add reusable-buffer debug draw command collection and reuse nested polygon/string storage on stable command streams.
 
 ## Next
 
-- [ ] Audit whether debug draw command collection should gain reusable-buffer APIs.
-- [ ] Audit whether standalone manifold collision helpers (`b2Collide*`) should become safe `boxdd::collision` entry points.
 - [ ] Review remaining `World` / `WorldHandle` query duplication and decide whether selective consolidation is worth it.
 - [ ] Audit remaining owned/scoped handle duplication outside the already-refactored hot paths.
 - [ ] Review remaining public raw escape hatches and document which are intentional (`world_id`, raw event slices, debug draw raw paths, etc.).
