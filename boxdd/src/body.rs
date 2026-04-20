@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::core::world_core::WorldCore;
 use crate::error::{ApiError, ApiResult};
-use crate::types::{BodyId, ContactData, MassData, Vec2};
+use crate::types::{BodyId, ContactData, JointId, MassData, ShapeId, Vec2};
 use crate::world::World;
 use boxdd_sys::ffi;
 use std::ffi::{CStr, CString};
@@ -84,6 +84,16 @@ fn body_linear_velocity_impl(id: BodyId) -> Vec2 {
 #[inline]
 fn body_angular_velocity_impl(id: BodyId) -> f32 {
     unsafe { ffi::b2Body_GetAngularVelocity(id) }
+}
+
+#[inline]
+pub(crate) fn body_rotation_raw_impl(id: BodyId) -> ffi::b2Rot {
+    unsafe { ffi::b2Body_GetRotation(id) }
+}
+
+#[inline]
+pub(crate) fn body_rotation_impl(id: BodyId) -> crate::Rot {
+    body_rotation_raw_impl(id).into()
 }
 
 #[inline]
@@ -243,6 +253,62 @@ fn body_apply_mass_from_shapes_impl(id: BodyId) {
 }
 
 #[inline]
+pub(crate) fn body_shape_count_impl(id: BodyId) -> i32 {
+    unsafe { ffi::b2Body_GetShapeCount(id) }
+}
+
+#[inline]
+fn body_shape_capacity(id: BodyId) -> usize {
+    body_shape_count_impl(id).max(0) as usize
+}
+
+#[inline]
+pub(crate) fn body_shapes_into_impl(id: BodyId, out: &mut Vec<ShapeId>) {
+    let cap = body_shape_capacity(id);
+    unsafe {
+        crate::core::ffi_vec::fill_from_ffi(out, cap, |ptr, cap| {
+            ffi::b2Body_GetShapes(id, ptr, cap)
+        });
+    }
+}
+
+#[inline]
+pub(crate) fn body_shapes_impl(id: BodyId) -> Vec<ShapeId> {
+    let cap = body_shape_capacity(id);
+    unsafe {
+        crate::core::ffi_vec::read_from_ffi(cap, |ptr, cap| ffi::b2Body_GetShapes(id, ptr, cap))
+    }
+}
+
+#[inline]
+pub(crate) fn body_joint_count_impl(id: BodyId) -> i32 {
+    unsafe { ffi::b2Body_GetJointCount(id) }
+}
+
+#[inline]
+fn body_joint_capacity(id: BodyId) -> usize {
+    body_joint_count_impl(id).max(0) as usize
+}
+
+#[inline]
+pub(crate) fn body_joints_into_impl(id: BodyId, out: &mut Vec<JointId>) {
+    let cap = body_joint_capacity(id);
+    unsafe {
+        crate::core::ffi_vec::fill_from_ffi(out, cap, |ptr, cap| {
+            ffi::b2Body_GetJoints(id, ptr, cap)
+        });
+    }
+}
+
+#[inline]
+pub(crate) fn body_joints_impl(id: BodyId) -> Vec<JointId> {
+    let cap = body_joint_capacity(id);
+    unsafe {
+        crate::core::ffi_vec::read_from_ffi(cap, |ptr, cap| ffi::b2Body_GetJoints(id, ptr, cap))
+    }
+}
+
+#[inline]
 fn body_type_impl(id: BodyId) -> BodyType {
     BodyType::from_raw(unsafe { ffi::b2Body_GetType(id) })
 }
@@ -283,47 +349,77 @@ fn body_set_angular_damping_impl(id: BodyId, angular_damping: f32) {
 }
 
 #[inline]
-fn body_is_awake_impl(id: BodyId) -> bool {
+pub(crate) fn body_enable_sleep_impl(id: BodyId, enable_sleep: bool) {
+    unsafe { ffi::b2Body_EnableSleep(id, enable_sleep) }
+}
+
+#[inline]
+pub(crate) fn body_is_sleep_enabled_impl(id: BodyId) -> bool {
+    unsafe { ffi::b2Body_IsSleepEnabled(id) }
+}
+
+#[inline]
+pub(crate) fn body_set_sleep_threshold_impl(id: BodyId, sleep_threshold: f32) {
+    unsafe { ffi::b2Body_SetSleepThreshold(id, sleep_threshold) }
+}
+
+#[inline]
+pub(crate) fn body_sleep_threshold_impl(id: BodyId) -> f32 {
+    unsafe { ffi::b2Body_GetSleepThreshold(id) }
+}
+
+#[inline]
+pub(crate) fn body_is_awake_impl(id: BodyId) -> bool {
     unsafe { ffi::b2Body_IsAwake(id) }
 }
 
 #[inline]
-fn body_set_awake_impl(id: BodyId, awake: bool) {
+pub(crate) fn body_set_awake_impl(id: BodyId, awake: bool) {
     unsafe { ffi::b2Body_SetAwake(id, awake) }
 }
 
 #[inline]
-fn body_is_enabled_impl(id: BodyId) -> bool {
+pub(crate) fn body_is_enabled_impl(id: BodyId) -> bool {
     unsafe { ffi::b2Body_IsEnabled(id) }
 }
 
 #[inline]
-fn body_enable_impl(id: BodyId) {
+pub(crate) fn body_enable_impl(id: BodyId) {
     unsafe { ffi::b2Body_Enable(id) }
 }
 
 #[inline]
-fn body_disable_impl(id: BodyId) {
+pub(crate) fn body_disable_impl(id: BodyId) {
     unsafe { ffi::b2Body_Disable(id) }
 }
 
 #[inline]
-fn body_is_bullet_impl(id: BodyId) -> bool {
+pub(crate) fn body_is_bullet_impl(id: BodyId) -> bool {
     unsafe { ffi::b2Body_IsBullet(id) }
 }
 
 #[inline]
-fn body_set_bullet_impl(id: BodyId, bullet: bool) {
+pub(crate) fn body_set_bullet_impl(id: BodyId, bullet: bool) {
     unsafe { ffi::b2Body_SetBullet(id, bullet) }
 }
 
 #[inline]
-fn body_set_name_impl(id: BodyId, name: &CStr) {
+pub(crate) fn body_enable_contact_events_impl(id: BodyId, flag: bool) {
+    unsafe { ffi::b2Body_EnableContactEvents(id, flag) }
+}
+
+#[inline]
+pub(crate) fn body_enable_hit_events_impl(id: BodyId, flag: bool) {
+    unsafe { ffi::b2Body_EnableHitEvents(id, flag) }
+}
+
+#[inline]
+pub(crate) fn body_set_name_impl(id: BodyId, name: &CStr) {
     unsafe { ffi::b2Body_SetName(id, name.as_ptr()) }
 }
 
 #[inline]
-fn body_name_impl(id: BodyId) -> Option<String> {
+pub(crate) fn body_name_impl(id: BodyId) -> Option<String> {
     let name_ptr = unsafe { ffi::b2Body_GetName(id) };
     if name_ptr.is_null() {
         None
@@ -460,6 +556,26 @@ impl OwnedBody {
     pub fn try_angular_velocity(&self) -> ApiResult<f32> {
         self.check_valid()?;
         Ok(body_angular_velocity_impl(self.id))
+    }
+
+    pub fn rotation(&self) -> crate::Rot {
+        self.assert_valid();
+        body_rotation_impl(self.id)
+    }
+
+    pub fn try_rotation(&self) -> ApiResult<crate::Rot> {
+        self.check_valid()?;
+        Ok(body_rotation_impl(self.id))
+    }
+
+    pub fn rotation_raw(&self) -> ffi::b2Rot {
+        self.assert_valid();
+        body_rotation_raw_impl(self.id)
+    }
+
+    pub fn try_rotation_raw(&self) -> ApiResult<ffi::b2Rot> {
+        self.check_valid()?;
+        Ok(body_rotation_raw_impl(self.id))
     }
 
     pub fn transform(&self) -> crate::Transform {
@@ -764,6 +880,68 @@ impl OwnedBody {
         Ok(())
     }
 
+    pub fn shape_count(&self) -> i32 {
+        self.assert_valid();
+        body_shape_count_impl(self.id)
+    }
+
+    pub fn try_shape_count(&self) -> ApiResult<i32> {
+        self.check_valid()?;
+        Ok(body_shape_count_impl(self.id))
+    }
+
+    pub fn shapes(&self) -> Vec<ShapeId> {
+        self.assert_valid();
+        body_shapes_impl(self.id)
+    }
+
+    pub fn shapes_into(&self, out: &mut Vec<ShapeId>) {
+        self.assert_valid();
+        body_shapes_into_impl(self.id, out);
+    }
+
+    pub fn try_shapes(&self) -> ApiResult<Vec<ShapeId>> {
+        self.check_valid()?;
+        Ok(body_shapes_impl(self.id))
+    }
+
+    pub fn try_shapes_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
+        self.check_valid()?;
+        body_shapes_into_impl(self.id, out);
+        Ok(())
+    }
+
+    pub fn joint_count(&self) -> i32 {
+        self.assert_valid();
+        body_joint_count_impl(self.id)
+    }
+
+    pub fn try_joint_count(&self) -> ApiResult<i32> {
+        self.check_valid()?;
+        Ok(body_joint_count_impl(self.id))
+    }
+
+    pub fn joints(&self) -> Vec<JointId> {
+        self.assert_valid();
+        body_joints_impl(self.id)
+    }
+
+    pub fn joints_into(&self, out: &mut Vec<JointId>) {
+        self.assert_valid();
+        body_joints_into_impl(self.id, out);
+    }
+
+    pub fn try_joints(&self) -> ApiResult<Vec<JointId>> {
+        self.check_valid()?;
+        Ok(body_joints_impl(self.id))
+    }
+
+    pub fn try_joints_into(&self, out: &mut Vec<JointId>) -> ApiResult<()> {
+        self.check_valid()?;
+        body_joints_into_impl(self.id, out);
+        Ok(())
+    }
+
     pub fn body_type(&self) -> BodyType {
         self.assert_valid();
         body_type_impl(self.id)
@@ -838,6 +1016,48 @@ impl OwnedBody {
         Ok(())
     }
 
+    pub fn enable_sleep(&mut self, flag: bool) {
+        self.assert_valid();
+        body_enable_sleep_impl(self.id, flag)
+    }
+
+    pub fn try_enable_sleep(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        body_enable_sleep_impl(self.id, flag);
+        Ok(())
+    }
+
+    pub fn is_sleep_enabled(&self) -> bool {
+        self.assert_valid();
+        body_is_sleep_enabled_impl(self.id)
+    }
+
+    pub fn try_is_sleep_enabled(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(body_is_sleep_enabled_impl(self.id))
+    }
+
+    pub fn set_sleep_threshold(&mut self, sleep_threshold: f32) {
+        self.assert_valid();
+        body_set_sleep_threshold_impl(self.id, sleep_threshold)
+    }
+
+    pub fn try_set_sleep_threshold(&mut self, sleep_threshold: f32) -> ApiResult<()> {
+        self.check_valid()?;
+        body_set_sleep_threshold_impl(self.id, sleep_threshold);
+        Ok(())
+    }
+
+    pub fn sleep_threshold(&self) -> f32 {
+        self.assert_valid();
+        body_sleep_threshold_impl(self.id)
+    }
+
+    pub fn try_sleep_threshold(&self) -> ApiResult<f32> {
+        self.check_valid()?;
+        Ok(body_sleep_threshold_impl(self.id))
+    }
+
     pub fn is_awake(&self) -> bool {
         self.assert_valid();
         body_is_awake_impl(self.id)
@@ -899,6 +1119,28 @@ impl OwnedBody {
     pub fn try_set_bullet(&mut self, flag: bool) -> ApiResult<()> {
         self.check_valid()?;
         body_set_bullet_impl(self.id, flag);
+        Ok(())
+    }
+
+    pub fn enable_contact_events(&mut self, flag: bool) {
+        self.assert_valid();
+        body_enable_contact_events_impl(self.id, flag)
+    }
+
+    pub fn try_enable_contact_events(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        body_enable_contact_events_impl(self.id, flag);
+        Ok(())
+    }
+
+    pub fn enable_hit_events(&mut self, flag: bool) {
+        self.assert_valid();
+        body_enable_hit_events_impl(self.id, flag)
+    }
+
+    pub fn try_enable_hit_events(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        body_enable_hit_events_impl(self.id, flag);
         Ok(())
     }
 
@@ -1420,6 +1662,26 @@ impl<'w> Body<'w> {
         Ok(body_angular_velocity_impl(self.id))
     }
 
+    pub fn rotation(&self) -> crate::Rot {
+        self.assert_valid();
+        body_rotation_impl(self.id)
+    }
+
+    pub fn try_rotation(&self) -> ApiResult<crate::Rot> {
+        self.check_valid()?;
+        Ok(body_rotation_impl(self.id))
+    }
+
+    pub fn rotation_raw(&self) -> ffi::b2Rot {
+        self.assert_valid();
+        body_rotation_raw_impl(self.id)
+    }
+
+    pub fn try_rotation_raw(&self) -> ApiResult<ffi::b2Rot> {
+        self.check_valid()?;
+        Ok(body_rotation_raw_impl(self.id))
+    }
+
     pub fn transform(&self) -> crate::Transform {
         self.assert_valid();
         body_transform_impl(self.id)
@@ -1754,6 +2016,68 @@ impl<'w> Body<'w> {
         Ok(())
     }
 
+    pub fn shape_count(&self) -> i32 {
+        self.assert_valid();
+        body_shape_count_impl(self.id)
+    }
+
+    pub fn try_shape_count(&self) -> ApiResult<i32> {
+        self.check_valid()?;
+        Ok(body_shape_count_impl(self.id))
+    }
+
+    pub fn shapes(&self) -> Vec<ShapeId> {
+        self.assert_valid();
+        body_shapes_impl(self.id)
+    }
+
+    pub fn shapes_into(&self, out: &mut Vec<ShapeId>) {
+        self.assert_valid();
+        body_shapes_into_impl(self.id, out);
+    }
+
+    pub fn try_shapes(&self) -> ApiResult<Vec<ShapeId>> {
+        self.check_valid()?;
+        Ok(body_shapes_impl(self.id))
+    }
+
+    pub fn try_shapes_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
+        self.check_valid()?;
+        body_shapes_into_impl(self.id, out);
+        Ok(())
+    }
+
+    pub fn joint_count(&self) -> i32 {
+        self.assert_valid();
+        body_joint_count_impl(self.id)
+    }
+
+    pub fn try_joint_count(&self) -> ApiResult<i32> {
+        self.check_valid()?;
+        Ok(body_joint_count_impl(self.id))
+    }
+
+    pub fn joints(&self) -> Vec<JointId> {
+        self.assert_valid();
+        body_joints_impl(self.id)
+    }
+
+    pub fn joints_into(&self, out: &mut Vec<JointId>) {
+        self.assert_valid();
+        body_joints_into_impl(self.id, out);
+    }
+
+    pub fn try_joints(&self) -> ApiResult<Vec<JointId>> {
+        self.check_valid()?;
+        Ok(body_joints_impl(self.id))
+    }
+
+    pub fn try_joints_into(&self, out: &mut Vec<JointId>) -> ApiResult<()> {
+        self.check_valid()?;
+        body_joints_into_impl(self.id, out);
+        Ok(())
+    }
+
     pub fn body_type(&self) -> BodyType {
         self.assert_valid();
         body_type_impl(self.id)
@@ -1829,6 +2153,48 @@ impl<'w> Body<'w> {
         Ok(())
     }
 
+    pub fn enable_sleep(&mut self, flag: bool) {
+        self.assert_valid();
+        body_enable_sleep_impl(self.id, flag)
+    }
+
+    pub fn try_enable_sleep(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        body_enable_sleep_impl(self.id, flag);
+        Ok(())
+    }
+
+    pub fn is_sleep_enabled(&self) -> bool {
+        self.assert_valid();
+        body_is_sleep_enabled_impl(self.id)
+    }
+
+    pub fn try_is_sleep_enabled(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(body_is_sleep_enabled_impl(self.id))
+    }
+
+    pub fn set_sleep_threshold(&mut self, sleep_threshold: f32) {
+        self.assert_valid();
+        body_set_sleep_threshold_impl(self.id, sleep_threshold)
+    }
+
+    pub fn try_set_sleep_threshold(&mut self, sleep_threshold: f32) -> ApiResult<()> {
+        self.check_valid()?;
+        body_set_sleep_threshold_impl(self.id, sleep_threshold);
+        Ok(())
+    }
+
+    pub fn sleep_threshold(&self) -> f32 {
+        self.assert_valid();
+        body_sleep_threshold_impl(self.id)
+    }
+
+    pub fn try_sleep_threshold(&self) -> ApiResult<f32> {
+        self.check_valid()?;
+        Ok(body_sleep_threshold_impl(self.id))
+    }
+
     pub fn is_awake(&self) -> bool {
         self.assert_valid();
         body_is_awake_impl(self.id)
@@ -1896,6 +2262,28 @@ impl<'w> Body<'w> {
     pub fn try_set_bullet(&mut self, flag: bool) -> ApiResult<()> {
         self.check_valid()?;
         body_set_bullet_impl(self.id, flag);
+        Ok(())
+    }
+
+    pub fn enable_contact_events(&mut self, flag: bool) {
+        self.assert_valid();
+        body_enable_contact_events_impl(self.id, flag)
+    }
+
+    pub fn try_enable_contact_events(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        body_enable_contact_events_impl(self.id, flag);
+        Ok(())
+    }
+
+    pub fn enable_hit_events(&mut self, flag: bool) {
+        self.assert_valid();
+        body_enable_hit_events_impl(self.id, flag)
+    }
+
+    pub fn try_enable_hit_events(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        body_enable_hit_events_impl(self.id, flag);
         Ok(())
     }
 

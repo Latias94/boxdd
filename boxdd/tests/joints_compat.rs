@@ -1,5 +1,4 @@
 use boxdd::{prelude::*, shapes};
-use boxdd_sys::ffi;
 
 #[test]
 fn revolute_and_prismatic_limits_smoke() {
@@ -38,11 +37,11 @@ fn revolute_and_prismatic_limits_smoke() {
         world.step(1.0 / 60.0, 4);
     }
 
-    // Check revolute angle within limits via FFI getter (compat smoke)
-    let ang = unsafe { ffi::b2RevoluteJoint_GetAngle(rjid) };
+    // Check revolute angle within limits via safe getter.
+    let ang = world.revolute_angle(rjid);
     assert!(ang <= 15.0_f32.to_radians() + 1e-3 && ang >= -15.0_f32.to_radians() - 1e-3);
 
-    // Check prismatic translation within limits via FFI getter
-    let trans = unsafe { ffi::b2PrismaticJoint_GetTranslation(pjid) };
+    // Check prismatic translation within limits via safe getter.
+    let trans = world.prismatic_translation(pjid);
     assert!(trans.is_finite());
 }

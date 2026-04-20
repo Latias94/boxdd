@@ -247,6 +247,148 @@ fn try_owned_body_mutation_invalid_id_returns_err() {
 }
 
 #[test]
+fn try_body_runtime_helpers_invalid_id_returns_err() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let mut body = world.create_body_owned(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+    let body_id = body.id();
+    world.destroy_body_id(body_id);
+
+    let mut shape_ids = Vec::new();
+    let mut joint_ids = Vec::new();
+
+    assert_eq!(body.try_rotation().unwrap_err(), ApiError::InvalidBodyId);
+    assert_eq!(
+        body.try_rotation_raw().unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        body.try_is_sleep_enabled().unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        body.try_sleep_threshold().unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        body.try_set_sleep_threshold(0.5).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(body.try_is_awake().unwrap_err(), ApiError::InvalidBodyId);
+    assert_eq!(
+        body.try_set_awake(false).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(body.try_is_enabled().unwrap_err(), ApiError::InvalidBodyId);
+    assert_eq!(body.try_enable().unwrap_err(), ApiError::InvalidBodyId);
+    assert_eq!(body.try_disable().unwrap_err(), ApiError::InvalidBodyId);
+    assert_eq!(body.try_is_bullet().unwrap_err(), ApiError::InvalidBodyId);
+    assert_eq!(
+        body.try_set_bullet(true).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(body.try_name().unwrap_err(), ApiError::InvalidBodyId);
+    assert_eq!(body.try_shape_count().unwrap_err(), ApiError::InvalidBodyId);
+    assert_eq!(
+        body.try_shapes_into(&mut shape_ids).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(body.try_joint_count().unwrap_err(), ApiError::InvalidBodyId);
+    assert_eq!(
+        body.try_joints_into(&mut joint_ids).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        body.try_enable_contact_events(true).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        body.try_enable_hit_events(true).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+
+    assert_eq!(
+        world.try_body_rotation(body_id).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        world.try_body_is_sleep_enabled(body_id).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        world.try_body_sleep_threshold(body_id).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        world.try_body_is_awake(body_id).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        world.try_set_body_awake(body_id, false).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        world.try_body_is_enabled(body_id).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        world.try_enable_body(body_id).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        world.try_disable_body(body_id).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        world.try_body_is_bullet(body_id).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        world.try_set_body_bullet(body_id, true).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        world.try_body_name(body_id).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        world
+            .try_set_body_sleep_threshold(body_id, 0.5)
+            .unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        world.try_body_shape_count(body_id).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        world
+            .try_body_shapes_into(body_id, &mut shape_ids)
+            .unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        world.try_body_joint_count(body_id).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        world
+            .try_body_joints_into(body_id, &mut joint_ids)
+            .unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        world
+            .try_body_enable_contact_events(body_id, true)
+            .unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        world.try_body_enable_hit_events(body_id, true).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+}
+
+#[test]
 fn try_set_body_target_transform_invalid_id_returns_err() {
     let mut world = World::new(WorldDef::default()).unwrap();
     let body = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
@@ -283,6 +425,75 @@ fn try_owned_shape_mutation_invalid_id_returns_err() {
 }
 
 #[test]
+fn try_shape_runtime_helpers_invalid_id_returns_err() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body_id = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+    let sdef = ShapeDef::builder().density(1.0).build();
+    let circle = shapes::circle([0.0_f32, 0.0], 0.5);
+    let mut shape = world.create_circle_shape_for_owned(body_id, &sdef, &circle);
+    let shape_id = shape.id();
+    world.destroy_shape_id(shape_id, true);
+
+    assert_eq!(shape.try_aabb().unwrap_err(), ApiError::InvalidShapeId);
+    assert_eq!(
+        shape.try_test_point([0.0_f32, 0.0]).unwrap_err(),
+        ApiError::InvalidShapeId
+    );
+    assert_eq!(
+        shape.try_ray_cast([-1.0_f32, 0.0], [2.0, 0.0]).unwrap_err(),
+        ApiError::InvalidShapeId
+    );
+    assert_eq!(shape.try_mass_data().unwrap_err(), ApiError::InvalidShapeId);
+    assert_eq!(
+        shape.try_sensor_events_enabled().unwrap_err(),
+        ApiError::InvalidShapeId
+    );
+    assert_eq!(
+        shape.try_enable_contact_events(true).unwrap_err(),
+        ApiError::InvalidShapeId
+    );
+    assert_eq!(
+        shape.try_sensor_overlaps_valid().unwrap_err(),
+        ApiError::InvalidShapeId
+    );
+
+    assert_eq!(
+        world.try_shape_aabb(shape_id).unwrap_err(),
+        ApiError::InvalidShapeId
+    );
+    assert_eq!(
+        world
+            .try_shape_test_point(shape_id, [0.0_f32, 0.0])
+            .unwrap_err(),
+        ApiError::InvalidShapeId
+    );
+    assert_eq!(
+        world
+            .try_shape_ray_cast(shape_id, [-1.0_f32, 0.0], [2.0, 0.0])
+            .unwrap_err(),
+        ApiError::InvalidShapeId
+    );
+    assert_eq!(
+        world.try_shape_mass_data(shape_id).unwrap_err(),
+        ApiError::InvalidShapeId
+    );
+    assert_eq!(
+        world.try_shape_sensor_events_enabled(shape_id).unwrap_err(),
+        ApiError::InvalidShapeId
+    );
+    assert_eq!(
+        world
+            .try_shape_enable_contact_events(shape_id, true)
+            .unwrap_err(),
+        ApiError::InvalidShapeId
+    );
+    assert_eq!(
+        world.try_shape_sensor_overlaps_valid(shape_id).unwrap_err(),
+        ApiError::InvalidShapeId
+    );
+}
+
+#[test]
 fn try_owned_chain_mutation_invalid_id_returns_err() {
     let mut world = World::new(WorldDef::default()).unwrap();
     let body_id = world.create_body_id(BodyBuilder::new().build());
@@ -313,6 +524,115 @@ fn try_owned_joint_mutation_invalid_id_returns_err() {
 }
 
 #[test]
+fn try_joint_runtime_helpers_invalid_id_returns_err() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let a = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+    let b = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+    let mut joint = world.create_distance_joint_owned(
+        &DistanceJointDef::new(
+            JointBaseBuilder::new()
+                .bodies_by_id(a, b)
+                .constraint_hertz(2.0)
+                .constraint_damping_ratio(0.3)
+                .build(),
+        )
+        .length(1.0),
+    );
+    let joint_id = joint.id();
+    world.destroy_joint_id(joint_id, true);
+
+    assert_eq!(
+        joint.try_joint_type().unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        joint.try_joint_type_raw().unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(joint.try_body_a_id().unwrap_err(), ApiError::InvalidJointId);
+    assert_eq!(joint.try_body_b_id().unwrap_err(), ApiError::InvalidJointId);
+    assert_eq!(
+        joint.try_collide_connected().unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        joint.try_set_collide_connected(true).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        joint.try_constraint_tuning().unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        joint
+            .try_set_constraint_tuning(ConstraintTuning::new(4.0, 0.5))
+            .unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        joint.try_local_frame_a().unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        joint.try_local_frame_b().unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        joint.try_wake_bodies().unwrap_err(),
+        ApiError::InvalidJointId
+    );
+
+    assert_eq!(
+        world.try_joint_type(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        world.try_joint_type_raw(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        world.try_joint_body_a_id(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        world.try_joint_body_b_id(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        world.try_joint_collide_connected(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        world
+            .try_set_joint_collide_connected(joint_id, true)
+            .unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        world.try_joint_constraint_tuning(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        world
+            .try_set_joint_constraint_tuning(joint_id, ConstraintTuning::new(4.0, 0.5))
+            .unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        world.try_joint_local_frame_a(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        world.try_joint_local_frame_b(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        world.try_joint_wake_bodies(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+}
+
+#[test]
 fn try_joint_runtime_controls_invalid_id_returns_err() {
     let mut world = World::new(WorldDef::default()).unwrap();
     let a = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
@@ -322,6 +642,47 @@ fn try_joint_runtime_controls_invalid_id_returns_err() {
 
     let err = world.try_revolute_set_motor_speed(j, 1.0).unwrap_err();
     assert_eq!(err, ApiError::InvalidJointId);
+}
+
+#[test]
+fn try_joint_runtime_controls_wrong_family_returns_err() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let a = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+    let b = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+    let mut joint = world
+        .revolute(a, b)
+        .anchor_world([0.0_f32, 0.0])
+        .build_owned();
+    let joint_id = joint.id();
+
+    assert_eq!(
+        world.try_distance_length(joint_id).unwrap_err(),
+        ApiError::InvalidJointType
+    );
+    assert_eq!(
+        world.try_distance_set_length(joint_id, 1.0).unwrap_err(),
+        ApiError::InvalidJointType
+    );
+    assert_eq!(
+        joint.try_distance_length().unwrap_err(),
+        ApiError::InvalidJointType
+    );
+    assert_eq!(
+        joint.try_distance_set_length(1.0).unwrap_err(),
+        ApiError::InvalidJointType
+    );
+
+    {
+        let mut scoped = world.joint(joint_id).expect("joint should still be valid");
+        assert_eq!(
+            scoped.try_distance_length().unwrap_err(),
+            ApiError::InvalidJointType
+        );
+        assert_eq!(
+            scoped.try_distance_set_length(1.0).unwrap_err(),
+            ApiError::InvalidJointType
+        );
+    }
 }
 
 #[test]

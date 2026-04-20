@@ -12,6 +12,11 @@
 - [x] Document the threading / async model around `worker_count`, worker-thread callbacks, and dedicated physics-thread usage.
 - [x] Align crate docs / README error-handling guidance around panic-by-default vs `try_*`.
 - [x] Add a dedicated physics-thread example to demonstrate the recommended multi-thread integration pattern.
+- [x] Productize live shape runtime wrappers for AABB, point tests, ray casts, computed mass data, runtime event toggles, and the missing `try_sensor_overlaps_valid` symmetry.
+- [x] Productize the body runtime completeness slice: rotation, sleep/awake/enabled/bullet/name controls, attached `shapes/joints` enumeration with reusable buffers, and body-level contact/hit event toggles.
+- [x] Productize the first joint runtime completeness slice: joint type/body ids, `collide_connected`, constraint tuning, local frames, and wake helpers across `Joint`, `OwnedJoint`, and `World::joint_*`.
+- [x] Fix world-space joint builders so runtime-computed body ids/local frames preserve previously configured base flags such as `collide_connected`.
+- [x] Productize the type-specific joint runtime completeness slice: distance/prismatic/revolute/weld/wheel/motor getters/setters across `Joint`, `OwnedJoint`, and `World`, and return `ApiError::InvalidJointType` for wrong-family `try_*` calls.
 
 ## In Progress
 

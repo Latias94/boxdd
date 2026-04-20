@@ -2,7 +2,7 @@ use crate::types::BodyId;
 use crate::world::World;
 use boxdd_sys::ffi;
 
-use super::{Joint, JointBase, JointBaseBuilder, OwnedJoint};
+use super::{Joint, JointBase, OwnedJoint};
 use crate::error::ApiResult;
 
 // Weld joint
@@ -94,20 +94,16 @@ impl<'w> WeldJointBuilder<'w> {
         let aw = self.anchor_world.unwrap_or(ta.p);
         let la = crate::core::math::world_to_local_point(ta, aw);
         let lb = crate::core::math::world_to_local_point(tb, aw);
-        let base = JointBaseBuilder::new()
-            .bodies_by_id(self.body_a, self.body_b)
-            .local_frames_raw(
-                ffi::b2Transform {
-                    p: la,
-                    q: ffi::b2Rot { c: 1.0, s: 0.0 },
-                },
-                ffi::b2Transform {
-                    p: lb,
-                    q: ffi::b2Rot { c: 1.0, s: 0.0 },
-                },
-            )
-            .build();
-        self.def.0.base = base.0;
+        self.def.0.base.bodyIdA = self.body_a;
+        self.def.0.base.bodyIdB = self.body_b;
+        self.def.0.base.localFrameA = ffi::b2Transform {
+            p: la,
+            q: ffi::b2Rot { c: 1.0, s: 0.0 },
+        };
+        self.def.0.base.localFrameB = ffi::b2Transform {
+            p: lb,
+            q: ffi::b2Rot { c: 1.0, s: 0.0 },
+        };
         self.world.create_weld_joint(&self.def)
     }
 
@@ -119,20 +115,16 @@ impl<'w> WeldJointBuilder<'w> {
         let aw = self.anchor_world.unwrap_or(ta.p);
         let la = crate::core::math::world_to_local_point(ta, aw);
         let lb = crate::core::math::world_to_local_point(tb, aw);
-        let base = JointBaseBuilder::new()
-            .bodies_by_id(self.body_a, self.body_b)
-            .local_frames_raw(
-                ffi::b2Transform {
-                    p: la,
-                    q: ffi::b2Rot { c: 1.0, s: 0.0 },
-                },
-                ffi::b2Transform {
-                    p: lb,
-                    q: ffi::b2Rot { c: 1.0, s: 0.0 },
-                },
-            )
-            .build();
-        self.def.0.base = base.0;
+        self.def.0.base.bodyIdA = self.body_a;
+        self.def.0.base.bodyIdB = self.body_b;
+        self.def.0.base.localFrameA = ffi::b2Transform {
+            p: la,
+            q: ffi::b2Rot { c: 1.0, s: 0.0 },
+        };
+        self.def.0.base.localFrameB = ffi::b2Transform {
+            p: lb,
+            q: ffi::b2Rot { c: 1.0, s: 0.0 },
+        };
         self.world.try_create_weld_joint(&self.def)
     }
 
@@ -145,20 +137,16 @@ impl<'w> WeldJointBuilder<'w> {
         let aw = self.anchor_world.unwrap_or(ta.p);
         let la = crate::core::math::world_to_local_point(ta, aw);
         let lb = crate::core::math::world_to_local_point(tb, aw);
-        let base = JointBaseBuilder::new()
-            .bodies_by_id(self.body_a, self.body_b)
-            .local_frames_raw(
-                ffi::b2Transform {
-                    p: la,
-                    q: ffi::b2Rot { c: 1.0, s: 0.0 },
-                },
-                ffi::b2Transform {
-                    p: lb,
-                    q: ffi::b2Rot { c: 1.0, s: 0.0 },
-                },
-            )
-            .build();
-        self.def.0.base = base.0;
+        self.def.0.base.bodyIdA = self.body_a;
+        self.def.0.base.bodyIdB = self.body_b;
+        self.def.0.base.localFrameA = ffi::b2Transform {
+            p: la,
+            q: ffi::b2Rot { c: 1.0, s: 0.0 },
+        };
+        self.def.0.base.localFrameB = ffi::b2Transform {
+            p: lb,
+            q: ffi::b2Rot { c: 1.0, s: 0.0 },
+        };
         self.world.create_weld_joint_owned(&self.def)
     }
 
@@ -170,20 +158,16 @@ impl<'w> WeldJointBuilder<'w> {
         let aw = self.anchor_world.unwrap_or(ta.p);
         let la = crate::core::math::world_to_local_point(ta, aw);
         let lb = crate::core::math::world_to_local_point(tb, aw);
-        let base = JointBaseBuilder::new()
-            .bodies_by_id(self.body_a, self.body_b)
-            .local_frames_raw(
-                ffi::b2Transform {
-                    p: la,
-                    q: ffi::b2Rot { c: 1.0, s: 0.0 },
-                },
-                ffi::b2Transform {
-                    p: lb,
-                    q: ffi::b2Rot { c: 1.0, s: 0.0 },
-                },
-            )
-            .build();
-        self.def.0.base = base.0;
+        self.def.0.base.bodyIdA = self.body_a;
+        self.def.0.base.bodyIdB = self.body_b;
+        self.def.0.base.localFrameA = ffi::b2Transform {
+            p: la,
+            q: ffi::b2Rot { c: 1.0, s: 0.0 },
+        };
+        self.def.0.base.localFrameB = ffi::b2Transform {
+            p: lb,
+            q: ffi::b2Rot { c: 1.0, s: 0.0 },
+        };
         self.world.try_create_weld_joint_owned(&self.def)
     }
 }

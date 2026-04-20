@@ -25,6 +25,8 @@ pub enum ApiError {
     InvalidShapeId,
     #[error("invalid JointId")]
     InvalidJointId,
+    #[error("invalid joint type for this API")]
+    InvalidJointType,
     #[error("invalid ChainId")]
     InvalidChainId,
 

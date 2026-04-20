@@ -23,6 +23,9 @@
 - Character mover helpers cover the full safe workflow: `cast_mover`, `collide_mover`, `solve_planes`, and `clip_vector`.
 - Standalone collision geometry helpers cover shape proxies, GJK distance, contact manifolds, chain-segment manifolds, shape cast, TOI, and `Aabb::is_valid` / `Aabb::ray_cast` without raw `ffi`.
 - Shape creation and editing now use crate-owned geometry values, and chain segments can be inspected through the crate-owned `ChainSegment` type.
+- Live shape runtime helpers now cover `aabb`, `test_point`, direct `ray_cast`, computed `mass_data`, and runtime event toggles without raw `ffi`.
+- Body runtime helpers now cover `rotation`, sleep/awake/enabled/bullet/name controls, attached `shapes/joints` enumeration, and body-level contact/hit event toggles.
+- Joint runtime helpers now cover both common metadata/control and type-specific distance/prismatic/revolute/weld/wheel/motor state across owned/scoped/id-style APIs.
 - Shape classification, mass properties, and contact extraction now use crate-owned value types such as `ShapeType`, `MassData`, `ContactData`, and `Manifold`.
 - Body motion constraints use the crate-owned `MotionLocks` type instead of raw Box2D flags.
 - Crate-owned `MassData` and `MotionLocks` cross the FFI boundary explicitly via `from_raw(...)` / `into_raw()` when raw interop is still needed.
@@ -63,7 +66,7 @@ world.step(1.0/60.0, 4);
 ## Error Handling
 - The default safe APIs panic on misuse such as stale ids or calling Box2D while the world is locked in a callback. This keeps the common path terse and avoids Rust-level UB.
 - At engine/runtime boundaries, prefer `try_*` APIs and handle `ApiError` explicitly.
-- `ApiError` covers stale ids, callback-locked access, invalid chain defs, interior NUL strings, typed user-data mismatches, and material-callback slot exhaustion.
+- `ApiError` covers stale ids, callback-locked access, invalid typed-joint family use, invalid chain defs, interior NUL strings, typed user-data mismatches, and material-callback slot exhaustion.
 
 ## Snapshots
 - Enable `serialize` and see example `examples/scene_serialize.rs` for a minimal scene round-trip.
@@ -98,7 +101,7 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 
 ## Hot Path APIs
 - Convenience methods like `world.overlap_aabb(...)` and `world.cast_ray_all(...)` still return owned `Vec`s for one-off use.
-- For per-frame hot paths, prefer reusable-buffer variants such as `world.overlap_aabb_into(...)`, `world.cast_ray_all_into(...)`, `world.debug_draw_collect_into(...)`, `shape.sensor_overlaps_into(...)`, `body.contact_data_into(...)`, and `chain.segments_into(...)`.
+- For per-frame hot paths, prefer reusable-buffer variants such as `world.overlap_aabb_into(...)`, `world.cast_ray_all_into(...)`, `world.debug_draw_collect_into(...)`, `shape.sensor_overlaps_into(...)`, `body.contact_data_into(...)`, `body.shapes_into(...)`, `body.joints_into(...)`, and `chain.segments_into(...)`.
 - `body.contact_data_into(...)` and `shape.contact_data_into(...)` now fill `Vec<ContactData>`; explicit raw escape hatches are available as `contact_data_into_raw(...)` if you truly need the upstream FFI layout.
 
 ## Character Mover APIs
@@ -117,9 +120,17 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 - `boxdd::shapes::circle`, `segment`, `capsule`, `box_polygon`, and `polygon_from_points` return safe geometry value types instead of raw Box2D structs.
 - `Shape::circle()` / `segment()` / `capsule()` / `polygon()` and the corresponding setters now use the same geometry types as world/body creation APIs.
 - `Circle`, `Capsule`, and `Polygon` expose standalone helpers such as `mass_data(...)`, `aabb(...)`, `contains_point(...)`, and `ray_cast(...)` for world-free geometry work.
+- Live `Shape` / `OwnedShape` / `World::shape_*` APIs now also cover runtime `aabb`, `test_point`, `ray_cast`, `mass_data`, and event-toggle state.
 - Raw geometry conversion is explicit on the crate-owned geometry types: use `from_raw(...)` / `into_raw()` when you intentionally cross the FFI boundary.
 - `ShapeDefBuilder::filter(...)` and `ChainDef::builder().filter(...)` now take the safe `Filter` type; explicit raw escape hatches are named `filter_raw(...)`.
 - `Filter` also uses explicit raw conversion via `from_raw(...)` / `into_raw()` instead of implicit `From<ffi::b2Filter>` conversions.
+
+## Joint Runtime APIs
+- `Joint`, `OwnedJoint`, and `World::joint_*` now stay aligned for common runtime metadata and control: joint type, connected body ids, `collide_connected`, constraint tuning, local frames, and wake helpers.
+- Type-specific runtime getters/setters for distance, prismatic, revolute, weld, wheel, and motor joints are now aligned across `World`, `OwnedJoint`, and scoped `Joint<'_>` handles.
+- `JointType` and `ConstraintTuning` are crate-owned value types; raw access stays explicit through `joint_type_raw` and `JointType::from_raw(...)` / `into_raw()`.
+- `try_*` typed joint APIs now return `ApiError::InvalidJointType` when a valid joint is used through the wrong family surface.
+- World-space joint builders now preserve previously configured base flags such as `collide_connected` while populating runtime-computed body ids and local frames.
 
 ## Material Mixing Callbacks
 - `world.set_friction_callback(...)` and `world.set_restitution_callback(...)` expose Box2D's material mixing hooks as safe typed closures.

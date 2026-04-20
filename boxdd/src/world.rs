@@ -1,6 +1,8 @@
 use crate::Transform;
 use crate::body::{Body, BodyDef, BodyType};
+use crate::collision::CastOutput;
 use crate::core::world_core::{CustomFilterCtx, MaterialMixCtx, PreSolveCtx, WorldCore};
+use crate::query::Aabb;
 use crate::shapes::{ShapeDef, SurfaceMaterial};
 use crate::types::{BodyId, ChainId, JointId, MassData, MotionLocks, ShapeId, Vec2};
 use boxdd_sys::ffi;
@@ -34,39 +36,6 @@ impl MaterialMixInput {
             user_material_id,
         }
     }
-}
-
-fn retain_valid_shape_ids(ids: &mut Vec<ShapeId>) {
-    ids.retain(|sid| unsafe { ffi::b2Shape_IsValid(*sid) });
-}
-
-fn shape_sensor_overlaps_into_impl(shape: ShapeId, out: &mut Vec<ShapeId>) {
-    let cap = unsafe { ffi::b2Shape_GetSensorCapacity(shape) }.max(0) as usize;
-    unsafe {
-        crate::core::ffi_vec::fill_from_ffi(out, cap, |ptr, cap| {
-            ffi::b2Shape_GetSensorData(shape, ptr, cap)
-        });
-    }
-}
-
-fn shape_sensor_overlaps_impl(shape: ShapeId) -> Vec<ShapeId> {
-    let cap = unsafe { ffi::b2Shape_GetSensorCapacity(shape) }.max(0) as usize;
-    unsafe {
-        crate::core::ffi_vec::read_from_ffi(cap, |ptr, cap| {
-            ffi::b2Shape_GetSensorData(shape, ptr, cap)
-        })
-    }
-}
-
-fn shape_sensor_overlaps_valid_into_impl(shape: ShapeId, out: &mut Vec<ShapeId>) {
-    shape_sensor_overlaps_into_impl(shape, out);
-    retain_valid_shape_ids(out);
-}
-
-fn shape_sensor_overlaps_valid_impl(shape: ShapeId) -> Vec<ShapeId> {
-    let mut ids = shape_sensor_overlaps_impl(shape);
-    retain_valid_shape_ids(&mut ids);
-    ids
 }
 
 macro_rules! impl_world_shape_create_methods {
@@ -804,6 +773,16 @@ impl World {
         Ok(Vec2::from(unsafe { ffi::b2Body_GetPosition(body) }))
     }
 
+    pub fn body_rotation(&self, body: BodyId) -> crate::Rot {
+        crate::core::debug_checks::assert_body_valid(body);
+        crate::body::body_rotation_impl(body)
+    }
+
+    pub fn try_body_rotation(&self, body: BodyId) -> crate::error::ApiResult<crate::Rot> {
+        crate::core::debug_checks::check_body_valid(body)?;
+        Ok(crate::body::body_rotation_impl(body))
+    }
+
     pub fn body_local_point<V: Into<Vec2>>(&self, body: BodyId, world_point: V) -> Vec2 {
         crate::core::debug_checks::assert_body_valid(body);
         let p: ffi::b2Vec2 = world_point.into().into();
@@ -984,6 +963,76 @@ impl World {
         Ok(())
     }
 
+    pub fn body_shape_count(&self, body: BodyId) -> i32 {
+        crate::core::debug_checks::assert_body_valid(body);
+        crate::body::body_shape_count_impl(body)
+    }
+
+    pub fn try_body_shape_count(&self, body: BodyId) -> crate::error::ApiResult<i32> {
+        crate::core::debug_checks::check_body_valid(body)?;
+        Ok(crate::body::body_shape_count_impl(body))
+    }
+
+    pub fn body_shapes(&self, body: BodyId) -> Vec<ShapeId> {
+        crate::core::debug_checks::assert_body_valid(body);
+        crate::body::body_shapes_impl(body)
+    }
+
+    pub fn body_shapes_into(&self, body: BodyId, out: &mut Vec<ShapeId>) {
+        crate::core::debug_checks::assert_body_valid(body);
+        crate::body::body_shapes_into_impl(body, out);
+    }
+
+    pub fn try_body_shapes(&self, body: BodyId) -> crate::error::ApiResult<Vec<ShapeId>> {
+        crate::core::debug_checks::check_body_valid(body)?;
+        Ok(crate::body::body_shapes_impl(body))
+    }
+
+    pub fn try_body_shapes_into(
+        &self,
+        body: BodyId,
+        out: &mut Vec<ShapeId>,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::debug_checks::check_body_valid(body)?;
+        crate::body::body_shapes_into_impl(body, out);
+        Ok(())
+    }
+
+    pub fn body_joint_count(&self, body: BodyId) -> i32 {
+        crate::core::debug_checks::assert_body_valid(body);
+        crate::body::body_joint_count_impl(body)
+    }
+
+    pub fn try_body_joint_count(&self, body: BodyId) -> crate::error::ApiResult<i32> {
+        crate::core::debug_checks::check_body_valid(body)?;
+        Ok(crate::body::body_joint_count_impl(body))
+    }
+
+    pub fn body_joints(&self, body: BodyId) -> Vec<JointId> {
+        crate::core::debug_checks::assert_body_valid(body);
+        crate::body::body_joints_impl(body)
+    }
+
+    pub fn body_joints_into(&self, body: BodyId, out: &mut Vec<JointId>) {
+        crate::core::debug_checks::assert_body_valid(body);
+        crate::body::body_joints_into_impl(body, out);
+    }
+
+    pub fn try_body_joints(&self, body: BodyId) -> crate::error::ApiResult<Vec<JointId>> {
+        crate::core::debug_checks::check_body_valid(body)?;
+        Ok(crate::body::body_joints_impl(body))
+    }
+
+    pub fn try_body_joints_into(
+        &self,
+        body: BodyId,
+        out: &mut Vec<JointId>,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::debug_checks::check_body_valid(body)?;
+        crate::body::body_joints_into_impl(body, out);
+        Ok(())
+    }
+
     pub fn set_body_target_transform(
         &mut self,
         body: BodyId,
@@ -1066,6 +1115,117 @@ impl World {
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
         unsafe { ffi::b2Body_SetAngularVelocity(body, w) }
+        Ok(())
+    }
+
+    pub fn body_enable_sleep(&mut self, body: BodyId, flag: bool) {
+        crate::core::debug_checks::assert_body_valid(body);
+        crate::body::body_enable_sleep_impl(body, flag)
+    }
+
+    pub fn try_body_enable_sleep(
+        &mut self,
+        body: BodyId,
+        flag: bool,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::debug_checks::check_body_valid(body)?;
+        crate::body::body_enable_sleep_impl(body, flag);
+        Ok(())
+    }
+
+    pub fn body_is_sleep_enabled(&self, body: BodyId) -> bool {
+        crate::core::debug_checks::assert_body_valid(body);
+        crate::body::body_is_sleep_enabled_impl(body)
+    }
+
+    pub fn try_body_is_sleep_enabled(&self, body: BodyId) -> crate::error::ApiResult<bool> {
+        crate::core::debug_checks::check_body_valid(body)?;
+        Ok(crate::body::body_is_sleep_enabled_impl(body))
+    }
+
+    pub fn body_sleep_threshold(&self, body: BodyId) -> f32 {
+        crate::core::debug_checks::assert_body_valid(body);
+        crate::body::body_sleep_threshold_impl(body)
+    }
+
+    pub fn try_body_sleep_threshold(&self, body: BodyId) -> crate::error::ApiResult<f32> {
+        crate::core::debug_checks::check_body_valid(body)?;
+        Ok(crate::body::body_sleep_threshold_impl(body))
+    }
+
+    pub fn set_body_sleep_threshold(&mut self, body: BodyId, sleep_threshold: f32) {
+        crate::core::debug_checks::assert_body_valid(body);
+        crate::body::body_set_sleep_threshold_impl(body, sleep_threshold)
+    }
+
+    pub fn try_set_body_sleep_threshold(
+        &mut self,
+        body: BodyId,
+        sleep_threshold: f32,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::debug_checks::check_body_valid(body)?;
+        crate::body::body_set_sleep_threshold_impl(body, sleep_threshold);
+        Ok(())
+    }
+
+    pub fn body_is_awake(&self, body: BodyId) -> bool {
+        crate::core::debug_checks::assert_body_valid(body);
+        crate::body::body_is_awake_impl(body)
+    }
+
+    pub fn try_body_is_awake(&self, body: BodyId) -> crate::error::ApiResult<bool> {
+        crate::core::debug_checks::check_body_valid(body)?;
+        Ok(crate::body::body_is_awake_impl(body))
+    }
+
+    pub fn set_body_awake(&mut self, body: BodyId, awake: bool) {
+        crate::core::debug_checks::assert_body_valid(body);
+        crate::body::body_set_awake_impl(body, awake)
+    }
+
+    pub fn try_set_body_awake(&mut self, body: BodyId, awake: bool) -> crate::error::ApiResult<()> {
+        crate::core::debug_checks::check_body_valid(body)?;
+        crate::body::body_set_awake_impl(body, awake);
+        Ok(())
+    }
+
+    pub fn body_is_enabled(&self, body: BodyId) -> bool {
+        crate::core::debug_checks::assert_body_valid(body);
+        crate::body::body_is_enabled_impl(body)
+    }
+
+    pub fn try_body_is_enabled(&self, body: BodyId) -> crate::error::ApiResult<bool> {
+        crate::core::debug_checks::check_body_valid(body)?;
+        Ok(crate::body::body_is_enabled_impl(body))
+    }
+
+    pub fn body_enable_contact_events(&mut self, body: BodyId, flag: bool) {
+        crate::core::debug_checks::assert_body_valid(body);
+        crate::body::body_enable_contact_events_impl(body, flag)
+    }
+
+    pub fn try_body_enable_contact_events(
+        &mut self,
+        body: BodyId,
+        flag: bool,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::debug_checks::check_body_valid(body)?;
+        crate::body::body_enable_contact_events_impl(body, flag);
+        Ok(())
+    }
+
+    pub fn body_enable_hit_events(&mut self, body: BodyId, flag: bool) {
+        crate::core::debug_checks::assert_body_valid(body);
+        crate::body::body_enable_hit_events_impl(body, flag)
+    }
+
+    pub fn try_body_enable_hit_events(
+        &mut self,
+        body: BodyId,
+        flag: bool,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::debug_checks::check_body_valid(body)?;
+        crate::body::body_enable_hit_events_impl(body, flag);
         Ok(())
     }
 
@@ -1178,24 +1338,49 @@ impl World {
     /// Enable a body by id.
     pub fn enable_body(&mut self, body: BodyId) {
         crate::core::debug_checks::assert_body_valid(body);
-        unsafe { ffi::b2Body_Enable(body) }
+        crate::body::body_enable_impl(body)
     }
 
     pub fn try_enable_body(&mut self, body: BodyId) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
-        unsafe { ffi::b2Body_Enable(body) }
+        crate::body::body_enable_impl(body);
         Ok(())
     }
 
     /// Disable a body by id.
     pub fn disable_body(&mut self, body: BodyId) {
         crate::core::debug_checks::assert_body_valid(body);
-        unsafe { ffi::b2Body_Disable(body) }
+        crate::body::body_disable_impl(body)
     }
 
     pub fn try_disable_body(&mut self, body: BodyId) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
-        unsafe { ffi::b2Body_Disable(body) }
+        crate::body::body_disable_impl(body);
+        Ok(())
+    }
+
+    pub fn body_is_bullet(&self, body: BodyId) -> bool {
+        crate::core::debug_checks::assert_body_valid(body);
+        crate::body::body_is_bullet_impl(body)
+    }
+
+    pub fn try_body_is_bullet(&self, body: BodyId) -> crate::error::ApiResult<bool> {
+        crate::core::debug_checks::check_body_valid(body)?;
+        Ok(crate::body::body_is_bullet_impl(body))
+    }
+
+    pub fn set_body_bullet(&mut self, body: BodyId, bullet: bool) {
+        crate::core::debug_checks::assert_body_valid(body);
+        crate::body::body_set_bullet_impl(body, bullet)
+    }
+
+    pub fn try_set_body_bullet(
+        &mut self,
+        body: BodyId,
+        bullet: bool,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::debug_checks::check_body_valid(body)?;
+        crate::body::body_set_bullet_impl(body, bullet);
         Ok(())
     }
 
@@ -1203,14 +1388,24 @@ impl World {
     pub fn set_body_name(&mut self, body: BodyId, name: &str) {
         crate::core::debug_checks::assert_body_valid(body);
         let cs = CString::new(name).expect("body name contains an interior NUL byte");
-        unsafe { ffi::b2Body_SetName(body, cs.as_ptr()) }
+        crate::body::body_set_name_impl(body, cs.as_c_str())
     }
 
     pub fn try_set_body_name(&mut self, body: BodyId, name: &str) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
         let cs = CString::new(name).map_err(|_| crate::error::ApiError::NulByteInString)?;
-        unsafe { ffi::b2Body_SetName(body, cs.as_ptr()) }
+        crate::body::body_set_name_impl(body, cs.as_c_str());
         Ok(())
+    }
+
+    pub fn body_name(&self, body: BodyId) -> Option<String> {
+        crate::core::debug_checks::assert_body_valid(body);
+        crate::body::body_name_impl(body)
+    }
+
+    pub fn try_body_name(&self, body: BodyId) -> crate::error::ApiResult<Option<String>> {
+        crate::core::debug_checks::check_body_valid(body)?;
+        Ok(crate::body::body_name_impl(body))
     }
 
     /// Get number of awake bodies.
@@ -2164,7 +2359,7 @@ impl World {
 
     pub fn shape_surface_material(&self, shape: ShapeId) -> SurfaceMaterial {
         crate::core::debug_checks::assert_shape_valid(shape);
-        SurfaceMaterial(unsafe { ffi::b2Shape_GetSurfaceMaterial(shape) })
+        crate::shapes::shape_surface_material_impl(shape)
     }
 
     pub fn try_shape_surface_material(
@@ -2172,14 +2367,12 @@ impl World {
         shape: ShapeId,
     ) -> crate::error::ApiResult<SurfaceMaterial> {
         crate::core::debug_checks::check_shape_valid(shape)?;
-        Ok(SurfaceMaterial(unsafe {
-            ffi::b2Shape_GetSurfaceMaterial(shape)
-        }))
+        Ok(crate::shapes::shape_surface_material_impl(shape))
     }
 
     pub fn shape_set_surface_material(&mut self, shape: ShapeId, material: &SurfaceMaterial) {
         crate::core::debug_checks::assert_shape_valid(shape);
-        unsafe { ffi::b2Shape_SetSurfaceMaterial(shape, &material.0) }
+        crate::shapes::shape_set_surface_material_impl(shape, material)
     }
 
     pub fn try_shape_set_surface_material(
@@ -2188,25 +2381,72 @@ impl World {
         material: &SurfaceMaterial,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_shape_valid(shape)?;
-        unsafe { ffi::b2Shape_SetSurfaceMaterial(shape, &material.0) }
+        crate::shapes::shape_set_surface_material_impl(shape, material);
         Ok(())
     }
 
     pub fn shape_body_id(&self, shape: ShapeId) -> BodyId {
         crate::core::debug_checks::assert_shape_valid(shape);
-        unsafe { ffi::b2Shape_GetBody(shape) }
+        crate::shapes::shape_body_id_impl(shape)
     }
 
     pub fn try_shape_body_id(&self, shape: ShapeId) -> crate::error::ApiResult<BodyId> {
         crate::core::debug_checks::check_shape_valid(shape)?;
-        Ok(unsafe { ffi::b2Shape_GetBody(shape) })
+        Ok(crate::shapes::shape_body_id_impl(shape))
+    }
+
+    pub fn shape_aabb(&self, shape: ShapeId) -> Aabb {
+        crate::core::debug_checks::assert_shape_valid(shape);
+        crate::shapes::shape_aabb_impl(shape)
+    }
+
+    pub fn try_shape_aabb(&self, shape: ShapeId) -> crate::error::ApiResult<Aabb> {
+        crate::core::debug_checks::check_shape_valid(shape)?;
+        Ok(crate::shapes::shape_aabb_impl(shape))
+    }
+
+    pub fn shape_test_point<V: Into<Vec2>>(&self, shape: ShapeId, point: V) -> bool {
+        crate::core::debug_checks::assert_shape_valid(shape);
+        crate::shapes::shape_test_point_impl(shape, point)
+    }
+
+    pub fn try_shape_test_point<V: Into<Vec2>>(
+        &self,
+        shape: ShapeId,
+        point: V,
+    ) -> crate::error::ApiResult<bool> {
+        crate::core::debug_checks::check_shape_valid(shape)?;
+        Ok(crate::shapes::shape_test_point_impl(shape, point))
+    }
+
+    pub fn shape_ray_cast<VO: Into<Vec2>, VT: Into<Vec2>>(
+        &self,
+        shape: ShapeId,
+        origin: VO,
+        translation: VT,
+    ) -> CastOutput {
+        crate::core::debug_checks::assert_shape_valid(shape);
+        crate::shapes::shape_ray_cast_impl(shape, origin, translation)
+    }
+
+    pub fn try_shape_ray_cast<VO: Into<Vec2>, VT: Into<Vec2>>(
+        &self,
+        shape: ShapeId,
+        origin: VO,
+        translation: VT,
+    ) -> crate::error::ApiResult<CastOutput> {
+        crate::core::debug_checks::check_shape_valid(shape)?;
+        Ok(crate::shapes::shape_ray_cast_impl(
+            shape,
+            origin,
+            translation,
+        ))
     }
 
     /// Return the closest point on a shape to `target` (in world coordinates).
     pub fn shape_closest_point<V: Into<Vec2>>(&self, shape: ShapeId, target: V) -> Vec2 {
         crate::core::debug_checks::assert_shape_valid(shape);
-        let t: ffi::b2Vec2 = target.into().into();
-        Vec2::from(unsafe { ffi::b2Shape_GetClosestPoint(shape, t) })
+        crate::shapes::shape_closest_point_impl(shape, target)
     }
 
     pub fn try_shape_closest_point<V: Into<Vec2>>(
@@ -2215,10 +2455,7 @@ impl World {
         target: V,
     ) -> crate::error::ApiResult<Vec2> {
         crate::core::debug_checks::check_shape_valid(shape)?;
-        let t: ffi::b2Vec2 = target.into().into();
-        Ok(Vec2::from(unsafe {
-            ffi::b2Shape_GetClosestPoint(shape, t)
-        }))
+        Ok(crate::shapes::shape_closest_point_impl(shape, target))
     }
 
     /// Apply wind force/torque approximation to a shape.
@@ -2231,8 +2468,7 @@ impl World {
         wake: bool,
     ) {
         crate::core::debug_checks::assert_shape_valid(shape);
-        let w: ffi::b2Vec2 = wind.into().into();
-        unsafe { ffi::b2Shape_ApplyWind(shape, w, drag, lift, wake) }
+        crate::shapes::shape_apply_wind_impl(shape, wind, drag, lift, wake)
     }
 
     pub fn try_shape_apply_wind<V: Into<Vec2>>(
@@ -2244,32 +2480,147 @@ impl World {
         wake: bool,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_shape_valid(shape)?;
-        let w: ffi::b2Vec2 = wind.into().into();
-        unsafe { ffi::b2Shape_ApplyWind(shape, w, drag, lift, wake) }
+        crate::shapes::shape_apply_wind_impl(shape, wind, drag, lift, wake);
         Ok(())
+    }
+
+    pub fn shape_mass_data(&self, shape: ShapeId) -> MassData {
+        crate::core::debug_checks::assert_shape_valid(shape);
+        crate::shapes::shape_mass_data_impl(shape)
+    }
+
+    pub fn try_shape_mass_data(&self, shape: ShapeId) -> crate::error::ApiResult<MassData> {
+        crate::core::debug_checks::check_shape_valid(shape)?;
+        Ok(crate::shapes::shape_mass_data_impl(shape))
+    }
+
+    pub fn shape_enable_sensor_events(&mut self, shape: ShapeId, flag: bool) {
+        crate::core::debug_checks::assert_shape_valid(shape);
+        crate::shapes::shape_enable_sensor_events_impl(shape, flag)
+    }
+
+    pub fn try_shape_enable_sensor_events(
+        &mut self,
+        shape: ShapeId,
+        flag: bool,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::debug_checks::check_shape_valid(shape)?;
+        crate::shapes::shape_enable_sensor_events_impl(shape, flag);
+        Ok(())
+    }
+
+    pub fn shape_sensor_events_enabled(&self, shape: ShapeId) -> bool {
+        crate::core::debug_checks::assert_shape_valid(shape);
+        crate::shapes::shape_sensor_events_enabled_impl(shape)
+    }
+
+    pub fn try_shape_sensor_events_enabled(&self, shape: ShapeId) -> crate::error::ApiResult<bool> {
+        crate::core::debug_checks::check_shape_valid(shape)?;
+        Ok(crate::shapes::shape_sensor_events_enabled_impl(shape))
+    }
+
+    pub fn shape_enable_contact_events(&mut self, shape: ShapeId, flag: bool) {
+        crate::core::debug_checks::assert_shape_valid(shape);
+        crate::shapes::shape_enable_contact_events_impl(shape, flag)
+    }
+
+    pub fn try_shape_enable_contact_events(
+        &mut self,
+        shape: ShapeId,
+        flag: bool,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::debug_checks::check_shape_valid(shape)?;
+        crate::shapes::shape_enable_contact_events_impl(shape, flag);
+        Ok(())
+    }
+
+    pub fn shape_contact_events_enabled(&self, shape: ShapeId) -> bool {
+        crate::core::debug_checks::assert_shape_valid(shape);
+        crate::shapes::shape_contact_events_enabled_impl(shape)
+    }
+
+    pub fn try_shape_contact_events_enabled(
+        &self,
+        shape: ShapeId,
+    ) -> crate::error::ApiResult<bool> {
+        crate::core::debug_checks::check_shape_valid(shape)?;
+        Ok(crate::shapes::shape_contact_events_enabled_impl(shape))
+    }
+
+    pub fn shape_enable_pre_solve_events(&mut self, shape: ShapeId, flag: bool) {
+        crate::core::debug_checks::assert_shape_valid(shape);
+        crate::shapes::shape_enable_pre_solve_events_impl(shape, flag)
+    }
+
+    pub fn try_shape_enable_pre_solve_events(
+        &mut self,
+        shape: ShapeId,
+        flag: bool,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::debug_checks::check_shape_valid(shape)?;
+        crate::shapes::shape_enable_pre_solve_events_impl(shape, flag);
+        Ok(())
+    }
+
+    pub fn shape_pre_solve_events_enabled(&self, shape: ShapeId) -> bool {
+        crate::core::debug_checks::assert_shape_valid(shape);
+        crate::shapes::shape_pre_solve_events_enabled_impl(shape)
+    }
+
+    pub fn try_shape_pre_solve_events_enabled(
+        &self,
+        shape: ShapeId,
+    ) -> crate::error::ApiResult<bool> {
+        crate::core::debug_checks::check_shape_valid(shape)?;
+        Ok(crate::shapes::shape_pre_solve_events_enabled_impl(shape))
+    }
+
+    pub fn shape_enable_hit_events(&mut self, shape: ShapeId, flag: bool) {
+        crate::core::debug_checks::assert_shape_valid(shape);
+        crate::shapes::shape_enable_hit_events_impl(shape, flag)
+    }
+
+    pub fn try_shape_enable_hit_events(
+        &mut self,
+        shape: ShapeId,
+        flag: bool,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::debug_checks::check_shape_valid(shape)?;
+        crate::shapes::shape_enable_hit_events_impl(shape, flag);
+        Ok(())
+    }
+
+    pub fn shape_hit_events_enabled(&self, shape: ShapeId) -> bool {
+        crate::core::debug_checks::assert_shape_valid(shape);
+        crate::shapes::shape_hit_events_enabled_impl(shape)
+    }
+
+    pub fn try_shape_hit_events_enabled(&self, shape: ShapeId) -> crate::error::ApiResult<bool> {
+        crate::core::debug_checks::check_shape_valid(shape)?;
+        Ok(crate::shapes::shape_hit_events_enabled_impl(shape))
     }
 
     // Sensor helpers (ID-style)
     /// Get the maximum capacity required to retrieve sensor overlaps for a shape id.
     pub fn shape_sensor_capacity(&self, shape: ShapeId) -> i32 {
         crate::core::debug_checks::assert_shape_valid(shape);
-        unsafe { ffi::b2Shape_GetSensorCapacity(shape) }
+        crate::shapes::shape_sensor_capacity_impl(shape)
     }
 
     pub fn try_shape_sensor_capacity(&self, shape: ShapeId) -> crate::error::ApiResult<i32> {
         crate::core::debug_checks::check_shape_valid(shape)?;
-        Ok(unsafe { ffi::b2Shape_GetSensorCapacity(shape) })
+        Ok(crate::shapes::shape_sensor_capacity_impl(shape))
     }
 
     /// Get overlapped shapes for a sensor shape id. Returns empty if not a sensor.
     pub fn shape_sensor_overlaps(&self, shape: ShapeId) -> Vec<ShapeId> {
         crate::core::debug_checks::assert_shape_valid(shape);
-        shape_sensor_overlaps_impl(shape)
+        crate::shapes::shape_sensor_overlaps_impl(shape)
     }
 
     pub fn shape_sensor_overlaps_into(&self, shape: ShapeId, out: &mut Vec<ShapeId>) {
         crate::core::debug_checks::assert_shape_valid(shape);
-        shape_sensor_overlaps_into_impl(shape, out);
+        crate::shapes::shape_sensor_overlaps_into_impl(shape, out);
     }
 
     pub fn try_shape_sensor_overlaps(
@@ -2277,7 +2628,7 @@ impl World {
         shape: ShapeId,
     ) -> crate::error::ApiResult<Vec<ShapeId>> {
         crate::core::debug_checks::check_shape_valid(shape)?;
-        Ok(shape_sensor_overlaps_impl(shape))
+        Ok(crate::shapes::shape_sensor_overlaps_impl(shape))
     }
 
     pub fn try_shape_sensor_overlaps_into(
@@ -2286,19 +2637,27 @@ impl World {
         out: &mut Vec<ShapeId>,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_shape_valid(shape)?;
-        shape_sensor_overlaps_into_impl(shape, out);
+        crate::shapes::shape_sensor_overlaps_into_impl(shape, out);
         Ok(())
     }
 
     /// Get overlapped shapes for a sensor shape id, filtered to valid (non-destroyed) ids.
     pub fn shape_sensor_overlaps_valid(&self, shape: ShapeId) -> Vec<ShapeId> {
         crate::core::debug_checks::assert_shape_valid(shape);
-        shape_sensor_overlaps_valid_impl(shape)
+        crate::shapes::shape_sensor_overlaps_valid_impl(shape)
+    }
+
+    pub fn try_shape_sensor_overlaps_valid(
+        &self,
+        shape: ShapeId,
+    ) -> crate::error::ApiResult<Vec<ShapeId>> {
+        crate::core::debug_checks::check_shape_valid(shape)?;
+        Ok(crate::shapes::shape_sensor_overlaps_valid_impl(shape))
     }
 
     pub fn shape_sensor_overlaps_valid_into(&self, shape: ShapeId, out: &mut Vec<ShapeId>) {
         crate::core::debug_checks::assert_shape_valid(shape);
-        shape_sensor_overlaps_valid_into_impl(shape, out);
+        crate::shapes::shape_sensor_overlaps_valid_into_impl(shape, out);
     }
 
     pub fn try_shape_sensor_overlaps_valid_into(
@@ -2307,7 +2666,7 @@ impl World {
         out: &mut Vec<ShapeId>,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_shape_valid(shape)?;
-        shape_sensor_overlaps_valid_into_impl(shape, out);
+        crate::shapes::shape_sensor_overlaps_valid_into_impl(shape, out);
         Ok(())
     }
 }

@@ -9,9 +9,11 @@ pub mod geometry;
 pub mod helpers;
 
 use crate::body::Body;
+use crate::collision::CastOutput;
 use crate::error::ApiResult;
 use crate::filter::Filter;
-use crate::types::{BodyId, ChainId, ContactData, ShapeId, Vec2};
+use crate::query::Aabb;
+use crate::types::{BodyId, ChainId, ContactData, MassData, ShapeId, Vec2};
 use crate::world::World;
 use boxdd_sys::ffi;
 use std::os::raw::c_void;
@@ -134,7 +136,7 @@ fn shape_contact_data_raw_impl(id: ShapeId) -> Vec<ffi::b2ContactData> {
     }
 }
 
-fn shape_sensor_overlaps_into_impl(id: ShapeId, out: &mut Vec<ShapeId>) {
+pub(crate) fn shape_sensor_overlaps_into_impl(id: ShapeId, out: &mut Vec<ShapeId>) {
     let cap = unsafe { ffi::b2Shape_GetSensorCapacity(id) }.max(0) as usize;
     unsafe {
         crate::core::ffi_vec::fill_from_ffi(out, cap, |ptr, cap| {
@@ -143,7 +145,7 @@ fn shape_sensor_overlaps_into_impl(id: ShapeId, out: &mut Vec<ShapeId>) {
     }
 }
 
-fn shape_sensor_overlaps_impl(id: ShapeId) -> Vec<ShapeId> {
+pub(crate) fn shape_sensor_overlaps_impl(id: ShapeId) -> Vec<ShapeId> {
     let cap = unsafe { ffi::b2Shape_GetSensorCapacity(id) }.max(0) as usize;
     unsafe {
         crate::core::ffi_vec::read_from_ffi(cap, |ptr, cap| {
@@ -152,12 +154,12 @@ fn shape_sensor_overlaps_impl(id: ShapeId) -> Vec<ShapeId> {
     }
 }
 
-fn shape_sensor_overlaps_valid_into_impl(id: ShapeId, out: &mut Vec<ShapeId>) {
+pub(crate) fn shape_sensor_overlaps_valid_into_impl(id: ShapeId, out: &mut Vec<ShapeId>) {
     shape_sensor_overlaps_into_impl(id, out);
     retain_valid_shape_ids(out);
 }
 
-fn shape_sensor_overlaps_valid_impl(id: ShapeId) -> Vec<ShapeId> {
+pub(crate) fn shape_sensor_overlaps_valid_impl(id: ShapeId) -> Vec<ShapeId> {
     let mut ids = shape_sensor_overlaps_impl(id);
     retain_valid_shape_ids(&mut ids);
     ids
@@ -189,7 +191,7 @@ fn shape_type_impl(id: ShapeId) -> ShapeType {
 }
 
 #[inline]
-fn shape_body_id_impl(id: ShapeId) -> BodyId {
+pub(crate) fn shape_body_id_impl(id: ShapeId) -> BodyId {
     unsafe { ffi::b2Shape_GetBody(id) }
 }
 
@@ -219,13 +221,52 @@ fn shape_polygon_impl(id: ShapeId) -> Polygon {
 }
 
 #[inline]
-fn shape_closest_point_impl<V: Into<Vec2>>(id: ShapeId, target: V) -> Vec2 {
+pub(crate) fn shape_closest_point_impl<V: Into<Vec2>>(id: ShapeId, target: V) -> Vec2 {
     let target: ffi::b2Vec2 = target.into().into();
     Vec2::from(unsafe { ffi::b2Shape_GetClosestPoint(id, target) })
 }
 
 #[inline]
-fn shape_apply_wind_impl<V: Into<Vec2>>(id: ShapeId, wind: V, drag: f32, lift: f32, wake: bool) {
+pub(crate) fn shape_aabb_impl(id: ShapeId) -> Aabb {
+    Aabb::from_raw(unsafe { ffi::b2Shape_GetAABB(id) })
+}
+
+#[inline]
+pub(crate) fn shape_test_point_impl<V: Into<Vec2>>(id: ShapeId, point: V) -> bool {
+    let point: ffi::b2Vec2 = point.into().into();
+    unsafe { ffi::b2Shape_TestPoint(id, point) }
+}
+
+#[inline]
+fn make_shape_ray_input<VO: Into<Vec2>, VT: Into<Vec2>>(
+    origin: VO,
+    translation: VT,
+) -> ffi::b2RayCastInput {
+    ffi::b2RayCastInput {
+        origin: origin.into().into(),
+        translation: translation.into().into(),
+        maxFraction: 1.0,
+    }
+}
+
+#[inline]
+pub(crate) fn shape_ray_cast_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
+    id: ShapeId,
+    origin: VO,
+    translation: VT,
+) -> CastOutput {
+    let input = make_shape_ray_input(origin, translation);
+    CastOutput::from_raw(unsafe { ffi::b2Shape_RayCast(id, &input) })
+}
+
+#[inline]
+pub(crate) fn shape_apply_wind_impl<V: Into<Vec2>>(
+    id: ShapeId,
+    wind: V,
+    drag: f32,
+    lift: f32,
+    wake: bool,
+) {
     let wind: ffi::b2Vec2 = wind.into().into();
     unsafe { ffi::b2Shape_ApplyWind(id, wind, drag, lift, wake) }
 }
@@ -270,6 +311,51 @@ fn shape_is_sensor_impl(id: ShapeId) -> bool {
 }
 
 #[inline]
+pub(crate) fn shape_mass_data_impl(id: ShapeId) -> MassData {
+    MassData::from_raw(unsafe { ffi::b2Shape_ComputeMassData(id) })
+}
+
+#[inline]
+pub(crate) fn shape_enable_sensor_events_impl(id: ShapeId, flag: bool) {
+    unsafe { ffi::b2Shape_EnableSensorEvents(id, flag) }
+}
+
+#[inline]
+pub(crate) fn shape_sensor_events_enabled_impl(id: ShapeId) -> bool {
+    unsafe { ffi::b2Shape_AreSensorEventsEnabled(id) }
+}
+
+#[inline]
+pub(crate) fn shape_enable_contact_events_impl(id: ShapeId, flag: bool) {
+    unsafe { ffi::b2Shape_EnableContactEvents(id, flag) }
+}
+
+#[inline]
+pub(crate) fn shape_contact_events_enabled_impl(id: ShapeId) -> bool {
+    unsafe { ffi::b2Shape_AreContactEventsEnabled(id) }
+}
+
+#[inline]
+pub(crate) fn shape_enable_pre_solve_events_impl(id: ShapeId, flag: bool) {
+    unsafe { ffi::b2Shape_EnablePreSolveEvents(id, flag) }
+}
+
+#[inline]
+pub(crate) fn shape_pre_solve_events_enabled_impl(id: ShapeId) -> bool {
+    unsafe { ffi::b2Shape_ArePreSolveEventsEnabled(id) }
+}
+
+#[inline]
+pub(crate) fn shape_enable_hit_events_impl(id: ShapeId, flag: bool) {
+    unsafe { ffi::b2Shape_EnableHitEvents(id, flag) }
+}
+
+#[inline]
+pub(crate) fn shape_hit_events_enabled_impl(id: ShapeId) -> bool {
+    unsafe { ffi::b2Shape_AreHitEventsEnabled(id) }
+}
+
+#[inline]
 fn shape_set_density_impl(id: ShapeId, density: f32, update_body_mass: bool) {
     unsafe { ffi::b2Shape_SetDensity(id, density, update_body_mass) }
 }
@@ -310,17 +396,17 @@ fn shape_user_material_impl(id: ShapeId) -> u64 {
 }
 
 #[inline]
-fn shape_set_surface_material_impl(id: ShapeId, material: &SurfaceMaterial) {
+pub(crate) fn shape_set_surface_material_impl(id: ShapeId, material: &SurfaceMaterial) {
     unsafe { ffi::b2Shape_SetSurfaceMaterial(id, &material.0) }
 }
 
 #[inline]
-fn shape_surface_material_impl(id: ShapeId) -> SurfaceMaterial {
+pub(crate) fn shape_surface_material_impl(id: ShapeId) -> SurfaceMaterial {
     SurfaceMaterial(unsafe { ffi::b2Shape_GetSurfaceMaterial(id) })
 }
 
 #[inline]
-fn shape_sensor_capacity_impl(id: ShapeId) -> i32 {
+pub(crate) fn shape_sensor_capacity_impl(id: ShapeId) -> i32 {
     unsafe { ffi::b2Shape_GetSensorCapacity(id) }
 }
 
@@ -457,6 +543,90 @@ impl OwnedShape {
         Ok(shape_is_sensor_impl(self.id))
     }
 
+    pub fn enable_sensor_events(&mut self, flag: bool) {
+        self.assert_valid();
+        shape_enable_sensor_events_impl(self.id, flag)
+    }
+
+    pub fn try_enable_sensor_events(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_enable_sensor_events_impl(self.id, flag);
+        Ok(())
+    }
+
+    pub fn sensor_events_enabled(&self) -> bool {
+        self.assert_valid();
+        shape_sensor_events_enabled_impl(self.id)
+    }
+
+    pub fn try_sensor_events_enabled(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(shape_sensor_events_enabled_impl(self.id))
+    }
+
+    pub fn enable_contact_events(&mut self, flag: bool) {
+        self.assert_valid();
+        shape_enable_contact_events_impl(self.id, flag)
+    }
+
+    pub fn try_enable_contact_events(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_enable_contact_events_impl(self.id, flag);
+        Ok(())
+    }
+
+    pub fn contact_events_enabled(&self) -> bool {
+        self.assert_valid();
+        shape_contact_events_enabled_impl(self.id)
+    }
+
+    pub fn try_contact_events_enabled(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(shape_contact_events_enabled_impl(self.id))
+    }
+
+    pub fn enable_pre_solve_events(&mut self, flag: bool) {
+        self.assert_valid();
+        shape_enable_pre_solve_events_impl(self.id, flag)
+    }
+
+    pub fn try_enable_pre_solve_events(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_enable_pre_solve_events_impl(self.id, flag);
+        Ok(())
+    }
+
+    pub fn pre_solve_events_enabled(&self) -> bool {
+        self.assert_valid();
+        shape_pre_solve_events_enabled_impl(self.id)
+    }
+
+    pub fn try_pre_solve_events_enabled(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(shape_pre_solve_events_enabled_impl(self.id))
+    }
+
+    pub fn enable_hit_events(&mut self, flag: bool) {
+        self.assert_valid();
+        shape_enable_hit_events_impl(self.id, flag)
+    }
+
+    pub fn try_enable_hit_events(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_enable_hit_events_impl(self.id, flag);
+        Ok(())
+    }
+
+    pub fn hit_events_enabled(&self) -> bool {
+        self.assert_valid();
+        shape_hit_events_enabled_impl(self.id)
+    }
+
+    pub fn try_hit_events_enabled(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(shape_hit_events_enabled_impl(self.id))
+    }
+
     pub fn shape_type(&self) -> ShapeType {
         self.assert_valid();
         shape_type_impl(self.id)
@@ -518,6 +688,44 @@ impl OwnedShape {
     pub fn try_closest_point<V: Into<Vec2>>(&self, target: V) -> ApiResult<Vec2> {
         self.check_valid()?;
         Ok(shape_closest_point_impl(self.id, target))
+    }
+
+    pub fn aabb(&self) -> Aabb {
+        self.assert_valid();
+        shape_aabb_impl(self.id)
+    }
+
+    pub fn try_aabb(&self) -> ApiResult<Aabb> {
+        self.check_valid()?;
+        Ok(shape_aabb_impl(self.id))
+    }
+
+    pub fn test_point<V: Into<Vec2>>(&self, point: V) -> bool {
+        self.assert_valid();
+        shape_test_point_impl(self.id, point)
+    }
+
+    pub fn try_test_point<V: Into<Vec2>>(&self, point: V) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(shape_test_point_impl(self.id, point))
+    }
+
+    pub fn ray_cast<VO: Into<Vec2>, VT: Into<Vec2>>(
+        &self,
+        origin: VO,
+        translation: VT,
+    ) -> CastOutput {
+        self.assert_valid();
+        shape_ray_cast_impl(self.id, origin, translation)
+    }
+
+    pub fn try_ray_cast<VO: Into<Vec2>, VT: Into<Vec2>>(
+        &self,
+        origin: VO,
+        translation: VT,
+    ) -> ApiResult<CastOutput> {
+        self.check_valid()?;
+        Ok(shape_ray_cast_impl(self.id, origin, translation))
     }
 
     /// Apply wind force/torque approximation to the shape.
@@ -609,6 +817,16 @@ impl OwnedShape {
     pub fn try_density(&self) -> ApiResult<f32> {
         self.check_valid()?;
         Ok(shape_density_impl(self.id))
+    }
+
+    pub fn mass_data(&self) -> MassData {
+        self.assert_valid();
+        shape_mass_data_impl(self.id)
+    }
+
+    pub fn try_mass_data(&self) -> ApiResult<MassData> {
+        self.check_valid()?;
+        Ok(shape_mass_data_impl(self.id))
     }
 
     pub fn set_friction(&mut self, friction: f32) {
@@ -760,6 +978,11 @@ impl OwnedShape {
     pub fn sensor_overlaps_valid(&self) -> Vec<ShapeId> {
         self.assert_valid();
         shape_sensor_overlaps_valid_impl(self.id)
+    }
+
+    pub fn try_sensor_overlaps_valid(&self) -> ApiResult<Vec<ShapeId>> {
+        self.check_valid()?;
+        Ok(shape_sensor_overlaps_valid_impl(self.id))
     }
 
     pub fn sensor_overlaps_valid_into(&self, out: &mut Vec<ShapeId>) {
@@ -1010,6 +1233,90 @@ impl<'w> Shape<'w> {
         Ok(shape_body_id_impl(self.id))
     }
 
+    pub fn enable_sensor_events(&mut self, flag: bool) {
+        self.assert_valid();
+        shape_enable_sensor_events_impl(self.id, flag)
+    }
+
+    pub fn try_enable_sensor_events(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_enable_sensor_events_impl(self.id, flag);
+        Ok(())
+    }
+
+    pub fn sensor_events_enabled(&self) -> bool {
+        self.assert_valid();
+        shape_sensor_events_enabled_impl(self.id)
+    }
+
+    pub fn try_sensor_events_enabled(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(shape_sensor_events_enabled_impl(self.id))
+    }
+
+    pub fn enable_contact_events(&mut self, flag: bool) {
+        self.assert_valid();
+        shape_enable_contact_events_impl(self.id, flag)
+    }
+
+    pub fn try_enable_contact_events(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_enable_contact_events_impl(self.id, flag);
+        Ok(())
+    }
+
+    pub fn contact_events_enabled(&self) -> bool {
+        self.assert_valid();
+        shape_contact_events_enabled_impl(self.id)
+    }
+
+    pub fn try_contact_events_enabled(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(shape_contact_events_enabled_impl(self.id))
+    }
+
+    pub fn enable_pre_solve_events(&mut self, flag: bool) {
+        self.assert_valid();
+        shape_enable_pre_solve_events_impl(self.id, flag)
+    }
+
+    pub fn try_enable_pre_solve_events(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_enable_pre_solve_events_impl(self.id, flag);
+        Ok(())
+    }
+
+    pub fn pre_solve_events_enabled(&self) -> bool {
+        self.assert_valid();
+        shape_pre_solve_events_enabled_impl(self.id)
+    }
+
+    pub fn try_pre_solve_events_enabled(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(shape_pre_solve_events_enabled_impl(self.id))
+    }
+
+    pub fn enable_hit_events(&mut self, flag: bool) {
+        self.assert_valid();
+        shape_enable_hit_events_impl(self.id, flag)
+    }
+
+    pub fn try_enable_hit_events(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_enable_hit_events_impl(self.id, flag);
+        Ok(())
+    }
+
+    pub fn hit_events_enabled(&self) -> bool {
+        self.assert_valid();
+        shape_hit_events_enabled_impl(self.id)
+    }
+
+    pub fn try_hit_events_enabled(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(shape_hit_events_enabled_impl(self.id))
+    }
+
     // Getters
     pub fn circle(&self) -> Circle {
         self.assert_valid();
@@ -1041,6 +1348,44 @@ impl<'w> Shape<'w> {
     pub fn try_closest_point<V: Into<Vec2>>(&self, target: V) -> ApiResult<Vec2> {
         self.check_valid()?;
         Ok(shape_closest_point_impl(self.id, target))
+    }
+
+    pub fn aabb(&self) -> Aabb {
+        self.assert_valid();
+        shape_aabb_impl(self.id)
+    }
+
+    pub fn try_aabb(&self) -> ApiResult<Aabb> {
+        self.check_valid()?;
+        Ok(shape_aabb_impl(self.id))
+    }
+
+    pub fn test_point<V: Into<Vec2>>(&self, point: V) -> bool {
+        self.assert_valid();
+        shape_test_point_impl(self.id, point)
+    }
+
+    pub fn try_test_point<V: Into<Vec2>>(&self, point: V) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(shape_test_point_impl(self.id, point))
+    }
+
+    pub fn ray_cast<VO: Into<Vec2>, VT: Into<Vec2>>(
+        &self,
+        origin: VO,
+        translation: VT,
+    ) -> CastOutput {
+        self.assert_valid();
+        shape_ray_cast_impl(self.id, origin, translation)
+    }
+
+    pub fn try_ray_cast<VO: Into<Vec2>, VT: Into<Vec2>>(
+        &self,
+        origin: VO,
+        translation: VT,
+    ) -> ApiResult<CastOutput> {
+        self.check_valid()?;
+        Ok(shape_ray_cast_impl(self.id, origin, translation))
     }
 
     /// Apply wind force/torque approximation to the shape.
@@ -1142,6 +1487,16 @@ impl<'w> Shape<'w> {
     pub fn try_density(&self) -> ApiResult<f32> {
         self.check_valid()?;
         Ok(shape_density_impl(self.id))
+    }
+
+    pub fn mass_data(&self) -> MassData {
+        self.assert_valid();
+        shape_mass_data_impl(self.id)
+    }
+
+    pub fn try_mass_data(&self) -> ApiResult<MassData> {
+        self.check_valid()?;
+        Ok(shape_mass_data_impl(self.id))
     }
     pub fn set_friction(&mut self, friction: f32) {
         self.assert_valid();
@@ -1390,6 +1745,11 @@ impl<'w> Shape<'w> {
     pub fn sensor_overlaps_valid(&self) -> Vec<ShapeId> {
         self.assert_valid();
         shape_sensor_overlaps_valid_impl(self.id)
+    }
+
+    pub fn try_sensor_overlaps_valid(&self) -> ApiResult<Vec<ShapeId>> {
+        self.check_valid()?;
+        Ok(shape_sensor_overlaps_valid_impl(self.id))
     }
 
     pub fn sensor_overlaps_valid_into(&self, out: &mut Vec<ShapeId>) {

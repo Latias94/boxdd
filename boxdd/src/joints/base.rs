@@ -33,29 +33,161 @@ pub struct OwnedJoint {
     _not_send: PhantomData<Rc<()>>,
 }
 
+/// Joint kinds reported by Box2D.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum JointType {
+    Distance,
+    Filter,
+    Motor,
+    Prismatic,
+    Revolute,
+    Weld,
+    Wheel,
+}
+
+impl JointType {
+    #[inline]
+    pub const fn from_raw(raw: ffi::b2JointType) -> Option<Self> {
+        match raw {
+            ffi::b2JointType_b2_distanceJoint => Some(Self::Distance),
+            ffi::b2JointType_b2_filterJoint => Some(Self::Filter),
+            ffi::b2JointType_b2_motorJoint => Some(Self::Motor),
+            ffi::b2JointType_b2_prismaticJoint => Some(Self::Prismatic),
+            ffi::b2JointType_b2_revoluteJoint => Some(Self::Revolute),
+            ffi::b2JointType_b2_weldJoint => Some(Self::Weld),
+            ffi::b2JointType_b2_wheelJoint => Some(Self::Wheel),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub const fn into_raw(self) -> ffi::b2JointType {
+        match self {
+            Self::Distance => ffi::b2JointType_b2_distanceJoint,
+            Self::Filter => ffi::b2JointType_b2_filterJoint,
+            Self::Motor => ffi::b2JointType_b2_motorJoint,
+            Self::Prismatic => ffi::b2JointType_b2_prismaticJoint,
+            Self::Revolute => ffi::b2JointType_b2_revoluteJoint,
+            Self::Weld => ffi::b2JointType_b2_weldJoint,
+            Self::Wheel => ffi::b2JointType_b2_wheelJoint,
+        }
+    }
+}
+
+impl TryFrom<ffi::b2JointType> for JointType {
+    type Error = ffi::b2JointType;
+
+    #[inline]
+    fn try_from(value: ffi::b2JointType) -> Result<Self, Self::Error> {
+        Self::from_raw(value).ok_or(value)
+    }
+}
+
+#[inline]
+fn joint_type_from_ffi(raw: ffi::b2JointType) -> JointType {
+    JointType::from_raw(raw).expect("Box2D returned an unknown joint type")
+}
+
+/// Shared constraint tuning (Hertz + damping ratio) used by Box2D joints.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+pub struct ConstraintTuning {
+    pub hertz: f32,
+    pub damping_ratio: f32,
+}
+
+impl ConstraintTuning {
+    #[inline]
+    pub const fn new(hertz: f32, damping_ratio: f32) -> Self {
+        Self {
+            hertz,
+            damping_ratio,
+        }
+    }
+}
+
 #[inline]
 fn joint_is_valid_impl(id: JointId) -> bool {
     unsafe { ffi::b2Joint_IsValid(id) }
 }
 
 #[inline]
-fn joint_linear_separation_impl(id: JointId) -> f32 {
+pub(crate) fn joint_type_raw_impl(id: JointId) -> ffi::b2JointType {
+    unsafe { ffi::b2Joint_GetType(id) }
+}
+
+#[inline]
+pub(crate) fn joint_type_impl(id: JointId) -> JointType {
+    joint_type_from_ffi(joint_type_raw_impl(id))
+}
+
+#[inline]
+pub(crate) fn joint_body_a_id_impl(id: JointId) -> BodyId {
+    unsafe { ffi::b2Joint_GetBodyA(id) }
+}
+
+#[inline]
+pub(crate) fn joint_body_b_id_impl(id: JointId) -> BodyId {
+    unsafe { ffi::b2Joint_GetBodyB(id) }
+}
+
+#[inline]
+pub(crate) fn joint_linear_separation_impl(id: JointId) -> f32 {
     unsafe { ffi::b2Joint_GetLinearSeparation(id) }
 }
 
 #[inline]
-fn joint_angular_separation_impl(id: JointId) -> f32 {
+pub(crate) fn joint_angular_separation_impl(id: JointId) -> f32 {
     unsafe { ffi::b2Joint_GetAngularSeparation(id) }
 }
 
 #[inline]
-fn joint_constraint_force_impl(id: JointId) -> Vec2 {
+pub(crate) fn joint_constraint_force_impl(id: JointId) -> Vec2 {
     Vec2::from(unsafe { ffi::b2Joint_GetConstraintForce(id) })
 }
 
 #[inline]
-fn joint_constraint_torque_impl(id: JointId) -> f32 {
+pub(crate) fn joint_constraint_torque_impl(id: JointId) -> f32 {
     unsafe { ffi::b2Joint_GetConstraintTorque(id) }
+}
+
+#[inline]
+pub(crate) fn joint_collide_connected_impl(id: JointId) -> bool {
+    unsafe { ffi::b2Joint_GetCollideConnected(id) }
+}
+
+#[inline]
+pub(crate) fn joint_set_collide_connected_impl(id: JointId, flag: bool) {
+    unsafe { ffi::b2Joint_SetCollideConnected(id, flag) }
+}
+
+#[inline]
+pub(crate) fn joint_constraint_tuning_impl(id: JointId) -> ConstraintTuning {
+    let mut hertz = 0.0f32;
+    let mut damping_ratio = 0.0f32;
+    unsafe { ffi::b2Joint_GetConstraintTuning(id, &mut hertz, &mut damping_ratio) };
+    ConstraintTuning::new(hertz, damping_ratio)
+}
+
+#[inline]
+pub(crate) fn joint_set_constraint_tuning_impl(id: JointId, tuning: ConstraintTuning) {
+    unsafe { ffi::b2Joint_SetConstraintTuning(id, tuning.hertz, tuning.damping_ratio) }
+}
+
+#[inline]
+pub(crate) fn joint_local_frame_a_impl(id: JointId) -> crate::Transform {
+    crate::Transform::from(unsafe { ffi::b2Joint_GetLocalFrameA(id) })
+}
+
+#[inline]
+pub(crate) fn joint_local_frame_b_impl(id: JointId) -> crate::Transform {
+    crate::Transform::from(unsafe { ffi::b2Joint_GetLocalFrameB(id) })
+}
+
+#[inline]
+pub(crate) fn joint_wake_bodies_impl(id: JointId) {
+    unsafe { ffi::b2Joint_WakeBodies(id) }
 }
 
 #[inline]
@@ -172,6 +304,119 @@ impl OwnedJoint {
     /// Borrow the raw id for ID-style APIs.
     pub fn as_id(&self) -> JointId {
         self.id
+    }
+
+    pub fn joint_type(&self) -> JointType {
+        self.assert_valid();
+        joint_type_impl(self.id)
+    }
+
+    pub fn try_joint_type(&self) -> ApiResult<JointType> {
+        self.check_valid()?;
+        Ok(joint_type_impl(self.id))
+    }
+
+    pub fn joint_type_raw(&self) -> ffi::b2JointType {
+        self.assert_valid();
+        joint_type_raw_impl(self.id)
+    }
+
+    pub fn try_joint_type_raw(&self) -> ApiResult<ffi::b2JointType> {
+        self.check_valid()?;
+        Ok(joint_type_raw_impl(self.id))
+    }
+
+    pub fn body_a_id(&self) -> BodyId {
+        self.assert_valid();
+        joint_body_a_id_impl(self.id)
+    }
+
+    pub fn try_body_a_id(&self) -> ApiResult<BodyId> {
+        self.check_valid()?;
+        Ok(joint_body_a_id_impl(self.id))
+    }
+
+    pub fn body_b_id(&self) -> BodyId {
+        self.assert_valid();
+        joint_body_b_id_impl(self.id)
+    }
+
+    pub fn try_body_b_id(&self) -> ApiResult<BodyId> {
+        self.check_valid()?;
+        Ok(joint_body_b_id_impl(self.id))
+    }
+
+    pub fn collide_connected(&self) -> bool {
+        self.assert_valid();
+        joint_collide_connected_impl(self.id)
+    }
+
+    pub fn try_collide_connected(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(joint_collide_connected_impl(self.id))
+    }
+
+    pub fn set_collide_connected(&mut self, flag: bool) {
+        self.assert_valid();
+        joint_set_collide_connected_impl(self.id, flag)
+    }
+
+    pub fn try_set_collide_connected(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        joint_set_collide_connected_impl(self.id, flag);
+        Ok(())
+    }
+
+    pub fn constraint_tuning(&self) -> ConstraintTuning {
+        self.assert_valid();
+        joint_constraint_tuning_impl(self.id)
+    }
+
+    pub fn try_constraint_tuning(&self) -> ApiResult<ConstraintTuning> {
+        self.check_valid()?;
+        Ok(joint_constraint_tuning_impl(self.id))
+    }
+
+    pub fn set_constraint_tuning(&mut self, tuning: ConstraintTuning) {
+        self.assert_valid();
+        joint_set_constraint_tuning_impl(self.id, tuning)
+    }
+
+    pub fn try_set_constraint_tuning(&mut self, tuning: ConstraintTuning) -> ApiResult<()> {
+        self.check_valid()?;
+        joint_set_constraint_tuning_impl(self.id, tuning);
+        Ok(())
+    }
+
+    pub fn local_frame_a(&self) -> crate::Transform {
+        self.assert_valid();
+        joint_local_frame_a_impl(self.id)
+    }
+
+    pub fn try_local_frame_a(&self) -> ApiResult<crate::Transform> {
+        self.check_valid()?;
+        Ok(joint_local_frame_a_impl(self.id))
+    }
+
+    pub fn local_frame_b(&self) -> crate::Transform {
+        self.assert_valid();
+        joint_local_frame_b_impl(self.id)
+    }
+
+    pub fn try_local_frame_b(&self) -> ApiResult<crate::Transform> {
+        self.check_valid()?;
+        Ok(joint_local_frame_b_impl(self.id))
+    }
+
+    pub fn wake_bodies(&mut self) {
+        self.assert_valid();
+        joint_wake_bodies_impl(self.id)
+    }
+
+    pub fn try_wake_bodies(&mut self) -> ApiResult<()> {
+        self.check_valid()?;
+        joint_wake_bodies_impl(self.id);
+        Ok(())
     }
 
     pub fn linear_separation(&self) -> f32 {
@@ -427,6 +672,120 @@ impl<'w> Joint<'w> {
         crate::core::callback_state::check_not_in_callback()?;
         Ok(joint_is_valid_impl(self.id))
     }
+
+    pub fn joint_type(&self) -> JointType {
+        self.assert_valid();
+        joint_type_impl(self.id)
+    }
+
+    pub fn try_joint_type(&self) -> ApiResult<JointType> {
+        self.check_valid()?;
+        Ok(joint_type_impl(self.id))
+    }
+
+    pub fn joint_type_raw(&self) -> ffi::b2JointType {
+        self.assert_valid();
+        joint_type_raw_impl(self.id)
+    }
+
+    pub fn try_joint_type_raw(&self) -> ApiResult<ffi::b2JointType> {
+        self.check_valid()?;
+        Ok(joint_type_raw_impl(self.id))
+    }
+
+    pub fn body_a_id(&self) -> BodyId {
+        self.assert_valid();
+        joint_body_a_id_impl(self.id)
+    }
+
+    pub fn try_body_a_id(&self) -> ApiResult<BodyId> {
+        self.check_valid()?;
+        Ok(joint_body_a_id_impl(self.id))
+    }
+
+    pub fn body_b_id(&self) -> BodyId {
+        self.assert_valid();
+        joint_body_b_id_impl(self.id)
+    }
+
+    pub fn try_body_b_id(&self) -> ApiResult<BodyId> {
+        self.check_valid()?;
+        Ok(joint_body_b_id_impl(self.id))
+    }
+
+    pub fn collide_connected(&self) -> bool {
+        self.assert_valid();
+        joint_collide_connected_impl(self.id)
+    }
+
+    pub fn try_collide_connected(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(joint_collide_connected_impl(self.id))
+    }
+
+    pub fn set_collide_connected(&mut self, flag: bool) {
+        self.assert_valid();
+        joint_set_collide_connected_impl(self.id, flag)
+    }
+
+    pub fn try_set_collide_connected(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        joint_set_collide_connected_impl(self.id, flag);
+        Ok(())
+    }
+
+    pub fn constraint_tuning(&self) -> ConstraintTuning {
+        self.assert_valid();
+        joint_constraint_tuning_impl(self.id)
+    }
+
+    pub fn try_constraint_tuning(&self) -> ApiResult<ConstraintTuning> {
+        self.check_valid()?;
+        Ok(joint_constraint_tuning_impl(self.id))
+    }
+
+    pub fn set_constraint_tuning(&mut self, tuning: ConstraintTuning) {
+        self.assert_valid();
+        joint_set_constraint_tuning_impl(self.id, tuning)
+    }
+
+    pub fn try_set_constraint_tuning(&mut self, tuning: ConstraintTuning) -> ApiResult<()> {
+        self.check_valid()?;
+        joint_set_constraint_tuning_impl(self.id, tuning);
+        Ok(())
+    }
+
+    pub fn local_frame_a(&self) -> crate::Transform {
+        self.assert_valid();
+        joint_local_frame_a_impl(self.id)
+    }
+
+    pub fn try_local_frame_a(&self) -> ApiResult<crate::Transform> {
+        self.check_valid()?;
+        Ok(joint_local_frame_a_impl(self.id))
+    }
+
+    pub fn local_frame_b(&self) -> crate::Transform {
+        self.assert_valid();
+        joint_local_frame_b_impl(self.id)
+    }
+
+    pub fn try_local_frame_b(&self) -> ApiResult<crate::Transform> {
+        self.check_valid()?;
+        Ok(joint_local_frame_b_impl(self.id))
+    }
+
+    pub fn wake_bodies(&mut self) {
+        self.assert_valid();
+        joint_wake_bodies_impl(self.id)
+    }
+
+    pub fn try_wake_bodies(&mut self) -> ApiResult<()> {
+        self.check_valid()?;
+        joint_wake_bodies_impl(self.id);
+        Ok(())
+    }
+
     pub fn linear_separation(&self) -> f32 {
         self.assert_valid();
         joint_linear_separation_impl(self.id)

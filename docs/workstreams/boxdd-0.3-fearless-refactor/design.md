@@ -147,6 +147,9 @@ These seams are worth keeping only if:
 - standalone collision geometry helpers for distance, shape cast, TOI, and AABB validation/ray cast
 - crate-owned wrapper cleanup for remaining leaked Box2D value types (`ShapeType`, `MassData`, contact data, and manifolds)
 - explicit raw geometry conversions for crate-owned shape geometry values
+- live shape runtime completeness cleanup so AABB / point test / ray cast / mass data / event toggles stay aligned across owned/scoped/id styles
+- body runtime completeness cleanup so rotation / sleeping / awake-enabled-bullet-name state / attached ids / body-level event toggles stay aligned across owned/scoped/id styles
+- joint runtime completeness cleanup so common joint metadata plus type-specific distance/prismatic/revolute/weld/wheel/motor state/control stay aligned across owned/scoped/id styles, and wrong-family `try_*` calls return `ApiError::InvalidJointType`
 - math-interop completeness cleanup so `mint` stays a first-class bridge instead of a partially-covered feature
 - explicit threading / async documentation and examples that preserve the current `!Send` / `!Sync` design instead of weakening it
 - clearer crate-level error-handling guidance for panic-by-default vs `try_*` usage
@@ -157,6 +160,8 @@ These seams are worth keeping only if:
 - continue the `World` / `WorldHandle` duplication review after the query surface consolidation, keeping only the duplication that is still clearer than a shared internal definition
 - owned / scoped handle duplication review outside the hottest paths
 - continue collapsing purely mechanical per-type API families such as joint creation entrypoints when the public surface stays identical but the internal drift risk drops
+- continue the completeness audit after shipping the live-shape runtime wrappers, especially for remaining body/joint runtime gaps
+- keep world-space joint builders behaviorally coherent when runtime-computed frames or body ids are filled, so base flags such as `collide_connected` are not silently lost
 - keep callback-sensitive event-buffer borrowing on a single internal path so deferred-destroy behavior cannot diverge across body/contact/sensor/joint views
 - apply the same single-source rule to geometry-specific world helpers when circle/segment/capsule/polygon entrypoints are mechanically identical apart from the Box2D function they call
 - keep intentional raw seams such as `debug_draw_raw` only when they share the same panic forwarding, callback lock semantics, and regression coverage as the safe path

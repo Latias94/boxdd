@@ -4,8 +4,9 @@ pub use crate::{
     WorldHandle,
     debug_draw::{DebugDraw, DebugDrawCmd, DebugDrawOptions, HexColor, RawDebugDraw},
     joints::{
-        DistanceJointDef, FilterJointDef, Joint, JointBase, JointBaseBuilder, MotorJointDef,
-        OwnedJoint, PrismaticJointDef, RevoluteJointDef, WeldJointDef, WheelJointDef,
+        ConstraintTuning, DistanceJointDef, FilterJointDef, Joint, JointBase, JointBaseBuilder,
+        JointType, MotorJointDef, OwnedJoint, PrismaticJointDef, RevoluteJointDef, WeldJointDef,
+        WheelJointDef,
     },
     query::{
         Aabb, CollisionPlane, MoverPlaneResult, Plane, PlaneSolverResult, QueryFilter, RayResult,

@@ -3,7 +3,7 @@ use crate::types::BodyId;
 use crate::world::World;
 use boxdd_sys::ffi;
 
-use super::{Joint, JointBase, JointBaseBuilder, OwnedJoint};
+use super::{Joint, JointBase, OwnedJoint};
 use crate::error::ApiResult;
 
 // Distance joint
@@ -253,20 +253,16 @@ impl<'w> DistanceJointBuilder<'w> {
         let bw = self.anchor_b_world.unwrap_or(tb.p);
         let la = crate::core::math::world_to_local_point(ta, aw);
         let lb = crate::core::math::world_to_local_point(tb, bw);
-        let base = JointBaseBuilder::new()
-            .bodies_by_id(self.body_a, self.body_b)
-            .local_frames_raw(
-                ffi::b2Transform {
-                    p: la,
-                    q: ffi::b2Rot { c: 1.0, s: 0.0 },
-                },
-                ffi::b2Transform {
-                    p: lb,
-                    q: ffi::b2Rot { c: 1.0, s: 0.0 },
-                },
-            )
-            .build();
-        self.def.0.base = base.0;
+        self.def.0.base.bodyIdA = self.body_a;
+        self.def.0.base.bodyIdB = self.body_b;
+        self.def.0.base.localFrameA = ffi::b2Transform {
+            p: la,
+            q: ffi::b2Rot { c: 1.0, s: 0.0 },
+        };
+        self.def.0.base.localFrameB = ffi::b2Transform {
+            p: lb,
+            q: ffi::b2Rot { c: 1.0, s: 0.0 },
+        };
         self.world.create_distance_joint(&self.def)
     }
 
@@ -279,20 +275,16 @@ impl<'w> DistanceJointBuilder<'w> {
         let bw = self.anchor_b_world.unwrap_or(tb.p);
         let la = crate::core::math::world_to_local_point(ta, aw);
         let lb = crate::core::math::world_to_local_point(tb, bw);
-        let base = JointBaseBuilder::new()
-            .bodies_by_id(self.body_a, self.body_b)
-            .local_frames_raw(
-                ffi::b2Transform {
-                    p: la,
-                    q: ffi::b2Rot { c: 1.0, s: 0.0 },
-                },
-                ffi::b2Transform {
-                    p: lb,
-                    q: ffi::b2Rot { c: 1.0, s: 0.0 },
-                },
-            )
-            .build();
-        self.def.0.base = base.0;
+        self.def.0.base.bodyIdA = self.body_a;
+        self.def.0.base.bodyIdB = self.body_b;
+        self.def.0.base.localFrameA = ffi::b2Transform {
+            p: la,
+            q: ffi::b2Rot { c: 1.0, s: 0.0 },
+        };
+        self.def.0.base.localFrameB = ffi::b2Transform {
+            p: lb,
+            q: ffi::b2Rot { c: 1.0, s: 0.0 },
+        };
         self.world.try_create_distance_joint(&self.def)
     }
 
@@ -307,20 +299,16 @@ impl<'w> DistanceJointBuilder<'w> {
         let bw = self.anchor_b_world.unwrap_or(tb.p);
         let la = crate::core::math::world_to_local_point(ta, aw);
         let lb = crate::core::math::world_to_local_point(tb, bw);
-        let base = JointBaseBuilder::new()
-            .bodies_by_id(self.body_a, self.body_b)
-            .local_frames_raw(
-                ffi::b2Transform {
-                    p: la,
-                    q: ffi::b2Rot { c: 1.0, s: 0.0 },
-                },
-                ffi::b2Transform {
-                    p: lb,
-                    q: ffi::b2Rot { c: 1.0, s: 0.0 },
-                },
-            )
-            .build();
-        self.def.0.base = base.0;
+        self.def.0.base.bodyIdA = self.body_a;
+        self.def.0.base.bodyIdB = self.body_b;
+        self.def.0.base.localFrameA = ffi::b2Transform {
+            p: la,
+            q: ffi::b2Rot { c: 1.0, s: 0.0 },
+        };
+        self.def.0.base.localFrameB = ffi::b2Transform {
+            p: lb,
+            q: ffi::b2Rot { c: 1.0, s: 0.0 },
+        };
         self.world.create_distance_joint_owned(&self.def)
     }
 
@@ -333,20 +321,16 @@ impl<'w> DistanceJointBuilder<'w> {
         let bw = self.anchor_b_world.unwrap_or(tb.p);
         let la = crate::core::math::world_to_local_point(ta, aw);
         let lb = crate::core::math::world_to_local_point(tb, bw);
-        let base = JointBaseBuilder::new()
-            .bodies_by_id(self.body_a, self.body_b)
-            .local_frames_raw(
-                ffi::b2Transform {
-                    p: la,
-                    q: ffi::b2Rot { c: 1.0, s: 0.0 },
-                },
-                ffi::b2Transform {
-                    p: lb,
-                    q: ffi::b2Rot { c: 1.0, s: 0.0 },
-                },
-            )
-            .build();
-        self.def.0.base = base.0;
+        self.def.0.base.bodyIdA = self.body_a;
+        self.def.0.base.bodyIdB = self.body_b;
+        self.def.0.base.localFrameA = ffi::b2Transform {
+            p: la,
+            q: ffi::b2Rot { c: 1.0, s: 0.0 },
+        };
+        self.def.0.base.localFrameB = ffi::b2Transform {
+            p: lb,
+            q: ffi::b2Rot { c: 1.0, s: 0.0 },
+        };
         self.world.try_create_distance_joint_owned(&self.def)
     }
 }

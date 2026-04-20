@@ -38,20 +38,16 @@ impl<'w> FilterJointBuilder<'w> {
     pub fn build(mut self) -> Joint<'w> {
         crate::core::debug_checks::assert_body_valid(self.body_a);
         crate::core::debug_checks::assert_body_valid(self.body_b);
-        let base = super::JointBaseBuilder::new()
-            .bodies_by_id(self.body_a, self.body_b)
-            .build();
-        self.def.0.base = base.0;
+        self.def.0.base.bodyIdA = self.body_a;
+        self.def.0.base.bodyIdB = self.body_b;
         self.world.create_filter_joint(&self.def)
     }
 
     pub fn try_build(mut self) -> ApiResult<Joint<'w>> {
         crate::core::debug_checks::check_body_valid(self.body_a)?;
         crate::core::debug_checks::check_body_valid(self.body_b)?;
-        let base = super::JointBaseBuilder::new()
-            .bodies_by_id(self.body_a, self.body_b)
-            .build();
-        self.def.0.base = base.0;
+        self.def.0.base.bodyIdA = self.body_a;
+        self.def.0.base.bodyIdB = self.body_b;
         self.world.try_create_filter_joint(&self.def)
     }
 
@@ -59,20 +55,16 @@ impl<'w> FilterJointBuilder<'w> {
     pub fn build_owned(mut self) -> OwnedJoint {
         crate::core::debug_checks::assert_body_valid(self.body_a);
         crate::core::debug_checks::assert_body_valid(self.body_b);
-        let base = super::JointBaseBuilder::new()
-            .bodies_by_id(self.body_a, self.body_b)
-            .build();
-        self.def.0.base = base.0;
+        self.def.0.base.bodyIdA = self.body_a;
+        self.def.0.base.bodyIdB = self.body_b;
         self.world.create_filter_joint_owned(&self.def)
     }
 
     pub fn try_build_owned(mut self) -> ApiResult<OwnedJoint> {
         crate::core::debug_checks::check_body_valid(self.body_a)?;
         crate::core::debug_checks::check_body_valid(self.body_b)?;
-        let base = super::JointBaseBuilder::new()
-            .bodies_by_id(self.body_a, self.body_b)
-            .build();
-        self.def.0.base = base.0;
+        self.def.0.base.bodyIdA = self.body_a;
+        self.def.0.base.bodyIdB = self.body_b;
         self.world.try_create_filter_joint_owned(&self.def)
     }
 }

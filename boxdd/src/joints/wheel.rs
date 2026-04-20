@@ -3,7 +3,7 @@ use crate::types::BodyId;
 use crate::world::World;
 use boxdd_sys::ffi;
 
-use super::{Joint, JointBase, JointBaseBuilder, OwnedJoint};
+use super::{Joint, JointBase, OwnedJoint};
 use crate::error::ApiResult;
 
 // Wheel joint
@@ -254,14 +254,10 @@ impl<'w> WheelJointBuilder<'w> {
         let lb = crate::core::math::world_to_local_point(tb, bw);
         let ra = crate::core::math::world_axis_to_local_rot(ta, axis);
         let rb = crate::core::math::world_axis_to_local_rot(tb, axis);
-        let base = JointBaseBuilder::new()
-            .bodies_by_id(self.body_a, self.body_b)
-            .local_frames_raw(
-                ffi::b2Transform { p: la, q: ra },
-                ffi::b2Transform { p: lb, q: rb },
-            )
-            .build();
-        self.def.0.base = base.0;
+        self.def.0.base.bodyIdA = self.body_a;
+        self.def.0.base.bodyIdB = self.body_b;
+        self.def.0.base.localFrameA = ffi::b2Transform { p: la, q: ra };
+        self.def.0.base.localFrameB = ffi::b2Transform { p: lb, q: rb };
         self.world.create_wheel_joint(&self.def)
     }
 
@@ -277,14 +273,10 @@ impl<'w> WheelJointBuilder<'w> {
         let lb = crate::core::math::world_to_local_point(tb, bw);
         let ra = crate::core::math::world_axis_to_local_rot(ta, axis);
         let rb = crate::core::math::world_axis_to_local_rot(tb, axis);
-        let base = JointBaseBuilder::new()
-            .bodies_by_id(self.body_a, self.body_b)
-            .local_frames_raw(
-                ffi::b2Transform { p: la, q: ra },
-                ffi::b2Transform { p: lb, q: rb },
-            )
-            .build();
-        self.def.0.base = base.0;
+        self.def.0.base.bodyIdA = self.body_a;
+        self.def.0.base.bodyIdB = self.body_b;
+        self.def.0.base.localFrameA = ffi::b2Transform { p: la, q: ra };
+        self.def.0.base.localFrameB = ffi::b2Transform { p: lb, q: rb };
         self.world.try_create_wheel_joint(&self.def)
     }
 
@@ -302,14 +294,10 @@ impl<'w> WheelJointBuilder<'w> {
         let lb = crate::core::math::world_to_local_point(tb, bw);
         let ra = crate::core::math::world_axis_to_local_rot(ta, axis);
         let rb = crate::core::math::world_axis_to_local_rot(tb, axis);
-        let base = JointBaseBuilder::new()
-            .bodies_by_id(self.body_a, self.body_b)
-            .local_frames_raw(
-                ffi::b2Transform { p: la, q: ra },
-                ffi::b2Transform { p: lb, q: rb },
-            )
-            .build();
-        self.def.0.base = base.0;
+        self.def.0.base.bodyIdA = self.body_a;
+        self.def.0.base.bodyIdB = self.body_b;
+        self.def.0.base.localFrameA = ffi::b2Transform { p: la, q: ra };
+        self.def.0.base.localFrameB = ffi::b2Transform { p: lb, q: rb };
         self.world.create_wheel_joint_owned(&self.def)
     }
 
@@ -325,14 +313,10 @@ impl<'w> WheelJointBuilder<'w> {
         let lb = crate::core::math::world_to_local_point(tb, bw);
         let ra = crate::core::math::world_axis_to_local_rot(ta, axis);
         let rb = crate::core::math::world_axis_to_local_rot(tb, axis);
-        let base = JointBaseBuilder::new()
-            .bodies_by_id(self.body_a, self.body_b)
-            .local_frames_raw(
-                ffi::b2Transform { p: la, q: ra },
-                ffi::b2Transform { p: lb, q: rb },
-            )
-            .build();
-        self.def.0.base = base.0;
+        self.def.0.base.bodyIdA = self.body_a;
+        self.def.0.base.bodyIdB = self.body_b;
+        self.def.0.base.localFrameA = ffi::b2Transform { p: la, q: ra };
+        self.def.0.base.localFrameB = ffi::b2Transform { p: lb, q: rb };
         self.world.try_create_wheel_joint_owned(&self.def)
     }
 }

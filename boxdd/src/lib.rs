@@ -9,6 +9,9 @@
 //! - Character mover helpers: cast movers, collect collision planes, solve planes, and clip velocity without raw FFI.
 //! - Standalone collision geometry helpers: shape proxies, GJK distance, manifolds, shape cast, TOI, and AABB validation/ray cast.
 //! - Shape geometry uses crate-owned values (`Circle`, `Segment`, `ChainSegment`, `Capsule`, `Polygon`) across helpers, shape editing, and creation.
+//! - Live shapes expose safe runtime helpers for AABB, point tests, direct ray casts, computed mass data, and runtime event toggles.
+//! - Bodies expose safe runtime helpers for rotation, sleep/awake/enabled/bullet/name controls, attached shape/joint enumeration, and body-level contact/hit event toggles.
+//! - Joints expose safe runtime helpers for joint kind, connected body ids, `collide_connected`, constraint tuning, local frames, wake controls, and type-specific runtime state across distance/prismatic/revolute/weld/wheel/motor families.
 //! - Core value types such as `ShapeType`, `MassData`, and contact manifolds are crate-owned instead of leaking raw Box2D structs.
 //! - Typed material mixing callbacks for friction and restitution using `user_material_id`.
 //! - Three usage styles:
@@ -16,7 +19,7 @@
 //!   - Scoped handles: `Body<'_>`/`Shape<'_>`/`Joint<'_>`/`Chain<'_>` (dropping only releases the world borrow).
 //!   - ID-style: raw ids (`BodyId`/`ShapeId`/`JointId`/`ChainId`) for maximum flexibility.
 //! - Safe handle methods validate ids and panic on invalid ids (prevents UB if an id becomes stale).
-//!   For recoverable failures (invalid ids / calling during Box2D callbacks), use `try_*` APIs returning `ApiResult<T>`.
+//!   For recoverable failures (invalid ids / wrong typed-joint family / calling during Box2D callbacks), use `try_*` APIs returning `ApiResult<T>`.
 //! - Threading: `World` and owned handles are `!Send`/`!Sync`. Run physics on one thread; in async runtimes prefer
 //!   `spawn_local`/`LocalSet`, or create the world inside a dedicated physics thread and communicate via channels.
 //!
@@ -245,10 +248,10 @@ pub use events::{
 };
 pub use filter::Filter;
 pub use joints::{
-    DistanceJointBuilder, DistanceJointDef, FilterJointBuilder, FilterJointDef, Joint, JointBase,
-    JointBaseBuilder, MotorJointBuilder, MotorJointDef, PrismaticJointBuilder, PrismaticJointDef,
-    RevoluteJointBuilder, RevoluteJointDef, WeldJointBuilder, WeldJointDef, WheelJointBuilder,
-    WheelJointDef,
+    ConstraintTuning, DistanceJointBuilder, DistanceJointDef, FilterJointBuilder, FilterJointDef,
+    Joint, JointBase, JointBaseBuilder, JointType, MotorJointBuilder, MotorJointDef,
+    PrismaticJointBuilder, PrismaticJointDef, RevoluteJointBuilder, RevoluteJointDef,
+    WeldJointBuilder, WeldJointDef, WheelJointBuilder, WheelJointDef,
 };
 pub use query::{
     Aabb, CollisionPlane, MoverPlaneResult, Plane, PlaneSolverResult, QueryFilter, RayResult,

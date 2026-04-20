@@ -130,6 +130,12 @@ Scope:
 - audit thread-model / async guidance so `worker_count`, worker-thread callbacks, and `World: !Send/!Sync` are documented together
 - audit math interop completeness so `mint` stays aligned with the crate-owned `Vec2` / `Rot` / `Transform` / `Aabb` vocabulary
 - clarify panic-by-default vs `try_*` error-handling guidance at the crate boundary
+- productize live shape runtime wrappers for AABB, point tests, ray casts, computed mass data, and runtime event toggles across owned/scoped/id APIs
+- productize the body runtime completeness slice around rotation, sleeping/awake/enabled/bullet/name state, attached ids, and body-level event toggles
+- productize the first joint runtime completeness slice around joint metadata, constraint tuning, local frames, and wake helpers across owned/scoped/id APIs
+- productize the type-specific joint runtime completeness slice around distance/prismatic/revolute/weld/wheel/motor getters/setters across owned/scoped/id APIs
+- make typed joint `try_*` APIs reject wrong joint families with `ApiError::InvalidJointType` instead of depending on upstream asserts
+- keep world-space joint builders coherent when they compute body ids / local frames at build time so previously configured base flags are preserved
 
 Exit criteria:
 
@@ -138,3 +144,8 @@ Exit criteria:
 - the next completeness pass has a short, explicit backlog instead of scattered notes
 - thread-model guidance no longer implies that internal worker threads make the public world API thread-safe
 - math interop documentation and tests cover the intended `mint` bridge story explicitly
+- common live-shape runtime queries and toggles no longer require raw `ffi` or an upstream-only mental model
+- common body runtime controls and attached-id enumeration no longer require handle-only workarounds or ad-hoc allocations
+- common joint runtime metadata and control no longer require raw `ffi` or per-handle-style workarounds
+- type-specific joint runtime state and control no longer require world-only helpers, raw `ffi`, or upstream joint-family knowledge
+- wrong-family typed joint `try_*` misuse reports `ApiError::InvalidJointType` instead of depending on Box2D assert builds
