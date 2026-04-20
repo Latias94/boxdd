@@ -4,10 +4,11 @@ use boxdd::HexColor;
 fn hex_color_helpers_round_trip_rgb_values() {
     let color = HexColor::from_rgb(0x12, 0x34, 0x56);
     assert_eq!(color.rgb_u32(), 0x123456);
+    assert_eq!(HexColor::from_raw(color.into_raw()).rgb_u32(), 0x123456);
     assert_eq!(color.into_raw(), 0x123456);
     assert_eq!(color.with_alpha(0x7f), 0x7f123456);
 
-    let masked: HexColor = 0xffabcdefu32.into();
+    let masked = HexColor::from_raw(0xffabcdef);
     assert_eq!(masked.rgb_u32(), 0xabcdef);
     assert_eq!(masked.into_raw(), 0xabcdef);
 

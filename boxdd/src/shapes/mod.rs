@@ -59,13 +59,6 @@ impl ShapeType {
     }
 }
 
-impl From<ShapeType> for ffi::b2ShapeType {
-    #[inline]
-    fn from(value: ShapeType) -> Self {
-        value.into_raw()
-    }
-}
-
 impl TryFrom<ffi::b2ShapeType> for ShapeType {
     type Error = ffi::b2ShapeType;
 

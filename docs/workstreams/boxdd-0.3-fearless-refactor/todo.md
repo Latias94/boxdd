@@ -44,13 +44,14 @@
 - [x] Make `BodyType`, `Aabb`, mover/query value types, collision outputs, and `Counters` use explicit `from_raw(...)` / `into_raw()` APIs where applicable instead of implicit raw conversions.
 - [x] Make collision input value types (`DistanceInput`, `ShapeCastPairInput`, `Sweep`, `ToiInput`) cross the raw boundary explicitly with named `into_raw()` / `from_raw()` APIs instead of implicit conversions.
 - [x] Make contact/manifold value types (`ManifoldPoint`, `Manifold`, `ContactData`) use explicit raw conversion APIs instead of implicit `From<ffi::...>` shims.
+- [x] Remove the remaining compatibility `From` shims for `ShapeType` and `HexColor` in favor of their existing named raw conversion APIs.
 
 ## Next
 
 - [ ] Review remaining `World` / `WorldHandle` query duplication and decide whether selective consolidation is worth it.
 - [ ] Audit any remaining owned/scoped handle duplication outside the already-refactored internals and confirm it is worth keeping.
 - [ ] Review remaining public raw escape hatches and document which are intentional (`world_id_raw`, raw event slices, debug draw raw paths, etc.).
-- [ ] Audit remaining compatibility shims around crate-owned types, prioritizing `ShapeType`, `HexColor`, and any intentional debug-draw/raw-color or raw-event boundaries that should stay explicit.
+- [ ] Audit the remaining intentional raw boundaries, especially debug-draw/raw-event hooks and other explicit escape hatches that should stay narrow and well-documented.
 
 ## Release Checklist
 

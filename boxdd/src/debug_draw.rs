@@ -78,20 +78,6 @@ impl HexColor {
     }
 }
 
-impl From<ffi::b2HexColor> for HexColor {
-    #[inline]
-    fn from(raw: ffi::b2HexColor) -> Self {
-        Self::from_raw(raw)
-    }
-}
-
-impl From<HexColor> for ffi::b2HexColor {
-    #[inline]
-    fn from(color: HexColor) -> Self {
-        color.into_raw()
-    }
-}
-
 const _: () = {
     assert!(core::mem::size_of::<HexColor>() == core::mem::size_of::<ffi::b2HexColor>());
     assert!(core::mem::align_of::<HexColor>() == core::mem::align_of::<ffi::b2HexColor>());

@@ -298,6 +298,14 @@ fn shape_type_uses_safe_enum_and_explicit_raw_escape_hatch() {
 
     assert_eq!(circle.shape_type(), ShapeType::Circle);
     assert_eq!(
+        ShapeType::from_raw(boxdd_sys::ffi::b2ShapeType_b2_circleShape),
+        Some(ShapeType::Circle)
+    );
+    assert_eq!(
+        ShapeType::Circle.into_raw(),
+        boxdd_sys::ffi::b2ShapeType_b2_circleShape
+    );
+    assert_eq!(
         circle.shape_type_raw(),
         boxdd_sys::ffi::b2ShapeType_b2_circleShape
     );

@@ -51,6 +51,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Breaking: `BodyType`, `Aabb`, mover/query value types (`RayResult`, `Plane`, `CollisionPlane`, `PlaneSolverResult`), collision outputs (`SegmentDistanceResult`, `CastOutput`, `DistanceOutput`, `ToiState`, `ToiOutput`), and `Counters` now use explicit `from_raw(...)` and, where applicable, `into_raw()` APIs instead of implicit raw conversions.
 - Breaking: collision input value types (`DistanceInput`, `ShapeCastPairInput`, `Sweep`, `ToiInput`) now use explicit named raw conversion APIs instead of implicit `From<Self> for ffi::...>` conversions.
 - Breaking: `ManifoldPoint`, `Manifold`, and `ContactData` now cross the raw FFI boundary explicitly via `from_raw(...)` / `into_raw()` instead of implicit `From<ffi::...>` conversions.
+- Breaking: `ShapeType` and `HexColor` now rely solely on their named raw conversion APIs (`from_raw(...)` / `into_raw()`) instead of compatibility `From` shims.
 - Breaking: raw world-id escape hatches now use explicit naming: `World::raw` / `WorldHandle::raw` moved to `world_id_raw`, and body/shape/chain `world_id` accessors moved to `world_id_raw` / `try_world_id_raw`.
 - Breaking: `DebugDraw` / `RawDebugDraw` color parameters and collected command colors now use crate-owned `HexColor` instead of leaking `ffi::b2HexColor`.
 
