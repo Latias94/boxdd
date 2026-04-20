@@ -33,12 +33,13 @@
 - [x] Replace `ffi::b2MotionLocks` with crate-owned `MotionLocks`.
 - [x] Add a crate-owned `ChainSegment` geometry type and productize chain-segment manifold collision helpers.
 - [x] Add reusable-buffer debug draw command collection and reuse nested polygon/string storage on stable command streams.
+- [x] Rename raw world-id escape hatches explicitly to `world_id_raw` / `try_world_id_raw`.
 
 ## Next
 
 - [ ] Review remaining `World` / `WorldHandle` query duplication and decide whether selective consolidation is worth it.
 - [ ] Audit remaining owned/scoped handle duplication outside the already-refactored hot paths.
-- [ ] Review remaining public raw escape hatches and document which are intentional (`world_id`, raw event slices, debug draw raw paths, etc.).
+- [ ] Review remaining public raw escape hatches and document which are intentional (`world_id_raw`, raw event slices, debug draw raw paths, etc.).
 
 ## Release Checklist
 

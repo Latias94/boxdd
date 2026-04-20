@@ -1,4 +1,9 @@
 use boxdd::prelude::*;
+use boxdd::shapes;
+
+fn same_world_id(a: boxdd_sys::ffi::b2WorldId, b: boxdd_sys::ffi::b2WorldId) -> bool {
+    a.index1 == b.index1 && a.generation == b.generation
+}
 
 #[test]
 fn world_runtime_coverage_safe_api() {
@@ -59,4 +64,38 @@ fn world_runtime_coverage_safe_api() {
     assert_eq!(world.body_motion_locks(body), locks);
 
     world.step(1.0, 1);
+}
+
+#[test]
+fn raw_world_id_escape_hatches_are_explicit() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let world_id = world.world_id_raw();
+    let handle = world.handle();
+    assert!(same_world_id(handle.world_id_raw(), world_id));
+
+    let body = world.create_body_owned(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+    assert!(same_world_id(body.world_id_raw(), world_id));
+    assert!(same_world_id(body.try_world_id_raw().unwrap(), world_id));
+
+    let shape = world.create_circle_shape_for_owned(
+        body.id(),
+        &ShapeDef::default(),
+        &shapes::circle([0.0_f32, 0.0], 0.5),
+    );
+    assert!(same_world_id(shape.world_id_raw(), world_id));
+    assert!(same_world_id(shape.try_world_id_raw().unwrap(), world_id));
+
+    let chain = world.create_chain_for_owned(
+        body.id(),
+        &boxdd::shapes::chain::ChainDef::builder()
+            .points([
+                Vec2::new(-2.0, 0.0),
+                Vec2::new(-1.0, 0.0),
+                Vec2::new(1.0, 0.0),
+                Vec2::new(2.0, 0.0),
+            ])
+            .build(),
+    );
+    assert!(same_world_id(chain.world_id_raw(), world_id));
+    assert!(same_world_id(chain.try_world_id_raw().unwrap(), world_id));
 }

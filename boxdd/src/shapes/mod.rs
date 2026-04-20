@@ -187,12 +187,12 @@ impl OwnedShape {
         self.id
     }
 
-    pub fn world_id(&self) -> ffi::b2WorldId {
+    pub fn world_id_raw(&self) -> ffi::b2WorldId {
         self.assert_valid();
         unsafe { ffi::b2Shape_GetWorld(self.id) }
     }
 
-    pub fn try_world_id(&self) -> ApiResult<ffi::b2WorldId> {
+    pub fn try_world_id_raw(&self) -> ApiResult<ffi::b2WorldId> {
         self.check_valid()?;
         Ok(unsafe { ffi::b2Shape_GetWorld(self.id) })
     }
@@ -789,12 +789,12 @@ impl<'w> Shape<'w> {
         self.id
     }
 
-    pub fn world_id(&self) -> ffi::b2WorldId {
+    pub fn world_id_raw(&self) -> ffi::b2WorldId {
         self.assert_valid();
         unsafe { ffi::b2Shape_GetWorld(self.id) }
     }
 
-    pub fn try_world_id(&self) -> ApiResult<ffi::b2WorldId> {
+    pub fn try_world_id_raw(&self) -> ApiResult<ffi::b2WorldId> {
         self.check_valid()?;
         Ok(unsafe { ffi::b2Shape_GetWorld(self.id) })
     }

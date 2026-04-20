@@ -394,8 +394,12 @@ impl CallbackWorld {
 
 impl WorldHandle {
     /// Expose raw world id for advanced use-cases.
-    pub fn raw(&self) -> ffi::b2WorldId {
+    pub fn world_id_raw(&self) -> ffi::b2WorldId {
         self.core.id
+    }
+
+    pub(crate) fn raw(&self) -> ffi::b2WorldId {
+        self.world_id_raw()
     }
 }
 
@@ -520,9 +524,13 @@ impl World {
         Ok(Vec2::from(unsafe { ffi::b2World_GetGravity(self.raw()) }))
     }
 
-    /// Expose raw id for advanced use-cases.
-    pub fn raw(&self) -> ffi::b2WorldId {
+    /// Expose the raw Box2D world id for advanced use-cases.
+    pub fn world_id_raw(&self) -> ffi::b2WorldId {
         self.core.id
+    }
+
+    pub(crate) fn raw(&self) -> ffi::b2WorldId {
+        self.world_id_raw()
     }
 
     pub(crate) fn core_arc(&self) -> Arc<WorldCore> {

@@ -814,13 +814,13 @@ impl PhysicsApp {
             self.step_ms = t0.elapsed().as_secs_f32() * 1000.0;
             // World counters
             unsafe {
-                let c = ffi::b2World_GetCounters(self.world.raw());
+                let c = ffi::b2World_GetCounters(self.world.world_id_raw());
                 self.cnt_bodies = c.bodyCount;
                 self.cnt_shapes = c.shapeCount;
                 self.cnt_contacts = c.contactCount;
                 self.cnt_joints = c.jointCount;
                 self.cnt_islands = c.islandCount;
-                self.cnt_awake = ffi::b2World_GetAwakeBodyCount(self.world.raw());
+                self.cnt_awake = ffi::b2World_GetAwakeBodyCount(self.world.world_id_raw());
             }
         }
         match self.scene {
