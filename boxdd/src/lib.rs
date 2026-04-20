@@ -68,7 +68,7 @@
 //! - With `mint`, `cgmath`, `nalgebra`, or `glam` enabled, `Vec2` also accepts those crates'
 //!   2D vector/point types via `From`/`Into`.
 //! - Returned vectors can be converted back using `From` to the corresponding math types.
-//! - `mint` also covers `Rot -> mint::RowMatrix2` / `mint::ColumnMatrix2`, plus row- and
+//! - `mint` also covers `Rot <-> mint::RowMatrix2` / `mint::ColumnMatrix2`, plus row- and
 //!   column-major 2D affine matrices for `Transform`.
 //!
 //! Modules
@@ -231,6 +231,12 @@ pub use collision::{
     collide_segment_and_capsule, collide_segment_and_circle, collide_segment_and_polygon,
     segment_distance, shape_cast, shape_distance, time_of_impact,
 };
+#[cfg(feature = "glam")]
+#[cfg_attr(docsrs, doc(cfg(feature = "glam")))]
+pub use core::math::RotFromGlamError;
+#[cfg(feature = "mint")]
+#[cfg_attr(docsrs, doc(cfg(feature = "mint")))]
+pub use core::math::RotFromMintError;
 #[cfg(feature = "cgmath")]
 #[cfg_attr(docsrs, doc(cfg(feature = "cgmath")))]
 pub use core::math::TransformFromCgmathError;

@@ -97,6 +97,83 @@ impl From<Rot> for mint::ColumnMatrix2<f32> {
     }
 }
 
+#[cfg(feature = "mint")]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, thiserror::Error)]
+pub enum RotFromMintError {
+    #[error("non-finite value in mint rotation matrix")]
+    NonFinite,
+    #[error("mint matrix is not a pure rotation")]
+    NotPureRotation,
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<mint::RowMatrix2<f32>> for Rot {
+    type Error = RotFromMintError;
+
+    #[inline]
+    fn try_from(m: mint::RowMatrix2<f32>) -> Result<Self, Self::Error> {
+        let a = m.x.x;
+        let b = m.x.y;
+        let c = m.y.x;
+        let d = m.y.y;
+
+        if !(a.is_finite() && b.is_finite() && c.is_finite() && d.is_finite()) {
+            return Err(RotFromMintError::NonFinite);
+        }
+
+        let eps = 1.0e-4;
+        let row0_len2 = a * a + b * b;
+        let row1_len2 = c * c + d * d;
+        if (row0_len2 - 1.0).abs() > eps || (row1_len2 - 1.0).abs() > eps {
+            return Err(RotFromMintError::NotPureRotation);
+        }
+        if (a * c + b * d).abs() > eps {
+            return Err(RotFromMintError::NotPureRotation);
+        }
+        let det = a * d - b * c;
+        if (det - 1.0).abs() > 5.0e-4 {
+            return Err(RotFromMintError::NotPureRotation);
+        }
+
+        // Expected form: [[c, -s], [s, c]].
+        if (b + c).abs() > 1.0e-4 || (d - a).abs() > 1.0e-4 {
+            return Err(RotFromMintError::NotPureRotation);
+        }
+
+        Ok(Rot { c: a, s: c })
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<&mint::RowMatrix2<f32>> for Rot {
+    type Error = RotFromMintError;
+
+    #[inline]
+    fn try_from(m: &mint::RowMatrix2<f32>) -> Result<Self, Self::Error> {
+        Self::try_from(*m)
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<mint::ColumnMatrix2<f32>> for Rot {
+    type Error = RotFromMintError;
+
+    #[inline]
+    fn try_from(m: mint::ColumnMatrix2<f32>) -> Result<Self, Self::Error> {
+        Self::try_from(mint::RowMatrix2::from(m))
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<&mint::ColumnMatrix2<f32>> for Rot {
+    type Error = RotFromMintError;
+
+    #[inline]
+    fn try_from(m: &mint::ColumnMatrix2<f32>) -> Result<Self, Self::Error> {
+        Self::try_from(*m)
+    }
+}
+
 // Interop with common math libraries for rotations
 #[cfg(feature = "cgmath")]
 impl From<Rot> for cgmath::Basis2<f32> {
@@ -111,10 +188,10 @@ impl From<Rot> for cgmath::Basis2<f32> {
 impl<'a> From<&'a cgmath::Basis2<f32>> for Rot {
     #[inline]
     fn from(b: &'a cgmath::Basis2<f32>) -> Self {
-        let col_y = b.as_ref().y; // rotation's Y axis
+        let col_x = b.as_ref().x; // rotation's X axis
         Rot {
-            c: col_y.y,
-            s: col_y.x,
+            c: col_x.x,
+            s: col_x.y,
         }
     }
 }
@@ -326,6 +403,61 @@ impl From<Rot> for glam::Mat2 {
         let x = glam::Vec2::new(r.c, r.s);
         let y = glam::Vec2::new(-r.s, r.c);
         glam::Mat2::from_cols(x, y)
+    }
+}
+
+#[cfg(feature = "glam")]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, thiserror::Error)]
+pub enum RotFromGlamError {
+    #[error("non-finite value in glam::Mat2")]
+    NonFinite,
+    #[error("glam::Mat2 is not a pure rotation")]
+    NotPureRotation,
+}
+
+#[cfg(feature = "glam")]
+impl TryFrom<glam::Mat2> for Rot {
+    type Error = RotFromGlamError;
+
+    #[inline]
+    fn try_from(m: glam::Mat2) -> Result<Self, Self::Error> {
+        let x = m.x_axis;
+        let y = m.y_axis;
+
+        if !(x.is_finite() && y.is_finite()) {
+            return Err(RotFromGlamError::NonFinite);
+        }
+
+        let eps = 1.0e-4;
+        let x_len2 = x.length_squared();
+        let y_len2 = y.length_squared();
+        if (x_len2 - 1.0).abs() > eps || (y_len2 - 1.0).abs() > eps {
+            return Err(RotFromGlamError::NotPureRotation);
+        }
+        if x.dot(y).abs() > eps {
+            return Err(RotFromGlamError::NotPureRotation);
+        }
+        let det = x.x * y.y - x.y * y.x;
+        if (det - 1.0).abs() > 5.0e-4 {
+            return Err(RotFromGlamError::NotPureRotation);
+        }
+
+        let expected_y = glam::Vec2::new(-x.y, x.x);
+        if (y - expected_y).length_squared() > 1.0e-6 {
+            return Err(RotFromGlamError::NotPureRotation);
+        }
+
+        Ok(Rot { c: x.x, s: x.y })
+    }
+}
+
+#[cfg(feature = "glam")]
+impl TryFrom<&glam::Mat2> for Rot {
+    type Error = RotFromGlamError;
+
+    #[inline]
+    fn try_from(m: &glam::Mat2) -> Result<Self, Self::Error> {
+        Self::try_from(*m)
     }
 }
 

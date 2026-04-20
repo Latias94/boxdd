@@ -19,6 +19,8 @@
 - [x] Productize the type-specific joint runtime completeness slice: distance/prismatic/revolute/weld/wheel/motor getters/setters across `Joint`, `OwnedJoint`, and `World`, and return `ApiError::InvalidJointType` for wrong-family `try_*` calls.
 - [x] Productize the remaining world runtime extras slice: `Profile` timings, `ExplosionDef`/`World::explode`, speculative collision control, and matching `try_*` coverage for callback-sensitive world tuning helpers.
 - [x] Close the body/world-handle follow-up gaps: `BodyBuilder::allow_fast_rotation`, computed body AABB across owned/scoped/id views, and read-only `WorldHandle` mirrors for runtime diagnostics/tuning getters.
+- [x] Close the `mint` rotation round-trip gap so crate-owned `Rot` values support recoverable inbound conversion from row/column-major `mint` rotation matrices.
+- [x] Close the remaining obvious rotation interop asymmetry by adding recoverable inbound conversion from `glam::Mat2` to crate-owned `Rot`, and add round-trip coverage for `cgmath` / `nalgebra` rotation adapters.
 
 ## In Progress
 

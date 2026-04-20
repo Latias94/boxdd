@@ -1,6 +1,6 @@
 #![cfg(feature = "mint")]
 
-use boxdd::{Aabb, Rot, Transform, TransformFromMintError, Vec2};
+use boxdd::{Aabb, Rot, RotFromMintError, Transform, TransformFromMintError, Vec2};
 
 #[test]
 fn vec2_converts_to_and_from_mint() {
@@ -32,6 +32,42 @@ fn rot_converts_to_mint_matrices() {
     assert!((col.x.y - r.angle().sin()).abs() < 1.0e-6);
     assert!((col.y.x + r.angle().sin()).abs() < 1.0e-6);
     assert!((col.y.y - r.angle().cos()).abs() < 1.0e-6);
+}
+
+#[test]
+fn rot_round_trips_through_mint_matrices() {
+    let r = Rot::from_radians(0.25);
+
+    let row: mint::RowMatrix2<f32> = r.into();
+    let from_row = Rot::try_from(row).unwrap();
+    assert!((from_row.angle() - r.angle()).abs() < 1.0e-6);
+
+    let col: mint::ColumnMatrix2<f32> = r.into();
+    let from_col = Rot::try_from(&col).unwrap();
+    assert!((from_col.angle() - r.angle()).abs() < 1.0e-6);
+}
+
+#[test]
+fn rot_try_from_mint_rejects_scaled() {
+    let m = mint::RowMatrix2::<f32> {
+        x: mint::Vector2 { x: 2.0, y: 0.0 },
+        y: mint::Vector2 { x: 0.0, y: 2.0 },
+    };
+    let err = Rot::try_from(m).unwrap_err();
+    assert_eq!(err, RotFromMintError::NotPureRotation);
+}
+
+#[test]
+fn rot_try_from_mint_rejects_non_finite() {
+    let m = mint::ColumnMatrix2::<f32> {
+        x: mint::Vector2 {
+            x: f32::NAN,
+            y: 0.0,
+        },
+        y: mint::Vector2 { x: 0.0, y: 1.0 },
+    };
+    let err = Rot::try_from(m).unwrap_err();
+    assert_eq!(err, RotFromMintError::NonFinite);
 }
 
 #[test]

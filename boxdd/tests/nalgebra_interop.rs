@@ -1,6 +1,6 @@
 #![cfg(feature = "nalgebra")]
 
-use boxdd::{Aabb, Transform, Vec2};
+use boxdd::{Aabb, Rot, Transform, Vec2};
 
 #[test]
 fn vec2_converts_to_and_from_nalgebra() {
@@ -34,6 +34,14 @@ fn aabb_converts_to_and_from_nalgebra_tuples() {
     let (lv, uv): (nalgebra::Vector2<f32>, nalgebra::Vector2<f32>) = a.into();
     let a3 = Aabb::from((lv, uv));
     assert_eq!(a3, a2);
+}
+
+#[test]
+fn rot_round_trips_through_nalgebra_unit_complex() {
+    let r = Rot::from_radians(0.25);
+    let rot: nalgebra::UnitComplex<f32> = r.into();
+    let r2 = Rot::from(&rot);
+    assert!((r2.angle() - r.angle()).abs() < 1.0e-6);
 }
 
 #[test]

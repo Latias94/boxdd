@@ -151,7 +151,7 @@ These seams are worth keeping only if:
 - body runtime completeness cleanup so rotation / sleeping / awake-enabled-bullet-name state / attached ids / computed body AABB / fast-rotation setup stay aligned across owned/scoped/id styles
 - joint runtime completeness cleanup so common joint metadata plus type-specific distance/prismatic/revolute/weld/wheel/motor state/control stay aligned across owned/scoped/id styles, and wrong-family `try_*` calls return `ApiError::InvalidJointType`
 - world runtime extras cleanup so diagnostics/tuning helpers like `Profile`, explosions, speculative collision, and callback-sensitive tuning toggles live on the same main safe surface with matching `try_*` coverage and mirrored read-only access on `WorldHandle`
-- math-interop completeness cleanup so `mint` stays a first-class bridge instead of a partially-covered feature
+- math-interop completeness cleanup so `mint` stays a first-class bridge instead of a partially-covered feature, including recoverable inbound conversion for crate-owned rotation values
 - explicit threading / async documentation and examples that preserve the current `!Send` / `!Sync` design instead of weakening it
 - clearer crate-level error-handling guidance for panic-by-default vs `try_*` usage
 

@@ -48,14 +48,14 @@ world.step(1.0/60.0, 4);
 ## Features (optional)
 - `serde`: serialization for core value/config types (`Vec2`, `Rot`, `Transform`, `Aabb`, `QueryFilter`, etc.).
 - `serialize`: snapshot helpers (save/apply world config; take/rebuild minimal full-scene snapshot).
-- `mint`: lightweight math interop types (`mint::Vector2`, `mint::Point2`, `mint::RowMatrix2` / `mint::ColumnMatrix2` for `Rot`, and row/column-major 2D affine matrices for `Transform`).
+- `mint`: lightweight math interop types (`mint::Vector2`, `mint::Point2`, bidirectional `mint::RowMatrix2` / `mint::ColumnMatrix2` for `Rot`, and row/column-major 2D affine matrices for `Transform`).
 - `cgmath`, `nalgebra`, `glam`: conversions with their 2D types (e.g. `Vector2/Point2`, `UnitComplex/Isometry2`, `glam::Vec2`).
 - `bytemuck`: enable `Pod`/`Zeroable` for core math types (`Vec2`, `Rot`, `Transform`, `Aabb`) for zero-copy interop.
 - `unchecked`: exposes extra `unsafe` unchecked APIs for hot paths (skips id validity checks; you must guarantee ids are valid).
 
 ## Math Interop
 - `Vec2` always accepts `[f32; 2]` and `(f32, f32)` anywhere `Into<Vec2>` is used.
-- `mint` now covers `Vec2`, `Aabb`, `Rot`, and `Transform`, including row- and column-major 2D matrix forms.
+- `mint` now covers `Vec2`, `Aabb`, `Rot`, and `Transform`, including row- and column-major 2D matrix forms and recoverable `TryFrom` validation for `Rot` / `Transform`.
 - `cgmath`, `nalgebra`, and `glam` remain first-class interop options for projects that already standardize on those math crates.
 
 ## Threading and Async

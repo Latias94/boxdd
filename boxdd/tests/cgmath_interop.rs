@@ -1,6 +1,6 @@
 #![cfg(feature = "cgmath")]
 
-use boxdd::{Aabb, Transform, TransformFromCgmathError, Vec2};
+use boxdd::{Aabb, Rot, Transform, TransformFromCgmathError, Vec2};
 
 #[test]
 fn vec2_converts_to_and_from_cgmath() {
@@ -34,6 +34,14 @@ fn aabb_converts_to_and_from_cgmath_tuples() {
     let (lv, uv): (cgmath::Vector2<f32>, cgmath::Vector2<f32>) = a.into();
     let a3 = Aabb::from((lv, uv));
     assert_eq!(a3, a2);
+}
+
+#[test]
+fn rot_round_trips_through_cgmath_basis2() {
+    let r = Rot::from_radians(0.25);
+    let basis: cgmath::Basis2<f32> = r.into();
+    let r2 = Rot::from(&basis);
+    assert!((r2.angle() - r.angle()).abs() < 1.0e-6);
 }
 
 #[test]

@@ -146,6 +146,7 @@ Exit criteria:
 - the next completeness pass has a short, explicit backlog instead of scattered notes
 - thread-model guidance no longer implies that internal worker threads make the public world API thread-safe
 - math interop documentation and tests cover the intended `mint` bridge story explicitly
+- crate-owned `Rot` no longer has a one-way-only `mint` story; row/column-major rotation matrices round-trip with recoverable validation
 - common live-shape runtime queries and toggles no longer require raw `ffi` or an upstream-only mental model
 - common body runtime controls and attached-id enumeration no longer require handle-only workarounds or ad-hoc allocations
 - computed body AABB, fast-rotation setup, and read-only world runtime getters are available on the main safe surface without `World`/`WorldHandle` drift

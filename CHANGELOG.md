@@ -35,6 +35,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - `ApiError::InvalidJointType` for recoverable `try_*` typed-joint runtime misuse when a valid joint is accessed through the wrong family surface.
 - World runtime extras for `Profile` timings, `ExplosionDef`, `World::explode` / `try_explode`, and speculative collision control.
 - `BodyBuilder::allow_fast_rotation`, computed body AABB helpers across `Body`, `OwnedBody`, and `World::body_aabb`, plus read-only `WorldHandle` runtime getters for gravity/counters/profile/awake-count/runtime-tuning state.
+- Recoverable rotation round-tripping for `mint::RowMatrix2/ColumnMatrix2` and `glam::Mat2`, via `Rot::try_from(...)`, `RotFromMintError`, and `RotFromGlamError`.
 
 ### Changed
 - Query internals now share reusable collection helpers instead of duplicating callback-to-`Vec` plumbing across each query entrypoint.
@@ -71,6 +72,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Internal: world-level shape runtime helpers now share the same private implementation path as owned/scoped shape handles, reducing completeness drift across the three shape API styles.
 - Internal: the new body runtime completeness slice shares single private helper paths for attached-shape/joint enumeration and body runtime controls instead of duplicating FFI plumbing across owned/scoped/id styles.
 - Internal: computed body AABB and read-only `World` / `WorldHandle` runtime getters now share single helper paths, reducing one of the remaining handle-style drift pockets in the 0.3 runtime surface.
+- Internal: `mint` and `glam` rotation validation now follow the same pure-rotation acceptance rules as `Transform` conversion, removing another asymmetry in the math interop surface.
 - Internal: world-level joint runtime helpers now share the same private implementation path as owned/scoped joint handles, including type-specific joint family validation, reducing completeness drift across the three joint API styles.
 - World-level runtime tuning helpers now expose matching `try_*` variants for callback-sensitive controls instead of forcing panic-only access on that slice.
 - Breaking: raw world-id escape hatches now use explicit naming: `World::raw` / `WorldHandle::raw` moved to `world_id_raw`, and body/shape/chain `world_id` accessors moved to `world_id_raw` / `try_world_id_raw`.
@@ -80,6 +82,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 ### Fixed
 - World-space joint builders no longer clobber previously configured base fields such as `collide_connected` when filling runtime-computed body ids and local frames.
 - Safe type-specific joint runtime APIs no longer rely on upstream Box2D family asserts alone; wrong-family `try_*` calls now fail with `ApiError::InvalidJointType`.
+- `cgmath::Basis2 -> Rot` now reconstructs the rotation from the correct axis, so round-tripping through `cgmath` no longer flips the angle sign.
 
 ## [boxdd 0.2.0] - 2025-12-17
 

@@ -30,10 +30,16 @@ pub use crate::{
 pub use crate::unchecked::*;
 
 #[cfg(feature = "glam")]
+pub use crate::RotFromGlamError;
+
+#[cfg(feature = "glam")]
 pub use crate::TransformFromGlamError;
 
 #[cfg(feature = "cgmath")]
 pub use crate::TransformFromCgmathError;
+
+#[cfg(feature = "mint")]
+pub use crate::RotFromMintError;
 
 #[cfg(feature = "mint")]
 pub use crate::TransformFromMintError;
