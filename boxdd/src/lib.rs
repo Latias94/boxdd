@@ -8,6 +8,7 @@
 //! - Hot-path friendly APIs: keep the convenience `Vec`-returning methods, or reuse caller-owned buffers with `*_into`.
 //! - Character mover helpers: cast movers, collect collision planes, solve planes, and clip velocity without raw FFI.
 //! - Standalone collision geometry helpers: shape proxies, GJK distance, shape cast, TOI, and AABB validation/ray cast.
+//! - Shape geometry uses crate-owned values (`Circle`, `Segment`, `Capsule`, `Polygon`) across helpers, shape editing, and creation.
 //! - Typed material mixing callbacks for friction and restitution using `user_material_id`.
 //! - Three usage styles:
 //!   - Owned handles: `OwnedBody`/`OwnedShape`/`OwnedJoint`/`OwnedChain` (Drop destroys; easy to store).
@@ -232,7 +233,10 @@ pub use query::{
     clip_vector, solve_planes,
 };
 pub use shapes::chain::{Chain, ChainDef, ChainDefBuilder, OwnedChain};
-pub use shapes::{OwnedShape, Shape, ShapeDef, ShapeDefBuilder, SurfaceMaterial};
+pub use shapes::{
+    Capsule, Circle, MAX_POLYGON_VERTICES, OwnedShape, Polygon, Segment, Shape, ShapeDef,
+    ShapeDefBuilder, SurfaceMaterial,
+};
 pub use types::Vec2;
 pub use world::{
     CallbackWorld, MaterialMixInput, OutstandingOwnedHandles, OwnedHandleCounts, World,

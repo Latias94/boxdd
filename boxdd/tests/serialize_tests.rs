@@ -49,10 +49,7 @@ fn shape_flags_snapshot_recorded() {
         .enable_pre_solve_events(true)
         .invoke_contact_creation(true)
         .build();
-    let circle = boxdd_sys::ffi::b2Circle {
-        center: Vec2::new(0.0, 0.0).into(),
-        radius: 0.25,
-    };
+    let circle = shapes::circle([0.0_f32, 0.0], 0.25);
     let _sid = world.create_circle_shape_for(a, &sdef, &circle);
 
     let scene = boxdd::serialize::SceneSnapshot::take(&world);
@@ -95,10 +92,7 @@ fn shape_flags_snapshot_recorded_for_scoped_shapes() {
             .enable_pre_solve_events(true)
             .invoke_contact_creation(true)
             .build();
-        let circle = boxdd_sys::ffi::b2Circle {
-            center: Vec2::new(0.0, 0.0).into(),
-            radius: 0.25,
-        };
+        let circle = shapes::circle([0.0_f32, 0.0], 0.25);
         let _ = body.create_circle_shape(&sdef, &circle);
     }
 

@@ -12,7 +12,8 @@ pub use crate::{
         clip_vector, solve_planes,
     },
     shapes::{
-        self, OwnedShape, Shape, ShapeDef, ShapeDefBuilder, SurfaceMaterial,
+        self, Capsule, Circle, MAX_POLYGON_VERTICES, OwnedShape, Polygon, Segment, Shape, ShapeDef,
+        ShapeDefBuilder, SurfaceMaterial,
         chain::{Chain, ChainDef, ChainDefBuilder, OwnedChain},
     },
     types::{BodyId, ChainId, JointId, MassData, ShapeId, Vec2},

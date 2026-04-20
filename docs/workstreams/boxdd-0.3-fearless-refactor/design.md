@@ -107,6 +107,7 @@ result is simpler and easier to audit.
 - unify standalone collision geometry helpers with shape-construction helper types
 - `World` / `WorldHandle` duplication review
 - owned / scoped handle duplication review outside the hottest paths
+- continue value-type cleanup for remaining raw Box2D structs that still leak through public APIs
 
 ## Release Strategy
 

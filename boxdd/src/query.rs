@@ -116,11 +116,7 @@ unsafe extern "C" fn collect_mover_plane_result_cb(
 }
 
 fn make_capsule<V1: Into<Vec2>, V2: Into<Vec2>>(c1: V1, c2: V2, radius: f32) -> ffi::b2Capsule {
-    ffi::b2Capsule {
-        center1: c1.into().into(),
-        center2: c2.into().into(),
-        radius,
-    }
+    crate::shapes::Capsule::new(c1, c2, radius).into()
 }
 
 fn overlap_aabb_into_impl(
@@ -511,6 +507,15 @@ impl From<Aabb> for ffi::b2AABB {
         ffi::b2AABB {
             lowerBound: a.lower.into(),
             upperBound: a.upper.into(),
+        }
+    }
+}
+
+impl From<ffi::b2AABB> for Aabb {
+    fn from(a: ffi::b2AABB) -> Self {
+        Self {
+            lower: a.lowerBound.into(),
+            upper: a.upperBound.into(),
         }
     }
 }

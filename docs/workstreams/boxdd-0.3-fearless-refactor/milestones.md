@@ -72,14 +72,30 @@ Exit criteria:
 
 ## M5: Geometry Type Unification
 
-Status: planned
+Status: shipped
 
 Scope:
 
 - replace raw `ffi` geometry helper outputs in `shapes::helpers` with crate-owned geometry value types where practical
 - review whether shape-creation entrypoints should accept the same geometry vocabulary used by `boxdd::collision`
+- replace raw shape getter/setter geometry surfaces with the same crate-owned value types
+- add standalone low-level helpers on geometry values where the upstream C API already exposes them directly
 
 Exit criteria:
 
 - users can move between shape construction and standalone collision algorithms without dropping to raw `ffi`
 - the remaining raw geometry exposure is explicit, narrow, and justified
+
+## M6: Value-Type Coherence Audit
+
+Status: planned
+
+Scope:
+
+- review remaining public raw Box2D value types such as `ShapeType`, `MassData`, and contact-data structs
+- decide which remaining raw types should become crate-owned wrappers in the post-geometry cleanup pass
+
+Exit criteria:
+
+- the remaining raw public value types are either wrapped or explicitly documented as intentional escape hatches
+- the next wrapper-coherence pass has a concrete list instead of ad-hoc observations

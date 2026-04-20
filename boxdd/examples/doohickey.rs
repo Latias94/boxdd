@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let sdef_rr = ShapeDef::builder()
         .material(SurfaceMaterial::default().rolling_resistance(0.1))
-        .filter_ex(filt)
+        .filter(filt)
         .build();
     let circle = shapes::circle([0.0_f32, 0.0], 1.0 * scale);
     let bar = shapes::capsule([-3.5 * scale, 0.0], [3.5 * scale, 0.0], 0.15 * scale);

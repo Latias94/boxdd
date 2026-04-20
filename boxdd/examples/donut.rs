@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let sdef = ShapeDef::builder()
         .material(SurfaceMaterial::default().friction(0.3))
-        .filter_ex(filt)
+        .filter(filt)
         .build();
 
     // Create bodies around the circle

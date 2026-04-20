@@ -438,25 +438,15 @@ impl SceneSnapshot {
                 let def = &sh.def;
                 match &sh.geom {
                     ShapeGeom::Circle { center, radius } => {
-                        let c = ffi::b2Circle {
-                            center: (*center).into(),
-                            radius: *radius,
-                        };
+                        let c = crate::shapes::Circle::new(*center, *radius);
                         let _ = world.create_circle_shape_for(id, def, &c);
                     }
                     ShapeGeom::Segment { p1, p2 } => {
-                        let s = ffi::b2Segment {
-                            point1: (*p1).into(),
-                            point2: (*p2).into(),
-                        };
+                        let s = crate::shapes::Segment::new(*p1, *p2);
                         let _ = world.create_segment_shape_for(id, def, &s);
                     }
                     ShapeGeom::Capsule { c1, c2, radius } => {
-                        let cap = ffi::b2Capsule {
-                            center1: (*c1).into(),
-                            center2: (*c2).into(),
-                            radius: *radius,
-                        };
+                        let cap = crate::shapes::Capsule::new(*c1, *c2, *radius);
                         let _ = world.create_capsule_shape_for(id, def, &cap);
                     }
                     ShapeGeom::Polygon { vertices, radius } => {
@@ -481,7 +471,7 @@ impl SceneSnapshot {
             let mut b = crate::shapes::chain::ChainDef::builder()
                 .points(cr.points.iter().copied())
                 .is_loop(cr.is_loop)
-                .filter(cr.filter.into())
+                .filter(cr.filter)
                 .enable_sensor_events(cr.enable_sensor_events);
             match &cr.materials {
                 None => {}
@@ -722,7 +712,7 @@ fn shapes_from_body(world: &World, body: ffi::b2BodyId) -> Vec<ShapeInstance> {
         let mut builder = crate::shapes::ShapeDef::builder()
             .material(crate::shapes::SurfaceMaterial(mat))
             .density(unsafe { ffi::b2Shape_GetDensity(sid) })
-            .filter_ex(crate::filter::Filter::from(unsafe {
+            .filter(crate::filter::Filter::from(unsafe {
                 ffi::b2Shape_GetFilter(sid)
             }));
         let is_sensor = unsafe { ffi::b2Shape_IsSensor(sid) };

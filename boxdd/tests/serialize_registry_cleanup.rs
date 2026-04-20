@@ -8,10 +8,7 @@ fn shape_flags_removed_when_shape_destroyed() {
     let body = world.create_body_id(BodyBuilder::new().build());
 
     let sdef = ShapeDef::builder().enable_contact_events(true).build();
-    let circle = boxdd_sys::ffi::b2Circle {
-        center: Vec2::new(0.0, 0.0).into(),
-        radius: 0.25,
-    };
+    let circle = shapes::circle([0.0_f32, 0.0], 0.25);
     let sid = world.create_circle_shape_for(body, &sdef, &circle);
     assert!(world.shape_flags(sid).is_some());
 
@@ -40,10 +37,7 @@ fn registries_cleaned_when_body_destroyed() {
     let body = world.create_body_id(BodyBuilder::new().build());
 
     let sdef = ShapeDef::builder().enable_contact_events(true).build();
-    let circle = boxdd_sys::ffi::b2Circle {
-        center: Vec2::new(0.0, 0.0).into(),
-        radius: 0.25,
-    };
+    let circle = shapes::circle([0.0_f32, 0.0], 0.25);
     let sid = world.create_circle_shape_for(body, &sdef, &circle);
 
     let chain_def = boxdd::shapes::chain::ChainDef::builder()

@@ -423,7 +423,11 @@ impl ChainDefBuilder {
         self.inner.def.isLoop = v;
         self
     }
-    pub fn filter(mut self, f: ffi::b2Filter) -> Self {
+    pub fn filter(mut self, f: crate::filter::Filter) -> Self {
+        self.inner.def.filter = f.into();
+        self
+    }
+    pub fn filter_raw(mut self, f: ffi::b2Filter) -> Self {
         self.inner.def.filter = f;
         self
     }

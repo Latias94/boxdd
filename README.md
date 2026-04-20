@@ -21,6 +21,7 @@
 - Hot-path query and state-extraction APIs expose `*_into` variants so games can reuse `Vec` buffers across frames instead of reallocating.
 - Character mover helpers cover the full safe workflow: `cast_mover`, `collide_mover`, `solve_planes`, and `clip_vector`.
 - Standalone collision geometry helpers cover shape proxies, GJK distance, shape cast, TOI, and `Aabb::is_valid` / `Aabb::ray_cast` without raw `ffi`.
+- Shape creation and editing now use crate-owned geometry values: `Circle`, `Segment`, `Capsule`, and `Polygon`.
 - Typed world-level friction and restitution mixing callbacks expose `user_material_id` without dropping to raw `ffi`.
 
 ## Quickstart
@@ -87,6 +88,12 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 - Use `ShapeProxy`, `SimplexCache`, `DistanceInput`, `ShapeCastPairInput`, `Sweep`, and `ToiInput` with `shape_distance(...)`, `shape_cast(...)`, and `time_of_impact(...)`.
 - `Aabb::is_valid()` and `Aabb::ray_cast(origin, translation)` now cover common AABB validation and ray-cast needs without reaching for `boxdd_sys::ffi`.
 - These advanced APIs are intentionally not in the prelude, so collision-heavy code can import them explicitly.
+
+## Shape Geometry APIs
+- `boxdd::shapes::circle`, `segment`, `capsule`, `box_polygon`, and `polygon_from_points` return safe geometry value types instead of raw Box2D structs.
+- `Shape::circle()` / `segment()` / `capsule()` / `polygon()` and the corresponding setters now use the same geometry types as world/body creation APIs.
+- `Circle`, `Capsule`, and `Polygon` expose standalone helpers such as `mass_data(...)`, `aabb(...)`, `contains_point(...)`, and `ray_cast(...)` for world-free geometry work.
+- `ShapeDefBuilder::filter(...)` and `ChainDef::builder().filter(...)` now take the safe `Filter` type; explicit raw escape hatches are named `filter_raw(...)`.
 
 ## Material Mixing Callbacks
 - `world.set_friction_callback(...)` and `world.set_restitution_callback(...)` expose Box2D's material mixing hooks as safe typed closures.

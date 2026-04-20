@@ -1,4 +1,4 @@
-use boxdd_sys::ffi;
+use boxdd::{Transform, Vec2, shapes};
 
 fn approx(a: f32, b: f32, tol: f32) -> bool {
     (a - b).abs() <= tol
@@ -6,18 +6,12 @@ fn approx(a: f32, b: f32, tol: f32) -> bool {
 
 #[test]
 fn shape_mass_aabb_point_raycast() {
-    let circle = ffi::b2Circle {
-        center: ffi::b2Vec2 { x: 1.0, y: 0.0 },
-        radius: 1.0,
-    };
-    let boxp = unsafe { ffi::b2MakeBox(1.0, 1.0) };
-    let segment = ffi::b2Segment {
-        point1: ffi::b2Vec2 { x: 0.0, y: 1.0 },
-        point2: ffi::b2Vec2 { x: 0.0, y: -1.0 },
-    };
+    let circle = shapes::circle([1.0_f32, 0.0], 1.0);
+    let boxp = shapes::box_polygon(1.0, 1.0);
+    let segment = shapes::segment([0.0_f32, 1.0], [0.0, -1.0]);
 
     // Mass: circle
-    let md = unsafe { ffi::b2ComputeCircleMass(&circle, 1.0) };
+    let md = circle.mass_data(1.0);
     assert!(approx(md.mass, core::f32::consts::PI, f32::EPSILON));
     assert!(approx(md.center.x, 1.0, f32::EPSILON) && approx(md.center.y, 0.0, f32::EPSILON));
     assert!(approx(
@@ -27,36 +21,31 @@ fn shape_mass_aabb_point_raycast() {
     ));
 
     // Mass: capsule sandwich between hull and box bound
-    let capsule = ffi::b2Capsule {
-        center1: ffi::b2Vec2 { x: -1.0, y: 0.0 },
-        center2: ffi::b2Vec2 { x: 1.0, y: 0.0 },
-        radius: 1.0,
-    };
-    let m_cap = unsafe { ffi::b2ComputeCapsuleMass(&capsule, 1.0) };
+    let capsule = shapes::capsule([-1.0_f32, 0.0], [1.0, 0.0], 1.0);
+    let m_cap = capsule.mass_data(1.0);
     let dx = capsule.center2.x - capsule.center1.x;
     let dy = capsule.center2.y - capsule.center1.y;
     let length = (dx * dx + dy * dy).sqrt();
-    let r = unsafe { ffi::b2MakeBox(capsule.radius, capsule.radius + 0.5 * length) };
-    let m_box = unsafe { ffi::b2ComputePolygonMass(&r, 1.0) };
-    // approximate capsule via hull
+    let r = shapes::box_polygon(capsule.radius, capsule.radius + 0.5 * length);
+    let m_box = r.mass_data(1.0);
+
     const N: usize = 4;
-    let mut pts = [ffi::b2Vec2 { x: 0.0, y: 0.0 }; 2 * N];
+    let mut pts = [Vec2::ZERO; 2 * N];
     let mut angle = -0.5 * core::f32::consts::PI;
     let d = core::f32::consts::PI / (N as f32 - 1.0);
-    for p in pts.iter_mut().take(N) {
-        p.x = 1.0 + capsule.radius * angle.cos();
-        p.y = capsule.radius * angle.sin();
+    for point in pts.iter_mut().take(N) {
+        point.x = 1.0 + capsule.radius * angle.cos();
+        point.y = capsule.radius * angle.sin();
         angle += d;
     }
     angle = 0.5 * core::f32::consts::PI;
-    for p in pts.iter_mut().skip(N).take(N) {
-        p.x = -1.0 + capsule.radius * angle.cos();
-        p.y = capsule.radius * angle.sin();
+    for point in pts.iter_mut().skip(N).take(N) {
+        point.x = -1.0 + capsule.radius * angle.cos();
+        point.y = capsule.radius * angle.sin();
         angle += d;
     }
-    let hull = unsafe { ffi::b2ComputeHull(pts.as_ptr(), (2 * N) as i32) };
-    let ac = unsafe { ffi::b2MakePolygon(&hull, 0.0) };
-    let m_hull = unsafe { ffi::b2ComputePolygonMass(&ac, 1.0) };
+    let ac = shapes::polygon_from_points(pts, 0.0).expect("valid capsule hull polygon");
+    let m_hull = ac.mass_data(1.0);
     assert!(m_hull.mass < m_cap.mass && m_cap.mass < m_box.mass);
     assert!(
         m_hull.rotationalInertia < m_cap.rotationalInertia
@@ -64,80 +53,49 @@ fn shape_mass_aabb_point_raycast() {
     );
 
     // Mass: box
-    let m = unsafe { ffi::b2ComputePolygonMass(&boxp, 1.0) };
+    let m = boxp.mass_data(1.0);
     assert!(approx(m.mass, 4.0, f32::EPSILON));
     assert!(approx(m.center.x, 0.0, f32::EPSILON));
     assert!(approx(m.center.y, 0.0, f32::EPSILON));
     assert!(approx(m.rotationalInertia, 8.0 / 3.0, 2.0 * f32::EPSILON));
 
     // AABB
-    let a_circle = unsafe {
-        ffi::b2ComputeCircleAABB(
-            &circle,
-            ffi::b2Transform {
-                p: ffi::b2Vec2 { x: 0.0, y: 0.0 },
-                q: ffi::b2Rot { c: 1.0, s: 0.0 },
-            },
-        )
-    };
-    assert!(approx(a_circle.lowerBound.x, 0.0, f32::EPSILON));
-    assert!(approx(a_circle.lowerBound.y, -1.0, f32::EPSILON));
-    assert!(approx(a_circle.upperBound.x, 2.0, f32::EPSILON));
-    assert!(approx(a_circle.upperBound.y, 1.0, f32::EPSILON));
+    let a_circle = circle.aabb(Transform::IDENTITY);
+    assert!(approx(a_circle.lower.x, 0.0, f32::EPSILON));
+    assert!(approx(a_circle.lower.y, -1.0, f32::EPSILON));
+    assert!(approx(a_circle.upper.x, 2.0, f32::EPSILON));
+    assert!(approx(a_circle.upper.y, 1.0, f32::EPSILON));
 
-    let a_box = unsafe {
-        ffi::b2ComputePolygonAABB(
-            &boxp,
-            ffi::b2Transform {
-                p: ffi::b2Vec2 { x: 0.0, y: 0.0 },
-                q: ffi::b2Rot { c: 1.0, s: 0.0 },
-            },
-        )
-    };
-    assert!(approx(a_box.lowerBound.x, -1.0, f32::EPSILON));
-    assert!(approx(a_box.lowerBound.y, -1.0, f32::EPSILON));
-    assert!(approx(a_box.upperBound.x, 1.0, f32::EPSILON));
-    assert!(approx(a_box.upperBound.y, 1.0, f32::EPSILON));
+    let a_box = boxp.aabb(Transform::IDENTITY);
+    assert!(approx(a_box.lower.x, -1.0, f32::EPSILON));
+    assert!(approx(a_box.lower.y, -1.0, f32::EPSILON));
+    assert!(approx(a_box.upper.x, 1.0, f32::EPSILON));
+    assert!(approx(a_box.upper.y, 1.0, f32::EPSILON));
 
-    let a_seg = unsafe {
-        ffi::b2ComputeSegmentAABB(
-            &segment,
-            ffi::b2Transform {
-                p: ffi::b2Vec2 { x: 0.0, y: 0.0 },
-                q: ffi::b2Rot { c: 1.0, s: 0.0 },
-            },
-        )
-    };
-    assert!(approx(a_seg.lowerBound.x, 0.0, f32::EPSILON));
-    assert!(approx(a_seg.lowerBound.y, -1.0, f32::EPSILON));
-    assert!(approx(a_seg.upperBound.x, 0.0, f32::EPSILON));
-    assert!(approx(a_seg.upperBound.y, 1.0, f32::EPSILON));
+    let a_seg = segment.aabb(Transform::IDENTITY);
+    assert!(approx(a_seg.lower.x, 0.0, f32::EPSILON));
+    assert!(approx(a_seg.lower.y, -1.0, f32::EPSILON));
+    assert!(approx(a_seg.upper.x, 0.0, f32::EPSILON));
+    assert!(approx(a_seg.upper.y, 1.0, f32::EPSILON));
 
     // Point in shape
-    let p1 = ffi::b2Vec2 { x: 0.5, y: 0.5 };
-    let p2 = ffi::b2Vec2 { x: 4.0, y: -4.0 };
-    assert!(unsafe { ffi::b2PointInCircle(&circle, p1) });
-    assert!(!unsafe { ffi::b2PointInCircle(&circle, p2) });
-    assert!(unsafe { ffi::b2PointInPolygon(&boxp, p1) });
-    assert!(!unsafe { ffi::b2PointInPolygon(&boxp, p2) });
+    let p1 = [0.5_f32, 0.5];
+    let p2 = [4.0_f32, -4.0];
+    assert!(circle.contains_point(p1));
+    assert!(!circle.contains_point(p2));
+    assert!(boxp.contains_point(p1));
+    assert!(!boxp.contains_point(p2));
 
     // Ray casts
-    let input = ffi::b2RayCastInput {
-        origin: ffi::b2Vec2 { x: -4.0, y: 0.0 },
-        translation: ffi::b2Vec2 { x: 8.0, y: 0.0 },
-        maxFraction: 1.0,
-    };
-    let out_c = unsafe { ffi::b2RayCastCircle(&circle, &input) };
+    let out_c = circle.ray_cast([-4.0_f32, 0.0], [8.0, 0.0]);
     assert!(out_c.hit);
-    assert!(
-        approx(out_c.normal.x, -1.0, f32::EPSILON) && approx(out_c.normal.y, 0.0, f32::EPSILON)
-    );
+    assert!(approx(out_c.normal.x, -1.0, f32::EPSILON));
+    assert!(approx(out_c.normal.y, 0.0, f32::EPSILON));
     assert!(approx(out_c.fraction, 0.5, f32::EPSILON));
 
-    let out_p = unsafe { ffi::b2RayCastPolygon(&boxp, &input) };
+    let out_p = boxp.ray_cast([-4.0_f32, 0.0], [8.0, 0.0]);
     assert!(out_p.hit);
-    assert!(
-        approx(out_p.normal.x, -1.0, f32::EPSILON) && approx(out_p.normal.y, 0.0, f32::EPSILON)
-    );
+    assert!(approx(out_p.normal.x, -1.0, f32::EPSILON));
+    assert!(approx(out_p.normal.y, 0.0, f32::EPSILON));
     assert!(approx(out_p.fraction, 3.0 / 8.0, f32::EPSILON));
 }

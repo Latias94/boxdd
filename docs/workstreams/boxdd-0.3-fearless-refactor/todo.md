@@ -23,10 +23,13 @@
 - [x] Add `Aabb::is_valid()` and `Aabb::ray_cast(origin, translation)` without exposing raw `ffi`.
 - [x] Move low-level collision/AABB tests over to the public safe API.
 - [x] Normalize body transform access around safe `Transform` and rename raw accessors explicitly.
+- [x] Replace raw shape helper outputs and shape create/get/set APIs with crate-owned geometry value types.
+- [x] Normalize shape and chain builder filter setters around the safe `Filter` type.
+- [x] Move standalone shape geometry tests to the new safe geometry values.
 
 ## Next
 
-- [ ] Review `shapes::helpers` and shape-creation inputs so low-level geometry stops leaking raw `ffi` structs.
+- [ ] Review remaining public raw value types such as `ShapeType`, `MassData`, and contact-data structs.
 - [ ] Audit whether debug draw command collection should gain reusable-buffer APIs.
 - [ ] Review remaining `World` / `WorldHandle` query duplication and decide whether selective consolidation is worth it.
 - [ ] Audit remaining owned/scoped handle duplication outside the already-refactored hot paths.
