@@ -36,6 +36,7 @@
 - [x] Rename raw world-id escape hatches explicitly to `world_id_raw` / `try_world_id_raw`.
 - [x] Replace `ffi::b2HexColor` with crate-owned `HexColor` across debug-draw callbacks and collected commands.
 - [x] Make crate-owned geometry raw conversions explicit with `from_raw(...)` / `into_raw()` for `Circle`, `Segment`, `ChainSegment`, `Capsule`, and `Polygon`.
+- [x] Make `MassData` and `MotionLocks` use explicit raw conversions instead of implicit `From<ffi::...>` impls.
 
 ## Next
 

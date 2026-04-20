@@ -71,7 +71,7 @@ impl Circle {
     #[inline]
     pub fn mass_data(self, density: f32) -> MassData {
         let raw = self.into_raw();
-        unsafe { ffi::b2ComputeCircleMass(&raw, density) }.into()
+        MassData::from_raw(unsafe { ffi::b2ComputeCircleMass(&raw, density) })
     }
 
     #[inline]
@@ -284,7 +284,7 @@ impl Capsule {
     #[inline]
     pub fn mass_data(self, density: f32) -> MassData {
         let raw = self.into_raw();
-        unsafe { ffi::b2ComputeCapsuleMass(&raw, density) }.into()
+        MassData::from_raw(unsafe { ffi::b2ComputeCapsuleMass(&raw, density) })
     }
 
     #[inline]
@@ -403,7 +403,7 @@ impl Polygon {
     #[inline]
     pub fn mass_data(self, density: f32) -> MassData {
         let raw = self.into_raw();
-        unsafe { ffi::b2ComputePolygonMass(&raw, density) }.into()
+        MassData::from_raw(unsafe { ffi::b2ComputePolygonMass(&raw, density) })
     }
 
     #[inline]

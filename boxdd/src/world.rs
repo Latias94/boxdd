@@ -869,17 +869,17 @@ impl World {
 
     pub fn body_mass_data(&self, body: BodyId) -> MassData {
         crate::core::debug_checks::assert_body_valid(body);
-        unsafe { ffi::b2Body_GetMassData(body) }.into()
+        MassData::from_raw(unsafe { ffi::b2Body_GetMassData(body) })
     }
 
     pub fn try_body_mass_data(&self, body: BodyId) -> crate::error::ApiResult<MassData> {
         crate::core::debug_checks::check_body_valid(body)?;
-        Ok(unsafe { ffi::b2Body_GetMassData(body) }.into())
+        Ok(MassData::from_raw(unsafe { ffi::b2Body_GetMassData(body) }))
     }
 
     pub fn set_body_mass_data(&mut self, body: BodyId, mass_data: MassData) {
         crate::core::debug_checks::assert_body_valid(body);
-        unsafe { ffi::b2Body_SetMassData(body, mass_data.into()) };
+        unsafe { ffi::b2Body_SetMassData(body, mass_data.into_raw()) };
     }
 
     pub fn try_set_body_mass_data(
@@ -888,7 +888,7 @@ impl World {
         mass_data: MassData,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
-        unsafe { ffi::b2Body_SetMassData(body, mass_data.into()) };
+        unsafe { ffi::b2Body_SetMassData(body, mass_data.into_raw()) };
         Ok(())
     }
 
@@ -991,18 +991,20 @@ impl World {
     /// Get the current motion locks for a body.
     pub fn body_motion_locks(&self, body: BodyId) -> MotionLocks {
         crate::core::debug_checks::assert_body_valid(body);
-        unsafe { ffi::b2Body_GetMotionLocks(body) }.into()
+        MotionLocks::from_raw(unsafe { ffi::b2Body_GetMotionLocks(body) })
     }
 
     pub fn try_body_motion_locks(&self, body: BodyId) -> crate::error::ApiResult<MotionLocks> {
         crate::core::debug_checks::check_body_valid(body)?;
-        Ok(unsafe { ffi::b2Body_GetMotionLocks(body) }.into())
+        Ok(MotionLocks::from_raw(unsafe {
+            ffi::b2Body_GetMotionLocks(body)
+        }))
     }
 
     /// Set motion locks (translation/rotation constraints) for a body.
     pub fn set_body_motion_locks(&mut self, body: BodyId, locks: MotionLocks) {
         crate::core::debug_checks::assert_body_valid(body);
-        unsafe { ffi::b2Body_SetMotionLocks(body, locks.into()) }
+        unsafe { ffi::b2Body_SetMotionLocks(body, locks.into_raw()) }
     }
 
     pub fn try_set_body_motion_locks(
@@ -1011,7 +1013,7 @@ impl World {
         locks: MotionLocks,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
-        unsafe { ffi::b2Body_SetMotionLocks(body, locks.into()) }
+        unsafe { ffi::b2Body_SetMotionLocks(body, locks.into_raw()) }
         Ok(())
     }
 

@@ -186,26 +186,24 @@ impl MassData {
             rotational_inertia,
         }
     }
-}
 
-impl From<ffi::b2MassData> for MassData {
     #[inline]
-    fn from(raw: ffi::b2MassData) -> Self {
+    /// Construct from the raw Box2D value.
+    pub fn from_raw(raw: ffi::b2MassData) -> Self {
         Self {
             mass: raw.mass,
             center: raw.center.into(),
             rotational_inertia: raw.rotationalInertia,
         }
     }
-}
 
-impl From<MassData> for ffi::b2MassData {
     #[inline]
-    fn from(raw: MassData) -> Self {
-        Self {
-            mass: raw.mass,
-            center: raw.center.into(),
-            rotationalInertia: raw.rotational_inertia,
+    /// Convert into the raw Box2D value.
+    pub fn into_raw(self) -> ffi::b2MassData {
+        ffi::b2MassData {
+            mass: self.mass,
+            center: self.center.into(),
+            rotationalInertia: self.rotational_inertia,
         }
     }
 }
@@ -229,26 +227,24 @@ impl MotionLocks {
             angular_z,
         }
     }
-}
 
-impl From<ffi::b2MotionLocks> for MotionLocks {
     #[inline]
-    fn from(raw: ffi::b2MotionLocks) -> Self {
+    /// Construct from the raw Box2D value.
+    pub fn from_raw(raw: ffi::b2MotionLocks) -> Self {
         Self {
             linear_x: raw.linearX,
             linear_y: raw.linearY,
             angular_z: raw.angularZ,
         }
     }
-}
 
-impl From<MotionLocks> for ffi::b2MotionLocks {
     #[inline]
-    fn from(raw: MotionLocks) -> Self {
-        Self {
-            linearX: raw.linear_x,
-            linearY: raw.linear_y,
-            angularZ: raw.angular_z,
+    /// Convert into the raw Box2D value.
+    pub fn into_raw(self) -> ffi::b2MotionLocks {
+        ffi::b2MotionLocks {
+            linearX: self.linear_x,
+            linearY: self.linear_y,
+            angularZ: self.angular_z,
         }
     }
 }

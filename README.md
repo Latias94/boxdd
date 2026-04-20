@@ -24,6 +24,7 @@
 - Shape creation and editing now use crate-owned geometry values, and chain segments can be inspected through the crate-owned `ChainSegment` type.
 - Shape classification, mass properties, and contact extraction now use crate-owned value types such as `ShapeType`, `MassData`, `ContactData`, and `Manifold`.
 - Body motion constraints use the crate-owned `MotionLocks` type instead of raw Box2D flags.
+- Crate-owned `MassData` and `MotionLocks` cross the FFI boundary explicitly via `from_raw(...)` / `into_raw()` when raw interop is still needed.
 - Debug draw callbacks and collected commands use the crate-owned `HexColor` type instead of raw `ffi` colors.
 - Typed world-level friction and restitution mixing callbacks expose `user_material_id` without dropping to raw `ffi`.
 

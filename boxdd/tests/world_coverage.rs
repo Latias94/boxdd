@@ -99,3 +99,12 @@ fn raw_world_id_escape_hatches_are_explicit() {
     assert!(same_world_id(chain.world_id_raw(), world_id));
     assert!(same_world_id(chain.try_world_id_raw().unwrap(), world_id));
 }
+
+#[test]
+fn mass_data_and_motion_locks_round_trip_through_explicit_raw_conversions() {
+    let mass_data = MassData::new(3.5, Vec2::new(1.0, -2.0), 4.25);
+    assert_eq!(MassData::from_raw(mass_data.into_raw()), mass_data);
+
+    let locks = MotionLocks::new(true, false, true);
+    assert_eq!(MotionLocks::from_raw(locks.into_raw()), locks);
+}

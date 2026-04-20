@@ -455,22 +455,24 @@ impl OwnedBody {
 
     pub fn mass_data(&self) -> MassData {
         self.assert_valid();
-        unsafe { ffi::b2Body_GetMassData(self.id) }.into()
+        MassData::from_raw(unsafe { ffi::b2Body_GetMassData(self.id) })
     }
 
     pub fn try_mass_data(&self) -> ApiResult<MassData> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_GetMassData(self.id) }.into())
+        Ok(MassData::from_raw(unsafe {
+            ffi::b2Body_GetMassData(self.id)
+        }))
     }
 
     pub fn set_mass_data(&mut self, mass_data: MassData) {
         self.assert_valid();
-        unsafe { ffi::b2Body_SetMassData(self.id, mass_data.into()) };
+        unsafe { ffi::b2Body_SetMassData(self.id, mass_data.into_raw()) };
     }
 
     pub fn try_set_mass_data(&mut self, mass_data: MassData) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_SetMassData(self.id, mass_data.into()) };
+        unsafe { ffi::b2Body_SetMassData(self.id, mass_data.into_raw()) };
         Ok(())
     }
 
@@ -1532,22 +1534,24 @@ impl<'w> Body<'w> {
 
     pub fn mass_data(&self) -> MassData {
         self.assert_valid();
-        unsafe { ffi::b2Body_GetMassData(self.id) }.into()
+        MassData::from_raw(unsafe { ffi::b2Body_GetMassData(self.id) })
     }
 
     pub fn try_mass_data(&self) -> ApiResult<MassData> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_GetMassData(self.id) }.into())
+        Ok(MassData::from_raw(unsafe {
+            ffi::b2Body_GetMassData(self.id)
+        }))
     }
 
     pub fn set_mass_data(&mut self, mass_data: MassData) {
         self.assert_valid();
-        unsafe { ffi::b2Body_SetMassData(self.id, mass_data.into()) };
+        unsafe { ffi::b2Body_SetMassData(self.id, mass_data.into_raw()) };
     }
 
     pub fn try_set_mass_data(&mut self, mass_data: MassData) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_SetMassData(self.id, mass_data.into()) };
+        unsafe { ffi::b2Body_SetMassData(self.id, mass_data.into_raw()) };
         Ok(())
     }
 
