@@ -424,7 +424,7 @@ impl ChainDefBuilder {
         self
     }
     pub fn filter(mut self, f: crate::filter::Filter) -> Self {
-        self.inner.def.filter = f.into();
+        self.inner.def.filter = f.into_raw();
         self
     }
     pub fn filter_raw(mut self, f: ffi::b2Filter) -> Self {

@@ -37,6 +37,7 @@
 - [x] Replace `ffi::b2HexColor` with crate-owned `HexColor` across debug-draw callbacks and collected commands.
 - [x] Make crate-owned geometry raw conversions explicit with `from_raw(...)` / `into_raw()` for `Circle`, `Segment`, `ChainSegment`, `Capsule`, and `Polygon`.
 - [x] Make `MassData` and `MotionLocks` use explicit raw conversions instead of implicit `From<ffi::...>` impls.
+- [x] Make `Filter` use explicit raw conversions instead of implicit `From<ffi::b2Filter>` impls.
 
 ## Next
 

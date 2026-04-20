@@ -141,3 +141,32 @@ fn geometry_value_types_round_trip_through_explicit_raw_conversions() {
         assert!(approx_eq(lhs.y, rhs.y, f32::EPSILON));
     }
 }
+
+#[test]
+fn shape_filters_use_safe_values_with_explicit_raw_escape_hatch() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+    let filter = Filter {
+        category_bits: 0x0002,
+        mask_bits: 0x0004,
+        group_index: -3,
+    };
+    assert_eq!(Filter::from_raw(filter.into_raw()), filter);
+
+    let sdef = ShapeDef::builder().density(1.0).filter(filter).build();
+    let mut shape =
+        world.create_circle_shape_for_owned(body, &sdef, &shapes::circle([0.0_f32, 0.0], 0.5));
+    assert_eq!(shape.filter(), filter);
+    assert_eq!(shape.try_filter().unwrap(), filter);
+
+    let updated_filter = Filter {
+        category_bits: 0x0010,
+        mask_bits: 0x0020,
+        group_index: 7,
+    };
+    shape.set_filter(updated_filter);
+    assert_eq!(shape.filter(), updated_filter);
+
+    shape.try_set_filter(filter).unwrap();
+    assert_eq!(shape.filter(), filter);
+}

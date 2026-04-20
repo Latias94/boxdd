@@ -10,33 +10,28 @@ pub struct Filter {
 
 impl Default for Filter {
     fn default() -> Self {
-        let f = unsafe { ffi::b2DefaultFilter() };
-        Self {
-            category_bits: f.categoryBits,
-            mask_bits: f.maskBits,
-            group_index: f.groupIndex,
-        }
+        Self::from_raw(unsafe { ffi::b2DefaultFilter() })
     }
 }
 
-impl From<Filter> for ffi::b2Filter {
+impl Filter {
     #[inline]
-    fn from(f: Filter) -> Self {
+    /// Construct from the raw Box2D filter value.
+    pub const fn from_raw(raw: ffi::b2Filter) -> Self {
         Self {
-            categoryBits: f.category_bits,
-            maskBits: f.mask_bits,
-            groupIndex: f.group_index,
+            category_bits: raw.categoryBits,
+            mask_bits: raw.maskBits,
+            group_index: raw.groupIndex,
         }
     }
-}
 
-impl From<ffi::b2Filter> for Filter {
     #[inline]
-    fn from(f: ffi::b2Filter) -> Self {
-        Self {
-            category_bits: f.categoryBits,
-            mask_bits: f.maskBits,
-            group_index: f.groupIndex,
+    /// Convert into the raw Box2D filter value.
+    pub const fn into_raw(self) -> ffi::b2Filter {
+        ffi::b2Filter {
+            categoryBits: self.category_bits,
+            maskBits: self.mask_bits,
+            groupIndex: self.group_index,
         }
     }
 }

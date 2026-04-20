@@ -406,7 +406,7 @@ impl SceneSnapshot {
                 chains.push(ChainRecord {
                     body: bi,
                     is_loop: cr.is_loop,
-                    filter: crate::filter::Filter::from(cr.filter),
+                    filter: crate::filter::Filter::from_raw(cr.filter),
                     enable_sensor_events: cr.enable_sensor_events,
                     points: cr.points.iter().cloned().map(Vec2::from).collect(),
                     materials,
@@ -717,7 +717,7 @@ fn shapes_from_body(world: &World, body: ffi::b2BodyId) -> Vec<ShapeInstance> {
         let mut builder = crate::shapes::ShapeDef::builder()
             .material(crate::shapes::SurfaceMaterial(mat))
             .density(unsafe { ffi::b2Shape_GetDensity(sid) })
-            .filter(crate::filter::Filter::from(unsafe {
+            .filter(crate::filter::Filter::from_raw(unsafe {
                 ffi::b2Shape_GetFilter(sid)
             }));
         let is_sensor = unsafe { ffi::b2Shape_IsSensor(sid) };

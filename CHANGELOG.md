@@ -42,6 +42,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Breaking: shape creation, editing, and geometry getters now use safe geometry values instead of raw `ffi::b2Circle` / `b2Segment` / `b2Capsule` / `b2Polygon`.
 - Breaking: crate-owned geometry values now cross the raw FFI boundary explicitly via `from_raw(...)` / `into_raw()`; implicit `From<ffi::...>` conversions were removed for `Circle`, `Segment`, `ChainSegment`, `Capsule`, and `Polygon`, and `Polygon::new(raw)` was renamed to `Polygon::from_raw(raw)`.
 - Breaking: `ShapeDefBuilder::filter` and `ChainDefBuilder::filter` now take `Filter`; raw Box2D escape hatches are named `filter_raw`.
+- Breaking: `Filter` now crosses the raw FFI boundary explicitly via `from_raw(...)` / `into_raw()` instead of implicit `From<ffi::b2Filter>` conversions.
 - Breaking: `Shape::shape_type` / `OwnedShape::shape_type` now return safe `ShapeType`; raw access moved to `shape_type_raw` / `try_shape_type_raw`.
 - Breaking: `Body::*contact_data*` and `Shape::*contact_data*` now use crate-owned `ContactData`; raw escape hatches are named `contact_data_raw` / `contact_data_into_raw` / `try_*_raw`.
 - Breaking: `MassData` is now crate-owned, and its inertia field is renamed to Rust-style `rotational_inertia`.

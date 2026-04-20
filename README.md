@@ -101,6 +101,7 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 - `Circle`, `Capsule`, and `Polygon` expose standalone helpers such as `mass_data(...)`, `aabb(...)`, `contains_point(...)`, and `ray_cast(...)` for world-free geometry work.
 - Raw geometry conversion is explicit on the crate-owned geometry types: use `from_raw(...)` / `into_raw()` when you intentionally cross the FFI boundary.
 - `ShapeDefBuilder::filter(...)` and `ChainDef::builder().filter(...)` now take the safe `Filter` type; explicit raw escape hatches are named `filter_raw(...)`.
+- `Filter` also uses explicit raw conversion via `from_raw(...)` / `into_raw()` instead of implicit `From<ffi::b2Filter>` conversions.
 
 ## Material Mixing Callbacks
 - `world.set_friction_callback(...)` and `world.set_restitution_callback(...)` expose Box2D's material mixing hooks as safe typed closures.

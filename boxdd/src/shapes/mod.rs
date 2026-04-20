@@ -388,19 +388,19 @@ impl OwnedShape {
 
     pub fn filter(&self) -> Filter {
         self.assert_valid();
-        Filter::from(unsafe { ffi::b2Shape_GetFilter(self.id) })
+        Filter::from_raw(unsafe { ffi::b2Shape_GetFilter(self.id) })
     }
     pub fn try_filter(&self) -> ApiResult<Filter> {
         self.check_valid()?;
-        Ok(Filter::from(unsafe { ffi::b2Shape_GetFilter(self.id) }))
+        Ok(Filter::from_raw(unsafe { ffi::b2Shape_GetFilter(self.id) }))
     }
     pub fn set_filter(&mut self, f: Filter) {
         self.assert_valid();
-        unsafe { ffi::b2Shape_SetFilter(self.id, f.into()) }
+        unsafe { ffi::b2Shape_SetFilter(self.id, f.into_raw()) }
     }
     pub fn try_set_filter(&mut self, f: Filter) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Shape_SetFilter(self.id, f.into()) }
+        unsafe { ffi::b2Shape_SetFilter(self.id, f.into_raw()) }
         Ok(())
     }
 
@@ -966,19 +966,19 @@ impl<'w> Shape<'w> {
 
     pub fn filter(&self) -> Filter {
         self.assert_valid();
-        Filter::from(unsafe { ffi::b2Shape_GetFilter(self.id) })
+        Filter::from_raw(unsafe { ffi::b2Shape_GetFilter(self.id) })
     }
     pub fn try_filter(&self) -> ApiResult<Filter> {
         self.check_valid()?;
-        Ok(Filter::from(unsafe { ffi::b2Shape_GetFilter(self.id) }))
+        Ok(Filter::from_raw(unsafe { ffi::b2Shape_GetFilter(self.id) }))
     }
     pub fn set_filter(&mut self, f: Filter) {
         self.assert_valid();
-        unsafe { ffi::b2Shape_SetFilter(self.id, f.into()) }
+        unsafe { ffi::b2Shape_SetFilter(self.id, f.into_raw()) }
     }
     pub fn try_set_filter(&mut self, f: Filter) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Shape_SetFilter(self.id, f.into()) }
+        unsafe { ffi::b2Shape_SetFilter(self.id, f.into_raw()) }
         Ok(())
     }
 
@@ -1398,7 +1398,7 @@ impl ShapeDefBuilder {
     }
     /// Collision filter (category/mask/group).
     pub fn filter(mut self, f: Filter) -> Self {
-        self.def.0.filter = f.into();
+        self.def.0.filter = f.into_raw();
         self
     }
     /// Raw Box2D filter escape hatch.
@@ -1543,7 +1543,7 @@ impl serde::Serialize for ShapeDef {
         let r = Repr {
             material: SurfaceMaterial(self.0.material),
             density: self.0.density,
-            filter: Filter::from(self.0.filter),
+            filter: Filter::from_raw(self.0.filter),
             enable_custom_filtering: self.0.enableCustomFiltering,
             is_sensor: self.0.isSensor,
             enable_sensor_events: self.0.enableSensorEvents,
