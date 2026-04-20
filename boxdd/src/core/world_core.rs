@@ -133,6 +133,9 @@ impl WorldCore {
 
     pub(crate) fn process_deferred_destroys(&self) {
         crate::core::callback_state::assert_not_in_callback();
+        if self.events_buffers_are_borrowed() {
+            return;
+        }
         let mut pending = self
             .deferred_destroys
             .lock()

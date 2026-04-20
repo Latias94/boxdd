@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use boxdd::prelude::*;
+use boxdd_sys::ffi;
 
 #[derive(Clone)]
 struct DropCounter(Arc<AtomicUsize>);
@@ -93,6 +94,86 @@ fn raw_events_view_defers_destroys() {
         world.with_contact_events(|begin, end, hit| {
             let _ = (begin.len(), end.len(), hit.len());
             drop(body);
+        });
+    }
+
+    assert!(world.body(id).is_none());
+}
+
+#[test]
+fn raw_body_events_view_defers_destroys() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body = world.create_body_owned(BodyBuilder::new().build());
+    let id = body.id();
+
+    unsafe {
+        world.with_body_events(|moves| {
+            let _ = moves.len();
+            drop(body);
+        });
+    }
+
+    assert!(world.body(id).is_none());
+}
+
+#[test]
+fn raw_sensor_events_view_defers_shape_destroys() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body = world.create_body_id(BodyBuilder::new().build());
+    let shape = world.create_circle_shape_for_owned(
+        body,
+        &ShapeDef::builder().sensor(true).build(),
+        &shapes::circle([0.0_f32, 0.0], 0.5),
+    );
+    let id = shape.id();
+
+    unsafe {
+        world.with_sensor_events(|begin, end| {
+            let _ = (begin.len(), end.len());
+            drop(shape);
+        });
+    }
+
+    assert!(world.shape(id).is_none());
+}
+
+#[test]
+fn raw_joint_events_view_defers_joint_destroys() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body_a = world.create_body_id(BodyBuilder::new().build());
+    let body_b = world.create_body_id(BodyBuilder::new().build());
+    let joint = world
+        .revolute(body_a, body_b)
+        .anchor_world([0.0_f32, 0.0])
+        .build_owned();
+    let id = joint.id();
+
+    unsafe {
+        world.with_joint_events(|events| {
+            let _ = events.len();
+            drop(joint);
+        });
+    }
+
+    assert!(world.joint(id).is_none());
+}
+
+#[test]
+fn nested_raw_event_views_delay_destroy_until_outermost_scope() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body = world.create_body_owned(BodyBuilder::new().build());
+    let id = body.id();
+
+    unsafe {
+        world.with_contact_events(|begin, end, hit| {
+            let _ = (begin.len(), end.len(), hit.len());
+
+            world.with_body_events(|moves| {
+                let _ = moves.len();
+                drop(body);
+            });
+
+            assert!(ffi::b2Body_IsValid(id));
         });
     }
 

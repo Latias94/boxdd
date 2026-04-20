@@ -61,7 +61,7 @@
 
 - [ ] Audit any remaining owned/scoped handle duplication outside the already-refactored internals and confirm it is worth keeping.
 - [x] Review remaining public raw escape hatches and document which are intentional (`world_id_raw`, raw event slices, debug draw raw paths, etc.).
-- [ ] Add more targeted regression coverage where intentional raw escape hatches still rely on callback-sensitive or zero-copy behavior.
+- [x] Add more targeted regression coverage where intentional raw escape hatches still rely on callback-sensitive or zero-copy behavior.
 - [ ] Continue the completeness audit against upstream Box2D v3 and record any intentionally unwrapped or raw-only areas that should be revisited after `0.3.0`.
 
 ## Release Checklist

@@ -612,6 +612,8 @@ impl World {
             let _borrow = core.borrow_event_buffers();
             f()
         };
+        // Nested raw/view event borrows are allowed. Deferred destroys must wait until the
+        // outermost borrow ends so previously returned event slices cannot be invalidated early.
         core.process_deferred_destroys();
         out
     }
