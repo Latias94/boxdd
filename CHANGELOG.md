@@ -54,6 +54,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Breaking: `ShapeType` and `HexColor` now rely solely on their named raw conversion APIs (`from_raw(...)` / `into_raw()`) instead of compatibility `From` shims.
 - Internal: mirrored `World` / `WorldHandle` query methods now share a single internal definition, reducing drift risk as the 0.3 query surface grows.
 - Internal: joint creation entrypoints now share a single internal definition across all joint types, and `try_create_*_joint*` now consistently return `ApiError::InCallback` when called from callbacks.
+- Internal: body/contact/sensor/joint event views now share a single world-level event-buffer borrow/cleanup helper, reducing drift risk in deferred-destroy handling.
 - Breaking: raw world-id escape hatches now use explicit naming: `World::raw` / `WorldHandle::raw` moved to `world_id_raw`, and body/shape/chain `world_id` accessors moved to `world_id_raw` / `try_world_id_raw`.
 - Breaking: `DebugDraw` / `RawDebugDraw` color parameters and collected command colors now use crate-owned `HexColor` instead of leaking `ffi::b2HexColor`.
 

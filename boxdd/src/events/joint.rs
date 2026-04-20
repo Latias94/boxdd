@@ -52,9 +52,7 @@ impl World {
     ///
     /// Dropping `Owned*` handles inside `f` is OK; destruction is deferred until after this call.
     pub unsafe fn with_joint_events<T>(&self, f: impl FnOnce(&[ffi::b2JointEvent]) -> T) -> T {
-        crate::core::callback_state::assert_not_in_callback();
-        let out = {
-            let _borrow = self.core_arc().borrow_event_buffers();
+        self.with_borrowed_event_buffers(|| {
             let raw = unsafe { ffi::b2World_GetJointEvents(self.raw()) };
             let slice = if raw.count > 0 && !raw.jointEvents.is_null() {
                 unsafe { core::slice::from_raw_parts(raw.jointEvents, raw.count as usize) }
@@ -62,9 +60,7 @@ impl World {
                 &[][..]
             };
             f(slice)
-        };
-        self.core_arc().process_deferred_destroys();
-        out
+        })
     }
 
     /// Zero-copy view over joint events without exposing raw FFI types.
@@ -80,9 +76,7 @@ impl World {
     /// ```
     ///
     pub fn with_joint_events_view<T>(&self, f: impl FnOnce(JointEventIter<'_>) -> T) -> T {
-        crate::core::callback_state::assert_not_in_callback();
-        let out = {
-            let _borrow = self.core_arc().borrow_event_buffers();
+        self.with_borrowed_event_buffers(|| {
             let raw = unsafe { ffi::b2World_GetJointEvents(self.raw()) };
             let slice = if raw.count > 0 && !raw.jointEvents.is_null() {
                 unsafe { core::slice::from_raw_parts(raw.jointEvents, raw.count as usize) }
@@ -90,8 +84,6 @@ impl World {
                 &[][..]
             };
             f(JointEventIter(slice.iter()))
-        };
-        self.core_arc().process_deferred_destroys();
-        out
+        })
     }
 }

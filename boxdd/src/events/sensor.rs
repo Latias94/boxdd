@@ -102,9 +102,7 @@ impl World {
         &self,
         f: impl FnOnce(&[ffi::b2SensorBeginTouchEvent], &[ffi::b2SensorEndTouchEvent]) -> T,
     ) -> T {
-        crate::core::callback_state::assert_not_in_callback();
-        let out = {
-            let _borrow = self.core_arc().borrow_event_buffers();
+        self.with_borrowed_event_buffers(|| {
             // Low-level raw view exposing FFI slices; valid only within this call.
             // Prefer `with_sensor_events_view` to avoid leaking FFI types.
             let raw = unsafe { ffi::b2World_GetSensorEvents(self.raw()) };
@@ -119,9 +117,7 @@ impl World {
                 &[][..]
             };
             f(begin, end)
-        };
-        self.core_arc().process_deferred_destroys();
-        out
+        })
     }
 
     /// Zero-copy view over sensor events without exposing raw FFI types.
@@ -141,9 +137,7 @@ impl World {
         &self,
         f: impl FnOnce(SensorBeginIter<'_>, SensorEndIter<'_>) -> T,
     ) -> T {
-        crate::core::callback_state::assert_not_in_callback();
-        let out = {
-            let _borrow = self.core_arc().borrow_event_buffers();
+        self.with_borrowed_event_buffers(|| {
             let raw = unsafe { ffi::b2World_GetSensorEvents(self.raw()) };
             let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
                 unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
@@ -156,8 +150,6 @@ impl World {
                 &[][..]
             };
             f(SensorBeginIter(begin.iter()), SensorEndIter(end.iter()))
-        };
-        self.core_arc().process_deferred_destroys();
-        out
+        })
     }
 }

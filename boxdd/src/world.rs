@@ -537,6 +537,17 @@ impl World {
         Arc::clone(&self.core)
     }
 
+    pub(crate) fn with_borrowed_event_buffers<T>(&self, f: impl FnOnce() -> T) -> T {
+        crate::core::callback_state::assert_not_in_callback();
+        let core = self.core_arc();
+        let out = {
+            let _borrow = core.borrow_event_buffers();
+            f()
+        };
+        core.process_deferred_destroys();
+        out
+    }
+
     // --- Typed user data ---------------------------------------------------------
     /// Set typed user data on this world.
     ///

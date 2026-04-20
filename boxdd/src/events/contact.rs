@@ -164,9 +164,7 @@ impl World {
             &[ffi::b2ContactHitEvent],
         ) -> T,
     ) -> T {
-        crate::core::callback_state::assert_not_in_callback();
-        let out = {
-            let _borrow = self.core_arc().borrow_event_buffers();
+        self.with_borrowed_event_buffers(|| {
             // Low-level raw view over contact events.
             // Exposes FFI slices directly; they are only valid within this call.
             // Prefer `with_contact_events_view` for a safe, FFI-opaque interface.
@@ -187,9 +185,7 @@ impl World {
                 &[][..]
             };
             f(begin, end, hit)
-        };
-        self.core_arc().process_deferred_destroys();
-        out
+        })
     }
 
     /// Zero-copy view over contact events without exposing raw FFI types.
@@ -212,9 +208,7 @@ impl World {
         &self,
         f: impl FnOnce(BeginIter<'_>, EndIter<'_>, HitIter<'_>) -> T,
     ) -> T {
-        crate::core::callback_state::assert_not_in_callback();
-        let out = {
-            let _borrow = self.core_arc().borrow_event_buffers();
+        self.with_borrowed_event_buffers(|| {
             let raw = unsafe { ffi::b2World_GetContactEvents(self.raw()) };
             let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
                 unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
@@ -236,8 +230,6 @@ impl World {
                 EndIter(end.iter()),
                 HitIter(hit.iter()),
             )
-        };
-        self.core_arc().process_deferred_destroys();
-        out
+        })
     }
 }
