@@ -81,11 +81,13 @@ Scope:
 - review whether shape-creation entrypoints should accept the same geometry vocabulary used by `boxdd::collision`
 - replace raw shape getter/setter geometry surfaces with the same crate-owned value types
 - add standalone low-level helpers on geometry values where the upstream C API already exposes them directly
+- make raw conversion on crate-owned geometry values explicit via `from_raw(...)` / `into_raw()`
 
 Exit criteria:
 
 - users can move between shape construction and standalone collision algorithms without dropping to raw `ffi`
 - the remaining raw geometry exposure is explicit, narrow, and justified
+- geometry values no longer rely on implicit raw `From` conversions on the public API boundary
 
 ## M6: Value-Type Coherence Audit
 

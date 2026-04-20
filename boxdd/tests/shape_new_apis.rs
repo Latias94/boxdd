@@ -100,3 +100,44 @@ fn shape_geometry_roundtrip_uses_safe_value_types() {
     assert!(chain_segment.segment.point1.x < chain_segment.segment.point2.x);
     assert!(chain_segment.segment.point2.x <= chain_segment.ghost2.x);
 }
+
+#[test]
+fn geometry_value_types_round_trip_through_explicit_raw_conversions() {
+    let circle = shapes::circle([1.0_f32, -2.0], 0.5);
+    assert_eq!(Circle::from_raw(circle.into_raw()), circle);
+
+    let segment = shapes::segment([-1.0_f32, 2.0], [3.0, 4.0]);
+    assert_eq!(Segment::from_raw(segment.into_raw()), segment);
+
+    let chain_segment = shapes::chain_segment([-3.0_f32, 0.0], [-1.0, 0.0], [2.0, 0.0], [4.0, 0.0]);
+    assert_eq!(
+        ChainSegment::from_raw(chain_segment.into_raw()),
+        chain_segment
+    );
+
+    let capsule = shapes::capsule([-1.0_f32, -1.0], [1.0, 1.0], 0.25);
+    assert_eq!(Capsule::from_raw(capsule.into_raw()), capsule);
+
+    let polygon = shapes::box_polygon(1.5, 0.75);
+    let polygon_roundtrip = Polygon::from_raw(polygon.into_raw());
+    assert_eq!(polygon_roundtrip.count(), polygon.count());
+    assert!(approx_eq(
+        polygon_roundtrip.radius(),
+        polygon.radius(),
+        f32::EPSILON
+    ));
+    assert!(approx_eq(
+        polygon_roundtrip.centroid().x,
+        polygon.centroid().x,
+        f32::EPSILON
+    ));
+    assert!(approx_eq(
+        polygon_roundtrip.centroid().y,
+        polygon.centroid().y,
+        f32::EPSILON
+    ));
+    for (lhs, rhs) in polygon_roundtrip.vertices().iter().zip(polygon.vertices()) {
+        assert!(approx_eq(lhs.x, rhs.x, f32::EPSILON));
+        assert!(approx_eq(lhs.y, rhs.y, f32::EPSILON));
+    }
+}

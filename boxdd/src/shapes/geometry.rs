@@ -51,20 +51,38 @@ impl Circle {
     }
 
     #[inline]
+    /// Construct from the raw Box2D geometry value.
+    pub fn from_raw(circle: ffi::b2Circle) -> Self {
+        Self {
+            center: circle.center.into(),
+            radius: circle.radius,
+        }
+    }
+
+    #[inline]
+    /// Convert into the raw Box2D geometry value.
+    pub fn into_raw(self) -> ffi::b2Circle {
+        ffi::b2Circle {
+            center: self.center.into(),
+            radius: self.radius,
+        }
+    }
+
+    #[inline]
     pub fn mass_data(self, density: f32) -> MassData {
-        let raw: ffi::b2Circle = self.into();
+        let raw = self.into_raw();
         unsafe { ffi::b2ComputeCircleMass(&raw, density) }.into()
     }
 
     #[inline]
     pub fn aabb(self, transform: Transform) -> Aabb {
-        let raw: ffi::b2Circle = self.into();
+        let raw = self.into_raw();
         unsafe { ffi::b2ComputeCircleAABB(&raw, transform.into()) }.into()
     }
 
     #[inline]
     pub fn contains_point<P: Into<Vec2>>(self, point: P) -> bool {
-        let raw: ffi::b2Circle = self.into();
+        let raw = self.into_raw();
         unsafe { ffi::b2PointInCircle(&raw, point.into().into()) }
     }
 
@@ -74,29 +92,9 @@ impl Circle {
         origin: VO,
         translation: VT,
     ) -> CastOutput {
-        let raw: ffi::b2Circle = self.into();
+        let raw = self.into_raw();
         let input = make_ray_input(origin, translation);
         unsafe { ffi::b2RayCastCircle(&raw, &input) }.into()
-    }
-}
-
-impl From<Circle> for ffi::b2Circle {
-    #[inline]
-    fn from(circle: Circle) -> Self {
-        Self {
-            center: circle.center.into(),
-            radius: circle.radius,
-        }
-    }
-}
-
-impl From<ffi::b2Circle> for Circle {
-    #[inline]
-    fn from(circle: ffi::b2Circle) -> Self {
-        Self {
-            center: circle.center.into(),
-            radius: circle.radius,
-        }
     }
 }
 
@@ -119,8 +117,26 @@ impl Segment {
     }
 
     #[inline]
+    /// Construct from the raw Box2D geometry value.
+    pub fn from_raw(segment: ffi::b2Segment) -> Self {
+        Self {
+            point1: segment.point1.into(),
+            point2: segment.point2.into(),
+        }
+    }
+
+    #[inline]
+    /// Convert into the raw Box2D geometry value.
+    pub fn into_raw(self) -> ffi::b2Segment {
+        ffi::b2Segment {
+            point1: self.point1.into(),
+            point2: self.point2.into(),
+        }
+    }
+
+    #[inline]
     pub fn aabb(self, transform: Transform) -> Aabb {
-        let raw: ffi::b2Segment = self.into();
+        let raw = self.into_raw();
         unsafe { ffi::b2ComputeSegmentAABB(&raw, transform.into()) }.into()
     }
 
@@ -131,29 +147,9 @@ impl Segment {
         translation: VT,
         one_sided: bool,
     ) -> CastOutput {
-        let raw: ffi::b2Segment = self.into();
+        let raw = self.into_raw();
         let input = make_ray_input(origin, translation);
         unsafe { ffi::b2RayCastSegment(&raw, &input, one_sided) }.into()
-    }
-}
-
-impl From<Segment> for ffi::b2Segment {
-    #[inline]
-    fn from(segment: Segment) -> Self {
-        Self {
-            point1: segment.point1.into(),
-            point2: segment.point2.into(),
-        }
-    }
-}
-
-impl From<ffi::b2Segment> for Segment {
-    #[inline]
-    fn from(segment: ffi::b2Segment) -> Self {
-        Self {
-            point1: segment.point1.into(),
-            point2: segment.point2.into(),
-        }
     }
 }
 
@@ -204,6 +200,28 @@ impl ChainSegment {
     pub fn chain_id_raw(self) -> i32 {
         self.chain_id
     }
+
+    #[inline]
+    /// Construct from the raw Box2D geometry value.
+    pub fn from_raw(segment: ffi::b2ChainSegment) -> Self {
+        Self {
+            ghost1: segment.ghost1.into(),
+            segment: Segment::from_raw(segment.segment),
+            ghost2: segment.ghost2.into(),
+            chain_id: segment.chainId,
+        }
+    }
+
+    #[inline]
+    /// Convert into the raw Box2D geometry value.
+    pub fn into_raw(self) -> ffi::b2ChainSegment {
+        ffi::b2ChainSegment {
+            ghost1: self.ghost1.into(),
+            segment: self.segment.into_raw(),
+            ghost2: self.ghost2.into(),
+            chainId: self.chain_id,
+        }
+    }
 }
 
 impl fmt::Debug for ChainSegment {
@@ -220,30 +238,6 @@ impl fmt::Debug for ChainSegment {
 impl PartialEq for ChainSegment {
     fn eq(&self, other: &Self) -> bool {
         self.ghost1 == other.ghost1 && self.segment == other.segment && self.ghost2 == other.ghost2
-    }
-}
-
-impl From<ChainSegment> for ffi::b2ChainSegment {
-    #[inline]
-    fn from(segment: ChainSegment) -> Self {
-        Self {
-            ghost1: segment.ghost1.into(),
-            segment: segment.segment.into(),
-            ghost2: segment.ghost2.into(),
-            chainId: segment.chain_id,
-        }
-    }
-}
-
-impl From<ffi::b2ChainSegment> for ChainSegment {
-    #[inline]
-    fn from(segment: ffi::b2ChainSegment) -> Self {
-        Self {
-            ghost1: segment.ghost1.into(),
-            segment: segment.segment.into(),
-            ghost2: segment.ghost2.into(),
-            chain_id: segment.chainId,
-        }
     }
 }
 
@@ -268,20 +262,40 @@ impl Capsule {
     }
 
     #[inline]
+    /// Construct from the raw Box2D geometry value.
+    pub fn from_raw(capsule: ffi::b2Capsule) -> Self {
+        Self {
+            center1: capsule.center1.into(),
+            center2: capsule.center2.into(),
+            radius: capsule.radius,
+        }
+    }
+
+    #[inline]
+    /// Convert into the raw Box2D geometry value.
+    pub fn into_raw(self) -> ffi::b2Capsule {
+        ffi::b2Capsule {
+            center1: self.center1.into(),
+            center2: self.center2.into(),
+            radius: self.radius,
+        }
+    }
+
+    #[inline]
     pub fn mass_data(self, density: f32) -> MassData {
-        let raw: ffi::b2Capsule = self.into();
+        let raw = self.into_raw();
         unsafe { ffi::b2ComputeCapsuleMass(&raw, density) }.into()
     }
 
     #[inline]
     pub fn aabb(self, transform: Transform) -> Aabb {
-        let raw: ffi::b2Capsule = self.into();
+        let raw = self.into_raw();
         unsafe { ffi::b2ComputeCapsuleAABB(&raw, transform.into()) }.into()
     }
 
     #[inline]
     pub fn contains_point<P: Into<Vec2>>(self, point: P) -> bool {
-        let raw: ffi::b2Capsule = self.into();
+        let raw = self.into_raw();
         unsafe { ffi::b2PointInCapsule(&raw, point.into().into()) }
     }
 
@@ -291,31 +305,9 @@ impl Capsule {
         origin: VO,
         translation: VT,
     ) -> CastOutput {
-        let raw: ffi::b2Capsule = self.into();
+        let raw = self.into_raw();
         let input = make_ray_input(origin, translation);
         unsafe { ffi::b2RayCastCapsule(&raw, &input) }.into()
-    }
-}
-
-impl From<Capsule> for ffi::b2Capsule {
-    #[inline]
-    fn from(capsule: Capsule) -> Self {
-        Self {
-            center1: capsule.center1.into(),
-            center2: capsule.center2.into(),
-            radius: capsule.radius,
-        }
-    }
-}
-
-impl From<ffi::b2Capsule> for Capsule {
-    #[inline]
-    fn from(capsule: ffi::b2Capsule) -> Self {
-        Self {
-            center1: capsule.center1.into(),
-            center2: capsule.center2.into(),
-            radius: capsule.radius,
-        }
     }
 }
 
@@ -331,8 +323,15 @@ pub struct Polygon {
 
 impl Polygon {
     #[inline]
-    pub fn new(raw: ffi::b2Polygon) -> Self {
+    /// Construct from the raw Box2D geometry value.
+    pub fn from_raw(raw: ffi::b2Polygon) -> Self {
         Self { raw }
+    }
+
+    #[inline]
+    /// Convert into the raw Box2D geometry value.
+    pub fn into_raw(self) -> ffi::b2Polygon {
+        self.raw
     }
 
     #[inline]
@@ -366,7 +365,7 @@ impl Polygon {
 
     #[inline]
     pub fn box_polygon(half_width: f32, half_height: f32) -> Self {
-        unsafe { ffi::b2MakeBox(half_width, half_height) }.into()
+        Self::from_raw(unsafe { ffi::b2MakeBox(half_width, half_height) })
     }
 
     #[inline]
@@ -393,29 +392,29 @@ impl Polygon {
             return None;
         }
 
-        Some(unsafe { ffi::b2MakePolygon(&hull, radius) }.into())
+        Some(Self::from_raw(unsafe { ffi::b2MakePolygon(&hull, radius) }))
     }
 
     #[inline]
     pub fn transformed(self, transform: Transform) -> Self {
-        unsafe { ffi::b2TransformPolygon(transform.into(), &self.raw) }.into()
+        Self::from_raw(unsafe { ffi::b2TransformPolygon(transform.into(), &self.raw) })
     }
 
     #[inline]
     pub fn mass_data(self, density: f32) -> MassData {
-        let raw: ffi::b2Polygon = self.into();
+        let raw = self.into_raw();
         unsafe { ffi::b2ComputePolygonMass(&raw, density) }.into()
     }
 
     #[inline]
     pub fn aabb(self, transform: Transform) -> Aabb {
-        let raw: ffi::b2Polygon = self.into();
+        let raw = self.into_raw();
         unsafe { ffi::b2ComputePolygonAABB(&raw, transform.into()) }.into()
     }
 
     #[inline]
     pub fn contains_point<P: Into<Vec2>>(self, point: P) -> bool {
-        let raw: ffi::b2Polygon = self.into();
+        let raw = self.into_raw();
         unsafe { ffi::b2PointInPolygon(&raw, point.into().into()) }
     }
 
@@ -425,14 +424,9 @@ impl Polygon {
         origin: VO,
         translation: VT,
     ) -> CastOutput {
-        let raw: ffi::b2Polygon = self.into();
+        let raw = self.into_raw();
         let input = make_ray_input(origin, translation);
         unsafe { ffi::b2RayCastPolygon(&raw, &input) }.into()
-    }
-
-    #[inline]
-    pub(crate) fn raw(self) -> ffi::b2Polygon {
-        self.raw
     }
 }
 
@@ -444,20 +438,6 @@ impl fmt::Debug for Polygon {
             .field("centroid", &self.centroid())
             .field("radius", &self.radius())
             .finish()
-    }
-}
-
-impl From<Polygon> for ffi::b2Polygon {
-    #[inline]
-    fn from(polygon: Polygon) -> Self {
-        polygon.raw
-    }
-}
-
-impl From<ffi::b2Polygon> for Polygon {
-    #[inline]
-    fn from(polygon: ffi::b2Polygon) -> Self {
-        Self { raw: polygon }
     }
 }
 

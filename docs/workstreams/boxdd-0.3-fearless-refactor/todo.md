@@ -35,12 +35,14 @@
 - [x] Add reusable-buffer debug draw command collection and reuse nested polygon/string storage on stable command streams.
 - [x] Rename raw world-id escape hatches explicitly to `world_id_raw` / `try_world_id_raw`.
 - [x] Replace `ffi::b2HexColor` with crate-owned `HexColor` across debug-draw callbacks and collected commands.
+- [x] Make crate-owned geometry raw conversions explicit with `from_raw(...)` / `into_raw()` for `Circle`, `Segment`, `ChainSegment`, `Capsule`, and `Polygon`.
 
 ## Next
 
 - [ ] Review remaining `World` / `WorldHandle` query duplication and decide whether selective consolidation is worth it.
 - [ ] Audit remaining owned/scoped handle duplication outside the already-refactored hot paths.
 - [ ] Review remaining public raw escape hatches and document which are intentional (`world_id_raw`, raw event slices, debug draw raw paths, etc.).
+- [ ] Audit remaining crate-owned value types that still rely on implicit raw conversions and decide which should move to explicit `from_raw(...)` / `into_raw()` in `0.3`.
 
 ## Release Checklist
 

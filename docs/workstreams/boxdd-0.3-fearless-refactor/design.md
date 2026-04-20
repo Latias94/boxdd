@@ -34,6 +34,7 @@ The main gaps are:
 - the character mover flow is incomplete unless users drop to `boxdd_sys::ffi`
 - some safe APIs still duplicate the same implementation patterns across handle styles
 - the crate lacks a clearer release-level refactor plan that ties these efforts together
+- some crate-owned value types still blur the raw FFI boundary with implicit conversions instead of explicit escape hatches
 
 If we do not address these now, the likely outcome is a sequence of small additive
 patches that preserve avoidable duplication and keep advanced users half inside the safe
@@ -45,6 +46,7 @@ API and half inside raw FFI.
 - Productize the Box2D character mover flow as an ergonomic safe API.
 - Keep hot-path APIs friendly to per-frame reuse patterns.
 - Identify and remove redundant implementation patterns where the maintenance cost is not justified.
+- Make raw FFI escape hatches explicit where the crate owns the safe vocabulary.
 - Track larger follow-up refactors explicitly so the crate does not drift back toward ad-hoc growth.
 
 ## Non-Goals
@@ -85,6 +87,13 @@ Some duplication is acceptable for API clarity. Repeated callback plumbing, raw 
 fill patterns, or near-identical handle implementations should be consolidated when the
 result is simpler and easier to audit.
 
+### 5. Raw Escape Hatches Should Be Loud
+
+If `boxdd` owns a user-facing value type, crossing into raw Box2D structs should be
+explicit in the API surface. Implicit `From<ffi::...>` conversions are convenient for
+internal plumbing, but they make the public safe vocabulary too porous and hide where
+FFI boundaries actually exist.
+
 ## Release Scope
 
 ### Delivered in the first `0.3.0` slice
@@ -104,6 +113,7 @@ result is simpler and easier to audit.
 - typed friction / restitution callbacks
 - standalone collision geometry helpers for distance, shape cast, TOI, and AABB validation/ray cast
 - crate-owned wrapper cleanup for remaining leaked Box2D value types (`ShapeType`, `MassData`, contact data, and manifolds)
+- explicit raw geometry conversions for crate-owned shape geometry values
 
 ### Planned follow-up audit items
 
@@ -111,6 +121,7 @@ result is simpler and easier to audit.
 - `World` / `WorldHandle` duplication review
 - owned / scoped handle duplication review outside the hottest paths
 - continue value-type cleanup for remaining raw Box2D structs that still leak through public APIs
+- continue auditing crate-owned value types that still use implicit raw conversions where explicit `*_raw`/`from_raw` APIs would be clearer
 
 ## Release Strategy
 

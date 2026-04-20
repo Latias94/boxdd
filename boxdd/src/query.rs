@@ -116,7 +116,7 @@ unsafe extern "C" fn collect_mover_plane_result_cb(
 }
 
 fn make_capsule<V1: Into<Vec2>, V2: Into<Vec2>>(c1: V1, c2: V2, radius: f32) -> ffi::b2Capsule {
-    crate::shapes::Capsule::new(c1, c2, radius).into()
+    crate::shapes::Capsule::new(c1, c2, radius).into_raw()
 }
 
 fn overlap_aabb_into_impl(

@@ -1956,7 +1956,7 @@ impl World {
         c: &crate::shapes::Circle,
     ) -> ShapeId {
         crate::core::debug_checks::assert_body_valid(body);
-        let raw: ffi::b2Circle = (*c).into();
+        let raw = c.into_raw();
         let sid = unsafe { ffi::b2CreateCircleShape(body, &def.0, &raw) };
         #[cfg(feature = "serialize")]
         self.record_shape_flags(sid, &def.0);
@@ -1978,7 +1978,7 @@ impl World {
         s: &crate::shapes::Segment,
     ) -> ShapeId {
         crate::core::debug_checks::assert_body_valid(body);
-        let raw: ffi::b2Segment = (*s).into();
+        let raw = s.into_raw();
         let sid = unsafe { ffi::b2CreateSegmentShape(body, &def.0, &raw) };
         #[cfg(feature = "serialize")]
         self.record_shape_flags(sid, &def.0);
@@ -2000,7 +2000,7 @@ impl World {
         c: &crate::shapes::Capsule,
     ) -> ShapeId {
         crate::core::debug_checks::assert_body_valid(body);
-        let raw: ffi::b2Capsule = (*c).into();
+        let raw = c.into_raw();
         let sid = unsafe { ffi::b2CreateCapsuleShape(body, &def.0, &raw) };
         #[cfg(feature = "serialize")]
         self.record_shape_flags(sid, &def.0);
@@ -2022,7 +2022,7 @@ impl World {
         p: &crate::shapes::Polygon,
     ) -> ShapeId {
         crate::core::debug_checks::assert_body_valid(body);
-        let raw: ffi::b2Polygon = (*p).into();
+        let raw = p.into_raw();
         let sid = unsafe { ffi::b2CreatePolygonShape(body, &def.0, &raw) };
         #[cfg(feature = "serialize")]
         self.record_shape_flags(sid, &def.0);
@@ -2124,7 +2124,7 @@ impl World {
     // Shape helpers (ID-style)
     pub fn shape_set_circle(&mut self, shape: ShapeId, c: &crate::shapes::Circle) {
         crate::core::debug_checks::assert_shape_valid(shape);
-        let raw: ffi::b2Circle = (*c).into();
+        let raw = c.into_raw();
         unsafe { ffi::b2Shape_SetCircle(shape, &raw) }
     }
 
@@ -2134,14 +2134,14 @@ impl World {
         c: &crate::shapes::Circle,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_shape_valid(shape)?;
-        let raw: ffi::b2Circle = (*c).into();
+        let raw = c.into_raw();
         unsafe { ffi::b2Shape_SetCircle(shape, &raw) }
         Ok(())
     }
 
     pub fn shape_set_segment(&mut self, shape: ShapeId, s: &crate::shapes::Segment) {
         crate::core::debug_checks::assert_shape_valid(shape);
-        let raw: ffi::b2Segment = (*s).into();
+        let raw = s.into_raw();
         unsafe { ffi::b2Shape_SetSegment(shape, &raw) }
     }
 
@@ -2151,14 +2151,14 @@ impl World {
         s: &crate::shapes::Segment,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_shape_valid(shape)?;
-        let raw: ffi::b2Segment = (*s).into();
+        let raw = s.into_raw();
         unsafe { ffi::b2Shape_SetSegment(shape, &raw) }
         Ok(())
     }
 
     pub fn shape_set_capsule(&mut self, shape: ShapeId, c: &crate::shapes::Capsule) {
         crate::core::debug_checks::assert_shape_valid(shape);
-        let raw: ffi::b2Capsule = (*c).into();
+        let raw = c.into_raw();
         unsafe { ffi::b2Shape_SetCapsule(shape, &raw) }
     }
 
@@ -2168,14 +2168,14 @@ impl World {
         c: &crate::shapes::Capsule,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_shape_valid(shape)?;
-        let raw: ffi::b2Capsule = (*c).into();
+        let raw = c.into_raw();
         unsafe { ffi::b2Shape_SetCapsule(shape, &raw) }
         Ok(())
     }
 
     pub fn shape_set_polygon(&mut self, shape: ShapeId, p: &crate::shapes::Polygon) {
         crate::core::debug_checks::assert_shape_valid(shape);
-        let raw: ffi::b2Polygon = (*p).into();
+        let raw = p.into_raw();
         unsafe { ffi::b2Shape_SetPolygon(shape, &raw) }
     }
 
@@ -2185,7 +2185,7 @@ impl World {
         p: &crate::shapes::Polygon,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_shape_valid(shape)?;
-        let raw: ffi::b2Polygon = (*p).into();
+        let raw = p.into_raw();
         unsafe { ffi::b2Shape_SetPolygon(shape, &raw) }
         Ok(())
     }

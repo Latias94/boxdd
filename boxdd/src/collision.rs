@@ -582,8 +582,8 @@ pub fn collide_circles(
     circle_b: Circle,
     transform_b: Transform,
 ) -> Manifold {
-    let raw_a: ffi::b2Circle = circle_a.into();
-    let raw_b: ffi::b2Circle = circle_b.into();
+    let raw_a = circle_a.into_raw();
+    let raw_b = circle_b.into_raw();
     unsafe { ffi::b2CollideCircles(&raw_a, transform_a.into(), &raw_b, transform_b.into()) }.into()
 }
 
@@ -595,8 +595,8 @@ pub fn collide_capsule_and_circle(
     circle_b: Circle,
     transform_b: Transform,
 ) -> Manifold {
-    let raw_a: ffi::b2Capsule = capsule_a.into();
-    let raw_b: ffi::b2Circle = circle_b.into();
+    let raw_a = capsule_a.into_raw();
+    let raw_b = circle_b.into_raw();
     unsafe {
         ffi::b2CollideCapsuleAndCircle(&raw_a, transform_a.into(), &raw_b, transform_b.into())
     }
@@ -611,8 +611,8 @@ pub fn collide_segment_and_circle(
     circle_b: Circle,
     transform_b: Transform,
 ) -> Manifold {
-    let raw_a: ffi::b2Segment = segment_a.into();
-    let raw_b: ffi::b2Circle = circle_b.into();
+    let raw_a = segment_a.into_raw();
+    let raw_b = circle_b.into_raw();
     unsafe {
         ffi::b2CollideSegmentAndCircle(&raw_a, transform_a.into(), &raw_b, transform_b.into())
     }
@@ -627,8 +627,8 @@ pub fn collide_polygon_and_circle(
     circle_b: Circle,
     transform_b: Transform,
 ) -> Manifold {
-    let raw_a: ffi::b2Polygon = polygon_a.into();
-    let raw_b: ffi::b2Circle = circle_b.into();
+    let raw_a = polygon_a.into_raw();
+    let raw_b = circle_b.into_raw();
     unsafe {
         ffi::b2CollidePolygonAndCircle(&raw_a, transform_a.into(), &raw_b, transform_b.into())
     }
@@ -643,8 +643,8 @@ pub fn collide_capsules(
     capsule_b: Capsule,
     transform_b: Transform,
 ) -> Manifold {
-    let raw_a: ffi::b2Capsule = capsule_a.into();
-    let raw_b: ffi::b2Capsule = capsule_b.into();
+    let raw_a = capsule_a.into_raw();
+    let raw_b = capsule_b.into_raw();
     unsafe { ffi::b2CollideCapsules(&raw_a, transform_a.into(), &raw_b, transform_b.into()) }.into()
 }
 
@@ -656,8 +656,8 @@ pub fn collide_segment_and_capsule(
     capsule_b: Capsule,
     transform_b: Transform,
 ) -> Manifold {
-    let raw_a: ffi::b2Segment = segment_a.into();
-    let raw_b: ffi::b2Capsule = capsule_b.into();
+    let raw_a = segment_a.into_raw();
+    let raw_b = capsule_b.into_raw();
     unsafe {
         ffi::b2CollideSegmentAndCapsule(&raw_a, transform_a.into(), &raw_b, transform_b.into())
     }
@@ -672,8 +672,8 @@ pub fn collide_polygon_and_capsule(
     capsule_b: Capsule,
     transform_b: Transform,
 ) -> Manifold {
-    let raw_a: ffi::b2Polygon = polygon_a.into();
-    let raw_b: ffi::b2Capsule = capsule_b.into();
+    let raw_a = polygon_a.into_raw();
+    let raw_b = capsule_b.into_raw();
     unsafe {
         ffi::b2CollidePolygonAndCapsule(&raw_a, transform_a.into(), &raw_b, transform_b.into())
     }
@@ -688,8 +688,8 @@ pub fn collide_polygons(
     polygon_b: Polygon,
     transform_b: Transform,
 ) -> Manifold {
-    let raw_a: ffi::b2Polygon = polygon_a.into();
-    let raw_b: ffi::b2Polygon = polygon_b.into();
+    let raw_a = polygon_a.into_raw();
+    let raw_b = polygon_b.into_raw();
     unsafe { ffi::b2CollidePolygons(&raw_a, transform_a.into(), &raw_b, transform_b.into()) }.into()
 }
 
@@ -701,8 +701,8 @@ pub fn collide_segment_and_polygon(
     polygon_b: Polygon,
     transform_b: Transform,
 ) -> Manifold {
-    let raw_a: ffi::b2Segment = segment_a.into();
-    let raw_b: ffi::b2Polygon = polygon_b.into();
+    let raw_a = segment_a.into_raw();
+    let raw_b = polygon_b.into_raw();
     unsafe {
         ffi::b2CollideSegmentAndPolygon(&raw_a, transform_a.into(), &raw_b, transform_b.into())
     }
@@ -717,8 +717,8 @@ pub fn collide_chain_segment_and_circle(
     circle_b: Circle,
     transform_b: Transform,
 ) -> Manifold {
-    let raw_a: ffi::b2ChainSegment = segment_a.into();
-    let raw_b: ffi::b2Circle = circle_b.into();
+    let raw_a = segment_a.into_raw();
+    let raw_b = circle_b.into_raw();
     unsafe {
         ffi::b2CollideChainSegmentAndCircle(&raw_a, transform_a.into(), &raw_b, transform_b.into())
     }
@@ -737,8 +737,8 @@ pub fn collide_chain_segment_and_capsule(
     transform_b: Transform,
     cache: Option<&mut SimplexCache>,
 ) -> Manifold {
-    let raw_a: ffi::b2ChainSegment = segment_a.into();
-    let raw_b: ffi::b2Capsule = capsule_b.into();
+    let raw_a = segment_a.into_raw();
+    let raw_b = capsule_b.into_raw();
     let cache_ptr = match cache {
         Some(cache) => cache.raw_mut(),
         None => core::ptr::null_mut(),
@@ -767,8 +767,8 @@ pub fn collide_chain_segment_and_polygon(
     transform_b: Transform,
     cache: Option<&mut SimplexCache>,
 ) -> Manifold {
-    let raw_a: ffi::b2ChainSegment = segment_a.into();
-    let raw_b: ffi::b2Polygon = polygon_b.into();
+    let raw_a = segment_a.into_raw();
+    let raw_b = polygon_b.into_raw();
     let cache_ptr = match cache {
         Some(cache) => cache.raw_mut(),
         None => core::ptr::null_mut(),

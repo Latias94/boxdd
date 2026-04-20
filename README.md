@@ -98,6 +98,7 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 - `boxdd::shapes::circle`, `segment`, `capsule`, `box_polygon`, and `polygon_from_points` return safe geometry value types instead of raw Box2D structs.
 - `Shape::circle()` / `segment()` / `capsule()` / `polygon()` and the corresponding setters now use the same geometry types as world/body creation APIs.
 - `Circle`, `Capsule`, and `Polygon` expose standalone helpers such as `mass_data(...)`, `aabb(...)`, `contains_point(...)`, and `ray_cast(...)` for world-free geometry work.
+- Raw geometry conversion is explicit on the crate-owned geometry types: use `from_raw(...)` / `into_raw()` when you intentionally cross the FFI boundary.
 - `ShapeDefBuilder::filter(...)` and `ChainDef::builder().filter(...)` now take the safe `Filter` type; explicit raw escape hatches are named `filter_raw(...)`.
 
 ## Material Mixing Callbacks

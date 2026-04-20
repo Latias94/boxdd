@@ -287,23 +287,23 @@ impl OwnedShape {
     // Geometry
     pub fn circle(&self) -> Circle {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetCircle(self.id) }.into()
+        Circle::from_raw(unsafe { ffi::b2Shape_GetCircle(self.id) })
     }
     pub fn segment(&self) -> Segment {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetSegment(self.id) }.into()
+        Segment::from_raw(unsafe { ffi::b2Shape_GetSegment(self.id) })
     }
     pub fn chain_segment(&self) -> ChainSegment {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetChainSegment(self.id) }.into()
+        ChainSegment::from_raw(unsafe { ffi::b2Shape_GetChainSegment(self.id) })
     }
     pub fn capsule(&self) -> Capsule {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetCapsule(self.id) }.into()
+        Capsule::from_raw(unsafe { ffi::b2Shape_GetCapsule(self.id) })
     }
     pub fn polygon(&self) -> Polygon {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetPolygon(self.id) }.into()
+        Polygon::from_raw(unsafe { ffi::b2Shape_GetPolygon(self.id) })
     }
 
     /// Return the closest point on this shape to `target` (in world coordinates).
@@ -343,45 +343,45 @@ impl OwnedShape {
 
     pub fn set_circle(&mut self, c: &Circle) {
         self.assert_valid();
-        let raw: ffi::b2Circle = (*c).into();
+        let raw = c.into_raw();
         unsafe { ffi::b2Shape_SetCircle(self.id, &raw) }
     }
     pub fn try_set_circle(&mut self, c: &Circle) -> ApiResult<()> {
         self.check_valid()?;
-        let raw: ffi::b2Circle = (*c).into();
+        let raw = c.into_raw();
         unsafe { ffi::b2Shape_SetCircle(self.id, &raw) }
         Ok(())
     }
     pub fn set_segment(&mut self, s: &Segment) {
         self.assert_valid();
-        let raw: ffi::b2Segment = (*s).into();
+        let raw = s.into_raw();
         unsafe { ffi::b2Shape_SetSegment(self.id, &raw) }
     }
     pub fn try_set_segment(&mut self, s: &Segment) -> ApiResult<()> {
         self.check_valid()?;
-        let raw: ffi::b2Segment = (*s).into();
+        let raw = s.into_raw();
         unsafe { ffi::b2Shape_SetSegment(self.id, &raw) }
         Ok(())
     }
     pub fn set_capsule(&mut self, c: &Capsule) {
         self.assert_valid();
-        let raw: ffi::b2Capsule = (*c).into();
+        let raw = c.into_raw();
         unsafe { ffi::b2Shape_SetCapsule(self.id, &raw) }
     }
     pub fn try_set_capsule(&mut self, c: &Capsule) -> ApiResult<()> {
         self.check_valid()?;
-        let raw: ffi::b2Capsule = (*c).into();
+        let raw = c.into_raw();
         unsafe { ffi::b2Shape_SetCapsule(self.id, &raw) }
         Ok(())
     }
     pub fn set_polygon(&mut self, p: &Polygon) {
         self.assert_valid();
-        let raw: ffi::b2Polygon = (*p).into();
+        let raw = p.into_raw();
         unsafe { ffi::b2Shape_SetPolygon(self.id, &raw) }
     }
     pub fn try_set_polygon(&mut self, p: &Polygon) -> ApiResult<()> {
         self.check_valid()?;
-        let raw: ffi::b2Polygon = (*p).into();
+        let raw = p.into_raw();
         unsafe { ffi::b2Shape_SetPolygon(self.id, &raw) }
         Ok(())
     }
@@ -864,23 +864,23 @@ impl<'w> Shape<'w> {
     // Getters
     pub fn circle(&self) -> Circle {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetCircle(self.id) }.into()
+        Circle::from_raw(unsafe { ffi::b2Shape_GetCircle(self.id) })
     }
     pub fn segment(&self) -> Segment {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetSegment(self.id) }.into()
+        Segment::from_raw(unsafe { ffi::b2Shape_GetSegment(self.id) })
     }
     pub fn chain_segment(&self) -> ChainSegment {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetChainSegment(self.id) }.into()
+        ChainSegment::from_raw(unsafe { ffi::b2Shape_GetChainSegment(self.id) })
     }
     pub fn capsule(&self) -> Capsule {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetCapsule(self.id) }.into()
+        Capsule::from_raw(unsafe { ffi::b2Shape_GetCapsule(self.id) })
     }
     pub fn polygon(&self) -> Polygon {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetPolygon(self.id) }.into()
+        Polygon::from_raw(unsafe { ffi::b2Shape_GetPolygon(self.id) })
     }
 
     /// Return the closest point on this shape to `target` (in world coordinates).
@@ -921,45 +921,45 @@ impl<'w> Shape<'w> {
     // Setters
     pub fn set_circle(&mut self, c: &Circle) {
         self.assert_valid();
-        let raw: ffi::b2Circle = (*c).into();
+        let raw = c.into_raw();
         unsafe { ffi::b2Shape_SetCircle(self.id, &raw) }
     }
     pub fn try_set_circle(&mut self, c: &Circle) -> ApiResult<()> {
         self.check_valid()?;
-        let raw: ffi::b2Circle = (*c).into();
+        let raw = c.into_raw();
         unsafe { ffi::b2Shape_SetCircle(self.id, &raw) }
         Ok(())
     }
     pub fn set_segment(&mut self, s: &Segment) {
         self.assert_valid();
-        let raw: ffi::b2Segment = (*s).into();
+        let raw = s.into_raw();
         unsafe { ffi::b2Shape_SetSegment(self.id, &raw) }
     }
     pub fn try_set_segment(&mut self, s: &Segment) -> ApiResult<()> {
         self.check_valid()?;
-        let raw: ffi::b2Segment = (*s).into();
+        let raw = s.into_raw();
         unsafe { ffi::b2Shape_SetSegment(self.id, &raw) }
         Ok(())
     }
     pub fn set_capsule(&mut self, c: &Capsule) {
         self.assert_valid();
-        let raw: ffi::b2Capsule = (*c).into();
+        let raw = c.into_raw();
         unsafe { ffi::b2Shape_SetCapsule(self.id, &raw) }
     }
     pub fn try_set_capsule(&mut self, c: &Capsule) -> ApiResult<()> {
         self.check_valid()?;
-        let raw: ffi::b2Capsule = (*c).into();
+        let raw = c.into_raw();
         unsafe { ffi::b2Shape_SetCapsule(self.id, &raw) }
         Ok(())
     }
     pub fn set_polygon(&mut self, p: &Polygon) {
         self.assert_valid();
-        let raw: ffi::b2Polygon = (*p).into();
+        let raw = p.into_raw();
         unsafe { ffi::b2Shape_SetPolygon(self.id, &raw) }
     }
     pub fn try_set_polygon(&mut self, p: &Polygon) -> ApiResult<()> {
         self.check_valid()?;
-        let raw: ffi::b2Polygon = (*p).into();
+        let raw = p.into_raw();
         unsafe { ffi::b2Shape_SetPolygon(self.id, &raw) }
         Ok(())
     }
@@ -1613,7 +1613,7 @@ impl<'de> serde::Deserialize<'de> for ShapeDef {
 impl<'w> Body<'w> {
     pub fn create_circle_shape(&mut self, def: &ShapeDef, c: &Circle) -> Shape<'w> {
         crate::core::debug_checks::assert_body_valid(self.id);
-        let raw: ffi::b2Circle = (*c).into();
+        let raw = c.into_raw();
         let id = unsafe { ffi::b2CreateCircleShape(self.id, &def.0, &raw) };
         #[cfg(feature = "serialize")]
         self.core.record_shape_flags(id, &def.0);
@@ -1621,7 +1621,7 @@ impl<'w> Body<'w> {
     }
     pub fn create_segment_shape(&mut self, def: &ShapeDef, s: &Segment) -> Shape<'w> {
         crate::core::debug_checks::assert_body_valid(self.id);
-        let raw: ffi::b2Segment = (*s).into();
+        let raw = s.into_raw();
         let id = unsafe { ffi::b2CreateSegmentShape(self.id, &def.0, &raw) };
         #[cfg(feature = "serialize")]
         self.core.record_shape_flags(id, &def.0);
@@ -1629,7 +1629,7 @@ impl<'w> Body<'w> {
     }
     pub fn create_capsule_shape(&mut self, def: &ShapeDef, c: &Capsule) -> Shape<'w> {
         crate::core::debug_checks::assert_body_valid(self.id);
-        let raw: ffi::b2Capsule = (*c).into();
+        let raw = c.into_raw();
         let id = unsafe { ffi::b2CreateCapsuleShape(self.id, &def.0, &raw) };
         #[cfg(feature = "serialize")]
         self.core.record_shape_flags(id, &def.0);
@@ -1637,7 +1637,7 @@ impl<'w> Body<'w> {
     }
     pub fn create_polygon_shape(&mut self, def: &ShapeDef, p: &Polygon) -> Shape<'w> {
         crate::core::debug_checks::assert_body_valid(self.id);
-        let raw = p.raw();
+        let raw = p.into_raw();
         let id = unsafe { ffi::b2CreatePolygonShape(self.id, &def.0, &raw) };
         #[cfg(feature = "serialize")]
         self.core.record_shape_flags(id, &def.0);
