@@ -47,7 +47,7 @@ Scope:
 
 - review remaining allocation-sensitive APIs
 - reusable-buffer audit and cleanup for debug draw command collection
-- review `World` / `WorldHandle` duplication
+- review `World` / `WorldHandle` duplication and consolidate the mirrored query surface where the API intentionally stays symmetric
 - review owned/scoped handle duplication outside the hottest paths
 - consolidate the most mechanical `Shape` / `OwnedShape`, `Body` / `OwnedBody`, and `Chain` / `OwnedChain` internals behind shared private helpers
 
