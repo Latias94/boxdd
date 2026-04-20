@@ -55,7 +55,7 @@ fn debug_draw_panic_is_caught_and_resumed() {
             _transform: boxdd::Transform,
             _vertices: &[Vec2],
             _radius: f32,
-            _color: u32,
+            _color: HexColor,
         ) {
             panic!("boom in debug draw");
         }
@@ -84,7 +84,7 @@ fn debug_draw_reentrant_boxdd_call_panics() {
             _transform: boxdd::Transform,
             _vertices: &[Vec2],
             _radius: f32,
-            _color: u32,
+            _color: HexColor,
         ) {
             let _ = self.body.position();
         }

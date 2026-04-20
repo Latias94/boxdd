@@ -32,7 +32,7 @@ fn try_calls_from_debug_draw_return_in_callback() {
             _transform: boxdd::Transform,
             _vertices: &[Vec2],
             _radius: f32,
-            _color: u32,
+            _color: HexColor,
         ) {
             self.err = Some(self.body.try_position().unwrap_err());
         }
@@ -62,7 +62,7 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
             _transform: boxdd::Transform,
             _vertices: &[Vec2],
             _radius: f32,
-            _color: u32,
+            _color: HexColor,
         ) {
             if !self.errs.is_empty() {
                 return;
@@ -169,7 +169,7 @@ fn try_body_mutations_from_debug_draw_return_in_callback() {
             _transform: boxdd::Transform,
             _vertices: &[Vec2],
             _radius: f32,
-            _color: u32,
+            _color: HexColor,
         ) {
             if !self.errs.is_empty() {
                 return;

@@ -34,6 +34,7 @@
 - [x] Add a crate-owned `ChainSegment` geometry type and productize chain-segment manifold collision helpers.
 - [x] Add reusable-buffer debug draw command collection and reuse nested polygon/string storage on stable command streams.
 - [x] Rename raw world-id escape hatches explicitly to `world_id_raw` / `try_world_id_raw`.
+- [x] Replace `ffi::b2HexColor` with crate-owned `HexColor` across debug-draw callbacks and collected commands.
 
 ## Next
 

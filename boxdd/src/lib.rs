@@ -220,7 +220,7 @@ pub use core::math::TransformFromGlamError;
 #[cfg_attr(docsrs, doc(cfg(feature = "mint")))]
 pub use core::math::TransformFromMintError;
 pub use core::math::{Rot, Transform};
-pub use debug_draw::{DebugDraw, DebugDrawCmd, DebugDrawOptions};
+pub use debug_draw::{DebugDraw, DebugDrawCmd, DebugDrawOptions, HexColor};
 pub use error::{ApiError, ApiResult};
 pub use events::{
     BodyMoveEvent, ContactBeginTouchEvent, ContactEndTouchEvent, ContactEvents, ContactHitEvent,

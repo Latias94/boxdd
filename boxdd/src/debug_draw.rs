@@ -1,18 +1,16 @@
 //! Debug Draw bridge to Box2D v3 callbacks.
 //!
 //! Implement the `DebugDraw` trait to receive drawing commands and call `World::debug_draw` each
-//! step with `DebugDrawOptions` to render. Color is a packed integer (`b2HexColor`), compatible with
-//! Box2D's debug draw convention.
+//! step with `DebugDrawOptions` to render. Colors use the crate-owned [`HexColor`] type, which
+//! stores Box2D's packed `0xRRGGBB` convention.
 //!
 //! Example
 //! ```no_run
-//! use boxdd::{World, WorldDef, DebugDraw, DebugDrawOptions, Vec2};
-//! use boxdd_sys::ffi;
-//! use std::ffi::CStr;
+//! use boxdd::{DebugDraw, DebugDrawOptions, HexColor, Vec2, World, WorldDef};
 //! struct Printer;
 //! impl DebugDraw for Printer {
-//!     fn draw_polygon(&mut self, vertices: &[Vec2], color: u32) {
-//!         println!("poly {} color={:#x}", vertices.len(), color);
+//!     fn draw_polygon(&mut self, vertices: &[Vec2], color: HexColor) {
+//!         println!("poly {} color={:#x}", vertices.len(), color.rgb_u32());
 //!     }
 //! }
 //! # let def = WorldDef::builder().build();
@@ -32,7 +30,72 @@ use smallvec::SmallVec;
 use std::any::Any;
 use std::ffi::CStr;
 
-pub type HexColor = ffi::b2HexColor;
+/// Packed Box2D debug-draw RGB color (`0xRRGGBB`).
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(transparent)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct HexColor(u32);
+
+impl HexColor {
+    pub const BLACK: Self = Self::from_rgb_u32(0x000000);
+    pub const WHITE: Self = Self::from_rgb_u32(0xFFFFFF);
+    pub const RED: Self = Self::from_rgb_u32(0xFF0000);
+    pub const GREEN: Self = Self::from_rgb_u32(0x00FF00);
+    pub const BLUE: Self = Self::from_rgb_u32(0x0000FF);
+    pub const BOX2D_RED: Self = Self::from_rgb_u32(0xDC3132);
+    pub const BOX2D_BLUE: Self = Self::from_rgb_u32(0x30AEBF);
+    pub const BOX2D_GREEN: Self = Self::from_rgb_u32(0x8CC924);
+    pub const BOX2D_YELLOW: Self = Self::from_rgb_u32(0xFFEE8C);
+
+    #[inline]
+    pub const fn from_rgb(red: u8, green: u8, blue: u8) -> Self {
+        Self(((red as u32) << 16) | ((green as u32) << 8) | blue as u32)
+    }
+
+    #[inline]
+    pub const fn from_rgb_u32(rgb: u32) -> Self {
+        Self(rgb & 0x00ff_ffff)
+    }
+
+    #[inline]
+    pub const fn from_raw(raw: ffi::b2HexColor) -> Self {
+        Self::from_rgb_u32(raw)
+    }
+
+    #[inline]
+    pub const fn rgb_u32(self) -> u32 {
+        self.0
+    }
+
+    #[inline]
+    pub const fn into_raw(self) -> ffi::b2HexColor {
+        self.0
+    }
+
+    #[inline]
+    pub const fn with_alpha(self, alpha: u8) -> u32 {
+        ((alpha as u32) << 24) | self.0
+    }
+}
+
+impl From<ffi::b2HexColor> for HexColor {
+    #[inline]
+    fn from(raw: ffi::b2HexColor) -> Self {
+        Self::from_raw(raw)
+    }
+}
+
+impl From<HexColor> for ffi::b2HexColor {
+    #[inline]
+    fn from(color: HexColor) -> Self {
+        color.into_raw()
+    }
+}
+
+const _: () = {
+    assert!(core::mem::size_of::<HexColor>() == core::mem::size_of::<ffi::b2HexColor>());
+    assert!(core::mem::align_of::<HexColor>() == core::mem::align_of::<ffi::b2HexColor>());
+};
 
 #[derive(Clone, Debug)]
 pub enum DebugDrawCmd {
@@ -361,13 +424,14 @@ impl World {
         unsafe extern "C" fn draw_polygon_cb(
             vertices: *const ffi::b2Vec2,
             count: i32,
-            color: HexColor,
+            color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
             let ctx = unsafe { &mut *(context as *mut DebugCtx) };
             if *ctx.panicked {
                 return;
             }
+            let color = HexColor::from_raw(color);
             let n = count.max(0) as usize;
             if n == 0 || vertices.is_null() {
                 return;
@@ -391,13 +455,14 @@ impl World {
             vertices: *const ffi::b2Vec2,
             count: i32,
             radius: f32,
-            color: HexColor,
+            color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
             let ctx = unsafe { &mut *(context as *mut DebugCtx) };
             if *ctx.panicked {
                 return;
             }
+            let color = HexColor::from_raw(color);
             let n = count.max(0) as usize;
             if n == 0 || vertices.is_null() {
                 return;
@@ -420,13 +485,14 @@ impl World {
         unsafe extern "C" fn draw_circle_cb(
             center: ffi::b2Vec2,
             radius: f32,
-            color: HexColor,
+            color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
             let ctx = unsafe { &mut *(context as *mut DebugCtx) };
             if *ctx.panicked {
                 return;
             }
+            let color = HexColor::from_raw(color);
             let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let _g = crate::core::callback_state::CallbackGuard::enter();
                 ctx.drawer.draw_circle(Vec2::from(center), radius, color);
@@ -439,13 +505,14 @@ impl World {
         unsafe extern "C" fn draw_solid_circle_cb(
             transform: ffi::b2Transform,
             radius: f32,
-            color: HexColor,
+            color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
             let ctx = unsafe { &mut *(context as *mut DebugCtx) };
             if *ctx.panicked {
                 return;
             }
+            let color = HexColor::from_raw(color);
             let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let _g = crate::core::callback_state::CallbackGuard::enter();
                 ctx.drawer
@@ -460,13 +527,14 @@ impl World {
             p1: ffi::b2Vec2,
             p2: ffi::b2Vec2,
             radius: f32,
-            color: HexColor,
+            color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
             let ctx = unsafe { &mut *(context as *mut DebugCtx) };
             if *ctx.panicked {
                 return;
             }
+            let color = HexColor::from_raw(color);
             let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let _g = crate::core::callback_state::CallbackGuard::enter();
                 ctx.drawer
@@ -480,13 +548,14 @@ impl World {
         unsafe extern "C" fn draw_line_cb(
             p1: ffi::b2Vec2,
             p2: ffi::b2Vec2,
-            color: HexColor,
+            color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
             let ctx = unsafe { &mut *(context as *mut DebugCtx) };
             if *ctx.panicked {
                 return;
             }
+            let color = HexColor::from_raw(color);
             let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let _g = crate::core::callback_state::CallbackGuard::enter();
                 ctx.drawer
@@ -517,13 +586,14 @@ impl World {
         unsafe extern "C" fn draw_point_cb(
             p: ffi::b2Vec2,
             size: f32,
-            color: HexColor,
+            color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
             let ctx = unsafe { &mut *(context as *mut DebugCtx) };
             if *ctx.panicked {
                 return;
             }
+            let color = HexColor::from_raw(color);
             let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let _g = crate::core::callback_state::CallbackGuard::enter();
                 ctx.drawer.draw_point(Vec2::from(p), size, color);
@@ -536,13 +606,14 @@ impl World {
         unsafe extern "C" fn draw_string_cb(
             p: ffi::b2Vec2,
             s: *const core::ffi::c_char,
-            color: HexColor,
+            color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
             let ctx = unsafe { &mut *(context as *mut DebugCtx) };
             if *ctx.panicked {
                 return;
             }
+            let color = HexColor::from_raw(color);
             if !s.is_null() {
                 let cs = unsafe { CStr::from_ptr(s) };
                 let s = cs.to_string_lossy();
@@ -614,13 +685,14 @@ impl World {
         unsafe extern "C" fn draw_polygon_cb(
             vertices: *const ffi::b2Vec2,
             count: i32,
-            color: HexColor,
+            color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
             let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
             if *ctx.panicked {
                 return;
             }
+            let color = HexColor::from_raw(color);
             let n = count.max(0) as usize;
             if n == 0 || vertices.is_null() {
                 return;
@@ -640,13 +712,14 @@ impl World {
             vertices: *const ffi::b2Vec2,
             count: i32,
             radius: f32,
-            color: HexColor,
+            color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
             let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
             if *ctx.panicked {
                 return;
             }
+            let color = HexColor::from_raw(color);
             let n = count.max(0) as usize;
             if n == 0 || vertices.is_null() {
                 return;
@@ -665,13 +738,14 @@ impl World {
         unsafe extern "C" fn draw_circle_cb(
             center: ffi::b2Vec2,
             radius: f32,
-            color: HexColor,
+            color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
             let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
             if *ctx.panicked {
                 return;
             }
+            let color = HexColor::from_raw(color);
             let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let _g = crate::core::callback_state::CallbackGuard::enter();
                 ctx.drawer.draw_circle(center, radius, color);
@@ -684,13 +758,14 @@ impl World {
         unsafe extern "C" fn draw_solid_circle_cb(
             transform: ffi::b2Transform,
             radius: f32,
-            color: HexColor,
+            color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
             let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
             if *ctx.panicked {
                 return;
             }
+            let color = HexColor::from_raw(color);
             let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let _g = crate::core::callback_state::CallbackGuard::enter();
                 ctx.drawer.draw_solid_circle(transform, radius, color);
@@ -704,13 +779,14 @@ impl World {
             p1: ffi::b2Vec2,
             p2: ffi::b2Vec2,
             radius: f32,
-            color: HexColor,
+            color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
             let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
             if *ctx.panicked {
                 return;
             }
+            let color = HexColor::from_raw(color);
             let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let _g = crate::core::callback_state::CallbackGuard::enter();
                 ctx.drawer.draw_solid_capsule(p1, p2, radius, color);
@@ -723,13 +799,14 @@ impl World {
         unsafe extern "C" fn draw_line_cb(
             p1: ffi::b2Vec2,
             p2: ffi::b2Vec2,
-            color: HexColor,
+            color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
             let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
             if *ctx.panicked {
                 return;
             }
+            let color = HexColor::from_raw(color);
             let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let _g = crate::core::callback_state::CallbackGuard::enter();
                 ctx.drawer.draw_segment(p1, p2, color);
@@ -759,13 +836,14 @@ impl World {
         unsafe extern "C" fn draw_point_cb(
             p: ffi::b2Vec2,
             size: f32,
-            color: HexColor,
+            color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
             let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
             if *ctx.panicked {
                 return;
             }
+            let color = HexColor::from_raw(color);
             let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let _g = crate::core::callback_state::CallbackGuard::enter();
                 ctx.drawer.draw_point(p, size, color);
@@ -778,13 +856,14 @@ impl World {
         unsafe extern "C" fn draw_string_cb(
             p: ffi::b2Vec2,
             s: *const core::ffi::c_char,
-            color: HexColor,
+            color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
             let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
             if *ctx.panicked {
                 return;
             }
+            let color = HexColor::from_raw(color);
             if !s.is_null() {
                 let cs = unsafe { CStr::from_ptr(s) };
                 let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

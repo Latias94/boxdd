@@ -1,18 +1,24 @@
-use boxdd::{BodyBuilder, DebugDraw, DebugDrawOptions, ShapeDef, Vec2, World, WorldDef, shapes};
+use boxdd::{
+    BodyBuilder, DebugDraw, DebugDrawOptions, HexColor, ShapeDef, Vec2, World, WorldDef, shapes,
+};
 
 struct Printer;
 
 impl DebugDraw for Printer {
-    fn draw_polygon(&mut self, vertices: &[boxdd::Vec2], color: u32) {
-        println!("polygon {} verts color={:#x}", vertices.len(), color);
+    fn draw_polygon(&mut self, vertices: &[boxdd::Vec2], color: HexColor) {
+        println!(
+            "polygon {} verts color={:#x}",
+            vertices.len(),
+            color.rgb_u32()
+        );
     }
-    fn draw_segment(&mut self, p1: boxdd::Vec2, p2: boxdd::Vec2, _color: u32) {
+    fn draw_segment(&mut self, p1: boxdd::Vec2, p2: boxdd::Vec2, _color: HexColor) {
         println!(
             "segment ({:.2},{:.2})->({:.2},{:.2})",
             p1.x, p1.y, p2.x, p2.y
         );
     }
-    fn draw_string(&mut self, p: boxdd::Vec2, s: &str, _color: u32) {
+    fn draw_string(&mut self, p: boxdd::Vec2, s: &str, _color: HexColor) {
         println!("label at ({:.2},{:.2}): {}", p.x, p.y, s);
     }
 }

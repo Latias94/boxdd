@@ -6,36 +6,40 @@ pub struct ImguiDebugDraw<'a> {
     pub pixels_per_meter: f32,
 }
 
+fn imgui_color(color: bd::HexColor, alpha: u8) -> u32 {
+    color.with_alpha(alpha)
+}
+
 impl bd::DebugDraw for ImguiDebugDraw<'_> {
-    fn draw_segment(&mut self, p1: bd::Vec2, p2: bd::Vec2, color: u32) {
+    fn draw_segment(&mut self, p1: bd::Vec2, p2: bd::Vec2, color: bd::HexColor) {
         let dl = self.ui.get_foreground_draw_list();
         let ds = self.ui.io().display_size();
         let origin = [ds[0] * 0.5, ds[1] * 0.5];
         let s = self.pixels_per_meter;
         let w2s = |v: bd::Vec2| [origin[0] + v.x * s, ds[1] - (origin[1] + v.y * s)];
-        let col = 0xff00_0000u32 | (color & 0x00ff_ffff);
+        let col = imgui_color(color, 0xff);
         dl.add_line(w2s(p1), w2s(p2), col).build();
     }
-    fn draw_polygon(&mut self, vertices: &[bd::Vec2], color: u32) {
+    fn draw_polygon(&mut self, vertices: &[bd::Vec2], color: bd::HexColor) {
         let dl = self.ui.get_foreground_draw_list();
         let ds = self.ui.io().display_size();
         let origin = [ds[0] * 0.5, ds[1] * 0.5];
         let s = self.pixels_per_meter;
         let w2s = |v: bd::Vec2| [origin[0] + v.x * s, ds[1] - (origin[1] + v.y * s)];
-        let col = 0xff00_0000u32 | (color & 0x00ff_ffff);
+        let col = imgui_color(color, 0xff);
         for i in 0..vertices.len() {
             let a = w2s(vertices[i]);
             let b = w2s(vertices[(i + 1) % vertices.len()]);
             dl.add_line(a, b, col).build();
         }
     }
-    fn draw_circle(&mut self, center: bd::Vec2, radius: f32, color: u32) {
+    fn draw_circle(&mut self, center: bd::Vec2, radius: f32, color: bd::HexColor) {
         let dl = self.ui.get_foreground_draw_list();
         let ds = self.ui.io().display_size();
         let origin = [ds[0] * 0.5, ds[1] * 0.5];
         let s = self.pixels_per_meter;
         let w2s = |v: bd::Vec2| [origin[0] + v.x * s, ds[1] - (origin[1] + v.y * s)];
-        let col = 0xff00_0000u32 | (color & 0x00ff_ffff);
+        let col = imgui_color(color, 0xff);
         dl.add_circle(w2s(center), radius * s, col).thickness(1.0).build();
     }
     fn draw_solid_polygon(
@@ -43,7 +47,7 @@ impl bd::DebugDraw for ImguiDebugDraw<'_> {
         xf: bd::Transform,
         vertices: &[bd::Vec2],
         _radius: f32,
-        color: u32,
+        color: bd::HexColor,
     ) {
         if vertices.is_empty() {
             return;
@@ -55,23 +59,23 @@ impl bd::DebugDraw for ImguiDebugDraw<'_> {
         let transform = |v: bd::Vec2| xf.transform_point(v);
         let w2s = |v: bd::Vec2| [origin[0] + v.x * s, ds[1] - (origin[1] + v.y * s)];
         let pts: Vec<[f32; 2]> = vertices.iter().map(|&v| w2s(transform(v))).collect();
-        let fill = 0x4000_0000u32 | (color & 0x00ff_ffff);
+        let fill = imgui_color(color, 0x40);
         dl.add_concave_poly_filled(&pts, fill);
         // outline
-        let col = 0xff00_0000u32 | (color & 0x00ff_ffff);
+        let col = imgui_color(color, 0xff);
         for i in 0..pts.len() {
             dl.add_line(pts[i], pts[(i + 1) % pts.len()], col).build();
         }
     }
-    fn draw_solid_circle(&mut self, xf: bd::Transform, radius: f32, color: u32) {
+    fn draw_solid_circle(&mut self, xf: bd::Transform, radius: f32, color: bd::HexColor) {
         let dl = self.ui.get_foreground_draw_list();
         let ds = self.ui.io().display_size();
         let origin = [ds[0] * 0.5, ds[1] * 0.5];
         let s = self.pixels_per_meter;
         let center = xf.position();
         let w2s = |v: bd::Vec2| [origin[0] + v.x * s, ds[1] - (origin[1] + v.y * s)];
-        let fill = 0x4000_0000u32 | (color & 0x00ff_ffff);
-        let outline = 0xff00_0000u32 | (color & 0x00ff_ffff);
+        let fill = imgui_color(color, 0x40);
+        let outline = imgui_color(color, 0xff);
         // Approximate filled circle with polygon
         let steps = 28;
         let mut pts: Vec<[f32; 2]> = Vec::with_capacity(steps);
@@ -86,15 +90,15 @@ impl bd::DebugDraw for ImguiDebugDraw<'_> {
             dl.add_line(pts[i], pts[(i + 1) % steps], outline).build();
         }
     }
-    fn draw_solid_capsule(&mut self, p1: bd::Vec2, p2: bd::Vec2, radius: f32, color: u32) {
+    fn draw_solid_capsule(&mut self, p1: bd::Vec2, p2: bd::Vec2, radius: f32, color: bd::HexColor) {
         // Approximate: thick line + end circles
         let dl = self.ui.get_foreground_draw_list();
         let ds = self.ui.io().display_size();
         let origin = [ds[0] * 0.5, ds[1] * 0.5];
         let s = self.pixels_per_meter;
         let w2s = |v: bd::Vec2| [origin[0] + v.x * s, ds[1] - (origin[1] + v.y * s)];
-        let outline = 0xff00_0000u32 | (color & 0x00ff_ffff);
-        let fill = 0x4000_0000u32 | (color & 0x00ff_ffff);
+        let outline = imgui_color(color, 0xff);
+        let fill = imgui_color(color, 0x40);
         dl.add_line(w2s(p1), w2s(p2), fill)
             .thickness(radius * 2.0 * s)
             .build();
@@ -118,13 +122,13 @@ impl bd::DebugDraw for ImguiDebugDraw<'_> {
         dl.add_line(w2s(p), w2s(bd::Vec2::new(p.x + y_axis.x, p.y + y_axis.y)), 0xff00ff00)
             .build();
     }
-    fn draw_point(&mut self, p: bd::Vec2, size: f32, color: u32) {
+    fn draw_point(&mut self, p: bd::Vec2, size: f32, color: bd::HexColor) {
         let dl = self.ui.get_foreground_draw_list();
         let ds = self.ui.io().display_size();
         let origin = [ds[0] * 0.5, ds[1] * 0.5];
         let s = self.pixels_per_meter;
         let w2s = |v: bd::Vec2| [origin[0] + v.x * s, ds[1] - (origin[1] + v.y * s)];
-        let col = 0xff00_0000u32 | (color & 0x00ff_ffff);
+        let col = imgui_color(color, 0xff);
         // Small dot as tiny polygon (triangle approximation)
         let r = (size.max(2.0)) * 0.5;
         let c = w2s(p);
