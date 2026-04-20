@@ -15,7 +15,7 @@ fn shape_mass_aabb_point_raycast() {
     assert!(approx(md.mass, core::f32::consts::PI, f32::EPSILON));
     assert!(approx(md.center.x, 1.0, f32::EPSILON) && approx(md.center.y, 0.0, f32::EPSILON));
     assert!(approx(
-        md.rotationalInertia,
+        md.rotational_inertia,
         0.5 * core::f32::consts::PI,
         f32::EPSILON
     ));
@@ -48,8 +48,8 @@ fn shape_mass_aabb_point_raycast() {
     let m_hull = ac.mass_data(1.0);
     assert!(m_hull.mass < m_cap.mass && m_cap.mass < m_box.mass);
     assert!(
-        m_hull.rotationalInertia < m_cap.rotationalInertia
-            && m_cap.rotationalInertia < m_box.rotationalInertia
+        m_hull.rotational_inertia < m_cap.rotational_inertia
+            && m_cap.rotational_inertia < m_box.rotational_inertia
     );
 
     // Mass: box
@@ -57,7 +57,7 @@ fn shape_mass_aabb_point_raycast() {
     assert!(approx(m.mass, 4.0, f32::EPSILON));
     assert!(approx(m.center.x, 0.0, f32::EPSILON));
     assert!(approx(m.center.y, 0.0, f32::EPSILON));
-    assert!(approx(m.rotationalInertia, 8.0 / 3.0, 2.0 * f32::EPSILON));
+    assert!(approx(m.rotational_inertia, 8.0 / 3.0, 2.0 * f32::EPSILON));
 
     // AABB
     let a_circle = circle.aabb(Transform::IDENTITY);

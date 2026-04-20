@@ -29,11 +29,23 @@ fn body_and_shape_contact_data_into_reuses_buffer() {
     assert!(body_contacts.is_empty());
     assert_eq!(body_contacts.as_ptr(), body_contacts_ptr);
 
+    let mut body_contacts_raw = Vec::with_capacity(8);
+    let body_contacts_raw_ptr = body_contacts_raw.as_ptr();
+    body.contact_data_into_raw(&mut body_contacts_raw);
+    assert!(body_contacts_raw.is_empty());
+    assert_eq!(body_contacts_raw.as_ptr(), body_contacts_raw_ptr);
+
     let mut shape_contacts = Vec::with_capacity(8);
     let shape_contacts_ptr = shape_contacts.as_ptr();
     shape.contact_data_into(&mut shape_contacts);
     assert!(shape_contacts.is_empty());
     assert_eq!(shape_contacts.as_ptr(), shape_contacts_ptr);
+
+    let mut shape_contacts_raw = Vec::with_capacity(8);
+    let shape_contacts_raw_ptr = shape_contacts_raw.as_ptr();
+    shape.contact_data_into_raw(&mut shape_contacts_raw);
+    assert!(shape_contacts_raw.is_empty());
+    assert_eq!(shape_contacts_raw.as_ptr(), shape_contacts_raw_ptr);
 
     for _ in 0..240 {
         world.step(1.0 / 60.0, 4);
@@ -45,14 +57,31 @@ fn body_and_shape_contact_data_into_reuses_buffer() {
     body.contact_data_into(&mut body_contacts);
     assert!(!body_contacts.is_empty());
     assert_eq!(body_contacts.as_ptr(), body_contacts_ptr);
+    assert!(body_contacts[0].manifold.points().len() <= 2);
     body.try_contact_data_into(&mut body_contacts).unwrap();
     assert!(!body_contacts.is_empty());
+
+    body.contact_data_into_raw(&mut body_contacts_raw);
+    assert!(!body_contacts_raw.is_empty());
+    assert_eq!(body_contacts_raw.as_ptr(), body_contacts_raw_ptr);
+    body.try_contact_data_into_raw(&mut body_contacts_raw)
+        .unwrap();
+    assert!(!body_contacts_raw.is_empty());
 
     shape.contact_data_into(&mut shape_contacts);
     assert!(!shape_contacts.is_empty());
     assert_eq!(shape_contacts.as_ptr(), shape_contacts_ptr);
+    assert!(shape_contacts[0].manifold.points().len() <= 2);
     shape.try_contact_data_into(&mut shape_contacts).unwrap();
     assert!(!shape_contacts.is_empty());
+
+    shape.contact_data_into_raw(&mut shape_contacts_raw);
+    assert!(!shape_contacts_raw.is_empty());
+    assert_eq!(shape_contacts_raw.as_ptr(), shape_contacts_raw_ptr);
+    shape
+        .try_contact_data_into_raw(&mut shape_contacts_raw)
+        .unwrap();
+    assert!(!shape_contacts_raw.is_empty());
 }
 
 #[test]
@@ -168,4 +197,21 @@ fn chain_segments_into_reuses_buffer() {
     chain.try_segments_into(&mut segments).unwrap();
     assert_eq!(segments.len(), baseline.len());
     assert_eq!(segments.as_ptr(), segments_ptr);
+}
+
+#[test]
+fn shape_type_uses_safe_enum_and_explicit_raw_escape_hatch() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body = world.create_body_id(BodyBuilder::new().build());
+    let circle = world.create_circle_shape_for_owned(
+        body,
+        &ShapeDef::default(),
+        &shapes::circle([0.0_f32, 0.0], 0.5),
+    );
+
+    assert_eq!(circle.shape_type(), ShapeType::Circle);
+    assert_eq!(
+        circle.shape_type_raw(),
+        boxdd_sys::ffi::b2ShapeType_b2_circleShape
+    );
 }

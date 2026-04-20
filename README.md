@@ -22,6 +22,7 @@
 - Character mover helpers cover the full safe workflow: `cast_mover`, `collide_mover`, `solve_planes`, and `clip_vector`.
 - Standalone collision geometry helpers cover shape proxies, GJK distance, shape cast, TOI, and `Aabb::is_valid` / `Aabb::ray_cast` without raw `ffi`.
 - Shape creation and editing now use crate-owned geometry values: `Circle`, `Segment`, `Capsule`, and `Polygon`.
+- Shape classification, mass properties, and contact extraction now use crate-owned value types such as `ShapeType`, `MassData`, `ContactData`, and `Manifold`.
 - Typed world-level friction and restitution mixing callbacks expose `user_material_id` without dropping to raw `ffi`.
 
 ## Quickstart
@@ -77,6 +78,7 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 ## Hot Path APIs
 - Convenience methods like `world.overlap_aabb(...)` and `world.cast_ray_all(...)` still return owned `Vec`s for one-off use.
 - For per-frame hot paths, prefer reusable-buffer variants such as `world.overlap_aabb_into(...)`, `world.cast_ray_all_into(...)`, `shape.sensor_overlaps_into(...)`, `body.contact_data_into(...)`, and `chain.segments_into(...)`.
+- `body.contact_data_into(...)` and `shape.contact_data_into(...)` now fill `Vec<ContactData>`; explicit raw escape hatches are available as `contact_data_into_raw(...)` if you truly need the upstream FFI layout.
 
 ## Character Mover APIs
 - The safe wrapper now covers Box2D's geometric character mover pipeline.

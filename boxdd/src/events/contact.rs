@@ -1,4 +1,4 @@
-use crate::types::{ShapeId, Vec2};
+use crate::types::{ContactId, ShapeId, Vec2};
 use crate::world::World;
 use boxdd_sys::ffi;
 
@@ -15,7 +15,7 @@ impl<'a> ContactBeginTouch<'a> {
     pub fn shape_b(&self) -> ShapeId {
         self.0.shapeIdB
     }
-    pub fn contact_id(&self) -> ffi::b2ContactId {
+    pub fn contact_id(&self) -> ContactId {
         self.0.contactId
     }
 }
@@ -88,7 +88,7 @@ impl<'a> Iterator for HitIter<'a> {
 pub struct ContactBeginTouchEvent {
     pub shape_a: ShapeId,
     pub shape_b: ShapeId,
-    pub contact_id: ffi::b2ContactId,
+    pub contact_id: ContactId,
 }
 
 #[derive(Clone, Debug)]

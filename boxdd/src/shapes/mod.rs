@@ -11,7 +11,7 @@ pub mod helpers;
 use crate::body::Body;
 use crate::error::ApiResult;
 use crate::filter::Filter;
-use crate::types::{BodyId, ChainId, ShapeId, Vec2};
+use crate::types::{BodyId, ChainId, ContactData, ShapeId, Vec2};
 use crate::world::World;
 use boxdd_sys::ffi;
 use std::os::raw::c_void;
@@ -22,6 +22,63 @@ pub use geometry::{
     Capsule, Circle, MAX_POLYGON_VERTICES, Polygon, Segment, box_polygon, capsule, circle,
     polygon_from_points, segment,
 };
+
+/// Shape kinds reported by Box2D.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum ShapeType {
+    Circle,
+    Capsule,
+    Segment,
+    Polygon,
+    ChainSegment,
+}
+
+impl ShapeType {
+    #[inline]
+    pub const fn from_raw(raw: ffi::b2ShapeType) -> Option<Self> {
+        match raw {
+            ffi::b2ShapeType_b2_circleShape => Some(Self::Circle),
+            ffi::b2ShapeType_b2_capsuleShape => Some(Self::Capsule),
+            ffi::b2ShapeType_b2_segmentShape => Some(Self::Segment),
+            ffi::b2ShapeType_b2_polygonShape => Some(Self::Polygon),
+            ffi::b2ShapeType_b2_chainSegmentShape => Some(Self::ChainSegment),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub const fn into_raw(self) -> ffi::b2ShapeType {
+        match self {
+            Self::Circle => ffi::b2ShapeType_b2_circleShape,
+            Self::Capsule => ffi::b2ShapeType_b2_capsuleShape,
+            Self::Segment => ffi::b2ShapeType_b2_segmentShape,
+            Self::Polygon => ffi::b2ShapeType_b2_polygonShape,
+            Self::ChainSegment => ffi::b2ShapeType_b2_chainSegmentShape,
+        }
+    }
+}
+
+impl From<ShapeType> for ffi::b2ShapeType {
+    #[inline]
+    fn from(value: ShapeType) -> Self {
+        value.into_raw()
+    }
+}
+
+impl TryFrom<ffi::b2ShapeType> for ShapeType {
+    type Error = ffi::b2ShapeType;
+
+    #[inline]
+    fn try_from(value: ffi::b2ShapeType) -> Result<Self, Self::Error> {
+        Self::from_raw(value).ok_or(value)
+    }
+}
+
+#[inline]
+fn shape_type_from_ffi(raw: ffi::b2ShapeType) -> ShapeType {
+    ShapeType::from_raw(raw).expect("Box2D returned an unknown shape type")
+}
 
 /// A scoped shape handle tied to a mutable borrow of the world.
 pub struct Shape<'w> {
@@ -44,8 +101,30 @@ fn retain_valid_shape_ids(ids: &mut Vec<ShapeId>) {
     ids.retain(|sid| unsafe { ffi::b2Shape_IsValid(*sid) });
 }
 
-fn shape_contact_data_into_impl(id: ShapeId, out: &mut Vec<ffi::b2ContactData>) {
-    let cap = unsafe { ffi::b2Shape_GetContactCapacity(id) }.max(0) as usize;
+fn shape_contact_capacity(id: ShapeId) -> usize {
+    unsafe { ffi::b2Shape_GetContactCapacity(id) }.max(0) as usize
+}
+
+fn shape_contact_data_into_impl(id: ShapeId, out: &mut Vec<ContactData>) {
+    let cap = shape_contact_capacity(id);
+    unsafe {
+        crate::core::ffi_vec::fill_from_ffi(out, cap, |ptr, cap| {
+            ffi::b2Shape_GetContactData(id, ptr.cast::<ffi::b2ContactData>(), cap)
+        });
+    }
+}
+
+fn shape_contact_data_impl(id: ShapeId) -> Vec<ContactData> {
+    let cap = shape_contact_capacity(id);
+    unsafe {
+        crate::core::ffi_vec::read_from_ffi::<ContactData>(cap, |ptr, cap| {
+            ffi::b2Shape_GetContactData(id, ptr.cast::<ffi::b2ContactData>(), cap)
+        })
+    }
+}
+
+fn shape_contact_data_into_raw_impl(id: ShapeId, out: &mut Vec<ffi::b2ContactData>) {
+    let cap = shape_contact_capacity(id);
     unsafe {
         crate::core::ffi_vec::fill_from_ffi(out, cap, |ptr, cap| {
             ffi::b2Shape_GetContactData(id, ptr, cap)
@@ -53,8 +132,8 @@ fn shape_contact_data_into_impl(id: ShapeId, out: &mut Vec<ffi::b2ContactData>) 
     }
 }
 
-fn shape_contact_data_impl(id: ShapeId) -> Vec<ffi::b2ContactData> {
-    let cap = unsafe { ffi::b2Shape_GetContactCapacity(id) }.max(0) as usize;
+fn shape_contact_data_raw_impl(id: ShapeId) -> Vec<ffi::b2ContactData> {
+    let cap = shape_contact_capacity(id);
     unsafe {
         crate::core::ffi_vec::read_from_ffi(cap, |ptr, cap| {
             ffi::b2Shape_GetContactData(id, ptr, cap)
@@ -173,12 +252,24 @@ impl OwnedShape {
         Ok(unsafe { ffi::b2Shape_IsSensor(self.id) })
     }
 
-    pub fn shape_type(&self) -> ffi::b2ShapeType {
+    pub fn shape_type(&self) -> ShapeType {
+        self.assert_valid();
+        shape_type_from_ffi(unsafe { ffi::b2Shape_GetType(self.id) })
+    }
+
+    pub fn try_shape_type(&self) -> ApiResult<ShapeType> {
+        self.check_valid()?;
+        Ok(shape_type_from_ffi(unsafe {
+            ffi::b2Shape_GetType(self.id)
+        }))
+    }
+
+    pub fn shape_type_raw(&self) -> ffi::b2ShapeType {
         self.assert_valid();
         unsafe { ffi::b2Shape_GetType(self.id) }
     }
 
-    pub fn try_shape_type(&self) -> ApiResult<ffi::b2ShapeType> {
+    pub fn try_shape_type_raw(&self) -> ApiResult<ffi::b2ShapeType> {
         self.check_valid()?;
         Ok(unsafe { ffi::b2Shape_GetType(self.id) })
     }
@@ -401,24 +492,45 @@ impl OwnedShape {
         }))
     }
 
-    pub fn contact_data(&self) -> Vec<ffi::b2ContactData> {
+    pub fn contact_data(&self) -> Vec<ContactData> {
         self.assert_valid();
         shape_contact_data_impl(self.id)
     }
 
-    pub fn contact_data_into(&self, out: &mut Vec<ffi::b2ContactData>) {
+    pub fn contact_data_into(&self, out: &mut Vec<ContactData>) {
         self.assert_valid();
         shape_contact_data_into_impl(self.id, out);
     }
 
-    pub fn try_contact_data(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
+    pub fn try_contact_data(&self) -> ApiResult<Vec<ContactData>> {
         self.check_valid()?;
         Ok(shape_contact_data_impl(self.id))
     }
 
-    pub fn try_contact_data_into(&self, out: &mut Vec<ffi::b2ContactData>) -> ApiResult<()> {
+    pub fn try_contact_data_into(&self, out: &mut Vec<ContactData>) -> ApiResult<()> {
         self.check_valid()?;
         shape_contact_data_into_impl(self.id, out);
+        Ok(())
+    }
+
+    pub fn contact_data_raw(&self) -> Vec<ffi::b2ContactData> {
+        self.assert_valid();
+        shape_contact_data_raw_impl(self.id)
+    }
+
+    pub fn contact_data_into_raw(&self, out: &mut Vec<ffi::b2ContactData>) {
+        self.assert_valid();
+        shape_contact_data_into_raw_impl(self.id, out);
+    }
+
+    pub fn try_contact_data_raw(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
+        self.check_valid()?;
+        Ok(shape_contact_data_raw_impl(self.id))
+    }
+
+    pub fn try_contact_data_into_raw(&self, out: &mut Vec<ffi::b2ContactData>) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_contact_data_into_raw_impl(self.id, out);
         Ok(())
     }
 
@@ -713,12 +825,24 @@ impl<'w> Shape<'w> {
         Ok(unsafe { ffi::b2Shape_IsValid(self.id) })
     }
 
-    pub fn shape_type(&self) -> ffi::b2ShapeType {
+    pub fn shape_type(&self) -> ShapeType {
+        self.assert_valid();
+        shape_type_from_ffi(unsafe { ffi::b2Shape_GetType(self.id) })
+    }
+
+    pub fn try_shape_type(&self) -> ApiResult<ShapeType> {
+        self.check_valid()?;
+        Ok(shape_type_from_ffi(unsafe {
+            ffi::b2Shape_GetType(self.id)
+        }))
+    }
+
+    pub fn shape_type_raw(&self) -> ffi::b2ShapeType {
         self.assert_valid();
         unsafe { ffi::b2Shape_GetType(self.id) }
     }
 
-    pub fn try_shape_type(&self) -> ApiResult<ffi::b2ShapeType> {
+    pub fn try_shape_type_raw(&self) -> ApiResult<ffi::b2ShapeType> {
         self.check_valid()?;
         Ok(unsafe { ffi::b2Shape_GetType(self.id) })
     }
@@ -1070,24 +1194,45 @@ impl<'w> Shape<'w> {
         Ok(v)
     }
 
-    pub fn contact_data(&self) -> Vec<ffi::b2ContactData> {
+    pub fn contact_data(&self) -> Vec<ContactData> {
         self.assert_valid();
         shape_contact_data_impl(self.id)
     }
 
-    pub fn contact_data_into(&self, out: &mut Vec<ffi::b2ContactData>) {
+    pub fn contact_data_into(&self, out: &mut Vec<ContactData>) {
         self.assert_valid();
         shape_contact_data_into_impl(self.id, out);
     }
 
-    pub fn try_contact_data(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
+    pub fn try_contact_data(&self) -> ApiResult<Vec<ContactData>> {
         self.check_valid()?;
         Ok(shape_contact_data_impl(self.id))
     }
 
-    pub fn try_contact_data_into(&self, out: &mut Vec<ffi::b2ContactData>) -> ApiResult<()> {
+    pub fn try_contact_data_into(&self, out: &mut Vec<ContactData>) -> ApiResult<()> {
         self.check_valid()?;
         shape_contact_data_into_impl(self.id, out);
+        Ok(())
+    }
+
+    pub fn contact_data_raw(&self) -> Vec<ffi::b2ContactData> {
+        self.assert_valid();
+        shape_contact_data_raw_impl(self.id)
+    }
+
+    pub fn contact_data_into_raw(&self, out: &mut Vec<ffi::b2ContactData>) {
+        self.assert_valid();
+        shape_contact_data_into_raw_impl(self.id, out);
+    }
+
+    pub fn try_contact_data_raw(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
+        self.check_valid()?;
+        Ok(shape_contact_data_raw_impl(self.id))
+    }
+
+    pub fn try_contact_data_into_raw(&self, out: &mut Vec<ffi::b2ContactData>) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_contact_data_into_raw_impl(self.id, out);
         Ok(())
     }
 

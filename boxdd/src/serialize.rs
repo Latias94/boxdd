@@ -2,7 +2,12 @@
 //!
 //! This module is only compiled when the `serialize` feature is enabled.
 
-use crate::{body::BodyType, types::Vec2, world::World};
+use crate::{
+    body::BodyType,
+    shapes::ShapeType,
+    types::{BodyId, Vec2},
+    world::World,
+};
 use boxdd_sys::ffi;
 // no Hash/Eq on FFI ids; use simple field comparisons and linear scans
 
@@ -68,7 +73,7 @@ pub struct BodySnapshot {
 }
 
 impl BodySnapshot {
-    pub fn take(world: &World, id: ffi::b2BodyId) -> Self {
+    pub fn take(world: &World, id: BodyId) -> Self {
         crate::core::debug_checks::assert_body_valid(id);
         let rot = unsafe { ffi::b2Body_GetRotation(id) };
         Self {
@@ -87,7 +92,7 @@ impl BodySnapshot {
         }
     }
 
-    pub fn apply(&self, world: &mut World, id: ffi::b2BodyId) {
+    pub fn apply(&self, world: &mut World, id: BodyId) {
         crate::core::debug_checks::assert_body_valid(id);
         world.set_body_type(id, self.body_type);
         // set transform (position + angle)
@@ -743,39 +748,45 @@ fn shapes_from_body(world: &World, body: ffi::b2BodyId) -> Vec<ShapeInstance> {
         }
         let sdef = builder.build();
         // geometry
-        let geom = if st == ffi::b2ShapeType_b2_circleShape {
-            let c = unsafe { ffi::b2Shape_GetCircle(sid) };
-            ShapeGeom::Circle {
-                center: Vec2::from(c.center),
-                radius: c.radius,
+        let geom = match ShapeType::from_raw(st) {
+            Some(ShapeType::Circle) => {
+                let c = unsafe { ffi::b2Shape_GetCircle(sid) };
+                ShapeGeom::Circle {
+                    center: Vec2::from(c.center),
+                    radius: c.radius,
+                }
             }
-        } else if st == ffi::b2ShapeType_b2_segmentShape {
-            let s = unsafe { ffi::b2Shape_GetSegment(sid) };
-            ShapeGeom::Segment {
-                p1: Vec2::from(s.point1),
-                p2: Vec2::from(s.point2),
+            Some(ShapeType::Segment) => {
+                let s = unsafe { ffi::b2Shape_GetSegment(sid) };
+                ShapeGeom::Segment {
+                    p1: Vec2::from(s.point1),
+                    p2: Vec2::from(s.point2),
+                }
             }
-        } else if st == ffi::b2ShapeType_b2_capsuleShape {
-            let c = unsafe { ffi::b2Shape_GetCapsule(sid) };
-            ShapeGeom::Capsule {
-                c1: Vec2::from(c.center1),
-                c2: Vec2::from(c.center2),
-                radius: c.radius,
+            Some(ShapeType::Capsule) => {
+                let c = unsafe { ffi::b2Shape_GetCapsule(sid) };
+                ShapeGeom::Capsule {
+                    c1: Vec2::from(c.center1),
+                    c2: Vec2::from(c.center2),
+                    radius: c.radius,
+                }
             }
-        } else if st == ffi::b2ShapeType_b2_polygonShape {
-            let p = unsafe { ffi::b2Shape_GetPolygon(sid) };
-            let mut verts: Vec<Vec2> = Vec::new();
-            let n = (p.count as usize).min(8);
-            for i in 0..n {
-                verts.push(Vec2::from(p.vertices[i]));
+            Some(ShapeType::Polygon) => {
+                let p = unsafe { ffi::b2Shape_GetPolygon(sid) };
+                let mut verts: Vec<Vec2> = Vec::new();
+                let n = (p.count as usize).min(8);
+                for i in 0..n {
+                    verts.push(Vec2::from(p.vertices[i]));
+                }
+                ShapeGeom::Polygon {
+                    vertices: verts,
+                    radius: p.radius,
+                }
             }
-            ShapeGeom::Polygon {
-                vertices: verts,
-                radius: p.radius,
+            _ => {
+                // Unsupported shape type (chain segments etc.)
+                continue;
             }
-        } else {
-            // Unsupported shape type (chain segments etc.)
-            continue;
         };
         out.push(ShapeInstance {
             def: sdef,

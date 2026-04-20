@@ -101,10 +101,12 @@ result is simpler and easier to audit.
 - docs and examples that show the intended mover flow
 - typed friction / restitution callbacks
 - standalone collision geometry helpers for distance, shape cast, TOI, and AABB validation/ray cast
+- crate-owned wrapper cleanup for remaining leaked Box2D value types (`ShapeType`, `MassData`, contact data, and manifolds)
 
 ### Planned follow-up audit items
 
 - unify standalone collision geometry helpers with shape-construction helper types
+- review whether standalone manifold-generation helpers (`b2Collide*`) should move into the safe collision surface
 - `World` / `WorldHandle` duplication review
 - owned / scoped handle duplication review outside the hottest paths
 - continue value-type cleanup for remaining raw Box2D structs that still leak through public APIs

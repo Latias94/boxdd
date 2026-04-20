@@ -88,14 +88,29 @@ Exit criteria:
 
 ## M6: Value-Type Coherence Audit
 
-Status: planned
+Status: shipped
 
 Scope:
 
 - review remaining public raw Box2D value types such as `ShapeType`, `MassData`, and contact-data structs
-- decide which remaining raw types should become crate-owned wrappers in the post-geometry cleanup pass
+- convert the remaining user-facing value types to crate-owned wrappers where the safe API should own the vocabulary
+- rename raw escape hatches explicitly with `*_raw` suffixes where keeping them is still justified
 
 Exit criteria:
 
-- the remaining raw public value types are either wrapped or explicitly documented as intentional escape hatches
-- the next wrapper-coherence pass has a concrete list instead of ad-hoc observations
+- `ShapeType`, `MassData`, `ContactData`, `Manifold`, and `ManifoldPoint` no longer leak raw `ffi` types through the main safe API
+- raw escape hatches for shape type and contact extraction are explicit instead of silently sharing the primary method names
+
+## M7: Remaining Raw Surface Audit
+
+Status: planned
+
+Scope:
+
+- review remaining public raw escape hatches such as `world_id`, raw event slices, and debug draw hooks
+- decide whether standalone manifold-generation helpers (`b2Collide*`) should become safe collision APIs
+
+Exit criteria:
+
+- the remaining raw public surface is either clearly intentional or scheduled for removal
+- the next completeness pass has a short, explicit backlog instead of scattered notes

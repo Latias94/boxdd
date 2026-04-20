@@ -1,10 +1,11 @@
 use crate::Transform;
+use crate::types::BodyId;
 use crate::world::World;
 use boxdd_sys::ffi;
 
 #[derive(Clone, Debug)]
 pub struct BodyMoveEvent {
-    pub body_id: ffi::b2BodyId,
+    pub body_id: BodyId,
     pub transform: Transform,
     pub fell_asleep: bool,
 }
@@ -15,7 +16,7 @@ pub struct BodyMoveEvent {
 #[derive(Copy, Clone)]
 pub struct BodyMove<'a>(&'a ffi::b2BodyMoveEvent);
 impl<'a> BodyMove<'a> {
-    pub fn body_id(&self) -> ffi::b2BodyId {
+    pub fn body_id(&self) -> BodyId {
         self.0.bodyId
     }
     pub fn transform(&self) -> Transform {

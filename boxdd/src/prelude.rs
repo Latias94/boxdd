@@ -13,10 +13,13 @@ pub use crate::{
     },
     shapes::{
         self, Capsule, Circle, MAX_POLYGON_VERTICES, OwnedShape, Polygon, Segment, Shape, ShapeDef,
-        ShapeDefBuilder, SurfaceMaterial,
+        ShapeDefBuilder, ShapeType, SurfaceMaterial,
         chain::{Chain, ChainDef, ChainDefBuilder, OwnedChain},
     },
-    types::{BodyId, ChainId, JointId, MassData, ShapeId, Vec2},
+    types::{
+        BodyId, ChainId, ContactData, ContactId, JointId, Manifold, ManifoldPoint, MassData,
+        ShapeId, Vec2,
+    },
     world::Counters,
     {Rot, Transform},
 };

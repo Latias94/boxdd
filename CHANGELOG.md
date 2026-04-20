@@ -21,6 +21,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - A standalone `collision` module with safe `ShapeProxy`, `SimplexCache`, `DistanceInput`, `ShapeCastPairInput`, `Sweep`, `ToiInput`, `ToiState`, and `*_distance` / `shape_cast` / `time_of_impact` helpers.
 - `Aabb::is_valid()` and `Aabb::ray_cast(origin, translation)` for low-level geometry checks without raw FFI.
 - Crate-owned `Circle`, `Segment`, `Capsule`, and `Polygon` geometry value types, including standalone mass/AABB/point/ray helpers for world-free shape geometry work.
+- Crate-owned `ShapeType`, `MassData`, `ContactData`, `Manifold`, and `ManifoldPoint` value types for the main safe API surface.
 
 ### Changed
 - Query internals now share reusable collection helpers instead of duplicating callback-to-`Vec` plumbing across each query entrypoint.
@@ -33,6 +34,9 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Breaking: `Body::transform` / `OwnedBody::transform` now return safe `Transform`; raw FFI access moved to `transform_raw` / `try_transform_raw`.
 - Breaking: shape creation, editing, and geometry getters now use safe geometry values instead of raw `ffi::b2Circle` / `b2Segment` / `b2Capsule` / `b2Polygon`.
 - Breaking: `ShapeDefBuilder::filter` and `ChainDefBuilder::filter` now take `Filter`; raw Box2D escape hatches are named `filter_raw`.
+- Breaking: `Shape::shape_type` / `OwnedShape::shape_type` now return safe `ShapeType`; raw access moved to `shape_type_raw` / `try_shape_type_raw`.
+- Breaking: `Body::*contact_data*` and `Shape::*contact_data*` now use crate-owned `ContactData`; raw escape hatches are named `contact_data_raw` / `contact_data_into_raw` / `try_*_raw`.
+- Breaking: `MassData` is now crate-owned, and its inertia field is renamed to Rust-style `rotational_inertia`.
 
 ## [boxdd 0.2.0] - 2025-12-17
 

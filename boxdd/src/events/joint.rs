@@ -1,9 +1,10 @@
+use crate::types::JointId;
 use crate::world::World;
 use boxdd_sys::ffi;
 
 #[derive(Clone, Debug)]
 pub struct JointEvent {
-    pub joint_id: ffi::b2JointId,
+    pub joint_id: JointId,
 }
 
 /// Zero-copy view wrapper for a joint event.
@@ -12,7 +13,7 @@ pub struct JointEvent {
 #[derive(Copy, Clone)]
 pub struct JointEventView<'a>(&'a ffi::b2JointEvent);
 impl<'a> JointEventView<'a> {
-    pub fn joint_id(&self) -> ffi::b2JointId {
+    pub fn joint_id(&self) -> JointId {
         self.0.jointId
     }
 }

@@ -26,13 +26,16 @@
 - [x] Replace raw shape helper outputs and shape create/get/set APIs with crate-owned geometry value types.
 - [x] Normalize shape and chain builder filter setters around the safe `Filter` type.
 - [x] Move standalone shape geometry tests to the new safe geometry values.
+- [x] Replace leaked raw value types on hot paths: `ShapeType`, `MassData`, `ContactData`, `Manifold`, and `ManifoldPoint`.
+- [x] Rename raw shape/contact escape hatches explicitly with `*_raw` suffixes.
 
 ## Next
 
-- [ ] Review remaining public raw value types such as `ShapeType`, `MassData`, and contact-data structs.
 - [ ] Audit whether debug draw command collection should gain reusable-buffer APIs.
+- [ ] Audit whether standalone manifold collision helpers (`b2Collide*`) should become safe `boxdd::collision` entry points.
 - [ ] Review remaining `World` / `WorldHandle` query duplication and decide whether selective consolidation is worth it.
 - [ ] Audit remaining owned/scoped handle duplication outside the already-refactored hot paths.
+- [ ] Review remaining public raw escape hatches and document which are intentional (`world_id`, raw event slices, debug draw raw paths, etc.).
 
 ## Release Checklist
 

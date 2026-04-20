@@ -10,7 +10,7 @@ use boxdd_sys::ffi;
 use crate::body::{BodyType, OwnedBody};
 use crate::joints::OwnedJoint;
 use crate::shapes::chain::OwnedChain;
-use crate::shapes::{OwnedShape, SurfaceMaterial};
+use crate::shapes::{OwnedShape, ShapeType, SurfaceMaterial};
 use crate::types::{BodyId, ChainId, JointId, ShapeId, Vec2};
 use crate::{Body, Joint, Shape, Transform, World};
 
@@ -22,7 +22,7 @@ pub trait WorldUncheckedExt {
     unsafe fn set_body_type_unchecked(&mut self, body: BodyId, t: BodyType);
 
     unsafe fn shape_body_unchecked(&self, shape: ShapeId) -> BodyId;
-    unsafe fn shape_type_unchecked(&self, shape: ShapeId) -> ffi::b2ShapeType;
+    unsafe fn shape_type_unchecked(&self, shape: ShapeId) -> ShapeType;
 }
 
 impl WorldUncheckedExt for World {
@@ -46,8 +46,9 @@ impl WorldUncheckedExt for World {
     unsafe fn shape_body_unchecked(&self, shape: ShapeId) -> BodyId {
         unsafe { ffi::b2Shape_GetBody(shape) }
     }
-    unsafe fn shape_type_unchecked(&self, shape: ShapeId) -> ffi::b2ShapeType {
-        unsafe { ffi::b2Shape_GetType(shape) }
+    unsafe fn shape_type_unchecked(&self, shape: ShapeId) -> ShapeType {
+        ShapeType::from_raw(unsafe { ffi::b2Shape_GetType(shape) })
+            .expect("Box2D returned an unknown shape type")
     }
 }
 
@@ -133,7 +134,7 @@ impl BodyUncheckedExt for OwnedBody {
 }
 
 pub trait ShapeUncheckedExt {
-    unsafe fn shape_type_unchecked(&self) -> ffi::b2ShapeType;
+    unsafe fn shape_type_unchecked(&self) -> ShapeType;
     unsafe fn body_id_unchecked(&self) -> BodyId;
     unsafe fn density_unchecked(&self) -> f32;
     unsafe fn set_density_unchecked(&mut self, density: f32, update_body_mass: bool);
@@ -141,8 +142,9 @@ pub trait ShapeUncheckedExt {
 }
 
 impl<'w> ShapeUncheckedExt for Shape<'w> {
-    unsafe fn shape_type_unchecked(&self) -> ffi::b2ShapeType {
-        unsafe { ffi::b2Shape_GetType(self.id) }
+    unsafe fn shape_type_unchecked(&self) -> ShapeType {
+        ShapeType::from_raw(unsafe { ffi::b2Shape_GetType(self.id) })
+            .expect("Box2D returned an unknown shape type")
     }
     unsafe fn body_id_unchecked(&self) -> BodyId {
         unsafe { ffi::b2Shape_GetBody(self.id) }
@@ -159,8 +161,9 @@ impl<'w> ShapeUncheckedExt for Shape<'w> {
 }
 
 impl ShapeUncheckedExt for OwnedShape {
-    unsafe fn shape_type_unchecked(&self) -> ffi::b2ShapeType {
-        unsafe { ffi::b2Shape_GetType(self.id()) }
+    unsafe fn shape_type_unchecked(&self) -> ShapeType {
+        ShapeType::from_raw(unsafe { ffi::b2Shape_GetType(self.id()) })
+            .expect("Box2D returned an unknown shape type")
     }
     unsafe fn body_id_unchecked(&self) -> BodyId {
         unsafe { ffi::b2Shape_GetBody(self.id()) }
