@@ -70,7 +70,7 @@ fn chain_set_surface_material_impl(id: ChainId, index: i32, material: &SurfaceMa
 
 #[inline]
 fn chain_surface_material_impl(id: ChainId, index: i32) -> SurfaceMaterial {
-    SurfaceMaterial(unsafe { ffi::b2Chain_GetSurfaceMaterial(id, index) })
+    SurfaceMaterial::from_raw(unsafe { ffi::b2Chain_GetSurfaceMaterial(id, index) })
 }
 
 impl OwnedChain {

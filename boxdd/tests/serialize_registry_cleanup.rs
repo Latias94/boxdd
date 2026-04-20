@@ -80,15 +80,15 @@ fn chain_records_use_crate_owned_values_and_material_variants() {
         .build();
     let single_material = boxdd::shapes::chain::ChainDef::builder()
         .points(base_points.map(|p| Vec2::new(p.x, p.y + 1.0)))
-        .single_material(&boxdd::shapes::SurfaceMaterial::default().friction(0.3))
+        .single_material(&boxdd::shapes::SurfaceMaterial::default().with_friction(0.3))
         .build();
     let multiple_materials = boxdd::shapes::chain::ChainDef::builder()
         .points(base_points.map(|p| Vec2::new(p.x, p.y + 2.0)))
         .materials(&[
-            boxdd::shapes::SurfaceMaterial::default().friction(0.1),
-            boxdd::shapes::SurfaceMaterial::default().friction(0.2),
-            boxdd::shapes::SurfaceMaterial::default().friction(0.3),
-            boxdd::shapes::SurfaceMaterial::default().friction(0.4),
+            boxdd::shapes::SurfaceMaterial::default().with_friction(0.1),
+            boxdd::shapes::SurfaceMaterial::default().with_friction(0.2),
+            boxdd::shapes::SurfaceMaterial::default().with_friction(0.3),
+            boxdd::shapes::SurfaceMaterial::default().with_friction(0.4),
         ])
         .build();
 

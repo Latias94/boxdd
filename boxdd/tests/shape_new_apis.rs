@@ -150,6 +150,39 @@ fn geometry_value_types_round_trip_through_explicit_raw_conversions() {
         assert!(approx_eq(lhs.x, rhs.x, f32::EPSILON));
         assert!(approx_eq(lhs.y, rhs.y, f32::EPSILON));
     }
+
+    let rounded = shapes::rounded_box_polygon(1.5, 0.75, 0.2);
+    let rounded_roundtrip = Polygon::from_raw(rounded.into_raw());
+    assert_eq!(rounded_roundtrip.count(), 4);
+    assert!(approx_eq(rounded_roundtrip.radius(), 0.2, f32::EPSILON));
+    for (lhs, rhs) in rounded_roundtrip.vertices().iter().zip(rounded.vertices()) {
+        assert!(approx_eq(lhs.x, rhs.x, f32::EPSILON));
+        assert!(approx_eq(lhs.y, rhs.y, f32::EPSILON));
+    }
+}
+
+#[test]
+fn surface_material_is_a_readable_value_type_with_explicit_raw_conversions() {
+    let material = SurfaceMaterial::default()
+        .with_friction(0.35)
+        .with_restitution(0.6)
+        .with_rolling_resistance(0.15)
+        .with_tangent_speed(-2.5)
+        .with_user_material_id(99)
+        .with_custom_color(HexColor::from_rgb(0xAA, 0xBB, 0xCC));
+
+    let copy = material;
+    assert_eq!(copy, material);
+    assert!(approx_eq(material.friction(), 0.35, f32::EPSILON));
+    assert!(approx_eq(material.restitution(), 0.6, f32::EPSILON));
+    assert!(approx_eq(material.rolling_resistance(), 0.15, f32::EPSILON));
+    assert!(approx_eq(material.tangent_speed(), -2.5, f32::EPSILON));
+    assert_eq!(material.user_material_id(), 99);
+    assert_eq!(
+        material.custom_color(),
+        HexColor::from_rgb(0xAA, 0xBB, 0xCC)
+    );
+    assert_eq!(SurfaceMaterial::from_raw(material.into_raw()), material);
 }
 
 #[test]

@@ -93,7 +93,7 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
             app.created_bodies += 1;
             let sdef = bd::ShapeDef::builder()
                 .density(1.0)
-                .material(bd::SurfaceMaterial::default().restitution(app.cr_restitution))
+                .material(bd::SurfaceMaterial::default().with_restitution(app.cr_restitution))
                 .build();
             app.world.create_circle_shape_for(ball, &sdef, &bd::shapes::circle([0.0, 0.0], 0.5));
             app.created_shapes += 1;
@@ -113,7 +113,9 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
             app.world.create_segment_shape_for(ground, &sdef, &bd::shapes::segment([-8.0, -2.0], [8.0, -2.0]));
             app.created_shapes += 1;
             // Bumpers
-            let mat = bd::shapes::SurfaceMaterial::default().restitution(1.2).friction(0.2);
+            let mat = bd::shapes::SurfaceMaterial::default()
+                .with_restitution(1.2)
+                .with_friction(0.2);
             let bdef = bd::ShapeDef::builder().material(mat).density(0.0).build();
             for &c in &[[-4.0, 6.0], [0.0, 8.0], [4.0, 6.0]] {
                 app.world.create_circle_shape_for(ground, &bdef, &bd::shapes::circle(c, 0.8));
@@ -355,7 +357,9 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
                             .build(),
                     );
                 app.created_bodies += 1;
-                let mat = bd::shapes::SurfaceMaterial::default().restitution(app.pb_restitution).friction(0.2);
+                let mat = bd::shapes::SurfaceMaterial::default()
+                    .with_restitution(app.pb_restitution)
+                    .with_friction(0.2);
                 let sdef = bd::ShapeDef::builder().material(mat).density(1.0).build();
                 app.world.create_circle_shape_for(b, &sdef, &bd::shapes::circle([0.0, 0.0], app.pb_ball_radius));
                 app.created_shapes += 1;

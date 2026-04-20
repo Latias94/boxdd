@@ -31,8 +31,14 @@ impl ChainMaterialsRecord {
     fn from_raw_slice(materials: &[ffi::b2SurfaceMaterial]) -> Self {
         match materials {
             [] => Self::Default,
-            [material] => Self::Single(SurfaceMaterial(*material)),
-            _ => Self::Multiple(materials.iter().copied().map(SurfaceMaterial).collect()),
+            [material] => Self::Single(SurfaceMaterial::from_raw(*material)),
+            _ => Self::Multiple(
+                materials
+                    .iter()
+                    .copied()
+                    .map(SurfaceMaterial::from_raw)
+                    .collect(),
+            ),
         }
     }
 }

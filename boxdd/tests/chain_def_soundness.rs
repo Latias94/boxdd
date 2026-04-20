@@ -6,7 +6,7 @@ fn chain_def_single_material_is_owned_and_clone_safe() {
     let body = world.create_body_id(BodyBuilder::new().position([0.0, 0.0]).build());
 
     let def = {
-        let m = boxdd::shapes::SurfaceMaterial::default().friction(0.3);
+        let m = boxdd::shapes::SurfaceMaterial::default().with_friction(0.3);
         let def = boxdd::shapes::chain::ChainDef::builder()
             // Minimal non-loop chain: 4 points (includes ghost points at ends)
             .points([

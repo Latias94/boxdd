@@ -236,7 +236,7 @@ impl ChainUncheckedExt for OwnedChain {
         }
     }
     unsafe fn surface_material_unchecked(&self, index: i32) -> SurfaceMaterial {
-        SurfaceMaterial(unsafe { ffi::b2Chain_GetSurfaceMaterial(self.id(), index) })
+        SurfaceMaterial::from_raw(unsafe { ffi::b2Chain_GetSurfaceMaterial(self.id(), index) })
     }
     unsafe fn set_surface_material_unchecked(&mut self, index: i32, material: &SurfaceMaterial) {
         unsafe { ffi::b2Chain_SetSurfaceMaterial(self.id(), &material.0, index) }
@@ -256,7 +256,7 @@ impl<'w> ChainUncheckedExt for crate::shapes::chain::Chain<'w> {
         }
     }
     unsafe fn surface_material_unchecked(&self, index: i32) -> SurfaceMaterial {
-        SurfaceMaterial(unsafe { ffi::b2Chain_GetSurfaceMaterial(self.id, index) })
+        SurfaceMaterial::from_raw(unsafe { ffi::b2Chain_GetSurfaceMaterial(self.id, index) })
     }
     unsafe fn set_surface_material_unchecked(&mut self, index: i32, material: &SurfaceMaterial) {
         unsafe { ffi::b2Chain_SetSurfaceMaterial(self.id, &material.0, index) }

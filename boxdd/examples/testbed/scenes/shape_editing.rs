@@ -41,9 +41,7 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
                 let poly = bd::shapes::box_polygon(app.se_hx, app.se_hy);
                 app.world.create_polygon_shape_for(bid, &sdef, &poly)
             } else {
-                let poly = bd::Polygon::from_raw(unsafe {
-                    boxdd_sys::ffi::b2MakeRoundedBox(app.se_hx, app.se_hy, app.se_radius)
-                });
+                let poly = bd::shapes::rounded_box_polygon(app.se_hx, app.se_hy, app.se_radius);
                 app.world.create_polygon_shape_for(bid, &sdef, &poly)
             };
             app.se_shape = Some(new_sid);

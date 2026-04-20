@@ -6,13 +6,13 @@ use dear_imgui_rs as imgui;
 pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     // Two conveyors (static bodies) left/right with opposite tangent speeds
     let conv_mat_l = bd::shapes::SurfaceMaterial::default()
-        .friction(0.9)
-        .restitution(0.0)
-        .tangent_speed(app.mat_conv_speed);
+        .with_friction(0.9)
+        .with_restitution(0.0)
+        .with_tangent_speed(app.mat_conv_speed);
     let conv_mat_r = bd::shapes::SurfaceMaterial::default()
-        .friction(0.9)
-        .restitution(0.0)
-        .tangent_speed(-app.mat_conv_speed);
+        .with_friction(0.9)
+        .with_restitution(0.0)
+        .with_tangent_speed(-app.mat_conv_speed);
 
     let sdef_l = bd::ShapeDef::builder().density(0.0).material(conv_mat_l).build();
     let sdef_r = bd::ShapeDef::builder().density(0.0).material(conv_mat_r).build();
@@ -60,9 +60,9 @@ fn spawn_box(app: &mut super::PhysicsApp, x: f32, y: f32) {
         .create_body_id(bd::BodyBuilder::new().body_type(bd::BodyType::Dynamic).position([x, y]).build());
     app.created_bodies += 1;
     let mat = bd::shapes::SurfaceMaterial::default()
-        .friction(0.8)
-        .restitution(0.1)
-        .rolling_resistance(app.mat_roll_res);
+        .with_friction(0.8)
+        .with_restitution(0.1)
+        .with_rolling_resistance(app.mat_roll_res);
     let sdef = bd::ShapeDef::builder().density(1.0).material(mat).build();
     let sid = app
         .world
@@ -78,9 +78,9 @@ fn spawn_ball(app: &mut super::PhysicsApp, x: f32, y: f32) {
         .create_body_id(bd::BodyBuilder::new().body_type(bd::BodyType::Dynamic).position([x, y]).build());
     app.created_bodies += 1;
     let mat = bd::shapes::SurfaceMaterial::default()
-        .friction(0.4)
-        .restitution(0.2)
-        .rolling_resistance(app.mat_roll_res);
+        .with_friction(0.4)
+        .with_restitution(0.2)
+        .with_rolling_resistance(app.mat_roll_res);
     let sdef = bd::ShapeDef::builder().density(1.0).material(mat).build();
     let sid = app
         .world
@@ -189,18 +189,18 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
                 let m = app
                     .world
                     .shape_surface_material(sid)
-                    .tangent_speed(app.mat_conv_speed)
-                    .friction(app.mat_belt_friction)
-                    .restitution(app.mat_belt_restitution);
+                    .with_tangent_speed(app.mat_conv_speed)
+                    .with_friction(app.mat_belt_friction)
+                    .with_restitution(app.mat_belt_restitution);
                 app.world.shape_set_surface_material(sid, &m);
             }
             if let Some(sid) = app.mat_belt_right {
                 let m = app
                     .world
                     .shape_surface_material(sid)
-                    .tangent_speed(-app.mat_conv_speed)
-                    .friction(app.mat_belt_friction)
-                    .restitution(app.mat_belt_restitution);
+                    .with_tangent_speed(-app.mat_conv_speed)
+                    .with_friction(app.mat_belt_friction)
+                    .with_restitution(app.mat_belt_restitution);
                 app.world.shape_set_surface_material(sid, &m);
             }
         }
@@ -228,9 +228,9 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
             for &sid in &app.mat_shapes {
                 if let Ok(m0) = app.world.try_shape_surface_material(sid) {
                     let m = m0
-                        .rolling_resistance(app.mat_roll_res)
-                        .friction(app.mat_shape_friction)
-                        .restitution(app.mat_shape_restitution);
+                        .with_rolling_resistance(app.mat_roll_res)
+                        .with_friction(app.mat_shape_friction)
+                        .with_restitution(app.mat_shape_restitution);
                     let _ = app.world.try_shape_set_surface_material(sid, &m);
                 }
             }

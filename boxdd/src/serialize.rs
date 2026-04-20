@@ -709,7 +709,7 @@ fn shapes_from_body(world: &World, body: ffi::b2BodyId) -> Vec<ShapeInstance> {
         // Build ShapeDef from runtime properties
         let mat = unsafe { ffi::b2Shape_GetSurfaceMaterial(sid) };
         let mut builder = crate::shapes::ShapeDef::builder()
-            .material(crate::shapes::SurfaceMaterial(mat))
+            .material(crate::shapes::SurfaceMaterial::from_raw(mat))
             .density(unsafe { ffi::b2Shape_GetDensity(sid) })
             .filter(crate::filter::Filter::from_raw(unsafe {
                 ffi::b2Shape_GetFilter(sid)

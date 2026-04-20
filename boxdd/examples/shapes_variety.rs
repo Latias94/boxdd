@@ -13,9 +13,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Materials
-    let ice = SurfaceMaterial::default().friction(0.05).restitution(0.0);
-    let rubber = SurfaceMaterial::default().friction(0.8).restitution(0.7);
-    let metal = SurfaceMaterial::default().friction(0.4).restitution(0.1);
+    let ice = SurfaceMaterial::default()
+        .with_friction(0.05)
+        .with_restitution(0.0);
+    let rubber = SurfaceMaterial::default()
+        .with_friction(0.8)
+        .with_restitution(0.7);
+    let metal = SurfaceMaterial::default()
+        .with_friction(0.4)
+        .with_restitution(0.1);
 
     // A few dynamic bodies each with a different shape
     let s_circle = ShapeDef::builder()

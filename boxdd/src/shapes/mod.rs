@@ -10,6 +10,7 @@ pub mod helpers;
 
 use crate::body::Body;
 use crate::collision::CastOutput;
+use crate::debug_draw::HexColor;
 use crate::error::ApiResult;
 use crate::filter::Filter;
 use crate::query::Aabb;
@@ -22,7 +23,7 @@ use std::sync::Arc;
 
 pub use geometry::{
     Capsule, ChainSegment, Circle, MAX_POLYGON_VERTICES, Polygon, Segment, box_polygon, capsule,
-    chain_segment, circle, polygon_from_points, segment,
+    chain_segment, circle, polygon_from_points, rounded_box_polygon, segment,
 };
 
 /// Shape kinds reported by Box2D.
@@ -402,7 +403,7 @@ pub(crate) fn shape_set_surface_material_impl(id: ShapeId, material: &SurfaceMat
 
 #[inline]
 pub(crate) fn shape_surface_material_impl(id: ShapeId) -> SurfaceMaterial {
-    SurfaceMaterial(unsafe { ffi::b2Shape_GetSurfaceMaterial(id) })
+    SurfaceMaterial::from_raw(unsafe { ffi::b2Shape_GetSurfaceMaterial(id) })
 }
 
 #[inline]
@@ -1789,7 +1790,7 @@ impl<'w> Shape<'w> {
 }
 
 /// Shape surface material parameters.
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct SurfaceMaterial(pub(crate) ffi::b2SurfaceMaterial);
 
 impl Default for SurfaceMaterial {
@@ -1799,29 +1800,80 @@ impl Default for SurfaceMaterial {
 }
 
 impl SurfaceMaterial {
-    pub fn friction(mut self, v: f32) -> Self {
+    #[inline]
+    pub const fn from_raw(raw: ffi::b2SurfaceMaterial) -> Self {
+        Self(raw)
+    }
+
+    #[inline]
+    pub const fn into_raw(self) -> ffi::b2SurfaceMaterial {
+        self.0
+    }
+
+    #[inline]
+    pub const fn friction(&self) -> f32 {
+        self.0.friction
+    }
+
+    #[inline]
+    pub const fn restitution(&self) -> f32 {
+        self.0.restitution
+    }
+
+    #[inline]
+    pub const fn rolling_resistance(&self) -> f32 {
+        self.0.rollingResistance
+    }
+
+    #[inline]
+    pub const fn tangent_speed(&self) -> f32 {
+        self.0.tangentSpeed
+    }
+
+    #[inline]
+    pub const fn user_material_id(&self) -> u64 {
+        self.0.userMaterialId
+    }
+
+    #[inline]
+    pub const fn custom_color(&self) -> HexColor {
+        HexColor::from_rgb_u32(self.0.customColor)
+    }
+
+    pub fn with_friction(mut self, v: f32) -> Self {
         self.0.friction = v;
         self
     }
-    pub fn restitution(mut self, v: f32) -> Self {
+    pub fn with_restitution(mut self, v: f32) -> Self {
         self.0.restitution = v;
         self
     }
-    pub fn rolling_resistance(mut self, v: f32) -> Self {
+    pub fn with_rolling_resistance(mut self, v: f32) -> Self {
         self.0.rollingResistance = v;
         self
     }
-    pub fn tangent_speed(mut self, v: f32) -> Self {
+    pub fn with_tangent_speed(mut self, v: f32) -> Self {
         self.0.tangentSpeed = v;
         self
     }
-    pub fn user_material_id(mut self, v: u64) -> Self {
+    pub fn with_user_material_id(mut self, v: u64) -> Self {
         self.0.userMaterialId = v;
         self
     }
-    pub fn custom_color(mut self, rgba: u32) -> Self {
-        self.0.customColor = rgba;
+    pub fn with_custom_color(mut self, color: HexColor) -> Self {
+        self.0.customColor = color.rgb_u32();
         self
+    }
+}
+
+impl PartialEq for SurfaceMaterial {
+    fn eq(&self, other: &Self) -> bool {
+        self.friction() == other.friction()
+            && self.restitution() == other.restitution()
+            && self.rolling_resistance() == other.rolling_resistance()
+            && self.tangent_speed() == other.tangent_speed()
+            && self.user_material_id() == other.user_material_id()
+            && self.custom_color() == other.custom_color()
     }
 }
 
@@ -1939,15 +1991,15 @@ impl serde::Serialize for SurfaceMaterial {
             rolling_resistance: f32,
             tangent_speed: f32,
             user_material_id: u64,
-            custom_color: u32,
+            custom_color: HexColor,
         }
         let r = Repr {
-            friction: self.0.friction,
-            restitution: self.0.restitution,
-            rolling_resistance: self.0.rollingResistance,
-            tangent_speed: self.0.tangentSpeed,
-            user_material_id: self.0.userMaterialId,
-            custom_color: self.0.customColor,
+            friction: self.friction(),
+            restitution: self.restitution(),
+            rolling_resistance: self.rolling_resistance(),
+            tangent_speed: self.tangent_speed(),
+            user_material_id: self.user_material_id(),
+            custom_color: self.custom_color(),
         };
         r.serialize(serializer)
     }
@@ -1972,17 +2024,17 @@ impl<'de> serde::Deserialize<'de> for SurfaceMaterial {
             #[serde(default)]
             user_material_id: u64,
             #[serde(default)]
-            custom_color: u32,
+            custom_color: HexColor,
         }
         let r = Repr::deserialize(deserializer)?;
         let mut sm = SurfaceMaterial::default();
         sm = sm
-            .friction(r.friction)
-            .restitution(r.restitution)
-            .rolling_resistance(r.rolling_resistance)
-            .tangent_speed(r.tangent_speed)
-            .user_material_id(r.user_material_id)
-            .custom_color(r.custom_color);
+            .with_friction(r.friction)
+            .with_restitution(r.restitution)
+            .with_rolling_resistance(r.rolling_resistance)
+            .with_tangent_speed(r.tangent_speed)
+            .with_user_material_id(r.user_material_id)
+            .with_custom_color(r.custom_color);
         Ok(sm)
     }
 }
@@ -2008,7 +2060,7 @@ impl serde::Serialize for ShapeDef {
             update_body_mass: bool,
         }
         let r = Repr {
-            material: SurfaceMaterial(self.0.material),
+            material: SurfaceMaterial::from_raw(self.0.material),
             density: self.0.density,
             filter: Filter::from_raw(self.0.filter),
             enable_custom_filtering: self.0.enableCustomFiltering,

@@ -313,7 +313,8 @@ impl Capsule {
 
 /// Convex polygon geometry in local shape space.
 ///
-/// Construct polygons with helpers such as [`box_polygon`] or [`polygon_from_points`]
+/// Construct polygons with helpers such as [`box_polygon`], [`rounded_box_polygon`], or
+/// [`polygon_from_points`]
 /// instead of filling raw vertices manually.
 #[doc(alias = "polygon")]
 #[derive(Copy, Clone)]
@@ -366,6 +367,11 @@ impl Polygon {
     #[inline]
     pub fn box_polygon(half_width: f32, half_height: f32) -> Self {
         Self::from_raw(unsafe { ffi::b2MakeBox(half_width, half_height) })
+    }
+
+    #[inline]
+    pub fn rounded_box_polygon(half_width: f32, half_height: f32, radius: f32) -> Self {
+        Self::from_raw(unsafe { ffi::b2MakeRoundedBox(half_width, half_height, radius) })
     }
 
     #[inline]
@@ -475,6 +481,12 @@ pub fn capsule<C1: Into<Vec2>, C2: Into<Vec2>>(center1: C1, center2: C2, radius:
 #[inline]
 pub fn box_polygon(half_width: f32, half_height: f32) -> Polygon {
     Polygon::box_polygon(half_width, half_height)
+}
+
+/// Axis-aligned rounded box polygon helper.
+#[inline]
+pub fn rounded_box_polygon(half_width: f32, half_height: f32, radius: f32) -> Polygon {
+    Polygon::rounded_box_polygon(half_width, half_height, radius)
 }
 
 /// Build a polygon from arbitrary points by computing a convex hull.

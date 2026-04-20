@@ -26,6 +26,7 @@
 - [x] Add reusable-buffer and recoverable `try_*` snapshot APIs for world body/contact/sensor/joint events so callers can keep owned event data without per-frame allocation churn.
 - [x] Record the `World` vs `WorldHandle` event split as an intentional `0.3.0` design decision: event reads stay on `World`, and any future `WorldHandle` mirror should start with owned snapshots only.
 - [x] Narrow the serialize-time chain metadata seam so `ChainDef` raw point/material helpers stay crate-private and `World::chain_records()` returns crate-owned `Filter` / `Vec2` / material-layout values instead of raw `ffi` collections.
+- [x] Productize the remaining shape-material geometry seams: add safe rounded-box polygon helpers and make `SurfaceMaterial` a full crate-owned value type with getters plus explicit `from_raw(...)` / `into_raw()` conversion.
 
 ## In Progress
 

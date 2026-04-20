@@ -5,15 +5,27 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     // Circle, box, capsule on ground with mixed materials
     let s_circle = bd::ShapeDef::builder()
         .density(1.0)
-        .material(bd::SurfaceMaterial::default().friction(0.8).restitution(0.7))
+        .material(
+            bd::SurfaceMaterial::default()
+                .with_friction(0.8)
+                .with_restitution(0.7),
+        )
         .build();
     let s_poly = bd::ShapeDef::builder()
         .density(1.0)
-        .material(bd::SurfaceMaterial::default().friction(0.4).restitution(0.1))
+        .material(
+            bd::SurfaceMaterial::default()
+                .with_friction(0.4)
+                .with_restitution(0.1),
+        )
         .build();
     let s_caps = bd::ShapeDef::builder()
         .density(1.0)
-        .material(bd::SurfaceMaterial::default().friction(0.05).restitution(0.0))
+        .material(
+            bd::SurfaceMaterial::default()
+                .with_friction(0.05)
+                .with_restitution(0.0),
+        )
         .build();
     let b_circle = app.world.create_body_id(
         bd::BodyBuilder::new()

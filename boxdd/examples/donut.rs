@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
     let sdef = ShapeDef::builder()
-        .material(SurfaceMaterial::default().friction(0.3))
+        .material(SurfaceMaterial::default().with_friction(0.3))
         .filter(filt)
         .build();
 

@@ -8,7 +8,7 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
 
     // Common builders
     let bdef_dyn = bd::BodyBuilder::new().body_type(bd::BodyType::Dynamic);
-    let mat = bd::shapes::SurfaceMaterial::default().rolling_resistance(0.1);
+    let mat = bd::shapes::SurfaceMaterial::default().with_rolling_resistance(0.1);
     let sdef_rr = bd::ShapeDef::builder().material(mat).build();
 
     let circle = bd::shapes::circle([0.0_f32, 0.0], 1.0 * scale);

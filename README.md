@@ -125,13 +125,14 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 - These advanced APIs are intentionally not in the prelude, so collision-heavy code can import them explicitly.
 
 ## Shape Geometry APIs
-- `boxdd::shapes::circle`, `segment`, `capsule`, `box_polygon`, and `polygon_from_points` return safe geometry value types instead of raw Box2D structs.
+- `boxdd::shapes::circle`, `segment`, `capsule`, `box_polygon`, `rounded_box_polygon`, and `polygon_from_points` return safe geometry value types instead of raw Box2D structs.
 - `Shape::circle()` / `segment()` / `capsule()` / `polygon()` and the corresponding setters now use the same geometry types as world/body creation APIs.
 - `Circle`, `Capsule`, and `Polygon` expose standalone helpers such as `mass_data(...)`, `aabb(...)`, `contains_point(...)`, and `ray_cast(...)` for world-free geometry work.
 - Live `Shape` / `OwnedShape` / `World::shape_*` APIs now also cover runtime `aabb`, `test_point`, `ray_cast`, `mass_data`, and event-toggle state.
 - Raw geometry conversion is explicit on the crate-owned geometry types: use `from_raw(...)` / `into_raw()` when you intentionally cross the FFI boundary.
 - `ShapeDefBuilder::filter(...)` and `ChainDef::builder().filter(...)` now take the safe `Filter` type; explicit raw escape hatches are named `filter_raw(...)`.
 - `Filter` also uses explicit raw conversion via `from_raw(...)` / `into_raw()` instead of implicit `From<ffi::b2Filter>` conversions.
+- `SurfaceMaterial` now behaves like a normal crate-owned value type: builder-style mutation uses `with_*` methods, read access uses getters such as `friction()`, `restitution()`, and `custom_color()`, `custom_color` uses crate-owned `HexColor`, and raw interop stays explicit through `from_raw(...)` / `into_raw()`.
 
 ## Joint Runtime APIs
 - `Joint`, `OwnedJoint`, and `World::joint_*` now stay aligned for common runtime metadata and control: joint type, connected body ids, `collide_connected`, constraint tuning, local frames, and wake helpers.

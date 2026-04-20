@@ -17,9 +17,9 @@ fn material_mix_callbacks_receive_material_ids_and_can_override_restitution() {
         .density(0.0)
         .material(
             SurfaceMaterial::default()
-                .friction(0.9)
-                .restitution(0.0)
-                .user_material_id(11),
+                .with_friction(0.9)
+                .with_restitution(0.0)
+                .with_user_material_id(11),
         )
         .build();
     let _ground_shape =
@@ -35,9 +35,9 @@ fn material_mix_callbacks_receive_material_ids_and_can_override_restitution() {
         .density(1.0)
         .material(
             SurfaceMaterial::default()
-                .friction(0.8)
-                .restitution(0.0)
-                .user_material_id(22),
+                .with_friction(0.8)
+                .with_restitution(0.0)
+                .with_user_material_id(22),
         )
         .build();
     let _ball_shape =
@@ -105,9 +105,9 @@ fn material_mix_callback_panic_is_caught_and_resumed_after_step() {
         .density(1.0)
         .material(
             SurfaceMaterial::default()
-                .friction(0.5)
-                .restitution(0.0)
-                .user_material_id(1),
+                .with_friction(0.5)
+                .with_restitution(0.0)
+                .with_user_material_id(1),
         )
         .build();
     let poly = shapes::box_polygon(0.5, 0.5);

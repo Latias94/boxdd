@@ -26,7 +26,7 @@ fn hello_world_final_pose() {
     );
     let sdef = ShapeDef::builder()
         .density(1.0)
-        .material(SurfaceMaterial::default().friction(0.3))
+        .material(SurfaceMaterial::default().with_friction(0.3))
         .build();
     let _bx = world.create_polygon_shape_for(body, &sdef, &shapes::box_polygon(1.0, 1.0));
 

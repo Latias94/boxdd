@@ -8,12 +8,12 @@
 //! - Hot-path friendly APIs: keep the convenience `Vec`-returning methods, or reuse caller-owned buffers with `*_into`.
 //! - Character mover helpers: cast movers, collect collision planes, solve planes, and clip velocity without raw FFI.
 //! - Standalone collision geometry helpers: shape proxies, GJK distance, manifolds, shape cast, TOI, and AABB validation/ray cast.
-//! - Shape geometry uses crate-owned values (`Circle`, `Segment`, `ChainSegment`, `Capsule`, `Polygon`) across helpers, shape editing, and creation.
+//! - Shape geometry uses crate-owned values (`Circle`, `Segment`, `ChainSegment`, `Capsule`, `Polygon`) across helpers, shape editing, and creation, including rounded-box polygon helpers without raw FFI.
 //! - Live shapes expose safe runtime helpers for AABB, point tests, direct ray casts, computed mass data, and runtime event toggles.
 //! - Bodies expose safe runtime helpers for rotation, sleep/awake/enabled/bullet/name controls, attached shape/joint enumeration, and body-level contact/hit event toggles.
 //! - Joints expose safe runtime helpers for joint kind, connected body ids, `collide_connected`, constraint tuning, local frames, wake controls, and type-specific runtime state across distance/prismatic/revolute/weld/wheel/motor families.
 //! - World runtime helpers expose counters, per-stage `Profile` timings, explosion control, and `try_*` access for callback-sensitive tuning toggles.
-//! - Core value types such as `ShapeType`, `MassData`, and contact manifolds are crate-owned instead of leaking raw Box2D structs.
+//! - Core value types such as `ShapeType`, `MassData`, `SurfaceMaterial`, and contact manifolds are crate-owned instead of leaking raw Box2D structs.
 //! - Typed material mixing callbacks for friction and restitution using `user_material_id`.
 //! - Three usage styles:
 //!   - Owned handles: `OwnedBody`/`OwnedShape`/`OwnedJoint`/`OwnedChain` (Drop destroys; easy to store).
