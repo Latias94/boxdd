@@ -124,6 +124,7 @@ FFI boundaries actually exist.
 - unify standalone collision geometry helpers with shape-construction helper types
 - continue the `World` / `WorldHandle` duplication review after the query surface consolidation, keeping only the duplication that is still clearer than a shared internal definition
 - owned / scoped handle duplication review outside the hottest paths
+- continue collapsing purely mechanical per-type API families such as joint creation entrypoints when the public surface stays identical but the internal drift risk drops
 - audit the remaining intentional raw boundaries such as debug draw/raw color hooks and raw event/debug escape hatches, and confirm each one is still worth keeping
 - continue value-type cleanup for remaining raw Box2D structs that still leak through public APIs
 - continue auditing intentional raw seams such as debug draw/raw color paths and raw event/debug hooks so the kept escape hatches stay explicit and justified

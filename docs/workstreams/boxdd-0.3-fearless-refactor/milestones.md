@@ -50,12 +50,14 @@ Scope:
 - review `World` / `WorldHandle` duplication and consolidate the mirrored query surface where the API intentionally stays symmetric
 - review owned/scoped handle duplication outside the hottest paths
 - consolidate the most mechanical `Shape` / `OwnedShape`, `Body` / `OwnedBody`, and `Chain` / `OwnedChain` internals behind shared private helpers
+- consolidate the most mechanical joint creation entrypoints so joint-type additions cannot drift across scoped/id/owned/try variants
 
 Exit criteria:
 
 - the remaining duplication backlog is explicitly categorized as worth keeping or worth removing
 - no obvious per-frame allocation trap remains undocumented or unaddressed on the main safe surface
 - high-churn owned/scoped handle pairs no longer duplicate the same FFI access logic across every hot-path accessor
+- joint creation families no longer duplicate per-type create/owned/id/try plumbing or callback-state handling
 
 ## M4: Advanced Wrapper Coverage
 

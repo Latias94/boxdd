@@ -46,6 +46,7 @@
 - [x] Make contact/manifold value types (`ManifoldPoint`, `Manifold`, `ContactData`) use explicit raw conversion APIs instead of implicit `From<ffi::...>` shims.
 - [x] Remove the remaining compatibility `From` shims for `ShapeType` and `HexColor` in favor of their existing named raw conversion APIs.
 - [x] Consolidate the mirrored `World` / `WorldHandle` query method definitions behind a single internal source so future query additions cannot drift between the two handle styles.
+- [x] Consolidate the repeated joint creation entrypoints behind a single internal definition and normalize `try_create_*_joint*` to return `ApiError::InCallback` when called from callbacks.
 
 ## Next
 
