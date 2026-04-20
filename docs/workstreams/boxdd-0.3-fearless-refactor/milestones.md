@@ -52,6 +52,7 @@ Scope:
 - consolidate the most mechanical `Shape` / `OwnedShape`, `Body` / `OwnedBody`, and `Chain` / `OwnedChain` internals behind shared private helpers
 - consolidate the most mechanical joint creation entrypoints so joint-type additions cannot drift across scoped/id/owned/try variants
 - consolidate event-buffer borrow / cleanup plumbing so all event-view APIs share the same lifetime and deferred-destroy path
+- consolidate world-level shape create/edit helper families so geometry-type additions cannot drift across create/owned/try setter variants
 
 Exit criteria:
 
@@ -60,6 +61,7 @@ Exit criteria:
 - high-churn owned/scoped handle pairs no longer duplicate the same FFI access logic across every hot-path accessor
 - joint creation families no longer duplicate per-type create/owned/id/try plumbing or callback-state handling
 - event-view APIs no longer duplicate the borrow-event-buffers / process-deferred-destroys template in every module
+- world-level shape create/edit families no longer duplicate the same geometry-to-FFI plumbing for each geometry type
 
 ## M4: Advanced Wrapper Coverage
 

@@ -69,6 +69,71 @@ fn shape_sensor_overlaps_valid_impl(shape: ShapeId) -> Vec<ShapeId> {
     ids
 }
 
+macro_rules! impl_world_shape_create_methods {
+    ($(
+        $create:ident,
+        $owned:ident,
+        $arg:ident,
+        $geom_ty:path,
+        $ffi_create:path;
+    )+) => {
+        $(
+            pub fn $create(
+                &mut self,
+                body: BodyId,
+                def: &ShapeDef,
+                $arg: &$geom_ty,
+            ) -> ShapeId {
+                crate::core::debug_checks::assert_body_valid(body);
+                let raw = $arg.into_raw();
+                let sid = unsafe { $ffi_create(body, &def.0, &raw) };
+                #[cfg(feature = "serialize")]
+                self.record_shape_flags(sid, &def.0);
+                sid
+            }
+
+            pub fn $owned(
+                &mut self,
+                body: BodyId,
+                def: &ShapeDef,
+                $arg: &$geom_ty,
+            ) -> crate::shapes::OwnedShape {
+                let sid = self.$create(body, def, $arg);
+                crate::shapes::OwnedShape::new(self.core_arc(), sid)
+            }
+        )+
+    };
+}
+
+macro_rules! impl_world_shape_set_methods {
+    ($(
+        $set:ident,
+        $try_set:ident,
+        $arg:ident,
+        $geom_ty:path,
+        $ffi_set:path;
+    )+) => {
+        $(
+            pub fn $set(&mut self, shape: ShapeId, $arg: &$geom_ty) {
+                crate::core::debug_checks::assert_shape_valid(shape);
+                let raw = $arg.into_raw();
+                unsafe { $ffi_set(shape, &raw) }
+            }
+
+            pub fn $try_set(
+                &mut self,
+                shape: ShapeId,
+                $arg: &$geom_ty,
+            ) -> crate::error::ApiResult<()> {
+                crate::core::debug_checks::check_shape_valid(shape)?;
+                let raw = $arg.into_raw();
+                unsafe { $ffi_set(shape, &raw) }
+                Ok(())
+            }
+        )+
+    };
+}
+
 /// Error type for world creation and operations.
 #[non_exhaustive]
 #[derive(Debug, thiserror::Error)]
@@ -1962,93 +2027,27 @@ impl World {
     }
 
     // ID-based shape helpers (world-anchored)
-    pub fn create_circle_shape_for(
-        &mut self,
-        body: BodyId,
-        def: &ShapeDef,
-        c: &crate::shapes::Circle,
-    ) -> ShapeId {
-        crate::core::debug_checks::assert_body_valid(body);
-        let raw = c.into_raw();
-        let sid = unsafe { ffi::b2CreateCircleShape(body, &def.0, &raw) };
-        #[cfg(feature = "serialize")]
-        self.record_shape_flags(sid, &def.0);
-        sid
-    }
-    pub fn create_circle_shape_for_owned(
-        &mut self,
-        body: BodyId,
-        def: &ShapeDef,
-        c: &crate::shapes::Circle,
-    ) -> crate::shapes::OwnedShape {
-        let sid = self.create_circle_shape_for(body, def, c);
-        crate::shapes::OwnedShape::new(self.core_arc(), sid)
-    }
-    pub fn create_segment_shape_for(
-        &mut self,
-        body: BodyId,
-        def: &ShapeDef,
-        s: &crate::shapes::Segment,
-    ) -> ShapeId {
-        crate::core::debug_checks::assert_body_valid(body);
-        let raw = s.into_raw();
-        let sid = unsafe { ffi::b2CreateSegmentShape(body, &def.0, &raw) };
-        #[cfg(feature = "serialize")]
-        self.record_shape_flags(sid, &def.0);
-        sid
-    }
-    pub fn create_segment_shape_for_owned(
-        &mut self,
-        body: BodyId,
-        def: &ShapeDef,
-        s: &crate::shapes::Segment,
-    ) -> crate::shapes::OwnedShape {
-        let sid = self.create_segment_shape_for(body, def, s);
-        crate::shapes::OwnedShape::new(self.core_arc(), sid)
-    }
-    pub fn create_capsule_shape_for(
-        &mut self,
-        body: BodyId,
-        def: &ShapeDef,
-        c: &crate::shapes::Capsule,
-    ) -> ShapeId {
-        crate::core::debug_checks::assert_body_valid(body);
-        let raw = c.into_raw();
-        let sid = unsafe { ffi::b2CreateCapsuleShape(body, &def.0, &raw) };
-        #[cfg(feature = "serialize")]
-        self.record_shape_flags(sid, &def.0);
-        sid
-    }
-    pub fn create_capsule_shape_for_owned(
-        &mut self,
-        body: BodyId,
-        def: &ShapeDef,
-        c: &crate::shapes::Capsule,
-    ) -> crate::shapes::OwnedShape {
-        let sid = self.create_capsule_shape_for(body, def, c);
-        crate::shapes::OwnedShape::new(self.core_arc(), sid)
-    }
-    pub fn create_polygon_shape_for(
-        &mut self,
-        body: BodyId,
-        def: &ShapeDef,
-        p: &crate::shapes::Polygon,
-    ) -> ShapeId {
-        crate::core::debug_checks::assert_body_valid(body);
-        let raw = p.into_raw();
-        let sid = unsafe { ffi::b2CreatePolygonShape(body, &def.0, &raw) };
-        #[cfg(feature = "serialize")]
-        self.record_shape_flags(sid, &def.0);
-        sid
-    }
-    pub fn create_polygon_shape_for_owned(
-        &mut self,
-        body: BodyId,
-        def: &ShapeDef,
-        p: &crate::shapes::Polygon,
-    ) -> crate::shapes::OwnedShape {
-        let sid = self.create_polygon_shape_for(body, def, p);
-        crate::shapes::OwnedShape::new(self.core_arc(), sid)
+    impl_world_shape_create_methods! {
+        create_circle_shape_for,
+        create_circle_shape_for_owned,
+        c,
+        crate::shapes::Circle,
+        ffi::b2CreateCircleShape;
+        create_segment_shape_for,
+        create_segment_shape_for_owned,
+        s,
+        crate::shapes::Segment,
+        ffi::b2CreateSegmentShape;
+        create_capsule_shape_for,
+        create_capsule_shape_for_owned,
+        c,
+        crate::shapes::Capsule,
+        ffi::b2CreateCapsuleShape;
+        create_polygon_shape_for,
+        create_polygon_shape_for_owned,
+        p,
+        crate::shapes::Polygon,
+        ffi::b2CreatePolygonShape;
     }
     pub fn destroy_shape_id(&mut self, shape: ShapeId, update_body_mass: bool) {
         crate::core::callback_state::assert_not_in_callback();
@@ -2135,72 +2134,27 @@ impl World {
     }
 
     // Shape helpers (ID-style)
-    pub fn shape_set_circle(&mut self, shape: ShapeId, c: &crate::shapes::Circle) {
-        crate::core::debug_checks::assert_shape_valid(shape);
-        let raw = c.into_raw();
-        unsafe { ffi::b2Shape_SetCircle(shape, &raw) }
-    }
-
-    pub fn try_shape_set_circle(
-        &mut self,
-        shape: ShapeId,
-        c: &crate::shapes::Circle,
-    ) -> crate::error::ApiResult<()> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
-        let raw = c.into_raw();
-        unsafe { ffi::b2Shape_SetCircle(shape, &raw) }
-        Ok(())
-    }
-
-    pub fn shape_set_segment(&mut self, shape: ShapeId, s: &crate::shapes::Segment) {
-        crate::core::debug_checks::assert_shape_valid(shape);
-        let raw = s.into_raw();
-        unsafe { ffi::b2Shape_SetSegment(shape, &raw) }
-    }
-
-    pub fn try_shape_set_segment(
-        &mut self,
-        shape: ShapeId,
-        s: &crate::shapes::Segment,
-    ) -> crate::error::ApiResult<()> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
-        let raw = s.into_raw();
-        unsafe { ffi::b2Shape_SetSegment(shape, &raw) }
-        Ok(())
-    }
-
-    pub fn shape_set_capsule(&mut self, shape: ShapeId, c: &crate::shapes::Capsule) {
-        crate::core::debug_checks::assert_shape_valid(shape);
-        let raw = c.into_raw();
-        unsafe { ffi::b2Shape_SetCapsule(shape, &raw) }
-    }
-
-    pub fn try_shape_set_capsule(
-        &mut self,
-        shape: ShapeId,
-        c: &crate::shapes::Capsule,
-    ) -> crate::error::ApiResult<()> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
-        let raw = c.into_raw();
-        unsafe { ffi::b2Shape_SetCapsule(shape, &raw) }
-        Ok(())
-    }
-
-    pub fn shape_set_polygon(&mut self, shape: ShapeId, p: &crate::shapes::Polygon) {
-        crate::core::debug_checks::assert_shape_valid(shape);
-        let raw = p.into_raw();
-        unsafe { ffi::b2Shape_SetPolygon(shape, &raw) }
-    }
-
-    pub fn try_shape_set_polygon(
-        &mut self,
-        shape: ShapeId,
-        p: &crate::shapes::Polygon,
-    ) -> crate::error::ApiResult<()> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
-        let raw = p.into_raw();
-        unsafe { ffi::b2Shape_SetPolygon(shape, &raw) }
-        Ok(())
+    impl_world_shape_set_methods! {
+        shape_set_circle,
+        try_shape_set_circle,
+        c,
+        crate::shapes::Circle,
+        ffi::b2Shape_SetCircle;
+        shape_set_segment,
+        try_shape_set_segment,
+        s,
+        crate::shapes::Segment,
+        ffi::b2Shape_SetSegment;
+        shape_set_capsule,
+        try_shape_set_capsule,
+        c,
+        crate::shapes::Capsule,
+        ffi::b2Shape_SetCapsule;
+        shape_set_polygon,
+        try_shape_set_polygon,
+        p,
+        crate::shapes::Polygon,
+        ffi::b2Shape_SetPolygon;
     }
 
     pub fn shape_surface_material(&self, shape: ShapeId) -> SurfaceMaterial {
