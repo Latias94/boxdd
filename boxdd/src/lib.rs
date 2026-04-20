@@ -6,6 +6,7 @@
 //! - Modular API: world, bodies, shapes, joints, queries, events, debug draw.
 //! - Ergonomics: builder patterns, world-space helpers, optional `mint` integration.
 //! - Hot-path friendly APIs: keep the convenience `Vec`-returning methods, or reuse caller-owned buffers with `*_into`.
+//! - Character mover helpers: cast movers, collect collision planes, solve planes, and clip velocity without raw FFI.
 //! - Three usage styles:
 //!   - Owned handles: `OwnedBody`/`OwnedShape`/`OwnedJoint`/`OwnedChain` (Drop destroys; easy to store).
 //!   - Scoped handles: `Body<'_>`/`Shape<'_>`/`Joint<'_>`/`Chain<'_>` (dropping only releases the world borrow).
@@ -84,6 +85,20 @@
 //! // Ray (closest)
 //! let r = world.cast_ray_closest(Vec2::new(0.0, 5.0), Vec2::new(0.0, -10.0), QueryFilter::default());
 //! if r.hit { let _ = (r.point, r.normal, r.fraction); }
+//! ```
+//!
+//! Character Mover Helpers
+//! ```no_run
+//! use boxdd::{clip_vector, solve_planes, CollisionPlane, QueryFilter, Vec2, World, WorldDef};
+//! let world = World::new(WorldDef::default()).unwrap();
+//! let planes = world.collide_mover([0.0_f32, 0.75], [0.0, 1.75], 0.25, QueryFilter::default());
+//! let mut rigid: Vec<CollisionPlane> = planes
+//!     .into_iter()
+//!     .filter_map(|p| p.into_rigid_collision_plane())
+//!     .collect();
+//! let solved = solve_planes([0.0_f32, -0.1], &mut rigid);
+//! let _clipped_velocity = clip_vector(Vec2::new(0.0, -1.0), &rigid);
+//! let _ = solved.translation;
 //! ```
 //!
 //! Feature Flags
@@ -167,7 +182,10 @@ pub use joints::{
     RevoluteJointBuilder, RevoluteJointDef, WeldJointBuilder, WeldJointDef, WheelJointBuilder,
     WheelJointDef,
 };
-pub use query::{Aabb, QueryFilter, RayResult};
+pub use query::{
+    Aabb, CollisionPlane, MoverPlaneResult, Plane, PlaneSolverResult, QueryFilter, RayResult,
+    clip_vector, solve_planes,
+};
 pub use shapes::chain::{Chain, ChainDef, ChainDefBuilder, OwnedChain};
 pub use shapes::{OwnedShape, Shape, ShapeDef, ShapeDefBuilder, SurfaceMaterial};
 pub use types::Vec2;

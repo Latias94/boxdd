@@ -17,17 +17,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &shapes::box_polygon(0.5, 0.5),
     );
 
-    // Character mover capsule
-    let c1 = Vec2::new(0.0, 1.0);
-    let c2 = Vec2::new(0.0, 1.8);
+    // Character mover capsule. This starts slightly overlapping the ground so the
+    // plane solver has something to resolve.
+    let c1 = Vec2::new(0.0, 0.7);
+    let c2 = Vec2::new(0.0, 1.5);
     let radius = 0.25;
+    let desired_move = Vec2::new(2.0, 0.0);
 
-    for _ in 0..10 {
-        world.step(1.0 / 60.0, 4);
-    }
+    // Minimal API demo:
+    // 1. cast the mover against future movement
+    // 2. collect current contact planes
+    // 3. solve planes
+    // 4. clip a velocity / movement vector
+    let frac = world.cast_mover(c1, c2, radius, desired_move, QueryFilter::default());
+    let plane_results = world.collide_mover(c1, c2, radius, QueryFilter::default());
+    let mut planes: Vec<CollisionPlane> = plane_results
+        .into_iter()
+        .filter_map(|plane| plane.into_rigid_collision_plane())
+        .collect();
+    let solved = solve_planes([0.0_f32, -0.15], &mut planes);
+    let clipped = clip_vector(desired_move, &planes);
 
-    // Try to move right by 2 meters; report fraction
-    let frac = world.cast_mover(c1, c2, radius, [2.0_f32, 0.0], QueryFilter::default());
     println!("character mover fraction: {:.3}", frac);
+    println!("collision planes: {}", planes.len());
+    println!(
+        "solve translation: ({:.3}, {:.3})",
+        solved.translation.x, solved.translation.y
+    );
+    println!("clipped vector: ({:.3}, {:.3})", clipped.x, clipped.y);
     Ok(())
 }

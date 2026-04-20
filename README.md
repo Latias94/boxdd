@@ -19,6 +19,7 @@
 - Math interop (features: `mint`/`cgmath`/`nalgebra`/`glam`): any `Into<Vec2>` accepts the corresponding 2D vector/point types, plus arrays/tuples.
 - Two error-handling styles: panic-on-misuse by default, plus `try_*` APIs returning `ApiResult<T>` for recoverable errors.
 - Hot-path query and state-extraction APIs expose `*_into` variants so games can reuse `Vec` buffers across frames instead of reallocating.
+- Character mover helpers cover the full safe workflow: `cast_mover`, `collide_mover`, `solve_planes`, and `clip_vector`.
 
 ## Quickstart
 ```rust
@@ -73,6 +74,11 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 ## Hot Path APIs
 - Convenience methods like `world.overlap_aabb(...)` and `world.cast_ray_all(...)` still return owned `Vec`s for one-off use.
 - For per-frame hot paths, prefer reusable-buffer variants such as `world.overlap_aabb_into(...)`, `world.cast_ray_all_into(...)`, `shape.sensor_overlaps_into(...)`, `body.contact_data_into(...)`, and `chain.segments_into(...)`.
+
+## Character Mover APIs
+- The safe wrapper now covers Box2D's geometric character mover pipeline.
+- Use `world.cast_mover(...)` to test motion, `world.collide_mover(...)` or `world.collide_mover_into(...)` to collect planes, `boxdd::solve_planes(...)` to solve them, and `boxdd::clip_vector(...)` to clip velocity against solved planes.
+- See `examples/character_mover.rs` for a minimal end-to-end usage example.
 
 ## Events
 - Three access styles:

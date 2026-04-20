@@ -7,7 +7,10 @@ pub use crate::{
         DistanceJointDef, FilterJointDef, Joint, JointBase, JointBaseBuilder, MotorJointDef,
         OwnedJoint, PrismaticJointDef, RevoluteJointDef, WeldJointDef, WheelJointDef,
     },
-    query::{Aabb, QueryFilter, RayResult},
+    query::{
+        Aabb, CollisionPlane, MoverPlaneResult, Plane, PlaneSolverResult, QueryFilter, RayResult,
+        clip_vector, solve_planes,
+    },
     shapes::{
         self, OwnedShape, Shape, ShapeDef, ShapeDefBuilder, SurfaceMaterial,
         chain::{Chain, ChainDef, ChainDefBuilder, OwnedChain},

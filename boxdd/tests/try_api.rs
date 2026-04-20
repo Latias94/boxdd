@@ -70,6 +70,7 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
             let aabb = Aabb::from_center_half_extents([0.0, 1.0], [10.0, 10.0]);
             let mut overlap_ids = Vec::new();
             let mut ray_hits = Vec::new();
+            let mut mover_planes = Vec::new();
             self.errs.push(
                 self.world
                     .try_overlap_aabb(aabb, QueryFilter::default())
@@ -95,6 +96,28 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
                     )
                     .unwrap_err(),
             );
+            self.errs.push(
+                self.world
+                    .try_cast_mover(
+                        [0.0_f32, 0.75],
+                        [0.0, 1.75],
+                        0.25,
+                        [1.0_f32, 0.0],
+                        QueryFilter::default(),
+                    )
+                    .unwrap_err(),
+            );
+            self.errs.push(
+                self.world
+                    .try_collide_mover_into(
+                        [0.0_f32, 0.75],
+                        [0.0, 1.75],
+                        0.25,
+                        QueryFilter::default(),
+                        &mut mover_planes,
+                    )
+                    .unwrap_err(),
+            );
         }
     }
 
@@ -112,6 +135,8 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
     assert_eq!(
         drawer.errs,
         vec![
+            ApiError::InCallback,
+            ApiError::InCallback,
             ApiError::InCallback,
             ApiError::InCallback,
             ApiError::InCallback,

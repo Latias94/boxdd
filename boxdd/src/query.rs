@@ -1,9 +1,10 @@
-//! Broad-phase queries and casting helpers.
+//! Broad-phase queries, casts, and character-mover helpers.
 //!
 //! - AABB overlap: collect matching shape ids.
 //! - Ray casts: closest or all hits along a path.
 //! - Shape overlap / casting: build a temporary proxy from points + radius (accepts `Into<Vec2>` points).
 //! - Offset proxies: apply translation + rotation to the proxy for queries in local frames.
+//! - Character mover helpers: cast a capsule mover, collect collision planes, solve planes, and clip velocity.
 //!
 //! Note: Box2D proxies support at most `B2_MAX_POLYGON_VERTICES` points (8). Extra points are ignored.
 //!
@@ -96,6 +97,29 @@ unsafe extern "C" fn collect_ray_result_cb(
         1.0f32
     } else {
         0.0
+    }
+}
+
+unsafe extern "C" fn collect_mover_plane_result_cb(
+    shape_id: ffi::b2ShapeId,
+    plane: *const ffi::b2PlaneResult,
+    ctx: *mut core::ffi::c_void,
+) -> bool {
+    let ctx = unsafe { &mut *(ctx as *mut CollectCtx<'_, MoverPlaneResult>) };
+    let plane = unsafe { *plane };
+    ctx.push(MoverPlaneResult {
+        shape_id,
+        plane: plane.plane.into(),
+        point: plane.point.into(),
+        hit: plane.hit,
+    })
+}
+
+fn make_capsule<V1: Into<Vec2>, V2: Into<Vec2>>(c1: V1, c2: V2, radius: f32) -> ffi::b2Capsule {
+    ffi::b2Capsule {
+        center1: c1.into().into(),
+        center2: c2.into().into(),
+        radius,
     }
 }
 
@@ -274,13 +298,44 @@ fn cast_mover_impl<V1: Into<Vec2>, V2: Into<Vec2>, VT: Into<Vec2>>(
     translation: VT,
     filter: QueryFilter,
 ) -> f32 {
-    let cap = ffi::b2Capsule {
-        center1: c1.into().into(),
-        center2: c2.into().into(),
-        radius,
-    };
+    let cap = make_capsule(c1, c2, radius);
     let t: ffi::b2Vec2 = translation.into().into();
     unsafe { ffi::b2World_CastMover(world, &cap, t, filter.0) }
+}
+
+fn collide_mover_into_impl<V1: Into<Vec2>, V2: Into<Vec2>>(
+    world: ffi::b2WorldId,
+    c1: V1,
+    c2: V2,
+    radius: f32,
+    filter: QueryFilter,
+    out: &mut Vec<MoverPlaneResult>,
+) {
+    out.clear();
+    let cap = make_capsule(c1, c2, radius);
+    let mut ctx = CollectCtx::from_cleared(out);
+    unsafe {
+        ffi::b2World_CollideMover(
+            world,
+            &cap,
+            filter.0,
+            Some(collect_mover_plane_result_cb),
+            &mut ctx as *mut _ as *mut _,
+        );
+    }
+    ctx.resume_unwind_if_needed();
+}
+
+fn collide_mover_impl<V1: Into<Vec2>, V2: Into<Vec2>>(
+    world: ffi::b2WorldId,
+    c1: V1,
+    c2: V2,
+    radius: f32,
+    filter: QueryFilter,
+) -> Vec<MoverPlaneResult> {
+    let mut out = Vec::new();
+    collide_mover_into_impl(world, c1, c2, radius, filter, &mut out);
+    out
 }
 
 fn overlap_polygon_points_with_offset_into_impl<I, P, V, A>(
@@ -687,6 +742,221 @@ impl From<ffi::b2RayResult> for RayResult {
     }
 }
 
+/// A collision plane used by Box2D's character mover helpers.
+#[doc(alias = "plane")]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Plane {
+    pub normal: Vec2,
+    pub offset: f32,
+}
+
+impl Plane {
+    #[inline]
+    pub fn new<N: Into<Vec2>>(normal: N, offset: f32) -> Self {
+        Self {
+            normal: normal.into(),
+            offset,
+        }
+    }
+}
+
+impl From<ffi::b2Plane> for Plane {
+    #[inline]
+    fn from(plane: ffi::b2Plane) -> Self {
+        Self {
+            normal: plane.normal.into(),
+            offset: plane.offset,
+        }
+    }
+}
+
+impl From<Plane> for ffi::b2Plane {
+    #[inline]
+    fn from(plane: Plane) -> Self {
+        Self {
+            normal: plane.normal.into(),
+            offset: plane.offset,
+        }
+    }
+}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl bytemuck::Zeroable for Plane {}
+#[cfg(feature = "bytemuck")]
+unsafe impl bytemuck::Pod for Plane {}
+
+const _: () = {
+    assert!(core::mem::size_of::<Plane>() == core::mem::size_of::<ffi::b2Plane>());
+    assert!(core::mem::align_of::<Plane>() == core::mem::align_of::<ffi::b2Plane>());
+};
+
+/// Result item returned by `collide_mover`.
+#[doc(alias = "plane_result")]
+#[derive(Copy, Clone, Debug)]
+pub struct MoverPlaneResult {
+    pub shape_id: ShapeId,
+    pub plane: Plane,
+    pub point: Vec2,
+    pub hit: bool,
+}
+
+impl MoverPlaneResult {
+    /// Convert a valid mover-plane result into a collision plane for `solve_planes`.
+    ///
+    /// Returns `None` when `hit` is `false`, matching Box2D's guidance to ignore that result.
+    #[inline]
+    pub fn into_collision_plane(
+        self,
+        push_limit: f32,
+        clip_velocity: bool,
+    ) -> Option<CollisionPlane> {
+        self.hit
+            .then(|| CollisionPlane::new(self.plane, push_limit, clip_velocity))
+    }
+
+    /// Convert a valid mover-plane result into a rigid collision plane.
+    ///
+    /// This uses `f32::MAX` as the push limit and enables velocity clipping.
+    #[inline]
+    pub fn into_rigid_collision_plane(self) -> Option<CollisionPlane> {
+        self.into_collision_plane(CollisionPlane::RIGID_PUSH_LIMIT, true)
+    }
+}
+
+/// Collision plane input for `solve_planes` and `clip_vector`.
+#[doc(alias = "collision_plane")]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct CollisionPlane {
+    pub plane: Plane,
+    pub push_limit: f32,
+    pub push: f32,
+    pub clip_velocity: bool,
+}
+
+impl CollisionPlane {
+    pub const RIGID_PUSH_LIMIT: f32 = f32::MAX;
+
+    #[inline]
+    pub fn new(plane: Plane, push_limit: f32, clip_velocity: bool) -> Self {
+        Self {
+            plane,
+            push_limit,
+            push: 0.0,
+            clip_velocity,
+        }
+    }
+
+    #[inline]
+    pub fn rigid(plane: Plane) -> Self {
+        Self::new(plane, Self::RIGID_PUSH_LIMIT, true)
+    }
+}
+
+impl From<ffi::b2CollisionPlane> for CollisionPlane {
+    #[inline]
+    fn from(plane: ffi::b2CollisionPlane) -> Self {
+        Self {
+            plane: plane.plane.into(),
+            push_limit: plane.pushLimit,
+            push: plane.push,
+            clip_velocity: plane.clipVelocity,
+        }
+    }
+}
+
+impl From<CollisionPlane> for ffi::b2CollisionPlane {
+    #[inline]
+    fn from(plane: CollisionPlane) -> Self {
+        Self {
+            plane: plane.plane.into(),
+            pushLimit: plane.push_limit,
+            push: plane.push,
+            clipVelocity: plane.clip_velocity,
+        }
+    }
+}
+
+const _: () = {
+    assert!(
+        core::mem::size_of::<CollisionPlane>() == core::mem::size_of::<ffi::b2CollisionPlane>()
+    );
+    assert!(
+        core::mem::align_of::<CollisionPlane>() == core::mem::align_of::<ffi::b2CollisionPlane>()
+    );
+};
+
+/// Result returned by `solve_planes`.
+#[doc(alias = "plane_solver_result")]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct PlaneSolverResult {
+    pub translation: Vec2,
+    pub iteration_count: i32,
+}
+
+impl From<ffi::b2PlaneSolverResult> for PlaneSolverResult {
+    #[inline]
+    fn from(result: ffi::b2PlaneSolverResult) -> Self {
+        Self {
+            translation: result.translation.into(),
+            iteration_count: result.iterationCount,
+        }
+    }
+}
+
+#[inline]
+fn raw_collision_planes_mut(planes: &mut [CollisionPlane]) -> *mut ffi::b2CollisionPlane {
+    if planes.is_empty() {
+        core::ptr::null_mut()
+    } else {
+        planes.as_mut_ptr().cast()
+    }
+}
+
+#[inline]
+fn raw_collision_planes(planes: &[CollisionPlane]) -> *const ffi::b2CollisionPlane {
+    if planes.is_empty() {
+        core::ptr::null()
+    } else {
+        planes.as_ptr().cast()
+    }
+}
+
+/// Solve the translation that best satisfies the supplied mover collision planes.
+///
+/// The `push` field on each collision plane is updated in place by Box2D.
+#[inline]
+pub fn solve_planes<V: Into<Vec2>>(
+    target_delta: V,
+    planes: &mut [CollisionPlane],
+) -> PlaneSolverResult {
+    let raw = unsafe {
+        ffi::b2SolvePlanes(
+            target_delta.into().into(),
+            raw_collision_planes_mut(planes),
+            planes.len() as i32,
+        )
+    };
+    raw.into()
+}
+
+/// Clip a velocity or movement vector against solved collision planes.
+#[inline]
+pub fn clip_vector<V: Into<Vec2>>(vector: V, planes: &[CollisionPlane]) -> Vec2 {
+    unsafe {
+        ffi::b2ClipVector(
+            vector.into().into(),
+            raw_collision_planes(planes),
+            planes.len() as i32,
+        )
+    }
+    .into()
+}
+
 impl World {
     /// Overlap test for all shapes in an AABB. Returns matching shape ids.
     ///
@@ -1007,6 +1277,55 @@ impl World {
             translation,
             filter,
         ))
+    }
+
+    /// Collect collision planes for a capsule mover at its current position.
+    pub fn collide_mover<V1: Into<Vec2>, V2: Into<Vec2>>(
+        &self,
+        c1: V1,
+        c2: V2,
+        radius: f32,
+        filter: QueryFilter,
+    ) -> Vec<MoverPlaneResult> {
+        crate::core::callback_state::assert_not_in_callback();
+        collide_mover_impl(self.raw(), c1, c2, radius, filter)
+    }
+
+    /// Collect collision planes for a capsule mover and reuse `out`.
+    pub fn collide_mover_into<V1: Into<Vec2>, V2: Into<Vec2>>(
+        &self,
+        c1: V1,
+        c2: V2,
+        radius: f32,
+        filter: QueryFilter,
+        out: &mut Vec<MoverPlaneResult>,
+    ) {
+        crate::core::callback_state::assert_not_in_callback();
+        collide_mover_into_impl(self.raw(), c1, c2, radius, filter, out);
+    }
+
+    pub fn try_collide_mover<V1: Into<Vec2>, V2: Into<Vec2>>(
+        &self,
+        c1: V1,
+        c2: V2,
+        radius: f32,
+        filter: QueryFilter,
+    ) -> crate::error::ApiResult<Vec<MoverPlaneResult>> {
+        crate::core::callback_state::check_not_in_callback()?;
+        Ok(collide_mover_impl(self.raw(), c1, c2, radius, filter))
+    }
+
+    pub fn try_collide_mover_into<V1: Into<Vec2>, V2: Into<Vec2>>(
+        &self,
+        c1: V1,
+        c2: V2,
+        radius: f32,
+        filter: QueryFilter,
+        out: &mut Vec<MoverPlaneResult>,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        collide_mover_into_impl(self.raw(), c1, c2, radius, filter, out);
+        Ok(())
     }
 
     /// Overlap polygon points with an offset transform.
@@ -1515,6 +1834,53 @@ impl WorldHandle {
             translation,
             filter,
         ))
+    }
+
+    pub fn collide_mover<V1: Into<Vec2>, V2: Into<Vec2>>(
+        &self,
+        c1: V1,
+        c2: V2,
+        radius: f32,
+        filter: QueryFilter,
+    ) -> Vec<MoverPlaneResult> {
+        crate::core::callback_state::assert_not_in_callback();
+        collide_mover_impl(self.raw(), c1, c2, radius, filter)
+    }
+
+    pub fn collide_mover_into<V1: Into<Vec2>, V2: Into<Vec2>>(
+        &self,
+        c1: V1,
+        c2: V2,
+        radius: f32,
+        filter: QueryFilter,
+        out: &mut Vec<MoverPlaneResult>,
+    ) {
+        crate::core::callback_state::assert_not_in_callback();
+        collide_mover_into_impl(self.raw(), c1, c2, radius, filter, out);
+    }
+
+    pub fn try_collide_mover<V1: Into<Vec2>, V2: Into<Vec2>>(
+        &self,
+        c1: V1,
+        c2: V2,
+        radius: f32,
+        filter: QueryFilter,
+    ) -> crate::error::ApiResult<Vec<MoverPlaneResult>> {
+        crate::core::callback_state::check_not_in_callback()?;
+        Ok(collide_mover_impl(self.raw(), c1, c2, radius, filter))
+    }
+
+    pub fn try_collide_mover_into<V1: Into<Vec2>, V2: Into<Vec2>>(
+        &self,
+        c1: V1,
+        c2: V2,
+        radius: f32,
+        filter: QueryFilter,
+        out: &mut Vec<MoverPlaneResult>,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        collide_mover_into_impl(self.raw(), c1, c2, radius, filter, out);
+        Ok(())
     }
 
     pub fn overlap_polygon_points_with_offset<I, P, V, A>(

@@ -15,13 +15,15 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Reusable-buffer data extraction APIs for `contact_data`, `sensor_overlaps`, `shape_sensor_overlaps`, and `segments`.
 - In-place valid-filter variants for sensor overlap hot paths: `sensor_overlaps_valid_into` and `shape_sensor_overlaps_valid_into`.
 - Workstream documentation under `docs/workstreams/query-buffer-reuse/` to track the 0.3 allocation-hotpath refactor plan, milestones, and cleanup backlog.
+- Safe character mover APIs covering collision-plane collection and solver helpers: `collide_mover`, `collide_mover_into`, `solve_planes`, and `clip_vector`.
+- A broader 0.3 umbrella workstream under `docs/workstreams/boxdd-0.3-fearless-refactor/` to track the rest of the fearless refactor plan.
 
 ### Changed
 - Query internals now share reusable collection helpers instead of duplicating callback-to-`Vec` plumbing across each query entrypoint.
 - Temporary polygon proxy point collection now uses a stack-first `SmallVec` path for Box2D's fixed-size proxy vertex limit.
 - Contact, sensor, and chain segment extraction now share a common FFI-backed `Vec` fill helper instead of repeating `with_capacity + set_len` logic across handle types.
 - Sensor valid-filter paths now reuse a single caller-owned buffer and filter in place instead of allocating a second `Vec`.
-- Examples and crate docs now show how to reuse buffers on hot paths across queries and state extraction.
+- Examples and crate docs now show both reusable-buffer hot paths and the safe character mover workflow.
 
 ## [boxdd 0.2.0] - 2025-12-17
 

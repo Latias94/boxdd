@@ -50,6 +50,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         [0.5_f32, 0.0],
         QueryFilter::default(),
     );
+    let mover_planes =
+        world.collide_mover([0.0_f32, 0.7], [0.0, 1.5], 0.25, QueryFilter::default());
+    let mut rigid_planes: Vec<boxdd::CollisionPlane> = mover_planes
+        .into_iter()
+        .filter_map(|plane| plane.into_rigid_collision_plane())
+        .collect();
+    let _solver = boxdd::solve_planes([0.0_f32, -0.1], &mut rigid_planes);
+    let _clipped = boxdd::clip_vector([1.0_f32, -1.0], &rigid_planes);
 
     Ok(())
 }
