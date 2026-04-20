@@ -45,9 +45,9 @@
 ## Next
 
 - [ ] Review remaining `World` / `WorldHandle` query duplication and decide whether selective consolidation is worth it.
-- [ ] Audit remaining owned/scoped handle duplication outside the already-refactored hot paths, especially `Body` / `Shape` name and user-data paths.
+- [ ] Audit any remaining owned/scoped handle duplication outside the already-refactored internals and confirm it is worth keeping.
 - [ ] Review remaining public raw escape hatches and document which are intentional (`world_id_raw`, raw event slices, debug draw raw paths, etc.).
-- [ ] Audit remaining crate-owned value types that still rely on implicit raw conversions and decide which should move to explicit `from_raw(...)` / `into_raw()` in `0.3`.
+- [ ] Audit remaining crate-owned value types that still rely on implicit raw conversions, prioritizing `BodyType`, query results, collision outputs, `Counters`, and any remaining debug-draw/raw-color seams.
 
 ## Release Checklist
 

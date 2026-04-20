@@ -331,6 +331,67 @@ fn shape_sensor_capacity_impl(id: ShapeId) -> i32 {
     unsafe { ffi::b2Shape_GetSensorCapacity(id) }
 }
 
+unsafe fn shape_set_user_data_ptr_impl(
+    world_core: &crate::core::world_core::WorldCore,
+    id: ShapeId,
+    user_data: *mut c_void,
+) {
+    let _ = world_core.clear_shape_user_data(id);
+    unsafe { ffi::b2Shape_SetUserData(id, user_data) }
+}
+
+#[inline]
+fn shape_user_data_ptr_impl(id: ShapeId) -> *mut c_void {
+    unsafe { ffi::b2Shape_GetUserData(id) }
+}
+
+fn shape_set_user_data_impl<T: 'static>(
+    world_core: &crate::core::world_core::WorldCore,
+    id: ShapeId,
+    value: T,
+) {
+    let user_data = world_core.set_shape_user_data(id, value);
+    unsafe { ffi::b2Shape_SetUserData(id, user_data) };
+}
+
+fn shape_clear_user_data_impl(
+    world_core: &crate::core::world_core::WorldCore,
+    id: ShapeId,
+) -> bool {
+    let had = world_core.clear_shape_user_data(id);
+    if had {
+        unsafe { ffi::b2Shape_SetUserData(id, core::ptr::null_mut()) };
+    }
+    had
+}
+
+fn shape_with_user_data_impl<T: 'static, R>(
+    world_core: &crate::core::world_core::WorldCore,
+    id: ShapeId,
+    f: impl FnOnce(&T) -> R,
+) -> ApiResult<Option<R>> {
+    world_core.try_with_shape_user_data(id, f)
+}
+
+fn shape_with_user_data_mut_impl<T: 'static, R>(
+    world_core: &crate::core::world_core::WorldCore,
+    id: ShapeId,
+    f: impl FnOnce(&mut T) -> R,
+) -> ApiResult<Option<R>> {
+    world_core.try_with_shape_user_data_mut(id, f)
+}
+
+fn shape_take_user_data_impl<T: 'static>(
+    world_core: &crate::core::world_core::WorldCore,
+    id: ShapeId,
+) -> ApiResult<Option<T>> {
+    let value = world_core.take_shape_user_data::<T>(id)?;
+    if value.is_some() {
+        unsafe { ffi::b2Shape_SetUserData(id, core::ptr::null_mut()) };
+    }
+    Ok(value)
+}
+
 impl OwnedShape {
     pub(crate) fn new(core: Arc<crate::core::world_core::WorldCore>, id: ShapeId) -> Self {
         core.owned_shapes
@@ -729,8 +790,7 @@ impl OwnedShape {
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn set_user_data_ptr(&mut self, p: *mut c_void) {
         self.assert_valid();
-        let _ = self.core.clear_shape_user_data(self.id);
-        unsafe { ffi::b2Shape_SetUserData(self.id, p) }
+        unsafe { shape_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
     }
     /// Set an opaque user data pointer on this shape.
     ///
@@ -740,18 +800,17 @@ impl OwnedShape {
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut c_void) -> ApiResult<()> {
         self.check_valid()?;
-        let _ = self.core.clear_shape_user_data(self.id);
-        unsafe { ffi::b2Shape_SetUserData(self.id, p) }
+        unsafe { shape_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
         Ok(())
     }
     pub fn user_data_ptr(&self) -> *mut c_void {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetUserData(self.id) }
+        shape_user_data_ptr_impl(self.id)
     }
 
     pub fn try_user_data_ptr(&self) -> ApiResult<*mut c_void> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Shape_GetUserData(self.id) })
+        Ok(shape_user_data_ptr_impl(self.id))
     }
 
     /// Set typed user data on this shape.
@@ -760,41 +819,29 @@ impl OwnedShape {
     /// is automatically freed when cleared or when the shape is destroyed.
     pub fn set_user_data<T: 'static>(&mut self, value: T) {
         self.assert_valid();
-        let p = self.core.set_shape_user_data(self.id, value);
-        unsafe { ffi::b2Shape_SetUserData(self.id, p) };
+        shape_set_user_data_impl(self.core.as_ref(), self.id, value);
     }
 
     pub fn try_set_user_data<T: 'static>(&mut self, value: T) -> ApiResult<()> {
         self.check_valid()?;
-        let p = self.core.set_shape_user_data(self.id, value);
-        unsafe { ffi::b2Shape_SetUserData(self.id, p) };
+        shape_set_user_data_impl(self.core.as_ref(), self.id, value);
         Ok(())
     }
 
     /// Clear typed user data on this shape. Returns whether any typed data was present.
     pub fn clear_user_data(&mut self) -> bool {
         self.assert_valid();
-        let had = self.core.clear_shape_user_data(self.id);
-        if had {
-            unsafe { ffi::b2Shape_SetUserData(self.id, core::ptr::null_mut()) };
-        }
-        had
+        shape_clear_user_data_impl(self.core.as_ref(), self.id)
     }
 
     pub fn try_clear_user_data(&mut self) -> ApiResult<bool> {
         self.check_valid()?;
-        let had = self.core.clear_shape_user_data(self.id);
-        if had {
-            unsafe { ffi::b2Shape_SetUserData(self.id, core::ptr::null_mut()) };
-        }
-        Ok(had)
+        Ok(shape_clear_user_data_impl(self.core.as_ref(), self.id))
     }
 
     pub fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
         self.assert_valid();
-        self.core
-            .try_with_shape_user_data(self.id, f)
-            .expect("user data type mismatch")
+        shape_with_user_data_impl(self.core.as_ref(), self.id, f).expect("user data type mismatch")
     }
 
     pub fn try_with_user_data<T: 'static, R>(
@@ -802,13 +849,12 @@ impl OwnedShape {
         f: impl FnOnce(&T) -> R,
     ) -> ApiResult<Option<R>> {
         self.check_valid()?;
-        self.core.try_with_shape_user_data(self.id, f)
+        shape_with_user_data_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn with_user_data_mut<T: 'static, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
         self.assert_valid();
-        self.core
-            .try_with_shape_user_data_mut(self.id, f)
+        shape_with_user_data_mut_impl(self.core.as_ref(), self.id, f)
             .expect("user data type mismatch")
     }
 
@@ -817,28 +863,17 @@ impl OwnedShape {
         f: impl FnOnce(&mut T) -> R,
     ) -> ApiResult<Option<R>> {
         self.check_valid()?;
-        self.core.try_with_shape_user_data_mut(self.id, f)
+        shape_with_user_data_mut_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn take_user_data<T: 'static>(&mut self) -> Option<T> {
         self.assert_valid();
-        let v = self
-            .core
-            .take_shape_user_data::<T>(self.id)
-            .expect("user data type mismatch");
-        if v.is_some() {
-            unsafe { ffi::b2Shape_SetUserData(self.id, core::ptr::null_mut()) };
-        }
-        v
+        shape_take_user_data_impl(self.core.as_ref(), self.id).expect("user data type mismatch")
     }
 
     pub fn try_take_user_data<T: 'static>(&mut self) -> ApiResult<Option<T>> {
         self.check_valid()?;
-        let v = self.core.take_shape_user_data::<T>(self.id)?;
-        if v.is_some() {
-            unsafe { ffi::b2Shape_SetUserData(self.id, core::ptr::null_mut()) };
-        }
-        Ok(v)
+        shape_take_user_data_impl(self.core.as_ref(), self.id)
     }
 
     pub fn update_body_mass_on_drop(mut self, flag: bool) -> Self {
@@ -1195,8 +1230,7 @@ impl<'w> Shape<'w> {
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn set_user_data_ptr(&mut self, p: *mut core::ffi::c_void) {
         self.assert_valid();
-        let _ = self.core.clear_shape_user_data(self.id);
-        unsafe { ffi::b2Shape_SetUserData(self.id, p) }
+        unsafe { shape_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
     }
     /// Set an opaque user data pointer on this shape.
     ///
@@ -1206,18 +1240,17 @@ impl<'w> Shape<'w> {
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut core::ffi::c_void) -> ApiResult<()> {
         self.check_valid()?;
-        let _ = self.core.clear_shape_user_data(self.id);
-        unsafe { ffi::b2Shape_SetUserData(self.id, p) }
+        unsafe { shape_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
         Ok(())
     }
     pub fn user_data_ptr(&self) -> *mut core::ffi::c_void {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetUserData(self.id) }
+        shape_user_data_ptr_impl(self.id)
     }
 
     pub fn try_user_data_ptr(&self) -> ApiResult<*mut core::ffi::c_void> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Shape_GetUserData(self.id) })
+        Ok(shape_user_data_ptr_impl(self.id))
     }
 
     /// Set typed user data on this shape.
@@ -1226,41 +1259,29 @@ impl<'w> Shape<'w> {
     /// is automatically freed when cleared or when the shape is destroyed.
     pub fn set_user_data<T: 'static>(&mut self, value: T) {
         self.assert_valid();
-        let p = self.core.set_shape_user_data(self.id, value);
-        unsafe { ffi::b2Shape_SetUserData(self.id, p) };
+        shape_set_user_data_impl(self.core.as_ref(), self.id, value);
     }
 
     pub fn try_set_user_data<T: 'static>(&mut self, value: T) -> ApiResult<()> {
         self.check_valid()?;
-        let p = self.core.set_shape_user_data(self.id, value);
-        unsafe { ffi::b2Shape_SetUserData(self.id, p) };
+        shape_set_user_data_impl(self.core.as_ref(), self.id, value);
         Ok(())
     }
 
     /// Clear typed user data on this shape. Returns whether any typed data was present.
     pub fn clear_user_data(&mut self) -> bool {
         self.assert_valid();
-        let had = self.core.clear_shape_user_data(self.id);
-        if had {
-            unsafe { ffi::b2Shape_SetUserData(self.id, core::ptr::null_mut()) };
-        }
-        had
+        shape_clear_user_data_impl(self.core.as_ref(), self.id)
     }
 
     pub fn try_clear_user_data(&mut self) -> ApiResult<bool> {
         self.check_valid()?;
-        let had = self.core.clear_shape_user_data(self.id);
-        if had {
-            unsafe { ffi::b2Shape_SetUserData(self.id, core::ptr::null_mut()) };
-        }
-        Ok(had)
+        Ok(shape_clear_user_data_impl(self.core.as_ref(), self.id))
     }
 
     pub fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
         self.assert_valid();
-        self.core
-            .try_with_shape_user_data(self.id, f)
-            .expect("user data type mismatch")
+        shape_with_user_data_impl(self.core.as_ref(), self.id, f).expect("user data type mismatch")
     }
 
     pub fn try_with_user_data<T: 'static, R>(
@@ -1268,13 +1289,12 @@ impl<'w> Shape<'w> {
         f: impl FnOnce(&T) -> R,
     ) -> ApiResult<Option<R>> {
         self.check_valid()?;
-        self.core.try_with_shape_user_data(self.id, f)
+        shape_with_user_data_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn with_user_data_mut<T: 'static, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
         self.assert_valid();
-        self.core
-            .try_with_shape_user_data_mut(self.id, f)
+        shape_with_user_data_mut_impl(self.core.as_ref(), self.id, f)
             .expect("user data type mismatch")
     }
 
@@ -1283,28 +1303,17 @@ impl<'w> Shape<'w> {
         f: impl FnOnce(&mut T) -> R,
     ) -> ApiResult<Option<R>> {
         self.check_valid()?;
-        self.core.try_with_shape_user_data_mut(self.id, f)
+        shape_with_user_data_mut_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn take_user_data<T: 'static>(&mut self) -> Option<T> {
         self.assert_valid();
-        let v = self
-            .core
-            .take_shape_user_data::<T>(self.id)
-            .expect("user data type mismatch");
-        if v.is_some() {
-            unsafe { ffi::b2Shape_SetUserData(self.id, core::ptr::null_mut()) };
-        }
-        v
+        shape_take_user_data_impl(self.core.as_ref(), self.id).expect("user data type mismatch")
     }
 
     pub fn try_take_user_data<T: 'static>(&mut self) -> ApiResult<Option<T>> {
         self.check_valid()?;
-        let v = self.core.take_shape_user_data::<T>(self.id)?;
-        if v.is_some() {
-            unsafe { ffi::b2Shape_SetUserData(self.id, core::ptr::null_mut()) };
-        }
-        Ok(v)
+        shape_take_user_data_impl(self.core.as_ref(), self.id)
     }
 
     pub fn contact_data(&self) -> Vec<ContactData> {
