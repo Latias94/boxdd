@@ -11,67 +11,117 @@
 use crate::types::{ShapeId, Vec2};
 use crate::world::{World, WorldHandle};
 use boxdd_sys::ffi;
+use smallvec::SmallVec;
 use std::any::Any;
 
 const MAX_PROXY_POINTS: usize = ffi::B2_MAX_POLYGON_VERTICES as usize;
+type ProxyPoints = SmallVec<[ffi::b2Vec2; MAX_PROXY_POINTS]>;
+type PanicPayload = Box<dyn Any + Send + 'static>;
 
-fn collect_proxy_points<I, P>(points: I) -> Vec<ffi::b2Vec2>
+fn collect_proxy_points<I, P>(points: I) -> ProxyPoints
 where
     I: IntoIterator<Item = P>,
     P: Into<Vec2>,
 {
-    let mut out: Vec<ffi::b2Vec2> = Vec::with_capacity(MAX_PROXY_POINTS);
+    let mut out = SmallVec::<[ffi::b2Vec2; MAX_PROXY_POINTS]>::new();
     for p in points.into_iter().take(MAX_PROXY_POINTS) {
         out.push(ffi::b2Vec2::from(p.into()));
     }
     out
 }
 
-fn overlap_aabb_impl(world: ffi::b2WorldId, aabb: Aabb, filter: QueryFilter) -> Vec<ShapeId> {
-    struct Ctx<'a> {
-        out: &'a mut Vec<ShapeId>,
-        panicked: &'a mut bool,
-        panic: &'a mut Option<Box<dyn Any + Send + 'static>>,
+struct CollectCtx<'a, T> {
+    out: &'a mut Vec<T>,
+    panicked: bool,
+    panic: Option<PanicPayload>,
+}
+
+impl<'a, T> CollectCtx<'a, T> {
+    fn from_cleared(out: &'a mut Vec<T>) -> Self {
+        Self {
+            out,
+            panicked: false,
+            panic: None,
+        }
     }
-    unsafe extern "C" fn cb(shape_id: ffi::b2ShapeId, ctx: *mut core::ffi::c_void) -> bool {
-        let ctx = unsafe { &mut *(ctx as *mut Ctx<'_>) };
-        if *ctx.panicked {
+
+    fn push(&mut self, value: T) -> bool {
+        if self.panicked {
             return false;
         }
         let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            ctx.out.push(shape_id);
-            true
+            self.out.push(value);
         }));
         match r {
-            Ok(v) => v,
+            Ok(()) => true,
             Err(p) => {
-                *ctx.panicked = true;
-                *ctx.panic = Some(p);
+                self.panicked = true;
+                self.panic = Some(p);
                 false
             }
         }
     }
 
-    let mut out: Vec<ShapeId> = Vec::new();
-    let mut panicked = false;
-    let mut panic: Option<Box<dyn Any + Send + 'static>> = None;
-    let mut ctx = Ctx {
-        out: &mut out,
-        panicked: &mut panicked,
-        panic: &mut panic,
-    };
+    fn resume_unwind_if_needed(self) {
+        if let Some(p) = self.panic {
+            std::panic::resume_unwind(p);
+        }
+    }
+}
+
+unsafe extern "C" fn collect_shape_id_cb(
+    shape_id: ffi::b2ShapeId,
+    ctx: *mut core::ffi::c_void,
+) -> bool {
+    let ctx = unsafe { &mut *(ctx as *mut CollectCtx<'_, ShapeId>) };
+    ctx.push(shape_id)
+}
+
+#[allow(clippy::unnecessary_cast)]
+unsafe extern "C" fn collect_ray_result_cb(
+    shape_id: ffi::b2ShapeId,
+    point: ffi::b2Vec2,
+    normal: ffi::b2Vec2,
+    fraction: f32,
+    ctx: *mut core::ffi::c_void,
+) -> f32 {
+    let ctx = unsafe { &mut *(ctx as *mut CollectCtx<'_, RayResult>) };
+    if ctx.push(RayResult {
+        shape_id,
+        point: point.into(),
+        normal: normal.into(),
+        fraction,
+        hit: true,
+    }) {
+        1.0f32
+    } else {
+        0.0
+    }
+}
+
+fn overlap_aabb_into_impl(
+    world: ffi::b2WorldId,
+    aabb: Aabb,
+    filter: QueryFilter,
+    out: &mut Vec<ShapeId>,
+) {
+    out.clear();
+    let mut ctx = CollectCtx::from_cleared(out);
     unsafe {
         let _ = ffi::b2World_OverlapAABB(
             world,
             aabb.into(),
             filter.0,
-            Some(cb),
+            Some(collect_shape_id_cb),
             &mut ctx as *mut _ as *mut _,
         );
     }
-    if let Some(p) = panic.take() {
-        std::panic::resume_unwind(p);
-    }
+    ctx.resume_unwind_if_needed();
+}
+
+fn overlap_aabb_impl(world: ffi::b2WorldId, aabb: Aabb, filter: QueryFilter) -> Vec<ShapeId> {
+    let mut out = Vec::new();
+    overlap_aabb_into_impl(world, aabb, filter, &mut out);
     out
 }
 
@@ -93,50 +143,20 @@ fn cast_ray_all_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
     translation: VT,
     filter: QueryFilter,
 ) -> Vec<RayResult> {
-    struct Ctx<'a> {
-        out: &'a mut Vec<RayResult>,
-        panicked: &'a mut bool,
-        panic: &'a mut Option<Box<dyn Any + Send + 'static>>,
-    }
-    #[allow(clippy::unnecessary_cast)]
-    unsafe extern "C" fn cb(
-        shape_id: ffi::b2ShapeId,
-        point: ffi::b2Vec2,
-        normal: ffi::b2Vec2,
-        fraction: f32,
-        ctx: *mut core::ffi::c_void,
-    ) -> f32 {
-        let ctx = unsafe { &mut *(ctx as *mut Ctx<'_>) };
-        if *ctx.panicked {
-            return 0.0;
-        }
-        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            ctx.out.push(RayResult {
-                shape_id,
-                point: point.into(),
-                normal: normal.into(),
-                fraction,
-                hit: true,
-            });
-            1.0f32
-        }));
-        match r {
-            Ok(v) => v,
-            Err(p) => {
-                *ctx.panicked = true;
-                *ctx.panic = Some(p);
-                0.0
-            }
-        }
-    }
-    let mut out: Vec<RayResult> = Vec::new();
-    let mut panicked = false;
-    let mut panic: Option<Box<dyn Any + Send + 'static>> = None;
-    let mut ctx = Ctx {
-        out: &mut out,
-        panicked: &mut panicked,
-        panic: &mut panic,
-    };
+    let mut out = Vec::new();
+    cast_ray_all_into_impl(world, origin, translation, filter, &mut out);
+    out
+}
+
+fn cast_ray_all_into_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
+    world: ffi::b2WorldId,
+    origin: VO,
+    translation: VT,
+    filter: QueryFilter,
+    out: &mut Vec<RayResult>,
+) {
+    out.clear();
+    let mut ctx = CollectCtx::from_cleared(out);
     let o: ffi::b2Vec2 = origin.into().into();
     let t: ffi::b2Vec2 = translation.into().into();
     unsafe {
@@ -145,14 +165,40 @@ fn cast_ray_all_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
             o,
             t,
             filter.0,
-            Some(cb),
+            Some(collect_ray_result_cb),
             &mut ctx as *mut _ as *mut _,
         );
     }
-    if let Some(p) = panic.take() {
-        std::panic::resume_unwind(p);
+    ctx.resume_unwind_if_needed();
+}
+
+fn overlap_polygon_points_into_impl<I, P>(
+    world: ffi::b2WorldId,
+    points: I,
+    radius: f32,
+    filter: QueryFilter,
+    out: &mut Vec<ShapeId>,
+) where
+    I: IntoIterator<Item = P>,
+    P: Into<Vec2>,
+{
+    out.clear();
+    let pts = collect_proxy_points(points);
+    if pts.is_empty() {
+        return;
     }
-    out
+    let proxy = unsafe { ffi::b2MakeProxy(pts.as_ptr(), pts.len() as i32, radius) };
+    let mut ctx = CollectCtx::from_cleared(out);
+    unsafe {
+        let _ = ffi::b2World_OverlapShape(
+            world,
+            &proxy,
+            filter.0,
+            Some(collect_shape_id_cb),
+            &mut ctx as *mut _ as *mut _,
+        );
+    }
+    ctx.resume_unwind_if_needed();
 }
 
 fn overlap_polygon_points_impl<I, P>(
@@ -165,55 +211,42 @@ where
     I: IntoIterator<Item = P>,
     P: Into<Vec2>,
 {
-    let pts: Vec<ffi::b2Vec2> = collect_proxy_points(points);
+    let mut out = Vec::new();
+    overlap_polygon_points_into_impl(world, points, radius, filter, &mut out);
+    out
+}
+
+fn cast_shape_points_into_impl<I, P, VT>(
+    world: ffi::b2WorldId,
+    points: I,
+    radius: f32,
+    translation: VT,
+    filter: QueryFilter,
+    out: &mut Vec<RayResult>,
+) where
+    I: IntoIterator<Item = P>,
+    P: Into<Vec2>,
+    VT: Into<Vec2>,
+{
+    out.clear();
+    let pts = collect_proxy_points(points);
     if pts.is_empty() {
-        return Vec::new();
+        return;
     }
     let proxy = unsafe { ffi::b2MakeProxy(pts.as_ptr(), pts.len() as i32, radius) };
-    let mut out = Vec::new();
-    let mut panicked = false;
-    let mut panic: Option<Box<dyn Any + Send + 'static>> = None;
-    struct Ctx<'a> {
-        out: &'a mut Vec<ShapeId>,
-        panicked: &'a mut bool,
-        panic: &'a mut Option<Box<dyn Any + Send + 'static>>,
-    }
-    unsafe extern "C" fn cb(shape_id: ffi::b2ShapeId, ctx: *mut core::ffi::c_void) -> bool {
-        let ctx = unsafe { &mut *(ctx as *mut Ctx<'_>) };
-        if *ctx.panicked {
-            return false;
-        }
-        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            ctx.out.push(shape_id);
-            true
-        }));
-        match r {
-            Ok(v) => v,
-            Err(p) => {
-                *ctx.panicked = true;
-                *ctx.panic = Some(p);
-                false
-            }
-        }
-    }
-    let mut ctx = Ctx {
-        out: &mut out,
-        panicked: &mut panicked,
-        panic: &mut panic,
-    };
+    let mut ctx = CollectCtx::from_cleared(out);
+    let t: ffi::b2Vec2 = translation.into().into();
     unsafe {
-        let _ = ffi::b2World_OverlapShape(
+        let _ = ffi::b2World_CastShape(
             world,
             &proxy,
+            t,
             filter.0,
-            Some(cb),
+            Some(collect_ray_result_cb),
             &mut ctx as *mut _ as *mut _,
         );
     }
-    if let Some(p) = panic.take() {
-        std::panic::resume_unwind(p);
-    }
-    out
+    ctx.resume_unwind_if_needed();
 }
 
 fn cast_shape_points_impl<I, P, VT>(
@@ -228,69 +261,8 @@ where
     P: Into<Vec2>,
     VT: Into<Vec2>,
 {
-    struct Ctx<'a> {
-        out: &'a mut Vec<RayResult>,
-        panicked: &'a mut bool,
-        panic: &'a mut Option<Box<dyn Any + Send + 'static>>,
-    }
-    #[allow(clippy::unnecessary_cast)]
-    unsafe extern "C" fn cb(
-        shape_id: ffi::b2ShapeId,
-        point: ffi::b2Vec2,
-        normal: ffi::b2Vec2,
-        fraction: f32,
-        ctx: *mut core::ffi::c_void,
-    ) -> f32 {
-        let ctx = unsafe { &mut *(ctx as *mut Ctx<'_>) };
-        if *ctx.panicked {
-            return 0.0;
-        }
-        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            ctx.out.push(RayResult {
-                shape_id,
-                point: point.into(),
-                normal: normal.into(),
-                fraction,
-                hit: true,
-            });
-            1.0f32
-        }));
-        match r {
-            Ok(v) => v,
-            Err(p) => {
-                *ctx.panicked = true;
-                *ctx.panic = Some(p);
-                0.0
-            }
-        }
-    }
-    let pts: Vec<ffi::b2Vec2> = collect_proxy_points(points);
-    if pts.is_empty() {
-        return Vec::new();
-    }
-    let proxy = unsafe { ffi::b2MakeProxy(pts.as_ptr(), pts.len() as i32, radius) };
-    let mut out: Vec<RayResult> = Vec::new();
-    let mut panicked = false;
-    let mut panic: Option<Box<dyn Any + Send + 'static>> = None;
-    let mut ctx = Ctx {
-        out: &mut out,
-        panicked: &mut panicked,
-        panic: &mut panic,
-    };
-    let t: ffi::b2Vec2 = translation.into().into();
-    unsafe {
-        let _ = ffi::b2World_CastShape(
-            world,
-            &proxy,
-            t,
-            filter.0,
-            Some(cb),
-            &mut ctx as *mut _ as *mut _,
-        );
-    }
-    if let Some(p) = panic.take() {
-        std::panic::resume_unwind(p);
-    }
+    let mut out = Vec::new();
+    cast_shape_points_into_impl(world, points, radius, translation, filter, &mut out);
     out
 }
 
@@ -311,6 +283,49 @@ fn cast_mover_impl<V1: Into<Vec2>, V2: Into<Vec2>, VT: Into<Vec2>>(
     unsafe { ffi::b2World_CastMover(world, &cap, t, filter.0) }
 }
 
+fn overlap_polygon_points_with_offset_into_impl<I, P, V, A>(
+    world: ffi::b2WorldId,
+    points: I,
+    radius: f32,
+    position: V,
+    angle_radians: A,
+    filter: QueryFilter,
+    out: &mut Vec<ShapeId>,
+) where
+    I: IntoIterator<Item = P>,
+    P: Into<Vec2>,
+    V: Into<Vec2>,
+    A: Into<f32>,
+{
+    out.clear();
+    let pts = collect_proxy_points(points);
+    if pts.is_empty() {
+        return;
+    }
+    let (s, c) = angle_radians.into().sin_cos();
+    let pos: ffi::b2Vec2 = position.into().into();
+    let proxy = unsafe {
+        ffi::b2MakeOffsetProxy(
+            pts.as_ptr(),
+            pts.len() as i32,
+            radius,
+            pos,
+            ffi::b2Rot { c, s },
+        )
+    };
+    let mut ctx = CollectCtx::from_cleared(out);
+    unsafe {
+        let _ = ffi::b2World_OverlapShape(
+            world,
+            &proxy,
+            filter.0,
+            Some(collect_shape_id_cb),
+            &mut ctx as *mut _ as *mut _,
+        );
+    }
+    ctx.resume_unwind_if_needed();
+}
+
 fn overlap_polygon_points_with_offset_impl<I, P, V, A>(
     world: ffi::b2WorldId,
     points: I,
@@ -325,9 +340,39 @@ where
     V: Into<Vec2>,
     A: Into<f32>,
 {
-    let pts: Vec<ffi::b2Vec2> = collect_proxy_points(points);
+    let mut out = Vec::new();
+    overlap_polygon_points_with_offset_into_impl(
+        world,
+        points,
+        radius,
+        position,
+        angle_radians,
+        filter,
+        &mut out,
+    );
+    out
+}
+
+fn cast_shape_points_with_offset_into_impl<I, P, V, A, VT>(
+    world: ffi::b2WorldId,
+    points: I,
+    radius: f32,
+    position: V,
+    angle_radians: A,
+    translation: VT,
+    filter: QueryFilter,
+    out: &mut Vec<RayResult>,
+) where
+    I: IntoIterator<Item = P>,
+    P: Into<Vec2>,
+    V: Into<Vec2>,
+    A: Into<f32>,
+    VT: Into<Vec2>,
+{
+    out.clear();
+    let pts = collect_proxy_points(points);
     if pts.is_empty() {
-        return Vec::new();
+        return;
     }
     let (s, c) = angle_radians.into().sin_cos();
     let pos: ffi::b2Vec2 = position.into().into();
@@ -340,50 +385,19 @@ where
             ffi::b2Rot { c, s },
         )
     };
-    let mut out = Vec::new();
-    let mut panicked = false;
-    let mut panic: Option<Box<dyn Any + Send + 'static>> = None;
-    struct Ctx<'a> {
-        out: &'a mut Vec<ShapeId>,
-        panicked: &'a mut bool,
-        panic: &'a mut Option<Box<dyn Any + Send + 'static>>,
-    }
-    unsafe extern "C" fn cb(shape_id: ffi::b2ShapeId, ctx: *mut core::ffi::c_void) -> bool {
-        let ctx = unsafe { &mut *(ctx as *mut Ctx<'_>) };
-        if *ctx.panicked {
-            return false;
-        }
-        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            ctx.out.push(shape_id);
-            true
-        }));
-        match r {
-            Ok(v) => v,
-            Err(p) => {
-                *ctx.panicked = true;
-                *ctx.panic = Some(p);
-                false
-            }
-        }
-    }
-    let mut ctx = Ctx {
-        out: &mut out,
-        panicked: &mut panicked,
-        panic: &mut panic,
-    };
+    let mut ctx = CollectCtx::from_cleared(out);
+    let t: ffi::b2Vec2 = translation.into().into();
     unsafe {
-        let _ = ffi::b2World_OverlapShape(
+        let _ = ffi::b2World_CastShape(
             world,
             &proxy,
+            t,
             filter.0,
-            Some(cb),
+            Some(collect_ray_result_cb),
             &mut ctx as *mut _ as *mut _,
         );
     }
-    if let Some(p) = panic.take() {
-        std::panic::resume_unwind(p);
-    }
-    out
+    ctx.resume_unwind_if_needed();
 }
 
 fn cast_shape_points_with_offset_impl<I, P, V, A, VT>(
@@ -402,79 +416,17 @@ where
     A: Into<f32>,
     VT: Into<Vec2>,
 {
-    struct Ctx<'a> {
-        out: &'a mut Vec<RayResult>,
-        panicked: &'a mut bool,
-        panic: &'a mut Option<Box<dyn Any + Send + 'static>>,
-    }
-    #[allow(clippy::unnecessary_cast)]
-    unsafe extern "C" fn cb(
-        shape_id: ffi::b2ShapeId,
-        point: ffi::b2Vec2,
-        normal: ffi::b2Vec2,
-        fraction: f32,
-        ctx: *mut core::ffi::c_void,
-    ) -> f32 {
-        let ctx = unsafe { &mut *(ctx as *mut Ctx<'_>) };
-        if *ctx.panicked {
-            return 0.0;
-        }
-        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            ctx.out.push(RayResult {
-                shape_id,
-                point: point.into(),
-                normal: normal.into(),
-                fraction,
-                hit: true,
-            });
-            1.0f32
-        }));
-        match r {
-            Ok(v) => v,
-            Err(p) => {
-                *ctx.panicked = true;
-                *ctx.panic = Some(p);
-                0.0
-            }
-        }
-    }
-    let pts: Vec<ffi::b2Vec2> = collect_proxy_points(points);
-    if pts.is_empty() {
-        return Vec::new();
-    }
-    let (s, c) = angle_radians.into().sin_cos();
-    let pos: ffi::b2Vec2 = position.into().into();
-    let proxy = unsafe {
-        ffi::b2MakeOffsetProxy(
-            pts.as_ptr(),
-            pts.len() as i32,
-            radius,
-            pos,
-            ffi::b2Rot { c, s },
-        )
-    };
-    let mut out: Vec<RayResult> = Vec::new();
-    let mut panicked = false;
-    let mut panic: Option<Box<dyn Any + Send + 'static>> = None;
-    let mut ctx = Ctx {
-        out: &mut out,
-        panicked: &mut panicked,
-        panic: &mut panic,
-    };
-    let t: ffi::b2Vec2 = translation.into().into();
-    unsafe {
-        let _ = ffi::b2World_CastShape(
-            world,
-            &proxy,
-            t,
-            filter.0,
-            Some(cb),
-            &mut ctx as *mut _ as *mut _,
-        );
-    }
-    if let Some(p) = panic.take() {
-        std::panic::resume_unwind(p);
-    }
+    let mut out = Vec::new();
+    cast_shape_points_with_offset_into_impl(
+        world,
+        points,
+        radius,
+        position,
+        angle_radians,
+        translation,
+        filter,
+        &mut out,
+    );
     out
 }
 
@@ -753,6 +705,14 @@ impl World {
         overlap_aabb_impl(self.raw(), aabb, filter)
     }
 
+    /// Overlap test for all shapes in an AABB and write matching shape ids into `out`.
+    ///
+    /// `out` is cleared before new hits are appended so its allocation can be reused across frames.
+    pub fn overlap_aabb_into(&self, aabb: Aabb, filter: QueryFilter, out: &mut Vec<ShapeId>) {
+        crate::core::callback_state::assert_not_in_callback();
+        overlap_aabb_into_impl(self.raw(), aabb, filter, out);
+    }
+
     pub fn try_overlap_aabb(
         &self,
         aabb: Aabb,
@@ -760,6 +720,17 @@ impl World {
     ) -> crate::error::ApiResult<Vec<ShapeId>> {
         crate::core::callback_state::check_not_in_callback()?;
         Ok(overlap_aabb_impl(self.raw(), aabb, filter))
+    }
+
+    pub fn try_overlap_aabb_into(
+        &self,
+        aabb: Aabb,
+        filter: QueryFilter,
+        out: &mut Vec<ShapeId>,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        overlap_aabb_into_impl(self.raw(), aabb, filter, out);
+        Ok(())
     }
 
     /// Cast a ray and return the closest hit.
@@ -815,6 +786,18 @@ impl World {
         cast_ray_all_impl(self.raw(), origin, translation, filter)
     }
 
+    /// Cast a ray and append all hits into `out`, reusing the caller-owned allocation.
+    pub fn cast_ray_all_into<VO: Into<Vec2>, VT: Into<Vec2>>(
+        &self,
+        origin: VO,
+        translation: VT,
+        filter: QueryFilter,
+        out: &mut Vec<RayResult>,
+    ) {
+        crate::core::callback_state::assert_not_in_callback();
+        cast_ray_all_into_impl(self.raw(), origin, translation, filter, out);
+    }
+
     pub fn try_cast_ray_all<VO: Into<Vec2>, VT: Into<Vec2>>(
         &self,
         origin: VO,
@@ -823,6 +806,18 @@ impl World {
     ) -> crate::error::ApiResult<Vec<RayResult>> {
         crate::core::callback_state::check_not_in_callback()?;
         Ok(cast_ray_all_impl(self.raw(), origin, translation, filter))
+    }
+
+    pub fn try_cast_ray_all_into<VO: Into<Vec2>, VT: Into<Vec2>>(
+        &self,
+        origin: VO,
+        translation: VT,
+        filter: QueryFilter,
+        out: &mut Vec<RayResult>,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        cast_ray_all_into_impl(self.raw(), origin, translation, filter, out);
+        Ok(())
     }
 
     /// Overlap polygon points (creates a temporary shape proxy from given points + radius) and collect all shape ids.
@@ -849,6 +844,21 @@ impl World {
         overlap_polygon_points_impl(self.raw(), points, radius, filter)
     }
 
+    /// Overlap a temporary polygon proxy and write matching shape ids into `out`.
+    pub fn overlap_polygon_points_into<I, P>(
+        &self,
+        points: I,
+        radius: f32,
+        filter: QueryFilter,
+        out: &mut Vec<ShapeId>,
+    ) where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+    {
+        crate::core::callback_state::assert_not_in_callback();
+        overlap_polygon_points_into_impl(self.raw(), points, radius, filter, out);
+    }
+
     pub fn try_overlap_polygon_points<I, P>(
         &self,
         points: I,
@@ -866,6 +876,22 @@ impl World {
             radius,
             filter,
         ))
+    }
+
+    pub fn try_overlap_polygon_points_into<I, P>(
+        &self,
+        points: I,
+        radius: f32,
+        filter: QueryFilter,
+        out: &mut Vec<ShapeId>,
+    ) -> crate::error::ApiResult<()>
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+    {
+        crate::core::callback_state::check_not_in_callback()?;
+        overlap_polygon_points_into_impl(self.raw(), points, radius, filter, out);
+        Ok(())
     }
 
     /// Cast a polygon proxy and collect hits. Returns all intersections with fraction and contact info.
@@ -894,6 +920,23 @@ impl World {
         cast_shape_points_impl(self.raw(), points, radius, translation, filter)
     }
 
+    /// Cast a temporary polygon proxy and write all hits into `out`.
+    pub fn cast_shape_points_into<I, P, VT>(
+        &self,
+        points: I,
+        radius: f32,
+        translation: VT,
+        filter: QueryFilter,
+        out: &mut Vec<RayResult>,
+    ) where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+        VT: Into<Vec2>,
+    {
+        crate::core::callback_state::assert_not_in_callback();
+        cast_shape_points_into_impl(self.raw(), points, radius, translation, filter, out);
+    }
+
     pub fn try_cast_shape_points<I, P, VT>(
         &self,
         points: I,
@@ -914,6 +957,24 @@ impl World {
             translation,
             filter,
         ))
+    }
+
+    pub fn try_cast_shape_points_into<I, P, VT>(
+        &self,
+        points: I,
+        radius: f32,
+        translation: VT,
+        filter: QueryFilter,
+        out: &mut Vec<RayResult>,
+    ) -> crate::error::ApiResult<()>
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+        VT: Into<Vec2>,
+    {
+        crate::core::callback_state::check_not_in_callback()?;
+        cast_shape_points_into_impl(self.raw(), points, radius, translation, filter, out);
+        Ok(())
     }
 
     /// Cast a capsule mover and return remaining fraction (1.0 = free, < 1.0 = hit earlier).
@@ -983,6 +1044,33 @@ impl World {
         )
     }
 
+    /// Overlap an offset polygon proxy and write matching shape ids into `out`.
+    pub fn overlap_polygon_points_with_offset_into<I, P, V, A>(
+        &self,
+        points: I,
+        radius: f32,
+        position: V,
+        angle_radians: A,
+        filter: QueryFilter,
+        out: &mut Vec<ShapeId>,
+    ) where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+        V: Into<Vec2>,
+        A: Into<f32>,
+    {
+        crate::core::callback_state::assert_not_in_callback();
+        overlap_polygon_points_with_offset_into_impl(
+            self.raw(),
+            points,
+            radius,
+            position,
+            angle_radians,
+            filter,
+            out,
+        );
+    }
+
     pub fn try_overlap_polygon_points_with_offset<I, P, V, A>(
         &self,
         points: I,
@@ -1006,6 +1094,34 @@ impl World {
             angle_radians,
             filter,
         ))
+    }
+
+    pub fn try_overlap_polygon_points_with_offset_into<I, P, V, A>(
+        &self,
+        points: I,
+        radius: f32,
+        position: V,
+        angle_radians: A,
+        filter: QueryFilter,
+        out: &mut Vec<ShapeId>,
+    ) -> crate::error::ApiResult<()>
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+        V: Into<Vec2>,
+        A: Into<f32>,
+    {
+        crate::core::callback_state::check_not_in_callback()?;
+        overlap_polygon_points_with_offset_into_impl(
+            self.raw(),
+            points,
+            radius,
+            position,
+            angle_radians,
+            filter,
+            out,
+        );
+        Ok(())
     }
 
     /// Cast polygon points with an offset transform (position + angle).
@@ -1046,6 +1162,36 @@ impl World {
         )
     }
 
+    /// Cast an offset polygon proxy and write all hits into `out`.
+    pub fn cast_shape_points_with_offset_into<I, P, V, A, VT>(
+        &self,
+        points: I,
+        radius: f32,
+        position: V,
+        angle_radians: A,
+        translation: VT,
+        filter: QueryFilter,
+        out: &mut Vec<RayResult>,
+    ) where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+        V: Into<Vec2>,
+        A: Into<f32>,
+        VT: Into<Vec2>,
+    {
+        crate::core::callback_state::assert_not_in_callback();
+        cast_shape_points_with_offset_into_impl(
+            self.raw(),
+            points,
+            radius,
+            position,
+            angle_radians,
+            translation,
+            filter,
+            out,
+        );
+    }
+
     pub fn try_cast_shape_points_with_offset<I, P, V, A, VT>(
         &self,
         points: I,
@@ -1073,12 +1219,48 @@ impl World {
             filter,
         ))
     }
+
+    pub fn try_cast_shape_points_with_offset_into<I, P, V, A, VT>(
+        &self,
+        points: I,
+        radius: f32,
+        position: V,
+        angle_radians: A,
+        translation: VT,
+        filter: QueryFilter,
+        out: &mut Vec<RayResult>,
+    ) -> crate::error::ApiResult<()>
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+        V: Into<Vec2>,
+        A: Into<f32>,
+        VT: Into<Vec2>,
+    {
+        crate::core::callback_state::check_not_in_callback()?;
+        cast_shape_points_with_offset_into_impl(
+            self.raw(),
+            points,
+            radius,
+            position,
+            angle_radians,
+            translation,
+            filter,
+            out,
+        );
+        Ok(())
+    }
 }
 
 impl WorldHandle {
     pub fn overlap_aabb(&self, aabb: Aabb, filter: QueryFilter) -> Vec<ShapeId> {
         crate::core::callback_state::assert_not_in_callback();
         overlap_aabb_impl(self.raw(), aabb, filter)
+    }
+
+    pub fn overlap_aabb_into(&self, aabb: Aabb, filter: QueryFilter, out: &mut Vec<ShapeId>) {
+        crate::core::callback_state::assert_not_in_callback();
+        overlap_aabb_into_impl(self.raw(), aabb, filter, out);
     }
 
     pub fn try_overlap_aabb(
@@ -1088,6 +1270,17 @@ impl WorldHandle {
     ) -> crate::error::ApiResult<Vec<ShapeId>> {
         crate::core::callback_state::check_not_in_callback()?;
         Ok(overlap_aabb_impl(self.raw(), aabb, filter))
+    }
+
+    pub fn try_overlap_aabb_into(
+        &self,
+        aabb: Aabb,
+        filter: QueryFilter,
+        out: &mut Vec<ShapeId>,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        overlap_aabb_into_impl(self.raw(), aabb, filter, out);
+        Ok(())
     }
 
     pub fn cast_ray_closest<VO: Into<Vec2>, VT: Into<Vec2>>(
@@ -1125,6 +1318,17 @@ impl WorldHandle {
         cast_ray_all_impl(self.raw(), origin, translation, filter)
     }
 
+    pub fn cast_ray_all_into<VO: Into<Vec2>, VT: Into<Vec2>>(
+        &self,
+        origin: VO,
+        translation: VT,
+        filter: QueryFilter,
+        out: &mut Vec<RayResult>,
+    ) {
+        crate::core::callback_state::assert_not_in_callback();
+        cast_ray_all_into_impl(self.raw(), origin, translation, filter, out);
+    }
+
     pub fn try_cast_ray_all<VO: Into<Vec2>, VT: Into<Vec2>>(
         &self,
         origin: VO,
@@ -1133,6 +1337,18 @@ impl WorldHandle {
     ) -> crate::error::ApiResult<Vec<RayResult>> {
         crate::core::callback_state::check_not_in_callback()?;
         Ok(cast_ray_all_impl(self.raw(), origin, translation, filter))
+    }
+
+    pub fn try_cast_ray_all_into<VO: Into<Vec2>, VT: Into<Vec2>>(
+        &self,
+        origin: VO,
+        translation: VT,
+        filter: QueryFilter,
+        out: &mut Vec<RayResult>,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        cast_ray_all_into_impl(self.raw(), origin, translation, filter, out);
+        Ok(())
     }
 
     pub fn overlap_polygon_points<I, P>(
@@ -1147,6 +1363,20 @@ impl WorldHandle {
     {
         crate::core::callback_state::assert_not_in_callback();
         overlap_polygon_points_impl(self.raw(), points, radius, filter)
+    }
+
+    pub fn overlap_polygon_points_into<I, P>(
+        &self,
+        points: I,
+        radius: f32,
+        filter: QueryFilter,
+        out: &mut Vec<ShapeId>,
+    ) where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+    {
+        crate::core::callback_state::assert_not_in_callback();
+        overlap_polygon_points_into_impl(self.raw(), points, radius, filter, out);
     }
 
     pub fn try_overlap_polygon_points<I, P>(
@@ -1168,6 +1398,22 @@ impl WorldHandle {
         ))
     }
 
+    pub fn try_overlap_polygon_points_into<I, P>(
+        &self,
+        points: I,
+        radius: f32,
+        filter: QueryFilter,
+        out: &mut Vec<ShapeId>,
+    ) -> crate::error::ApiResult<()>
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+    {
+        crate::core::callback_state::check_not_in_callback()?;
+        overlap_polygon_points_into_impl(self.raw(), points, radius, filter, out);
+        Ok(())
+    }
+
     pub fn cast_shape_points<I, P, VT>(
         &self,
         points: I,
@@ -1182,6 +1428,22 @@ impl WorldHandle {
     {
         crate::core::callback_state::assert_not_in_callback();
         cast_shape_points_impl(self.raw(), points, radius, translation, filter)
+    }
+
+    pub fn cast_shape_points_into<I, P, VT>(
+        &self,
+        points: I,
+        radius: f32,
+        translation: VT,
+        filter: QueryFilter,
+        out: &mut Vec<RayResult>,
+    ) where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+        VT: Into<Vec2>,
+    {
+        crate::core::callback_state::assert_not_in_callback();
+        cast_shape_points_into_impl(self.raw(), points, radius, translation, filter, out);
     }
 
     pub fn try_cast_shape_points<I, P, VT>(
@@ -1204,6 +1466,24 @@ impl WorldHandle {
             translation,
             filter,
         ))
+    }
+
+    pub fn try_cast_shape_points_into<I, P, VT>(
+        &self,
+        points: I,
+        radius: f32,
+        translation: VT,
+        filter: QueryFilter,
+        out: &mut Vec<RayResult>,
+    ) -> crate::error::ApiResult<()>
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+        VT: Into<Vec2>,
+    {
+        crate::core::callback_state::check_not_in_callback()?;
+        cast_shape_points_into_impl(self.raw(), points, radius, translation, filter, out);
+        Ok(())
     }
 
     pub fn cast_mover<V1: Into<Vec2>, V2: Into<Vec2>, VT: Into<Vec2>>(
@@ -1262,6 +1542,32 @@ impl WorldHandle {
         )
     }
 
+    pub fn overlap_polygon_points_with_offset_into<I, P, V, A>(
+        &self,
+        points: I,
+        radius: f32,
+        position: V,
+        angle_radians: A,
+        filter: QueryFilter,
+        out: &mut Vec<ShapeId>,
+    ) where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+        V: Into<Vec2>,
+        A: Into<f32>,
+    {
+        crate::core::callback_state::assert_not_in_callback();
+        overlap_polygon_points_with_offset_into_impl(
+            self.raw(),
+            points,
+            radius,
+            position,
+            angle_radians,
+            filter,
+            out,
+        );
+    }
+
     pub fn try_overlap_polygon_points_with_offset<I, P, V, A>(
         &self,
         points: I,
@@ -1285,6 +1591,34 @@ impl WorldHandle {
             angle_radians,
             filter,
         ))
+    }
+
+    pub fn try_overlap_polygon_points_with_offset_into<I, P, V, A>(
+        &self,
+        points: I,
+        radius: f32,
+        position: V,
+        angle_radians: A,
+        filter: QueryFilter,
+        out: &mut Vec<ShapeId>,
+    ) -> crate::error::ApiResult<()>
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+        V: Into<Vec2>,
+        A: Into<f32>,
+    {
+        crate::core::callback_state::check_not_in_callback()?;
+        overlap_polygon_points_with_offset_into_impl(
+            self.raw(),
+            points,
+            radius,
+            position,
+            angle_radians,
+            filter,
+            out,
+        );
+        Ok(())
     }
 
     pub fn cast_shape_points_with_offset<I, P, V, A, VT>(
@@ -1315,6 +1649,35 @@ impl WorldHandle {
         )
     }
 
+    pub fn cast_shape_points_with_offset_into<I, P, V, A, VT>(
+        &self,
+        points: I,
+        radius: f32,
+        position: V,
+        angle_radians: A,
+        translation: VT,
+        filter: QueryFilter,
+        out: &mut Vec<RayResult>,
+    ) where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+        V: Into<Vec2>,
+        A: Into<f32>,
+        VT: Into<Vec2>,
+    {
+        crate::core::callback_state::assert_not_in_callback();
+        cast_shape_points_with_offset_into_impl(
+            self.raw(),
+            points,
+            radius,
+            position,
+            angle_radians,
+            translation,
+            filter,
+            out,
+        );
+    }
+
     pub fn try_cast_shape_points_with_offset<I, P, V, A, VT>(
         &self,
         points: I,
@@ -1341,5 +1704,36 @@ impl WorldHandle {
             translation,
             filter,
         ))
+    }
+
+    pub fn try_cast_shape_points_with_offset_into<I, P, V, A, VT>(
+        &self,
+        points: I,
+        radius: f32,
+        position: V,
+        angle_radians: A,
+        translation: VT,
+        filter: QueryFilter,
+        out: &mut Vec<RayResult>,
+    ) -> crate::error::ApiResult<()>
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+        V: Into<Vec2>,
+        A: Into<f32>,
+        VT: Into<Vec2>,
+    {
+        crate::core::callback_state::check_not_in_callback()?;
+        cast_shape_points_with_offset_into_impl(
+            self.raw(),
+            points,
+            radius,
+            position,
+            angle_radians,
+            translation,
+            filter,
+            out,
+        );
+        Ok(())
     }
 }

@@ -68,6 +68,8 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
                 return;
             }
             let aabb = Aabb::from_center_half_extents([0.0, 1.0], [10.0, 10.0]);
+            let mut overlap_ids = Vec::new();
+            let mut ray_hits = Vec::new();
             self.errs.push(
                 self.world
                     .try_overlap_aabb(aabb, QueryFilter::default())
@@ -75,7 +77,22 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
             );
             self.errs.push(
                 self.world
+                    .try_overlap_aabb_into(aabb, QueryFilter::default(), &mut overlap_ids)
+                    .unwrap_err(),
+            );
+            self.errs.push(
+                self.world
                     .try_cast_ray_closest([0.0, 5.0], [0.0, -10.0], QueryFilter::default())
+                    .unwrap_err(),
+            );
+            self.errs.push(
+                self.world
+                    .try_cast_ray_all_into(
+                        [0.0, 5.0],
+                        [0.0, -10.0],
+                        QueryFilter::default(),
+                        &mut ray_hits,
+                    )
                     .unwrap_err(),
             );
         }
@@ -94,7 +111,12 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
     world.debug_draw(&mut drawer, DebugDrawOptions::default());
     assert_eq!(
         drawer.errs,
-        vec![ApiError::InCallback, ApiError::InCallback]
+        vec![
+            ApiError::InCallback,
+            ApiError::InCallback,
+            ApiError::InCallback,
+            ApiError::InCallback,
+        ]
     );
 }
 

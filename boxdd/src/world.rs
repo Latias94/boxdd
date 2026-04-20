@@ -16,6 +16,39 @@ type PreSolveFn = fn(
     crate::types::Vec2,
 ) -> bool;
 
+fn retain_valid_shape_ids(ids: &mut Vec<ShapeId>) {
+    ids.retain(|sid| unsafe { ffi::b2Shape_IsValid(*sid) });
+}
+
+fn shape_sensor_overlaps_into_impl(shape: ShapeId, out: &mut Vec<ShapeId>) {
+    let cap = unsafe { ffi::b2Shape_GetSensorCapacity(shape) }.max(0) as usize;
+    unsafe {
+        crate::core::ffi_vec::fill_from_ffi(out, cap, |ptr, cap| {
+            ffi::b2Shape_GetSensorData(shape, ptr, cap)
+        });
+    }
+}
+
+fn shape_sensor_overlaps_impl(shape: ShapeId) -> Vec<ShapeId> {
+    let cap = unsafe { ffi::b2Shape_GetSensorCapacity(shape) }.max(0) as usize;
+    unsafe {
+        crate::core::ffi_vec::read_from_ffi(cap, |ptr, cap| {
+            ffi::b2Shape_GetSensorData(shape, ptr, cap)
+        })
+    }
+}
+
+fn shape_sensor_overlaps_valid_into_impl(shape: ShapeId, out: &mut Vec<ShapeId>) {
+    shape_sensor_overlaps_into_impl(shape, out);
+    retain_valid_shape_ids(out);
+}
+
+fn shape_sensor_overlaps_valid_impl(shape: ShapeId) -> Vec<ShapeId> {
+    let mut ids = shape_sensor_overlaps_impl(shape);
+    retain_valid_shape_ids(&mut ids);
+    ids
+}
+
 /// Error type for world creation and operations.
 #[non_exhaustive]
 #[derive(Debug, thiserror::Error)]
@@ -2057,15 +2090,12 @@ impl World {
     /// Get overlapped shapes for a sensor shape id. Returns empty if not a sensor.
     pub fn shape_sensor_overlaps(&self, shape: ShapeId) -> Vec<ShapeId> {
         crate::core::debug_checks::assert_shape_valid(shape);
-        let cap = self.shape_sensor_capacity(shape);
-        if cap <= 0 {
-            return Vec::new();
-        }
-        let mut ids: Vec<ShapeId> = Vec::with_capacity(cap as usize);
-        let wrote =
-            unsafe { ffi::b2Shape_GetSensorData(shape, ids.as_mut_ptr(), cap) }.max(0) as usize;
-        unsafe { ids.set_len(wrote.min(cap as usize)) };
-        ids
+        shape_sensor_overlaps_impl(shape)
+    }
+
+    pub fn shape_sensor_overlaps_into(&self, shape: ShapeId, out: &mut Vec<ShapeId>) {
+        crate::core::debug_checks::assert_shape_valid(shape);
+        shape_sensor_overlaps_into_impl(shape, out);
     }
 
     pub fn try_shape_sensor_overlaps(
@@ -2073,22 +2103,38 @@ impl World {
         shape: ShapeId,
     ) -> crate::error::ApiResult<Vec<ShapeId>> {
         crate::core::debug_checks::check_shape_valid(shape)?;
-        let cap = unsafe { ffi::b2Shape_GetSensorCapacity(shape) };
-        if cap <= 0 {
-            return Ok(Vec::new());
-        }
-        let mut ids: Vec<ShapeId> = Vec::with_capacity(cap as usize);
-        let wrote =
-            unsafe { ffi::b2Shape_GetSensorData(shape, ids.as_mut_ptr(), cap) }.max(0) as usize;
-        unsafe { ids.set_len(wrote.min(cap as usize)) };
-        Ok(ids)
+        Ok(shape_sensor_overlaps_impl(shape))
     }
+
+    pub fn try_shape_sensor_overlaps_into(
+        &self,
+        shape: ShapeId,
+        out: &mut Vec<ShapeId>,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::debug_checks::check_shape_valid(shape)?;
+        shape_sensor_overlaps_into_impl(shape, out);
+        Ok(())
+    }
+
     /// Get overlapped shapes for a sensor shape id, filtered to valid (non-destroyed) ids.
     pub fn shape_sensor_overlaps_valid(&self, shape: ShapeId) -> Vec<ShapeId> {
-        self.shape_sensor_overlaps(shape)
-            .into_iter()
-            .filter(|&sid| unsafe { ffi::b2Shape_IsValid(sid) })
-            .collect()
+        crate::core::debug_checks::assert_shape_valid(shape);
+        shape_sensor_overlaps_valid_impl(shape)
+    }
+
+    pub fn shape_sensor_overlaps_valid_into(&self, shape: ShapeId, out: &mut Vec<ShapeId>) {
+        crate::core::debug_checks::assert_shape_valid(shape);
+        shape_sensor_overlaps_valid_into_impl(shape, out);
+    }
+
+    pub fn try_shape_sensor_overlaps_valid_into(
+        &self,
+        shape: ShapeId,
+        out: &mut Vec<ShapeId>,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::debug_checks::check_shape_valid(shape)?;
+        shape_sensor_overlaps_valid_into_impl(shape, out);
+        Ok(())
     }
 }
 

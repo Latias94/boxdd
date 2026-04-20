@@ -21,6 +21,24 @@ pub struct OwnedBody {
     _not_send: PhantomData<Rc<()>>,
 }
 
+fn body_contact_data_into_impl(id: BodyId, out: &mut Vec<ffi::b2ContactData>) {
+    let cap = unsafe { ffi::b2Body_GetContactCapacity(id) }.max(0) as usize;
+    unsafe {
+        crate::core::ffi_vec::fill_from_ffi(out, cap, |ptr, cap| {
+            ffi::b2Body_GetContactData(id, ptr, cap)
+        });
+    }
+}
+
+fn body_contact_data_impl(id: BodyId) -> Vec<ffi::b2ContactData> {
+    let cap = unsafe { ffi::b2Body_GetContactCapacity(id) }.max(0) as usize;
+    unsafe {
+        crate::core::ffi_vec::read_from_ffi(cap, |ptr, cap| {
+            ffi::b2Body_GetContactData(id, ptr, cap)
+        })
+    }
+}
+
 impl OwnedBody {
     pub(crate) fn new(core: Arc<crate::core::world_core::WorldCore>, id: BodyId) -> Self {
         core.owned_bodies
@@ -620,28 +638,23 @@ impl OwnedBody {
 
     pub fn contact_data(&self) -> Vec<ffi::b2ContactData> {
         self.assert_valid();
-        let cap = unsafe { ffi::b2Body_GetContactCapacity(self.id) }.max(0) as usize;
-        if cap == 0 {
-            return Vec::new();
-        }
-        let mut vec: Vec<ffi::b2ContactData> = Vec::with_capacity(cap);
-        let wrote = unsafe { ffi::b2Body_GetContactData(self.id, vec.as_mut_ptr(), cap as i32) }
-            .max(0) as usize;
-        unsafe { vec.set_len(wrote.min(cap)) };
-        vec
+        body_contact_data_impl(self.id)
+    }
+
+    pub fn contact_data_into(&self, out: &mut Vec<ffi::b2ContactData>) {
+        self.assert_valid();
+        body_contact_data_into_impl(self.id, out);
     }
 
     pub fn try_contact_data(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
         self.check_valid()?;
-        let cap = unsafe { ffi::b2Body_GetContactCapacity(self.id) }.max(0) as usize;
-        if cap == 0 {
-            return Ok(Vec::new());
-        }
-        let mut vec: Vec<ffi::b2ContactData> = Vec::with_capacity(cap);
-        let wrote = unsafe { ffi::b2Body_GetContactData(self.id, vec.as_mut_ptr(), cap as i32) }
-            .max(0) as usize;
-        unsafe { vec.set_len(wrote.min(cap)) };
-        Ok(vec)
+        Ok(body_contact_data_impl(self.id))
+    }
+
+    pub fn try_contact_data_into(&self, out: &mut Vec<ffi::b2ContactData>) -> ApiResult<()> {
+        self.check_valid()?;
+        body_contact_data_into_impl(self.id, out);
+        Ok(())
     }
 
     /// Borrow the raw id for ID-style APIs.
@@ -1268,28 +1281,23 @@ impl<'w> Body<'w> {
 
     pub fn contact_data(&self) -> Vec<ffi::b2ContactData> {
         self.assert_valid();
-        let cap = unsafe { ffi::b2Body_GetContactCapacity(self.id) }.max(0) as usize;
-        if cap == 0 {
-            return Vec::new();
-        }
-        let mut vec: Vec<ffi::b2ContactData> = Vec::with_capacity(cap);
-        let wrote = unsafe { ffi::b2Body_GetContactData(self.id, vec.as_mut_ptr(), cap as i32) }
-            .max(0) as usize;
-        unsafe { vec.set_len(wrote.min(cap)) };
-        vec
+        body_contact_data_impl(self.id)
+    }
+
+    pub fn contact_data_into(&self, out: &mut Vec<ffi::b2ContactData>) {
+        self.assert_valid();
+        body_contact_data_into_impl(self.id, out);
     }
 
     pub fn try_contact_data(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
         self.check_valid()?;
-        let cap = unsafe { ffi::b2Body_GetContactCapacity(self.id) }.max(0) as usize;
-        if cap == 0 {
-            return Ok(Vec::new());
-        }
-        let mut vec: Vec<ffi::b2ContactData> = Vec::with_capacity(cap);
-        let wrote = unsafe { ffi::b2Body_GetContactData(self.id, vec.as_mut_ptr(), cap as i32) }
-            .max(0) as usize;
-        unsafe { vec.set_len(wrote.min(cap)) };
-        Ok(vec)
+        Ok(body_contact_data_impl(self.id))
+    }
+
+    pub fn try_contact_data_into(&self, out: &mut Vec<ffi::b2ContactData>) -> ApiResult<()> {
+        self.check_valid()?;
+        body_contact_data_into_impl(self.id, out);
+        Ok(())
     }
 
     // Forces/impulses

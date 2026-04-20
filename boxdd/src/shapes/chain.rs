@@ -25,6 +25,24 @@ pub struct OwnedChain {
     _not_send: PhantomData<Rc<()>>,
 }
 
+fn chain_segments_into_impl(id: ChainId, out: &mut Vec<ShapeId>) {
+    let count = unsafe { ffi::b2Chain_GetSegmentCount(id) }.max(0) as usize;
+    unsafe {
+        crate::core::ffi_vec::fill_from_ffi(out, count, |ptr, count| {
+            ffi::b2Chain_GetSegments(id, ptr, count)
+        });
+    }
+}
+
+fn chain_segments_impl(id: ChainId) -> Vec<ShapeId> {
+    let count = unsafe { ffi::b2Chain_GetSegmentCount(id) }.max(0) as usize;
+    unsafe {
+        crate::core::ffi_vec::read_from_ffi(count, |ptr, count| {
+            ffi::b2Chain_GetSegments(id, ptr, count)
+        })
+    }
+}
+
 impl OwnedChain {
     pub(crate) fn new(core: Arc<crate::core::world_core::WorldCore>, id: ChainId) -> Self {
         core.owned_chains
@@ -96,28 +114,23 @@ impl OwnedChain {
     }
     pub fn segments(&self) -> Vec<ShapeId> {
         self.assert_valid();
-        let count = self.segment_count().max(0) as usize;
-        if count == 0 {
-            return Vec::new();
-        }
-        let mut vec: Vec<ShapeId> = Vec::with_capacity(count);
-        let wrote = unsafe { ffi::b2Chain_GetSegments(self.id, vec.as_mut_ptr(), count as i32) }
-            .max(0) as usize;
-        unsafe { vec.set_len(wrote.min(count)) };
-        vec
+        chain_segments_impl(self.id)
+    }
+
+    pub fn segments_into(&self, out: &mut Vec<ShapeId>) {
+        self.assert_valid();
+        chain_segments_into_impl(self.id, out);
     }
 
     pub fn try_segments(&self) -> ApiResult<Vec<ShapeId>> {
         self.check_valid()?;
-        let count = unsafe { ffi::b2Chain_GetSegmentCount(self.id) }.max(0) as usize;
-        if count == 0 {
-            return Ok(Vec::new());
-        }
-        let mut vec: Vec<ShapeId> = Vec::with_capacity(count);
-        let wrote = unsafe { ffi::b2Chain_GetSegments(self.id, vec.as_mut_ptr(), count as i32) }
-            .max(0) as usize;
-        unsafe { vec.set_len(wrote.min(count)) };
-        Ok(vec)
+        Ok(chain_segments_impl(self.id))
+    }
+
+    pub fn try_segments_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
+        self.check_valid()?;
+        chain_segments_into_impl(self.id, out);
+        Ok(())
     }
     pub fn set_surface_material(&mut self, index: i32, material: &SurfaceMaterial) {
         self.assert_valid();
@@ -250,29 +263,23 @@ impl<'w> Chain<'w> {
     /// Collect all segment shape ids for this chain.
     pub fn segments(&self) -> Vec<ShapeId> {
         self.assert_valid();
-        let count = self.segment_count().max(0) as usize;
-        if count == 0 {
-            return Vec::new();
-        }
-        let mut vec: Vec<ShapeId> = Vec::with_capacity(count);
-        // Safety: create temporary buffer to be filled by C, then set_len to returned count (clamped)
-        let wrote = unsafe { ffi::b2Chain_GetSegments(self.id, vec.as_mut_ptr(), count as i32) }
-            .max(0) as usize;
-        unsafe { vec.set_len(wrote.min(count)) };
-        vec
+        chain_segments_impl(self.id)
+    }
+
+    pub fn segments_into(&self, out: &mut Vec<ShapeId>) {
+        self.assert_valid();
+        chain_segments_into_impl(self.id, out);
     }
 
     pub fn try_segments(&self) -> ApiResult<Vec<ShapeId>> {
         self.check_valid()?;
-        let count = unsafe { ffi::b2Chain_GetSegmentCount(self.id) }.max(0) as usize;
-        if count == 0 {
-            return Ok(Vec::new());
-        }
-        let mut vec: Vec<ShapeId> = Vec::with_capacity(count);
-        let wrote = unsafe { ffi::b2Chain_GetSegments(self.id, vec.as_mut_ptr(), count as i32) }
-            .max(0) as usize;
-        unsafe { vec.set_len(wrote.min(count)) };
-        Ok(vec)
+        Ok(chain_segments_impl(self.id))
+    }
+
+    pub fn try_segments_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
+        self.check_valid()?;
+        chain_segments_into_impl(self.id, out);
+        Ok(())
     }
 
     pub fn set_surface_material(&mut self, index: i32, material: &SurfaceMaterial) {

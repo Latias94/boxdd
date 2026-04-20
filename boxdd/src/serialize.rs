@@ -263,10 +263,11 @@ impl SceneSnapshot {
             if count == 0 {
                 continue;
             }
-            let mut arr: Vec<ffi::b2JointId> = Vec::with_capacity(count);
-            let wrote = unsafe { ffi::b2Body_GetJoints(bid, arr.as_mut_ptr(), count as i32) }.max(0)
-                as usize;
-            unsafe { arr.set_len(wrote.min(count)) };
+            let arr = unsafe {
+                crate::core::ffi_vec::read_from_ffi(count, |ptr, count| {
+                    ffi::b2Body_GetJoints(bid, ptr, count)
+                })
+            };
             for j in arr {
                 if !joint_list.iter().any(|&x| eq_joint(x, j)) {
                     joint_list.push(j);
@@ -706,10 +707,11 @@ fn shapes_from_body(world: &World, body: ffi::b2BodyId) -> Vec<ShapeInstance> {
     if count == 0 {
         return out;
     }
-    let mut arr: Vec<ffi::b2ShapeId> = Vec::with_capacity(count);
-    let wrote =
-        unsafe { ffi::b2Body_GetShapes(body, arr.as_mut_ptr(), count as i32) }.max(0) as usize;
-    unsafe { arr.set_len(wrote.min(count)) };
+    let arr = unsafe {
+        crate::core::ffi_vec::read_from_ffi(count, |ptr, count| {
+            ffi::b2Body_GetShapes(body, ptr, count)
+        })
+    };
     for sid in arr {
         if !unsafe { ffi::b2Shape_IsValid(sid) } {
             continue;

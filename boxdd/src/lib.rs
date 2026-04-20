@@ -5,6 +5,7 @@
 //! - Thin safe layer on top of the official Box2D v3 C API.
 //! - Modular API: world, bodies, shapes, joints, queries, events, debug draw.
 //! - Ergonomics: builder patterns, world-space helpers, optional `mint` integration.
+//! - Hot-path friendly APIs: keep the convenience `Vec`-returning methods, or reuse caller-owned buffers with `*_into`.
 //! - Three usage styles:
 //!   - Owned handles: `OwnedBody`/`OwnedShape`/`OwnedJoint`/`OwnedChain` (Drop destroys; easy to store).
 //!   - Scoped handles: `Body<'_>`/`Shape<'_>`/`Joint<'_>`/`Chain<'_>` (dropping only releases the world borrow).
@@ -73,6 +74,13 @@
 //! // AABB overlap
 //! let hits = world.overlap_aabb(Aabb::from_center_half_extents([0.0, 1.0], [1.0, 1.5]), QueryFilter::default());
 //! assert!(!hits.is_empty());
+//! let mut reused = Vec::new();
+//! world.overlap_aabb_into(
+//!     Aabb::from_center_half_extents([0.0, 1.0], [1.0, 1.5]),
+//!     QueryFilter::default(),
+//!     &mut reused,
+//! );
+//! assert_eq!(hits.len(), reused.len());
 //! // Ray (closest)
 //! let r = world.cast_ray_closest(Vec2::new(0.0, 5.0), Vec2::new(0.0, -10.0), QueryFilter::default());
 //! if r.hit { let _ = (r.point, r.normal, r.fraction); }
@@ -126,6 +134,7 @@ pub mod core {
     pub(crate) mod box2d_lock;
     pub(crate) mod callback_state;
     pub(crate) mod debug_checks;
+    pub(crate) mod ffi_vec;
     pub mod math;
     #[cfg(feature = "serialize")]
     pub(crate) mod serialize_registry;

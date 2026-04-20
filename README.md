@@ -18,6 +18,7 @@
 - Safe, ergonomic Rust wrapper over the official Box2D v3 C API.
 - Math interop (features: `mint`/`cgmath`/`nalgebra`/`glam`): any `Into<Vec2>` accepts the corresponding 2D vector/point types, plus arrays/tuples.
 - Two error-handling styles: panic-on-misuse by default, plus `try_*` APIs returning `ApiResult<T>` for recoverable errors.
+- Hot-path query and state-extraction APIs expose `*_into` variants so games can reuse `Vec` buffers across frames instead of reallocating.
 
 ## Quickstart
 ```rust
@@ -68,6 +69,10 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 
 ## Examples
 - The `examples/` folder covers worlds/bodies/shapes, joints, queries/casts, events/sensors, CCD, and debug draw.
+
+## Hot Path APIs
+- Convenience methods like `world.overlap_aabb(...)` and `world.cast_ray_all(...)` still return owned `Vec`s for one-off use.
+- For per-frame hot paths, prefer reusable-buffer variants such as `world.overlap_aabb_into(...)`, `world.cast_ray_all_into(...)`, `shape.sensor_overlaps_into(...)`, `body.contact_data_into(...)`, and `chain.segments_into(...)`.
 
 ## Events
 - Three access styles:

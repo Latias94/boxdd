@@ -226,14 +226,11 @@ impl ChainUncheckedExt for OwnedChain {
     }
     unsafe fn segments_unchecked(&self) -> Vec<ShapeId> {
         let count = unsafe { ffi::b2Chain_GetSegmentCount(self.id()) }.max(0) as usize;
-        if count == 0 {
-            return Vec::new();
+        unsafe {
+            crate::core::ffi_vec::read_from_ffi(count, |ptr, count| {
+                ffi::b2Chain_GetSegments(self.id(), ptr, count)
+            })
         }
-        let mut vec: Vec<ShapeId> = Vec::with_capacity(count);
-        let wrote = unsafe { ffi::b2Chain_GetSegments(self.id(), vec.as_mut_ptr(), count as i32) }
-            .max(0) as usize;
-        unsafe { vec.set_len(wrote.min(count)) };
-        vec
     }
     unsafe fn surface_material_unchecked(&self, index: i32) -> SurfaceMaterial {
         SurfaceMaterial(unsafe { ffi::b2Chain_GetSurfaceMaterial(self.id(), index) })
@@ -249,14 +246,11 @@ impl<'w> ChainUncheckedExt for crate::shapes::chain::Chain<'w> {
     }
     unsafe fn segments_unchecked(&self) -> Vec<ShapeId> {
         let count = unsafe { ffi::b2Chain_GetSegmentCount(self.id) }.max(0) as usize;
-        if count == 0 {
-            return Vec::new();
+        unsafe {
+            crate::core::ffi_vec::read_from_ffi(count, |ptr, count| {
+                ffi::b2Chain_GetSegments(self.id, ptr, count)
+            })
         }
-        let mut vec: Vec<ShapeId> = Vec::with_capacity(count);
-        let wrote = unsafe { ffi::b2Chain_GetSegments(self.id, vec.as_mut_ptr(), count as i32) }
-            .max(0) as usize;
-        unsafe { vec.set_len(wrote.min(count)) };
-        vec
     }
     unsafe fn surface_material_unchecked(&self, index: i32) -> SurfaceMaterial {
         SurfaceMaterial(unsafe { ffi::b2Chain_GetSurfaceMaterial(self.id, index) })

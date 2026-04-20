@@ -36,12 +36,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut begin = 0usize;
     let mut end = 0usize;
     let mut overlaps_total = 0usize;
+    let mut overlaps = Vec::new();
     for _ in 0..180 {
         world.step(1.0 / 120.0, 8);
         let ev = world.sensor_events();
         begin += ev.begin.len();
         end += ev.end.len();
-        overlaps_total += world.shape_sensor_overlaps(sensor_shape).len();
+        world.shape_sensor_overlaps_into(sensor_shape, &mut overlaps);
+        overlaps_total += overlaps.len();
     }
     println!(
         "sensors: begin={} end={} overlaps_sum={} (over frames)",

@@ -21,18 +21,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         world.step(1.0 / 60.0, 4);
     }
 
-    // AABB overlap around origin
-    let ids = world.overlap_aabb(
+    // AABB overlap around origin with a reusable output buffer
+    let mut ids = Vec::new();
+    world.overlap_aabb_into(
         Aabb {
             lower: Vec2::new(-1.0, -1.0),
             upper: Vec2::new(1.0, 1.0),
         },
         QueryFilter::default(),
+        &mut ids,
     );
     println!("overlap ids: {}", ids.len());
 
-    // Ray cast down from y=10
-    let hits = world.cast_ray_all([0.0_f32, 10.0], [0.0, -100.0], QueryFilter::default());
+    // Ray cast down from y=10 with the same reuse pattern
+    let mut hits = Vec::new();
+    world.cast_ray_all_into(
+        [0.0_f32, 10.0],
+        [0.0, -100.0],
+        QueryFilter::default(),
+        &mut hits,
+    );
     println!("ray hits: {}", hits.len());
 
     Ok(())

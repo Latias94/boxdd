@@ -129,10 +129,11 @@ impl Registries {
         if count == 0 {
             return;
         }
-        let mut arr: Vec<ShapeId> = Vec::with_capacity(count);
-        let wrote =
-            unsafe { ffi::b2Body_GetShapes(body, arr.as_mut_ptr(), count as i32) }.max(0) as usize;
-        unsafe { arr.set_len(wrote.min(count)) };
+        let arr = unsafe {
+            crate::core::ffi_vec::read_from_ffi(count, |ptr, count| {
+                ffi::b2Body_GetShapes(body, ptr, count)
+            })
+        };
         for sid in arr {
             self.remove_shape_flags(sid);
         }

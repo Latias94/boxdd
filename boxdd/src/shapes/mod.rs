@@ -34,6 +34,57 @@ pub struct OwnedShape {
     _not_send: PhantomData<Rc<()>>,
 }
 
+fn retain_valid_shape_ids(ids: &mut Vec<ShapeId>) {
+    ids.retain(|sid| unsafe { ffi::b2Shape_IsValid(*sid) });
+}
+
+fn shape_contact_data_into_impl(id: ShapeId, out: &mut Vec<ffi::b2ContactData>) {
+    let cap = unsafe { ffi::b2Shape_GetContactCapacity(id) }.max(0) as usize;
+    unsafe {
+        crate::core::ffi_vec::fill_from_ffi(out, cap, |ptr, cap| {
+            ffi::b2Shape_GetContactData(id, ptr, cap)
+        });
+    }
+}
+
+fn shape_contact_data_impl(id: ShapeId) -> Vec<ffi::b2ContactData> {
+    let cap = unsafe { ffi::b2Shape_GetContactCapacity(id) }.max(0) as usize;
+    unsafe {
+        crate::core::ffi_vec::read_from_ffi(cap, |ptr, cap| {
+            ffi::b2Shape_GetContactData(id, ptr, cap)
+        })
+    }
+}
+
+fn shape_sensor_overlaps_into_impl(id: ShapeId, out: &mut Vec<ShapeId>) {
+    let cap = unsafe { ffi::b2Shape_GetSensorCapacity(id) }.max(0) as usize;
+    unsafe {
+        crate::core::ffi_vec::fill_from_ffi(out, cap, |ptr, cap| {
+            ffi::b2Shape_GetSensorData(id, ptr, cap)
+        });
+    }
+}
+
+fn shape_sensor_overlaps_impl(id: ShapeId) -> Vec<ShapeId> {
+    let cap = unsafe { ffi::b2Shape_GetSensorCapacity(id) }.max(0) as usize;
+    unsafe {
+        crate::core::ffi_vec::read_from_ffi(cap, |ptr, cap| {
+            ffi::b2Shape_GetSensorData(id, ptr, cap)
+        })
+    }
+}
+
+fn shape_sensor_overlaps_valid_into_impl(id: ShapeId, out: &mut Vec<ShapeId>) {
+    shape_sensor_overlaps_into_impl(id, out);
+    retain_valid_shape_ids(out);
+}
+
+fn shape_sensor_overlaps_valid_impl(id: ShapeId) -> Vec<ShapeId> {
+    let mut ids = shape_sensor_overlaps_impl(id);
+    retain_valid_shape_ids(&mut ids);
+    ids
+}
+
 impl OwnedShape {
     pub(crate) fn new(core: Arc<crate::core::world_core::WorldCore>, id: ShapeId) -> Self {
         core.owned_shapes
@@ -338,28 +389,23 @@ impl OwnedShape {
 
     pub fn contact_data(&self) -> Vec<ffi::b2ContactData> {
         self.assert_valid();
-        let cap = unsafe { ffi::b2Shape_GetContactCapacity(self.id) }.max(0) as usize;
-        if cap == 0 {
-            return Vec::new();
-        }
-        let mut vec: Vec<ffi::b2ContactData> = Vec::with_capacity(cap);
-        let wrote = unsafe { ffi::b2Shape_GetContactData(self.id, vec.as_mut_ptr(), cap as i32) }
-            .max(0) as usize;
-        unsafe { vec.set_len(wrote.min(cap)) };
-        vec
+        shape_contact_data_impl(self.id)
+    }
+
+    pub fn contact_data_into(&self, out: &mut Vec<ffi::b2ContactData>) {
+        self.assert_valid();
+        shape_contact_data_into_impl(self.id, out);
     }
 
     pub fn try_contact_data(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
         self.check_valid()?;
-        let cap = unsafe { ffi::b2Shape_GetContactCapacity(self.id) }.max(0) as usize;
-        if cap == 0 {
-            return Ok(Vec::new());
-        }
-        let mut vec: Vec<ffi::b2ContactData> = Vec::with_capacity(cap);
-        let wrote = unsafe { ffi::b2Shape_GetContactData(self.id, vec.as_mut_ptr(), cap as i32) }
-            .max(0) as usize;
-        unsafe { vec.set_len(wrote.min(cap)) };
-        Ok(vec)
+        Ok(shape_contact_data_impl(self.id))
+    }
+
+    pub fn try_contact_data_into(&self, out: &mut Vec<ffi::b2ContactData>) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_contact_data_into_impl(self.id, out);
+        Ok(())
     }
 
     /// Get the maximum capacity required for retrieving all overlapped shapes on this sensor shape.
@@ -375,35 +421,39 @@ impl OwnedShape {
 
     pub fn sensor_overlaps(&self) -> Vec<ShapeId> {
         self.assert_valid();
-        let cap = self.sensor_capacity();
-        if cap <= 0 {
-            return Vec::new();
-        }
-        let mut ids: Vec<ShapeId> = Vec::with_capacity(cap as usize);
-        let wrote =
-            unsafe { ffi::b2Shape_GetSensorData(self.id, ids.as_mut_ptr(), cap) }.max(0) as usize;
-        unsafe { ids.set_len(wrote.min(cap as usize)) };
-        ids
+        shape_sensor_overlaps_impl(self.id)
+    }
+
+    pub fn sensor_overlaps_into(&self, out: &mut Vec<ShapeId>) {
+        self.assert_valid();
+        shape_sensor_overlaps_into_impl(self.id, out);
     }
 
     pub fn try_sensor_overlaps(&self) -> ApiResult<Vec<ShapeId>> {
         self.check_valid()?;
-        let cap = unsafe { ffi::b2Shape_GetSensorCapacity(self.id) };
-        if cap <= 0 {
-            return Ok(Vec::new());
-        }
-        let mut ids: Vec<ShapeId> = Vec::with_capacity(cap as usize);
-        let wrote =
-            unsafe { ffi::b2Shape_GetSensorData(self.id, ids.as_mut_ptr(), cap) }.max(0) as usize;
-        unsafe { ids.set_len(wrote.min(cap as usize)) };
-        Ok(ids)
+        Ok(shape_sensor_overlaps_impl(self.id))
+    }
+
+    pub fn try_sensor_overlaps_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_sensor_overlaps_into_impl(self.id, out);
+        Ok(())
     }
 
     pub fn sensor_overlaps_valid(&self) -> Vec<ShapeId> {
-        self.sensor_overlaps()
-            .into_iter()
-            .filter(|&sid| unsafe { ffi::b2Shape_IsValid(sid) })
-            .collect()
+        self.assert_valid();
+        shape_sensor_overlaps_valid_impl(self.id)
+    }
+
+    pub fn sensor_overlaps_valid_into(&self, out: &mut Vec<ShapeId>) {
+        self.assert_valid();
+        shape_sensor_overlaps_valid_into_impl(self.id, out);
+    }
+
+    pub fn try_sensor_overlaps_valid_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_sensor_overlaps_valid_into_impl(self.id, out);
+        Ok(())
     }
 
     /// Set an opaque user data pointer on this shape.
@@ -1000,28 +1050,23 @@ impl<'w> Shape<'w> {
 
     pub fn contact_data(&self) -> Vec<ffi::b2ContactData> {
         self.assert_valid();
-        let cap = unsafe { ffi::b2Shape_GetContactCapacity(self.id) }.max(0) as usize;
-        if cap == 0 {
-            return Vec::new();
-        }
-        let mut vec: Vec<ffi::b2ContactData> = Vec::with_capacity(cap);
-        let wrote = unsafe { ffi::b2Shape_GetContactData(self.id, vec.as_mut_ptr(), cap as i32) }
-            .max(0) as usize;
-        unsafe { vec.set_len(wrote.min(cap)) };
-        vec
+        shape_contact_data_impl(self.id)
+    }
+
+    pub fn contact_data_into(&self, out: &mut Vec<ffi::b2ContactData>) {
+        self.assert_valid();
+        shape_contact_data_into_impl(self.id, out);
     }
 
     pub fn try_contact_data(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
         self.check_valid()?;
-        let cap = unsafe { ffi::b2Shape_GetContactCapacity(self.id) }.max(0) as usize;
-        if cap == 0 {
-            return Ok(Vec::new());
-        }
-        let mut vec: Vec<ffi::b2ContactData> = Vec::with_capacity(cap);
-        let wrote = unsafe { ffi::b2Shape_GetContactData(self.id, vec.as_mut_ptr(), cap as i32) }
-            .max(0) as usize;
-        unsafe { vec.set_len(wrote.min(cap)) };
-        Ok(vec)
+        Ok(shape_contact_data_impl(self.id))
+    }
+
+    pub fn try_contact_data_into(&self, out: &mut Vec<ffi::b2ContactData>) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_contact_data_into_impl(self.id, out);
+        Ok(())
     }
 
     /// Get the maximum capacity required for retrieving all the overlapped shapes on this sensor shape.
@@ -1040,36 +1085,40 @@ impl<'w> Shape<'w> {
     /// Note: overlaps may contain destroyed shapes; use `sensor_overlaps_valid` to filter.
     pub fn sensor_overlaps(&self) -> Vec<ShapeId> {
         self.assert_valid();
-        let cap = self.sensor_capacity();
-        if cap <= 0 {
-            return Vec::new();
-        }
-        let mut ids: Vec<ShapeId> = Vec::with_capacity(cap as usize);
-        let wrote =
-            unsafe { ffi::b2Shape_GetSensorData(self.id, ids.as_mut_ptr(), cap) }.max(0) as usize;
-        unsafe { ids.set_len(wrote.min(cap as usize)) };
-        ids
+        shape_sensor_overlaps_impl(self.id)
+    }
+
+    pub fn sensor_overlaps_into(&self, out: &mut Vec<ShapeId>) {
+        self.assert_valid();
+        shape_sensor_overlaps_into_impl(self.id, out);
     }
 
     pub fn try_sensor_overlaps(&self) -> ApiResult<Vec<ShapeId>> {
         self.check_valid()?;
-        let cap = unsafe { ffi::b2Shape_GetSensorCapacity(self.id) };
-        if cap <= 0 {
-            return Ok(Vec::new());
-        }
-        let mut ids: Vec<ShapeId> = Vec::with_capacity(cap as usize);
-        let wrote =
-            unsafe { ffi::b2Shape_GetSensorData(self.id, ids.as_mut_ptr(), cap) }.max(0) as usize;
-        unsafe { ids.set_len(wrote.min(cap as usize)) };
-        Ok(ids)
+        Ok(shape_sensor_overlaps_impl(self.id))
+    }
+
+    pub fn try_sensor_overlaps_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_sensor_overlaps_into_impl(self.id, out);
+        Ok(())
     }
 
     /// Get overlapped shapes and filter out invalid (destroyed) shape ids.
     pub fn sensor_overlaps_valid(&self) -> Vec<ShapeId> {
-        self.sensor_overlaps()
-            .into_iter()
-            .filter(|&sid| unsafe { ffi::b2Shape_IsValid(sid) })
-            .collect()
+        self.assert_valid();
+        shape_sensor_overlaps_valid_impl(self.id)
+    }
+
+    pub fn sensor_overlaps_valid_into(&self, out: &mut Vec<ShapeId>) {
+        self.assert_valid();
+        shape_sensor_overlaps_valid_into_impl(self.id, out);
+    }
+
+    pub fn try_sensor_overlaps_valid_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_sensor_overlaps_valid_into_impl(self.id, out);
+        Ok(())
     }
 
     /// Destroy this shape immediately.
