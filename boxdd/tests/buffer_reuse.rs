@@ -68,6 +68,30 @@ fn body_and_shape_contact_data_into_reuses_buffer() {
         .unwrap();
     assert!(!body_contacts_raw.is_empty());
 
+    let converted_body_contact = ContactData::from_raw(body_contacts_raw[0]);
+    assert_eq!(converted_body_contact.manifold, body_contacts[0].manifold);
+    let converted_body_contact_raw = converted_body_contact.into_raw();
+    assert_eq!(
+        converted_body_contact_raw.contactId.index1,
+        body_contacts_raw[0].contactId.index1
+    );
+    assert_eq!(
+        converted_body_contact_raw.contactId.generation,
+        body_contacts_raw[0].contactId.generation
+    );
+    assert_eq!(
+        converted_body_contact_raw.shapeIdA.index1,
+        body_contacts_raw[0].shapeIdA.index1
+    );
+    assert_eq!(
+        converted_body_contact_raw.shapeIdB.index1,
+        body_contacts_raw[0].shapeIdB.index1
+    );
+    assert_eq!(
+        converted_body_contact_raw.manifold.pointCount,
+        body_contacts_raw[0].manifold.pointCount
+    );
+
     shape.contact_data_into(&mut shape_contacts);
     assert!(!shape_contacts.is_empty());
     assert_eq!(shape_contacts.as_ptr(), shape_contacts_ptr);
@@ -82,6 +106,9 @@ fn body_and_shape_contact_data_into_reuses_buffer() {
         .try_contact_data_into_raw(&mut shape_contacts_raw)
         .unwrap();
     assert!(!shape_contacts_raw.is_empty());
+
+    let converted_shape_contact = ContactData::from_raw(shape_contacts_raw[0]);
+    assert_eq!(converted_shape_contact.manifold, shape_contacts[0].manifold);
 }
 
 #[test]

@@ -269,9 +269,9 @@ pub struct ManifoldPoint {
     pub persisted: bool,
 }
 
-impl From<ffi::b2ManifoldPoint> for ManifoldPoint {
+impl ManifoldPoint {
     #[inline]
-    fn from(raw: ffi::b2ManifoldPoint) -> Self {
+    pub fn from_raw(raw: ffi::b2ManifoldPoint) -> Self {
         Self {
             point: raw.point.into(),
             anchor_a: raw.anchorA.into(),
@@ -285,22 +285,20 @@ impl From<ffi::b2ManifoldPoint> for ManifoldPoint {
             persisted: raw.persisted,
         }
     }
-}
 
-impl From<ManifoldPoint> for ffi::b2ManifoldPoint {
     #[inline]
-    fn from(raw: ManifoldPoint) -> Self {
-        Self {
-            point: raw.point.into(),
-            anchorA: raw.anchor_a.into(),
-            anchorB: raw.anchor_b.into(),
-            separation: raw.separation,
-            normalImpulse: raw.normal_impulse,
-            tangentImpulse: raw.tangent_impulse,
-            totalNormalImpulse: raw.total_normal_impulse,
-            normalVelocity: raw.normal_velocity,
-            id: raw.id,
-            persisted: raw.persisted,
+    pub fn into_raw(self) -> ffi::b2ManifoldPoint {
+        ffi::b2ManifoldPoint {
+            point: self.point.into(),
+            anchorA: self.anchor_a.into(),
+            anchorB: self.anchor_b.into(),
+            separation: self.separation,
+            normalImpulse: self.normal_impulse,
+            tangentImpulse: self.tangent_impulse,
+            totalNormalImpulse: self.total_normal_impulse,
+            normalVelocity: self.normal_velocity,
+            id: self.id,
+            persisted: self.persisted,
         }
     }
 }
@@ -322,28 +320,24 @@ impl Manifold {
         let count = self.point_count.clamp(0, MAX_MANIFOLD_POINTS as i32) as usize;
         &self.contact_points[..count]
     }
-}
 
-impl From<ffi::b2Manifold> for Manifold {
     #[inline]
-    fn from(raw: ffi::b2Manifold) -> Self {
+    pub fn from_raw(raw: ffi::b2Manifold) -> Self {
         Self {
             normal: raw.normal.into(),
             rolling_impulse: raw.rollingImpulse,
-            contact_points: raw.points.map(Into::into),
+            contact_points: raw.points.map(ManifoldPoint::from_raw),
             point_count: raw.pointCount.clamp(0, MAX_MANIFOLD_POINTS as i32),
         }
     }
-}
 
-impl From<Manifold> for ffi::b2Manifold {
     #[inline]
-    fn from(raw: Manifold) -> Self {
-        Self {
-            normal: raw.normal.into(),
-            rollingImpulse: raw.rolling_impulse,
-            points: raw.contact_points.map(Into::into),
-            pointCount: raw.point_count.clamp(0, MAX_MANIFOLD_POINTS as i32),
+    pub fn into_raw(self) -> ffi::b2Manifold {
+        ffi::b2Manifold {
+            normal: self.normal.into(),
+            rollingImpulse: self.rolling_impulse,
+            points: self.contact_points.map(ManifoldPoint::into_raw),
+            pointCount: self.point_count.clamp(0, MAX_MANIFOLD_POINTS as i32),
         }
     }
 }
@@ -358,26 +352,24 @@ pub struct ContactData {
     pub manifold: Manifold,
 }
 
-impl From<ffi::b2ContactData> for ContactData {
+impl ContactData {
     #[inline]
-    fn from(raw: ffi::b2ContactData) -> Self {
+    pub fn from_raw(raw: ffi::b2ContactData) -> Self {
         Self {
             contact_id: raw.contactId,
             shape_id_a: raw.shapeIdA,
             shape_id_b: raw.shapeIdB,
-            manifold: raw.manifold.into(),
+            manifold: Manifold::from_raw(raw.manifold),
         }
     }
-}
 
-impl From<ContactData> for ffi::b2ContactData {
     #[inline]
-    fn from(raw: ContactData) -> Self {
-        Self {
-            contactId: raw.contact_id,
-            shapeIdA: raw.shape_id_a,
-            shapeIdB: raw.shape_id_b,
-            manifold: raw.manifold.into(),
+    pub fn into_raw(self) -> ffi::b2ContactData {
+        ffi::b2ContactData {
+            contactId: self.contact_id,
+            shapeIdA: self.shape_id_a,
+            shapeIdB: self.shape_id_b,
+            manifold: self.manifold.into_raw(),
         }
     }
 }

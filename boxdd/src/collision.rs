@@ -586,7 +586,9 @@ pub fn collide_circles(
 ) -> Manifold {
     let raw_a = circle_a.into_raw();
     let raw_b = circle_b.into_raw();
-    unsafe { ffi::b2CollideCircles(&raw_a, transform_a.into(), &raw_b, transform_b.into()) }.into()
+    Manifold::from_raw(unsafe {
+        ffi::b2CollideCircles(&raw_a, transform_a.into(), &raw_b, transform_b.into())
+    })
 }
 
 /// Compute the contact manifold between a capsule and a circle.
@@ -599,10 +601,9 @@ pub fn collide_capsule_and_circle(
 ) -> Manifold {
     let raw_a = capsule_a.into_raw();
     let raw_b = circle_b.into_raw();
-    unsafe {
+    Manifold::from_raw(unsafe {
         ffi::b2CollideCapsuleAndCircle(&raw_a, transform_a.into(), &raw_b, transform_b.into())
-    }
-    .into()
+    })
 }
 
 /// Compute the contact manifold between a segment and a circle.
@@ -615,10 +616,9 @@ pub fn collide_segment_and_circle(
 ) -> Manifold {
     let raw_a = segment_a.into_raw();
     let raw_b = circle_b.into_raw();
-    unsafe {
+    Manifold::from_raw(unsafe {
         ffi::b2CollideSegmentAndCircle(&raw_a, transform_a.into(), &raw_b, transform_b.into())
-    }
-    .into()
+    })
 }
 
 /// Compute the contact manifold between a polygon and a circle.
@@ -631,10 +631,9 @@ pub fn collide_polygon_and_circle(
 ) -> Manifold {
     let raw_a = polygon_a.into_raw();
     let raw_b = circle_b.into_raw();
-    unsafe {
+    Manifold::from_raw(unsafe {
         ffi::b2CollidePolygonAndCircle(&raw_a, transform_a.into(), &raw_b, transform_b.into())
-    }
-    .into()
+    })
 }
 
 /// Compute the contact manifold between two capsules.
@@ -647,7 +646,9 @@ pub fn collide_capsules(
 ) -> Manifold {
     let raw_a = capsule_a.into_raw();
     let raw_b = capsule_b.into_raw();
-    unsafe { ffi::b2CollideCapsules(&raw_a, transform_a.into(), &raw_b, transform_b.into()) }.into()
+    Manifold::from_raw(unsafe {
+        ffi::b2CollideCapsules(&raw_a, transform_a.into(), &raw_b, transform_b.into())
+    })
 }
 
 /// Compute the contact manifold between a segment and a capsule.
@@ -660,10 +661,9 @@ pub fn collide_segment_and_capsule(
 ) -> Manifold {
     let raw_a = segment_a.into_raw();
     let raw_b = capsule_b.into_raw();
-    unsafe {
+    Manifold::from_raw(unsafe {
         ffi::b2CollideSegmentAndCapsule(&raw_a, transform_a.into(), &raw_b, transform_b.into())
-    }
-    .into()
+    })
 }
 
 /// Compute the contact manifold between a polygon and a capsule.
@@ -676,10 +676,9 @@ pub fn collide_polygon_and_capsule(
 ) -> Manifold {
     let raw_a = polygon_a.into_raw();
     let raw_b = capsule_b.into_raw();
-    unsafe {
+    Manifold::from_raw(unsafe {
         ffi::b2CollidePolygonAndCapsule(&raw_a, transform_a.into(), &raw_b, transform_b.into())
-    }
-    .into()
+    })
 }
 
 /// Compute the contact manifold between two polygons.
@@ -692,7 +691,9 @@ pub fn collide_polygons(
 ) -> Manifold {
     let raw_a = polygon_a.into_raw();
     let raw_b = polygon_b.into_raw();
-    unsafe { ffi::b2CollidePolygons(&raw_a, transform_a.into(), &raw_b, transform_b.into()) }.into()
+    Manifold::from_raw(unsafe {
+        ffi::b2CollidePolygons(&raw_a, transform_a.into(), &raw_b, transform_b.into())
+    })
 }
 
 /// Compute the contact manifold between a segment and a polygon.
@@ -705,10 +706,9 @@ pub fn collide_segment_and_polygon(
 ) -> Manifold {
     let raw_a = segment_a.into_raw();
     let raw_b = polygon_b.into_raw();
-    unsafe {
+    Manifold::from_raw(unsafe {
         ffi::b2CollideSegmentAndPolygon(&raw_a, transform_a.into(), &raw_b, transform_b.into())
-    }
-    .into()
+    })
 }
 
 /// Compute the contact manifold between a chain segment and a circle.
@@ -721,10 +721,9 @@ pub fn collide_chain_segment_and_circle(
 ) -> Manifold {
     let raw_a = segment_a.into_raw();
     let raw_b = circle_b.into_raw();
-    unsafe {
+    Manifold::from_raw(unsafe {
         ffi::b2CollideChainSegmentAndCircle(&raw_a, transform_a.into(), &raw_b, transform_b.into())
-    }
-    .into()
+    })
 }
 
 /// Compute the contact manifold between a chain segment and a capsule.
@@ -745,7 +744,7 @@ pub fn collide_chain_segment_and_capsule(
         Some(cache) => cache.raw_mut(),
         None => core::ptr::null_mut(),
     };
-    unsafe {
+    Manifold::from_raw(unsafe {
         ffi::b2CollideChainSegmentAndCapsule(
             &raw_a,
             transform_a.into(),
@@ -753,8 +752,7 @@ pub fn collide_chain_segment_and_capsule(
             transform_b.into(),
             cache_ptr,
         )
-    }
-    .into()
+    })
 }
 
 /// Compute the contact manifold between a chain segment and a polygon.
@@ -775,7 +773,7 @@ pub fn collide_chain_segment_and_polygon(
         Some(cache) => cache.raw_mut(),
         None => core::ptr::null_mut(),
     };
-    unsafe {
+    Manifold::from_raw(unsafe {
         ffi::b2CollideChainSegmentAndPolygon(
             &raw_a,
             transform_a.into(),
@@ -783,8 +781,7 @@ pub fn collide_chain_segment_and_polygon(
             transform_b.into(),
             cache_ptr,
         )
-    }
-    .into()
+    })
 }
 
 impl Aabb {

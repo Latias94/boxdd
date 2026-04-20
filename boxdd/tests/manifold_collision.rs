@@ -1,6 +1,6 @@
 use boxdd::{
-    SimplexCache, Transform, collide_capsule_and_circle, collide_capsules,
-    collide_chain_segment_and_capsule, collide_chain_segment_and_circle,
+    Manifold, ManifoldPoint, SimplexCache, Transform, Vec2, collide_capsule_and_circle,
+    collide_capsules, collide_chain_segment_and_capsule, collide_chain_segment_and_circle,
     collide_chain_segment_and_polygon, collide_circles, collide_polygon_and_capsule,
     collide_polygon_and_circle, collide_polygons, collide_segment_and_capsule,
     collide_segment_and_circle, collide_segment_and_polygon, shapes,
@@ -106,4 +106,31 @@ fn safe_manifold_collision_helpers_report_separation() {
 
     let manifold = collide_circles(circle, Transform::IDENTITY, circle, separated);
     assert!(manifold.points().is_empty());
+}
+
+#[test]
+fn manifold_value_types_use_explicit_raw_conversions() {
+    let point = ManifoldPoint {
+        point: Vec2::new(1.0, 2.0),
+        anchor_a: Vec2::new(-1.0, 0.5),
+        anchor_b: Vec2::new(0.25, -0.75),
+        separation: -0.1,
+        normal_impulse: 0.2,
+        tangent_impulse: 0.3,
+        total_normal_impulse: 0.4,
+        normal_velocity: -1.5,
+        id: 7,
+        persisted: true,
+    };
+    assert_eq!(ManifoldPoint::from_raw(point.into_raw()), point);
+
+    let manifold = Manifold {
+        normal: Vec2::new(0.0, 1.0),
+        rolling_impulse: 0.5,
+        contact_points: [point, ManifoldPoint::default()],
+        point_count: 1,
+    };
+    let raw = manifold.into_raw();
+    assert_eq!(raw.pointCount, 1);
+    assert_eq!(Manifold::from_raw(raw), manifold);
 }
