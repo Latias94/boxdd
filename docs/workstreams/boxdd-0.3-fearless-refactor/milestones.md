@@ -54,6 +54,7 @@ Scope:
 - consolidate event-buffer borrow / cleanup plumbing so all event-view APIs share the same lifetime and deferred-destroy path
 - consolidate world-level shape create/edit helper families so geometry-type additions cannot drift across create/owned/try setter variants
 - consolidate shared debug-draw callback bridging so safe/raw draw paths cannot drift in panic forwarding, callback locking, or option wiring
+- document the remaining intentional raw escape hatches and keep callback-sensitive raw paths under regression tests
 
 Exit criteria:
 
@@ -64,6 +65,7 @@ Exit criteria:
 - event-view APIs no longer duplicate the borrow-event-buffers / process-deferred-destroys template in every module
 - world-level shape create/edit families no longer duplicate the same geometry-to-FFI plumbing for each geometry type
 - safe/raw debug-draw paths no longer duplicate the same callback panic bridge and option wiring, and the remaining raw path has direct regression coverage
+- the remaining intentional raw surfaces are explicitly documented instead of being discovered only by source spelunking
 
 ## M4: Advanced Wrapper Coverage
 

@@ -82,3 +82,19 @@ fn events_view_defers_destroys() {
 
     assert!(world.body(id).is_none());
 }
+
+#[test]
+fn raw_events_view_defers_destroys() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body = world.create_body_owned(BodyBuilder::new().build());
+    let id = body.id();
+
+    unsafe {
+        world.with_contact_events(|begin, end, hit| {
+            let _ = (begin.len(), end.len(), hit.len());
+            drop(body);
+        });
+    }
+
+    assert!(world.body(id).is_none());
+}

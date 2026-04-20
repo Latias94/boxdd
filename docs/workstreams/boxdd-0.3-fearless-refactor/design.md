@@ -98,6 +98,32 @@ explicit in the API surface. Implicit `From<ffi::...>` conversions are convenien
 internal plumbing, but they make the public safe vocabulary too porous and hide where
 FFI boundaries actually exist.
 
+### 6. Intentional Raw Seams Must Stay Narrow
+
+`0.3.0` is not trying to delete every low-level interop hook. The point is to make the
+kept seams explicit, justified, and regression-tested.
+
+The main intentional raw escape hatches are:
+
+- raw ids and raw world-id accessors such as `world_id_raw` for integration with ID-style
+  storage or external systems already built around Box2D ids
+- explicit raw conversion points on crate-owned value types via `from_raw(...)` /
+  `into_raw()`
+- raw event-slice visitors `unsafe { with_*_events(...) }` for zero-copy advanced
+  consumers that need direct access to Box2D event buffers
+- `debug_draw_raw` for render backends that want zero-copy vertex slices and `CStr`
+  strings instead of the safe converted callback surface
+- raw user-data pointer APIs (`set_user_data_ptr`, `user_data_ptr`) for interop with
+  existing pointer-based ownership schemes
+
+These seams are worth keeping only if:
+
+- the safe path already exists for normal use
+- the raw path is clearly named or `unsafe`
+- callback locking / deferred-destroy / panic forwarding behavior stays aligned with the
+  safe path
+- regression tests cover the callback-sensitive raw paths
+
 ## Release Scope
 
 ### Delivered in the first `0.3.0` slice

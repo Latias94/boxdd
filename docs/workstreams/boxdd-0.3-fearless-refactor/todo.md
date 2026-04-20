@@ -54,8 +54,8 @@
 ## Next
 
 - [ ] Audit any remaining owned/scoped handle duplication outside the already-refactored internals and confirm it is worth keeping.
-- [ ] Review remaining public raw escape hatches and document which are intentional (`world_id_raw`, raw event slices, debug draw raw paths, etc.).
-- [ ] Audit the remaining intentional raw boundaries, especially debug-draw/raw-event hooks and other explicit escape hatches that should stay narrow and well-documented.
+- [x] Review remaining public raw escape hatches and document which are intentional (`world_id_raw`, raw event slices, debug draw raw paths, etc.).
+- [ ] Add more targeted regression coverage where intentional raw escape hatches still rely on callback-sensitive or zero-copy behavior.
 
 ## Release Checklist
 
