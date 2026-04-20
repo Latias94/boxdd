@@ -124,7 +124,7 @@ FFI boundaries actually exist.
 - unify standalone collision geometry helpers with shape-construction helper types
 - `World` / `WorldHandle` duplication review
 - owned / scoped handle duplication review outside the hottest paths
-- audit the remaining input-side raw conversion seams (`DistanceInput`, `ShapeCastPairInput`, `Sweep`, `ToiInput`) and confirm whether they should also move to explicit `into_raw()` APIs
+- audit the remaining crate-owned raw conversion seams in `types.rs` (`ManifoldPoint`, `Manifold`, `ContactData`) and confirm whether they should also move to explicit named raw APIs
 - continue value-type cleanup for remaining raw Box2D structs that still leak through public APIs
 - continue auditing intentional raw seams such as debug draw/raw color paths and raw event/debug hooks so the kept escape hatches stay explicit and justified
 

@@ -288,17 +288,15 @@ impl DistanceInput {
         self.use_radii = use_radii;
         self
     }
-}
 
-impl From<DistanceInput> for ffi::b2DistanceInput {
     #[inline]
-    fn from(input: DistanceInput) -> Self {
-        Self {
-            proxyA: input.proxy_a.raw(),
-            proxyB: input.proxy_b.raw(),
-            transformA: input.transform_a.into(),
-            transformB: input.transform_b.into(),
-            useRadii: input.use_radii,
+    pub fn into_raw(self) -> ffi::b2DistanceInput {
+        ffi::b2DistanceInput {
+            proxyA: self.proxy_a.raw(),
+            proxyB: self.proxy_b.raw(),
+            transformA: self.transform_a.into(),
+            transformB: self.transform_b.into(),
+            useRadii: self.use_radii,
         }
     }
 }
@@ -376,19 +374,17 @@ impl ShapeCastPairInput {
         self.can_encroach = can_encroach;
         self
     }
-}
 
-impl From<ShapeCastPairInput> for ffi::b2ShapeCastPairInput {
     #[inline]
-    fn from(input: ShapeCastPairInput) -> Self {
-        Self {
-            proxyA: input.proxy_a.raw(),
-            proxyB: input.proxy_b.raw(),
-            transformA: input.transform_a.into(),
-            transformB: input.transform_b.into(),
-            translationB: input.translation_b.into(),
-            maxFraction: input.max_fraction,
-            canEncroach: input.can_encroach,
+    pub fn into_raw(self) -> ffi::b2ShapeCastPairInput {
+        ffi::b2ShapeCastPairInput {
+            proxyA: self.proxy_a.raw(),
+            proxyB: self.proxy_b.raw(),
+            transformA: self.transform_a.into(),
+            transformB: self.transform_b.into(),
+            translationB: self.translation_b.into(),
+            maxFraction: self.max_fraction,
+            canEncroach: self.can_encroach,
         }
     }
 }
@@ -422,24 +418,33 @@ impl Sweep {
         }
     }
 
+    #[inline]
+    pub fn from_raw(raw: ffi::b2Sweep) -> Self {
+        Self {
+            local_center: raw.localCenter.into(),
+            c1: raw.c1.into(),
+            c2: raw.c2.into(),
+            q1: raw.q1.into(),
+            q2: raw.q2.into(),
+        }
+    }
+
+    #[inline]
+    pub fn into_raw(self) -> ffi::b2Sweep {
+        ffi::b2Sweep {
+            localCenter: self.local_center.into(),
+            c1: self.c1.into(),
+            c2: self.c2.into(),
+            q1: self.q1.into(),
+            q2: self.q2.into(),
+        }
+    }
+
     /// Evaluate the sweep transform at `time` in the `[0, 1]` interval.
     #[inline]
     pub fn transform_at(self, time: f32) -> Transform {
-        let raw: ffi::b2Sweep = self.into();
+        let raw = self.into_raw();
         unsafe { ffi::b2GetSweepTransform(&raw, time) }.into()
-    }
-}
-
-impl From<Sweep> for ffi::b2Sweep {
-    #[inline]
-    fn from(sweep: Sweep) -> Self {
-        Self {
-            localCenter: sweep.local_center.into(),
-            c1: sweep.c1.into(),
-            c2: sweep.c2.into(),
-            q1: sweep.q1.into(),
-            q2: sweep.q2.into(),
-        }
     }
 }
 
@@ -473,17 +478,15 @@ impl ToiInput {
         self.max_fraction = max_fraction;
         self
     }
-}
 
-impl From<ToiInput> for ffi::b2TOIInput {
     #[inline]
-    fn from(input: ToiInput) -> Self {
-        Self {
-            proxyA: input.proxy_a.raw(),
-            proxyB: input.proxy_b.raw(),
-            sweepA: input.sweep_a.into(),
-            sweepB: input.sweep_b.into(),
-            maxFraction: input.max_fraction,
+    pub fn into_raw(self) -> ffi::b2TOIInput {
+        ffi::b2TOIInput {
+            proxyA: self.proxy_a.raw(),
+            proxyB: self.proxy_b.raw(),
+            sweepA: self.sweep_a.into_raw(),
+            sweepB: self.sweep_b.into_raw(),
+            maxFraction: self.max_fraction,
         }
     }
 }
@@ -555,7 +558,7 @@ where
 
 /// Compute the closest distance between two shape proxies.
 pub fn shape_distance(input: DistanceInput, cache: &mut SimplexCache) -> DistanceOutput {
-    let raw_input: ffi::b2DistanceInput = input.into();
+    let raw_input = input.into_raw();
     DistanceOutput::from_raw(unsafe {
         ffi::b2ShapeDistance(&raw_input, cache.raw_mut(), core::ptr::null_mut(), 0)
     })
@@ -563,13 +566,13 @@ pub fn shape_distance(input: DistanceInput, cache: &mut SimplexCache) -> Distanc
 
 /// Cast shape B against shape A.
 pub fn shape_cast(input: ShapeCastPairInput) -> CastOutput {
-    let raw_input: ffi::b2ShapeCastPairInput = input.into();
+    let raw_input = input.into_raw();
     CastOutput::from_raw(unsafe { ffi::b2ShapeCast(&raw_input) })
 }
 
 /// Compute the time of impact between two moving shape proxies.
 pub fn time_of_impact(input: ToiInput) -> ToiOutput {
-    let raw_input: ffi::b2TOIInput = input.into();
+    let raw_input = input.into_raw();
     ToiOutput::from_raw(unsafe { ffi::b2TimeOfImpact(&raw_input) })
 }
 

@@ -42,13 +42,14 @@
 - [x] Consolidate shared `Body` / `OwnedBody` internals for state, transform, force/impulse, mass, and common flag accessors.
 - [x] Consolidate shared `Chain` / `OwnedChain` internals for validity, segment/material access, and common raw escape hatches.
 - [x] Make `BodyType`, `Aabb`, mover/query value types, collision outputs, and `Counters` use explicit `from_raw(...)` / `into_raw()` APIs where applicable instead of implicit raw conversions.
+- [x] Make collision input value types (`DistanceInput`, `ShapeCastPairInput`, `Sweep`, `ToiInput`) cross the raw boundary explicitly with named `into_raw()` / `from_raw()` APIs instead of implicit conversions.
 
 ## Next
 
 - [ ] Review remaining `World` / `WorldHandle` query duplication and decide whether selective consolidation is worth it.
 - [ ] Audit any remaining owned/scoped handle duplication outside the already-refactored internals and confirm it is worth keeping.
 - [ ] Review remaining public raw escape hatches and document which are intentional (`world_id_raw`, raw event slices, debug draw raw paths, etc.).
-- [ ] Audit the remaining input-side and escape-hatch raw conversion seams, prioritizing `DistanceInput` / `ShapeCastPairInput` / `Sweep` / `ToiInput`, plus any intentional debug-draw/raw-color boundaries that should stay explicit.
+- [ ] Audit remaining crate-owned types that still rely on implicit raw conversions, prioritizing `ManifoldPoint`, `Manifold`, `ContactData`, and any intentional debug-draw/raw-color seams that should stay explicit.
 
 ## Release Checklist
 

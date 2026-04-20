@@ -138,3 +138,78 @@ fn collision_result_types_use_explicit_raw_conversions() {
     assert!(approx(toi.normal.x, -1.0, f32::EPSILON));
     assert!(approx(toi.fraction, 0.6, f32::EPSILON));
 }
+
+#[test]
+fn collision_input_types_use_explicit_raw_conversions() {
+    let proxy_a =
+        ShapeProxy::new([[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]], 0.25).unwrap();
+    let proxy_b = ShapeProxy::new([[2.0, -1.0], [2.0, 1.0]], 0.5).unwrap();
+
+    let distance_input =
+        DistanceInput::new(proxy_a, proxy_b, Transform::IDENTITY, Transform::IDENTITY)
+            .with_radii(true);
+    let raw_distance = distance_input.into_raw();
+    assert_eq!(raw_distance.proxyA.count, 4);
+    assert_eq!(raw_distance.proxyB.count, 2);
+    assert!(raw_distance.useRadii);
+    assert!(approx(raw_distance.proxyA.points[0].x, -1.0, f32::EPSILON));
+    assert!(approx(raw_distance.proxyA.radius, 0.25, f32::EPSILON));
+    assert!(approx(raw_distance.proxyB.points[0].x, 2.0, f32::EPSILON));
+    assert!(approx(raw_distance.proxyB.radius, 0.5, f32::EPSILON));
+
+    let cast_input = ShapeCastPairInput::new(
+        proxy_a,
+        proxy_b,
+        Transform::IDENTITY,
+        Transform::IDENTITY,
+        [-2.0, 0.5],
+    )
+    .with_max_fraction(0.75)
+    .with_can_encroach(true);
+    let raw_cast = cast_input.into_raw();
+    assert_eq!(raw_cast.proxyA.count, 4);
+    assert_eq!(raw_cast.proxyB.count, 2);
+    assert!(approx(raw_cast.translationB.x, -2.0, f32::EPSILON));
+    assert!(approx(raw_cast.translationB.y, 0.5, f32::EPSILON));
+    assert!(approx(raw_cast.maxFraction, 0.75, f32::EPSILON));
+    assert!(raw_cast.canEncroach);
+
+    let sweep = Sweep::new(
+        [1.0, 2.0],
+        [3.0, 4.0],
+        [5.0, 6.0],
+        Rot::from_degrees(10.0),
+        Rot::from_degrees(20.0),
+    );
+    let raw_sweep = sweep.into_raw();
+    assert!(approx(raw_sweep.localCenter.x, 1.0, f32::EPSILON));
+    assert!(approx(raw_sweep.localCenter.y, 2.0, f32::EPSILON));
+    assert!(approx(raw_sweep.c1.x, 3.0, f32::EPSILON));
+    assert!(approx(raw_sweep.c2.y, 6.0, f32::EPSILON));
+
+    let sweep_roundtrip = Sweep::from_raw(raw_sweep);
+    assert!(approx(sweep_roundtrip.local_center.x, 1.0, f32::EPSILON));
+    assert!(approx(sweep_roundtrip.local_center.y, 2.0, f32::EPSILON));
+    assert!(approx(sweep_roundtrip.c1.x, 3.0, f32::EPSILON));
+    assert!(approx(sweep_roundtrip.c1.y, 4.0, f32::EPSILON));
+    assert!(approx(sweep_roundtrip.c2.x, 5.0, f32::EPSILON));
+    assert!(approx(sweep_roundtrip.c2.y, 6.0, f32::EPSILON));
+    assert!(approx(
+        sweep_roundtrip.q1.angle(),
+        Rot::from_degrees(10.0).angle(),
+        1.0e-5
+    ));
+    assert!(approx(
+        sweep_roundtrip.q2.angle(),
+        Rot::from_degrees(20.0).angle(),
+        1.0e-5
+    ));
+
+    let toi_input = ToiInput::new(proxy_a, proxy_b, sweep, sweep_roundtrip).with_max_fraction(0.9);
+    let raw_toi = toi_input.into_raw();
+    assert_eq!(raw_toi.proxyA.count, 4);
+    assert_eq!(raw_toi.proxyB.count, 2);
+    assert!(approx(raw_toi.maxFraction, 0.9, f32::EPSILON));
+    assert!(approx(raw_toi.sweepA.localCenter.x, 1.0, f32::EPSILON));
+    assert!(approx(raw_toi.sweepB.c2.y, 6.0, f32::EPSILON));
+}
