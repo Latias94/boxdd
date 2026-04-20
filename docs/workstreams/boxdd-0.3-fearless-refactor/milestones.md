@@ -49,11 +49,13 @@ Scope:
 - reusable-buffer audit and cleanup for debug draw command collection
 - review `World` / `WorldHandle` duplication
 - review owned/scoped handle duplication outside the hottest paths
+- consolidate the most mechanical `Shape` / `OwnedShape`, `Body` / `OwnedBody`, and `Chain` / `OwnedChain` internals behind shared private helpers
 
 Exit criteria:
 
 - the remaining duplication backlog is explicitly categorized as worth keeping or worth removing
 - no obvious per-frame allocation trap remains undocumented or unaddressed on the main safe surface
+- high-churn owned/scoped handle pairs no longer duplicate the same FFI access logic across every hot-path accessor
 
 ## M4: Advanced Wrapper Coverage
 

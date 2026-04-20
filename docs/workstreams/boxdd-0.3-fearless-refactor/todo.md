@@ -38,11 +38,14 @@
 - [x] Make crate-owned geometry raw conversions explicit with `from_raw(...)` / `into_raw()` for `Circle`, `Segment`, `ChainSegment`, `Capsule`, and `Polygon`.
 - [x] Make `MassData` and `MotionLocks` use explicit raw conversions instead of implicit `From<ffi::...>` impls.
 - [x] Make `Filter` use explicit raw conversions instead of implicit `From<ffi::b2Filter>` impls.
+- [x] Consolidate shared `Shape` / `OwnedShape` internals for geometry, material, filter, and sensor-capacity accessors.
+- [x] Consolidate shared `Body` / `OwnedBody` internals for state, transform, force/impulse, mass, and common flag accessors.
+- [x] Consolidate shared `Chain` / `OwnedChain` internals for validity, segment/material access, and common raw escape hatches.
 
 ## Next
 
 - [ ] Review remaining `World` / `WorldHandle` query duplication and decide whether selective consolidation is worth it.
-- [ ] Audit remaining owned/scoped handle duplication outside the already-refactored hot paths.
+- [ ] Audit remaining owned/scoped handle duplication outside the already-refactored hot paths, especially `Body` / `Shape` name and user-data paths.
 - [ ] Review remaining public raw escape hatches and document which are intentional (`world_id_raw`, raw event slices, debug draw raw paths, etc.).
 - [ ] Audit remaining crate-owned value types that still rely on implicit raw conversions and decide which should move to explicit `from_raw(...)` / `into_raw()` in `0.3`.
 

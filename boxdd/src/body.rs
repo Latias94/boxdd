@@ -61,6 +61,262 @@ fn body_contact_data_raw_impl(id: BodyId) -> Vec<ffi::b2ContactData> {
     }
 }
 
+#[inline]
+fn body_world_id_impl(id: BodyId) -> ffi::b2WorldId {
+    unsafe { ffi::b2Body_GetWorld(id) }
+}
+
+#[inline]
+fn body_is_valid_impl(id: BodyId) -> bool {
+    unsafe { ffi::b2Body_IsValid(id) }
+}
+
+#[inline]
+fn body_position_impl(id: BodyId) -> Vec2 {
+    Vec2::from(unsafe { ffi::b2Body_GetPosition(id) })
+}
+
+#[inline]
+fn body_linear_velocity_impl(id: BodyId) -> Vec2 {
+    Vec2::from(unsafe { ffi::b2Body_GetLinearVelocity(id) })
+}
+
+#[inline]
+fn body_angular_velocity_impl(id: BodyId) -> f32 {
+    unsafe { ffi::b2Body_GetAngularVelocity(id) }
+}
+
+#[inline]
+fn body_transform_raw_impl(id: BodyId) -> ffi::b2Transform {
+    unsafe { ffi::b2Body_GetTransform(id) }
+}
+
+#[inline]
+fn body_transform_impl(id: BodyId) -> crate::Transform {
+    body_transform_raw_impl(id).into()
+}
+
+#[inline]
+fn body_local_point_impl<V: Into<Vec2>>(id: BodyId, world_point: V) -> Vec2 {
+    let point: ffi::b2Vec2 = world_point.into().into();
+    Vec2::from(unsafe { ffi::b2Body_GetLocalPoint(id, point) })
+}
+
+#[inline]
+fn body_world_point_impl<V: Into<Vec2>>(id: BodyId, local_point: V) -> Vec2 {
+    let point: ffi::b2Vec2 = local_point.into().into();
+    Vec2::from(unsafe { ffi::b2Body_GetWorldPoint(id, point) })
+}
+
+#[inline]
+fn body_local_vector_impl<V: Into<Vec2>>(id: BodyId, world_vector: V) -> Vec2 {
+    let vector: ffi::b2Vec2 = world_vector.into().into();
+    Vec2::from(unsafe { ffi::b2Body_GetLocalVector(id, vector) })
+}
+
+#[inline]
+fn body_world_vector_impl<V: Into<Vec2>>(id: BodyId, local_vector: V) -> Vec2 {
+    let vector: ffi::b2Vec2 = local_vector.into().into();
+    Vec2::from(unsafe { ffi::b2Body_GetWorldVector(id, vector) })
+}
+
+#[inline]
+fn body_local_point_velocity_impl<V: Into<Vec2>>(id: BodyId, local_point: V) -> Vec2 {
+    let point: ffi::b2Vec2 = local_point.into().into();
+    Vec2::from(unsafe { ffi::b2Body_GetLocalPointVelocity(id, point) })
+}
+
+#[inline]
+fn body_world_point_velocity_impl<V: Into<Vec2>>(id: BodyId, world_point: V) -> Vec2 {
+    let point: ffi::b2Vec2 = world_point.into().into();
+    Vec2::from(unsafe { ffi::b2Body_GetWorldPointVelocity(id, point) })
+}
+
+#[inline]
+fn body_set_position_and_rotation_impl<V: Into<Vec2>>(id: BodyId, position: V, angle_radians: f32) {
+    let (s, c) = angle_radians.sin_cos();
+    let rotation = ffi::b2Rot { c, s };
+    let position: ffi::b2Vec2 = position.into().into();
+    unsafe { ffi::b2Body_SetTransform(id, position, rotation) };
+}
+
+#[inline]
+fn body_set_linear_velocity_impl<V: Into<Vec2>>(id: BodyId, velocity: V) {
+    let velocity: ffi::b2Vec2 = velocity.into().into();
+    unsafe { ffi::b2Body_SetLinearVelocity(id, velocity) }
+}
+
+#[inline]
+fn body_set_angular_velocity_impl(id: BodyId, angular_velocity: f32) {
+    unsafe { ffi::b2Body_SetAngularVelocity(id, angular_velocity) }
+}
+
+#[inline]
+fn body_set_target_transform_impl(
+    id: BodyId,
+    target: crate::Transform,
+    time_step: f32,
+    wake: bool,
+) {
+    unsafe { ffi::b2Body_SetTargetTransform(id, target.into(), time_step, wake) };
+}
+
+#[inline]
+fn body_apply_force_impl<F: Into<Vec2>, P: Into<Vec2>>(id: BodyId, force: F, point: P, wake: bool) {
+    let force: ffi::b2Vec2 = force.into().into();
+    let point: ffi::b2Vec2 = point.into().into();
+    unsafe { ffi::b2Body_ApplyForce(id, force, point, wake) };
+}
+
+#[inline]
+fn body_apply_force_to_center_impl<V: Into<Vec2>>(id: BodyId, force: V, wake: bool) {
+    let force: ffi::b2Vec2 = force.into().into();
+    unsafe { ffi::b2Body_ApplyForceToCenter(id, force, wake) };
+}
+
+#[inline]
+fn body_apply_torque_impl(id: BodyId, torque: f32, wake: bool) {
+    unsafe { ffi::b2Body_ApplyTorque(id, torque, wake) }
+}
+
+#[inline]
+fn body_clear_forces_impl(id: BodyId) {
+    unsafe { ffi::b2Body_ClearForces(id) };
+}
+
+#[inline]
+fn body_apply_linear_impulse_impl<F: Into<Vec2>, P: Into<Vec2>>(
+    id: BodyId,
+    impulse: F,
+    point: P,
+    wake: bool,
+) {
+    let impulse: ffi::b2Vec2 = impulse.into().into();
+    let point: ffi::b2Vec2 = point.into().into();
+    unsafe { ffi::b2Body_ApplyLinearImpulse(id, impulse, point, wake) };
+}
+
+#[inline]
+fn body_apply_linear_impulse_to_center_impl<V: Into<Vec2>>(id: BodyId, impulse: V, wake: bool) {
+    let impulse: ffi::b2Vec2 = impulse.into().into();
+    unsafe { ffi::b2Body_ApplyLinearImpulseToCenter(id, impulse, wake) };
+}
+
+#[inline]
+fn body_apply_angular_impulse_impl(id: BodyId, impulse: f32, wake: bool) {
+    unsafe { ffi::b2Body_ApplyAngularImpulse(id, impulse, wake) }
+}
+
+#[inline]
+fn body_mass_impl(id: BodyId) -> f32 {
+    unsafe { ffi::b2Body_GetMass(id) }
+}
+
+#[inline]
+fn body_rotational_inertia_impl(id: BodyId) -> f32 {
+    unsafe { ffi::b2Body_GetRotationalInertia(id) }
+}
+
+#[inline]
+fn body_local_center_of_mass_impl(id: BodyId) -> Vec2 {
+    Vec2::from(unsafe { ffi::b2Body_GetLocalCenterOfMass(id) })
+}
+
+#[inline]
+fn body_world_center_of_mass_impl(id: BodyId) -> Vec2 {
+    Vec2::from(unsafe { ffi::b2Body_GetWorldCenterOfMass(id) })
+}
+
+#[inline]
+fn body_mass_data_impl(id: BodyId) -> MassData {
+    MassData::from_raw(unsafe { ffi::b2Body_GetMassData(id) })
+}
+
+#[inline]
+fn body_set_mass_data_impl(id: BodyId, mass_data: MassData) {
+    unsafe { ffi::b2Body_SetMassData(id, mass_data.into_raw()) };
+}
+
+#[inline]
+fn body_apply_mass_from_shapes_impl(id: BodyId) {
+    unsafe { ffi::b2Body_ApplyMassFromShapes(id) };
+}
+
+#[inline]
+fn body_type_impl(id: BodyId) -> BodyType {
+    BodyType::from(unsafe { ffi::b2Body_GetType(id) })
+}
+
+#[inline]
+fn body_set_type_impl(id: BodyId, body_type: BodyType) {
+    unsafe { ffi::b2Body_SetType(id, body_type.into()) }
+}
+
+#[inline]
+fn body_gravity_scale_impl(id: BodyId) -> f32 {
+    unsafe { ffi::b2Body_GetGravityScale(id) }
+}
+
+#[inline]
+fn body_set_gravity_scale_impl(id: BodyId, gravity_scale: f32) {
+    unsafe { ffi::b2Body_SetGravityScale(id, gravity_scale) }
+}
+
+#[inline]
+fn body_linear_damping_impl(id: BodyId) -> f32 {
+    unsafe { ffi::b2Body_GetLinearDamping(id) }
+}
+
+#[inline]
+fn body_set_linear_damping_impl(id: BodyId, linear_damping: f32) {
+    unsafe { ffi::b2Body_SetLinearDamping(id, linear_damping) }
+}
+
+#[inline]
+fn body_angular_damping_impl(id: BodyId) -> f32 {
+    unsafe { ffi::b2Body_GetAngularDamping(id) }
+}
+
+#[inline]
+fn body_set_angular_damping_impl(id: BodyId, angular_damping: f32) {
+    unsafe { ffi::b2Body_SetAngularDamping(id, angular_damping) }
+}
+
+#[inline]
+fn body_is_awake_impl(id: BodyId) -> bool {
+    unsafe { ffi::b2Body_IsAwake(id) }
+}
+
+#[inline]
+fn body_set_awake_impl(id: BodyId, awake: bool) {
+    unsafe { ffi::b2Body_SetAwake(id, awake) }
+}
+
+#[inline]
+fn body_is_enabled_impl(id: BodyId) -> bool {
+    unsafe { ffi::b2Body_IsEnabled(id) }
+}
+
+#[inline]
+fn body_enable_impl(id: BodyId) {
+    unsafe { ffi::b2Body_Enable(id) }
+}
+
+#[inline]
+fn body_disable_impl(id: BodyId) {
+    unsafe { ffi::b2Body_Disable(id) }
+}
+
+#[inline]
+fn body_is_bullet_impl(id: BodyId) -> bool {
+    unsafe { ffi::b2Body_IsBullet(id) }
+}
+
+#[inline]
+fn body_set_bullet_impl(id: BodyId, bullet: bool) {
+    unsafe { ffi::b2Body_SetBullet(id, bullet) }
+}
+
 impl OwnedBody {
     pub(crate) fn new(core: Arc<crate::core::world_core::WorldCore>, id: BodyId) -> Self {
         core.owned_bodies
@@ -79,22 +335,22 @@ impl OwnedBody {
 
     pub fn world_id_raw(&self) -> ffi::b2WorldId {
         self.assert_valid();
-        unsafe { ffi::b2Body_GetWorld(self.id) }
+        body_world_id_impl(self.id)
     }
 
     pub fn try_world_id_raw(&self) -> ApiResult<ffi::b2WorldId> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_GetWorld(self.id) })
+        Ok(body_world_id_impl(self.id))
     }
 
     pub fn is_valid(&self) -> bool {
         crate::core::callback_state::assert_not_in_callback();
-        unsafe { ffi::b2Body_IsValid(self.id) }
+        body_is_valid_impl(self.id)
     }
 
     pub fn try_is_valid(&self) -> ApiResult<bool> {
         crate::core::callback_state::check_not_in_callback()?;
-        Ok(unsafe { ffi::b2Body_IsValid(self.id) })
+        Ok(body_is_valid_impl(self.id))
     }
 
     #[inline]
@@ -109,142 +365,117 @@ impl OwnedBody {
 
     pub fn position(&self) -> Vec2 {
         self.assert_valid();
-        Vec2::from(unsafe { ffi::b2Body_GetPosition(self.id) })
+        body_position_impl(self.id)
     }
 
     pub fn try_position(&self) -> ApiResult<Vec2> {
         self.check_valid()?;
-        Ok(Vec2::from(unsafe { ffi::b2Body_GetPosition(self.id) }))
+        Ok(body_position_impl(self.id))
     }
 
     pub fn linear_velocity(&self) -> Vec2 {
         self.assert_valid();
-        Vec2::from(unsafe { ffi::b2Body_GetLinearVelocity(self.id) })
+        body_linear_velocity_impl(self.id)
     }
 
     pub fn try_linear_velocity(&self) -> ApiResult<Vec2> {
         self.check_valid()?;
-        Ok(Vec2::from(unsafe {
-            ffi::b2Body_GetLinearVelocity(self.id)
-        }))
+        Ok(body_linear_velocity_impl(self.id))
     }
 
     pub fn angular_velocity(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Body_GetAngularVelocity(self.id) }
+        body_angular_velocity_impl(self.id)
     }
 
     pub fn try_angular_velocity(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_GetAngularVelocity(self.id) })
+        Ok(body_angular_velocity_impl(self.id))
     }
 
     pub fn transform(&self) -> crate::Transform {
         self.assert_valid();
-        unsafe { ffi::b2Body_GetTransform(self.id) }.into()
+        body_transform_impl(self.id)
     }
 
     pub fn try_transform(&self) -> ApiResult<crate::Transform> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_GetTransform(self.id) }.into())
+        Ok(body_transform_impl(self.id))
     }
 
     pub fn transform_raw(&self) -> ffi::b2Transform {
         self.assert_valid();
-        unsafe { ffi::b2Body_GetTransform(self.id) }
+        body_transform_raw_impl(self.id)
     }
 
     pub fn try_transform_raw(&self) -> ApiResult<ffi::b2Transform> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_GetTransform(self.id) })
+        Ok(body_transform_raw_impl(self.id))
     }
 
     pub fn local_point<V: Into<Vec2>>(&self, world_point: V) -> Vec2 {
         self.assert_valid();
-        let p: ffi::b2Vec2 = world_point.into().into();
-        Vec2::from(unsafe { ffi::b2Body_GetLocalPoint(self.id, p) })
+        body_local_point_impl(self.id, world_point)
     }
 
     pub fn try_local_point<V: Into<Vec2>>(&self, world_point: V) -> ApiResult<Vec2> {
         self.check_valid()?;
-        let p: ffi::b2Vec2 = world_point.into().into();
-        Ok(Vec2::from(unsafe { ffi::b2Body_GetLocalPoint(self.id, p) }))
+        Ok(body_local_point_impl(self.id, world_point))
     }
 
     pub fn world_point<V: Into<Vec2>>(&self, local_point: V) -> Vec2 {
         self.assert_valid();
-        let p: ffi::b2Vec2 = local_point.into().into();
-        Vec2::from(unsafe { ffi::b2Body_GetWorldPoint(self.id, p) })
+        body_world_point_impl(self.id, local_point)
     }
 
     pub fn try_world_point<V: Into<Vec2>>(&self, local_point: V) -> ApiResult<Vec2> {
         self.check_valid()?;
-        let p: ffi::b2Vec2 = local_point.into().into();
-        Ok(Vec2::from(unsafe { ffi::b2Body_GetWorldPoint(self.id, p) }))
+        Ok(body_world_point_impl(self.id, local_point))
     }
 
     pub fn local_vector<V: Into<Vec2>>(&self, world_vector: V) -> Vec2 {
         self.assert_valid();
-        let v: ffi::b2Vec2 = world_vector.into().into();
-        Vec2::from(unsafe { ffi::b2Body_GetLocalVector(self.id, v) })
+        body_local_vector_impl(self.id, world_vector)
     }
 
     pub fn try_local_vector<V: Into<Vec2>>(&self, world_vector: V) -> ApiResult<Vec2> {
         self.check_valid()?;
-        let v: ffi::b2Vec2 = world_vector.into().into();
-        Ok(Vec2::from(unsafe {
-            ffi::b2Body_GetLocalVector(self.id, v)
-        }))
+        Ok(body_local_vector_impl(self.id, world_vector))
     }
 
     pub fn world_vector<V: Into<Vec2>>(&self, local_vector: V) -> Vec2 {
         self.assert_valid();
-        let v: ffi::b2Vec2 = local_vector.into().into();
-        Vec2::from(unsafe { ffi::b2Body_GetWorldVector(self.id, v) })
+        body_world_vector_impl(self.id, local_vector)
     }
 
     pub fn try_world_vector<V: Into<Vec2>>(&self, local_vector: V) -> ApiResult<Vec2> {
         self.check_valid()?;
-        let v: ffi::b2Vec2 = local_vector.into().into();
-        Ok(Vec2::from(unsafe {
-            ffi::b2Body_GetWorldVector(self.id, v)
-        }))
+        Ok(body_world_vector_impl(self.id, local_vector))
     }
 
     pub fn local_point_velocity<V: Into<Vec2>>(&self, local_point: V) -> Vec2 {
         self.assert_valid();
-        let p: ffi::b2Vec2 = local_point.into().into();
-        Vec2::from(unsafe { ffi::b2Body_GetLocalPointVelocity(self.id, p) })
+        body_local_point_velocity_impl(self.id, local_point)
     }
 
     pub fn try_local_point_velocity<V: Into<Vec2>>(&self, local_point: V) -> ApiResult<Vec2> {
         self.check_valid()?;
-        let p: ffi::b2Vec2 = local_point.into().into();
-        Ok(Vec2::from(unsafe {
-            ffi::b2Body_GetLocalPointVelocity(self.id, p)
-        }))
+        Ok(body_local_point_velocity_impl(self.id, local_point))
     }
 
     pub fn world_point_velocity<V: Into<Vec2>>(&self, world_point: V) -> Vec2 {
         self.assert_valid();
-        let p: ffi::b2Vec2 = world_point.into().into();
-        Vec2::from(unsafe { ffi::b2Body_GetWorldPointVelocity(self.id, p) })
+        body_world_point_velocity_impl(self.id, world_point)
     }
 
     pub fn try_world_point_velocity<V: Into<Vec2>>(&self, world_point: V) -> ApiResult<Vec2> {
         self.check_valid()?;
-        let p: ffi::b2Vec2 = world_point.into().into();
-        Ok(Vec2::from(unsafe {
-            ffi::b2Body_GetWorldPointVelocity(self.id, p)
-        }))
+        Ok(body_world_point_velocity_impl(self.id, world_point))
     }
 
     pub fn set_position_and_rotation<V: Into<Vec2>>(&mut self, p: V, angle_radians: f32) {
         self.assert_valid();
-        let (s, c) = angle_radians.sin_cos();
-        let rot = ffi::b2Rot { c, s };
-        let pos: ffi::b2Vec2 = p.into().into();
-        unsafe { ffi::b2Body_SetTransform(self.id, pos, rot) };
+        body_set_position_and_rotation_impl(self.id, p, angle_radians);
     }
 
     pub fn try_set_position_and_rotation<V: Into<Vec2>>(
@@ -253,40 +484,35 @@ impl OwnedBody {
         angle_radians: f32,
     ) -> ApiResult<()> {
         self.check_valid()?;
-        let (s, c) = angle_radians.sin_cos();
-        let rot = ffi::b2Rot { c, s };
-        let pos: ffi::b2Vec2 = p.into().into();
-        unsafe { ffi::b2Body_SetTransform(self.id, pos, rot) };
+        body_set_position_and_rotation_impl(self.id, p, angle_radians);
         Ok(())
     }
 
     pub fn set_linear_velocity<V: Into<Vec2>>(&mut self, v: V) {
         self.assert_valid();
-        let vel: ffi::b2Vec2 = v.into().into();
-        unsafe { ffi::b2Body_SetLinearVelocity(self.id, vel) }
+        body_set_linear_velocity_impl(self.id, v)
     }
 
     pub fn try_set_linear_velocity<V: Into<Vec2>>(&mut self, v: V) -> ApiResult<()> {
         self.check_valid()?;
-        let vel: ffi::b2Vec2 = v.into().into();
-        unsafe { ffi::b2Body_SetLinearVelocity(self.id, vel) }
+        body_set_linear_velocity_impl(self.id, v);
         Ok(())
     }
 
     pub fn set_angular_velocity(&mut self, w: f32) {
         self.assert_valid();
-        unsafe { ffi::b2Body_SetAngularVelocity(self.id, w) }
+        body_set_angular_velocity_impl(self.id, w)
     }
 
     pub fn try_set_angular_velocity(&mut self, w: f32) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_SetAngularVelocity(self.id, w) }
+        body_set_angular_velocity_impl(self.id, w);
         Ok(())
     }
 
     pub fn set_target_transform(&mut self, target: crate::Transform, time_step: f32, wake: bool) {
         self.assert_valid();
-        unsafe { ffi::b2Body_SetTargetTransform(self.id, target.into(), time_step, wake) };
+        body_set_target_transform_impl(self.id, target, time_step, wake);
     }
 
     pub fn try_set_target_transform(
@@ -296,14 +522,13 @@ impl OwnedBody {
         wake: bool,
     ) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_SetTargetTransform(self.id, target.into(), time_step, wake) };
+        body_set_target_transform_impl(self.id, target, time_step, wake);
         Ok(())
     }
 
     pub fn apply_force_to_center<V: Into<Vec2>>(&mut self, force: V, wake: bool) {
         self.assert_valid();
-        let f: ffi::b2Vec2 = force.into().into();
-        unsafe { ffi::b2Body_ApplyForceToCenter(self.id, f, wake) };
+        body_apply_force_to_center_impl(self.id, force, wake);
     }
 
     pub fn try_apply_force_to_center<V: Into<Vec2>>(
@@ -312,16 +537,13 @@ impl OwnedBody {
         wake: bool,
     ) -> ApiResult<()> {
         self.check_valid()?;
-        let f: ffi::b2Vec2 = force.into().into();
-        unsafe { ffi::b2Body_ApplyForceToCenter(self.id, f, wake) };
+        body_apply_force_to_center_impl(self.id, force, wake);
         Ok(())
     }
 
     pub fn apply_force<F: Into<Vec2>, P: Into<Vec2>>(&mut self, force: F, point: P, wake: bool) {
         self.assert_valid();
-        let f: ffi::b2Vec2 = force.into().into();
-        let p: ffi::b2Vec2 = point.into().into();
-        unsafe { ffi::b2Body_ApplyForce(self.id, f, p, wake) };
+        body_apply_force_impl(self.id, force, point, wake);
     }
 
     pub fn try_apply_force<F: Into<Vec2>, P: Into<Vec2>>(
@@ -331,36 +553,33 @@ impl OwnedBody {
         wake: bool,
     ) -> ApiResult<()> {
         self.check_valid()?;
-        let f: ffi::b2Vec2 = force.into().into();
-        let p: ffi::b2Vec2 = point.into().into();
-        unsafe { ffi::b2Body_ApplyForce(self.id, f, p, wake) };
+        body_apply_force_impl(self.id, force, point, wake);
         Ok(())
     }
     pub fn apply_torque(&mut self, torque: f32, wake: bool) {
         self.assert_valid();
-        unsafe { ffi::b2Body_ApplyTorque(self.id, torque, wake) }
+        body_apply_torque_impl(self.id, torque, wake)
     }
 
     pub fn try_apply_torque(&mut self, torque: f32, wake: bool) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_ApplyTorque(self.id, torque, wake) }
+        body_apply_torque_impl(self.id, torque, wake);
         Ok(())
     }
 
     pub fn clear_forces(&mut self) {
         self.assert_valid();
-        unsafe { ffi::b2Body_ClearForces(self.id) };
+        body_clear_forces_impl(self.id);
     }
 
     pub fn try_clear_forces(&mut self) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_ClearForces(self.id) };
+        body_clear_forces_impl(self.id);
         Ok(())
     }
     pub fn apply_linear_impulse_to_center<V: Into<Vec2>>(&mut self, impulse: V, wake: bool) {
         self.assert_valid();
-        let i: ffi::b2Vec2 = impulse.into().into();
-        unsafe { ffi::b2Body_ApplyLinearImpulseToCenter(self.id, i, wake) };
+        body_apply_linear_impulse_to_center_impl(self.id, impulse, wake);
     }
 
     pub fn try_apply_linear_impulse_to_center<V: Into<Vec2>>(
@@ -369,8 +588,7 @@ impl OwnedBody {
         wake: bool,
     ) -> ApiResult<()> {
         self.check_valid()?;
-        let i: ffi::b2Vec2 = impulse.into().into();
-        unsafe { ffi::b2Body_ApplyLinearImpulseToCenter(self.id, i, wake) };
+        body_apply_linear_impulse_to_center_impl(self.id, impulse, wake);
         Ok(())
     }
 
@@ -381,13 +599,11 @@ impl OwnedBody {
         wake: bool,
     ) {
         self.assert_valid();
-        let i: ffi::b2Vec2 = impulse.into().into();
-        let p: ffi::b2Vec2 = point.into().into();
-        unsafe { ffi::b2Body_ApplyLinearImpulse(self.id, i, p, wake) };
+        body_apply_linear_impulse_impl(self.id, impulse, point, wake);
     }
     pub fn apply_angular_impulse(&mut self, impulse: f32, wake: bool) {
         self.assert_valid();
-        unsafe { ffi::b2Body_ApplyAngularImpulse(self.id, impulse, wake) }
+        body_apply_angular_impulse_impl(self.id, impulse, wake)
     }
 
     pub fn try_apply_linear_impulse<F: Into<Vec2>, P: Into<Vec2>>(
@@ -397,231 +613,223 @@ impl OwnedBody {
         wake: bool,
     ) -> ApiResult<()> {
         self.check_valid()?;
-        let i: ffi::b2Vec2 = impulse.into().into();
-        let p: ffi::b2Vec2 = point.into().into();
-        unsafe { ffi::b2Body_ApplyLinearImpulse(self.id, i, p, wake) };
+        body_apply_linear_impulse_impl(self.id, impulse, point, wake);
         Ok(())
     }
 
     pub fn try_apply_angular_impulse(&mut self, impulse: f32, wake: bool) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_ApplyAngularImpulse(self.id, impulse, wake) }
+        body_apply_angular_impulse_impl(self.id, impulse, wake);
         Ok(())
     }
 
     pub fn mass(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Body_GetMass(self.id) }
+        body_mass_impl(self.id)
     }
 
     pub fn try_mass(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_GetMass(self.id) })
+        Ok(body_mass_impl(self.id))
     }
 
     pub fn rotational_inertia(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Body_GetRotationalInertia(self.id) }
+        body_rotational_inertia_impl(self.id)
     }
 
     pub fn try_rotational_inertia(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_GetRotationalInertia(self.id) })
+        Ok(body_rotational_inertia_impl(self.id))
     }
 
     pub fn local_center_of_mass(&self) -> Vec2 {
         self.assert_valid();
-        Vec2::from(unsafe { ffi::b2Body_GetLocalCenterOfMass(self.id) })
+        body_local_center_of_mass_impl(self.id)
     }
 
     pub fn try_local_center_of_mass(&self) -> ApiResult<Vec2> {
         self.check_valid()?;
-        Ok(Vec2::from(unsafe {
-            ffi::b2Body_GetLocalCenterOfMass(self.id)
-        }))
+        Ok(body_local_center_of_mass_impl(self.id))
     }
 
     pub fn world_center_of_mass(&self) -> Vec2 {
         self.assert_valid();
-        Vec2::from(unsafe { ffi::b2Body_GetWorldCenterOfMass(self.id) })
+        body_world_center_of_mass_impl(self.id)
     }
 
     pub fn try_world_center_of_mass(&self) -> ApiResult<Vec2> {
         self.check_valid()?;
-        Ok(Vec2::from(unsafe {
-            ffi::b2Body_GetWorldCenterOfMass(self.id)
-        }))
+        Ok(body_world_center_of_mass_impl(self.id))
     }
 
     pub fn mass_data(&self) -> MassData {
         self.assert_valid();
-        MassData::from_raw(unsafe { ffi::b2Body_GetMassData(self.id) })
+        body_mass_data_impl(self.id)
     }
 
     pub fn try_mass_data(&self) -> ApiResult<MassData> {
         self.check_valid()?;
-        Ok(MassData::from_raw(unsafe {
-            ffi::b2Body_GetMassData(self.id)
-        }))
+        Ok(body_mass_data_impl(self.id))
     }
 
     pub fn set_mass_data(&mut self, mass_data: MassData) {
         self.assert_valid();
-        unsafe { ffi::b2Body_SetMassData(self.id, mass_data.into_raw()) };
+        body_set_mass_data_impl(self.id, mass_data);
     }
 
     pub fn try_set_mass_data(&mut self, mass_data: MassData) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_SetMassData(self.id, mass_data.into_raw()) };
+        body_set_mass_data_impl(self.id, mass_data);
         Ok(())
     }
 
     pub fn apply_mass_from_shapes(&mut self) {
         self.assert_valid();
-        unsafe { ffi::b2Body_ApplyMassFromShapes(self.id) };
+        body_apply_mass_from_shapes_impl(self.id);
     }
 
     pub fn try_apply_mass_from_shapes(&mut self) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_ApplyMassFromShapes(self.id) };
+        body_apply_mass_from_shapes_impl(self.id);
         Ok(())
     }
 
     pub fn body_type(&self) -> BodyType {
         self.assert_valid();
-        BodyType::from(unsafe { ffi::b2Body_GetType(self.id) })
+        body_type_impl(self.id)
     }
 
     pub fn try_body_type(&self) -> ApiResult<BodyType> {
         self.check_valid()?;
-        Ok(BodyType::from(unsafe { ffi::b2Body_GetType(self.id) }))
+        Ok(body_type_impl(self.id))
     }
     pub fn set_body_type(&mut self, t: BodyType) {
         self.assert_valid();
-        unsafe { ffi::b2Body_SetType(self.id, t.into()) }
+        body_set_type_impl(self.id, t)
     }
 
     pub fn try_set_body_type(&mut self, t: BodyType) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_SetType(self.id, t.into()) }
+        body_set_type_impl(self.id, t);
         Ok(())
     }
 
     pub fn gravity_scale(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Body_GetGravityScale(self.id) }
+        body_gravity_scale_impl(self.id)
     }
     pub fn try_gravity_scale(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_GetGravityScale(self.id) })
+        Ok(body_gravity_scale_impl(self.id))
     }
     pub fn set_gravity_scale(&mut self, v: f32) {
         self.assert_valid();
-        unsafe { ffi::b2Body_SetGravityScale(self.id, v) }
+        body_set_gravity_scale_impl(self.id, v)
     }
 
     pub fn try_set_gravity_scale(&mut self, v: f32) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_SetGravityScale(self.id, v) }
+        body_set_gravity_scale_impl(self.id, v);
         Ok(())
     }
 
     pub fn linear_damping(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Body_GetLinearDamping(self.id) }
+        body_linear_damping_impl(self.id)
     }
     pub fn try_linear_damping(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_GetLinearDamping(self.id) })
+        Ok(body_linear_damping_impl(self.id))
     }
     pub fn set_linear_damping(&mut self, v: f32) {
         self.assert_valid();
-        unsafe { ffi::b2Body_SetLinearDamping(self.id, v) }
+        body_set_linear_damping_impl(self.id, v)
     }
     pub fn try_set_linear_damping(&mut self, v: f32) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_SetLinearDamping(self.id, v) }
+        body_set_linear_damping_impl(self.id, v);
         Ok(())
     }
     pub fn angular_damping(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Body_GetAngularDamping(self.id) }
+        body_angular_damping_impl(self.id)
     }
     pub fn try_angular_damping(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_GetAngularDamping(self.id) })
+        Ok(body_angular_damping_impl(self.id))
     }
     pub fn set_angular_damping(&mut self, v: f32) {
         self.assert_valid();
-        unsafe { ffi::b2Body_SetAngularDamping(self.id, v) }
+        body_set_angular_damping_impl(self.id, v)
     }
     pub fn try_set_angular_damping(&mut self, v: f32) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_SetAngularDamping(self.id, v) }
+        body_set_angular_damping_impl(self.id, v);
         Ok(())
     }
 
     pub fn is_awake(&self) -> bool {
         self.assert_valid();
-        unsafe { ffi::b2Body_IsAwake(self.id) }
+        body_is_awake_impl(self.id)
     }
     pub fn try_is_awake(&self) -> ApiResult<bool> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_IsAwake(self.id) })
+        Ok(body_is_awake_impl(self.id))
     }
     pub fn set_awake(&mut self, awake: bool) {
         self.assert_valid();
-        unsafe { ffi::b2Body_SetAwake(self.id, awake) }
+        body_set_awake_impl(self.id, awake)
     }
     pub fn try_set_awake(&mut self, awake: bool) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_SetAwake(self.id, awake) }
+        body_set_awake_impl(self.id, awake);
         Ok(())
     }
 
     pub fn is_enabled(&self) -> bool {
         self.assert_valid();
-        unsafe { ffi::b2Body_IsEnabled(self.id) }
+        body_is_enabled_impl(self.id)
     }
     pub fn try_is_enabled(&self) -> ApiResult<bool> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_IsEnabled(self.id) })
+        Ok(body_is_enabled_impl(self.id))
     }
     pub fn enable(&mut self) {
         self.assert_valid();
-        unsafe { ffi::b2Body_Enable(self.id) }
+        body_enable_impl(self.id)
     }
     pub fn try_enable(&mut self) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_Enable(self.id) }
+        body_enable_impl(self.id);
         Ok(())
     }
     pub fn disable(&mut self) {
         self.assert_valid();
-        unsafe { ffi::b2Body_Disable(self.id) }
+        body_disable_impl(self.id)
     }
     pub fn try_disable(&mut self) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_Disable(self.id) }
+        body_disable_impl(self.id);
         Ok(())
     }
 
     pub fn is_bullet(&self) -> bool {
         self.assert_valid();
-        unsafe { ffi::b2Body_IsBullet(self.id) }
+        body_is_bullet_impl(self.id)
     }
     pub fn try_is_bullet(&self) -> ApiResult<bool> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_IsBullet(self.id) })
+        Ok(body_is_bullet_impl(self.id))
     }
     pub fn set_bullet(&mut self, flag: bool) {
         self.assert_valid();
-        unsafe { ffi::b2Body_SetBullet(self.id, flag) }
+        body_set_bullet_impl(self.id, flag)
     }
 
     pub fn try_set_bullet(&mut self, flag: bool) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_SetBullet(self.id, flag) }
+        body_set_bullet_impl(self.id, flag);
         Ok(())
     }
 
@@ -1138,192 +1346,165 @@ impl<'w> Body<'w> {
 
     pub fn world_id_raw(&self) -> ffi::b2WorldId {
         self.assert_valid();
-        unsafe { ffi::b2Body_GetWorld(self.id) }
+        body_world_id_impl(self.id)
     }
 
     pub fn try_world_id_raw(&self) -> ApiResult<ffi::b2WorldId> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_GetWorld(self.id) })
+        Ok(body_world_id_impl(self.id))
     }
 
     pub fn is_valid(&self) -> bool {
         crate::core::callback_state::assert_not_in_callback();
-        unsafe { ffi::b2Body_IsValid(self.id) }
+        body_is_valid_impl(self.id)
     }
 
     pub fn try_is_valid(&self) -> ApiResult<bool> {
         crate::core::callback_state::check_not_in_callback()?;
-        Ok(unsafe { ffi::b2Body_IsValid(self.id) })
+        Ok(body_is_valid_impl(self.id))
     }
 
     // Queries
     pub fn position(&self) -> Vec2 {
         self.assert_valid();
-        Vec2::from(unsafe { ffi::b2Body_GetPosition(self.id) })
+        body_position_impl(self.id)
     }
 
     pub fn try_position(&self) -> ApiResult<Vec2> {
         self.check_valid()?;
-        Ok(Vec2::from(unsafe { ffi::b2Body_GetPosition(self.id) }))
+        Ok(body_position_impl(self.id))
     }
 
     pub fn linear_velocity(&self) -> Vec2 {
         self.assert_valid();
-        Vec2::from(unsafe { ffi::b2Body_GetLinearVelocity(self.id) })
+        body_linear_velocity_impl(self.id)
     }
 
     pub fn try_linear_velocity(&self) -> ApiResult<Vec2> {
         self.check_valid()?;
-        Ok(Vec2::from(unsafe {
-            ffi::b2Body_GetLinearVelocity(self.id)
-        }))
+        Ok(body_linear_velocity_impl(self.id))
     }
 
     pub fn angular_velocity(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Body_GetAngularVelocity(self.id) }
+        body_angular_velocity_impl(self.id)
     }
 
     pub fn try_angular_velocity(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_GetAngularVelocity(self.id) })
+        Ok(body_angular_velocity_impl(self.id))
     }
 
     pub fn transform(&self) -> crate::Transform {
         self.assert_valid();
-        unsafe { ffi::b2Body_GetTransform(self.id) }.into()
+        body_transform_impl(self.id)
     }
 
     pub fn try_transform(&self) -> ApiResult<crate::Transform> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_GetTransform(self.id) }.into())
+        Ok(body_transform_impl(self.id))
     }
 
     pub fn transform_raw(&self) -> ffi::b2Transform {
         self.assert_valid();
-        unsafe { ffi::b2Body_GetTransform(self.id) }
+        body_transform_raw_impl(self.id)
     }
 
     pub fn try_transform_raw(&self) -> ApiResult<ffi::b2Transform> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_GetTransform(self.id) })
+        Ok(body_transform_raw_impl(self.id))
     }
 
     pub fn local_point<V: Into<Vec2>>(&self, world_point: V) -> Vec2 {
         self.assert_valid();
-        let p: ffi::b2Vec2 = world_point.into().into();
-        Vec2::from(unsafe { ffi::b2Body_GetLocalPoint(self.id, p) })
+        body_local_point_impl(self.id, world_point)
     }
 
     pub fn try_local_point<V: Into<Vec2>>(&self, world_point: V) -> ApiResult<Vec2> {
         self.check_valid()?;
-        let p: ffi::b2Vec2 = world_point.into().into();
-        Ok(Vec2::from(unsafe { ffi::b2Body_GetLocalPoint(self.id, p) }))
+        Ok(body_local_point_impl(self.id, world_point))
     }
 
     pub fn world_point<V: Into<Vec2>>(&self, local_point: V) -> Vec2 {
         self.assert_valid();
-        let p: ffi::b2Vec2 = local_point.into().into();
-        Vec2::from(unsafe { ffi::b2Body_GetWorldPoint(self.id, p) })
+        body_world_point_impl(self.id, local_point)
     }
 
     pub fn try_world_point<V: Into<Vec2>>(&self, local_point: V) -> ApiResult<Vec2> {
         self.check_valid()?;
-        let p: ffi::b2Vec2 = local_point.into().into();
-        Ok(Vec2::from(unsafe { ffi::b2Body_GetWorldPoint(self.id, p) }))
+        Ok(body_world_point_impl(self.id, local_point))
     }
 
     pub fn local_vector<V: Into<Vec2>>(&self, world_vector: V) -> Vec2 {
         self.assert_valid();
-        let v: ffi::b2Vec2 = world_vector.into().into();
-        Vec2::from(unsafe { ffi::b2Body_GetLocalVector(self.id, v) })
+        body_local_vector_impl(self.id, world_vector)
     }
 
     pub fn try_local_vector<V: Into<Vec2>>(&self, world_vector: V) -> ApiResult<Vec2> {
         self.check_valid()?;
-        let v: ffi::b2Vec2 = world_vector.into().into();
-        Ok(Vec2::from(unsafe {
-            ffi::b2Body_GetLocalVector(self.id, v)
-        }))
+        Ok(body_local_vector_impl(self.id, world_vector))
     }
 
     pub fn world_vector<V: Into<Vec2>>(&self, local_vector: V) -> Vec2 {
         self.assert_valid();
-        let v: ffi::b2Vec2 = local_vector.into().into();
-        Vec2::from(unsafe { ffi::b2Body_GetWorldVector(self.id, v) })
+        body_world_vector_impl(self.id, local_vector)
     }
 
     pub fn try_world_vector<V: Into<Vec2>>(&self, local_vector: V) -> ApiResult<Vec2> {
         self.check_valid()?;
-        let v: ffi::b2Vec2 = local_vector.into().into();
-        Ok(Vec2::from(unsafe {
-            ffi::b2Body_GetWorldVector(self.id, v)
-        }))
+        Ok(body_world_vector_impl(self.id, local_vector))
     }
 
     pub fn local_point_velocity<V: Into<Vec2>>(&self, local_point: V) -> Vec2 {
         self.assert_valid();
-        let p: ffi::b2Vec2 = local_point.into().into();
-        Vec2::from(unsafe { ffi::b2Body_GetLocalPointVelocity(self.id, p) })
+        body_local_point_velocity_impl(self.id, local_point)
     }
 
     pub fn try_local_point_velocity<V: Into<Vec2>>(&self, local_point: V) -> ApiResult<Vec2> {
         self.check_valid()?;
-        let p: ffi::b2Vec2 = local_point.into().into();
-        Ok(Vec2::from(unsafe {
-            ffi::b2Body_GetLocalPointVelocity(self.id, p)
-        }))
+        Ok(body_local_point_velocity_impl(self.id, local_point))
     }
 
     pub fn world_point_velocity<V: Into<Vec2>>(&self, world_point: V) -> Vec2 {
         self.assert_valid();
-        let p: ffi::b2Vec2 = world_point.into().into();
-        Vec2::from(unsafe { ffi::b2Body_GetWorldPointVelocity(self.id, p) })
+        body_world_point_velocity_impl(self.id, world_point)
     }
 
     pub fn try_world_point_velocity<V: Into<Vec2>>(&self, world_point: V) -> ApiResult<Vec2> {
         self.check_valid()?;
-        let p: ffi::b2Vec2 = world_point.into().into();
-        Ok(Vec2::from(unsafe {
-            ffi::b2Body_GetWorldPointVelocity(self.id, p)
-        }))
+        Ok(body_world_point_velocity_impl(self.id, world_point))
     }
 
     // Mutations
     pub fn set_position_and_rotation<V: Into<Vec2>>(&mut self, p: V, angle_radians: f32) {
         self.assert_valid();
-        let (s, c) = angle_radians.sin_cos();
-        let rot = ffi::b2Rot { c, s };
-        let pos: ffi::b2Vec2 = p.into().into();
-        unsafe { ffi::b2Body_SetTransform(self.id, pos, rot) };
+        body_set_position_and_rotation_impl(self.id, p, angle_radians);
     }
     pub fn set_linear_velocity<V: Into<Vec2>>(&mut self, v: V) {
         self.assert_valid();
-        let vel: ffi::b2Vec2 = v.into().into();
-        unsafe { ffi::b2Body_SetLinearVelocity(self.id, vel) }
+        body_set_linear_velocity_impl(self.id, v)
     }
 
     pub fn try_set_linear_velocity<V: Into<Vec2>>(&mut self, v: V) -> ApiResult<()> {
         self.check_valid()?;
-        let vel: ffi::b2Vec2 = v.into().into();
-        unsafe { ffi::b2Body_SetLinearVelocity(self.id, vel) }
+        body_set_linear_velocity_impl(self.id, v);
         Ok(())
     }
 
     pub fn set_angular_velocity(&mut self, w: f32) {
         self.assert_valid();
-        unsafe { ffi::b2Body_SetAngularVelocity(self.id, w) }
+        body_set_angular_velocity_impl(self.id, w)
     }
 
     pub fn try_set_angular_velocity(&mut self, w: f32) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_SetAngularVelocity(self.id, w) }
+        body_set_angular_velocity_impl(self.id, w);
         Ok(())
     }
 
     pub fn set_target_transform(&mut self, target: crate::Transform, time_step: f32, wake: bool) {
         self.assert_valid();
-        unsafe { ffi::b2Body_SetTargetTransform(self.id, target.into(), time_step, wake) };
+        body_set_target_transform_impl(self.id, target, time_step, wake);
     }
 
     pub fn try_set_target_transform(
@@ -1333,7 +1514,7 @@ impl<'w> Body<'w> {
         wake: bool,
     ) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_SetTargetTransform(self.id, target.into(), time_step, wake) };
+        body_set_target_transform_impl(self.id, target, time_step, wake);
         Ok(())
     }
 
@@ -1382,9 +1563,7 @@ impl<'w> Body<'w> {
     // Forces/impulses
     pub fn apply_force<F: Into<Vec2>, P: Into<Vec2>>(&mut self, force: F, point: P, wake: bool) {
         self.assert_valid();
-        let f: ffi::b2Vec2 = force.into().into();
-        let p: ffi::b2Vec2 = point.into().into();
-        unsafe { ffi::b2Body_ApplyForce(self.id, f, p, wake) };
+        body_apply_force_impl(self.id, force, point, wake);
     }
 
     pub fn try_apply_force<F: Into<Vec2>, P: Into<Vec2>>(
@@ -1394,15 +1573,12 @@ impl<'w> Body<'w> {
         wake: bool,
     ) -> ApiResult<()> {
         self.check_valid()?;
-        let f: ffi::b2Vec2 = force.into().into();
-        let p: ffi::b2Vec2 = point.into().into();
-        unsafe { ffi::b2Body_ApplyForce(self.id, f, p, wake) };
+        body_apply_force_impl(self.id, force, point, wake);
         Ok(())
     }
     pub fn apply_force_to_center<V: Into<Vec2>>(&mut self, force: V, wake: bool) {
         self.assert_valid();
-        let f: ffi::b2Vec2 = force.into().into();
-        unsafe { ffi::b2Body_ApplyForceToCenter(self.id, f, wake) };
+        body_apply_force_to_center_impl(self.id, force, wake);
     }
 
     pub fn try_apply_force_to_center<V: Into<Vec2>>(
@@ -1411,29 +1587,28 @@ impl<'w> Body<'w> {
         wake: bool,
     ) -> ApiResult<()> {
         self.check_valid()?;
-        let f: ffi::b2Vec2 = force.into().into();
-        unsafe { ffi::b2Body_ApplyForceToCenter(self.id, f, wake) };
+        body_apply_force_to_center_impl(self.id, force, wake);
         Ok(())
     }
     pub fn apply_torque(&mut self, torque: f32, wake: bool) {
         self.assert_valid();
-        unsafe { ffi::b2Body_ApplyTorque(self.id, torque, wake) }
+        body_apply_torque_impl(self.id, torque, wake)
     }
 
     pub fn try_apply_torque(&mut self, torque: f32, wake: bool) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_ApplyTorque(self.id, torque, wake) }
+        body_apply_torque_impl(self.id, torque, wake);
         Ok(())
     }
 
     pub fn clear_forces(&mut self) {
         self.assert_valid();
-        unsafe { ffi::b2Body_ClearForces(self.id) };
+        body_clear_forces_impl(self.id);
     }
 
     pub fn try_clear_forces(&mut self) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_ClearForces(self.id) };
+        body_clear_forces_impl(self.id);
         Ok(())
     }
 
@@ -1444,9 +1619,7 @@ impl<'w> Body<'w> {
         wake: bool,
     ) {
         self.assert_valid();
-        let i: ffi::b2Vec2 = impulse.into().into();
-        let p: ffi::b2Vec2 = point.into().into();
-        unsafe { ffi::b2Body_ApplyLinearImpulse(self.id, i, p, wake) };
+        body_apply_linear_impulse_impl(self.id, impulse, point, wake);
     }
 
     pub fn try_apply_linear_impulse<F: Into<Vec2>, P: Into<Vec2>>(
@@ -1456,15 +1629,12 @@ impl<'w> Body<'w> {
         wake: bool,
     ) -> ApiResult<()> {
         self.check_valid()?;
-        let i: ffi::b2Vec2 = impulse.into().into();
-        let p: ffi::b2Vec2 = point.into().into();
-        unsafe { ffi::b2Body_ApplyLinearImpulse(self.id, i, p, wake) };
+        body_apply_linear_impulse_impl(self.id, impulse, point, wake);
         Ok(())
     }
     pub fn apply_linear_impulse_to_center<V: Into<Vec2>>(&mut self, impulse: V, wake: bool) {
         self.assert_valid();
-        let i: ffi::b2Vec2 = impulse.into().into();
-        unsafe { ffi::b2Body_ApplyLinearImpulseToCenter(self.id, i, wake) };
+        body_apply_linear_impulse_to_center_impl(self.id, impulse, wake);
     }
 
     pub fn try_apply_linear_impulse_to_center<V: Into<Vec2>>(
@@ -1473,241 +1643,234 @@ impl<'w> Body<'w> {
         wake: bool,
     ) -> ApiResult<()> {
         self.check_valid()?;
-        let i: ffi::b2Vec2 = impulse.into().into();
-        unsafe { ffi::b2Body_ApplyLinearImpulseToCenter(self.id, i, wake) };
+        body_apply_linear_impulse_to_center_impl(self.id, impulse, wake);
         Ok(())
     }
     pub fn apply_angular_impulse(&mut self, impulse: f32, wake: bool) {
         self.assert_valid();
-        unsafe { ffi::b2Body_ApplyAngularImpulse(self.id, impulse, wake) }
+        body_apply_angular_impulse_impl(self.id, impulse, wake)
     }
 
     pub fn try_apply_angular_impulse(&mut self, impulse: f32, wake: bool) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_ApplyAngularImpulse(self.id, impulse, wake) }
+        body_apply_angular_impulse_impl(self.id, impulse, wake);
         Ok(())
     }
 
     pub fn mass(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Body_GetMass(self.id) }
+        body_mass_impl(self.id)
     }
 
     pub fn try_mass(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_GetMass(self.id) })
+        Ok(body_mass_impl(self.id))
     }
 
     pub fn rotational_inertia(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Body_GetRotationalInertia(self.id) }
+        body_rotational_inertia_impl(self.id)
     }
 
     pub fn try_rotational_inertia(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_GetRotationalInertia(self.id) })
+        Ok(body_rotational_inertia_impl(self.id))
     }
 
     pub fn local_center_of_mass(&self) -> Vec2 {
         self.assert_valid();
-        Vec2::from(unsafe { ffi::b2Body_GetLocalCenterOfMass(self.id) })
+        body_local_center_of_mass_impl(self.id)
     }
 
     pub fn try_local_center_of_mass(&self) -> ApiResult<Vec2> {
         self.check_valid()?;
-        Ok(Vec2::from(unsafe {
-            ffi::b2Body_GetLocalCenterOfMass(self.id)
-        }))
+        Ok(body_local_center_of_mass_impl(self.id))
     }
 
     pub fn world_center_of_mass(&self) -> Vec2 {
         self.assert_valid();
-        Vec2::from(unsafe { ffi::b2Body_GetWorldCenterOfMass(self.id) })
+        body_world_center_of_mass_impl(self.id)
     }
 
     pub fn try_world_center_of_mass(&self) -> ApiResult<Vec2> {
         self.check_valid()?;
-        Ok(Vec2::from(unsafe {
-            ffi::b2Body_GetWorldCenterOfMass(self.id)
-        }))
+        Ok(body_world_center_of_mass_impl(self.id))
     }
 
     pub fn mass_data(&self) -> MassData {
         self.assert_valid();
-        MassData::from_raw(unsafe { ffi::b2Body_GetMassData(self.id) })
+        body_mass_data_impl(self.id)
     }
 
     pub fn try_mass_data(&self) -> ApiResult<MassData> {
         self.check_valid()?;
-        Ok(MassData::from_raw(unsafe {
-            ffi::b2Body_GetMassData(self.id)
-        }))
+        Ok(body_mass_data_impl(self.id))
     }
 
     pub fn set_mass_data(&mut self, mass_data: MassData) {
         self.assert_valid();
-        unsafe { ffi::b2Body_SetMassData(self.id, mass_data.into_raw()) };
+        body_set_mass_data_impl(self.id, mass_data);
     }
 
     pub fn try_set_mass_data(&mut self, mass_data: MassData) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_SetMassData(self.id, mass_data.into_raw()) };
+        body_set_mass_data_impl(self.id, mass_data);
         Ok(())
     }
 
     pub fn apply_mass_from_shapes(&mut self) {
         self.assert_valid();
-        unsafe { ffi::b2Body_ApplyMassFromShapes(self.id) };
+        body_apply_mass_from_shapes_impl(self.id);
     }
 
     pub fn try_apply_mass_from_shapes(&mut self) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_ApplyMassFromShapes(self.id) };
+        body_apply_mass_from_shapes_impl(self.id);
         Ok(())
     }
 
     pub fn body_type(&self) -> BodyType {
         self.assert_valid();
-        BodyType::from(unsafe { ffi::b2Body_GetType(self.id) })
+        body_type_impl(self.id)
     }
 
     pub fn try_body_type(&self) -> ApiResult<BodyType> {
         self.check_valid()?;
-        Ok(BodyType::from(unsafe { ffi::b2Body_GetType(self.id) }))
+        Ok(body_type_impl(self.id))
     }
     pub fn set_body_type(&mut self, t: BodyType) {
         self.assert_valid();
-        unsafe { ffi::b2Body_SetType(self.id, t.into()) }
+        body_set_type_impl(self.id, t)
     }
 
     pub fn try_set_body_type(&mut self, t: BodyType) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_SetType(self.id, t.into()) }
+        body_set_type_impl(self.id, t);
         Ok(())
     }
 
     pub fn gravity_scale(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Body_GetGravityScale(self.id) }
+        body_gravity_scale_impl(self.id)
     }
     pub fn try_gravity_scale(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_GetGravityScale(self.id) })
+        Ok(body_gravity_scale_impl(self.id))
     }
     pub fn set_gravity_scale(&mut self, v: f32) {
         self.assert_valid();
-        unsafe { ffi::b2Body_SetGravityScale(self.id, v) }
+        body_set_gravity_scale_impl(self.id, v)
     }
 
     pub fn try_set_gravity_scale(&mut self, v: f32) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_SetGravityScale(self.id, v) }
+        body_set_gravity_scale_impl(self.id, v);
         Ok(())
     }
 
     pub fn linear_damping(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Body_GetLinearDamping(self.id) }
+        body_linear_damping_impl(self.id)
     }
     pub fn try_linear_damping(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_GetLinearDamping(self.id) })
+        Ok(body_linear_damping_impl(self.id))
     }
     pub fn set_linear_damping(&mut self, v: f32) {
         self.assert_valid();
-        unsafe { ffi::b2Body_SetLinearDamping(self.id, v) }
+        body_set_linear_damping_impl(self.id, v)
     }
     pub fn try_set_linear_damping(&mut self, v: f32) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_SetLinearDamping(self.id, v) }
+        body_set_linear_damping_impl(self.id, v);
         Ok(())
     }
     pub fn angular_damping(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Body_GetAngularDamping(self.id) }
+        body_angular_damping_impl(self.id)
     }
     pub fn try_angular_damping(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_GetAngularDamping(self.id) })
+        Ok(body_angular_damping_impl(self.id))
     }
     pub fn set_angular_damping(&mut self, v: f32) {
         self.assert_valid();
-        unsafe { ffi::b2Body_SetAngularDamping(self.id, v) }
+        body_set_angular_damping_impl(self.id, v)
     }
 
     pub fn try_set_angular_damping(&mut self, v: f32) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_SetAngularDamping(self.id, v) }
+        body_set_angular_damping_impl(self.id, v);
         Ok(())
     }
 
     pub fn is_awake(&self) -> bool {
         self.assert_valid();
-        unsafe { ffi::b2Body_IsAwake(self.id) }
+        body_is_awake_impl(self.id)
     }
     pub fn set_awake(&mut self, awake: bool) {
         self.assert_valid();
-        unsafe { ffi::b2Body_SetAwake(self.id, awake) }
+        body_set_awake_impl(self.id, awake)
     }
 
     pub fn try_is_awake(&self) -> ApiResult<bool> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_IsAwake(self.id) })
+        Ok(body_is_awake_impl(self.id))
     }
 
     pub fn try_set_awake(&mut self, awake: bool) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_SetAwake(self.id, awake) }
+        body_set_awake_impl(self.id, awake);
         Ok(())
     }
 
     pub fn is_enabled(&self) -> bool {
         self.assert_valid();
-        unsafe { ffi::b2Body_IsEnabled(self.id) }
+        body_is_enabled_impl(self.id)
     }
     pub fn enable(&mut self) {
         self.assert_valid();
-        unsafe { ffi::b2Body_Enable(self.id) }
+        body_enable_impl(self.id)
     }
     pub fn disable(&mut self) {
         self.assert_valid();
-        unsafe { ffi::b2Body_Disable(self.id) }
+        body_disable_impl(self.id)
     }
 
     pub fn try_is_enabled(&self) -> ApiResult<bool> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_IsEnabled(self.id) })
+        Ok(body_is_enabled_impl(self.id))
     }
 
     pub fn try_enable(&mut self) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_Enable(self.id) }
+        body_enable_impl(self.id);
         Ok(())
     }
 
     pub fn try_disable(&mut self) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_Disable(self.id) }
+        body_disable_impl(self.id);
         Ok(())
     }
 
     pub fn is_bullet(&self) -> bool {
         self.assert_valid();
-        unsafe { ffi::b2Body_IsBullet(self.id) }
+        body_is_bullet_impl(self.id)
     }
     pub fn set_bullet(&mut self, flag: bool) {
         self.assert_valid();
-        unsafe { ffi::b2Body_SetBullet(self.id, flag) }
+        body_set_bullet_impl(self.id, flag)
     }
 
     pub fn try_is_bullet(&self) -> ApiResult<bool> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Body_IsBullet(self.id) })
+        Ok(body_is_bullet_impl(self.id))
     }
 
     pub fn try_set_bullet(&mut self, flag: bool) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Body_SetBullet(self.id, flag) }
+        body_set_bullet_impl(self.id, flag);
         Ok(())
     }
 

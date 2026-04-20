@@ -43,6 +43,36 @@ fn chain_segments_impl(id: ChainId) -> Vec<ShapeId> {
     }
 }
 
+#[inline]
+fn chain_world_id_impl(id: ChainId) -> ffi::b2WorldId {
+    unsafe { ffi::b2Chain_GetWorld(id) }
+}
+
+#[inline]
+fn chain_is_valid_impl(id: ChainId) -> bool {
+    unsafe { ffi::b2Chain_IsValid(id) }
+}
+
+#[inline]
+fn chain_segment_count_impl(id: ChainId) -> i32 {
+    unsafe { ffi::b2Chain_GetSegmentCount(id) }
+}
+
+#[inline]
+fn chain_surface_material_count_impl(id: ChainId) -> i32 {
+    unsafe { ffi::b2Chain_GetSurfaceMaterialCount(id) }
+}
+
+#[inline]
+fn chain_set_surface_material_impl(id: ChainId, index: i32, material: &SurfaceMaterial) {
+    unsafe { ffi::b2Chain_SetSurfaceMaterial(id, &material.0, index) }
+}
+
+#[inline]
+fn chain_surface_material_impl(id: ChainId, index: i32) -> SurfaceMaterial {
+    SurfaceMaterial(unsafe { ffi::b2Chain_GetSurfaceMaterial(id, index) })
+}
+
 impl OwnedChain {
     pub(crate) fn new(core: Arc<crate::core::world_core::WorldCore>, id: ChainId) -> Self {
         core.owned_chains
@@ -61,22 +91,22 @@ impl OwnedChain {
 
     pub fn world_id_raw(&self) -> ffi::b2WorldId {
         self.assert_valid();
-        unsafe { ffi::b2Chain_GetWorld(self.id) }
+        chain_world_id_impl(self.id)
     }
 
     pub fn try_world_id_raw(&self) -> ApiResult<ffi::b2WorldId> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Chain_GetWorld(self.id) })
+        Ok(chain_world_id_impl(self.id))
     }
 
     pub fn is_valid(&self) -> bool {
         crate::core::callback_state::assert_not_in_callback();
-        unsafe { ffi::b2Chain_IsValid(self.id) }
+        chain_is_valid_impl(self.id)
     }
 
     pub fn try_is_valid(&self) -> ApiResult<bool> {
         crate::core::callback_state::check_not_in_callback()?;
-        Ok(unsafe { ffi::b2Chain_IsValid(self.id) })
+        Ok(chain_is_valid_impl(self.id))
     }
 
     #[inline]
@@ -96,21 +126,21 @@ impl OwnedChain {
 
     pub fn segment_count(&self) -> i32 {
         self.assert_valid();
-        unsafe { ffi::b2Chain_GetSegmentCount(self.id) }
+        chain_segment_count_impl(self.id)
     }
 
     pub fn try_segment_count(&self) -> ApiResult<i32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Chain_GetSegmentCount(self.id) })
+        Ok(chain_segment_count_impl(self.id))
     }
 
     pub fn surface_material_count(&self) -> i32 {
         self.assert_valid();
-        unsafe { ffi::b2Chain_GetSurfaceMaterialCount(self.id) }
+        chain_surface_material_count_impl(self.id)
     }
     pub fn try_surface_material_count(&self) -> ApiResult<i32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Chain_GetSurfaceMaterialCount(self.id) })
+        Ok(chain_surface_material_count_impl(self.id))
     }
     pub fn segments(&self) -> Vec<ShapeId> {
         self.assert_valid();
@@ -134,7 +164,7 @@ impl OwnedChain {
     }
     pub fn set_surface_material(&mut self, index: i32, material: &SurfaceMaterial) {
         self.assert_valid();
-        unsafe { ffi::b2Chain_SetSurfaceMaterial(self.id, &material.0, index) }
+        chain_set_surface_material_impl(self.id, index, material)
     }
     pub fn try_set_surface_material(
         &mut self,
@@ -142,19 +172,17 @@ impl OwnedChain {
         material: &SurfaceMaterial,
     ) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Chain_SetSurfaceMaterial(self.id, &material.0, index) }
+        chain_set_surface_material_impl(self.id, index, material);
         Ok(())
     }
     pub fn surface_material(&self, index: i32) -> SurfaceMaterial {
         self.assert_valid();
-        SurfaceMaterial(unsafe { ffi::b2Chain_GetSurfaceMaterial(self.id, index) })
+        chain_surface_material_impl(self.id, index)
     }
 
     pub fn try_surface_material(&self, index: i32) -> ApiResult<SurfaceMaterial> {
         self.check_valid()?;
-        Ok(SurfaceMaterial(unsafe {
-            ffi::b2Chain_GetSurfaceMaterial(self.id, index)
-        }))
+        Ok(chain_surface_material_impl(self.id, index))
     }
 
     pub fn into_id(mut self) -> ChainId {
@@ -163,7 +191,7 @@ impl OwnedChain {
     }
 
     pub fn destroy(mut self) {
-        if self.destroy_on_drop && unsafe { ffi::b2Chain_IsValid(self.id) } {
+        if self.destroy_on_drop && chain_is_valid_impl(self.id) {
             if crate::core::callback_state::in_callback() || self.core.events_buffers_are_borrowed()
             {
                 self.core
@@ -186,7 +214,7 @@ impl Drop for OwnedChain {
             .owned_chains
             .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
         debug_assert!(prev > 0, "owned chain counter underflow");
-        if self.destroy_on_drop && unsafe { ffi::b2Chain_IsValid(self.id) } {
+        if self.destroy_on_drop && chain_is_valid_impl(self.id) {
             if crate::core::callback_state::in_callback() || self.core.events_buffers_are_borrowed()
             {
                 self.core
@@ -225,39 +253,39 @@ impl<'w> Chain<'w> {
 
     pub fn world_id_raw(&self) -> ffi::b2WorldId {
         self.assert_valid();
-        unsafe { ffi::b2Chain_GetWorld(self.id) }
+        chain_world_id_impl(self.id)
     }
 
     pub fn try_world_id_raw(&self) -> ApiResult<ffi::b2WorldId> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Chain_GetWorld(self.id) })
+        Ok(chain_world_id_impl(self.id))
     }
 
     pub fn is_valid(&self) -> bool {
         crate::core::callback_state::assert_not_in_callback();
-        unsafe { ffi::b2Chain_IsValid(self.id) }
+        chain_is_valid_impl(self.id)
     }
 
     pub fn try_is_valid(&self) -> ApiResult<bool> {
         crate::core::callback_state::check_not_in_callback()?;
-        Ok(unsafe { ffi::b2Chain_IsValid(self.id) })
+        Ok(chain_is_valid_impl(self.id))
     }
     pub fn segment_count(&self) -> i32 {
         self.assert_valid();
-        unsafe { ffi::b2Chain_GetSegmentCount(self.id) }
+        chain_segment_count_impl(self.id)
     }
 
     pub fn try_segment_count(&self) -> ApiResult<i32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Chain_GetSegmentCount(self.id) })
+        Ok(chain_segment_count_impl(self.id))
     }
     pub fn surface_material_count(&self) -> i32 {
         self.assert_valid();
-        unsafe { ffi::b2Chain_GetSurfaceMaterialCount(self.id) }
+        chain_surface_material_count_impl(self.id)
     }
     pub fn try_surface_material_count(&self) -> ApiResult<i32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Chain_GetSurfaceMaterialCount(self.id) })
+        Ok(chain_surface_material_count_impl(self.id))
     }
 
     /// Collect all segment shape ids for this chain.
@@ -284,7 +312,7 @@ impl<'w> Chain<'w> {
 
     pub fn set_surface_material(&mut self, index: i32, material: &SurfaceMaterial) {
         self.assert_valid();
-        unsafe { ffi::b2Chain_SetSurfaceMaterial(self.id, &material.0, index) }
+        chain_set_surface_material_impl(self.id, index, material)
     }
 
     pub fn try_set_surface_material(
@@ -293,26 +321,24 @@ impl<'w> Chain<'w> {
         material: &SurfaceMaterial,
     ) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Chain_SetSurfaceMaterial(self.id, &material.0, index) }
+        chain_set_surface_material_impl(self.id, index, material);
         Ok(())
     }
 
     pub fn surface_material(&self, index: i32) -> SurfaceMaterial {
         self.assert_valid();
-        SurfaceMaterial(unsafe { ffi::b2Chain_GetSurfaceMaterial(self.id, index) })
+        chain_surface_material_impl(self.id, index)
     }
 
     pub fn try_surface_material(&self, index: i32) -> ApiResult<SurfaceMaterial> {
         self.check_valid()?;
-        Ok(SurfaceMaterial(unsafe {
-            ffi::b2Chain_GetSurfaceMaterial(self.id, index)
-        }))
+        Ok(chain_surface_material_impl(self.id, index))
     }
 
     /// Destroy this chain immediately.
     pub fn destroy(self) {
         crate::core::callback_state::assert_not_in_callback();
-        if unsafe { ffi::b2Chain_IsValid(self.id) } {
+        if chain_is_valid_impl(self.id) {
             unsafe { ffi::b2DestroyChain(self.id) }
             #[cfg(feature = "serialize")]
             self.core.remove_chain(self.id);
@@ -321,7 +347,7 @@ impl<'w> Chain<'w> {
 
     pub fn try_destroy(self) -> ApiResult<()> {
         self.check_valid()?;
-        if unsafe { ffi::b2Chain_IsValid(self.id) } {
+        if chain_is_valid_impl(self.id) {
             unsafe { ffi::b2DestroyChain(self.id) }
             #[cfg(feature = "serialize")]
             self.core.remove_chain(self.id);

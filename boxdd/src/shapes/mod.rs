@@ -170,6 +170,167 @@ fn shape_sensor_overlaps_valid_impl(id: ShapeId) -> Vec<ShapeId> {
     ids
 }
 
+#[inline]
+fn shape_world_id_impl(id: ShapeId) -> ffi::b2WorldId {
+    unsafe { ffi::b2Shape_GetWorld(id) }
+}
+
+#[inline]
+fn shape_parent_chain_id_impl(id: ShapeId) -> Option<ChainId> {
+    let chain_id = unsafe { ffi::b2Shape_GetParentChain(id) };
+    if unsafe { ffi::b2Chain_IsValid(chain_id) } {
+        Some(chain_id)
+    } else {
+        None
+    }
+}
+
+#[inline]
+fn shape_type_raw_impl(id: ShapeId) -> ffi::b2ShapeType {
+    unsafe { ffi::b2Shape_GetType(id) }
+}
+
+#[inline]
+fn shape_type_impl(id: ShapeId) -> ShapeType {
+    shape_type_from_ffi(shape_type_raw_impl(id))
+}
+
+#[inline]
+fn shape_body_id_impl(id: ShapeId) -> BodyId {
+    unsafe { ffi::b2Shape_GetBody(id) }
+}
+
+#[inline]
+fn shape_circle_impl(id: ShapeId) -> Circle {
+    Circle::from_raw(unsafe { ffi::b2Shape_GetCircle(id) })
+}
+
+#[inline]
+fn shape_segment_impl(id: ShapeId) -> Segment {
+    Segment::from_raw(unsafe { ffi::b2Shape_GetSegment(id) })
+}
+
+#[inline]
+fn shape_chain_segment_impl(id: ShapeId) -> ChainSegment {
+    ChainSegment::from_raw(unsafe { ffi::b2Shape_GetChainSegment(id) })
+}
+
+#[inline]
+fn shape_capsule_impl(id: ShapeId) -> Capsule {
+    Capsule::from_raw(unsafe { ffi::b2Shape_GetCapsule(id) })
+}
+
+#[inline]
+fn shape_polygon_impl(id: ShapeId) -> Polygon {
+    Polygon::from_raw(unsafe { ffi::b2Shape_GetPolygon(id) })
+}
+
+#[inline]
+fn shape_closest_point_impl<V: Into<Vec2>>(id: ShapeId, target: V) -> Vec2 {
+    let target: ffi::b2Vec2 = target.into().into();
+    Vec2::from(unsafe { ffi::b2Shape_GetClosestPoint(id, target) })
+}
+
+#[inline]
+fn shape_apply_wind_impl<V: Into<Vec2>>(id: ShapeId, wind: V, drag: f32, lift: f32, wake: bool) {
+    let wind: ffi::b2Vec2 = wind.into().into();
+    unsafe { ffi::b2Shape_ApplyWind(id, wind, drag, lift, wake) }
+}
+
+#[inline]
+fn shape_set_circle_impl(id: ShapeId, circle: &Circle) {
+    let raw = circle.into_raw();
+    unsafe { ffi::b2Shape_SetCircle(id, &raw) }
+}
+
+#[inline]
+fn shape_set_segment_impl(id: ShapeId, segment: &Segment) {
+    let raw = segment.into_raw();
+    unsafe { ffi::b2Shape_SetSegment(id, &raw) }
+}
+
+#[inline]
+fn shape_set_capsule_impl(id: ShapeId, capsule: &Capsule) {
+    let raw = capsule.into_raw();
+    unsafe { ffi::b2Shape_SetCapsule(id, &raw) }
+}
+
+#[inline]
+fn shape_set_polygon_impl(id: ShapeId, polygon: &Polygon) {
+    let raw = polygon.into_raw();
+    unsafe { ffi::b2Shape_SetPolygon(id, &raw) }
+}
+
+#[inline]
+fn shape_filter_impl(id: ShapeId) -> Filter {
+    Filter::from_raw(unsafe { ffi::b2Shape_GetFilter(id) })
+}
+
+#[inline]
+fn shape_set_filter_impl(id: ShapeId, filter: Filter) {
+    unsafe { ffi::b2Shape_SetFilter(id, filter.into_raw()) }
+}
+
+#[inline]
+fn shape_is_sensor_impl(id: ShapeId) -> bool {
+    unsafe { ffi::b2Shape_IsSensor(id) }
+}
+
+#[inline]
+fn shape_set_density_impl(id: ShapeId, density: f32, update_body_mass: bool) {
+    unsafe { ffi::b2Shape_SetDensity(id, density, update_body_mass) }
+}
+
+#[inline]
+fn shape_density_impl(id: ShapeId) -> f32 {
+    unsafe { ffi::b2Shape_GetDensity(id) }
+}
+
+#[inline]
+fn shape_set_friction_impl(id: ShapeId, friction: f32) {
+    unsafe { ffi::b2Shape_SetFriction(id, friction) }
+}
+
+#[inline]
+fn shape_friction_impl(id: ShapeId) -> f32 {
+    unsafe { ffi::b2Shape_GetFriction(id) }
+}
+
+#[inline]
+fn shape_set_restitution_impl(id: ShapeId, restitution: f32) {
+    unsafe { ffi::b2Shape_SetRestitution(id, restitution) }
+}
+
+#[inline]
+fn shape_restitution_impl(id: ShapeId) -> f32 {
+    unsafe { ffi::b2Shape_GetRestitution(id) }
+}
+
+#[inline]
+fn shape_set_user_material_impl(id: ShapeId, material: u64) {
+    unsafe { ffi::b2Shape_SetUserMaterial(id, material) }
+}
+
+#[inline]
+fn shape_user_material_impl(id: ShapeId) -> u64 {
+    unsafe { ffi::b2Shape_GetUserMaterial(id) }
+}
+
+#[inline]
+fn shape_set_surface_material_impl(id: ShapeId, material: &SurfaceMaterial) {
+    unsafe { ffi::b2Shape_SetSurfaceMaterial(id, &material.0) }
+}
+
+#[inline]
+fn shape_surface_material_impl(id: ShapeId) -> SurfaceMaterial {
+    SurfaceMaterial(unsafe { ffi::b2Shape_GetSurfaceMaterial(id) })
+}
+
+#[inline]
+fn shape_sensor_capacity_impl(id: ShapeId) -> i32 {
+    unsafe { ffi::b2Shape_GetSensorCapacity(id) }
+}
+
 impl OwnedShape {
     pub(crate) fn new(core: Arc<crate::core::world_core::WorldCore>, id: ShapeId) -> Self {
         core.owned_shapes
@@ -189,32 +350,22 @@ impl OwnedShape {
 
     pub fn world_id_raw(&self) -> ffi::b2WorldId {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetWorld(self.id) }
+        shape_world_id_impl(self.id)
     }
 
     pub fn try_world_id_raw(&self) -> ApiResult<ffi::b2WorldId> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Shape_GetWorld(self.id) })
+        Ok(shape_world_id_impl(self.id))
     }
 
     pub fn parent_chain_id(&self) -> Option<ChainId> {
         self.assert_valid();
-        let cid = unsafe { ffi::b2Shape_GetParentChain(self.id) };
-        if unsafe { ffi::b2Chain_IsValid(cid) } {
-            Some(cid)
-        } else {
-            None
-        }
+        shape_parent_chain_id_impl(self.id)
     }
 
     pub fn try_parent_chain_id(&self) -> ApiResult<Option<ChainId>> {
         self.check_valid()?;
-        let cid = unsafe { ffi::b2Shape_GetParentChain(self.id) };
-        if unsafe { ffi::b2Chain_IsValid(cid) } {
-            Ok(Some(cid))
-        } else {
-            Ok(None)
-        }
+        Ok(shape_parent_chain_id_impl(self.id))
     }
 
     pub fn is_valid(&self) -> bool {
@@ -244,88 +395,81 @@ impl OwnedShape {
 
     pub fn is_sensor(&self) -> bool {
         self.assert_valid();
-        unsafe { ffi::b2Shape_IsSensor(self.id) }
+        shape_is_sensor_impl(self.id)
     }
 
     pub fn try_is_sensor(&self) -> ApiResult<bool> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Shape_IsSensor(self.id) })
+        Ok(shape_is_sensor_impl(self.id))
     }
 
     pub fn shape_type(&self) -> ShapeType {
         self.assert_valid();
-        shape_type_from_ffi(unsafe { ffi::b2Shape_GetType(self.id) })
+        shape_type_impl(self.id)
     }
 
     pub fn try_shape_type(&self) -> ApiResult<ShapeType> {
         self.check_valid()?;
-        Ok(shape_type_from_ffi(unsafe {
-            ffi::b2Shape_GetType(self.id)
-        }))
+        Ok(shape_type_impl(self.id))
     }
 
     pub fn shape_type_raw(&self) -> ffi::b2ShapeType {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetType(self.id) }
+        shape_type_raw_impl(self.id)
     }
 
     pub fn try_shape_type_raw(&self) -> ApiResult<ffi::b2ShapeType> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Shape_GetType(self.id) })
+        Ok(shape_type_raw_impl(self.id))
     }
 
     pub fn body_id(&self) -> BodyId {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetBody(self.id) }
+        shape_body_id_impl(self.id)
     }
 
     pub fn try_body_id(&self) -> ApiResult<BodyId> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Shape_GetBody(self.id) })
+        Ok(shape_body_id_impl(self.id))
     }
 
     // Geometry
     pub fn circle(&self) -> Circle {
         self.assert_valid();
-        Circle::from_raw(unsafe { ffi::b2Shape_GetCircle(self.id) })
+        shape_circle_impl(self.id)
     }
     pub fn segment(&self) -> Segment {
         self.assert_valid();
-        Segment::from_raw(unsafe { ffi::b2Shape_GetSegment(self.id) })
+        shape_segment_impl(self.id)
     }
     pub fn chain_segment(&self) -> ChainSegment {
         self.assert_valid();
-        ChainSegment::from_raw(unsafe { ffi::b2Shape_GetChainSegment(self.id) })
+        shape_chain_segment_impl(self.id)
     }
     pub fn capsule(&self) -> Capsule {
         self.assert_valid();
-        Capsule::from_raw(unsafe { ffi::b2Shape_GetCapsule(self.id) })
+        shape_capsule_impl(self.id)
     }
     pub fn polygon(&self) -> Polygon {
         self.assert_valid();
-        Polygon::from_raw(unsafe { ffi::b2Shape_GetPolygon(self.id) })
+        shape_polygon_impl(self.id)
     }
 
     /// Return the closest point on this shape to `target` (in world coordinates).
     pub fn closest_point<V: Into<Vec2>>(&self, target: V) -> Vec2 {
         self.assert_valid();
-        let t: ffi::b2Vec2 = target.into().into();
-        Vec2::from(unsafe { ffi::b2Shape_GetClosestPoint(self.id, t) })
+        shape_closest_point_impl(self.id, target)
     }
 
     pub fn try_closest_point<V: Into<Vec2>>(&self, target: V) -> ApiResult<Vec2> {
         self.check_valid()?;
-        let t: ffi::b2Vec2 = target.into().into();
-        Ok(Vec2::from(unsafe {
-            ffi::b2Shape_GetClosestPoint(self.id, t)
-        }))
+        Ok(shape_closest_point_impl(self.id, target))
     }
 
     /// Apply wind force/torque approximation to the shape.
     pub fn apply_wind<V: Into<Vec2>>(&mut self, wind: V, drag: f32, lift: f32, wake: bool) {
         self.assert_valid();
-        let w: ffi::b2Vec2 = wind.into().into();
-        unsafe { ffi::b2Shape_ApplyWind(self.id, w, drag, lift, wake) }
+        shape_apply_wind_impl(self.id, wind, drag, lift, wake)
     }
 
     pub fn try_apply_wind<V: Into<Vec2>>(
@@ -336,164 +480,153 @@ impl OwnedShape {
         wake: bool,
     ) -> ApiResult<()> {
         self.check_valid()?;
-        let w: ffi::b2Vec2 = wind.into().into();
-        unsafe { ffi::b2Shape_ApplyWind(self.id, w, drag, lift, wake) }
+        shape_apply_wind_impl(self.id, wind, drag, lift, wake);
         Ok(())
     }
 
     pub fn set_circle(&mut self, c: &Circle) {
         self.assert_valid();
-        let raw = c.into_raw();
-        unsafe { ffi::b2Shape_SetCircle(self.id, &raw) }
+        shape_set_circle_impl(self.id, c)
     }
     pub fn try_set_circle(&mut self, c: &Circle) -> ApiResult<()> {
         self.check_valid()?;
-        let raw = c.into_raw();
-        unsafe { ffi::b2Shape_SetCircle(self.id, &raw) }
+        shape_set_circle_impl(self.id, c);
         Ok(())
     }
     pub fn set_segment(&mut self, s: &Segment) {
         self.assert_valid();
-        let raw = s.into_raw();
-        unsafe { ffi::b2Shape_SetSegment(self.id, &raw) }
+        shape_set_segment_impl(self.id, s)
     }
     pub fn try_set_segment(&mut self, s: &Segment) -> ApiResult<()> {
         self.check_valid()?;
-        let raw = s.into_raw();
-        unsafe { ffi::b2Shape_SetSegment(self.id, &raw) }
+        shape_set_segment_impl(self.id, s);
         Ok(())
     }
     pub fn set_capsule(&mut self, c: &Capsule) {
         self.assert_valid();
-        let raw = c.into_raw();
-        unsafe { ffi::b2Shape_SetCapsule(self.id, &raw) }
+        shape_set_capsule_impl(self.id, c)
     }
     pub fn try_set_capsule(&mut self, c: &Capsule) -> ApiResult<()> {
         self.check_valid()?;
-        let raw = c.into_raw();
-        unsafe { ffi::b2Shape_SetCapsule(self.id, &raw) }
+        shape_set_capsule_impl(self.id, c);
         Ok(())
     }
     pub fn set_polygon(&mut self, p: &Polygon) {
         self.assert_valid();
-        let raw = p.into_raw();
-        unsafe { ffi::b2Shape_SetPolygon(self.id, &raw) }
+        shape_set_polygon_impl(self.id, p)
     }
     pub fn try_set_polygon(&mut self, p: &Polygon) -> ApiResult<()> {
         self.check_valid()?;
-        let raw = p.into_raw();
-        unsafe { ffi::b2Shape_SetPolygon(self.id, &raw) }
+        shape_set_polygon_impl(self.id, p);
         Ok(())
     }
 
     pub fn filter(&self) -> Filter {
         self.assert_valid();
-        Filter::from_raw(unsafe { ffi::b2Shape_GetFilter(self.id) })
+        shape_filter_impl(self.id)
     }
     pub fn try_filter(&self) -> ApiResult<Filter> {
         self.check_valid()?;
-        Ok(Filter::from_raw(unsafe { ffi::b2Shape_GetFilter(self.id) }))
+        Ok(shape_filter_impl(self.id))
     }
     pub fn set_filter(&mut self, f: Filter) {
         self.assert_valid();
-        unsafe { ffi::b2Shape_SetFilter(self.id, f.into_raw()) }
+        shape_set_filter_impl(self.id, f)
     }
     pub fn try_set_filter(&mut self, f: Filter) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Shape_SetFilter(self.id, f.into_raw()) }
+        shape_set_filter_impl(self.id, f);
         Ok(())
     }
 
     pub fn set_density(&mut self, density: f32, update_body_mass: bool) {
         self.assert_valid();
-        unsafe { ffi::b2Shape_SetDensity(self.id, density, update_body_mass) }
+        shape_set_density_impl(self.id, density, update_body_mass)
     }
     pub fn try_set_density(&mut self, density: f32, update_body_mass: bool) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Shape_SetDensity(self.id, density, update_body_mass) }
+        shape_set_density_impl(self.id, density, update_body_mass);
         Ok(())
     }
     pub fn density(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetDensity(self.id) }
+        shape_density_impl(self.id)
     }
     pub fn try_density(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Shape_GetDensity(self.id) })
+        Ok(shape_density_impl(self.id))
     }
 
     pub fn set_friction(&mut self, friction: f32) {
         self.assert_valid();
-        unsafe { ffi::b2Shape_SetFriction(self.id, friction) }
+        shape_set_friction_impl(self.id, friction)
     }
     pub fn try_set_friction(&mut self, friction: f32) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Shape_SetFriction(self.id, friction) }
+        shape_set_friction_impl(self.id, friction);
         Ok(())
     }
     pub fn friction(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetFriction(self.id) }
+        shape_friction_impl(self.id)
     }
     pub fn try_friction(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Shape_GetFriction(self.id) })
+        Ok(shape_friction_impl(self.id))
     }
 
     pub fn set_restitution(&mut self, restitution: f32) {
         self.assert_valid();
-        unsafe { ffi::b2Shape_SetRestitution(self.id, restitution) }
+        shape_set_restitution_impl(self.id, restitution)
     }
     pub fn try_set_restitution(&mut self, restitution: f32) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Shape_SetRestitution(self.id, restitution) }
+        shape_set_restitution_impl(self.id, restitution);
         Ok(())
     }
     pub fn restitution(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetRestitution(self.id) }
+        shape_restitution_impl(self.id)
     }
     pub fn try_restitution(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Shape_GetRestitution(self.id) })
+        Ok(shape_restitution_impl(self.id))
     }
 
     pub fn set_user_material(&mut self, material: u64) {
         self.assert_valid();
-        unsafe { ffi::b2Shape_SetUserMaterial(self.id, material) }
+        shape_set_user_material_impl(self.id, material)
     }
     pub fn try_set_user_material(&mut self, material: u64) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Shape_SetUserMaterial(self.id, material) }
+        shape_set_user_material_impl(self.id, material);
         Ok(())
     }
     pub fn user_material(&self) -> u64 {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetUserMaterial(self.id) }
+        shape_user_material_impl(self.id)
     }
     pub fn try_user_material(&self) -> ApiResult<u64> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Shape_GetUserMaterial(self.id) })
+        Ok(shape_user_material_impl(self.id))
     }
 
     pub fn set_surface_material(&mut self, material: &SurfaceMaterial) {
         self.assert_valid();
-        unsafe { ffi::b2Shape_SetSurfaceMaterial(self.id, &material.0) }
+        shape_set_surface_material_impl(self.id, material)
     }
     pub fn try_set_surface_material(&mut self, material: &SurfaceMaterial) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Shape_SetSurfaceMaterial(self.id, &material.0) }
+        shape_set_surface_material_impl(self.id, material);
         Ok(())
     }
     pub fn surface_material(&self) -> SurfaceMaterial {
         self.assert_valid();
-        SurfaceMaterial(unsafe { ffi::b2Shape_GetSurfaceMaterial(self.id) })
+        shape_surface_material_impl(self.id)
     }
     pub fn try_surface_material(&self) -> ApiResult<SurfaceMaterial> {
         self.check_valid()?;
-        Ok(SurfaceMaterial(unsafe {
-            ffi::b2Shape_GetSurfaceMaterial(self.id)
-        }))
+        Ok(shape_surface_material_impl(self.id))
     }
 
     pub fn contact_data(&self) -> Vec<ContactData> {
@@ -541,12 +674,12 @@ impl OwnedShape {
     /// Get the maximum capacity required for retrieving all overlapped shapes on this sensor shape.
     pub fn sensor_capacity(&self) -> i32 {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetSensorCapacity(self.id) }
+        shape_sensor_capacity_impl(self.id)
     }
 
     pub fn try_sensor_capacity(&self) -> ApiResult<i32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Shape_GetSensorCapacity(self.id) })
+        Ok(shape_sensor_capacity_impl(self.id))
     }
 
     pub fn sensor_overlaps(&self) -> Vec<ShapeId> {
@@ -791,32 +924,22 @@ impl<'w> Shape<'w> {
 
     pub fn world_id_raw(&self) -> ffi::b2WorldId {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetWorld(self.id) }
+        shape_world_id_impl(self.id)
     }
 
     pub fn try_world_id_raw(&self) -> ApiResult<ffi::b2WorldId> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Shape_GetWorld(self.id) })
+        Ok(shape_world_id_impl(self.id))
     }
 
     pub fn parent_chain_id(&self) -> Option<ChainId> {
         self.assert_valid();
-        let cid = unsafe { ffi::b2Shape_GetParentChain(self.id) };
-        if unsafe { ffi::b2Chain_IsValid(cid) } {
-            Some(cid)
-        } else {
-            None
-        }
+        shape_parent_chain_id_impl(self.id)
     }
 
     pub fn try_parent_chain_id(&self) -> ApiResult<Option<ChainId>> {
         self.check_valid()?;
-        let cid = unsafe { ffi::b2Shape_GetParentChain(self.id) };
-        if unsafe { ffi::b2Chain_IsValid(cid) } {
-            Ok(Some(cid))
-        } else {
-            Ok(None)
-        }
+        Ok(shape_parent_chain_id_impl(self.id))
     }
 
     pub fn is_valid(&self) -> bool {
@@ -831,78 +954,71 @@ impl<'w> Shape<'w> {
 
     pub fn shape_type(&self) -> ShapeType {
         self.assert_valid();
-        shape_type_from_ffi(unsafe { ffi::b2Shape_GetType(self.id) })
+        shape_type_impl(self.id)
     }
 
     pub fn try_shape_type(&self) -> ApiResult<ShapeType> {
         self.check_valid()?;
-        Ok(shape_type_from_ffi(unsafe {
-            ffi::b2Shape_GetType(self.id)
-        }))
+        Ok(shape_type_impl(self.id))
     }
 
     pub fn shape_type_raw(&self) -> ffi::b2ShapeType {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetType(self.id) }
+        shape_type_raw_impl(self.id)
     }
 
     pub fn try_shape_type_raw(&self) -> ApiResult<ffi::b2ShapeType> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Shape_GetType(self.id) })
+        Ok(shape_type_raw_impl(self.id))
     }
 
     pub fn body_id(&self) -> BodyId {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetBody(self.id) }
+        shape_body_id_impl(self.id)
     }
 
     pub fn try_body_id(&self) -> ApiResult<BodyId> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Shape_GetBody(self.id) })
+        Ok(shape_body_id_impl(self.id))
     }
 
     // Getters
     pub fn circle(&self) -> Circle {
         self.assert_valid();
-        Circle::from_raw(unsafe { ffi::b2Shape_GetCircle(self.id) })
+        shape_circle_impl(self.id)
     }
     pub fn segment(&self) -> Segment {
         self.assert_valid();
-        Segment::from_raw(unsafe { ffi::b2Shape_GetSegment(self.id) })
+        shape_segment_impl(self.id)
     }
     pub fn chain_segment(&self) -> ChainSegment {
         self.assert_valid();
-        ChainSegment::from_raw(unsafe { ffi::b2Shape_GetChainSegment(self.id) })
+        shape_chain_segment_impl(self.id)
     }
     pub fn capsule(&self) -> Capsule {
         self.assert_valid();
-        Capsule::from_raw(unsafe { ffi::b2Shape_GetCapsule(self.id) })
+        shape_capsule_impl(self.id)
     }
     pub fn polygon(&self) -> Polygon {
         self.assert_valid();
-        Polygon::from_raw(unsafe { ffi::b2Shape_GetPolygon(self.id) })
+        shape_polygon_impl(self.id)
     }
 
     /// Return the closest point on this shape to `target` (in world coordinates).
     pub fn closest_point<V: Into<Vec2>>(&self, target: V) -> Vec2 {
         self.assert_valid();
-        let t: ffi::b2Vec2 = target.into().into();
-        Vec2::from(unsafe { ffi::b2Shape_GetClosestPoint(self.id, t) })
+        shape_closest_point_impl(self.id, target)
     }
 
     pub fn try_closest_point<V: Into<Vec2>>(&self, target: V) -> ApiResult<Vec2> {
         self.check_valid()?;
-        let t: ffi::b2Vec2 = target.into().into();
-        Ok(Vec2::from(unsafe {
-            ffi::b2Shape_GetClosestPoint(self.id, t)
-        }))
+        Ok(shape_closest_point_impl(self.id, target))
     }
 
     /// Apply wind force/torque approximation to the shape.
     pub fn apply_wind<V: Into<Vec2>>(&mut self, wind: V, drag: f32, lift: f32, wake: bool) {
         self.assert_valid();
-        let w: ffi::b2Vec2 = wind.into().into();
-        unsafe { ffi::b2Shape_ApplyWind(self.id, w, drag, lift, wake) }
+        shape_apply_wind_impl(self.id, wind, drag, lift, wake)
     }
 
     pub fn try_apply_wind<V: Into<Vec2>>(
@@ -913,170 +1029,159 @@ impl<'w> Shape<'w> {
         wake: bool,
     ) -> ApiResult<()> {
         self.check_valid()?;
-        let w: ffi::b2Vec2 = wind.into().into();
-        unsafe { ffi::b2Shape_ApplyWind(self.id, w, drag, lift, wake) }
+        shape_apply_wind_impl(self.id, wind, drag, lift, wake);
         Ok(())
     }
 
     // Setters
     pub fn set_circle(&mut self, c: &Circle) {
         self.assert_valid();
-        let raw = c.into_raw();
-        unsafe { ffi::b2Shape_SetCircle(self.id, &raw) }
+        shape_set_circle_impl(self.id, c)
     }
     pub fn try_set_circle(&mut self, c: &Circle) -> ApiResult<()> {
         self.check_valid()?;
-        let raw = c.into_raw();
-        unsafe { ffi::b2Shape_SetCircle(self.id, &raw) }
+        shape_set_circle_impl(self.id, c);
         Ok(())
     }
     pub fn set_segment(&mut self, s: &Segment) {
         self.assert_valid();
-        let raw = s.into_raw();
-        unsafe { ffi::b2Shape_SetSegment(self.id, &raw) }
+        shape_set_segment_impl(self.id, s)
     }
     pub fn try_set_segment(&mut self, s: &Segment) -> ApiResult<()> {
         self.check_valid()?;
-        let raw = s.into_raw();
-        unsafe { ffi::b2Shape_SetSegment(self.id, &raw) }
+        shape_set_segment_impl(self.id, s);
         Ok(())
     }
     pub fn set_capsule(&mut self, c: &Capsule) {
         self.assert_valid();
-        let raw = c.into_raw();
-        unsafe { ffi::b2Shape_SetCapsule(self.id, &raw) }
+        shape_set_capsule_impl(self.id, c)
     }
     pub fn try_set_capsule(&mut self, c: &Capsule) -> ApiResult<()> {
         self.check_valid()?;
-        let raw = c.into_raw();
-        unsafe { ffi::b2Shape_SetCapsule(self.id, &raw) }
+        shape_set_capsule_impl(self.id, c);
         Ok(())
     }
     pub fn set_polygon(&mut self, p: &Polygon) {
         self.assert_valid();
-        let raw = p.into_raw();
-        unsafe { ffi::b2Shape_SetPolygon(self.id, &raw) }
+        shape_set_polygon_impl(self.id, p)
     }
     pub fn try_set_polygon(&mut self, p: &Polygon) -> ApiResult<()> {
         self.check_valid()?;
-        let raw = p.into_raw();
-        unsafe { ffi::b2Shape_SetPolygon(self.id, &raw) }
+        shape_set_polygon_impl(self.id, p);
         Ok(())
     }
 
     pub fn filter(&self) -> Filter {
         self.assert_valid();
-        Filter::from_raw(unsafe { ffi::b2Shape_GetFilter(self.id) })
+        shape_filter_impl(self.id)
     }
     pub fn try_filter(&self) -> ApiResult<Filter> {
         self.check_valid()?;
-        Ok(Filter::from_raw(unsafe { ffi::b2Shape_GetFilter(self.id) }))
+        Ok(shape_filter_impl(self.id))
     }
     pub fn set_filter(&mut self, f: Filter) {
         self.assert_valid();
-        unsafe { ffi::b2Shape_SetFilter(self.id, f.into_raw()) }
+        shape_set_filter_impl(self.id, f)
     }
     pub fn try_set_filter(&mut self, f: Filter) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Shape_SetFilter(self.id, f.into_raw()) }
+        shape_set_filter_impl(self.id, f);
         Ok(())
     }
 
     // Material and physical properties
     pub fn is_sensor(&self) -> bool {
         self.assert_valid();
-        unsafe { ffi::b2Shape_IsSensor(self.id) }
+        shape_is_sensor_impl(self.id)
     }
     pub fn try_is_sensor(&self) -> ApiResult<bool> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Shape_IsSensor(self.id) })
+        Ok(shape_is_sensor_impl(self.id))
     }
     pub fn set_density(&mut self, density: f32, update_body_mass: bool) {
         self.assert_valid();
-        unsafe { ffi::b2Shape_SetDensity(self.id, density, update_body_mass) }
+        shape_set_density_impl(self.id, density, update_body_mass)
     }
     pub fn try_set_density(&mut self, density: f32, update_body_mass: bool) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Shape_SetDensity(self.id, density, update_body_mass) }
+        shape_set_density_impl(self.id, density, update_body_mass);
         Ok(())
     }
     pub fn density(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetDensity(self.id) }
+        shape_density_impl(self.id)
     }
     pub fn try_density(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Shape_GetDensity(self.id) })
+        Ok(shape_density_impl(self.id))
     }
     pub fn set_friction(&mut self, friction: f32) {
         self.assert_valid();
-        unsafe { ffi::b2Shape_SetFriction(self.id, friction) }
+        shape_set_friction_impl(self.id, friction)
     }
     pub fn try_set_friction(&mut self, friction: f32) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Shape_SetFriction(self.id, friction) }
+        shape_set_friction_impl(self.id, friction);
         Ok(())
     }
     pub fn friction(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetFriction(self.id) }
+        shape_friction_impl(self.id)
     }
     pub fn try_friction(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Shape_GetFriction(self.id) })
+        Ok(shape_friction_impl(self.id))
     }
     pub fn set_restitution(&mut self, restitution: f32) {
         self.assert_valid();
-        unsafe { ffi::b2Shape_SetRestitution(self.id, restitution) }
+        shape_set_restitution_impl(self.id, restitution)
     }
     pub fn try_set_restitution(&mut self, restitution: f32) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Shape_SetRestitution(self.id, restitution) }
+        shape_set_restitution_impl(self.id, restitution);
         Ok(())
     }
     pub fn restitution(&self) -> f32 {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetRestitution(self.id) }
+        shape_restitution_impl(self.id)
     }
     pub fn try_restitution(&self) -> ApiResult<f32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Shape_GetRestitution(self.id) })
+        Ok(shape_restitution_impl(self.id))
     }
     pub fn set_user_material(&mut self, material: u64) {
         self.assert_valid();
-        unsafe { ffi::b2Shape_SetUserMaterial(self.id, material) }
+        shape_set_user_material_impl(self.id, material)
     }
     pub fn try_set_user_material(&mut self, material: u64) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Shape_SetUserMaterial(self.id, material) }
+        shape_set_user_material_impl(self.id, material);
         Ok(())
     }
     pub fn user_material(&self) -> u64 {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetUserMaterial(self.id) }
+        shape_user_material_impl(self.id)
     }
     pub fn try_user_material(&self) -> ApiResult<u64> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Shape_GetUserMaterial(self.id) })
+        Ok(shape_user_material_impl(self.id))
     }
     pub fn set_surface_material(&mut self, material: &SurfaceMaterial) {
         self.assert_valid();
-        unsafe { ffi::b2Shape_SetSurfaceMaterial(self.id, &material.0) }
+        shape_set_surface_material_impl(self.id, material)
     }
     pub fn try_set_surface_material(&mut self, material: &SurfaceMaterial) -> ApiResult<()> {
         self.check_valid()?;
-        unsafe { ffi::b2Shape_SetSurfaceMaterial(self.id, &material.0) }
+        shape_set_surface_material_impl(self.id, material);
         Ok(())
     }
     pub fn surface_material(&self) -> SurfaceMaterial {
         self.assert_valid();
-        SurfaceMaterial(unsafe { ffi::b2Shape_GetSurfaceMaterial(self.id) })
+        shape_surface_material_impl(self.id)
     }
     pub fn try_surface_material(&self) -> ApiResult<SurfaceMaterial> {
         self.check_valid()?;
-        Ok(SurfaceMaterial(unsafe {
-            ffi::b2Shape_GetSurfaceMaterial(self.id)
-        }))
+        Ok(shape_surface_material_impl(self.id))
     }
 
     // Opaque user pointer (engine-owned)
@@ -1248,12 +1353,12 @@ impl<'w> Shape<'w> {
     /// Returns 0 if this shape is not a sensor.
     pub fn sensor_capacity(&self) -> i32 {
         self.assert_valid();
-        unsafe { ffi::b2Shape_GetSensorCapacity(self.id) }
+        shape_sensor_capacity_impl(self.id)
     }
 
     pub fn try_sensor_capacity(&self) -> ApiResult<i32> {
         self.check_valid()?;
-        Ok(unsafe { ffi::b2Shape_GetSensorCapacity(self.id) })
+        Ok(shape_sensor_capacity_impl(self.id))
     }
 
     /// Get overlapped shapes for this sensor shape. If this is not a sensor, returns empty.

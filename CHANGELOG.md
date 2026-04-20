@@ -38,6 +38,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - World-level callback coverage now treats material mixing as a first-class safe API beside custom filter and pre-solve.
 - Collision/AABB regression tests now validate the public safe API instead of calling `boxdd_sys::ffi` directly.
 - The testbed manifold viewer now uses the public safe collision API instead of `boxdd_sys::ffi::b2Collide*`.
+- Owned/scoped `Shape`, `Body`, and `Chain` handles now share private helper implementations for hot-path geometry/material/state accessors and common raw escape hatches, reducing internal drift risk without changing the public API.
 - Breaking: `Body::transform` / `OwnedBody::transform` now return safe `Transform`; raw FFI access moved to `transform_raw` / `try_transform_raw`.
 - Breaking: shape creation, editing, and geometry getters now use safe geometry values instead of raw `ffi::b2Circle` / `b2Segment` / `b2Capsule` / `b2Polygon`.
 - Breaking: crate-owned geometry values now cross the raw FFI boundary explicitly via `from_raw(...)` / `into_raw()`; implicit `From<ffi::...>` conversions were removed for `Circle`, `Segment`, `ChainSegment`, `Capsule`, and `Polygon`, and `Polygon::new(raw)` was renamed to `Polygon::from_raw(raw)`.

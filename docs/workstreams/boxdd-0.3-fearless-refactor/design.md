@@ -87,6 +87,10 @@ Some duplication is acceptable for API clarity. Repeated callback plumbing, raw 
 fill patterns, or near-identical handle implementations should be consolidated when the
 result is simpler and easier to audit.
 
+For owned/scoped handle pairs, prefer small private free-function helpers over macro
+layers or trait indirection. The goal is to keep the public API explicit while making
+the shared FFI path single-sourced internally.
+
 ### 5. Raw Escape Hatches Should Be Loud
 
 If `boxdd` owns a user-facing value type, crossing into raw Box2D structs should be
@@ -120,6 +124,7 @@ FFI boundaries actually exist.
 - unify standalone collision geometry helpers with shape-construction helper types
 - `World` / `WorldHandle` duplication review
 - owned / scoped handle duplication review outside the hottest paths
+- review whether `Body` / `Shape` name and user-data paths should share more internal helpers or stay separate for clarity
 - continue value-type cleanup for remaining raw Box2D structs that still leak through public APIs
 - continue auditing crate-owned value types that still use implicit raw conversions where explicit `*_raw`/`from_raw` APIs would be clearer
 
