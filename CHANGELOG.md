@@ -18,6 +18,8 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Safe character mover APIs covering collision-plane collection and solver helpers: `collide_mover`, `collide_mover_into`, `solve_planes`, and `clip_vector`.
 - A broader 0.3 umbrella workstream under `docs/workstreams/boxdd-0.3-fearless-refactor/` to track the rest of the fearless refactor plan.
 - Typed world-level material mixing callbacks for friction and restitution using `MaterialMixInput` and `user_material_id`.
+- A standalone `collision` module with safe `ShapeProxy`, `SimplexCache`, `DistanceInput`, `ShapeCastPairInput`, `Sweep`, `ToiInput`, `ToiState`, and `*_distance` / `shape_cast` / `time_of_impact` helpers.
+- `Aabb::is_valid()` and `Aabb::ray_cast(origin, translation)` for low-level geometry checks without raw FFI.
 
 ### Changed
 - Query internals now share reusable collection helpers instead of duplicating callback-to-`Vec` plumbing across each query entrypoint.
@@ -26,6 +28,8 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Sensor valid-filter paths now reuse a single caller-owned buffer and filter in place instead of allocating a second `Vec`.
 - Examples and crate docs now show both reusable-buffer hot paths and the safe character mover workflow.
 - World-level callback coverage now treats material mixing as a first-class safe API beside custom filter and pre-solve.
+- Collision/AABB regression tests now validate the public safe API instead of calling `boxdd_sys::ffi` directly.
+- Breaking: `Body::transform` / `OwnedBody::transform` now return safe `Transform`; raw FFI access moved to `transform_raw` / `try_transform_raw`.
 
 ## [boxdd 0.2.0] - 2025-12-17
 

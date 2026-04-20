@@ -3,10 +3,11 @@
 //!
 //! Highlights
 //! - Thin safe layer on top of the official Box2D v3 C API.
-//! - Modular API: world, bodies, shapes, joints, queries, events, debug draw.
+//! - Modular API: world, bodies, shapes, joints, queries, collision geometry, events, debug draw.
 //! - Ergonomics: builder patterns, world-space helpers, optional `mint` integration.
 //! - Hot-path friendly APIs: keep the convenience `Vec`-returning methods, or reuse caller-owned buffers with `*_into`.
 //! - Character mover helpers: cast movers, collect collision planes, solve planes, and clip velocity without raw FFI.
+//! - Standalone collision geometry helpers: shape proxies, GJK distance, shape cast, TOI, and AABB validation/ray cast.
 //! - Typed material mixing callbacks for friction and restitution using `user_material_id`.
 //! - Three usage styles:
 //!   - Owned handles: `OwnedBody`/`OwnedShape`/`OwnedJoint`/`OwnedChain` (Drop destroys; easy to store).
@@ -63,7 +64,7 @@
 //! - Returned vectors can be converted back using `From` to the corresponding math types.
 //!
 //! Modules
-//! - `world`, `body`, `shapes`, `joints`, `query`, `events`, `debug_draw`, `prelude`.
+//! - `world`, `body`, `shapes`, `joints`, `query`, `collision`, `events`, `debug_draw`, `prelude`.
 //!   Import `boxdd::prelude::*` for the most common types.
 //!
 //! Queries (AABB + Ray Cast)
@@ -100,6 +101,29 @@
 //! let solved = solve_planes([0.0_f32, -0.1], &mut rigid);
 //! let _clipped_velocity = clip_vector(Vec2::new(0.0, -1.0), &rigid);
 //! let _ = solved.translation;
+//! ```
+//!
+//! Collision Geometry
+//! ```no_run
+//! use boxdd::{
+//!     shape_distance, DistanceInput, ShapeProxy, SimplexCache, ToiInput, ToiState, Sweep,
+//!     Transform,
+//! };
+//! let proxy_a = ShapeProxy::new([[-1.0_f32, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]], 0.0).unwrap();
+//! let proxy_b = ShapeProxy::new([[2.0_f32, -1.0], [2.0, 1.0]], 0.0).unwrap();
+//! let mut cache = SimplexCache::default();
+//! let distance = shape_distance(
+//!     DistanceInput::new(proxy_a, proxy_b, Transform::IDENTITY, Transform::IDENTITY),
+//!     &mut cache,
+//! );
+//! assert!(distance.distance >= 0.0);
+//! let toi = boxdd::time_of_impact(ToiInput::new(
+//!     proxy_a,
+//!     proxy_b,
+//!     Sweep::new([0.0_f32, 0.0], [0.0, 0.0], [0.0, 0.0], boxdd::Rot::IDENTITY, boxdd::Rot::IDENTITY),
+//!     Sweep::new([0.0_f32, 0.0], [0.0, 0.0], [-2.0, 0.0], boxdd::Rot::IDENTITY, boxdd::Rot::IDENTITY),
+//! ));
+//! let _ = matches!(toi.state, ToiState::Hit | ToiState::Separated | ToiState::Overlapped | ToiState::Failed | ToiState::Unknown);
 //! ```
 //!
 //! Material Mixing Callbacks
@@ -141,6 +165,7 @@
 //! ```
 
 pub mod body;
+pub mod collision;
 pub mod debug_draw;
 pub mod error;
 pub mod events;
@@ -174,6 +199,11 @@ pub mod core {
 
 pub use body::OwnedBody;
 pub use body::{Body, BodyBuilder, BodyDef, BodyType};
+pub use collision::{
+    CastOutput, DistanceInput, DistanceOutput, MAX_SHAPE_PROXY_POINTS, SegmentDistanceResult,
+    ShapeCastPairInput, ShapeProxy, SimplexCache, Sweep, ToiInput, ToiOutput, ToiState,
+    segment_distance, shape_cast, shape_distance, time_of_impact,
+};
 #[cfg(feature = "cgmath")]
 #[cfg_attr(docsrs, doc(cfg(feature = "cgmath")))]
 pub use core::math::TransformFromCgmathError;

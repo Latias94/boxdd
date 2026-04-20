@@ -56,15 +56,30 @@ Exit criteria:
 
 ## M4: Advanced Wrapper Coverage
 
-Status: in progress
+Status: shipped
 
 Scope:
 
 - typed friction callback API
 - typed restitution callback API
-- identify candidates for a broader safe geometry / collision surface
+- standalone `collision` module for shape proxies, GJK distance, shape cast, and TOI
+- `Aabb::is_valid()` and `Aabb::ray_cast(origin, translation)`
 
 Exit criteria:
 
-- advanced collision customization no longer feels noticeably less productized than filter / pre-solve
+- advanced collision customization and low-level geometry algorithms no longer require raw `ffi` for normal use
 - the next post-`0.3` wrapper-coverage push has a concrete backlog instead of scattered notes
+
+## M5: Geometry Type Unification
+
+Status: planned
+
+Scope:
+
+- replace raw `ffi` geometry helper outputs in `shapes::helpers` with crate-owned geometry value types where practical
+- review whether shape-creation entrypoints should accept the same geometry vocabulary used by `boxdd::collision`
+
+Exit criteria:
+
+- users can move between shape construction and standalone collision algorithms without dropping to raw `ffi`
+- the remaining raw geometry exposure is explicit, narrow, and justified

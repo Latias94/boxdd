@@ -19,13 +19,17 @@
 - [x] Update `CHANGELOG.md` to reflect the expanded `0.3.0` scope.
 - [x] Add typed safe friction / restitution mixing callbacks with panic forwarding and `user_material_id` inputs.
 - [x] Add tests for material mixing callbacks, including panic propagation.
+- [x] Add a standalone safe `collision` module for distance, shape cast, TOI, and reusable value types.
+- [x] Add `Aabb::is_valid()` and `Aabb::ray_cast(origin, translation)` without exposing raw `ffi`.
+- [x] Move low-level collision/AABB tests over to the public safe API.
+- [x] Normalize body transform access around safe `Transform` and rename raw accessors explicitly.
 
 ## Next
 
+- [ ] Review `shapes::helpers` and shape-creation inputs so low-level geometry stops leaking raw `ffi` structs.
 - [ ] Audit whether debug draw command collection should gain reusable-buffer APIs.
 - [ ] Review remaining `World` / `WorldHandle` query duplication and decide whether selective consolidation is worth it.
 - [ ] Audit remaining owned/scoped handle duplication outside the already-refactored hot paths.
-- [ ] Identify geometry / collision helpers that still force users into raw `boxdd_sys::ffi`.
 
 ## Release Checklist
 

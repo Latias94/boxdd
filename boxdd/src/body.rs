@@ -117,18 +117,24 @@ impl OwnedBody {
         Ok(unsafe { ffi::b2Body_GetAngularVelocity(self.id) })
     }
 
-    pub fn transform(&self) -> ffi::b2Transform {
+    pub fn transform(&self) -> crate::Transform {
+        self.assert_valid();
+        unsafe { ffi::b2Body_GetTransform(self.id) }.into()
+    }
+
+    pub fn try_transform(&self) -> ApiResult<crate::Transform> {
+        self.check_valid()?;
+        Ok(unsafe { ffi::b2Body_GetTransform(self.id) }.into())
+    }
+
+    pub fn transform_raw(&self) -> ffi::b2Transform {
         self.assert_valid();
         unsafe { ffi::b2Body_GetTransform(self.id) }
     }
 
-    pub fn try_transform(&self) -> ApiResult<ffi::b2Transform> {
+    pub fn try_transform_raw(&self) -> ApiResult<ffi::b2Transform> {
         self.check_valid()?;
         Ok(unsafe { ffi::b2Body_GetTransform(self.id) })
-    }
-
-    pub fn transform_ex(&self) -> crate::Transform {
-        crate::Transform::from(self.transform())
     }
 
     pub fn local_point<V: Into<Vec2>>(&self, world_point: V) -> Vec2 {
@@ -1138,17 +1144,24 @@ impl<'w> Body<'w> {
         Ok(unsafe { ffi::b2Body_GetAngularVelocity(self.id) })
     }
 
-    pub fn transform(&self) -> ffi::b2Transform {
+    pub fn transform(&self) -> crate::Transform {
+        self.assert_valid();
+        unsafe { ffi::b2Body_GetTransform(self.id) }.into()
+    }
+
+    pub fn try_transform(&self) -> ApiResult<crate::Transform> {
+        self.check_valid()?;
+        Ok(unsafe { ffi::b2Body_GetTransform(self.id) }.into())
+    }
+
+    pub fn transform_raw(&self) -> ffi::b2Transform {
         self.assert_valid();
         unsafe { ffi::b2Body_GetTransform(self.id) }
     }
 
-    pub fn try_transform(&self) -> ApiResult<ffi::b2Transform> {
+    pub fn try_transform_raw(&self) -> ApiResult<ffi::b2Transform> {
         self.check_valid()?;
         Ok(unsafe { ffi::b2Body_GetTransform(self.id) })
-    }
-    pub fn transform_ex(&self) -> crate::Transform {
-        crate::Transform::from(self.transform())
     }
 
     pub fn local_point<V: Into<Vec2>>(&self, world_point: V) -> Vec2 {

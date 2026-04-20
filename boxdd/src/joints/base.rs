@@ -685,8 +685,8 @@ impl JointBaseBuilder {
         body_b: &Body<'w>,
         world_b: V,
     ) -> Self {
-        let ta = body_a.transform();
-        let tb = body_b.transform();
+        let ta = body_a.transform_raw();
+        let tb = body_b.transform_raw();
         let wa: ffi::b2Vec2 = world_a.into().into();
         let wb: ffi::b2Vec2 = world_b.into().into();
         let la = crate::core::math::world_to_local_point(ta, wa);
@@ -722,8 +722,8 @@ impl JointBaseBuilder {
         VB: Into<crate::types::Vec2>,
         AX: Into<crate::types::Vec2>,
     {
-        let ta = body_a.transform();
-        let tb = body_b.transform();
+        let ta = body_a.transform_raw();
+        let tb = body_b.transform_raw();
         let wa: ffi::b2Vec2 = anchor_a_world.into().into();
         let wb: ffi::b2Vec2 = anchor_b_world.into().into();
         let axis_w: ffi::b2Vec2 = axis_world.into().into();

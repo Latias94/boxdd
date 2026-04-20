@@ -20,6 +20,7 @@
 - Two error-handling styles: panic-on-misuse by default, plus `try_*` APIs returning `ApiResult<T>` for recoverable errors.
 - Hot-path query and state-extraction APIs expose `*_into` variants so games can reuse `Vec` buffers across frames instead of reallocating.
 - Character mover helpers cover the full safe workflow: `cast_mover`, `collide_mover`, `solve_planes`, and `clip_vector`.
+- Standalone collision geometry helpers cover shape proxies, GJK distance, shape cast, TOI, and `Aabb::is_valid` / `Aabb::ray_cast` without raw `ffi`.
 - Typed world-level friction and restitution mixing callbacks expose `user_material_id` without dropping to raw `ffi`.
 
 ## Quickstart
@@ -80,6 +81,12 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 - The safe wrapper now covers Box2D's geometric character mover pipeline.
 - Use `world.cast_mover(...)` to test motion, `world.collide_mover(...)` or `world.collide_mover_into(...)` to collect planes, `boxdd::solve_planes(...)` to solve them, and `boxdd::clip_vector(...)` to clip velocity against solved planes.
 - See `examples/character_mover.rs` for a minimal end-to-end usage example.
+
+## Collision Geometry APIs
+- `boxdd::collision` exposes Box2D's standalone low-level geometry algorithms as safe Rust value types.
+- Use `ShapeProxy`, `SimplexCache`, `DistanceInput`, `ShapeCastPairInput`, `Sweep`, and `ToiInput` with `shape_distance(...)`, `shape_cast(...)`, and `time_of_impact(...)`.
+- `Aabb::is_valid()` and `Aabb::ray_cast(origin, translation)` now cover common AABB validation and ray-cast needs without reaching for `boxdd_sys::ffi`.
+- These advanced APIs are intentionally not in the prelude, so collision-heavy code can import them explicitly.
 
 ## Material Mixing Callbacks
 - `world.set_friction_callback(...)` and `world.set_restitution_callback(...)` expose Box2D's material mixing hooks as safe typed closures.

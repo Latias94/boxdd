@@ -100,10 +100,11 @@ result is simpler and easier to audit.
 - `solve_planes` and `clip_vector` safe entry points
 - docs and examples that show the intended mover flow
 - typed friction / restitution callbacks
+- standalone collision geometry helpers for distance, shape cast, TOI, and AABB validation/ray cast
 
 ### Planned follow-up audit items
 
-- broader safe geometry / collision helpers around currently raw-only upstream features
+- unify standalone collision geometry helpers with shape-construction helper types
 - `World` / `WorldHandle` duplication review
 - owned / scoped handle duplication review outside the hottest paths
 
