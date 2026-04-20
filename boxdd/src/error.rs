@@ -3,6 +3,13 @@
 //! The default safe API surface prefers panics on misuse (invalid ids, calling from within a
 //! Box2D callback) to prevent Rust-level UB. If you want recoverable errors (e.g. in production),
 //! use the `try_*` APIs returning `ApiResult<T>`.
+//!
+//! Common `ApiError` categories are:
+//! - stale ids after an object was destroyed
+//! - calling Box2D while the world is locked inside a callback
+//! - invalid definitions or strings crossing the FFI boundary
+//! - typed user-data mismatches
+//! - callback resource exhaustion for advanced callback registration
 
 pub type ApiResult<T> = core::result::Result<T, ApiError>;
 

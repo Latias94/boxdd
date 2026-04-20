@@ -18,6 +18,7 @@
 - Safe, ergonomic Rust wrapper over the official Box2D v3 C API.
 - Math interop (features: `mint`/`cgmath`/`nalgebra`/`glam`): any `Into<Vec2>` accepts the corresponding 2D vector/point types, plus arrays/tuples.
 - Two error-handling styles: panic-on-misuse by default, plus `try_*` APIs returning `ApiResult<T>` for recoverable errors.
+- Explicit threading model: `worker_count` enables Box2D's internal parallelism, while `World` and owned handles remain pinned to one thread/task.
 - Hot-path query, debug-draw collection, and state-extraction APIs expose `*_into` variants so games can reuse `Vec` buffers across frames instead of reallocating.
 - Character mover helpers cover the full safe workflow: `cast_mover`, `collide_mover`, `solve_planes`, and `clip_vector`.
 - Standalone collision geometry helpers cover shape proxies, GJK distance, contact manifolds, chain-segment manifolds, shape cast, TOI, and `Aabb::is_valid` / `Aabb::ray_cast` without raw `ffi`.
@@ -43,10 +44,26 @@ world.step(1.0/60.0, 4);
 ## Features (optional)
 - `serde`: serialization for core value/config types (`Vec2`, `Rot`, `Transform`, `Aabb`, `QueryFilter`, etc.).
 - `serialize`: snapshot helpers (save/apply world config; take/rebuild minimal full-scene snapshot).
-- `mint`: lightweight math interop types (`mint::Vector2`, `mint::Point2`, and 2D affine matrices for `Transform`).
+- `mint`: lightweight math interop types (`mint::Vector2`, `mint::Point2`, `mint::RowMatrix2` / `mint::ColumnMatrix2` for `Rot`, and row/column-major 2D affine matrices for `Transform`).
 - `cgmath`, `nalgebra`, `glam`: conversions with their 2D types (e.g. `Vector2/Point2`, `UnitComplex/Isometry2`, `glam::Vec2`).
 - `bytemuck`: enable `Pod`/`Zeroable` for core math types (`Vec2`, `Rot`, `Transform`, `Aabb`) for zero-copy interop.
 - `unchecked`: exposes extra `unsafe` unchecked APIs for hot paths (skips id validity checks; you must guarantee ids are valid).
+
+## Math Interop
+- `Vec2` always accepts `[f32; 2]` and `(f32, f32)` anywhere `Into<Vec2>` is used.
+- `mint` now covers `Vec2`, `Aabb`, `Rot`, and `Transform`, including row- and column-major 2D matrix forms.
+- `cgmath`, `nalgebra`, and `glam` remain first-class interop options for projects that already standardize on those math crates.
+
+## Threading and Async
+- `WorldDef::builder().worker_count(n)` lets Box2D use internal worker threads during `world.step(...)`. It does not make `World`, `WorldHandle`, or owned handles `Send`/`Sync`.
+- Keep physics ownership on one thread/task. In async runtimes prefer `spawn_local` / `LocalSet`; in multi-threaded engines prefer a dedicated physics thread and communicate with channels.
+- `set_custom_filter*`, `set_pre_solve*`, `set_friction_callback`, and `set_restitution_callback` may run on Box2D worker threads, so those closures must stay `Send + Sync` and should be treated as pure callbacks.
+- See `examples/physics_thread.rs` for a minimal dedicated-thread pattern.
+
+## Error Handling
+- The default safe APIs panic on misuse such as stale ids or calling Box2D while the world is locked in a callback. This keeps the common path terse and avoids Rust-level UB.
+- At engine/runtime boundaries, prefer `try_*` APIs and handle `ApiError` explicitly.
+- `ApiError` covers stale ids, callback-locked access, invalid chain defs, interior NUL strings, typed user-data mismatches, and material-callback slot exhaustion.
 
 ## Snapshots
 - Enable `serialize` and see example `examples/scene_serialize.rs` for a minimal scene round-trip.
@@ -77,6 +94,7 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 
 ## Examples
 - The `examples/` folder covers worlds/bodies/shapes, joints, queries/casts, events/sensors, CCD, and debug draw.
+- `examples/physics_thread.rs` shows the recommended dedicated physics-thread + channel pattern when your game/app is otherwise multi-threaded.
 
 ## Hot Path APIs
 - Convenience methods like `world.overlap_aabb(...)` and `world.cast_ray_all(...)` still return owned `Vec`s for one-off use.
@@ -134,7 +152,7 @@ world.with_joint_events_view(|j| { let _ = j.count(); });
   - To force bindgen: enable the `boxdd-sys/bindgen` feature, set `BOXDD_SYS_FORCE_BINDGEN=1`, and ensure `libclang` is available. On Windows/MSVC, set `LIBCLANG_PATH` if needed.
 - On docs.rs, the native C build is skipped.
 - Safe handle methods validate ids and panic on invalid ids (prevents UB if an id becomes stale). For recoverable failures (invalid ids / calling during Box2D callbacks), use `try_*` APIs.
-- Threading: `World` and owned handles are `!Send`/`!Sync`. Run physics on one thread; in async runtimes prefer `spawn_local`/`LocalSet`, or create the world inside a dedicated physics thread and communicate via channels.
+- Threading: `World` and owned handles are `!Send`/`!Sync`. `worker_count` only controls Box2D's internal stepping workers. Run physics on one thread; in async runtimes prefer `spawn_local`/`LocalSet`, or create the world inside a dedicated physics thread and communicate via channels.
 
 ## Documentation
 - Local: `cargo doc --open`

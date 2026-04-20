@@ -27,6 +27,8 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Crate-owned `ShapeType`, `MassData`, `ContactData`, `Manifold`, and `ManifoldPoint` value types for the main safe API surface.
 - Crate-owned `MotionLocks` for body translation/rotation constraints.
 - Crate-owned `HexColor` for debug-draw callbacks and collected debug-draw commands.
+- `mint` interop for `Rot -> mint::RowMatrix2` / `mint::ColumnMatrix2`, plus `Transform <-> mint::ColumnMatrix3x2` / `mint::ColumnMatrix2x3`.
+- A dedicated `examples/physics_thread.rs` example showing the recommended dedicated-thread + channel integration pattern.
 
 ### Changed
 - Query internals now share reusable collection helpers instead of duplicating callback-to-`Vec` plumbing across each query entrypoint.
@@ -61,6 +63,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Internal: `Joint` / `OwnedJoint` now share private helpers for common state accessors, threshold controls, and raw/typed user-data plumbing, reducing one of the last large owned/scoped duplication pockets.
 - Breaking: raw world-id escape hatches now use explicit naming: `World::raw` / `WorldHandle::raw` moved to `world_id_raw`, and body/shape/chain `world_id` accessors moved to `world_id_raw` / `try_world_id_raw`.
 - Breaking: `DebugDraw` / `RawDebugDraw` color parameters and collected command colors now use crate-owned `HexColor` instead of leaking `ffi::b2HexColor`.
+- Docs: crate docs and README now spell out the threading / async model (`worker_count` vs `World: !Send/!Sync`) and the intended panic-by-default vs `try_*` error-handling split.
 
 ## [boxdd 0.2.0] - 2025-12-17
 

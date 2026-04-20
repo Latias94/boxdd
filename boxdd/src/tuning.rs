@@ -43,6 +43,8 @@
 //!     `World::maximum_linear_speed`
 //! - Worker threads
 //!   - `WorldBuilder::worker_count`
+//!   - This only changes Box2D's internal worker usage during stepping; `World` itself stays pinned
+//!     to one thread/task.
 //!
 //! Notes
 //! - Upstream constants in `src/constants.h` are implementation details and may

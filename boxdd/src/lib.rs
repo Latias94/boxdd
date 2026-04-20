@@ -4,7 +4,7 @@
 //! Highlights
 //! - Thin safe layer on top of the official Box2D v3 C API.
 //! - Modular API: world, bodies, shapes, joints, queries, collision geometry, events, debug draw.
-//! - Ergonomics: builder patterns, world-space helpers, optional `mint` integration.
+//! - Ergonomics: builder patterns, world-space helpers, and optional math interop (`mint`/`cgmath`/`nalgebra`/`glam`).
 //! - Hot-path friendly APIs: keep the convenience `Vec`-returning methods, or reuse caller-owned buffers with `*_into`.
 //! - Character mover helpers: cast movers, collect collision planes, solve planes, and clip velocity without raw FFI.
 //! - Standalone collision geometry helpers: shape proxies, GJK distance, manifolds, shape cast, TOI, and AABB validation/ray cast.
@@ -64,6 +64,8 @@
 //! - With `mint`, `cgmath`, `nalgebra`, or `glam` enabled, `Vec2` also accepts those crates'
 //!   2D vector/point types via `From`/`Into`.
 //! - Returned vectors can be converted back using `From` to the corresponding math types.
+//! - `mint` also covers `Rot -> mint::RowMatrix2` / `mint::ColumnMatrix2`, plus row- and
+//!   column-major 2D affine matrices for `Transform`.
 //!
 //! Modules
 //! - `world`, `body`, `shapes`, `joints`, `query`, `collision`, `events`, `debug_draw`, `prelude`.
@@ -144,9 +146,24 @@
 //! Feature Flags
 //! - `serialize`: scene snapshot helpers (save/apply world config; build/restore minimal full-scene snapshot).
 //! - `pkg-config`: allow linking against a system `box2d` via pkg-config.
-//! - `mint`: lightweight math interop types (`mint::Vector2`, `mint::Point2`, and 2D affine matrices for `Transform`).
+//! - `mint`: lightweight math interop types (`mint::Vector2`, `mint::Point2`, `mint::RowMatrix2` /
+//!   `mint::ColumnMatrix2` for `Rot`, and row/column-major 2D affine matrices for `Transform`).
 //! - `cgmath` / `nalgebra` / `glam`: conversions with their 2D math types.
 //! - `bytemuck`: `Pod`/`Zeroable` for core math types (`Vec2`, `Rot`, `Transform`, `Aabb`) for zero-copy interop.
+//!
+//! Threading and async
+//! - `WorldDef::builder().worker_count(n)` lets Box2D use internal worker threads during `World::step(...)`.
+//!   It does not make `World`, `WorldHandle`, or owned handles `Send`/`Sync`.
+//! - Keep the world on one thread/task. In async runtimes prefer `spawn_local` / `LocalSet`; in
+//!   multi-threaded engines prefer a dedicated physics thread plus channels.
+//! - `set_custom_filter*`, `set_pre_solve*`, `set_friction_callback`, and `set_restitution_callback`
+//!   may run on Box2D worker threads and therefore require `Send + Sync` closures.
+//! - See `examples/physics_thread.rs` for the dedicated-thread pattern.
+//!
+//! Error handling
+//! - The default safe surface panics on misuse such as stale ids or calling Box2D while the world
+//!   is locked in a callback. This keeps the common path terse and avoids Rust-level UB.
+//! - At runtime boundaries, prefer `try_*` APIs and handle `ApiError` explicitly.
 //!
 //! Events
 //! - Three access styles:

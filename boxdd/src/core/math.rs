@@ -78,6 +78,25 @@ impl<'de> serde::Deserialize<'de> for Rot {
     }
 }
 
+#[cfg(feature = "mint")]
+impl From<Rot> for mint::RowMatrix2<f32> {
+    #[inline]
+    fn from(r: Rot) -> Self {
+        Self {
+            x: mint::Vector2 { x: r.c, y: -r.s },
+            y: mint::Vector2 { x: r.s, y: r.c },
+        }
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<Rot> for mint::ColumnMatrix2<f32> {
+    #[inline]
+    fn from(r: Rot) -> Self {
+        mint::RowMatrix2::from(r).into()
+    }
+}
+
 // Interop with common math libraries for rotations
 #[cfg(feature = "cgmath")]
 impl From<Rot> for cgmath::Basis2<f32> {
@@ -464,6 +483,34 @@ impl From<Transform> for mint::RowMatrix3x2<f32> {
 }
 
 #[cfg(feature = "mint")]
+impl TryFrom<mint::ColumnMatrix3x2<f32>> for Transform {
+    type Error = TransformFromMintError;
+
+    #[inline]
+    fn try_from(m: mint::ColumnMatrix3x2<f32>) -> Result<Self, Self::Error> {
+        Self::try_from(mint::RowMatrix3x2::from(m))
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<&mint::ColumnMatrix3x2<f32>> for Transform {
+    type Error = TransformFromMintError;
+
+    #[inline]
+    fn try_from(m: &mint::ColumnMatrix3x2<f32>) -> Result<Self, Self::Error> {
+        Self::try_from(*m)
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<Transform> for mint::ColumnMatrix3x2<f32> {
+    #[inline]
+    fn from(t: Transform) -> Self {
+        mint::RowMatrix3x2::from(t).into()
+    }
+}
+
+#[cfg(feature = "mint")]
 impl TryFrom<mint::RowMatrix2x3<f32>> for Transform {
     type Error = TransformFromMintError;
 
@@ -538,6 +585,34 @@ impl From<Transform> for mint::RowMatrix2x3<f32> {
                 z: t.p.y,
             },
         }
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<mint::ColumnMatrix2x3<f32>> for Transform {
+    type Error = TransformFromMintError;
+
+    #[inline]
+    fn try_from(m: mint::ColumnMatrix2x3<f32>) -> Result<Self, Self::Error> {
+        Self::try_from(mint::RowMatrix2x3::from(m))
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<&mint::ColumnMatrix2x3<f32>> for Transform {
+    type Error = TransformFromMintError;
+
+    #[inline]
+    fn try_from(m: &mint::ColumnMatrix2x3<f32>) -> Result<Self, Self::Error> {
+        Self::try_from(*m)
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<Transform> for mint::ColumnMatrix2x3<f32> {
+    #[inline]
+    fn from(t: Transform) -> Self {
+        mint::RowMatrix2x3::from(t).into()
     }
 }
 

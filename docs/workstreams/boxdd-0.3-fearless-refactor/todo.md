@@ -7,6 +7,11 @@
 - [x] Add shared callback collection and FFI `Vec` fill helpers to remove repeated low-level plumbing.
 - [x] Update docs, examples, versioning, tests, and changelog for the first `0.3.0` slice.
 - [x] Record the broader `0.3.0` refactor scope in a dedicated workstream.
+- [x] Audit whether async, multithreading, error handling, and math-interop changes belong in `0.3.0`, and keep the release boundary explicit instead of adding shallow abstractions.
+- [x] Expand `mint` interop to cover rotation matrices plus column-major 2D transform matrices.
+- [x] Document the threading / async model around `worker_count`, worker-thread callbacks, and dedicated physics-thread usage.
+- [x] Align crate docs / README error-handling guidance around panic-by-default vs `try_*`.
+- [x] Add a dedicated physics-thread example to demonstrate the recommended multi-thread integration pattern.
 
 ## In Progress
 
@@ -57,6 +62,7 @@
 - [ ] Audit any remaining owned/scoped handle duplication outside the already-refactored internals and confirm it is worth keeping.
 - [x] Review remaining public raw escape hatches and document which are intentional (`world_id_raw`, raw event slices, debug draw raw paths, etc.).
 - [ ] Add more targeted regression coverage where intentional raw escape hatches still rely on callback-sensitive or zero-copy behavior.
+- [ ] Continue the completeness audit against upstream Box2D v3 and record any intentionally unwrapped or raw-only areas that should be revisited after `0.3.0`.
 
 ## Release Checklist
 

@@ -35,6 +35,9 @@ The main gaps are:
 - some safe APIs still duplicate the same implementation patterns across handle styles
 - the crate lacks a clearer release-level refactor plan that ties these efforts together
 - some crate-owned value types still blur the raw FFI boundary with implicit conversions instead of explicit escape hatches
+- the threading / async model is correct but still too easy to misread unless users inspect the source
+- math interop coverage is useful but still uneven, especially around `mint` rotation / transform forms
+- the panic-vs-`try_*` error-handling strategy is sound but not explicit enough at the crate boundary
 
 If we do not address these now, the likely outcome is a sequence of small additive
 patches that preserve avoidable duplication and keep advanced users half inside the safe
@@ -144,6 +147,9 @@ These seams are worth keeping only if:
 - standalone collision geometry helpers for distance, shape cast, TOI, and AABB validation/ray cast
 - crate-owned wrapper cleanup for remaining leaked Box2D value types (`ShapeType`, `MassData`, contact data, and manifolds)
 - explicit raw geometry conversions for crate-owned shape geometry values
+- math-interop completeness cleanup so `mint` stays a first-class bridge instead of a partially-covered feature
+- explicit threading / async documentation and examples that preserve the current `!Send` / `!Sync` design instead of weakening it
+- clearer crate-level error-handling guidance for panic-by-default vs `try_*` usage
 
 ### Planned follow-up audit items
 

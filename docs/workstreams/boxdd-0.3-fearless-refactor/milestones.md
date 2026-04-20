@@ -127,9 +127,14 @@ Scope:
 - review remaining public raw escape hatches such as `world_id`, raw event slices, and debug draw hooks
 - make remaining crate-owned value types cross the raw boundary explicitly where the wrapper owns the vocabulary
 - finish any obviously missing value-type/productization gaps left after the main `0.3` wrapper passes
+- audit thread-model / async guidance so `worker_count`, worker-thread callbacks, and `World: !Send/!Sync` are documented together
+- audit math interop completeness so `mint` stays aligned with the crate-owned `Vec2` / `Rot` / `Transform` / `Aabb` vocabulary
+- clarify panic-by-default vs `try_*` error-handling guidance at the crate boundary
 
 Exit criteria:
 
 - the remaining raw public surface is either clearly intentional or scheduled for removal
 - crate-owned value types no longer rely on implicit raw conversions except for documented input-side or raw-escape-hatch exceptions
 - the next completeness pass has a short, explicit backlog instead of scattered notes
+- thread-model guidance no longer implies that internal worker threads make the public world API thread-safe
+- math interop documentation and tests cover the intended `mint` bridge story explicitly

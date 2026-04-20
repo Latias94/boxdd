@@ -342,7 +342,10 @@ impl WorldBuilder {
         self.def.0.enableContactSoftening = flag;
         self
     }
-    /// Number of worker threads Box2D may use.
+    /// Number of worker threads Box2D may use during stepping.
+    ///
+    /// This controls Box2D's internal parallelism only; it does not make `World` or owned handles
+    /// `Send` / `Sync`.
     pub fn worker_count(mut self, n: i32) -> Self {
         self.def.0.workerCount = n;
         self
