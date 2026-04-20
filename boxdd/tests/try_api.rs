@@ -1,5 +1,6 @@
 use boxdd::prelude::*;
 use boxdd::shapes;
+use boxdd_sys::ffi;
 
 #[test]
 fn try_body_position_invalid_id_returns_err() {
@@ -143,6 +144,36 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
             ApiError::InCallback,
         ]
     );
+}
+
+#[test]
+fn try_calls_from_debug_draw_raw_return_in_callback() {
+    struct Drawer {
+        body: OwnedBody,
+        err: Option<ApiError>,
+    }
+    impl RawDebugDraw for Drawer {
+        fn draw_solid_polygon(
+            &mut self,
+            _transform: ffi::b2Transform,
+            _vertices: &[ffi::b2Vec2],
+            _radius: f32,
+            _color: HexColor,
+        ) {
+            self.err = Some(self.body.try_position().unwrap_err());
+        }
+    }
+
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body = world.create_body_owned(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+    let body_id = body.id();
+    let sdef = ShapeDef::builder().density(1.0).build();
+    let poly = shapes::box_polygon(0.5, 0.5);
+    let _ = world.create_polygon_shape_for(body_id, &sdef, &poly);
+
+    let mut drawer = Drawer { body, err: None };
+    world.debug_draw_raw(&mut drawer, DebugDrawOptions::default());
+    assert_eq!(drawer.err, Some(ApiError::InCallback));
 }
 
 #[test]

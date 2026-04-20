@@ -56,6 +56,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Internal: joint creation entrypoints now share a single internal definition across all joint types, and `try_create_*_joint*` now consistently return `ApiError::InCallback` when called from callbacks.
 - Internal: body/contact/sensor/joint event views now share a single world-level event-buffer borrow/cleanup helper, reducing drift risk in deferred-destroy handling.
 - Internal: world-level circle/segment/capsule/polygon shape create/edit helpers now share single internal definitions instead of repeating identical geometry-to-FFI plumbing per shape type.
+- Internal: safe and raw debug-draw paths now share callback panic forwarding and option wiring helpers, and `debug_draw_raw` has dedicated panic/in-callback regression coverage.
 - Breaking: raw world-id escape hatches now use explicit naming: `World::raw` / `WorldHandle::raw` moved to `world_id_raw`, and body/shape/chain `world_id` accessors moved to `world_id_raw` / `try_world_id_raw`.
 - Breaking: `DebugDraw` / `RawDebugDraw` color parameters and collected command colors now use crate-owned `HexColor` instead of leaking `ffi::b2HexColor`.
 

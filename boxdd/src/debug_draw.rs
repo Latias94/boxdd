@@ -30,6 +30,8 @@ use smallvec::SmallVec;
 use std::any::Any;
 use std::ffi::CStr;
 
+type DebugDrawPanic = Box<dyn Any + Send + 'static>;
+
 /// Packed Box2D debug-draw RGB color (`0xRRGGBB`).
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
@@ -226,15 +228,82 @@ impl Default for DebugDrawOptions {
     }
 }
 
-struct DebugCtx<'a> {
-    drawer: &'a mut dyn DebugDraw,
+struct DebugDrawCtx<'a, T: ?Sized> {
+    drawer: &'a mut T,
     panicked: &'a mut bool,
-    panic: &'a mut Option<Box<dyn Any + Send + 'static>>,
+    panic: &'a mut Option<DebugDrawPanic>,
 }
-struct RawDebugCtx<'a> {
-    drawer: &'a mut dyn RawDebugDraw,
-    panicked: &'a mut bool,
-    panic: &'a mut Option<Box<dyn Any + Send + 'static>>,
+
+type SafeDebugCtx<'a> = DebugDrawCtx<'a, dyn DebugDraw + 'a>;
+type RawDebugCtx<'a> = DebugDrawCtx<'a, dyn RawDebugDraw + 'a>;
+
+#[inline]
+fn run_debug_draw_callback<T: ?Sized>(ctx: &mut DebugDrawCtx<'_, T>, f: impl FnOnce(&mut T)) {
+    if *ctx.panicked {
+        return;
+    }
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _g = crate::core::callback_state::CallbackGuard::enter();
+        f(ctx.drawer);
+    }));
+    if let Err(p) = result {
+        *ctx.panicked = true;
+        *ctx.panic = Some(p);
+    }
+}
+
+#[inline]
+unsafe fn ffi_debug_draw_vertices<'a>(
+    vertices: *const ffi::b2Vec2,
+    count: i32,
+) -> Option<&'a [ffi::b2Vec2]> {
+    let n = count.max(0) as usize;
+    if n == 0 || vertices.is_null() {
+        None
+    } else {
+        Some(unsafe { core::slice::from_raw_parts(vertices, n) })
+    }
+}
+
+unsafe fn safe_debug_draw_vertices(
+    vertices: *const ffi::b2Vec2,
+    count: i32,
+) -> Option<SmallVec<[Vec2; 8]>> {
+    let src = unsafe { ffi_debug_draw_vertices(vertices, count) }?;
+    let mut verts: SmallVec<[Vec2; 8]> = SmallVec::with_capacity(src.len().min(8));
+    verts.extend(src.iter().copied().map(Vec2::from));
+    Some(verts)
+}
+
+fn apply_debug_draw_options(
+    dd: &mut ffi::b2DebugDraw,
+    opts: DebugDrawOptions,
+    context: *mut core::ffi::c_void,
+) {
+    dd.drawingBounds = opts.drawing_bounds;
+    dd.forceScale = opts.force_scale;
+    dd.jointScale = opts.joint_scale;
+    dd.drawShapes = opts.draw_shapes;
+    dd.drawJoints = opts.draw_joints;
+    dd.drawJointExtras = opts.draw_joint_extras;
+    dd.drawBounds = opts.draw_bounds;
+    dd.drawMass = opts.draw_mass;
+    dd.drawBodyNames = opts.draw_body_names;
+    dd.drawContactPoints = opts.draw_contacts;
+    dd.drawGraphColors = opts.draw_graph_colors;
+    dd.drawContactFeatures = opts.draw_contact_features;
+    dd.drawContactNormals = opts.draw_contact_normals;
+    dd.drawContactForces = opts.draw_contact_forces;
+    dd.drawFrictionForces = opts.draw_friction_forces;
+    dd.drawIslands = opts.draw_islands;
+    dd.context = context;
+}
+
+fn finish_debug_draw(world: &World, panic: &mut Option<DebugDrawPanic>) {
+    world.core_arc().process_deferred_destroys();
+    if let Some(p) = panic.take() {
+        std::panic::resume_unwind(p);
+    }
 }
 
 struct CollectDebugDraw<'a> {
@@ -399,8 +468,9 @@ impl World {
     pub fn debug_draw(&mut self, drawer: &mut impl DebugDraw, opts: DebugDrawOptions) {
         crate::core::callback_state::assert_not_in_callback();
         let mut panicked = false;
-        let mut panic: Option<Box<dyn Any + Send + 'static>> = None;
-        let mut ctx = DebugCtx {
+        let mut panic: Option<DebugDrawPanic> = None;
+        let drawer: &mut dyn DebugDraw = drawer;
+        let mut ctx = SafeDebugCtx {
             drawer,
             panicked: &mut panicked,
             panic: &mut panic,
@@ -413,28 +483,12 @@ impl World {
             color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = unsafe { &mut *(context as *mut DebugCtx) };
-            if *ctx.panicked {
-                return;
-            }
+            let ctx = unsafe { &mut *(context as *mut SafeDebugCtx<'_>) };
             let color = HexColor::from_raw(color);
-            let n = count.max(0) as usize;
-            if n == 0 || vertices.is_null() {
+            let Some(verts) = (unsafe { safe_debug_draw_vertices(vertices, count) }) else {
                 return;
-            }
-            let src = unsafe { core::slice::from_raw_parts(vertices, n) };
-            let mut verts: SmallVec<[Vec2; 8]> = SmallVec::with_capacity(src.len().min(8));
-            for v in src.iter().copied() {
-                verts.push(Vec2::from(v));
-            }
-            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _g = crate::core::callback_state::CallbackGuard::enter();
-                ctx.drawer.draw_polygon(&verts, color);
-            }));
-            if let Err(p) = r {
-                *ctx.panicked = true;
-                *ctx.panic = Some(p);
-            }
+            };
+            run_debug_draw_callback(ctx, |drawer| drawer.draw_polygon(&verts, color));
         }
         unsafe extern "C" fn draw_solid_polygon_cb(
             transform: ffi::b2Transform,
@@ -444,29 +498,15 @@ impl World {
             color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = unsafe { &mut *(context as *mut DebugCtx) };
-            if *ctx.panicked {
-                return;
-            }
+            let ctx = unsafe { &mut *(context as *mut SafeDebugCtx<'_>) };
             let color = HexColor::from_raw(color);
-            let n = count.max(0) as usize;
-            if n == 0 || vertices.is_null() {
+            let Some(verts) = (unsafe { safe_debug_draw_vertices(vertices, count) }) else {
                 return;
-            }
-            let src = unsafe { core::slice::from_raw_parts(vertices, n) };
-            let mut verts: SmallVec<[Vec2; 8]> = SmallVec::with_capacity(src.len().min(8));
-            for v in src.iter().copied() {
-                verts.push(Vec2::from(v));
-            }
-            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _g = crate::core::callback_state::CallbackGuard::enter();
-                ctx.drawer
-                    .draw_solid_polygon(Transform::from(transform), &verts, radius, color);
-            }));
-            if let Err(p) = r {
-                *ctx.panicked = true;
-                *ctx.panic = Some(p);
-            }
+            };
+            let transform = Transform::from(transform);
+            run_debug_draw_callback(ctx, |drawer| {
+                drawer.draw_solid_polygon(transform, &verts, radius, color);
+            });
         }
         unsafe extern "C" fn draw_circle_cb(
             center: ffi::b2Vec2,
@@ -474,19 +514,10 @@ impl World {
             color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = unsafe { &mut *(context as *mut DebugCtx) };
-            if *ctx.panicked {
-                return;
-            }
+            let ctx = unsafe { &mut *(context as *mut SafeDebugCtx<'_>) };
             let color = HexColor::from_raw(color);
-            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _g = crate::core::callback_state::CallbackGuard::enter();
-                ctx.drawer.draw_circle(Vec2::from(center), radius, color);
-            }));
-            if let Err(p) = r {
-                *ctx.panicked = true;
-                *ctx.panic = Some(p);
-            }
+            let center = Vec2::from(center);
+            run_debug_draw_callback(ctx, |drawer| drawer.draw_circle(center, radius, color));
         }
         unsafe extern "C" fn draw_solid_circle_cb(
             transform: ffi::b2Transform,
@@ -494,20 +525,12 @@ impl World {
             color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = unsafe { &mut *(context as *mut DebugCtx) };
-            if *ctx.panicked {
-                return;
-            }
+            let ctx = unsafe { &mut *(context as *mut SafeDebugCtx<'_>) };
             let color = HexColor::from_raw(color);
-            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _g = crate::core::callback_state::CallbackGuard::enter();
-                ctx.drawer
-                    .draw_solid_circle(Transform::from(transform), radius, color);
-            }));
-            if let Err(p) = r {
-                *ctx.panicked = true;
-                *ctx.panic = Some(p);
-            }
+            let transform = Transform::from(transform);
+            run_debug_draw_callback(ctx, |drawer| {
+                drawer.draw_solid_circle(transform, radius, color);
+            });
         }
         unsafe extern "C" fn draw_solid_capsule_cb(
             p1: ffi::b2Vec2,
@@ -516,20 +539,13 @@ impl World {
             color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = unsafe { &mut *(context as *mut DebugCtx) };
-            if *ctx.panicked {
-                return;
-            }
+            let ctx = unsafe { &mut *(context as *mut SafeDebugCtx<'_>) };
             let color = HexColor::from_raw(color);
-            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _g = crate::core::callback_state::CallbackGuard::enter();
-                ctx.drawer
-                    .draw_solid_capsule(Vec2::from(p1), Vec2::from(p2), radius, color);
-            }));
-            if let Err(p) = r {
-                *ctx.panicked = true;
-                *ctx.panic = Some(p);
-            }
+            let p1 = Vec2::from(p1);
+            let p2 = Vec2::from(p2);
+            run_debug_draw_callback(ctx, |drawer| {
+                drawer.draw_solid_capsule(p1, p2, radius, color);
+            });
         }
         unsafe extern "C" fn draw_line_cb(
             p1: ffi::b2Vec2,
@@ -537,37 +553,19 @@ impl World {
             color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = unsafe { &mut *(context as *mut DebugCtx) };
-            if *ctx.panicked {
-                return;
-            }
+            let ctx = unsafe { &mut *(context as *mut SafeDebugCtx<'_>) };
             let color = HexColor::from_raw(color);
-            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _g = crate::core::callback_state::CallbackGuard::enter();
-                ctx.drawer
-                    .draw_segment(Vec2::from(p1), Vec2::from(p2), color);
-            }));
-            if let Err(p) = r {
-                *ctx.panicked = true;
-                *ctx.panic = Some(p);
-            }
+            let p1 = Vec2::from(p1);
+            let p2 = Vec2::from(p2);
+            run_debug_draw_callback(ctx, |drawer| drawer.draw_segment(p1, p2, color));
         }
         unsafe extern "C" fn draw_transform_cb(
             transform: ffi::b2Transform,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = unsafe { &mut *(context as *mut DebugCtx) };
-            if *ctx.panicked {
-                return;
-            }
-            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _g = crate::core::callback_state::CallbackGuard::enter();
-                ctx.drawer.draw_transform(Transform::from(transform));
-            }));
-            if let Err(p) = r {
-                *ctx.panicked = true;
-                *ctx.panic = Some(p);
-            }
+            let ctx = unsafe { &mut *(context as *mut SafeDebugCtx<'_>) };
+            let transform = Transform::from(transform);
+            run_debug_draw_callback(ctx, |drawer| drawer.draw_transform(transform));
         }
         unsafe extern "C" fn draw_point_cb(
             p: ffi::b2Vec2,
@@ -575,19 +573,10 @@ impl World {
             color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = unsafe { &mut *(context as *mut DebugCtx) };
-            if *ctx.panicked {
-                return;
-            }
+            let ctx = unsafe { &mut *(context as *mut SafeDebugCtx<'_>) };
             let color = HexColor::from_raw(color);
-            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _g = crate::core::callback_state::CallbackGuard::enter();
-                ctx.drawer.draw_point(Vec2::from(p), size, color);
-            }));
-            if let Err(p) = r {
-                *ctx.panicked = true;
-                *ctx.panic = Some(p);
-            }
+            let p = Vec2::from(p);
+            run_debug_draw_callback(ctx, |drawer| drawer.draw_point(p, size, color));
         }
         unsafe extern "C" fn draw_string_cb(
             p: ffi::b2Vec2,
@@ -595,22 +584,13 @@ impl World {
             color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = unsafe { &mut *(context as *mut DebugCtx) };
-            if *ctx.panicked {
-                return;
-            }
+            let ctx = unsafe { &mut *(context as *mut SafeDebugCtx<'_>) };
             let color = HexColor::from_raw(color);
             if !s.is_null() {
                 let cs = unsafe { CStr::from_ptr(s) };
                 let s = cs.to_string_lossy();
-                let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let _g = crate::core::callback_state::CallbackGuard::enter();
-                    ctx.drawer.draw_string(Vec2::from(p), &s, color);
-                }));
-                if let Err(p) = r {
-                    *ctx.panicked = true;
-                    *ctx.panic = Some(p);
-                }
+                let p = Vec2::from(p);
+                run_debug_draw_callback(ctx, |drawer| drawer.draw_string(p, &s, color));
             }
         }
 
@@ -623,34 +603,10 @@ impl World {
         dd.DrawTransformFcn = Some(draw_transform_cb);
         dd.DrawPointFcn = Some(draw_point_cb);
         dd.DrawStringFcn = Some(draw_string_cb);
-
-        // Options
-        dd.drawingBounds = opts.drawing_bounds;
-        dd.forceScale = opts.force_scale;
-        dd.jointScale = opts.joint_scale;
-        dd.drawShapes = opts.draw_shapes;
-        dd.drawJoints = opts.draw_joints;
-        dd.drawJointExtras = opts.draw_joint_extras;
-        dd.drawBounds = opts.draw_bounds;
-        dd.drawMass = opts.draw_mass;
-        dd.drawBodyNames = opts.draw_body_names;
-        dd.drawContactPoints = opts.draw_contacts;
-        dd.drawGraphColors = opts.draw_graph_colors;
-        dd.drawContactFeatures = opts.draw_contact_features;
-        dd.drawContactNormals = opts.draw_contact_normals;
-        dd.drawContactForces = opts.draw_contact_forces;
-        dd.drawFrictionForces = opts.draw_friction_forces;
-        dd.drawIslands = opts.draw_islands;
-        dd.context = &mut ctx as *mut _ as *mut _;
+        apply_debug_draw_options(&mut dd, opts, &mut ctx as *mut _ as *mut _);
 
         unsafe { ffi::b2World_Draw(self.raw(), &mut dd) };
-
-        // Flush deferred destroys scheduled from draw callbacks.
-        self.core_arc().process_deferred_destroys();
-
-        if let Some(p) = panic.take() {
-            std::panic::resume_unwind(p);
-        }
+        finish_debug_draw(self, &mut panic);
     }
 
     // Raw path: zero-copy FFI types to trait
@@ -661,7 +617,8 @@ impl World {
     pub fn debug_draw_raw(&mut self, drawer: &mut impl RawDebugDraw, opts: DebugDrawOptions) {
         crate::core::callback_state::assert_not_in_callback();
         let mut panicked = false;
-        let mut panic: Option<Box<dyn Any + Send + 'static>> = None;
+        let mut panic: Option<DebugDrawPanic> = None;
+        let drawer: &mut dyn RawDebugDraw = drawer;
         let mut ctx = RawDebugCtx {
             drawer,
             panicked: &mut panicked,
@@ -674,24 +631,12 @@ impl World {
             color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
-            if *ctx.panicked {
-                return;
-            }
+            let ctx = unsafe { &mut *(context as *mut RawDebugCtx<'_>) };
             let color = HexColor::from_raw(color);
-            let n = count.max(0) as usize;
-            if n == 0 || vertices.is_null() {
+            let Some(vertices) = (unsafe { ffi_debug_draw_vertices(vertices, count) }) else {
                 return;
-            }
-            let slice = unsafe { core::slice::from_raw_parts(vertices, n) };
-            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _g = crate::core::callback_state::CallbackGuard::enter();
-                ctx.drawer.draw_polygon(slice, color);
-            }));
-            if let Err(p) = r {
-                *ctx.panicked = true;
-                *ctx.panic = Some(p);
-            }
+            };
+            run_debug_draw_callback(ctx, |drawer| drawer.draw_polygon(vertices, color));
         }
         unsafe extern "C" fn draw_solid_polygon_cb(
             transform: ffi::b2Transform,
@@ -701,25 +646,14 @@ impl World {
             color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
-            if *ctx.panicked {
-                return;
-            }
+            let ctx = unsafe { &mut *(context as *mut RawDebugCtx<'_>) };
             let color = HexColor::from_raw(color);
-            let n = count.max(0) as usize;
-            if n == 0 || vertices.is_null() {
+            let Some(vertices) = (unsafe { ffi_debug_draw_vertices(vertices, count) }) else {
                 return;
-            }
-            let slice = unsafe { core::slice::from_raw_parts(vertices, n) };
-            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _g = crate::core::callback_state::CallbackGuard::enter();
-                ctx.drawer
-                    .draw_solid_polygon(transform, slice, radius, color);
-            }));
-            if let Err(p) = r {
-                *ctx.panicked = true;
-                *ctx.panic = Some(p);
-            }
+            };
+            run_debug_draw_callback(ctx, |drawer| {
+                drawer.draw_solid_polygon(transform, vertices, radius, color);
+            });
         }
         unsafe extern "C" fn draw_circle_cb(
             center: ffi::b2Vec2,
@@ -727,19 +661,9 @@ impl World {
             color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
-            if *ctx.panicked {
-                return;
-            }
+            let ctx = unsafe { &mut *(context as *mut RawDebugCtx<'_>) };
             let color = HexColor::from_raw(color);
-            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _g = crate::core::callback_state::CallbackGuard::enter();
-                ctx.drawer.draw_circle(center, radius, color);
-            }));
-            if let Err(p) = r {
-                *ctx.panicked = true;
-                *ctx.panic = Some(p);
-            }
+            run_debug_draw_callback(ctx, |drawer| drawer.draw_circle(center, radius, color));
         }
         unsafe extern "C" fn draw_solid_circle_cb(
             transform: ffi::b2Transform,
@@ -747,19 +671,11 @@ impl World {
             color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
-            if *ctx.panicked {
-                return;
-            }
+            let ctx = unsafe { &mut *(context as *mut RawDebugCtx<'_>) };
             let color = HexColor::from_raw(color);
-            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _g = crate::core::callback_state::CallbackGuard::enter();
-                ctx.drawer.draw_solid_circle(transform, radius, color);
-            }));
-            if let Err(p) = r {
-                *ctx.panicked = true;
-                *ctx.panic = Some(p);
-            }
+            run_debug_draw_callback(ctx, |drawer| {
+                drawer.draw_solid_circle(transform, radius, color);
+            });
         }
         unsafe extern "C" fn draw_solid_capsule_cb(
             p1: ffi::b2Vec2,
@@ -768,19 +684,11 @@ impl World {
             color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
-            if *ctx.panicked {
-                return;
-            }
+            let ctx = unsafe { &mut *(context as *mut RawDebugCtx<'_>) };
             let color = HexColor::from_raw(color);
-            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _g = crate::core::callback_state::CallbackGuard::enter();
-                ctx.drawer.draw_solid_capsule(p1, p2, radius, color);
-            }));
-            if let Err(p) = r {
-                *ctx.panicked = true;
-                *ctx.panic = Some(p);
-            }
+            run_debug_draw_callback(ctx, |drawer| {
+                drawer.draw_solid_capsule(p1, p2, radius, color);
+            });
         }
         unsafe extern "C" fn draw_line_cb(
             p1: ffi::b2Vec2,
@@ -788,36 +696,16 @@ impl World {
             color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
-            if *ctx.panicked {
-                return;
-            }
+            let ctx = unsafe { &mut *(context as *mut RawDebugCtx<'_>) };
             let color = HexColor::from_raw(color);
-            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _g = crate::core::callback_state::CallbackGuard::enter();
-                ctx.drawer.draw_segment(p1, p2, color);
-            }));
-            if let Err(p) = r {
-                *ctx.panicked = true;
-                *ctx.panic = Some(p);
-            }
+            run_debug_draw_callback(ctx, |drawer| drawer.draw_segment(p1, p2, color));
         }
         unsafe extern "C" fn draw_transform_cb(
             transform: ffi::b2Transform,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
-            if *ctx.panicked {
-                return;
-            }
-            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _g = crate::core::callback_state::CallbackGuard::enter();
-                ctx.drawer.draw_transform(transform);
-            }));
-            if let Err(p) = r {
-                *ctx.panicked = true;
-                *ctx.panic = Some(p);
-            }
+            let ctx = unsafe { &mut *(context as *mut RawDebugCtx<'_>) };
+            run_debug_draw_callback(ctx, |drawer| drawer.draw_transform(transform));
         }
         unsafe extern "C" fn draw_point_cb(
             p: ffi::b2Vec2,
@@ -825,19 +713,9 @@ impl World {
             color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
-            if *ctx.panicked {
-                return;
-            }
+            let ctx = unsafe { &mut *(context as *mut RawDebugCtx<'_>) };
             let color = HexColor::from_raw(color);
-            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _g = crate::core::callback_state::CallbackGuard::enter();
-                ctx.drawer.draw_point(p, size, color);
-            }));
-            if let Err(p) = r {
-                *ctx.panicked = true;
-                *ctx.panic = Some(p);
-            }
+            run_debug_draw_callback(ctx, |drawer| drawer.draw_point(p, size, color));
         }
         unsafe extern "C" fn draw_string_cb(
             p: ffi::b2Vec2,
@@ -845,21 +723,11 @@ impl World {
             color: ffi::b2HexColor,
             context: *mut core::ffi::c_void,
         ) {
-            let ctx = unsafe { &mut *(context as *mut RawDebugCtx) };
-            if *ctx.panicked {
-                return;
-            }
+            let ctx = unsafe { &mut *(context as *mut RawDebugCtx<'_>) };
             let color = HexColor::from_raw(color);
             if !s.is_null() {
                 let cs = unsafe { CStr::from_ptr(s) };
-                let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let _g = crate::core::callback_state::CallbackGuard::enter();
-                    ctx.drawer.draw_string(p, cs, color);
-                }));
-                if let Err(p) = r {
-                    *ctx.panicked = true;
-                    *ctx.panic = Some(p);
-                }
+                run_debug_draw_callback(ctx, |drawer| drawer.draw_string(p, cs, color));
             }
         }
         dd.DrawPolygonFcn = Some(draw_polygon_cb);
@@ -871,30 +739,8 @@ impl World {
         dd.DrawTransformFcn = Some(draw_transform_cb);
         dd.DrawPointFcn = Some(draw_point_cb);
         dd.DrawStringFcn = Some(draw_string_cb);
-        dd.drawingBounds = opts.drawing_bounds;
-        dd.forceScale = opts.force_scale;
-        dd.jointScale = opts.joint_scale;
-        dd.drawShapes = opts.draw_shapes;
-        dd.drawJoints = opts.draw_joints;
-        dd.drawJointExtras = opts.draw_joint_extras;
-        dd.drawBounds = opts.draw_bounds;
-        dd.drawMass = opts.draw_mass;
-        dd.drawBodyNames = opts.draw_body_names;
-        dd.drawContactPoints = opts.draw_contacts;
-        dd.drawGraphColors = opts.draw_graph_colors;
-        dd.drawContactFeatures = opts.draw_contact_features;
-        dd.drawContactNormals = opts.draw_contact_normals;
-        dd.drawContactForces = opts.draw_contact_forces;
-        dd.drawFrictionForces = opts.draw_friction_forces;
-        dd.drawIslands = opts.draw_islands;
-        dd.context = &mut ctx as *mut _ as *mut _;
+        apply_debug_draw_options(&mut dd, opts, &mut ctx as *mut _ as *mut _);
         unsafe { ffi::b2World_Draw(self.raw(), &mut dd) };
-
-        // Flush deferred destroys scheduled from draw callbacks.
-        self.core_arc().process_deferred_destroys();
-
-        if let Some(p) = panic.take() {
-            std::panic::resume_unwind(p);
-        }
+        finish_debug_draw(self, &mut panic);
     }
 }

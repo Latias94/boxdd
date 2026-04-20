@@ -49,6 +49,7 @@
 - [x] Consolidate the repeated joint creation entrypoints behind a single internal definition and normalize `try_create_*_joint*` to return `ApiError::InCallback` when called from callbacks.
 - [x] Consolidate event-buffer borrow / deferred-destroy plumbing behind a shared `World` helper so body/contact/sensor/joint event views stay behaviorally aligned.
 - [x] Consolidate the repeated world-level shape create/edit entrypoints so circle/segment/capsule/polygon helpers share a single internal definition.
+- [x] Consolidate shared debug-draw callback panic plumbing and option wiring across the safe and raw debug-draw paths, and add dedicated `debug_draw_raw` regression coverage.
 
 ## Next
 
