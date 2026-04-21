@@ -44,7 +44,7 @@ fn body_contact_data_impl(id: BodyId) -> Vec<ContactData> {
     }
 }
 
-fn body_contact_data_into_raw_impl(id: BodyId, out: &mut Vec<ffi::b2ContactData>) {
+fn body_contact_data_raw_into_impl(id: BodyId, out: &mut Vec<ffi::b2ContactData>) {
     let cap = body_contact_capacity(id);
     unsafe {
         crate::core::ffi_vec::fill_from_ffi(out, cap, |ptr, cap| {
@@ -60,6 +60,55 @@ fn body_contact_data_raw_impl(id: BodyId) -> Vec<ffi::b2ContactData> {
             ffi::b2Body_GetContactData(id, ptr, cap)
         })
     }
+}
+
+macro_rules! impl_body_contact_data_methods {
+    () => {
+        pub fn contact_data(&self) -> Vec<ContactData> {
+            self.assert_valid();
+            body_contact_data_impl(self.id)
+        }
+
+        pub fn contact_data_into(&self, out: &mut Vec<ContactData>) {
+            self.assert_valid();
+            body_contact_data_into_impl(self.id, out);
+        }
+
+        pub fn try_contact_data(&self) -> ApiResult<Vec<ContactData>> {
+            self.check_valid()?;
+            Ok(body_contact_data_impl(self.id))
+        }
+
+        pub fn try_contact_data_into(&self, out: &mut Vec<ContactData>) -> ApiResult<()> {
+            self.check_valid()?;
+            body_contact_data_into_impl(self.id, out);
+            Ok(())
+        }
+
+        pub fn contact_data_raw(&self) -> Vec<ffi::b2ContactData> {
+            self.assert_valid();
+            body_contact_data_raw_impl(self.id)
+        }
+
+        pub fn contact_data_raw_into(&self, out: &mut Vec<ffi::b2ContactData>) {
+            self.assert_valid();
+            body_contact_data_raw_into_impl(self.id, out);
+        }
+
+        pub fn try_contact_data_raw(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
+            self.check_valid()?;
+            Ok(body_contact_data_raw_impl(self.id))
+        }
+
+        pub fn try_contact_data_raw_into(
+            &self,
+            out: &mut Vec<ffi::b2ContactData>,
+        ) -> ApiResult<()> {
+            self.check_valid()?;
+            body_contact_data_raw_into_impl(self.id, out);
+            Ok(())
+        }
+    };
 }
 
 #[inline]
@@ -1183,47 +1232,7 @@ impl OwnedBody {
         Ok(body_name_impl(self.id))
     }
 
-    pub fn contact_data(&self) -> Vec<ContactData> {
-        self.assert_valid();
-        body_contact_data_impl(self.id)
-    }
-
-    pub fn contact_data_into(&self, out: &mut Vec<ContactData>) {
-        self.assert_valid();
-        body_contact_data_into_impl(self.id, out);
-    }
-
-    pub fn try_contact_data(&self) -> ApiResult<Vec<ContactData>> {
-        self.check_valid()?;
-        Ok(body_contact_data_impl(self.id))
-    }
-
-    pub fn try_contact_data_into(&self, out: &mut Vec<ContactData>) -> ApiResult<()> {
-        self.check_valid()?;
-        body_contact_data_into_impl(self.id, out);
-        Ok(())
-    }
-
-    pub fn contact_data_raw(&self) -> Vec<ffi::b2ContactData> {
-        self.assert_valid();
-        body_contact_data_raw_impl(self.id)
-    }
-
-    pub fn contact_data_into_raw(&self, out: &mut Vec<ffi::b2ContactData>) {
-        self.assert_valid();
-        body_contact_data_into_raw_impl(self.id, out);
-    }
-
-    pub fn try_contact_data_raw(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
-        self.check_valid()?;
-        Ok(body_contact_data_raw_impl(self.id))
-    }
-
-    pub fn try_contact_data_into_raw(&self, out: &mut Vec<ffi::b2ContactData>) -> ApiResult<()> {
-        self.check_valid()?;
-        body_contact_data_into_raw_impl(self.id, out);
-        Ok(())
-    }
+    impl_body_contact_data_methods!();
 
     /// Borrow the raw id for ID-style APIs.
     pub fn as_id(&self) -> BodyId {
@@ -1960,47 +1969,7 @@ impl<'w> Body<'w> {
         Ok(())
     }
 
-    pub fn contact_data(&self) -> Vec<ContactData> {
-        self.assert_valid();
-        body_contact_data_impl(self.id)
-    }
-
-    pub fn contact_data_into(&self, out: &mut Vec<ContactData>) {
-        self.assert_valid();
-        body_contact_data_into_impl(self.id, out);
-    }
-
-    pub fn try_contact_data(&self) -> ApiResult<Vec<ContactData>> {
-        self.check_valid()?;
-        Ok(body_contact_data_impl(self.id))
-    }
-
-    pub fn try_contact_data_into(&self, out: &mut Vec<ContactData>) -> ApiResult<()> {
-        self.check_valid()?;
-        body_contact_data_into_impl(self.id, out);
-        Ok(())
-    }
-
-    pub fn contact_data_raw(&self) -> Vec<ffi::b2ContactData> {
-        self.assert_valid();
-        body_contact_data_raw_impl(self.id)
-    }
-
-    pub fn contact_data_into_raw(&self, out: &mut Vec<ffi::b2ContactData>) {
-        self.assert_valid();
-        body_contact_data_into_raw_impl(self.id, out);
-    }
-
-    pub fn try_contact_data_raw(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
-        self.check_valid()?;
-        Ok(body_contact_data_raw_impl(self.id))
-    }
-
-    pub fn try_contact_data_into_raw(&self, out: &mut Vec<ffi::b2ContactData>) -> ApiResult<()> {
-        self.check_valid()?;
-        body_contact_data_into_raw_impl(self.id, out);
-        Ok(())
-    }
+    impl_body_contact_data_methods!();
 
     // Forces/impulses
     pub fn apply_force<F: Into<Vec2>, P: Into<Vec2>>(&mut self, force: F, point: P, wake: bool) {

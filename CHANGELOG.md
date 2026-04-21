@@ -60,7 +60,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Breaking: `ShapeDefBuilder::filter` and `ChainDefBuilder::filter` now take `Filter`; raw Box2D escape hatches are named `filter_raw`.
 - Breaking: `Filter` now crosses the raw FFI boundary explicitly via `from_raw(...)` / `into_raw()` instead of implicit `From<ffi::b2Filter>` conversions.
 - Breaking: `Shape::shape_type` / `OwnedShape::shape_type` now return safe `ShapeType`; raw access moved to `shape_type_raw` / `try_shape_type_raw`.
-- Breaking: `Body::*contact_data*` and `Shape::*contact_data*` now use crate-owned `ContactData`; raw escape hatches are named `contact_data_raw` / `contact_data_into_raw` / `try_*_raw`.
+- Breaking: `Body::*contact_data*` and `Shape::*contact_data*` now use crate-owned `ContactData`; raw escape hatches are named `contact_data_raw` / `contact_data_raw_into` / `try_contact_data_raw_into` for consistency with the broader `*_raw` surface.
 - Breaking: `MassData` is now crate-owned, and its inertia field is renamed to Rust-style `rotational_inertia`.
 - Breaking: `MassData` and `MotionLocks` now cross the raw FFI boundary explicitly via `from_raw(...)` / `into_raw()` instead of implicit `From<ffi::...>` conversions.
 - Breaking: `BodyType`, `Aabb`, mover/query value types (`RayResult`, `Plane`, `CollisionPlane`, `PlaneSolverResult`), collision outputs (`SegmentDistanceResult`, `CastOutput`, `DistanceOutput`, `ToiState`, `ToiOutput`), and `Counters` now use explicit `from_raw(...)` and, where applicable, `into_raw()` APIs instead of implicit raw conversions.

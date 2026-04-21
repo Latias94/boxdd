@@ -31,7 +31,7 @@ fn body_and_shape_contact_data_into_reuses_buffer() {
 
     let mut body_contacts_raw = Vec::with_capacity(8);
     let body_contacts_raw_ptr = body_contacts_raw.as_ptr();
-    body.contact_data_into_raw(&mut body_contacts_raw);
+    body.contact_data_raw_into(&mut body_contacts_raw);
     assert!(body_contacts_raw.is_empty());
     assert_eq!(body_contacts_raw.as_ptr(), body_contacts_raw_ptr);
 
@@ -43,7 +43,7 @@ fn body_and_shape_contact_data_into_reuses_buffer() {
 
     let mut shape_contacts_raw = Vec::with_capacity(8);
     let shape_contacts_raw_ptr = shape_contacts_raw.as_ptr();
-    shape.contact_data_into_raw(&mut shape_contacts_raw);
+    shape.contact_data_raw_into(&mut shape_contacts_raw);
     assert!(shape_contacts_raw.is_empty());
     assert_eq!(shape_contacts_raw.as_ptr(), shape_contacts_raw_ptr);
 
@@ -61,10 +61,10 @@ fn body_and_shape_contact_data_into_reuses_buffer() {
     body.try_contact_data_into(&mut body_contacts).unwrap();
     assert!(!body_contacts.is_empty());
 
-    body.contact_data_into_raw(&mut body_contacts_raw);
+    body.contact_data_raw_into(&mut body_contacts_raw);
     assert!(!body_contacts_raw.is_empty());
     assert_eq!(body_contacts_raw.as_ptr(), body_contacts_raw_ptr);
-    body.try_contact_data_into_raw(&mut body_contacts_raw)
+    body.try_contact_data_raw_into(&mut body_contacts_raw)
         .unwrap();
     assert!(!body_contacts_raw.is_empty());
 
@@ -99,11 +99,11 @@ fn body_and_shape_contact_data_into_reuses_buffer() {
     shape.try_contact_data_into(&mut shape_contacts).unwrap();
     assert!(!shape_contacts.is_empty());
 
-    shape.contact_data_into_raw(&mut shape_contacts_raw);
+    shape.contact_data_raw_into(&mut shape_contacts_raw);
     assert!(!shape_contacts_raw.is_empty());
     assert_eq!(shape_contacts_raw.as_ptr(), shape_contacts_raw_ptr);
     shape
-        .try_contact_data_into_raw(&mut shape_contacts_raw)
+        .try_contact_data_raw_into(&mut shape_contacts_raw)
         .unwrap();
     assert!(!shape_contacts_raw.is_empty());
 

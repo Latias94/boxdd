@@ -119,7 +119,7 @@ fn shape_contact_data_impl(id: ShapeId) -> Vec<ContactData> {
     }
 }
 
-fn shape_contact_data_into_raw_impl(id: ShapeId, out: &mut Vec<ffi::b2ContactData>) {
+fn shape_contact_data_raw_into_impl(id: ShapeId, out: &mut Vec<ffi::b2ContactData>) {
     let cap = shape_contact_capacity(id);
     unsafe {
         crate::core::ffi_vec::fill_from_ffi(out, cap, |ptr, cap| {
@@ -135,6 +135,55 @@ fn shape_contact_data_raw_impl(id: ShapeId) -> Vec<ffi::b2ContactData> {
             ffi::b2Shape_GetContactData(id, ptr, cap)
         })
     }
+}
+
+macro_rules! impl_shape_contact_data_methods {
+    () => {
+        pub fn contact_data(&self) -> Vec<ContactData> {
+            self.assert_valid();
+            shape_contact_data_impl(self.id)
+        }
+
+        pub fn contact_data_into(&self, out: &mut Vec<ContactData>) {
+            self.assert_valid();
+            shape_contact_data_into_impl(self.id, out);
+        }
+
+        pub fn try_contact_data(&self) -> ApiResult<Vec<ContactData>> {
+            self.check_valid()?;
+            Ok(shape_contact_data_impl(self.id))
+        }
+
+        pub fn try_contact_data_into(&self, out: &mut Vec<ContactData>) -> ApiResult<()> {
+            self.check_valid()?;
+            shape_contact_data_into_impl(self.id, out);
+            Ok(())
+        }
+
+        pub fn contact_data_raw(&self) -> Vec<ffi::b2ContactData> {
+            self.assert_valid();
+            shape_contact_data_raw_impl(self.id)
+        }
+
+        pub fn contact_data_raw_into(&self, out: &mut Vec<ffi::b2ContactData>) {
+            self.assert_valid();
+            shape_contact_data_raw_into_impl(self.id, out);
+        }
+
+        pub fn try_contact_data_raw(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
+            self.check_valid()?;
+            Ok(shape_contact_data_raw_impl(self.id))
+        }
+
+        pub fn try_contact_data_raw_into(
+            &self,
+            out: &mut Vec<ffi::b2ContactData>,
+        ) -> ApiResult<()> {
+            self.check_valid()?;
+            shape_contact_data_raw_into_impl(self.id, out);
+            Ok(())
+        }
+    };
 }
 
 pub(crate) fn shape_sensor_overlaps_into_impl(id: ShapeId, out: &mut Vec<ShapeId>) {
@@ -902,47 +951,7 @@ impl OwnedShape {
         Ok(shape_surface_material_impl(self.id))
     }
 
-    pub fn contact_data(&self) -> Vec<ContactData> {
-        self.assert_valid();
-        shape_contact_data_impl(self.id)
-    }
-
-    pub fn contact_data_into(&self, out: &mut Vec<ContactData>) {
-        self.assert_valid();
-        shape_contact_data_into_impl(self.id, out);
-    }
-
-    pub fn try_contact_data(&self) -> ApiResult<Vec<ContactData>> {
-        self.check_valid()?;
-        Ok(shape_contact_data_impl(self.id))
-    }
-
-    pub fn try_contact_data_into(&self, out: &mut Vec<ContactData>) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_contact_data_into_impl(self.id, out);
-        Ok(())
-    }
-
-    pub fn contact_data_raw(&self) -> Vec<ffi::b2ContactData> {
-        self.assert_valid();
-        shape_contact_data_raw_impl(self.id)
-    }
-
-    pub fn contact_data_into_raw(&self, out: &mut Vec<ffi::b2ContactData>) {
-        self.assert_valid();
-        shape_contact_data_into_raw_impl(self.id, out);
-    }
-
-    pub fn try_contact_data_raw(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
-        self.check_valid()?;
-        Ok(shape_contact_data_raw_impl(self.id))
-    }
-
-    pub fn try_contact_data_into_raw(&self, out: &mut Vec<ffi::b2ContactData>) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_contact_data_into_raw_impl(self.id, out);
-        Ok(())
-    }
+    impl_shape_contact_data_methods!();
 
     /// Get the maximum capacity required for retrieving all overlapped shapes on this sensor shape.
     pub fn sensor_capacity(&self) -> i32 {
@@ -1665,47 +1674,7 @@ impl<'w> Shape<'w> {
         shape_take_user_data_impl(self.core.as_ref(), self.id)
     }
 
-    pub fn contact_data(&self) -> Vec<ContactData> {
-        self.assert_valid();
-        shape_contact_data_impl(self.id)
-    }
-
-    pub fn contact_data_into(&self, out: &mut Vec<ContactData>) {
-        self.assert_valid();
-        shape_contact_data_into_impl(self.id, out);
-    }
-
-    pub fn try_contact_data(&self) -> ApiResult<Vec<ContactData>> {
-        self.check_valid()?;
-        Ok(shape_contact_data_impl(self.id))
-    }
-
-    pub fn try_contact_data_into(&self, out: &mut Vec<ContactData>) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_contact_data_into_impl(self.id, out);
-        Ok(())
-    }
-
-    pub fn contact_data_raw(&self) -> Vec<ffi::b2ContactData> {
-        self.assert_valid();
-        shape_contact_data_raw_impl(self.id)
-    }
-
-    pub fn contact_data_into_raw(&self, out: &mut Vec<ffi::b2ContactData>) {
-        self.assert_valid();
-        shape_contact_data_into_raw_impl(self.id, out);
-    }
-
-    pub fn try_contact_data_raw(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
-        self.check_valid()?;
-        Ok(shape_contact_data_raw_impl(self.id))
-    }
-
-    pub fn try_contact_data_into_raw(&self, out: &mut Vec<ffi::b2ContactData>) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_contact_data_into_raw_impl(self.id, out);
-        Ok(())
-    }
+    impl_shape_contact_data_methods!();
 
     /// Get the maximum capacity required for retrieving all the overlapped shapes on this sensor shape.
     /// Returns 0 if this shape is not a sensor.
