@@ -8,12 +8,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let steps = 300usize;
     let sub_steps = 8i32;
 
-    let mut world = World::new(
-        WorldDef::builder()
-            .gravity([0.0_f32, -10.0])
-            .worker_count(1)
-            .build(),
-    )?;
+    let mut world = World::new(WorldDef::builder().gravity([0.0_f32, -10.0]).build())?;
 
     // Ground
     let ground = world.create_body_id(BodyBuilder::new().build());

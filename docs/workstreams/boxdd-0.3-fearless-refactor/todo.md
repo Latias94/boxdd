@@ -123,7 +123,7 @@
 - [x] Continue the completeness audit against upstream Box2D v3 and record any intentionally unwrapped or raw-only areas that should be revisited after `0.3.0`.
 - [x] Re-evaluate the lightweight contact-inspection slice: move `ContactIdExt` onto `ContactId` as inherent methods and record that a first-class `Contact` handle remains an intentional omission for `0.3.0`.
 - [ ] Revisit the remaining `candidate after 0.3` entries from the completeness matrix and decide which ones deserve the first post-`0.3` wrapper pass.
-- [ ] Decide whether the task-system / multithread stepping seam deserves a first-class safe API after `0.3`, or should stay an intentional raw-only `WorldDef` capability.
+- [x] Keep the task-system / multithread stepping seam explicit and raw-only for `0.3`, but add named `unsafe` `WorldDef` / `WorldBuilder` helpers so advanced users no longer need direct `ffi::b2WorldDef` field surgery.
 
 ## Release Checklist
 

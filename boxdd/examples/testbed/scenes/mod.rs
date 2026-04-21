@@ -748,7 +748,7 @@ impl PhysicsApp {
                 b = b.enable_continuous(true).hit_event_threshold(self.events_threshold);
             }
             Scene::Determinism => {
-                b = b.worker_count(1).enable_continuous(true);
+                b = b.enable_continuous(true);
             }
             Scene::WorldTuning => {
                 b = b

@@ -22,7 +22,7 @@
 //!   size. Not exposed.
 //! - Max workers (`B2_MAX_WORKERS`): internal upper bound; configure desired
 //!   worker count via `WorldDef::builder().worker_count(n)`. Actual multithreaded
-//!   stepping still requires task callbacks on the raw `WorldDef` path.
+//!   stepping still requires explicit raw task callbacks on `WorldDef` / `WorldBuilder`.
 //!
 //! Safe API controls related to tuning:
 //!

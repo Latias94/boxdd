@@ -588,6 +588,37 @@ impl WorldDef {
         self.0.workerCount
     }
 
+    /// Returns whether raw task-system callbacks are installed on this definition.
+    pub fn has_task_system_raw(&self) -> bool {
+        self.0.enqueueTask.is_some() || self.0.finishTask.is_some()
+    }
+
+    /// Install raw Box2D task-system callbacks on this definition.
+    ///
+    /// # Safety
+    /// `enqueue_task`, `finish_task`, and `user_task_context` must satisfy Box2D's task-system
+    /// contract and remain valid for the lifetime of any world created from this definition.
+    pub unsafe fn set_task_system_raw(
+        &mut self,
+        worker_count: i32,
+        enqueue_task: ffi::b2EnqueueTaskCallback,
+        finish_task: ffi::b2FinishTaskCallback,
+        user_task_context: *mut core::ffi::c_void,
+    ) {
+        self.0.workerCount = worker_count;
+        self.0.enqueueTask = enqueue_task;
+        self.0.finishTask = finish_task;
+        self.0.userTaskContext = user_task_context;
+    }
+
+    /// Remove any raw Box2D task-system callbacks from this definition.
+    pub fn clear_task_system_raw(&mut self) {
+        self.0.workerCount = 0;
+        self.0.enqueueTask = None;
+        self.0.finishTask = None;
+        self.0.userTaskContext = core::ptr::null_mut();
+    }
+
     pub fn into_raw(self) -> ffi::b2WorldDef {
         self.0
     }
@@ -775,11 +806,42 @@ impl WorldBuilder {
     }
     /// Number of worker threads Box2D may use during stepping when a task system is installed.
     ///
-    /// This does not make `World` or owned handles `Send` / `Sync`. `boxdd` does not currently
-    /// expose a safe task-system registration API, so non-zero values only become active when
-    /// advanced users also supply raw task callbacks through `unsafe WorldDef::from_raw(...)`.
+    /// This does not make `World` or owned handles `Send` / `Sync`. Non-zero values only become
+    /// active when advanced users also supply raw task callbacks through
+    /// `unsafe WorldBuilder::task_system_raw(...)`, `WorldDef::set_task_system_raw(...)`, or an
+    /// explicit raw `WorldDef` conversion path.
     pub fn worker_count(mut self, n: i32) -> Self {
         self.def.0.workerCount = n;
+        self
+    }
+
+    /// Install raw Box2D task-system callbacks on the builder.
+    ///
+    /// # Safety
+    /// `enqueue_task`, `finish_task`, and `user_task_context` must satisfy Box2D's task-system
+    /// contract and remain valid for the lifetime of any world created from the resulting
+    /// definition.
+    pub unsafe fn task_system_raw(
+        mut self,
+        worker_count: i32,
+        enqueue_task: ffi::b2EnqueueTaskCallback,
+        finish_task: ffi::b2FinishTaskCallback,
+        user_task_context: *mut core::ffi::c_void,
+    ) -> Self {
+        unsafe {
+            self.def.set_task_system_raw(
+                worker_count,
+                enqueue_task,
+                finish_task,
+                user_task_context,
+            );
+        }
+        self
+    }
+
+    /// Remove any raw Box2D task-system callbacks from the builder.
+    pub fn clear_task_system_raw(mut self) -> Self {
+        self.def.clear_task_system_raw();
         self
     }
 

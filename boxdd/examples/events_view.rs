@@ -7,7 +7,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .gravity([0.0_f32, -10.0])
             .enable_continuous(true)
             .hit_event_threshold(0.2)
-            .worker_count(1)
             .build(),
     )?;
 

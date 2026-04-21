@@ -20,15 +20,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (reply_tx, reply_rx) = mpsc::channel::<PhysicsReply>();
 
     let physics_thread = thread::spawn(move || {
-        // Keep the world on one dedicated thread. `worker_count` only controls Box2D's
-        // internal parallelism during `step`; it does not make the world itself Send/Sync.
-        let mut world = World::new(
-            WorldDef::builder()
-                .gravity([0.0_f32, -10.0])
-                .worker_count(2)
-                .build(),
-        )
-        .expect("failed to create world");
+        // Keep the world on one dedicated thread. This example focuses on the ownership model;
+        // Box2D worker threads require explicit raw task-system callbacks and are intentionally
+        // not part of this safe-threading example.
+        let mut world = World::new(WorldDef::builder().gravity([0.0_f32, -10.0]).build())
+            .expect("failed to create world");
 
         let ground = world.create_body_id(BodyBuilder::new().build());
         let _ground_shape = world.create_segment_shape_for(

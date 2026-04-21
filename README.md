@@ -18,7 +18,7 @@
 - Safe, ergonomic Rust wrapper over the official Box2D v3 C API.
 - Math interop (features: `mint`/`cgmath`/`nalgebra`/`glam`): any `Into<Vec2>` accepts the corresponding 2D vector/point types, plus arrays/tuples.
 - Two error-handling styles: panic-on-misuse by default, plus `try_*` APIs returning `ApiResult<T>` for recoverable errors.
-- Explicit threading model: `worker_count` remains part of `WorldDef`, while `World` and owned handles stay pinned to one thread/task; actual Box2D worker-thread stepping still requires a task system on the raw `WorldDef` path.
+- Explicit threading model: `worker_count` remains part of `WorldDef`, while `World` and owned handles stay pinned to one thread/task; actual Box2D worker-thread stepping still requires an explicit raw task-system configuration path.
 - Hot-path query, debug-draw collection, and state-extraction APIs expose `*_into` buffer-reuse variants, and overlap queries also expose `visit_*` forms for zero result-container allocation.
 - Character mover helpers cover the full safe workflow: `cast_mover`, `collide_mover`, `solve_planes`, and `clip_vector`.
 - World runtime helpers cover counters, per-stage `Profile` timings, speculative-collision toggles, and safe explosion control.
@@ -67,7 +67,7 @@ world.step(1.0/60.0, 4);
 - `cgmath`, `nalgebra`, and `glam` remain first-class interop options for projects that already standardize on those math crates.
 
 ## Threading and Async
-- `WorldDef::builder().worker_count(n)` stores the desired upstream worker count, but Box2D only uses worker threads when task callbacks are also installed on the raw `WorldDef` path. It does not make `World`, `WorldHandle`, or owned handles `Send`/`Sync`.
+- `WorldDef::builder().worker_count(n)` stores the desired upstream worker count, but Box2D only uses worker threads when task callbacks are also installed through `unsafe WorldBuilder::task_system_raw(...)`, `WorldDef::set_task_system_raw(...)`, or a fully raw `WorldDef` path. It does not make `World`, `WorldHandle`, or owned handles `Send`/`Sync`.
 - Keep physics ownership on one thread/task. In async runtimes prefer `spawn_local` / `LocalSet`; in multi-threaded engines prefer a dedicated physics thread and communicate with channels.
 - `set_custom_filter*`, `set_pre_solve*`, `set_friction_callback`, and `set_restitution_callback` may run on Box2D worker threads, so those closures must stay `Send + Sync` and should be treated as pure callbacks.
 - See `examples/physics_thread.rs` for a minimal dedicated-thread pattern.

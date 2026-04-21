@@ -78,6 +78,74 @@ fn world_def_validation_rejects_invalid_numeric_values() {
     );
 }
 
+unsafe extern "C" fn serial_enqueue_task(
+    task: boxdd_sys::ffi::b2TaskCallback,
+    item_count: i32,
+    _min_range: i32,
+    task_context: *mut core::ffi::c_void,
+    _user_context: *mut core::ffi::c_void,
+) -> *mut core::ffi::c_void {
+    if item_count > 0 {
+        if let Some(task) = task {
+            unsafe { task(0, item_count, 0, task_context) };
+        }
+    }
+    core::ptr::null_mut()
+}
+
+unsafe extern "C" fn serial_finish_task(
+    _user_task: *mut core::ffi::c_void,
+    _user_context: *mut core::ffi::c_void,
+) {
+}
+
+#[test]
+fn world_def_raw_task_system_configuration_is_explicit() {
+    let mut def = WorldDef::default();
+    assert!(!def.has_task_system_raw());
+    unsafe {
+        def.set_task_system_raw(
+            2,
+            Some(serial_enqueue_task),
+            Some(serial_finish_task),
+            core::ptr::null_mut(),
+        );
+    }
+    assert!(def.has_task_system_raw());
+    assert_eq!(def.worker_count(), 2);
+
+    let raw = def.clone().into_raw();
+    assert!(raw.enqueueTask.is_some());
+    assert!(raw.finishTask.is_some());
+
+    let mut world = World::new(def.clone()).unwrap();
+    world.step(1.0 / 60.0, 4);
+
+    let cleared = WorldBuilder::from(def).clear_task_system_raw().build();
+    assert!(!cleared.has_task_system_raw());
+    assert_eq!(cleared.worker_count(), 0);
+}
+
+#[test]
+fn world_builder_can_install_raw_task_system_callbacks() {
+    let def = unsafe {
+        WorldDef::builder()
+            .gravity([0.0_f32, -10.0])
+            .task_system_raw(
+                2,
+                Some(serial_enqueue_task),
+                Some(serial_finish_task),
+                core::ptr::null_mut(),
+            )
+            .build()
+    };
+    assert!(def.has_task_system_raw());
+    assert_eq!(def.worker_count(), 2);
+
+    let mut world = World::new(def).unwrap();
+    world.step(1.0 / 60.0, 4);
+}
+
 #[test]
 fn world_runtime_coverage_safe_api() {
     let mut world = World::new(WorldDef::builder().build()).unwrap();

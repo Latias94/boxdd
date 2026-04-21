@@ -27,7 +27,6 @@ fn run_once(
     let mut world = World::new(
         WorldDef::builder()
             .gravity([0.0_f32, -10.0])
-            .worker_count(1)
             .enable_continuous(true)
             .build(),
     )?;

@@ -175,8 +175,9 @@
 //!
 //! Threading and async
 //! - `WorldDef::builder().worker_count(n)` preserves Box2D's worker-count setting, but actual
-//!   multithreaded stepping still requires raw task callbacks on `WorldDef`. It does not make
-//!   `World`, `WorldHandle`, or owned handles `Send`/`Sync`.
+//!   multithreaded stepping still requires explicit raw task callbacks through
+//!   `unsafe WorldBuilder::task_system_raw(...)` / `WorldDef::set_task_system_raw(...)`. It does
+//!   not make `World`, `WorldHandle`, or owned handles `Send`/`Sync`.
 //! - Keep the world on one thread/task. In async runtimes prefer `spawn_local` / `LocalSet`; in
 //!   multi-threaded engines prefer a dedicated physics thread plus channels.
 //! - `set_custom_filter*`, `set_pre_solve*`, `set_friction_callback`, and `set_restitution_callback`
