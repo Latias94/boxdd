@@ -510,11 +510,13 @@ fn try_owned_shape_mutation_invalid_id_returns_err() {
 fn try_shape_runtime_helpers_invalid_id_returns_err() {
     let mut world = World::new(WorldDef::default()).unwrap();
     let body_id = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+    let handle = world.handle();
     let sdef = ShapeDef::builder().density(1.0).build();
     let circle = shapes::circle([0.0_f32, 0.0], 0.5);
     let mut shape = world.create_circle_shape_for_owned(body_id, &sdef, &circle);
     let shape_id = shape.id();
     world.destroy_shape_id(shape_id, true);
+    let mut overlap_ids = Vec::new();
 
     assert_eq!(shape.try_aabb().unwrap_err(), ApiError::InvalidShapeId);
     assert_eq!(
@@ -571,6 +573,28 @@ fn try_shape_runtime_helpers_invalid_id_returns_err() {
     );
     assert_eq!(
         world.try_shape_sensor_overlaps_valid(shape_id).unwrap_err(),
+        ApiError::InvalidShapeId
+    );
+    assert_eq!(
+        handle.try_shape_surface_material(shape_id).unwrap_err(),
+        ApiError::InvalidShapeId
+    );
+    assert_eq!(
+        handle.try_shape_aabb(shape_id).unwrap_err(),
+        ApiError::InvalidShapeId
+    );
+    assert_eq!(
+        handle.try_shape_mass_data(shape_id).unwrap_err(),
+        ApiError::InvalidShapeId
+    );
+    assert_eq!(
+        handle.try_shape_hit_events_enabled(shape_id).unwrap_err(),
+        ApiError::InvalidShapeId
+    );
+    assert_eq!(
+        handle
+            .try_shape_sensor_overlaps_into(shape_id, &mut overlap_ids)
+            .unwrap_err(),
         ApiError::InvalidShapeId
     );
 }

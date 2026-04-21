@@ -34,6 +34,10 @@ fn same_chain_id(a: ChainId, b: ChainId) -> bool {
     a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
 }
 
+fn same_shape_id(a: ShapeId, b: ShapeId) -> bool {
+    a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
+}
+
 #[test]
 fn shape_closest_point_and_apply_wind_smoke() {
     let mut world = World::new(WorldDef::default()).unwrap();
@@ -477,6 +481,218 @@ fn shape_runtime_queries_and_mass_data_match_safe_geometry_helpers() {
         expected_mass_data,
         1.0e-5
     ));
+}
+
+#[test]
+fn world_handle_shape_runtime_queries_match_world_queries() {
+    let mut world = World::new(WorldDef::builder().gravity([0.0_f32, -10.0]).build()).unwrap();
+
+    let sensor_body = world.create_body_id(BodyBuilder::new().position([0.0_f32, 1.5]).build());
+    let sensor_material = SurfaceMaterial::default()
+        .with_friction(0.25)
+        .with_restitution(0.1)
+        .with_user_material_id(41);
+    let sensor_shape_id = world.create_polygon_shape_for(
+        sensor_body,
+        &ShapeDef::builder()
+            .density(1.0)
+            .sensor(true)
+            .enable_sensor_events(true)
+            .material(sensor_material)
+            .build(),
+        &shapes::box_polygon(2.0, 0.3),
+    );
+
+    let visitor_body = world.create_body_id(
+        BodyBuilder::new()
+            .body_type(BodyType::Dynamic)
+            .position([0.0_f32, 3.0])
+            .build(),
+    );
+    let visitor_shape_id = world.create_circle_shape_for(
+        visitor_body,
+        &ShapeDef::builder()
+            .density(1.0)
+            .enable_sensor_events(true)
+            .build(),
+        &shapes::circle([0.0_f32, 0.0], 0.25),
+    );
+
+    world.shape_enable_contact_events(sensor_shape_id, true);
+    world.shape_enable_pre_solve_events(sensor_shape_id, true);
+    world.shape_enable_hit_events(sensor_shape_id, true);
+
+    for _ in 0..240 {
+        world.step(1.0 / 120.0, 8);
+        if !world.shape_sensor_overlaps(sensor_shape_id).is_empty() {
+            break;
+        }
+    }
+
+    let handle = world.handle();
+
+    assert_eq!(
+        handle.shape_surface_material(sensor_shape_id),
+        sensor_material
+    );
+    assert_eq!(
+        handle.try_shape_surface_material(sensor_shape_id).unwrap(),
+        sensor_material
+    );
+    assert_eq!(handle.shape_body_id(sensor_shape_id), sensor_body);
+    assert_eq!(
+        handle.try_shape_body_id(sensor_shape_id).unwrap(),
+        sensor_body
+    );
+
+    let world_aabb = world.shape_aabb(sensor_shape_id);
+    assert_eq!(handle.shape_aabb(sensor_shape_id), world_aabb);
+    assert_eq!(handle.try_shape_aabb(sensor_shape_id).unwrap(), world_aabb);
+
+    assert_eq!(
+        handle.shape_test_point(sensor_shape_id, [0.0_f32, 1.5]),
+        world.shape_test_point(sensor_shape_id, [0.0_f32, 1.5])
+    );
+    assert_eq!(
+        handle
+            .try_shape_test_point(sensor_shape_id, [3.0_f32, 1.5])
+            .unwrap(),
+        world.shape_test_point(sensor_shape_id, [3.0_f32, 1.5])
+    );
+
+    let world_cast = world.shape_ray_cast(sensor_shape_id, [-3.0_f32, 1.5], [6.0_f32, 0.0]);
+    let handle_cast = handle.shape_ray_cast(sensor_shape_id, [-3.0_f32, 1.5], [6.0_f32, 0.0]);
+    assert_eq!(handle_cast.hit, world_cast.hit);
+    assert!(approx_eq(handle_cast.fraction, world_cast.fraction, 1.0e-6));
+    assert!(approx_vec2(handle_cast.point, world_cast.point, 1.0e-6));
+    assert!(approx_vec2(handle_cast.normal, world_cast.normal, 1.0e-6));
+    let handle_try_cast = handle
+        .try_shape_ray_cast(sensor_shape_id, [-3.0_f32, 1.5], [6.0_f32, 0.0])
+        .unwrap();
+    assert_eq!(handle_try_cast.hit, world_cast.hit);
+    assert!(approx_eq(
+        handle_try_cast.fraction,
+        world_cast.fraction,
+        1.0e-6
+    ));
+    assert!(approx_vec2(handle_try_cast.point, world_cast.point, 1.0e-6));
+    assert!(approx_vec2(
+        handle_try_cast.normal,
+        world_cast.normal,
+        1.0e-6
+    ));
+
+    let world_closest_point = world.shape_closest_point(sensor_shape_id, [3.5_f32, 1.5]);
+    assert_eq!(
+        handle.shape_closest_point(sensor_shape_id, [3.5_f32, 1.5]),
+        world_closest_point
+    );
+    assert_eq!(
+        handle
+            .try_shape_closest_point(sensor_shape_id, [3.5_f32, 1.5])
+            .unwrap(),
+        world_closest_point
+    );
+
+    assert!(approx_mass_data(
+        handle.shape_mass_data(sensor_shape_id),
+        world.shape_mass_data(sensor_shape_id),
+        1.0e-6
+    ));
+    assert!(approx_mass_data(
+        handle.try_shape_mass_data(sensor_shape_id).unwrap(),
+        world.shape_mass_data(sensor_shape_id),
+        1.0e-6
+    ));
+
+    assert!(handle.shape_sensor_events_enabled(sensor_shape_id));
+    assert!(
+        handle
+            .try_shape_sensor_events_enabled(sensor_shape_id)
+            .unwrap()
+    );
+    assert!(handle.shape_contact_events_enabled(sensor_shape_id));
+    assert!(
+        handle
+            .try_shape_contact_events_enabled(sensor_shape_id)
+            .unwrap()
+    );
+    assert!(handle.shape_pre_solve_events_enabled(sensor_shape_id));
+    assert!(
+        handle
+            .try_shape_pre_solve_events_enabled(sensor_shape_id)
+            .unwrap()
+    );
+    assert!(handle.shape_hit_events_enabled(sensor_shape_id));
+    assert!(
+        handle
+            .try_shape_hit_events_enabled(sensor_shape_id)
+            .unwrap()
+    );
+
+    let sensor_capacity = world.shape_sensor_capacity(sensor_shape_id);
+    assert_eq!(
+        handle.shape_sensor_capacity(sensor_shape_id),
+        sensor_capacity
+    );
+    assert_eq!(
+        handle.try_shape_sensor_capacity(sensor_shape_id).unwrap(),
+        sensor_capacity
+    );
+
+    let world_overlaps = world.shape_sensor_overlaps(sensor_shape_id);
+    assert!(!world_overlaps.is_empty());
+    assert!(
+        world_overlaps
+            .iter()
+            .copied()
+            .any(|id| same_shape_id(id, visitor_shape_id))
+    );
+    let handle_overlaps = handle.shape_sensor_overlaps(sensor_shape_id);
+    assert_eq!(handle_overlaps.len(), world_overlaps.len());
+    assert!(
+        handle_overlaps
+            .iter()
+            .copied()
+            .any(|id| same_shape_id(id, visitor_shape_id))
+    );
+    let mut overlap_buf = Vec::with_capacity(8);
+    let overlap_buf_ptr = overlap_buf.as_ptr();
+    handle.shape_sensor_overlaps_into(sensor_shape_id, &mut overlap_buf);
+    assert_eq!(overlap_buf.as_ptr(), overlap_buf_ptr);
+    assert_eq!(overlap_buf.len(), world_overlaps.len());
+    handle
+        .try_shape_sensor_overlaps_into(sensor_shape_id, &mut overlap_buf)
+        .unwrap();
+    assert_eq!(overlap_buf.as_ptr(), overlap_buf_ptr);
+    assert_eq!(overlap_buf.len(), world_overlaps.len());
+
+    let world_overlaps_valid = world.shape_sensor_overlaps_valid(sensor_shape_id);
+    assert!(!world_overlaps_valid.is_empty());
+    assert!(
+        world_overlaps_valid
+            .iter()
+            .copied()
+            .any(|id| same_shape_id(id, visitor_shape_id))
+    );
+    let handle_overlaps_valid = handle.shape_sensor_overlaps_valid(sensor_shape_id);
+    assert_eq!(handle_overlaps_valid.len(), world_overlaps_valid.len());
+    assert!(
+        handle_overlaps_valid
+            .iter()
+            .copied()
+            .any(|id| same_shape_id(id, visitor_shape_id))
+    );
+    let mut overlap_valid_buf = Vec::with_capacity(8);
+    let overlap_valid_buf_ptr = overlap_valid_buf.as_ptr();
+    handle.shape_sensor_overlaps_valid_into(sensor_shape_id, &mut overlap_valid_buf);
+    assert_eq!(overlap_valid_buf.as_ptr(), overlap_valid_buf_ptr);
+    assert_eq!(overlap_valid_buf.len(), world_overlaps_valid.len());
+    handle
+        .try_shape_sensor_overlaps_valid_into(sensor_shape_id, &mut overlap_valid_buf)
+        .unwrap();
+    assert_eq!(overlap_valid_buf.as_ptr(), overlap_valid_buf_ptr);
+    assert_eq!(overlap_valid_buf.len(), world_overlaps_valid.len());
 }
 
 #[test]
