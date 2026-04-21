@@ -49,6 +49,7 @@
 - [x] Replace the remaining `World` / `WorldHandle` read-only getter macros (`gravity`, runtime snapshots, tuning getters) with private checked-read helpers plus explicit method definitions.
 - [x] Remove the last `world.rs` shape create/set macro layer so world-owned geometry creation and editing helpers use ordinary private functions plus explicit methods.
 - [x] Replace the `joints/mod.rs` world joint-creation macro layer with generic private creation helpers plus explicit per-family scoped/id/owned/`try_*` methods.
+- [x] Start decomposing the typed joint runtime macro layer by replacing the `Distance` joint family with shared kind-checked helpers plus explicit `World` / `OwnedJoint` / `Joint` methods.
 
 ## In Progress
 
