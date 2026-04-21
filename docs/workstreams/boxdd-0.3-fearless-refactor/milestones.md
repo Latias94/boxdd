@@ -54,6 +54,7 @@ Scope:
 - normalize live chain material helpers around visible segment indexing so open-chain ghost placeholder entries stay a `ChainDef` detail instead of leaking through the runtime API
 - normalize obvious Box2D assert preconditions into explicit safe-wrapper argument validation where the public runtime API already owns the semantics
 - extend that validation policy to creation-time definition objects and shared default constructors so `try_*` creation paths do not depend on native assert builds
+- extend that validation policy to `World::step`, world query/cast/mover entrypoints, and standalone collision inputs so the last obvious runtime assert pockets are encoded in Rust-side contracts too
 - consolidate the most mechanical joint creation entrypoints so joint-type additions cannot drift across scoped/id/owned/try variants
 - consolidate event-buffer borrow / cleanup plumbing so all event-view APIs share the same lifetime and deferred-destroy path
 - add reusable-buffer event snapshot getters so owned event extraction does not force fresh allocations beside the existing zero-copy views
@@ -71,6 +72,7 @@ Exit criteria:
 - live chain material count/get/set helpers no longer leak Box2D's open-chain ghost placeholder indexing through the safe runtime surface
 - obvious range/value misuse on the main runtime setter surface no longer depends on Box2D assert builds for failure behavior
 - obvious creation-time def misuse on body/joint creation paths no longer depends on Box2D assert builds, and shared joint-base defaults match upstream semantics
+- `World::step` and the world query/cast/mover hot paths no longer depend on Box2D assert builds for invalid AABBs, vectors, radii, or sub-step counts
 - joint creation families no longer duplicate per-type create/owned/id/try plumbing or callback-state handling
 - event-view APIs no longer duplicate the borrow-event-buffers / process-deferred-destroys template in every module
 - owned event snapshots no longer force fresh allocation when callers need persistent copies instead of borrowed event views
@@ -89,10 +91,12 @@ Scope:
 - typed restitution callback API
 - standalone `collision` module for shape proxies, GJK distance, shape cast, and TOI
 - `Aabb::is_valid()` and `Aabb::ray_cast(origin, translation)`
+- recoverable validation for standalone collision inputs and `try_*` entrypoints for distance/shape-cast/TOI
 
 Exit criteria:
 
 - advanced collision customization and low-level geometry algorithms no longer require raw `ffi` for normal use
+- standalone collision helpers expose both panic-by-default and recoverable validation paths instead of relying on upstream asserts for malformed input
 - the next post-`0.3` wrapper-coverage push has a concrete backlog instead of scattered notes
 
 ## M5: Geometry Type Unification

@@ -129,7 +129,7 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 
 ## Collision Geometry APIs
 - `boxdd::collision` exposes Box2D's standalone low-level geometry algorithms as safe Rust value types.
-- Use `ShapeProxy`, `SimplexCache`, `DistanceInput`, `ShapeCastPairInput`, `Sweep`, and `ToiInput` with `shape_distance(...)`, `shape_cast(...)`, and `time_of_impact(...)`.
+- Use `ShapeProxy`, `SimplexCache`, `DistanceInput`, `ShapeCastPairInput`, `Sweep`, and `ToiInput` with `shape_distance(...)`, `shape_cast(...)`, and `time_of_impact(...)`, or the matching recoverable `try_*` variants when malformed input should return `ApiError::InvalidArgument`.
 - Standalone manifold helpers such as `collide_polygons(...)`, `collide_polygon_and_circle(...)`, `collide_segment_and_capsule(...)`, and `collide_chain_segment_and_polygon(...)` now return the safe `Manifold` type.
 - `Aabb::is_valid()` and `Aabb::ray_cast(origin, translation)` now cover common AABB validation and ray-cast needs without reaching for `boxdd_sys::ffi`.
 - These advanced APIs are intentionally not in the prelude, so collision-heavy code can import them explicitly.

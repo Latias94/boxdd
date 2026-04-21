@@ -7,6 +7,7 @@
 
 use crate::{
     core::math::{Rot, Transform},
+    error::{ApiError, ApiResult},
     query::Aabb,
     shapes::{Capsule, ChainSegment, Circle, Polygon, Segment},
     types::{Manifold, Vec2},
@@ -21,6 +22,56 @@ const _: () = {
     assert!(core::mem::size_of::<Vec2>() == core::mem::size_of::<ffi::b2Vec2>());
     assert!(core::mem::align_of::<Vec2>() == core::mem::align_of::<ffi::b2Vec2>());
 };
+
+#[inline]
+fn check_collision_vec2_valid(value: Vec2) -> ApiResult<()> {
+    if value.is_valid() {
+        Ok(())
+    } else {
+        Err(ApiError::InvalidArgument)
+    }
+}
+
+#[inline]
+fn check_collision_rot_valid(value: Rot) -> ApiResult<()> {
+    if value.is_valid() {
+        Ok(())
+    } else {
+        Err(ApiError::InvalidArgument)
+    }
+}
+
+#[inline]
+fn check_collision_transform_valid(value: Transform) -> ApiResult<()> {
+    if value.is_valid() {
+        Ok(())
+    } else {
+        Err(ApiError::InvalidArgument)
+    }
+}
+
+#[inline]
+fn check_collision_non_negative_finite_scalar(value: f32) -> ApiResult<()> {
+    if crate::is_valid_float(value) && value >= 0.0 {
+        Ok(())
+    } else {
+        Err(ApiError::InvalidArgument)
+    }
+}
+
+#[inline]
+fn check_collision_unit_interval_scalar(value: f32) -> ApiResult<()> {
+    if crate::is_valid_float(value) && (0.0..=1.0).contains(&value) {
+        Ok(())
+    } else {
+        Err(ApiError::InvalidArgument)
+    }
+}
+
+#[inline]
+fn assert_collision_input_valid(name: &str, valid: bool) {
+    assert!(valid, "{name} contains invalid Box2D input");
+}
 
 #[inline]
 fn ray_cast_axis(
@@ -63,8 +114,8 @@ fn ray_cast_axis(
 
 /// A Box2D point-cloud proxy used by distance, shape-cast, and TOI algorithms.
 ///
-/// Returns `None` from [`ShapeProxy::new`] when the iterator is empty or contains more
-/// than [`MAX_SHAPE_PROXY_POINTS`] points.
+/// Returns `None` from [`ShapeProxy::new`] when the iterator is empty, contains more than
+/// [`MAX_SHAPE_PROXY_POINTS`] points, or contains invalid Box2D coordinates/radius data.
 #[doc(alias = "shape_proxy")]
 #[derive(Copy, Clone)]
 pub struct ShapeProxy {
@@ -78,23 +129,35 @@ impl ShapeProxy {
         I: IntoIterator<Item = P>,
         P: Into<Vec2>,
     {
+        Self::try_new(points, radius).ok()
+    }
+
+    /// Build a proxy from `1..=MAX_SHAPE_PROXY_POINTS` valid points and an external radius.
+    pub fn try_new<I, P>(points: I, radius: f32) -> ApiResult<Self>
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+    {
+        check_collision_non_negative_finite_scalar(radius)?;
         let mut raw_points = [ffi::b2Vec2 { x: 0.0, y: 0.0 }; MAX_SHAPE_PROXY_POINTS];
         let mut count = 0usize;
 
         for point in points {
             if count == MAX_SHAPE_PROXY_POINTS {
-                return None;
+                return Err(ApiError::InvalidArgument);
             }
-            raw_points[count] = point.into().into_raw();
+            let point = point.into();
+            check_collision_vec2_valid(point)?;
+            raw_points[count] = point.into_raw();
             count += 1;
         }
 
         if count == 0 {
-            return None;
+            return Err(ApiError::InvalidArgument);
         }
 
         let raw = unsafe { ffi::b2MakeProxy(raw_points.as_ptr(), count as i32, radius) };
-        Some(Self { raw })
+        Ok(Self { raw })
     }
 
     /// The points stored in this proxy.
@@ -114,6 +177,18 @@ impl ShapeProxy {
     #[inline]
     pub fn radius(&self) -> f32 {
         self.raw.radius
+    }
+
+    /// Validate this proxy for Box2D standalone collision algorithms.
+    pub fn validate(&self) -> ApiResult<()> {
+        if !(1..=MAX_SHAPE_PROXY_POINTS as i32).contains(&self.raw.count) {
+            return Err(ApiError::InvalidArgument);
+        }
+        check_collision_non_negative_finite_scalar(self.raw.radius)?;
+        for point in self.points().iter().copied() {
+            check_collision_vec2_valid(point)?;
+        }
+        Ok(())
     }
 
     #[inline]
@@ -289,6 +364,15 @@ impl DistanceInput {
         self
     }
 
+    /// Validate this input before crossing the Box2D FFI boundary.
+    pub fn validate(&self) -> ApiResult<()> {
+        self.proxy_a.validate()?;
+        self.proxy_b.validate()?;
+        check_collision_transform_valid(self.transform_a)?;
+        check_collision_transform_valid(self.transform_b)?;
+        Ok(())
+    }
+
     #[inline]
     pub fn into_raw(self) -> ffi::b2DistanceInput {
         ffi::b2DistanceInput {
@@ -375,6 +459,17 @@ impl ShapeCastPairInput {
         self
     }
 
+    /// Validate this input before crossing the Box2D FFI boundary.
+    pub fn validate(&self) -> ApiResult<()> {
+        self.proxy_a.validate()?;
+        self.proxy_b.validate()?;
+        check_collision_transform_valid(self.transform_a)?;
+        check_collision_transform_valid(self.transform_b)?;
+        check_collision_vec2_valid(self.translation_b)?;
+        check_collision_unit_interval_scalar(self.max_fraction)?;
+        Ok(())
+    }
+
     #[inline]
     pub fn into_raw(self) -> ffi::b2ShapeCastPairInput {
         ffi::b2ShapeCastPairInput {
@@ -440,6 +535,16 @@ impl Sweep {
         }
     }
 
+    /// Validate this sweep for Box2D continuous-collision algorithms.
+    pub fn validate(&self) -> ApiResult<()> {
+        check_collision_vec2_valid(self.local_center)?;
+        check_collision_vec2_valid(self.c1)?;
+        check_collision_vec2_valid(self.c2)?;
+        check_collision_rot_valid(self.q1)?;
+        check_collision_rot_valid(self.q2)?;
+        Ok(())
+    }
+
     /// Evaluate the sweep transform at `time` in the `[0, 1]` interval.
     #[inline]
     pub fn transform_at(self, time: f32) -> Transform {
@@ -477,6 +582,16 @@ impl ToiInput {
     pub fn with_max_fraction(mut self, max_fraction: f32) -> Self {
         self.max_fraction = max_fraction;
         self
+    }
+
+    /// Validate this input before crossing the Box2D FFI boundary.
+    pub fn validate(&self) -> ApiResult<()> {
+        self.proxy_a.validate()?;
+        self.proxy_b.validate()?;
+        self.sweep_a.validate()?;
+        self.sweep_b.validate()?;
+        check_collision_unit_interval_scalar(self.max_fraction)?;
+        Ok(())
     }
 
     #[inline]
@@ -558,22 +673,55 @@ where
 
 /// Compute the closest distance between two shape proxies.
 pub fn shape_distance(input: DistanceInput, cache: &mut SimplexCache) -> DistanceOutput {
+    assert_collision_input_valid("shape_distance input", input.validate().is_ok());
     let raw_input = input.into_raw();
     DistanceOutput::from_raw(unsafe {
         ffi::b2ShapeDistance(&raw_input, cache.raw_mut(), core::ptr::null_mut(), 0)
     })
 }
 
+/// Compute the closest distance between two shape proxies with recoverable validation.
+pub fn try_shape_distance(
+    input: DistanceInput,
+    cache: &mut SimplexCache,
+) -> ApiResult<DistanceOutput> {
+    input.validate()?;
+    let raw_input = input.into_raw();
+    Ok(DistanceOutput::from_raw(unsafe {
+        ffi::b2ShapeDistance(&raw_input, cache.raw_mut(), core::ptr::null_mut(), 0)
+    }))
+}
+
 /// Cast shape B against shape A.
 pub fn shape_cast(input: ShapeCastPairInput) -> CastOutput {
+    assert_collision_input_valid("shape_cast input", input.validate().is_ok());
     let raw_input = input.into_raw();
     CastOutput::from_raw(unsafe { ffi::b2ShapeCast(&raw_input) })
 }
 
+/// Cast shape B against shape A with recoverable validation.
+pub fn try_shape_cast(input: ShapeCastPairInput) -> ApiResult<CastOutput> {
+    input.validate()?;
+    let raw_input = input.into_raw();
+    Ok(CastOutput::from_raw(unsafe {
+        ffi::b2ShapeCast(&raw_input)
+    }))
+}
+
 /// Compute the time of impact between two moving shape proxies.
 pub fn time_of_impact(input: ToiInput) -> ToiOutput {
+    assert_collision_input_valid("time_of_impact input", input.validate().is_ok());
     let raw_input = input.into_raw();
     ToiOutput::from_raw(unsafe { ffi::b2TimeOfImpact(&raw_input) })
+}
+
+/// Compute the time of impact between two moving shape proxies with recoverable validation.
+pub fn try_time_of_impact(input: ToiInput) -> ApiResult<ToiOutput> {
+    input.validate()?;
+    let raw_input = input.into_raw();
+    Ok(ToiOutput::from_raw(unsafe {
+        ffi::b2TimeOfImpact(&raw_input)
+    }))
 }
 
 /// Compute the contact manifold between two circles.

@@ -23,6 +23,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - A broader 0.3 umbrella workstream under `docs/workstreams/boxdd-0.3-fearless-refactor/` to track the rest of the fearless refactor plan.
 - Typed world-level material mixing callbacks for friction and restitution using `MaterialMixInput` and `user_material_id`.
 - A standalone `collision` module with safe `ShapeProxy`, `SimplexCache`, `DistanceInput`, `ShapeCastPairInput`, `Sweep`, `ToiInput`, `ToiState`, and `*_distance` / `shape_cast` / `time_of_impact` helpers.
+- Recoverable standalone collision entrypoints: `try_shape_distance`, `try_shape_cast`, and `try_time_of_impact`, plus `validate()` helpers on `ShapeProxy`, `DistanceInput`, `ShapeCastPairInput`, `Sweep`, and `ToiInput`.
 - Safe standalone manifold collision helpers for the crate-owned circle/capsule/segment/polygon geometry types.
 - Safe standalone chain-segment manifold collision helpers and a crate-owned `ChainSegment` geometry type.
 - `Aabb::is_valid()` and `Aabb::ray_cast(origin, translation)` for low-level geometry checks without raw FFI.
@@ -74,6 +75,8 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Runtime shape numeric setters and joint limit/range setters now validate their obvious Box2D assert preconditions in the safe wrapper first, so `try_*` callers receive `ApiError::InvalidArgument` instead of depending on upstream assert builds.
 - Body creation, world creation, body mass-data mutation, and joint creation now front-load the obvious Box2D definition preconditions in the safe wrapper, so invalid defs fail as Rust panics or `ApiError::InvalidArgument` instead of depending on native assert builds.
 - World runtime tuning setters now validate gravity vectors and numeric threshold/tuning inputs in the safe wrapper, so `try_*` callers receive `ApiError::InvalidArgument` instead of relying on Box2D clamps or assert-enabled native builds.
+- `World::step`, AABB/query/cast/mover helpers, and standalone collision inputs now front-load the obvious Box2D assert preconditions in the safe wrapper, so invalid vectors/AABBs/radii/fractions fail as Rust panics or `ApiError::InvalidArgument` instead of depending on native assert builds.
+- Breaking: `ShapeProxy::new(...)` now returns `None` for invalid Box2D coordinates or negative/non-finite radii in addition to the existing empty/too-many-point rejection.
 - Breaking: `BodyDef::from_raw(...)` and `WorldDef::from_raw(...)` are now `unsafe` because raw name pointers and raw task/material callback pointers can otherwise flow into later safe creation/stepping paths.
 - Threading docs now spell out that `worker_count` alone does not enable Box2D workers; task callbacks must also be installed through the explicit raw task-system path.
 - Breaking: `JointBase::default()` now mirrors Box2D's actual upstream defaults (`forceThreshold = FLT_MAX`, `torqueThreshold = FLT_MAX`, `constraintHertz = 60`, `constraintDampingRatio = 2`, and `drawScale = length_units_per_meter()`) instead of a partial zeroed approximation.

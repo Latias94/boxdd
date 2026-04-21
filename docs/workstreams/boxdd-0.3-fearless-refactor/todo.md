@@ -104,6 +104,8 @@
 - [x] Normalize live chain surface-material counts and indexing around visible segments so open-chain ghost placeholder entries no longer leak through the safe runtime API.
 - [x] Front-load obvious Box2D assert preconditions in the safe runtime surface so shape numeric setters and joint range/limit setters return recoverable errors instead of depending on upstream assert builds.
 - [x] Front-load obvious creation-time definition preconditions in the safe wrapper (`BodyDef`, `ShapeDef`, shared `JointBase`, and concrete joint defs), and fix `JointBase::default()` to mirror upstream Box2D defaults instead of a partial zeroed approximation.
+- [x] Front-load the remaining obvious Box2D assert preconditions on `World::step`, world query/cast/mover entrypoints, and standalone collision inputs so invalid vectors/AABBs/radii/fractions fail in the Rust wrapper before crossing FFI.
+- [x] Add recoverable standalone collision validation via `ShapeProxy::try_new(...)`, `validate()` on collision input value objects, and `try_shape_distance` / `try_shape_cast` / `try_time_of_impact`.
 - [x] Make `BodyType`, `Aabb`, mover/query value types, collision outputs, and `Counters` use explicit `from_raw(...)` / `into_raw()` APIs where applicable instead of implicit raw conversions.
 - [x] Make collision input value types (`DistanceInput`, `ShapeCastPairInput`, `Sweep`, `ToiInput`) cross the raw boundary explicitly with named `into_raw()` / `from_raw()` APIs instead of implicit conversions.
 - [x] Make contact/manifold value types (`ManifoldPoint`, `Manifold`, `ContactData`) use explicit raw conversion APIs instead of implicit `From<ffi::...>` shims.

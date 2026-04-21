@@ -261,7 +261,8 @@ pub use collision::{
     collide_chain_segment_and_circle, collide_chain_segment_and_polygon, collide_circles,
     collide_polygon_and_capsule, collide_polygon_and_circle, collide_polygons,
     collide_segment_and_capsule, collide_segment_and_circle, collide_segment_and_polygon,
-    segment_distance, shape_cast, shape_distance, time_of_impact,
+    segment_distance, shape_cast, shape_distance, time_of_impact, try_shape_cast,
+    try_shape_distance, try_time_of_impact,
 };
 #[cfg(feature = "glam")]
 #[cfg_attr(docsrs, doc(cfg(feature = "glam")))]

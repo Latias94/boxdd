@@ -491,6 +491,24 @@ fn check_positive_finite_world_scalar(value: f32) -> crate::error::ApiResult<()>
 }
 
 #[inline]
+fn assert_world_step_args_valid(time_step: f32, sub_steps: i32) {
+    assert!(
+        crate::is_valid_float(time_step),
+        "time_step must be finite, got {time_step}"
+    );
+    assert!(sub_steps > 0, "sub_steps must be > 0, got {sub_steps}");
+}
+
+#[inline]
+fn check_world_step_args_valid(time_step: f32, sub_steps: i32) -> crate::error::ApiResult<()> {
+    if crate::is_valid_float(time_step) && sub_steps > 0 {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+#[inline]
 fn check_world_worker_count_valid(worker_count: i32) -> crate::error::ApiResult<()> {
     if worker_count >= 0 {
         Ok(())
@@ -1769,6 +1787,7 @@ impl World {
     /// Step the simulation by `time_step` seconds using `sub_steps` sub-steps.
     pub fn step(&mut self, time_step: f32, sub_steps: i32) {
         crate::core::callback_state::assert_not_in_callback();
+        assert_world_step_args_valid(time_step, sub_steps);
         // Prepare panic forwarding for callbacks invoked during the FFI call.
         self.core
             .callback_panicked
@@ -1804,6 +1823,7 @@ impl World {
     /// Returns `ApiError::InCallback` if called while Box2D is already executing a callback.
     pub fn try_step(&mut self, time_step: f32, sub_steps: i32) -> crate::error::ApiResult<()> {
         crate::core::callback_state::check_not_in_callback()?;
+        check_world_step_args_valid(time_step, sub_steps)?;
         self.step(time_step, sub_steps);
         Ok(())
     }

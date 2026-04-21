@@ -20,16 +20,148 @@ const MAX_PROXY_POINTS: usize = ffi::B2_MAX_POLYGON_VERTICES as usize;
 type ProxyPoints = SmallVec<[ffi::b2Vec2; MAX_PROXY_POINTS]>;
 type PanicPayload = Box<dyn Any + Send + 'static>;
 
-fn collect_proxy_points<I, P>(points: I) -> ProxyPoints
+#[inline]
+fn minimum_mover_radius() -> f32 {
+    0.01 * crate::length_units_per_meter()
+}
+
+#[inline]
+fn assert_query_vec2_valid(name: &str, value: Vec2) {
+    assert!(
+        value.is_valid(),
+        "{name} must be a valid Box2D vector, got {:?}",
+        value
+    );
+}
+
+#[inline]
+fn check_query_vec2_valid(value: Vec2) -> ApiResult<()> {
+    if value.is_valid() {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+#[inline]
+fn assert_query_aabb_valid(aabb: Aabb) {
+    assert!(aabb.is_valid(), "aabb must be valid, got {:?}", aabb);
+}
+
+#[inline]
+fn check_query_aabb_valid(aabb: Aabb) -> ApiResult<()> {
+    if aabb.is_valid() {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+#[inline]
+fn assert_query_non_negative_finite_scalar(name: &str, value: f32) {
+    assert!(
+        crate::is_valid_float(value) && value >= 0.0,
+        "{name} must be finite and >= 0.0, got {value}"
+    );
+}
+
+#[inline]
+fn check_query_non_negative_finite_scalar(value: f32) -> ApiResult<()> {
+    if crate::is_valid_float(value) && value >= 0.0 {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+#[inline]
+fn assert_query_angle_valid(angle_radians: f32) {
+    assert!(
+        crate::is_valid_float(angle_radians),
+        "angle_radians must be finite, got {angle_radians}"
+    );
+}
+
+#[inline]
+fn check_query_angle_valid(angle_radians: f32) -> ApiResult<()> {
+    if crate::is_valid_float(angle_radians) {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+#[inline]
+fn assert_query_mover_radius_valid(radius: f32) {
+    let minimum = minimum_mover_radius();
+    assert!(
+        crate::is_valid_float(radius) && radius > minimum,
+        "mover radius must be finite and > {minimum}, got {radius}"
+    );
+}
+
+#[inline]
+fn check_query_mover_radius_valid(radius: f32) -> ApiResult<()> {
+    if crate::is_valid_float(radius) && radius > minimum_mover_radius() {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+fn collect_asserted_proxy_points<I, P>(points: I) -> ProxyPoints
 where
     I: IntoIterator<Item = P>,
     P: Into<Vec2>,
 {
     let mut out = SmallVec::<[ffi::b2Vec2; MAX_PROXY_POINTS]>::new();
     for p in points.into_iter().take(MAX_PROXY_POINTS) {
-        out.push(p.into().into_raw());
+        let point = p.into();
+        assert_query_vec2_valid("points", point);
+        out.push(point.into_raw());
     }
     out
+}
+
+fn try_collect_proxy_points<I, P>(points: I) -> ApiResult<ProxyPoints>
+where
+    I: IntoIterator<Item = P>,
+    P: Into<Vec2>,
+{
+    let mut out = SmallVec::<[ffi::b2Vec2; MAX_PROXY_POINTS]>::new();
+    for p in points.into_iter().take(MAX_PROXY_POINTS) {
+        let point = p.into();
+        check_query_vec2_valid(point)?;
+        out.push(point.into_raw());
+    }
+    Ok(out)
+}
+
+#[inline]
+fn make_proxy_from_points(points: &ProxyPoints, radius: f32) -> Option<ffi::b2ShapeProxy> {
+    (!points.is_empty())
+        .then(|| unsafe { ffi::b2MakeProxy(points.as_ptr(), points.len() as i32, radius) })
+}
+
+#[inline]
+fn make_offset_proxy_from_points(
+    points: &ProxyPoints,
+    radius: f32,
+    position: Vec2,
+    angle_radians: f32,
+) -> Option<ffi::b2ShapeProxy> {
+    (!points.is_empty()).then(|| {
+        let (s, c) = angle_radians.sin_cos();
+        unsafe {
+            ffi::b2MakeOffsetProxy(
+                points.as_ptr(),
+                points.len() as i32,
+                radius,
+                position.into_raw(),
+                ffi::b2Rot { c, s },
+            )
+        }
+    })
 }
 
 struct CollectCtx<'a, T> {
@@ -277,16 +409,13 @@ fn cast_ray_all_into_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
     ctx.resume_unwind_if_needed();
 }
 
-fn overlap_polygon_points_into_impl<I, P>(
+fn overlap_polygon_points_into_impl(
     world: ffi::b2WorldId,
-    points: I,
+    points: &ProxyPoints,
     radius: f32,
     filter: QueryFilter,
     out: &mut Vec<ShapeId>,
-) where
-    I: IntoIterator<Item = P>,
-    P: Into<Vec2>,
-{
+) {
     out.clear();
     let mut collect = |shape_id| {
         out.push(shape_id);
@@ -295,61 +424,47 @@ fn overlap_polygon_points_into_impl<I, P>(
     let _ = visit_overlap_polygon_points_impl(world, points, radius, filter, &mut collect);
 }
 
-fn visit_overlap_polygon_points_impl<I, P, F>(
+fn visit_overlap_polygon_points_impl<F>(
     world: ffi::b2WorldId,
-    points: I,
+    points: &ProxyPoints,
     radius: f32,
     filter: QueryFilter,
     visit: &mut F,
 ) -> bool
 where
-    I: IntoIterator<Item = P>,
-    P: Into<Vec2>,
     F: FnMut(ShapeId) -> bool,
 {
-    let pts = collect_proxy_points(points);
-    if pts.is_empty() {
+    let Some(proxy) = make_proxy_from_points(points, radius) else {
         return true;
-    }
-    let proxy = unsafe { ffi::b2MakeProxy(pts.as_ptr(), pts.len() as i32, radius) };
+    };
     visit_overlap_shape_proxy_impl(world, &proxy, filter, visit)
 }
 
-fn overlap_polygon_points_impl<I, P>(
+fn overlap_polygon_points_impl(
     world: ffi::b2WorldId,
-    points: I,
+    points: &ProxyPoints,
     radius: f32,
     filter: QueryFilter,
-) -> Vec<ShapeId>
-where
-    I: IntoIterator<Item = P>,
-    P: Into<Vec2>,
-{
+) -> Vec<ShapeId> {
     let mut out = Vec::new();
     overlap_polygon_points_into_impl(world, points, radius, filter, &mut out);
     out
 }
 
-fn cast_shape_points_into_impl<I, P, VT>(
+fn cast_shape_points_into_impl(
     world: ffi::b2WorldId,
-    points: I,
+    points: &ProxyPoints,
     radius: f32,
-    translation: VT,
+    translation: Vec2,
     filter: QueryFilter,
     out: &mut Vec<RayResult>,
-) where
-    I: IntoIterator<Item = P>,
-    P: Into<Vec2>,
-    VT: Into<Vec2>,
-{
+) {
     out.clear();
-    let pts = collect_proxy_points(points);
-    if pts.is_empty() {
+    let Some(proxy) = make_proxy_from_points(points, radius) else {
         return;
-    }
-    let proxy = unsafe { ffi::b2MakeProxy(pts.as_ptr(), pts.len() as i32, radius) };
+    };
     let mut ctx = CollectCtx::from_cleared(out);
-    let t: ffi::b2Vec2 = translation.into().into_raw();
+    let t = translation.into_raw();
     unsafe {
         let _ = ffi::b2World_CastShape(
             world,
@@ -363,40 +478,35 @@ fn cast_shape_points_into_impl<I, P, VT>(
     ctx.resume_unwind_if_needed();
 }
 
-fn cast_shape_points_impl<I, P, VT>(
+fn cast_shape_points_impl(
     world: ffi::b2WorldId,
-    points: I,
+    points: &ProxyPoints,
     radius: f32,
-    translation: VT,
+    translation: Vec2,
     filter: QueryFilter,
-) -> Vec<RayResult>
-where
-    I: IntoIterator<Item = P>,
-    P: Into<Vec2>,
-    VT: Into<Vec2>,
-{
+) -> Vec<RayResult> {
     let mut out = Vec::new();
     cast_shape_points_into_impl(world, points, radius, translation, filter, &mut out);
     out
 }
 
-fn cast_mover_impl<V1: Into<Vec2>, V2: Into<Vec2>, VT: Into<Vec2>>(
+fn cast_mover_impl(
     world: ffi::b2WorldId,
-    c1: V1,
-    c2: V2,
+    c1: Vec2,
+    c2: Vec2,
     radius: f32,
-    translation: VT,
+    translation: Vec2,
     filter: QueryFilter,
 ) -> f32 {
     let cap = make_capsule(c1, c2, radius);
-    let t: ffi::b2Vec2 = translation.into().into_raw();
+    let t = translation.into_raw();
     unsafe { ffi::b2World_CastMover(world, &cap, t, filter.0) }
 }
 
-fn collide_mover_into_impl<V1: Into<Vec2>, V2: Into<Vec2>>(
+fn collide_mover_into_impl(
     world: ffi::b2WorldId,
-    c1: V1,
-    c2: V2,
+    c1: Vec2,
+    c2: Vec2,
     radius: f32,
     filter: QueryFilter,
     out: &mut Vec<MoverPlaneResult>,
@@ -416,10 +526,10 @@ fn collide_mover_into_impl<V1: Into<Vec2>, V2: Into<Vec2>>(
     ctx.resume_unwind_if_needed();
 }
 
-fn collide_mover_impl<V1: Into<Vec2>, V2: Into<Vec2>>(
+fn collide_mover_impl(
     world: ffi::b2WorldId,
-    c1: V1,
-    c2: V2,
+    c1: Vec2,
+    c2: Vec2,
     radius: f32,
     filter: QueryFilter,
 ) -> Vec<MoverPlaneResult> {
@@ -428,20 +538,15 @@ fn collide_mover_impl<V1: Into<Vec2>, V2: Into<Vec2>>(
     out
 }
 
-fn overlap_polygon_points_with_offset_into_impl<I, P, V, A>(
+fn overlap_polygon_points_with_offset_into_impl(
     world: ffi::b2WorldId,
-    points: I,
+    points: &ProxyPoints,
     radius: f32,
-    position: V,
-    angle_radians: A,
+    position: Vec2,
+    angle_radians: f32,
     filter: QueryFilter,
     out: &mut Vec<ShapeId>,
-) where
-    I: IntoIterator<Item = P>,
-    P: Into<Vec2>,
-    V: Into<Vec2>,
-    A: Into<f32>,
-{
+) {
     out.clear();
     let mut collect = |shape_id| {
         out.push(shape_id);
@@ -458,54 +563,32 @@ fn overlap_polygon_points_with_offset_into_impl<I, P, V, A>(
     );
 }
 
-fn visit_overlap_polygon_points_with_offset_impl<I, P, V, A, F>(
+fn visit_overlap_polygon_points_with_offset_impl<F>(
     world: ffi::b2WorldId,
-    points: I,
+    points: &ProxyPoints,
     radius: f32,
-    position: V,
-    angle_radians: A,
+    position: Vec2,
+    angle_radians: f32,
     filter: QueryFilter,
     visit: &mut F,
 ) -> bool
 where
-    I: IntoIterator<Item = P>,
-    P: Into<Vec2>,
-    V: Into<Vec2>,
-    A: Into<f32>,
     F: FnMut(ShapeId) -> bool,
 {
-    let pts = collect_proxy_points(points);
-    if pts.is_empty() {
+    let Some(proxy) = make_offset_proxy_from_points(points, radius, position, angle_radians) else {
         return true;
-    }
-    let (s, c) = angle_radians.into().sin_cos();
-    let pos: ffi::b2Vec2 = position.into().into_raw();
-    let proxy = unsafe {
-        ffi::b2MakeOffsetProxy(
-            pts.as_ptr(),
-            pts.len() as i32,
-            radius,
-            pos,
-            ffi::b2Rot { c, s },
-        )
     };
     visit_overlap_shape_proxy_impl(world, &proxy, filter, visit)
 }
 
-fn overlap_polygon_points_with_offset_impl<I, P, V, A>(
+fn overlap_polygon_points_with_offset_impl(
     world: ffi::b2WorldId,
-    points: I,
+    points: &ProxyPoints,
     radius: f32,
-    position: V,
-    angle_radians: A,
+    position: Vec2,
+    angle_radians: f32,
     filter: QueryFilter,
-) -> Vec<ShapeId>
-where
-    I: IntoIterator<Item = P>,
-    P: Into<Vec2>,
-    V: Into<Vec2>,
-    A: Into<f32>,
-{
+) -> Vec<ShapeId> {
     let mut out = Vec::new();
     overlap_polygon_points_with_offset_into_impl(
         world,
@@ -519,40 +602,22 @@ where
     out
 }
 
-fn cast_shape_points_with_offset_into_impl<I, P, V, A, VT>(
+fn cast_shape_points_with_offset_into_impl(
     world: ffi::b2WorldId,
-    points: I,
+    points: &ProxyPoints,
     radius: f32,
-    position: V,
-    angle_radians: A,
-    translation: VT,
+    position: Vec2,
+    angle_radians: f32,
+    translation: Vec2,
     filter: QueryFilter,
     out: &mut Vec<RayResult>,
-) where
-    I: IntoIterator<Item = P>,
-    P: Into<Vec2>,
-    V: Into<Vec2>,
-    A: Into<f32>,
-    VT: Into<Vec2>,
-{
+) {
     out.clear();
-    let pts = collect_proxy_points(points);
-    if pts.is_empty() {
+    let Some(proxy) = make_offset_proxy_from_points(points, radius, position, angle_radians) else {
         return;
-    }
-    let (s, c) = angle_radians.into().sin_cos();
-    let pos: ffi::b2Vec2 = position.into().into_raw();
-    let proxy = unsafe {
-        ffi::b2MakeOffsetProxy(
-            pts.as_ptr(),
-            pts.len() as i32,
-            radius,
-            pos,
-            ffi::b2Rot { c, s },
-        )
     };
     let mut ctx = CollectCtx::from_cleared(out);
-    let t: ffi::b2Vec2 = translation.into().into_raw();
+    let t = translation.into_raw();
     unsafe {
         let _ = ffi::b2World_CastShape(
             world,
@@ -566,22 +631,15 @@ fn cast_shape_points_with_offset_into_impl<I, P, V, A, VT>(
     ctx.resume_unwind_if_needed();
 }
 
-fn cast_shape_points_with_offset_impl<I, P, V, A, VT>(
+fn cast_shape_points_with_offset_impl(
     world: ffi::b2WorldId,
-    points: I,
+    points: &ProxyPoints,
     radius: f32,
-    position: V,
-    angle_radians: A,
-    translation: VT,
+    position: Vec2,
+    angle_radians: f32,
+    translation: Vec2,
     filter: QueryFilter,
-) -> Vec<RayResult>
-where
-    I: IntoIterator<Item = P>,
-    P: Into<Vec2>,
-    V: Into<Vec2>,
-    A: Into<f32>,
-    VT: Into<Vec2>,
-{
+) -> Vec<RayResult> {
     let mut out = Vec::new();
     cast_shape_points_with_offset_into_impl(
         world,
@@ -1079,9 +1137,9 @@ fn checked_query_impl<R>(f: impl FnOnce() -> R) -> R {
 }
 
 #[inline]
-fn try_checked_query_impl<R>(f: impl FnOnce() -> R) -> ApiResult<R> {
+fn try_checked_query_result_impl<R>(f: impl FnOnce() -> ApiResult<R>) -> ApiResult<R> {
     crate::core::callback_state::check_not_in_callback()?;
-    Ok(f())
+    f()
 }
 
 fn overlap_aabb_checked_impl(
@@ -1089,7 +1147,10 @@ fn overlap_aabb_checked_impl(
     aabb: Aabb,
     filter: QueryFilter,
 ) -> Vec<ShapeId> {
-    checked_query_impl(|| overlap_aabb_impl(raw_world_id, aabb, filter))
+    checked_query_impl(|| {
+        assert_query_aabb_valid(aabb);
+        overlap_aabb_impl(raw_world_id, aabb, filter)
+    })
 }
 
 fn visit_overlap_aabb_checked_impl<F>(
@@ -1101,7 +1162,10 @@ fn visit_overlap_aabb_checked_impl<F>(
 where
     F: FnMut(ShapeId) -> bool,
 {
-    checked_query_impl(|| visit_overlap_aabb_impl(raw_world_id, aabb, filter, visit))
+    checked_query_impl(|| {
+        assert_query_aabb_valid(aabb);
+        visit_overlap_aabb_impl(raw_world_id, aabb, filter, visit)
+    })
 }
 
 fn overlap_aabb_into_checked_impl(
@@ -1110,7 +1174,10 @@ fn overlap_aabb_into_checked_impl(
     filter: QueryFilter,
     out: &mut Vec<ShapeId>,
 ) {
-    checked_query_impl(|| overlap_aabb_into_impl(raw_world_id, aabb, filter, out));
+    checked_query_impl(|| {
+        assert_query_aabb_valid(aabb);
+        overlap_aabb_into_impl(raw_world_id, aabb, filter, out);
+    });
 }
 
 fn try_overlap_aabb_impl(
@@ -1118,7 +1185,10 @@ fn try_overlap_aabb_impl(
     aabb: Aabb,
     filter: QueryFilter,
 ) -> ApiResult<Vec<ShapeId>> {
-    try_checked_query_impl(|| overlap_aabb_impl(raw_world_id, aabb, filter))
+    try_checked_query_result_impl(|| {
+        check_query_aabb_valid(aabb)?;
+        Ok(overlap_aabb_impl(raw_world_id, aabb, filter))
+    })
 }
 
 fn try_visit_overlap_aabb_impl<F>(
@@ -1130,7 +1200,10 @@ fn try_visit_overlap_aabb_impl<F>(
 where
     F: FnMut(ShapeId) -> bool,
 {
-    try_checked_query_impl(|| visit_overlap_aabb_impl(raw_world_id, aabb, filter, visit))
+    try_checked_query_result_impl(|| {
+        check_query_aabb_valid(aabb)?;
+        Ok(visit_overlap_aabb_impl(raw_world_id, aabb, filter, visit))
+    })
 }
 
 fn try_overlap_aabb_into_impl(
@@ -1139,7 +1212,11 @@ fn try_overlap_aabb_into_impl(
     filter: QueryFilter,
     out: &mut Vec<ShapeId>,
 ) -> ApiResult<()> {
-    try_checked_query_impl(|| overlap_aabb_into_impl(raw_world_id, aabb, filter, out))
+    try_checked_query_result_impl(|| {
+        check_query_aabb_valid(aabb)?;
+        overlap_aabb_into_impl(raw_world_id, aabb, filter, out);
+        Ok(())
+    })
 }
 
 fn cast_ray_closest_checked_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
@@ -1148,7 +1225,13 @@ fn cast_ray_closest_checked_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
     translation: VT,
     filter: QueryFilter,
 ) -> RayResult {
-    checked_query_impl(|| cast_ray_closest_impl(raw_world_id, origin, translation, filter))
+    checked_query_impl(|| {
+        let origin = origin.into();
+        let translation = translation.into();
+        assert_query_vec2_valid("origin", origin);
+        assert_query_vec2_valid("translation", translation);
+        cast_ray_closest_impl(raw_world_id, origin, translation, filter)
+    })
 }
 
 fn try_cast_ray_closest_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
@@ -1157,7 +1240,18 @@ fn try_cast_ray_closest_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
     translation: VT,
     filter: QueryFilter,
 ) -> ApiResult<RayResult> {
-    try_checked_query_impl(|| cast_ray_closest_impl(raw_world_id, origin, translation, filter))
+    try_checked_query_result_impl(|| {
+        let origin = origin.into();
+        let translation = translation.into();
+        check_query_vec2_valid(origin)?;
+        check_query_vec2_valid(translation)?;
+        Ok(cast_ray_closest_impl(
+            raw_world_id,
+            origin,
+            translation,
+            filter,
+        ))
+    })
 }
 
 fn cast_ray_all_checked_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
@@ -1166,7 +1260,13 @@ fn cast_ray_all_checked_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
     translation: VT,
     filter: QueryFilter,
 ) -> Vec<RayResult> {
-    checked_query_impl(|| cast_ray_all_impl(raw_world_id, origin, translation, filter))
+    checked_query_impl(|| {
+        let origin = origin.into();
+        let translation = translation.into();
+        assert_query_vec2_valid("origin", origin);
+        assert_query_vec2_valid("translation", translation);
+        cast_ray_all_impl(raw_world_id, origin, translation, filter)
+    })
 }
 
 fn cast_ray_all_into_checked_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
@@ -1176,7 +1276,13 @@ fn cast_ray_all_into_checked_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
     filter: QueryFilter,
     out: &mut Vec<RayResult>,
 ) {
-    checked_query_impl(|| cast_ray_all_into_impl(raw_world_id, origin, translation, filter, out));
+    checked_query_impl(|| {
+        let origin = origin.into();
+        let translation = translation.into();
+        assert_query_vec2_valid("origin", origin);
+        assert_query_vec2_valid("translation", translation);
+        cast_ray_all_into_impl(raw_world_id, origin, translation, filter, out);
+    });
 }
 
 fn try_cast_ray_all_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
@@ -1185,7 +1291,13 @@ fn try_cast_ray_all_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
     translation: VT,
     filter: QueryFilter,
 ) -> ApiResult<Vec<RayResult>> {
-    try_checked_query_impl(|| cast_ray_all_impl(raw_world_id, origin, translation, filter))
+    try_checked_query_result_impl(|| {
+        let origin = origin.into();
+        let translation = translation.into();
+        check_query_vec2_valid(origin)?;
+        check_query_vec2_valid(translation)?;
+        Ok(cast_ray_all_impl(raw_world_id, origin, translation, filter))
+    })
 }
 
 fn try_cast_ray_all_into_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
@@ -1195,8 +1307,13 @@ fn try_cast_ray_all_into_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
     filter: QueryFilter,
     out: &mut Vec<RayResult>,
 ) -> ApiResult<()> {
-    try_checked_query_impl(|| {
-        cast_ray_all_into_impl(raw_world_id, origin, translation, filter, out)
+    try_checked_query_result_impl(|| {
+        let origin = origin.into();
+        let translation = translation.into();
+        check_query_vec2_valid(origin)?;
+        check_query_vec2_valid(translation)?;
+        cast_ray_all_into_impl(raw_world_id, origin, translation, filter, out);
+        Ok(())
     })
 }
 
@@ -1210,7 +1327,11 @@ where
     I: IntoIterator<Item = P>,
     P: Into<Vec2>,
 {
-    checked_query_impl(|| overlap_polygon_points_impl(raw_world_id, points, radius, filter))
+    checked_query_impl(|| {
+        assert_query_non_negative_finite_scalar("radius", radius);
+        let points = collect_asserted_proxy_points(points);
+        overlap_polygon_points_impl(raw_world_id, &points, radius, filter)
+    })
 }
 
 fn visit_overlap_polygon_points_checked_impl<I, P, F>(
@@ -1226,7 +1347,9 @@ where
     F: FnMut(ShapeId) -> bool,
 {
     checked_query_impl(|| {
-        visit_overlap_polygon_points_impl(raw_world_id, points, radius, filter, visit)
+        assert_query_non_negative_finite_scalar("radius", radius);
+        let points = collect_asserted_proxy_points(points);
+        visit_overlap_polygon_points_impl(raw_world_id, &points, radius, filter, visit)
     })
 }
 
@@ -1241,7 +1364,9 @@ fn overlap_polygon_points_into_checked_impl<I, P>(
     P: Into<Vec2>,
 {
     checked_query_impl(|| {
-        overlap_polygon_points_into_impl(raw_world_id, points, radius, filter, out)
+        assert_query_non_negative_finite_scalar("radius", radius);
+        let points = collect_asserted_proxy_points(points);
+        overlap_polygon_points_into_impl(raw_world_id, &points, radius, filter, out)
     });
 }
 
@@ -1255,7 +1380,16 @@ where
     I: IntoIterator<Item = P>,
     P: Into<Vec2>,
 {
-    try_checked_query_impl(|| overlap_polygon_points_impl(raw_world_id, points, radius, filter))
+    try_checked_query_result_impl(|| {
+        check_query_non_negative_finite_scalar(radius)?;
+        let points = try_collect_proxy_points(points)?;
+        Ok(overlap_polygon_points_impl(
+            raw_world_id,
+            &points,
+            radius,
+            filter,
+        ))
+    })
 }
 
 fn try_visit_overlap_polygon_points_impl<I, P, F>(
@@ -1270,8 +1404,16 @@ where
     P: Into<Vec2>,
     F: FnMut(ShapeId) -> bool,
 {
-    try_checked_query_impl(|| {
-        visit_overlap_polygon_points_impl(raw_world_id, points, radius, filter, visit)
+    try_checked_query_result_impl(|| {
+        check_query_non_negative_finite_scalar(radius)?;
+        let points = try_collect_proxy_points(points)?;
+        Ok(visit_overlap_polygon_points_impl(
+            raw_world_id,
+            &points,
+            radius,
+            filter,
+            visit,
+        ))
     })
 }
 
@@ -1286,8 +1428,11 @@ where
     I: IntoIterator<Item = P>,
     P: Into<Vec2>,
 {
-    try_checked_query_impl(|| {
-        overlap_polygon_points_into_impl(raw_world_id, points, radius, filter, out)
+    try_checked_query_result_impl(|| {
+        check_query_non_negative_finite_scalar(radius)?;
+        let points = try_collect_proxy_points(points)?;
+        overlap_polygon_points_into_impl(raw_world_id, &points, radius, filter, out);
+        Ok(())
     })
 }
 
@@ -1303,7 +1448,13 @@ where
     P: Into<Vec2>,
     VT: Into<Vec2>,
 {
-    checked_query_impl(|| cast_shape_points_impl(raw_world_id, points, radius, translation, filter))
+    checked_query_impl(|| {
+        let translation = translation.into();
+        assert_query_non_negative_finite_scalar("radius", radius);
+        assert_query_vec2_valid("translation", translation);
+        let points = collect_asserted_proxy_points(points);
+        cast_shape_points_impl(raw_world_id, &points, radius, translation, filter)
+    })
 }
 
 fn cast_shape_points_into_checked_impl<I, P, VT>(
@@ -1319,7 +1470,11 @@ fn cast_shape_points_into_checked_impl<I, P, VT>(
     VT: Into<Vec2>,
 {
     checked_query_impl(|| {
-        cast_shape_points_into_impl(raw_world_id, points, radius, translation, filter, out)
+        let translation = translation.into();
+        assert_query_non_negative_finite_scalar("radius", radius);
+        assert_query_vec2_valid("translation", translation);
+        let points = collect_asserted_proxy_points(points);
+        cast_shape_points_into_impl(raw_world_id, &points, radius, translation, filter, out)
     });
 }
 
@@ -1335,8 +1490,18 @@ where
     P: Into<Vec2>,
     VT: Into<Vec2>,
 {
-    try_checked_query_impl(|| {
-        cast_shape_points_impl(raw_world_id, points, radius, translation, filter)
+    try_checked_query_result_impl(|| {
+        let translation = translation.into();
+        check_query_non_negative_finite_scalar(radius)?;
+        check_query_vec2_valid(translation)?;
+        let points = try_collect_proxy_points(points)?;
+        Ok(cast_shape_points_impl(
+            raw_world_id,
+            &points,
+            radius,
+            translation,
+            filter,
+        ))
     })
 }
 
@@ -1353,8 +1518,13 @@ where
     P: Into<Vec2>,
     VT: Into<Vec2>,
 {
-    try_checked_query_impl(|| {
-        cast_shape_points_into_impl(raw_world_id, points, radius, translation, filter, out)
+    try_checked_query_result_impl(|| {
+        let translation = translation.into();
+        check_query_non_negative_finite_scalar(radius)?;
+        check_query_vec2_valid(translation)?;
+        let points = try_collect_proxy_points(points)?;
+        cast_shape_points_into_impl(raw_world_id, &points, radius, translation, filter, out);
+        Ok(())
     })
 }
 
@@ -1366,7 +1536,16 @@ fn cast_mover_checked_impl<V1: Into<Vec2>, V2: Into<Vec2>, VT: Into<Vec2>>(
     translation: VT,
     filter: QueryFilter,
 ) -> f32 {
-    checked_query_impl(|| cast_mover_impl(raw_world_id, c1, c2, radius, translation, filter))
+    checked_query_impl(|| {
+        let c1 = c1.into();
+        let c2 = c2.into();
+        let translation = translation.into();
+        assert_query_vec2_valid("c1", c1);
+        assert_query_vec2_valid("c2", c2);
+        assert_query_vec2_valid("translation", translation);
+        assert_query_mover_radius_valid(radius);
+        cast_mover_impl(raw_world_id, c1, c2, radius, translation, filter)
+    })
 }
 
 fn try_cast_mover_impl<V1: Into<Vec2>, V2: Into<Vec2>, VT: Into<Vec2>>(
@@ -1377,7 +1556,23 @@ fn try_cast_mover_impl<V1: Into<Vec2>, V2: Into<Vec2>, VT: Into<Vec2>>(
     translation: VT,
     filter: QueryFilter,
 ) -> ApiResult<f32> {
-    try_checked_query_impl(|| cast_mover_impl(raw_world_id, c1, c2, radius, translation, filter))
+    try_checked_query_result_impl(|| {
+        let c1 = c1.into();
+        let c2 = c2.into();
+        let translation = translation.into();
+        check_query_vec2_valid(c1)?;
+        check_query_vec2_valid(c2)?;
+        check_query_vec2_valid(translation)?;
+        check_query_mover_radius_valid(radius)?;
+        Ok(cast_mover_impl(
+            raw_world_id,
+            c1,
+            c2,
+            radius,
+            translation,
+            filter,
+        ))
+    })
 }
 
 fn collide_mover_checked_impl<V1: Into<Vec2>, V2: Into<Vec2>>(
@@ -1387,7 +1582,14 @@ fn collide_mover_checked_impl<V1: Into<Vec2>, V2: Into<Vec2>>(
     radius: f32,
     filter: QueryFilter,
 ) -> Vec<MoverPlaneResult> {
-    checked_query_impl(|| collide_mover_impl(raw_world_id, c1, c2, radius, filter))
+    checked_query_impl(|| {
+        let c1 = c1.into();
+        let c2 = c2.into();
+        assert_query_vec2_valid("c1", c1);
+        assert_query_vec2_valid("c2", c2);
+        assert_query_mover_radius_valid(radius);
+        collide_mover_impl(raw_world_id, c1, c2, radius, filter)
+    })
 }
 
 fn collide_mover_into_checked_impl<V1: Into<Vec2>, V2: Into<Vec2>>(
@@ -1398,7 +1600,14 @@ fn collide_mover_into_checked_impl<V1: Into<Vec2>, V2: Into<Vec2>>(
     filter: QueryFilter,
     out: &mut Vec<MoverPlaneResult>,
 ) {
-    checked_query_impl(|| collide_mover_into_impl(raw_world_id, c1, c2, radius, filter, out));
+    checked_query_impl(|| {
+        let c1 = c1.into();
+        let c2 = c2.into();
+        assert_query_vec2_valid("c1", c1);
+        assert_query_vec2_valid("c2", c2);
+        assert_query_mover_radius_valid(radius);
+        collide_mover_into_impl(raw_world_id, c1, c2, radius, filter, out);
+    });
 }
 
 fn try_collide_mover_impl<V1: Into<Vec2>, V2: Into<Vec2>>(
@@ -1408,7 +1617,14 @@ fn try_collide_mover_impl<V1: Into<Vec2>, V2: Into<Vec2>>(
     radius: f32,
     filter: QueryFilter,
 ) -> ApiResult<Vec<MoverPlaneResult>> {
-    try_checked_query_impl(|| collide_mover_impl(raw_world_id, c1, c2, radius, filter))
+    try_checked_query_result_impl(|| {
+        let c1 = c1.into();
+        let c2 = c2.into();
+        check_query_vec2_valid(c1)?;
+        check_query_vec2_valid(c2)?;
+        check_query_mover_radius_valid(radius)?;
+        Ok(collide_mover_impl(raw_world_id, c1, c2, radius, filter))
+    })
 }
 
 fn try_collide_mover_into_impl<V1: Into<Vec2>, V2: Into<Vec2>>(
@@ -1419,7 +1635,15 @@ fn try_collide_mover_into_impl<V1: Into<Vec2>, V2: Into<Vec2>>(
     filter: QueryFilter,
     out: &mut Vec<MoverPlaneResult>,
 ) -> ApiResult<()> {
-    try_checked_query_impl(|| collide_mover_into_impl(raw_world_id, c1, c2, radius, filter, out))
+    try_checked_query_result_impl(|| {
+        let c1 = c1.into();
+        let c2 = c2.into();
+        check_query_vec2_valid(c1)?;
+        check_query_vec2_valid(c2)?;
+        check_query_mover_radius_valid(radius)?;
+        collide_mover_into_impl(raw_world_id, c1, c2, radius, filter, out);
+        Ok(())
+    })
 }
 
 fn overlap_polygon_points_with_offset_checked_impl<I, P, V, A>(
@@ -1437,9 +1661,15 @@ where
     A: Into<f32>,
 {
     checked_query_impl(|| {
+        let position = position.into();
+        let angle_radians = angle_radians.into();
+        assert_query_non_negative_finite_scalar("radius", radius);
+        assert_query_vec2_valid("position", position);
+        assert_query_angle_valid(angle_radians);
+        let points = collect_asserted_proxy_points(points);
         overlap_polygon_points_with_offset_impl(
             raw_world_id,
-            points,
+            &points,
             radius,
             position,
             angle_radians,
@@ -1465,9 +1695,15 @@ where
     F: FnMut(ShapeId) -> bool,
 {
     checked_query_impl(|| {
+        let position = position.into();
+        let angle_radians = angle_radians.into();
+        assert_query_non_negative_finite_scalar("radius", radius);
+        assert_query_vec2_valid("position", position);
+        assert_query_angle_valid(angle_radians);
+        let points = collect_asserted_proxy_points(points);
         visit_overlap_polygon_points_with_offset_impl(
             raw_world_id,
-            points,
+            &points,
             radius,
             position,
             angle_radians,
@@ -1492,9 +1728,15 @@ fn overlap_polygon_points_with_offset_into_checked_impl<I, P, V, A>(
     A: Into<f32>,
 {
     checked_query_impl(|| {
+        let position = position.into();
+        let angle_radians = angle_radians.into();
+        assert_query_non_negative_finite_scalar("radius", radius);
+        assert_query_vec2_valid("position", position);
+        assert_query_angle_valid(angle_radians);
+        let points = collect_asserted_proxy_points(points);
         overlap_polygon_points_with_offset_into_impl(
             raw_world_id,
-            points,
+            &points,
             radius,
             position,
             angle_radians,
@@ -1518,15 +1760,21 @@ where
     V: Into<Vec2>,
     A: Into<f32>,
 {
-    try_checked_query_impl(|| {
-        overlap_polygon_points_with_offset_impl(
+    try_checked_query_result_impl(|| {
+        let position = position.into();
+        let angle_radians = angle_radians.into();
+        check_query_non_negative_finite_scalar(radius)?;
+        check_query_vec2_valid(position)?;
+        check_query_angle_valid(angle_radians)?;
+        let points = try_collect_proxy_points(points)?;
+        Ok(overlap_polygon_points_with_offset_impl(
             raw_world_id,
-            points,
+            &points,
             radius,
             position,
             angle_radians,
             filter,
-        )
+        ))
     })
 }
 
@@ -1546,16 +1794,22 @@ where
     A: Into<f32>,
     F: FnMut(ShapeId) -> bool,
 {
-    try_checked_query_impl(|| {
-        visit_overlap_polygon_points_with_offset_impl(
+    try_checked_query_result_impl(|| {
+        let position = position.into();
+        let angle_radians = angle_radians.into();
+        check_query_non_negative_finite_scalar(radius)?;
+        check_query_vec2_valid(position)?;
+        check_query_angle_valid(angle_radians)?;
+        let points = try_collect_proxy_points(points)?;
+        Ok(visit_overlap_polygon_points_with_offset_impl(
             raw_world_id,
-            points,
+            &points,
             radius,
             position,
             angle_radians,
             filter,
             visit,
-        )
+        ))
     })
 }
 
@@ -1574,16 +1828,23 @@ where
     V: Into<Vec2>,
     A: Into<f32>,
 {
-    try_checked_query_impl(|| {
+    try_checked_query_result_impl(|| {
+        let position = position.into();
+        let angle_radians = angle_radians.into();
+        check_query_non_negative_finite_scalar(radius)?;
+        check_query_vec2_valid(position)?;
+        check_query_angle_valid(angle_radians)?;
+        let points = try_collect_proxy_points(points)?;
         overlap_polygon_points_with_offset_into_impl(
             raw_world_id,
-            points,
+            &points,
             radius,
             position,
             angle_radians,
             filter,
             out,
-        )
+        );
+        Ok(())
     })
 }
 
@@ -1604,9 +1865,17 @@ where
     VT: Into<Vec2>,
 {
     checked_query_impl(|| {
+        let position = position.into();
+        let angle_radians = angle_radians.into();
+        let translation = translation.into();
+        assert_query_non_negative_finite_scalar("radius", radius);
+        assert_query_vec2_valid("position", position);
+        assert_query_angle_valid(angle_radians);
+        assert_query_vec2_valid("translation", translation);
+        let points = collect_asserted_proxy_points(points);
         cast_shape_points_with_offset_impl(
             raw_world_id,
-            points,
+            &points,
             radius,
             position,
             angle_radians,
@@ -1633,9 +1902,17 @@ fn cast_shape_points_with_offset_into_checked_impl<I, P, V, A, VT>(
     VT: Into<Vec2>,
 {
     checked_query_impl(|| {
+        let position = position.into();
+        let angle_radians = angle_radians.into();
+        let translation = translation.into();
+        assert_query_non_negative_finite_scalar("radius", radius);
+        assert_query_vec2_valid("position", position);
+        assert_query_angle_valid(angle_radians);
+        assert_query_vec2_valid("translation", translation);
+        let points = collect_asserted_proxy_points(points);
         cast_shape_points_with_offset_into_impl(
             raw_world_id,
-            points,
+            &points,
             radius,
             position,
             angle_radians,
@@ -1662,16 +1939,24 @@ where
     A: Into<f32>,
     VT: Into<Vec2>,
 {
-    try_checked_query_impl(|| {
-        cast_shape_points_with_offset_impl(
+    try_checked_query_result_impl(|| {
+        let position = position.into();
+        let angle_radians = angle_radians.into();
+        let translation = translation.into();
+        check_query_non_negative_finite_scalar(radius)?;
+        check_query_vec2_valid(position)?;
+        check_query_angle_valid(angle_radians)?;
+        check_query_vec2_valid(translation)?;
+        let points = try_collect_proxy_points(points)?;
+        Ok(cast_shape_points_with_offset_impl(
             raw_world_id,
-            points,
+            &points,
             radius,
             position,
             angle_radians,
             translation,
             filter,
-        )
+        ))
     })
 }
 
@@ -1692,17 +1977,26 @@ where
     A: Into<f32>,
     VT: Into<Vec2>,
 {
-    try_checked_query_impl(|| {
+    try_checked_query_result_impl(|| {
+        let position = position.into();
+        let angle_radians = angle_radians.into();
+        let translation = translation.into();
+        check_query_non_negative_finite_scalar(radius)?;
+        check_query_vec2_valid(position)?;
+        check_query_angle_valid(angle_radians)?;
+        check_query_vec2_valid(translation)?;
+        let points = try_collect_proxy_points(points)?;
         cast_shape_points_with_offset_into_impl(
             raw_world_id,
-            points,
+            &points,
             radius,
             position,
             angle_radians,
             translation,
             filter,
             out,
-        )
+        );
+        Ok(())
     })
 }
 
