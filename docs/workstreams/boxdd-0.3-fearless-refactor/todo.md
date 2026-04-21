@@ -38,6 +38,7 @@
 - [x] Extend borrowed event-buffer APIs with matching `try_*` entrypoints so zero-copy views and raw event slices are not panic-only corners of the runtime surface.
 - [x] Align the remaining raw contact-data buffer APIs with the explicit `*_raw` naming scheme by renaming `contact_data_into_raw(...)` to `contact_data_raw_into(...)`, and consolidate the body/shape handle implementations behind shared private definitions.
 - [x] Continue the owned/scoped duplication audit by consolidating the remaining high-frequency enumeration helpers (`Body::{shape_count,shapes,joint_count,joints}`, `Shape::sensor_overlaps*`, and `Chain::segments*`) behind single private definitions without changing the public API.
+- [x] Continue the feature-gated duplication audit by consolidating the `unchecked` body/shape/joint/chain extension trait implementations so owned/scoped handles share the same internal raw FFI definitions.
 
 ## In Progress
 
