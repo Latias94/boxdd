@@ -3045,6 +3045,15 @@ impl World {
         }
     }
 
+    pub fn try_body<'w>(&'w mut self, id: BodyId) -> crate::error::ApiResult<Body<'w>> {
+        crate::core::callback_state::check_not_in_callback()?;
+        if unsafe { ffi::b2Body_IsValid(raw_body_id(id)) } {
+            Ok(Body::new(self.core_arc(), id))
+        } else {
+            Err(crate::error::ApiError::InvalidBodyId)
+        }
+    }
+
     /// Borrow a scoped joint handle by id (returns `None` if the id is invalid).
     pub fn joint<'w>(&'w mut self, id: JointId) -> Option<crate::joints::Joint<'w>> {
         crate::core::callback_state::assert_not_in_callback();
@@ -3052,6 +3061,18 @@ impl World {
             Some(crate::joints::Joint::new(self.core_arc(), id))
         } else {
             None
+        }
+    }
+
+    pub fn try_joint<'w>(
+        &'w mut self,
+        id: JointId,
+    ) -> crate::error::ApiResult<crate::joints::Joint<'w>> {
+        crate::core::callback_state::check_not_in_callback()?;
+        if unsafe { ffi::b2Joint_IsValid(raw_joint_id(id)) } {
+            Ok(crate::joints::Joint::new(self.core_arc(), id))
+        } else {
+            Err(crate::error::ApiError::InvalidJointId)
         }
     }
 
@@ -3065,6 +3086,18 @@ impl World {
         }
     }
 
+    pub fn try_shape<'w>(
+        &'w mut self,
+        id: ShapeId,
+    ) -> crate::error::ApiResult<crate::shapes::Shape<'w>> {
+        crate::core::callback_state::check_not_in_callback()?;
+        if unsafe { ffi::b2Shape_IsValid(raw_shape_id(id)) } {
+            Ok(crate::shapes::Shape::new(self.core_arc(), id))
+        } else {
+            Err(crate::error::ApiError::InvalidShapeId)
+        }
+    }
+
     /// Borrow a scoped chain handle by id (returns `None` if the id is invalid).
     pub fn chain<'w>(&'w mut self, id: ChainId) -> Option<crate::shapes::chain::Chain<'w>> {
         crate::core::callback_state::assert_not_in_callback();
@@ -3072,6 +3105,18 @@ impl World {
             Some(crate::shapes::chain::Chain::new(self.core_arc(), id))
         } else {
             None
+        }
+    }
+
+    pub fn try_chain<'w>(
+        &'w mut self,
+        id: ChainId,
+    ) -> crate::error::ApiResult<crate::shapes::chain::Chain<'w>> {
+        crate::core::callback_state::check_not_in_callback()?;
+        if unsafe { ffi::b2Chain_IsValid(raw_chain_id(id)) } {
+            Ok(crate::shapes::chain::Chain::new(self.core_arc(), id))
+        } else {
+            Err(crate::error::ApiError::InvalidChainId)
         }
     }
 
@@ -4737,6 +4782,56 @@ mod tests {
                 .try_create_chain_for_owned(body, &chain_def)
                 .err()
                 .unwrap(),
+            crate::ApiError::InCallback
+        );
+    }
+
+    #[test]
+    fn try_world_scoped_handle_borrows_return_in_callback() {
+        let mut world = World::new(WorldDef::default()).unwrap();
+        let body_id = world.create_body_id(crate::BodyBuilder::new().build());
+        let shape_id = world.create_circle_shape_for(
+            body_id,
+            &crate::ShapeDef::default(),
+            &crate::shapes::circle([0.0_f32, 0.0], 0.5),
+        );
+        let chain_id = world.create_chain_for_id(
+            body_id,
+            &crate::shapes::chain::ChainDef::builder()
+                .points([
+                    crate::Vec2::new(-1.0, 0.0),
+                    crate::Vec2::new(0.0, 0.0),
+                    crate::Vec2::new(1.0, 0.0),
+                    crate::Vec2::new(2.0, 0.0),
+                ])
+                .build(),
+        );
+        let other_body = world.create_body_id(crate::BodyBuilder::new().build());
+        let joint_id = world.create_distance_joint_id(
+            &crate::DistanceJointDef::new(
+                crate::JointBaseBuilder::new()
+                    .bodies_by_id(body_id, other_body)
+                    .build(),
+            )
+            .length(1.0),
+        );
+
+        let _g = crate::core::callback_state::CallbackGuard::enter();
+
+        assert_eq!(
+            world.try_body(body_id).err().unwrap(),
+            crate::ApiError::InCallback
+        );
+        assert_eq!(
+            world.try_shape(shape_id).err().unwrap(),
+            crate::ApiError::InCallback
+        );
+        assert_eq!(
+            world.try_chain(chain_id).err().unwrap(),
+            crate::ApiError::InCallback
+        );
+        assert_eq!(
+            world.try_joint(joint_id).unwrap_err(),
             crate::ApiError::InCallback
         );
     }

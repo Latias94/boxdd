@@ -371,6 +371,51 @@ fn body_try_create_polygon_from_points_returns_recoverable_error() {
 }
 
 #[test]
+fn body_try_create_shape_helpers_return_recoverable_errors() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let mut body = world.create_body(BodyBuilder::new().build());
+    let def = ShapeDef::default();
+
+    let circle = body
+        .try_create_circle_shape(&def, &shapes::circle([0.0_f32, 0.0], 0.5))
+        .unwrap();
+    assert_eq!(circle.shape_type(), ShapeType::Circle);
+
+    let polygon = body.try_create_box(&def, 0.5, 0.25).unwrap();
+    assert_eq!(polygon.shape_type(), ShapeType::Polygon);
+
+    let capsule = body
+        .try_create_capsule_simple(&def, [-0.5_f32, 0.0], [0.5_f32, 0.0], 0.25)
+        .unwrap();
+    assert_eq!(capsule.shape_type(), ShapeType::Capsule);
+
+    let err = body.try_create_box(&def, 0.0, 0.25).err().unwrap();
+    assert_eq!(err, ApiError::InvalidArgument);
+
+    let err = body.try_create_circle_simple(&def, -0.5).err().unwrap();
+    assert_eq!(err, ApiError::InvalidArgument);
+
+    let err = body
+        .try_create_segment_simple(&def, [0.0_f32, 0.0], [0.0_f32, 0.0])
+        .err()
+        .unwrap();
+    assert_eq!(err, ApiError::InvalidArgument);
+
+    let err = body
+        .try_create_capsule_shape(&def, &shapes::capsule([0.0_f32, 0.0], [0.0_f32, 0.0], 0.25))
+        .err()
+        .unwrap();
+    assert_eq!(err, ApiError::InvalidArgument);
+
+    let invalid_def = ShapeDef::builder().density(f32::NAN).build();
+    let err = body
+        .try_create_polygon_shape(&invalid_def, &shapes::box_polygon(0.5, 0.5))
+        .err()
+        .unwrap();
+    assert_eq!(err, ApiError::InvalidArgument);
+}
+
+#[test]
 fn surface_material_is_a_readable_value_type_with_explicit_raw_conversions() {
     let material = SurfaceMaterial::default()
         .with_friction(0.35)

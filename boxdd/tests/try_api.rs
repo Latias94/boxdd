@@ -16,6 +16,9 @@ fn try_body_position_invalid_id_returns_err() {
     let body = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
     world.destroy_body_id(body);
 
+    let err = world.try_body(body).err().unwrap();
+    assert_eq!(err, ApiError::InvalidBodyId);
+
     let err = world.try_body_position(body).unwrap_err();
     assert_eq!(err, ApiError::InvalidBodyId);
 }
@@ -276,6 +279,53 @@ fn try_create_shape_invalid_inputs_return_err() {
         .try_create_circle_shape_for_owned(body, &shape_def, &shapes::circle([0.0_f32, 0.0], 0.5))
         .unwrap();
     assert_eq!(owned.shape_type(), ShapeType::Circle);
+
+    let shape_id = world
+        .try_create_circle_shape_for(body, &shape_def, &shapes::circle([0.0_f32, 0.0], 0.5))
+        .unwrap();
+    let _ = world.try_shape(shape_id).unwrap();
+    world.destroy_shape_id(shape_id, true);
+    let err = world.try_shape(shape_id).err().unwrap();
+    assert_eq!(err, ApiError::InvalidShapeId);
+}
+
+#[test]
+fn try_scoped_handle_borrows_return_err_for_invalid_ids() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body_id = world.create_body_id(BodyBuilder::new().build());
+    let other_body = world.create_body_id(BodyBuilder::new().build());
+    let joint_id = world.create_distance_joint_id(
+        &DistanceJointDef::new(
+            JointBaseBuilder::new()
+                .bodies_by_id(body_id, other_body)
+                .build(),
+        )
+        .length(1.0),
+    );
+    let chain_id = world.create_chain_for_id(
+        body_id,
+        &boxdd::shapes::chain::ChainDef::builder()
+            .points([
+                Vec2::new(-1.0, 0.0),
+                Vec2::new(0.0, 0.0),
+                Vec2::new(1.0, 0.0),
+                Vec2::new(2.0, 0.0),
+            ])
+            .build(),
+    );
+
+    world.destroy_joint_id(joint_id, true);
+    world.destroy_chain_id(chain_id);
+    world.destroy_body_id(body_id);
+
+    let err = world.try_body(body_id).err().unwrap();
+    assert_eq!(err, ApiError::InvalidBodyId);
+    assert_eq!(
+        world.try_joint(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    let err = world.try_chain(chain_id).err().unwrap();
+    assert_eq!(err, ApiError::InvalidChainId);
 }
 
 #[test]
