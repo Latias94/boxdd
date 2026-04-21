@@ -153,13 +153,13 @@ impl<'w> PrismaticJointBuilder<'w> {
         a: VA,
         b: VB,
     ) -> Self {
-        self.anchor_a_world = Some(ffi::b2Vec2::from(a.into()));
-        self.anchor_b_world = Some(ffi::b2Vec2::from(b.into()));
+        self.anchor_a_world = Some(a.into().into_raw());
+        self.anchor_b_world = Some(b.into().into_raw());
         self
     }
     /// Set prismatic axis in world space.
     pub fn axis_world<V: Into<crate::types::Vec2>>(mut self, axis: V) -> Self {
-        self.axis_world = Some(ffi::b2Vec2::from(axis.into()));
+        self.axis_world = Some(axis.into().into_raw());
         self
     }
     /// Enable limits with lower/upper translation (meters).

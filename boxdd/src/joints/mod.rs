@@ -673,7 +673,7 @@ fn joint_scalar_write_impl<T>(id: JointId, value: T, write: JointScalarWriteFn<T
 
 #[inline]
 fn joint_vec2_read_impl(id: JointId, read: JointVec2ReadFn) -> Vec2 {
-    Vec2::from(unsafe { read(id) })
+    Vec2::from_raw(unsafe { read(id) })
 }
 
 #[inline]
@@ -1153,7 +1153,7 @@ fn motor_linear_velocity_impl(id: JointId) -> Vec2 {
 
 #[inline]
 fn motor_set_linear_velocity_impl(id: JointId, value: Vec2) {
-    let raw: ffi::b2Vec2 = value.into();
+    let raw: ffi::b2Vec2 = value.into_raw();
     unsafe { ffi::b2MotorJoint_SetLinearVelocity(id, raw) }
 }
 

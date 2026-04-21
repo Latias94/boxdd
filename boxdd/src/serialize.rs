@@ -391,7 +391,7 @@ impl SceneSnapshot {
             };
             let base = crate::joints::JointBaseBuilder::new()
                 .bodies_by_id(aid, bid)
-                .local_frames_raw(jr.local_a.into(), jr.local_b.into())
+                .local_frames_raw(jr.local_a.into_raw(), jr.local_b.into_raw())
                 .build();
             match jr.kind {
                 JointKind::Distance => {

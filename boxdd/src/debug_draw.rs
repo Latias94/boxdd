@@ -271,7 +271,7 @@ unsafe fn safe_debug_draw_vertices(
 ) -> Option<SmallVec<[Vec2; 8]>> {
     let src = unsafe { ffi_debug_draw_vertices(vertices, count) }?;
     let mut verts: SmallVec<[Vec2; 8]> = SmallVec::with_capacity(src.len().min(8));
-    verts.extend(src.iter().copied().map(Vec2::from));
+    verts.extend(src.iter().copied().map(Vec2::from_raw));
     Some(verts)
 }
 
@@ -527,7 +527,7 @@ impl World {
             let Some(verts) = (unsafe { safe_debug_draw_vertices(vertices, count) }) else {
                 return;
             };
-            let transform = Transform::from(transform);
+            let transform = Transform::from_raw(transform);
             run_debug_draw_callback(ctx, |drawer| {
                 drawer.draw_solid_polygon(transform, &verts, radius, color);
             });
@@ -540,7 +540,7 @@ impl World {
         ) {
             let ctx = unsafe { &mut *(context as *mut SafeDebugCtx<'_>) };
             let color = HexColor::from_raw(color);
-            let center = Vec2::from(center);
+            let center = Vec2::from_raw(center);
             run_debug_draw_callback(ctx, |drawer| drawer.draw_circle(center, radius, color));
         }
         unsafe extern "C" fn draw_solid_circle_cb(
@@ -551,7 +551,7 @@ impl World {
         ) {
             let ctx = unsafe { &mut *(context as *mut SafeDebugCtx<'_>) };
             let color = HexColor::from_raw(color);
-            let transform = Transform::from(transform);
+            let transform = Transform::from_raw(transform);
             run_debug_draw_callback(ctx, |drawer| {
                 drawer.draw_solid_circle(transform, radius, color);
             });
@@ -565,8 +565,8 @@ impl World {
         ) {
             let ctx = unsafe { &mut *(context as *mut SafeDebugCtx<'_>) };
             let color = HexColor::from_raw(color);
-            let p1 = Vec2::from(p1);
-            let p2 = Vec2::from(p2);
+            let p1 = Vec2::from_raw(p1);
+            let p2 = Vec2::from_raw(p2);
             run_debug_draw_callback(ctx, |drawer| {
                 drawer.draw_solid_capsule(p1, p2, radius, color);
             });
@@ -579,8 +579,8 @@ impl World {
         ) {
             let ctx = unsafe { &mut *(context as *mut SafeDebugCtx<'_>) };
             let color = HexColor::from_raw(color);
-            let p1 = Vec2::from(p1);
-            let p2 = Vec2::from(p2);
+            let p1 = Vec2::from_raw(p1);
+            let p2 = Vec2::from_raw(p2);
             run_debug_draw_callback(ctx, |drawer| drawer.draw_segment(p1, p2, color));
         }
         unsafe extern "C" fn draw_transform_cb(
@@ -588,7 +588,7 @@ impl World {
             context: *mut core::ffi::c_void,
         ) {
             let ctx = unsafe { &mut *(context as *mut SafeDebugCtx<'_>) };
-            let transform = Transform::from(transform);
+            let transform = Transform::from_raw(transform);
             run_debug_draw_callback(ctx, |drawer| drawer.draw_transform(transform));
         }
         unsafe extern "C" fn draw_point_cb(
@@ -599,7 +599,7 @@ impl World {
         ) {
             let ctx = unsafe { &mut *(context as *mut SafeDebugCtx<'_>) };
             let color = HexColor::from_raw(color);
-            let p = Vec2::from(p);
+            let p = Vec2::from_raw(p);
             run_debug_draw_callback(ctx, |drawer| drawer.draw_point(p, size, color));
         }
         unsafe extern "C" fn draw_string_cb(
@@ -613,7 +613,7 @@ impl World {
             if !s.is_null() {
                 let cs = unsafe { CStr::from_ptr(s) };
                 let s = cs.to_string_lossy();
-                let p = Vec2::from(p);
+                let p = Vec2::from_raw(p);
                 run_debug_draw_callback(ctx, |drawer| drawer.draw_string(p, &s, color));
             }
         }

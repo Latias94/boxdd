@@ -106,12 +106,12 @@ fn body_runtime_controls_and_enumeration_are_available_across_handle_and_world_a
         assert!(approx_eq(rotation.angle(), 0.5, 1.0e-6));
         assert!(approx_eq(body.try_rotation().unwrap().angle(), 0.5, 1.0e-6));
         assert!(approx_eq(
-            Rot::from(body.rotation_raw()).angle(),
+            Rot::from_raw(body.rotation_raw()).angle(),
             rotation.angle(),
             1.0e-6
         ));
         assert!(approx_eq(
-            Rot::from(body.try_rotation_raw().unwrap()).angle(),
+            Rot::from_raw(body.try_rotation_raw().unwrap()).angle(),
             rotation.angle(),
             1.0e-6
         ));

@@ -156,7 +156,7 @@ pub struct RevoluteJointBuilder<'w> {
 impl<'w> RevoluteJointBuilder<'w> {
     /// Set world anchor (defaults to body A position).
     pub fn anchor_world<V: Into<crate::types::Vec2>>(mut self, a: V) -> Self {
-        self.anchor_world = Some(ffi::b2Vec2::from(a.into()));
+        self.anchor_world = Some(a.into().into_raw());
         self
     }
     /// Limit angles in radians.

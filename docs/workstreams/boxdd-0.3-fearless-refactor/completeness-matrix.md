@@ -94,7 +94,7 @@
 
 | Seam | Status | Notes |
 | --- | --- | --- |
-| `from_raw(...)` / `into_raw()` on crate-owned value types | raw-only | Intentional low-level escape hatch; safe vocabulary stays crate-owned. |
+| `from_raw(...)` / `into_raw()` on crate-owned value types | raw-only | Intentional low-level escape hatch; safe vocabulary stays crate-owned, including core math values such as `Vec2`, `Rot`, and `Transform`. |
 | `debug_draw_raw` | raw-only | Kept for render backends that want direct FFI slices and strings. |
 | `with_*_events_raw(...)` | raw-only | Explicit unsafe zero-copy access to Box2D event buffers. |
 | `*_user_data_ptr_raw` | raw-only | Kept for pointer-based integration with external ownership systems. |

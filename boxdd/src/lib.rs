@@ -8,6 +8,7 @@
 //! - Hot-path friendly APIs: keep the convenience `Vec`-returning methods, or reuse caller-owned buffers with `*_into`.
 //! - Character mover helpers: cast movers, collect collision planes, solve planes, and clip velocity without raw FFI.
 //! - Standalone collision geometry helpers: shape proxies, GJK distance, manifolds, shape cast, TOI, AABB validation/ray cast, and deterministic global math helpers.
+//! - Core math types (`Vec2`, `Rot`, `Transform`) use explicit `from_raw(...)` / `into_raw()` naming for Box2D interop instead of implicit raw conversions.
 //! - Shape geometry uses crate-owned values (`Circle`, `Segment`, `ChainSegment`, `Capsule`, `Polygon`) across helpers, shape editing, and creation, including square/rounded/offset/hull-based polygon builders without raw FFI.
 //! - Live shapes expose safe runtime helpers for AABB, point tests, direct ray casts, computed mass data, and runtime event toggles.
 //! - Bodies expose safe runtime helpers for rotation, sleep/awake/enabled/bullet/name controls, attached shape/joint enumeration, and body-level contact/hit event toggles.

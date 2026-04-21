@@ -31,7 +31,7 @@ impl MotorJointDef {
 
     #[inline]
     pub fn target_linear_velocity(&self) -> crate::types::Vec2 {
-        crate::types::Vec2::from(self.0.linearVelocity)
+        crate::types::Vec2::from_raw(self.0.linearVelocity)
     }
 
     #[inline]
@@ -86,7 +86,7 @@ impl MotorJointDef {
 
     /// Target linear velocity of body B relative to A (m/s).
     pub fn linear_velocity<V: Into<crate::types::Vec2>>(mut self, v: V) -> Self {
-        self.0.linearVelocity = ffi::b2Vec2::from(v.into());
+        self.0.linearVelocity = v.into().into_raw();
         self
     }
     /// Maximum force to achieve linear velocity (N).
@@ -148,7 +148,7 @@ pub struct MotorJointBuilder<'w> {
 impl<'w> MotorJointBuilder<'w> {
     /// Target linear velocity (m/s).
     pub fn linear_velocity<V: Into<crate::types::Vec2>>(mut self, v: V) -> Self {
-        self.def = self.def.linear_velocity(ffi::b2Vec2::from(v.into()));
+        self.def = self.def.linear_velocity(v.into());
         self
     }
     /// Target angular velocity (rad/s).

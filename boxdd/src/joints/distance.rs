@@ -164,8 +164,8 @@ impl DistanceJointDef {
         a: VA,
         b: VB,
     ) -> Self {
-        let a: ffi::b2Vec2 = a.into().into();
-        let b: ffi::b2Vec2 = b.into().into();
+        let a: ffi::b2Vec2 = a.into().into_raw();
+        let b: ffi::b2Vec2 = b.into().into_raw();
         let dx = b.x - a.x;
         let dy = b.y - a.y;
         self.0.length = (dx * dx + dy * dy).sqrt();
@@ -194,8 +194,8 @@ impl<'w> DistanceJointBuilder<'w> {
         a: VA,
         b: VB,
     ) -> Self {
-        self.anchor_a_world = Some(ffi::b2Vec2::from(a.into()));
-        self.anchor_b_world = Some(ffi::b2Vec2::from(b.into()));
+        self.anchor_a_world = Some(a.into().into_raw());
+        self.anchor_b_world = Some(b.into().into_raw());
         self
     }
     /// Set desired distance (meters).
@@ -209,9 +209,9 @@ impl<'w> DistanceJointBuilder<'w> {
         a: VA,
         b: VB,
     ) -> Self {
-        self.def = self
-            .def
-            .length_from_world_points(ffi::b2Vec2::from(a.into()), ffi::b2Vec2::from(b.into()));
+        let a = a.into();
+        let b = b.into();
+        self.def = self.def.length_from_world_points(a, b);
         self
     }
     /// Enable limits with minimum/maximum length (meters).

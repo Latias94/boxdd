@@ -144,7 +144,7 @@ pub(crate) fn joint_angular_separation_impl(id: JointId) -> f32 {
 
 #[inline]
 pub(crate) fn joint_constraint_force_impl(id: JointId) -> Vec2 {
-    Vec2::from(unsafe { ffi::b2Joint_GetConstraintForce(id) })
+    Vec2::from_raw(unsafe { ffi::b2Joint_GetConstraintForce(id) })
 }
 
 #[inline]
@@ -177,12 +177,12 @@ pub(crate) fn joint_set_constraint_tuning_impl(id: JointId, tuning: ConstraintTu
 
 #[inline]
 pub(crate) fn joint_local_frame_a_impl(id: JointId) -> crate::Transform {
-    crate::Transform::from(unsafe { ffi::b2Joint_GetLocalFrameA(id) })
+    crate::Transform::from_raw(unsafe { ffi::b2Joint_GetLocalFrameA(id) })
 }
 
 #[inline]
 pub(crate) fn joint_local_frame_b_impl(id: JointId) -> crate::Transform {
-    crate::Transform::from(unsafe { ffi::b2Joint_GetLocalFrameB(id) })
+    crate::Transform::from_raw(unsafe { ffi::b2Joint_GetLocalFrameB(id) })
 }
 
 #[inline]
@@ -1105,13 +1105,13 @@ impl JointBase {
     /// Local frame on body A.
     #[inline]
     pub fn local_frame_a(&self) -> crate::Transform {
-        crate::Transform::from(self.0.localFrameA)
+        crate::Transform::from_raw(self.0.localFrameA)
     }
 
     /// Local frame on body B.
     #[inline]
     pub fn local_frame_b(&self) -> crate::Transform {
-        crate::Transform::from(self.0.localFrameB)
+        crate::Transform::from_raw(self.0.localFrameB)
     }
 
     /// Whether the connected bodies should collide with each other.
@@ -1186,11 +1186,11 @@ impl JointBaseBuilder {
         let (sa, ca) = angle_a.sin_cos();
         let (sb, cb) = angle_b.sin_cos();
         self.base.0.localFrameA = ffi::b2Transform {
-            p: ffi::b2Vec2::from(pos_a.into()),
+            p: pos_a.into().into_raw(),
             q: ffi::b2Rot { c: ca, s: sa },
         };
         self.base.0.localFrameB = ffi::b2Transform {
-            p: ffi::b2Vec2::from(pos_b.into()),
+            p: pos_b.into().into_raw(),
             q: ffi::b2Rot { c: cb, s: sb },
         };
         self
@@ -1238,8 +1238,8 @@ impl JointBaseBuilder {
     ) -> Self {
         let ta = body_a.transform_raw();
         let tb = body_b.transform_raw();
-        let wa: ffi::b2Vec2 = world_a.into().into();
-        let wb: ffi::b2Vec2 = world_b.into().into();
+        let wa: ffi::b2Vec2 = world_a.into().into_raw();
+        let wb: ffi::b2Vec2 = world_b.into().into_raw();
         let la = crate::core::math::world_to_local_point(ta, wa);
         let lb = crate::core::math::world_to_local_point(tb, wb);
         let ident = ffi::b2Transform {
@@ -1275,9 +1275,9 @@ impl JointBaseBuilder {
     {
         let ta = body_a.transform_raw();
         let tb = body_b.transform_raw();
-        let wa: ffi::b2Vec2 = anchor_a_world.into().into();
-        let wb: ffi::b2Vec2 = anchor_b_world.into().into();
-        let axis_w: ffi::b2Vec2 = axis_world.into().into();
+        let wa: ffi::b2Vec2 = anchor_a_world.into().into_raw();
+        let wb: ffi::b2Vec2 = anchor_b_world.into().into_raw();
+        let axis_w: ffi::b2Vec2 = axis_world.into().into_raw();
         // Local frames: positions from anchors, rotations from world axis
         let la = crate::core::math::world_to_local_point(ta, wa);
         let lb = crate::core::math::world_to_local_point(tb, wb);

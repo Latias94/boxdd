@@ -75,7 +75,7 @@ impl ChainCreateMeta {
                 .points_raw_slice()
                 .iter()
                 .copied()
-                .map(Vec2::from)
+                .map(Vec2::from_raw)
                 .collect(),
             materials: ChainMaterialsRecord::from_raw_slice(def.materials_raw_slice()),
         }

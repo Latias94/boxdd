@@ -55,8 +55,8 @@ pub fn compute_cos_sin(radians: f32) -> Rot {
 /// Compute the rotation between two unit vectors.
 #[inline]
 pub fn rotation_between_unit_vectors<V1: Into<Vec2>, V2: Into<Vec2>>(v1: V1, v2: V2) -> Rot {
-    Rot::from(unsafe {
-        ffi::b2ComputeRotationBetweenUnitVectors(v1.into().into(), v2.into().into())
+    Rot::from_raw(unsafe {
+        ffi::b2ComputeRotationBetweenUnitVectors(v1.into().into_raw(), v2.into().into_raw())
     })
 }
 
@@ -83,6 +83,20 @@ pub struct Rot {
 
 impl Rot {
     pub const IDENTITY: Self = Self { c: 1.0, s: 0.0 };
+
+    #[inline]
+    pub const fn from_raw(raw: ffi::b2Rot) -> Self {
+        Self { c: raw.c, s: raw.s }
+    }
+
+    #[inline]
+    pub const fn into_raw(self) -> ffi::b2Rot {
+        ffi::b2Rot {
+            c: self.c,
+            s: self.s,
+        }
+    }
+
     #[inline]
     pub fn from_radians(rad: f32) -> Self {
         let (s, c) = rad.sin_cos();
@@ -106,7 +120,7 @@ impl Rot {
     }
     #[inline]
     pub fn is_valid(self) -> bool {
-        unsafe { ffi::b2IsValidRotation(self.into()) }
+        unsafe { ffi::b2IsValidRotation(self.into_raw()) }
     }
     #[inline]
     pub fn from_unit_vectors<V1: Into<Vec2>, V2: Into<Vec2>>(v1: V1, v2: V2) -> Self {
@@ -129,19 +143,6 @@ impl Rot {
             x: c * v.x + s * v.y,
             y: -s * v.x + c * v.y,
         }
-    }
-}
-
-impl From<Rot> for ffi::b2Rot {
-    #[inline]
-    fn from(r: Rot) -> Self {
-        ffi::b2Rot { c: r.c, s: r.s }
-    }
-}
-impl From<ffi::b2Rot> for Rot {
-    #[inline]
-    fn from(r: ffi::b2Rot) -> Self {
-        Self { c: r.c, s: r.s }
     }
 }
 
@@ -418,6 +419,23 @@ impl Transform {
         p: Vec2 { x: 0.0, y: 0.0 },
         q: Rot::IDENTITY,
     };
+
+    #[inline]
+    pub const fn from_raw(raw: ffi::b2Transform) -> Self {
+        Self {
+            p: Vec2::from_raw(raw.p),
+            q: Rot::from_raw(raw.q),
+        }
+    }
+
+    #[inline]
+    pub const fn into_raw(self) -> ffi::b2Transform {
+        ffi::b2Transform {
+            p: self.p.into_raw(),
+            q: self.q.into_raw(),
+        }
+    }
+
     #[inline]
     pub fn from_pos_angle<P: Into<Vec2>>(p: P, angle_radians: f32) -> Self {
         Self {
@@ -435,7 +453,7 @@ impl Transform {
     }
     #[inline]
     pub fn is_valid(self) -> bool {
-        unsafe { ffi::b2IsValidTransform(self.into()) }
+        unsafe { ffi::b2IsValidTransform(self.into_raw()) }
     }
     #[inline]
     pub fn transform_point(self, v: Vec2) -> Vec2 {
@@ -450,25 +468,6 @@ impl Transform {
         let dx = v.x - self.p.x;
         let dy = v.y - self.p.y;
         self.q.inv_rotate_vec(Vec2 { x: dx, y: dy })
-    }
-}
-
-impl From<Transform> for ffi::b2Transform {
-    #[inline]
-    fn from(t: Transform) -> Self {
-        ffi::b2Transform {
-            p: t.p.into(),
-            q: t.q.into(),
-        }
-    }
-}
-impl From<ffi::b2Transform> for Transform {
-    #[inline]
-    fn from(t: ffi::b2Transform) -> Self {
-        Self {
-            p: Vec2::from(t.p),
-            q: Rot::from(t.q),
-        }
     }
 }
 

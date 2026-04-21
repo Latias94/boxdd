@@ -36,7 +36,7 @@ impl ExplosionDef {
 
     /// World-space center position.
     pub fn center(&self) -> Vec2 {
-        Vec2::from(self.0.position)
+        Vec2::from_raw(self.0.position)
     }
 
     /// Explosion radius in meters.
@@ -62,7 +62,7 @@ impl ExplosionDef {
 
     /// World-space center position.
     pub fn position<V: Into<Vec2>>(mut self, p: V) -> Self {
-        self.0.position = p.into().into();
+        self.0.position = p.into().into_raw();
         self
     }
 

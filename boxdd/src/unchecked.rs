@@ -23,17 +23,17 @@ unsafe fn body_transform_raw_unchecked_impl(id: BodyId) -> ffi::b2Transform {
 
 #[inline]
 unsafe fn body_transform_unchecked_impl(id: BodyId) -> Transform {
-    Transform::from(unsafe { body_transform_raw_unchecked_impl(id) })
+    Transform::from_raw(unsafe { body_transform_raw_unchecked_impl(id) })
 }
 
 #[inline]
 unsafe fn body_position_unchecked_impl(id: BodyId) -> Vec2 {
-    Vec2::from(unsafe { ffi::b2Body_GetPosition(id) })
+    Vec2::from_raw(unsafe { ffi::b2Body_GetPosition(id) })
 }
 
 #[inline]
 unsafe fn body_linear_velocity_unchecked_impl(id: BodyId) -> Vec2 {
-    Vec2::from(unsafe { ffi::b2Body_GetLinearVelocity(id) })
+    Vec2::from_raw(unsafe { ffi::b2Body_GetLinearVelocity(id) })
 }
 
 #[inline]
@@ -43,7 +43,7 @@ unsafe fn body_angular_velocity_unchecked_impl(id: BodyId) -> f32 {
 
 #[inline]
 unsafe fn set_body_linear_velocity_unchecked_impl(id: BodyId, v: Vec2) {
-    let raw: ffi::b2Vec2 = v.into();
+    let raw: ffi::b2Vec2 = v.into_raw();
     unsafe { ffi::b2Body_SetLinearVelocity(id, raw) }
 }
 

@@ -181,12 +181,12 @@ fn body_is_valid_impl(id: BodyId) -> bool {
 
 #[inline]
 fn body_position_impl(id: BodyId) -> Vec2 {
-    Vec2::from(unsafe { ffi::b2Body_GetPosition(id) })
+    Vec2::from_raw(unsafe { ffi::b2Body_GetPosition(id) })
 }
 
 #[inline]
 pub(crate) fn body_linear_velocity_impl(id: BodyId) -> Vec2 {
-    Vec2::from(unsafe { ffi::b2Body_GetLinearVelocity(id) })
+    Vec2::from_raw(unsafe { ffi::b2Body_GetLinearVelocity(id) })
 }
 
 #[inline]
@@ -201,7 +201,7 @@ pub(crate) fn body_rotation_raw_impl(id: BodyId) -> ffi::b2Rot {
 
 #[inline]
 pub(crate) fn body_rotation_impl(id: BodyId) -> crate::Rot {
-    body_rotation_raw_impl(id).into()
+    crate::Rot::from_raw(body_rotation_raw_impl(id))
 }
 
 #[inline]
@@ -211,7 +211,7 @@ fn body_transform_raw_impl(id: BodyId) -> ffi::b2Transform {
 
 #[inline]
 fn body_transform_impl(id: BodyId) -> crate::Transform {
-    body_transform_raw_impl(id).into()
+    crate::Transform::from_raw(body_transform_raw_impl(id))
 }
 
 #[inline]
@@ -221,51 +221,51 @@ pub(crate) fn body_aabb_impl(id: BodyId) -> Aabb {
 
 #[inline]
 fn body_local_point_impl<V: Into<Vec2>>(id: BodyId, world_point: V) -> Vec2 {
-    let point: ffi::b2Vec2 = world_point.into().into();
-    Vec2::from(unsafe { ffi::b2Body_GetLocalPoint(id, point) })
+    let point: ffi::b2Vec2 = world_point.into().into_raw();
+    Vec2::from_raw(unsafe { ffi::b2Body_GetLocalPoint(id, point) })
 }
 
 #[inline]
 fn body_world_point_impl<V: Into<Vec2>>(id: BodyId, local_point: V) -> Vec2 {
-    let point: ffi::b2Vec2 = local_point.into().into();
-    Vec2::from(unsafe { ffi::b2Body_GetWorldPoint(id, point) })
+    let point: ffi::b2Vec2 = local_point.into().into_raw();
+    Vec2::from_raw(unsafe { ffi::b2Body_GetWorldPoint(id, point) })
 }
 
 #[inline]
 fn body_local_vector_impl<V: Into<Vec2>>(id: BodyId, world_vector: V) -> Vec2 {
-    let vector: ffi::b2Vec2 = world_vector.into().into();
-    Vec2::from(unsafe { ffi::b2Body_GetLocalVector(id, vector) })
+    let vector: ffi::b2Vec2 = world_vector.into().into_raw();
+    Vec2::from_raw(unsafe { ffi::b2Body_GetLocalVector(id, vector) })
 }
 
 #[inline]
 fn body_world_vector_impl<V: Into<Vec2>>(id: BodyId, local_vector: V) -> Vec2 {
-    let vector: ffi::b2Vec2 = local_vector.into().into();
-    Vec2::from(unsafe { ffi::b2Body_GetWorldVector(id, vector) })
+    let vector: ffi::b2Vec2 = local_vector.into().into_raw();
+    Vec2::from_raw(unsafe { ffi::b2Body_GetWorldVector(id, vector) })
 }
 
 #[inline]
 fn body_local_point_velocity_impl<V: Into<Vec2>>(id: BodyId, local_point: V) -> Vec2 {
-    let point: ffi::b2Vec2 = local_point.into().into();
-    Vec2::from(unsafe { ffi::b2Body_GetLocalPointVelocity(id, point) })
+    let point: ffi::b2Vec2 = local_point.into().into_raw();
+    Vec2::from_raw(unsafe { ffi::b2Body_GetLocalPointVelocity(id, point) })
 }
 
 #[inline]
 fn body_world_point_velocity_impl<V: Into<Vec2>>(id: BodyId, world_point: V) -> Vec2 {
-    let point: ffi::b2Vec2 = world_point.into().into();
-    Vec2::from(unsafe { ffi::b2Body_GetWorldPointVelocity(id, point) })
+    let point: ffi::b2Vec2 = world_point.into().into_raw();
+    Vec2::from_raw(unsafe { ffi::b2Body_GetWorldPointVelocity(id, point) })
 }
 
 #[inline]
 fn body_set_position_and_rotation_impl<V: Into<Vec2>>(id: BodyId, position: V, angle_radians: f32) {
     let (s, c) = angle_radians.sin_cos();
     let rotation = ffi::b2Rot { c, s };
-    let position: ffi::b2Vec2 = position.into().into();
+    let position: ffi::b2Vec2 = position.into().into_raw();
     unsafe { ffi::b2Body_SetTransform(id, position, rotation) };
 }
 
 #[inline]
 fn body_set_linear_velocity_impl<V: Into<Vec2>>(id: BodyId, velocity: V) {
-    let velocity: ffi::b2Vec2 = velocity.into().into();
+    let velocity: ffi::b2Vec2 = velocity.into().into_raw();
     unsafe { ffi::b2Body_SetLinearVelocity(id, velocity) }
 }
 
@@ -281,19 +281,19 @@ fn body_set_target_transform_impl(
     time_step: f32,
     wake: bool,
 ) {
-    unsafe { ffi::b2Body_SetTargetTransform(id, target.into(), time_step, wake) };
+    unsafe { ffi::b2Body_SetTargetTransform(id, target.into_raw(), time_step, wake) };
 }
 
 #[inline]
 fn body_apply_force_impl<F: Into<Vec2>, P: Into<Vec2>>(id: BodyId, force: F, point: P, wake: bool) {
-    let force: ffi::b2Vec2 = force.into().into();
-    let point: ffi::b2Vec2 = point.into().into();
+    let force: ffi::b2Vec2 = force.into().into_raw();
+    let point: ffi::b2Vec2 = point.into().into_raw();
     unsafe { ffi::b2Body_ApplyForce(id, force, point, wake) };
 }
 
 #[inline]
 fn body_apply_force_to_center_impl<V: Into<Vec2>>(id: BodyId, force: V, wake: bool) {
-    let force: ffi::b2Vec2 = force.into().into();
+    let force: ffi::b2Vec2 = force.into().into_raw();
     unsafe { ffi::b2Body_ApplyForceToCenter(id, force, wake) };
 }
 
@@ -314,14 +314,14 @@ fn body_apply_linear_impulse_impl<F: Into<Vec2>, P: Into<Vec2>>(
     point: P,
     wake: bool,
 ) {
-    let impulse: ffi::b2Vec2 = impulse.into().into();
-    let point: ffi::b2Vec2 = point.into().into();
+    let impulse: ffi::b2Vec2 = impulse.into().into_raw();
+    let point: ffi::b2Vec2 = point.into().into_raw();
     unsafe { ffi::b2Body_ApplyLinearImpulse(id, impulse, point, wake) };
 }
 
 #[inline]
 fn body_apply_linear_impulse_to_center_impl<V: Into<Vec2>>(id: BodyId, impulse: V, wake: bool) {
-    let impulse: ffi::b2Vec2 = impulse.into().into();
+    let impulse: ffi::b2Vec2 = impulse.into().into_raw();
     unsafe { ffi::b2Body_ApplyLinearImpulseToCenter(id, impulse, wake) };
 }
 
@@ -342,12 +342,12 @@ fn body_rotational_inertia_impl(id: BodyId) -> f32 {
 
 #[inline]
 fn body_local_center_of_mass_impl(id: BodyId) -> Vec2 {
-    Vec2::from(unsafe { ffi::b2Body_GetLocalCenterOfMass(id) })
+    Vec2::from_raw(unsafe { ffi::b2Body_GetLocalCenterOfMass(id) })
 }
 
 #[inline]
 fn body_world_center_of_mass_impl(id: BodyId) -> Vec2 {
-    Vec2::from(unsafe { ffi::b2Body_GetWorldCenterOfMass(id) })
+    Vec2::from_raw(unsafe { ffi::b2Body_GetWorldCenterOfMass(id) })
 }
 
 #[inline]
@@ -1620,13 +1620,13 @@ impl BodyDef {
     /// Initial world-space position.
     #[inline]
     pub fn position(&self) -> Vec2 {
-        Vec2::from(self.0.position)
+        Vec2::from_raw(self.0.position)
     }
 
     /// Initial rotation value.
     #[inline]
     pub fn rotation(&self) -> crate::Rot {
-        crate::Rot::from(self.0.rotation)
+        crate::Rot::from_raw(self.0.rotation)
     }
 
     /// Initial angle in radians.
@@ -1638,7 +1638,7 @@ impl BodyDef {
     /// Initial linear velocity in m/s.
     #[inline]
     pub fn linear_velocity(&self) -> Vec2 {
-        Vec2::from(self.0.linearVelocity)
+        Vec2::from_raw(self.0.linearVelocity)
     }
 
     /// Initial angular velocity in rad/s.
@@ -1727,7 +1727,7 @@ impl BodyBuilder {
     }
     /// Initial world-space position.
     pub fn position<V: Into<Vec2>>(mut self, p: V) -> Self {
-        self.def.0.position = ffi::b2Vec2::from(p.into());
+        self.def.0.position = p.into().into_raw();
         self
     }
     /// Initial rotation in radians.
@@ -1739,7 +1739,7 @@ impl BodyBuilder {
     }
     /// Initial linear velocity (m/s).
     pub fn linear_velocity<V: Into<Vec2>>(mut self, v: V) -> Self {
-        self.def.0.linearVelocity = ffi::b2Vec2::from(v.into());
+        self.def.0.linearVelocity = v.into().into_raw();
         self
     }
     /// Initial angular velocity (rad/s).
@@ -1830,9 +1830,9 @@ impl serde::Serialize for BodyDef {
                 x if x == ffi::b2BodyType_b2_kinematicBody => BodyType::Kinematic,
                 _ => BodyType::Dynamic,
             },
-            position: crate::types::Vec2::from(self.0.position),
+            position: crate::types::Vec2::from_raw(self.0.position),
             angle,
-            linear_velocity: crate::types::Vec2::from(self.0.linearVelocity),
+            linear_velocity: crate::types::Vec2::from_raw(self.0.linearVelocity),
             angular_velocity: self.0.angularVelocity,
             linear_damping: self.0.linearDamping,
             angular_damping: self.0.angularDamping,

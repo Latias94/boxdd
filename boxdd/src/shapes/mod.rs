@@ -327,8 +327,8 @@ pub(crate) fn shape_polygon_impl(id: ShapeId) -> Polygon {
 
 #[inline]
 pub(crate) fn shape_closest_point_impl<V: Into<Vec2>>(id: ShapeId, target: V) -> Vec2 {
-    let target: ffi::b2Vec2 = target.into().into();
-    Vec2::from(unsafe { ffi::b2Shape_GetClosestPoint(id, target) })
+    let target: ffi::b2Vec2 = target.into().into_raw();
+    Vec2::from_raw(unsafe { ffi::b2Shape_GetClosestPoint(id, target) })
 }
 
 #[inline]
@@ -338,7 +338,7 @@ pub(crate) fn shape_aabb_impl(id: ShapeId) -> Aabb {
 
 #[inline]
 pub(crate) fn shape_test_point_impl<V: Into<Vec2>>(id: ShapeId, point: V) -> bool {
-    let point: ffi::b2Vec2 = point.into().into();
+    let point: ffi::b2Vec2 = point.into().into_raw();
     unsafe { ffi::b2Shape_TestPoint(id, point) }
 }
 
@@ -348,8 +348,8 @@ fn make_shape_ray_input<VO: Into<Vec2>, VT: Into<Vec2>>(
     translation: VT,
 ) -> ffi::b2RayCastInput {
     ffi::b2RayCastInput {
-        origin: origin.into().into(),
-        translation: translation.into().into(),
+        origin: origin.into().into_raw(),
+        translation: translation.into().into_raw(),
         maxFraction: 1.0,
     }
 }
@@ -372,7 +372,7 @@ pub(crate) fn shape_apply_wind_impl<V: Into<Vec2>>(
     lift: f32,
     wake: bool,
 ) {
-    let wind: ffi::b2Vec2 = wind.into().into();
+    let wind: ffi::b2Vec2 = wind.into().into_raw();
     unsafe { ffi::b2Shape_ApplyWind(id, wind, drag, lift, wake) }
 }
 

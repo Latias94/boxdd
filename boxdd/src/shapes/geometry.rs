@@ -26,8 +26,8 @@ fn make_ray_input<VO: Into<Vec2>, VT: Into<Vec2>>(
     translation: VT,
 ) -> ffi::b2RayCastInput {
     ffi::b2RayCastInput {
-        origin: origin.into().into(),
-        translation: translation.into().into(),
+        origin: origin.into().into_raw(),
+        translation: translation.into().into_raw(),
         maxFraction: 1.0,
     }
 }
@@ -46,7 +46,7 @@ where
         if pts.len() == MAX_POLYGON_INPUT_POINTS {
             return None;
         }
-        pts.push(point.into().into());
+        pts.push(point.into().into_raw());
     }
 
     if pts.is_empty() || pts.len() > MAX_POLYGON_VERTICES {
@@ -89,7 +89,7 @@ impl Circle {
     /// Construct from the raw Box2D geometry value.
     pub fn from_raw(circle: ffi::b2Circle) -> Self {
         Self {
-            center: circle.center.into(),
+            center: Vec2::from_raw(circle.center),
             radius: circle.radius,
         }
     }
@@ -98,7 +98,7 @@ impl Circle {
     /// Convert into the raw Box2D geometry value.
     pub fn into_raw(self) -> ffi::b2Circle {
         ffi::b2Circle {
-            center: self.center.into(),
+            center: self.center.into_raw(),
             radius: self.radius,
         }
     }
@@ -112,13 +112,13 @@ impl Circle {
     #[inline]
     pub fn aabb(self, transform: Transform) -> Aabb {
         let raw = self.into_raw();
-        Aabb::from_raw(unsafe { ffi::b2ComputeCircleAABB(&raw, transform.into()) })
+        Aabb::from_raw(unsafe { ffi::b2ComputeCircleAABB(&raw, transform.into_raw()) })
     }
 
     #[inline]
     pub fn contains_point<P: Into<Vec2>>(self, point: P) -> bool {
         let raw = self.into_raw();
-        unsafe { ffi::b2PointInCircle(&raw, point.into().into()) }
+        unsafe { ffi::b2PointInCircle(&raw, point.into().into_raw()) }
     }
 
     #[inline]
@@ -155,8 +155,8 @@ impl Segment {
     /// Construct from the raw Box2D geometry value.
     pub fn from_raw(segment: ffi::b2Segment) -> Self {
         Self {
-            point1: segment.point1.into(),
-            point2: segment.point2.into(),
+            point1: Vec2::from_raw(segment.point1),
+            point2: Vec2::from_raw(segment.point2),
         }
     }
 
@@ -164,15 +164,15 @@ impl Segment {
     /// Convert into the raw Box2D geometry value.
     pub fn into_raw(self) -> ffi::b2Segment {
         ffi::b2Segment {
-            point1: self.point1.into(),
-            point2: self.point2.into(),
+            point1: self.point1.into_raw(),
+            point2: self.point2.into_raw(),
         }
     }
 
     #[inline]
     pub fn aabb(self, transform: Transform) -> Aabb {
         let raw = self.into_raw();
-        Aabb::from_raw(unsafe { ffi::b2ComputeSegmentAABB(&raw, transform.into()) })
+        Aabb::from_raw(unsafe { ffi::b2ComputeSegmentAABB(&raw, transform.into_raw()) })
     }
 
     #[inline]
@@ -240,9 +240,9 @@ impl ChainSegment {
     /// Construct from the raw Box2D geometry value.
     pub fn from_raw(segment: ffi::b2ChainSegment) -> Self {
         Self {
-            ghost1: segment.ghost1.into(),
+            ghost1: Vec2::from_raw(segment.ghost1),
             segment: Segment::from_raw(segment.segment),
-            ghost2: segment.ghost2.into(),
+            ghost2: Vec2::from_raw(segment.ghost2),
             chain_id: segment.chainId,
         }
     }
@@ -251,9 +251,9 @@ impl ChainSegment {
     /// Convert into the raw Box2D geometry value.
     pub fn into_raw(self) -> ffi::b2ChainSegment {
         ffi::b2ChainSegment {
-            ghost1: self.ghost1.into(),
+            ghost1: self.ghost1.into_raw(),
             segment: self.segment.into_raw(),
-            ghost2: self.ghost2.into(),
+            ghost2: self.ghost2.into_raw(),
             chainId: self.chain_id,
         }
     }
@@ -300,8 +300,8 @@ impl Capsule {
     /// Construct from the raw Box2D geometry value.
     pub fn from_raw(capsule: ffi::b2Capsule) -> Self {
         Self {
-            center1: capsule.center1.into(),
-            center2: capsule.center2.into(),
+            center1: Vec2::from_raw(capsule.center1),
+            center2: Vec2::from_raw(capsule.center2),
             radius: capsule.radius,
         }
     }
@@ -310,8 +310,8 @@ impl Capsule {
     /// Convert into the raw Box2D geometry value.
     pub fn into_raw(self) -> ffi::b2Capsule {
         ffi::b2Capsule {
-            center1: self.center1.into(),
-            center2: self.center2.into(),
+            center1: self.center1.into_raw(),
+            center2: self.center2.into_raw(),
             radius: self.radius,
         }
     }
@@ -325,13 +325,13 @@ impl Capsule {
     #[inline]
     pub fn aabb(self, transform: Transform) -> Aabb {
         let raw = self.into_raw();
-        Aabb::from_raw(unsafe { ffi::b2ComputeCapsuleAABB(&raw, transform.into()) })
+        Aabb::from_raw(unsafe { ffi::b2ComputeCapsuleAABB(&raw, transform.into_raw()) })
     }
 
     #[inline]
     pub fn contains_point<P: Into<Vec2>>(self, point: P) -> bool {
         let raw = self.into_raw();
-        unsafe { ffi::b2PointInCapsule(&raw, point.into().into()) }
+        unsafe { ffi::b2PointInCapsule(&raw, point.into().into_raw()) }
     }
 
     #[inline]
@@ -391,7 +391,7 @@ impl Polygon {
 
     #[inline]
     pub fn centroid(&self) -> Vec2 {
-        self.raw.centroid.into()
+        Vec2::from_raw(self.raw.centroid)
     }
 
     #[inline]
@@ -420,8 +420,8 @@ impl Polygon {
             ffi::b2MakeOffsetBox(
                 half_width,
                 half_height,
-                transform.position().into(),
-                transform.rotation().into(),
+                transform.position().into_raw(),
+                transform.rotation().into_raw(),
             )
         })
     }
@@ -437,8 +437,8 @@ impl Polygon {
             ffi::b2MakeOffsetRoundedBox(
                 half_width,
                 half_height,
-                transform.position().into(),
-                transform.rotation().into(),
+                transform.position().into_raw(),
+                transform.rotation().into_raw(),
                 radius,
             )
         })
@@ -465,14 +465,14 @@ impl Polygon {
             if radius == 0.0 {
                 ffi::b2MakeOffsetPolygon(
                     &hull,
-                    transform.position().into(),
-                    transform.rotation().into(),
+                    transform.position().into_raw(),
+                    transform.rotation().into_raw(),
                 )
             } else {
                 ffi::b2MakeOffsetRoundedPolygon(
                     &hull,
-                    transform.position().into(),
-                    transform.rotation().into(),
+                    transform.position().into_raw(),
+                    transform.rotation().into_raw(),
                     radius,
                 )
             }
@@ -490,7 +490,7 @@ impl Polygon {
 
     #[inline]
     pub fn transformed(self, transform: Transform) -> Self {
-        Self::from_raw(unsafe { ffi::b2TransformPolygon(transform.into(), &self.raw) })
+        Self::from_raw(unsafe { ffi::b2TransformPolygon(transform.into_raw(), &self.raw) })
     }
 
     #[inline]
@@ -502,13 +502,13 @@ impl Polygon {
     #[inline]
     pub fn aabb(self, transform: Transform) -> Aabb {
         let raw = self.into_raw();
-        Aabb::from_raw(unsafe { ffi::b2ComputePolygonAABB(&raw, transform.into()) })
+        Aabb::from_raw(unsafe { ffi::b2ComputePolygonAABB(&raw, transform.into_raw()) })
     }
 
     #[inline]
     pub fn contains_point<P: Into<Vec2>>(self, point: P) -> bool {
         let raw = self.into_raw();
-        unsafe { ffi::b2PointInPolygon(&raw, point.into().into()) }
+        unsafe { ffi::b2PointInPolygon(&raw, point.into().into_raw()) }
     }
 
     #[inline]

@@ -27,7 +27,7 @@ where
 {
     let mut out = SmallVec::<[ffi::b2Vec2; MAX_PROXY_POINTS]>::new();
     for p in points.into_iter().take(MAX_PROXY_POINTS) {
-        out.push(ffi::b2Vec2::from(p.into()));
+        out.push(p.into().into_raw());
     }
     out
 }
@@ -90,8 +90,8 @@ unsafe extern "C" fn collect_ray_result_cb(
     let ctx = unsafe { &mut *(ctx as *mut CollectCtx<'_, RayResult>) };
     if ctx.push(RayResult {
         shape_id,
-        point: point.into(),
-        normal: normal.into(),
+        point: Vec2::from_raw(point),
+        normal: Vec2::from_raw(normal),
         fraction,
         hit: true,
     }) {
@@ -111,7 +111,7 @@ unsafe extern "C" fn collect_mover_plane_result_cb(
     ctx.push(MoverPlaneResult {
         shape_id,
         plane: Plane::from_raw(plane.plane),
-        point: plane.point.into(),
+        point: Vec2::from_raw(plane.point),
         hit: plane.hit,
     })
 }
@@ -152,8 +152,8 @@ fn cast_ray_closest_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
     translation: VT,
     filter: QueryFilter,
 ) -> RayResult {
-    let o: ffi::b2Vec2 = origin.into().into();
-    let t: ffi::b2Vec2 = translation.into().into();
+    let o: ffi::b2Vec2 = origin.into().into_raw();
+    let t: ffi::b2Vec2 = translation.into().into_raw();
     let raw = unsafe { ffi::b2World_CastRayClosest(world, o, t, filter.0) };
     RayResult::from_raw(raw)
 }
@@ -178,8 +178,8 @@ fn cast_ray_all_into_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
 ) {
     out.clear();
     let mut ctx = CollectCtx::from_cleared(out);
-    let o: ffi::b2Vec2 = origin.into().into();
-    let t: ffi::b2Vec2 = translation.into().into();
+    let o: ffi::b2Vec2 = origin.into().into_raw();
+    let t: ffi::b2Vec2 = translation.into().into_raw();
     unsafe {
         let _ = ffi::b2World_CastRay(
             world,
@@ -256,7 +256,7 @@ fn cast_shape_points_into_impl<I, P, VT>(
     }
     let proxy = unsafe { ffi::b2MakeProxy(pts.as_ptr(), pts.len() as i32, radius) };
     let mut ctx = CollectCtx::from_cleared(out);
-    let t: ffi::b2Vec2 = translation.into().into();
+    let t: ffi::b2Vec2 = translation.into().into_raw();
     unsafe {
         let _ = ffi::b2World_CastShape(
             world,
@@ -296,7 +296,7 @@ fn cast_mover_impl<V1: Into<Vec2>, V2: Into<Vec2>, VT: Into<Vec2>>(
     filter: QueryFilter,
 ) -> f32 {
     let cap = make_capsule(c1, c2, radius);
-    let t: ffi::b2Vec2 = translation.into().into();
+    let t: ffi::b2Vec2 = translation.into().into_raw();
     unsafe { ffi::b2World_CastMover(world, &cap, t, filter.0) }
 }
 
@@ -355,7 +355,7 @@ fn overlap_polygon_points_with_offset_into_impl<I, P, V, A>(
         return;
     }
     let (s, c) = angle_radians.into().sin_cos();
-    let pos: ffi::b2Vec2 = position.into().into();
+    let pos: ffi::b2Vec2 = position.into().into_raw();
     let proxy = unsafe {
         ffi::b2MakeOffsetProxy(
             pts.as_ptr(),
@@ -427,7 +427,7 @@ fn cast_shape_points_with_offset_into_impl<I, P, V, A, VT>(
         return;
     }
     let (s, c) = angle_radians.into().sin_cos();
-    let pos: ffi::b2Vec2 = position.into().into();
+    let pos: ffi::b2Vec2 = position.into().into_raw();
     let proxy = unsafe {
         ffi::b2MakeOffsetProxy(
             pts.as_ptr(),
@@ -438,7 +438,7 @@ fn cast_shape_points_with_offset_into_impl<I, P, V, A, VT>(
         )
     };
     let mut ctx = CollectCtx::from_cleared(out);
-    let t: ffi::b2Vec2 = translation.into().into();
+    let t: ffi::b2Vec2 = translation.into().into_raw();
     unsafe {
         let _ = ffi::b2World_CastShape(
             world,
@@ -507,16 +507,16 @@ impl Aabb {
     #[inline]
     pub fn from_raw(raw: ffi::b2AABB) -> Self {
         Self {
-            lower: raw.lowerBound.into(),
-            upper: raw.upperBound.into(),
+            lower: Vec2::from_raw(raw.lowerBound),
+            upper: Vec2::from_raw(raw.upperBound),
         }
     }
 
     #[inline]
     pub fn into_raw(self) -> ffi::b2AABB {
         ffi::b2AABB {
-            lowerBound: self.lower.into(),
-            upperBound: self.upper.into(),
+            lowerBound: self.lower.into_raw(),
+            upperBound: self.upper.into_raw(),
         }
     }
 
@@ -739,8 +739,8 @@ impl RayResult {
     pub fn from_raw(raw: ffi::b2RayResult) -> Self {
         Self {
             shape_id: raw.shapeId,
-            point: raw.point.into(),
-            normal: raw.normal.into(),
+            point: Vec2::from_raw(raw.point),
+            normal: Vec2::from_raw(raw.normal),
             fraction: raw.fraction,
             hit: raw.hit,
         }
@@ -774,7 +774,7 @@ impl Plane {
     #[inline]
     pub fn from_raw(raw: ffi::b2Plane) -> Self {
         Self {
-            normal: raw.normal.into(),
+            normal: Vec2::from_raw(raw.normal),
             offset: raw.offset,
         }
     }
@@ -782,7 +782,7 @@ impl Plane {
     #[inline]
     pub fn into_raw(self) -> ffi::b2Plane {
         ffi::b2Plane {
-            normal: self.normal.into(),
+            normal: self.normal.into_raw(),
             offset: self.offset,
         }
     }
@@ -904,7 +904,7 @@ impl PlaneSolverResult {
     #[inline]
     pub fn from_raw(raw: ffi::b2PlaneSolverResult) -> Self {
         Self {
-            translation: raw.translation.into(),
+            translation: Vec2::from_raw(raw.translation),
             iteration_count: raw.iterationCount,
         }
     }
@@ -938,7 +938,7 @@ pub fn solve_planes<V: Into<Vec2>>(
 ) -> PlaneSolverResult {
     let raw = unsafe {
         ffi::b2SolvePlanes(
-            target_delta.into().into(),
+            target_delta.into().into_raw(),
             raw_collision_planes_mut(planes),
             planes.len() as i32,
         )
@@ -949,14 +949,13 @@ pub fn solve_planes<V: Into<Vec2>>(
 /// Clip a velocity or movement vector against solved collision planes.
 #[inline]
 pub fn clip_vector<V: Into<Vec2>>(vector: V, planes: &[CollisionPlane]) -> Vec2 {
-    unsafe {
+    Vec2::from_raw(unsafe {
         ffi::b2ClipVector(
-            vector.into().into(),
+            vector.into().into_raw(),
             raw_collision_planes(planes),
             planes.len() as i32,
         )
-    }
-    .into()
+    })
 }
 
 #[inline]

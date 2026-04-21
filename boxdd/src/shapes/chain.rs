@@ -531,10 +531,7 @@ impl ChainDefBuilder {
         I: IntoIterator<Item = P>,
         P: Into<crate::types::Vec2>,
     {
-        self.inner.points = points
-            .into_iter()
-            .map(|p| ffi::b2Vec2::from(p.into()))
-            .collect();
+        self.inner.points = points.into_iter().map(|p| p.into().into_raw()).collect();
         self.inner.def.points = if self.inner.points.is_empty() {
             core::ptr::null()
         } else {

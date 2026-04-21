@@ -1,6 +1,7 @@
 use boxdd::{
     Plane, Rot, Transform, Vec2, atan2, compute_cos_sin, rotation_between_unit_vectors, version,
 };
+use boxdd_sys::ffi;
 
 fn approx(a: f32, b: f32, tol: f32) -> bool {
     (a - b).abs() <= tol
@@ -99,4 +100,33 @@ fn public_math_helpers_cover_validity_rotation_and_version() {
 
     let v = version();
     assert!(v.major >= 3);
+}
+
+#[test]
+fn core_math_types_use_explicit_raw_conversions() {
+    let vec = Vec2::from_raw(ffi::b2Vec2 { x: 1.25, y: -2.5 });
+    assert_eq!(vec, Vec2::new(1.25, -2.5));
+    let raw_vec = vec.into_raw();
+    assert_eq!(raw_vec.x, 1.25);
+    assert_eq!(raw_vec.y, -2.5);
+
+    let rot = Rot::from_raw(ffi::b2Rot { c: 0.5, s: 0.75 });
+    assert!(approx(rot.cosine(), 0.5, 1e-6));
+    assert!(approx(rot.sine(), 0.75, 1e-6));
+    let raw_rot = rot.into_raw();
+    assert!(approx(raw_rot.c, 0.5, 1e-6));
+    assert!(approx(raw_rot.s, 0.75, 1e-6));
+
+    let transform = Transform::from_raw(ffi::b2Transform {
+        p: ffi::b2Vec2 { x: -3.0, y: 4.5 },
+        q: ffi::b2Rot { c: 0.0, s: 1.0 },
+    });
+    assert_eq!(transform.position(), Vec2::new(-3.0, 4.5));
+    assert!(approx(transform.rotation().cosine(), 0.0, 1e-6));
+    assert!(approx(transform.rotation().sine(), 1.0, 1e-6));
+    let raw_transform = transform.into_raw();
+    assert_eq!(raw_transform.p.x, -3.0);
+    assert_eq!(raw_transform.p.y, 4.5);
+    assert!(approx(raw_transform.q.c, 0.0, 1e-6));
+    assert!(approx(raw_transform.q.s, 1.0, 1e-6));
 }

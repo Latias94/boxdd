@@ -41,10 +41,10 @@ impl<'a> ContactHit<'a> {
         self.0.shapeIdB
     }
     pub fn point(&self) -> Vec2 {
-        self.0.point.into()
+        Vec2::from_raw(self.0.point)
     }
     pub fn normal(&self) -> Vec2 {
-        self.0.normal.into()
+        Vec2::from_raw(self.0.normal)
     }
     pub fn approach_speed(&self) -> f32 {
         self.0.approachSpeed
@@ -143,8 +143,8 @@ fn contact_events_into_impl(world: ffi::b2WorldId, out: &mut ContactEvents) {
     super::map_snapshot_into(&mut out.hit, hit, |e| ContactHitEvent {
         shape_a: e.shapeIdA,
         shape_b: e.shapeIdB,
-        point: e.point.into(),
-        normal: e.normal.into(),
+        point: Vec2::from_raw(e.point),
+        normal: Vec2::from_raw(e.normal),
         approach_speed: e.approachSpeed,
     });
 }

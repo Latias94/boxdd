@@ -27,22 +27,21 @@ impl Vec2 {
     }
 
     #[inline]
+    pub const fn from_raw(raw: ffi::b2Vec2) -> Self {
+        Self { x: raw.x, y: raw.y }
+    }
+
+    #[inline]
+    pub const fn into_raw(self) -> ffi::b2Vec2 {
+        ffi::b2Vec2 {
+            x: self.x,
+            y: self.y,
+        }
+    }
+
+    #[inline]
     pub fn is_valid(self) -> bool {
-        unsafe { ffi::b2IsValidVec2(self.into()) }
-    }
-}
-
-impl From<ffi::b2Vec2> for Vec2 {
-    #[inline]
-    fn from(v: ffi::b2Vec2) -> Self {
-        Self { x: v.x, y: v.y }
-    }
-}
-
-impl From<Vec2> for ffi::b2Vec2 {
-    #[inline]
-    fn from(v: Vec2) -> Self {
-        ffi::b2Vec2 { x: v.x, y: v.y }
+        unsafe { ffi::b2IsValidVec2(self.into_raw()) }
     }
 }
 
@@ -201,7 +200,7 @@ impl MassData {
     pub fn from_raw(raw: ffi::b2MassData) -> Self {
         Self {
             mass: raw.mass,
-            center: raw.center.into(),
+            center: Vec2::from_raw(raw.center),
             rotational_inertia: raw.rotationalInertia,
         }
     }
@@ -211,7 +210,7 @@ impl MassData {
     pub fn into_raw(self) -> ffi::b2MassData {
         ffi::b2MassData {
             mass: self.mass,
-            center: self.center.into(),
+            center: self.center.into_raw(),
             rotationalInertia: self.rotational_inertia,
         }
     }
@@ -282,9 +281,9 @@ impl ManifoldPoint {
     #[inline]
     pub fn from_raw(raw: ffi::b2ManifoldPoint) -> Self {
         Self {
-            point: raw.point.into(),
-            anchor_a: raw.anchorA.into(),
-            anchor_b: raw.anchorB.into(),
+            point: Vec2::from_raw(raw.point),
+            anchor_a: Vec2::from_raw(raw.anchorA),
+            anchor_b: Vec2::from_raw(raw.anchorB),
             separation: raw.separation,
             normal_impulse: raw.normalImpulse,
             tangent_impulse: raw.tangentImpulse,
@@ -298,9 +297,9 @@ impl ManifoldPoint {
     #[inline]
     pub fn into_raw(self) -> ffi::b2ManifoldPoint {
         ffi::b2ManifoldPoint {
-            point: self.point.into(),
-            anchorA: self.anchor_a.into(),
-            anchorB: self.anchor_b.into(),
+            point: self.point.into_raw(),
+            anchorA: self.anchor_a.into_raw(),
+            anchorB: self.anchor_b.into_raw(),
             separation: self.separation,
             normalImpulse: self.normal_impulse,
             tangentImpulse: self.tangent_impulse,
@@ -333,7 +332,7 @@ impl Manifold {
     #[inline]
     pub fn from_raw(raw: ffi::b2Manifold) -> Self {
         Self {
-            normal: raw.normal.into(),
+            normal: Vec2::from_raw(raw.normal),
             rolling_impulse: raw.rollingImpulse,
             contact_points: raw.points.map(ManifoldPoint::from_raw),
             point_count: raw.pointCount.clamp(0, MAX_MANIFOLD_POINTS as i32),
@@ -343,7 +342,7 @@ impl Manifold {
     #[inline]
     pub fn into_raw(self) -> ffi::b2Manifold {
         ffi::b2Manifold {
-            normal: self.normal.into(),
+            normal: self.normal.into_raw(),
             rollingImpulse: self.rolling_impulse,
             points: self.contact_points.map(ManifoldPoint::into_raw),
             pointCount: self.point_count.clamp(0, MAX_MANIFOLD_POINTS as i32),

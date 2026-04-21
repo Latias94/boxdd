@@ -24,11 +24,11 @@ pub fn tick(app: &mut super::PhysicsApp) {
     let (sa, ca) = app.sd_a_angle.sin_cos();
     let (sb, cb) = app.sd_b_angle.sin_cos();
     let ta = ffi::b2Transform {
-        p: bd::Vec2::new(app.sd_a_x, app.sd_a_y).into(),
+        p: bd::Vec2::new(app.sd_a_x, app.sd_a_y).into_raw(),
         q: ffi::b2Rot { c: ca, s: sa },
     };
     let tb = ffi::b2Transform {
-        p: bd::Vec2::new(app.sd_b_x, app.sd_b_y).into(),
+        p: bd::Vec2::new(app.sd_b_x, app.sd_b_y).into_raw(),
         q: ffi::b2Rot { c: cb, s: sb },
     };
     let input = ffi::b2DistanceInput {

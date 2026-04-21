@@ -85,7 +85,7 @@ impl ShapeProxy {
             if count == MAX_SHAPE_PROXY_POINTS {
                 return None;
             }
-            raw_points[count] = point.into().into();
+            raw_points[count] = point.into().into_raw();
             count += 1;
         }
 
@@ -212,8 +212,8 @@ impl SegmentDistanceResult {
     #[inline]
     pub fn from_raw(raw: ffi::b2SegmentDistanceResult) -> Self {
         Self {
-            closest1: raw.closest1.into(),
-            closest2: raw.closest2.into(),
+            closest1: Vec2::from_raw(raw.closest1),
+            closest2: Vec2::from_raw(raw.closest2),
             fraction1: raw.fraction1,
             fraction2: raw.fraction2,
             distance_squared: raw.distanceSquared,
@@ -244,8 +244,8 @@ impl CastOutput {
     #[inline]
     pub fn from_raw(raw: ffi::b2CastOutput) -> Self {
         Self {
-            normal: raw.normal.into(),
-            point: raw.point.into(),
+            normal: Vec2::from_raw(raw.normal),
+            point: Vec2::from_raw(raw.point),
             fraction: raw.fraction,
             iterations: raw.iterations,
             hit: raw.hit,
@@ -294,8 +294,8 @@ impl DistanceInput {
         ffi::b2DistanceInput {
             proxyA: self.proxy_a.raw(),
             proxyB: self.proxy_b.raw(),
-            transformA: self.transform_a.into(),
-            transformB: self.transform_b.into(),
+            transformA: self.transform_a.into_raw(),
+            transformB: self.transform_b.into_raw(),
             useRadii: self.use_radii,
         }
     }
@@ -317,9 +317,9 @@ impl DistanceOutput {
     #[inline]
     pub fn from_raw(raw: ffi::b2DistanceOutput) -> Self {
         Self {
-            point_a: raw.pointA.into(),
-            point_b: raw.pointB.into(),
-            normal: raw.normal.into(),
+            point_a: Vec2::from_raw(raw.pointA),
+            point_b: Vec2::from_raw(raw.pointB),
+            normal: Vec2::from_raw(raw.normal),
             distance: raw.distance,
             iterations: raw.iterations,
             simplex_count: raw.simplexCount,
@@ -380,9 +380,9 @@ impl ShapeCastPairInput {
         ffi::b2ShapeCastPairInput {
             proxyA: self.proxy_a.raw(),
             proxyB: self.proxy_b.raw(),
-            transformA: self.transform_a.into(),
-            transformB: self.transform_b.into(),
-            translationB: self.translation_b.into(),
+            transformA: self.transform_a.into_raw(),
+            transformB: self.transform_b.into_raw(),
+            translationB: self.translation_b.into_raw(),
             maxFraction: self.max_fraction,
             canEncroach: self.can_encroach,
         }
@@ -421,22 +421,22 @@ impl Sweep {
     #[inline]
     pub fn from_raw(raw: ffi::b2Sweep) -> Self {
         Self {
-            local_center: raw.localCenter.into(),
-            c1: raw.c1.into(),
-            c2: raw.c2.into(),
-            q1: raw.q1.into(),
-            q2: raw.q2.into(),
+            local_center: Vec2::from_raw(raw.localCenter),
+            c1: Vec2::from_raw(raw.c1),
+            c2: Vec2::from_raw(raw.c2),
+            q1: Rot::from_raw(raw.q1),
+            q2: Rot::from_raw(raw.q2),
         }
     }
 
     #[inline]
     pub fn into_raw(self) -> ffi::b2Sweep {
         ffi::b2Sweep {
-            localCenter: self.local_center.into(),
-            c1: self.c1.into(),
-            c2: self.c2.into(),
-            q1: self.q1.into(),
-            q2: self.q2.into(),
+            localCenter: self.local_center.into_raw(),
+            c1: self.c1.into_raw(),
+            c2: self.c2.into_raw(),
+            q1: self.q1.into_raw(),
+            q2: self.q2.into_raw(),
         }
     }
 
@@ -444,7 +444,7 @@ impl Sweep {
     #[inline]
     pub fn transform_at(self, time: f32) -> Transform {
         let raw = self.into_raw();
-        unsafe { ffi::b2GetSweepTransform(&raw, time) }.into()
+        Transform::from_raw(unsafe { ffi::b2GetSweepTransform(&raw, time) })
     }
 }
 
@@ -531,8 +531,8 @@ impl ToiOutput {
     pub fn from_raw(raw: ffi::b2TOIOutput) -> Self {
         Self {
             state: ToiState::from_raw(raw.state),
-            point: raw.point.into(),
-            normal: raw.normal.into(),
+            point: Vec2::from_raw(raw.point),
+            normal: Vec2::from_raw(raw.normal),
             fraction: raw.fraction,
         }
     }
@@ -548,10 +548,10 @@ where
 {
     SegmentDistanceResult::from_raw(unsafe {
         ffi::b2SegmentDistance(
-            p1.into().into(),
-            q1.into().into(),
-            p2.into().into(),
-            q2.into().into(),
+            p1.into().into_raw(),
+            q1.into().into_raw(),
+            p2.into().into_raw(),
+            q2.into().into_raw(),
         )
     })
 }
@@ -587,7 +587,12 @@ pub fn collide_circles(
     let raw_a = circle_a.into_raw();
     let raw_b = circle_b.into_raw();
     Manifold::from_raw(unsafe {
-        ffi::b2CollideCircles(&raw_a, transform_a.into(), &raw_b, transform_b.into())
+        ffi::b2CollideCircles(
+            &raw_a,
+            transform_a.into_raw(),
+            &raw_b,
+            transform_b.into_raw(),
+        )
     })
 }
 
@@ -602,7 +607,12 @@ pub fn collide_capsule_and_circle(
     let raw_a = capsule_a.into_raw();
     let raw_b = circle_b.into_raw();
     Manifold::from_raw(unsafe {
-        ffi::b2CollideCapsuleAndCircle(&raw_a, transform_a.into(), &raw_b, transform_b.into())
+        ffi::b2CollideCapsuleAndCircle(
+            &raw_a,
+            transform_a.into_raw(),
+            &raw_b,
+            transform_b.into_raw(),
+        )
     })
 }
 
@@ -617,7 +627,12 @@ pub fn collide_segment_and_circle(
     let raw_a = segment_a.into_raw();
     let raw_b = circle_b.into_raw();
     Manifold::from_raw(unsafe {
-        ffi::b2CollideSegmentAndCircle(&raw_a, transform_a.into(), &raw_b, transform_b.into())
+        ffi::b2CollideSegmentAndCircle(
+            &raw_a,
+            transform_a.into_raw(),
+            &raw_b,
+            transform_b.into_raw(),
+        )
     })
 }
 
@@ -632,7 +647,12 @@ pub fn collide_polygon_and_circle(
     let raw_a = polygon_a.into_raw();
     let raw_b = circle_b.into_raw();
     Manifold::from_raw(unsafe {
-        ffi::b2CollidePolygonAndCircle(&raw_a, transform_a.into(), &raw_b, transform_b.into())
+        ffi::b2CollidePolygonAndCircle(
+            &raw_a,
+            transform_a.into_raw(),
+            &raw_b,
+            transform_b.into_raw(),
+        )
     })
 }
 
@@ -647,7 +667,12 @@ pub fn collide_capsules(
     let raw_a = capsule_a.into_raw();
     let raw_b = capsule_b.into_raw();
     Manifold::from_raw(unsafe {
-        ffi::b2CollideCapsules(&raw_a, transform_a.into(), &raw_b, transform_b.into())
+        ffi::b2CollideCapsules(
+            &raw_a,
+            transform_a.into_raw(),
+            &raw_b,
+            transform_b.into_raw(),
+        )
     })
 }
 
@@ -662,7 +687,12 @@ pub fn collide_segment_and_capsule(
     let raw_a = segment_a.into_raw();
     let raw_b = capsule_b.into_raw();
     Manifold::from_raw(unsafe {
-        ffi::b2CollideSegmentAndCapsule(&raw_a, transform_a.into(), &raw_b, transform_b.into())
+        ffi::b2CollideSegmentAndCapsule(
+            &raw_a,
+            transform_a.into_raw(),
+            &raw_b,
+            transform_b.into_raw(),
+        )
     })
 }
 
@@ -677,7 +707,12 @@ pub fn collide_polygon_and_capsule(
     let raw_a = polygon_a.into_raw();
     let raw_b = capsule_b.into_raw();
     Manifold::from_raw(unsafe {
-        ffi::b2CollidePolygonAndCapsule(&raw_a, transform_a.into(), &raw_b, transform_b.into())
+        ffi::b2CollidePolygonAndCapsule(
+            &raw_a,
+            transform_a.into_raw(),
+            &raw_b,
+            transform_b.into_raw(),
+        )
     })
 }
 
@@ -692,7 +727,12 @@ pub fn collide_polygons(
     let raw_a = polygon_a.into_raw();
     let raw_b = polygon_b.into_raw();
     Manifold::from_raw(unsafe {
-        ffi::b2CollidePolygons(&raw_a, transform_a.into(), &raw_b, transform_b.into())
+        ffi::b2CollidePolygons(
+            &raw_a,
+            transform_a.into_raw(),
+            &raw_b,
+            transform_b.into_raw(),
+        )
     })
 }
 
@@ -707,7 +747,12 @@ pub fn collide_segment_and_polygon(
     let raw_a = segment_a.into_raw();
     let raw_b = polygon_b.into_raw();
     Manifold::from_raw(unsafe {
-        ffi::b2CollideSegmentAndPolygon(&raw_a, transform_a.into(), &raw_b, transform_b.into())
+        ffi::b2CollideSegmentAndPolygon(
+            &raw_a,
+            transform_a.into_raw(),
+            &raw_b,
+            transform_b.into_raw(),
+        )
     })
 }
 
@@ -722,7 +767,12 @@ pub fn collide_chain_segment_and_circle(
     let raw_a = segment_a.into_raw();
     let raw_b = circle_b.into_raw();
     Manifold::from_raw(unsafe {
-        ffi::b2CollideChainSegmentAndCircle(&raw_a, transform_a.into(), &raw_b, transform_b.into())
+        ffi::b2CollideChainSegmentAndCircle(
+            &raw_a,
+            transform_a.into_raw(),
+            &raw_b,
+            transform_b.into_raw(),
+        )
     })
 }
 
@@ -747,9 +797,9 @@ pub fn collide_chain_segment_and_capsule(
     Manifold::from_raw(unsafe {
         ffi::b2CollideChainSegmentAndCapsule(
             &raw_a,
-            transform_a.into(),
+            transform_a.into_raw(),
             &raw_b,
-            transform_b.into(),
+            transform_b.into_raw(),
             cache_ptr,
         )
     })
@@ -776,9 +826,9 @@ pub fn collide_chain_segment_and_polygon(
     Manifold::from_raw(unsafe {
         ffi::b2CollideChainSegmentAndPolygon(
             &raw_a,
-            transform_a.into(),
+            transform_a.into_raw(),
             &raw_b,
-            transform_b.into(),
+            transform_b.into_raw(),
             cache_ptr,
         )
     })

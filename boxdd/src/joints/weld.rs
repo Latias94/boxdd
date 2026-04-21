@@ -88,7 +88,7 @@ pub struct WeldJointBuilder<'w> {
 impl<'w> WeldJointBuilder<'w> {
     /// Set world-space anchor (defaults to body A position).
     pub fn anchor_world<V: Into<crate::types::Vec2>>(mut self, a: V) -> Self {
-        self.anchor_world = Some(ffi::b2Vec2::from(a.into()));
+        self.anchor_world = Some(a.into().into_raw());
         self
     }
     pub fn linear_stiffness(mut self, hertz: f32, damping_ratio: f32) -> Self {
