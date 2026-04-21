@@ -48,6 +48,7 @@
 - [x] Replace the mirrored `World` / `WorldHandle` query macro layer with private checked-query helpers plus explicit method definitions for the reusable-buffer and mover/query surface.
 - [x] Replace the remaining `World` / `WorldHandle` read-only getter macros (`gravity`, runtime snapshots, tuning getters) with private checked-read helpers plus explicit method definitions.
 - [x] Remove the last `world.rs` shape create/set macro layer so world-owned geometry creation and editing helpers use ordinary private functions plus explicit methods.
+- [x] Replace the `joints/mod.rs` world joint-creation macro layer with generic private creation helpers plus explicit per-family scoped/id/owned/`try_*` methods.
 
 ## In Progress
 
