@@ -33,6 +33,8 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Recoverable polygon construction helpers: `try_square_polygon`, `try_box_polygon`, `try_rounded_box_polygon`, `try_offset_box_polygon`, `try_offset_rounded_box_polygon`, `try_polygon_from_points`, `try_offset_polygon_from_points`, and `Body::try_create_polygon_from_points`.
 - Recoverable world-level shape creation helpers: `World::try_create_{circle,segment,capsule,polygon}_shape_for*`, covering both id-returning and owned-shape-returning paths.
 - Recoverable scoped-body shape creation helpers: `Body::try_create_{circle,segment,capsule,polygon}_shape`, plus `try_create_box`, `try_create_circle_simple`, `try_create_segment_simple`, and `try_create_capsule_simple`.
+- Owned-body local shape creation helpers on `OwnedBody`: `create_{circle,segment,capsule,polygon}_shape`, matching `try_create_*` variants, convenience `create_box` / `create_*_simple`, and `create_polygon_from_points` so stored-body workflows no longer have to bounce through `World::create_*_shape_for_owned(body.id(), ...)`.
+- Body-local and owned-body chain creation helpers: `Body::try_create_chain` plus `OwnedBody::{create_chain,try_create_chain}`, with `World` / `Body<'_>` / `OwnedBody` routed through one shared private chain-creation helper path.
 - Recoverable scoped-handle borrow helpers on `World`: `try_body`, `try_shape`, `try_joint`, and `try_chain`, turning invalid ids and callback-locked access into `ApiError` instead of `Option`-only probing.
 - Crate-owned `ShapeType`, `MassData`, `ContactData`, `Manifold`, and `ManifoldPoint` value types for the main safe API surface.
 - Crate-owned `MotionLocks` for body translation/rotation constraints.

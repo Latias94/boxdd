@@ -756,6 +756,10 @@ impl OwnedBody {
         self.id
     }
 
+    pub(crate) fn core_arc(&self) -> Arc<crate::core::world_core::WorldCore> {
+        Arc::clone(&self.core)
+    }
+
     pub fn world_id_raw(&self) -> ffi::b2WorldId {
         body_world_id_checked_impl(self.id)
     }

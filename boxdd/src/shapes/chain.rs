@@ -1,9 +1,9 @@
 use std::marker::PhantomData;
 
-use crate::body::Body;
+use crate::body::{Body, OwnedBody};
 use crate::error::{ApiError, ApiResult};
 use crate::shapes::SurfaceMaterial;
-use crate::types::{ChainId, ShapeId, Vec2};
+use crate::types::{BodyId, ChainId, ShapeId, Vec2};
 use crate::world::World;
 use boxdd_sys::ffi;
 use std::rc::Rc;
@@ -710,6 +710,42 @@ pub(crate) fn check_chain_def_valid(def: &ChainDef) -> ApiResult<()> {
     Ok(())
 }
 
+pub(crate) fn create_chain_for_body_impl(
+    core: &crate::core::world_core::WorldCore,
+    body: BodyId,
+    def: &ChainDef,
+) -> ChainId {
+    crate::core::debug_checks::assert_body_valid(body);
+    assert_chain_def_valid(def);
+    let id = ChainId::from_raw(unsafe { ffi::b2CreateChain(body.into_raw(), &def.def) });
+    #[cfg(feature = "serialize")]
+    {
+        let meta = crate::core::serialize_registry::ChainCreateMeta::from_def(body, def);
+        core.record_chain(id, meta);
+    }
+    #[cfg(not(feature = "serialize"))]
+    let _ = core;
+    id
+}
+
+pub(crate) fn try_create_chain_for_body_impl(
+    core: &crate::core::world_core::WorldCore,
+    body: BodyId,
+    def: &ChainDef,
+) -> ApiResult<ChainId> {
+    crate::core::debug_checks::check_body_valid(body)?;
+    check_chain_def_valid(def)?;
+    let id = ChainId::from_raw(unsafe { ffi::b2CreateChain(body.into_raw(), &def.def) });
+    #[cfg(feature = "serialize")]
+    {
+        let meta = crate::core::serialize_registry::ChainCreateMeta::from_def(body, def);
+        core.record_chain(id, meta);
+    }
+    #[cfg(not(feature = "serialize"))]
+    let _ = core;
+    Ok(id)
+}
+
 impl ChainDef {
     pub fn validate(&self) -> ApiResult<()> {
         check_chain_def_valid(self)
@@ -719,14 +755,27 @@ impl ChainDef {
 impl<'w> Body<'w> {
     /// Create a chain shape attached to this body. Points/materials are cloned internally by Box2D.
     pub fn create_chain(&mut self, def: &ChainDef) -> Chain<'w> {
-        crate::core::debug_checks::assert_body_valid(self.id);
-        assert_chain_def_valid(def);
-        let id = ChainId::from_raw(unsafe { ffi::b2CreateChain(self.id.into_raw(), &def.def) });
-        #[cfg(feature = "serialize")]
-        {
-            let meta = crate::core::serialize_registry::ChainCreateMeta::from_def(self.id, def);
-            self.core.record_chain(id, meta);
-        }
+        let id = create_chain_for_body_impl(self.core.as_ref(), self.id, def);
         Chain::new(Arc::clone(&self.core), id)
+    }
+
+    pub fn try_create_chain(&mut self, def: &ChainDef) -> ApiResult<Chain<'w>> {
+        let id = try_create_chain_for_body_impl(self.core.as_ref(), self.id, def)?;
+        Ok(Chain::new(Arc::clone(&self.core), id))
+    }
+}
+
+impl OwnedBody {
+    /// Create a chain shape attached to this body. Points/materials are cloned internally by Box2D.
+    pub fn create_chain(&mut self, def: &ChainDef) -> OwnedChain {
+        let core = self.core_arc();
+        let id = create_chain_for_body_impl(core.as_ref(), self.id(), def);
+        OwnedChain::new(core, id)
+    }
+
+    pub fn try_create_chain(&mut self, def: &ChainDef) -> ApiResult<OwnedChain> {
+        let core = self.core_arc();
+        let id = try_create_chain_for_body_impl(core.as_ref(), self.id(), def)?;
+        Ok(OwnedChain::new(core, id))
     }
 }

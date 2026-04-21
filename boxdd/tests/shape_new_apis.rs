@@ -416,6 +416,62 @@ fn body_try_create_shape_helpers_return_recoverable_errors() {
 }
 
 #[test]
+fn owned_body_shape_creation_helpers_return_owned_shapes_and_recoverable_errors() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let mut body = world.create_body_owned(BodyBuilder::new().build());
+    let def = ShapeDef::default();
+
+    let circle = body
+        .try_create_circle_shape(&def, &shapes::circle([0.0_f32, 0.0], 0.5))
+        .unwrap();
+    assert_eq!(circle.shape_type(), ShapeType::Circle);
+
+    let polygon = body.create_box(&def, 0.5, 0.25);
+    assert_eq!(polygon.shape_type(), ShapeType::Polygon);
+
+    let capsule = body
+        .try_create_capsule_simple(&def, [-0.5_f32, 0.0], [0.5_f32, 0.0], 0.25)
+        .unwrap();
+    assert_eq!(capsule.shape_type(), ShapeType::Capsule);
+
+    let from_points = body
+        .create_polygon_from_points(&def, [[-0.5_f32, 0.0], [0.5_f32, 0.0], [0.0_f32, 1.0]], 0.0)
+        .unwrap();
+    assert_eq!(from_points.shape_type(), ShapeType::Polygon);
+
+    let err = body.try_create_box(&def, 0.0, 0.25).err().unwrap();
+    assert_eq!(err, ApiError::InvalidArgument);
+
+    let err = body.try_create_circle_simple(&def, -0.5).err().unwrap();
+    assert_eq!(err, ApiError::InvalidArgument);
+
+    let err = body
+        .try_create_segment_simple(&def, [0.0_f32, 0.0], [0.0_f32, 0.0])
+        .err()
+        .unwrap();
+    assert_eq!(err, ApiError::InvalidArgument);
+
+    let err = body
+        .try_create_capsule_shape(&def, &shapes::capsule([0.0_f32, 0.0], [0.0_f32, 0.0], 0.25))
+        .err()
+        .unwrap();
+    assert_eq!(err, ApiError::InvalidArgument);
+
+    let err = body
+        .try_create_polygon_from_points(&def, [[0.0_f32, 0.0], [0.0_f32, 0.0]], 0.0)
+        .err()
+        .unwrap();
+    assert_eq!(err, ApiError::InvalidArgument);
+
+    let invalid_def = ShapeDef::builder().density(f32::NAN).build();
+    let err = body
+        .try_create_polygon_shape(&invalid_def, &shapes::box_polygon(0.5, 0.5))
+        .err()
+        .unwrap();
+    assert_eq!(err, ApiError::InvalidArgument);
+}
+
+#[test]
 fn surface_material_is_a_readable_value_type_with_explicit_raw_conversions() {
     let material = SurfaceMaterial::default()
         .with_friction(0.35)
@@ -714,6 +770,31 @@ fn chain_runtime_queries_and_material_mutation_are_available_across_owned_and_sc
     assert_eq!(chain.surface_material(1), updated_owned);
     assert_eq!(chain.surface_material(2), updated_scoped_try);
     assert_eq!(chain.surface_material(3), updated_scoped_try);
+}
+
+#[test]
+fn body_and_owned_body_chain_creation_helpers_are_available() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let def = ChainDef::builder()
+        .points([
+            [-2.0_f32, 0.0],
+            [-1.0, 0.0],
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [2.0, 0.0],
+        ])
+        .build();
+
+    let body_id = world.create_body_id(BodyBuilder::new().build());
+    {
+        let mut body = world.body(body_id).unwrap();
+        let chain = body.try_create_chain(&def).unwrap();
+        assert_eq!(chain.segment_count(), 2);
+    }
+
+    let mut owned_body = world.create_body_owned(BodyBuilder::new().build());
+    let owned_chain = owned_body.create_chain(&def);
+    assert_eq!(owned_chain.segment_count(), 2);
 }
 
 #[test]

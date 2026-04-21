@@ -36,10 +36,10 @@
 //! use boxdd::{World, WorldDef, BodyBuilder, ShapeDef, shapes, Vec2};
 //! let def = WorldDef::builder().gravity(Vec2::new(0.0, -9.8)).build();
 //! let mut world = World::new(def).unwrap();
-//! let body = world.create_body_owned(BodyBuilder::new().position([0.0, 2.0]).build());
+//! let mut body = world.create_body_owned(BodyBuilder::new().position([0.0, 2.0]).build());
 //! let sdef = ShapeDef::builder().density(1.0).build();
 //! let poly = shapes::box_polygon(0.5, 0.5);
-//! let _shape = world.create_polygon_shape_for_owned(body.id(), &sdef, &poly);
+//! let _shape = body.create_polygon_shape(&sdef, &poly);
 //! world.step(1.0/60.0, 4);
 //! ```
 //!

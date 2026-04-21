@@ -218,14 +218,61 @@ fn try_calls_from_debug_draw_raw_return_in_callback() {
 }
 
 #[test]
+fn owned_body_try_create_shape_helpers_return_in_callback() {
+    struct Drawer {
+        body: OwnedBody,
+        err: Option<ApiError>,
+    }
+    impl RawDebugDraw for Drawer {
+        fn draw_solid_polygon(
+            &mut self,
+            _transform: ffi::b2Transform,
+            _vertices: &[ffi::b2Vec2],
+            _radius: f32,
+            _color: HexColor,
+        ) {
+            self.err = Some(
+                self.body
+                    .try_create_circle_simple(&ShapeDef::default(), 0.5)
+                    .err()
+                    .unwrap(),
+            );
+        }
+    }
+
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body = world.create_body_owned(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+    let body_id = body.id();
+    let sdef = ShapeDef::builder().density(1.0).build();
+    let poly = shapes::box_polygon(0.5, 0.5);
+    let _ = world.create_polygon_shape_for(body_id, &sdef, &poly);
+
+    let mut drawer = Drawer { body, err: None };
+    world.debug_draw_raw(&mut drawer, DebugDrawOptions::default());
+    assert_eq!(drawer.err, Some(ApiError::InCallback));
+}
+
+#[test]
 fn try_create_chain_invalid_def_returns_err() {
     let mut world = World::new(WorldDef::default()).unwrap();
     let body = world.create_body_id(BodyBuilder::new().build());
+    let mut owned_body = world.create_body_owned(BodyBuilder::new().build());
     let def = boxdd::shapes::chain::ChainDef::builder()
         .points([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]])
         .build();
 
     let err = world.try_create_chain_for_id(body, &def).unwrap_err();
+    assert_eq!(err, ApiError::InvalidChainDef);
+
+    let err = world
+        .body(body)
+        .unwrap()
+        .try_create_chain(&def)
+        .err()
+        .unwrap();
+    assert_eq!(err, ApiError::InvalidChainDef);
+
+    let err = owned_body.try_create_chain(&def).err().unwrap();
     assert_eq!(err, ApiError::InvalidChainDef);
 }
 
