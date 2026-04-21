@@ -10,7 +10,7 @@
 //! - Standalone collision geometry helpers: shape proxies, segment/GJK distance, manifolds, shape cast, TOI, recoverable `try_*` validation paths, AABB validation/ray cast, and deterministic global math helpers.
 //! - Core math types (`Vec2`, `Rot`, `Transform`) use explicit `from_raw(...)` / `into_raw()` naming for Box2D interop instead of implicit raw conversions.
 //! - Global Box2D foundation helpers expose allocated-byte inspection, timing ticks/millisecond helpers, thread yielding, and deterministic hashing without dropping to `boxdd_sys::ffi`.
-//! - Shape geometry uses crate-owned values (`Circle`, `Segment`, `ChainSegment`, `Capsule`, `Polygon`) across helpers, shape editing, and creation, including square/rounded/offset/hull-based polygon builders plus standalone `try_*` geometry helpers without raw FFI.
+//! - Shape geometry uses crate-owned values (`Circle`, `Segment`, `ChainSegment`, `Capsule`, `Polygon`) across helpers, shape editing, and creation, including square/rounded/offset/hull-based polygon builders plus standalone and construction-time `try_*` geometry helpers without raw FFI.
 //! - Chain runtime material helpers use visible live-segment indexing on open chains instead of Box2D's ghost-placeholder storage layout.
 //! - Safe shape/joint mutators front-load obvious Box2D assert preconditions such as non-negative material scalars and ordered joint limits.
 //! - Pointer-bearing config wrappers keep their raw re-entry explicit: `BodyDef::from_raw(...)`

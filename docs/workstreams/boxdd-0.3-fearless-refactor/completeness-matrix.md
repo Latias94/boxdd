@@ -41,7 +41,7 @@
 
 | Slice | Status | Notes |
 | --- | --- | --- |
-| crate-owned geometry values and shape create/edit/get/set helpers | safe-covered | Main API no longer leaks raw `b2Circle` / `b2Polygon` style values, polygon construction covers square/box/rounded/offset/hull-based helpers, and geometry values now expose `is_valid()` / `validate()` for preflight checks. |
+| crate-owned geometry values and shape create/edit/get/set helpers | safe-covered | Main API no longer leaks raw `b2Circle` / `b2Polygon` style values, polygon construction covers square/box/rounded/offset/hull-based helpers plus recoverable `try_*` variants, and geometry values now expose `is_valid()` / `validate()` for preflight checks. |
 | runtime AABB, point tests, ray casts, mass data, sensor/contact event toggles | safe-covered | Owned/scoped/world-id styles are aligned. |
 | sensor overlaps, contact data, and reusable-buffer variants | safe-covered | Covers the hot-path story that originally motivated `0.3.0`. |
 | raw geometry conversions, raw world-id, raw pointer user-data seams | raw-only | Explicit `from_raw(...)` / `into_raw()` and `*_raw` APIs stay available. |

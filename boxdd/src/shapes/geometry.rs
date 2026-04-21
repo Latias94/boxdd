@@ -165,12 +165,22 @@ fn assert_positive_finite_polygon_scalar(name: &str, value: f32) {
     );
 }
 
+#[inline]
+fn check_positive_finite_polygon_scalar(value: f32) -> ApiResult<()> {
+    geometry_is_valid_or_err(crate::is_valid_float(value) && value > 0.0)
+}
+
 #[track_caller]
 fn assert_non_negative_finite_polygon_scalar(name: &str, value: f32) {
     assert!(
         geometry_scalar_is_non_negative_finite(value),
         "{name} must be finite and >= 0.0, got {value}"
     );
+}
+
+#[inline]
+fn check_non_negative_finite_polygon_scalar(value: f32) -> ApiResult<()> {
+    geometry_is_valid_or_err(geometry_scalar_is_non_negative_finite(value))
 }
 
 #[track_caller]
@@ -263,6 +273,15 @@ fn assert_polygon_helper_geometry_valid(polygon: Polygon) {
 #[inline]
 fn check_polygon_helper_geometry_valid(polygon: Polygon) -> ApiResult<()> {
     geometry_is_valid_or_err(polygon_helper_geometry_is_valid(polygon))
+}
+
+#[inline]
+fn try_compute_hull_from_points<I, P>(points: I) -> ApiResult<ffi::b2Hull>
+where
+    I: IntoIterator<Item = P>,
+    P: Into<Vec2>,
+{
+    compute_hull_from_points(points).ok_or(ApiError::InvalidArgument)
 }
 
 /// Circle geometry in local shape space.
@@ -808,10 +827,25 @@ impl Polygon {
     }
 
     #[inline]
+    pub fn try_square_polygon(half_width: f32) -> ApiResult<Self> {
+        check_positive_finite_polygon_scalar(half_width)?;
+        Ok(Self::from_raw(unsafe { ffi::b2MakeSquare(half_width) }))
+    }
+
+    #[inline]
     pub fn box_polygon(half_width: f32, half_height: f32) -> Self {
         assert_positive_finite_polygon_scalar("half_width", half_width);
         assert_positive_finite_polygon_scalar("half_height", half_height);
         Self::from_raw(unsafe { ffi::b2MakeBox(half_width, half_height) })
+    }
+
+    #[inline]
+    pub fn try_box_polygon(half_width: f32, half_height: f32) -> ApiResult<Self> {
+        check_positive_finite_polygon_scalar(half_width)?;
+        check_positive_finite_polygon_scalar(half_height)?;
+        Ok(Self::from_raw(unsafe {
+            ffi::b2MakeBox(half_width, half_height)
+        }))
     }
 
     #[inline]
@@ -820,6 +854,20 @@ impl Polygon {
         assert_positive_finite_polygon_scalar("half_height", half_height);
         assert_non_negative_finite_polygon_scalar("radius", radius);
         Self::from_raw(unsafe { ffi::b2MakeRoundedBox(half_width, half_height, radius) })
+    }
+
+    #[inline]
+    pub fn try_rounded_box_polygon(
+        half_width: f32,
+        half_height: f32,
+        radius: f32,
+    ) -> ApiResult<Self> {
+        check_positive_finite_polygon_scalar(half_width)?;
+        check_positive_finite_polygon_scalar(half_height)?;
+        check_non_negative_finite_polygon_scalar(radius)?;
+        Ok(Self::from_raw(unsafe {
+            ffi::b2MakeRoundedBox(half_width, half_height, radius)
+        }))
     }
 
     #[inline]
@@ -835,6 +883,25 @@ impl Polygon {
                 transform.rotation().into_raw(),
             )
         })
+    }
+
+    #[inline]
+    pub fn try_offset_box_polygon(
+        half_width: f32,
+        half_height: f32,
+        transform: Transform,
+    ) -> ApiResult<Self> {
+        check_positive_finite_polygon_scalar(half_width)?;
+        check_positive_finite_polygon_scalar(half_height)?;
+        check_transform_valid(transform)?;
+        Ok(Self::from_raw(unsafe {
+            ffi::b2MakeOffsetBox(
+                half_width,
+                half_height,
+                transform.position().into_raw(),
+                transform.rotation().into_raw(),
+            )
+        }))
     }
 
     #[inline]
@@ -860,16 +927,45 @@ impl Polygon {
     }
 
     #[inline]
+    pub fn try_offset_rounded_box_polygon(
+        half_width: f32,
+        half_height: f32,
+        radius: f32,
+        transform: Transform,
+    ) -> ApiResult<Self> {
+        check_positive_finite_polygon_scalar(half_width)?;
+        check_positive_finite_polygon_scalar(half_height)?;
+        check_non_negative_finite_polygon_scalar(radius)?;
+        check_transform_valid(transform)?;
+        Ok(Self::from_raw(unsafe {
+            ffi::b2MakeOffsetRoundedBox(
+                half_width,
+                half_height,
+                transform.position().into_raw(),
+                transform.rotation().into_raw(),
+                radius,
+            )
+        }))
+    }
+
+    #[inline]
     pub fn from_points<I, P>(points: I, radius: f32) -> Option<Self>
     where
         I: IntoIterator<Item = P>,
         P: Into<Vec2>,
     {
-        if !geometry_scalar_is_non_negative_finite(radius) {
-            return None;
-        }
-        let hull = compute_hull_from_points(points)?;
-        Some(Self::from_raw(unsafe { ffi::b2MakePolygon(&hull, radius) }))
+        Self::try_from_points(points, radius).ok()
+    }
+
+    #[inline]
+    pub fn try_from_points<I, P>(points: I, radius: f32) -> ApiResult<Self>
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+    {
+        check_non_negative_finite_polygon_scalar(radius)?;
+        let hull = try_compute_hull_from_points(points)?;
+        Ok(Self::from_raw(unsafe { ffi::b2MakePolygon(&hull, radius) }))
     }
 
     #[inline]
@@ -878,11 +974,23 @@ impl Polygon {
         I: IntoIterator<Item = P>,
         P: Into<Vec2>,
     {
-        if !geometry_scalar_is_non_negative_finite(radius) || !transform.is_valid() {
-            return None;
-        }
-        let hull = compute_hull_from_points(points)?;
-        Some(Self::from_raw(unsafe {
+        Self::try_offset_from_points(points, radius, transform).ok()
+    }
+
+    #[inline]
+    pub fn try_offset_from_points<I, P>(
+        points: I,
+        radius: f32,
+        transform: Transform,
+    ) -> ApiResult<Self>
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+    {
+        check_non_negative_finite_polygon_scalar(radius)?;
+        check_transform_valid(transform)?;
+        let hull = try_compute_hull_from_points(points)?;
+        Ok(Self::from_raw(unsafe {
             if radius == 0.0 {
                 ffi::b2MakeOffsetPolygon(
                     &hull,
@@ -1053,10 +1161,22 @@ pub fn box_polygon(half_width: f32, half_height: f32) -> Polygon {
     Polygon::box_polygon(half_width, half_height)
 }
 
+/// Recoverable axis-aligned box polygon helper.
+#[inline]
+pub fn try_box_polygon(half_width: f32, half_height: f32) -> ApiResult<Polygon> {
+    Polygon::try_box_polygon(half_width, half_height)
+}
+
 /// Axis-aligned square polygon helper.
 #[inline]
 pub fn square_polygon(half_width: f32) -> Polygon {
     Polygon::square_polygon(half_width)
+}
+
+/// Recoverable axis-aligned square polygon helper.
+#[inline]
+pub fn try_square_polygon(half_width: f32) -> ApiResult<Polygon> {
+    Polygon::try_square_polygon(half_width)
 }
 
 /// Axis-aligned rounded box polygon helper.
@@ -1065,10 +1185,30 @@ pub fn rounded_box_polygon(half_width: f32, half_height: f32, radius: f32) -> Po
     Polygon::rounded_box_polygon(half_width, half_height, radius)
 }
 
+/// Recoverable axis-aligned rounded box polygon helper.
+#[inline]
+pub fn try_rounded_box_polygon(
+    half_width: f32,
+    half_height: f32,
+    radius: f32,
+) -> ApiResult<Polygon> {
+    Polygon::try_rounded_box_polygon(half_width, half_height, radius)
+}
+
 /// Offset box polygon helper using the crate's `Transform` vocabulary.
 #[inline]
 pub fn offset_box_polygon(half_width: f32, half_height: f32, transform: Transform) -> Polygon {
     Polygon::offset_box_polygon(half_width, half_height, transform)
+}
+
+/// Recoverable offset box polygon helper using the crate's `Transform` vocabulary.
+#[inline]
+pub fn try_offset_box_polygon(
+    half_width: f32,
+    half_height: f32,
+    transform: Transform,
+) -> ApiResult<Polygon> {
+    Polygon::try_offset_box_polygon(half_width, half_height, transform)
 }
 
 /// Offset rounded box polygon helper using the crate's `Transform` vocabulary.
@@ -1082,6 +1222,17 @@ pub fn offset_rounded_box_polygon(
     Polygon::offset_rounded_box_polygon(half_width, half_height, radius, transform)
 }
 
+/// Recoverable offset rounded box polygon helper using the crate's `Transform` vocabulary.
+#[inline]
+pub fn try_offset_rounded_box_polygon(
+    half_width: f32,
+    half_height: f32,
+    radius: f32,
+    transform: Transform,
+) -> ApiResult<Polygon> {
+    Polygon::try_offset_rounded_box_polygon(half_width, half_height, radius, transform)
+}
+
 /// Build a polygon from arbitrary points by computing a convex hull.
 #[inline]
 pub fn polygon_from_points<I, P>(points: I, radius: f32) -> Option<Polygon>
@@ -1090,6 +1241,16 @@ where
     P: Into<Vec2>,
 {
     Polygon::from_points(points, radius)
+}
+
+/// Recoverably build a polygon from arbitrary points by computing a convex hull.
+#[inline]
+pub fn try_polygon_from_points<I, P>(points: I, radius: f32) -> ApiResult<Polygon>
+where
+    I: IntoIterator<Item = P>,
+    P: Into<Vec2>,
+{
+    Polygon::try_from_points(points, radius)
 }
 
 /// Build an offset polygon from arbitrary points by computing a convex hull first.
@@ -1104,6 +1265,20 @@ where
     P: Into<Vec2>,
 {
     Polygon::offset_from_points(points, radius, transform)
+}
+
+/// Recoverably build an offset polygon from arbitrary points by computing a convex hull first.
+#[inline]
+pub fn try_offset_polygon_from_points<I, P>(
+    points: I,
+    radius: f32,
+    transform: Transform,
+) -> ApiResult<Polygon>
+where
+    I: IntoIterator<Item = P>,
+    P: Into<Vec2>,
+{
+    Polygon::try_offset_from_points(points, radius, transform)
 }
 
 /// Check whether a point set can produce a valid Box2D convex hull.

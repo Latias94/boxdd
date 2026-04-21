@@ -1,6 +1,6 @@
-use boxdd::Filter;
 use boxdd::prelude::*;
 use boxdd::shapes;
+use boxdd::{ApiError, Filter};
 
 fn approx_eq(a: f32, b: f32, eps: f32) -> bool {
     (a - b).abs() <= eps
@@ -234,6 +234,140 @@ fn polygon_helpers_cover_square_offset_and_hull_workflows() {
         shapes::offset_polygon_from_points(too_many_points.iter().copied(), 0.0, transform)
             .is_none()
     );
+}
+
+#[test]
+fn polygon_try_helpers_match_safe_helpers_and_reject_invalid_inputs() {
+    let transform = Transform::from_pos_angle([2.5_f32, -1.25], 0.35);
+
+    let square = shapes::try_square_polygon(1.25).unwrap();
+    assert!(approx_polygon(
+        &square,
+        &shapes::square_polygon(1.25),
+        1.0e-6
+    ));
+
+    let box_poly = shapes::try_box_polygon(1.5, 0.75).unwrap();
+    assert!(approx_polygon(
+        &box_poly,
+        &shapes::box_polygon(1.5, 0.75),
+        1.0e-6
+    ));
+
+    let rounded = shapes::try_rounded_box_polygon(1.5, 0.75, 0.2).unwrap();
+    assert!(approx_polygon(
+        &rounded,
+        &shapes::rounded_box_polygon(1.5, 0.75, 0.2),
+        1.0e-6
+    ));
+
+    let offset_box = shapes::try_offset_box_polygon(1.5, 0.75, transform).unwrap();
+    assert!(approx_polygon(
+        &offset_box,
+        &shapes::offset_box_polygon(1.5, 0.75, transform),
+        1.0e-6
+    ));
+
+    let offset_rounded = shapes::try_offset_rounded_box_polygon(1.5, 0.75, 0.2, transform).unwrap();
+    assert!(approx_polygon(
+        &offset_rounded,
+        &shapes::offset_rounded_box_polygon(1.5, 0.75, 0.2, transform),
+        1.0e-6
+    ));
+
+    let hull_points = [
+        Vec2::new(-1.0, 0.0),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(0.0, -1.0),
+    ];
+    let hull = shapes::try_polygon_from_points(hull_points, 0.15).unwrap();
+    let offset_hull = shapes::try_offset_polygon_from_points(hull_points, 0.15, transform).unwrap();
+    assert!(approx_polygon(
+        &hull,
+        &shapes::polygon_from_points(hull_points, 0.15).unwrap(),
+        1.0e-6
+    ));
+    assert!(approx_polygon(
+        &offset_hull,
+        &shapes::offset_polygon_from_points(hull_points, 0.15, transform).unwrap(),
+        1.0e-6
+    ));
+
+    let invalid_transform = Transform::from_pos_angle([f32::NAN, 0.0], 0.0);
+    let collinear = [
+        Vec2::new(-1.0, 0.0),
+        Vec2::new(0.0, 0.0),
+        Vec2::new(1.0, 0.0),
+    ];
+
+    assert_eq!(
+        shapes::try_square_polygon(f32::NAN).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        shapes::try_box_polygon(0.0, 1.0).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        shapes::try_rounded_box_polygon(1.0, 1.0, -0.1).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        shapes::try_offset_box_polygon(1.0, 1.0, invalid_transform).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        shapes::try_offset_rounded_box_polygon(1.0, 1.0, 0.1, invalid_transform).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        shapes::try_polygon_from_points(collinear, 0.0).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        shapes::try_offset_polygon_from_points(collinear, 0.0, transform).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        shapes::try_offset_polygon_from_points(hull_points, 0.0, invalid_transform).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+}
+
+#[test]
+fn body_try_create_polygon_from_points_returns_recoverable_error() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let mut body = world.create_body(BodyBuilder::new().build());
+    let def = ShapeDef::default();
+
+    let shape = body
+        .try_create_polygon_from_points(
+            &def,
+            [
+                Vec2::new(-1.0, 0.0),
+                Vec2::new(0.0, 1.0),
+                Vec2::new(1.0, 0.0),
+                Vec2::new(0.0, -1.0),
+            ],
+            0.1,
+        )
+        .unwrap();
+    assert_eq!(shape.shape_type(), ShapeType::Polygon);
+
+    let err = body
+        .try_create_polygon_from_points(
+            &def,
+            [
+                Vec2::new(-1.0, 0.0),
+                Vec2::new(0.0, 0.0),
+                Vec2::new(1.0, 0.0),
+            ],
+            0.0,
+        )
+        .err()
+        .unwrap();
+    assert_eq!(err, ApiError::InvalidArgument);
 }
 
 #[test]

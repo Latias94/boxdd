@@ -25,7 +25,9 @@ pub use geometry::{
     Capsule, ChainSegment, Circle, MAX_POLYGON_VERTICES, Polygon, Segment, box_polygon, capsule,
     chain_segment, circle, offset_box_polygon, offset_polygon_from_points,
     offset_rounded_box_polygon, polygon_from_points, polygon_hull_is_valid, rounded_box_polygon,
-    segment, square_polygon,
+    segment, square_polygon, try_box_polygon, try_offset_box_polygon,
+    try_offset_polygon_from_points, try_offset_rounded_box_polygon, try_polygon_from_points,
+    try_rounded_box_polygon, try_square_polygon,
 };
 
 /// Shape kinds reported by Box2D.
@@ -2653,6 +2655,20 @@ impl<'w> Body<'w> {
     {
         let poly = crate::shapes::polygon_from_points(points, radius)?;
         Some(self.create_polygon_shape(def, &poly))
+    }
+
+    pub fn try_create_polygon_from_points<I, P>(
+        &mut self,
+        def: &ShapeDef,
+        points: I,
+        radius: f32,
+    ) -> ApiResult<Shape<'w>>
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<crate::types::Vec2>,
+    {
+        let poly = crate::shapes::try_polygon_from_points(points, radius)?;
+        Ok(self.create_polygon_shape(def, &poly))
     }
 }
 // Shapes: module note moved to top-level doc above.

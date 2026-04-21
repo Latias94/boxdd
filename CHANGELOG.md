@@ -30,6 +30,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - `Aabb::is_valid()` and `Aabb::ray_cast(origin, translation)` for low-level geometry checks without raw FFI.
 - Crate-owned `Circle`, `Segment`, `Capsule`, and `Polygon` geometry value types, including standalone mass/AABB/point/ray helpers for world-free shape geometry work.
 - Recoverable world-free geometry helper APIs on crate-owned geometry values: `try_mass_data`, `try_aabb`, `try_contains_point`, `try_ray_cast`, and `Polygon::try_transformed`.
+- Recoverable polygon construction helpers: `try_square_polygon`, `try_box_polygon`, `try_rounded_box_polygon`, `try_offset_box_polygon`, `try_offset_rounded_box_polygon`, `try_polygon_from_points`, `try_offset_polygon_from_points`, and `Body::try_create_polygon_from_points`.
 - Crate-owned `ShapeType`, `MassData`, `ContactData`, `Manifold`, and `ManifoldPoint` value types for the main safe API surface.
 - Crate-owned `MotionLocks` for body translation/rotation constraints.
 - Crate-owned `HexColor` for debug-draw callbacks and collected debug-draw commands.
