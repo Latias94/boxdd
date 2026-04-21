@@ -19,6 +19,11 @@ impl WeldJointDef {
     }
 
     #[inline]
+    pub fn from_raw(raw: ffi::b2WeldJointDef) -> Self {
+        Self(raw)
+    }
+
+    #[inline]
     pub fn base(&self) -> JointBase {
         JointBase(self.0.base)
     }
@@ -41,6 +46,11 @@ impl WeldJointDef {
     #[inline]
     pub fn configured_angular_damping_ratio(&self) -> f32 {
         self.0.angularDampingRatio
+    }
+
+    #[inline]
+    pub fn into_raw(self) -> ffi::b2WeldJointDef {
+        self.0
     }
 
     /// Linear stiffness (Hz) for weld constraint.

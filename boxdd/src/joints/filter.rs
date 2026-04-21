@@ -19,8 +19,18 @@ impl FilterJointDef {
     }
 
     #[inline]
+    pub fn from_raw(raw: ffi::b2FilterJointDef) -> Self {
+        Self(raw)
+    }
+
+    #[inline]
     pub fn base(&self) -> JointBase {
         JointBase(self.0.base)
+    }
+
+    #[inline]
+    pub fn into_raw(self) -> ffi::b2FilterJointDef {
+        self.0
     }
 }
 

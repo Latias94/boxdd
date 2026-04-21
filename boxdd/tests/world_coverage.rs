@@ -7,6 +7,49 @@ fn same_world_id(a: boxdd_sys::ffi::b2WorldId, b: boxdd_sys::ffi::b2WorldId) -> 
 }
 
 #[test]
+fn world_def_is_a_readable_value_type_and_can_seed_a_builder() {
+    let def = WorldDef::builder()
+        .gravity([1.0_f32, -9.5])
+        .restitution_threshold(2.5)
+        .hit_event_threshold(7.0)
+        .contact_hertz(11.0)
+        .contact_damping_ratio(0.6)
+        .contact_speed(13.0)
+        .maximum_linear_speed(42.0)
+        .enable_sleep(false)
+        .enable_continuous(false)
+        .enable_contact_softening(false)
+        .worker_count(3)
+        .build();
+
+    assert_eq!(def.gravity(), Vec2::new(1.0, -9.5));
+    assert_eq!(def.restitution_threshold(), 2.5);
+    assert_eq!(def.hit_event_threshold(), 7.0);
+    assert_eq!(def.contact_hertz(), 11.0);
+    assert_eq!(def.contact_damping_ratio(), 0.6);
+    assert_eq!(def.contact_speed(), 13.0);
+    assert_eq!(def.maximum_linear_speed(), 42.0);
+    assert!(!def.is_sleep_enabled());
+    assert!(!def.is_continuous_enabled());
+    assert!(!def.is_contact_softening_enabled());
+    assert_eq!(def.worker_count(), 3);
+
+    let raw_roundtrip = WorldDef::from_raw(def.clone().into_raw());
+    assert_eq!(raw_roundtrip.gravity(), Vec2::new(1.0, -9.5));
+    assert_eq!(raw_roundtrip.restitution_threshold(), 2.5);
+    assert_eq!(raw_roundtrip.worker_count(), 3);
+
+    let rebuilt = WorldBuilder::from(def.clone())
+        .worker_count(5)
+        .enable_continuous(true)
+        .build();
+    assert_eq!(rebuilt.gravity(), Vec2::new(1.0, -9.5));
+    assert_eq!(rebuilt.hit_event_threshold(), 7.0);
+    assert!(rebuilt.is_continuous_enabled());
+    assert_eq!(rebuilt.worker_count(), 5);
+}
+
+#[test]
 fn world_runtime_coverage_safe_api() {
     let mut world = World::new(WorldDef::builder().build()).unwrap();
 
@@ -269,4 +312,27 @@ fn explosion_def_uses_explicit_raw_conversions() {
     assert_eq!(roundtrip.radius, 3.0);
     assert_eq!(roundtrip.falloff, 4.0);
     assert_eq!(roundtrip.impulsePerLength, 5.0);
+}
+
+#[test]
+fn explosion_def_is_a_readable_value_type() {
+    let def = ExplosionDef::new()
+        .mask_bits(0x00ff)
+        .position([2.0_f32, -3.5])
+        .radius(4.5)
+        .falloff(1.25)
+        .impulse_per_length(6.0);
+
+    assert_eq!(def.affected_mask_bits(), 0x00ff);
+    assert_eq!(def.center(), Vec2::new(2.0, -3.5));
+    assert_eq!(def.blast_radius(), 4.5);
+    assert_eq!(def.falloff_distance(), 1.25);
+    assert_eq!(def.impulse_per_unit_length(), 6.0);
+
+    let roundtrip = ExplosionDef::from_raw(def.into_raw());
+    assert_eq!(roundtrip.affected_mask_bits(), 0x00ff);
+    assert_eq!(roundtrip.center(), Vec2::new(2.0, -3.5));
+    assert_eq!(roundtrip.blast_radius(), 4.5);
+    assert_eq!(roundtrip.falloff_distance(), 1.25);
+    assert_eq!(roundtrip.impulse_per_unit_length(), 6.0);
 }

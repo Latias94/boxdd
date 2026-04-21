@@ -500,27 +500,27 @@ impl OwnedJoint {
     /// The caller must ensure that `p` is valid for as long as Box2D may read it.
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
-    pub unsafe fn set_user_data_ptr(&mut self, p: *mut c_void) {
+    pub unsafe fn set_user_data_ptr_raw(&mut self, p: *mut c_void) {
         self.assert_valid();
         unsafe { joint_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
     }
     /// Set an opaque user data pointer on this joint.
     ///
     /// # Safety
-    /// Same safety contract as `set_user_data_ptr`.
+    /// Same safety contract as `set_user_data_ptr_raw`.
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
-    pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut c_void) -> ApiResult<()> {
+    pub unsafe fn try_set_user_data_ptr_raw(&mut self, p: *mut c_void) -> ApiResult<()> {
         self.check_valid()?;
         unsafe { joint_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
         Ok(())
     }
-    pub fn user_data_ptr(&self) -> *mut c_void {
+    pub fn user_data_ptr_raw(&self) -> *mut c_void {
         self.assert_valid();
         joint_user_data_ptr_impl(self.id)
     }
 
-    pub fn try_user_data_ptr(&self) -> ApiResult<*mut c_void> {
+    pub fn try_user_data_ptr_raw(&self) -> ApiResult<*mut c_void> {
         self.check_valid()?;
         Ok(joint_user_data_ptr_impl(self.id))
     }
@@ -870,27 +870,27 @@ impl<'w> Joint<'w> {
     /// The caller must ensure that `p` is valid for as long as Box2D may read it.
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
-    pub unsafe fn set_user_data_ptr(&mut self, p: *mut c_void) {
+    pub unsafe fn set_user_data_ptr_raw(&mut self, p: *mut c_void) {
         self.assert_valid();
         unsafe { joint_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
     }
     /// Set an opaque user data pointer on this joint.
     ///
     /// # Safety
-    /// Same safety contract as `set_user_data_ptr`.
+    /// Same safety contract as `set_user_data_ptr_raw`.
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
-    pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut c_void) -> ApiResult<()> {
+    pub unsafe fn try_set_user_data_ptr_raw(&mut self, p: *mut c_void) -> ApiResult<()> {
         self.check_valid()?;
         unsafe { joint_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
         Ok(())
     }
-    pub fn user_data_ptr(&self) -> *mut c_void {
+    pub fn user_data_ptr_raw(&self) -> *mut c_void {
         self.assert_valid();
         joint_user_data_ptr_impl(self.id)
     }
 
-    pub fn try_user_data_ptr(&self) -> ApiResult<*mut c_void> {
+    pub fn try_user_data_ptr_raw(&self) -> ApiResult<*mut c_void> {
         self.check_valid()?;
         Ok(joint_user_data_ptr_impl(self.id))
     }
@@ -1009,6 +1009,12 @@ impl JointBase {
         JointBaseBuilder::new()
     }
 
+    /// Construct from the raw Box2D joint base definition value.
+    #[inline]
+    pub fn from_raw(raw: ffi::b2JointDef) -> Self {
+        Self(raw)
+    }
+
     /// Attached body A id.
     #[inline]
     pub fn body_a_id(&self) -> BodyId {
@@ -1061,6 +1067,12 @@ impl JointBase {
     #[inline]
     pub fn draw_scale(&self) -> f32 {
         self.0.drawScale
+    }
+
+    /// Convert into the raw Box2D joint base definition value.
+    #[inline]
+    pub fn into_raw(self) -> ffi::b2JointDef {
+        self.0
     }
 }
 

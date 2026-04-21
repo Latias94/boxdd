@@ -30,6 +30,31 @@ impl ExplosionDef {
     }
 
     /// Mask bits used to filter affected shapes.
+    pub fn affected_mask_bits(&self) -> u64 {
+        self.0.maskBits
+    }
+
+    /// World-space center position.
+    pub fn center(&self) -> Vec2 {
+        Vec2::from(self.0.position)
+    }
+
+    /// Explosion radius in meters.
+    pub fn blast_radius(&self) -> f32 {
+        self.0.radius
+    }
+
+    /// Falloff distance beyond the radius where the impulse decays to zero.
+    pub fn falloff_distance(&self) -> f32 {
+        self.0.falloff
+    }
+
+    /// Impulse per unit length applied to perimeter facing the explosion.
+    pub fn impulse_per_unit_length(&self) -> f32 {
+        self.0.impulsePerLength
+    }
+
+    /// Mask bits used to filter affected shapes.
     pub fn mask_bits(mut self, bits: u64) -> Self {
         self.0.maskBits = bits;
         self

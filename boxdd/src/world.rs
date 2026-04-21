@@ -266,6 +266,54 @@ impl WorldDef {
         WorldBuilder::from(Self::default())
     }
 
+    pub fn from_raw(raw: ffi::b2WorldDef) -> Self {
+        Self(raw)
+    }
+
+    pub fn gravity(&self) -> crate::types::Vec2 {
+        crate::types::Vec2::from(self.0.gravity)
+    }
+
+    pub fn restitution_threshold(&self) -> f32 {
+        self.0.restitutionThreshold
+    }
+
+    pub fn hit_event_threshold(&self) -> f32 {
+        self.0.hitEventThreshold
+    }
+
+    pub fn contact_hertz(&self) -> f32 {
+        self.0.contactHertz
+    }
+
+    pub fn contact_damping_ratio(&self) -> f32 {
+        self.0.contactDampingRatio
+    }
+
+    pub fn contact_speed(&self) -> f32 {
+        self.0.contactSpeed
+    }
+
+    pub fn maximum_linear_speed(&self) -> f32 {
+        self.0.maximumLinearSpeed
+    }
+
+    pub fn is_sleep_enabled(&self) -> bool {
+        self.0.enableSleep
+    }
+
+    pub fn is_continuous_enabled(&self) -> bool {
+        self.0.enableContinuous
+    }
+
+    pub fn is_contact_softening_enabled(&self) -> bool {
+        self.0.enableContactSoftening
+    }
+
+    pub fn worker_count(&self) -> i32 {
+        self.0.workerCount
+    }
+
     pub fn into_raw(self) -> ffi::b2WorldDef {
         self.0
     }

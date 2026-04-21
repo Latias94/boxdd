@@ -1238,7 +1238,7 @@ impl OwnedBody {
     /// are upheld. Box2D treats this as an opaque pointer and may store/use it across steps.
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
-    pub unsafe fn set_user_data_ptr(&mut self, p: *mut c_void) {
+    pub unsafe fn set_user_data_ptr_raw(&mut self, p: *mut c_void) {
         self.assert_valid();
         unsafe { body_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
     }
@@ -1246,20 +1246,20 @@ impl OwnedBody {
     /// Set an opaque user data pointer on this body.
     ///
     /// # Safety
-    /// Same safety contract as `set_user_data_ptr`.
+    /// Same safety contract as `set_user_data_ptr_raw`.
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
-    pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut c_void) -> ApiResult<()> {
+    pub unsafe fn try_set_user_data_ptr_raw(&mut self, p: *mut c_void) -> ApiResult<()> {
         self.check_valid()?;
         unsafe { body_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
         Ok(())
     }
-    pub fn user_data_ptr(&self) -> *mut c_void {
+    pub fn user_data_ptr_raw(&self) -> *mut c_void {
         self.assert_valid();
         body_user_data_ptr_impl(self.id)
     }
 
-    pub fn try_user_data_ptr(&self) -> ApiResult<*mut c_void> {
+    pub fn try_user_data_ptr_raw(&self) -> ApiResult<*mut c_void> {
         self.check_valid()?;
         Ok(body_user_data_ptr_impl(self.id))
     }
@@ -1420,6 +1420,12 @@ impl BodyDef {
         BodyBuilder::new()
     }
 
+    /// Construct from the raw Box2D body definition value.
+    #[inline]
+    pub fn from_raw(raw: ffi::b2BodyDef) -> Self {
+        Self(raw)
+    }
+
     /// Body type used when the body is created.
     #[inline]
     pub fn body_type(&self) -> BodyType {
@@ -1502,6 +1508,12 @@ impl BodyDef {
     #[inline]
     pub fn is_enabled(&self) -> bool {
         self.0.isEnabled
+    }
+
+    /// Convert into the raw Box2D body definition value.
+    #[inline]
+    pub fn into_raw(self) -> ffi::b2BodyDef {
+        self.0
     }
 }
 
@@ -2461,7 +2473,7 @@ impl<'w> Body<'w> {
     /// are upheld. Box2D treats this as an opaque pointer and may store/use it across steps.
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
-    pub unsafe fn set_user_data_ptr(&mut self, p: *mut c_void) {
+    pub unsafe fn set_user_data_ptr_raw(&mut self, p: *mut c_void) {
         self.assert_valid();
         unsafe { body_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
     }
@@ -2469,20 +2481,20 @@ impl<'w> Body<'w> {
     /// Set an opaque user data pointer on this body.
     ///
     /// # Safety
-    /// Same safety contract as `set_user_data_ptr`.
+    /// Same safety contract as `set_user_data_ptr_raw`.
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
-    pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut c_void) -> ApiResult<()> {
+    pub unsafe fn try_set_user_data_ptr_raw(&mut self, p: *mut c_void) -> ApiResult<()> {
         self.check_valid()?;
         unsafe { body_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
         Ok(())
     }
-    pub fn user_data_ptr(&self) -> *mut c_void {
+    pub fn user_data_ptr_raw(&self) -> *mut c_void {
         self.assert_valid();
         body_user_data_ptr_impl(self.id)
     }
 
-    pub fn try_user_data_ptr(&self) -> ApiResult<*mut c_void> {
+    pub fn try_user_data_ptr_raw(&self) -> ApiResult<*mut c_void> {
         self.check_valid()?;
         Ok(body_user_data_ptr_impl(self.id))
     }

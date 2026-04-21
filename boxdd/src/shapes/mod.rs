@@ -1005,27 +1005,27 @@ impl OwnedShape {
     /// pointer and may access it during simulation callbacks.
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
-    pub unsafe fn set_user_data_ptr(&mut self, p: *mut c_void) {
+    pub unsafe fn set_user_data_ptr_raw(&mut self, p: *mut c_void) {
         self.assert_valid();
         unsafe { shape_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
     }
     /// Set an opaque user data pointer on this shape.
     ///
     /// # Safety
-    /// Same safety contract as `set_user_data_ptr`.
+    /// Same safety contract as `set_user_data_ptr_raw`.
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
-    pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut c_void) -> ApiResult<()> {
+    pub unsafe fn try_set_user_data_ptr_raw(&mut self, p: *mut c_void) -> ApiResult<()> {
         self.check_valid()?;
         unsafe { shape_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
         Ok(())
     }
-    pub fn user_data_ptr(&self) -> *mut c_void {
+    pub fn user_data_ptr_raw(&self) -> *mut c_void {
         self.assert_valid();
         shape_user_data_ptr_impl(self.id)
     }
 
-    pub fn try_user_data_ptr(&self) -> ApiResult<*mut c_void> {
+    pub fn try_user_data_ptr_raw(&self) -> ApiResult<*mut c_void> {
         self.check_valid()?;
         Ok(shape_user_data_ptr_impl(self.id))
     }
@@ -1577,27 +1577,27 @@ impl<'w> Shape<'w> {
     /// pointer and may access it during simulation callbacks.
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
-    pub unsafe fn set_user_data_ptr(&mut self, p: *mut core::ffi::c_void) {
+    pub unsafe fn set_user_data_ptr_raw(&mut self, p: *mut core::ffi::c_void) {
         self.assert_valid();
         unsafe { shape_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
     }
     /// Set an opaque user data pointer on this shape.
     ///
     /// # Safety
-    /// Same safety contract as `set_user_data_ptr`.
+    /// Same safety contract as `set_user_data_ptr_raw`.
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
-    pub unsafe fn try_set_user_data_ptr(&mut self, p: *mut core::ffi::c_void) -> ApiResult<()> {
+    pub unsafe fn try_set_user_data_ptr_raw(&mut self, p: *mut core::ffi::c_void) -> ApiResult<()> {
         self.check_valid()?;
         unsafe { shape_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
         Ok(())
     }
-    pub fn user_data_ptr(&self) -> *mut core::ffi::c_void {
+    pub fn user_data_ptr_raw(&self) -> *mut core::ffi::c_void {
         self.assert_valid();
         shape_user_data_ptr_impl(self.id)
     }
 
-    pub fn try_user_data_ptr(&self) -> ApiResult<*mut core::ffi::c_void> {
+    pub fn try_user_data_ptr_raw(&self) -> ApiResult<*mut core::ffi::c_void> {
         self.check_valid()?;
         Ok(shape_user_data_ptr_impl(self.id))
     }
@@ -1907,6 +1907,12 @@ impl ShapeDef {
         }
     }
 
+    /// Construct from the raw Box2D shape definition value.
+    #[inline]
+    pub fn from_raw(raw: ffi::b2ShapeDef) -> Self {
+        Self(raw)
+    }
+
     /// Surface material parameters used by the shape.
     #[inline]
     pub const fn material(&self) -> SurfaceMaterial {
@@ -1971,6 +1977,12 @@ impl ShapeDef {
     #[inline]
     pub const fn updates_body_mass(&self) -> bool {
         self.0.updateBodyMass
+    }
+
+    /// Convert into the raw Box2D shape definition value.
+    #[inline]
+    pub fn into_raw(self) -> ffi::b2ShapeDef {
+        self.0
     }
 }
 

@@ -23,6 +23,11 @@ impl WheelJointDef {
     }
 
     #[inline]
+    pub fn from_raw(raw: ffi::b2WheelJointDef) -> Self {
+        Self(raw)
+    }
+
+    #[inline]
     pub fn base(&self) -> JointBase {
         JointBase(self.0.base)
     }
@@ -70,6 +75,11 @@ impl WheelJointDef {
     #[inline]
     pub fn target_motor_speed(&self) -> f32 {
         self.0.motorSpeed
+    }
+
+    #[inline]
+    pub fn into_raw(self) -> ffi::b2WheelJointDef {
+        self.0
     }
 
     /// Enable/disable suspension spring.

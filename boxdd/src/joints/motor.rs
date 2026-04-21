@@ -20,6 +20,11 @@ impl MotorJointDef {
     }
 
     #[inline]
+    pub fn from_raw(raw: ffi::b2MotorJointDef) -> Self {
+        Self(raw)
+    }
+
+    #[inline]
     pub fn base(&self) -> JointBase {
         JointBase(self.0.base)
     }
@@ -72,6 +77,11 @@ impl MotorJointDef {
     #[inline]
     pub fn maximum_spring_torque(&self) -> f32 {
         self.0.maxSpringTorque
+    }
+
+    #[inline]
+    pub fn into_raw(self) -> ffi::b2MotorJointDef {
+        self.0
     }
 
     /// Target linear velocity of body B relative to A (m/s).

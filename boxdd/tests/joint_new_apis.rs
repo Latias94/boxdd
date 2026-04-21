@@ -77,6 +77,18 @@ fn joint_defs_are_readable_value_types() {
         frame_b,
         1.0e-6
     ));
+    let roundtrip_base = JointBase::from_raw(base.clone().into_raw());
+    assert!(same_body_id(roundtrip_base.body_a_id(), body_a));
+    assert!(approx_tuning(
+        roundtrip_base.constraint_tuning(),
+        tuning,
+        1.0e-6
+    ));
+    assert!(approx_transform(
+        roundtrip_base.local_frame_a(),
+        frame_a,
+        1.0e-6
+    ));
 
     let distance = DistanceJointDef::new(base.clone())
         .length(3.5)
@@ -104,6 +116,9 @@ fn joint_defs_are_readable_value_types() {
     assert!(distance.motor_enabled());
     assert!(approx_eq(distance.maximum_motor_force(), 9.0, 1.0e-6));
     assert!(approx_eq(distance.target_motor_speed(), -2.0, 1.0e-6));
+    let distance_roundtrip = DistanceJointDef::from_raw(distance.clone().into_raw());
+    assert!(approx_eq(distance_roundtrip.target_length(), 3.5, 1.0e-6));
+    assert!(distance_roundtrip.motor_enabled());
 
     let prismatic = PrismaticJointDef::new(base.clone())
         .enable_spring(true)
@@ -125,6 +140,13 @@ fn joint_defs_are_readable_value_types() {
     assert!(prismatic.motor_enabled());
     assert!(approx_eq(prismatic.maximum_motor_force(), 11.0, 1.0e-6));
     assert!(approx_eq(prismatic.target_motor_speed(), 1.5, 1.0e-6));
+    let prismatic_roundtrip = PrismaticJointDef::from_raw(prismatic.clone().into_raw());
+    assert!(prismatic_roundtrip.motor_enabled());
+    assert!(approx_eq(
+        prismatic_roundtrip.maximum_motor_force(),
+        11.0,
+        1.0e-6
+    ));
 
     let revolute = RevoluteJointDef::new(base.clone())
         .target_angle(0.2)
@@ -148,6 +170,13 @@ fn joint_defs_are_readable_value_types() {
     assert!(revolute.motor_enabled());
     assert!(approx_eq(revolute.maximum_motor_torque(), 12.0, 1.0e-6));
     assert!(approx_eq(revolute.target_motor_speed(), 0.9, 1.0e-6));
+    let revolute_roundtrip = RevoluteJointDef::from_raw(revolute.clone().into_raw());
+    assert!(revolute_roundtrip.limit_enabled());
+    assert!(approx_eq(
+        revolute_roundtrip.maximum_motor_torque(),
+        12.0,
+        1.0e-6
+    ));
 
     let weld = WeldJointDef::new(base.clone())
         .linear_hertz(3.0)
@@ -164,6 +193,17 @@ fn joint_defs_are_readable_value_types() {
     ));
     assert!(approx_eq(
         weld.configured_angular_damping_ratio(),
+        0.7,
+        1.0e-6
+    ));
+    let weld_roundtrip = WeldJointDef::from_raw(weld.clone().into_raw());
+    assert!(approx_eq(
+        weld_roundtrip.configured_linear_hertz(),
+        3.0,
+        1.0e-6
+    ));
+    assert!(approx_eq(
+        weld_roundtrip.configured_angular_damping_ratio(),
         0.7,
         1.0e-6
     ));
@@ -188,6 +228,13 @@ fn joint_defs_are_readable_value_types() {
     assert!(wheel.motor_enabled());
     assert!(approx_eq(wheel.maximum_motor_torque(), 7.0, 1.0e-6));
     assert!(approx_eq(wheel.target_motor_speed(), -1.25, 1.0e-6));
+    let wheel_roundtrip = WheelJointDef::from_raw(wheel.clone().into_raw());
+    assert!(wheel_roundtrip.spring_enabled());
+    assert!(approx_eq(
+        wheel_roundtrip.maximum_motor_torque(),
+        7.0,
+        1.0e-6
+    ));
 
     let motor = MotorJointDef::new(base.clone())
         .linear_velocity([2.0_f32, -1.0])
@@ -219,10 +266,23 @@ fn joint_defs_are_readable_value_types() {
         1.0e-6
     ));
     assert!(approx_eq(motor.maximum_spring_torque(), 9.0, 1.0e-6));
+    let motor_roundtrip = MotorJointDef::from_raw(motor.clone().into_raw());
+    assert!(approx_vec2(
+        motor_roundtrip.target_linear_velocity(),
+        Vec2::new(2.0, -1.0),
+        1.0e-6
+    ));
+    assert!(approx_eq(
+        motor_roundtrip.maximum_spring_torque(),
+        9.0,
+        1.0e-6
+    ));
 
     let filter = FilterJointDef::new(base.clone());
     assert!(same_body_id(filter.base().body_b_id(), body_b));
     assert!(filter.base().collide_connected());
+    let filter_roundtrip = FilterJointDef::from_raw(filter.into_raw());
+    assert!(same_body_id(filter_roundtrip.base().body_b_id(), body_b));
 }
 
 #[test]

@@ -1,3 +1,4 @@
+use std::ffi::c_void;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -69,6 +70,54 @@ fn callback_world_can_read_shape_user_data() {
     world.step(1.0 / 60.0, 1);
 
     assert!(called.load(Ordering::SeqCst) > 0);
+}
+
+#[test]
+fn raw_user_data_pointer_escape_hatches_are_explicit() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let mut body = world.create_body_owned(BodyBuilder::new().build());
+    let body_b = world.create_body_id(BodyBuilder::new().build());
+    let mut shape = world.create_circle_shape_for_owned(
+        body.id(),
+        &ShapeDef::default(),
+        &shapes::circle([0.0_f32, 0.0], 0.5),
+    );
+    let mut joint = world
+        .revolute(body.id(), body_b)
+        .anchor_world([0.0_f32, 0.0])
+        .build_owned();
+
+    let mut body_marker = 10_u32;
+    let mut shape_marker = 20_u32;
+    let mut joint_marker = 30_u32;
+    let body_ptr = (&mut body_marker as *mut u32).cast::<c_void>();
+    let shape_ptr = (&mut shape_marker as *mut u32).cast::<c_void>();
+    let joint_ptr = (&mut joint_marker as *mut u32).cast::<c_void>();
+
+    unsafe {
+        body.set_user_data_ptr_raw(body_ptr);
+        shape.set_user_data_ptr_raw(shape_ptr);
+        joint.set_user_data_ptr_raw(joint_ptr);
+    }
+
+    assert_eq!(body.user_data_ptr_raw(), body_ptr);
+    assert_eq!(shape.user_data_ptr_raw(), shape_ptr);
+    assert_eq!(joint.user_data_ptr_raw(), joint_ptr);
+
+    unsafe {
+        body.try_set_user_data_ptr_raw(core::ptr::null_mut())
+            .unwrap();
+        shape
+            .try_set_user_data_ptr_raw(core::ptr::null_mut())
+            .unwrap();
+        joint
+            .try_set_user_data_ptr_raw(core::ptr::null_mut())
+            .unwrap();
+    }
+
+    assert!(body.try_user_data_ptr_raw().unwrap().is_null());
+    assert!(shape.try_user_data_ptr_raw().unwrap().is_null());
+    assert!(joint.try_user_data_ptr_raw().unwrap().is_null());
 }
 
 #[test]

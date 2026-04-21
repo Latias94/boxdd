@@ -119,7 +119,7 @@ The main intentional raw escape hatches are:
   consumers that need direct access to Box2D event buffers
 - `debug_draw_raw` for render backends that want zero-copy vertex slices and `CStr`
   strings instead of the safe converted callback surface
-- raw user-data pointer APIs (`set_user_data_ptr`, `user_data_ptr`) for interop with
+- raw user-data pointer APIs (`set_user_data_ptr_raw`, `user_data_ptr_raw`) for interop with
   existing pointer-based ownership schemes
 
 These seams are worth keeping only if:
@@ -161,6 +161,8 @@ These seams are worth keeping only if:
 - serialize-time chain metadata cleanup so `ChainDef` helpers and `World::chain_records()` stay on crate-owned `Filter` / `Vec2` / `SurfaceMaterial` vocabulary instead of leaking raw `ffi` collections back into the public surface
 - definition value-object cleanup so `ShapeDef` / `ChainDef` can be inspected as normal crate-owned config values instead of acting like builder-only write shells
 - creation-definition cleanup so `BodyDef`, `JointBase`, and concrete joint defs no longer act like write-only shells, and obvious naming mistakes on config-only APIs are corrected even when that requires a breaking change
+- world-config cleanup so top-level setup values such as `WorldDef` and `ExplosionDef` follow the same readable crate-owned value-object rules as the rest of the safe API
+- config raw-boundary cleanup so builder-oriented wrappers such as `BodyDef`, `ShapeDef`, `JointBase`, and concrete joint defs cross back to raw Box2D structs through explicit named escape hatches when users truly need that seam
 - keep event APIs centered on `World` unless a future use-case justifies a narrower `WorldHandle` mirror for owned snapshots only
 
 ### Planned follow-up audit items

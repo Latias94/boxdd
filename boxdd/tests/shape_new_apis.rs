@@ -231,6 +231,12 @@ fn shape_def_is_a_readable_value_type_and_can_seed_a_builder() {
     assert!(approx_eq(rebuilt.density(), 4.0, f32::EPSILON));
     assert!(!rebuilt.is_sensor());
     assert_eq!(rebuilt.filter(), filter);
+
+    let roundtrip = ShapeDef::from_raw(sdef.into_raw());
+    assert_eq!(roundtrip.material(), material);
+    assert!(approx_eq(roundtrip.density(), 2.5, f32::EPSILON));
+    assert_eq!(roundtrip.filter(), filter);
+    assert!(roundtrip.is_sensor());
 }
 
 #[test]

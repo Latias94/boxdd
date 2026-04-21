@@ -23,6 +23,11 @@ impl RevoluteJointDef {
     }
 
     #[inline]
+    pub fn from_raw(raw: ffi::b2RevoluteJointDef) -> Self {
+        Self(raw)
+    }
+
+    #[inline]
     pub fn base(&self) -> JointBase {
         JointBase(self.0.base)
     }
@@ -75,6 +80,11 @@ impl RevoluteJointDef {
     #[inline]
     pub fn target_motor_speed(&self) -> f32 {
         self.0.motorSpeed
+    }
+
+    #[inline]
+    pub fn into_raw(self) -> ffi::b2RevoluteJointDef {
+        self.0
     }
 
     pub fn target_angle(mut self, v: f32) -> Self {
