@@ -13,6 +13,52 @@ fn same_joint_id(a: JointId, b: JointId) -> bool {
 }
 
 #[test]
+fn body_def_is_a_readable_value_type_and_can_seed_a_builder() {
+    let def = BodyDef::builder()
+        .body_type(BodyType::Dynamic)
+        .position([1.5_f32, -2.25])
+        .angle(0.75)
+        .linear_velocity([-3.0_f32, 4.5])
+        .angular_velocity(1.25)
+        .linear_damping(0.2)
+        .angular_damping(0.4)
+        .gravity_scale(1.75)
+        .enable_sleep(false)
+        .awake(false)
+        .bullet(true)
+        .allow_fast_rotation(true)
+        .enabled(false)
+        .build();
+
+    assert_eq!(def.body_type(), BodyType::Dynamic);
+    assert_eq!(def.position(), Vec2::new(1.5, -2.25));
+    assert!(approx_eq(def.angle(), 0.75, 1.0e-6));
+    assert!(approx_eq(def.rotation().angle(), 0.75, 1.0e-6));
+    assert_eq!(def.linear_velocity(), Vec2::new(-3.0, 4.5));
+    assert!(approx_eq(def.angular_velocity(), 1.25, 1.0e-6));
+    assert!(approx_eq(def.linear_damping(), 0.2, 1.0e-6));
+    assert!(approx_eq(def.angular_damping(), 0.4, 1.0e-6));
+    assert!(approx_eq(def.gravity_scale(), 1.75, 1.0e-6));
+    assert!(!def.is_sleep_enabled());
+    assert!(!def.is_awake());
+    assert!(def.is_bullet());
+    assert!(def.is_fast_rotation_allowed());
+    assert!(!def.is_enabled());
+
+    let rebuilt = BodyBuilder::from(def.clone())
+        .position([0.0_f32, 2.0])
+        .enabled(true)
+        .build();
+    assert_eq!(rebuilt.body_type(), BodyType::Dynamic);
+    assert_eq!(rebuilt.position(), Vec2::new(0.0, 2.0));
+    assert!(approx_eq(rebuilt.angle(), 0.75, 1.0e-6));
+    assert_eq!(rebuilt.linear_velocity(), Vec2::new(-3.0, 4.5));
+    assert!(rebuilt.is_enabled());
+    assert!(rebuilt.is_bullet());
+    assert!(rebuilt.is_fast_rotation_allowed());
+}
+
+#[test]
 fn body_runtime_controls_and_enumeration_are_available_across_handle_and_world_apis() {
     let mut world = World::new(WorldDef::default()).unwrap();
 

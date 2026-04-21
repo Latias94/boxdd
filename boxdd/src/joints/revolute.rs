@@ -21,6 +21,62 @@ impl RevoluteJointDef {
         def.base = base.0;
         Self(def)
     }
+
+    #[inline]
+    pub fn base(&self) -> JointBase {
+        JointBase(self.0.base)
+    }
+
+    #[inline]
+    pub fn target_angle_value(&self) -> f32 {
+        self.0.targetAngle
+    }
+
+    #[inline]
+    pub fn spring_enabled(&self) -> bool {
+        self.0.enableSpring
+    }
+
+    #[inline]
+    pub fn spring_hertz(&self) -> f32 {
+        self.0.hertz
+    }
+
+    #[inline]
+    pub fn spring_damping_ratio(&self) -> f32 {
+        self.0.dampingRatio
+    }
+
+    #[inline]
+    pub fn limit_enabled(&self) -> bool {
+        self.0.enableLimit
+    }
+
+    #[inline]
+    pub fn minimum_angle(&self) -> f32 {
+        self.0.lowerAngle
+    }
+
+    #[inline]
+    pub fn maximum_angle(&self) -> f32 {
+        self.0.upperAngle
+    }
+
+    #[inline]
+    pub fn motor_enabled(&self) -> bool {
+        self.0.enableMotor
+    }
+
+    #[inline]
+    pub fn maximum_motor_torque(&self) -> f32 {
+        self.0.maxMotorTorque
+    }
+
+    #[inline]
+    pub fn target_motor_speed(&self) -> f32 {
+        self.0.motorSpeed
+    }
+
     pub fn target_angle(mut self, v: f32) -> Self {
         self.0.targetAngle = v;
         self

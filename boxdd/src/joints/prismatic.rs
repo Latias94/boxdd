@@ -21,6 +21,57 @@ impl PrismaticJointDef {
         def.base = base.0;
         Self(def)
     }
+
+    #[inline]
+    pub fn base(&self) -> JointBase {
+        JointBase(self.0.base)
+    }
+
+    #[inline]
+    pub fn spring_enabled(&self) -> bool {
+        self.0.enableSpring
+    }
+
+    #[inline]
+    pub fn spring_hertz(&self) -> f32 {
+        self.0.hertz
+    }
+
+    #[inline]
+    pub fn spring_damping_ratio(&self) -> f32 {
+        self.0.dampingRatio
+    }
+
+    #[inline]
+    pub fn minimum_translation(&self) -> f32 {
+        self.0.lowerTranslation
+    }
+
+    #[inline]
+    pub fn maximum_translation(&self) -> f32 {
+        self.0.upperTranslation
+    }
+
+    #[inline]
+    pub fn limit_enabled(&self) -> bool {
+        self.0.enableLimit
+    }
+
+    #[inline]
+    pub fn motor_enabled(&self) -> bool {
+        self.0.enableMotor
+    }
+
+    #[inline]
+    pub fn maximum_motor_force(&self) -> f32 {
+        self.0.maxMotorForce
+    }
+
+    #[inline]
+    pub fn target_motor_speed(&self) -> f32 {
+        self.0.motorSpeed
+    }
+
     /// Enable/disable spring along the prismatic axis.
     pub fn enable_spring(mut self, flag: bool) -> Self {
         self.0.enableSpring = flag;
@@ -57,12 +108,6 @@ impl PrismaticJointDef {
         self
     }
     /// Maximum motor force (N) along the axis.
-    pub fn max_motor_torque(mut self, v: f32) -> Self {
-        // Upstream names this as max motor force for prismatic joints
-        self.0.maxMotorForce = v;
-        self
-    }
-    /// Alias for clarity: max motor force (N)
     pub fn max_motor_force(mut self, v: f32) -> Self {
         self.0.maxMotorForce = v;
         self
@@ -121,7 +166,7 @@ impl<'w> PrismaticJointBuilder<'w> {
         self.def = self
             .def
             .enable_motor(true)
-            .max_motor_torque(max_force)
+            .max_motor_force(max_force)
             .motor_speed(speed);
         self
     }
@@ -130,7 +175,7 @@ impl<'w> PrismaticJointBuilder<'w> {
         self.def = self
             .def
             .enable_motor(true)
-            .max_motor_torque(max_force)
+            .max_motor_force(max_force)
             .motor_speed_deg(speed_deg);
         self
     }

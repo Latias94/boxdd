@@ -186,6 +186,125 @@ fn surface_material_is_a_readable_value_type_with_explicit_raw_conversions() {
 }
 
 #[test]
+fn shape_def_is_a_readable_value_type_and_can_seed_a_builder() {
+    let material = SurfaceMaterial::default()
+        .with_friction(0.45)
+        .with_restitution(0.2)
+        .with_user_material_id(7);
+    let filter = Filter {
+        category_bits: 0x0010,
+        mask_bits: 0x0020,
+        group_index: -5,
+    };
+
+    let sdef = ShapeDef::builder()
+        .material(material)
+        .density(2.5)
+        .filter(filter)
+        .enable_custom_filtering(true)
+        .sensor(true)
+        .enable_sensor_events(true)
+        .enable_contact_events(true)
+        .enable_hit_events(true)
+        .enable_pre_solve_events(true)
+        .invoke_contact_creation(true)
+        .update_body_mass(false)
+        .build();
+
+    assert_eq!(sdef.material(), material);
+    assert!(approx_eq(sdef.density(), 2.5, f32::EPSILON));
+    assert_eq!(sdef.filter(), filter);
+    assert!(sdef.is_sensor());
+    assert!(sdef.custom_filtering_enabled());
+    assert!(sdef.sensor_events_enabled());
+    assert!(sdef.contact_events_enabled());
+    assert!(sdef.hit_events_enabled());
+    assert!(sdef.pre_solve_events_enabled());
+    assert!(sdef.invokes_contact_creation());
+    assert!(!sdef.updates_body_mass());
+
+    let rebuilt = ShapeDefBuilder::from(sdef.clone())
+        .density(4.0)
+        .sensor(false)
+        .build();
+    assert_eq!(rebuilt.material(), material);
+    assert!(approx_eq(rebuilt.density(), 4.0, f32::EPSILON));
+    assert!(!rebuilt.is_sensor());
+    assert_eq!(rebuilt.filter(), filter);
+}
+
+#[test]
+fn chain_def_exposes_points_flags_and_material_layout() {
+    let points = [
+        Vec2::new(-2.0, 0.0),
+        Vec2::new(-1.0, 0.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(2.0, 0.0),
+    ];
+    let filter = Filter {
+        category_bits: 0x0008,
+        mask_bits: 0x0010,
+        group_index: 3,
+    };
+
+    let default_def = boxdd::shapes::chain::ChainDef::builder()
+        .points(points)
+        .filter(filter)
+        .enable_sensor_events(true)
+        .build();
+    assert_eq!(default_def.points(), points.as_slice());
+    assert!(!default_def.is_loop());
+    assert_eq!(default_def.filter(), filter);
+    assert!(default_def.sensor_events_enabled());
+    assert_eq!(default_def.material_count(), 1);
+    match default_def.material_layout() {
+        ChainDefMaterialLayout::Default(material) => {
+            assert_eq!(material, SurfaceMaterial::default());
+        }
+        other => panic!("expected default material layout, got {other:?}"),
+    }
+
+    let single_material = SurfaceMaterial::default()
+        .with_friction(0.3)
+        .with_restitution(0.1);
+    let single_def = boxdd::shapes::chain::ChainDef::builder()
+        .points(points)
+        .single_material(&single_material)
+        .build();
+    assert_eq!(single_def.material_count(), 1);
+    match single_def.material_layout() {
+        ChainDefMaterialLayout::Single(material) => {
+            assert_eq!(material, single_material);
+        }
+        other => panic!("expected single material layout, got {other:?}"),
+    }
+
+    let multiple_materials = [
+        SurfaceMaterial::default().with_friction(0.1),
+        SurfaceMaterial::default().with_friction(0.2),
+        SurfaceMaterial::default().with_friction(0.3),
+        SurfaceMaterial::default().with_friction(0.4),
+    ];
+    let multiple_def = ChainDefBuilder::from(
+        boxdd::shapes::chain::ChainDef::builder()
+            .points(points)
+            .materials(&multiple_materials)
+            .build(),
+    )
+    .is_loop(true)
+    .build();
+    assert!(multiple_def.is_loop());
+    assert_eq!(multiple_def.points(), points.as_slice());
+    assert_eq!(multiple_def.material_count(), multiple_materials.len());
+    match multiple_def.material_layout() {
+        ChainDefMaterialLayout::Multiple(materials) => {
+            assert_eq!(materials, multiple_materials.as_slice());
+        }
+        other => panic!("expected multiple material layout, got {other:?}"),
+    }
+}
+
+#[test]
 fn shape_filters_use_safe_values_with_explicit_raw_escape_hatch() {
     let mut world = World::new(WorldDef::default()).unwrap();
     let body = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());

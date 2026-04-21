@@ -269,7 +269,7 @@ pub use query::{
     Aabb, CollisionPlane, MoverPlaneResult, Plane, PlaneSolverResult, QueryFilter, RayResult,
     clip_vector, solve_planes,
 };
-pub use shapes::chain::{Chain, ChainDef, ChainDefBuilder, OwnedChain};
+pub use shapes::chain::{Chain, ChainDef, ChainDefBuilder, ChainDefMaterialLayout, OwnedChain};
 pub use shapes::{
     Capsule, ChainSegment, Circle, MAX_POLYGON_VERTICES, OwnedShape, Polygon, Segment, Shape,
     ShapeDef, ShapeDefBuilder, ShapeType, SurfaceMaterial,

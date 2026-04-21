@@ -38,6 +38,8 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Recoverable rotation round-tripping for `mint::RowMatrix2/ColumnMatrix2` and `glam::Mat2`, via `Rot::try_from(...)`, `RotFromMintError`, and `RotFromGlamError`.
 - Reusable-buffer world event snapshot APIs: `body_events_into`, `contact_events_into`, `sensor_events_into`, `joint_events_into`, plus matching `try_*` variants for recoverable callback-sensitive event reads.
 - Safe rounded-box polygon helpers via `Polygon::rounded_box_polygon(...)` and `shapes::rounded_box_polygon(...)`.
+- Read-side definition APIs so `ShapeDef` exposes crate-owned getters for material/filter/flags, `ChainDef` exposes `points()` / `filter()` / `sensor_events_enabled()` plus `material_layout()`, and both definition builders can start from existing defs via `From<...>`.
+- Read-side creation-definition APIs so `BodyDef`, `JointBase`, and all concrete `*JointDef` types expose safe getters, and `BodyDef` / `JointBase` now offer `builder()` plus `From<...> for ...Builder` round-tripping.
 
 ### Changed
 - Query internals now share reusable collection helpers instead of duplicating callback-to-`Vec` plumbing across each query entrypoint.
@@ -82,6 +84,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Docs/design: `WorldHandle` intentionally does not mirror event-buffer APIs in `0.3.0`; event reads stay on `World` because they are coupled to completed-step buffers and deferred-destroy flushing semantics.
 - Breaking: serialize-time chain metadata now stays on crate-owned vocabulary: `World::chain_records()` returns `Filter`, `Vec<Vec2>`, and `ChainMaterialsRecord`, and the old public `ChainDef` raw clone helpers are no longer exposed.
 - Breaking: `SurfaceMaterial` now behaves like a normal crate-owned value type: read access uses getters such as `friction()` / `restitution()` / `custom_color()`, `custom_color` uses crate-owned `HexColor`, builder-style mutation uses `with_*` methods, and raw interop is explicit through `from_raw(...)` / `into_raw()`.
+- Breaking: `PrismaticJointDef::max_motor_torque(...)` was removed; prismatic creation-time motor configuration now uses the correct `max_motor_force(...)` name only.
 - Breaking: raw world-id escape hatches now use explicit naming: `World::raw` / `WorldHandle::raw` moved to `world_id_raw`, and body/shape/chain `world_id` accessors moved to `world_id_raw` / `try_world_id_raw`.
 - Breaking: `DebugDraw` / `RawDebugDraw` color parameters and collected command colors now use crate-owned `HexColor` instead of leaking `ffi::b2HexColor`.
 - Docs: crate docs and README now spell out the threading / async model (`worker_count` vs `World: !Send/!Sync`) and the intended panic-by-default vs `try_*` error-handling split.

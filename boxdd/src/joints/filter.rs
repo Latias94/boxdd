@@ -17,6 +17,11 @@ impl FilterJointDef {
         def.base = base.0;
         Self(def)
     }
+
+    #[inline]
+    pub fn base(&self) -> JointBase {
+        JointBase(self.0.base)
+    }
 }
 
 /// Builder for a filter joint that disables collision between two bodies while keeping them in the same island.

@@ -134,6 +134,8 @@ Scope:
 - clarify panic-by-default vs `try_*` error-handling guidance at the crate boundary
 - make the `World` vs `WorldHandle` event API split explicit so it is treated as an intentional lifecycle/design choice instead of an accidental completeness gap
 - remove the remaining serialize-time chain metadata leaks so `ChainDef` / `World::chain_records()` stop exposing raw `ffi::b2Vec2` / `b2SurfaceMaterial` collections where crate-owned value types already exist
+- make definition-side value objects such as `ShapeDef` / `ChainDef` readable in the same crate-owned vocabulary used by their builders instead of forcing write-only configuration shells
+- make creation-time config types such as `BodyDef`, `JointBase`, and concrete joint defs readable and correctly named instead of relying on builder-only mutation or legacy misnomers
 - productize live shape runtime wrappers for AABB, point tests, ray casts, computed mass data, and runtime event toggles across owned/scoped/id APIs
 - productize the body runtime completeness slice around rotation, sleeping/awake/enabled/bullet/name state, attached ids, and body-level event toggles
 - productize the first joint runtime completeness slice around joint metadata, constraint tuning, local frames, and wake helpers across owned/scoped/id APIs
@@ -152,6 +154,8 @@ Exit criteria:
 - math interop documentation and tests cover the intended `mint` bridge story explicitly
 - the `WorldHandle` event surface is either explicitly documented as intentionally narrow or expanded with a concrete lifecycle story; it is no longer ambiguous
 - serialize-time chain capture no longer exposes raw point/material/filter storage when crate-owned value/layout types already define the public vocabulary
+- definition-side config values no longer require raw field knowledge or builder replay just to inspect material/filter/flag state
+- creation-time config values no longer require source spelunking or replaying builder calls just to inspect body/joint setup, and wrong config names are removed instead of preserved indefinitely
 - crate-owned `Rot` no longer has a one-way-only `mint` story; row/column-major rotation matrices round-trip with recoverable validation
 - common live-shape runtime queries and toggles no longer require raw `ffi` or an upstream-only mental model
 - common body runtime controls and attached-id enumeration no longer require handle-only workarounds or ad-hoc allocations

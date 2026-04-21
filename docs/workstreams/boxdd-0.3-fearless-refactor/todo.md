@@ -27,6 +27,8 @@
 - [x] Record the `World` vs `WorldHandle` event split as an intentional `0.3.0` design decision: event reads stay on `World`, and any future `WorldHandle` mirror should start with owned snapshots only.
 - [x] Narrow the serialize-time chain metadata seam so `ChainDef` raw point/material helpers stay crate-private and `World::chain_records()` returns crate-owned `Filter` / `Vec2` / material-layout values instead of raw `ffi` collections.
 - [x] Productize the remaining shape-material geometry seams: add safe rounded-box polygon helpers and make `SurfaceMaterial` a full crate-owned value type with getters plus explicit `from_raw(...)` / `into_raw()` conversion.
+- [x] Complete the definition-side value-object cleanup so `ShapeDef` has read-side getters, `ChainDef` exposes safe points/filter/material-layout inspection, and both builders can resume from an existing definition value.
+- [x] Continue creation-time definition cleanup so `BodyDef`, `JointBase`, and concrete `*JointDef` types are inspectable value objects, and remove the misnamed prismatic `max_motor_torque(...)` creation alias in favor of `max_motor_force(...)`.
 
 ## In Progress
 

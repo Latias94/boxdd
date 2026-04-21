@@ -18,6 +18,62 @@ impl MotorJointDef {
         def.base = base.0;
         Self(def)
     }
+
+    #[inline]
+    pub fn base(&self) -> JointBase {
+        JointBase(self.0.base)
+    }
+
+    #[inline]
+    pub fn target_linear_velocity(&self) -> crate::types::Vec2 {
+        crate::types::Vec2::from(self.0.linearVelocity)
+    }
+
+    #[inline]
+    pub fn maximum_velocity_force(&self) -> f32 {
+        self.0.maxVelocityForce
+    }
+
+    #[inline]
+    pub fn target_angular_velocity(&self) -> f32 {
+        self.0.angularVelocity
+    }
+
+    #[inline]
+    pub fn maximum_velocity_torque(&self) -> f32 {
+        self.0.maxVelocityTorque
+    }
+
+    #[inline]
+    pub fn linear_spring_hertz(&self) -> f32 {
+        self.0.linearHertz
+    }
+
+    #[inline]
+    pub fn linear_spring_damping_ratio(&self) -> f32 {
+        self.0.linearDampingRatio
+    }
+
+    #[inline]
+    pub fn maximum_spring_force(&self) -> f32 {
+        self.0.maxSpringForce
+    }
+
+    #[inline]
+    pub fn angular_spring_hertz(&self) -> f32 {
+        self.0.angularHertz
+    }
+
+    #[inline]
+    pub fn angular_spring_damping_ratio(&self) -> f32 {
+        self.0.angularDampingRatio
+    }
+
+    #[inline]
+    pub fn maximum_spring_torque(&self) -> f32 {
+        self.0.maxSpringTorque
+    }
+
     /// Target linear velocity of body B relative to A (m/s).
     pub fn linear_velocity<V: Into<crate::types::Vec2>>(mut self, v: V) -> Self {
         self.0.linearVelocity = ffi::b2Vec2::from(v.into());

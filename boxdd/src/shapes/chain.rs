@@ -3,11 +3,43 @@ use std::marker::PhantomData;
 use crate::body::Body;
 use crate::error::{ApiError, ApiResult};
 use crate::shapes::SurfaceMaterial;
-use crate::types::{ChainId, ShapeId};
+use crate::types::{ChainId, ShapeId, Vec2};
 use crate::world::World;
 use boxdd_sys::ffi;
 use std::rc::Rc;
 use std::sync::Arc;
+
+const _: () = {
+    assert!(core::mem::size_of::<Vec2>() == core::mem::size_of::<ffi::b2Vec2>());
+    assert!(core::mem::align_of::<Vec2>() == core::mem::align_of::<ffi::b2Vec2>());
+    assert!(
+        core::mem::size_of::<SurfaceMaterial>() == core::mem::size_of::<ffi::b2SurfaceMaterial>()
+    );
+    assert!(
+        core::mem::align_of::<SurfaceMaterial>() == core::mem::align_of::<ffi::b2SurfaceMaterial>()
+    );
+};
+
+/// How a `ChainDef` provides surface materials to Box2D.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum ChainDefMaterialLayout<'a> {
+    /// Use Box2D's default chain material.
+    Default(SurfaceMaterial),
+    /// Use one material for the entire chain.
+    Single(SurfaceMaterial),
+    /// Use one material entry for every stored chain point.
+    Multiple(&'a [SurfaceMaterial]),
+}
+
+impl<'a> ChainDefMaterialLayout<'a> {
+    /// Number of material entries visible to Box2D.
+    pub const fn count(&self) -> usize {
+        match self {
+            Self::Default(_) | Self::Single(_) => 1,
+            Self::Multiple(materials) => materials.len(),
+        }
+    }
+}
 
 /// A scoped chain handle tied to a mutable borrow of the world.
 pub struct Chain<'w> {
@@ -407,11 +439,56 @@ impl Default for ChainDef {
 }
 
 impl ChainDef {
+    /// Start building a new `ChainDef` from defaults.
     pub fn builder() -> ChainDefBuilder {
         ChainDefBuilder {
             inner: Self::default(),
         }
     }
+
+    /// Stored chain points, including Box2D's ghost points.
+    pub fn points(&self) -> &[Vec2] {
+        unsafe {
+            core::slice::from_raw_parts(self.points.as_ptr().cast::<Vec2>(), self.points.len())
+        }
+    }
+
+    /// Whether the chain is closed into a loop.
+    pub const fn is_loop(&self) -> bool {
+        self.def.isLoop
+    }
+
+    /// Collision filter used by the chain.
+    pub const fn filter(&self) -> crate::filter::Filter {
+        crate::filter::Filter::from_raw(self.def.filter)
+    }
+
+    /// Whether sensor begin/end events are enabled for the chain.
+    pub const fn sensor_events_enabled(&self) -> bool {
+        self.def.enableSensorEvents
+    }
+
+    /// Inspect the material layout supplied to the chain definition.
+    pub fn material_layout(&self) -> ChainDefMaterialLayout<'_> {
+        match self.materials.len() {
+            0 => ChainDefMaterialLayout::Default(SurfaceMaterial::from_raw(unsafe {
+                *self.def.materials
+            })),
+            1 => ChainDefMaterialLayout::Single(SurfaceMaterial::from_raw(self.materials[0])),
+            _ => ChainDefMaterialLayout::Multiple(unsafe {
+                core::slice::from_raw_parts(
+                    self.materials.as_ptr().cast::<SurfaceMaterial>(),
+                    self.materials.len(),
+                )
+            }),
+        }
+    }
+
+    /// Number of material entries visible to Box2D.
+    pub fn material_count(&self) -> usize {
+        self.material_layout().count()
+    }
+
     #[cfg(feature = "serialize")]
     pub(crate) fn points_raw_slice(&self) -> &[ffi::b2Vec2] {
         &self.points
@@ -490,6 +567,12 @@ impl ChainDefBuilder {
             self.inner.def.points = core::ptr::null();
         }
         self.inner
+    }
+}
+
+impl From<ChainDef> for ChainDefBuilder {
+    fn from(def: ChainDef) -> Self {
+        Self { inner: def }
     }
 }
 

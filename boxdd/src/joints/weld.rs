@@ -17,6 +17,32 @@ impl WeldJointDef {
         def.base = base.0;
         Self(def)
     }
+
+    #[inline]
+    pub fn base(&self) -> JointBase {
+        JointBase(self.0.base)
+    }
+
+    #[inline]
+    pub fn configured_linear_hertz(&self) -> f32 {
+        self.0.linearHertz
+    }
+
+    #[inline]
+    pub fn configured_angular_hertz(&self) -> f32 {
+        self.0.angularHertz
+    }
+
+    #[inline]
+    pub fn configured_linear_damping_ratio(&self) -> f32 {
+        self.0.linearDampingRatio
+    }
+
+    #[inline]
+    pub fn configured_angular_damping_ratio(&self) -> f32 {
+        self.0.angularDampingRatio
+    }
+
     /// Linear stiffness (Hz) for weld constraint.
     pub fn linear_hertz(mut self, v: f32) -> Self {
         self.0.linearHertz = v;

@@ -1414,6 +1414,97 @@ impl Default for BodyDef {
     }
 }
 
+impl BodyDef {
+    /// Start building a new `BodyDef` from defaults.
+    pub fn builder() -> BodyBuilder {
+        BodyBuilder::new()
+    }
+
+    /// Body type used when the body is created.
+    #[inline]
+    pub fn body_type(&self) -> BodyType {
+        BodyType::from_raw(self.0.type_)
+    }
+
+    /// Initial world-space position.
+    #[inline]
+    pub fn position(&self) -> Vec2 {
+        Vec2::from(self.0.position)
+    }
+
+    /// Initial rotation value.
+    #[inline]
+    pub fn rotation(&self) -> crate::Rot {
+        crate::Rot::from(self.0.rotation)
+    }
+
+    /// Initial angle in radians.
+    #[inline]
+    pub fn angle(&self) -> f32 {
+        self.rotation().angle()
+    }
+
+    /// Initial linear velocity in m/s.
+    #[inline]
+    pub fn linear_velocity(&self) -> Vec2 {
+        Vec2::from(self.0.linearVelocity)
+    }
+
+    /// Initial angular velocity in rad/s.
+    #[inline]
+    pub fn angular_velocity(&self) -> f32 {
+        self.0.angularVelocity
+    }
+
+    /// Linear damping.
+    #[inline]
+    pub fn linear_damping(&self) -> f32 {
+        self.0.linearDamping
+    }
+
+    /// Angular damping.
+    #[inline]
+    pub fn angular_damping(&self) -> f32 {
+        self.0.angularDamping
+    }
+
+    /// Per-body gravity scale.
+    #[inline]
+    pub fn gravity_scale(&self) -> f32 {
+        self.0.gravityScale
+    }
+
+    /// Whether sleeping is enabled at creation.
+    #[inline]
+    pub fn is_sleep_enabled(&self) -> bool {
+        self.0.enableSleep
+    }
+
+    /// Whether the body starts awake.
+    #[inline]
+    pub fn is_awake(&self) -> bool {
+        self.0.isAwake
+    }
+
+    /// Whether the body starts as a bullet.
+    #[inline]
+    pub fn is_bullet(&self) -> bool {
+        self.0.isBullet
+    }
+
+    /// Whether the body allows fast rotation without Box2D's default clamp.
+    #[inline]
+    pub fn is_fast_rotation_allowed(&self) -> bool {
+        self.0.allowFastRotation
+    }
+
+    /// Whether the body starts enabled for simulation.
+    #[inline]
+    pub fn is_enabled(&self) -> bool {
+        self.0.isEnabled
+    }
+}
+
 /// Fluent builder for `BodyDef`.
 #[doc(alias = "body_builder")]
 #[doc(alias = "bodybuilder")]

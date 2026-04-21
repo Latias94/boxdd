@@ -1790,8 +1790,18 @@ impl<'w> Shape<'w> {
 }
 
 /// Shape surface material parameters.
+#[repr(transparent)]
 #[derive(Copy, Clone, Debug)]
 pub struct SurfaceMaterial(pub(crate) ffi::b2SurfaceMaterial);
+
+const _: () = {
+    assert!(
+        core::mem::size_of::<SurfaceMaterial>() == core::mem::size_of::<ffi::b2SurfaceMaterial>()
+    );
+    assert!(
+        core::mem::align_of::<SurfaceMaterial>() == core::mem::align_of::<ffi::b2SurfaceMaterial>()
+    );
+};
 
 impl Default for SurfaceMaterial {
     fn default() -> Self {
@@ -1890,10 +1900,77 @@ impl Default for ShapeDef {
 }
 
 impl ShapeDef {
+    /// Start building a new `ShapeDef` from defaults.
     pub fn builder() -> ShapeDefBuilder {
         ShapeDefBuilder {
             def: Self::default(),
         }
+    }
+
+    /// Surface material parameters used by the shape.
+    #[inline]
+    pub const fn material(&self) -> SurfaceMaterial {
+        SurfaceMaterial::from_raw(self.0.material)
+    }
+
+    /// Density in kg/m².
+    #[inline]
+    pub const fn density(&self) -> f32 {
+        self.0.density
+    }
+
+    /// Collision filter used by the shape.
+    #[inline]
+    pub const fn filter(&self) -> Filter {
+        Filter::from_raw(self.0.filter)
+    }
+
+    /// Whether the shape is configured as a sensor.
+    #[inline]
+    pub const fn is_sensor(&self) -> bool {
+        self.0.isSensor
+    }
+
+    /// Whether world-level custom filtering is enabled for the shape.
+    #[inline]
+    pub const fn custom_filtering_enabled(&self) -> bool {
+        self.0.enableCustomFiltering
+    }
+
+    /// Whether sensor begin/end events are enabled for the shape.
+    #[inline]
+    pub const fn sensor_events_enabled(&self) -> bool {
+        self.0.enableSensorEvents
+    }
+
+    /// Whether contact begin/end events are enabled for the shape.
+    #[inline]
+    pub const fn contact_events_enabled(&self) -> bool {
+        self.0.enableContactEvents
+    }
+
+    /// Whether hit events are enabled for the shape.
+    #[inline]
+    pub const fn hit_events_enabled(&self) -> bool {
+        self.0.enableHitEvents
+    }
+
+    /// Whether pre-solve events are enabled for the shape.
+    #[inline]
+    pub const fn pre_solve_events_enabled(&self) -> bool {
+        self.0.enablePreSolveEvents
+    }
+
+    /// Whether contact-creation callbacks are invoked for the shape.
+    #[inline]
+    pub const fn invokes_contact_creation(&self) -> bool {
+        self.0.invokeContactCreation
+    }
+
+    /// Whether creating or destroying the shape updates the owning body's mass.
+    #[inline]
+    pub const fn updates_body_mass(&self) -> bool {
+        self.0.updateBodyMass
     }
 }
 
@@ -1974,6 +2051,12 @@ impl ShapeDefBuilder {
     #[must_use]
     pub fn build(self) -> ShapeDef {
         self.def
+    }
+}
+
+impl From<ShapeDef> for ShapeDefBuilder {
+    fn from(def: ShapeDef) -> Self {
+        Self { def }
     }
 }
 

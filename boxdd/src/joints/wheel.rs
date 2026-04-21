@@ -21,6 +21,57 @@ impl WheelJointDef {
         def.base = base.0;
         Self(def)
     }
+
+    #[inline]
+    pub fn base(&self) -> JointBase {
+        JointBase(self.0.base)
+    }
+
+    #[inline]
+    pub fn spring_enabled(&self) -> bool {
+        self.0.enableSpring
+    }
+
+    #[inline]
+    pub fn spring_hertz(&self) -> f32 {
+        self.0.hertz
+    }
+
+    #[inline]
+    pub fn spring_damping_ratio(&self) -> f32 {
+        self.0.dampingRatio
+    }
+
+    #[inline]
+    pub fn limit_enabled(&self) -> bool {
+        self.0.enableLimit
+    }
+
+    #[inline]
+    pub fn minimum_translation(&self) -> f32 {
+        self.0.lowerTranslation
+    }
+
+    #[inline]
+    pub fn maximum_translation(&self) -> f32 {
+        self.0.upperTranslation
+    }
+
+    #[inline]
+    pub fn motor_enabled(&self) -> bool {
+        self.0.enableMotor
+    }
+
+    #[inline]
+    pub fn maximum_motor_torque(&self) -> f32 {
+        self.0.maxMotorTorque
+    }
+
+    #[inline]
+    pub fn target_motor_speed(&self) -> f32 {
+        self.0.motorSpeed
+    }
+
     /// Enable/disable suspension spring.
     pub fn enable_spring(mut self, flag: bool) -> Self {
         self.0.enableSpring = flag;

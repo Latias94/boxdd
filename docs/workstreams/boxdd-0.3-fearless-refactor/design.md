@@ -159,6 +159,8 @@ These seams are worth keeping only if:
 - clearer crate-level error-handling guidance for panic-by-default vs `try_*` usage
 - reusable-buffer event snapshot APIs so callers that need owned event data can still avoid per-frame allocation churn without dropping to raw or borrowed-only views
 - serialize-time chain metadata cleanup so `ChainDef` helpers and `World::chain_records()` stay on crate-owned `Filter` / `Vec2` / `SurfaceMaterial` vocabulary instead of leaking raw `ffi` collections back into the public surface
+- definition value-object cleanup so `ShapeDef` / `ChainDef` can be inspected as normal crate-owned config values instead of acting like builder-only write shells
+- creation-definition cleanup so `BodyDef`, `JointBase`, and concrete joint defs no longer act like write-only shells, and obvious naming mistakes on config-only APIs are corrected even when that requires a breaking change
 - keep event APIs centered on `World` unless a future use-case justifies a narrower `WorldHandle` mirror for owned snapshots only
 
 ### Planned follow-up audit items

@@ -19,7 +19,7 @@ pub use crate::{
     shapes::{
         self, Capsule, ChainSegment, Circle, MAX_POLYGON_VERTICES, OwnedShape, Polygon, Segment,
         Shape, ShapeDef, ShapeDefBuilder, ShapeType, SurfaceMaterial,
-        chain::{Chain, ChainDef, ChainDefBuilder, OwnedChain},
+        chain::{Chain, ChainDef, ChainDefBuilder, ChainDefMaterialLayout, OwnedChain},
     },
     types::{
         BodyId, ChainId, ContactData, ContactId, JointId, Manifold, ManifoldPoint, MassData,

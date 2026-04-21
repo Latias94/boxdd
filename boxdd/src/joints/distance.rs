@@ -21,6 +21,72 @@ impl DistanceJointDef {
         def.base = base.0;
         Self(def)
     }
+
+    #[inline]
+    pub fn base(&self) -> JointBase {
+        JointBase(self.0.base)
+    }
+
+    #[inline]
+    pub fn target_length(&self) -> f32 {
+        self.0.length
+    }
+
+    #[inline]
+    pub fn spring_enabled(&self) -> bool {
+        self.0.enableSpring
+    }
+
+    #[inline]
+    pub fn minimum_spring_force(&self) -> f32 {
+        self.0.lowerSpringForce
+    }
+
+    #[inline]
+    pub fn maximum_spring_force(&self) -> f32 {
+        self.0.upperSpringForce
+    }
+
+    #[inline]
+    pub fn spring_hertz(&self) -> f32 {
+        self.0.hertz
+    }
+
+    #[inline]
+    pub fn spring_damping_ratio(&self) -> f32 {
+        self.0.dampingRatio
+    }
+
+    #[inline]
+    pub fn limit_enabled(&self) -> bool {
+        self.0.enableLimit
+    }
+
+    #[inline]
+    pub fn minimum_length(&self) -> f32 {
+        self.0.minLength
+    }
+
+    #[inline]
+    pub fn maximum_length(&self) -> f32 {
+        self.0.maxLength
+    }
+
+    #[inline]
+    pub fn motor_enabled(&self) -> bool {
+        self.0.enableMotor
+    }
+
+    #[inline]
+    pub fn maximum_motor_force(&self) -> f32 {
+        self.0.maxMotorForce
+    }
+
+    #[inline]
+    pub fn target_motor_speed(&self) -> f32 {
+        self.0.motorSpeed
+    }
+
     /// Target distance between anchors (meters).
     pub fn length(mut self, v: f32) -> Self {
         self.0.length = v;

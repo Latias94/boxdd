@@ -34,6 +34,198 @@ fn create_dynamic_body(world: &mut World, position: [f32; 2]) -> BodyId {
 }
 
 #[test]
+fn joint_defs_are_readable_value_types() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body_a = create_dynamic_body(&mut world, [-1.0, 0.0]);
+    let body_b = create_dynamic_body(&mut world, [2.0, 1.0]);
+
+    let frame_a = Transform::from_pos_angle([0.25_f32, -0.5], 0.3);
+    let frame_b = Transform::from_pos_angle([1.0_f32, 2.0], -0.6);
+    let tuning = ConstraintTuning::new(4.0, 0.25);
+
+    let base = JointBase::builder()
+        .bodies_by_id(body_a, body_b)
+        .local_frames(
+            frame_a.position(),
+            frame_a.rotation().angle(),
+            frame_b.position(),
+            frame_b.rotation().angle(),
+        )
+        .collide_connected(true)
+        .force_threshold(2.5)
+        .torque_threshold(3.5)
+        .constraint_hertz(tuning.hertz)
+        .constraint_damping_ratio(tuning.damping_ratio)
+        .draw_scale(1.25)
+        .build();
+
+    assert!(same_body_id(base.body_a_id(), body_a));
+    assert!(same_body_id(base.body_b_id(), body_b));
+    assert!(approx_transform(base.local_frame_a(), frame_a, 1.0e-6));
+    assert!(approx_transform(base.local_frame_b(), frame_b, 1.0e-6));
+    assert!(base.collide_connected());
+    assert!(approx_eq(base.force_threshold(), 2.5, 1.0e-6));
+    assert!(approx_eq(base.torque_threshold(), 3.5, 1.0e-6));
+    assert!(approx_tuning(base.constraint_tuning(), tuning, 1.0e-6));
+    assert!(approx_eq(base.draw_scale(), 1.25, 1.0e-6));
+
+    let rebuilt_base = JointBaseBuilder::from(base.clone()).draw_scale(2.0).build();
+    assert!(same_body_id(rebuilt_base.body_a_id(), body_a));
+    assert!(approx_eq(rebuilt_base.draw_scale(), 2.0, 1.0e-6));
+    assert!(approx_transform(
+        rebuilt_base.local_frame_b(),
+        frame_b,
+        1.0e-6
+    ));
+
+    let distance = DistanceJointDef::new(base.clone())
+        .length(3.5)
+        .enable_spring(true)
+        .lower_spring_force(-1.0)
+        .upper_spring_force(8.0)
+        .hertz(5.0)
+        .damping_ratio(0.6)
+        .enable_limit(true)
+        .min_length(1.5)
+        .max_length(6.5)
+        .enable_motor(true)
+        .max_motor_force(9.0)
+        .motor_speed(-2.0);
+    assert!(same_body_id(distance.base().body_a_id(), body_a));
+    assert!(approx_eq(distance.target_length(), 3.5, 1.0e-6));
+    assert!(distance.spring_enabled());
+    assert!(approx_eq(distance.minimum_spring_force(), -1.0, 1.0e-6));
+    assert!(approx_eq(distance.maximum_spring_force(), 8.0, 1.0e-6));
+    assert!(approx_eq(distance.spring_hertz(), 5.0, 1.0e-6));
+    assert!(approx_eq(distance.spring_damping_ratio(), 0.6, 1.0e-6));
+    assert!(distance.limit_enabled());
+    assert!(approx_eq(distance.minimum_length(), 1.5, 1.0e-6));
+    assert!(approx_eq(distance.maximum_length(), 6.5, 1.0e-6));
+    assert!(distance.motor_enabled());
+    assert!(approx_eq(distance.maximum_motor_force(), 9.0, 1.0e-6));
+    assert!(approx_eq(distance.target_motor_speed(), -2.0, 1.0e-6));
+
+    let prismatic = PrismaticJointDef::new(base.clone())
+        .enable_spring(true)
+        .hertz(7.0)
+        .damping_ratio(0.4)
+        .lower_translation(-0.25)
+        .upper_translation(0.75)
+        .enable_limit(true)
+        .enable_motor(true)
+        .max_motor_force(11.0)
+        .motor_speed(1.5);
+    assert!(same_body_id(prismatic.base().body_b_id(), body_b));
+    assert!(prismatic.spring_enabled());
+    assert!(approx_eq(prismatic.spring_hertz(), 7.0, 1.0e-6));
+    assert!(approx_eq(prismatic.spring_damping_ratio(), 0.4, 1.0e-6));
+    assert!(approx_eq(prismatic.minimum_translation(), -0.25, 1.0e-6));
+    assert!(approx_eq(prismatic.maximum_translation(), 0.75, 1.0e-6));
+    assert!(prismatic.limit_enabled());
+    assert!(prismatic.motor_enabled());
+    assert!(approx_eq(prismatic.maximum_motor_force(), 11.0, 1.0e-6));
+    assert!(approx_eq(prismatic.target_motor_speed(), 1.5, 1.0e-6));
+
+    let revolute = RevoluteJointDef::new(base.clone())
+        .target_angle(0.2)
+        .enable_spring(true)
+        .hertz(8.0)
+        .damping_ratio(0.3)
+        .enable_limit(true)
+        .lower_angle(-0.5)
+        .upper_angle(1.0)
+        .enable_motor(true)
+        .max_motor_torque(12.0)
+        .motor_speed(0.9);
+    assert!(same_body_id(revolute.base().body_a_id(), body_a));
+    assert!(approx_eq(revolute.target_angle_value(), 0.2, 1.0e-6));
+    assert!(revolute.spring_enabled());
+    assert!(approx_eq(revolute.spring_hertz(), 8.0, 1.0e-6));
+    assert!(approx_eq(revolute.spring_damping_ratio(), 0.3, 1.0e-6));
+    assert!(revolute.limit_enabled());
+    assert!(approx_eq(revolute.minimum_angle(), -0.5, 1.0e-6));
+    assert!(approx_eq(revolute.maximum_angle(), 1.0, 1.0e-6));
+    assert!(revolute.motor_enabled());
+    assert!(approx_eq(revolute.maximum_motor_torque(), 12.0, 1.0e-6));
+    assert!(approx_eq(revolute.target_motor_speed(), 0.9, 1.0e-6));
+
+    let weld = WeldJointDef::new(base.clone())
+        .linear_hertz(3.0)
+        .angular_hertz(4.0)
+        .linear_damping_ratio(0.2)
+        .angular_damping_ratio(0.7);
+    assert!(same_body_id(weld.base().body_a_id(), body_a));
+    assert!(approx_eq(weld.configured_linear_hertz(), 3.0, 1.0e-6));
+    assert!(approx_eq(weld.configured_angular_hertz(), 4.0, 1.0e-6));
+    assert!(approx_eq(
+        weld.configured_linear_damping_ratio(),
+        0.2,
+        1.0e-6
+    ));
+    assert!(approx_eq(
+        weld.configured_angular_damping_ratio(),
+        0.7,
+        1.0e-6
+    ));
+
+    let wheel = WheelJointDef::new(base.clone())
+        .enable_spring(true)
+        .hertz(6.0)
+        .damping_ratio(0.5)
+        .enable_limit(true)
+        .lower_translation(-0.2)
+        .upper_translation(0.4)
+        .enable_motor(true)
+        .max_motor_torque(7.0)
+        .motor_speed(-1.25);
+    assert!(same_body_id(wheel.base().body_b_id(), body_b));
+    assert!(wheel.spring_enabled());
+    assert!(approx_eq(wheel.spring_hertz(), 6.0, 1.0e-6));
+    assert!(approx_eq(wheel.spring_damping_ratio(), 0.5, 1.0e-6));
+    assert!(wheel.limit_enabled());
+    assert!(approx_eq(wheel.minimum_translation(), -0.2, 1.0e-6));
+    assert!(approx_eq(wheel.maximum_translation(), 0.4, 1.0e-6));
+    assert!(wheel.motor_enabled());
+    assert!(approx_eq(wheel.maximum_motor_torque(), 7.0, 1.0e-6));
+    assert!(approx_eq(wheel.target_motor_speed(), -1.25, 1.0e-6));
+
+    let motor = MotorJointDef::new(base.clone())
+        .linear_velocity([2.0_f32, -1.0])
+        .max_velocity_force(5.0)
+        .angular_velocity(0.75)
+        .max_velocity_torque(6.0)
+        .linear_hertz(2.5)
+        .linear_damping_ratio(0.15)
+        .max_spring_force(8.0)
+        .angular_hertz(3.5)
+        .angular_damping_ratio(0.45)
+        .max_spring_torque(9.0);
+    assert!(same_body_id(motor.base().body_a_id(), body_a));
+    assert!(approx_vec2(
+        motor.target_linear_velocity(),
+        Vec2::new(2.0, -1.0),
+        1.0e-6
+    ));
+    assert!(approx_eq(motor.maximum_velocity_force(), 5.0, 1.0e-6));
+    assert!(approx_eq(motor.target_angular_velocity(), 0.75, 1.0e-6));
+    assert!(approx_eq(motor.maximum_velocity_torque(), 6.0, 1.0e-6));
+    assert!(approx_eq(motor.linear_spring_hertz(), 2.5, 1.0e-6));
+    assert!(approx_eq(motor.linear_spring_damping_ratio(), 0.15, 1.0e-6));
+    assert!(approx_eq(motor.maximum_spring_force(), 8.0, 1.0e-6));
+    assert!(approx_eq(motor.angular_spring_hertz(), 3.5, 1.0e-6));
+    assert!(approx_eq(
+        motor.angular_spring_damping_ratio(),
+        0.45,
+        1.0e-6
+    ));
+    assert!(approx_eq(motor.maximum_spring_torque(), 9.0, 1.0e-6));
+
+    let filter = FilterJointDef::new(base.clone());
+    assert!(same_body_id(filter.base().body_b_id(), body_b));
+    assert!(filter.base().collide_connected());
+}
+
+#[test]
 fn joint_runtime_metadata_and_tuning_are_available_across_owned_scoped_and_world_apis() {
     let mut world = World::new(WorldDef::default()).unwrap();
 

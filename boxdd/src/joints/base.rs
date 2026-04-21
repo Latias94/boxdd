@@ -1003,6 +1003,67 @@ impl Default for JointBase {
     }
 }
 
+impl JointBase {
+    /// Start building a new `JointBase` from defaults.
+    pub fn builder() -> JointBaseBuilder {
+        JointBaseBuilder::new()
+    }
+
+    /// Attached body A id.
+    #[inline]
+    pub fn body_a_id(&self) -> BodyId {
+        self.0.bodyIdA
+    }
+
+    /// Attached body B id.
+    #[inline]
+    pub fn body_b_id(&self) -> BodyId {
+        self.0.bodyIdB
+    }
+
+    /// Local frame on body A.
+    #[inline]
+    pub fn local_frame_a(&self) -> crate::Transform {
+        crate::Transform::from(self.0.localFrameA)
+    }
+
+    /// Local frame on body B.
+    #[inline]
+    pub fn local_frame_b(&self) -> crate::Transform {
+        crate::Transform::from(self.0.localFrameB)
+    }
+
+    /// Whether the connected bodies should collide with each other.
+    #[inline]
+    pub fn collide_connected(&self) -> bool {
+        self.0.collideConnected
+    }
+
+    /// Force threshold used for joint events.
+    #[inline]
+    pub fn force_threshold(&self) -> f32 {
+        self.0.forceThreshold
+    }
+
+    /// Torque threshold used for joint events.
+    #[inline]
+    pub fn torque_threshold(&self) -> f32 {
+        self.0.torqueThreshold
+    }
+
+    /// Shared constraint tuning on the base definition.
+    #[inline]
+    pub fn constraint_tuning(&self) -> ConstraintTuning {
+        ConstraintTuning::new(self.0.constraintHertz, self.0.constraintDampingRatio)
+    }
+
+    /// Debug draw scale.
+    #[inline]
+    pub fn draw_scale(&self) -> f32 {
+        self.0.drawScale
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct JointBaseBuilder {
     base: JointBase,
@@ -1144,5 +1205,11 @@ impl JointBaseBuilder {
 impl Default for JointBaseBuilder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl From<JointBase> for JointBaseBuilder {
+    fn from(base: JointBase) -> Self {
+        Self { base }
     }
 }
