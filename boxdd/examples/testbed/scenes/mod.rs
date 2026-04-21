@@ -1,6 +1,5 @@
 // Central physics app + scene routing for the ImGui testbed
 use boxdd as bd;
-use boxdd_sys::ffi;
 use dear_imgui_rs as imgui;
 
 // Re-export per-scene modules for callers
@@ -812,16 +811,13 @@ impl PhysicsApp {
             let dt = (base_dt * self.time_scale.max(0.0)).max(0.0);
             self.world.step(dt, sub);
             self.step_ms = t0.elapsed().as_secs_f32() * 1000.0;
-            // World counters
-            unsafe {
-                let c = ffi::b2World_GetCounters(self.world.world_id_raw());
-                self.cnt_bodies = c.bodyCount;
-                self.cnt_shapes = c.shapeCount;
-                self.cnt_contacts = c.contactCount;
-                self.cnt_joints = c.jointCount;
-                self.cnt_islands = c.islandCount;
-                self.cnt_awake = ffi::b2World_GetAwakeBodyCount(self.world.world_id_raw());
-            }
+            let c = self.world.counters();
+            self.cnt_bodies = c.body_count;
+            self.cnt_shapes = c.shape_count;
+            self.cnt_contacts = c.contact_count;
+            self.cnt_joints = c.joint_count;
+            self.cnt_islands = c.island_count;
+            self.cnt_awake = self.world.awake_body_count();
         }
         match self.scene {
             Scene::Events => events::tick(self),

@@ -129,6 +129,7 @@ Status: in progress
 Scope:
 
 - review remaining public raw escape hatches such as `world_id`, raw event slices, and debug draw hooks
+- replace low-value example/testbed `boxdd_sys::ffi` call sites with equivalent safe APIs once the wrapper surface is complete enough
 - make remaining crate-owned value types cross the raw boundary explicitly where the wrapper owns the vocabulary
 - productize public opaque ids (`BodyId`, `ShapeId`, `JointId`, `ChainId`, `ContactId`) as crate-owned value types so the safe API stops leaking mixed raw-id seams
 - align core math types (`Vec2`, `Rot`, `Transform`) with the same explicit raw-boundary rule as the rest of the crate-owned API

@@ -61,6 +61,7 @@
 - [x] Productize the remaining low-risk global foundation helpers (`allocated_byte_count`, timing ticks/milliseconds, deterministic hashing, and float validation) while explicitly deferring process-wide allocator/log/assert hooks past `0.3`.
 - [x] Add zero-allocation overlap visitor APIs (`visit_overlap_*` / `try_visit_overlap_*`) and route overlap collection helpers through the same visitor core so hot-path query styles cannot drift.
 - [x] Productize opaque Box2D ids (`BodyId`, `ShapeId`, `JointId`, `ChainId`, `ContactId`) as crate-owned value types with explicit `from_raw(...)` / `into_raw()` boundaries, and remove the remaining mixed raw-id seams from the safe API.
+- [x] Sweep the top-level examples and testbed scenes for low-value raw FFI usage now covered by the safe API, and switch body-velocity reads, shape distance, world counters, and revolute limits over to the crate-owned wrapper surface.
 
 ## In Progress
 

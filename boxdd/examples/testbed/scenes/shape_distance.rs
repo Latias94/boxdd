@@ -1,14 +1,13 @@
 use boxdd as bd;
 use dear_imgui_rs as imgui;
-use boxdd_sys::ffi;
 
 #[allow(dead_code)]
-fn rect_points(hx: f32, hy: f32) -> [ffi::b2Vec2; 4] {
+fn rect_points(hx: f32, hy: f32) -> [[f32; 2]; 4] {
     [
-        ffi::b2Vec2 { x: -hx, y: -hy },
-        ffi::b2Vec2 { x: hx, y: -hy },
-        ffi::b2Vec2 { x: hx, y: hy },
-        ffi::b2Vec2 { x: -hx, y: hy },
+        [-hx, -hy],
+        [hx, -hy],
+        [hx, hy],
+        [-hx, hy],
     ]
 }
 
@@ -16,35 +15,26 @@ pub fn build(_app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {}
 
 #[allow(dead_code)]
 pub fn tick(app: &mut super::PhysicsApp) {
-    // Build two proxies and compute GJK distance
-    let a_pts = rect_points(app.sd_a_hx, app.sd_a_hy);
-    let b_pts = rect_points(app.sd_b_hx, app.sd_b_hy);
-    let proxy_a = unsafe { ffi::b2MakeProxy(a_pts.as_ptr(), a_pts.len() as i32, app.sd_a_radius) };
-    let proxy_b = unsafe { ffi::b2MakeProxy(b_pts.as_ptr(), b_pts.len() as i32, app.sd_b_radius) };
-    let (sa, ca) = app.sd_a_angle.sin_cos();
-    let (sb, cb) = app.sd_b_angle.sin_cos();
-    let ta = ffi::b2Transform {
-        p: bd::Vec2::new(app.sd_a_x, app.sd_a_y).into_raw(),
-        q: ffi::b2Rot { c: ca, s: sa },
-    };
-    let tb = ffi::b2Transform {
-        p: bd::Vec2::new(app.sd_b_x, app.sd_b_y).into_raw(),
-        q: ffi::b2Rot { c: cb, s: sb },
-    };
-    let input = ffi::b2DistanceInput {
-        proxyA: proxy_a,
-        proxyB: proxy_b,
-        transformA: ta,
-        transformB: tb,
-        useRadii: true,
-    };
-    let mut cache = ffi::b2SimplexCache { count: 0, indexA: [0; 3], indexB: [0; 3] };
-    let out = unsafe { ffi::b2ShapeDistance(&input, &mut cache, core::ptr::null_mut(), 0) };
+    let proxy_a = bd::ShapeProxy::new(rect_points(app.sd_a_hx, app.sd_a_hy), app.sd_a_radius)
+        .expect("rect proxy must stay within the Box2D shape-proxy point limit");
+    let proxy_b = bd::ShapeProxy::new(rect_points(app.sd_b_hx, app.sd_b_hy), app.sd_b_radius)
+        .expect("rect proxy must stay within the Box2D shape-proxy point limit");
+    let mut cache = bd::SimplexCache::default();
+    let out = bd::shape_distance(
+        bd::DistanceInput::new(
+            proxy_a,
+            proxy_b,
+            bd::Transform::from_pos_angle([app.sd_a_x, app.sd_a_y], app.sd_a_angle),
+            bd::Transform::from_pos_angle([app.sd_b_x, app.sd_b_y], app.sd_b_angle),
+        )
+        .with_radii(true),
+        &mut cache,
+    );
     app.sd_distance = out.distance;
-    app.sd_point_ax = out.pointA.x;
-    app.sd_point_ay = out.pointA.y;
-    app.sd_point_bx = out.pointB.x;
-    app.sd_point_by = out.pointB.y;
+    app.sd_point_ax = out.point_a.x;
+    app.sd_point_ay = out.point_a.y;
+    app.sd_point_bx = out.point_b.x;
+    app.sd_point_by = out.point_b.y;
 }
 
 pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {

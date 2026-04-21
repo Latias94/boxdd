@@ -116,6 +116,33 @@ fn body_runtime_controls_and_enumeration_are_available_across_handle_and_world_a
             1.0e-6
         ));
 
+        assert_eq!(body.linear_velocity(), Vec2::ZERO);
+        assert_eq!(body.try_linear_velocity().unwrap(), Vec2::ZERO);
+        assert!(approx_eq(body.angular_velocity(), 0.0, 1.0e-6));
+        assert!(approx_eq(body.try_angular_velocity().unwrap(), 0.0, 1.0e-6));
+        body.set_linear_velocity([2.5_f32, -1.25]);
+        body.try_set_angular_velocity(1.5).unwrap();
+        assert_eq!(body.linear_velocity(), Vec2::new(2.5, -1.25));
+        assert_eq!(body.try_linear_velocity().unwrap(), Vec2::new(2.5, -1.25));
+        assert!(approx_eq(body.angular_velocity(), 1.5, 1.0e-6));
+        assert!(approx_eq(body.try_angular_velocity().unwrap(), 1.5, 1.0e-6));
+    }
+
+    assert_eq!(world.body_linear_velocity(body_id), Vec2::new(2.5, -1.25));
+    assert_eq!(
+        world.try_body_linear_velocity(body_id).unwrap(),
+        Vec2::new(2.5, -1.25)
+    );
+    assert!(approx_eq(world.body_angular_velocity(body_id), 1.5, 1.0e-6));
+    assert!(approx_eq(
+        world.try_body_angular_velocity(body_id).unwrap(),
+        1.5,
+        1.0e-6
+    ));
+
+    {
+        let mut body = world.body(body_id).expect("body should still be valid");
+
         assert!(body.is_sleep_enabled());
         assert!(body.try_is_sleep_enabled().unwrap());
         body.enable_sleep(false);

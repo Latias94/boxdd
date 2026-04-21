@@ -59,11 +59,8 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
                 .world
                 .create_revolute_joint_world_id(prev, b, [x - link_half, y]);
             app.created_joints += 1;
-            // Limit a bit for stability
-            unsafe {
-                boxdd_sys::ffi::b2RevoluteJoint_EnableLimit(jid.into_raw(), true);
-                boxdd_sys::ffi::b2RevoluteJoint_SetLimits(jid.into_raw(), -0.5, 0.5);
-            }
+            app.world.revolute_enable_limit(jid, true);
+            app.world.revolute_set_limits(jid, -0.5, 0.5);
             prev = b;
         }
     }

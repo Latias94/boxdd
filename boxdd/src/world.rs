@@ -1405,6 +1405,28 @@ impl World {
         }))
     }
 
+    /// Get a body's world linear velocity.
+    pub fn body_linear_velocity(&self, body: BodyId) -> Vec2 {
+        crate::core::debug_checks::assert_body_valid(body);
+        crate::body::body_linear_velocity_impl(body)
+    }
+
+    pub fn try_body_linear_velocity(&self, body: BodyId) -> crate::error::ApiResult<Vec2> {
+        crate::core::debug_checks::check_body_valid(body)?;
+        Ok(crate::body::body_linear_velocity_impl(body))
+    }
+
+    /// Get a body's angular velocity in radians per second.
+    pub fn body_angular_velocity(&self, body: BodyId) -> f32 {
+        crate::core::debug_checks::assert_body_valid(body);
+        crate::body::body_angular_velocity_impl(body)
+    }
+
+    pub fn try_body_angular_velocity(&self, body: BodyId) -> crate::error::ApiResult<f32> {
+        crate::core::debug_checks::check_body_valid(body)?;
+        Ok(crate::body::body_angular_velocity_impl(body))
+    }
+
     pub fn body_rotation(&self, body: BodyId) -> crate::Rot {
         crate::core::debug_checks::assert_body_valid(body);
         crate::body::body_rotation_impl(body)

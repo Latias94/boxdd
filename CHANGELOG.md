@@ -11,6 +11,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 ## [boxdd 0.3.0] - 2026-04-20
 
 ### Added
+- `World::body_linear_velocity` / `try_body_linear_velocity` and `World::body_angular_velocity` / `try_body_angular_velocity`, completing the id-based body runtime getter surface beside the existing transform/position/rotation helpers.
 - Global foundation helpers for allocated-byte inspection, `ticks` / `milliseconds_since` / `milliseconds_and_reset`, `yield_now`, `HASH_INIT`, `hash_bytes`, and `is_valid_float` without dropping to `boxdd_sys::ffi`.
 - Zero-allocation overlap visitor APIs: `visit_overlap_aabb`, `visit_overlap_polygon_points`, and `visit_overlap_polygon_points_with_offset`, plus matching `try_visit_*` entrypoints on `World` and `WorldHandle`.
 - Reusable-buffer query APIs: `*_into` / `try_*_into` for AABB overlap, ray-all, polygon overlap, shape cast, and offset query variants.
@@ -49,6 +50,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - A release-level completeness matrix under `docs/workstreams/boxdd-0.3-fearless-refactor/completeness-matrix.md` to record which wrapper areas are safe-covered, raw-only, intentionally omitted, or candidates after `0.3`.
 
 ### Changed
+- Top-level examples and testbed scenes now use the public safe world/collision/joint APIs for body velocity reads, shape distance, world counters, and revolute limits instead of calling `boxdd_sys::ffi` directly for those workflows.
 - Overlap query internals now route both `Vec` collection and reusable-buffer `*_into` forms through the same visitor-based callback path, reducing one more hot-path drift pocket.
 - Query internals now share reusable collection helpers instead of duplicating callback-to-`Vec` plumbing across each query entrypoint.
 - Debug draw command collection now supports caller-owned buffer reuse and preserves nested polygon vertex / string storage when command shapes remain stable.
