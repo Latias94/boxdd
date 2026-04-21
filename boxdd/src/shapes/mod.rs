@@ -186,6 +186,66 @@ macro_rules! impl_shape_contact_data_methods {
     };
 }
 
+macro_rules! impl_shape_sensor_overlap_methods {
+    () => {
+        /// Get the maximum capacity required for retrieving all overlapped shapes on this sensor shape.
+        pub fn sensor_capacity(&self) -> i32 {
+            self.assert_valid();
+            shape_sensor_capacity_impl(self.id)
+        }
+
+        pub fn try_sensor_capacity(&self) -> ApiResult<i32> {
+            self.check_valid()?;
+            Ok(shape_sensor_capacity_impl(self.id))
+        }
+
+        /// Get overlapped shapes for this sensor shape. If this is not a sensor, returns empty.
+        /// Note: overlaps may contain destroyed shapes; use `sensor_overlaps_valid` to filter.
+        pub fn sensor_overlaps(&self) -> Vec<ShapeId> {
+            self.assert_valid();
+            shape_sensor_overlaps_impl(self.id)
+        }
+
+        pub fn sensor_overlaps_into(&self, out: &mut Vec<ShapeId>) {
+            self.assert_valid();
+            shape_sensor_overlaps_into_impl(self.id, out);
+        }
+
+        pub fn try_sensor_overlaps(&self) -> ApiResult<Vec<ShapeId>> {
+            self.check_valid()?;
+            Ok(shape_sensor_overlaps_impl(self.id))
+        }
+
+        pub fn try_sensor_overlaps_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
+            self.check_valid()?;
+            shape_sensor_overlaps_into_impl(self.id, out);
+            Ok(())
+        }
+
+        /// Get overlapped shapes and filter out invalid (destroyed) shape ids.
+        pub fn sensor_overlaps_valid(&self) -> Vec<ShapeId> {
+            self.assert_valid();
+            shape_sensor_overlaps_valid_impl(self.id)
+        }
+
+        pub fn try_sensor_overlaps_valid(&self) -> ApiResult<Vec<ShapeId>> {
+            self.check_valid()?;
+            Ok(shape_sensor_overlaps_valid_impl(self.id))
+        }
+
+        pub fn sensor_overlaps_valid_into(&self, out: &mut Vec<ShapeId>) {
+            self.assert_valid();
+            shape_sensor_overlaps_valid_into_impl(self.id, out);
+        }
+
+        pub fn try_sensor_overlaps_valid_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
+            self.check_valid()?;
+            shape_sensor_overlaps_valid_into_impl(self.id, out);
+            Ok(())
+        }
+    };
+}
+
 pub(crate) fn shape_sensor_overlaps_into_impl(id: ShapeId, out: &mut Vec<ShapeId>) {
     let cap = unsafe { ffi::b2Shape_GetSensorCapacity(id) }.max(0) as usize;
     unsafe {
@@ -953,58 +1013,7 @@ impl OwnedShape {
 
     impl_shape_contact_data_methods!();
 
-    /// Get the maximum capacity required for retrieving all overlapped shapes on this sensor shape.
-    pub fn sensor_capacity(&self) -> i32 {
-        self.assert_valid();
-        shape_sensor_capacity_impl(self.id)
-    }
-
-    pub fn try_sensor_capacity(&self) -> ApiResult<i32> {
-        self.check_valid()?;
-        Ok(shape_sensor_capacity_impl(self.id))
-    }
-
-    pub fn sensor_overlaps(&self) -> Vec<ShapeId> {
-        self.assert_valid();
-        shape_sensor_overlaps_impl(self.id)
-    }
-
-    pub fn sensor_overlaps_into(&self, out: &mut Vec<ShapeId>) {
-        self.assert_valid();
-        shape_sensor_overlaps_into_impl(self.id, out);
-    }
-
-    pub fn try_sensor_overlaps(&self) -> ApiResult<Vec<ShapeId>> {
-        self.check_valid()?;
-        Ok(shape_sensor_overlaps_impl(self.id))
-    }
-
-    pub fn try_sensor_overlaps_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_sensor_overlaps_into_impl(self.id, out);
-        Ok(())
-    }
-
-    pub fn sensor_overlaps_valid(&self) -> Vec<ShapeId> {
-        self.assert_valid();
-        shape_sensor_overlaps_valid_impl(self.id)
-    }
-
-    pub fn try_sensor_overlaps_valid(&self) -> ApiResult<Vec<ShapeId>> {
-        self.check_valid()?;
-        Ok(shape_sensor_overlaps_valid_impl(self.id))
-    }
-
-    pub fn sensor_overlaps_valid_into(&self, out: &mut Vec<ShapeId>) {
-        self.assert_valid();
-        shape_sensor_overlaps_valid_into_impl(self.id, out);
-    }
-
-    pub fn try_sensor_overlaps_valid_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_sensor_overlaps_valid_into_impl(self.id, out);
-        Ok(())
-    }
+    impl_shape_sensor_overlap_methods!();
 
     /// Set an opaque user data pointer on this shape.
     ///
@@ -1676,62 +1685,7 @@ impl<'w> Shape<'w> {
 
     impl_shape_contact_data_methods!();
 
-    /// Get the maximum capacity required for retrieving all the overlapped shapes on this sensor shape.
-    /// Returns 0 if this shape is not a sensor.
-    pub fn sensor_capacity(&self) -> i32 {
-        self.assert_valid();
-        shape_sensor_capacity_impl(self.id)
-    }
-
-    pub fn try_sensor_capacity(&self) -> ApiResult<i32> {
-        self.check_valid()?;
-        Ok(shape_sensor_capacity_impl(self.id))
-    }
-
-    /// Get overlapped shapes for this sensor shape. If this is not a sensor, returns empty.
-    /// Note: overlaps may contain destroyed shapes; use `sensor_overlaps_valid` to filter.
-    pub fn sensor_overlaps(&self) -> Vec<ShapeId> {
-        self.assert_valid();
-        shape_sensor_overlaps_impl(self.id)
-    }
-
-    pub fn sensor_overlaps_into(&self, out: &mut Vec<ShapeId>) {
-        self.assert_valid();
-        shape_sensor_overlaps_into_impl(self.id, out);
-    }
-
-    pub fn try_sensor_overlaps(&self) -> ApiResult<Vec<ShapeId>> {
-        self.check_valid()?;
-        Ok(shape_sensor_overlaps_impl(self.id))
-    }
-
-    pub fn try_sensor_overlaps_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_sensor_overlaps_into_impl(self.id, out);
-        Ok(())
-    }
-
-    /// Get overlapped shapes and filter out invalid (destroyed) shape ids.
-    pub fn sensor_overlaps_valid(&self) -> Vec<ShapeId> {
-        self.assert_valid();
-        shape_sensor_overlaps_valid_impl(self.id)
-    }
-
-    pub fn try_sensor_overlaps_valid(&self) -> ApiResult<Vec<ShapeId>> {
-        self.check_valid()?;
-        Ok(shape_sensor_overlaps_valid_impl(self.id))
-    }
-
-    pub fn sensor_overlaps_valid_into(&self, out: &mut Vec<ShapeId>) {
-        self.assert_valid();
-        shape_sensor_overlaps_valid_into_impl(self.id, out);
-    }
-
-    pub fn try_sensor_overlaps_valid_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_sensor_overlaps_valid_into_impl(self.id, out);
-        Ok(())
-    }
+    impl_shape_sensor_overlap_methods!();
 
     /// Destroy this shape immediately.
     ///

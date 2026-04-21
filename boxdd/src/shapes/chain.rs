@@ -75,6 +75,42 @@ fn chain_segments_impl(id: ChainId) -> Vec<ShapeId> {
     }
 }
 
+macro_rules! impl_chain_segment_methods {
+    () => {
+        pub fn segment_count(&self) -> i32 {
+            self.assert_valid();
+            chain_segment_count_impl(self.id)
+        }
+
+        pub fn try_segment_count(&self) -> ApiResult<i32> {
+            self.check_valid()?;
+            Ok(chain_segment_count_impl(self.id))
+        }
+
+        /// Collect all segment shape ids for this chain.
+        pub fn segments(&self) -> Vec<ShapeId> {
+            self.assert_valid();
+            chain_segments_impl(self.id)
+        }
+
+        pub fn segments_into(&self, out: &mut Vec<ShapeId>) {
+            self.assert_valid();
+            chain_segments_into_impl(self.id, out);
+        }
+
+        pub fn try_segments(&self) -> ApiResult<Vec<ShapeId>> {
+            self.check_valid()?;
+            Ok(chain_segments_impl(self.id))
+        }
+
+        pub fn try_segments_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
+            self.check_valid()?;
+            chain_segments_into_impl(self.id, out);
+            Ok(())
+        }
+    };
+}
+
 #[inline]
 fn chain_world_id_impl(id: ChainId) -> ffi::b2WorldId {
     unsafe { ffi::b2Chain_GetWorld(id) }
@@ -156,15 +192,7 @@ impl OwnedChain {
         self.id
     }
 
-    pub fn segment_count(&self) -> i32 {
-        self.assert_valid();
-        chain_segment_count_impl(self.id)
-    }
-
-    pub fn try_segment_count(&self) -> ApiResult<i32> {
-        self.check_valid()?;
-        Ok(chain_segment_count_impl(self.id))
-    }
+    impl_chain_segment_methods!();
 
     pub fn surface_material_count(&self) -> i32 {
         self.assert_valid();
@@ -173,26 +201,6 @@ impl OwnedChain {
     pub fn try_surface_material_count(&self) -> ApiResult<i32> {
         self.check_valid()?;
         Ok(chain_surface_material_count_impl(self.id))
-    }
-    pub fn segments(&self) -> Vec<ShapeId> {
-        self.assert_valid();
-        chain_segments_impl(self.id)
-    }
-
-    pub fn segments_into(&self, out: &mut Vec<ShapeId>) {
-        self.assert_valid();
-        chain_segments_into_impl(self.id, out);
-    }
-
-    pub fn try_segments(&self) -> ApiResult<Vec<ShapeId>> {
-        self.check_valid()?;
-        Ok(chain_segments_impl(self.id))
-    }
-
-    pub fn try_segments_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
-        self.check_valid()?;
-        chain_segments_into_impl(self.id, out);
-        Ok(())
     }
     pub fn set_surface_material(&mut self, index: i32, material: &SurfaceMaterial) {
         self.assert_valid();
@@ -302,15 +310,7 @@ impl<'w> Chain<'w> {
         crate::core::callback_state::check_not_in_callback()?;
         Ok(chain_is_valid_impl(self.id))
     }
-    pub fn segment_count(&self) -> i32 {
-        self.assert_valid();
-        chain_segment_count_impl(self.id)
-    }
-
-    pub fn try_segment_count(&self) -> ApiResult<i32> {
-        self.check_valid()?;
-        Ok(chain_segment_count_impl(self.id))
-    }
+    impl_chain_segment_methods!();
     pub fn surface_material_count(&self) -> i32 {
         self.assert_valid();
         chain_surface_material_count_impl(self.id)
@@ -318,28 +318,6 @@ impl<'w> Chain<'w> {
     pub fn try_surface_material_count(&self) -> ApiResult<i32> {
         self.check_valid()?;
         Ok(chain_surface_material_count_impl(self.id))
-    }
-
-    /// Collect all segment shape ids for this chain.
-    pub fn segments(&self) -> Vec<ShapeId> {
-        self.assert_valid();
-        chain_segments_impl(self.id)
-    }
-
-    pub fn segments_into(&self, out: &mut Vec<ShapeId>) {
-        self.assert_valid();
-        chain_segments_into_impl(self.id, out);
-    }
-
-    pub fn try_segments(&self) -> ApiResult<Vec<ShapeId>> {
-        self.check_valid()?;
-        Ok(chain_segments_impl(self.id))
-    }
-
-    pub fn try_segments_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
-        self.check_valid()?;
-        chain_segments_into_impl(self.id, out);
-        Ok(())
     }
 
     pub fn set_surface_material(&mut self, index: i32, material: &SurfaceMaterial) {

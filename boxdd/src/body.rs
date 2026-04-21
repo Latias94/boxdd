@@ -111,6 +111,72 @@ macro_rules! impl_body_contact_data_methods {
     };
 }
 
+macro_rules! impl_body_attachment_methods {
+    () => {
+        pub fn shape_count(&self) -> i32 {
+            self.assert_valid();
+            body_shape_count_impl(self.id)
+        }
+
+        pub fn try_shape_count(&self) -> ApiResult<i32> {
+            self.check_valid()?;
+            Ok(body_shape_count_impl(self.id))
+        }
+
+        pub fn shapes(&self) -> Vec<ShapeId> {
+            self.assert_valid();
+            body_shapes_impl(self.id)
+        }
+
+        pub fn shapes_into(&self, out: &mut Vec<ShapeId>) {
+            self.assert_valid();
+            body_shapes_into_impl(self.id, out);
+        }
+
+        pub fn try_shapes(&self) -> ApiResult<Vec<ShapeId>> {
+            self.check_valid()?;
+            Ok(body_shapes_impl(self.id))
+        }
+
+        pub fn try_shapes_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
+            self.check_valid()?;
+            body_shapes_into_impl(self.id, out);
+            Ok(())
+        }
+
+        pub fn joint_count(&self) -> i32 {
+            self.assert_valid();
+            body_joint_count_impl(self.id)
+        }
+
+        pub fn try_joint_count(&self) -> ApiResult<i32> {
+            self.check_valid()?;
+            Ok(body_joint_count_impl(self.id))
+        }
+
+        pub fn joints(&self) -> Vec<JointId> {
+            self.assert_valid();
+            body_joints_impl(self.id)
+        }
+
+        pub fn joints_into(&self, out: &mut Vec<JointId>) {
+            self.assert_valid();
+            body_joints_into_impl(self.id, out);
+        }
+
+        pub fn try_joints(&self) -> ApiResult<Vec<JointId>> {
+            self.check_valid()?;
+            Ok(body_joints_impl(self.id))
+        }
+
+        pub fn try_joints_into(&self, out: &mut Vec<JointId>) -> ApiResult<()> {
+            self.check_valid()?;
+            body_joints_into_impl(self.id, out);
+            Ok(())
+        }
+    };
+}
+
 #[inline]
 fn body_world_id_impl(id: BodyId) -> ffi::b2WorldId {
     unsafe { ffi::b2Body_GetWorld(id) }
@@ -945,67 +1011,7 @@ impl OwnedBody {
         Ok(())
     }
 
-    pub fn shape_count(&self) -> i32 {
-        self.assert_valid();
-        body_shape_count_impl(self.id)
-    }
-
-    pub fn try_shape_count(&self) -> ApiResult<i32> {
-        self.check_valid()?;
-        Ok(body_shape_count_impl(self.id))
-    }
-
-    pub fn shapes(&self) -> Vec<ShapeId> {
-        self.assert_valid();
-        body_shapes_impl(self.id)
-    }
-
-    pub fn shapes_into(&self, out: &mut Vec<ShapeId>) {
-        self.assert_valid();
-        body_shapes_into_impl(self.id, out);
-    }
-
-    pub fn try_shapes(&self) -> ApiResult<Vec<ShapeId>> {
-        self.check_valid()?;
-        Ok(body_shapes_impl(self.id))
-    }
-
-    pub fn try_shapes_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
-        self.check_valid()?;
-        body_shapes_into_impl(self.id, out);
-        Ok(())
-    }
-
-    pub fn joint_count(&self) -> i32 {
-        self.assert_valid();
-        body_joint_count_impl(self.id)
-    }
-
-    pub fn try_joint_count(&self) -> ApiResult<i32> {
-        self.check_valid()?;
-        Ok(body_joint_count_impl(self.id))
-    }
-
-    pub fn joints(&self) -> Vec<JointId> {
-        self.assert_valid();
-        body_joints_impl(self.id)
-    }
-
-    pub fn joints_into(&self, out: &mut Vec<JointId>) {
-        self.assert_valid();
-        body_joints_into_impl(self.id, out);
-    }
-
-    pub fn try_joints(&self) -> ApiResult<Vec<JointId>> {
-        self.check_valid()?;
-        Ok(body_joints_impl(self.id))
-    }
-
-    pub fn try_joints_into(&self, out: &mut Vec<JointId>) -> ApiResult<()> {
-        self.check_valid()?;
-        body_joints_into_impl(self.id, out);
-        Ok(())
-    }
+    impl_body_attachment_methods!();
 
     pub fn body_type(&self) -> BodyType {
         self.assert_valid();
@@ -2140,67 +2146,7 @@ impl<'w> Body<'w> {
         Ok(())
     }
 
-    pub fn shape_count(&self) -> i32 {
-        self.assert_valid();
-        body_shape_count_impl(self.id)
-    }
-
-    pub fn try_shape_count(&self) -> ApiResult<i32> {
-        self.check_valid()?;
-        Ok(body_shape_count_impl(self.id))
-    }
-
-    pub fn shapes(&self) -> Vec<ShapeId> {
-        self.assert_valid();
-        body_shapes_impl(self.id)
-    }
-
-    pub fn shapes_into(&self, out: &mut Vec<ShapeId>) {
-        self.assert_valid();
-        body_shapes_into_impl(self.id, out);
-    }
-
-    pub fn try_shapes(&self) -> ApiResult<Vec<ShapeId>> {
-        self.check_valid()?;
-        Ok(body_shapes_impl(self.id))
-    }
-
-    pub fn try_shapes_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
-        self.check_valid()?;
-        body_shapes_into_impl(self.id, out);
-        Ok(())
-    }
-
-    pub fn joint_count(&self) -> i32 {
-        self.assert_valid();
-        body_joint_count_impl(self.id)
-    }
-
-    pub fn try_joint_count(&self) -> ApiResult<i32> {
-        self.check_valid()?;
-        Ok(body_joint_count_impl(self.id))
-    }
-
-    pub fn joints(&self) -> Vec<JointId> {
-        self.assert_valid();
-        body_joints_impl(self.id)
-    }
-
-    pub fn joints_into(&self, out: &mut Vec<JointId>) {
-        self.assert_valid();
-        body_joints_into_impl(self.id, out);
-    }
-
-    pub fn try_joints(&self) -> ApiResult<Vec<JointId>> {
-        self.check_valid()?;
-        Ok(body_joints_impl(self.id))
-    }
-
-    pub fn try_joints_into(&self, out: &mut Vec<JointId>) -> ApiResult<()> {
-        self.check_valid()?;
-        body_joints_into_impl(self.id, out);
-        Ok(())
-    }
+    impl_body_attachment_methods!();
 
     pub fn body_type(&self) -> BodyType {
         self.assert_valid();
