@@ -4,8 +4,9 @@
 
 use crate::{
     body::BodyType,
+    joints::JointType,
     shapes::ShapeType,
-    types::{BodyId, Vec2},
+    types::{BodyId, JointId, Vec2},
     world::World,
 };
 use boxdd_sys::ffi;
@@ -75,36 +76,27 @@ pub struct BodySnapshot {
 impl BodySnapshot {
     pub fn take(world: &World, id: BodyId) -> Self {
         crate::core::debug_checks::assert_body_valid(id);
-        let rot = unsafe { ffi::b2Body_GetRotation(id) };
         Self {
-            body_type: match unsafe { ffi::b2Body_GetType(id) } {
-                x if x == ffi::b2BodyType_b2_staticBody => BodyType::Static,
-                x if x == ffi::b2BodyType_b2_kinematicBody => BodyType::Kinematic,
-                _ => BodyType::Dynamic,
-            },
+            body_type: crate::body::body_type_impl(id),
             position: world.body_position(id),
-            angle: rot.s.atan2(rot.c),
-            linear_velocity: Vec2::from(unsafe { ffi::b2Body_GetLinearVelocity(id) }),
-            angular_velocity: unsafe { ffi::b2Body_GetAngularVelocity(id) },
-            linear_damping: unsafe { ffi::b2Body_GetLinearDamping(id) },
-            angular_damping: unsafe { ffi::b2Body_GetAngularDamping(id) },
-            gravity_scale: unsafe { ffi::b2Body_GetGravityScale(id) },
+            angle: crate::body::body_rotation_impl(id).angle(),
+            linear_velocity: crate::body::body_linear_velocity_impl(id),
+            angular_velocity: crate::body::body_angular_velocity_impl(id),
+            linear_damping: crate::body::body_linear_damping_impl(id),
+            angular_damping: crate::body::body_angular_damping_impl(id),
+            gravity_scale: crate::body::body_gravity_scale_impl(id),
         }
     }
 
     pub fn apply(&self, world: &mut World, id: BodyId) {
         crate::core::debug_checks::assert_body_valid(id);
         world.set_body_type(id, self.body_type);
-        // set transform (position + angle)
-        let (s, c) = self.angle.sin_cos();
-        let rot = ffi::b2Rot { c, s };
-        let pos: ffi::b2Vec2 = self.position.into();
-        unsafe { ffi::b2Body_SetTransform(id, pos, rot) };
+        world.set_body_position_and_rotation(id, self.position, self.angle);
         world.set_body_linear_velocity(id, self.linear_velocity);
         world.set_body_angular_velocity(id, self.angular_velocity);
-        unsafe { ffi::b2Body_SetLinearDamping(id, self.linear_damping) };
-        unsafe { ffi::b2Body_SetAngularDamping(id, self.angular_damping) };
-        unsafe { ffi::b2Body_SetGravityScale(id, self.gravity_scale) };
+        crate::body::body_set_linear_damping_impl(id, self.linear_damping);
+        crate::body::body_set_angular_damping_impl(id, self.angular_damping);
+        crate::body::body_set_gravity_scale_impl(id, self.gravity_scale);
     }
 }
 
@@ -246,34 +238,18 @@ impl SceneSnapshot {
         for &bid in &body_ids {
             crate::core::debug_checks::assert_body_valid(bid);
             // BodyDef from runtime
-            let def = body_def_from_runtime(bid);
+            let def = body_def_from_runtime(world, bid);
             // Optional name
-            let name = unsafe {
-                let p = ffi::b2Body_GetName(bid);
-                if p.is_null() {
-                    None
-                } else {
-                    Some(std::ffi::CStr::from_ptr(p).to_string_lossy().into_owned())
-                }
-            };
+            let name = world.body_name(bid);
             // Shapes
             let shapes = shapes_from_body(world, bid);
             bodies.push(BodyRecord { def, name, shapes });
         }
 
         // Gather joints by walking per body and deduping (without Hash/Eq)
-        let mut joint_list: Vec<ffi::b2JointId> = Vec::new();
+        let mut joint_list: Vec<JointId> = Vec::new();
         for &bid in &body_ids {
-            let count = unsafe { ffi::b2Body_GetJointCount(bid) }.max(0) as usize;
-            if count == 0 {
-                continue;
-            }
-            let arr = unsafe {
-                crate::core::ffi_vec::read_from_ffi(count, |ptr, count| {
-                    ffi::b2Body_GetJoints(bid, ptr, count)
-                })
-            };
-            for j in arr {
+            for j in world.body_joints(bid) {
                 if !joint_list.iter().any(|&x| eq_joint(x, j)) {
                     joint_list.push(j);
                 }
@@ -282,104 +258,25 @@ impl SceneSnapshot {
 
         let mut joints = Vec::new();
         for j in joint_list {
-            if !unsafe { ffi::b2Joint_IsValid(j) } {
+            if !crate::joints::joint_is_valid_impl(j) {
                 continue;
             }
-            let a = unsafe { ffi::b2Joint_GetBodyA(j) };
-            let b = unsafe { ffi::b2Joint_GetBodyB(j) };
+            let a = world.joint_body_a_id(j);
+            let b = world.joint_body_b_id(j);
             let ia = find_body_index(&body_ids, a);
             let ib = find_body_index(&body_ids, b);
             let (Some(ia), Some(ib)) = (ia, ib) else {
                 continue;
             };
-            let t = unsafe { ffi::b2Joint_GetType(j) };
-            let kind = match t {
-                x if x == ffi::b2JointType_b2_distanceJoint => JointKind::Distance,
-                x if x == ffi::b2JointType_b2_filterJoint => JointKind::Filter,
-                x if x == ffi::b2JointType_b2_motorJoint => JointKind::Motor,
-                x if x == ffi::b2JointType_b2_prismaticJoint => JointKind::Prismatic,
-                x if x == ffi::b2JointType_b2_revoluteJoint => JointKind::Revolute,
-                x if x == ffi::b2JointType_b2_weldJoint => JointKind::Weld,
-                _ => JointKind::Wheel,
-            };
-            let la = unsafe { ffi::b2Joint_GetLocalFrameA(j) };
-            let lb = unsafe { ffi::b2Joint_GetLocalFrameB(j) };
-            // Capture per-type parameters using FFI getters
-            let params = match kind {
-                JointKind::Distance => Some(JointParams::Distance {
-                    length: unsafe { ffi::b2DistanceJoint_GetLength(j) },
-                    spring_enabled: unsafe { ffi::b2DistanceJoint_IsSpringEnabled(j) },
-                    spring_hertz: unsafe { ffi::b2DistanceJoint_GetSpringHertz(j) },
-                    spring_damping_ratio: unsafe { ffi::b2DistanceJoint_GetSpringDampingRatio(j) },
-                    limit_enabled: unsafe { ffi::b2DistanceJoint_IsLimitEnabled(j) },
-                    min_length: unsafe { ffi::b2DistanceJoint_GetMinLength(j) },
-                    max_length: unsafe { ffi::b2DistanceJoint_GetMaxLength(j) },
-                    motor_enabled: unsafe { ffi::b2DistanceJoint_IsMotorEnabled(j) },
-                    motor_speed: unsafe { ffi::b2DistanceJoint_GetMotorSpeed(j) },
-                    max_motor_force: unsafe { ffi::b2DistanceJoint_GetMaxMotorForce(j) },
-                }),
-                JointKind::Prismatic => Some(JointParams::Prismatic {
-                    spring_enabled: unsafe { ffi::b2PrismaticJoint_IsSpringEnabled(j) },
-                    spring_hertz: unsafe { ffi::b2PrismaticJoint_GetSpringHertz(j) },
-                    spring_damping_ratio: unsafe { ffi::b2PrismaticJoint_GetSpringDampingRatio(j) },
-                    target_translation: unsafe { ffi::b2PrismaticJoint_GetTargetTranslation(j) },
-                    limit_enabled: unsafe { ffi::b2PrismaticJoint_IsLimitEnabled(j) },
-                    lower: unsafe { ffi::b2PrismaticJoint_GetLowerLimit(j) },
-                    upper: unsafe { ffi::b2PrismaticJoint_GetUpperLimit(j) },
-                    motor_enabled: unsafe { ffi::b2PrismaticJoint_IsMotorEnabled(j) },
-                    motor_speed: unsafe { ffi::b2PrismaticJoint_GetMotorSpeed(j) },
-                    max_motor_force: unsafe { ffi::b2PrismaticJoint_GetMaxMotorForce(j) },
-                }),
-                JointKind::Revolute => Some(JointParams::Revolute {
-                    spring_enabled: unsafe { ffi::b2RevoluteJoint_IsSpringEnabled(j) },
-                    spring_hertz: unsafe { ffi::b2RevoluteJoint_GetSpringHertz(j) },
-                    spring_damping_ratio: unsafe { ffi::b2RevoluteJoint_GetSpringDampingRatio(j) },
-                    target_angle: unsafe { ffi::b2RevoluteJoint_GetTargetAngle(j) },
-                    limit_enabled: unsafe { ffi::b2RevoluteJoint_IsLimitEnabled(j) },
-                    lower: unsafe { ffi::b2RevoluteJoint_GetLowerLimit(j) },
-                    upper: unsafe { ffi::b2RevoluteJoint_GetUpperLimit(j) },
-                    motor_enabled: unsafe { ffi::b2RevoluteJoint_IsMotorEnabled(j) },
-                    motor_speed: unsafe { ffi::b2RevoluteJoint_GetMotorSpeed(j) },
-                    max_motor_torque: unsafe { ffi::b2RevoluteJoint_GetMaxMotorTorque(j) },
-                }),
-                JointKind::Weld => Some(JointParams::Weld {
-                    linear_hertz: unsafe { ffi::b2WeldJoint_GetLinearHertz(j) },
-                    linear_damping_ratio: unsafe { ffi::b2WeldJoint_GetLinearDampingRatio(j) },
-                    angular_hertz: unsafe { ffi::b2WeldJoint_GetAngularHertz(j) },
-                    angular_damping_ratio: unsafe { ffi::b2WeldJoint_GetAngularDampingRatio(j) },
-                }),
-                JointKind::Wheel => Some(JointParams::Wheel {
-                    spring_enabled: unsafe { ffi::b2WheelJoint_IsSpringEnabled(j) },
-                    spring_hertz: unsafe { ffi::b2WheelJoint_GetSpringHertz(j) },
-                    spring_damping_ratio: unsafe { ffi::b2WheelJoint_GetSpringDampingRatio(j) },
-                    limit_enabled: unsafe { ffi::b2WheelJoint_IsLimitEnabled(j) },
-                    lower: unsafe { ffi::b2WheelJoint_GetLowerLimit(j) },
-                    upper: unsafe { ffi::b2WheelJoint_GetUpperLimit(j) },
-                    motor_enabled: unsafe { ffi::b2WheelJoint_IsMotorEnabled(j) },
-                    motor_speed: unsafe { ffi::b2WheelJoint_GetMotorSpeed(j) },
-                    max_motor_torque: unsafe { ffi::b2WheelJoint_GetMaxMotorTorque(j) },
-                }),
-                JointKind::Motor => Some(JointParams::Motor {
-                    linear_velocity: Vec2::from(unsafe { ffi::b2MotorJoint_GetLinearVelocity(j) }),
-                    angular_velocity: unsafe { ffi::b2MotorJoint_GetAngularVelocity(j) },
-                    max_velocity_force: unsafe { ffi::b2MotorJoint_GetMaxVelocityForce(j) },
-                    max_velocity_torque: unsafe { ffi::b2MotorJoint_GetMaxVelocityTorque(j) },
-                    linear_hertz: unsafe { ffi::b2MotorJoint_GetLinearHertz(j) },
-                    linear_damping_ratio: unsafe { ffi::b2MotorJoint_GetLinearDampingRatio(j) },
-                    angular_hertz: unsafe { ffi::b2MotorJoint_GetAngularHertz(j) },
-                    angular_damping_ratio: unsafe { ffi::b2MotorJoint_GetAngularDampingRatio(j) },
-                    max_spring_force: unsafe { ffi::b2MotorJoint_GetMaxSpringForce(j) },
-                    max_spring_torque: unsafe { ffi::b2MotorJoint_GetMaxSpringTorque(j) },
-                }),
-                JointKind::Filter => Some(JointParams::Filter {}),
-            };
+            let kind = joint_kind_from_runtime(world.joint_type(j));
+            let params = joint_params_from_runtime(world, j, kind);
 
             joints.push(JointRecord {
                 kind,
                 body_a: ia,
                 body_b: ib,
-                local_a: crate::Transform::from(la),
-                local_b: crate::Transform::from(lb),
+                local_a: world.joint_local_frame_a(j),
+                local_b: world.joint_local_frame_b(j),
                 params,
             });
         }
@@ -658,63 +555,31 @@ impl SceneSnapshot {
     }
 }
 
-fn body_def_from_runtime(id: ffi::b2BodyId) -> crate::body::BodyDef {
+fn body_def_from_runtime(world: &World, id: BodyId) -> crate::body::BodyDef {
     crate::core::debug_checks::assert_body_valid(id);
-    let btype = unsafe { ffi::b2Body_GetType(id) };
-    let bt = if btype == ffi::b2BodyType_b2_staticBody {
-        BodyType::Static
-    } else if btype == ffi::b2BodyType_b2_kinematicBody {
-        BodyType::Kinematic
-    } else {
-        BodyType::Dynamic
-    };
-    let pos = Vec2::from(unsafe { ffi::b2Body_GetPosition(id) });
-    let rot = unsafe { ffi::b2Body_GetRotation(id) };
-    let angle = rot.s.atan2(rot.c);
-    let linvel = Vec2::from(unsafe { ffi::b2Body_GetLinearVelocity(id) });
-    let angvel = unsafe { ffi::b2Body_GetAngularVelocity(id) };
-    let lin_damp = unsafe { ffi::b2Body_GetLinearDamping(id) };
-    let ang_damp = unsafe { ffi::b2Body_GetAngularDamping(id) };
-    let gscale = unsafe { ffi::b2Body_GetGravityScale(id) };
     // Defaults for flags not queryable via getters
     crate::body::BodyBuilder::new()
-        .body_type(bt)
-        .position(pos)
-        .angle(angle)
-        .linear_velocity(linvel)
-        .angular_velocity(angvel)
-        .linear_damping(lin_damp)
-        .angular_damping(ang_damp)
-        .gravity_scale(gscale)
+        .body_type(crate::body::body_type_impl(id))
+        .position(world.body_position(id))
+        .angle(crate::body::body_rotation_impl(id).angle())
+        .linear_velocity(crate::body::body_linear_velocity_impl(id))
+        .angular_velocity(crate::body::body_angular_velocity_impl(id))
+        .linear_damping(crate::body::body_linear_damping_impl(id))
+        .angular_damping(crate::body::body_angular_damping_impl(id))
+        .gravity_scale(crate::body::body_gravity_scale_impl(id))
         .build()
 }
 
-fn shapes_from_body(world: &World, body: ffi::b2BodyId) -> Vec<ShapeInstance> {
+fn shapes_from_body(world: &World, body: BodyId) -> Vec<ShapeInstance> {
     crate::core::debug_checks::assert_body_valid(body);
     let mut out = Vec::new();
-    let count = unsafe { ffi::b2Body_GetShapeCount(body) }.max(0) as usize;
-    if count == 0 {
-        return out;
-    }
-    let arr = unsafe {
-        crate::core::ffi_vec::read_from_ffi(count, |ptr, count| {
-            ffi::b2Body_GetShapes(body, ptr, count)
-        })
-    };
-    for sid in arr {
-        if !unsafe { ffi::b2Shape_IsValid(sid) } {
-            continue;
-        }
-        let st = unsafe { ffi::b2Shape_GetType(sid) };
+    for sid in world.body_shapes(body) {
         // Build ShapeDef from runtime properties
-        let mat = unsafe { ffi::b2Shape_GetSurfaceMaterial(sid) };
         let mut builder = crate::shapes::ShapeDef::builder()
-            .material(crate::shapes::SurfaceMaterial::from_raw(mat))
-            .density(unsafe { ffi::b2Shape_GetDensity(sid) })
-            .filter(crate::filter::Filter::from_raw(unsafe {
-                ffi::b2Shape_GetFilter(sid)
-            }));
-        let is_sensor = unsafe { ffi::b2Shape_IsSensor(sid) };
+            .material(world.shape_surface_material(sid))
+            .density(crate::shapes::shape_density_impl(sid))
+            .filter(crate::shapes::shape_filter_impl(sid));
+        let is_sensor = crate::shapes::shape_is_sensor_impl(sid);
         if is_sensor {
             builder = builder.sensor(true);
         }
@@ -742,42 +607,37 @@ fn shapes_from_body(world: &World, body: ffi::b2BodyId) -> Vec<ShapeInstance> {
         }
         let sdef = builder.build();
         // geometry
-        let geom = match ShapeType::from_raw(st) {
-            Some(ShapeType::Circle) => {
-                let c = unsafe { ffi::b2Shape_GetCircle(sid) };
+        let geom = match crate::shapes::shape_type_impl(sid) {
+            ShapeType::Circle => {
+                let c = crate::shapes::shape_circle_impl(sid);
                 ShapeGeom::Circle {
-                    center: Vec2::from(c.center),
+                    center: c.center,
                     radius: c.radius,
                 }
             }
-            Some(ShapeType::Segment) => {
-                let s = unsafe { ffi::b2Shape_GetSegment(sid) };
+            ShapeType::Segment => {
+                let s = crate::shapes::shape_segment_impl(sid);
                 ShapeGeom::Segment {
-                    p1: Vec2::from(s.point1),
-                    p2: Vec2::from(s.point2),
+                    p1: s.point1,
+                    p2: s.point2,
                 }
             }
-            Some(ShapeType::Capsule) => {
-                let c = unsafe { ffi::b2Shape_GetCapsule(sid) };
+            ShapeType::Capsule => {
+                let c = crate::shapes::shape_capsule_impl(sid);
                 ShapeGeom::Capsule {
-                    c1: Vec2::from(c.center1),
-                    c2: Vec2::from(c.center2),
+                    c1: c.center1,
+                    c2: c.center2,
                     radius: c.radius,
                 }
             }
-            Some(ShapeType::Polygon) => {
-                let p = unsafe { ffi::b2Shape_GetPolygon(sid) };
-                let mut verts: Vec<Vec2> = Vec::new();
-                let n = (p.count as usize).min(8);
-                for i in 0..n {
-                    verts.push(Vec2::from(p.vertices[i]));
-                }
+            ShapeType::Polygon => {
+                let p = crate::shapes::shape_polygon_impl(sid);
                 ShapeGeom::Polygon {
-                    vertices: verts,
-                    radius: p.radius,
+                    vertices: p.vertices().to_vec(),
+                    radius: p.radius(),
                 }
             }
-            _ => {
+            ShapeType::ChainSegment => {
                 // Unsupported shape type (chain segments etc.)
                 continue;
             }
@@ -792,22 +652,109 @@ fn shapes_from_body(world: &World, body: ffi::b2BodyId) -> Vec<ShapeInstance> {
 }
 
 #[inline]
-fn eq_joint(a: ffi::b2JointId, b: ffi::b2JointId) -> bool {
+fn eq_joint(a: JointId, b: JointId) -> bool {
     a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
 }
 
 #[inline]
-fn eq_body(a: ffi::b2BodyId, b: ffi::b2BodyId) -> bool {
+fn eq_body(a: BodyId, b: BodyId) -> bool {
     a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
 }
 
-fn find_body_index(list: &[ffi::b2BodyId], target: ffi::b2BodyId) -> Option<u32> {
+fn find_body_index(list: &[BodyId], target: BodyId) -> Option<u32> {
     for (i, &x) in list.iter().enumerate() {
         if eq_body(x, target) {
             return Some(i as u32);
         }
     }
     None
+}
+
+fn joint_kind_from_runtime(kind: JointType) -> JointKind {
+    match kind {
+        JointType::Distance => JointKind::Distance,
+        JointType::Filter => JointKind::Filter,
+        JointType::Motor => JointKind::Motor,
+        JointType::Prismatic => JointKind::Prismatic,
+        JointType::Revolute => JointKind::Revolute,
+        JointType::Weld => JointKind::Weld,
+        JointType::Wheel => JointKind::Wheel,
+    }
+}
+
+fn joint_params_from_runtime(
+    world: &World,
+    joint: JointId,
+    kind: JointKind,
+) -> Option<JointParams> {
+    match kind {
+        JointKind::Distance => Some(JointParams::Distance {
+            length: world.distance_length(joint),
+            spring_enabled: world.distance_spring_enabled(joint),
+            spring_hertz: world.distance_spring_hertz(joint),
+            spring_damping_ratio: world.distance_spring_damping_ratio(joint),
+            limit_enabled: world.distance_limit_enabled(joint),
+            min_length: world.distance_min_length(joint),
+            max_length: world.distance_max_length(joint),
+            motor_enabled: world.distance_motor_enabled(joint),
+            motor_speed: world.distance_motor_speed(joint),
+            max_motor_force: world.distance_max_motor_force(joint),
+        }),
+        JointKind::Prismatic => Some(JointParams::Prismatic {
+            spring_enabled: world.prismatic_spring_enabled(joint),
+            spring_hertz: world.prismatic_spring_hertz(joint),
+            spring_damping_ratio: world.prismatic_spring_damping_ratio(joint),
+            target_translation: world.prismatic_target_translation(joint),
+            limit_enabled: world.prismatic_limit_enabled(joint),
+            lower: world.prismatic_lower_limit(joint),
+            upper: world.prismatic_upper_limit(joint),
+            motor_enabled: world.prismatic_motor_enabled(joint),
+            motor_speed: world.prismatic_motor_speed(joint),
+            max_motor_force: world.prismatic_max_motor_force(joint),
+        }),
+        JointKind::Revolute => Some(JointParams::Revolute {
+            spring_enabled: world.revolute_spring_enabled(joint),
+            spring_hertz: world.revolute_spring_hertz(joint),
+            spring_damping_ratio: world.revolute_spring_damping_ratio(joint),
+            target_angle: world.revolute_target_angle(joint),
+            limit_enabled: world.revolute_limit_enabled(joint),
+            lower: world.revolute_lower_limit(joint),
+            upper: world.revolute_upper_limit(joint),
+            motor_enabled: world.revolute_motor_enabled(joint),
+            motor_speed: world.revolute_motor_speed(joint),
+            max_motor_torque: world.revolute_max_motor_torque(joint),
+        }),
+        JointKind::Weld => Some(JointParams::Weld {
+            linear_hertz: world.weld_linear_hertz(joint),
+            linear_damping_ratio: world.weld_linear_damping_ratio(joint),
+            angular_hertz: world.weld_angular_hertz(joint),
+            angular_damping_ratio: world.weld_angular_damping_ratio(joint),
+        }),
+        JointKind::Wheel => Some(JointParams::Wheel {
+            spring_enabled: world.wheel_spring_enabled(joint),
+            spring_hertz: world.wheel_spring_hertz(joint),
+            spring_damping_ratio: world.wheel_spring_damping_ratio(joint),
+            limit_enabled: world.wheel_limit_enabled(joint),
+            lower: world.wheel_lower_limit(joint),
+            upper: world.wheel_upper_limit(joint),
+            motor_enabled: world.wheel_motor_enabled(joint),
+            motor_speed: world.wheel_motor_speed(joint),
+            max_motor_torque: world.wheel_max_motor_torque(joint),
+        }),
+        JointKind::Motor => Some(JointParams::Motor {
+            linear_velocity: world.motor_linear_velocity(joint),
+            angular_velocity: world.motor_angular_velocity(joint),
+            max_velocity_force: world.motor_max_velocity_force(joint),
+            max_velocity_torque: world.motor_max_velocity_torque(joint),
+            linear_hertz: world.motor_linear_hertz(joint),
+            linear_damping_ratio: world.motor_linear_damping_ratio(joint),
+            angular_hertz: world.motor_angular_hertz(joint),
+            angular_damping_ratio: world.motor_angular_damping_ratio(joint),
+            max_spring_force: world.motor_max_spring_force(joint),
+            max_spring_torque: world.motor_max_spring_torque(joint),
+        }),
+        JointKind::Filter => Some(JointParams::Filter {}),
+    }
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]

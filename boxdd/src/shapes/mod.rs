@@ -291,7 +291,7 @@ fn shape_type_raw_impl(id: ShapeId) -> ffi::b2ShapeType {
 }
 
 #[inline]
-fn shape_type_impl(id: ShapeId) -> ShapeType {
+pub(crate) fn shape_type_impl(id: ShapeId) -> ShapeType {
     shape_type_from_ffi(shape_type_raw_impl(id))
 }
 
@@ -301,12 +301,12 @@ pub(crate) fn shape_body_id_impl(id: ShapeId) -> BodyId {
 }
 
 #[inline]
-fn shape_circle_impl(id: ShapeId) -> Circle {
+pub(crate) fn shape_circle_impl(id: ShapeId) -> Circle {
     Circle::from_raw(unsafe { ffi::b2Shape_GetCircle(id) })
 }
 
 #[inline]
-fn shape_segment_impl(id: ShapeId) -> Segment {
+pub(crate) fn shape_segment_impl(id: ShapeId) -> Segment {
     Segment::from_raw(unsafe { ffi::b2Shape_GetSegment(id) })
 }
 
@@ -316,12 +316,12 @@ fn shape_chain_segment_impl(id: ShapeId) -> ChainSegment {
 }
 
 #[inline]
-fn shape_capsule_impl(id: ShapeId) -> Capsule {
+pub(crate) fn shape_capsule_impl(id: ShapeId) -> Capsule {
     Capsule::from_raw(unsafe { ffi::b2Shape_GetCapsule(id) })
 }
 
 #[inline]
-fn shape_polygon_impl(id: ShapeId) -> Polygon {
+pub(crate) fn shape_polygon_impl(id: ShapeId) -> Polygon {
     Polygon::from_raw(unsafe { ffi::b2Shape_GetPolygon(id) })
 }
 
@@ -401,7 +401,7 @@ fn shape_set_polygon_impl(id: ShapeId, polygon: &Polygon) {
 }
 
 #[inline]
-fn shape_filter_impl(id: ShapeId) -> Filter {
+pub(crate) fn shape_filter_impl(id: ShapeId) -> Filter {
     Filter::from_raw(unsafe { ffi::b2Shape_GetFilter(id) })
 }
 
@@ -411,7 +411,7 @@ fn shape_set_filter_impl(id: ShapeId, filter: Filter) {
 }
 
 #[inline]
-fn shape_is_sensor_impl(id: ShapeId) -> bool {
+pub(crate) fn shape_is_sensor_impl(id: ShapeId) -> bool {
     unsafe { ffi::b2Shape_IsSensor(id) }
 }
 
@@ -466,7 +466,7 @@ fn shape_set_density_impl(id: ShapeId, density: f32, update_body_mass: bool) {
 }
 
 #[inline]
-fn shape_density_impl(id: ShapeId) -> f32 {
+pub(crate) fn shape_density_impl(id: ShapeId) -> f32 {
     unsafe { ffi::b2Shape_GetDensity(id) }
 }
 

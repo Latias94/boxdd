@@ -45,6 +45,11 @@ fn check_joint_valid(id: JointId) -> ApiResult<()> {
 }
 
 #[inline]
+pub(crate) fn joint_is_valid_impl(id: JointId) -> bool {
+    base::joint_is_valid_impl(id)
+}
+
+#[inline]
 fn assert_joint_def_bodies_valid(base: &ffi::b2JointDef) {
     crate::core::debug_checks::assert_body_valid(base.bodyIdA);
     crate::core::debug_checks::assert_body_valid(base.bodyIdB);

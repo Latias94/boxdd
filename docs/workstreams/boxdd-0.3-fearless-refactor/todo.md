@@ -56,6 +56,7 @@
 - [x] Expand polygon-construction helpers with square, offset-box, offset-rounded-box, offset-from-points, and hull-validation APIs so crate-owned geometry no longer needs raw FFI for those upstream builders.
 - [x] Remove the remaining low-level joint scalar/vector runtime macro layer in `joints/mod.rs` by consolidating it behind private generic FFI helpers plus explicit per-joint impl functions.
 - [x] Replace the `material_mix_registry` trampoline macro with const-generic callback trampolines so the crate no longer relies on internal `macro_rules!` expansion for callback dispatch tables.
+- [x] Refactor `serialize.rs` to reuse crate-owned body/joint/shape runtime helper layers instead of duplicating raw FFI getters for snapshots and scene extraction.
 
 ## In Progress
 

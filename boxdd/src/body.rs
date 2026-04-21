@@ -185,12 +185,12 @@ fn body_position_impl(id: BodyId) -> Vec2 {
 }
 
 #[inline]
-fn body_linear_velocity_impl(id: BodyId) -> Vec2 {
+pub(crate) fn body_linear_velocity_impl(id: BodyId) -> Vec2 {
     Vec2::from(unsafe { ffi::b2Body_GetLinearVelocity(id) })
 }
 
 #[inline]
-fn body_angular_velocity_impl(id: BodyId) -> f32 {
+pub(crate) fn body_angular_velocity_impl(id: BodyId) -> f32 {
     unsafe { ffi::b2Body_GetAngularVelocity(id) }
 }
 
@@ -422,7 +422,7 @@ pub(crate) fn body_joints_impl(id: BodyId) -> Vec<JointId> {
 }
 
 #[inline]
-fn body_type_impl(id: BodyId) -> BodyType {
+pub(crate) fn body_type_impl(id: BodyId) -> BodyType {
     BodyType::from_raw(unsafe { ffi::b2Body_GetType(id) })
 }
 
@@ -432,32 +432,32 @@ fn body_set_type_impl(id: BodyId, body_type: BodyType) {
 }
 
 #[inline]
-fn body_gravity_scale_impl(id: BodyId) -> f32 {
+pub(crate) fn body_gravity_scale_impl(id: BodyId) -> f32 {
     unsafe { ffi::b2Body_GetGravityScale(id) }
 }
 
 #[inline]
-fn body_set_gravity_scale_impl(id: BodyId, gravity_scale: f32) {
+pub(crate) fn body_set_gravity_scale_impl(id: BodyId, gravity_scale: f32) {
     unsafe { ffi::b2Body_SetGravityScale(id, gravity_scale) }
 }
 
 #[inline]
-fn body_linear_damping_impl(id: BodyId) -> f32 {
+pub(crate) fn body_linear_damping_impl(id: BodyId) -> f32 {
     unsafe { ffi::b2Body_GetLinearDamping(id) }
 }
 
 #[inline]
-fn body_set_linear_damping_impl(id: BodyId, linear_damping: f32) {
+pub(crate) fn body_set_linear_damping_impl(id: BodyId, linear_damping: f32) {
     unsafe { ffi::b2Body_SetLinearDamping(id, linear_damping) }
 }
 
 #[inline]
-fn body_angular_damping_impl(id: BodyId) -> f32 {
+pub(crate) fn body_angular_damping_impl(id: BodyId) -> f32 {
     unsafe { ffi::b2Body_GetAngularDamping(id) }
 }
 
 #[inline]
-fn body_set_angular_damping_impl(id: BodyId, angular_damping: f32) {
+pub(crate) fn body_set_angular_damping_impl(id: BodyId, angular_damping: f32) {
     unsafe { ffi::b2Body_SetAngularDamping(id, angular_damping) }
 }
 

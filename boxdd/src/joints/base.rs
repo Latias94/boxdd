@@ -108,7 +108,7 @@ impl ConstraintTuning {
 }
 
 #[inline]
-fn joint_is_valid_impl(id: JointId) -> bool {
+pub(crate) fn joint_is_valid_impl(id: JointId) -> bool {
     unsafe { ffi::b2Joint_IsValid(id) }
 }
 
