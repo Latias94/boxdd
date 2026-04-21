@@ -42,6 +42,7 @@
 - [x] Close the remaining obvious contact inspection gap by adding safe `ContactIdExt` helpers plus `ApiError::InvalidContactId` instead of forcing users back to raw `ffi::b2Contact_*`.
 - [x] Add a release-level completeness matrix that classifies major wrapper areas as `safe-covered`, `raw-only`, `intentional omission`, or `candidate after 0.3`.
 - [x] Expand `WorldHandle` event support with owned snapshots only (`*_events`, `*_events_into`, `try_*`) while keeping borrowed/raw event-buffer APIs on `World`.
+- [x] Replace the temporary `World` / `WorldHandle` event-snapshot macro layer with private free-function helpers so the mirror stays explicit and aligned with the workstream's anti-macro duplication rules.
 
 ## In Progress
 

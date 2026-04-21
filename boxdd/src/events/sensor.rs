@@ -90,42 +90,71 @@ fn sensor_events_into_impl(world: ffi::b2WorldId, out: &mut SensorEvents) {
     });
 }
 
-macro_rules! impl_sensor_event_snapshot_methods {
-    ($world_ty:ty) => {
-        impl $world_ty {
-            pub fn sensor_events(&self) -> SensorEvents {
-                crate::core::callback_state::assert_not_in_callback();
-                let mut out = SensorEvents::default();
-                sensor_events_into_impl(self.raw(), &mut out);
-                out
-            }
-
-            pub fn sensor_events_into(&self, out: &mut SensorEvents) {
-                crate::core::callback_state::assert_not_in_callback();
-                sensor_events_into_impl(self.raw(), out);
-            }
-
-            pub fn try_sensor_events(&self) -> crate::error::ApiResult<SensorEvents> {
-                crate::core::callback_state::check_not_in_callback()?;
-                let mut out = SensorEvents::default();
-                sensor_events_into_impl(self.raw(), &mut out);
-                Ok(out)
-            }
-
-            pub fn try_sensor_events_into(
-                &self,
-                out: &mut SensorEvents,
-            ) -> crate::error::ApiResult<()> {
-                crate::core::callback_state::check_not_in_callback()?;
-                sensor_events_into_impl(self.raw(), out);
-                Ok(())
-            }
-        }
-    };
+fn sensor_events_snapshot_impl(world: ffi::b2WorldId) -> SensorEvents {
+    let mut out = SensorEvents::default();
+    sensor_events_into_impl(world, &mut out);
+    out
 }
 
-impl_sensor_event_snapshot_methods!(World);
-impl_sensor_event_snapshot_methods!(WorldHandle);
+fn sensor_events_checked_impl(world: ffi::b2WorldId) -> SensorEvents {
+    crate::core::callback_state::assert_not_in_callback();
+    sensor_events_snapshot_impl(world)
+}
+
+fn sensor_events_into_checked_impl(world: ffi::b2WorldId, out: &mut SensorEvents) {
+    crate::core::callback_state::assert_not_in_callback();
+    sensor_events_into_impl(world, out);
+}
+
+fn try_sensor_events_impl(world: ffi::b2WorldId) -> crate::error::ApiResult<SensorEvents> {
+    crate::core::callback_state::check_not_in_callback()?;
+    Ok(sensor_events_snapshot_impl(world))
+}
+
+fn try_sensor_events_into_impl(
+    world: ffi::b2WorldId,
+    out: &mut SensorEvents,
+) -> crate::error::ApiResult<()> {
+    crate::core::callback_state::check_not_in_callback()?;
+    sensor_events_into_impl(world, out);
+    Ok(())
+}
+
+impl World {
+    pub fn sensor_events(&self) -> SensorEvents {
+        sensor_events_checked_impl(self.raw())
+    }
+
+    pub fn sensor_events_into(&self, out: &mut SensorEvents) {
+        sensor_events_into_checked_impl(self.raw(), out);
+    }
+
+    pub fn try_sensor_events(&self) -> crate::error::ApiResult<SensorEvents> {
+        try_sensor_events_impl(self.raw())
+    }
+
+    pub fn try_sensor_events_into(&self, out: &mut SensorEvents) -> crate::error::ApiResult<()> {
+        try_sensor_events_into_impl(self.raw(), out)
+    }
+}
+
+impl WorldHandle {
+    pub fn sensor_events(&self) -> SensorEvents {
+        sensor_events_checked_impl(self.raw())
+    }
+
+    pub fn sensor_events_into(&self, out: &mut SensorEvents) {
+        sensor_events_into_checked_impl(self.raw(), out);
+    }
+
+    pub fn try_sensor_events(&self) -> crate::error::ApiResult<SensorEvents> {
+        try_sensor_events_impl(self.raw())
+    }
+
+    pub fn try_sensor_events_into(&self, out: &mut SensorEvents) -> crate::error::ApiResult<()> {
+        try_sensor_events_into_impl(self.raw(), out)
+    }
+}
 
 impl World {
     /// Low-level raw view over sensor events (borrows Box2D's internal buffers).

@@ -52,42 +52,77 @@ fn body_events_into_impl(world: ffi::b2WorldId, out: &mut Vec<BodyMoveEvent>) {
     });
 }
 
-macro_rules! impl_body_event_snapshot_methods {
-    ($world_ty:ty) => {
-        impl $world_ty {
-            pub fn body_events(&self) -> Vec<BodyMoveEvent> {
-                crate::core::callback_state::assert_not_in_callback();
-                let mut out = Vec::new();
-                body_events_into_impl(self.raw(), &mut out);
-                out
-            }
-
-            pub fn body_events_into(&self, out: &mut Vec<BodyMoveEvent>) {
-                crate::core::callback_state::assert_not_in_callback();
-                body_events_into_impl(self.raw(), out);
-            }
-
-            pub fn try_body_events(&self) -> crate::error::ApiResult<Vec<BodyMoveEvent>> {
-                crate::core::callback_state::check_not_in_callback()?;
-                let mut out = Vec::new();
-                body_events_into_impl(self.raw(), &mut out);
-                Ok(out)
-            }
-
-            pub fn try_body_events_into(
-                &self,
-                out: &mut Vec<BodyMoveEvent>,
-            ) -> crate::error::ApiResult<()> {
-                crate::core::callback_state::check_not_in_callback()?;
-                body_events_into_impl(self.raw(), out);
-                Ok(())
-            }
-        }
-    };
+fn body_events_snapshot_impl(world: ffi::b2WorldId) -> Vec<BodyMoveEvent> {
+    let mut out = Vec::new();
+    body_events_into_impl(world, &mut out);
+    out
 }
 
-impl_body_event_snapshot_methods!(World);
-impl_body_event_snapshot_methods!(WorldHandle);
+fn body_events_checked_impl(world: ffi::b2WorldId) -> Vec<BodyMoveEvent> {
+    crate::core::callback_state::assert_not_in_callback();
+    body_events_snapshot_impl(world)
+}
+
+fn body_events_into_checked_impl(world: ffi::b2WorldId, out: &mut Vec<BodyMoveEvent>) {
+    crate::core::callback_state::assert_not_in_callback();
+    body_events_into_impl(world, out);
+}
+
+fn try_body_events_impl(world: ffi::b2WorldId) -> crate::error::ApiResult<Vec<BodyMoveEvent>> {
+    crate::core::callback_state::check_not_in_callback()?;
+    Ok(body_events_snapshot_impl(world))
+}
+
+fn try_body_events_into_impl(
+    world: ffi::b2WorldId,
+    out: &mut Vec<BodyMoveEvent>,
+) -> crate::error::ApiResult<()> {
+    crate::core::callback_state::check_not_in_callback()?;
+    body_events_into_impl(world, out);
+    Ok(())
+}
+
+impl World {
+    pub fn body_events(&self) -> Vec<BodyMoveEvent> {
+        body_events_checked_impl(self.raw())
+    }
+
+    pub fn body_events_into(&self, out: &mut Vec<BodyMoveEvent>) {
+        body_events_into_checked_impl(self.raw(), out);
+    }
+
+    pub fn try_body_events(&self) -> crate::error::ApiResult<Vec<BodyMoveEvent>> {
+        try_body_events_impl(self.raw())
+    }
+
+    pub fn try_body_events_into(
+        &self,
+        out: &mut Vec<BodyMoveEvent>,
+    ) -> crate::error::ApiResult<()> {
+        try_body_events_into_impl(self.raw(), out)
+    }
+}
+
+impl WorldHandle {
+    pub fn body_events(&self) -> Vec<BodyMoveEvent> {
+        body_events_checked_impl(self.raw())
+    }
+
+    pub fn body_events_into(&self, out: &mut Vec<BodyMoveEvent>) {
+        body_events_into_checked_impl(self.raw(), out);
+    }
+
+    pub fn try_body_events(&self) -> crate::error::ApiResult<Vec<BodyMoveEvent>> {
+        try_body_events_impl(self.raw())
+    }
+
+    pub fn try_body_events_into(
+        &self,
+        out: &mut Vec<BodyMoveEvent>,
+    ) -> crate::error::ApiResult<()> {
+        try_body_events_into_impl(self.raw(), out)
+    }
+}
 
 impl World {
     // Zero-copy visitor (closure style). Data is only valid within the call.

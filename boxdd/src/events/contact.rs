@@ -149,42 +149,71 @@ fn contact_events_into_impl(world: ffi::b2WorldId, out: &mut ContactEvents) {
     });
 }
 
-macro_rules! impl_contact_event_snapshot_methods {
-    ($world_ty:ty) => {
-        impl $world_ty {
-            pub fn contact_events(&self) -> ContactEvents {
-                crate::core::callback_state::assert_not_in_callback();
-                let mut out = ContactEvents::default();
-                contact_events_into_impl(self.raw(), &mut out);
-                out
-            }
-
-            pub fn contact_events_into(&self, out: &mut ContactEvents) {
-                crate::core::callback_state::assert_not_in_callback();
-                contact_events_into_impl(self.raw(), out);
-            }
-
-            pub fn try_contact_events(&self) -> crate::error::ApiResult<ContactEvents> {
-                crate::core::callback_state::check_not_in_callback()?;
-                let mut out = ContactEvents::default();
-                contact_events_into_impl(self.raw(), &mut out);
-                Ok(out)
-            }
-
-            pub fn try_contact_events_into(
-                &self,
-                out: &mut ContactEvents,
-            ) -> crate::error::ApiResult<()> {
-                crate::core::callback_state::check_not_in_callback()?;
-                contact_events_into_impl(self.raw(), out);
-                Ok(())
-            }
-        }
-    };
+fn contact_events_snapshot_impl(world: ffi::b2WorldId) -> ContactEvents {
+    let mut out = ContactEvents::default();
+    contact_events_into_impl(world, &mut out);
+    out
 }
 
-impl_contact_event_snapshot_methods!(World);
-impl_contact_event_snapshot_methods!(WorldHandle);
+fn contact_events_checked_impl(world: ffi::b2WorldId) -> ContactEvents {
+    crate::core::callback_state::assert_not_in_callback();
+    contact_events_snapshot_impl(world)
+}
+
+fn contact_events_into_checked_impl(world: ffi::b2WorldId, out: &mut ContactEvents) {
+    crate::core::callback_state::assert_not_in_callback();
+    contact_events_into_impl(world, out);
+}
+
+fn try_contact_events_impl(world: ffi::b2WorldId) -> crate::error::ApiResult<ContactEvents> {
+    crate::core::callback_state::check_not_in_callback()?;
+    Ok(contact_events_snapshot_impl(world))
+}
+
+fn try_contact_events_into_impl(
+    world: ffi::b2WorldId,
+    out: &mut ContactEvents,
+) -> crate::error::ApiResult<()> {
+    crate::core::callback_state::check_not_in_callback()?;
+    contact_events_into_impl(world, out);
+    Ok(())
+}
+
+impl World {
+    pub fn contact_events(&self) -> ContactEvents {
+        contact_events_checked_impl(self.raw())
+    }
+
+    pub fn contact_events_into(&self, out: &mut ContactEvents) {
+        contact_events_into_checked_impl(self.raw(), out);
+    }
+
+    pub fn try_contact_events(&self) -> crate::error::ApiResult<ContactEvents> {
+        try_contact_events_impl(self.raw())
+    }
+
+    pub fn try_contact_events_into(&self, out: &mut ContactEvents) -> crate::error::ApiResult<()> {
+        try_contact_events_into_impl(self.raw(), out)
+    }
+}
+
+impl WorldHandle {
+    pub fn contact_events(&self) -> ContactEvents {
+        contact_events_checked_impl(self.raw())
+    }
+
+    pub fn contact_events_into(&self, out: &mut ContactEvents) {
+        contact_events_into_checked_impl(self.raw(), out);
+    }
+
+    pub fn try_contact_events(&self) -> crate::error::ApiResult<ContactEvents> {
+        try_contact_events_impl(self.raw())
+    }
+
+    pub fn try_contact_events_into(&self, out: &mut ContactEvents) -> crate::error::ApiResult<()> {
+        try_contact_events_into_impl(self.raw(), out)
+    }
+}
 
 impl World {
     /// Low-level raw view over contact events (borrows Box2D's internal buffers).
