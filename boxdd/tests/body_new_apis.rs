@@ -359,3 +359,245 @@ fn body_aabb_helpers_match_owned_scoped_and_world_views() {
     assert_eq!(world.body_aabb(body_id), expected);
     assert_eq!(world.try_body_aabb(body_id).unwrap(), expected);
 }
+
+#[test]
+fn world_handle_body_runtime_queries_match_world_queries() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+
+    let body_id = world.create_body_id(
+        BodyBuilder::new()
+            .body_type(BodyType::Dynamic)
+            .position([1.0_f32, 2.0])
+            .angle(0.25)
+            .build(),
+    );
+    let other_body_id = world.create_body_id(
+        BodyBuilder::new()
+            .body_type(BodyType::Dynamic)
+            .position([2.0_f32, 2.0])
+            .build(),
+    );
+
+    let shape_a = world.create_circle_shape_for(
+        body_id,
+        &ShapeDef::builder().density(1.0).build(),
+        &shapes::circle([0.0_f32, 0.0], 0.5),
+    );
+    let shape_b = world.create_polygon_shape_for(
+        body_id,
+        &ShapeDef::builder().density(1.0).build(),
+        &shapes::box_polygon(0.25, 0.75),
+    );
+    let joint = world
+        .revolute(body_id, other_body_id)
+        .anchor_world([1.5_f32, 2.0])
+        .build_owned();
+    let joint_id = joint.id();
+
+    world.set_body_linear_velocity(body_id, [2.0_f32, -1.0]);
+    world.set_body_angular_velocity(body_id, 1.25);
+    world.set_body_sleep_threshold(body_id, 0.4);
+    let locks = MotionLocks::new(true, false, true);
+    world.set_body_motion_locks(body_id, locks);
+    world.set_body_bullet(body_id, true);
+    world.set_body_name(body_id, "handle-body");
+    {
+        let mut body = world.body(body_id).expect("body should still be valid");
+        body.set_gravity_scale(1.5);
+        body.set_linear_damping(0.2);
+        body.set_angular_damping(0.3);
+    }
+
+    let handle = world.handle();
+
+    let transform = world.body_transform(body_id);
+    let handle_transform = handle.body_transform(body_id);
+    assert_eq!(handle_transform.position(), transform.position());
+    assert!(approx_eq(
+        handle_transform.rotation().angle(),
+        transform.rotation().angle(),
+        1.0e-6
+    ));
+    let handle_try_transform = handle.try_body_transform(body_id).unwrap();
+    assert_eq!(handle_try_transform.position(), transform.position());
+    assert!(approx_eq(
+        handle_try_transform.rotation().angle(),
+        transform.rotation().angle(),
+        1.0e-6
+    ));
+    assert_eq!(handle.body_position(body_id), world.body_position(body_id));
+    assert_eq!(
+        handle.try_body_position(body_id).unwrap(),
+        world.body_position(body_id)
+    );
+    assert_eq!(
+        handle.body_linear_velocity(body_id),
+        world.body_linear_velocity(body_id)
+    );
+    assert_eq!(
+        handle.try_body_linear_velocity(body_id).unwrap(),
+        world.body_linear_velocity(body_id)
+    );
+    assert!(approx_eq(
+        handle.body_angular_velocity(body_id),
+        world.body_angular_velocity(body_id),
+        1.0e-6
+    ));
+    assert!(approx_eq(
+        handle.try_body_angular_velocity(body_id).unwrap(),
+        world.body_angular_velocity(body_id),
+        1.0e-6
+    ));
+    assert!(approx_eq(
+        handle.body_rotation(body_id).angle(),
+        world.body_rotation(body_id).angle(),
+        1.0e-6
+    ));
+    assert_eq!(handle.body_aabb(body_id), world.body_aabb(body_id));
+    assert_eq!(
+        handle.try_body_aabb(body_id).unwrap(),
+        world.body_aabb(body_id)
+    );
+
+    assert_eq!(
+        handle.body_local_point(body_id, [2.0_f32, 3.0]),
+        world.body_local_point(body_id, [2.0_f32, 3.0])
+    );
+    assert_eq!(
+        handle.body_world_point(body_id, [0.25_f32, -0.5]),
+        world.body_world_point(body_id, [0.25_f32, -0.5])
+    );
+    assert_eq!(
+        handle.body_local_vector(body_id, [1.0_f32, 0.0]),
+        world.body_local_vector(body_id, [1.0_f32, 0.0])
+    );
+    assert_eq!(
+        handle.body_world_vector(body_id, [0.0_f32, 1.0]),
+        world.body_world_vector(body_id, [0.0_f32, 1.0])
+    );
+    assert_eq!(
+        handle.body_local_point_velocity(body_id, [0.5_f32, 0.0]),
+        world.body_local_point_velocity(body_id, [0.5_f32, 0.0])
+    );
+    assert_eq!(
+        handle.body_world_point_velocity(body_id, [1.5_f32, 2.25]),
+        world.body_world_point_velocity(body_id, [1.5_f32, 2.25])
+    );
+
+    assert!(approx_eq(
+        handle.body_mass(body_id),
+        world.body_mass(body_id),
+        1.0e-6
+    ));
+    assert!(approx_eq(
+        handle.try_body_mass(body_id).unwrap(),
+        world.body_mass(body_id),
+        1.0e-6
+    ));
+    assert!(approx_eq(
+        handle.body_rotational_inertia(body_id),
+        world.body_rotational_inertia(body_id),
+        1.0e-6
+    ));
+    assert_eq!(
+        handle.body_local_center_of_mass(body_id),
+        world.body_local_center_of_mass(body_id)
+    );
+    assert_eq!(
+        handle.body_world_center_of_mass(body_id),
+        world.body_world_center_of_mass(body_id)
+    );
+    assert_eq!(
+        handle.body_mass_data(body_id),
+        world.body_mass_data(body_id)
+    );
+    assert_eq!(
+        handle.try_body_mass_data(body_id).unwrap(),
+        world.body_mass_data(body_id)
+    );
+
+    assert_eq!(handle.body_shape_count(body_id), 2);
+    assert_eq!(handle.try_body_shape_count(body_id).unwrap(), 2);
+    let handle_shapes = handle.body_shapes(body_id);
+    assert_eq!(handle_shapes.len(), 2);
+    assert!(
+        handle_shapes
+            .iter()
+            .copied()
+            .any(|id| same_shape_id(id, shape_a))
+    );
+    assert!(
+        handle_shapes
+            .iter()
+            .copied()
+            .any(|id| same_shape_id(id, shape_b))
+    );
+    let mut handle_shape_buf = Vec::with_capacity(4);
+    let handle_shape_buf_ptr = handle_shape_buf.as_ptr();
+    handle.body_shapes_into(body_id, &mut handle_shape_buf);
+    assert_eq!(handle_shape_buf.as_ptr(), handle_shape_buf_ptr);
+    assert_eq!(handle_shape_buf.len(), 2);
+    handle
+        .try_body_shapes_into(body_id, &mut handle_shape_buf)
+        .unwrap();
+    assert_eq!(handle_shape_buf.as_ptr(), handle_shape_buf_ptr);
+    assert_eq!(handle_shape_buf.len(), 2);
+
+    assert_eq!(handle.body_joint_count(body_id), 1);
+    assert_eq!(handle.try_body_joint_count(body_id).unwrap(), 1);
+    let handle_joints = handle.body_joints(body_id);
+    assert_eq!(handle_joints.len(), 1);
+    assert!(same_joint_id(handle_joints[0], joint_id));
+    let mut handle_joint_buf = Vec::with_capacity(4);
+    let handle_joint_buf_ptr = handle_joint_buf.as_ptr();
+    handle.body_joints_into(body_id, &mut handle_joint_buf);
+    assert_eq!(handle_joint_buf.as_ptr(), handle_joint_buf_ptr);
+    assert_eq!(handle_joint_buf.len(), 1);
+    handle
+        .try_body_joints_into(body_id, &mut handle_joint_buf)
+        .unwrap();
+    assert_eq!(handle_joint_buf.as_ptr(), handle_joint_buf_ptr);
+    assert_eq!(handle_joint_buf.len(), 1);
+
+    assert_eq!(handle.body_type(body_id), BodyType::Dynamic);
+    assert_eq!(handle.try_body_type(body_id).unwrap(), BodyType::Dynamic);
+    assert!(approx_eq(handle.body_gravity_scale(body_id), 1.5, 1.0e-6));
+    assert!(approx_eq(
+        handle.try_body_gravity_scale(body_id).unwrap(),
+        1.5,
+        1.0e-6
+    ));
+    assert!(approx_eq(handle.body_linear_damping(body_id), 0.2, 1.0e-6));
+    assert!(approx_eq(
+        handle.try_body_linear_damping(body_id).unwrap(),
+        0.2,
+        1.0e-6
+    ));
+    assert!(approx_eq(handle.body_angular_damping(body_id), 0.3, 1.0e-6));
+    assert!(approx_eq(
+        handle.try_body_angular_damping(body_id).unwrap(),
+        0.3,
+        1.0e-6
+    ));
+    assert!(handle.body_is_sleep_enabled(body_id));
+    assert!(handle.try_body_is_sleep_enabled(body_id).unwrap());
+    assert!(approx_eq(handle.body_sleep_threshold(body_id), 0.4, 1.0e-6));
+    assert!(approx_eq(
+        handle.try_body_sleep_threshold(body_id).unwrap(),
+        0.4,
+        1.0e-6
+    ));
+    assert!(handle.body_is_awake(body_id));
+    assert!(handle.try_body_is_awake(body_id).unwrap());
+    assert!(handle.body_is_enabled(body_id));
+    assert!(handle.try_body_is_enabled(body_id).unwrap());
+    assert_eq!(handle.body_motion_locks(body_id), locks);
+    assert_eq!(handle.try_body_motion_locks(body_id).unwrap(), locks);
+    assert!(handle.body_is_bullet(body_id));
+    assert!(handle.try_body_is_bullet(body_id).unwrap());
+    assert_eq!(handle.body_name(body_id).as_deref(), Some("handle-body"));
+    assert_eq!(
+        handle.try_body_name(body_id).unwrap().as_deref(),
+        Some("handle-body")
+    );
+}

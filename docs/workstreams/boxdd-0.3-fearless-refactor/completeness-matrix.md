@@ -80,7 +80,8 @@
 
 | Slice | Status | Notes |
 | --- | --- | --- |
-| read-only queries and runtime getters | safe-covered | Includes counters/profile/runtime tuning mirrors where lifecycle semantics stay simple. |
+| world-level queries and runtime getters | safe-covered | Includes counters/profile/runtime tuning mirrors where lifecycle semantics stay simple. |
+| body-by-id read-only runtime mirrors | safe-covered | Includes transforms, velocities, point/vector conversion helpers, mass data, damping/flags, motion locks, and attached shape/joint enumeration without requiring a mutable `World` borrow. |
 | owned event snapshots and reusable-buffer snapshot reads | safe-covered | Mirrors `World` for `*_events`, `*_events_into`, and `try_*` without exposing borrowed/raw buffer lifetimes. |
 | event views and raw event slices | intentional omission | These stay on `World` because they are tied to step-local buffers and deferred-destroy flushing semantics. |
 | mutation, callback registration, stepping | intentional omission | `WorldHandle` remains a cheap stored-query/read-only helper, not a second mutable world API. |

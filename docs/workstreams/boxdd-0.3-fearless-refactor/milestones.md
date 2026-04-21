@@ -137,6 +137,7 @@ Scope:
 - build a release-level completeness matrix so the final `0.3.0` gap list is explicit instead of implicit
 - close the remaining obvious `ContactId` gap with direct safe validation and data-fetch helpers
 - expand `WorldHandle` event support with owned snapshots only, while keeping borrowed/raw event-buffer APIs on `World`
+- expand `WorldHandle` beyond world-level diagnostics to pure body-by-id read-only runtime queries where no mutable borrow or step-buffer lifetime coupling is involved
 - finish any obviously missing value-type/productization gaps left after the main `0.3` wrapper passes
 - audit thread-model / async guidance so `worker_count`, worker-thread callbacks, and `World: !Send/!Sync` are documented together
 - audit math interop completeness so `mint` stays aligned with the crate-owned `Vec2` / `Rot` / `Transform` / `Aabb` vocabulary
@@ -166,6 +167,7 @@ Exit criteria:
 - the remaining raw public surface is either clearly intentional or scheduled for removal
 - the release has a concrete completeness matrix instead of relying on scattered TODO bullets and source inspection
 - `WorldHandle` mirrors owned event snapshots with a clear lifecycle boundary, while borrowed/raw event-buffer APIs remain intentionally `World`-only
+- `WorldHandle` is usable as a stored read-only body query helper instead of being limited to world-level diagnostics only
 - crate-owned value types no longer rely on implicit raw conversions except for documented input-side or raw-escape-hatch exceptions
 - body/shape/joint/chain/contact ids no longer leak raw `ffi::*Id` types through the normal safe wrapper surface
 - the next completeness pass has a short, explicit backlog instead of scattered notes

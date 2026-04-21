@@ -288,6 +288,7 @@ fn try_owned_body_mutation_invalid_id_returns_err() {
 fn try_body_runtime_helpers_invalid_id_returns_err() {
     let mut world = World::new(WorldDef::default()).unwrap();
     let mut body = world.create_body_owned(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+    let handle = world.handle();
     let body_id = body.id();
     world.destroy_body_id(body_id);
 
@@ -443,6 +444,28 @@ fn try_body_runtime_helpers_invalid_id_returns_err() {
     );
     assert_eq!(
         world.try_body_enable_hit_events(body_id, true).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        handle.try_body_transform(body_id).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        handle.try_body_mass_data(body_id).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        handle
+            .try_body_shapes_into(body_id, &mut shape_ids)
+            .unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        handle.try_body_motion_locks(body_id).unwrap_err(),
+        ApiError::InvalidBodyId
+    );
+    assert_eq!(
+        handle.try_body_name(body_id).unwrap_err(),
         ApiError::InvalidBodyId
     );
 }

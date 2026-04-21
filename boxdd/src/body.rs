@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::core::world_core::WorldCore;
 use crate::error::{ApiError, ApiResult};
 use crate::query::Aabb;
-use crate::types::{BodyId, ContactData, JointId, MassData, ShapeId, Vec2};
+use crate::types::{BodyId, ContactData, JointId, MassData, MotionLocks, ShapeId, Vec2};
 use crate::world::World;
 use boxdd_sys::ffi;
 use std::ffi::{CStr, CString};
@@ -189,7 +189,7 @@ fn body_is_valid_impl(id: BodyId) -> bool {
 }
 
 #[inline]
-fn body_position_impl(id: BodyId) -> Vec2 {
+pub(crate) fn body_position_impl(id: BodyId) -> Vec2 {
     Vec2::from_raw(unsafe { ffi::b2Body_GetPosition(raw_body_id(id)) })
 }
 
@@ -219,7 +219,7 @@ fn body_transform_raw_impl(id: BodyId) -> ffi::b2Transform {
 }
 
 #[inline]
-fn body_transform_impl(id: BodyId) -> crate::Transform {
+pub(crate) fn body_transform_impl(id: BodyId) -> crate::Transform {
     crate::Transform::from_raw(body_transform_raw_impl(id))
 }
 
@@ -229,37 +229,37 @@ pub(crate) fn body_aabb_impl(id: BodyId) -> Aabb {
 }
 
 #[inline]
-fn body_local_point_impl<V: Into<Vec2>>(id: BodyId, world_point: V) -> Vec2 {
+pub(crate) fn body_local_point_impl<V: Into<Vec2>>(id: BodyId, world_point: V) -> Vec2 {
     let point: ffi::b2Vec2 = world_point.into().into_raw();
     Vec2::from_raw(unsafe { ffi::b2Body_GetLocalPoint(raw_body_id(id), point) })
 }
 
 #[inline]
-fn body_world_point_impl<V: Into<Vec2>>(id: BodyId, local_point: V) -> Vec2 {
+pub(crate) fn body_world_point_impl<V: Into<Vec2>>(id: BodyId, local_point: V) -> Vec2 {
     let point: ffi::b2Vec2 = local_point.into().into_raw();
     Vec2::from_raw(unsafe { ffi::b2Body_GetWorldPoint(raw_body_id(id), point) })
 }
 
 #[inline]
-fn body_local_vector_impl<V: Into<Vec2>>(id: BodyId, world_vector: V) -> Vec2 {
+pub(crate) fn body_local_vector_impl<V: Into<Vec2>>(id: BodyId, world_vector: V) -> Vec2 {
     let vector: ffi::b2Vec2 = world_vector.into().into_raw();
     Vec2::from_raw(unsafe { ffi::b2Body_GetLocalVector(raw_body_id(id), vector) })
 }
 
 #[inline]
-fn body_world_vector_impl<V: Into<Vec2>>(id: BodyId, local_vector: V) -> Vec2 {
+pub(crate) fn body_world_vector_impl<V: Into<Vec2>>(id: BodyId, local_vector: V) -> Vec2 {
     let vector: ffi::b2Vec2 = local_vector.into().into_raw();
     Vec2::from_raw(unsafe { ffi::b2Body_GetWorldVector(raw_body_id(id), vector) })
 }
 
 #[inline]
-fn body_local_point_velocity_impl<V: Into<Vec2>>(id: BodyId, local_point: V) -> Vec2 {
+pub(crate) fn body_local_point_velocity_impl<V: Into<Vec2>>(id: BodyId, local_point: V) -> Vec2 {
     let point: ffi::b2Vec2 = local_point.into().into_raw();
     Vec2::from_raw(unsafe { ffi::b2Body_GetLocalPointVelocity(raw_body_id(id), point) })
 }
 
 #[inline]
-fn body_world_point_velocity_impl<V: Into<Vec2>>(id: BodyId, world_point: V) -> Vec2 {
+pub(crate) fn body_world_point_velocity_impl<V: Into<Vec2>>(id: BodyId, world_point: V) -> Vec2 {
     let point: ffi::b2Vec2 = world_point.into().into_raw();
     Vec2::from_raw(unsafe { ffi::b2Body_GetWorldPointVelocity(raw_body_id(id), point) })
 }
@@ -340,28 +340,33 @@ fn body_apply_angular_impulse_impl(id: BodyId, impulse: f32, wake: bool) {
 }
 
 #[inline]
-fn body_mass_impl(id: BodyId) -> f32 {
+pub(crate) fn body_mass_impl(id: BodyId) -> f32 {
     unsafe { ffi::b2Body_GetMass(raw_body_id(id)) }
 }
 
 #[inline]
-fn body_rotational_inertia_impl(id: BodyId) -> f32 {
+pub(crate) fn body_rotational_inertia_impl(id: BodyId) -> f32 {
     unsafe { ffi::b2Body_GetRotationalInertia(raw_body_id(id)) }
 }
 
 #[inline]
-fn body_local_center_of_mass_impl(id: BodyId) -> Vec2 {
+pub(crate) fn body_local_center_of_mass_impl(id: BodyId) -> Vec2 {
     Vec2::from_raw(unsafe { ffi::b2Body_GetLocalCenterOfMass(raw_body_id(id)) })
 }
 
 #[inline]
-fn body_world_center_of_mass_impl(id: BodyId) -> Vec2 {
+pub(crate) fn body_world_center_of_mass_impl(id: BodyId) -> Vec2 {
     Vec2::from_raw(unsafe { ffi::b2Body_GetWorldCenterOfMass(raw_body_id(id)) })
 }
 
 #[inline]
-fn body_mass_data_impl(id: BodyId) -> MassData {
+pub(crate) fn body_mass_data_impl(id: BodyId) -> MassData {
     MassData::from_raw(unsafe { ffi::b2Body_GetMassData(raw_body_id(id)) })
+}
+
+#[inline]
+pub(crate) fn body_motion_locks_impl(id: BodyId) -> MotionLocks {
+    MotionLocks::from_raw(unsafe { ffi::b2Body_GetMotionLocks(raw_body_id(id)) })
 }
 
 #[inline]

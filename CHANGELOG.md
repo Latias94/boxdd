@@ -39,6 +39,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - `ApiError::InvalidJointType` for recoverable `try_*` typed-joint runtime misuse when a valid joint is accessed through the wrong family surface.
 - World runtime extras for `Profile` timings, `ExplosionDef`, `World::explode` / `try_explode`, and speculative collision control.
 - `BodyBuilder::allow_fast_rotation`, computed body AABB helpers across `Body`, `OwnedBody`, and `World::body_aabb`, plus read-only `WorldHandle` runtime getters for gravity/counters/profile/awake-count/runtime-tuning state.
+- Read-only `WorldHandle::body_*` mirrors for body-by-id runtime queries, covering transforms, velocities, point/vector conversions, mass data, damping/flags, motion locks, and attached shape/joint enumeration without requiring a mutable `World` borrow.
 - Owned event snapshot mirrors on `WorldHandle`: `*_events`, `*_events_into`, and `try_*` now match `World` for body/contact/sensor/joint event snapshots without exposing borrowed/raw event-buffer APIs there.
 - Recoverable rotation round-tripping for `mint::RowMatrix2/ColumnMatrix2` and `glam::Mat2`, via `Rot::try_from(...)`, `RotFromMintError`, and `RotFromGlamError`.
 - Reusable-buffer world event snapshot APIs: `body_events_into`, `contact_events_into`, `sensor_events_into`, `joint_events_into`, plus matching `try_*` variants for recoverable callback-sensitive event reads.
@@ -93,6 +94,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Internal: the remaining high-frequency `Body` / `Shape` / `Chain` owned-vs-scoped enumeration helpers (`shapes`, `joints`, `sensor_overlaps`, `segments`, and related count/into variants) now share single private definitions, further reducing handle-style drift in the 0.3 runtime surface.
 - Internal: the feature-gated `unchecked` extension traits now share single internal implementations across owned/scoped body, shape, joint, and chain handles instead of repeating the same raw FFI calls per handle type.
 - Internal: computed body AABB and read-only `World` / `WorldHandle` runtime getters now share single helper paths, reducing one of the remaining handle-style drift pockets in the 0.3 runtime surface.
+- Internal: `WorldHandle` body-by-id read-only runtime mirrors now reuse shared `body.rs` helper implementations instead of open-coding another raw FFI getter table.
 - Internal: `mint` and `glam` rotation validation now follow the same pure-rotation acceptance rules as `Transform` conversion, removing another asymmetry in the math interop surface.
 - Internal: world-level joint runtime helpers now share the same private implementation path as owned/scoped joint handles, including type-specific joint family validation, reducing completeness drift across the three joint API styles.
 - World-level runtime tuning helpers now expose matching `try_*` variants for callback-sensitive controls instead of forcing panic-only access on that slice.
