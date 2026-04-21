@@ -103,6 +103,123 @@ macro_rules! impl_world_shape_set_methods {
     };
 }
 
+macro_rules! impl_world_gravity_methods {
+    () => {
+        /// Get current gravity vector.
+        pub fn gravity(&self) -> Vec2 {
+            crate::core::callback_state::assert_not_in_callback();
+            world_gravity_impl(self.raw())
+        }
+
+        pub fn try_gravity(&self) -> crate::error::ApiResult<Vec2> {
+            crate::core::callback_state::check_not_in_callback()?;
+            Ok(world_gravity_impl(self.raw()))
+        }
+    };
+}
+
+macro_rules! impl_world_runtime_snapshot_methods {
+    () => {
+        /// World counters snapshot (sizes, tree heights, etc.).
+        pub fn counters(&self) -> Counters {
+            crate::core::callback_state::assert_not_in_callback();
+            world_counters_impl(self.raw())
+        }
+
+        pub fn try_counters(&self) -> crate::error::ApiResult<Counters> {
+            crate::core::callback_state::check_not_in_callback()?;
+            Ok(world_counters_impl(self.raw()))
+        }
+
+        /// World profile snapshot with per-stage timing in milliseconds from the last completed step.
+        pub fn profile(&self) -> Profile {
+            crate::core::callback_state::assert_not_in_callback();
+            world_profile_impl(self.raw())
+        }
+
+        pub fn try_profile(&self) -> crate::error::ApiResult<Profile> {
+            crate::core::callback_state::check_not_in_callback()?;
+            Ok(world_profile_impl(self.raw()))
+        }
+
+        /// Get number of awake bodies.
+        pub fn awake_body_count(&self) -> i32 {
+            crate::core::callback_state::assert_not_in_callback();
+            world_awake_body_count_impl(self.raw())
+        }
+
+        pub fn try_awake_body_count(&self) -> crate::error::ApiResult<i32> {
+            crate::core::callback_state::check_not_in_callback()?;
+            Ok(world_awake_body_count_impl(self.raw()))
+        }
+    };
+}
+
+macro_rules! impl_world_runtime_tuning_getter_methods {
+    () => {
+        pub fn is_sleeping_enabled(&self) -> bool {
+            crate::core::callback_state::assert_not_in_callback();
+            world_is_sleeping_enabled_impl(self.raw())
+        }
+
+        pub fn try_is_sleeping_enabled(&self) -> crate::error::ApiResult<bool> {
+            crate::core::callback_state::check_not_in_callback()?;
+            Ok(world_is_sleeping_enabled_impl(self.raw()))
+        }
+
+        pub fn is_continuous_enabled(&self) -> bool {
+            crate::core::callback_state::assert_not_in_callback();
+            world_is_continuous_enabled_impl(self.raw())
+        }
+
+        pub fn try_is_continuous_enabled(&self) -> crate::error::ApiResult<bool> {
+            crate::core::callback_state::check_not_in_callback()?;
+            Ok(world_is_continuous_enabled_impl(self.raw()))
+        }
+
+        /// Returns true if constraint warm starting is enabled.
+        pub fn is_warm_starting_enabled(&self) -> bool {
+            crate::core::callback_state::assert_not_in_callback();
+            world_is_warm_starting_enabled_impl(self.raw())
+        }
+
+        pub fn try_is_warm_starting_enabled(&self) -> crate::error::ApiResult<bool> {
+            crate::core::callback_state::check_not_in_callback()?;
+            Ok(world_is_warm_starting_enabled_impl(self.raw()))
+        }
+
+        pub fn restitution_threshold(&self) -> f32 {
+            crate::core::callback_state::assert_not_in_callback();
+            world_restitution_threshold_impl(self.raw())
+        }
+
+        pub fn try_restitution_threshold(&self) -> crate::error::ApiResult<f32> {
+            crate::core::callback_state::check_not_in_callback()?;
+            Ok(world_restitution_threshold_impl(self.raw()))
+        }
+
+        pub fn hit_event_threshold(&self) -> f32 {
+            crate::core::callback_state::assert_not_in_callback();
+            world_hit_event_threshold_impl(self.raw())
+        }
+
+        pub fn try_hit_event_threshold(&self) -> crate::error::ApiResult<f32> {
+            crate::core::callback_state::check_not_in_callback()?;
+            Ok(world_hit_event_threshold_impl(self.raw()))
+        }
+
+        pub fn maximum_linear_speed(&self) -> f32 {
+            crate::core::callback_state::assert_not_in_callback();
+            world_maximum_linear_speed_impl(self.raw())
+        }
+
+        pub fn try_maximum_linear_speed(&self) -> crate::error::ApiResult<f32> {
+            crate::core::callback_state::check_not_in_callback()?;
+            Ok(world_maximum_linear_speed_impl(self.raw()))
+        }
+    };
+}
+
 #[inline]
 fn world_gravity_impl(world: ffi::b2WorldId) -> Vec2 {
     Vec2::from(unsafe { ffi::b2World_GetGravity(world) })
@@ -627,105 +744,9 @@ impl WorldHandle {
         self.world_id_raw()
     }
 
-    pub fn gravity(&self) -> Vec2 {
-        crate::core::callback_state::assert_not_in_callback();
-        world_gravity_impl(self.raw())
-    }
-
-    pub fn try_gravity(&self) -> crate::error::ApiResult<Vec2> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(world_gravity_impl(self.raw()))
-    }
-
-    pub fn counters(&self) -> Counters {
-        crate::core::callback_state::assert_not_in_callback();
-        world_counters_impl(self.raw())
-    }
-
-    pub fn try_counters(&self) -> crate::error::ApiResult<Counters> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(world_counters_impl(self.raw()))
-    }
-
-    pub fn profile(&self) -> Profile {
-        crate::core::callback_state::assert_not_in_callback();
-        world_profile_impl(self.raw())
-    }
-
-    pub fn try_profile(&self) -> crate::error::ApiResult<Profile> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(world_profile_impl(self.raw()))
-    }
-
-    pub fn awake_body_count(&self) -> i32 {
-        crate::core::callback_state::assert_not_in_callback();
-        world_awake_body_count_impl(self.raw())
-    }
-
-    pub fn try_awake_body_count(&self) -> crate::error::ApiResult<i32> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(world_awake_body_count_impl(self.raw()))
-    }
-
-    pub fn is_sleeping_enabled(&self) -> bool {
-        crate::core::callback_state::assert_not_in_callback();
-        world_is_sleeping_enabled_impl(self.raw())
-    }
-
-    pub fn try_is_sleeping_enabled(&self) -> crate::error::ApiResult<bool> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(world_is_sleeping_enabled_impl(self.raw()))
-    }
-
-    pub fn is_continuous_enabled(&self) -> bool {
-        crate::core::callback_state::assert_not_in_callback();
-        world_is_continuous_enabled_impl(self.raw())
-    }
-
-    pub fn try_is_continuous_enabled(&self) -> crate::error::ApiResult<bool> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(world_is_continuous_enabled_impl(self.raw()))
-    }
-
-    pub fn is_warm_starting_enabled(&self) -> bool {
-        crate::core::callback_state::assert_not_in_callback();
-        world_is_warm_starting_enabled_impl(self.raw())
-    }
-
-    pub fn try_is_warm_starting_enabled(&self) -> crate::error::ApiResult<bool> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(world_is_warm_starting_enabled_impl(self.raw()))
-    }
-
-    pub fn restitution_threshold(&self) -> f32 {
-        crate::core::callback_state::assert_not_in_callback();
-        world_restitution_threshold_impl(self.raw())
-    }
-
-    pub fn try_restitution_threshold(&self) -> crate::error::ApiResult<f32> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(world_restitution_threshold_impl(self.raw()))
-    }
-
-    pub fn hit_event_threshold(&self) -> f32 {
-        crate::core::callback_state::assert_not_in_callback();
-        world_hit_event_threshold_impl(self.raw())
-    }
-
-    pub fn try_hit_event_threshold(&self) -> crate::error::ApiResult<f32> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(world_hit_event_threshold_impl(self.raw()))
-    }
-
-    pub fn maximum_linear_speed(&self) -> f32 {
-        crate::core::callback_state::assert_not_in_callback();
-        world_maximum_linear_speed_impl(self.raw())
-    }
-
-    pub fn try_maximum_linear_speed(&self) -> crate::error::ApiResult<f32> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(world_maximum_linear_speed_impl(self.raw()))
-    }
+    impl_world_gravity_methods!();
+    impl_world_runtime_snapshot_methods!();
+    impl_world_runtime_tuning_getter_methods!();
 }
 
 #[cfg(feature = "serialize")]
@@ -932,16 +953,7 @@ impl World {
         Ok(())
     }
 
-    /// Get current gravity vector.
-    pub fn gravity(&self) -> Vec2 {
-        crate::core::callback_state::assert_not_in_callback();
-        world_gravity_impl(self.raw())
-    }
-
-    pub fn try_gravity(&self) -> crate::error::ApiResult<Vec2> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(world_gravity_impl(self.raw()))
-    }
+    impl_world_gravity_methods!();
 
     /// Expose the raw Box2D world id for advanced use-cases.
     pub fn world_id_raw(&self) -> ffi::b2WorldId {
@@ -1203,27 +1215,7 @@ impl World {
             .shape_flags(sid)
     }
 
-    /// World counters snapshot (sizes, tree heights, etc.).
-    pub fn counters(&self) -> Counters {
-        crate::core::callback_state::assert_not_in_callback();
-        world_counters_impl(self.raw())
-    }
-
-    pub fn try_counters(&self) -> crate::error::ApiResult<Counters> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(world_counters_impl(self.raw()))
-    }
-
-    /// World profile snapshot with per-stage timing in milliseconds from the last completed step.
-    pub fn profile(&self) -> Profile {
-        crate::core::callback_state::assert_not_in_callback();
-        world_profile_impl(self.raw())
-    }
-
-    pub fn try_profile(&self) -> crate::error::ApiResult<Profile> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(world_profile_impl(self.raw()))
-    }
+    impl_world_runtime_snapshot_methods!();
 
     /// Get a body's transform safely from its id.
     pub fn body_transform(&self, body: BodyId) -> Transform {
@@ -1892,17 +1884,6 @@ impl World {
         Ok(crate::body::body_name_impl(body))
     }
 
-    /// Get number of awake bodies.
-    pub fn awake_body_count(&self) -> i32 {
-        crate::core::callback_state::assert_not_in_callback();
-        world_awake_body_count_impl(self.raw())
-    }
-
-    pub fn try_awake_body_count(&self) -> crate::error::ApiResult<i32> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(world_awake_body_count_impl(self.raw()))
-    }
-
     /// Create a body owned by this world.
     pub fn create_body<'w>(&'w mut self, def: BodyDef) -> Body<'w> {
         crate::core::callback_state::assert_not_in_callback();
@@ -2045,14 +2026,6 @@ impl World {
         unsafe { ffi::b2World_EnableSleeping(self.raw(), flag) }
         Ok(())
     }
-    pub fn is_sleeping_enabled(&self) -> bool {
-        crate::core::callback_state::assert_not_in_callback();
-        world_is_sleeping_enabled_impl(self.raw())
-    }
-    pub fn try_is_sleeping_enabled(&self) -> crate::error::ApiResult<bool> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(world_is_sleeping_enabled_impl(self.raw()))
-    }
     pub fn enable_continuous(&mut self, flag: bool) {
         crate::core::callback_state::assert_not_in_callback();
         unsafe { ffi::b2World_EnableContinuous(self.raw(), flag) }
@@ -2061,14 +2034,6 @@ impl World {
         crate::core::callback_state::check_not_in_callback()?;
         unsafe { ffi::b2World_EnableContinuous(self.raw(), flag) }
         Ok(())
-    }
-    pub fn is_continuous_enabled(&self) -> bool {
-        crate::core::callback_state::assert_not_in_callback();
-        world_is_continuous_enabled_impl(self.raw())
-    }
-    pub fn try_is_continuous_enabled(&self) -> crate::error::ApiResult<bool> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(world_is_continuous_enabled_impl(self.raw()))
     }
     /// Enable or disable constraint warm starting at runtime.
     ///
@@ -2084,15 +2049,6 @@ impl World {
         unsafe { ffi::b2World_EnableWarmStarting(self.raw(), flag) }
         Ok(())
     }
-    /// Returns true if constraint warm starting is enabled.
-    pub fn is_warm_starting_enabled(&self) -> bool {
-        crate::core::callback_state::assert_not_in_callback();
-        world_is_warm_starting_enabled_impl(self.raw())
-    }
-    pub fn try_is_warm_starting_enabled(&self) -> crate::error::ApiResult<bool> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(world_is_warm_starting_enabled_impl(self.raw()))
-    }
     pub fn set_restitution_threshold(&mut self, value: f32) {
         crate::core::callback_state::assert_not_in_callback();
         unsafe { ffi::b2World_SetRestitutionThreshold(self.raw(), value) }
@@ -2102,14 +2058,6 @@ impl World {
         unsafe { ffi::b2World_SetRestitutionThreshold(self.raw(), value) }
         Ok(())
     }
-    pub fn restitution_threshold(&self) -> f32 {
-        crate::core::callback_state::assert_not_in_callback();
-        world_restitution_threshold_impl(self.raw())
-    }
-    pub fn try_restitution_threshold(&self) -> crate::error::ApiResult<f32> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(world_restitution_threshold_impl(self.raw()))
-    }
     pub fn set_hit_event_threshold(&mut self, value: f32) {
         crate::core::callback_state::assert_not_in_callback();
         unsafe { ffi::b2World_SetHitEventThreshold(self.raw(), value) }
@@ -2118,14 +2066,6 @@ impl World {
         crate::core::callback_state::check_not_in_callback()?;
         unsafe { ffi::b2World_SetHitEventThreshold(self.raw(), value) }
         Ok(())
-    }
-    pub fn hit_event_threshold(&self) -> f32 {
-        crate::core::callback_state::assert_not_in_callback();
-        world_hit_event_threshold_impl(self.raw())
-    }
-    pub fn try_hit_event_threshold(&self) -> crate::error::ApiResult<f32> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(world_hit_event_threshold_impl(self.raw()))
     }
     pub fn set_contact_tuning(&mut self, hertz: f32, damping_ratio: f32, push_speed: f32) {
         crate::core::callback_state::assert_not_in_callback();
@@ -2160,14 +2100,7 @@ impl World {
         unsafe { ffi::b2World_SetMaximumLinearSpeed(self.raw(), v) }
         Ok(())
     }
-    pub fn maximum_linear_speed(&self) -> f32 {
-        crate::core::callback_state::assert_not_in_callback();
-        world_maximum_linear_speed_impl(self.raw())
-    }
-    pub fn try_maximum_linear_speed(&self) -> crate::error::ApiResult<f32> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(world_maximum_linear_speed_impl(self.raw()))
-    }
+    impl_world_runtime_tuning_getter_methods!();
 
     // --- Collision/solve callbacks ---------------------------------------------------------
     /// Register a thread-safe custom filter closure. This is called when a contact pair is
