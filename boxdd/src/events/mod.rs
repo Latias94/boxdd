@@ -69,4 +69,66 @@ mod tests {
             ApiError::InCallback
         );
     }
+
+    #[test]
+    fn try_event_view_apis_return_in_callback() {
+        let world = World::new(WorldDef::default()).unwrap();
+        let _g = crate::core::callback_state::CallbackGuard::enter();
+
+        assert_eq!(
+            world
+                .try_with_body_events_view(|it| it.count())
+                .unwrap_err(),
+            ApiError::InCallback
+        );
+        assert_eq!(
+            world
+                .try_with_contact_events_view(|begin, end, hit| begin.count()
+                    + end.count()
+                    + hit.count())
+                .unwrap_err(),
+            ApiError::InCallback
+        );
+        assert_eq!(
+            world
+                .try_with_sensor_events_view(|begin, end| begin.count() + end.count())
+                .unwrap_err(),
+            ApiError::InCallback
+        );
+        assert_eq!(
+            world
+                .try_with_joint_events_view(|it| it.count())
+                .unwrap_err(),
+            ApiError::InCallback
+        );
+    }
+
+    #[test]
+    fn try_event_raw_apis_return_in_callback() {
+        let world = World::new(WorldDef::default()).unwrap();
+        let _g = crate::core::callback_state::CallbackGuard::enter();
+
+        assert_eq!(
+            unsafe { world.try_with_body_events_raw(|events| events.len()) }.unwrap_err(),
+            ApiError::InCallback
+        );
+        assert_eq!(
+            unsafe {
+                world.try_with_contact_events_raw(|begin, end, hit| {
+                    begin.len() + end.len() + hit.len()
+                })
+            }
+            .unwrap_err(),
+            ApiError::InCallback
+        );
+        assert_eq!(
+            unsafe { world.try_with_sensor_events_raw(|begin, end| begin.len() + end.len()) }
+                .unwrap_err(),
+            ApiError::InCallback
+        );
+        assert_eq!(
+            unsafe { world.try_with_joint_events_raw(|events| events.len()) }.unwrap_err(),
+            ApiError::InCallback
+        );
+    }
 }

@@ -157,6 +157,8 @@ These seams are worth keeping only if:
 - math-interop completeness cleanup so `mint` stays a first-class bridge instead of a partially-covered feature, including recoverable inbound conversion for crate-owned rotation values
 - explicit threading / async documentation and examples that preserve the current `!Send` / `!Sync` design instead of weakening it
 - clearer crate-level error-handling guidance for panic-by-default vs `try_*` usage
+- callback-sensitive world execution helpers such as stepping, deferred-destroy flushing, and debug draw should follow the same panic-by-default plus `try_*` split as the rest of the runtime surface
+- borrowed event-buffer access should follow the same rule too, so zero-copy views and raw event slices are not left behind as panic-only APIs once the owned snapshot surface has `try_*` coverage
 - reusable-buffer event snapshot APIs so callers that need owned event data can still avoid per-frame allocation churn without dropping to raw or borrowed-only views
 - reusable-buffer wrapper metadata snapshots so crate-owned serialize registries such as `body_ids()` / `chain_records()` do not regress into allocation-only APIs beside the main query/event surface
 - serialize-time chain metadata cleanup so `ChainDef` helpers and `World::chain_records()` stay on crate-owned `Filter` / `Vec2` / `SurfaceMaterial` vocabulary instead of leaking raw `ffi` collections back into the public surface

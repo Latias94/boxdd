@@ -151,7 +151,8 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
   - By value: `world.contact_events()`/`sensor_events()`/`body_events()`/`joint_events()` return owned data for storage or cross-frame use.
   - Reusable buffers: `*_events_into(...)` reuse caller-owned owned-event storage across frames.
   - Zero‑copy views: `with_*_events_view(...)` iterate without allocations (borrows internal buffers).
-  - Raw slices: `unsafe { with_*_events(...) }` expose FFI slices (borrows internal buffers).
+  - Raw slices: `unsafe { with_*_events_raw(...) }` expose FFI slices (borrows internal buffers).
+- Callback-sensitive event entrypoints also have matching `try_*` variants so callback-lock failures can return `ApiError::InCallback` instead of forcing panic-only control flow.
 - These event APIs intentionally stay on `World` rather than `WorldHandle`, because they are tied to the completed step's world-local event buffers plus deferred-destroy flushing.
 - Example (reusable buffers + zero-copy views):
 ```rust

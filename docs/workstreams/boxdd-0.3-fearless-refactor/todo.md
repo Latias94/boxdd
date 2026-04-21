@@ -34,6 +34,8 @@
 - [x] Tighten raw event-buffer visitors so direct FFI-slice access uses `with_*_events_raw(...)` naming instead of blending in with the safe zero-copy event views.
 - [x] Finish raw-boundary symmetry for configuration wrappers so `BodyDef`, `ShapeDef`, `JointBase`, and concrete joint defs all expose named `from_raw(...)` / `into_raw()` escape hatches.
 - [x] Extend the reusable-buffer story to wrapper-owned serialize metadata so `World::body_ids()` and `World::chain_records()` also have `*_into(...)` / `try_*_into(...)` forms for allocation-sensitive tooling.
+- [x] Extend callback-sensitive world execution helpers with matching `try_*` entrypoints so stepping, deferred-destroy flushing, and debug draw are not panic-only APIs.
+- [x] Extend borrowed event-buffer APIs with matching `try_*` entrypoints so zero-copy views and raw event slices are not panic-only corners of the runtime surface.
 
 ## In Progress
 

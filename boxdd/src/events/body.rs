@@ -104,6 +104,25 @@ impl World {
         })
     }
 
+    /// Low-level raw view over body events with recoverable callback-lock checking.
+    ///
+    /// # Safety
+    /// Same safety contract as `with_body_events_raw`.
+    pub unsafe fn try_with_body_events_raw<T>(
+        &self,
+        f: impl FnOnce(&[ffi::b2BodyMoveEvent]) -> T,
+    ) -> crate::error::ApiResult<T> {
+        self.try_with_borrowed_event_buffers(|| {
+            let raw = unsafe { ffi::b2World_GetBodyEvents(self.raw()) };
+            let slice = if raw.moveCount > 0 && !raw.moveEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.moveEvents, raw.moveCount as usize) }
+            } else {
+                &[][..]
+            };
+            f(slice)
+        })
+    }
+
     /// Zero-copy view over body move events without exposing raw FFI types.
     ///
     /// While `f` runs, dropping `Owned*` handles does not destroy bodies/shapes/joints immediately;
@@ -120,6 +139,22 @@ impl World {
     ///
     pub fn with_body_events_view<T>(&self, f: impl FnOnce(BodyMoveIter<'_>) -> T) -> T {
         self.with_borrowed_event_buffers(|| {
+            let raw = unsafe { ffi::b2World_GetBodyEvents(self.raw()) };
+            let slice = if raw.moveCount > 0 && !raw.moveEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.moveEvents, raw.moveCount as usize) }
+            } else {
+                &[][..]
+            };
+            f(BodyMoveIter(slice.iter()))
+        })
+    }
+
+    /// Zero-copy view over body move events with recoverable callback-lock checking.
+    pub fn try_with_body_events_view<T>(
+        &self,
+        f: impl FnOnce(BodyMoveIter<'_>) -> T,
+    ) -> crate::error::ApiResult<T> {
+        self.try_with_borrowed_event_buffers(|| {
             let raw = unsafe { ffi::b2World_GetBodyEvents(self.raw()) };
             let slice = if raw.moveCount > 0 && !raw.moveEvents.is_null() {
                 unsafe { core::slice::from_raw_parts(raw.moveEvents, raw.moveCount as usize) }

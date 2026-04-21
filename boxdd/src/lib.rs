@@ -175,6 +175,8 @@
 //!   - Reusable buffers: `*_events_into(...)` reuse caller-owned owned-event storage across frames.
 //!   - Zero‑copy views: `with_*_events_view(...)` iterate without allocations (borrows internal buffers).
 //!   - Raw slices: `unsafe { with_*_events_raw(...) }` expose FFI slices (borrows internal buffers).
+//! - Callback-sensitive event entrypoints also expose matching `try_*` variants so callback-lock
+//!   failures can return `ApiError::InCallback` instead of forcing panic-only control flow.
 //! - Event APIs intentionally live on `World`, not `WorldHandle`, because they are tied to the
 //!   completed step's world-local event buffers and deferred-destroy flushing behavior.
 //!

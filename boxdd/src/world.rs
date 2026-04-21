@@ -889,6 +889,15 @@ impl World {
         }
     }
 
+    /// Step the simulation by `time_step` seconds using `sub_steps` sub-steps.
+    ///
+    /// Returns `ApiError::InCallback` if called while Box2D is already executing a callback.
+    pub fn try_step(&mut self, time_step: f32, sub_steps: i32) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        self.step(time_step, sub_steps);
+        Ok(())
+    }
+
     /// Flush deferred destroys scheduled from Box2D callbacks.
     ///
     /// Most users don't need to call this because `World::step`, event view helpers
@@ -898,6 +907,15 @@ impl World {
     pub fn flush_deferred_destroys(&mut self) {
         crate::core::callback_state::assert_not_in_callback();
         self.core.process_deferred_destroys();
+    }
+
+    /// Flush deferred destroys scheduled from Box2D callbacks.
+    ///
+    /// Returns `ApiError::InCallback` if called while Box2D is already executing a callback.
+    pub fn try_flush_deferred_destroys(&mut self) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        self.flush_deferred_destroys();
+        Ok(())
     }
 
     /// Set gravity vector.
@@ -949,6 +967,14 @@ impl World {
         // outermost borrow ends so previously returned event slices cannot be invalidated early.
         core.process_deferred_destroys();
         out
+    }
+
+    pub(crate) fn try_with_borrowed_event_buffers<T>(
+        &self,
+        f: impl FnOnce() -> T,
+    ) -> crate::error::ApiResult<T> {
+        crate::core::callback_state::check_not_in_callback()?;
+        Ok(self.with_borrowed_event_buffers(f))
     }
 
     // --- Typed user data ---------------------------------------------------------
@@ -3406,6 +3432,61 @@ mod tests {
         );
         assert_eq!(
             world.try_explode(&explosion).unwrap_err(),
+            crate::ApiError::InCallback
+        );
+    }
+
+    #[test]
+    fn try_world_callback_sensitive_entrypoints_return_in_callback() {
+        struct NoopDrawer;
+
+        impl crate::DebugDraw for NoopDrawer {}
+
+        impl crate::debug_draw::RawDebugDraw for NoopDrawer {
+            fn draw_polygon(
+                &mut self,
+                _vertices: &[boxdd_sys::ffi::b2Vec2],
+                _color: crate::HexColor,
+            ) {
+            }
+        }
+
+        let mut world = World::new(WorldDef::default()).unwrap();
+        let mut cmds = Vec::new();
+        let mut drawer = NoopDrawer;
+        let mut raw_drawer = NoopDrawer;
+        let _g = crate::core::callback_state::CallbackGuard::enter();
+
+        assert_eq!(
+            world.try_step(1.0 / 60.0, 1).unwrap_err(),
+            crate::ApiError::InCallback
+        );
+        assert_eq!(
+            world.try_flush_deferred_destroys().unwrap_err(),
+            crate::ApiError::InCallback
+        );
+        assert_eq!(
+            world
+                .try_debug_draw_collect(crate::DebugDrawOptions::default())
+                .unwrap_err(),
+            crate::ApiError::InCallback
+        );
+        assert_eq!(
+            world
+                .try_debug_draw_collect_into(&mut cmds, crate::DebugDrawOptions::default())
+                .unwrap_err(),
+            crate::ApiError::InCallback
+        );
+        assert_eq!(
+            world
+                .try_debug_draw(&mut drawer, crate::DebugDrawOptions::default())
+                .unwrap_err(),
+            crate::ApiError::InCallback
+        );
+        assert_eq!(
+            world
+                .try_debug_draw_raw(&mut raw_drawer, crate::DebugDrawOptions::default())
+                .unwrap_err(),
             crate::ApiError::InCallback
         );
     }

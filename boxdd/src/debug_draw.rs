@@ -449,6 +449,17 @@ impl World {
         cmds
     }
 
+    /// Collect debug draw commands into a vector (fully safe).
+    ///
+    /// Returns `ApiError::InCallback` if called while Box2D is already executing a callback.
+    pub fn try_debug_draw_collect(
+        &mut self,
+        opts: DebugDrawOptions,
+    ) -> crate::error::ApiResult<Vec<DebugDrawCmd>> {
+        crate::core::callback_state::check_not_in_callback()?;
+        Ok(self.debug_draw_collect(opts))
+    }
+
     /// Collect debug draw commands into a caller-owned buffer.
     ///
     /// This reuses the outer command buffer and, when the command sequence stays
@@ -458,6 +469,19 @@ impl World {
         let mut collector = CollectDebugDraw::new(out);
         self.debug_draw(&mut collector, opts);
         collector.finish();
+    }
+
+    /// Collect debug draw commands into a caller-owned buffer.
+    ///
+    /// Returns `ApiError::InCallback` if called while Box2D is already executing a callback.
+    pub fn try_debug_draw_collect_into(
+        &mut self,
+        out: &mut Vec<DebugDrawCmd>,
+        opts: DebugDrawOptions,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        self.debug_draw_collect_into(out, opts);
+        Ok(())
     }
 
     // Safe wrapper: converts to Vec2/Transform and &str
@@ -609,6 +633,19 @@ impl World {
         finish_debug_draw(self, &mut panic);
     }
 
+    /// Safe debug draw bridge with recoverable callback-lock checking.
+    ///
+    /// Returns `ApiError::InCallback` if called while Box2D is already executing a callback.
+    pub fn try_debug_draw(
+        &mut self,
+        drawer: &mut impl DebugDraw,
+        opts: DebugDrawOptions,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        self.debug_draw(drawer, opts);
+        Ok(())
+    }
+
     // Raw path: zero-copy FFI types to trait
     ///
     /// Box2D invokes the draw callbacks while traversing internal world state. During this call,
@@ -742,5 +779,18 @@ impl World {
         apply_debug_draw_options(&mut dd, opts, &mut ctx as *mut _ as *mut _);
         unsafe { ffi::b2World_Draw(self.raw(), &mut dd) };
         finish_debug_draw(self, &mut panic);
+    }
+
+    /// Raw debug draw bridge with recoverable callback-lock checking.
+    ///
+    /// Returns `ApiError::InCallback` if called while Box2D is already executing a callback.
+    pub fn try_debug_draw_raw(
+        &mut self,
+        drawer: &mut impl RawDebugDraw,
+        opts: DebugDrawOptions,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        self.debug_draw_raw(drawer, opts);
+        Ok(())
     }
 }

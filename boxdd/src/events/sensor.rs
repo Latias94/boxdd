@@ -145,6 +145,30 @@ impl World {
         })
     }
 
+    /// Low-level raw view over sensor events with recoverable callback-lock checking.
+    ///
+    /// # Safety
+    /// Same safety contract as `with_sensor_events_raw`.
+    pub unsafe fn try_with_sensor_events_raw<T>(
+        &self,
+        f: impl FnOnce(&[ffi::b2SensorBeginTouchEvent], &[ffi::b2SensorEndTouchEvent]) -> T,
+    ) -> crate::error::ApiResult<T> {
+        self.try_with_borrowed_event_buffers(|| {
+            let raw = unsafe { ffi::b2World_GetSensorEvents(self.raw()) };
+            let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
+            } else {
+                &[][..]
+            };
+            let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
+            } else {
+                &[][..]
+            };
+            f(begin, end)
+        })
+    }
+
     /// Zero-copy view over sensor events without exposing raw FFI types.
     ///
     /// While `f` runs, dropping `Owned*` handles does not destroy bodies/shapes/joints immediately;
@@ -163,6 +187,27 @@ impl World {
         f: impl FnOnce(SensorBeginIter<'_>, SensorEndIter<'_>) -> T,
     ) -> T {
         self.with_borrowed_event_buffers(|| {
+            let raw = unsafe { ffi::b2World_GetSensorEvents(self.raw()) };
+            let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
+            } else {
+                &[][..]
+            };
+            let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
+            } else {
+                &[][..]
+            };
+            f(SensorBeginIter(begin.iter()), SensorEndIter(end.iter()))
+        })
+    }
+
+    /// Zero-copy view over sensor events with recoverable callback-lock checking.
+    pub fn try_with_sensor_events_view<T>(
+        &self,
+        f: impl FnOnce(SensorBeginIter<'_>, SensorEndIter<'_>) -> T,
+    ) -> crate::error::ApiResult<T> {
+        self.try_with_borrowed_event_buffers(|| {
             let raw = unsafe { ffi::b2World_GetSensorEvents(self.raw()) };
             let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
                 unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }

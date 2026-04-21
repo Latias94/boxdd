@@ -214,6 +214,39 @@ impl World {
         })
     }
 
+    /// Low-level raw view over contact events with recoverable callback-lock checking.
+    ///
+    /// # Safety
+    /// Same safety contract as `with_contact_events_raw`.
+    pub unsafe fn try_with_contact_events_raw<T>(
+        &self,
+        f: impl FnOnce(
+            &[ffi::b2ContactBeginTouchEvent],
+            &[ffi::b2ContactEndTouchEvent],
+            &[ffi::b2ContactHitEvent],
+        ) -> T,
+    ) -> crate::error::ApiResult<T> {
+        self.try_with_borrowed_event_buffers(|| {
+            let raw = unsafe { ffi::b2World_GetContactEvents(self.raw()) };
+            let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
+            } else {
+                &[][..]
+            };
+            let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
+            } else {
+                &[][..]
+            };
+            let hit = if raw.hitCount > 0 && !raw.hitEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.hitEvents, raw.hitCount as usize) }
+            } else {
+                &[][..]
+            };
+            f(begin, end, hit)
+        })
+    }
+
     /// Zero-copy view over contact events without exposing raw FFI types.
     ///
     /// While `f` runs, dropping `Owned*` handles does not destroy bodies/shapes immediately; the
@@ -235,6 +268,36 @@ impl World {
         f: impl FnOnce(BeginIter<'_>, EndIter<'_>, HitIter<'_>) -> T,
     ) -> T {
         self.with_borrowed_event_buffers(|| {
+            let raw = unsafe { ffi::b2World_GetContactEvents(self.raw()) };
+            let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
+            } else {
+                &[][..]
+            };
+            let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
+            } else {
+                &[][..]
+            };
+            let hit = if raw.hitCount > 0 && !raw.hitEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.hitEvents, raw.hitCount as usize) }
+            } else {
+                &[][..]
+            };
+            f(
+                BeginIter(begin.iter()),
+                EndIter(end.iter()),
+                HitIter(hit.iter()),
+            )
+        })
+    }
+
+    /// Zero-copy view over contact events with recoverable callback-lock checking.
+    pub fn try_with_contact_events_view<T>(
+        &self,
+        f: impl FnOnce(BeginIter<'_>, EndIter<'_>, HitIter<'_>) -> T,
+    ) -> crate::error::ApiResult<T> {
+        self.try_with_borrowed_event_buffers(|| {
             let raw = unsafe { ffi::b2World_GetContactEvents(self.raw()) };
             let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
                 unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }

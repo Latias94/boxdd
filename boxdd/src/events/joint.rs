@@ -86,6 +86,25 @@ impl World {
         })
     }
 
+    /// Low-level raw view over joint events with recoverable callback-lock checking.
+    ///
+    /// # Safety
+    /// Same safety contract as `with_joint_events_raw`.
+    pub unsafe fn try_with_joint_events_raw<T>(
+        &self,
+        f: impl FnOnce(&[ffi::b2JointEvent]) -> T,
+    ) -> crate::error::ApiResult<T> {
+        self.try_with_borrowed_event_buffers(|| {
+            let raw = unsafe { ffi::b2World_GetJointEvents(self.raw()) };
+            let slice = if raw.count > 0 && !raw.jointEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.jointEvents, raw.count as usize) }
+            } else {
+                &[][..]
+            };
+            f(slice)
+        })
+    }
+
     /// Zero-copy view over joint events without exposing raw FFI types.
     ///
     /// While `f` runs, dropping `Owned*` handles does not destroy bodies/shapes/joints immediately;
@@ -100,6 +119,22 @@ impl World {
     ///
     pub fn with_joint_events_view<T>(&self, f: impl FnOnce(JointEventIter<'_>) -> T) -> T {
         self.with_borrowed_event_buffers(|| {
+            let raw = unsafe { ffi::b2World_GetJointEvents(self.raw()) };
+            let slice = if raw.count > 0 && !raw.jointEvents.is_null() {
+                unsafe { core::slice::from_raw_parts(raw.jointEvents, raw.count as usize) }
+            } else {
+                &[][..]
+            };
+            f(JointEventIter(slice.iter()))
+        })
+    }
+
+    /// Zero-copy view over joint events with recoverable callback-lock checking.
+    pub fn try_with_joint_events_view<T>(
+        &self,
+        f: impl FnOnce(JointEventIter<'_>) -> T,
+    ) -> crate::error::ApiResult<T> {
+        self.try_with_borrowed_event_buffers(|| {
             let raw = unsafe { ffi::b2World_GetJointEvents(self.raw()) };
             let slice = if raw.count > 0 && !raw.jointEvents.is_null() {
                 unsafe { core::slice::from_raw_parts(raw.jointEvents, raw.count as usize) }
