@@ -227,6 +227,58 @@ fn try_create_chain_invalid_def_returns_err() {
 }
 
 #[test]
+fn try_create_shape_invalid_inputs_return_err() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body = world.create_body_id(BodyBuilder::new().build());
+    let invalid_body = body;
+    world.destroy_body_id(invalid_body);
+
+    let shape_def = ShapeDef::default();
+    let err = world
+        .try_create_circle_shape_for(
+            invalid_body,
+            &shape_def,
+            &shapes::circle([0.0_f32, 0.0], 0.5),
+        )
+        .unwrap_err();
+    assert_eq!(err, ApiError::InvalidBodyId);
+
+    let body = world.create_body_id(BodyBuilder::new().build());
+    let invalid_def = ShapeDef::builder().density(f32::NAN).build();
+    let err = world
+        .try_create_circle_shape_for(body, &invalid_def, &shapes::circle([0.0_f32, 0.0], 0.5))
+        .unwrap_err();
+    assert_eq!(err, ApiError::InvalidArgument);
+
+    let err = world
+        .try_create_segment_shape_for(
+            body,
+            &shape_def,
+            &shapes::segment([0.0_f32, 0.0], [0.0_f32, 0.0]),
+        )
+        .unwrap_err();
+    assert_eq!(err, ApiError::InvalidArgument);
+
+    let err = world
+        .try_create_polygon_shape_for(
+            body,
+            &shape_def,
+            &Polygon::from_raw({
+                let mut raw = shapes::box_polygon(0.5, 0.5).into_raw();
+                raw.radius = -1.0;
+                raw
+            }),
+        )
+        .unwrap_err();
+    assert_eq!(err, ApiError::InvalidArgument);
+
+    let owned = world
+        .try_create_circle_shape_for_owned(body, &shape_def, &shapes::circle([0.0_f32, 0.0], 0.5))
+        .unwrap();
+    assert_eq!(owned.shape_type(), ShapeType::Circle);
+}
+
+#[test]
 fn try_body_mutations_from_debug_draw_return_in_callback() {
     struct Drawer {
         body: OwnedBody,

@@ -31,6 +31,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Crate-owned `Circle`, `Segment`, `Capsule`, and `Polygon` geometry value types, including standalone mass/AABB/point/ray helpers for world-free shape geometry work.
 - Recoverable world-free geometry helper APIs on crate-owned geometry values: `try_mass_data`, `try_aabb`, `try_contains_point`, `try_ray_cast`, and `Polygon::try_transformed`.
 - Recoverable polygon construction helpers: `try_square_polygon`, `try_box_polygon`, `try_rounded_box_polygon`, `try_offset_box_polygon`, `try_offset_rounded_box_polygon`, `try_polygon_from_points`, `try_offset_polygon_from_points`, and `Body::try_create_polygon_from_points`.
+- Recoverable world-level shape creation helpers: `World::try_create_{circle,segment,capsule,polygon}_shape_for*`, covering both id-returning and owned-shape-returning paths.
 - Crate-owned `ShapeType`, `MassData`, `ContactData`, `Manifold`, and `ManifoldPoint` value types for the main safe API surface.
 - Crate-owned `MotionLocks` for body translation/rotation constraints.
 - Crate-owned `HexColor` for debug-draw callbacks and collected debug-draw commands.
@@ -82,6 +83,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - `solve_planes` and `clip_vector` now validate mover-solver inputs in the safe wrapper, so invalid target vectors, plane normals, push limits, and clip-state pushes fail as Rust panics or `ApiError::InvalidArgument` instead of flowing unchecked into Box2D.
 - Shape creation/editing, standalone geometry helpers, and standalone manifold/segment-distance helpers now validate obvious geometry/transform/helper-input preconditions in the safe wrapper, so malformed circles/segments/capsules/polygons fail as Rust panics or `ApiError::InvalidArgument` instead of depending on Box2D asserts.
 - Standalone geometry helpers now use helper-specific validation instead of blindly reusing shape-construction validity: zero-length segments keep defined AABB/ray-cast behavior, and zero-length capsules keep their upstream circle-like mass/point/ray semantics.
+- World-level shape and chain creation now follow the same callback-lock contract as other callback-sensitive runtime mutations: safe entrypoints panic in callbacks, and `try_*` entrypoints return `ApiError::InCallback`.
 - Breaking: `ShapeProxy::new(...)` now returns `None` for invalid Box2D coordinates or negative/non-finite radii in addition to the existing empty/too-many-point rejection.
 - Breaking: crate-owned geometry constructors and helper builders now reject obvious malformed input earlier: polygon hull builders return `None` for invalid points/radii/transforms, and box/rounded-box helpers panic on non-finite or non-positive extents before crossing FFI.
 - Breaking: `BodyDef::from_raw(...)` and `WorldDef::from_raw(...)` are now `unsafe` because raw name pointers and raw task/material callback pointers can otherwise flow into later safe creation/stepping paths.

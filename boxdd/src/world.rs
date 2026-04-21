@@ -64,6 +64,7 @@ fn world_create_circle_shape_for_impl(
     def: &ShapeDef,
     circle: &crate::shapes::Circle,
 ) -> ShapeId {
+    crate::core::callback_state::assert_not_in_callback();
     crate::core::debug_checks::assert_body_valid(body);
     crate::shapes::assert_shape_def_valid(def);
     crate::shapes::assert_circle_geometry_valid(circle);
@@ -77,12 +78,33 @@ fn world_create_circle_shape_for_impl(
     sid
 }
 
+fn try_world_create_circle_shape_for_impl(
+    world: &mut World,
+    body: BodyId,
+    def: &ShapeDef,
+    circle: &crate::shapes::Circle,
+) -> crate::error::ApiResult<ShapeId> {
+    crate::core::callback_state::check_not_in_callback()?;
+    crate::core::debug_checks::check_body_valid(body)?;
+    crate::shapes::check_shape_def_valid(def)?;
+    crate::shapes::check_circle_geometry_valid(circle)?;
+    let raw = circle.into_raw();
+    let sid =
+        ShapeId::from_raw(unsafe { ffi::b2CreateCircleShape(raw_body_id(body), &def.0, &raw) });
+    #[cfg(feature = "serialize")]
+    world.record_shape_flags(sid, &def.0);
+    #[cfg(not(feature = "serialize"))]
+    let _ = world;
+    Ok(sid)
+}
+
 fn world_create_segment_shape_for_impl(
     world: &mut World,
     body: BodyId,
     def: &ShapeDef,
     segment: &crate::shapes::Segment,
 ) -> ShapeId {
+    crate::core::callback_state::assert_not_in_callback();
     crate::core::debug_checks::assert_body_valid(body);
     crate::shapes::assert_shape_def_valid(def);
     crate::shapes::assert_segment_geometry_valid(segment);
@@ -96,12 +118,33 @@ fn world_create_segment_shape_for_impl(
     sid
 }
 
+fn try_world_create_segment_shape_for_impl(
+    world: &mut World,
+    body: BodyId,
+    def: &ShapeDef,
+    segment: &crate::shapes::Segment,
+) -> crate::error::ApiResult<ShapeId> {
+    crate::core::callback_state::check_not_in_callback()?;
+    crate::core::debug_checks::check_body_valid(body)?;
+    crate::shapes::check_shape_def_valid(def)?;
+    crate::shapes::check_segment_geometry_valid(segment)?;
+    let raw = segment.into_raw();
+    let sid =
+        ShapeId::from_raw(unsafe { ffi::b2CreateSegmentShape(raw_body_id(body), &def.0, &raw) });
+    #[cfg(feature = "serialize")]
+    world.record_shape_flags(sid, &def.0);
+    #[cfg(not(feature = "serialize"))]
+    let _ = world;
+    Ok(sid)
+}
+
 fn world_create_capsule_shape_for_impl(
     world: &mut World,
     body: BodyId,
     def: &ShapeDef,
     capsule: &crate::shapes::Capsule,
 ) -> ShapeId {
+    crate::core::callback_state::assert_not_in_callback();
     crate::core::debug_checks::assert_body_valid(body);
     crate::shapes::assert_shape_def_valid(def);
     crate::shapes::assert_capsule_geometry_valid(capsule);
@@ -115,12 +158,33 @@ fn world_create_capsule_shape_for_impl(
     sid
 }
 
+fn try_world_create_capsule_shape_for_impl(
+    world: &mut World,
+    body: BodyId,
+    def: &ShapeDef,
+    capsule: &crate::shapes::Capsule,
+) -> crate::error::ApiResult<ShapeId> {
+    crate::core::callback_state::check_not_in_callback()?;
+    crate::core::debug_checks::check_body_valid(body)?;
+    crate::shapes::check_shape_def_valid(def)?;
+    crate::shapes::check_capsule_geometry_valid(capsule)?;
+    let raw = capsule.into_raw();
+    let sid =
+        ShapeId::from_raw(unsafe { ffi::b2CreateCapsuleShape(raw_body_id(body), &def.0, &raw) });
+    #[cfg(feature = "serialize")]
+    world.record_shape_flags(sid, &def.0);
+    #[cfg(not(feature = "serialize"))]
+    let _ = world;
+    Ok(sid)
+}
+
 fn world_create_polygon_shape_for_impl(
     world: &mut World,
     body: BodyId,
     def: &ShapeDef,
     polygon: &crate::shapes::Polygon,
 ) -> ShapeId {
+    crate::core::callback_state::assert_not_in_callback();
     crate::core::debug_checks::assert_body_valid(body);
     crate::shapes::assert_shape_def_valid(def);
     crate::shapes::assert_polygon_geometry_valid(polygon);
@@ -132,6 +196,26 @@ fn world_create_polygon_shape_for_impl(
     #[cfg(not(feature = "serialize"))]
     let _ = world;
     sid
+}
+
+fn try_world_create_polygon_shape_for_impl(
+    world: &mut World,
+    body: BodyId,
+    def: &ShapeDef,
+    polygon: &crate::shapes::Polygon,
+) -> crate::error::ApiResult<ShapeId> {
+    crate::core::callback_state::check_not_in_callback()?;
+    crate::core::debug_checks::check_body_valid(body)?;
+    crate::shapes::check_shape_def_valid(def)?;
+    crate::shapes::check_polygon_geometry_valid(polygon)?;
+    let raw = polygon.into_raw();
+    let sid =
+        ShapeId::from_raw(unsafe { ffi::b2CreatePolygonShape(raw_body_id(body), &def.0, &raw) });
+    #[cfg(feature = "serialize")]
+    world.record_shape_flags(sid, &def.0);
+    #[cfg(not(feature = "serialize"))]
+    let _ = world;
+    Ok(sid)
 }
 
 fn world_shape_set_circle_impl(shape: ShapeId, circle: &crate::shapes::Circle) {
@@ -3750,6 +3834,25 @@ impl World {
         crate::shapes::OwnedShape::new(self.core_arc(), sid)
     }
 
+    pub fn try_create_circle_shape_for(
+        &mut self,
+        body: BodyId,
+        def: &ShapeDef,
+        circle: &crate::shapes::Circle,
+    ) -> crate::error::ApiResult<ShapeId> {
+        try_world_create_circle_shape_for_impl(self, body, def, circle)
+    }
+
+    pub fn try_create_circle_shape_for_owned(
+        &mut self,
+        body: BodyId,
+        def: &ShapeDef,
+        circle: &crate::shapes::Circle,
+    ) -> crate::error::ApiResult<crate::shapes::OwnedShape> {
+        let sid = try_world_create_circle_shape_for_impl(self, body, def, circle)?;
+        Ok(crate::shapes::OwnedShape::new(self.core_arc(), sid))
+    }
+
     pub fn create_segment_shape_for(
         &mut self,
         body: BodyId,
@@ -3767,6 +3870,25 @@ impl World {
     ) -> crate::shapes::OwnedShape {
         let sid = world_create_segment_shape_for_impl(self, body, def, segment);
         crate::shapes::OwnedShape::new(self.core_arc(), sid)
+    }
+
+    pub fn try_create_segment_shape_for(
+        &mut self,
+        body: BodyId,
+        def: &ShapeDef,
+        segment: &crate::shapes::Segment,
+    ) -> crate::error::ApiResult<ShapeId> {
+        try_world_create_segment_shape_for_impl(self, body, def, segment)
+    }
+
+    pub fn try_create_segment_shape_for_owned(
+        &mut self,
+        body: BodyId,
+        def: &ShapeDef,
+        segment: &crate::shapes::Segment,
+    ) -> crate::error::ApiResult<crate::shapes::OwnedShape> {
+        let sid = try_world_create_segment_shape_for_impl(self, body, def, segment)?;
+        Ok(crate::shapes::OwnedShape::new(self.core_arc(), sid))
     }
 
     pub fn create_capsule_shape_for(
@@ -3788,6 +3910,25 @@ impl World {
         crate::shapes::OwnedShape::new(self.core_arc(), sid)
     }
 
+    pub fn try_create_capsule_shape_for(
+        &mut self,
+        body: BodyId,
+        def: &ShapeDef,
+        capsule: &crate::shapes::Capsule,
+    ) -> crate::error::ApiResult<ShapeId> {
+        try_world_create_capsule_shape_for_impl(self, body, def, capsule)
+    }
+
+    pub fn try_create_capsule_shape_for_owned(
+        &mut self,
+        body: BodyId,
+        def: &ShapeDef,
+        capsule: &crate::shapes::Capsule,
+    ) -> crate::error::ApiResult<crate::shapes::OwnedShape> {
+        let sid = try_world_create_capsule_shape_for_impl(self, body, def, capsule)?;
+        Ok(crate::shapes::OwnedShape::new(self.core_arc(), sid))
+    }
+
     pub fn create_polygon_shape_for(
         &mut self,
         body: BodyId,
@@ -3805,6 +3946,25 @@ impl World {
     ) -> crate::shapes::OwnedShape {
         let sid = world_create_polygon_shape_for_impl(self, body, def, polygon);
         crate::shapes::OwnedShape::new(self.core_arc(), sid)
+    }
+
+    pub fn try_create_polygon_shape_for(
+        &mut self,
+        body: BodyId,
+        def: &ShapeDef,
+        polygon: &crate::shapes::Polygon,
+    ) -> crate::error::ApiResult<ShapeId> {
+        try_world_create_polygon_shape_for_impl(self, body, def, polygon)
+    }
+
+    pub fn try_create_polygon_shape_for_owned(
+        &mut self,
+        body: BodyId,
+        def: &ShapeDef,
+        polygon: &crate::shapes::Polygon,
+    ) -> crate::error::ApiResult<crate::shapes::OwnedShape> {
+        let sid = try_world_create_polygon_shape_for_impl(self, body, def, polygon)?;
+        Ok(crate::shapes::OwnedShape::new(self.core_arc(), sid))
     }
     pub fn destroy_shape_id(&mut self, shape: ShapeId, update_body_mass: bool) {
         crate::core::callback_state::assert_not_in_callback();
@@ -3824,6 +3984,7 @@ impl World {
         body: BodyId,
         def: &crate::shapes::chain::ChainDef,
     ) -> ChainId {
+        crate::core::callback_state::assert_not_in_callback();
         crate::core::debug_checks::assert_body_valid(body);
         crate::shapes::chain::assert_chain_def_valid(def);
         let cid = ChainId::from_raw(unsafe { ffi::b2CreateChain(raw_body_id(body), &def.def) });
@@ -3840,6 +4001,7 @@ impl World {
         body: BodyId,
         def: &crate::shapes::chain::ChainDef,
     ) -> crate::error::ApiResult<ChainId> {
+        crate::core::callback_state::check_not_in_callback()?;
         crate::core::debug_checks::check_body_valid(body)?;
         crate::shapes::chain::check_chain_def_valid(def)?;
         let cid = ChainId::from_raw(unsafe { ffi::b2CreateChain(raw_body_id(body), &def.def) });
@@ -4532,6 +4694,49 @@ mod tests {
             world
                 .try_debug_draw_raw(&mut raw_drawer, crate::DebugDrawOptions::default())
                 .unwrap_err(),
+            crate::ApiError::InCallback
+        );
+    }
+
+    #[test]
+    fn try_world_shape_and_chain_creation_return_in_callback() {
+        let mut world = World::new(WorldDef::default()).unwrap();
+        let body = world.create_body_id(crate::BodyBuilder::new().build());
+        let shape_def = crate::ShapeDef::default();
+        let circle = crate::shapes::circle([0.0_f32, 0.0], 0.5);
+        let chain_def = crate::shapes::chain::ChainDef::builder()
+            .points([
+                crate::Vec2::new(-1.0, 0.0),
+                crate::Vec2::new(0.0, 0.0),
+                crate::Vec2::new(1.0, 0.0),
+                crate::Vec2::new(2.0, 0.0),
+            ])
+            .build();
+
+        let _g = crate::core::callback_state::CallbackGuard::enter();
+
+        assert_eq!(
+            world
+                .try_create_circle_shape_for(body, &shape_def, &circle)
+                .unwrap_err(),
+            crate::ApiError::InCallback
+        );
+        assert_eq!(
+            world
+                .try_create_circle_shape_for_owned(body, &shape_def, &circle)
+                .err()
+                .unwrap(),
+            crate::ApiError::InCallback
+        );
+        assert_eq!(
+            world.try_create_chain_for_id(body, &chain_def).unwrap_err(),
+            crate::ApiError::InCallback
+        );
+        assert_eq!(
+            world
+                .try_create_chain_for_owned(body, &chain_def)
+                .err()
+                .unwrap(),
             crate::ApiError::InCallback
         );
     }
