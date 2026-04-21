@@ -129,6 +129,7 @@ Scope:
 - review remaining public raw escape hatches such as `world_id`, raw event slices, and debug draw hooks
 - make remaining crate-owned value types cross the raw boundary explicitly where the wrapper owns the vocabulary
 - align core math types (`Vec2`, `Rot`, `Transform`) with the same explicit raw-boundary rule as the rest of the crate-owned API
+- close the remaining low-risk global foundation utility gap with byte-count, timing, yield, hash, and float-validation helpers
 - build a release-level completeness matrix so the final `0.3.0` gap list is explicit instead of implicit
 - close the remaining obvious `ContactId` gap with direct safe validation and data-fetch helpers
 - expand `WorldHandle` event support with owned snapshots only, while keeping borrowed/raw event-buffer APIs on `World`

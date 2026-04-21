@@ -9,6 +9,7 @@
 //! - Character mover helpers: cast movers, collect collision planes, solve planes, and clip velocity without raw FFI.
 //! - Standalone collision geometry helpers: shape proxies, GJK distance, manifolds, shape cast, TOI, AABB validation/ray cast, and deterministic global math helpers.
 //! - Core math types (`Vec2`, `Rot`, `Transform`) use explicit `from_raw(...)` / `into_raw()` naming for Box2D interop instead of implicit raw conversions.
+//! - Global Box2D foundation helpers expose allocated-byte inspection, timing ticks/millisecond helpers, thread yielding, and deterministic hashing without dropping to `boxdd_sys::ffi`.
 //! - Shape geometry uses crate-owned values (`Circle`, `Segment`, `ChainSegment`, `Capsule`, `Polygon`) across helpers, shape editing, and creation, including square/rounded/offset/hull-based polygon builders without raw FFI.
 //! - Live shapes expose safe runtime helpers for AABB, point tests, direct ray casts, computed mass data, and runtime event toggles.
 //! - Bodies expose safe runtime helpers for rotation, sleep/awake/enabled/bullet/name controls, attached shape/joint enumeration, and body-level contact/hit event toggles.
@@ -258,8 +259,9 @@ pub use core::math::TransformFromGlamError;
 #[cfg_attr(docsrs, doc(cfg(feature = "mint")))]
 pub use core::math::TransformFromMintError;
 pub use core::math::{
-    Rot, Transform, Version, atan2, compute_cos_sin, length_units_per_meter,
-    rotation_between_unit_vectors, set_length_units_per_meter, version,
+    HASH_INIT, Rot, Transform, Version, allocated_byte_count, atan2, compute_cos_sin, hash_bytes,
+    is_valid_float, length_units_per_meter, milliseconds_and_reset, milliseconds_since,
+    rotation_between_unit_vectors, set_length_units_per_meter, ticks, version, yield_now,
 };
 pub use debug_draw::{DebugDraw, DebugDrawCmd, DebugDrawOptions, HexColor};
 pub use error::{ApiError, ApiResult};

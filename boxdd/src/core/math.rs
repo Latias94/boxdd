@@ -36,6 +36,53 @@ pub fn version() -> Version {
     Version::from_raw(unsafe { ffi::b2GetVersion() })
 }
 
+/// Initial seed used by Box2D's deterministic djb2 hash helper.
+pub const HASH_INIT: u32 = ffi::B2_HASH_INIT;
+
+/// Check whether a scalar is valid for Box2D APIs.
+#[inline]
+pub fn is_valid_float(value: f32) -> bool {
+    unsafe { ffi::b2IsValidFloat(value) }
+}
+
+/// Get the total number of bytes currently allocated by Box2D.
+#[inline]
+pub fn allocated_byte_count() -> usize {
+    usize::try_from(unsafe { ffi::b2GetByteCount() })
+        .expect("Box2D reported a negative allocated byte count")
+}
+
+/// Get the absolute number of platform-specific system ticks.
+#[inline]
+pub fn ticks() -> u64 {
+    unsafe { ffi::b2GetTicks() }
+}
+
+/// Get the elapsed milliseconds since `start_ticks`.
+#[inline]
+pub fn milliseconds_since(start_ticks: u64) -> f32 {
+    unsafe { ffi::b2GetMilliseconds(start_ticks) }
+}
+
+/// Get the elapsed milliseconds since `start_ticks` and reset it to the current tick value.
+#[inline]
+pub fn milliseconds_and_reset(start_ticks: &mut u64) -> f32 {
+    unsafe { ffi::b2GetMillisecondsAndReset(start_ticks) }
+}
+
+/// Yield the current thread, matching Box2D's busy-loop helper.
+#[inline]
+pub fn yield_now() {
+    unsafe { ffi::b2Yield() }
+}
+
+/// Hash bytes with Box2D's deterministic djb2 helper.
+#[inline]
+pub fn hash_bytes(hash: u32, data: &[u8]) -> u32 {
+    let count = i32::try_from(data.len()).expect("hash input length exceeds Box2D limits");
+    unsafe { ffi::b2Hash(hash, data.as_ptr(), count) }
+}
+
 /// Cross-platform deterministic `atan2` in the range `[-pi, pi]`.
 #[inline]
 pub fn atan2(y: f32, x: f32) -> f32 {

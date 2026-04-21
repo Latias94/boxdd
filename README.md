@@ -23,6 +23,7 @@
 - Character mover helpers cover the full safe workflow: `cast_mover`, `collide_mover`, `solve_planes`, and `clip_vector`.
 - World runtime helpers cover counters, per-stage `Profile` timings, speculative-collision toggles, and safe explosion control.
 - Core math types (`Vec2`, `Rot`, `Transform`) now cross the Box2D raw boundary explicitly through `from_raw(...)` / `into_raw()` instead of implicit conversions.
+- Global foundation helpers now cover allocated-byte inspection, timing ticks/millisecond helpers, thread yielding, and deterministic hashing without dropping to raw `ffi`.
 - Standalone collision geometry helpers cover shape proxies, GJK distance, contact manifolds, chain-segment manifolds, shape cast, TOI, and `Aabb::is_valid` / `Aabb::ray_cast` without raw `ffi`.
 - Shape creation and editing now use crate-owned geometry values, and chain segments can be inspected through the crate-owned `ChainSegment` type.
 - Live shape runtime helpers now cover `aabb`, `test_point`, direct `ray_cast`, computed `mass_data`, and runtime event toggles without raw `ffi`.

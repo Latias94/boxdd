@@ -58,6 +58,7 @@
 - [x] Replace the `material_mix_registry` trampoline macro with const-generic callback trampolines so the crate no longer relies on internal `macro_rules!` expansion for callback dispatch tables.
 - [x] Refactor `serialize.rs` to reuse crate-owned body/joint/shape runtime helper layers instead of duplicating raw FFI getters for snapshots and scene extraction.
 - [x] Make core math value types (`Vec2`, `Rot`, `Transform`) use explicit `from_raw(...)` / `into_raw()` APIs instead of implicit raw `From` conversions so the crate-owned vocabulary has one consistent FFI boundary rule.
+- [x] Productize the remaining low-risk global foundation helpers (`allocated_byte_count`, timing ticks/milliseconds, deterministic hashing, and float validation) while explicitly deferring process-wide allocator/log/assert hooks past `0.3`.
 
 ## In Progress
 

@@ -1,5 +1,7 @@
 use boxdd::{
-    Plane, Rot, Transform, Vec2, atan2, compute_cos_sin, rotation_between_unit_vectors, version,
+    HASH_INIT, Plane, Rot, Transform, Vec2, allocated_byte_count, atan2, compute_cos_sin,
+    hash_bytes, is_valid_float, milliseconds_and_reset, milliseconds_since,
+    rotation_between_unit_vectors, ticks, version, yield_now,
 };
 use boxdd_sys::ffi;
 
@@ -129,4 +131,32 @@ fn core_math_types_use_explicit_raw_conversions() {
     assert_eq!(raw_transform.p.y, 4.5);
     assert!(approx(raw_transform.q.c, 0.0, 1e-6));
     assert!(approx(raw_transform.q.s, 1.0, 1e-6));
+}
+
+#[test]
+fn foundation_helpers_cover_alloc_timing_and_hash() {
+    assert!(is_valid_float(1.0));
+    assert!(!is_valid_float(f32::NAN));
+
+    let _bytes = allocated_byte_count();
+
+    let mut start = ticks();
+    yield_now();
+    let elapsed = milliseconds_since(start);
+    assert!(elapsed.is_finite());
+    assert!(elapsed >= 0.0);
+
+    let reset_elapsed = milliseconds_and_reset(&mut start);
+    assert!(reset_elapsed.is_finite());
+    assert!(reset_elapsed >= 0.0);
+
+    let after_reset = milliseconds_since(start);
+    assert!(after_reset.is_finite());
+    assert!(after_reset >= 0.0);
+
+    assert_eq!(hash_bytes(HASH_INIT, b""), HASH_INIT);
+    assert_eq!(
+        hash_bytes(hash_bytes(HASH_INIT, b"box"), b"dd"),
+        hash_bytes(HASH_INIT, b"boxdd")
+    );
 }

@@ -11,6 +11,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 ## [boxdd 0.3.0] - 2026-04-20
 
 ### Added
+- Global foundation helpers for allocated-byte inspection, `ticks` / `milliseconds_since` / `milliseconds_and_reset`, `yield_now`, `HASH_INIT`, `hash_bytes`, and `is_valid_float` without dropping to `boxdd_sys::ffi`.
 - Reusable-buffer query APIs: `*_into` / `try_*_into` for AABB overlap, ray-all, polygon overlap, shape cast, and offset query variants.
 - Reusable-buffer data extraction APIs for `contact_data`, `sensor_overlaps`, `shape_sensor_overlaps`, and `segments`.
 - Reusable-buffer debug draw command collection via `World::debug_draw_collect_into`.

@@ -25,6 +25,8 @@
 | --- | --- | --- |
 | deterministic math helpers and value validation | safe-covered | Public helpers cover deterministic `atan2`, cosine/sine, rotation-between-unit-vectors, plus `Vec2` / `Rot` / `Transform` / `Plane` validity checks. |
 | runtime version and global length-unit scale | safe-covered | `version()` plus `length_units_per_meter()` / `set_length_units_per_meter(...)` cover the remaining startup-level global Box2D utility surface. |
+| byte-count, timing, yield, hash, and scalar validation helpers | safe-covered | `allocated_byte_count()`, `ticks()`, `milliseconds_*`, `yield_now()`, `HASH_INIT`, `hash_bytes(...)`, and `is_valid_float(...)` cover the remaining low-risk foundation helpers without exposing raw `ffi`. |
+| global allocator / assert / log callbacks | candidate after 0.3 | These are process-wide hooks with substantially higher design and misuse risk than pure helper functions, so they stay in `boxdd-sys` for now. |
 
 ## Body
 
