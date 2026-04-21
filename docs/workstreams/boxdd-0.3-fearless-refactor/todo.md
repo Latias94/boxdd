@@ -45,6 +45,7 @@
 - [x] Replace the temporary `World` / `WorldHandle` event-snapshot macro layer with private free-function helpers so the mirror stays explicit and aligned with the workstream's anti-macro duplication rules.
 - [x] Replace the remaining `Body` / `Shape` / `Chain` public helper macros (`contact_data`, attachment enumeration, sensor overlaps, chain segments) with private free-function helpers plus explicit owned/scoped method definitions.
 - [x] Consolidate the remaining `Body` / `Shape` / `Joint` owned-vs-scoped identity and user-data helper layers (`world_id_raw`, `parent_chain_id`, `is_valid`, raw pointer access, typed user data) behind shared private functions.
+- [x] Replace the mirrored `World` / `WorldHandle` query macro layer with private checked-query helpers plus explicit method definitions for the reusable-buffer and mover/query surface.
 
 ## In Progress
 
