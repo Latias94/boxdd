@@ -172,14 +172,14 @@
 //!
 //! Events
 //! - Four access styles:
-//!   - By value: `world.contact_events()`/`sensor_events()`/`body_events()`/`joint_events()` return owned data for storage or cross‑frame use.
-//!   - Reusable buffers: `*_events_into(...)` reuse caller-owned owned-event storage across frames.
+//!   - By value: `World` and `WorldHandle` expose `contact_events()`/`sensor_events()`/`body_events()`/`joint_events()` for owned data that can be stored or used cross-frame.
+//!   - Reusable buffers: `World` and `WorldHandle` also expose `*_events_into(...)` to reuse caller-owned event storage across frames.
 //!   - Zero‑copy views: `with_*_events_view(...)` iterate without allocations (borrows internal buffers).
 //!   - Raw slices: `unsafe { with_*_events_raw(...) }` expose FFI slices (borrows internal buffers).
 //! - Callback-sensitive event entrypoints also expose matching `try_*` variants so callback-lock
 //!   failures can return `ApiError::InCallback` instead of forcing panic-only control flow.
-//! - Event APIs intentionally live on `World`, not `WorldHandle`, because they are tied to the
-//!   completed step's world-local event buffers and deferred-destroy flushing behavior.
+//! - Borrowed view/raw event APIs intentionally stay on `World`, not `WorldHandle`, because they
+//!   are tied to the completed step's world-local event buffers and deferred-destroy flushing behavior.
 //!
 //! Example (reusable buffers + zero‑copy views)
 //! ```no_run

@@ -6,8 +6,9 @@
 //!   owned event data.
 //! - Zero-copy visitors like `with_*` variants pass FFI slices valid only for the
 //!   duration of the closure and current step.
-//! - These APIs intentionally live on [`crate::World`] instead of `WorldHandle`: event reads are
-//!   tied to completed-step world buffers and the world's deferred-destroy flush semantics.
+//! - Owned snapshot getters are available on both [`crate::World`] and `WorldHandle`.
+//! - Borrowed zero-copy views and raw event-buffer access intentionally stay on [`crate::World`]:
+//!   they are tied to completed-step world buffers and the world's deferred-destroy flush semantics.
 
 #[inline]
 fn map_snapshot_into<TRaw, T>(out: &mut Vec<T>, slice: &[TRaw], map: impl FnMut(&TRaw) -> T) {
@@ -35,6 +36,7 @@ mod tests {
     #[test]
     fn try_event_snapshot_apis_return_in_callback() {
         let world = World::new(WorldDef::default()).unwrap();
+        let handle = world.handle();
         let mut body_events = Vec::new();
         let mut joint_events = Vec::new();
         let mut contact_events = ContactEvents::default();
@@ -66,6 +68,36 @@ mod tests {
         assert_eq!(world.try_joint_events().unwrap_err(), ApiError::InCallback);
         assert_eq!(
             world.try_joint_events_into(&mut joint_events).unwrap_err(),
+            ApiError::InCallback
+        );
+        assert_eq!(handle.try_body_events().unwrap_err(), ApiError::InCallback);
+        assert_eq!(
+            handle.try_body_events_into(&mut body_events).unwrap_err(),
+            ApiError::InCallback
+        );
+        assert_eq!(
+            handle.try_contact_events().unwrap_err(),
+            ApiError::InCallback
+        );
+        assert_eq!(
+            handle
+                .try_contact_events_into(&mut contact_events)
+                .unwrap_err(),
+            ApiError::InCallback
+        );
+        assert_eq!(
+            handle.try_sensor_events().unwrap_err(),
+            ApiError::InCallback
+        );
+        assert_eq!(
+            handle
+                .try_sensor_events_into(&mut sensor_events)
+                .unwrap_err(),
+            ApiError::InCallback
+        );
+        assert_eq!(handle.try_joint_events().unwrap_err(), ApiError::InCallback);
+        assert_eq!(
+            handle.try_joint_events_into(&mut joint_events).unwrap_err(),
             ApiError::InCallback
         );
     }

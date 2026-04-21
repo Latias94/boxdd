@@ -41,7 +41,7 @@ The main gaps are:
 - the panic-vs-`try_*` error-handling strategy is sound but not explicit enough at the crate boundary
 - callback registration on `World` has historically been asymmetric: material-mixing callbacks gained recoverable `try_*` setup, while custom filter / pre-solve registration lagged behind on panic-only helpers
 - owned world event snapshots have a safe zero-copy story via visitors, but until now the owned-copy path still forced fresh allocations unless users reworked their loop around borrowed views
-- `WorldHandle` mirrors many read-only runtime helpers, but event APIs are different because they depend on step-local world buffers and deferred-destroy flush timing
+- `WorldHandle` mirrors many read-only runtime helpers, and now also mirrors owned event snapshots; borrowed/raw event views are still different because they depend on step-local world buffers and deferred-destroy flush timing
 
 If we do not address these now, the likely outcome is a sequence of small additive
 patches that preserve avoidable duplication and keep advanced users half inside the safe
@@ -185,7 +185,7 @@ deliberate exclusions.
 - creation-definition cleanup so `BodyDef`, `JointBase`, and concrete joint defs no longer act like write-only shells, and obvious naming mistakes on config-only APIs are corrected even when that requires a breaking change
 - world-config cleanup so top-level setup values such as `WorldDef` and `ExplosionDef` follow the same readable crate-owned value-object rules as the rest of the safe API
 - config raw-boundary cleanup so builder-oriented wrappers such as `BodyDef`, `ShapeDef`, `JointBase`, and concrete joint defs cross back to raw Box2D structs through explicit named escape hatches when users truly need that seam
-- keep event APIs centered on `World` unless a future use-case justifies a narrower `WorldHandle` mirror for owned snapshots only
+- keep borrowed/raw event APIs centered on `World`; if `WorldHandle` mirrors event reads, keep that mirror limited to owned snapshots only
 
 ### Planned follow-up audit items
 
@@ -219,15 +219,18 @@ These do not block `0.3.0` completeness for the main safe wrapper. If a real pro
 use-case appears later, they can be revisited deliberately instead of being added just
 to chase one-to-one API parity.
 
-Another intentional omission for `0.3.0` is broader `WorldHandle` event mirroring.
-The crate keeps event snapshot/view APIs on `World` because they are bound to:
+The crate still intentionally omits broader `WorldHandle` event mirroring beyond owned snapshots.
+Owned snapshots now exist on both `World` and `WorldHandle`, but borrowed/raw event APIs stay on
+`World` because they are bound to:
 
 - the completed step's world-owned event buffers
 - deferred-destroy flushing that happens around borrowed event-buffer access
 - a shorter, more stateful lifecycle than the rest of `WorldHandle`'s cheap stored-query role
 
-If a later release adds `WorldHandle` event support, the preferred starting point is owned
-snapshot helpers (`*_events` / `*_events_into` / `try_*`) only, not borrowed/raw event views.
+The preferred `WorldHandle` event boundary is therefore now explicit:
+
+- allowed: owned snapshot helpers (`*_events` / `*_events_into` / `try_*`)
+- not added in `0.3.0`: borrowed/raw event views
 
 `ContactId`, on the other hand, is no longer an intentional omission for `0.3.0`.
 Upstream only exposes validity and data-fetch helpers for contacts, so the crate now treats

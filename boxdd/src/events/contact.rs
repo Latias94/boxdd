@@ -1,5 +1,5 @@
 use crate::types::{ContactId, ShapeId, Vec2};
-use crate::world::World;
+use crate::world::{World, WorldHandle};
 use boxdd_sys::ffi;
 
 /// Zero-copy view wrappers for contact events.
@@ -149,32 +149,44 @@ fn contact_events_into_impl(world: ffi::b2WorldId, out: &mut ContactEvents) {
     });
 }
 
+macro_rules! impl_contact_event_snapshot_methods {
+    ($world_ty:ty) => {
+        impl $world_ty {
+            pub fn contact_events(&self) -> ContactEvents {
+                crate::core::callback_state::assert_not_in_callback();
+                let mut out = ContactEvents::default();
+                contact_events_into_impl(self.raw(), &mut out);
+                out
+            }
+
+            pub fn contact_events_into(&self, out: &mut ContactEvents) {
+                crate::core::callback_state::assert_not_in_callback();
+                contact_events_into_impl(self.raw(), out);
+            }
+
+            pub fn try_contact_events(&self) -> crate::error::ApiResult<ContactEvents> {
+                crate::core::callback_state::check_not_in_callback()?;
+                let mut out = ContactEvents::default();
+                contact_events_into_impl(self.raw(), &mut out);
+                Ok(out)
+            }
+
+            pub fn try_contact_events_into(
+                &self,
+                out: &mut ContactEvents,
+            ) -> crate::error::ApiResult<()> {
+                crate::core::callback_state::check_not_in_callback()?;
+                contact_events_into_impl(self.raw(), out);
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_contact_event_snapshot_methods!(World);
+impl_contact_event_snapshot_methods!(WorldHandle);
+
 impl World {
-    pub fn contact_events(&self) -> ContactEvents {
-        crate::core::callback_state::assert_not_in_callback();
-        let mut out = ContactEvents::default();
-        contact_events_into_impl(self.raw(), &mut out);
-        out
-    }
-
-    pub fn contact_events_into(&self, out: &mut ContactEvents) {
-        crate::core::callback_state::assert_not_in_callback();
-        contact_events_into_impl(self.raw(), out);
-    }
-
-    pub fn try_contact_events(&self) -> crate::error::ApiResult<ContactEvents> {
-        crate::core::callback_state::check_not_in_callback()?;
-        let mut out = ContactEvents::default();
-        contact_events_into_impl(self.raw(), &mut out);
-        Ok(out)
-    }
-
-    pub fn try_contact_events_into(&self, out: &mut ContactEvents) -> crate::error::ApiResult<()> {
-        crate::core::callback_state::check_not_in_callback()?;
-        contact_events_into_impl(self.raw(), out);
-        Ok(())
-    }
-
     /// Low-level raw view over contact events (borrows Box2D's internal buffers).
     ///
     /// # Safety

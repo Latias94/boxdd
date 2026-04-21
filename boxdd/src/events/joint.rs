@@ -1,5 +1,5 @@
 use crate::types::JointId;
-use crate::world::World;
+use crate::world::{World, WorldHandle};
 use boxdd_sys::ffi;
 
 #[derive(Clone, Debug)]
@@ -41,32 +41,44 @@ fn joint_events_into_impl(world: ffi::b2WorldId, out: &mut Vec<JointEvent>) {
     });
 }
 
+macro_rules! impl_joint_event_snapshot_methods {
+    ($world_ty:ty) => {
+        impl $world_ty {
+            pub fn joint_events(&self) -> Vec<JointEvent> {
+                crate::core::callback_state::assert_not_in_callback();
+                let mut out = Vec::new();
+                joint_events_into_impl(self.raw(), &mut out);
+                out
+            }
+
+            pub fn joint_events_into(&self, out: &mut Vec<JointEvent>) {
+                crate::core::callback_state::assert_not_in_callback();
+                joint_events_into_impl(self.raw(), out);
+            }
+
+            pub fn try_joint_events(&self) -> crate::error::ApiResult<Vec<JointEvent>> {
+                crate::core::callback_state::check_not_in_callback()?;
+                let mut out = Vec::new();
+                joint_events_into_impl(self.raw(), &mut out);
+                Ok(out)
+            }
+
+            pub fn try_joint_events_into(
+                &self,
+                out: &mut Vec<JointEvent>,
+            ) -> crate::error::ApiResult<()> {
+                crate::core::callback_state::check_not_in_callback()?;
+                joint_events_into_impl(self.raw(), out);
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_joint_event_snapshot_methods!(World);
+impl_joint_event_snapshot_methods!(WorldHandle);
+
 impl World {
-    pub fn joint_events(&self) -> Vec<JointEvent> {
-        crate::core::callback_state::assert_not_in_callback();
-        let mut out = Vec::new();
-        joint_events_into_impl(self.raw(), &mut out);
-        out
-    }
-
-    pub fn joint_events_into(&self, out: &mut Vec<JointEvent>) {
-        crate::core::callback_state::assert_not_in_callback();
-        joint_events_into_impl(self.raw(), out);
-    }
-
-    pub fn try_joint_events(&self) -> crate::error::ApiResult<Vec<JointEvent>> {
-        crate::core::callback_state::check_not_in_callback()?;
-        let mut out = Vec::new();
-        joint_events_into_impl(self.raw(), &mut out);
-        Ok(out)
-    }
-
-    pub fn try_joint_events_into(&self, out: &mut Vec<JointEvent>) -> crate::error::ApiResult<()> {
-        crate::core::callback_state::check_not_in_callback()?;
-        joint_events_into_impl(self.raw(), out);
-        Ok(())
-    }
-
     /// Low-level raw view over joint events (borrows Box2D's internal buffers).
     ///
     /// # Safety

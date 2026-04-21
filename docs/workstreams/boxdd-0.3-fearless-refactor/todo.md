@@ -24,7 +24,7 @@
 - [x] Close the remaining callback-registration symmetry gap so custom filter / pre-solve setup and compatibility `*_callback` helpers expose matching `try_*` variants instead of forcing panic-only mutation.
 - [x] Audit the remaining upstream world-level C API helpers and record that `b2World_DumpMemoryStats` / `b2World_RebuildStaticTree` stay intentionally unwrapped for `0.3.0` because they are debug/internal-only seams, not core safe-wrapper surface area.
 - [x] Add reusable-buffer and recoverable `try_*` snapshot APIs for world body/contact/sensor/joint events so callers can keep owned event data without per-frame allocation churn.
-- [x] Record the `World` vs `WorldHandle` event split as an intentional `0.3.0` design decision: event reads stay on `World`, and any future `WorldHandle` mirror should start with owned snapshots only.
+- [x] Record the `World` vs `WorldHandle` event split as an intentional `0.3.0` design decision: borrowed/raw event reads stay on `World`, and any `WorldHandle` mirror should be limited to owned snapshots only.
 - [x] Narrow the serialize-time chain metadata seam so `ChainDef` raw point/material helpers stay crate-private and `World::chain_records()` returns crate-owned `Filter` / `Vec2` / material-layout values instead of raw `ffi` collections.
 - [x] Productize the remaining shape-material geometry seams: add safe rounded-box polygon helpers and make `SurfaceMaterial` a full crate-owned value type with getters plus explicit `from_raw(...)` / `into_raw()` conversion.
 - [x] Complete the definition-side value-object cleanup so `ShapeDef` has read-side getters, `ChainDef` exposes safe points/filter/material-layout inspection, and both builders can resume from an existing definition value.
@@ -41,6 +41,7 @@
 - [x] Continue the feature-gated duplication audit by consolidating the `unchecked` body/shape/joint/chain extension trait implementations so owned/scoped handles share the same internal raw FFI definitions.
 - [x] Close the remaining obvious contact inspection gap by adding safe `ContactIdExt` helpers plus `ApiError::InvalidContactId` instead of forcing users back to raw `ffi::b2Contact_*`.
 - [x] Add a release-level completeness matrix that classifies major wrapper areas as `safe-covered`, `raw-only`, `intentional omission`, or `candidate after 0.3`.
+- [x] Expand `WorldHandle` event support with owned snapshots only (`*_events`, `*_events_into`, `try_*`) while keeping borrowed/raw event-buffer APIs on `World`.
 
 ## In Progress
 
@@ -92,7 +93,7 @@
 - [x] Review remaining public raw escape hatches and document which are intentional (`world_id_raw`, raw event slices, debug draw raw paths, etc.).
 - [x] Add more targeted regression coverage where intentional raw escape hatches still rely on callback-sensitive or zero-copy behavior.
 - [x] Continue the completeness audit against upstream Box2D v3 and record any intentionally unwrapped or raw-only areas that should be revisited after `0.3.0`.
-- [ ] Revisit the `candidate after 0.3` entries from the completeness matrix and decide which ones deserve the first post-`0.3` wrapper pass.
+- [ ] Revisit the remaining `candidate after 0.3` entries from the completeness matrix and decide which ones deserve the first post-`0.3` wrapper pass.
 
 ## Release Checklist
 

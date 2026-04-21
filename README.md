@@ -153,7 +153,8 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
   - Zero‑copy views: `with_*_events_view(...)` iterate without allocations (borrows internal buffers).
   - Raw slices: `unsafe { with_*_events_raw(...) }` expose FFI slices (borrows internal buffers).
 - Callback-sensitive event entrypoints also have matching `try_*` variants so callback-lock failures can return `ApiError::InCallback` instead of forcing panic-only control flow.
-- These event APIs intentionally stay on `World` rather than `WorldHandle`, because they are tied to the completed step's world-local event buffers plus deferred-destroy flushing.
+- Owned event snapshots (`*_events`, `*_events_into`, `try_*`) are available on both `World` and `WorldHandle`.
+- Borrowed zero-copy event views and raw event-buffer access intentionally stay on `World`, because they are tied to the completed step's world-local event buffers plus deferred-destroy flushing.
 - Example (reusable buffers + zero-copy views):
 ```rust
 use boxdd::{ContactEvents, World, WorldDef};

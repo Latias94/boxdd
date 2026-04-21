@@ -644,9 +644,9 @@ pub struct World {
 /// objects (e.g. debug draw implementations). It is still `!Send`/`!Sync` to match Box2D's thread
 /// safety guarantees.
 ///
-/// `WorldHandle` intentionally focuses on stored read-only queries/diagnostics. Step-local event
-/// snapshot/view APIs remain on [`World`] because they are tied to Box2D's completed-step event
-/// buffers plus deferred-destroy flushing behavior.
+/// `WorldHandle` intentionally focuses on stored read-only queries/diagnostics plus owned event
+/// snapshots. Borrowed/raw step-local event buffer views remain on [`World`] because they are tied
+/// to Box2D's completed-step event buffers plus deferred-destroy flushing behavior.
 #[derive(Clone)]
 pub struct WorldHandle {
     core: Arc<WorldCore>,

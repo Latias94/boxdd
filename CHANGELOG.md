@@ -36,6 +36,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - `ApiError::InvalidJointType` for recoverable `try_*` typed-joint runtime misuse when a valid joint is accessed through the wrong family surface.
 - World runtime extras for `Profile` timings, `ExplosionDef`, `World::explode` / `try_explode`, and speculative collision control.
 - `BodyBuilder::allow_fast_rotation`, computed body AABB helpers across `Body`, `OwnedBody`, and `World::body_aabb`, plus read-only `WorldHandle` runtime getters for gravity/counters/profile/awake-count/runtime-tuning state.
+- Owned event snapshot mirrors on `WorldHandle`: `*_events`, `*_events_into`, and `try_*` now match `World` for body/contact/sensor/joint event snapshots without exposing borrowed/raw event-buffer APIs there.
 - Recoverable rotation round-tripping for `mint::RowMatrix2/ColumnMatrix2` and `glam::Mat2`, via `Rot::try_from(...)`, `RotFromMintError`, and `RotFromGlamError`.
 - Reusable-buffer world event snapshot APIs: `body_events_into`, `contact_events_into`, `sensor_events_into`, `joint_events_into`, plus matching `try_*` variants for recoverable callback-sensitive event reads.
 - Safe rounded-box polygon helpers via `Polygon::rounded_box_polygon(...)` and `shapes::rounded_box_polygon(...)`.
@@ -90,7 +91,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Zero-copy and raw event-buffer visitors now expose matching recoverable entrypoints too: `try_with_*_events_view(...)` and `unsafe { try_with_*_events_raw(...) }` return `ApiError::InCallback` instead of leaving borrowed event access as a panic-only corner.
 - Events docs now cover by-value, reusable-buffer, zero-copy, and raw access styles explicitly, and `ContactEvents` / `SensorEvents` implement `Default` for caller-owned buffer reuse.
 - `serialize` registry snapshots now expose reusable-buffer reads too: `World::body_ids_into(...)` / `try_body_ids_into(...)` and `World::chain_records_into(...)` / `try_chain_records_into(...)` avoid per-call allocation on wrapper-owned metadata queries.
-- Docs/design: `WorldHandle` intentionally does not mirror event-buffer APIs in `0.3.0`; event reads stay on `World` because they are coupled to completed-step buffers and deferred-destroy flushing semantics.
+- Docs/design: `WorldHandle` now mirrors owned event snapshots only; borrowed/raw event-buffer APIs still intentionally stay on `World` because they are coupled to completed-step buffers and deferred-destroy flushing semantics.
 - Breaking: serialize-time chain metadata now stays on crate-owned vocabulary: `World::chain_records()` returns `Filter`, `Vec<Vec2>`, and `ChainMaterialsRecord`, and the old public `ChainDef` raw clone helpers are no longer exposed.
 - Breaking: `SurfaceMaterial` now behaves like a normal crate-owned value type: read access uses getters such as `friction()` / `restitution()` / `custom_color()`, `custom_color` uses crate-owned `HexColor`, builder-style mutation uses `with_*` methods, and raw interop is explicit through `from_raw(...)` / `into_raw()`.
 - Breaking: `PrismaticJointDef::max_motor_torque(...)` was removed; prismatic creation-time motor configuration now uses the correct `max_motor_force(...)` name only.

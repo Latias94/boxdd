@@ -290,6 +290,7 @@ fn debug_draw_collect_into_reuses_command_and_vertex_buffers() {
 fn world_event_snapshots_into_reuse_buffers() {
     {
         let mut world = World::new(WorldDef::builder().gravity([0.0_f32, -10.0]).build()).unwrap();
+        let handle = world.handle();
         let moving_body = world.create_body_id(
             BodyBuilder::new()
                 .body_type(BodyType::Dynamic)
@@ -319,10 +320,17 @@ fn world_event_snapshots_into_reuse_buffers() {
         assert_eq!(body_events.as_ptr(), body_events_ptr);
         world.try_body_events_into(&mut body_events).unwrap();
         assert_eq!(body_events.len(), body_baseline.len());
+
+        handle.body_events_into(&mut body_events);
+        assert_eq!(body_events.len(), body_baseline.len());
+        assert_eq!(body_events.as_ptr(), body_events_ptr);
+        handle.try_body_events_into(&mut body_events).unwrap();
+        assert_eq!(body_events.len(), body_baseline.len());
     }
 
     {
         let mut world = World::new(WorldDef::builder().gravity([0.0_f32, -10.0]).build()).unwrap();
+        let handle = world.handle();
         let b1 = world.create_body_id(
             BodyBuilder::new()
                 .body_type(BodyType::Dynamic)
@@ -371,10 +379,21 @@ fn world_event_snapshots_into_reuse_buffers() {
         assert_eq!(contact_events.hit.as_ptr(), contact_hit_ptr);
         world.try_contact_events_into(&mut contact_events).unwrap();
         assert_eq!(contact_events.begin.len(), contact_baseline.begin.len());
+
+        handle.contact_events_into(&mut contact_events);
+        assert_eq!(contact_events.begin.len(), contact_baseline.begin.len());
+        assert_eq!(contact_events.end.len(), contact_baseline.end.len());
+        assert_eq!(contact_events.hit.len(), contact_baseline.hit.len());
+        assert_eq!(contact_events.begin.as_ptr(), contact_begin_ptr);
+        assert_eq!(contact_events.end.as_ptr(), contact_end_ptr);
+        assert_eq!(contact_events.hit.as_ptr(), contact_hit_ptr);
+        handle.try_contact_events_into(&mut contact_events).unwrap();
+        assert_eq!(contact_events.begin.len(), contact_baseline.begin.len());
     }
 
     {
         let mut world = World::new(WorldDef::builder().build()).unwrap();
+        let handle = world.handle();
         let wall = world.create_body_id(
             BodyBuilder::new()
                 .body_type(BodyType::Static)
@@ -423,10 +442,19 @@ fn world_event_snapshots_into_reuse_buffers() {
         assert_eq!(sensor_events.end.as_ptr(), sensor_end_ptr);
         world.try_sensor_events_into(&mut sensor_events).unwrap();
         assert_eq!(sensor_events.begin.len(), sensor_baseline.begin.len());
+
+        handle.sensor_events_into(&mut sensor_events);
+        assert_eq!(sensor_events.begin.len(), sensor_baseline.begin.len());
+        assert_eq!(sensor_events.end.len(), sensor_baseline.end.len());
+        assert_eq!(sensor_events.begin.as_ptr(), sensor_begin_ptr);
+        assert_eq!(sensor_events.end.as_ptr(), sensor_end_ptr);
+        handle.try_sensor_events_into(&mut sensor_events).unwrap();
+        assert_eq!(sensor_events.begin.len(), sensor_baseline.begin.len());
     }
 
     {
         let mut world = World::new(WorldDef::builder().gravity([0.0_f32, -10.0]).build()).unwrap();
+        let handle = world.handle();
         let joint_body_a = world.create_body_id(
             BodyBuilder::new()
                 .body_type(BodyType::Dynamic)
@@ -461,6 +489,12 @@ fn world_event_snapshots_into_reuse_buffers() {
         assert_eq!(joint_events.len(), joint_baseline.len());
         assert_eq!(joint_events.as_ptr(), joint_events_ptr);
         world.try_joint_events_into(&mut joint_events).unwrap();
+        assert_eq!(joint_events.len(), joint_baseline.len());
+
+        handle.joint_events_into(&mut joint_events);
+        assert_eq!(joint_events.len(), joint_baseline.len());
+        assert_eq!(joint_events.as_ptr(), joint_events_ptr);
+        handle.try_joint_events_into(&mut joint_events).unwrap();
         assert_eq!(joint_events.len(), joint_baseline.len());
     }
 }

@@ -1,5 +1,5 @@
 use crate::types::ShapeId;
-use crate::world::World;
+use crate::world::{World, WorldHandle};
 use boxdd_sys::ffi;
 
 /// Zero-copy view wrappers for sensor events.
@@ -90,32 +90,44 @@ fn sensor_events_into_impl(world: ffi::b2WorldId, out: &mut SensorEvents) {
     });
 }
 
+macro_rules! impl_sensor_event_snapshot_methods {
+    ($world_ty:ty) => {
+        impl $world_ty {
+            pub fn sensor_events(&self) -> SensorEvents {
+                crate::core::callback_state::assert_not_in_callback();
+                let mut out = SensorEvents::default();
+                sensor_events_into_impl(self.raw(), &mut out);
+                out
+            }
+
+            pub fn sensor_events_into(&self, out: &mut SensorEvents) {
+                crate::core::callback_state::assert_not_in_callback();
+                sensor_events_into_impl(self.raw(), out);
+            }
+
+            pub fn try_sensor_events(&self) -> crate::error::ApiResult<SensorEvents> {
+                crate::core::callback_state::check_not_in_callback()?;
+                let mut out = SensorEvents::default();
+                sensor_events_into_impl(self.raw(), &mut out);
+                Ok(out)
+            }
+
+            pub fn try_sensor_events_into(
+                &self,
+                out: &mut SensorEvents,
+            ) -> crate::error::ApiResult<()> {
+                crate::core::callback_state::check_not_in_callback()?;
+                sensor_events_into_impl(self.raw(), out);
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_sensor_event_snapshot_methods!(World);
+impl_sensor_event_snapshot_methods!(WorldHandle);
+
 impl World {
-    pub fn sensor_events(&self) -> SensorEvents {
-        crate::core::callback_state::assert_not_in_callback();
-        let mut out = SensorEvents::default();
-        sensor_events_into_impl(self.raw(), &mut out);
-        out
-    }
-
-    pub fn sensor_events_into(&self, out: &mut SensorEvents) {
-        crate::core::callback_state::assert_not_in_callback();
-        sensor_events_into_impl(self.raw(), out);
-    }
-
-    pub fn try_sensor_events(&self) -> crate::error::ApiResult<SensorEvents> {
-        crate::core::callback_state::check_not_in_callback()?;
-        let mut out = SensorEvents::default();
-        sensor_events_into_impl(self.raw(), &mut out);
-        Ok(out)
-    }
-
-    pub fn try_sensor_events_into(&self, out: &mut SensorEvents) -> crate::error::ApiResult<()> {
-        crate::core::callback_state::check_not_in_callback()?;
-        sensor_events_into_impl(self.raw(), out);
-        Ok(())
-    }
-
     /// Low-level raw view over sensor events (borrows Box2D's internal buffers).
     ///
     /// # Safety
