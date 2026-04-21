@@ -18,7 +18,7 @@
 - Safe, ergonomic Rust wrapper over the official Box2D v3 C API.
 - Math interop (features: `mint`/`cgmath`/`nalgebra`/`glam`): any `Into<Vec2>` accepts the corresponding 2D vector/point types, plus arrays/tuples.
 - Two error-handling styles: panic-on-misuse by default, plus `try_*` APIs returning `ApiResult<T>` for recoverable errors.
-- Explicit threading model: `worker_count` enables Box2D's internal parallelism, while `World` and owned handles remain pinned to one thread/task.
+- Explicit threading model: `worker_count` remains part of `WorldDef`, while `World` and owned handles stay pinned to one thread/task; actual Box2D worker-thread stepping still requires a task system on the raw `WorldDef` path.
 - Hot-path query, debug-draw collection, and state-extraction APIs expose `*_into` buffer-reuse variants, and overlap queries also expose `visit_*` forms for zero result-container allocation.
 - Character mover helpers cover the full safe workflow: `cast_mover`, `collide_mover`, `solve_planes`, and `clip_vector`.
 - World runtime helpers cover counters, per-stage `Profile` timings, speculative-collision toggles, and safe explosion control.
@@ -28,7 +28,8 @@
 - Shape creation and editing now use crate-owned geometry values, and chain segments can be inspected through the crate-owned `ChainSegment` type.
 - Chain runtime material access now uses visible segment indexing on open chains instead of leaking Box2D's ghost-placeholder storage layout.
 - Safe shape/joint mutators now front-load obvious Box2D assert preconditions such as non-negative material scalars and ordered joint limits.
-- Safe body/joint creation now validates obvious Box2D definition preconditions before entering native code, and definition value objects expose `validate()` helpers for preflight checks.
+- Safe world/body/joint creation now validates obvious Box2D definition preconditions before entering native code, and definition value objects expose `validate()` helpers for preflight checks.
+- Pointer-bearing config wrappers now keep their raw re-entry explicit: `BodyDef::from_raw(...)` and `WorldDef::from_raw(...)` are `unsafe` because raw names/task callbacks can otherwise punch through later safe creation paths.
 - Live shape runtime helpers now cover `aabb`, `test_point`, direct `ray_cast`, computed `mass_data`, and runtime event toggles without raw `ffi`.
 - Body runtime helpers now cover `rotation`, sleep/awake/enabled/bullet/name controls, attached `shapes/joints` enumeration, and body-level contact/hit event toggles.
 - Joint runtime helpers now cover both common metadata/control and type-specific distance/prismatic/revolute/weld/wheel/motor state across owned/scoped/id-style APIs.
@@ -66,7 +67,7 @@ world.step(1.0/60.0, 4);
 - `cgmath`, `nalgebra`, and `glam` remain first-class interop options for projects that already standardize on those math crates.
 
 ## Threading and Async
-- `WorldDef::builder().worker_count(n)` lets Box2D use internal worker threads during `world.step(...)`. It does not make `World`, `WorldHandle`, or owned handles `Send`/`Sync`.
+- `WorldDef::builder().worker_count(n)` stores the desired upstream worker count, but Box2D only uses worker threads when task callbacks are also installed on the raw `WorldDef` path. It does not make `World`, `WorldHandle`, or owned handles `Send`/`Sync`.
 - Keep physics ownership on one thread/task. In async runtimes prefer `spawn_local` / `LocalSet`; in multi-threaded engines prefer a dedicated physics thread and communicate with channels.
 - `set_custom_filter*`, `set_pre_solve*`, `set_friction_callback`, and `set_restitution_callback` may run on Box2D worker threads, so those closures must stay `Send + Sync` and should be treated as pure callbacks.
 - See `examples/physics_thread.rs` for a minimal dedicated-thread pattern.
@@ -75,7 +76,7 @@ world.step(1.0/60.0, 4);
 - The default safe APIs panic on misuse such as stale ids or calling Box2D while the world is locked in a callback. This keeps the common path terse and avoids Rust-level UB.
 - At engine/runtime boundaries, prefer `try_*` APIs and handle `ApiError` explicitly.
 - `ApiError` covers stale ids, callback-locked access, invalid arguments, out-of-range runtime indices, invalid typed-joint family use, invalid chain defs, interior NUL strings, typed user-data mismatches, and material-callback slot exhaustion.
-- `BodyDef`, `ShapeDef`, `SurfaceMaterial`, `JointBase`, and concrete `*JointDef` values expose `validate()` so tooling and editor flows can reject invalid config before calling `create_*`.
+- `WorldDef`, `BodyDef`, `ShapeDef`, `SurfaceMaterial`, `JointBase`, and concrete `*JointDef` values expose `validate()` so tooling and editor flows can reject invalid config before calling `create_*`.
 - World-level runtime tuning and explosion helpers now also expose `try_*` variants when callback locking should be handled recoverably.
 
 ## World Runtime Extras

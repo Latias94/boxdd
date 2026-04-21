@@ -34,8 +34,9 @@ fn world_def_is_a_readable_value_type_and_can_seed_a_builder() {
     assert!(!def.is_continuous_enabled());
     assert!(!def.is_contact_softening_enabled());
     assert_eq!(def.worker_count(), 3);
+    assert_eq!(def.validate(), Ok(()));
 
-    let raw_roundtrip = WorldDef::from_raw(def.clone().into_raw());
+    let raw_roundtrip = unsafe { WorldDef::from_raw(def.clone().into_raw()) };
     assert_eq!(raw_roundtrip.gravity(), Vec2::new(1.0, -9.5));
     assert_eq!(raw_roundtrip.restitution_threshold(), 2.5);
     assert_eq!(raw_roundtrip.worker_count(), 3);
@@ -48,6 +49,33 @@ fn world_def_is_a_readable_value_type_and_can_seed_a_builder() {
     assert_eq!(rebuilt.hit_event_threshold(), 7.0);
     assert!(rebuilt.is_continuous_enabled());
     assert_eq!(rebuilt.worker_count(), 5);
+}
+
+#[test]
+fn world_def_validation_rejects_invalid_numeric_values() {
+    let invalid_gravity = WorldDef::builder().gravity([f32::NAN, -10.0]).build();
+    assert_eq!(
+        invalid_gravity.validate().unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert!(matches!(
+        World::new(invalid_gravity),
+        Err(boxdd::world::Error::InvalidDefinition(
+            ApiError::InvalidArgument
+        ))
+    ));
+
+    let invalid_speed = WorldDef::builder().maximum_linear_speed(0.0).build();
+    assert_eq!(
+        invalid_speed.validate().unwrap_err(),
+        ApiError::InvalidArgument
+    );
+
+    let invalid_workers = WorldDef::builder().worker_count(-1).build();
+    assert_eq!(
+        invalid_workers.validate().unwrap_err(),
+        ApiError::InvalidArgument
+    );
 }
 
 #[test]

@@ -426,8 +426,92 @@ unsafe extern "C" fn pre_solve_callback(
 #[non_exhaustive]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("invalid world definition: {0}")]
+    InvalidDefinition(#[from] crate::error::ApiError),
+
     #[error("failed to create Box2D world")]
     CreateFailed,
+}
+
+#[inline]
+fn world_def_cookie_is_valid(def: &WorldDef) -> bool {
+    def.0.internalValue == unsafe { ffi::b2DefaultWorldDef() }.internalValue
+}
+
+#[inline]
+fn assert_world_gravity_valid(gravity: Vec2) {
+    assert!(
+        gravity.is_valid(),
+        "gravity must be a valid Box2D vector, got {:?}",
+        gravity
+    );
+}
+
+#[inline]
+fn check_world_gravity_valid(gravity: Vec2) -> crate::error::ApiResult<()> {
+    if gravity.is_valid() {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+#[inline]
+fn assert_non_negative_finite_world_scalar(name: &str, value: f32) {
+    assert!(
+        crate::is_valid_float(value) && value >= 0.0,
+        "{name} must be finite and >= 0.0, got {value}"
+    );
+}
+
+#[inline]
+fn check_non_negative_finite_world_scalar(value: f32) -> crate::error::ApiResult<()> {
+    if crate::is_valid_float(value) && value >= 0.0 {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+#[inline]
+fn assert_positive_finite_world_scalar(name: &str, value: f32) {
+    assert!(
+        crate::is_valid_float(value) && value > 0.0,
+        "{name} must be finite and > 0.0, got {value}"
+    );
+}
+
+#[inline]
+fn check_positive_finite_world_scalar(value: f32) -> crate::error::ApiResult<()> {
+    if crate::is_valid_float(value) && value > 0.0 {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+#[inline]
+fn check_world_worker_count_valid(worker_count: i32) -> crate::error::ApiResult<()> {
+    if worker_count >= 0 {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+#[inline]
+fn check_world_def_valid(def: &WorldDef) -> crate::error::ApiResult<()> {
+    if !world_def_cookie_is_valid(def) {
+        return Err(crate::error::ApiError::InvalidArgument);
+    }
+    check_world_gravity_valid(def.gravity())?;
+    check_non_negative_finite_world_scalar(def.restitution_threshold())?;
+    check_non_negative_finite_world_scalar(def.hit_event_threshold())?;
+    check_non_negative_finite_world_scalar(def.contact_hertz())?;
+    check_non_negative_finite_world_scalar(def.contact_damping_ratio())?;
+    check_non_negative_finite_world_scalar(def.contact_speed())?;
+    check_positive_finite_world_scalar(def.maximum_linear_speed())?;
+    check_world_worker_count_valid(def.worker_count())
 }
 
 /// World definition builder for constructing a simulation world.
@@ -449,7 +533,14 @@ impl WorldDef {
         WorldBuilder::from(Self::default())
     }
 
-    pub fn from_raw(raw: ffi::b2WorldDef) -> Self {
+    /// Construct from the raw Box2D world definition value.
+    ///
+    /// # Safety
+    /// Any raw callback pointers stored in `raw` (`frictionCallback`, `restitutionCallback`,
+    /// `enqueueTask`, and `finishTask`) must remain valid whenever the resulting `WorldDef` is
+    /// later used to create or step a world. This constructor does not validate callback
+    /// pointers, task contexts, or other raw pointer fields.
+    pub unsafe fn from_raw(raw: ffi::b2WorldDef) -> Self {
         Self(raw)
     }
 
@@ -499,6 +590,10 @@ impl WorldDef {
 
     pub fn into_raw(self) -> ffi::b2WorldDef {
         self.0
+    }
+
+    pub fn validate(&self) -> crate::error::ApiResult<()> {
+        check_world_def_valid(self)
     }
 }
 
@@ -678,10 +773,11 @@ impl WorldBuilder {
         self.def.0.enableContactSoftening = flag;
         self
     }
-    /// Number of worker threads Box2D may use during stepping.
+    /// Number of worker threads Box2D may use during stepping when a task system is installed.
     ///
-    /// This controls Box2D's internal parallelism only; it does not make `World` or owned handles
-    /// `Send` / `Sync`.
+    /// This does not make `World` or owned handles `Send` / `Sync`. `boxdd` does not currently
+    /// expose a safe task-system registration API, so non-zero values only become active when
+    /// advanced users also supply raw task callbacks through `unsafe WorldDef::from_raw(...)`.
     pub fn worker_count(mut self, n: i32) -> Self {
         self.def.0.workerCount = n;
         self
@@ -1592,6 +1688,7 @@ impl World {
 
     /// Create a world from a definition.
     pub fn new(def: WorldDef) -> Result<Self, Error> {
+        def.validate()?;
         let _guard = crate::core::box2d_lock::lock();
         let raw = def.into_raw();
         // SAFETY: FFI call to create a world; returns an id handle
@@ -1672,13 +1769,17 @@ impl World {
     /// Set gravity vector.
     pub fn set_gravity<V: Into<Vec2>>(&mut self, g: V) {
         crate::core::callback_state::assert_not_in_callback();
-        let gv: ffi::b2Vec2 = g.into().into_raw();
+        let gravity = g.into();
+        assert_world_gravity_valid(gravity);
+        let gv: ffi::b2Vec2 = gravity.into_raw();
         unsafe { ffi::b2World_SetGravity(self.raw(), gv) };
     }
 
     pub fn try_set_gravity<V: Into<Vec2>>(&mut self, g: V) -> crate::error::ApiResult<()> {
         crate::core::callback_state::check_not_in_callback()?;
-        let gv: ffi::b2Vec2 = g.into().into_raw();
+        let gravity = g.into();
+        check_world_gravity_valid(gravity)?;
+        let gv: ffi::b2Vec2 = gravity.into_raw();
         unsafe { ffi::b2World_SetGravity(self.raw(), gv) };
         Ok(())
     }
@@ -2831,24 +2932,31 @@ impl World {
     }
     pub fn set_restitution_threshold(&mut self, value: f32) {
         crate::core::callback_state::assert_not_in_callback();
+        assert_non_negative_finite_world_scalar("restitution_threshold", value);
         unsafe { ffi::b2World_SetRestitutionThreshold(self.raw(), value) }
     }
     pub fn try_set_restitution_threshold(&mut self, value: f32) -> crate::error::ApiResult<()> {
         crate::core::callback_state::check_not_in_callback()?;
+        check_non_negative_finite_world_scalar(value)?;
         unsafe { ffi::b2World_SetRestitutionThreshold(self.raw(), value) }
         Ok(())
     }
     pub fn set_hit_event_threshold(&mut self, value: f32) {
         crate::core::callback_state::assert_not_in_callback();
+        assert_non_negative_finite_world_scalar("hit_event_threshold", value);
         unsafe { ffi::b2World_SetHitEventThreshold(self.raw(), value) }
     }
     pub fn try_set_hit_event_threshold(&mut self, value: f32) -> crate::error::ApiResult<()> {
         crate::core::callback_state::check_not_in_callback()?;
+        check_non_negative_finite_world_scalar(value)?;
         unsafe { ffi::b2World_SetHitEventThreshold(self.raw(), value) }
         Ok(())
     }
     pub fn set_contact_tuning(&mut self, hertz: f32, damping_ratio: f32, push_speed: f32) {
         crate::core::callback_state::assert_not_in_callback();
+        assert_non_negative_finite_world_scalar("contact_hertz", hertz);
+        assert_non_negative_finite_world_scalar("contact_damping_ratio", damping_ratio);
+        assert_non_negative_finite_world_scalar("contact_speed", push_speed);
         unsafe { ffi::b2World_SetContactTuning(self.raw(), hertz, damping_ratio, push_speed) }
     }
     pub fn try_set_contact_tuning(
@@ -2858,6 +2966,9 @@ impl World {
         push_speed: f32,
     ) -> crate::error::ApiResult<()> {
         crate::core::callback_state::check_not_in_callback()?;
+        check_non_negative_finite_world_scalar(hertz)?;
+        check_non_negative_finite_world_scalar(damping_ratio)?;
+        check_non_negative_finite_world_scalar(push_speed)?;
         unsafe { ffi::b2World_SetContactTuning(self.raw(), hertz, damping_ratio, push_speed) }
         Ok(())
     }
@@ -2873,10 +2984,12 @@ impl World {
     }
     pub fn set_maximum_linear_speed(&mut self, v: f32) {
         crate::core::callback_state::assert_not_in_callback();
+        assert_positive_finite_world_scalar("maximum_linear_speed", v);
         unsafe { ffi::b2World_SetMaximumLinearSpeed(self.raw(), v) }
     }
     pub fn try_set_maximum_linear_speed(&mut self, v: f32) -> crate::error::ApiResult<()> {
         crate::core::callback_state::check_not_in_callback()?;
+        check_positive_finite_world_scalar(v)?;
         unsafe { ffi::b2World_SetMaximumLinearSpeed(self.raw(), v) }
         Ok(())
     }

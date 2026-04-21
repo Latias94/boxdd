@@ -1745,8 +1745,13 @@ impl BodyDef {
     }
 
     /// Construct from the raw Box2D body definition value.
+    ///
+    /// # Safety
+    /// If `raw.name` is non-null, it must point to a readable NUL-terminated string for any
+    /// later safe body-creation call. This constructor does not copy or validate the raw name
+    /// pointer.
     #[inline]
-    pub fn from_raw(raw: ffi::b2BodyDef) -> Self {
+    pub unsafe fn from_raw(raw: ffi::b2BodyDef) -> Self {
         Self(raw)
     }
 

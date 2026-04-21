@@ -30,6 +30,7 @@
 - [x] Complete the definition-side value-object cleanup so `ShapeDef` has read-side getters, `ChainDef` exposes safe points/filter/material-layout inspection, and both builders can resume from an existing definition value.
 - [x] Continue creation-time definition cleanup so `BodyDef`, `JointBase`, and concrete `*JointDef` types are inspectable value objects, and remove the misnamed prismatic `max_motor_torque(...)` creation alias in favor of `max_motor_force(...)`.
 - [x] Finish the world-config slice so `WorldDef` and `ExplosionDef` are readable value objects instead of builder-only or write-only configuration shells.
+- [x] Audit raw definition-object safety boundaries so pointer/callback-bearing config wrappers stop re-entering the safe API through safe `from_raw(...)`, and add explicit `WorldDef` validation plus world-tuning argument checks.
 - [x] Tighten the remaining raw pointer user-data escape hatches so body/shape/joint APIs use explicit `*_raw` naming and keep regression coverage for the preserved pointer seam.
 - [x] Tighten raw event-buffer visitors so direct FFI-slice access uses `with_*_events_raw(...)` naming instead of blending in with the safe zero-copy event views.
 - [x] Finish raw-boundary symmetry for configuration wrappers so `BodyDef`, `ShapeDef`, `JointBase`, and concrete joint defs all expose named `from_raw(...)` / `into_raw()` escape hatches.
@@ -122,6 +123,7 @@
 - [x] Continue the completeness audit against upstream Box2D v3 and record any intentionally unwrapped or raw-only areas that should be revisited after `0.3.0`.
 - [x] Re-evaluate the lightweight contact-inspection slice: move `ContactIdExt` onto `ContactId` as inherent methods and record that a first-class `Contact` handle remains an intentional omission for `0.3.0`.
 - [ ] Revisit the remaining `candidate after 0.3` entries from the completeness matrix and decide which ones deserve the first post-`0.3` wrapper pass.
+- [ ] Decide whether the task-system / multithread stepping seam deserves a first-class safe API after `0.3`, or should stay an intentional raw-only `WorldDef` capability.
 
 ## Release Checklist
 

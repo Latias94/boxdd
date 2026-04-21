@@ -13,6 +13,8 @@
 //! - Shape geometry uses crate-owned values (`Circle`, `Segment`, `ChainSegment`, `Capsule`, `Polygon`) across helpers, shape editing, and creation, including square/rounded/offset/hull-based polygon builders without raw FFI.
 //! - Chain runtime material helpers use visible live-segment indexing on open chains instead of Box2D's ghost-placeholder storage layout.
 //! - Safe shape/joint mutators front-load obvious Box2D assert preconditions such as non-negative material scalars and ordered joint limits.
+//! - Pointer-bearing config wrappers keep their raw re-entry explicit: `BodyDef::from_raw(...)`
+//!   and `WorldDef::from_raw(...)` are `unsafe`.
 //! - Live shapes expose safe runtime helpers for AABB, point tests, direct ray casts, computed mass data, and runtime event toggles.
 //! - Bodies expose safe runtime helpers for rotation, sleep/awake/enabled/bullet/name controls, attached shape/joint enumeration, and body-level contact/hit event toggles.
 //! - Joints expose safe runtime helpers for joint kind, connected body ids, `collide_connected`, constraint tuning, local frames, wake controls, and type-specific runtime state across distance/prismatic/revolute/weld/wheel/motor families.
@@ -172,8 +174,9 @@
 //! - `bytemuck`: `Pod`/`Zeroable` for core math types (`Vec2`, `Rot`, `Transform`, `Aabb`) for zero-copy interop.
 //!
 //! Threading and async
-//! - `WorldDef::builder().worker_count(n)` lets Box2D use internal worker threads during `World::step(...)`.
-//!   It does not make `World`, `WorldHandle`, or owned handles `Send`/`Sync`.
+//! - `WorldDef::builder().worker_count(n)` preserves Box2D's worker-count setting, but actual
+//!   multithreaded stepping still requires raw task callbacks on `WorldDef`. It does not make
+//!   `World`, `WorldHandle`, or owned handles `Send`/`Sync`.
 //! - Keep the world on one thread/task. In async runtimes prefer `spawn_local` / `LocalSet`; in
 //!   multi-threaded engines prefer a dedicated physics thread plus channels.
 //! - `set_custom_filter*`, `set_pre_solve*`, `set_friction_callback`, and `set_restitution_callback`
@@ -186,6 +189,8 @@
 //! - At runtime boundaries, prefer `try_*` APIs and handle `ApiError` explicitly.
 //! - `try_*` setters also turn obvious Box2D assert preconditions into recoverable `ApiError`
 //!   values instead of relying on assert-enabled native builds.
+//! - `WorldDef`, `BodyDef`, `ShapeDef`, `SurfaceMaterial`, `JointBase`, and concrete
+//!   `*JointDef` values expose `validate()` for preflight checks before crossing the FFI boundary.
 //!
 //! Events
 //! - Four access styles:

@@ -21,7 +21,8 @@
 //! - Graph color count (`B2_GRAPH_COLOR_COUNT`): internal constraint-coloring
 //!   size. Not exposed.
 //! - Max workers (`B2_MAX_WORKERS`): internal upper bound; configure desired
-//!   threads via `WorldDef::builder().worker_count(n)`.
+//!   worker count via `WorldDef::builder().worker_count(n)`. Actual multithreaded
+//!   stepping still requires task callbacks on the raw `WorldDef` path.
 //!
 //! Safe API controls related to tuning:
 //!
@@ -46,8 +47,8 @@
 //!     `World::maximum_linear_speed`
 //! - Worker threads
 //!   - `WorldBuilder::worker_count`
-//!   - This only changes Box2D's internal worker usage during stepping; `World` itself stays pinned
-//!     to one thread/task.
+//!   - This only affects Box2D's worker usage when a task system is also installed; `World`
+//!     itself stays pinned to one thread/task.
 //!
 //! Notes
 //! - Upstream constants in `src/constants.h` are implementation details and may

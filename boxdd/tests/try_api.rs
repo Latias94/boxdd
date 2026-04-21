@@ -650,6 +650,38 @@ fn try_body_numeric_mutation_invalid_values_return_err() {
 }
 
 #[test]
+fn try_world_numeric_mutation_invalid_values_return_err() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+
+    assert_eq!(
+        world.try_set_gravity([f32::NAN, -10.0]).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        world.try_set_restitution_threshold(f32::NAN).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        world.try_set_hit_event_threshold(-0.5).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        world
+            .try_set_contact_tuning(30.0, f32::NAN, 3.0)
+            .unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        world.try_set_contact_tuning(30.0, 0.7, -1.0).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        world.try_set_maximum_linear_speed(0.0).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+}
+
+#[test]
 fn try_owned_chain_mutation_invalid_id_returns_err() {
     let mut world = World::new(WorldDef::default()).unwrap();
     let body_id = world.create_body_id(BodyBuilder::new().build());

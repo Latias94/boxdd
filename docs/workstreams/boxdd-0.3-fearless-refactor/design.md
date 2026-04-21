@@ -134,6 +134,8 @@ The main intentional raw escape hatches are:
   strings instead of the safe converted callback surface
 - raw user-data pointer APIs (`set_user_data_ptr_raw`, `user_data_ptr_raw`) for interop with
   existing pointer-based ownership schemes
+- `unsafe from_raw(...)` on pointer/callback-bearing config wrappers such as `BodyDef` and
+  `WorldDef`, because those raw structs can carry borrowed strings or executable callbacks
 
 These seams are worth keeping only if:
 

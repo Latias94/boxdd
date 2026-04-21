@@ -32,7 +32,7 @@
 
 | Slice | Status | Notes |
 | --- | --- | --- |
-| creation, builders, value-object inspection, raw conversion symmetry | safe-covered | `BodyDef` is readable and has explicit `from_raw(...)` / `into_raw()`. |
+| creation, builders, value-object inspection, raw conversion symmetry | safe-covered | `BodyDef` is readable, validates the Box2D value-side preconditions, and keeps raw re-entry explicit via `unsafe from_raw(...)` / `into_raw()`. |
 | runtime state, transforms, forces/impulses, sleep/awake/enabled/bullet/name, fast rotation | safe-covered | Owned/scoped/world-id styles are aligned. |
 | attached shape/joint enumeration and contact-data extraction | safe-covered | Hot-path enumeration and contact-data reads support reusable caller-owned buffers. |
 | raw world-id and raw pointer user-data seams | raw-only | Kept explicitly as `*_raw` escape hatches. |
@@ -100,7 +100,7 @@
 
 | Seam | Status | Notes |
 | --- | --- | --- |
-| `from_raw(...)` / `into_raw()` on crate-owned value types | raw-only | Intentional low-level escape hatch; safe vocabulary stays crate-owned, including core math values plus opaque ids such as `BodyId`, `ShapeId`, `JointId`, `ChainId`, and `ContactId`. |
+| `from_raw(...)` / `into_raw()` on crate-owned value types | raw-only | Intentional low-level escape hatch; most crate-owned values keep safe `from_raw(...)`, but pointer/callback-bearing config wrappers such as `BodyDef` and `WorldDef` require `unsafe from_raw(...)`. |
 | `debug_draw_raw` | raw-only | Kept for render backends that want direct FFI slices and strings. |
 | `with_*_events_raw(...)` | raw-only | Explicit unsafe zero-copy access to Box2D event buffers. |
 | `*_user_data_ptr_raw` | raw-only | Kept for pointer-based integration with external ownership systems. |

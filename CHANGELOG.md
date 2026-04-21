@@ -39,6 +39,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - `ApiError::InvalidJointType` for recoverable `try_*` typed-joint runtime misuse when a valid joint is accessed through the wrong family surface.
 - `ApiError::InvalidArgument` for recoverable safe-wrapper validation of obvious Box2D assert preconditions such as non-negative shape material scalars and ordered joint limit/range setters.
 - `validate()` helpers on `BodyDef`, `ShapeDef`, `SurfaceMaterial`, `JointBase`, and concrete joint-definition value objects so engines can preflight definition state before crossing the FFI boundary.
+- `WorldDef::validate()` so world configuration can be preflighted before entering native code, matching the rest of the definition-side value-object cleanup.
 - `ApiError::IndexOutOfRange` for recoverable range-checked runtime index misuse, starting with chain surface-material access.
 - World runtime extras for `Profile` timings, `ExplosionDef`, `World::explode` / `try_explode`, and speculative collision control.
 - `BodyBuilder::allow_fast_rotation`, computed body AABB helpers across `Body`, `OwnedBody`, and `World::body_aabb`, plus read-only `WorldHandle` runtime getters for gravity/counters/profile/awake-count/runtime-tuning state.
@@ -70,7 +71,9 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - The testbed manifold viewer now uses the public safe collision API instead of `boxdd_sys::ffi::b2Collide*`.
 - Owned/scoped `Shape`, `Body`, and `Chain` handles now share private helper implementations for geometry/material/state accessors, body naming, typed user-data plumbing, and common raw escape hatches, reducing internal drift risk without changing the public API.
 - Runtime shape numeric setters and joint limit/range setters now validate their obvious Box2D assert preconditions in the safe wrapper first, so `try_*` callers receive `ApiError::InvalidArgument` instead of depending on upstream assert builds.
-- Body creation, body mass-data mutation, and joint creation now front-load the obvious Box2D definition preconditions in the safe wrapper, so invalid defs fail as Rust panics or `ApiError::InvalidArgument` instead of depending on native assert builds.
+- Body creation, world creation, body mass-data mutation, and joint creation now front-load the obvious Box2D definition preconditions in the safe wrapper, so invalid defs fail as Rust panics or `ApiError::InvalidArgument` instead of depending on native assert builds.
+- World runtime tuning setters now validate gravity vectors and numeric threshold/tuning inputs in the safe wrapper, so `try_*` callers receive `ApiError::InvalidArgument` instead of relying on Box2D clamps or assert-enabled native builds.
+- Breaking: `BodyDef::from_raw(...)` and `WorldDef::from_raw(...)` are now `unsafe` because raw name pointers and raw task/material callback pointers can otherwise flow into later safe creation/stepping paths.
 - Breaking: `JointBase::default()` now mirrors Box2D's actual upstream defaults (`forceThreshold = FLT_MAX`, `torqueThreshold = FLT_MAX`, `constraintHertz = 60`, `constraintDampingRatio = 2`, and `drawScale = length_units_per_meter()`) instead of a partial zeroed approximation.
 - Breaking: `ContactIdExt` has been removed; its `is_valid` / `data` / `data_raw` / `try_*` helpers now live directly on `ContactId`.
 - Breaking: `Chain` / `OwnedChain` runtime material count/get/set helpers now use visible live-segment indexing on open chains instead of Box2D's raw ghost-placeholder material layout; recoverable out-of-range access returns `ApiError::IndexOutOfRange`.

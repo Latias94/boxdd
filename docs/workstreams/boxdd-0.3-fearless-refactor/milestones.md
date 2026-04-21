@@ -156,6 +156,7 @@ Scope:
 - make definition-side value objects such as `ShapeDef` / `ChainDef` readable in the same crate-owned vocabulary used by their builders instead of forcing write-only configuration shells
 - make creation-time config types such as `BodyDef`, `JointBase`, and concrete joint defs readable and correctly named instead of relying on builder-only mutation or legacy misnomers
 - make top-level world config values such as `WorldDef` / `ExplosionDef` readable in the same crate-owned vocabulary instead of leaving them as setup-only shells
+- tighten pointer/callback-bearing config raw re-entry so `BodyDef::from_raw(...)` / `WorldDef::from_raw(...)` become `unsafe`, and validate safe world configuration/tuning inputs before entering Box2D
 - tighten remaining raw pointer user-data seams so their naming is as explicit as the rest of the `*_raw` surface
 - tighten raw event-buffer visitors so borrowed FFI-slice APIs also use explicit `*_raw` naming instead of looking like ordinary safe zero-copy helpers
 - finish raw-boundary symmetry for builder/config wrappers so the remaining config values do not require direct field access just to cross back to Box2D structs

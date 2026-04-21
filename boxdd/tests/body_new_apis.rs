@@ -57,7 +57,7 @@ fn body_def_is_a_readable_value_type_and_can_seed_a_builder() {
     assert!(rebuilt.is_bullet());
     assert!(rebuilt.is_fast_rotation_allowed());
 
-    let roundtrip = BodyDef::from_raw(def.into_raw());
+    let roundtrip = unsafe { BodyDef::from_raw(def.into_raw()) };
     assert_eq!(roundtrip.body_type(), BodyType::Dynamic);
     assert_eq!(roundtrip.position(), Vec2::new(1.5, -2.25));
     assert!(approx_eq(roundtrip.angle(), 0.75, 1.0e-6));
