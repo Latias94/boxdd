@@ -777,6 +777,18 @@ fn try_joint_runtime_helpers_invalid_id_returns_err() {
         handle.try_joint_torque_threshold(joint_id).unwrap_err(),
         ApiError::InvalidJointId
     );
+    assert_eq!(
+        handle.try_distance_length(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        handle.try_prismatic_spring_enabled(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        handle.try_motor_linear_velocity(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
 }
 
 #[test]
@@ -801,6 +813,7 @@ fn try_joint_runtime_controls_wrong_family_returns_err() {
         .anchor_world([0.0_f32, 0.0])
         .build_owned();
     let joint_id = joint.id();
+    let handle = world.handle();
 
     assert_eq!(
         world.try_distance_length(joint_id).unwrap_err(),
@@ -816,6 +829,14 @@ fn try_joint_runtime_controls_wrong_family_returns_err() {
     );
     assert_eq!(
         joint.try_distance_set_length(1.0).unwrap_err(),
+        ApiError::InvalidJointType
+    );
+    assert_eq!(
+        handle.try_distance_length(joint_id).unwrap_err(),
+        ApiError::InvalidJointType
+    );
+    assert_eq!(
+        handle.try_motor_linear_velocity(joint_id).unwrap_err(),
         ApiError::InvalidJointType
     );
 

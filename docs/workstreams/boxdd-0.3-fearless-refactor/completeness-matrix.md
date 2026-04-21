@@ -84,6 +84,7 @@
 | body-by-id read-only runtime mirrors | safe-covered | Includes transforms, velocities, point/vector conversion helpers, mass data, damping/flags, motion locks, and attached shape/joint enumeration without requiring a mutable `World` borrow. |
 | shape-by-id read-only runtime mirrors | safe-covered | Includes material/body lookup, AABB/point/raycast/closest-point helpers, mass data, event-flag reads, and reusable-buffer sensor-overlap enumeration for query-produced `ShapeId` values. |
 | joint-by-id read-only common runtime mirrors | safe-covered | Includes type/body lookup, collision/tuning metadata, local frames, thresholds, separations, and constraint force/torque reads for ids returned by body/world enumeration paths. |
+| joint-by-id read-only typed runtime mirrors | safe-covered | Covers the distance/prismatic/revolute/weld/wheel/motor getter families so query/enumeration-produced `JointId` values can stay on the stored-handle path for family-specific inspection too. |
 | owned event snapshots and reusable-buffer snapshot reads | safe-covered | Mirrors `World` for `*_events`, `*_events_into`, and `try_*` without exposing borrowed/raw buffer lifetimes. |
 | event views and raw event slices | intentional omission | These stay on `World` because they are tied to step-local buffers and deferred-destroy flushing semantics. |
 | mutation, callback registration, stepping | intentional omission | `WorldHandle` remains a cheap stored-query/read-only helper, not a second mutable world API. |

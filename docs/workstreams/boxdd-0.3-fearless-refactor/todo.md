@@ -65,6 +65,7 @@
 - [x] Expand `WorldHandle` from world-level diagnostics into a true stored read-only body query helper by mirroring the pure `body_*` runtime getter/enumeration surface and routing it through shared body helper implementations.
 - [x] Expand `WorldHandle` further into a stored read-only shape query helper by mirroring the pure `shape_*` runtime getter/enumeration surface used after world/query `ShapeId` results and routing it through shared shape helper implementations.
 - [x] Expand `WorldHandle` again into a stored read-only common joint query helper, and close the remaining world-id joint threshold gap so common joint runtime metadata/control no longer drifts between owned/scoped/id styles.
+- [x] Finish the `WorldHandle` joint follow-up by mirroring the typed distance/prismatic/revolute/weld/wheel/motor read-only runtime getter surface so `body_joints()` results can stay on the stored-handle path for family-specific inspection too.
 
 ## In Progress
 

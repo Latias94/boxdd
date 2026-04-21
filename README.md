@@ -139,8 +139,8 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 - `SurfaceMaterial` now behaves like a normal crate-owned value type: builder-style mutation uses `with_*` methods, read access uses getters such as `friction()`, `restitution()`, and `custom_color()`, `custom_color` uses crate-owned `HexColor`, and raw interop stays explicit through `from_raw(...)` / `into_raw()`.
 
 ## Joint Runtime APIs
-- `Joint`, `OwnedJoint`, and `World::joint_*` now stay aligned for common runtime metadata and control: joint type, connected body ids, `collide_connected`, constraint tuning, local frames, and wake helpers.
-- Type-specific runtime getters/setters for distance, prismatic, revolute, weld, wheel, and motor joints are now aligned across `World`, `OwnedJoint`, and scoped `Joint<'_>` handles.
+- `Joint`, `OwnedJoint`, `World::joint_*`, and read-only `WorldHandle::joint_*` now stay aligned for common runtime metadata and control: joint type, connected body ids, `collide_connected`, constraint tuning, local frames, thresholds, and wake helpers.
+- Type-specific runtime getters/setters for distance, prismatic, revolute, weld, wheel, and motor joints are aligned across `World`, `OwnedJoint`, and scoped `Joint<'_>` handles, while `WorldHandle` mirrors the read-only getter half so stored `JointId` values can stay on the handle path.
 - `JointType` and `ConstraintTuning` are crate-owned value types; raw access stays explicit through `joint_type_raw` and `JointType::from_raw(...)` / `into_raw()`.
 - `try_*` typed joint APIs now return `ApiError::InvalidJointType` when a valid joint is used through the wrong family surface.
 - World-space joint builders now preserve previously configured base flags such as `collide_connected` while populating runtime-computed body ids and local frames.
