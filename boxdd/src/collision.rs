@@ -661,14 +661,55 @@ where
     P2: Into<Vec2>,
     Q2: Into<Vec2>,
 {
+    let p1 = p1.into();
+    let q1 = q1.into();
+    let p2 = p2.into();
+    let q2 = q2.into();
+    assert_collision_input_valid(
+        "segment_distance p1",
+        check_collision_vec2_valid(p1).is_ok(),
+    );
+    assert_collision_input_valid(
+        "segment_distance q1",
+        check_collision_vec2_valid(q1).is_ok(),
+    );
+    assert_collision_input_valid(
+        "segment_distance p2",
+        check_collision_vec2_valid(p2).is_ok(),
+    );
+    assert_collision_input_valid(
+        "segment_distance q2",
+        check_collision_vec2_valid(q2).is_ok(),
+    );
     SegmentDistanceResult::from_raw(unsafe {
-        ffi::b2SegmentDistance(
-            p1.into().into_raw(),
-            q1.into().into_raw(),
-            p2.into().into_raw(),
-            q2.into().into_raw(),
-        )
+        ffi::b2SegmentDistance(p1.into_raw(), q1.into_raw(), p2.into_raw(), q2.into_raw())
     })
+}
+
+/// Compute the closest points between two line segments with recoverable validation.
+pub fn try_segment_distance<P1, Q1, P2, Q2>(
+    p1: P1,
+    q1: Q1,
+    p2: P2,
+    q2: Q2,
+) -> ApiResult<SegmentDistanceResult>
+where
+    P1: Into<Vec2>,
+    Q1: Into<Vec2>,
+    P2: Into<Vec2>,
+    Q2: Into<Vec2>,
+{
+    let p1 = p1.into();
+    let q1 = q1.into();
+    let p2 = p2.into();
+    let q2 = q2.into();
+    check_collision_vec2_valid(p1)?;
+    check_collision_vec2_valid(q1)?;
+    check_collision_vec2_valid(p2)?;
+    check_collision_vec2_valid(q2)?;
+    Ok(SegmentDistanceResult::from_raw(unsafe {
+        ffi::b2SegmentDistance(p1.into_raw(), q1.into_raw(), p2.into_raw(), q2.into_raw())
+    }))
 }
 
 /// Compute the closest distance between two shape proxies.
@@ -732,6 +773,16 @@ pub fn collide_circles(
     circle_b: Circle,
     transform_b: Transform,
 ) -> Manifold {
+    assert_collision_input_valid("circle_a", circle_a.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_a",
+        check_collision_transform_valid(transform_a).is_ok(),
+    );
+    assert_collision_input_valid("circle_b", circle_b.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_b",
+        check_collision_transform_valid(transform_b).is_ok(),
+    );
     let raw_a = circle_a.into_raw();
     let raw_b = circle_b.into_raw();
     Manifold::from_raw(unsafe {
@@ -744,6 +795,29 @@ pub fn collide_circles(
     })
 }
 
+/// Compute the contact manifold between two circles with recoverable validation.
+pub fn try_collide_circles(
+    circle_a: Circle,
+    transform_a: Transform,
+    circle_b: Circle,
+    transform_b: Transform,
+) -> ApiResult<Manifold> {
+    circle_a.validate()?;
+    check_collision_transform_valid(transform_a)?;
+    circle_b.validate()?;
+    check_collision_transform_valid(transform_b)?;
+    let raw_a = circle_a.into_raw();
+    let raw_b = circle_b.into_raw();
+    Ok(Manifold::from_raw(unsafe {
+        ffi::b2CollideCircles(
+            &raw_a,
+            transform_a.into_raw(),
+            &raw_b,
+            transform_b.into_raw(),
+        )
+    }))
+}
+
 /// Compute the contact manifold between a capsule and a circle.
 #[doc(alias = "b2CollideCapsuleAndCircle")]
 pub fn collide_capsule_and_circle(
@@ -752,6 +826,16 @@ pub fn collide_capsule_and_circle(
     circle_b: Circle,
     transform_b: Transform,
 ) -> Manifold {
+    assert_collision_input_valid("capsule_a", capsule_a.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_a",
+        check_collision_transform_valid(transform_a).is_ok(),
+    );
+    assert_collision_input_valid("circle_b", circle_b.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_b",
+        check_collision_transform_valid(transform_b).is_ok(),
+    );
     let raw_a = capsule_a.into_raw();
     let raw_b = circle_b.into_raw();
     Manifold::from_raw(unsafe {
@@ -764,6 +848,29 @@ pub fn collide_capsule_and_circle(
     })
 }
 
+/// Compute the contact manifold between a capsule and a circle with recoverable validation.
+pub fn try_collide_capsule_and_circle(
+    capsule_a: Capsule,
+    transform_a: Transform,
+    circle_b: Circle,
+    transform_b: Transform,
+) -> ApiResult<Manifold> {
+    capsule_a.validate()?;
+    check_collision_transform_valid(transform_a)?;
+    circle_b.validate()?;
+    check_collision_transform_valid(transform_b)?;
+    let raw_a = capsule_a.into_raw();
+    let raw_b = circle_b.into_raw();
+    Ok(Manifold::from_raw(unsafe {
+        ffi::b2CollideCapsuleAndCircle(
+            &raw_a,
+            transform_a.into_raw(),
+            &raw_b,
+            transform_b.into_raw(),
+        )
+    }))
+}
+
 /// Compute the contact manifold between a segment and a circle.
 #[doc(alias = "b2CollideSegmentAndCircle")]
 pub fn collide_segment_and_circle(
@@ -772,6 +879,16 @@ pub fn collide_segment_and_circle(
     circle_b: Circle,
     transform_b: Transform,
 ) -> Manifold {
+    assert_collision_input_valid("segment_a", segment_a.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_a",
+        check_collision_transform_valid(transform_a).is_ok(),
+    );
+    assert_collision_input_valid("circle_b", circle_b.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_b",
+        check_collision_transform_valid(transform_b).is_ok(),
+    );
     let raw_a = segment_a.into_raw();
     let raw_b = circle_b.into_raw();
     Manifold::from_raw(unsafe {
@@ -784,6 +901,29 @@ pub fn collide_segment_and_circle(
     })
 }
 
+/// Compute the contact manifold between a segment and a circle with recoverable validation.
+pub fn try_collide_segment_and_circle(
+    segment_a: Segment,
+    transform_a: Transform,
+    circle_b: Circle,
+    transform_b: Transform,
+) -> ApiResult<Manifold> {
+    segment_a.validate()?;
+    check_collision_transform_valid(transform_a)?;
+    circle_b.validate()?;
+    check_collision_transform_valid(transform_b)?;
+    let raw_a = segment_a.into_raw();
+    let raw_b = circle_b.into_raw();
+    Ok(Manifold::from_raw(unsafe {
+        ffi::b2CollideSegmentAndCircle(
+            &raw_a,
+            transform_a.into_raw(),
+            &raw_b,
+            transform_b.into_raw(),
+        )
+    }))
+}
+
 /// Compute the contact manifold between a polygon and a circle.
 #[doc(alias = "b2CollidePolygonAndCircle")]
 pub fn collide_polygon_and_circle(
@@ -792,6 +932,16 @@ pub fn collide_polygon_and_circle(
     circle_b: Circle,
     transform_b: Transform,
 ) -> Manifold {
+    assert_collision_input_valid("polygon_a", polygon_a.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_a",
+        check_collision_transform_valid(transform_a).is_ok(),
+    );
+    assert_collision_input_valid("circle_b", circle_b.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_b",
+        check_collision_transform_valid(transform_b).is_ok(),
+    );
     let raw_a = polygon_a.into_raw();
     let raw_b = circle_b.into_raw();
     Manifold::from_raw(unsafe {
@@ -804,6 +954,29 @@ pub fn collide_polygon_and_circle(
     })
 }
 
+/// Compute the contact manifold between a polygon and a circle with recoverable validation.
+pub fn try_collide_polygon_and_circle(
+    polygon_a: Polygon,
+    transform_a: Transform,
+    circle_b: Circle,
+    transform_b: Transform,
+) -> ApiResult<Manifold> {
+    polygon_a.validate()?;
+    check_collision_transform_valid(transform_a)?;
+    circle_b.validate()?;
+    check_collision_transform_valid(transform_b)?;
+    let raw_a = polygon_a.into_raw();
+    let raw_b = circle_b.into_raw();
+    Ok(Manifold::from_raw(unsafe {
+        ffi::b2CollidePolygonAndCircle(
+            &raw_a,
+            transform_a.into_raw(),
+            &raw_b,
+            transform_b.into_raw(),
+        )
+    }))
+}
+
 /// Compute the contact manifold between two capsules.
 #[doc(alias = "b2CollideCapsules")]
 pub fn collide_capsules(
@@ -812,6 +985,16 @@ pub fn collide_capsules(
     capsule_b: Capsule,
     transform_b: Transform,
 ) -> Manifold {
+    assert_collision_input_valid("capsule_a", capsule_a.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_a",
+        check_collision_transform_valid(transform_a).is_ok(),
+    );
+    assert_collision_input_valid("capsule_b", capsule_b.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_b",
+        check_collision_transform_valid(transform_b).is_ok(),
+    );
     let raw_a = capsule_a.into_raw();
     let raw_b = capsule_b.into_raw();
     Manifold::from_raw(unsafe {
@@ -824,6 +1007,29 @@ pub fn collide_capsules(
     })
 }
 
+/// Compute the contact manifold between two capsules with recoverable validation.
+pub fn try_collide_capsules(
+    capsule_a: Capsule,
+    transform_a: Transform,
+    capsule_b: Capsule,
+    transform_b: Transform,
+) -> ApiResult<Manifold> {
+    capsule_a.validate()?;
+    check_collision_transform_valid(transform_a)?;
+    capsule_b.validate()?;
+    check_collision_transform_valid(transform_b)?;
+    let raw_a = capsule_a.into_raw();
+    let raw_b = capsule_b.into_raw();
+    Ok(Manifold::from_raw(unsafe {
+        ffi::b2CollideCapsules(
+            &raw_a,
+            transform_a.into_raw(),
+            &raw_b,
+            transform_b.into_raw(),
+        )
+    }))
+}
+
 /// Compute the contact manifold between a segment and a capsule.
 #[doc(alias = "b2CollideSegmentAndCapsule")]
 pub fn collide_segment_and_capsule(
@@ -832,6 +1038,16 @@ pub fn collide_segment_and_capsule(
     capsule_b: Capsule,
     transform_b: Transform,
 ) -> Manifold {
+    assert_collision_input_valid("segment_a", segment_a.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_a",
+        check_collision_transform_valid(transform_a).is_ok(),
+    );
+    assert_collision_input_valid("capsule_b", capsule_b.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_b",
+        check_collision_transform_valid(transform_b).is_ok(),
+    );
     let raw_a = segment_a.into_raw();
     let raw_b = capsule_b.into_raw();
     Manifold::from_raw(unsafe {
@@ -844,6 +1060,29 @@ pub fn collide_segment_and_capsule(
     })
 }
 
+/// Compute the contact manifold between a segment and a capsule with recoverable validation.
+pub fn try_collide_segment_and_capsule(
+    segment_a: Segment,
+    transform_a: Transform,
+    capsule_b: Capsule,
+    transform_b: Transform,
+) -> ApiResult<Manifold> {
+    segment_a.validate()?;
+    check_collision_transform_valid(transform_a)?;
+    capsule_b.validate()?;
+    check_collision_transform_valid(transform_b)?;
+    let raw_a = segment_a.into_raw();
+    let raw_b = capsule_b.into_raw();
+    Ok(Manifold::from_raw(unsafe {
+        ffi::b2CollideSegmentAndCapsule(
+            &raw_a,
+            transform_a.into_raw(),
+            &raw_b,
+            transform_b.into_raw(),
+        )
+    }))
+}
+
 /// Compute the contact manifold between a polygon and a capsule.
 #[doc(alias = "b2CollidePolygonAndCapsule")]
 pub fn collide_polygon_and_capsule(
@@ -852,6 +1091,16 @@ pub fn collide_polygon_and_capsule(
     capsule_b: Capsule,
     transform_b: Transform,
 ) -> Manifold {
+    assert_collision_input_valid("polygon_a", polygon_a.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_a",
+        check_collision_transform_valid(transform_a).is_ok(),
+    );
+    assert_collision_input_valid("capsule_b", capsule_b.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_b",
+        check_collision_transform_valid(transform_b).is_ok(),
+    );
     let raw_a = polygon_a.into_raw();
     let raw_b = capsule_b.into_raw();
     Manifold::from_raw(unsafe {
@@ -864,6 +1113,29 @@ pub fn collide_polygon_and_capsule(
     })
 }
 
+/// Compute the contact manifold between a polygon and a capsule with recoverable validation.
+pub fn try_collide_polygon_and_capsule(
+    polygon_a: Polygon,
+    transform_a: Transform,
+    capsule_b: Capsule,
+    transform_b: Transform,
+) -> ApiResult<Manifold> {
+    polygon_a.validate()?;
+    check_collision_transform_valid(transform_a)?;
+    capsule_b.validate()?;
+    check_collision_transform_valid(transform_b)?;
+    let raw_a = polygon_a.into_raw();
+    let raw_b = capsule_b.into_raw();
+    Ok(Manifold::from_raw(unsafe {
+        ffi::b2CollidePolygonAndCapsule(
+            &raw_a,
+            transform_a.into_raw(),
+            &raw_b,
+            transform_b.into_raw(),
+        )
+    }))
+}
+
 /// Compute the contact manifold between two polygons.
 #[doc(alias = "b2CollidePolygons")]
 pub fn collide_polygons(
@@ -872,6 +1144,16 @@ pub fn collide_polygons(
     polygon_b: Polygon,
     transform_b: Transform,
 ) -> Manifold {
+    assert_collision_input_valid("polygon_a", polygon_a.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_a",
+        check_collision_transform_valid(transform_a).is_ok(),
+    );
+    assert_collision_input_valid("polygon_b", polygon_b.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_b",
+        check_collision_transform_valid(transform_b).is_ok(),
+    );
     let raw_a = polygon_a.into_raw();
     let raw_b = polygon_b.into_raw();
     Manifold::from_raw(unsafe {
@@ -884,6 +1166,29 @@ pub fn collide_polygons(
     })
 }
 
+/// Compute the contact manifold between two polygons with recoverable validation.
+pub fn try_collide_polygons(
+    polygon_a: Polygon,
+    transform_a: Transform,
+    polygon_b: Polygon,
+    transform_b: Transform,
+) -> ApiResult<Manifold> {
+    polygon_a.validate()?;
+    check_collision_transform_valid(transform_a)?;
+    polygon_b.validate()?;
+    check_collision_transform_valid(transform_b)?;
+    let raw_a = polygon_a.into_raw();
+    let raw_b = polygon_b.into_raw();
+    Ok(Manifold::from_raw(unsafe {
+        ffi::b2CollidePolygons(
+            &raw_a,
+            transform_a.into_raw(),
+            &raw_b,
+            transform_b.into_raw(),
+        )
+    }))
+}
+
 /// Compute the contact manifold between a segment and a polygon.
 #[doc(alias = "b2CollideSegmentAndPolygon")]
 pub fn collide_segment_and_polygon(
@@ -892,6 +1197,16 @@ pub fn collide_segment_and_polygon(
     polygon_b: Polygon,
     transform_b: Transform,
 ) -> Manifold {
+    assert_collision_input_valid("segment_a", segment_a.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_a",
+        check_collision_transform_valid(transform_a).is_ok(),
+    );
+    assert_collision_input_valid("polygon_b", polygon_b.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_b",
+        check_collision_transform_valid(transform_b).is_ok(),
+    );
     let raw_a = segment_a.into_raw();
     let raw_b = polygon_b.into_raw();
     Manifold::from_raw(unsafe {
@@ -904,6 +1219,29 @@ pub fn collide_segment_and_polygon(
     })
 }
 
+/// Compute the contact manifold between a segment and a polygon with recoverable validation.
+pub fn try_collide_segment_and_polygon(
+    segment_a: Segment,
+    transform_a: Transform,
+    polygon_b: Polygon,
+    transform_b: Transform,
+) -> ApiResult<Manifold> {
+    segment_a.validate()?;
+    check_collision_transform_valid(transform_a)?;
+    polygon_b.validate()?;
+    check_collision_transform_valid(transform_b)?;
+    let raw_a = segment_a.into_raw();
+    let raw_b = polygon_b.into_raw();
+    Ok(Manifold::from_raw(unsafe {
+        ffi::b2CollideSegmentAndPolygon(
+            &raw_a,
+            transform_a.into_raw(),
+            &raw_b,
+            transform_b.into_raw(),
+        )
+    }))
+}
+
 /// Compute the contact manifold between a chain segment and a circle.
 #[doc(alias = "b2CollideChainSegmentAndCircle")]
 pub fn collide_chain_segment_and_circle(
@@ -912,6 +1250,16 @@ pub fn collide_chain_segment_and_circle(
     circle_b: Circle,
     transform_b: Transform,
 ) -> Manifold {
+    assert_collision_input_valid("segment_a", segment_a.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_a",
+        check_collision_transform_valid(transform_a).is_ok(),
+    );
+    assert_collision_input_valid("circle_b", circle_b.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_b",
+        check_collision_transform_valid(transform_b).is_ok(),
+    );
     let raw_a = segment_a.into_raw();
     let raw_b = circle_b.into_raw();
     Manifold::from_raw(unsafe {
@@ -922,6 +1270,29 @@ pub fn collide_chain_segment_and_circle(
             transform_b.into_raw(),
         )
     })
+}
+
+/// Compute the contact manifold between a chain segment and a circle with recoverable validation.
+pub fn try_collide_chain_segment_and_circle(
+    segment_a: ChainSegment,
+    transform_a: Transform,
+    circle_b: Circle,
+    transform_b: Transform,
+) -> ApiResult<Manifold> {
+    segment_a.validate()?;
+    check_collision_transform_valid(transform_a)?;
+    circle_b.validate()?;
+    check_collision_transform_valid(transform_b)?;
+    let raw_a = segment_a.into_raw();
+    let raw_b = circle_b.into_raw();
+    Ok(Manifold::from_raw(unsafe {
+        ffi::b2CollideChainSegmentAndCircle(
+            &raw_a,
+            transform_a.into_raw(),
+            &raw_b,
+            transform_b.into_raw(),
+        )
+    }))
 }
 
 /// Compute the contact manifold between a chain segment and a capsule.
@@ -936,6 +1307,16 @@ pub fn collide_chain_segment_and_capsule(
     transform_b: Transform,
     cache: Option<&mut SimplexCache>,
 ) -> Manifold {
+    assert_collision_input_valid("segment_a", segment_a.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_a",
+        check_collision_transform_valid(transform_a).is_ok(),
+    );
+    assert_collision_input_valid("capsule_b", capsule_b.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_b",
+        check_collision_transform_valid(transform_b).is_ok(),
+    );
     let raw_a = segment_a.into_raw();
     let raw_b = capsule_b.into_raw();
     let cache_ptr = match cache {
@@ -953,6 +1334,35 @@ pub fn collide_chain_segment_and_capsule(
     })
 }
 
+/// Compute the contact manifold between a chain segment and a capsule with recoverable validation.
+pub fn try_collide_chain_segment_and_capsule(
+    segment_a: ChainSegment,
+    transform_a: Transform,
+    capsule_b: Capsule,
+    transform_b: Transform,
+    cache: Option<&mut SimplexCache>,
+) -> ApiResult<Manifold> {
+    segment_a.validate()?;
+    check_collision_transform_valid(transform_a)?;
+    capsule_b.validate()?;
+    check_collision_transform_valid(transform_b)?;
+    let raw_a = segment_a.into_raw();
+    let raw_b = capsule_b.into_raw();
+    let cache_ptr = match cache {
+        Some(cache) => cache.raw_mut(),
+        None => core::ptr::null_mut(),
+    };
+    Ok(Manifold::from_raw(unsafe {
+        ffi::b2CollideChainSegmentAndCapsule(
+            &raw_a,
+            transform_a.into_raw(),
+            &raw_b,
+            transform_b.into_raw(),
+            cache_ptr,
+        )
+    }))
+}
+
 /// Compute the contact manifold between a chain segment and a polygon.
 ///
 /// Provide `cache` when repeatedly colliding against nearby rounded polygons to
@@ -965,6 +1375,16 @@ pub fn collide_chain_segment_and_polygon(
     transform_b: Transform,
     cache: Option<&mut SimplexCache>,
 ) -> Manifold {
+    assert_collision_input_valid("segment_a", segment_a.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_a",
+        check_collision_transform_valid(transform_a).is_ok(),
+    );
+    assert_collision_input_valid("polygon_b", polygon_b.validate().is_ok());
+    assert_collision_input_valid(
+        "transform_b",
+        check_collision_transform_valid(transform_b).is_ok(),
+    );
     let raw_a = segment_a.into_raw();
     let raw_b = polygon_b.into_raw();
     let cache_ptr = match cache {
@@ -980,6 +1400,35 @@ pub fn collide_chain_segment_and_polygon(
             cache_ptr,
         )
     })
+}
+
+/// Compute the contact manifold between a chain segment and a polygon with recoverable validation.
+pub fn try_collide_chain_segment_and_polygon(
+    segment_a: ChainSegment,
+    transform_a: Transform,
+    polygon_b: Polygon,
+    transform_b: Transform,
+    cache: Option<&mut SimplexCache>,
+) -> ApiResult<Manifold> {
+    segment_a.validate()?;
+    check_collision_transform_valid(transform_a)?;
+    polygon_b.validate()?;
+    check_collision_transform_valid(transform_b)?;
+    let raw_a = segment_a.into_raw();
+    let raw_b = polygon_b.into_raw();
+    let cache_ptr = match cache {
+        Some(cache) => cache.raw_mut(),
+        None => core::ptr::null_mut(),
+    };
+    Ok(Manifold::from_raw(unsafe {
+        ffi::b2CollideChainSegmentAndPolygon(
+            &raw_a,
+            transform_a.into_raw(),
+            &raw_b,
+            transform_b.into_raw(),
+            cache_ptr,
+        )
+    }))
 }
 
 impl Aabb {

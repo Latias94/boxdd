@@ -93,7 +93,8 @@ Scope:
 - typed restitution callback API
 - standalone `collision` module for shape proxies, GJK distance, shape cast, and TOI
 - `Aabb::is_valid()` and `Aabb::ray_cast(origin, translation)`
-- recoverable validation for standalone collision inputs and `try_*` entrypoints for distance/shape-cast/TOI
+- recoverable validation for standalone collision inputs and `try_*` entrypoints for segment-distance / distance / shape-cast / TOI / manifold helpers
+- geometry value validation on `Circle` / `Segment` / `ChainSegment` / `Capsule` / `Polygon`, wired through shape create/edit entrypoints
 
 Exit criteria:
 

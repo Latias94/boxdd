@@ -66,6 +66,7 @@ fn world_create_circle_shape_for_impl(
 ) -> ShapeId {
     crate::core::debug_checks::assert_body_valid(body);
     crate::shapes::assert_shape_def_valid(def);
+    crate::shapes::assert_circle_geometry_valid(circle);
     let raw = circle.into_raw();
     let sid =
         ShapeId::from_raw(unsafe { ffi::b2CreateCircleShape(raw_body_id(body), &def.0, &raw) });
@@ -84,6 +85,7 @@ fn world_create_segment_shape_for_impl(
 ) -> ShapeId {
     crate::core::debug_checks::assert_body_valid(body);
     crate::shapes::assert_shape_def_valid(def);
+    crate::shapes::assert_segment_geometry_valid(segment);
     let raw = segment.into_raw();
     let sid =
         ShapeId::from_raw(unsafe { ffi::b2CreateSegmentShape(raw_body_id(body), &def.0, &raw) });
@@ -102,6 +104,7 @@ fn world_create_capsule_shape_for_impl(
 ) -> ShapeId {
     crate::core::debug_checks::assert_body_valid(body);
     crate::shapes::assert_shape_def_valid(def);
+    crate::shapes::assert_capsule_geometry_valid(capsule);
     let raw = capsule.into_raw();
     let sid =
         ShapeId::from_raw(unsafe { ffi::b2CreateCapsuleShape(raw_body_id(body), &def.0, &raw) });
@@ -120,6 +123,7 @@ fn world_create_polygon_shape_for_impl(
 ) -> ShapeId {
     crate::core::debug_checks::assert_body_valid(body);
     crate::shapes::assert_shape_def_valid(def);
+    crate::shapes::assert_polygon_geometry_valid(polygon);
     let raw = polygon.into_raw();
     let sid =
         ShapeId::from_raw(unsafe { ffi::b2CreatePolygonShape(raw_body_id(body), &def.0, &raw) });
@@ -132,6 +136,7 @@ fn world_create_polygon_shape_for_impl(
 
 fn world_shape_set_circle_impl(shape: ShapeId, circle: &crate::shapes::Circle) {
     crate::core::debug_checks::assert_shape_valid(shape);
+    crate::shapes::assert_circle_geometry_valid(circle);
     let raw = circle.into_raw();
     unsafe { ffi::b2Shape_SetCircle(raw_shape_id(shape), &raw) }
 }
@@ -141,6 +146,7 @@ fn try_world_shape_set_circle_impl(
     circle: &crate::shapes::Circle,
 ) -> crate::error::ApiResult<()> {
     crate::core::debug_checks::check_shape_valid(shape)?;
+    crate::shapes::check_circle_geometry_valid(circle)?;
     let raw = circle.into_raw();
     unsafe { ffi::b2Shape_SetCircle(raw_shape_id(shape), &raw) }
     Ok(())
@@ -148,6 +154,7 @@ fn try_world_shape_set_circle_impl(
 
 fn world_shape_set_segment_impl(shape: ShapeId, segment: &crate::shapes::Segment) {
     crate::core::debug_checks::assert_shape_valid(shape);
+    crate::shapes::assert_segment_geometry_valid(segment);
     let raw = segment.into_raw();
     unsafe { ffi::b2Shape_SetSegment(raw_shape_id(shape), &raw) }
 }
@@ -157,6 +164,7 @@ fn try_world_shape_set_segment_impl(
     segment: &crate::shapes::Segment,
 ) -> crate::error::ApiResult<()> {
     crate::core::debug_checks::check_shape_valid(shape)?;
+    crate::shapes::check_segment_geometry_valid(segment)?;
     let raw = segment.into_raw();
     unsafe { ffi::b2Shape_SetSegment(raw_shape_id(shape), &raw) }
     Ok(())
@@ -164,6 +172,7 @@ fn try_world_shape_set_segment_impl(
 
 fn world_shape_set_capsule_impl(shape: ShapeId, capsule: &crate::shapes::Capsule) {
     crate::core::debug_checks::assert_shape_valid(shape);
+    crate::shapes::assert_capsule_geometry_valid(capsule);
     let raw = capsule.into_raw();
     unsafe { ffi::b2Shape_SetCapsule(raw_shape_id(shape), &raw) }
 }
@@ -173,6 +182,7 @@ fn try_world_shape_set_capsule_impl(
     capsule: &crate::shapes::Capsule,
 ) -> crate::error::ApiResult<()> {
     crate::core::debug_checks::check_shape_valid(shape)?;
+    crate::shapes::check_capsule_geometry_valid(capsule)?;
     let raw = capsule.into_raw();
     unsafe { ffi::b2Shape_SetCapsule(raw_shape_id(shape), &raw) }
     Ok(())
@@ -180,6 +190,7 @@ fn try_world_shape_set_capsule_impl(
 
 fn world_shape_set_polygon_impl(shape: ShapeId, polygon: &crate::shapes::Polygon) {
     crate::core::debug_checks::assert_shape_valid(shape);
+    crate::shapes::assert_polygon_geometry_valid(polygon);
     let raw = polygon.into_raw();
     unsafe { ffi::b2Shape_SetPolygon(raw_shape_id(shape), &raw) }
 }
@@ -189,6 +200,7 @@ fn try_world_shape_set_polygon_impl(
     polygon: &crate::shapes::Polygon,
 ) -> crate::error::ApiResult<()> {
     crate::core::debug_checks::check_shape_valid(shape)?;
+    crate::shapes::check_polygon_geometry_valid(polygon)?;
     let raw = polygon.into_raw();
     unsafe { ffi::b2Shape_SetPolygon(raw_shape_id(shape), &raw) }
     Ok(())

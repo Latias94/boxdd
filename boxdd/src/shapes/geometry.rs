@@ -1,6 +1,7 @@
 use crate::{
     collision::CastOutput,
     core::math::Transform,
+    error::{ApiError, ApiResult},
     query::Aabb,
     types::{MassData, Vec2},
 };
@@ -46,7 +47,11 @@ where
         if pts.len() == MAX_POLYGON_INPUT_POINTS {
             return None;
         }
-        pts.push(point.into().into_raw());
+        let point = point.into();
+        if !point.is_valid() {
+            return None;
+        }
+        pts.push(point.into_raw());
     }
 
     if pts.is_empty() || pts.len() > MAX_POLYGON_VERTICES {
@@ -65,6 +70,58 @@ where
     let pts = collect_polygon_points(points)?;
     let hull = unsafe { ffi::b2ComputeHull(pts.as_ptr(), pts.len() as i32) };
     (hull.count > 0).then_some(hull)
+}
+
+#[inline]
+fn geometry_scalar_is_non_negative_finite(value: f32) -> bool {
+    crate::is_valid_float(value) && value >= 0.0
+}
+
+#[inline]
+fn minimum_shape_segment_length_squared() -> f32 {
+    let linear_slop = 0.005 * crate::length_units_per_meter();
+    linear_slop * linear_slop
+}
+
+#[inline]
+fn point_pair_has_minimum_separation(a: Vec2, b: Vec2) -> bool {
+    let dx = b.x - a.x;
+    let dy = b.y - a.y;
+    dx * dx + dy * dy > minimum_shape_segment_length_squared()
+}
+
+#[inline]
+fn geometry_is_valid_or_err(valid: bool) -> ApiResult<()> {
+    if valid {
+        Ok(())
+    } else {
+        Err(ApiError::InvalidArgument)
+    }
+}
+
+#[track_caller]
+fn assert_positive_finite_polygon_scalar(name: &str, value: f32) {
+    assert!(
+        crate::is_valid_float(value) && value > 0.0,
+        "{name} must be finite and > 0.0, got {value}"
+    );
+}
+
+#[track_caller]
+fn assert_non_negative_finite_polygon_scalar(name: &str, value: f32) {
+    assert!(
+        geometry_scalar_is_non_negative_finite(value),
+        "{name} must be finite and >= 0.0, got {value}"
+    );
+}
+
+#[track_caller]
+fn assert_transform_valid(transform: Transform) {
+    assert!(
+        transform.is_valid(),
+        "transform must be a valid Box2D transform, got {:?}",
+        transform
+    );
 }
 
 /// Circle geometry in local shape space.
@@ -101,6 +158,18 @@ impl Circle {
             center: self.center.into_raw(),
             radius: self.radius,
         }
+    }
+
+    #[inline]
+    /// Validate this circle for safe Box2D shape and standalone collision use.
+    pub fn is_valid(self) -> bool {
+        self.center.is_valid() && geometry_scalar_is_non_negative_finite(self.radius)
+    }
+
+    #[inline]
+    /// Validate this circle for safe Box2D shape and standalone collision use.
+    pub fn validate(self) -> ApiResult<()> {
+        geometry_is_valid_or_err(self.is_valid())
     }
 
     #[inline]
@@ -167,6 +236,20 @@ impl Segment {
             point1: self.point1.into_raw(),
             point2: self.point2.into_raw(),
         }
+    }
+
+    #[inline]
+    /// Validate this segment for safe Box2D shape and standalone collision use.
+    pub fn is_valid(self) -> bool {
+        self.point1.is_valid()
+            && self.point2.is_valid()
+            && point_pair_has_minimum_separation(self.point1, self.point2)
+    }
+
+    #[inline]
+    /// Validate this segment for safe Box2D shape and standalone collision use.
+    pub fn validate(self) -> ApiResult<()> {
+        geometry_is_valid_or_err(self.is_valid())
     }
 
     #[inline]
@@ -257,6 +340,18 @@ impl ChainSegment {
             chainId: self.chain_id,
         }
     }
+
+    #[inline]
+    /// Validate this chain segment for standalone collision use.
+    pub fn is_valid(self) -> bool {
+        self.ghost1.is_valid() && self.segment.is_valid() && self.ghost2.is_valid()
+    }
+
+    #[inline]
+    /// Validate this chain segment for standalone collision use.
+    pub fn validate(self) -> ApiResult<()> {
+        geometry_is_valid_or_err(self.is_valid())
+    }
 }
 
 impl fmt::Debug for ChainSegment {
@@ -314,6 +409,21 @@ impl Capsule {
             center2: self.center2.into_raw(),
             radius: self.radius,
         }
+    }
+
+    #[inline]
+    /// Validate this capsule for safe Box2D shape and standalone collision use.
+    pub fn is_valid(self) -> bool {
+        self.center1.is_valid()
+            && self.center2.is_valid()
+            && geometry_scalar_is_non_negative_finite(self.radius)
+            && point_pair_has_minimum_separation(self.center1, self.center2)
+    }
+
+    #[inline]
+    /// Validate this capsule for safe Box2D shape and standalone collision use.
+    pub fn validate(self) -> ApiResult<()> {
+        geometry_is_valid_or_err(self.is_valid())
     }
 
     #[inline]
@@ -400,22 +510,52 @@ impl Polygon {
     }
 
     #[inline]
+    /// Validate this polygon for safe Box2D shape and standalone collision use.
+    pub fn is_valid(self) -> bool {
+        if !(1..=MAX_POLYGON_VERTICES as i32).contains(&self.raw.count) {
+            return false;
+        }
+        if !Vec2::from_raw(self.raw.centroid).is_valid()
+            || !geometry_scalar_is_non_negative_finite(self.raw.radius)
+        {
+            return false;
+        }
+        self.vertices().iter().copied().all(Vec2::is_valid)
+            && self.normals().iter().copied().all(Vec2::is_valid)
+    }
+
+    #[inline]
+    /// Validate this polygon for safe Box2D shape and standalone collision use.
+    pub fn validate(self) -> ApiResult<()> {
+        geometry_is_valid_or_err(self.is_valid())
+    }
+
+    #[inline]
     pub fn square_polygon(half_width: f32) -> Self {
+        assert_positive_finite_polygon_scalar("half_width", half_width);
         Self::from_raw(unsafe { ffi::b2MakeSquare(half_width) })
     }
 
     #[inline]
     pub fn box_polygon(half_width: f32, half_height: f32) -> Self {
+        assert_positive_finite_polygon_scalar("half_width", half_width);
+        assert_positive_finite_polygon_scalar("half_height", half_height);
         Self::from_raw(unsafe { ffi::b2MakeBox(half_width, half_height) })
     }
 
     #[inline]
     pub fn rounded_box_polygon(half_width: f32, half_height: f32, radius: f32) -> Self {
+        assert_positive_finite_polygon_scalar("half_width", half_width);
+        assert_positive_finite_polygon_scalar("half_height", half_height);
+        assert_non_negative_finite_polygon_scalar("radius", radius);
         Self::from_raw(unsafe { ffi::b2MakeRoundedBox(half_width, half_height, radius) })
     }
 
     #[inline]
     pub fn offset_box_polygon(half_width: f32, half_height: f32, transform: Transform) -> Self {
+        assert_positive_finite_polygon_scalar("half_width", half_width);
+        assert_positive_finite_polygon_scalar("half_height", half_height);
+        assert_transform_valid(transform);
         Self::from_raw(unsafe {
             ffi::b2MakeOffsetBox(
                 half_width,
@@ -433,6 +573,10 @@ impl Polygon {
         radius: f32,
         transform: Transform,
     ) -> Self {
+        assert_positive_finite_polygon_scalar("half_width", half_width);
+        assert_positive_finite_polygon_scalar("half_height", half_height);
+        assert_non_negative_finite_polygon_scalar("radius", radius);
+        assert_transform_valid(transform);
         Self::from_raw(unsafe {
             ffi::b2MakeOffsetRoundedBox(
                 half_width,
@@ -450,6 +594,9 @@ impl Polygon {
         I: IntoIterator<Item = P>,
         P: Into<Vec2>,
     {
+        if !geometry_scalar_is_non_negative_finite(radius) {
+            return None;
+        }
         let hull = compute_hull_from_points(points)?;
         Some(Self::from_raw(unsafe { ffi::b2MakePolygon(&hull, radius) }))
     }
@@ -460,6 +607,9 @@ impl Polygon {
         I: IntoIterator<Item = P>,
         P: Into<Vec2>,
     {
+        if !geometry_scalar_is_non_negative_finite(radius) || !transform.is_valid() {
+            return None;
+        }
         let hull = compute_hull_from_points(points)?;
         Some(Self::from_raw(unsafe {
             if radius == 0.0 {

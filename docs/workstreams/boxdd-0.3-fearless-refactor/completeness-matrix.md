@@ -41,10 +41,17 @@
 
 | Slice | Status | Notes |
 | --- | --- | --- |
-| crate-owned geometry values and shape create/edit/get/set helpers | safe-covered | Main API no longer leaks raw `b2Circle` / `b2Polygon` style values, and polygon construction covers square/box/rounded/offset/hull-based helpers. |
+| crate-owned geometry values and shape create/edit/get/set helpers | safe-covered | Main API no longer leaks raw `b2Circle` / `b2Polygon` style values, polygon construction covers square/box/rounded/offset/hull-based helpers, and geometry values now expose `is_valid()` / `validate()` for preflight checks. |
 | runtime AABB, point tests, ray casts, mass data, sensor/contact event toggles | safe-covered | Owned/scoped/world-id styles are aligned. |
 | sensor overlaps, contact data, and reusable-buffer variants | safe-covered | Covers the hot-path story that originally motivated `0.3.0`. |
 | raw geometry conversions, raw world-id, raw pointer user-data seams | raw-only | Explicit `from_raw(...)` / `into_raw()` and `*_raw` APIs stay available. |
+
+## Standalone Collision
+
+| Slice | Status | Notes |
+| --- | --- | --- |
+| shape proxies, segment distance, GJK distance, shape cast, TOI, and AABB helpers | safe-covered | Includes panic-by-default safe entrypoints, `try_*` recoverable variants, and `validate()` on the input-side value objects. |
+| circle/capsule/segment/polygon manifold helpers and chain-segment manifold helpers | safe-covered | Safe manifold helpers now validate geometry/transforms up front and expose matching `try_collide_*` recoverable paths instead of depending on upstream asserts. |
 
 ## Chain
 

@@ -570,6 +570,51 @@ pub(crate) fn check_shape_def_valid(def: &ShapeDef) -> ApiResult<()> {
     check_surface_material_valid(&def.material())
 }
 
+#[track_caller]
+fn assert_shape_geometry_valid(name: &str, valid: bool) {
+    assert!(valid, "{name} must contain valid Box2D geometry");
+}
+
+#[inline]
+pub(crate) fn assert_circle_geometry_valid(circle: &Circle) {
+    assert_shape_geometry_valid("circle", circle.is_valid());
+}
+
+#[inline]
+pub(crate) fn assert_segment_geometry_valid(segment: &Segment) {
+    assert_shape_geometry_valid("segment", segment.is_valid());
+}
+
+#[inline]
+pub(crate) fn assert_capsule_geometry_valid(capsule: &Capsule) {
+    assert_shape_geometry_valid("capsule", capsule.is_valid());
+}
+
+#[inline]
+pub(crate) fn assert_polygon_geometry_valid(polygon: &Polygon) {
+    assert_shape_geometry_valid("polygon", polygon.is_valid());
+}
+
+#[inline]
+pub(crate) fn check_circle_geometry_valid(circle: &Circle) -> ApiResult<()> {
+    circle.validate()
+}
+
+#[inline]
+pub(crate) fn check_segment_geometry_valid(segment: &Segment) -> ApiResult<()> {
+    segment.validate()
+}
+
+#[inline]
+pub(crate) fn check_capsule_geometry_valid(capsule: &Capsule) -> ApiResult<()> {
+    capsule.validate()
+}
+
+#[inline]
+pub(crate) fn check_polygon_geometry_valid(polygon: &Polygon) -> ApiResult<()> {
+    polygon.validate()
+}
+
 fn shape_set_density_checked_impl(id: ShapeId, density: f32, update_body_mass: bool) {
     crate::core::debug_checks::assert_shape_valid(id);
     assert_non_negative_finite_shape_scalar("density", density);
@@ -1116,37 +1161,45 @@ impl OwnedShape {
 
     pub fn set_circle(&mut self, c: &Circle) {
         self.assert_valid();
+        assert_circle_geometry_valid(c);
         shape_set_circle_impl(self.id, c)
     }
     pub fn try_set_circle(&mut self, c: &Circle) -> ApiResult<()> {
         self.check_valid()?;
+        check_circle_geometry_valid(c)?;
         shape_set_circle_impl(self.id, c);
         Ok(())
     }
     pub fn set_segment(&mut self, s: &Segment) {
         self.assert_valid();
+        assert_segment_geometry_valid(s);
         shape_set_segment_impl(self.id, s)
     }
     pub fn try_set_segment(&mut self, s: &Segment) -> ApiResult<()> {
         self.check_valid()?;
+        check_segment_geometry_valid(s)?;
         shape_set_segment_impl(self.id, s);
         Ok(())
     }
     pub fn set_capsule(&mut self, c: &Capsule) {
         self.assert_valid();
+        assert_capsule_geometry_valid(c);
         shape_set_capsule_impl(self.id, c)
     }
     pub fn try_set_capsule(&mut self, c: &Capsule) -> ApiResult<()> {
         self.check_valid()?;
+        check_capsule_geometry_valid(c)?;
         shape_set_capsule_impl(self.id, c);
         Ok(())
     }
     pub fn set_polygon(&mut self, p: &Polygon) {
         self.assert_valid();
+        assert_polygon_geometry_valid(p);
         shape_set_polygon_impl(self.id, p)
     }
     pub fn try_set_polygon(&mut self, p: &Polygon) -> ApiResult<()> {
         self.check_valid()?;
+        check_polygon_geometry_valid(p)?;
         shape_set_polygon_impl(self.id, p);
         Ok(())
     }
@@ -1728,37 +1781,45 @@ impl<'w> Shape<'w> {
     // Setters
     pub fn set_circle(&mut self, c: &Circle) {
         self.assert_valid();
+        assert_circle_geometry_valid(c);
         shape_set_circle_impl(self.id, c)
     }
     pub fn try_set_circle(&mut self, c: &Circle) -> ApiResult<()> {
         self.check_valid()?;
+        check_circle_geometry_valid(c)?;
         shape_set_circle_impl(self.id, c);
         Ok(())
     }
     pub fn set_segment(&mut self, s: &Segment) {
         self.assert_valid();
+        assert_segment_geometry_valid(s);
         shape_set_segment_impl(self.id, s)
     }
     pub fn try_set_segment(&mut self, s: &Segment) -> ApiResult<()> {
         self.check_valid()?;
+        check_segment_geometry_valid(s)?;
         shape_set_segment_impl(self.id, s);
         Ok(())
     }
     pub fn set_capsule(&mut self, c: &Capsule) {
         self.assert_valid();
+        assert_capsule_geometry_valid(c);
         shape_set_capsule_impl(self.id, c)
     }
     pub fn try_set_capsule(&mut self, c: &Capsule) -> ApiResult<()> {
         self.check_valid()?;
+        check_capsule_geometry_valid(c)?;
         shape_set_capsule_impl(self.id, c);
         Ok(())
     }
     pub fn set_polygon(&mut self, p: &Polygon) {
         self.assert_valid();
+        assert_polygon_geometry_valid(p);
         shape_set_polygon_impl(self.id, p)
     }
     pub fn try_set_polygon(&mut self, p: &Polygon) -> ApiResult<()> {
         self.check_valid()?;
+        check_polygon_geometry_valid(p)?;
         shape_set_polygon_impl(self.id, p);
         Ok(())
     }
@@ -2507,6 +2568,7 @@ impl<'w> Body<'w> {
     pub fn create_circle_shape(&mut self, def: &ShapeDef, c: &Circle) -> Shape<'w> {
         crate::core::debug_checks::assert_body_valid(self.id);
         assert_shape_def_valid(def);
+        assert_circle_geometry_valid(c);
         let raw = c.into_raw();
         let id = ShapeId::from_raw(unsafe {
             ffi::b2CreateCircleShape(self.id.into_raw(), &def.0, &raw)
@@ -2518,6 +2580,7 @@ impl<'w> Body<'w> {
     pub fn create_segment_shape(&mut self, def: &ShapeDef, s: &Segment) -> Shape<'w> {
         crate::core::debug_checks::assert_body_valid(self.id);
         assert_shape_def_valid(def);
+        assert_segment_geometry_valid(s);
         let raw = s.into_raw();
         let id = ShapeId::from_raw(unsafe {
             ffi::b2CreateSegmentShape(self.id.into_raw(), &def.0, &raw)
@@ -2529,6 +2592,7 @@ impl<'w> Body<'w> {
     pub fn create_capsule_shape(&mut self, def: &ShapeDef, c: &Capsule) -> Shape<'w> {
         crate::core::debug_checks::assert_body_valid(self.id);
         assert_shape_def_valid(def);
+        assert_capsule_geometry_valid(c);
         let raw = c.into_raw();
         let id = ShapeId::from_raw(unsafe {
             ffi::b2CreateCapsuleShape(self.id.into_raw(), &def.0, &raw)
@@ -2540,6 +2604,7 @@ impl<'w> Body<'w> {
     pub fn create_polygon_shape(&mut self, def: &ShapeDef, p: &Polygon) -> Shape<'w> {
         crate::core::debug_checks::assert_body_valid(self.id);
         assert_shape_def_valid(def);
+        assert_polygon_geometry_valid(p);
         let raw = p.into_raw();
         let id = ShapeId::from_raw(unsafe {
             ffi::b2CreatePolygonShape(self.id.into_raw(), &def.0, &raw)

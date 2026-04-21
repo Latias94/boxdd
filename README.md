@@ -24,7 +24,7 @@
 - World runtime helpers cover counters, per-stage `Profile` timings, speculative-collision toggles, and safe explosion control.
 - Core math types (`Vec2`, `Rot`, `Transform`) now cross the Box2D raw boundary explicitly through `from_raw(...)` / `into_raw()` instead of implicit conversions.
 - Global foundation helpers now cover allocated-byte inspection, timing ticks/millisecond helpers, thread yielding, and deterministic hashing without dropping to raw `ffi`.
-- Standalone collision geometry helpers cover shape proxies, GJK distance, contact manifolds, chain-segment manifolds, shape cast, TOI, and `Aabb::is_valid` / `Aabb::ray_cast` without raw `ffi`.
+- Standalone collision geometry helpers cover shape proxies, GJK distance, segment distance, contact manifolds, chain-segment manifolds, shape cast, TOI, and `Aabb::is_valid` / `Aabb::ray_cast` without raw `ffi`, with matching recoverable `try_*` entrypoints for malformed input.
 - Shape creation and editing now use crate-owned geometry values, and chain segments can be inspected through the crate-owned `ChainSegment` type.
 - Chain runtime material access now uses visible segment indexing on open chains instead of leaking Box2D's ghost-placeholder storage layout.
 - Safe shape/joint mutators now front-load obvious Box2D assert preconditions such as non-negative material scalars and ordered joint limits.
@@ -129,8 +129,8 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 
 ## Collision Geometry APIs
 - `boxdd::collision` exposes Box2D's standalone low-level geometry algorithms as safe Rust value types.
-- Use `ShapeProxy`, `SimplexCache`, `DistanceInput`, `ShapeCastPairInput`, `Sweep`, and `ToiInput` with `shape_distance(...)`, `shape_cast(...)`, and `time_of_impact(...)`, or the matching recoverable `try_*` variants when malformed input should return `ApiError::InvalidArgument`.
-- Standalone manifold helpers such as `collide_polygons(...)`, `collide_polygon_and_circle(...)`, `collide_segment_and_capsule(...)`, and `collide_chain_segment_and_polygon(...)` now return the safe `Manifold` type.
+- Use `ShapeProxy`, `SimplexCache`, `DistanceInput`, `ShapeCastPairInput`, `Sweep`, and `ToiInput` with `segment_distance(...)`, `shape_distance(...)`, `shape_cast(...)`, and `time_of_impact(...)`, or the matching recoverable `try_*` variants when malformed input should return `ApiError::InvalidArgument`.
+- Standalone manifold helpers such as `collide_polygons(...)`, `collide_polygon_and_circle(...)`, `collide_segment_and_capsule(...)`, and `collide_chain_segment_and_polygon(...)` return the safe `Manifold` type and now also expose matching recoverable `try_collide_*` variants.
 - `Aabb::is_valid()` and `Aabb::ray_cast(origin, translation)` now cover common AABB validation and ray-cast needs without reaching for `boxdd_sys::ffi`.
 - These advanced APIs are intentionally not in the prelude, so collision-heavy code can import them explicitly.
 
@@ -138,6 +138,7 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 - `boxdd::shapes::circle`, `segment`, `capsule`, `box_polygon`, `rounded_box_polygon`, and `polygon_from_points` return safe geometry value types instead of raw Box2D structs.
 - `Shape::circle()` / `segment()` / `capsule()` / `polygon()` and the corresponding setters now use the same geometry types as world/body creation APIs.
 - `Circle`, `Capsule`, and `Polygon` expose standalone helpers such as `mass_data(...)`, `aabb(...)`, `contains_point(...)`, and `ray_cast(...)` for world-free geometry work.
+- `Circle`, `Segment`, `Capsule`, `ChainSegment`, and `Polygon` now expose `is_valid()` / `validate()` so engines can preflight geometry before crossing the FFI boundary.
 - Live `Shape` / `OwnedShape` / `World::shape_*` APIs now also cover runtime `aabb`, `test_point`, `ray_cast`, `mass_data`, and event-toggle state.
 - Raw geometry conversion is explicit on the crate-owned geometry types: use `from_raw(...)` / `into_raw()` when you intentionally cross the FFI boundary.
 - `ShapeDefBuilder::filter(...)` and `ChainDef::builder().filter(...)` now take the safe `Filter` type; explicit raw escape hatches are named `filter_raw(...)`.

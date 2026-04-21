@@ -7,7 +7,7 @@
 //! - Ergonomics: builder patterns, world-space helpers, and optional math interop (`mint`/`cgmath`/`nalgebra`/`glam`).
 //! - Hot-path friendly APIs: keep the convenience `Vec`-returning methods, reuse caller-owned buffers with `*_into`, or use `visit_*` overlap queries to avoid result-container allocation entirely.
 //! - Character mover helpers: cast movers, collect collision planes, solve planes, and clip velocity without raw FFI.
-//! - Standalone collision geometry helpers: shape proxies, GJK distance, manifolds, shape cast, TOI, AABB validation/ray cast, and deterministic global math helpers.
+//! - Standalone collision geometry helpers: shape proxies, segment/GJK distance, manifolds, shape cast, TOI, recoverable `try_*` validation paths, AABB validation/ray cast, and deterministic global math helpers.
 //! - Core math types (`Vec2`, `Rot`, `Transform`) use explicit `from_raw(...)` / `into_raw()` naming for Box2D interop instead of implicit raw conversions.
 //! - Global Box2D foundation helpers expose allocated-byte inspection, timing ticks/millisecond helpers, thread yielding, and deterministic hashing without dropping to `boxdd_sys::ffi`.
 //! - Shape geometry uses crate-owned values (`Circle`, `Segment`, `ChainSegment`, `Capsule`, `Polygon`) across helpers, shape editing, and creation, including square/rounded/offset/hull-based polygon builders without raw FFI.
@@ -132,12 +132,14 @@
 //! Collision Geometry
 //! ```no_run
 //! use boxdd::{
-//!     shape_distance, DistanceInput, ShapeProxy, SimplexCache, ToiInput, ToiState, Sweep,
-//!     Transform,
+//!     segment_distance, shape_distance, DistanceInput, ShapeProxy, SimplexCache, ToiInput,
+//!     ToiState, Sweep, Transform,
 //! };
 //! let proxy_a = ShapeProxy::new([[-1.0_f32, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]], 0.0).unwrap();
 //! let proxy_b = ShapeProxy::new([[2.0_f32, -1.0], [2.0, 1.0]], 0.0).unwrap();
 //! let mut cache = SimplexCache::default();
+//! let seg = segment_distance([-1.0_f32, 0.0], [1.0, 0.0], [0.0, -1.0], [0.0, 1.0]);
+//! assert!(seg.distance_squared >= 0.0);
 //! let distance = shape_distance(
 //!     DistanceInput::new(proxy_a, proxy_b, Transform::IDENTITY, Transform::IDENTITY),
 //!     &mut cache,
@@ -192,6 +194,8 @@
 //!   values instead of relying on assert-enabled native builds.
 //! - `WorldDef`, `BodyDef`, `ShapeDef`, `SurfaceMaterial`, `JointBase`, and concrete
 //!   `*JointDef` values expose `validate()` for preflight checks before crossing the FFI boundary.
+//! - Crate-owned geometry values (`Circle`, `Segment`, `Capsule`, `ChainSegment`, `Polygon`) also
+//!   expose `is_valid()` / `validate()` for preflight geometry checks.
 //!
 //! Events
 //! - Four access styles:
@@ -261,8 +265,13 @@ pub use collision::{
     collide_chain_segment_and_circle, collide_chain_segment_and_polygon, collide_circles,
     collide_polygon_and_capsule, collide_polygon_and_circle, collide_polygons,
     collide_segment_and_capsule, collide_segment_and_circle, collide_segment_and_polygon,
-    segment_distance, shape_cast, shape_distance, time_of_impact, try_shape_cast,
-    try_shape_distance, try_time_of_impact,
+    segment_distance, shape_cast, shape_distance, time_of_impact, try_collide_capsule_and_circle,
+    try_collide_capsules, try_collide_chain_segment_and_capsule,
+    try_collide_chain_segment_and_circle, try_collide_chain_segment_and_polygon,
+    try_collide_circles, try_collide_polygon_and_capsule, try_collide_polygon_and_circle,
+    try_collide_polygons, try_collide_segment_and_capsule, try_collide_segment_and_circle,
+    try_collide_segment_and_polygon, try_segment_distance, try_shape_cast, try_shape_distance,
+    try_time_of_impact,
 };
 #[cfg(feature = "glam")]
 #[cfg_attr(docsrs, doc(cfg(feature = "glam")))]
