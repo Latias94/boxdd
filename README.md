@@ -77,7 +77,7 @@ world.step(1.0/60.0, 4);
 - `world.counters()` and `world.profile()` expose simulation size counters and last-step timing breakdowns without dropping to raw `ffi`.
 - `ExplosionDef` and `world.explode(...)` / `world.try_explode(...)` now expose Box2D's explosion API directly on the main safe surface.
 - Runtime tuning controls such as sleeping, continuous collision, warm starting, speculative collision, restitution threshold, hit threshold, contact tuning, and maximum linear speed now have matching `try_*` coverage.
-- `BodyBuilder::allow_fast_rotation(...)`, computed body AABB helpers (`Body::aabb()`, `OwnedBody::aabb()`, `World::body_aabb(...)`), and read-only `WorldHandle` runtime getters for world diagnostics plus body-by-id and shape-by-id queries keep more of the upstream runtime surface on the main safe API.
+- `BodyBuilder::allow_fast_rotation(...)`, computed body AABB helpers (`Body::aabb()`, `OwnedBody::aabb()`, `World::body_aabb(...)`), and read-only `WorldHandle` runtime getters for world diagnostics plus body-by-id, shape-by-id, and joint-by-id queries keep more of the upstream runtime surface on the main safe API.
 
 ## Snapshots
 - Enable `serialize` and see example `examples/scene_serialize.rs` for a minimal scene round-trip.

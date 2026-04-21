@@ -64,6 +64,7 @@
 - [x] Sweep the top-level examples and testbed scenes for low-value raw FFI usage now covered by the safe API, and switch body-velocity reads, shape distance, world counters, and revolute limits over to the crate-owned wrapper surface.
 - [x] Expand `WorldHandle` from world-level diagnostics into a true stored read-only body query helper by mirroring the pure `body_*` runtime getter/enumeration surface and routing it through shared body helper implementations.
 - [x] Expand `WorldHandle` further into a stored read-only shape query helper by mirroring the pure `shape_*` runtime getter/enumeration surface used after world/query `ShapeId` results and routing it through shared shape helper implementations.
+- [x] Expand `WorldHandle` again into a stored read-only common joint query helper, and close the remaining world-id joint threshold gap so common joint runtime metadata/control no longer drifts between owned/scoped/id styles.
 
 ## In Progress
 

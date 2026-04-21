@@ -139,6 +139,7 @@ Scope:
 - expand `WorldHandle` event support with owned snapshots only, while keeping borrowed/raw event-buffer APIs on `World`
 - expand `WorldHandle` beyond world-level diagnostics to pure body-by-id read-only runtime queries where no mutable borrow or step-buffer lifetime coupling is involved
 - expand `WorldHandle` further to pure shape-by-id read-only runtime queries so query-produced `ShapeId` values can stay on the stored-handle path without bouncing back to `&World`
+- expand `WorldHandle` further to common joint-by-id read-only runtime queries so `body_joints()` results can stay on the stored-handle path for metadata inspection
 - finish any obviously missing value-type/productization gaps left after the main `0.3` wrapper passes
 - audit thread-model / async guidance so `worker_count`, worker-thread callbacks, and `World: !Send/!Sync` are documented together
 - audit math interop completeness so `mint` stays aligned with the crate-owned `Vec2` / `Rot` / `Transform` / `Aabb` vocabulary
@@ -170,6 +171,7 @@ Exit criteria:
 - `WorldHandle` mirrors owned event snapshots with a clear lifecycle boundary, while borrowed/raw event-buffer APIs remain intentionally `World`-only
 - `WorldHandle` is usable as a stored read-only body query helper instead of being limited to world-level diagnostics only
 - `WorldHandle` is also usable as a stored read-only shape query helper for the ids returned by world/query hot paths instead of forcing those follow-up reads back onto `&World`
+- `WorldHandle` is also usable as a stored read-only common joint query helper for ids returned by body/world enumeration paths instead of forcing those follow-up reads back onto `&World`
 - crate-owned value types no longer rely on implicit raw conversions except for documented input-side or raw-escape-hatch exceptions
 - body/shape/joint/chain/contact ids no longer leak raw `ffi::*Id` types through the normal safe wrapper surface
 - the next completeness pass has a short, explicit backlog instead of scattered notes

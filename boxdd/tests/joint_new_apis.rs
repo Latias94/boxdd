@@ -308,6 +308,10 @@ fn joint_runtime_metadata_and_tuning_are_available_across_owned_scoped_and_world
     let updated_from_scoped = ConstraintTuning::new(8.0, 0.75);
     let updated_from_owned = ConstraintTuning::new(5.0, 0.5);
     let updated_from_world = ConstraintTuning::new(2.0, 0.1);
+    let initial_force_threshold = 2.5;
+    let initial_torque_threshold = 3.5;
+    let updated_force_threshold = 6.0;
+    let updated_torque_threshold = 7.0;
 
     let base = JointBaseBuilder::new()
         .bodies_by_id(body_a, body_b)
@@ -318,6 +322,8 @@ fn joint_runtime_metadata_and_tuning_are_available_across_owned_scoped_and_world
             expected_frame_b.rotation().angle(),
         )
         .collide_connected(true)
+        .force_threshold(initial_force_threshold)
+        .torque_threshold(initial_torque_threshold)
         .constraint_hertz(initial_tuning.hertz)
         .constraint_damping_ratio(initial_tuning.damping_ratio)
         .build();
@@ -404,6 +410,26 @@ fn joint_runtime_metadata_and_tuning_are_available_across_owned_scoped_and_world
         initial_tuning,
         1.0e-6
     ));
+    assert!(approx_eq(
+        world.joint_force_threshold(joint_id),
+        initial_force_threshold,
+        1.0e-6
+    ));
+    assert!(approx_eq(
+        world.try_joint_force_threshold(joint_id).unwrap(),
+        initial_force_threshold,
+        1.0e-6
+    ));
+    assert!(approx_eq(
+        world.joint_torque_threshold(joint_id),
+        initial_torque_threshold,
+        1.0e-6
+    ));
+    assert!(approx_eq(
+        world.try_joint_torque_threshold(joint_id).unwrap(),
+        initial_torque_threshold,
+        1.0e-6
+    ));
     assert!(approx_transform(
         world.joint_local_frame_a(joint_id),
         expected_frame_a,
@@ -474,10 +500,24 @@ fn joint_runtime_metadata_and_tuning_are_available_across_owned_scoped_and_world
     world
         .try_set_joint_constraint_tuning(joint_id, updated_from_world)
         .unwrap();
+    world.set_joint_force_threshold(joint_id, updated_force_threshold);
+    world
+        .try_set_joint_torque_threshold(joint_id, updated_torque_threshold)
+        .unwrap();
     assert!(!joint.collide_connected());
     assert!(approx_tuning(
         joint.constraint_tuning(),
         updated_from_world,
+        1.0e-6
+    ));
+    assert!(approx_eq(
+        joint.force_threshold(),
+        updated_force_threshold,
+        1.0e-6
+    ));
+    assert!(approx_eq(
+        joint.torque_threshold(),
+        updated_torque_threshold,
         1.0e-6
     ));
 
@@ -507,6 +547,164 @@ fn joint_runtime_metadata_and_tuning_are_available_across_owned_scoped_and_world
     world.try_joint_wake_bodies(joint_id).unwrap();
     assert!(world.body(body_a).unwrap().is_awake());
     assert!(world.body(body_b).unwrap().is_awake());
+}
+
+#[test]
+fn world_handle_joint_runtime_queries_match_world_queries() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+
+    let body_a = create_dynamic_body(&mut world, [-1.0, 0.0]);
+    let body_b = create_dynamic_body(&mut world, [2.0, 1.0]);
+    let frame_a = Transform::from_pos_angle([0.25_f32, -0.5], 0.3);
+    let frame_b = Transform::from_pos_angle([1.0_f32, 2.0], -0.6);
+    let tuning = ConstraintTuning::new(4.0, 0.25);
+    let force_threshold = 2.5;
+    let torque_threshold = 3.5;
+
+    let joint_id = world.create_distance_joint_id(
+        &DistanceJointDef::new(
+            JointBase::builder()
+                .bodies_by_id(body_a, body_b)
+                .local_frames(
+                    frame_a.position(),
+                    frame_a.rotation().angle(),
+                    frame_b.position(),
+                    frame_b.rotation().angle(),
+                )
+                .collide_connected(true)
+                .force_threshold(force_threshold)
+                .torque_threshold(torque_threshold)
+                .constraint_hertz(tuning.hertz)
+                .constraint_damping_ratio(tuning.damping_ratio)
+                .build(),
+        )
+        .length(3.5),
+    );
+
+    let handle = world.handle();
+    let joint_ids = handle.body_joints(body_a);
+    assert_eq!(joint_ids.len(), 1);
+    assert_eq!(joint_ids[0], joint_id);
+
+    assert_eq!(handle.joint_type(joint_id), world.joint_type(joint_id));
+    assert_eq!(
+        handle.try_joint_type(joint_id).unwrap(),
+        world.joint_type(joint_id)
+    );
+    assert!(same_body_id(
+        handle.joint_body_a_id(joint_id),
+        world.joint_body_a_id(joint_id)
+    ));
+    assert!(same_body_id(
+        handle.try_joint_body_a_id(joint_id).unwrap(),
+        world.joint_body_a_id(joint_id)
+    ));
+    assert!(same_body_id(
+        handle.joint_body_b_id(joint_id),
+        world.joint_body_b_id(joint_id)
+    ));
+    assert!(same_body_id(
+        handle.try_joint_body_b_id(joint_id).unwrap(),
+        world.joint_body_b_id(joint_id)
+    ));
+    assert_eq!(
+        handle.joint_collide_connected(joint_id),
+        world.joint_collide_connected(joint_id)
+    );
+    assert_eq!(
+        handle.try_joint_collide_connected(joint_id).unwrap(),
+        world.joint_collide_connected(joint_id)
+    );
+    assert!(approx_tuning(
+        handle.joint_constraint_tuning(joint_id),
+        world.joint_constraint_tuning(joint_id),
+        1.0e-6
+    ));
+    assert!(approx_tuning(
+        handle.try_joint_constraint_tuning(joint_id).unwrap(),
+        world.joint_constraint_tuning(joint_id),
+        1.0e-6
+    ));
+    assert!(approx_transform(
+        handle.joint_local_frame_a(joint_id),
+        world.joint_local_frame_a(joint_id),
+        1.0e-6
+    ));
+    assert!(approx_transform(
+        handle.try_joint_local_frame_a(joint_id).unwrap(),
+        world.joint_local_frame_a(joint_id),
+        1.0e-6
+    ));
+    assert!(approx_transform(
+        handle.joint_local_frame_b(joint_id),
+        world.joint_local_frame_b(joint_id),
+        1.0e-6
+    ));
+    assert!(approx_transform(
+        handle.try_joint_local_frame_b(joint_id).unwrap(),
+        world.joint_local_frame_b(joint_id),
+        1.0e-6
+    ));
+    assert!(approx_eq(
+        handle.joint_linear_separation(joint_id),
+        world.joint_linear_separation(joint_id),
+        1.0e-6
+    ));
+    assert!(approx_eq(
+        handle.try_joint_linear_separation(joint_id).unwrap(),
+        world.joint_linear_separation(joint_id),
+        1.0e-6
+    ));
+    assert!(approx_eq(
+        handle.joint_angular_separation(joint_id),
+        world.joint_angular_separation(joint_id),
+        1.0e-6
+    ));
+    assert!(approx_eq(
+        handle.try_joint_angular_separation(joint_id).unwrap(),
+        world.joint_angular_separation(joint_id),
+        1.0e-6
+    ));
+    assert!(approx_vec2(
+        handle.joint_constraint_force(joint_id),
+        world.joint_constraint_force(joint_id),
+        1.0e-6
+    ));
+    assert!(approx_vec2(
+        handle.try_joint_constraint_force(joint_id).unwrap(),
+        world.joint_constraint_force(joint_id),
+        1.0e-6
+    ));
+    assert!(approx_eq(
+        handle.joint_constraint_torque(joint_id),
+        world.joint_constraint_torque(joint_id),
+        1.0e-6
+    ));
+    assert!(approx_eq(
+        handle.try_joint_constraint_torque(joint_id).unwrap(),
+        world.joint_constraint_torque(joint_id),
+        1.0e-6
+    ));
+    assert!(approx_eq(
+        handle.joint_force_threshold(joint_id),
+        force_threshold,
+        1.0e-6
+    ));
+    assert!(approx_eq(
+        handle.try_joint_force_threshold(joint_id).unwrap(),
+        force_threshold,
+        1.0e-6
+    ));
+    assert!(approx_eq(
+        handle.joint_torque_threshold(joint_id),
+        torque_threshold,
+        1.0e-6
+    ));
+    assert!(approx_eq(
+        handle.try_joint_torque_threshold(joint_id).unwrap(),
+        torque_threshold,
+        1.0e-6
+    ));
 }
 
 #[test]

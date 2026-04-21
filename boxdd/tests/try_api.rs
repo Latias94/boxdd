@@ -634,6 +634,7 @@ fn try_joint_runtime_helpers_invalid_id_returns_err() {
     let mut world = World::new(WorldDef::default()).unwrap();
     let a = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
     let b = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+    let handle = world.handle();
     let mut joint = world.create_distance_joint_owned(
         &DistanceJointDef::new(
             JointBaseBuilder::new()
@@ -734,6 +735,46 @@ fn try_joint_runtime_helpers_invalid_id_returns_err() {
     );
     assert_eq!(
         world.try_joint_wake_bodies(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        world.try_joint_force_threshold(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        world
+            .try_set_joint_force_threshold(joint_id, 4.0)
+            .unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        world.try_joint_torque_threshold(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        world
+            .try_set_joint_torque_threshold(joint_id, 5.0)
+            .unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        handle.try_joint_type(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        handle.try_joint_constraint_tuning(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        handle.try_joint_local_frame_a(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        handle.try_joint_force_threshold(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        handle.try_joint_torque_threshold(joint_id).unwrap_err(),
         ApiError::InvalidJointId
     );
 }

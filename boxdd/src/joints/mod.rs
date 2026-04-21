@@ -31,7 +31,7 @@ pub use wheel::{WheelJointBuilder, WheelJointDef};
 
 use crate::error::ApiResult;
 use crate::types::{BodyId, JointId, Vec2};
-use crate::world::World;
+use crate::world::{World, WorldHandle};
 use boxdd_sys::ffi;
 
 #[inline]
@@ -52,6 +52,18 @@ fn assert_joint_valid(id: JointId) {
 #[inline]
 fn check_joint_valid(id: JointId) -> ApiResult<()> {
     crate::core::debug_checks::check_joint_valid(id)
+}
+
+#[inline]
+fn joint_read_checked_impl<R>(id: JointId, f: impl FnOnce(JointId) -> R) -> R {
+    assert_joint_valid(id);
+    f(id)
+}
+
+#[inline]
+fn try_joint_read_checked_impl<R>(id: JointId, f: impl FnOnce(JointId) -> R) -> ApiResult<R> {
+    check_joint_valid(id)?;
+    Ok(f(id))
 }
 
 #[inline]
@@ -421,53 +433,43 @@ impl World {
 // Runtime joint control APIs (by joint type)
 impl World {
     pub fn joint_type(&self, id: JointId) -> JointType {
-        assert_joint_valid(id);
-        base::joint_type_impl(id)
+        joint_read_checked_impl(id, base::joint_type_impl)
     }
 
     pub fn try_joint_type(&self, id: JointId) -> ApiResult<JointType> {
-        check_joint_valid(id)?;
-        Ok(base::joint_type_impl(id))
+        try_joint_read_checked_impl(id, base::joint_type_impl)
     }
 
     pub fn joint_type_raw(&self, id: JointId) -> ffi::b2JointType {
-        assert_joint_valid(id);
-        base::joint_type_raw_impl(id)
+        joint_read_checked_impl(id, base::joint_type_raw_impl)
     }
 
     pub fn try_joint_type_raw(&self, id: JointId) -> ApiResult<ffi::b2JointType> {
-        check_joint_valid(id)?;
-        Ok(base::joint_type_raw_impl(id))
+        try_joint_read_checked_impl(id, base::joint_type_raw_impl)
     }
 
     pub fn joint_body_a_id(&self, id: JointId) -> BodyId {
-        assert_joint_valid(id);
-        base::joint_body_a_id_impl(id)
+        joint_read_checked_impl(id, base::joint_body_a_id_impl)
     }
 
     pub fn try_joint_body_a_id(&self, id: JointId) -> ApiResult<BodyId> {
-        check_joint_valid(id)?;
-        Ok(base::joint_body_a_id_impl(id))
+        try_joint_read_checked_impl(id, base::joint_body_a_id_impl)
     }
 
     pub fn joint_body_b_id(&self, id: JointId) -> BodyId {
-        assert_joint_valid(id);
-        base::joint_body_b_id_impl(id)
+        joint_read_checked_impl(id, base::joint_body_b_id_impl)
     }
 
     pub fn try_joint_body_b_id(&self, id: JointId) -> ApiResult<BodyId> {
-        check_joint_valid(id)?;
-        Ok(base::joint_body_b_id_impl(id))
+        try_joint_read_checked_impl(id, base::joint_body_b_id_impl)
     }
 
     pub fn joint_collide_connected(&self, id: JointId) -> bool {
-        assert_joint_valid(id);
-        base::joint_collide_connected_impl(id)
+        joint_read_checked_impl(id, base::joint_collide_connected_impl)
     }
 
     pub fn try_joint_collide_connected(&self, id: JointId) -> ApiResult<bool> {
-        check_joint_valid(id)?;
-        Ok(base::joint_collide_connected_impl(id))
+        try_joint_read_checked_impl(id, base::joint_collide_connected_impl)
     }
 
     pub fn set_joint_collide_connected(&mut self, id: JointId, flag: bool) {
@@ -482,13 +484,11 @@ impl World {
     }
 
     pub fn joint_constraint_tuning(&self, id: JointId) -> ConstraintTuning {
-        assert_joint_valid(id);
-        base::joint_constraint_tuning_impl(id)
+        joint_read_checked_impl(id, base::joint_constraint_tuning_impl)
     }
 
     pub fn try_joint_constraint_tuning(&self, id: JointId) -> ApiResult<ConstraintTuning> {
-        check_joint_valid(id)?;
-        Ok(base::joint_constraint_tuning_impl(id))
+        try_joint_read_checked_impl(id, base::joint_constraint_tuning_impl)
     }
 
     pub fn set_joint_constraint_tuning(&mut self, id: JointId, tuning: ConstraintTuning) {
@@ -507,23 +507,19 @@ impl World {
     }
 
     pub fn joint_local_frame_a(&self, id: JointId) -> crate::Transform {
-        assert_joint_valid(id);
-        base::joint_local_frame_a_impl(id)
+        joint_read_checked_impl(id, base::joint_local_frame_a_impl)
     }
 
     pub fn try_joint_local_frame_a(&self, id: JointId) -> ApiResult<crate::Transform> {
-        check_joint_valid(id)?;
-        Ok(base::joint_local_frame_a_impl(id))
+        try_joint_read_checked_impl(id, base::joint_local_frame_a_impl)
     }
 
     pub fn joint_local_frame_b(&self, id: JointId) -> crate::Transform {
-        assert_joint_valid(id);
-        base::joint_local_frame_b_impl(id)
+        joint_read_checked_impl(id, base::joint_local_frame_b_impl)
     }
 
     pub fn try_joint_local_frame_b(&self, id: JointId) -> ApiResult<crate::Transform> {
-        check_joint_valid(id)?;
-        Ok(base::joint_local_frame_b_impl(id))
+        try_joint_read_checked_impl(id, base::joint_local_frame_b_impl)
     }
 
     pub fn joint_wake_bodies(&mut self, id: JointId) {
@@ -538,43 +534,179 @@ impl World {
     }
 
     pub fn joint_linear_separation(&self, id: JointId) -> f32 {
-        assert_joint_valid(id);
-        base::joint_linear_separation_impl(id)
+        joint_read_checked_impl(id, base::joint_linear_separation_impl)
     }
 
     pub fn try_joint_linear_separation(&self, id: JointId) -> ApiResult<f32> {
-        check_joint_valid(id)?;
-        Ok(base::joint_linear_separation_impl(id))
+        try_joint_read_checked_impl(id, base::joint_linear_separation_impl)
     }
 
     pub fn joint_angular_separation(&self, id: JointId) -> f32 {
-        assert_joint_valid(id);
-        base::joint_angular_separation_impl(id)
+        joint_read_checked_impl(id, base::joint_angular_separation_impl)
     }
 
     pub fn try_joint_angular_separation(&self, id: JointId) -> ApiResult<f32> {
-        check_joint_valid(id)?;
-        Ok(base::joint_angular_separation_impl(id))
+        try_joint_read_checked_impl(id, base::joint_angular_separation_impl)
     }
 
     pub fn joint_constraint_force(&self, id: JointId) -> Vec2 {
-        assert_joint_valid(id);
-        base::joint_constraint_force_impl(id)
+        joint_read_checked_impl(id, base::joint_constraint_force_impl)
     }
 
     pub fn try_joint_constraint_force(&self, id: JointId) -> ApiResult<Vec2> {
-        check_joint_valid(id)?;
-        Ok(base::joint_constraint_force_impl(id))
+        try_joint_read_checked_impl(id, base::joint_constraint_force_impl)
     }
 
     pub fn joint_constraint_torque(&self, id: JointId) -> f32 {
-        assert_joint_valid(id);
-        base::joint_constraint_torque_impl(id)
+        joint_read_checked_impl(id, base::joint_constraint_torque_impl)
     }
 
     pub fn try_joint_constraint_torque(&self, id: JointId) -> ApiResult<f32> {
+        try_joint_read_checked_impl(id, base::joint_constraint_torque_impl)
+    }
+
+    pub fn joint_force_threshold(&self, id: JointId) -> f32 {
+        joint_read_checked_impl(id, base::joint_force_threshold_impl)
+    }
+
+    pub fn try_joint_force_threshold(&self, id: JointId) -> ApiResult<f32> {
+        try_joint_read_checked_impl(id, base::joint_force_threshold_impl)
+    }
+
+    pub fn set_joint_force_threshold(&mut self, id: JointId, threshold: f32) {
+        assert_joint_valid(id);
+        base::joint_set_force_threshold_impl(id, threshold)
+    }
+
+    pub fn try_set_joint_force_threshold(&mut self, id: JointId, threshold: f32) -> ApiResult<()> {
         check_joint_valid(id)?;
-        Ok(base::joint_constraint_torque_impl(id))
+        base::joint_set_force_threshold_impl(id, threshold);
+        Ok(())
+    }
+
+    pub fn joint_torque_threshold(&self, id: JointId) -> f32 {
+        joint_read_checked_impl(id, base::joint_torque_threshold_impl)
+    }
+
+    pub fn try_joint_torque_threshold(&self, id: JointId) -> ApiResult<f32> {
+        try_joint_read_checked_impl(id, base::joint_torque_threshold_impl)
+    }
+
+    pub fn set_joint_torque_threshold(&mut self, id: JointId, threshold: f32) {
+        assert_joint_valid(id);
+        base::joint_set_torque_threshold_impl(id, threshold)
+    }
+
+    pub fn try_set_joint_torque_threshold(&mut self, id: JointId, threshold: f32) -> ApiResult<()> {
+        check_joint_valid(id)?;
+        base::joint_set_torque_threshold_impl(id, threshold);
+        Ok(())
+    }
+}
+
+impl WorldHandle {
+    pub fn joint_type(&self, id: JointId) -> JointType {
+        joint_read_checked_impl(id, base::joint_type_impl)
+    }
+
+    pub fn try_joint_type(&self, id: JointId) -> ApiResult<JointType> {
+        try_joint_read_checked_impl(id, base::joint_type_impl)
+    }
+
+    pub fn joint_body_a_id(&self, id: JointId) -> BodyId {
+        joint_read_checked_impl(id, base::joint_body_a_id_impl)
+    }
+
+    pub fn try_joint_body_a_id(&self, id: JointId) -> ApiResult<BodyId> {
+        try_joint_read_checked_impl(id, base::joint_body_a_id_impl)
+    }
+
+    pub fn joint_body_b_id(&self, id: JointId) -> BodyId {
+        joint_read_checked_impl(id, base::joint_body_b_id_impl)
+    }
+
+    pub fn try_joint_body_b_id(&self, id: JointId) -> ApiResult<BodyId> {
+        try_joint_read_checked_impl(id, base::joint_body_b_id_impl)
+    }
+
+    pub fn joint_collide_connected(&self, id: JointId) -> bool {
+        joint_read_checked_impl(id, base::joint_collide_connected_impl)
+    }
+
+    pub fn try_joint_collide_connected(&self, id: JointId) -> ApiResult<bool> {
+        try_joint_read_checked_impl(id, base::joint_collide_connected_impl)
+    }
+
+    pub fn joint_constraint_tuning(&self, id: JointId) -> ConstraintTuning {
+        joint_read_checked_impl(id, base::joint_constraint_tuning_impl)
+    }
+
+    pub fn try_joint_constraint_tuning(&self, id: JointId) -> ApiResult<ConstraintTuning> {
+        try_joint_read_checked_impl(id, base::joint_constraint_tuning_impl)
+    }
+
+    pub fn joint_local_frame_a(&self, id: JointId) -> crate::Transform {
+        joint_read_checked_impl(id, base::joint_local_frame_a_impl)
+    }
+
+    pub fn try_joint_local_frame_a(&self, id: JointId) -> ApiResult<crate::Transform> {
+        try_joint_read_checked_impl(id, base::joint_local_frame_a_impl)
+    }
+
+    pub fn joint_local_frame_b(&self, id: JointId) -> crate::Transform {
+        joint_read_checked_impl(id, base::joint_local_frame_b_impl)
+    }
+
+    pub fn try_joint_local_frame_b(&self, id: JointId) -> ApiResult<crate::Transform> {
+        try_joint_read_checked_impl(id, base::joint_local_frame_b_impl)
+    }
+
+    pub fn joint_linear_separation(&self, id: JointId) -> f32 {
+        joint_read_checked_impl(id, base::joint_linear_separation_impl)
+    }
+
+    pub fn try_joint_linear_separation(&self, id: JointId) -> ApiResult<f32> {
+        try_joint_read_checked_impl(id, base::joint_linear_separation_impl)
+    }
+
+    pub fn joint_angular_separation(&self, id: JointId) -> f32 {
+        joint_read_checked_impl(id, base::joint_angular_separation_impl)
+    }
+
+    pub fn try_joint_angular_separation(&self, id: JointId) -> ApiResult<f32> {
+        try_joint_read_checked_impl(id, base::joint_angular_separation_impl)
+    }
+
+    pub fn joint_constraint_force(&self, id: JointId) -> Vec2 {
+        joint_read_checked_impl(id, base::joint_constraint_force_impl)
+    }
+
+    pub fn try_joint_constraint_force(&self, id: JointId) -> ApiResult<Vec2> {
+        try_joint_read_checked_impl(id, base::joint_constraint_force_impl)
+    }
+
+    pub fn joint_constraint_torque(&self, id: JointId) -> f32 {
+        joint_read_checked_impl(id, base::joint_constraint_torque_impl)
+    }
+
+    pub fn try_joint_constraint_torque(&self, id: JointId) -> ApiResult<f32> {
+        try_joint_read_checked_impl(id, base::joint_constraint_torque_impl)
+    }
+
+    pub fn joint_force_threshold(&self, id: JointId) -> f32 {
+        joint_read_checked_impl(id, base::joint_force_threshold_impl)
+    }
+
+    pub fn try_joint_force_threshold(&self, id: JointId) -> ApiResult<f32> {
+        try_joint_read_checked_impl(id, base::joint_force_threshold_impl)
+    }
+
+    pub fn joint_torque_threshold(&self, id: JointId) -> f32 {
+        joint_read_checked_impl(id, base::joint_torque_threshold_impl)
+    }
+
+    pub fn try_joint_torque_threshold(&self, id: JointId) -> ApiResult<f32> {
+        try_joint_read_checked_impl(id, base::joint_torque_threshold_impl)
     }
 }
 

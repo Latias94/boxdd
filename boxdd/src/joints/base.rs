@@ -198,22 +198,22 @@ pub(crate) fn joint_wake_bodies_impl(id: JointId) {
 }
 
 #[inline]
-fn joint_force_threshold_impl(id: JointId) -> f32 {
+pub(crate) fn joint_force_threshold_impl(id: JointId) -> f32 {
     unsafe { ffi::b2Joint_GetForceThreshold(raw_joint_id(id)) }
 }
 
 #[inline]
-fn joint_set_force_threshold_impl(id: JointId, threshold: f32) {
+pub(crate) fn joint_set_force_threshold_impl(id: JointId, threshold: f32) {
     unsafe { ffi::b2Joint_SetForceThreshold(raw_joint_id(id), threshold) }
 }
 
 #[inline]
-fn joint_torque_threshold_impl(id: JointId) -> f32 {
+pub(crate) fn joint_torque_threshold_impl(id: JointId) -> f32 {
     unsafe { ffi::b2Joint_GetTorqueThreshold(raw_joint_id(id)) }
 }
 
 #[inline]
-fn joint_set_torque_threshold_impl(id: JointId, threshold: f32) {
+pub(crate) fn joint_set_torque_threshold_impl(id: JointId, threshold: f32) {
     unsafe { ffi::b2Joint_SetTorqueThreshold(raw_joint_id(id), threshold) }
 }
 
