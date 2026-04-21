@@ -137,8 +137,9 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 ## Shape Geometry APIs
 - `boxdd::shapes::circle`, `segment`, `capsule`, `box_polygon`, `rounded_box_polygon`, and `polygon_from_points` return safe geometry value types instead of raw Box2D structs.
 - `Shape::circle()` / `segment()` / `capsule()` / `polygon()` and the corresponding setters now use the same geometry types as world/body creation APIs.
-- `Circle`, `Capsule`, and `Polygon` expose standalone helpers such as `mass_data(...)`, `aabb(...)`, `contains_point(...)`, and `ray_cast(...)` for world-free geometry work.
+- `Circle`, `Segment`, `Capsule`, and `Polygon` expose standalone helpers such as `mass_data(...)`, `aabb(...)`, `contains_point(...)`, `ray_cast(...)`, and `transformed(...)` for world-free geometry work.
 - `Circle`, `Segment`, `Capsule`, `ChainSegment`, and `Polygon` now expose `is_valid()` / `validate()` so engines can preflight geometry before crossing the FFI boundary.
+- Those world-free helper methods also expose recoverable `try_*` variants (`try_mass_data`, `try_aabb`, `try_contains_point`, `try_ray_cast`, `try_transformed`) so malformed helper inputs can return `ApiError::InvalidArgument` instead of panicking.
 - Live `Shape` / `OwnedShape` / `World::shape_*` APIs now also cover runtime `aabb`, `test_point`, `ray_cast`, `mass_data`, and event-toggle state.
 - Raw geometry conversion is explicit on the crate-owned geometry types: use `from_raw(...)` / `into_raw()` when you intentionally cross the FFI boundary.
 - `ShapeDefBuilder::filter(...)` and `ChainDef::builder().filter(...)` now take the safe `Filter` type; explicit raw escape hatches are named `filter_raw(...)`.

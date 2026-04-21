@@ -95,11 +95,13 @@ Scope:
 - `Aabb::is_valid()` and `Aabb::ray_cast(origin, translation)`
 - recoverable validation for standalone collision inputs and `try_*` entrypoints for segment-distance / distance / shape-cast / TOI / manifold helpers
 - geometry value validation on `Circle` / `Segment` / `ChainSegment` / `Capsule` / `Polygon`, wired through shape create/edit entrypoints
+- helper-specific validation plus recoverable `try_*` entrypoints for world-free geometry helpers such as mass/AABB/point/ray/transform operations on crate-owned geometry values
 
 Exit criteria:
 
 - advanced collision customization and low-level geometry algorithms no longer require raw `ffi` for normal use
 - standalone collision helpers expose both panic-by-default and recoverable validation paths instead of relying on upstream asserts for malformed input
+- world-free geometry helpers validate the inputs their Box2D helper actually requires, while preserving upstream-defined degenerate segment/capsule behavior instead of over-tightening everything to shape-construction validity
 - the next post-`0.3` wrapper-coverage push has a concrete backlog instead of scattered notes
 
 ## M5: Geometry Type Unification

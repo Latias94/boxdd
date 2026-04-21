@@ -82,6 +82,14 @@ The same policy also applies to creation-time definition objects and shared defa
 safe `*Def` wrappers should preflight obvious native invariants, and crate-owned
 default constructors must mirror upstream defaults instead of approximating them.
 
+That policy is about the helper's real contract, not about blindly reusing the most
+restrictive validation everywhere. Some standalone geometry helpers legitimately support
+degenerate values even though those same values are not valid shape-construction input.
+For example, zero-length segments can still produce defined miss/AABB behavior, and
+zero-length capsules still have circle-like mass/point/ray semantics upstream. The safe
+wrapper should therefore validate each helper against the preconditions Box2D actually
+requires, then expose recoverable `try_*` variants for the same contract.
+
 ### 2. Hot Paths Must Be Reusable
 
 If an API is plausibly called every frame, the safe surface should not force fresh heap

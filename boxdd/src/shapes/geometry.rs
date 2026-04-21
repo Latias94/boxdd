@@ -26,9 +26,30 @@ fn make_ray_input<VO: Into<Vec2>, VT: Into<Vec2>>(
     origin: VO,
     translation: VT,
 ) -> ffi::b2RayCastInput {
+    let origin = origin.into();
+    let translation = translation.into();
+    assert_valid_geometry_vec2("origin", origin);
+    assert_valid_geometry_vec2("translation", translation);
+    raw_ray_input(origin, translation)
+}
+
+#[inline]
+fn try_make_ray_input<VO: Into<Vec2>, VT: Into<Vec2>>(
+    origin: VO,
+    translation: VT,
+) -> ApiResult<ffi::b2RayCastInput> {
+    let origin = origin.into();
+    let translation = translation.into();
+    check_valid_geometry_vec2(origin)?;
+    check_valid_geometry_vec2(translation)?;
+    Ok(raw_ray_input(origin, translation))
+}
+
+#[inline]
+fn raw_ray_input(origin: Vec2, translation: Vec2) -> ffi::b2RayCastInput {
     ffi::b2RayCastInput {
-        origin: origin.into().into_raw(),
-        translation: translation.into().into_raw(),
+        origin: origin.into_raw(),
+        translation: translation.into_raw(),
         maxFraction: 1.0,
     }
 }
@@ -78,6 +99,16 @@ fn geometry_scalar_is_non_negative_finite(value: f32) -> bool {
 }
 
 #[inline]
+fn geometry_vec2_is_valid(value: Vec2) -> bool {
+    value.is_valid()
+}
+
+#[inline]
+fn geometry_density_is_valid(value: f32) -> bool {
+    geometry_scalar_is_non_negative_finite(value)
+}
+
+#[inline]
 fn minimum_shape_segment_length_squared() -> f32 {
     let linear_slop = 0.005 * crate::length_units_per_meter();
     linear_slop * linear_slop
@@ -97,6 +128,33 @@ fn geometry_is_valid_or_err(valid: bool) -> ApiResult<()> {
     } else {
         Err(ApiError::InvalidArgument)
     }
+}
+
+#[track_caller]
+fn assert_valid_geometry_vec2(name: &str, value: Vec2) {
+    assert!(
+        geometry_vec2_is_valid(value),
+        "{name} must be a valid Box2D vector, got {:?}",
+        value
+    );
+}
+
+#[inline]
+fn check_valid_geometry_vec2(value: Vec2) -> ApiResult<()> {
+    geometry_is_valid_or_err(geometry_vec2_is_valid(value))
+}
+
+#[track_caller]
+fn assert_non_negative_finite_density(density: f32) {
+    assert!(
+        geometry_density_is_valid(density),
+        "density must be finite and >= 0.0, got {density}"
+    );
+}
+
+#[inline]
+fn check_non_negative_finite_density(density: f32) -> ApiResult<()> {
+    geometry_is_valid_or_err(geometry_density_is_valid(density))
 }
 
 #[track_caller]
@@ -122,6 +180,89 @@ fn assert_transform_valid(transform: Transform) {
         "transform must be a valid Box2D transform, got {:?}",
         transform
     );
+}
+
+#[inline]
+fn check_transform_valid(transform: Transform) -> ApiResult<()> {
+    geometry_is_valid_or_err(transform.is_valid())
+}
+
+#[inline]
+fn circle_helper_geometry_is_valid(circle: Circle) -> bool {
+    circle.is_valid()
+}
+
+#[track_caller]
+fn assert_circle_helper_geometry_valid(circle: Circle) {
+    assert!(
+        circle_helper_geometry_is_valid(circle),
+        "circle must contain valid Box2D geometry, got {:?}",
+        circle
+    );
+}
+
+#[inline]
+fn check_circle_helper_geometry_valid(circle: Circle) -> ApiResult<()> {
+    geometry_is_valid_or_err(circle_helper_geometry_is_valid(circle))
+}
+
+#[inline]
+fn segment_helper_geometry_is_valid(segment: Segment) -> bool {
+    segment.point1.is_valid() && segment.point2.is_valid()
+}
+
+#[track_caller]
+fn assert_segment_helper_geometry_valid(segment: Segment) {
+    assert!(
+        segment_helper_geometry_is_valid(segment),
+        "segment must contain valid Box2D coordinates, got {:?}",
+        segment
+    );
+}
+
+#[inline]
+fn check_segment_helper_geometry_valid(segment: Segment) -> ApiResult<()> {
+    geometry_is_valid_or_err(segment_helper_geometry_is_valid(segment))
+}
+
+#[inline]
+fn capsule_helper_geometry_is_valid(capsule: Capsule) -> bool {
+    capsule.center1.is_valid()
+        && capsule.center2.is_valid()
+        && geometry_scalar_is_non_negative_finite(capsule.radius)
+}
+
+#[track_caller]
+fn assert_capsule_helper_geometry_valid(capsule: Capsule) {
+    assert!(
+        capsule_helper_geometry_is_valid(capsule),
+        "capsule must contain valid Box2D geometry, got {:?}",
+        capsule
+    );
+}
+
+#[inline]
+fn check_capsule_helper_geometry_valid(capsule: Capsule) -> ApiResult<()> {
+    geometry_is_valid_or_err(capsule_helper_geometry_is_valid(capsule))
+}
+
+#[inline]
+fn polygon_helper_geometry_is_valid(polygon: Polygon) -> bool {
+    polygon.is_valid()
+}
+
+#[track_caller]
+fn assert_polygon_helper_geometry_valid(polygon: Polygon) {
+    assert!(
+        polygon_helper_geometry_is_valid(polygon),
+        "polygon must contain valid Box2D geometry, got {:?}",
+        polygon
+    );
+}
+
+#[inline]
+fn check_polygon_helper_geometry_valid(polygon: Polygon) -> ApiResult<()> {
+    geometry_is_valid_or_err(polygon_helper_geometry_is_valid(polygon))
 }
 
 /// Circle geometry in local shape space.
@@ -174,20 +315,56 @@ impl Circle {
 
     #[inline]
     pub fn mass_data(self, density: f32) -> MassData {
+        assert_circle_helper_geometry_valid(self);
+        assert_non_negative_finite_density(density);
         let raw = self.into_raw();
         MassData::from_raw(unsafe { ffi::b2ComputeCircleMass(&raw, density) })
     }
 
     #[inline]
+    pub fn try_mass_data(self, density: f32) -> ApiResult<MassData> {
+        check_circle_helper_geometry_valid(self)?;
+        check_non_negative_finite_density(density)?;
+        let raw = self.into_raw();
+        Ok(MassData::from_raw(unsafe {
+            ffi::b2ComputeCircleMass(&raw, density)
+        }))
+    }
+
+    #[inline]
     pub fn aabb(self, transform: Transform) -> Aabb {
+        assert_circle_helper_geometry_valid(self);
+        assert_transform_valid(transform);
         let raw = self.into_raw();
         Aabb::from_raw(unsafe { ffi::b2ComputeCircleAABB(&raw, transform.into_raw()) })
     }
 
     #[inline]
-    pub fn contains_point<P: Into<Vec2>>(self, point: P) -> bool {
+    pub fn try_aabb(self, transform: Transform) -> ApiResult<Aabb> {
+        check_circle_helper_geometry_valid(self)?;
+        check_transform_valid(transform)?;
         let raw = self.into_raw();
-        unsafe { ffi::b2PointInCircle(&raw, point.into().into_raw()) }
+        Ok(Aabb::from_raw(unsafe {
+            ffi::b2ComputeCircleAABB(&raw, transform.into_raw())
+        }))
+    }
+
+    #[inline]
+    pub fn contains_point<P: Into<Vec2>>(self, point: P) -> bool {
+        assert_circle_helper_geometry_valid(self);
+        let point = point.into();
+        assert_valid_geometry_vec2("point", point);
+        let raw = self.into_raw();
+        unsafe { ffi::b2PointInCircle(&raw, point.into_raw()) }
+    }
+
+    #[inline]
+    pub fn try_contains_point<P: Into<Vec2>>(self, point: P) -> ApiResult<bool> {
+        check_circle_helper_geometry_valid(self)?;
+        let point = point.into();
+        check_valid_geometry_vec2(point)?;
+        let raw = self.into_raw();
+        Ok(unsafe { ffi::b2PointInCircle(&raw, point.into_raw()) })
     }
 
     #[inline]
@@ -196,9 +373,24 @@ impl Circle {
         origin: VO,
         translation: VT,
     ) -> CastOutput {
+        assert_circle_helper_geometry_valid(self);
         let raw = self.into_raw();
         let input = make_ray_input(origin, translation);
         CastOutput::from_raw(unsafe { ffi::b2RayCastCircle(&raw, &input) })
+    }
+
+    #[inline]
+    pub fn try_ray_cast<VO: Into<Vec2>, VT: Into<Vec2>>(
+        self,
+        origin: VO,
+        translation: VT,
+    ) -> ApiResult<CastOutput> {
+        check_circle_helper_geometry_valid(self)?;
+        let raw = self.into_raw();
+        let input = try_make_ray_input(origin, translation)?;
+        Ok(CastOutput::from_raw(unsafe {
+            ffi::b2RayCastCircle(&raw, &input)
+        }))
     }
 }
 
@@ -254,8 +446,20 @@ impl Segment {
 
     #[inline]
     pub fn aabb(self, transform: Transform) -> Aabb {
+        assert_segment_helper_geometry_valid(self);
+        assert_transform_valid(transform);
         let raw = self.into_raw();
         Aabb::from_raw(unsafe { ffi::b2ComputeSegmentAABB(&raw, transform.into_raw()) })
+    }
+
+    #[inline]
+    pub fn try_aabb(self, transform: Transform) -> ApiResult<Aabb> {
+        check_segment_helper_geometry_valid(self)?;
+        check_transform_valid(transform)?;
+        let raw = self.into_raw();
+        Ok(Aabb::from_raw(unsafe {
+            ffi::b2ComputeSegmentAABB(&raw, transform.into_raw())
+        }))
     }
 
     #[inline]
@@ -265,9 +469,25 @@ impl Segment {
         translation: VT,
         one_sided: bool,
     ) -> CastOutput {
+        assert_segment_helper_geometry_valid(self);
         let raw = self.into_raw();
         let input = make_ray_input(origin, translation);
         CastOutput::from_raw(unsafe { ffi::b2RayCastSegment(&raw, &input, one_sided) })
+    }
+
+    #[inline]
+    pub fn try_ray_cast<VO: Into<Vec2>, VT: Into<Vec2>>(
+        self,
+        origin: VO,
+        translation: VT,
+        one_sided: bool,
+    ) -> ApiResult<CastOutput> {
+        check_segment_helper_geometry_valid(self)?;
+        let raw = self.into_raw();
+        let input = try_make_ray_input(origin, translation)?;
+        Ok(CastOutput::from_raw(unsafe {
+            ffi::b2RayCastSegment(&raw, &input, one_sided)
+        }))
     }
 }
 
@@ -428,20 +648,56 @@ impl Capsule {
 
     #[inline]
     pub fn mass_data(self, density: f32) -> MassData {
+        assert_capsule_helper_geometry_valid(self);
+        assert_non_negative_finite_density(density);
         let raw = self.into_raw();
         MassData::from_raw(unsafe { ffi::b2ComputeCapsuleMass(&raw, density) })
     }
 
     #[inline]
+    pub fn try_mass_data(self, density: f32) -> ApiResult<MassData> {
+        check_capsule_helper_geometry_valid(self)?;
+        check_non_negative_finite_density(density)?;
+        let raw = self.into_raw();
+        Ok(MassData::from_raw(unsafe {
+            ffi::b2ComputeCapsuleMass(&raw, density)
+        }))
+    }
+
+    #[inline]
     pub fn aabb(self, transform: Transform) -> Aabb {
+        assert_capsule_helper_geometry_valid(self);
+        assert_transform_valid(transform);
         let raw = self.into_raw();
         Aabb::from_raw(unsafe { ffi::b2ComputeCapsuleAABB(&raw, transform.into_raw()) })
     }
 
     #[inline]
-    pub fn contains_point<P: Into<Vec2>>(self, point: P) -> bool {
+    pub fn try_aabb(self, transform: Transform) -> ApiResult<Aabb> {
+        check_capsule_helper_geometry_valid(self)?;
+        check_transform_valid(transform)?;
         let raw = self.into_raw();
-        unsafe { ffi::b2PointInCapsule(&raw, point.into().into_raw()) }
+        Ok(Aabb::from_raw(unsafe {
+            ffi::b2ComputeCapsuleAABB(&raw, transform.into_raw())
+        }))
+    }
+
+    #[inline]
+    pub fn contains_point<P: Into<Vec2>>(self, point: P) -> bool {
+        assert_capsule_helper_geometry_valid(self);
+        let point = point.into();
+        assert_valid_geometry_vec2("point", point);
+        let raw = self.into_raw();
+        unsafe { ffi::b2PointInCapsule(&raw, point.into_raw()) }
+    }
+
+    #[inline]
+    pub fn try_contains_point<P: Into<Vec2>>(self, point: P) -> ApiResult<bool> {
+        check_capsule_helper_geometry_valid(self)?;
+        let point = point.into();
+        check_valid_geometry_vec2(point)?;
+        let raw = self.into_raw();
+        Ok(unsafe { ffi::b2PointInCapsule(&raw, point.into_raw()) })
     }
 
     #[inline]
@@ -450,9 +706,24 @@ impl Capsule {
         origin: VO,
         translation: VT,
     ) -> CastOutput {
+        assert_capsule_helper_geometry_valid(self);
         let raw = self.into_raw();
         let input = make_ray_input(origin, translation);
         CastOutput::from_raw(unsafe { ffi::b2RayCastCapsule(&raw, &input) })
+    }
+
+    #[inline]
+    pub fn try_ray_cast<VO: Into<Vec2>, VT: Into<Vec2>>(
+        self,
+        origin: VO,
+        translation: VT,
+    ) -> ApiResult<CastOutput> {
+        check_capsule_helper_geometry_valid(self)?;
+        let raw = self.into_raw();
+        let input = try_make_ray_input(origin, translation)?;
+        Ok(CastOutput::from_raw(unsafe {
+            ffi::b2RayCastCapsule(&raw, &input)
+        }))
     }
 }
 
@@ -640,25 +911,72 @@ impl Polygon {
 
     #[inline]
     pub fn transformed(self, transform: Transform) -> Self {
+        assert_polygon_helper_geometry_valid(self);
+        assert_transform_valid(transform);
         Self::from_raw(unsafe { ffi::b2TransformPolygon(transform.into_raw(), &self.raw) })
     }
 
     #[inline]
+    pub fn try_transformed(self, transform: Transform) -> ApiResult<Self> {
+        check_polygon_helper_geometry_valid(self)?;
+        check_transform_valid(transform)?;
+        Ok(Self::from_raw(unsafe {
+            ffi::b2TransformPolygon(transform.into_raw(), &self.raw)
+        }))
+    }
+
+    #[inline]
     pub fn mass_data(self, density: f32) -> MassData {
+        assert_polygon_helper_geometry_valid(self);
+        assert_non_negative_finite_density(density);
         let raw = self.into_raw();
         MassData::from_raw(unsafe { ffi::b2ComputePolygonMass(&raw, density) })
     }
 
     #[inline]
+    pub fn try_mass_data(self, density: f32) -> ApiResult<MassData> {
+        check_polygon_helper_geometry_valid(self)?;
+        check_non_negative_finite_density(density)?;
+        let raw = self.into_raw();
+        Ok(MassData::from_raw(unsafe {
+            ffi::b2ComputePolygonMass(&raw, density)
+        }))
+    }
+
+    #[inline]
     pub fn aabb(self, transform: Transform) -> Aabb {
+        assert_polygon_helper_geometry_valid(self);
+        assert_transform_valid(transform);
         let raw = self.into_raw();
         Aabb::from_raw(unsafe { ffi::b2ComputePolygonAABB(&raw, transform.into_raw()) })
     }
 
     #[inline]
-    pub fn contains_point<P: Into<Vec2>>(self, point: P) -> bool {
+    pub fn try_aabb(self, transform: Transform) -> ApiResult<Aabb> {
+        check_polygon_helper_geometry_valid(self)?;
+        check_transform_valid(transform)?;
         let raw = self.into_raw();
-        unsafe { ffi::b2PointInPolygon(&raw, point.into().into_raw()) }
+        Ok(Aabb::from_raw(unsafe {
+            ffi::b2ComputePolygonAABB(&raw, transform.into_raw())
+        }))
+    }
+
+    #[inline]
+    pub fn contains_point<P: Into<Vec2>>(self, point: P) -> bool {
+        assert_polygon_helper_geometry_valid(self);
+        let point = point.into();
+        assert_valid_geometry_vec2("point", point);
+        let raw = self.into_raw();
+        unsafe { ffi::b2PointInPolygon(&raw, point.into_raw()) }
+    }
+
+    #[inline]
+    pub fn try_contains_point<P: Into<Vec2>>(self, point: P) -> ApiResult<bool> {
+        check_polygon_helper_geometry_valid(self)?;
+        let point = point.into();
+        check_valid_geometry_vec2(point)?;
+        let raw = self.into_raw();
+        Ok(unsafe { ffi::b2PointInPolygon(&raw, point.into_raw()) })
     }
 
     #[inline]
@@ -667,9 +985,24 @@ impl Polygon {
         origin: VO,
         translation: VT,
     ) -> CastOutput {
+        assert_polygon_helper_geometry_valid(self);
         let raw = self.into_raw();
         let input = make_ray_input(origin, translation);
         CastOutput::from_raw(unsafe { ffi::b2RayCastPolygon(&raw, &input) })
+    }
+
+    #[inline]
+    pub fn try_ray_cast<VO: Into<Vec2>, VT: Into<Vec2>>(
+        self,
+        origin: VO,
+        translation: VT,
+    ) -> ApiResult<CastOutput> {
+        check_polygon_helper_geometry_valid(self)?;
+        let raw = self.into_raw();
+        let input = try_make_ray_input(origin, translation)?;
+        Ok(CastOutput::from_raw(unsafe {
+            ffi::b2RayCastPolygon(&raw, &input)
+        }))
     }
 }
 

@@ -29,6 +29,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Safe standalone chain-segment manifold collision helpers and a crate-owned `ChainSegment` geometry type.
 - `Aabb::is_valid()` and `Aabb::ray_cast(origin, translation)` for low-level geometry checks without raw FFI.
 - Crate-owned `Circle`, `Segment`, `Capsule`, and `Polygon` geometry value types, including standalone mass/AABB/point/ray helpers for world-free shape geometry work.
+- Recoverable world-free geometry helper APIs on crate-owned geometry values: `try_mass_data`, `try_aabb`, `try_contains_point`, `try_ray_cast`, and `Polygon::try_transformed`.
 - Crate-owned `ShapeType`, `MassData`, `ContactData`, `Manifold`, and `ManifoldPoint` value types for the main safe API surface.
 - Crate-owned `MotionLocks` for body translation/rotation constraints.
 - Crate-owned `HexColor` for debug-draw callbacks and collected debug-draw commands.
@@ -78,7 +79,8 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - World runtime tuning setters now validate gravity vectors and numeric threshold/tuning inputs in the safe wrapper, so `try_*` callers receive `ApiError::InvalidArgument` instead of relying on Box2D clamps or assert-enabled native builds.
 - `World::step`, AABB/query/cast/mover helpers, and standalone collision inputs now front-load the obvious Box2D assert preconditions in the safe wrapper, so invalid vectors/AABBs/radii/fractions fail as Rust panics or `ApiError::InvalidArgument` instead of depending on native assert builds.
 - `solve_planes` and `clip_vector` now validate mover-solver inputs in the safe wrapper, so invalid target vectors, plane normals, push limits, and clip-state pushes fail as Rust panics or `ApiError::InvalidArgument` instead of flowing unchecked into Box2D.
-- Shape creation/editing and standalone manifold/segment-distance helpers now validate obvious geometry and transform preconditions in the safe wrapper, so malformed circles/segments/capsules/polygons fail as Rust panics or `ApiError::InvalidArgument` instead of depending on Box2D asserts or degenerate native behavior.
+- Shape creation/editing, standalone geometry helpers, and standalone manifold/segment-distance helpers now validate obvious geometry/transform/helper-input preconditions in the safe wrapper, so malformed circles/segments/capsules/polygons fail as Rust panics or `ApiError::InvalidArgument` instead of depending on Box2D asserts.
+- Standalone geometry helpers now use helper-specific validation instead of blindly reusing shape-construction validity: zero-length segments keep defined AABB/ray-cast behavior, and zero-length capsules keep their upstream circle-like mass/point/ray semantics.
 - Breaking: `ShapeProxy::new(...)` now returns `None` for invalid Box2D coordinates or negative/non-finite radii in addition to the existing empty/too-many-point rejection.
 - Breaking: crate-owned geometry constructors and helper builders now reject obvious malformed input earlier: polygon hull builders return `None` for invalid points/radii/transforms, and box/rounded-box helpers panic on non-finite or non-positive extents before crossing FFI.
 - Breaking: `BodyDef::from_raw(...)` and `WorldDef::from_raw(...)` are now `unsafe` because raw name pointers and raw task/material callback pointers can otherwise flow into later safe creation/stepping paths.
