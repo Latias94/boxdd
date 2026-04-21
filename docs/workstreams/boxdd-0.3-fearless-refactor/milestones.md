@@ -128,6 +128,8 @@ Scope:
 
 - review remaining public raw escape hatches such as `world_id`, raw event slices, and debug draw hooks
 - make remaining crate-owned value types cross the raw boundary explicitly where the wrapper owns the vocabulary
+- build a release-level completeness matrix so the final `0.3.0` gap list is explicit instead of implicit
+- close the remaining obvious `ContactId` gap with direct safe validation and data-fetch helpers
 - finish any obviously missing value-type/productization gaps left after the main `0.3` wrapper passes
 - audit thread-model / async guidance so `worker_count`, worker-thread callbacks, and `World: !Send/!Sync` are documented together
 - audit math interop completeness so `mint` stays aligned with the crate-owned `Vec2` / `Rot` / `Transform` / `Aabb` vocabulary
@@ -155,6 +157,7 @@ Scope:
 Exit criteria:
 
 - the remaining raw public surface is either clearly intentional or scheduled for removal
+- the release has a concrete completeness matrix instead of relying on scattered TODO bullets and source inspection
 - crate-owned value types no longer rely on implicit raw conversions except for documented input-side or raw-escape-hatch exceptions
 - the next completeness pass has a short, explicit backlog instead of scattered notes
 - thread-model guidance no longer implies that internal worker threads make the public world API thread-safe
@@ -172,3 +175,4 @@ Exit criteria:
 - type-specific joint runtime state and control no longer require world-only helpers, raw `ffi`, or upstream joint-family knowledge
 - wrong-family typed joint `try_*` misuse reports `ApiError::InvalidJointType` instead of depending on Box2D assert builds
 - common world runtime diagnostics/tuning extras and callback-registration helpers no longer hide in side modules or panic-only seams when recoverable `try_*` behavior is appropriate
+- `ContactId` no longer requires raw FFI for direct validity checks or contact-data inspection

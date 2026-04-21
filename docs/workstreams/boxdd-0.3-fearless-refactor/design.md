@@ -35,6 +35,7 @@ The main gaps are:
 - some safe APIs still duplicate the same implementation patterns across handle styles
 - the crate lacks a clearer release-level refactor plan that ties these efforts together
 - some crate-owned value types still blur the raw FFI boundary with implicit conversions instead of explicit escape hatches
+- `ContactId` values appear in event and snapshot APIs, but until this pass they still lacked a direct safe inspection path for validation or data reads
 - the threading / async model is correct but still too easy to misread unless users inspect the source
 - math interop coverage is useful but still uneven, especially around `mint` rotation / transform forms
 - the panic-vs-`try_*` error-handling strategy is sound but not explicit enough at the crate boundary
@@ -130,6 +131,23 @@ These seams are worth keeping only if:
   safe path
 - regression tests cover the callback-sensitive raw paths
 
+### 7. Completeness Must Be Auditable
+
+`0.3.0` is large enough that "we think coverage is pretty good" is not a sufficient release
+statement anymore.
+
+The workstream now keeps a dedicated completeness matrix at
+`docs/workstreams/boxdd-0.3-fearless-refactor/completeness-matrix.md` and classifies each
+major area as:
+
+- `safe-covered`
+- `raw-only`
+- `intentional omission`
+- `candidate after 0.3`
+
+This keeps the remaining gaps explicit and stops real omissions from hiding next to
+deliberate exclusions.
+
 ## Release Scope
 
 ### Delivered in the first `0.3.0` slice
@@ -154,6 +172,7 @@ These seams are worth keeping only if:
 - body runtime completeness cleanup so rotation / sleeping / awake-enabled-bullet-name state / attached ids / computed body AABB / fast-rotation setup stay aligned across owned/scoped/id styles
 - joint runtime completeness cleanup so common joint metadata plus type-specific distance/prismatic/revolute/weld/wheel/motor state/control stay aligned across owned/scoped/id styles, and wrong-family `try_*` calls return `ApiError::InvalidJointType`
 - world runtime extras cleanup so diagnostics/tuning helpers like `Profile`, explosions, speculative collision, and callback-sensitive tuning toggles plus callback-registration helpers live on the same main safe surface with matching `try_*` coverage and mirrored read-only access on `WorldHandle`
+- safe `ContactId` helpers so contact ids coming from events or snapshots can be validated and resolved into crate-owned/raw contact data without dropping to `boxdd_sys::ffi`
 - math-interop completeness cleanup so `mint` stays a first-class bridge instead of a partially-covered feature, including recoverable inbound conversion for crate-owned rotation values
 - explicit threading / async documentation and examples that preserve the current `!Send` / `!Sync` design instead of weakening it
 - clearer crate-level error-handling guidance for panic-by-default vs `try_*` usage
@@ -209,6 +228,10 @@ The crate keeps event snapshot/view APIs on `World` because they are bound to:
 
 If a later release adds `WorldHandle` event support, the preferred starting point is owned
 snapshot helpers (`*_events` / `*_events_into` / `try_*`) only, not borrowed/raw event views.
+
+`ContactId`, on the other hand, is no longer an intentional omission for `0.3.0`.
+Upstream only exposes validity and data-fetch helpers for contacts, so the crate now treats
+that tiny surface as part of the normal safe runtime API through `ContactIdExt`.
 
 ## Release Strategy
 

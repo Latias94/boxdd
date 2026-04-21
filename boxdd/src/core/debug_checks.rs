@@ -67,3 +67,20 @@ pub(crate) fn check_chain_valid(id: crate::types::ChainId) -> crate::error::ApiR
         Err(crate::error::ApiError::InvalidChainId)
     }
 }
+
+#[inline]
+#[track_caller]
+pub(crate) fn assert_contact_valid(id: crate::types::ContactId) {
+    crate::core::callback_state::assert_not_in_callback();
+    assert!(unsafe { ffi::b2Contact_IsValid(id) }, "invalid ContactId");
+}
+
+#[inline]
+pub(crate) fn check_contact_valid(id: crate::types::ContactId) -> crate::error::ApiResult<()> {
+    crate::core::callback_state::check_not_in_callback()?;
+    if unsafe { ffi::b2Contact_IsValid(id) } {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidContactId)
+    }
+}

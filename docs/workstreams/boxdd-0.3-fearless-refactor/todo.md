@@ -39,6 +39,8 @@
 - [x] Align the remaining raw contact-data buffer APIs with the explicit `*_raw` naming scheme by renaming `contact_data_into_raw(...)` to `contact_data_raw_into(...)`, and consolidate the body/shape handle implementations behind shared private definitions.
 - [x] Continue the owned/scoped duplication audit by consolidating the remaining high-frequency enumeration helpers (`Body::{shape_count,shapes,joint_count,joints}`, `Shape::sensor_overlaps*`, and `Chain::segments*`) behind single private definitions without changing the public API.
 - [x] Continue the feature-gated duplication audit by consolidating the `unchecked` body/shape/joint/chain extension trait implementations so owned/scoped handles share the same internal raw FFI definitions.
+- [x] Close the remaining obvious contact inspection gap by adding safe `ContactIdExt` helpers plus `ApiError::InvalidContactId` instead of forcing users back to raw `ffi::b2Contact_*`.
+- [x] Add a release-level completeness matrix that classifies major wrapper areas as `safe-covered`, `raw-only`, `intentional omission`, or `candidate after 0.3`.
 
 ## In Progress
 
@@ -89,7 +91,8 @@
 - [ ] Audit any remaining owned/scoped handle duplication outside the already-refactored internals and confirm it is worth keeping.
 - [x] Review remaining public raw escape hatches and document which are intentional (`world_id_raw`, raw event slices, debug draw raw paths, etc.).
 - [x] Add more targeted regression coverage where intentional raw escape hatches still rely on callback-sensitive or zero-copy behavior.
-- [ ] Continue the completeness audit against upstream Box2D v3 and record any intentionally unwrapped or raw-only areas that should be revisited after `0.3.0`.
+- [x] Continue the completeness audit against upstream Box2D v3 and record any intentionally unwrapped or raw-only areas that should be revisited after `0.3.0`.
+- [ ] Revisit the `candidate after 0.3` entries from the completeness matrix and decide which ones deserve the first post-`0.3` wrapper pass.
 
 ## Release Checklist
 

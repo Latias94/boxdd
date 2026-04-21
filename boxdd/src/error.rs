@@ -29,6 +29,8 @@ pub enum ApiError {
     InvalidJointType,
     #[error("invalid ChainId")]
     InvalidChainId,
+    #[error("invalid ContactId")]
+    InvalidContactId,
 
     #[error("invalid ChainDef")]
     InvalidChainDef,

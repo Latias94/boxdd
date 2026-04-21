@@ -2,6 +2,14 @@ use boxdd::prelude::*;
 use boxdd::shapes;
 use boxdd_sys::ffi;
 
+fn shape_id_fields(id: ShapeId) -> (i32, u16, u16) {
+    (id.index1, id.world0, id.generation)
+}
+
+fn contact_id_fields(id: ContactId) -> (i32, u16, i16, u32) {
+    (id.index1, id.world0, id.padding, id.generation)
+}
+
 #[test]
 fn try_body_position_invalid_id_returns_err() {
     let mut world = World::new(WorldDef::default()).unwrap();
@@ -688,6 +696,120 @@ fn try_joint_runtime_controls_wrong_family_returns_err() {
             ApiError::InvalidJointType
         );
     }
+}
+
+#[test]
+fn try_contact_id_helpers_cover_invalid_and_live_contacts() {
+    let invalid = ffi::b2ContactId {
+        index1: 0,
+        world0: 0,
+        padding: 0,
+        generation: 0,
+    };
+    assert!(!invalid.is_valid());
+    assert!(!invalid.try_is_valid().unwrap());
+    assert_eq!(invalid.try_data().unwrap_err(), ApiError::InvalidContactId);
+    assert_eq!(
+        invalid.try_data_raw().unwrap_err(),
+        ApiError::InvalidContactId
+    );
+
+    let mut world = World::new(WorldDef::builder().gravity([0.0_f32, 0.0]).build()).unwrap();
+    let body_a = world.create_body_id(
+        BodyBuilder::new()
+            .body_type(BodyType::Dynamic)
+            .position([-1.0_f32, 0.0])
+            .build(),
+    );
+    let body_b = world.create_body_id(
+        BodyBuilder::new()
+            .body_type(BodyType::Dynamic)
+            .position([1.0_f32, 0.0])
+            .build(),
+    );
+    let sdef = ShapeDef::builder()
+        .density(1.0)
+        .enable_contact_events(true)
+        .build();
+    let shape_a = world.create_polygon_shape_for(body_a, &sdef, &shapes::box_polygon(0.5, 0.5));
+    let shape_b = world.create_polygon_shape_for(body_b, &sdef, &shapes::box_polygon(0.5, 0.5));
+    world.set_body_linear_velocity(body_a, [2.0_f32, 0.0]);
+    world.set_body_linear_velocity(body_b, [-2.0_f32, 0.0]);
+
+    let mut live_contact = None;
+    for _ in 0..180 {
+        world.step(1.0 / 60.0, 4);
+        let events = world.contact_events();
+        if let Some(event) = events.begin.first() {
+            live_contact = Some((event.contact_id, event.shape_a, event.shape_b));
+            break;
+        }
+    }
+
+    let (contact, event_shape_a, event_shape_b) =
+        live_contact.expect("expected a live contact id from contact begin events");
+    assert!(contact.is_valid());
+    assert!(contact.try_is_valid().unwrap());
+
+    let data = contact.data();
+    let data_try = contact.try_data().unwrap();
+    let raw = contact.data_raw();
+    let raw_try = contact.try_data_raw().unwrap();
+    let mut expected_shapes = [shape_id_fields(shape_a), shape_id_fields(shape_b)];
+    let mut event_shapes = [
+        shape_id_fields(event_shape_a),
+        shape_id_fields(event_shape_b),
+    ];
+    expected_shapes.sort();
+    event_shapes.sort();
+
+    assert_eq!(
+        contact_id_fields(data.contact_id),
+        contact_id_fields(contact)
+    );
+    assert_eq!(
+        contact_id_fields(data_try.contact_id),
+        contact_id_fields(contact)
+    );
+    assert_eq!(contact_id_fields(raw.contactId), contact_id_fields(contact));
+    assert_eq!(
+        contact_id_fields(raw_try.contactId),
+        contact_id_fields(contact)
+    );
+
+    assert_eq!(event_shapes, expected_shapes);
+    assert_eq!(
+        shape_id_fields(data.shape_id_a),
+        shape_id_fields(event_shape_a)
+    );
+    assert_eq!(
+        shape_id_fields(data.shape_id_b),
+        shape_id_fields(event_shape_b)
+    );
+    assert_eq!(
+        shape_id_fields(data_try.shape_id_a),
+        shape_id_fields(event_shape_a)
+    );
+    assert_eq!(
+        shape_id_fields(data_try.shape_id_b),
+        shape_id_fields(event_shape_b)
+    );
+    assert_eq!(
+        shape_id_fields(raw.shapeIdA),
+        shape_id_fields(event_shape_a)
+    );
+    assert_eq!(
+        shape_id_fields(raw.shapeIdB),
+        shape_id_fields(event_shape_b)
+    );
+    assert_eq!(
+        shape_id_fields(raw_try.shapeIdA),
+        shape_id_fields(event_shape_a)
+    );
+    assert_eq!(
+        shape_id_fields(raw_try.shapeIdB),
+        shape_id_fields(event_shape_b)
+    );
 }
 
 #[test]

@@ -165,6 +165,10 @@ pub type BodyId = ffi::b2BodyId;
 pub type ShapeId = ffi::b2ShapeId;
 pub type JointId = ffi::b2JointId;
 pub type ChainId = ffi::b2ChainId;
+/// Opaque Box2D contact identifier.
+///
+/// Import [`crate::ContactIdExt`] or [`crate::prelude`] for direct validity checks and contact
+/// data reads.
 pub type ContactId = ffi::b2ContactId;
 
 /// Mass properties (mass, center, inertia) used by Box2D.

@@ -32,6 +32,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Live shape runtime wrappers for `aabb`, `test_point`, direct `ray_cast`, computed `mass_data`, and runtime event toggles across `Shape`, `OwnedShape`, and `World::shape_*`, plus symmetric `try_sensor_overlaps_valid` helpers.
 - Body runtime wrappers for rotation, sleep/awake/enabled/bullet/name controls, attached `shapes/joints` enumeration with reusable-buffer `*_into` variants, and body-level contact/hit event toggles across `Body`, `OwnedBody`, and `World::body_*`.
 - Joint runtime wrappers for joint type/body ids, `collide_connected`, constraint tuning, local frames, wake helpers, and type-specific distance/prismatic/revolute/weld/wheel/motor getters/setters across `Joint`, `OwnedJoint`, and `World`.
+- `ContactIdExt` with direct safe `is_valid` / `data` / `data_raw` helpers and recoverable `try_*` variants, plus `ApiError::InvalidContactId` for stale contact ids.
 - `ApiError::InvalidJointType` for recoverable `try_*` typed-joint runtime misuse when a valid joint is accessed through the wrong family surface.
 - World runtime extras for `Profile` timings, `ExplosionDef`, `World::explode` / `try_explode`, and speculative collision control.
 - `BodyBuilder::allow_fast_rotation`, computed body AABB helpers across `Body`, `OwnedBody`, and `World::body_aabb`, plus read-only `WorldHandle` runtime getters for gravity/counters/profile/awake-count/runtime-tuning state.
@@ -42,6 +43,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Read-side creation-definition APIs so `BodyDef`, `JointBase`, and all concrete `*JointDef` types expose safe getters, and `BodyDef` / `JointBase` now offer `builder()` plus `From<...> for ...Builder` round-tripping.
 - Read-side world-configuration APIs so `WorldDef` exposes safe getters plus explicit `from_raw(...)` / `into_raw()` symmetry, and `ExplosionDef` can now be inspected through crate-owned getters instead of acting like a write-only config shell.
 - Explicit raw conversion symmetry for configuration wrappers: `BodyDef`, `ShapeDef`, `JointBase`, and all concrete `*JointDef` types now expose named `from_raw(...)` / `into_raw()` escape hatches instead of trapping the raw boundary behind internal field access.
+- A release-level completeness matrix under `docs/workstreams/boxdd-0.3-fearless-refactor/completeness-matrix.md` to record which wrapper areas are safe-covered, raw-only, intentionally omitted, or candidates after `0.3`.
 
 ### Changed
 - Query internals now share reusable collection helpers instead of duplicating callback-to-`Vec` plumbing across each query entrypoint.

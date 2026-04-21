@@ -12,6 +12,7 @@
 //! - Live shapes expose safe runtime helpers for AABB, point tests, direct ray casts, computed mass data, and runtime event toggles.
 //! - Bodies expose safe runtime helpers for rotation, sleep/awake/enabled/bullet/name controls, attached shape/joint enumeration, and body-level contact/hit event toggles.
 //! - Joints expose safe runtime helpers for joint kind, connected body ids, `collide_connected`, constraint tuning, local frames, wake controls, and type-specific runtime state across distance/prismatic/revolute/weld/wheel/motor families.
+//! - `ContactId` values from contact events or snapshots expose direct safe helpers via `ContactIdExt`, including validity checks and crate-owned/raw contact-data reads.
 //! - World runtime helpers expose counters, per-stage `Profile` timings, explosion control, and `try_*` access for callback-sensitive tuning toggles.
 //! - Core value types such as `ShapeType`, `MassData`, `SurfaceMaterial`, and contact manifolds are crate-owned instead of leaking raw Box2D structs.
 //! - Typed material mixing callbacks for friction and restitution using `user_material_id`.
@@ -72,7 +73,7 @@
 //!   column-major 2D affine matrices for `Transform`.
 //!
 //! Modules
-//! - `world`, `body`, `shapes`, `joints`, `query`, `collision`, `events`, `debug_draw`, `prelude`.
+//! - `world`, `body`, `contact`, `shapes`, `joints`, `query`, `collision`, `events`, `debug_draw`, `prelude`.
 //!   Import `boxdd::prelude::*` for the most common types.
 //!
 //! Queries (AABB + Ray Cast)
@@ -196,6 +197,7 @@
 
 pub mod body;
 pub mod collision;
+pub mod contact;
 pub mod debug_draw;
 pub mod error;
 pub mod events;
@@ -238,6 +240,7 @@ pub use collision::{
     collide_segment_and_capsule, collide_segment_and_circle, collide_segment_and_polygon,
     segment_distance, shape_cast, shape_distance, time_of_impact,
 };
+pub use contact::ContactIdExt;
 #[cfg(feature = "glam")]
 #[cfg_attr(docsrs, doc(cfg(feature = "glam")))]
 pub use core::math::RotFromGlamError;
