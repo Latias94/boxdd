@@ -43,6 +43,7 @@
 - [x] Add a release-level completeness matrix that classifies major wrapper areas as `safe-covered`, `raw-only`, `intentional omission`, or `candidate after 0.3`.
 - [x] Expand `WorldHandle` event support with owned snapshots only (`*_events`, `*_events_into`, `try_*`) while keeping borrowed/raw event-buffer APIs on `World`.
 - [x] Replace the temporary `World` / `WorldHandle` event-snapshot macro layer with private free-function helpers so the mirror stays explicit and aligned with the workstream's anti-macro duplication rules.
+- [x] Replace the remaining `Body` / `Shape` / `Chain` public helper macros (`contact_data`, attachment enumeration, sensor overlaps, chain segments) with private free-function helpers plus explicit owned/scoped method definitions.
 
 ## In Progress
 

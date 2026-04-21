@@ -75,40 +75,35 @@ fn chain_segments_impl(id: ChainId) -> Vec<ShapeId> {
     }
 }
 
-macro_rules! impl_chain_segment_methods {
-    () => {
-        pub fn segment_count(&self) -> i32 {
-            self.assert_valid();
-            chain_segment_count_impl(self.id)
-        }
+fn chain_segment_count_checked_impl(id: ChainId) -> i32 {
+    crate::core::debug_checks::assert_chain_valid(id);
+    chain_segment_count_impl(id)
+}
 
-        pub fn try_segment_count(&self) -> ApiResult<i32> {
-            self.check_valid()?;
-            Ok(chain_segment_count_impl(self.id))
-        }
+fn try_chain_segment_count_impl(id: ChainId) -> ApiResult<i32> {
+    crate::core::debug_checks::check_chain_valid(id)?;
+    Ok(chain_segment_count_impl(id))
+}
 
-        /// Collect all segment shape ids for this chain.
-        pub fn segments(&self) -> Vec<ShapeId> {
-            self.assert_valid();
-            chain_segments_impl(self.id)
-        }
+fn chain_segments_checked_impl(id: ChainId) -> Vec<ShapeId> {
+    crate::core::debug_checks::assert_chain_valid(id);
+    chain_segments_impl(id)
+}
 
-        pub fn segments_into(&self, out: &mut Vec<ShapeId>) {
-            self.assert_valid();
-            chain_segments_into_impl(self.id, out);
-        }
+fn chain_segments_into_checked_impl(id: ChainId, out: &mut Vec<ShapeId>) {
+    crate::core::debug_checks::assert_chain_valid(id);
+    chain_segments_into_impl(id, out);
+}
 
-        pub fn try_segments(&self) -> ApiResult<Vec<ShapeId>> {
-            self.check_valid()?;
-            Ok(chain_segments_impl(self.id))
-        }
+fn try_chain_segments_impl(id: ChainId) -> ApiResult<Vec<ShapeId>> {
+    crate::core::debug_checks::check_chain_valid(id)?;
+    Ok(chain_segments_impl(id))
+}
 
-        pub fn try_segments_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
-            self.check_valid()?;
-            chain_segments_into_impl(self.id, out);
-            Ok(())
-        }
-    };
+fn try_chain_segments_into_impl(id: ChainId, out: &mut Vec<ShapeId>) -> ApiResult<()> {
+    crate::core::debug_checks::check_chain_valid(id)?;
+    chain_segments_into_impl(id, out);
+    Ok(())
 }
 
 #[inline]
@@ -192,7 +187,30 @@ impl OwnedChain {
         self.id
     }
 
-    impl_chain_segment_methods!();
+    pub fn segment_count(&self) -> i32 {
+        chain_segment_count_checked_impl(self.id)
+    }
+
+    pub fn try_segment_count(&self) -> ApiResult<i32> {
+        try_chain_segment_count_impl(self.id)
+    }
+
+    /// Collect all segment shape ids for this chain.
+    pub fn segments(&self) -> Vec<ShapeId> {
+        chain_segments_checked_impl(self.id)
+    }
+
+    pub fn segments_into(&self, out: &mut Vec<ShapeId>) {
+        chain_segments_into_checked_impl(self.id, out);
+    }
+
+    pub fn try_segments(&self) -> ApiResult<Vec<ShapeId>> {
+        try_chain_segments_impl(self.id)
+    }
+
+    pub fn try_segments_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
+        try_chain_segments_into_impl(self.id, out)
+    }
 
     pub fn surface_material_count(&self) -> i32 {
         self.assert_valid();
@@ -310,7 +328,32 @@ impl<'w> Chain<'w> {
         crate::core::callback_state::check_not_in_callback()?;
         Ok(chain_is_valid_impl(self.id))
     }
-    impl_chain_segment_methods!();
+
+    pub fn segment_count(&self) -> i32 {
+        chain_segment_count_checked_impl(self.id)
+    }
+
+    pub fn try_segment_count(&self) -> ApiResult<i32> {
+        try_chain_segment_count_impl(self.id)
+    }
+
+    /// Collect all segment shape ids for this chain.
+    pub fn segments(&self) -> Vec<ShapeId> {
+        chain_segments_checked_impl(self.id)
+    }
+
+    pub fn segments_into(&self, out: &mut Vec<ShapeId>) {
+        chain_segments_into_checked_impl(self.id, out);
+    }
+
+    pub fn try_segments(&self) -> ApiResult<Vec<ShapeId>> {
+        try_chain_segments_impl(self.id)
+    }
+
+    pub fn try_segments_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
+        try_chain_segments_into_impl(self.id, out)
+    }
+
     pub fn surface_material_count(&self) -> i32 {
         self.assert_valid();
         chain_surface_material_count_impl(self.id)

@@ -62,119 +62,111 @@ fn body_contact_data_raw_impl(id: BodyId) -> Vec<ffi::b2ContactData> {
     }
 }
 
-macro_rules! impl_body_contact_data_methods {
-    () => {
-        pub fn contact_data(&self) -> Vec<ContactData> {
-            self.assert_valid();
-            body_contact_data_impl(self.id)
-        }
-
-        pub fn contact_data_into(&self, out: &mut Vec<ContactData>) {
-            self.assert_valid();
-            body_contact_data_into_impl(self.id, out);
-        }
-
-        pub fn try_contact_data(&self) -> ApiResult<Vec<ContactData>> {
-            self.check_valid()?;
-            Ok(body_contact_data_impl(self.id))
-        }
-
-        pub fn try_contact_data_into(&self, out: &mut Vec<ContactData>) -> ApiResult<()> {
-            self.check_valid()?;
-            body_contact_data_into_impl(self.id, out);
-            Ok(())
-        }
-
-        pub fn contact_data_raw(&self) -> Vec<ffi::b2ContactData> {
-            self.assert_valid();
-            body_contact_data_raw_impl(self.id)
-        }
-
-        pub fn contact_data_raw_into(&self, out: &mut Vec<ffi::b2ContactData>) {
-            self.assert_valid();
-            body_contact_data_raw_into_impl(self.id, out);
-        }
-
-        pub fn try_contact_data_raw(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
-            self.check_valid()?;
-            Ok(body_contact_data_raw_impl(self.id))
-        }
-
-        pub fn try_contact_data_raw_into(
-            &self,
-            out: &mut Vec<ffi::b2ContactData>,
-        ) -> ApiResult<()> {
-            self.check_valid()?;
-            body_contact_data_raw_into_impl(self.id, out);
-            Ok(())
-        }
-    };
+fn body_contact_data_checked_impl(id: BodyId) -> Vec<ContactData> {
+    crate::core::debug_checks::assert_body_valid(id);
+    body_contact_data_impl(id)
 }
 
-macro_rules! impl_body_attachment_methods {
-    () => {
-        pub fn shape_count(&self) -> i32 {
-            self.assert_valid();
-            body_shape_count_impl(self.id)
-        }
+fn body_contact_data_into_checked_impl(id: BodyId, out: &mut Vec<ContactData>) {
+    crate::core::debug_checks::assert_body_valid(id);
+    body_contact_data_into_impl(id, out);
+}
 
-        pub fn try_shape_count(&self) -> ApiResult<i32> {
-            self.check_valid()?;
-            Ok(body_shape_count_impl(self.id))
-        }
+fn try_body_contact_data_impl(id: BodyId) -> ApiResult<Vec<ContactData>> {
+    crate::core::debug_checks::check_body_valid(id)?;
+    Ok(body_contact_data_impl(id))
+}
 
-        pub fn shapes(&self) -> Vec<ShapeId> {
-            self.assert_valid();
-            body_shapes_impl(self.id)
-        }
+fn try_body_contact_data_into_impl(id: BodyId, out: &mut Vec<ContactData>) -> ApiResult<()> {
+    crate::core::debug_checks::check_body_valid(id)?;
+    body_contact_data_into_impl(id, out);
+    Ok(())
+}
 
-        pub fn shapes_into(&self, out: &mut Vec<ShapeId>) {
-            self.assert_valid();
-            body_shapes_into_impl(self.id, out);
-        }
+fn body_contact_data_raw_checked_impl(id: BodyId) -> Vec<ffi::b2ContactData> {
+    crate::core::debug_checks::assert_body_valid(id);
+    body_contact_data_raw_impl(id)
+}
 
-        pub fn try_shapes(&self) -> ApiResult<Vec<ShapeId>> {
-            self.check_valid()?;
-            Ok(body_shapes_impl(self.id))
-        }
+fn body_contact_data_raw_into_checked_impl(id: BodyId, out: &mut Vec<ffi::b2ContactData>) {
+    crate::core::debug_checks::assert_body_valid(id);
+    body_contact_data_raw_into_impl(id, out);
+}
 
-        pub fn try_shapes_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
-            self.check_valid()?;
-            body_shapes_into_impl(self.id, out);
-            Ok(())
-        }
+fn try_body_contact_data_raw_impl(id: BodyId) -> ApiResult<Vec<ffi::b2ContactData>> {
+    crate::core::debug_checks::check_body_valid(id)?;
+    Ok(body_contact_data_raw_impl(id))
+}
 
-        pub fn joint_count(&self) -> i32 {
-            self.assert_valid();
-            body_joint_count_impl(self.id)
-        }
+fn try_body_contact_data_raw_into_impl(
+    id: BodyId,
+    out: &mut Vec<ffi::b2ContactData>,
+) -> ApiResult<()> {
+    crate::core::debug_checks::check_body_valid(id)?;
+    body_contact_data_raw_into_impl(id, out);
+    Ok(())
+}
 
-        pub fn try_joint_count(&self) -> ApiResult<i32> {
-            self.check_valid()?;
-            Ok(body_joint_count_impl(self.id))
-        }
+fn body_shape_count_checked_impl(id: BodyId) -> i32 {
+    crate::core::debug_checks::assert_body_valid(id);
+    body_shape_count_impl(id)
+}
 
-        pub fn joints(&self) -> Vec<JointId> {
-            self.assert_valid();
-            body_joints_impl(self.id)
-        }
+fn try_body_shape_count_impl(id: BodyId) -> ApiResult<i32> {
+    crate::core::debug_checks::check_body_valid(id)?;
+    Ok(body_shape_count_impl(id))
+}
 
-        pub fn joints_into(&self, out: &mut Vec<JointId>) {
-            self.assert_valid();
-            body_joints_into_impl(self.id, out);
-        }
+fn body_shapes_checked_impl(id: BodyId) -> Vec<ShapeId> {
+    crate::core::debug_checks::assert_body_valid(id);
+    body_shapes_impl(id)
+}
 
-        pub fn try_joints(&self) -> ApiResult<Vec<JointId>> {
-            self.check_valid()?;
-            Ok(body_joints_impl(self.id))
-        }
+fn body_shapes_into_checked_impl(id: BodyId, out: &mut Vec<ShapeId>) {
+    crate::core::debug_checks::assert_body_valid(id);
+    body_shapes_into_impl(id, out);
+}
 
-        pub fn try_joints_into(&self, out: &mut Vec<JointId>) -> ApiResult<()> {
-            self.check_valid()?;
-            body_joints_into_impl(self.id, out);
-            Ok(())
-        }
-    };
+fn try_body_shapes_impl(id: BodyId) -> ApiResult<Vec<ShapeId>> {
+    crate::core::debug_checks::check_body_valid(id)?;
+    Ok(body_shapes_impl(id))
+}
+
+fn try_body_shapes_into_impl(id: BodyId, out: &mut Vec<ShapeId>) -> ApiResult<()> {
+    crate::core::debug_checks::check_body_valid(id)?;
+    body_shapes_into_impl(id, out);
+    Ok(())
+}
+
+fn body_joint_count_checked_impl(id: BodyId) -> i32 {
+    crate::core::debug_checks::assert_body_valid(id);
+    body_joint_count_impl(id)
+}
+
+fn try_body_joint_count_impl(id: BodyId) -> ApiResult<i32> {
+    crate::core::debug_checks::check_body_valid(id)?;
+    Ok(body_joint_count_impl(id))
+}
+
+fn body_joints_checked_impl(id: BodyId) -> Vec<JointId> {
+    crate::core::debug_checks::assert_body_valid(id);
+    body_joints_impl(id)
+}
+
+fn body_joints_into_checked_impl(id: BodyId, out: &mut Vec<JointId>) {
+    crate::core::debug_checks::assert_body_valid(id);
+    body_joints_into_impl(id, out);
+}
+
+fn try_body_joints_impl(id: BodyId) -> ApiResult<Vec<JointId>> {
+    crate::core::debug_checks::check_body_valid(id)?;
+    Ok(body_joints_impl(id))
+}
+
+fn try_body_joints_into_impl(id: BodyId, out: &mut Vec<JointId>) -> ApiResult<()> {
+    crate::core::debug_checks::check_body_valid(id)?;
+    body_joints_into_impl(id, out);
+    Ok(())
 }
 
 #[inline]
@@ -1011,7 +1003,53 @@ impl OwnedBody {
         Ok(())
     }
 
-    impl_body_attachment_methods!();
+    pub fn shape_count(&self) -> i32 {
+        body_shape_count_checked_impl(self.id)
+    }
+
+    pub fn try_shape_count(&self) -> ApiResult<i32> {
+        try_body_shape_count_impl(self.id)
+    }
+
+    pub fn shapes(&self) -> Vec<ShapeId> {
+        body_shapes_checked_impl(self.id)
+    }
+
+    pub fn shapes_into(&self, out: &mut Vec<ShapeId>) {
+        body_shapes_into_checked_impl(self.id, out);
+    }
+
+    pub fn try_shapes(&self) -> ApiResult<Vec<ShapeId>> {
+        try_body_shapes_impl(self.id)
+    }
+
+    pub fn try_shapes_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
+        try_body_shapes_into_impl(self.id, out)
+    }
+
+    pub fn joint_count(&self) -> i32 {
+        body_joint_count_checked_impl(self.id)
+    }
+
+    pub fn try_joint_count(&self) -> ApiResult<i32> {
+        try_body_joint_count_impl(self.id)
+    }
+
+    pub fn joints(&self) -> Vec<JointId> {
+        body_joints_checked_impl(self.id)
+    }
+
+    pub fn joints_into(&self, out: &mut Vec<JointId>) {
+        body_joints_into_checked_impl(self.id, out);
+    }
+
+    pub fn try_joints(&self) -> ApiResult<Vec<JointId>> {
+        try_body_joints_impl(self.id)
+    }
+
+    pub fn try_joints_into(&self, out: &mut Vec<JointId>) -> ApiResult<()> {
+        try_body_joints_into_impl(self.id, out)
+    }
 
     pub fn body_type(&self) -> BodyType {
         self.assert_valid();
@@ -1238,7 +1276,37 @@ impl OwnedBody {
         Ok(body_name_impl(self.id))
     }
 
-    impl_body_contact_data_methods!();
+    pub fn contact_data(&self) -> Vec<ContactData> {
+        body_contact_data_checked_impl(self.id)
+    }
+
+    pub fn contact_data_into(&self, out: &mut Vec<ContactData>) {
+        body_contact_data_into_checked_impl(self.id, out);
+    }
+
+    pub fn try_contact_data(&self) -> ApiResult<Vec<ContactData>> {
+        try_body_contact_data_impl(self.id)
+    }
+
+    pub fn try_contact_data_into(&self, out: &mut Vec<ContactData>) -> ApiResult<()> {
+        try_body_contact_data_into_impl(self.id, out)
+    }
+
+    pub fn contact_data_raw(&self) -> Vec<ffi::b2ContactData> {
+        body_contact_data_raw_checked_impl(self.id)
+    }
+
+    pub fn contact_data_raw_into(&self, out: &mut Vec<ffi::b2ContactData>) {
+        body_contact_data_raw_into_checked_impl(self.id, out);
+    }
+
+    pub fn try_contact_data_raw(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
+        try_body_contact_data_raw_impl(self.id)
+    }
+
+    pub fn try_contact_data_raw_into(&self, out: &mut Vec<ffi::b2ContactData>) -> ApiResult<()> {
+        try_body_contact_data_raw_into_impl(self.id, out)
+    }
 
     /// Borrow the raw id for ID-style APIs.
     pub fn as_id(&self) -> BodyId {
@@ -1975,7 +2043,37 @@ impl<'w> Body<'w> {
         Ok(())
     }
 
-    impl_body_contact_data_methods!();
+    pub fn contact_data(&self) -> Vec<ContactData> {
+        body_contact_data_checked_impl(self.id)
+    }
+
+    pub fn contact_data_into(&self, out: &mut Vec<ContactData>) {
+        body_contact_data_into_checked_impl(self.id, out);
+    }
+
+    pub fn try_contact_data(&self) -> ApiResult<Vec<ContactData>> {
+        try_body_contact_data_impl(self.id)
+    }
+
+    pub fn try_contact_data_into(&self, out: &mut Vec<ContactData>) -> ApiResult<()> {
+        try_body_contact_data_into_impl(self.id, out)
+    }
+
+    pub fn contact_data_raw(&self) -> Vec<ffi::b2ContactData> {
+        body_contact_data_raw_checked_impl(self.id)
+    }
+
+    pub fn contact_data_raw_into(&self, out: &mut Vec<ffi::b2ContactData>) {
+        body_contact_data_raw_into_checked_impl(self.id, out);
+    }
+
+    pub fn try_contact_data_raw(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
+        try_body_contact_data_raw_impl(self.id)
+    }
+
+    pub fn try_contact_data_raw_into(&self, out: &mut Vec<ffi::b2ContactData>) -> ApiResult<()> {
+        try_body_contact_data_raw_into_impl(self.id, out)
+    }
 
     // Forces/impulses
     pub fn apply_force<F: Into<Vec2>, P: Into<Vec2>>(&mut self, force: F, point: P, wake: bool) {
@@ -2146,7 +2244,53 @@ impl<'w> Body<'w> {
         Ok(())
     }
 
-    impl_body_attachment_methods!();
+    pub fn shape_count(&self) -> i32 {
+        body_shape_count_checked_impl(self.id)
+    }
+
+    pub fn try_shape_count(&self) -> ApiResult<i32> {
+        try_body_shape_count_impl(self.id)
+    }
+
+    pub fn shapes(&self) -> Vec<ShapeId> {
+        body_shapes_checked_impl(self.id)
+    }
+
+    pub fn shapes_into(&self, out: &mut Vec<ShapeId>) {
+        body_shapes_into_checked_impl(self.id, out);
+    }
+
+    pub fn try_shapes(&self) -> ApiResult<Vec<ShapeId>> {
+        try_body_shapes_impl(self.id)
+    }
+
+    pub fn try_shapes_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
+        try_body_shapes_into_impl(self.id, out)
+    }
+
+    pub fn joint_count(&self) -> i32 {
+        body_joint_count_checked_impl(self.id)
+    }
+
+    pub fn try_joint_count(&self) -> ApiResult<i32> {
+        try_body_joint_count_impl(self.id)
+    }
+
+    pub fn joints(&self) -> Vec<JointId> {
+        body_joints_checked_impl(self.id)
+    }
+
+    pub fn joints_into(&self, out: &mut Vec<JointId>) {
+        body_joints_into_checked_impl(self.id, out);
+    }
+
+    pub fn try_joints(&self) -> ApiResult<Vec<JointId>> {
+        try_body_joints_impl(self.id)
+    }
+
+    pub fn try_joints_into(&self, out: &mut Vec<JointId>) -> ApiResult<()> {
+        try_body_joints_into_impl(self.id, out)
+    }
 
     pub fn body_type(&self) -> BodyType {
         self.assert_valid();
