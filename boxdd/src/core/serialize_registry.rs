@@ -162,13 +162,14 @@ impl Registries {
 
     pub(crate) fn remove_shape_flags_for_body(&mut self, body: BodyId) {
         // Enumerate shapes on this body while it is still valid.
-        let count = unsafe { ffi::b2Body_GetShapeCount(body) }.max(0) as usize;
+        let raw_body = body.into_raw();
+        let count = unsafe { ffi::b2Body_GetShapeCount(raw_body) }.max(0) as usize;
         if count == 0 {
             return;
         }
         let arr = unsafe {
-            crate::core::ffi_vec::read_from_ffi(count, |ptr, count| {
-                ffi::b2Body_GetShapes(body, ptr, count)
+            crate::core::ffi_vec::read_from_ffi(count, |ptr: *mut ShapeId, count| {
+                ffi::b2Body_GetShapes(raw_body, ptr.cast(), count)
             })
         };
         for sid in arr {
@@ -188,7 +189,7 @@ impl Registries {
             self.bodies
                 .iter()
                 .copied()
-                .filter(|&bid| unsafe { ffi::b2Body_IsValid(bid) }),
+                .filter(|&bid| unsafe { ffi::b2Body_IsValid(bid.into_raw()) }),
         );
     }
 
@@ -201,7 +202,7 @@ impl Registries {
     pub(crate) fn chain_records_into(&self, out: &mut Vec<ChainCreateRecord>) {
         out.clear();
         out.extend(self.chains.iter().filter_map(|(id, meta)| {
-            if unsafe { ffi::b2Chain_IsValid(*id) } {
+            if unsafe { ffi::b2Chain_IsValid(id.into_raw()) } {
                 Some(meta.to_record())
             } else {
                 None

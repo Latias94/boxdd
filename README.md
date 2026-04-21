@@ -19,7 +19,7 @@
 - Math interop (features: `mint`/`cgmath`/`nalgebra`/`glam`): any `Into<Vec2>` accepts the corresponding 2D vector/point types, plus arrays/tuples.
 - Two error-handling styles: panic-on-misuse by default, plus `try_*` APIs returning `ApiResult<T>` for recoverable errors.
 - Explicit threading model: `worker_count` enables Box2D's internal parallelism, while `World` and owned handles remain pinned to one thread/task.
-- Hot-path query, debug-draw collection, and state-extraction APIs expose `*_into` variants so games can reuse `Vec` buffers across frames instead of reallocating.
+- Hot-path query, debug-draw collection, and state-extraction APIs expose `*_into` buffer-reuse variants, and overlap queries also expose `visit_*` forms for zero result-container allocation.
 - Character mover helpers cover the full safe workflow: `cast_mover`, `collide_mover`, `solve_planes`, and `clip_vector`.
 - World runtime helpers cover counters, per-stage `Profile` timings, speculative-collision toggles, and safe explosion control.
 - Core math types (`Vec2`, `Rot`, `Transform`) now cross the Box2D raw boundary explicitly through `from_raw(...)` / `into_raw()` instead of implicit conversions.
@@ -29,6 +29,7 @@
 - Live shape runtime helpers now cover `aabb`, `test_point`, direct `ray_cast`, computed `mass_data`, and runtime event toggles without raw `ffi`.
 - Body runtime helpers now cover `rotation`, sleep/awake/enabled/bullet/name controls, attached `shapes/joints` enumeration, and body-level contact/hit event toggles.
 - Joint runtime helpers now cover both common metadata/control and type-specific distance/prismatic/revolute/weld/wheel/motor state across owned/scoped/id-style APIs.
+- Opaque ids (`BodyId`, `ShapeId`, `JointId`, `ChainId`, `ContactId`) are now crate-owned value types; raw interop is explicit through `from_raw(...)` / `into_raw()`.
 - Shape classification, mass properties, and contact extraction now use crate-owned value types such as `ShapeType`, `MassData`, `ContactData`, and `Manifold`.
 - Body motion constraints use the crate-owned `MotionLocks` type instead of raw Box2D flags.
 - Crate-owned `MassData` and `MotionLocks` cross the FFI boundary explicitly via `from_raw(...)` / `into_raw()` when raw interop is still needed.
@@ -112,6 +113,7 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 ## Hot Path APIs
 - Convenience methods like `world.overlap_aabb(...)` and `world.cast_ray_all(...)` still return owned `Vec`s for one-off use.
 - For per-frame hot paths, prefer reusable-buffer variants such as `world.overlap_aabb_into(...)`, `world.cast_ray_all_into(...)`, `world.debug_draw_collect_into(...)`, `shape.sensor_overlaps_into(...)`, `body.contact_data_into(...)`, `body.shapes_into(...)`, `body.joints_into(...)`, and `chain.segments_into(...)`.
+- For overlap-heavy paths that only need streaming inspection or early exit, prefer `world.visit_overlap_aabb(...)`, `visit_overlap_polygon_points(...)`, and `visit_overlap_polygon_points_with_offset(...)` so no result container needs to be built at all.
 - `body.contact_data_into(...)` and `shape.contact_data_into(...)` now fill `Vec<ContactData>`; explicit raw escape hatches are available as `contact_data_raw_into(...)` if you truly need the upstream FFI layout.
 
 ## Character Mover APIs

@@ -10,6 +10,26 @@ use std::ffi::CString;
 use std::rc::Rc;
 use std::sync::Arc;
 
+#[inline]
+fn raw_body_id(id: BodyId) -> ffi::b2BodyId {
+    id.into_raw()
+}
+
+#[inline]
+fn raw_shape_id(id: ShapeId) -> ffi::b2ShapeId {
+    id.into_raw()
+}
+
+#[inline]
+fn raw_joint_id(id: JointId) -> ffi::b2JointId {
+    id.into_raw()
+}
+
+#[inline]
+fn raw_chain_id(id: ChainId) -> ffi::b2ChainId {
+    id.into_raw()
+}
+
 type ShapeFilterFn = fn(crate::types::ShapeId, crate::types::ShapeId) -> bool;
 type PreSolveFn = fn(
     crate::types::ShapeId,
@@ -46,7 +66,8 @@ fn world_create_circle_shape_for_impl(
 ) -> ShapeId {
     crate::core::debug_checks::assert_body_valid(body);
     let raw = circle.into_raw();
-    let sid = unsafe { ffi::b2CreateCircleShape(body, &def.0, &raw) };
+    let sid =
+        ShapeId::from_raw(unsafe { ffi::b2CreateCircleShape(raw_body_id(body), &def.0, &raw) });
     #[cfg(feature = "serialize")]
     world.record_shape_flags(sid, &def.0);
     sid
@@ -60,7 +81,8 @@ fn world_create_segment_shape_for_impl(
 ) -> ShapeId {
     crate::core::debug_checks::assert_body_valid(body);
     let raw = segment.into_raw();
-    let sid = unsafe { ffi::b2CreateSegmentShape(body, &def.0, &raw) };
+    let sid =
+        ShapeId::from_raw(unsafe { ffi::b2CreateSegmentShape(raw_body_id(body), &def.0, &raw) });
     #[cfg(feature = "serialize")]
     world.record_shape_flags(sid, &def.0);
     sid
@@ -74,7 +96,8 @@ fn world_create_capsule_shape_for_impl(
 ) -> ShapeId {
     crate::core::debug_checks::assert_body_valid(body);
     let raw = capsule.into_raw();
-    let sid = unsafe { ffi::b2CreateCapsuleShape(body, &def.0, &raw) };
+    let sid =
+        ShapeId::from_raw(unsafe { ffi::b2CreateCapsuleShape(raw_body_id(body), &def.0, &raw) });
     #[cfg(feature = "serialize")]
     world.record_shape_flags(sid, &def.0);
     sid
@@ -88,7 +111,8 @@ fn world_create_polygon_shape_for_impl(
 ) -> ShapeId {
     crate::core::debug_checks::assert_body_valid(body);
     let raw = polygon.into_raw();
-    let sid = unsafe { ffi::b2CreatePolygonShape(body, &def.0, &raw) };
+    let sid =
+        ShapeId::from_raw(unsafe { ffi::b2CreatePolygonShape(raw_body_id(body), &def.0, &raw) });
     #[cfg(feature = "serialize")]
     world.record_shape_flags(sid, &def.0);
     sid
@@ -97,7 +121,7 @@ fn world_create_polygon_shape_for_impl(
 fn world_shape_set_circle_impl(shape: ShapeId, circle: &crate::shapes::Circle) {
     crate::core::debug_checks::assert_shape_valid(shape);
     let raw = circle.into_raw();
-    unsafe { ffi::b2Shape_SetCircle(shape, &raw) }
+    unsafe { ffi::b2Shape_SetCircle(raw_shape_id(shape), &raw) }
 }
 
 fn try_world_shape_set_circle_impl(
@@ -106,14 +130,14 @@ fn try_world_shape_set_circle_impl(
 ) -> crate::error::ApiResult<()> {
     crate::core::debug_checks::check_shape_valid(shape)?;
     let raw = circle.into_raw();
-    unsafe { ffi::b2Shape_SetCircle(shape, &raw) }
+    unsafe { ffi::b2Shape_SetCircle(raw_shape_id(shape), &raw) }
     Ok(())
 }
 
 fn world_shape_set_segment_impl(shape: ShapeId, segment: &crate::shapes::Segment) {
     crate::core::debug_checks::assert_shape_valid(shape);
     let raw = segment.into_raw();
-    unsafe { ffi::b2Shape_SetSegment(shape, &raw) }
+    unsafe { ffi::b2Shape_SetSegment(raw_shape_id(shape), &raw) }
 }
 
 fn try_world_shape_set_segment_impl(
@@ -122,14 +146,14 @@ fn try_world_shape_set_segment_impl(
 ) -> crate::error::ApiResult<()> {
     crate::core::debug_checks::check_shape_valid(shape)?;
     let raw = segment.into_raw();
-    unsafe { ffi::b2Shape_SetSegment(shape, &raw) }
+    unsafe { ffi::b2Shape_SetSegment(raw_shape_id(shape), &raw) }
     Ok(())
 }
 
 fn world_shape_set_capsule_impl(shape: ShapeId, capsule: &crate::shapes::Capsule) {
     crate::core::debug_checks::assert_shape_valid(shape);
     let raw = capsule.into_raw();
-    unsafe { ffi::b2Shape_SetCapsule(shape, &raw) }
+    unsafe { ffi::b2Shape_SetCapsule(raw_shape_id(shape), &raw) }
 }
 
 fn try_world_shape_set_capsule_impl(
@@ -138,14 +162,14 @@ fn try_world_shape_set_capsule_impl(
 ) -> crate::error::ApiResult<()> {
     crate::core::debug_checks::check_shape_valid(shape)?;
     let raw = capsule.into_raw();
-    unsafe { ffi::b2Shape_SetCapsule(shape, &raw) }
+    unsafe { ffi::b2Shape_SetCapsule(raw_shape_id(shape), &raw) }
     Ok(())
 }
 
 fn world_shape_set_polygon_impl(shape: ShapeId, polygon: &crate::shapes::Polygon) {
     crate::core::debug_checks::assert_shape_valid(shape);
     let raw = polygon.into_raw();
-    unsafe { ffi::b2Shape_SetPolygon(shape, &raw) }
+    unsafe { ffi::b2Shape_SetPolygon(raw_shape_id(shape), &raw) }
 }
 
 fn try_world_shape_set_polygon_impl(
@@ -154,7 +178,7 @@ fn try_world_shape_set_polygon_impl(
 ) -> crate::error::ApiResult<()> {
     crate::core::debug_checks::check_shape_valid(shape)?;
     let raw = polygon.into_raw();
-    unsafe { ffi::b2Shape_SetPolygon(shape, &raw) }
+    unsafe { ffi::b2Shape_SetPolygon(raw_shape_id(shape), &raw) }
     Ok(())
 }
 
@@ -321,7 +345,7 @@ unsafe extern "C" fn custom_filter_callback(
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _g = crate::core::callback_state::CallbackGuard::enter();
         let cw = CallbackWorld::new(Arc::clone(&core));
-        (ctx.cb)(&cw, a, b)
+        (ctx.cb)(&cw, ShapeId::from_raw(a), ShapeId::from_raw(b))
     })) {
         Ok(v) => v,
         Err(payload) => {
@@ -364,8 +388,8 @@ unsafe extern "C" fn pre_solve_callback(
         let cw = CallbackWorld::new(Arc::clone(&core));
         (ctx.cb)(
             &cw,
-            a,
-            b,
+            ShapeId::from_raw(a),
+            ShapeId::from_raw(b),
             crate::types::Vec2::from_raw(point),
             crate::types::Vec2::from_raw(normal),
         )
@@ -1358,25 +1382,27 @@ impl World {
     /// Get a body's transform safely from its id.
     pub fn body_transform(&self, body: BodyId) -> Transform {
         crate::core::debug_checks::assert_body_valid(body);
-        Transform::from_raw(unsafe { ffi::b2Body_GetTransform(body) })
+        Transform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(body)) })
     }
 
     pub fn try_body_transform(&self, body: BodyId) -> crate::error::ApiResult<Transform> {
         crate::core::debug_checks::check_body_valid(body)?;
         Ok(Transform::from_raw(unsafe {
-            ffi::b2Body_GetTransform(body)
+            ffi::b2Body_GetTransform(raw_body_id(body))
         }))
     }
 
     /// Get a body's world position.
     pub fn body_position(&self, body: BodyId) -> Vec2 {
         crate::core::debug_checks::assert_body_valid(body);
-        Vec2::from_raw(unsafe { ffi::b2Body_GetPosition(body) })
+        Vec2::from_raw(unsafe { ffi::b2Body_GetPosition(raw_body_id(body)) })
     }
 
     pub fn try_body_position(&self, body: BodyId) -> crate::error::ApiResult<Vec2> {
         crate::core::debug_checks::check_body_valid(body)?;
-        Ok(Vec2::from_raw(unsafe { ffi::b2Body_GetPosition(body) }))
+        Ok(Vec2::from_raw(unsafe {
+            ffi::b2Body_GetPosition(raw_body_id(body))
+        }))
     }
 
     pub fn body_rotation(&self, body: BodyId) -> crate::Rot {
@@ -1402,7 +1428,7 @@ impl World {
     pub fn body_local_point<V: Into<Vec2>>(&self, body: BodyId, world_point: V) -> Vec2 {
         crate::core::debug_checks::assert_body_valid(body);
         let p: ffi::b2Vec2 = world_point.into().into_raw();
-        Vec2::from_raw(unsafe { ffi::b2Body_GetLocalPoint(body, p) })
+        Vec2::from_raw(unsafe { ffi::b2Body_GetLocalPoint(raw_body_id(body), p) })
     }
 
     pub fn try_body_local_point<V: Into<Vec2>>(
@@ -1413,14 +1439,14 @@ impl World {
         crate::core::debug_checks::check_body_valid(body)?;
         let p: ffi::b2Vec2 = world_point.into().into_raw();
         Ok(Vec2::from_raw(unsafe {
-            ffi::b2Body_GetLocalPoint(body, p)
+            ffi::b2Body_GetLocalPoint(raw_body_id(body), p)
         }))
     }
 
     pub fn body_world_point<V: Into<Vec2>>(&self, body: BodyId, local_point: V) -> Vec2 {
         crate::core::debug_checks::assert_body_valid(body);
         let p: ffi::b2Vec2 = local_point.into().into_raw();
-        Vec2::from_raw(unsafe { ffi::b2Body_GetWorldPoint(body, p) })
+        Vec2::from_raw(unsafe { ffi::b2Body_GetWorldPoint(raw_body_id(body), p) })
     }
 
     pub fn try_body_world_point<V: Into<Vec2>>(
@@ -1431,14 +1457,14 @@ impl World {
         crate::core::debug_checks::check_body_valid(body)?;
         let p: ffi::b2Vec2 = local_point.into().into_raw();
         Ok(Vec2::from_raw(unsafe {
-            ffi::b2Body_GetWorldPoint(body, p)
+            ffi::b2Body_GetWorldPoint(raw_body_id(body), p)
         }))
     }
 
     pub fn body_local_vector<V: Into<Vec2>>(&self, body: BodyId, world_vector: V) -> Vec2 {
         crate::core::debug_checks::assert_body_valid(body);
         let v: ffi::b2Vec2 = world_vector.into().into_raw();
-        Vec2::from_raw(unsafe { ffi::b2Body_GetLocalVector(body, v) })
+        Vec2::from_raw(unsafe { ffi::b2Body_GetLocalVector(raw_body_id(body), v) })
     }
 
     pub fn try_body_local_vector<V: Into<Vec2>>(
@@ -1449,14 +1475,14 @@ impl World {
         crate::core::debug_checks::check_body_valid(body)?;
         let v: ffi::b2Vec2 = world_vector.into().into_raw();
         Ok(Vec2::from_raw(unsafe {
-            ffi::b2Body_GetLocalVector(body, v)
+            ffi::b2Body_GetLocalVector(raw_body_id(body), v)
         }))
     }
 
     pub fn body_world_vector<V: Into<Vec2>>(&self, body: BodyId, local_vector: V) -> Vec2 {
         crate::core::debug_checks::assert_body_valid(body);
         let v: ffi::b2Vec2 = local_vector.into().into_raw();
-        Vec2::from_raw(unsafe { ffi::b2Body_GetWorldVector(body, v) })
+        Vec2::from_raw(unsafe { ffi::b2Body_GetWorldVector(raw_body_id(body), v) })
     }
 
     pub fn try_body_world_vector<V: Into<Vec2>>(
@@ -1467,14 +1493,14 @@ impl World {
         crate::core::debug_checks::check_body_valid(body)?;
         let v: ffi::b2Vec2 = local_vector.into().into_raw();
         Ok(Vec2::from_raw(unsafe {
-            ffi::b2Body_GetWorldVector(body, v)
+            ffi::b2Body_GetWorldVector(raw_body_id(body), v)
         }))
     }
 
     pub fn body_local_point_velocity<V: Into<Vec2>>(&self, body: BodyId, local_point: V) -> Vec2 {
         crate::core::debug_checks::assert_body_valid(body);
         let p: ffi::b2Vec2 = local_point.into().into_raw();
-        Vec2::from_raw(unsafe { ffi::b2Body_GetLocalPointVelocity(body, p) })
+        Vec2::from_raw(unsafe { ffi::b2Body_GetLocalPointVelocity(raw_body_id(body), p) })
     }
 
     pub fn try_body_local_point_velocity<V: Into<Vec2>>(
@@ -1485,14 +1511,14 @@ impl World {
         crate::core::debug_checks::check_body_valid(body)?;
         let p: ffi::b2Vec2 = local_point.into().into_raw();
         Ok(Vec2::from_raw(unsafe {
-            ffi::b2Body_GetLocalPointVelocity(body, p)
+            ffi::b2Body_GetLocalPointVelocity(raw_body_id(body), p)
         }))
     }
 
     pub fn body_world_point_velocity<V: Into<Vec2>>(&self, body: BodyId, world_point: V) -> Vec2 {
         crate::core::debug_checks::assert_body_valid(body);
         let p: ffi::b2Vec2 = world_point.into().into_raw();
-        Vec2::from_raw(unsafe { ffi::b2Body_GetWorldPointVelocity(body, p) })
+        Vec2::from_raw(unsafe { ffi::b2Body_GetWorldPointVelocity(raw_body_id(body), p) })
     }
 
     pub fn try_body_world_point_velocity<V: Into<Vec2>>(
@@ -1503,67 +1529,69 @@ impl World {
         crate::core::debug_checks::check_body_valid(body)?;
         let p: ffi::b2Vec2 = world_point.into().into_raw();
         Ok(Vec2::from_raw(unsafe {
-            ffi::b2Body_GetWorldPointVelocity(body, p)
+            ffi::b2Body_GetWorldPointVelocity(raw_body_id(body), p)
         }))
     }
 
     pub fn body_mass(&self, body: BodyId) -> f32 {
         crate::core::debug_checks::assert_body_valid(body);
-        unsafe { ffi::b2Body_GetMass(body) }
+        unsafe { ffi::b2Body_GetMass(raw_body_id(body)) }
     }
 
     pub fn try_body_mass(&self, body: BodyId) -> crate::error::ApiResult<f32> {
         crate::core::debug_checks::check_body_valid(body)?;
-        Ok(unsafe { ffi::b2Body_GetMass(body) })
+        Ok(unsafe { ffi::b2Body_GetMass(raw_body_id(body)) })
     }
 
     pub fn body_rotational_inertia(&self, body: BodyId) -> f32 {
         crate::core::debug_checks::assert_body_valid(body);
-        unsafe { ffi::b2Body_GetRotationalInertia(body) }
+        unsafe { ffi::b2Body_GetRotationalInertia(raw_body_id(body)) }
     }
 
     pub fn try_body_rotational_inertia(&self, body: BodyId) -> crate::error::ApiResult<f32> {
         crate::core::debug_checks::check_body_valid(body)?;
-        Ok(unsafe { ffi::b2Body_GetRotationalInertia(body) })
+        Ok(unsafe { ffi::b2Body_GetRotationalInertia(raw_body_id(body)) })
     }
 
     pub fn body_local_center_of_mass(&self, body: BodyId) -> Vec2 {
         crate::core::debug_checks::assert_body_valid(body);
-        Vec2::from_raw(unsafe { ffi::b2Body_GetLocalCenterOfMass(body) })
+        Vec2::from_raw(unsafe { ffi::b2Body_GetLocalCenterOfMass(raw_body_id(body)) })
     }
 
     pub fn try_body_local_center_of_mass(&self, body: BodyId) -> crate::error::ApiResult<Vec2> {
         crate::core::debug_checks::check_body_valid(body)?;
         Ok(Vec2::from_raw(unsafe {
-            ffi::b2Body_GetLocalCenterOfMass(body)
+            ffi::b2Body_GetLocalCenterOfMass(raw_body_id(body))
         }))
     }
 
     pub fn body_world_center_of_mass(&self, body: BodyId) -> Vec2 {
         crate::core::debug_checks::assert_body_valid(body);
-        Vec2::from_raw(unsafe { ffi::b2Body_GetWorldCenterOfMass(body) })
+        Vec2::from_raw(unsafe { ffi::b2Body_GetWorldCenterOfMass(raw_body_id(body)) })
     }
 
     pub fn try_body_world_center_of_mass(&self, body: BodyId) -> crate::error::ApiResult<Vec2> {
         crate::core::debug_checks::check_body_valid(body)?;
         Ok(Vec2::from_raw(unsafe {
-            ffi::b2Body_GetWorldCenterOfMass(body)
+            ffi::b2Body_GetWorldCenterOfMass(raw_body_id(body))
         }))
     }
 
     pub fn body_mass_data(&self, body: BodyId) -> MassData {
         crate::core::debug_checks::assert_body_valid(body);
-        MassData::from_raw(unsafe { ffi::b2Body_GetMassData(body) })
+        MassData::from_raw(unsafe { ffi::b2Body_GetMassData(raw_body_id(body)) })
     }
 
     pub fn try_body_mass_data(&self, body: BodyId) -> crate::error::ApiResult<MassData> {
         crate::core::debug_checks::check_body_valid(body)?;
-        Ok(MassData::from_raw(unsafe { ffi::b2Body_GetMassData(body) }))
+        Ok(MassData::from_raw(unsafe {
+            ffi::b2Body_GetMassData(raw_body_id(body))
+        }))
     }
 
     pub fn set_body_mass_data(&mut self, body: BodyId, mass_data: MassData) {
         crate::core::debug_checks::assert_body_valid(body);
-        unsafe { ffi::b2Body_SetMassData(body, mass_data.into_raw()) };
+        unsafe { ffi::b2Body_SetMassData(raw_body_id(body), mass_data.into_raw()) };
     }
 
     pub fn try_set_body_mass_data(
@@ -1572,18 +1600,18 @@ impl World {
         mass_data: MassData,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
-        unsafe { ffi::b2Body_SetMassData(body, mass_data.into_raw()) };
+        unsafe { ffi::b2Body_SetMassData(raw_body_id(body), mass_data.into_raw()) };
         Ok(())
     }
 
     pub fn body_apply_mass_from_shapes(&mut self, body: BodyId) {
         crate::core::debug_checks::assert_body_valid(body);
-        unsafe { ffi::b2Body_ApplyMassFromShapes(body) };
+        unsafe { ffi::b2Body_ApplyMassFromShapes(raw_body_id(body)) };
     }
 
     pub fn try_body_apply_mass_from_shapes(&mut self, body: BodyId) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
-        unsafe { ffi::b2Body_ApplyMassFromShapes(body) };
+        unsafe { ffi::b2Body_ApplyMassFromShapes(raw_body_id(body)) };
         Ok(())
     }
 
@@ -1665,7 +1693,9 @@ impl World {
         wake: bool,
     ) {
         crate::core::debug_checks::assert_body_valid(body);
-        unsafe { ffi::b2Body_SetTargetTransform(body, target.into_raw(), time_step, wake) };
+        unsafe {
+            ffi::b2Body_SetTargetTransform(raw_body_id(body), target.into_raw(), time_step, wake)
+        };
     }
 
     pub fn try_set_body_target_transform(
@@ -1676,7 +1706,9 @@ impl World {
         wake: bool,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
-        unsafe { ffi::b2Body_SetTargetTransform(body, target.into_raw(), time_step, wake) };
+        unsafe {
+            ffi::b2Body_SetTargetTransform(raw_body_id(body), target.into_raw(), time_step, wake)
+        };
         Ok(())
     }
 
@@ -1691,7 +1723,7 @@ impl World {
         let (s, c) = angle_radians.sin_cos();
         let rot = ffi::b2Rot { c, s };
         let pos: ffi::b2Vec2 = p.into().into_raw();
-        unsafe { ffi::b2Body_SetTransform(body, pos, rot) };
+        unsafe { ffi::b2Body_SetTransform(raw_body_id(body), pos, rot) };
     }
 
     pub fn try_set_body_position_and_rotation<V: Into<Vec2>>(
@@ -1704,7 +1736,7 @@ impl World {
         let (s, c) = angle_radians.sin_cos();
         let rot = ffi::b2Rot { c, s };
         let pos: ffi::b2Vec2 = p.into().into_raw();
-        unsafe { ffi::b2Body_SetTransform(body, pos, rot) };
+        unsafe { ffi::b2Body_SetTransform(raw_body_id(body), pos, rot) };
         Ok(())
     }
 
@@ -1712,7 +1744,7 @@ impl World {
     pub fn set_body_linear_velocity<V: Into<Vec2>>(&mut self, body: BodyId, v: V) {
         crate::core::debug_checks::assert_body_valid(body);
         let vv: ffi::b2Vec2 = v.into().into_raw();
-        unsafe { ffi::b2Body_SetLinearVelocity(body, vv) }
+        unsafe { ffi::b2Body_SetLinearVelocity(raw_body_id(body), vv) }
     }
 
     pub fn try_set_body_linear_velocity<V: Into<Vec2>>(
@@ -1722,14 +1754,14 @@ impl World {
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
         let vv: ffi::b2Vec2 = v.into().into_raw();
-        unsafe { ffi::b2Body_SetLinearVelocity(body, vv) }
+        unsafe { ffi::b2Body_SetLinearVelocity(raw_body_id(body), vv) }
         Ok(())
     }
 
     /// Set a body's angular velocity by id.
     pub fn set_body_angular_velocity(&mut self, body: BodyId, w: f32) {
         crate::core::debug_checks::assert_body_valid(body);
-        unsafe { ffi::b2Body_SetAngularVelocity(body, w) }
+        unsafe { ffi::b2Body_SetAngularVelocity(raw_body_id(body), w) }
     }
 
     pub fn try_set_body_angular_velocity(
@@ -1738,7 +1770,7 @@ impl World {
         w: f32,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
-        unsafe { ffi::b2Body_SetAngularVelocity(body, w) }
+        unsafe { ffi::b2Body_SetAngularVelocity(raw_body_id(body), w) }
         Ok(())
     }
 
@@ -1856,20 +1888,20 @@ impl World {
     /// Get the current motion locks for a body.
     pub fn body_motion_locks(&self, body: BodyId) -> MotionLocks {
         crate::core::debug_checks::assert_body_valid(body);
-        MotionLocks::from_raw(unsafe { ffi::b2Body_GetMotionLocks(body) })
+        MotionLocks::from_raw(unsafe { ffi::b2Body_GetMotionLocks(raw_body_id(body)) })
     }
 
     pub fn try_body_motion_locks(&self, body: BodyId) -> crate::error::ApiResult<MotionLocks> {
         crate::core::debug_checks::check_body_valid(body)?;
         Ok(MotionLocks::from_raw(unsafe {
-            ffi::b2Body_GetMotionLocks(body)
+            ffi::b2Body_GetMotionLocks(raw_body_id(body))
         }))
     }
 
     /// Set motion locks (translation/rotation constraints) for a body.
     pub fn set_body_motion_locks(&mut self, body: BodyId, locks: MotionLocks) {
         crate::core::debug_checks::assert_body_valid(body);
-        unsafe { ffi::b2Body_SetMotionLocks(body, locks.into_raw()) }
+        unsafe { ffi::b2Body_SetMotionLocks(raw_body_id(body), locks.into_raw()) }
     }
 
     pub fn try_set_body_motion_locks(
@@ -1878,7 +1910,7 @@ impl World {
         locks: MotionLocks,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
-        unsafe { ffi::b2Body_SetMotionLocks(body, locks.into_raw()) }
+        unsafe { ffi::b2Body_SetMotionLocks(raw_body_id(body), locks.into_raw()) }
         Ok(())
     }
 
@@ -1891,7 +1923,7 @@ impl World {
     ) {
         crate::core::debug_checks::assert_body_valid(body);
         let i: ffi::b2Vec2 = impulse.into().into_raw();
-        unsafe { ffi::b2Body_ApplyLinearImpulseToCenter(body, i, wake) };
+        unsafe { ffi::b2Body_ApplyLinearImpulseToCenter(raw_body_id(body), i, wake) };
     }
 
     pub fn try_body_apply_linear_impulse_to_center<V: Into<Vec2>>(
@@ -1902,14 +1934,14 @@ impl World {
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
         let i: ffi::b2Vec2 = impulse.into().into_raw();
-        unsafe { ffi::b2Body_ApplyLinearImpulseToCenter(body, i, wake) };
+        unsafe { ffi::b2Body_ApplyLinearImpulseToCenter(raw_body_id(body), i, wake) };
         Ok(())
     }
 
     /// Apply an angular impulse to a body.
     pub fn body_apply_angular_impulse(&mut self, body: BodyId, impulse: f32, wake: bool) {
         crate::core::debug_checks::assert_body_valid(body);
-        unsafe { ffi::b2Body_ApplyAngularImpulse(body, impulse, wake) };
+        unsafe { ffi::b2Body_ApplyAngularImpulse(raw_body_id(body), impulse, wake) };
     }
 
     pub fn try_body_apply_angular_impulse(
@@ -1919,43 +1951,43 @@ impl World {
         wake: bool,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
-        unsafe { ffi::b2Body_ApplyAngularImpulse(body, impulse, wake) };
+        unsafe { ffi::b2Body_ApplyAngularImpulse(raw_body_id(body), impulse, wake) };
         Ok(())
     }
 
     /// Clear accumulated forces and torque on a body (usually only needed before stepping).
     pub fn body_clear_forces(&mut self, body: BodyId) {
         crate::core::debug_checks::assert_body_valid(body);
-        unsafe { ffi::b2Body_ClearForces(body) };
+        unsafe { ffi::b2Body_ClearForces(raw_body_id(body)) };
     }
 
     pub fn try_body_clear_forces(&mut self, body: BodyId) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
-        unsafe { ffi::b2Body_ClearForces(body) };
+        unsafe { ffi::b2Body_ClearForces(raw_body_id(body)) };
         Ok(())
     }
 
     /// Wake all touching bodies.
     pub fn body_wake_touching(&mut self, body: BodyId) {
         crate::core::debug_checks::assert_body_valid(body);
-        unsafe { ffi::b2Body_WakeTouching(body) };
+        unsafe { ffi::b2Body_WakeTouching(raw_body_id(body)) };
     }
 
     pub fn try_body_wake_touching(&mut self, body: BodyId) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
-        unsafe { ffi::b2Body_WakeTouching(body) };
+        unsafe { ffi::b2Body_WakeTouching(raw_body_id(body)) };
         Ok(())
     }
 
     /// Set a body's type by id.
     pub fn set_body_type(&mut self, body: BodyId, t: BodyType) {
         crate::core::debug_checks::assert_body_valid(body);
-        unsafe { ffi::b2Body_SetType(body, t.into_raw()) }
+        unsafe { ffi::b2Body_SetType(raw_body_id(body), t.into_raw()) }
     }
 
     pub fn try_set_body_type(&mut self, body: BodyId, t: BodyType) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
-        unsafe { ffi::b2Body_SetType(body, t.into_raw()) }
+        unsafe { ffi::b2Body_SetType(raw_body_id(body), t.into_raw()) }
         Ok(())
     }
 
@@ -2036,7 +2068,7 @@ impl World {
     pub fn create_body<'w>(&'w mut self, def: BodyDef) -> Body<'w> {
         crate::core::callback_state::assert_not_in_callback();
         let raw = def.0;
-        let id = unsafe { ffi::b2CreateBody(self.raw(), &raw) };
+        let id = BodyId::from_raw(unsafe { ffi::b2CreateBody(self.raw(), &raw) });
         #[cfg(feature = "serialize")]
         {
             self.core.record_body(id);
@@ -2047,7 +2079,7 @@ impl World {
     pub fn try_create_body<'w>(&'w mut self, def: BodyDef) -> crate::error::ApiResult<Body<'w>> {
         crate::core::callback_state::check_not_in_callback()?;
         let raw = def.0;
-        let id = unsafe { ffi::b2CreateBody(self.raw(), &raw) };
+        let id = BodyId::from_raw(unsafe { ffi::b2CreateBody(self.raw(), &raw) });
         #[cfg(feature = "serialize")]
         {
             self.core.record_body(id);
@@ -2059,7 +2091,7 @@ impl World {
     pub fn create_body_owned(&mut self, def: BodyDef) -> crate::body::OwnedBody {
         crate::core::callback_state::assert_not_in_callback();
         let raw = def.0;
-        let id = unsafe { ffi::b2CreateBody(self.raw(), &raw) };
+        let id = BodyId::from_raw(unsafe { ffi::b2CreateBody(self.raw(), &raw) });
         #[cfg(feature = "serialize")]
         {
             self.core.record_body(id);
@@ -2073,7 +2105,7 @@ impl World {
     ) -> crate::error::ApiResult<crate::body::OwnedBody> {
         crate::core::callback_state::check_not_in_callback()?;
         let raw = def.0;
-        let id = unsafe { ffi::b2CreateBody(self.raw(), &raw) };
+        let id = BodyId::from_raw(unsafe { ffi::b2CreateBody(self.raw(), &raw) });
         #[cfg(feature = "serialize")]
         {
             self.core.record_body(id);
@@ -2085,7 +2117,7 @@ impl World {
     pub fn create_body_id(&mut self, def: BodyDef) -> BodyId {
         crate::core::callback_state::assert_not_in_callback();
         let raw = def.0;
-        let id = unsafe { ffi::b2CreateBody(self.raw(), &raw) };
+        let id = BodyId::from_raw(unsafe { ffi::b2CreateBody(self.raw(), &raw) });
         #[cfg(feature = "serialize")]
         {
             self.core.record_body(id);
@@ -2096,7 +2128,7 @@ impl World {
     pub fn try_create_body_id(&mut self, def: BodyDef) -> crate::error::ApiResult<BodyId> {
         crate::core::callback_state::check_not_in_callback()?;
         let raw = def.0;
-        let id = unsafe { ffi::b2CreateBody(self.raw(), &raw) };
+        let id = BodyId::from_raw(unsafe { ffi::b2CreateBody(self.raw(), &raw) });
         #[cfg(feature = "serialize")]
         {
             self.core.record_body(id);
@@ -2107,10 +2139,10 @@ impl World {
     /// Destroy a body by id.
     pub fn destroy_body_id(&mut self, id: BodyId) {
         crate::core::callback_state::assert_not_in_callback();
-        if unsafe { ffi::b2Body_IsValid(id) } {
+        if unsafe { ffi::b2Body_IsValid(raw_body_id(id)) } {
             #[cfg(feature = "serialize")]
             self.core.cleanup_before_destroy_body(id);
-            unsafe { ffi::b2DestroyBody(id) };
+            unsafe { ffi::b2DestroyBody(raw_body_id(id)) };
             let _ = self.core.clear_body_user_data(id);
         }
     }
@@ -2119,7 +2151,7 @@ impl World {
         crate::core::debug_checks::check_body_valid(id)?;
         #[cfg(feature = "serialize")]
         self.core.cleanup_before_destroy_body(id);
-        unsafe { ffi::b2DestroyBody(id) };
+        unsafe { ffi::b2DestroyBody(raw_body_id(id)) };
         let _ = self.core.clear_body_user_data(id);
         Ok(())
     }
@@ -2127,7 +2159,7 @@ impl World {
     /// Borrow a scoped body handle by id (returns `None` if the id is invalid).
     pub fn body<'w>(&'w mut self, id: BodyId) -> Option<Body<'w>> {
         crate::core::callback_state::assert_not_in_callback();
-        if unsafe { ffi::b2Body_IsValid(id) } {
+        if unsafe { ffi::b2Body_IsValid(raw_body_id(id)) } {
             Some(Body::new(self.core_arc(), id))
         } else {
             None
@@ -2137,7 +2169,7 @@ impl World {
     /// Borrow a scoped joint handle by id (returns `None` if the id is invalid).
     pub fn joint<'w>(&'w mut self, id: JointId) -> Option<crate::joints::Joint<'w>> {
         crate::core::callback_state::assert_not_in_callback();
-        if unsafe { ffi::b2Joint_IsValid(id) } {
+        if unsafe { ffi::b2Joint_IsValid(raw_joint_id(id)) } {
             Some(crate::joints::Joint::new(self.core_arc(), id))
         } else {
             None
@@ -2147,7 +2179,7 @@ impl World {
     /// Borrow a scoped shape handle by id (returns `None` if the id is invalid).
     pub fn shape<'w>(&'w mut self, id: ShapeId) -> Option<crate::shapes::Shape<'w>> {
         crate::core::callback_state::assert_not_in_callback();
-        if unsafe { ffi::b2Shape_IsValid(id) } {
+        if unsafe { ffi::b2Shape_IsValid(raw_shape_id(id)) } {
             Some(crate::shapes::Shape::new(self.core_arc(), id))
         } else {
             None
@@ -2157,7 +2189,7 @@ impl World {
     /// Borrow a scoped chain handle by id (returns `None` if the id is invalid).
     pub fn chain<'w>(&'w mut self, id: ChainId) -> Option<crate::shapes::chain::Chain<'w>> {
         crate::core::callback_state::assert_not_in_callback();
-        if unsafe { ffi::b2Chain_IsValid(id) } {
+        if unsafe { ffi::b2Chain_IsValid(raw_chain_id(id)) } {
             Some(crate::shapes::chain::Chain::new(self.core_arc(), id))
         } else {
             None
@@ -2629,8 +2661,8 @@ impl World {
         crate::core::debug_checks::assert_body_valid(body_a);
         crate::core::debug_checks::assert_body_valid(body_b);
         let aw: ffi::b2Vec2 = anchor_world.into().into_raw();
-        let ta = unsafe { ffi::b2Body_GetTransform(body_a) };
-        let tb = unsafe { ffi::b2Body_GetTransform(body_b) };
+        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(body_a)) };
+        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(body_b)) };
         let la = crate::core::math::world_to_local_point(ta, aw);
         let lb = crate::core::math::world_to_local_point(tb, aw);
         let base = crate::joints::JointBaseBuilder::new()
@@ -2659,8 +2691,8 @@ impl World {
         crate::core::debug_checks::assert_body_valid(body_a);
         crate::core::debug_checks::assert_body_valid(body_b);
         let aw: ffi::b2Vec2 = anchor_world.into().into_raw();
-        let ta = unsafe { ffi::b2Body_GetTransform(body_a) };
-        let tb = unsafe { ffi::b2Body_GetTransform(body_b) };
+        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(body_a)) };
+        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(body_b)) };
         let la = crate::core::math::world_to_local_point(ta, aw);
         let lb = crate::core::math::world_to_local_point(tb, aw);
         let base = crate::joints::JointBaseBuilder::new()
@@ -2690,8 +2722,8 @@ impl World {
     ) -> crate::joints::Joint<'_> {
         crate::core::debug_checks::assert_body_valid(body_a);
         crate::core::debug_checks::assert_body_valid(body_b);
-        let ta = unsafe { ffi::b2Body_GetTransform(body_a) };
-        let tb = unsafe { ffi::b2Body_GetTransform(body_b) };
+        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(body_a)) };
+        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(body_b)) };
         let wa: ffi::b2Vec2 = anchor_a_world.into().into_raw();
         let wb: ffi::b2Vec2 = anchor_b_world.into().into_raw();
         let axis: ffi::b2Vec2 = axis_world.into().into_raw();
@@ -2712,16 +2744,16 @@ impl World {
 
     pub fn create_prismatic_joint_world_id<VA: Into<Vec2>, VB: Into<Vec2>, AX: Into<Vec2>>(
         &mut self,
-        body_a: ffi::b2BodyId,
-        body_b: ffi::b2BodyId,
+        body_a: BodyId,
+        body_b: BodyId,
         anchor_a_world: VA,
         anchor_b_world: VB,
         axis_world: AX,
     ) -> JointId {
         crate::core::debug_checks::assert_body_valid(body_a);
         crate::core::debug_checks::assert_body_valid(body_b);
-        let ta = unsafe { ffi::b2Body_GetTransform(body_a) };
-        let tb = unsafe { ffi::b2Body_GetTransform(body_b) };
+        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(body_a)) };
+        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(body_b)) };
         let wa: ffi::b2Vec2 = anchor_a_world.into().into_raw();
         let wb: ffi::b2Vec2 = anchor_b_world.into().into_raw();
         let axis: ffi::b2Vec2 = axis_world.into().into_raw();
@@ -2750,8 +2782,8 @@ impl World {
     ) -> crate::joints::Joint<'_> {
         crate::core::debug_checks::assert_body_valid(body_a);
         crate::core::debug_checks::assert_body_valid(body_b);
-        let ta = unsafe { ffi::b2Body_GetTransform(body_a) };
-        let tb = unsafe { ffi::b2Body_GetTransform(body_b) };
+        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(body_a)) };
+        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(body_b)) };
         let wa: ffi::b2Vec2 = anchor_a_world.into().into_raw();
         let wb: ffi::b2Vec2 = anchor_b_world.into().into_raw();
         let axis: ffi::b2Vec2 = axis_world.into().into_raw();
@@ -2772,16 +2804,16 @@ impl World {
 
     pub fn create_wheel_joint_world_id<VA: Into<Vec2>, VB: Into<Vec2>, AX: Into<Vec2>>(
         &mut self,
-        body_a: ffi::b2BodyId,
-        body_b: ffi::b2BodyId,
+        body_a: BodyId,
+        body_b: BodyId,
         anchor_a_world: VA,
         anchor_b_world: VB,
         axis_world: AX,
     ) -> JointId {
         crate::core::debug_checks::assert_body_valid(body_a);
         crate::core::debug_checks::assert_body_valid(body_b);
-        let ta = unsafe { ffi::b2Body_GetTransform(body_a) };
-        let tb = unsafe { ffi::b2Body_GetTransform(body_b) };
+        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(body_a)) };
+        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(body_b)) };
         let wa: ffi::b2Vec2 = anchor_a_world.into().into_raw();
         let wb: ffi::b2Vec2 = anchor_b_world.into().into_raw();
         let axis: ffi::b2Vec2 = axis_world.into().into_raw();
@@ -2825,8 +2857,8 @@ impl World {
         crate::core::debug_checks::assert_body_valid(body_a);
         crate::core::debug_checks::assert_body_valid(body_b);
         // Build JointBase from two world anchor points.
-        let ta = unsafe { ffi::b2Body_GetTransform(body_a) };
-        let tb = unsafe { ffi::b2Body_GetTransform(body_b) };
+        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(body_a)) };
+        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(body_b)) };
         let wa: ffi::b2Vec2 = anchor_a_world.into().into_raw();
         let wb: ffi::b2Vec2 = anchor_b_world.into().into_raw();
         let la = crate::core::math::world_to_local_point(ta, wa);
@@ -2873,8 +2905,8 @@ impl World {
         crate::core::debug_checks::assert_body_valid(body_a);
         crate::core::debug_checks::assert_body_valid(body_b);
         // Build JointBase from world anchors and a shared world axis (X-axis of local frames).
-        let ta = unsafe { ffi::b2Body_GetTransform(body_a) };
-        let tb = unsafe { ffi::b2Body_GetTransform(body_b) };
+        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(body_a)) };
+        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(body_b)) };
         let wa: ffi::b2Vec2 = anchor_a_world.into().into_raw();
         let wb: ffi::b2Vec2 = anchor_b_world.into().into_raw();
         let axis: ffi::b2Vec2 = axis_world.into().into_raw();
@@ -2969,8 +3001,8 @@ impl World {
     }
     pub fn destroy_shape_id(&mut self, shape: ShapeId, update_body_mass: bool) {
         crate::core::callback_state::assert_not_in_callback();
-        if unsafe { ffi::b2Shape_IsValid(shape) } {
-            unsafe { ffi::b2DestroyShape(shape, update_body_mass) };
+        if unsafe { ffi::b2Shape_IsValid(raw_shape_id(shape)) } {
+            unsafe { ffi::b2DestroyShape(raw_shape_id(shape), update_body_mass) };
             let _ = self.core.clear_shape_user_data(shape);
         }
         #[cfg(feature = "serialize")]
@@ -2987,7 +3019,7 @@ impl World {
     ) -> ChainId {
         crate::core::debug_checks::assert_body_valid(body);
         crate::shapes::chain::assert_chain_def_valid(def);
-        let cid = unsafe { ffi::b2CreateChain(body, &def.def) };
+        let cid = ChainId::from_raw(unsafe { ffi::b2CreateChain(raw_body_id(body), &def.def) });
         #[cfg(feature = "serialize")]
         {
             let meta = crate::core::serialize_registry::ChainCreateMeta::from_def(body, def);
@@ -3003,7 +3035,7 @@ impl World {
     ) -> crate::error::ApiResult<ChainId> {
         crate::core::debug_checks::check_body_valid(body)?;
         crate::shapes::chain::check_chain_def_valid(def)?;
-        let cid = unsafe { ffi::b2CreateChain(body, &def.def) };
+        let cid = ChainId::from_raw(unsafe { ffi::b2CreateChain(raw_body_id(body), &def.def) });
         #[cfg(feature = "serialize")]
         {
             let meta = crate::core::serialize_registry::ChainCreateMeta::from_def(body, def);
@@ -3032,8 +3064,8 @@ impl World {
 
     pub fn destroy_chain_id(&mut self, chain: ChainId) {
         crate::core::debug_checks::assert_chain_valid(chain);
-        if unsafe { ffi::b2Chain_IsValid(chain) } {
-            unsafe { ffi::b2DestroyChain(chain) };
+        if unsafe { ffi::b2Chain_IsValid(raw_chain_id(chain)) } {
+            unsafe { ffi::b2DestroyChain(raw_chain_id(chain)) };
         }
         #[cfg(feature = "serialize")]
         {
@@ -3043,7 +3075,7 @@ impl World {
 
     pub fn try_destroy_chain_id(&mut self, chain: ChainId) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_chain_valid(chain)?;
-        unsafe { ffi::b2DestroyChain(chain) };
+        unsafe { ffi::b2DestroyChain(raw_chain_id(chain)) };
         #[cfg(feature = "serialize")]
         {
             self.core.remove_chain(chain);
@@ -3559,7 +3591,7 @@ impl Profile {
 }
 #[cfg(feature = "serialize")]
 impl World {
-    fn record_shape_flags(&mut self, sid: ffi::b2ShapeId, def: &ffi::b2ShapeDef) {
+    fn record_shape_flags(&mut self, sid: ShapeId, def: &ffi::b2ShapeDef) {
         self.core.record_shape_flags(sid, def);
     }
 }

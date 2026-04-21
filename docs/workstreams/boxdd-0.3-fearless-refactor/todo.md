@@ -59,6 +59,8 @@
 - [x] Refactor `serialize.rs` to reuse crate-owned body/joint/shape runtime helper layers instead of duplicating raw FFI getters for snapshots and scene extraction.
 - [x] Make core math value types (`Vec2`, `Rot`, `Transform`) use explicit `from_raw(...)` / `into_raw()` APIs instead of implicit raw `From` conversions so the crate-owned vocabulary has one consistent FFI boundary rule.
 - [x] Productize the remaining low-risk global foundation helpers (`allocated_byte_count`, timing ticks/milliseconds, deterministic hashing, and float validation) while explicitly deferring process-wide allocator/log/assert hooks past `0.3`.
+- [x] Add zero-allocation overlap visitor APIs (`visit_overlap_*` / `try_visit_overlap_*`) and route overlap collection helpers through the same visitor core so hot-path query styles cannot drift.
+- [x] Productize opaque Box2D ids (`BodyId`, `ShapeId`, `JointId`, `ChainId`, `ContactId`) as crate-owned value types with explicit `from_raw(...)` / `into_raw()` boundaries, and remove the remaining mixed raw-id seams from the safe API.
 
 ## In Progress
 

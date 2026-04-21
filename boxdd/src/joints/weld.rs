@@ -2,7 +2,7 @@ use crate::types::BodyId;
 use crate::world::World;
 use boxdd_sys::ffi;
 
-use super::{Joint, JointBase, OwnedJoint};
+use super::{Joint, JointBase, OwnedJoint, raw_body_id};
 use crate::error::ApiResult;
 
 // Weld joint
@@ -125,13 +125,13 @@ impl<'w> WeldJointBuilder<'w> {
     pub fn build(mut self) -> Joint<'w> {
         crate::core::debug_checks::assert_body_valid(self.body_a);
         crate::core::debug_checks::assert_body_valid(self.body_b);
-        let ta = unsafe { ffi::b2Body_GetTransform(self.body_a) };
-        let tb = unsafe { ffi::b2Body_GetTransform(self.body_b) };
+        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
+        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
         let aw = self.anchor_world.unwrap_or(ta.p);
         let la = crate::core::math::world_to_local_point(ta, aw);
         let lb = crate::core::math::world_to_local_point(tb, aw);
-        self.def.0.base.bodyIdA = self.body_a;
-        self.def.0.base.bodyIdB = self.body_b;
+        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
+        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
         self.def.0.base.localFrameA = ffi::b2Transform {
             p: la,
             q: ffi::b2Rot { c: 1.0, s: 0.0 },
@@ -146,13 +146,13 @@ impl<'w> WeldJointBuilder<'w> {
     pub fn try_build(mut self) -> ApiResult<Joint<'w>> {
         crate::core::debug_checks::check_body_valid(self.body_a)?;
         crate::core::debug_checks::check_body_valid(self.body_b)?;
-        let ta = unsafe { ffi::b2Body_GetTransform(self.body_a) };
-        let tb = unsafe { ffi::b2Body_GetTransform(self.body_b) };
+        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
+        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
         let aw = self.anchor_world.unwrap_or(ta.p);
         let la = crate::core::math::world_to_local_point(ta, aw);
         let lb = crate::core::math::world_to_local_point(tb, aw);
-        self.def.0.base.bodyIdA = self.body_a;
-        self.def.0.base.bodyIdB = self.body_b;
+        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
+        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
         self.def.0.base.localFrameA = ffi::b2Transform {
             p: la,
             q: ffi::b2Rot { c: 1.0, s: 0.0 },
@@ -168,13 +168,13 @@ impl<'w> WeldJointBuilder<'w> {
     pub fn build_owned(mut self) -> OwnedJoint {
         crate::core::debug_checks::assert_body_valid(self.body_a);
         crate::core::debug_checks::assert_body_valid(self.body_b);
-        let ta = unsafe { ffi::b2Body_GetTransform(self.body_a) };
-        let tb = unsafe { ffi::b2Body_GetTransform(self.body_b) };
+        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
+        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
         let aw = self.anchor_world.unwrap_or(ta.p);
         let la = crate::core::math::world_to_local_point(ta, aw);
         let lb = crate::core::math::world_to_local_point(tb, aw);
-        self.def.0.base.bodyIdA = self.body_a;
-        self.def.0.base.bodyIdB = self.body_b;
+        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
+        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
         self.def.0.base.localFrameA = ffi::b2Transform {
             p: la,
             q: ffi::b2Rot { c: 1.0, s: 0.0 },
@@ -189,13 +189,13 @@ impl<'w> WeldJointBuilder<'w> {
     pub fn try_build_owned(mut self) -> ApiResult<OwnedJoint> {
         crate::core::debug_checks::check_body_valid(self.body_a)?;
         crate::core::debug_checks::check_body_valid(self.body_b)?;
-        let ta = unsafe { ffi::b2Body_GetTransform(self.body_a) };
-        let tb = unsafe { ffi::b2Body_GetTransform(self.body_b) };
+        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
+        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
         let aw = self.anchor_world.unwrap_or(ta.p);
         let la = crate::core::math::world_to_local_point(ta, aw);
         let lb = crate::core::math::world_to_local_point(tb, aw);
-        self.def.0.base.bodyIdA = self.body_a;
-        self.def.0.base.bodyIdB = self.body_b;
+        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
+        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
         self.def.0.base.localFrameA = ffi::b2Transform {
             p: la,
             q: ffi::b2Rot { c: 1.0, s: 0.0 },

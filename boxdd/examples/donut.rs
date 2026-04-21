@@ -46,8 +46,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let a = bodies[prev];
         let b = bodies[i];
         // Compute relative rotation inv(qA) * qB
-        let ta = unsafe { boxdd_sys::ffi::b2Body_GetTransform(a) };
-        let tb = unsafe { boxdd_sys::ffi::b2Body_GetTransform(b) };
+        let ta = unsafe { boxdd_sys::ffi::b2Body_GetTransform(a.into_raw()) };
+        let tb = unsafe { boxdd_sys::ffi::b2Body_GetTransform(b.into_raw()) };
         let ca = ta.q.c;
         let sa = ta.q.s;
         let cb = tb.q.c;

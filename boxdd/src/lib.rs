@@ -5,7 +5,7 @@
 //! - Thin safe layer on top of the official Box2D v3 C API.
 //! - Modular API: world, bodies, shapes, joints, queries, collision geometry, events, debug draw.
 //! - Ergonomics: builder patterns, world-space helpers, and optional math interop (`mint`/`cgmath`/`nalgebra`/`glam`).
-//! - Hot-path friendly APIs: keep the convenience `Vec`-returning methods, or reuse caller-owned buffers with `*_into`.
+//! - Hot-path friendly APIs: keep the convenience `Vec`-returning methods, reuse caller-owned buffers with `*_into`, or use `visit_*` overlap queries to avoid result-container allocation entirely.
 //! - Character mover helpers: cast movers, collect collision planes, solve planes, and clip velocity without raw FFI.
 //! - Standalone collision geometry helpers: shape proxies, GJK distance, manifolds, shape cast, TOI, AABB validation/ray cast, and deterministic global math helpers.
 //! - Core math types (`Vec2`, `Rot`, `Transform`) use explicit `from_raw(...)` / `into_raw()` naming for Box2D interop instead of implicit raw conversions.
@@ -95,6 +95,17 @@
 //!     &mut reused,
 //! );
 //! assert_eq!(hits.len(), reused.len());
+//! let mut visited = 0;
+//! let complete = world.visit_overlap_aabb(
+//!     Aabb::from_center_half_extents([0.0, 1.0], [1.0, 1.5]),
+//!     QueryFilter::default(),
+//!     |_| {
+//!         visited += 1;
+//!         true
+//!     },
+//! );
+//! assert!(complete);
+//! assert_eq!(hits.len(), visited);
 //! // Ray (closest)
 //! let r = world.cast_ray_closest(Vec2::new(0.0, 5.0), Vec2::new(0.0, -10.0), QueryFilter::default());
 //! if r.hit { let _ = (r.point, r.normal, r.fraction); }

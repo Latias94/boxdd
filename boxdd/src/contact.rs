@@ -4,12 +4,12 @@ use boxdd_sys::ffi;
 
 #[inline]
 fn contact_is_valid_impl(id: ContactId) -> bool {
-    unsafe { ffi::b2Contact_IsValid(id) }
+    unsafe { ffi::b2Contact_IsValid(id.into_raw()) }
 }
 
 #[inline]
 fn contact_data_raw_impl(id: ContactId) -> ffi::b2ContactData {
-    unsafe { ffi::b2Contact_GetData(id) }
+    unsafe { ffi::b2Contact_GetData(id.into_raw()) }
 }
 
 /// Safe helpers for standalone [`ContactId`] values.
@@ -79,10 +79,9 @@ impl ContactIdExt for ContactId {
 mod tests {
     use super::ContactIdExt;
     use crate::ApiError;
-    use boxdd_sys::ffi;
 
     fn invalid_contact_id() -> crate::ContactId {
-        ffi::b2ContactId {
+        crate::ContactId {
             index1: 0,
             world0: 0,
             padding: 0,

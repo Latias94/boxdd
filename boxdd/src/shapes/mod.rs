@@ -95,16 +95,27 @@ pub struct OwnedShape {
     _not_send: PhantomData<Rc<()>>,
 }
 
+#[inline]
+fn raw_shape_id(id: ShapeId) -> ffi::b2ShapeId {
+    id.into_raw()
+}
+
+#[inline]
+fn raw_chain_id(id: ChainId) -> ffi::b2ChainId {
+    id.into_raw()
+}
+
 fn retain_valid_shape_ids(ids: &mut Vec<ShapeId>) {
-    ids.retain(|sid| unsafe { ffi::b2Shape_IsValid(*sid) });
+    ids.retain(|sid| unsafe { ffi::b2Shape_IsValid(raw_shape_id(*sid)) });
 }
 
 fn shape_contact_capacity(id: ShapeId) -> usize {
-    unsafe { ffi::b2Shape_GetContactCapacity(id) }.max(0) as usize
+    unsafe { ffi::b2Shape_GetContactCapacity(raw_shape_id(id)) }.max(0) as usize
 }
 
 fn shape_contact_data_into_impl(id: ShapeId, out: &mut Vec<ContactData>) {
     let cap = shape_contact_capacity(id);
+    let id = raw_shape_id(id);
     unsafe {
         crate::core::ffi_vec::fill_from_ffi(out, cap, |ptr, cap| {
             ffi::b2Shape_GetContactData(id, ptr.cast::<ffi::b2ContactData>(), cap)
@@ -114,6 +125,7 @@ fn shape_contact_data_into_impl(id: ShapeId, out: &mut Vec<ContactData>) {
 
 fn shape_contact_data_impl(id: ShapeId) -> Vec<ContactData> {
     let cap = shape_contact_capacity(id);
+    let id = raw_shape_id(id);
     unsafe {
         crate::core::ffi_vec::read_from_ffi::<ContactData>(cap, |ptr, cap| {
             ffi::b2Shape_GetContactData(id, ptr.cast::<ffi::b2ContactData>(), cap)
@@ -123,6 +135,7 @@ fn shape_contact_data_impl(id: ShapeId) -> Vec<ContactData> {
 
 fn shape_contact_data_raw_into_impl(id: ShapeId, out: &mut Vec<ffi::b2ContactData>) {
     let cap = shape_contact_capacity(id);
+    let id = raw_shape_id(id);
     unsafe {
         crate::core::ffi_vec::fill_from_ffi(out, cap, |ptr, cap| {
             ffi::b2Shape_GetContactData(id, ptr, cap)
@@ -132,6 +145,7 @@ fn shape_contact_data_raw_into_impl(id: ShapeId, out: &mut Vec<ffi::b2ContactDat
 
 fn shape_contact_data_raw_impl(id: ShapeId) -> Vec<ffi::b2ContactData> {
     let cap = shape_contact_capacity(id);
+    let id = raw_shape_id(id);
     unsafe {
         crate::core::ffi_vec::read_from_ffi(cap, |ptr, cap| {
             ffi::b2Shape_GetContactData(id, ptr, cap)
@@ -237,19 +251,21 @@ fn try_shape_sensor_overlaps_valid_into_impl(id: ShapeId, out: &mut Vec<ShapeId>
 }
 
 pub(crate) fn shape_sensor_overlaps_into_impl(id: ShapeId, out: &mut Vec<ShapeId>) {
+    let id = raw_shape_id(id);
     let cap = unsafe { ffi::b2Shape_GetSensorCapacity(id) }.max(0) as usize;
     unsafe {
         crate::core::ffi_vec::fill_from_ffi(out, cap, |ptr, cap| {
-            ffi::b2Shape_GetSensorData(id, ptr, cap)
+            ffi::b2Shape_GetSensorData(id, ptr.cast(), cap)
         });
     }
 }
 
 pub(crate) fn shape_sensor_overlaps_impl(id: ShapeId) -> Vec<ShapeId> {
+    let id = raw_shape_id(id);
     let cap = unsafe { ffi::b2Shape_GetSensorCapacity(id) }.max(0) as usize;
     unsafe {
-        crate::core::ffi_vec::read_from_ffi(cap, |ptr, cap| {
-            ffi::b2Shape_GetSensorData(id, ptr, cap)
+        crate::core::ffi_vec::read_from_ffi(cap, |ptr: *mut ShapeId, cap| {
+            ffi::b2Shape_GetSensorData(id, ptr.cast(), cap)
         })
     }
 }
@@ -267,13 +283,13 @@ pub(crate) fn shape_sensor_overlaps_valid_impl(id: ShapeId) -> Vec<ShapeId> {
 
 #[inline]
 fn shape_world_id_impl(id: ShapeId) -> ffi::b2WorldId {
-    unsafe { ffi::b2Shape_GetWorld(id) }
+    unsafe { ffi::b2Shape_GetWorld(raw_shape_id(id)) }
 }
 
 #[inline]
 fn shape_parent_chain_id_impl(id: ShapeId) -> Option<ChainId> {
-    let chain_id = unsafe { ffi::b2Shape_GetParentChain(id) };
-    if unsafe { ffi::b2Chain_IsValid(chain_id) } {
+    let chain_id = ChainId::from_raw(unsafe { ffi::b2Shape_GetParentChain(raw_shape_id(id)) });
+    if unsafe { ffi::b2Chain_IsValid(raw_chain_id(chain_id)) } {
         Some(chain_id)
     } else {
         None
@@ -282,12 +298,12 @@ fn shape_parent_chain_id_impl(id: ShapeId) -> Option<ChainId> {
 
 #[inline]
 fn shape_is_valid_impl(id: ShapeId) -> bool {
-    unsafe { ffi::b2Shape_IsValid(id) }
+    unsafe { ffi::b2Shape_IsValid(raw_shape_id(id)) }
 }
 
 #[inline]
 fn shape_type_raw_impl(id: ShapeId) -> ffi::b2ShapeType {
-    unsafe { ffi::b2Shape_GetType(id) }
+    unsafe { ffi::b2Shape_GetType(raw_shape_id(id)) }
 }
 
 #[inline]
@@ -297,49 +313,49 @@ pub(crate) fn shape_type_impl(id: ShapeId) -> ShapeType {
 
 #[inline]
 pub(crate) fn shape_body_id_impl(id: ShapeId) -> BodyId {
-    unsafe { ffi::b2Shape_GetBody(id) }
+    BodyId::from_raw(unsafe { ffi::b2Shape_GetBody(raw_shape_id(id)) })
 }
 
 #[inline]
 pub(crate) fn shape_circle_impl(id: ShapeId) -> Circle {
-    Circle::from_raw(unsafe { ffi::b2Shape_GetCircle(id) })
+    Circle::from_raw(unsafe { ffi::b2Shape_GetCircle(raw_shape_id(id)) })
 }
 
 #[inline]
 pub(crate) fn shape_segment_impl(id: ShapeId) -> Segment {
-    Segment::from_raw(unsafe { ffi::b2Shape_GetSegment(id) })
+    Segment::from_raw(unsafe { ffi::b2Shape_GetSegment(raw_shape_id(id)) })
 }
 
 #[inline]
 fn shape_chain_segment_impl(id: ShapeId) -> ChainSegment {
-    ChainSegment::from_raw(unsafe { ffi::b2Shape_GetChainSegment(id) })
+    ChainSegment::from_raw(unsafe { ffi::b2Shape_GetChainSegment(raw_shape_id(id)) })
 }
 
 #[inline]
 pub(crate) fn shape_capsule_impl(id: ShapeId) -> Capsule {
-    Capsule::from_raw(unsafe { ffi::b2Shape_GetCapsule(id) })
+    Capsule::from_raw(unsafe { ffi::b2Shape_GetCapsule(raw_shape_id(id)) })
 }
 
 #[inline]
 pub(crate) fn shape_polygon_impl(id: ShapeId) -> Polygon {
-    Polygon::from_raw(unsafe { ffi::b2Shape_GetPolygon(id) })
+    Polygon::from_raw(unsafe { ffi::b2Shape_GetPolygon(raw_shape_id(id)) })
 }
 
 #[inline]
 pub(crate) fn shape_closest_point_impl<V: Into<Vec2>>(id: ShapeId, target: V) -> Vec2 {
     let target: ffi::b2Vec2 = target.into().into_raw();
-    Vec2::from_raw(unsafe { ffi::b2Shape_GetClosestPoint(id, target) })
+    Vec2::from_raw(unsafe { ffi::b2Shape_GetClosestPoint(raw_shape_id(id), target) })
 }
 
 #[inline]
 pub(crate) fn shape_aabb_impl(id: ShapeId) -> Aabb {
-    Aabb::from_raw(unsafe { ffi::b2Shape_GetAABB(id) })
+    Aabb::from_raw(unsafe { ffi::b2Shape_GetAABB(raw_shape_id(id)) })
 }
 
 #[inline]
 pub(crate) fn shape_test_point_impl<V: Into<Vec2>>(id: ShapeId, point: V) -> bool {
     let point: ffi::b2Vec2 = point.into().into_raw();
-    unsafe { ffi::b2Shape_TestPoint(id, point) }
+    unsafe { ffi::b2Shape_TestPoint(raw_shape_id(id), point) }
 }
 
 #[inline]
@@ -361,7 +377,7 @@ pub(crate) fn shape_ray_cast_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
     translation: VT,
 ) -> CastOutput {
     let input = make_shape_ray_input(origin, translation);
-    CastOutput::from_raw(unsafe { ffi::b2Shape_RayCast(id, &input) })
+    CastOutput::from_raw(unsafe { ffi::b2Shape_RayCast(raw_shape_id(id), &input) })
 }
 
 #[inline]
@@ -373,146 +389,146 @@ pub(crate) fn shape_apply_wind_impl<V: Into<Vec2>>(
     wake: bool,
 ) {
     let wind: ffi::b2Vec2 = wind.into().into_raw();
-    unsafe { ffi::b2Shape_ApplyWind(id, wind, drag, lift, wake) }
+    unsafe { ffi::b2Shape_ApplyWind(raw_shape_id(id), wind, drag, lift, wake) }
 }
 
 #[inline]
 fn shape_set_circle_impl(id: ShapeId, circle: &Circle) {
     let raw = circle.into_raw();
-    unsafe { ffi::b2Shape_SetCircle(id, &raw) }
+    unsafe { ffi::b2Shape_SetCircle(raw_shape_id(id), &raw) }
 }
 
 #[inline]
 fn shape_set_segment_impl(id: ShapeId, segment: &Segment) {
     let raw = segment.into_raw();
-    unsafe { ffi::b2Shape_SetSegment(id, &raw) }
+    unsafe { ffi::b2Shape_SetSegment(raw_shape_id(id), &raw) }
 }
 
 #[inline]
 fn shape_set_capsule_impl(id: ShapeId, capsule: &Capsule) {
     let raw = capsule.into_raw();
-    unsafe { ffi::b2Shape_SetCapsule(id, &raw) }
+    unsafe { ffi::b2Shape_SetCapsule(raw_shape_id(id), &raw) }
 }
 
 #[inline]
 fn shape_set_polygon_impl(id: ShapeId, polygon: &Polygon) {
     let raw = polygon.into_raw();
-    unsafe { ffi::b2Shape_SetPolygon(id, &raw) }
+    unsafe { ffi::b2Shape_SetPolygon(raw_shape_id(id), &raw) }
 }
 
 #[inline]
 pub(crate) fn shape_filter_impl(id: ShapeId) -> Filter {
-    Filter::from_raw(unsafe { ffi::b2Shape_GetFilter(id) })
+    Filter::from_raw(unsafe { ffi::b2Shape_GetFilter(raw_shape_id(id)) })
 }
 
 #[inline]
 fn shape_set_filter_impl(id: ShapeId, filter: Filter) {
-    unsafe { ffi::b2Shape_SetFilter(id, filter.into_raw()) }
+    unsafe { ffi::b2Shape_SetFilter(raw_shape_id(id), filter.into_raw()) }
 }
 
 #[inline]
 pub(crate) fn shape_is_sensor_impl(id: ShapeId) -> bool {
-    unsafe { ffi::b2Shape_IsSensor(id) }
+    unsafe { ffi::b2Shape_IsSensor(raw_shape_id(id)) }
 }
 
 #[inline]
 pub(crate) fn shape_mass_data_impl(id: ShapeId) -> MassData {
-    MassData::from_raw(unsafe { ffi::b2Shape_ComputeMassData(id) })
+    MassData::from_raw(unsafe { ffi::b2Shape_ComputeMassData(raw_shape_id(id)) })
 }
 
 #[inline]
 pub(crate) fn shape_enable_sensor_events_impl(id: ShapeId, flag: bool) {
-    unsafe { ffi::b2Shape_EnableSensorEvents(id, flag) }
+    unsafe { ffi::b2Shape_EnableSensorEvents(raw_shape_id(id), flag) }
 }
 
 #[inline]
 pub(crate) fn shape_sensor_events_enabled_impl(id: ShapeId) -> bool {
-    unsafe { ffi::b2Shape_AreSensorEventsEnabled(id) }
+    unsafe { ffi::b2Shape_AreSensorEventsEnabled(raw_shape_id(id)) }
 }
 
 #[inline]
 pub(crate) fn shape_enable_contact_events_impl(id: ShapeId, flag: bool) {
-    unsafe { ffi::b2Shape_EnableContactEvents(id, flag) }
+    unsafe { ffi::b2Shape_EnableContactEvents(raw_shape_id(id), flag) }
 }
 
 #[inline]
 pub(crate) fn shape_contact_events_enabled_impl(id: ShapeId) -> bool {
-    unsafe { ffi::b2Shape_AreContactEventsEnabled(id) }
+    unsafe { ffi::b2Shape_AreContactEventsEnabled(raw_shape_id(id)) }
 }
 
 #[inline]
 pub(crate) fn shape_enable_pre_solve_events_impl(id: ShapeId, flag: bool) {
-    unsafe { ffi::b2Shape_EnablePreSolveEvents(id, flag) }
+    unsafe { ffi::b2Shape_EnablePreSolveEvents(raw_shape_id(id), flag) }
 }
 
 #[inline]
 pub(crate) fn shape_pre_solve_events_enabled_impl(id: ShapeId) -> bool {
-    unsafe { ffi::b2Shape_ArePreSolveEventsEnabled(id) }
+    unsafe { ffi::b2Shape_ArePreSolveEventsEnabled(raw_shape_id(id)) }
 }
 
 #[inline]
 pub(crate) fn shape_enable_hit_events_impl(id: ShapeId, flag: bool) {
-    unsafe { ffi::b2Shape_EnableHitEvents(id, flag) }
+    unsafe { ffi::b2Shape_EnableHitEvents(raw_shape_id(id), flag) }
 }
 
 #[inline]
 pub(crate) fn shape_hit_events_enabled_impl(id: ShapeId) -> bool {
-    unsafe { ffi::b2Shape_AreHitEventsEnabled(id) }
+    unsafe { ffi::b2Shape_AreHitEventsEnabled(raw_shape_id(id)) }
 }
 
 #[inline]
 fn shape_set_density_impl(id: ShapeId, density: f32, update_body_mass: bool) {
-    unsafe { ffi::b2Shape_SetDensity(id, density, update_body_mass) }
+    unsafe { ffi::b2Shape_SetDensity(raw_shape_id(id), density, update_body_mass) }
 }
 
 #[inline]
 pub(crate) fn shape_density_impl(id: ShapeId) -> f32 {
-    unsafe { ffi::b2Shape_GetDensity(id) }
+    unsafe { ffi::b2Shape_GetDensity(raw_shape_id(id)) }
 }
 
 #[inline]
 fn shape_set_friction_impl(id: ShapeId, friction: f32) {
-    unsafe { ffi::b2Shape_SetFriction(id, friction) }
+    unsafe { ffi::b2Shape_SetFriction(raw_shape_id(id), friction) }
 }
 
 #[inline]
 fn shape_friction_impl(id: ShapeId) -> f32 {
-    unsafe { ffi::b2Shape_GetFriction(id) }
+    unsafe { ffi::b2Shape_GetFriction(raw_shape_id(id)) }
 }
 
 #[inline]
 fn shape_set_restitution_impl(id: ShapeId, restitution: f32) {
-    unsafe { ffi::b2Shape_SetRestitution(id, restitution) }
+    unsafe { ffi::b2Shape_SetRestitution(raw_shape_id(id), restitution) }
 }
 
 #[inline]
 fn shape_restitution_impl(id: ShapeId) -> f32 {
-    unsafe { ffi::b2Shape_GetRestitution(id) }
+    unsafe { ffi::b2Shape_GetRestitution(raw_shape_id(id)) }
 }
 
 #[inline]
 fn shape_set_user_material_impl(id: ShapeId, material: u64) {
-    unsafe { ffi::b2Shape_SetUserMaterial(id, material) }
+    unsafe { ffi::b2Shape_SetUserMaterial(raw_shape_id(id), material) }
 }
 
 #[inline]
 fn shape_user_material_impl(id: ShapeId) -> u64 {
-    unsafe { ffi::b2Shape_GetUserMaterial(id) }
+    unsafe { ffi::b2Shape_GetUserMaterial(raw_shape_id(id)) }
 }
 
 #[inline]
 pub(crate) fn shape_set_surface_material_impl(id: ShapeId, material: &SurfaceMaterial) {
-    unsafe { ffi::b2Shape_SetSurfaceMaterial(id, &material.0) }
+    unsafe { ffi::b2Shape_SetSurfaceMaterial(raw_shape_id(id), &material.0) }
 }
 
 #[inline]
 pub(crate) fn shape_surface_material_impl(id: ShapeId) -> SurfaceMaterial {
-    SurfaceMaterial::from_raw(unsafe { ffi::b2Shape_GetSurfaceMaterial(id) })
+    SurfaceMaterial::from_raw(unsafe { ffi::b2Shape_GetSurfaceMaterial(raw_shape_id(id)) })
 }
 
 #[inline]
 pub(crate) fn shape_sensor_capacity_impl(id: ShapeId) -> i32 {
-    unsafe { ffi::b2Shape_GetSensorCapacity(id) }
+    unsafe { ffi::b2Shape_GetSensorCapacity(raw_shape_id(id)) }
 }
 
 unsafe fn shape_set_user_data_ptr_impl(
@@ -521,12 +537,12 @@ unsafe fn shape_set_user_data_ptr_impl(
     user_data: *mut c_void,
 ) {
     let _ = world_core.clear_shape_user_data(id);
-    unsafe { ffi::b2Shape_SetUserData(id, user_data) }
+    unsafe { ffi::b2Shape_SetUserData(raw_shape_id(id), user_data) }
 }
 
 #[inline]
 fn shape_user_data_ptr_impl(id: ShapeId) -> *mut c_void {
-    unsafe { ffi::b2Shape_GetUserData(id) }
+    unsafe { ffi::b2Shape_GetUserData(raw_shape_id(id)) }
 }
 
 fn shape_set_user_data_impl<T: 'static>(
@@ -535,7 +551,7 @@ fn shape_set_user_data_impl<T: 'static>(
     value: T,
 ) {
     let user_data = world_core.set_shape_user_data(id, value);
-    unsafe { ffi::b2Shape_SetUserData(id, user_data) };
+    unsafe { ffi::b2Shape_SetUserData(raw_shape_id(id), user_data) };
 }
 
 fn shape_clear_user_data_impl(
@@ -544,7 +560,7 @@ fn shape_clear_user_data_impl(
 ) -> bool {
     let had = world_core.clear_shape_user_data(id);
     if had {
-        unsafe { ffi::b2Shape_SetUserData(id, core::ptr::null_mut()) };
+        unsafe { ffi::b2Shape_SetUserData(raw_shape_id(id), core::ptr::null_mut()) };
     }
     had
 }
@@ -571,7 +587,7 @@ fn shape_take_user_data_impl<T: 'static>(
 ) -> ApiResult<Option<T>> {
     let value = world_core.take_shape_user_data::<T>(id)?;
     if value.is_some() {
-        unsafe { ffi::b2Shape_SetUserData(id, core::ptr::null_mut()) };
+        unsafe { ffi::b2Shape_SetUserData(raw_shape_id(id), core::ptr::null_mut()) };
     }
     Ok(value)
 }
@@ -1314,7 +1330,7 @@ impl OwnedShape {
 
     /// Destroy the shape immediately and disarm drop.
     pub fn destroy(mut self, update_body_mass: bool) {
-        if self.destroy_on_drop && unsafe { ffi::b2Shape_IsValid(self.id) } {
+        if self.destroy_on_drop && unsafe { ffi::b2Shape_IsValid(raw_shape_id(self.id)) } {
             if crate::core::callback_state::in_callback() || self.core.events_buffers_are_borrowed()
             {
                 self.core
@@ -1323,7 +1339,7 @@ impl OwnedShape {
                         update_body_mass,
                     });
             } else {
-                unsafe { ffi::b2DestroyShape(self.id, update_body_mass) };
+                unsafe { ffi::b2DestroyShape(raw_shape_id(self.id), update_body_mass) };
                 let _ = self.core.clear_shape_user_data(self.id);
                 #[cfg(feature = "serialize")]
                 self.core.remove_shape_flags(self.id);
@@ -1341,7 +1357,7 @@ impl Drop for OwnedShape {
             .owned_shapes
             .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
         debug_assert!(prev > 0, "owned shape counter underflow");
-        if self.destroy_on_drop && unsafe { ffi::b2Shape_IsValid(self.id) } {
+        if self.destroy_on_drop && unsafe { ffi::b2Shape_IsValid(raw_shape_id(self.id)) } {
             if crate::core::callback_state::in_callback() || self.core.events_buffers_are_borrowed()
             {
                 self.core
@@ -1350,7 +1366,9 @@ impl Drop for OwnedShape {
                         update_body_mass: self.update_body_mass_on_drop,
                     });
             } else {
-                unsafe { ffi::b2DestroyShape(self.id, self.update_body_mass_on_drop) };
+                unsafe {
+                    ffi::b2DestroyShape(raw_shape_id(self.id), self.update_body_mass_on_drop)
+                };
                 let _ = self.core.clear_shape_user_data(self.id);
                 #[cfg(feature = "serialize")]
                 self.core.remove_shape_flags(self.id);
@@ -1931,8 +1949,8 @@ impl<'w> Shape<'w> {
     /// After destruction, any previously stored `ShapeId` referring to this shape becomes invalid.
     pub fn destroy(self, update_body_mass: bool) {
         crate::core::callback_state::assert_not_in_callback();
-        if unsafe { ffi::b2Shape_IsValid(self.id) } {
-            unsafe { ffi::b2DestroyShape(self.id, update_body_mass) };
+        if unsafe { ffi::b2Shape_IsValid(raw_shape_id(self.id)) } {
+            unsafe { ffi::b2DestroyShape(raw_shape_id(self.id), update_body_mass) };
             let _ = self.core.clear_shape_user_data(self.id);
             #[cfg(feature = "serialize")]
             self.core.remove_shape_flags(self.id);
@@ -1941,8 +1959,8 @@ impl<'w> Shape<'w> {
 
     pub fn try_destroy(self, update_body_mass: bool) -> ApiResult<()> {
         self.check_valid()?;
-        if unsafe { ffi::b2Shape_IsValid(self.id) } {
-            unsafe { ffi::b2DestroyShape(self.id, update_body_mass) };
+        if unsafe { ffi::b2Shape_IsValid(raw_shape_id(self.id)) } {
+            unsafe { ffi::b2DestroyShape(raw_shape_id(self.id), update_body_mass) };
             let _ = self.core.clear_shape_user_data(self.id);
             #[cfg(feature = "serialize")]
             self.core.remove_shape_flags(self.id);
@@ -2390,7 +2408,9 @@ impl<'w> Body<'w> {
     pub fn create_circle_shape(&mut self, def: &ShapeDef, c: &Circle) -> Shape<'w> {
         crate::core::debug_checks::assert_body_valid(self.id);
         let raw = c.into_raw();
-        let id = unsafe { ffi::b2CreateCircleShape(self.id, &def.0, &raw) };
+        let id = ShapeId::from_raw(unsafe {
+            ffi::b2CreateCircleShape(self.id.into_raw(), &def.0, &raw)
+        });
         #[cfg(feature = "serialize")]
         self.core.record_shape_flags(id, &def.0);
         Shape::new(Arc::clone(&self.core), id)
@@ -2398,7 +2418,9 @@ impl<'w> Body<'w> {
     pub fn create_segment_shape(&mut self, def: &ShapeDef, s: &Segment) -> Shape<'w> {
         crate::core::debug_checks::assert_body_valid(self.id);
         let raw = s.into_raw();
-        let id = unsafe { ffi::b2CreateSegmentShape(self.id, &def.0, &raw) };
+        let id = ShapeId::from_raw(unsafe {
+            ffi::b2CreateSegmentShape(self.id.into_raw(), &def.0, &raw)
+        });
         #[cfg(feature = "serialize")]
         self.core.record_shape_flags(id, &def.0);
         Shape::new(Arc::clone(&self.core), id)
@@ -2406,7 +2428,9 @@ impl<'w> Body<'w> {
     pub fn create_capsule_shape(&mut self, def: &ShapeDef, c: &Capsule) -> Shape<'w> {
         crate::core::debug_checks::assert_body_valid(self.id);
         let raw = c.into_raw();
-        let id = unsafe { ffi::b2CreateCapsuleShape(self.id, &def.0, &raw) };
+        let id = ShapeId::from_raw(unsafe {
+            ffi::b2CreateCapsuleShape(self.id.into_raw(), &def.0, &raw)
+        });
         #[cfg(feature = "serialize")]
         self.core.record_shape_flags(id, &def.0);
         Shape::new(Arc::clone(&self.core), id)
@@ -2414,7 +2438,9 @@ impl<'w> Body<'w> {
     pub fn create_polygon_shape(&mut self, def: &ShapeDef, p: &Polygon) -> Shape<'w> {
         crate::core::debug_checks::assert_body_valid(self.id);
         let raw = p.into_raw();
-        let id = unsafe { ffi::b2CreatePolygonShape(self.id, &def.0, &raw) };
+        let id = ShapeId::from_raw(unsafe {
+            ffi::b2CreatePolygonShape(self.id.into_raw(), &def.0, &raw)
+        });
         #[cfg(feature = "serialize")]
         self.core.record_shape_flags(id, &def.0);
         Shape::new(Arc::clone(&self.core), id)

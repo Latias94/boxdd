@@ -222,7 +222,7 @@ fn nested_raw_event_views_delay_destroy_until_outermost_scope() {
                 drop(body);
             });
 
-            assert!(ffi::b2Body_IsValid(id));
+            assert!(ffi::b2Body_IsValid(id.into_raw()));
         });
     }
 

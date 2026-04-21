@@ -4,6 +4,10 @@ fn approx_eq(a: f32, b: f32, eps: f32) -> bool {
     (a - b).abs() <= eps
 }
 
+fn shape_id_fields(id: ShapeId) -> (i32, u16, u16) {
+    (id.index1, id.world0, id.generation)
+}
+
 #[test]
 fn world_basics_and_queries() {
     let mut world = World::new(
@@ -73,6 +77,75 @@ fn world_basics_and_queries() {
         &mut handle_ids,
     );
     assert_eq!(handle_ids.len(), ids.len());
+
+    let mut visited_ids = Vec::new();
+    let visited_complete = world.visit_overlap_aabb(
+        Aabb::new([-2.0, -2.0], [2.0, 2.0]),
+        QueryFilter::default(),
+        |shape_id| {
+            visited_ids.push(shape_id);
+            true
+        },
+    );
+    assert!(visited_complete);
+    assert_eq!(
+        visited_ids
+            .iter()
+            .copied()
+            .map(shape_id_fields)
+            .collect::<Vec<_>>(),
+        ids.iter().copied().map(shape_id_fields).collect::<Vec<_>>()
+    );
+
+    let mut stopped_ids = Vec::new();
+    let visited_complete = world.visit_overlap_aabb(
+        Aabb::new([-2.0, -2.0], [2.0, 2.0]),
+        QueryFilter::default(),
+        |shape_id| {
+            stopped_ids.push(shape_id);
+            false
+        },
+    );
+    assert!(!visited_complete);
+    assert_eq!(stopped_ids.len(), 1);
+
+    let mut empty_visit_count = 0;
+    let visited_complete = world.visit_overlap_aabb(
+        Aabb::new([50.0, 50.0], [51.0, 51.0]),
+        QueryFilter::default(),
+        |_| {
+            empty_visit_count += 1;
+            true
+        },
+    );
+    assert!(visited_complete);
+    assert_eq!(empty_visit_count, 0);
+
+    let mut handle_visit_count = 0;
+    let visited_complete = handle.visit_overlap_aabb(
+        Aabb::new([-2.0, -2.0], [2.0, 2.0]),
+        QueryFilter::default(),
+        |_| {
+            handle_visit_count += 1;
+            true
+        },
+    );
+    assert!(visited_complete);
+    assert_eq!(handle_visit_count, ids.len());
+
+    let mut try_handle_visit_count = 0;
+    let visited_complete = handle
+        .try_visit_overlap_aabb(
+            Aabb::new([-2.0, -2.0], [2.0, 2.0]),
+            QueryFilter::default(),
+            |_| {
+                try_handle_visit_count += 1;
+                true
+            },
+        )
+        .unwrap();
+    assert!(visited_complete);
+    assert_eq!(try_handle_visit_count, ids.len());
 
     // Raycast downward from above body should hit something
     let hit = world.cast_ray_closest([0.0_f32, 10.0], [0.0, -100.0], QueryFilter::default());
@@ -223,6 +296,7 @@ fn world_handle_queries_match_world_queries() {
         0.0_f32,
         QueryFilter::default(),
     );
+    assert!(!world_overlap.is_empty());
     let handle_overlap = handle.overlap_polygon_points_with_offset(
         [
             Vec2::new(-0.25, -0.25),
@@ -240,6 +314,96 @@ fn world_handle_queries_match_world_queries() {
         assert_eq!(handle_shape.index1, world_shape.index1);
         assert_eq!(handle_shape.generation, world_shape.generation);
     }
+
+    let world_plain_overlap = world.overlap_polygon_points(
+        [
+            Vec2::new(-0.25, -0.25),
+            Vec2::new(0.25, -0.25),
+            Vec2::new(0.25, 0.25),
+            Vec2::new(-0.25, 0.25),
+        ],
+        0.0,
+        QueryFilter::default(),
+    );
+    let mut visited_plain_overlap = Vec::new();
+    let visited_complete = world.visit_overlap_polygon_points(
+        [
+            Vec2::new(-0.25, -0.25),
+            Vec2::new(0.25, -0.25),
+            Vec2::new(0.25, 0.25),
+            Vec2::new(-0.25, 0.25),
+        ],
+        0.0,
+        QueryFilter::default(),
+        |shape_id| {
+            visited_plain_overlap.push(shape_id);
+            true
+        },
+    );
+    assert!(visited_complete);
+    assert_eq!(
+        visited_plain_overlap
+            .iter()
+            .copied()
+            .map(shape_id_fields)
+            .collect::<Vec<_>>(),
+        world_plain_overlap
+            .iter()
+            .copied()
+            .map(shape_id_fields)
+            .collect::<Vec<_>>()
+    );
+
+    let mut visited_offset_overlap = Vec::new();
+    let visited_complete = world.visit_overlap_polygon_points_with_offset(
+        [
+            Vec2::new(-0.25, -0.25),
+            Vec2::new(0.25, -0.25),
+            Vec2::new(0.25, 0.25),
+            Vec2::new(-0.25, 0.25),
+        ],
+        0.0,
+        [0.0_f32, 0.2],
+        0.0_f32,
+        QueryFilter::default(),
+        |shape_id| {
+            visited_offset_overlap.push(shape_id);
+            true
+        },
+    );
+    assert!(visited_complete);
+    assert_eq!(
+        visited_offset_overlap
+            .iter()
+            .copied()
+            .map(shape_id_fields)
+            .collect::<Vec<_>>(),
+        world_overlap
+            .iter()
+            .copied()
+            .map(shape_id_fields)
+            .collect::<Vec<_>>()
+    );
+
+    let mut handle_offset_stop_count = 0;
+    let visited_complete = handle.visit_overlap_polygon_points_with_offset(
+        [
+            Vec2::new(-0.25, -0.25),
+            Vec2::new(0.25, -0.25),
+            Vec2::new(0.25, 0.25),
+            Vec2::new(-0.25, 0.25),
+        ],
+        0.0,
+        [0.0_f32, 0.2],
+        0.0_f32,
+        QueryFilter::default(),
+        |_| {
+            handle_offset_stop_count += 1;
+            false
+        },
+    );
+    assert!(!visited_complete);
+    assert_eq!(handle_offset_stop_count, 1);
 
     let mut world_cast_hits = Vec::with_capacity(8);
     world.cast_shape_points_with_offset_into(

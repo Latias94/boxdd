@@ -17,7 +17,7 @@ pub struct BodyMoveEvent {
 pub struct BodyMove<'a>(&'a ffi::b2BodyMoveEvent);
 impl<'a> BodyMove<'a> {
     pub fn body_id(&self) -> BodyId {
-        self.0.bodyId
+        BodyId::from_raw(self.0.bodyId)
     }
     pub fn transform(&self) -> Transform {
         Transform::from_raw(self.0.transform)
@@ -46,7 +46,7 @@ fn body_events_into_impl(world: ffi::b2WorldId, out: &mut Vec<BodyMoveEvent>) {
         &[][..]
     };
     super::map_snapshot_into(out, slice, |e| BodyMoveEvent {
-        body_id: e.bodyId,
+        body_id: BodyId::from_raw(e.bodyId),
         transform: Transform::from_raw(e.transform),
         fell_asleep: e.fellAsleep,
     });

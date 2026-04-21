@@ -12,7 +12,7 @@
 | Slice | Status | Notes |
 | --- | --- | --- |
 | world creation, destruction, stepping, deferred-destroy flushing | safe-covered | Includes panic-by-default and `try_*` execution entrypoints for callback-sensitive calls. |
-| broad-phase queries and reusable-buffer hot paths | safe-covered | `World` and `WorldHandle` now share one internal definition for mirrored query helpers. |
+| broad-phase queries and reusable-buffer hot paths | safe-covered | `World` and `WorldHandle` now share one internal definition for mirrored query helpers, including owned `Vec`, reusable-buffer `*_into`, and zero-allocation `visit_*` overlap styles. |
 | event snapshots, reusable-buffer snapshots, zero-copy views, raw event slices | safe-covered | Intentionally centered on `World`, not `WorldHandle`. |
 | debug draw and collected commands | safe-covered | Includes reusable-buffer collection and explicit raw draw path. |
 | callback registration and runtime tuning | safe-covered | Includes custom filter, pre-solve, friction, restitution, explosions, counters, profile, and speculative collision control. |
@@ -96,7 +96,7 @@
 
 | Seam | Status | Notes |
 | --- | --- | --- |
-| `from_raw(...)` / `into_raw()` on crate-owned value types | raw-only | Intentional low-level escape hatch; safe vocabulary stays crate-owned, including core math values such as `Vec2`, `Rot`, and `Transform`. |
+| `from_raw(...)` / `into_raw()` on crate-owned value types | raw-only | Intentional low-level escape hatch; safe vocabulary stays crate-owned, including core math values plus opaque ids such as `BodyId`, `ShapeId`, `JointId`, `ChainId`, and `ContactId`. |
 | `debug_draw_raw` | raw-only | Kept for render backends that want direct FFI slices and strings. |
 | `with_*_events_raw(...)` | raw-only | Explicit unsafe zero-copy access to Box2D event buffers. |
 | `*_user_data_ptr_raw` | raw-only | Kept for pointer-based integration with external ownership systems. |

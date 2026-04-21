@@ -47,6 +47,7 @@ Scope:
 
 - review remaining allocation-sensitive APIs
 - reusable-buffer audit and cleanup for debug draw command collection
+- add zero-allocation visitor-style overlap queries so hot paths can stream hits or short-circuit without building result vectors
 - review `World` / `WorldHandle` duplication and consolidate the mirrored query surface where the API intentionally stays symmetric
 - review owned/scoped handle duplication outside the hottest paths
 - consolidate the most mechanical `Shape` / `OwnedShape`, `Body` / `OwnedBody`, and `Chain` / `OwnedChain` internals behind shared private helpers
@@ -62,6 +63,7 @@ Exit criteria:
 
 - the remaining duplication backlog is explicitly categorized as worth keeping or worth removing
 - no obvious per-frame allocation trap remains undocumented or unaddressed on the main safe surface
+- overlap queries support all three intended hot-path styles: owned `Vec`, reusable-buffer `*_into`, and zero-allocation `visit_*`
 - high-churn owned/scoped handle pairs no longer duplicate the same FFI access logic across every hot-path accessor
 - joint creation families no longer duplicate per-type create/owned/id/try plumbing or callback-state handling
 - event-view APIs no longer duplicate the borrow-event-buffers / process-deferred-destroys template in every module
@@ -128,6 +130,7 @@ Scope:
 
 - review remaining public raw escape hatches such as `world_id`, raw event slices, and debug draw hooks
 - make remaining crate-owned value types cross the raw boundary explicitly where the wrapper owns the vocabulary
+- productize public opaque ids (`BodyId`, `ShapeId`, `JointId`, `ChainId`, `ContactId`) as crate-owned value types so the safe API stops leaking mixed raw-id seams
 - align core math types (`Vec2`, `Rot`, `Transform`) with the same explicit raw-boundary rule as the rest of the crate-owned API
 - close the remaining low-risk global foundation utility gap with byte-count, timing, yield, hash, and float-validation helpers
 - build a release-level completeness matrix so the final `0.3.0` gap list is explicit instead of implicit
@@ -163,6 +166,7 @@ Exit criteria:
 - the release has a concrete completeness matrix instead of relying on scattered TODO bullets and source inspection
 - `WorldHandle` mirrors owned event snapshots with a clear lifecycle boundary, while borrowed/raw event-buffer APIs remain intentionally `World`-only
 - crate-owned value types no longer rely on implicit raw conversions except for documented input-side or raw-escape-hatch exceptions
+- body/shape/joint/chain/contact ids no longer leak raw `ffi::*Id` types through the normal safe wrapper surface
 - the next completeness pass has a short, explicit backlog instead of scattered notes
 - thread-model guidance no longer implies that internal worker threads make the public world API thread-safe
 - math interop documentation and tests cover the intended `mint` bridge story explicitly

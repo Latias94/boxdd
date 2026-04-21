@@ -92,6 +92,33 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
             );
             self.errs.push(
                 self.world
+                    .try_visit_overlap_aabb(aabb, QueryFilter::default(), |_| true)
+                    .unwrap_err(),
+            );
+            self.errs.push(
+                self.world
+                    .try_visit_overlap_polygon_points(
+                        [[-0.5_f32, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]],
+                        0.0,
+                        QueryFilter::default(),
+                        |_| true,
+                    )
+                    .unwrap_err(),
+            );
+            self.errs.push(
+                self.world
+                    .try_visit_overlap_polygon_points_with_offset(
+                        [[-0.5_f32, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]],
+                        0.0,
+                        [0.0_f32, 1.0],
+                        0.0_f32,
+                        QueryFilter::default(),
+                        |_| true,
+                    )
+                    .unwrap_err(),
+            );
+            self.errs.push(
+                self.world
                     .try_cast_ray_closest([0.0, 5.0], [0.0, -10.0], QueryFilter::default())
                     .unwrap_err(),
             );
@@ -144,6 +171,9 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
     assert_eq!(
         drawer.errs,
         vec![
+            ApiError::InCallback,
+            ApiError::InCallback,
+            ApiError::InCallback,
             ApiError::InCallback,
             ApiError::InCallback,
             ApiError::InCallback,
@@ -700,12 +730,12 @@ fn try_joint_runtime_controls_wrong_family_returns_err() {
 
 #[test]
 fn try_contact_id_helpers_cover_invalid_and_live_contacts() {
-    let invalid = ffi::b2ContactId {
+    let invalid = ContactId::from_raw(ffi::b2ContactId {
         index1: 0,
         world0: 0,
         padding: 0,
         generation: 0,
-    };
+    });
     assert!(!invalid.is_valid());
     assert!(!invalid.try_is_valid().unwrap());
     assert_eq!(invalid.try_data().unwrap_err(), ApiError::InvalidContactId);
@@ -771,9 +801,12 @@ fn try_contact_id_helpers_cover_invalid_and_live_contacts() {
         contact_id_fields(data_try.contact_id),
         contact_id_fields(contact)
     );
-    assert_eq!(contact_id_fields(raw.contactId), contact_id_fields(contact));
     assert_eq!(
-        contact_id_fields(raw_try.contactId),
+        contact_id_fields(ContactId::from_raw(raw.contactId)),
+        contact_id_fields(contact)
+    );
+    assert_eq!(
+        contact_id_fields(ContactId::from_raw(raw_try.contactId)),
         contact_id_fields(contact)
     );
 
@@ -795,19 +828,19 @@ fn try_contact_id_helpers_cover_invalid_and_live_contacts() {
         shape_id_fields(event_shape_b)
     );
     assert_eq!(
-        shape_id_fields(raw.shapeIdA),
+        shape_id_fields(ShapeId::from_raw(raw.shapeIdA)),
         shape_id_fields(event_shape_a)
     );
     assert_eq!(
-        shape_id_fields(raw.shapeIdB),
+        shape_id_fields(ShapeId::from_raw(raw.shapeIdB)),
         shape_id_fields(event_shape_b)
     );
     assert_eq!(
-        shape_id_fields(raw_try.shapeIdA),
+        shape_id_fields(ShapeId::from_raw(raw_try.shapeIdA)),
         shape_id_fields(event_shape_a)
     );
     assert_eq!(
-        shape_id_fields(raw_try.shapeIdB),
+        shape_id_fields(ShapeId::from_raw(raw_try.shapeIdB)),
         shape_id_fields(event_shape_b)
     );
 }

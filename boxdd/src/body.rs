@@ -22,12 +22,18 @@ pub struct OwnedBody {
     _not_send: PhantomData<Rc<()>>,
 }
 
+#[inline]
+fn raw_body_id(id: BodyId) -> ffi::b2BodyId {
+    id.into_raw()
+}
+
 fn body_contact_capacity(id: BodyId) -> usize {
-    unsafe { ffi::b2Body_GetContactCapacity(id) }.max(0) as usize
+    unsafe { ffi::b2Body_GetContactCapacity(raw_body_id(id)) }.max(0) as usize
 }
 
 fn body_contact_data_into_impl(id: BodyId, out: &mut Vec<ContactData>) {
     let cap = body_contact_capacity(id);
+    let id = raw_body_id(id);
     unsafe {
         crate::core::ffi_vec::fill_from_ffi(out, cap, |ptr, cap| {
             ffi::b2Body_GetContactData(id, ptr.cast::<ffi::b2ContactData>(), cap)
@@ -37,6 +43,7 @@ fn body_contact_data_into_impl(id: BodyId, out: &mut Vec<ContactData>) {
 
 fn body_contact_data_impl(id: BodyId) -> Vec<ContactData> {
     let cap = body_contact_capacity(id);
+    let id = raw_body_id(id);
     unsafe {
         crate::core::ffi_vec::read_from_ffi::<ContactData>(cap, |ptr, cap| {
             ffi::b2Body_GetContactData(id, ptr.cast::<ffi::b2ContactData>(), cap)
@@ -46,6 +53,7 @@ fn body_contact_data_impl(id: BodyId) -> Vec<ContactData> {
 
 fn body_contact_data_raw_into_impl(id: BodyId, out: &mut Vec<ffi::b2ContactData>) {
     let cap = body_contact_capacity(id);
+    let id = raw_body_id(id);
     unsafe {
         crate::core::ffi_vec::fill_from_ffi(out, cap, |ptr, cap| {
             ffi::b2Body_GetContactData(id, ptr, cap)
@@ -55,6 +63,7 @@ fn body_contact_data_raw_into_impl(id: BodyId, out: &mut Vec<ffi::b2ContactData>
 
 fn body_contact_data_raw_impl(id: BodyId) -> Vec<ffi::b2ContactData> {
     let cap = body_contact_capacity(id);
+    let id = raw_body_id(id);
     unsafe {
         crate::core::ffi_vec::read_from_ffi(cap, |ptr, cap| {
             ffi::b2Body_GetContactData(id, ptr, cap)
@@ -171,32 +180,32 @@ fn try_body_joints_into_impl(id: BodyId, out: &mut Vec<JointId>) -> ApiResult<()
 
 #[inline]
 fn body_world_id_impl(id: BodyId) -> ffi::b2WorldId {
-    unsafe { ffi::b2Body_GetWorld(id) }
+    unsafe { ffi::b2Body_GetWorld(raw_body_id(id)) }
 }
 
 #[inline]
 fn body_is_valid_impl(id: BodyId) -> bool {
-    unsafe { ffi::b2Body_IsValid(id) }
+    unsafe { ffi::b2Body_IsValid(raw_body_id(id)) }
 }
 
 #[inline]
 fn body_position_impl(id: BodyId) -> Vec2 {
-    Vec2::from_raw(unsafe { ffi::b2Body_GetPosition(id) })
+    Vec2::from_raw(unsafe { ffi::b2Body_GetPosition(raw_body_id(id)) })
 }
 
 #[inline]
 pub(crate) fn body_linear_velocity_impl(id: BodyId) -> Vec2 {
-    Vec2::from_raw(unsafe { ffi::b2Body_GetLinearVelocity(id) })
+    Vec2::from_raw(unsafe { ffi::b2Body_GetLinearVelocity(raw_body_id(id)) })
 }
 
 #[inline]
 pub(crate) fn body_angular_velocity_impl(id: BodyId) -> f32 {
-    unsafe { ffi::b2Body_GetAngularVelocity(id) }
+    unsafe { ffi::b2Body_GetAngularVelocity(raw_body_id(id)) }
 }
 
 #[inline]
 pub(crate) fn body_rotation_raw_impl(id: BodyId) -> ffi::b2Rot {
-    unsafe { ffi::b2Body_GetRotation(id) }
+    unsafe { ffi::b2Body_GetRotation(raw_body_id(id)) }
 }
 
 #[inline]
@@ -206,7 +215,7 @@ pub(crate) fn body_rotation_impl(id: BodyId) -> crate::Rot {
 
 #[inline]
 fn body_transform_raw_impl(id: BodyId) -> ffi::b2Transform {
-    unsafe { ffi::b2Body_GetTransform(id) }
+    unsafe { ffi::b2Body_GetTransform(raw_body_id(id)) }
 }
 
 #[inline]
@@ -216,43 +225,43 @@ fn body_transform_impl(id: BodyId) -> crate::Transform {
 
 #[inline]
 pub(crate) fn body_aabb_impl(id: BodyId) -> Aabb {
-    Aabb::from_raw(unsafe { ffi::b2Body_ComputeAABB(id) })
+    Aabb::from_raw(unsafe { ffi::b2Body_ComputeAABB(raw_body_id(id)) })
 }
 
 #[inline]
 fn body_local_point_impl<V: Into<Vec2>>(id: BodyId, world_point: V) -> Vec2 {
     let point: ffi::b2Vec2 = world_point.into().into_raw();
-    Vec2::from_raw(unsafe { ffi::b2Body_GetLocalPoint(id, point) })
+    Vec2::from_raw(unsafe { ffi::b2Body_GetLocalPoint(raw_body_id(id), point) })
 }
 
 #[inline]
 fn body_world_point_impl<V: Into<Vec2>>(id: BodyId, local_point: V) -> Vec2 {
     let point: ffi::b2Vec2 = local_point.into().into_raw();
-    Vec2::from_raw(unsafe { ffi::b2Body_GetWorldPoint(id, point) })
+    Vec2::from_raw(unsafe { ffi::b2Body_GetWorldPoint(raw_body_id(id), point) })
 }
 
 #[inline]
 fn body_local_vector_impl<V: Into<Vec2>>(id: BodyId, world_vector: V) -> Vec2 {
     let vector: ffi::b2Vec2 = world_vector.into().into_raw();
-    Vec2::from_raw(unsafe { ffi::b2Body_GetLocalVector(id, vector) })
+    Vec2::from_raw(unsafe { ffi::b2Body_GetLocalVector(raw_body_id(id), vector) })
 }
 
 #[inline]
 fn body_world_vector_impl<V: Into<Vec2>>(id: BodyId, local_vector: V) -> Vec2 {
     let vector: ffi::b2Vec2 = local_vector.into().into_raw();
-    Vec2::from_raw(unsafe { ffi::b2Body_GetWorldVector(id, vector) })
+    Vec2::from_raw(unsafe { ffi::b2Body_GetWorldVector(raw_body_id(id), vector) })
 }
 
 #[inline]
 fn body_local_point_velocity_impl<V: Into<Vec2>>(id: BodyId, local_point: V) -> Vec2 {
     let point: ffi::b2Vec2 = local_point.into().into_raw();
-    Vec2::from_raw(unsafe { ffi::b2Body_GetLocalPointVelocity(id, point) })
+    Vec2::from_raw(unsafe { ffi::b2Body_GetLocalPointVelocity(raw_body_id(id), point) })
 }
 
 #[inline]
 fn body_world_point_velocity_impl<V: Into<Vec2>>(id: BodyId, world_point: V) -> Vec2 {
     let point: ffi::b2Vec2 = world_point.into().into_raw();
-    Vec2::from_raw(unsafe { ffi::b2Body_GetWorldPointVelocity(id, point) })
+    Vec2::from_raw(unsafe { ffi::b2Body_GetWorldPointVelocity(raw_body_id(id), point) })
 }
 
 #[inline]
@@ -260,18 +269,18 @@ fn body_set_position_and_rotation_impl<V: Into<Vec2>>(id: BodyId, position: V, a
     let (s, c) = angle_radians.sin_cos();
     let rotation = ffi::b2Rot { c, s };
     let position: ffi::b2Vec2 = position.into().into_raw();
-    unsafe { ffi::b2Body_SetTransform(id, position, rotation) };
+    unsafe { ffi::b2Body_SetTransform(raw_body_id(id), position, rotation) };
 }
 
 #[inline]
 fn body_set_linear_velocity_impl<V: Into<Vec2>>(id: BodyId, velocity: V) {
     let velocity: ffi::b2Vec2 = velocity.into().into_raw();
-    unsafe { ffi::b2Body_SetLinearVelocity(id, velocity) }
+    unsafe { ffi::b2Body_SetLinearVelocity(raw_body_id(id), velocity) }
 }
 
 #[inline]
 fn body_set_angular_velocity_impl(id: BodyId, angular_velocity: f32) {
-    unsafe { ffi::b2Body_SetAngularVelocity(id, angular_velocity) }
+    unsafe { ffi::b2Body_SetAngularVelocity(raw_body_id(id), angular_velocity) }
 }
 
 #[inline]
@@ -281,30 +290,30 @@ fn body_set_target_transform_impl(
     time_step: f32,
     wake: bool,
 ) {
-    unsafe { ffi::b2Body_SetTargetTransform(id, target.into_raw(), time_step, wake) };
+    unsafe { ffi::b2Body_SetTargetTransform(raw_body_id(id), target.into_raw(), time_step, wake) };
 }
 
 #[inline]
 fn body_apply_force_impl<F: Into<Vec2>, P: Into<Vec2>>(id: BodyId, force: F, point: P, wake: bool) {
     let force: ffi::b2Vec2 = force.into().into_raw();
     let point: ffi::b2Vec2 = point.into().into_raw();
-    unsafe { ffi::b2Body_ApplyForce(id, force, point, wake) };
+    unsafe { ffi::b2Body_ApplyForce(raw_body_id(id), force, point, wake) };
 }
 
 #[inline]
 fn body_apply_force_to_center_impl<V: Into<Vec2>>(id: BodyId, force: V, wake: bool) {
     let force: ffi::b2Vec2 = force.into().into_raw();
-    unsafe { ffi::b2Body_ApplyForceToCenter(id, force, wake) };
+    unsafe { ffi::b2Body_ApplyForceToCenter(raw_body_id(id), force, wake) };
 }
 
 #[inline]
 fn body_apply_torque_impl(id: BodyId, torque: f32, wake: bool) {
-    unsafe { ffi::b2Body_ApplyTorque(id, torque, wake) }
+    unsafe { ffi::b2Body_ApplyTorque(raw_body_id(id), torque, wake) }
 }
 
 #[inline]
 fn body_clear_forces_impl(id: BodyId) {
-    unsafe { ffi::b2Body_ClearForces(id) };
+    unsafe { ffi::b2Body_ClearForces(raw_body_id(id)) };
 }
 
 #[inline]
@@ -316,58 +325,58 @@ fn body_apply_linear_impulse_impl<F: Into<Vec2>, P: Into<Vec2>>(
 ) {
     let impulse: ffi::b2Vec2 = impulse.into().into_raw();
     let point: ffi::b2Vec2 = point.into().into_raw();
-    unsafe { ffi::b2Body_ApplyLinearImpulse(id, impulse, point, wake) };
+    unsafe { ffi::b2Body_ApplyLinearImpulse(raw_body_id(id), impulse, point, wake) };
 }
 
 #[inline]
 fn body_apply_linear_impulse_to_center_impl<V: Into<Vec2>>(id: BodyId, impulse: V, wake: bool) {
     let impulse: ffi::b2Vec2 = impulse.into().into_raw();
-    unsafe { ffi::b2Body_ApplyLinearImpulseToCenter(id, impulse, wake) };
+    unsafe { ffi::b2Body_ApplyLinearImpulseToCenter(raw_body_id(id), impulse, wake) };
 }
 
 #[inline]
 fn body_apply_angular_impulse_impl(id: BodyId, impulse: f32, wake: bool) {
-    unsafe { ffi::b2Body_ApplyAngularImpulse(id, impulse, wake) }
+    unsafe { ffi::b2Body_ApplyAngularImpulse(raw_body_id(id), impulse, wake) }
 }
 
 #[inline]
 fn body_mass_impl(id: BodyId) -> f32 {
-    unsafe { ffi::b2Body_GetMass(id) }
+    unsafe { ffi::b2Body_GetMass(raw_body_id(id)) }
 }
 
 #[inline]
 fn body_rotational_inertia_impl(id: BodyId) -> f32 {
-    unsafe { ffi::b2Body_GetRotationalInertia(id) }
+    unsafe { ffi::b2Body_GetRotationalInertia(raw_body_id(id)) }
 }
 
 #[inline]
 fn body_local_center_of_mass_impl(id: BodyId) -> Vec2 {
-    Vec2::from_raw(unsafe { ffi::b2Body_GetLocalCenterOfMass(id) })
+    Vec2::from_raw(unsafe { ffi::b2Body_GetLocalCenterOfMass(raw_body_id(id)) })
 }
 
 #[inline]
 fn body_world_center_of_mass_impl(id: BodyId) -> Vec2 {
-    Vec2::from_raw(unsafe { ffi::b2Body_GetWorldCenterOfMass(id) })
+    Vec2::from_raw(unsafe { ffi::b2Body_GetWorldCenterOfMass(raw_body_id(id)) })
 }
 
 #[inline]
 fn body_mass_data_impl(id: BodyId) -> MassData {
-    MassData::from_raw(unsafe { ffi::b2Body_GetMassData(id) })
+    MassData::from_raw(unsafe { ffi::b2Body_GetMassData(raw_body_id(id)) })
 }
 
 #[inline]
 fn body_set_mass_data_impl(id: BodyId, mass_data: MassData) {
-    unsafe { ffi::b2Body_SetMassData(id, mass_data.into_raw()) };
+    unsafe { ffi::b2Body_SetMassData(raw_body_id(id), mass_data.into_raw()) };
 }
 
 #[inline]
 fn body_apply_mass_from_shapes_impl(id: BodyId) {
-    unsafe { ffi::b2Body_ApplyMassFromShapes(id) };
+    unsafe { ffi::b2Body_ApplyMassFromShapes(raw_body_id(id)) };
 }
 
 #[inline]
 pub(crate) fn body_shape_count_impl(id: BodyId) -> i32 {
-    unsafe { ffi::b2Body_GetShapeCount(id) }
+    unsafe { ffi::b2Body_GetShapeCount(raw_body_id(id)) }
 }
 
 #[inline]
@@ -378,9 +387,10 @@ fn body_shape_capacity(id: BodyId) -> usize {
 #[inline]
 pub(crate) fn body_shapes_into_impl(id: BodyId, out: &mut Vec<ShapeId>) {
     let cap = body_shape_capacity(id);
+    let id = raw_body_id(id);
     unsafe {
         crate::core::ffi_vec::fill_from_ffi(out, cap, |ptr, cap| {
-            ffi::b2Body_GetShapes(id, ptr, cap)
+            ffi::b2Body_GetShapes(id, ptr.cast(), cap)
         });
     }
 }
@@ -388,14 +398,17 @@ pub(crate) fn body_shapes_into_impl(id: BodyId, out: &mut Vec<ShapeId>) {
 #[inline]
 pub(crate) fn body_shapes_impl(id: BodyId) -> Vec<ShapeId> {
     let cap = body_shape_capacity(id);
+    let id = raw_body_id(id);
     unsafe {
-        crate::core::ffi_vec::read_from_ffi(cap, |ptr, cap| ffi::b2Body_GetShapes(id, ptr, cap))
+        crate::core::ffi_vec::read_from_ffi(cap, |ptr: *mut ShapeId, cap| {
+            ffi::b2Body_GetShapes(id, ptr.cast(), cap)
+        })
     }
 }
 
 #[inline]
 pub(crate) fn body_joint_count_impl(id: BodyId) -> i32 {
-    unsafe { ffi::b2Body_GetJointCount(id) }
+    unsafe { ffi::b2Body_GetJointCount(raw_body_id(id)) }
 }
 
 #[inline]
@@ -406,9 +419,10 @@ fn body_joint_capacity(id: BodyId) -> usize {
 #[inline]
 pub(crate) fn body_joints_into_impl(id: BodyId, out: &mut Vec<JointId>) {
     let cap = body_joint_capacity(id);
+    let id = raw_body_id(id);
     unsafe {
         crate::core::ffi_vec::fill_from_ffi(out, cap, |ptr, cap| {
-            ffi::b2Body_GetJoints(id, ptr, cap)
+            ffi::b2Body_GetJoints(id, ptr.cast(), cap)
         });
     }
 }
@@ -416,124 +430,127 @@ pub(crate) fn body_joints_into_impl(id: BodyId, out: &mut Vec<JointId>) {
 #[inline]
 pub(crate) fn body_joints_impl(id: BodyId) -> Vec<JointId> {
     let cap = body_joint_capacity(id);
+    let id = raw_body_id(id);
     unsafe {
-        crate::core::ffi_vec::read_from_ffi(cap, |ptr, cap| ffi::b2Body_GetJoints(id, ptr, cap))
+        crate::core::ffi_vec::read_from_ffi(cap, |ptr: *mut JointId, cap| {
+            ffi::b2Body_GetJoints(id, ptr.cast(), cap)
+        })
     }
 }
 
 #[inline]
 pub(crate) fn body_type_impl(id: BodyId) -> BodyType {
-    BodyType::from_raw(unsafe { ffi::b2Body_GetType(id) })
+    BodyType::from_raw(unsafe { ffi::b2Body_GetType(raw_body_id(id)) })
 }
 
 #[inline]
 fn body_set_type_impl(id: BodyId, body_type: BodyType) {
-    unsafe { ffi::b2Body_SetType(id, body_type.into_raw()) }
+    unsafe { ffi::b2Body_SetType(raw_body_id(id), body_type.into_raw()) }
 }
 
 #[inline]
 pub(crate) fn body_gravity_scale_impl(id: BodyId) -> f32 {
-    unsafe { ffi::b2Body_GetGravityScale(id) }
+    unsafe { ffi::b2Body_GetGravityScale(raw_body_id(id)) }
 }
 
 #[inline]
 pub(crate) fn body_set_gravity_scale_impl(id: BodyId, gravity_scale: f32) {
-    unsafe { ffi::b2Body_SetGravityScale(id, gravity_scale) }
+    unsafe { ffi::b2Body_SetGravityScale(raw_body_id(id), gravity_scale) }
 }
 
 #[inline]
 pub(crate) fn body_linear_damping_impl(id: BodyId) -> f32 {
-    unsafe { ffi::b2Body_GetLinearDamping(id) }
+    unsafe { ffi::b2Body_GetLinearDamping(raw_body_id(id)) }
 }
 
 #[inline]
 pub(crate) fn body_set_linear_damping_impl(id: BodyId, linear_damping: f32) {
-    unsafe { ffi::b2Body_SetLinearDamping(id, linear_damping) }
+    unsafe { ffi::b2Body_SetLinearDamping(raw_body_id(id), linear_damping) }
 }
 
 #[inline]
 pub(crate) fn body_angular_damping_impl(id: BodyId) -> f32 {
-    unsafe { ffi::b2Body_GetAngularDamping(id) }
+    unsafe { ffi::b2Body_GetAngularDamping(raw_body_id(id)) }
 }
 
 #[inline]
 pub(crate) fn body_set_angular_damping_impl(id: BodyId, angular_damping: f32) {
-    unsafe { ffi::b2Body_SetAngularDamping(id, angular_damping) }
+    unsafe { ffi::b2Body_SetAngularDamping(raw_body_id(id), angular_damping) }
 }
 
 #[inline]
 pub(crate) fn body_enable_sleep_impl(id: BodyId, enable_sleep: bool) {
-    unsafe { ffi::b2Body_EnableSleep(id, enable_sleep) }
+    unsafe { ffi::b2Body_EnableSleep(raw_body_id(id), enable_sleep) }
 }
 
 #[inline]
 pub(crate) fn body_is_sleep_enabled_impl(id: BodyId) -> bool {
-    unsafe { ffi::b2Body_IsSleepEnabled(id) }
+    unsafe { ffi::b2Body_IsSleepEnabled(raw_body_id(id)) }
 }
 
 #[inline]
 pub(crate) fn body_set_sleep_threshold_impl(id: BodyId, sleep_threshold: f32) {
-    unsafe { ffi::b2Body_SetSleepThreshold(id, sleep_threshold) }
+    unsafe { ffi::b2Body_SetSleepThreshold(raw_body_id(id), sleep_threshold) }
 }
 
 #[inline]
 pub(crate) fn body_sleep_threshold_impl(id: BodyId) -> f32 {
-    unsafe { ffi::b2Body_GetSleepThreshold(id) }
+    unsafe { ffi::b2Body_GetSleepThreshold(raw_body_id(id)) }
 }
 
 #[inline]
 pub(crate) fn body_is_awake_impl(id: BodyId) -> bool {
-    unsafe { ffi::b2Body_IsAwake(id) }
+    unsafe { ffi::b2Body_IsAwake(raw_body_id(id)) }
 }
 
 #[inline]
 pub(crate) fn body_set_awake_impl(id: BodyId, awake: bool) {
-    unsafe { ffi::b2Body_SetAwake(id, awake) }
+    unsafe { ffi::b2Body_SetAwake(raw_body_id(id), awake) }
 }
 
 #[inline]
 pub(crate) fn body_is_enabled_impl(id: BodyId) -> bool {
-    unsafe { ffi::b2Body_IsEnabled(id) }
+    unsafe { ffi::b2Body_IsEnabled(raw_body_id(id)) }
 }
 
 #[inline]
 pub(crate) fn body_enable_impl(id: BodyId) {
-    unsafe { ffi::b2Body_Enable(id) }
+    unsafe { ffi::b2Body_Enable(raw_body_id(id)) }
 }
 
 #[inline]
 pub(crate) fn body_disable_impl(id: BodyId) {
-    unsafe { ffi::b2Body_Disable(id) }
+    unsafe { ffi::b2Body_Disable(raw_body_id(id)) }
 }
 
 #[inline]
 pub(crate) fn body_is_bullet_impl(id: BodyId) -> bool {
-    unsafe { ffi::b2Body_IsBullet(id) }
+    unsafe { ffi::b2Body_IsBullet(raw_body_id(id)) }
 }
 
 #[inline]
 pub(crate) fn body_set_bullet_impl(id: BodyId, bullet: bool) {
-    unsafe { ffi::b2Body_SetBullet(id, bullet) }
+    unsafe { ffi::b2Body_SetBullet(raw_body_id(id), bullet) }
 }
 
 #[inline]
 pub(crate) fn body_enable_contact_events_impl(id: BodyId, flag: bool) {
-    unsafe { ffi::b2Body_EnableContactEvents(id, flag) }
+    unsafe { ffi::b2Body_EnableContactEvents(raw_body_id(id), flag) }
 }
 
 #[inline]
 pub(crate) fn body_enable_hit_events_impl(id: BodyId, flag: bool) {
-    unsafe { ffi::b2Body_EnableHitEvents(id, flag) }
+    unsafe { ffi::b2Body_EnableHitEvents(raw_body_id(id), flag) }
 }
 
 #[inline]
 pub(crate) fn body_set_name_impl(id: BodyId, name: &CStr) {
-    unsafe { ffi::b2Body_SetName(id, name.as_ptr()) }
+    unsafe { ffi::b2Body_SetName(raw_body_id(id), name.as_ptr()) }
 }
 
 #[inline]
 pub(crate) fn body_name_impl(id: BodyId) -> Option<String> {
-    let name_ptr = unsafe { ffi::b2Body_GetName(id) };
+    let name_ptr = unsafe { ffi::b2Body_GetName(raw_body_id(id)) };
     if name_ptr.is_null() {
         None
     } else {
@@ -547,23 +564,23 @@ pub(crate) fn body_name_impl(id: BodyId) -> Option<String> {
 
 unsafe fn body_set_user_data_ptr_impl(world_core: &WorldCore, id: BodyId, user_data: *mut c_void) {
     let _ = world_core.clear_body_user_data(id);
-    unsafe { ffi::b2Body_SetUserData(id, user_data) }
+    unsafe { ffi::b2Body_SetUserData(raw_body_id(id), user_data) }
 }
 
 #[inline]
 fn body_user_data_ptr_impl(id: BodyId) -> *mut c_void {
-    unsafe { ffi::b2Body_GetUserData(id) }
+    unsafe { ffi::b2Body_GetUserData(raw_body_id(id)) }
 }
 
 fn body_set_user_data_impl<T: 'static>(world_core: &WorldCore, id: BodyId, value: T) {
     let user_data = world_core.set_body_user_data(id, value);
-    unsafe { ffi::b2Body_SetUserData(id, user_data) };
+    unsafe { ffi::b2Body_SetUserData(raw_body_id(id), user_data) };
 }
 
 fn body_clear_user_data_impl(world_core: &WorldCore, id: BodyId) -> bool {
     let had = world_core.clear_body_user_data(id);
     if had {
-        unsafe { ffi::b2Body_SetUserData(id, core::ptr::null_mut()) };
+        unsafe { ffi::b2Body_SetUserData(raw_body_id(id), core::ptr::null_mut()) };
     }
     had
 }
@@ -590,7 +607,7 @@ fn body_take_user_data_impl<T: 'static>(
 ) -> ApiResult<Option<T>> {
     let value = world_core.take_body_user_data::<T>(id)?;
     if value.is_some() {
-        unsafe { ffi::b2Body_SetUserData(id, core::ptr::null_mut()) };
+        unsafe { ffi::b2Body_SetUserData(raw_body_id(id), core::ptr::null_mut()) };
     }
     Ok(value)
 }
@@ -1520,7 +1537,7 @@ impl OwnedBody {
 
     /// Destroy the body immediately and disarm drop.
     pub fn destroy(mut self) {
-        if self.destroy_on_drop && unsafe { ffi::b2Body_IsValid(self.id) } {
+        if self.destroy_on_drop && unsafe { ffi::b2Body_IsValid(raw_body_id(self.id)) } {
             if crate::core::callback_state::in_callback() || self.core.events_buffers_are_borrowed()
             {
                 self.core
@@ -1528,7 +1545,7 @@ impl OwnedBody {
             } else {
                 #[cfg(feature = "serialize")]
                 self.core.cleanup_before_destroy_body(self.id);
-                unsafe { ffi::b2DestroyBody(self.id) };
+                unsafe { ffi::b2DestroyBody(raw_body_id(self.id)) };
                 let _ = self.core.clear_body_user_data(self.id);
             }
         }
@@ -1544,7 +1561,7 @@ impl Drop for OwnedBody {
             .owned_bodies
             .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
         debug_assert!(prev > 0, "owned body counter underflow");
-        if self.destroy_on_drop && unsafe { ffi::b2Body_IsValid(self.id) } {
+        if self.destroy_on_drop && unsafe { ffi::b2Body_IsValid(raw_body_id(self.id)) } {
             if crate::core::callback_state::in_callback() || self.core.events_buffers_are_borrowed()
             {
                 self.core
@@ -1552,7 +1569,7 @@ impl Drop for OwnedBody {
             } else {
                 #[cfg(feature = "serialize")]
                 self.core.cleanup_before_destroy_body(self.id);
-                unsafe { ffi::b2DestroyBody(self.id) };
+                unsafe { ffi::b2DestroyBody(raw_body_id(self.id)) };
                 let _ = self.core.clear_body_user_data(self.id);
             }
         }

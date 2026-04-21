@@ -69,7 +69,7 @@ fn aabb_and_ray_result_use_explicit_raw_conversions() {
     );
 
     let raw = boxdd_sys::ffi::b2RayResult {
-        shapeId: shape.id(),
+        shapeId: shape.id().into_raw(),
         point: boxdd_sys::ffi::b2Vec2 { x: 1.25, y: -2.5 },
         normal: boxdd_sys::ffi::b2Vec2 { x: 0.0, y: 1.0 },
         fraction: 0.375,

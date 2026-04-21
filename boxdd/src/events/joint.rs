@@ -14,7 +14,7 @@ pub struct JointEvent {
 pub struct JointEventView<'a>(&'a ffi::b2JointEvent);
 impl<'a> JointEventView<'a> {
     pub fn joint_id(&self) -> JointId {
-        self.0.jointId
+        JointId::from_raw(self.0.jointId)
     }
 }
 
@@ -37,7 +37,7 @@ fn joint_events_into_impl(world: ffi::b2WorldId, out: &mut Vec<JointEvent>) {
         &[][..]
     };
     super::map_snapshot_into(out, slice, |e| JointEvent {
-        joint_id: e.jointId,
+        joint_id: JointId::from_raw(e.jointId),
     });
 }
 

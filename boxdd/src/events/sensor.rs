@@ -9,10 +9,10 @@ use boxdd_sys::ffi;
 pub struct SensorBeginTouch<'a>(&'a ffi::b2SensorBeginTouchEvent);
 impl<'a> SensorBeginTouch<'a> {
     pub fn sensor_shape(&self) -> ShapeId {
-        self.0.sensorShapeId
+        ShapeId::from_raw(self.0.sensorShapeId)
     }
     pub fn visitor_shape(&self) -> ShapeId {
-        self.0.visitorShapeId
+        ShapeId::from_raw(self.0.visitorShapeId)
     }
 }
 
@@ -20,10 +20,10 @@ impl<'a> SensorBeginTouch<'a> {
 pub struct SensorEndTouch<'a>(&'a ffi::b2SensorEndTouchEvent);
 impl<'a> SensorEndTouch<'a> {
     pub fn sensor_shape(&self) -> ShapeId {
-        self.0.sensorShapeId
+        ShapeId::from_raw(self.0.sensorShapeId)
     }
     pub fn visitor_shape(&self) -> ShapeId {
-        self.0.visitorShapeId
+        ShapeId::from_raw(self.0.visitorShapeId)
     }
 }
 
@@ -81,12 +81,12 @@ fn sensor_events_into_impl(world: ffi::b2WorldId, out: &mut SensorEvents) {
     };
 
     super::map_snapshot_into(&mut out.begin, begin, |e| SensorBeginTouchEvent {
-        sensor_shape: e.sensorShapeId,
-        visitor_shape: e.visitorShapeId,
+        sensor_shape: ShapeId::from_raw(e.sensorShapeId),
+        visitor_shape: ShapeId::from_raw(e.visitorShapeId),
     });
     super::map_snapshot_into(&mut out.end, end, |e| SensorEndTouchEvent {
-        sensor_shape: e.sensorShapeId,
-        visitor_shape: e.visitorShapeId,
+        sensor_shape: ShapeId::from_raw(e.sensorShapeId),
+        visitor_shape: ShapeId::from_raw(e.visitorShapeId),
     });
 }
 

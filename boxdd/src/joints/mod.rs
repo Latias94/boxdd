@@ -35,6 +35,16 @@ use crate::world::World;
 use boxdd_sys::ffi;
 
 #[inline]
+pub(crate) fn raw_body_id(id: BodyId) -> ffi::b2BodyId {
+    id.into_raw()
+}
+
+#[inline]
+fn raw_joint_id(id: JointId) -> ffi::b2JointId {
+    id.into_raw()
+}
+
+#[inline]
 fn assert_joint_valid(id: JointId) {
     crate::core::debug_checks::assert_joint_valid(id);
 }
@@ -51,18 +61,18 @@ pub(crate) fn joint_is_valid_impl(id: JointId) -> bool {
 
 #[inline]
 fn assert_joint_def_bodies_valid(base: &ffi::b2JointDef) {
-    crate::core::debug_checks::assert_body_valid(base.bodyIdA);
-    crate::core::debug_checks::assert_body_valid(base.bodyIdB);
+    crate::core::debug_checks::assert_body_valid(BodyId::from_raw(base.bodyIdA));
+    crate::core::debug_checks::assert_body_valid(BodyId::from_raw(base.bodyIdB));
 }
 
 #[inline]
 fn check_joint_def_bodies_valid(base: &ffi::b2JointDef) -> ApiResult<()> {
-    crate::core::debug_checks::check_body_valid(base.bodyIdA)?;
-    crate::core::debug_checks::check_body_valid(base.bodyIdB)?;
+    crate::core::debug_checks::check_body_valid(BodyId::from_raw(base.bodyIdA))?;
+    crate::core::debug_checks::check_body_valid(BodyId::from_raw(base.bodyIdB))?;
     Ok(())
 }
 
-type JointCreateFn<D> = unsafe extern "C" fn(ffi::b2WorldId, *const D) -> JointId;
+type JointCreateFn<D> = unsafe extern "C" fn(ffi::b2WorldId, *const D) -> ffi::b2JointId;
 
 fn create_joint_id_checked_impl<D>(
     world: &mut World,
@@ -72,7 +82,7 @@ fn create_joint_id_checked_impl<D>(
 ) -> JointId {
     crate::core::callback_state::assert_not_in_callback();
     assert_joint_def_bodies_valid(base);
-    unsafe { create(world.raw(), raw_def) }
+    JointId::from_raw(unsafe { create(world.raw(), raw_def) })
 }
 
 fn try_create_joint_id_checked_impl<D>(
@@ -83,7 +93,7 @@ fn try_create_joint_id_checked_impl<D>(
 ) -> ApiResult<JointId> {
     crate::core::callback_state::check_not_in_callback()?;
     check_joint_def_bodies_valid(base)?;
-    Ok(unsafe { create(world.raw(), raw_def) })
+    Ok(JointId::from_raw(unsafe { create(world.raw(), raw_def) }))
 }
 
 fn create_joint_scoped_checked_impl<'w, D>(
@@ -394,15 +404,15 @@ impl World {
 
     pub fn destroy_joint_id(&mut self, id: JointId, wake_bodies: bool) {
         crate::core::callback_state::assert_not_in_callback();
-        if unsafe { ffi::b2Joint_IsValid(id) } {
-            unsafe { ffi::b2DestroyJoint(id, wake_bodies) };
+        if unsafe { ffi::b2Joint_IsValid(raw_joint_id(id)) } {
+            unsafe { ffi::b2DestroyJoint(raw_joint_id(id), wake_bodies) };
             let _ = self.core_arc().clear_joint_user_data(id);
         }
     }
 
     pub fn try_destroy_joint_id(&mut self, id: JointId, wake_bodies: bool) -> ApiResult<()> {
         check_joint_valid(id)?;
-        unsafe { ffi::b2DestroyJoint(id, wake_bodies) };
+        unsafe { ffi::b2DestroyJoint(raw_joint_id(id), wake_bodies) };
         let _ = self.core_arc().clear_joint_user_data(id);
         Ok(())
     }
@@ -657,23 +667,23 @@ fn try_joint_kind_set2_checked_impl<A, B>(
     Ok(())
 }
 
-type JointScalarReadFn<T> = unsafe extern "C" fn(JointId) -> T;
-type JointScalarWriteFn<T> = unsafe extern "C" fn(JointId, T);
-type JointVec2ReadFn = unsafe extern "C" fn(JointId) -> ffi::b2Vec2;
+type JointScalarReadFn<T> = unsafe extern "C" fn(ffi::b2JointId) -> T;
+type JointScalarWriteFn<T> = unsafe extern "C" fn(ffi::b2JointId, T);
+type JointVec2ReadFn = unsafe extern "C" fn(ffi::b2JointId) -> ffi::b2Vec2;
 
 #[inline]
 fn joint_scalar_read_impl<T>(id: JointId, read: JointScalarReadFn<T>) -> T {
-    unsafe { read(id) }
+    unsafe { read(raw_joint_id(id)) }
 }
 
 #[inline]
 fn joint_scalar_write_impl<T>(id: JointId, value: T, write: JointScalarWriteFn<T>) {
-    unsafe { write(id, value) }
+    unsafe { write(raw_joint_id(id), value) }
 }
 
 #[inline]
 fn joint_vec2_read_impl(id: JointId, read: JointVec2ReadFn) -> Vec2 {
-    Vec2::from_raw(unsafe { read(id) })
+    Vec2::from_raw(unsafe { read(raw_joint_id(id)) })
 }
 
 #[inline]
@@ -700,7 +710,13 @@ fn distance_enable_spring_impl(id: JointId, value: bool) {
 fn distance_spring_force_range_impl(id: JointId) -> (f32, f32) {
     let mut lower_force = 0.0f32;
     let mut upper_force = 0.0f32;
-    unsafe { ffi::b2DistanceJoint_GetSpringForceRange(id, &mut lower_force, &mut upper_force) };
+    unsafe {
+        ffi::b2DistanceJoint_GetSpringForceRange(
+            raw_joint_id(id),
+            &mut lower_force,
+            &mut upper_force,
+        )
+    };
     (lower_force, upper_force)
 }
 #[inline]
@@ -713,7 +729,7 @@ fn distance_upper_spring_force_impl(id: JointId) -> f32 {
 }
 #[inline]
 fn distance_set_spring_force_range_impl(id: JointId, lower_force: f32, upper_force: f32) {
-    unsafe { ffi::b2DistanceJoint_SetSpringForceRange(id, lower_force, upper_force) }
+    unsafe { ffi::b2DistanceJoint_SetSpringForceRange(raw_joint_id(id), lower_force, upper_force) }
 }
 
 #[inline]
@@ -763,7 +779,7 @@ fn distance_current_length_impl(id: JointId) -> f32 {
 
 #[inline]
 fn distance_set_length_range_impl(id: JointId, min_length: f32, max_length: f32) {
-    unsafe { ffi::b2DistanceJoint_SetLengthRange(id, min_length, max_length) }
+    unsafe { ffi::b2DistanceJoint_SetLengthRange(raw_joint_id(id), min_length, max_length) }
 }
 
 #[inline]
@@ -863,7 +879,7 @@ fn prismatic_upper_limit_impl(id: JointId) -> f32 {
 
 #[inline]
 fn prismatic_set_limits_impl(id: JointId, lower: f32, upper: f32) {
-    unsafe { ffi::b2PrismaticJoint_SetLimits(id, lower, upper) }
+    unsafe { ffi::b2PrismaticJoint_SetLimits(raw_joint_id(id), lower, upper) }
 }
 
 #[inline]
@@ -978,7 +994,7 @@ fn revolute_upper_limit_impl(id: JointId) -> f32 {
 
 #[inline]
 fn revolute_set_limits_impl(id: JointId, lower: f32, upper: f32) {
-    unsafe { ffi::b2RevoluteJoint_SetLimits(id, lower, upper) }
+    unsafe { ffi::b2RevoluteJoint_SetLimits(raw_joint_id(id), lower, upper) }
 }
 
 #[inline]
@@ -1108,7 +1124,7 @@ fn wheel_upper_limit_impl(id: JointId) -> f32 {
 
 #[inline]
 fn wheel_set_limits_impl(id: JointId, lower: f32, upper: f32) {
-    unsafe { ffi::b2WheelJoint_SetLimits(id, lower, upper) }
+    unsafe { ffi::b2WheelJoint_SetLimits(raw_joint_id(id), lower, upper) }
 }
 
 #[inline]
@@ -1154,7 +1170,7 @@ fn motor_linear_velocity_impl(id: JointId) -> Vec2 {
 #[inline]
 fn motor_set_linear_velocity_impl(id: JointId, value: Vec2) {
     let raw: ffi::b2Vec2 = value.into_raw();
-    unsafe { ffi::b2MotorJoint_SetLinearVelocity(id, raw) }
+    unsafe { ffi::b2MotorJoint_SetLinearVelocity(raw_joint_id(id), raw) }
 }
 
 #[inline]

@@ -13,7 +13,7 @@ use std::os::raw::c_void;
 
 /// A scoped joint handle tied to a mutable borrow of the world.
 pub struct Joint<'w> {
-    pub(crate) id: ffi::b2JointId,
+    pub(crate) id: JointId,
     pub(crate) core: Arc<crate::core::world_core::WorldCore>,
     pub(crate) _world: PhantomData<&'w World>,
 }
@@ -89,6 +89,11 @@ fn joint_type_from_ffi(raw: ffi::b2JointType) -> JointType {
     JointType::from_raw(raw).expect("Box2D returned an unknown joint type")
 }
 
+#[inline]
+fn raw_joint_id(id: JointId) -> ffi::b2JointId {
+    id.into_raw()
+}
+
 /// Shared constraint tuning (Hertz + damping ratio) used by Box2D joints.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
@@ -109,12 +114,12 @@ impl ConstraintTuning {
 
 #[inline]
 pub(crate) fn joint_is_valid_impl(id: JointId) -> bool {
-    unsafe { ffi::b2Joint_IsValid(id) }
+    unsafe { ffi::b2Joint_IsValid(raw_joint_id(id)) }
 }
 
 #[inline]
 pub(crate) fn joint_type_raw_impl(id: JointId) -> ffi::b2JointType {
-    unsafe { ffi::b2Joint_GetType(id) }
+    unsafe { ffi::b2Joint_GetType(raw_joint_id(id)) }
 }
 
 #[inline]
@@ -124,90 +129,92 @@ pub(crate) fn joint_type_impl(id: JointId) -> JointType {
 
 #[inline]
 pub(crate) fn joint_body_a_id_impl(id: JointId) -> BodyId {
-    unsafe { ffi::b2Joint_GetBodyA(id) }
+    BodyId::from_raw(unsafe { ffi::b2Joint_GetBodyA(raw_joint_id(id)) })
 }
 
 #[inline]
 pub(crate) fn joint_body_b_id_impl(id: JointId) -> BodyId {
-    unsafe { ffi::b2Joint_GetBodyB(id) }
+    BodyId::from_raw(unsafe { ffi::b2Joint_GetBodyB(raw_joint_id(id)) })
 }
 
 #[inline]
 pub(crate) fn joint_linear_separation_impl(id: JointId) -> f32 {
-    unsafe { ffi::b2Joint_GetLinearSeparation(id) }
+    unsafe { ffi::b2Joint_GetLinearSeparation(raw_joint_id(id)) }
 }
 
 #[inline]
 pub(crate) fn joint_angular_separation_impl(id: JointId) -> f32 {
-    unsafe { ffi::b2Joint_GetAngularSeparation(id) }
+    unsafe { ffi::b2Joint_GetAngularSeparation(raw_joint_id(id)) }
 }
 
 #[inline]
 pub(crate) fn joint_constraint_force_impl(id: JointId) -> Vec2 {
-    Vec2::from_raw(unsafe { ffi::b2Joint_GetConstraintForce(id) })
+    Vec2::from_raw(unsafe { ffi::b2Joint_GetConstraintForce(raw_joint_id(id)) })
 }
 
 #[inline]
 pub(crate) fn joint_constraint_torque_impl(id: JointId) -> f32 {
-    unsafe { ffi::b2Joint_GetConstraintTorque(id) }
+    unsafe { ffi::b2Joint_GetConstraintTorque(raw_joint_id(id)) }
 }
 
 #[inline]
 pub(crate) fn joint_collide_connected_impl(id: JointId) -> bool {
-    unsafe { ffi::b2Joint_GetCollideConnected(id) }
+    unsafe { ffi::b2Joint_GetCollideConnected(raw_joint_id(id)) }
 }
 
 #[inline]
 pub(crate) fn joint_set_collide_connected_impl(id: JointId, flag: bool) {
-    unsafe { ffi::b2Joint_SetCollideConnected(id, flag) }
+    unsafe { ffi::b2Joint_SetCollideConnected(raw_joint_id(id), flag) }
 }
 
 #[inline]
 pub(crate) fn joint_constraint_tuning_impl(id: JointId) -> ConstraintTuning {
     let mut hertz = 0.0f32;
     let mut damping_ratio = 0.0f32;
-    unsafe { ffi::b2Joint_GetConstraintTuning(id, &mut hertz, &mut damping_ratio) };
+    unsafe { ffi::b2Joint_GetConstraintTuning(raw_joint_id(id), &mut hertz, &mut damping_ratio) };
     ConstraintTuning::new(hertz, damping_ratio)
 }
 
 #[inline]
 pub(crate) fn joint_set_constraint_tuning_impl(id: JointId, tuning: ConstraintTuning) {
-    unsafe { ffi::b2Joint_SetConstraintTuning(id, tuning.hertz, tuning.damping_ratio) }
+    unsafe {
+        ffi::b2Joint_SetConstraintTuning(raw_joint_id(id), tuning.hertz, tuning.damping_ratio)
+    }
 }
 
 #[inline]
 pub(crate) fn joint_local_frame_a_impl(id: JointId) -> crate::Transform {
-    crate::Transform::from_raw(unsafe { ffi::b2Joint_GetLocalFrameA(id) })
+    crate::Transform::from_raw(unsafe { ffi::b2Joint_GetLocalFrameA(raw_joint_id(id)) })
 }
 
 #[inline]
 pub(crate) fn joint_local_frame_b_impl(id: JointId) -> crate::Transform {
-    crate::Transform::from_raw(unsafe { ffi::b2Joint_GetLocalFrameB(id) })
+    crate::Transform::from_raw(unsafe { ffi::b2Joint_GetLocalFrameB(raw_joint_id(id)) })
 }
 
 #[inline]
 pub(crate) fn joint_wake_bodies_impl(id: JointId) {
-    unsafe { ffi::b2Joint_WakeBodies(id) }
+    unsafe { ffi::b2Joint_WakeBodies(raw_joint_id(id)) }
 }
 
 #[inline]
 fn joint_force_threshold_impl(id: JointId) -> f32 {
-    unsafe { ffi::b2Joint_GetForceThreshold(id) }
+    unsafe { ffi::b2Joint_GetForceThreshold(raw_joint_id(id)) }
 }
 
 #[inline]
 fn joint_set_force_threshold_impl(id: JointId, threshold: f32) {
-    unsafe { ffi::b2Joint_SetForceThreshold(id, threshold) }
+    unsafe { ffi::b2Joint_SetForceThreshold(raw_joint_id(id), threshold) }
 }
 
 #[inline]
 fn joint_torque_threshold_impl(id: JointId) -> f32 {
-    unsafe { ffi::b2Joint_GetTorqueThreshold(id) }
+    unsafe { ffi::b2Joint_GetTorqueThreshold(raw_joint_id(id)) }
 }
 
 #[inline]
 fn joint_set_torque_threshold_impl(id: JointId, threshold: f32) {
-    unsafe { ffi::b2Joint_SetTorqueThreshold(id, threshold) }
+    unsafe { ffi::b2Joint_SetTorqueThreshold(raw_joint_id(id), threshold) }
 }
 
 unsafe fn joint_set_user_data_ptr_impl(
@@ -216,23 +223,23 @@ unsafe fn joint_set_user_data_ptr_impl(
     user_data: *mut c_void,
 ) {
     let _ = world_core.clear_joint_user_data(id);
-    unsafe { ffi::b2Joint_SetUserData(id, user_data) }
+    unsafe { ffi::b2Joint_SetUserData(raw_joint_id(id), user_data) }
 }
 
 #[inline]
 fn joint_user_data_ptr_impl(id: JointId) -> *mut c_void {
-    unsafe { ffi::b2Joint_GetUserData(id) }
+    unsafe { ffi::b2Joint_GetUserData(raw_joint_id(id)) }
 }
 
 fn joint_set_user_data_impl<T: 'static>(world_core: &WorldCore, id: JointId, value: T) {
     let user_data = world_core.set_joint_user_data(id, value);
-    unsafe { ffi::b2Joint_SetUserData(id, user_data) };
+    unsafe { ffi::b2Joint_SetUserData(raw_joint_id(id), user_data) };
 }
 
 fn joint_clear_user_data_impl(world_core: &WorldCore, id: JointId) -> bool {
     let had = world_core.clear_joint_user_data(id);
     if had {
-        unsafe { ffi::b2Joint_SetUserData(id, core::ptr::null_mut()) };
+        unsafe { ffi::b2Joint_SetUserData(raw_joint_id(id), core::ptr::null_mut()) };
     }
     had
 }
@@ -259,7 +266,7 @@ fn joint_take_user_data_impl<T: 'static>(
 ) -> ApiResult<Option<T>> {
     let value = world_core.take_joint_user_data::<T>(id)?;
     if value.is_some() {
-        unsafe { ffi::b2Joint_SetUserData(id, core::ptr::null_mut()) };
+        unsafe { ffi::b2Joint_SetUserData(raw_joint_id(id), core::ptr::null_mut()) };
     }
     Ok(value)
 }
@@ -693,7 +700,7 @@ impl OwnedJoint {
     }
 
     pub fn destroy(mut self, wake_bodies: bool) {
-        if self.destroy_on_drop && unsafe { ffi::b2Joint_IsValid(self.id) } {
+        if self.destroy_on_drop && unsafe { ffi::b2Joint_IsValid(raw_joint_id(self.id)) } {
             if crate::core::callback_state::in_callback() || self.core.events_buffers_are_borrowed()
             {
                 self.core
@@ -702,7 +709,7 @@ impl OwnedJoint {
                         wake_bodies,
                     });
             } else {
-                unsafe { ffi::b2DestroyJoint(self.id, wake_bodies) };
+                unsafe { ffi::b2DestroyJoint(raw_joint_id(self.id), wake_bodies) };
                 let _ = self.core.clear_joint_user_data(self.id);
             }
         }
@@ -718,7 +725,7 @@ impl Drop for OwnedJoint {
             .owned_joints
             .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
         debug_assert!(prev > 0, "owned joint counter underflow");
-        if self.destroy_on_drop && unsafe { ffi::b2Joint_IsValid(self.id) } {
+        if self.destroy_on_drop && unsafe { ffi::b2Joint_IsValid(raw_joint_id(self.id)) } {
             if crate::core::callback_state::in_callback() || self.core.events_buffers_are_borrowed()
             {
                 self.core
@@ -727,7 +734,7 @@ impl Drop for OwnedJoint {
                         wake_bodies: self.wake_bodies_on_drop,
                     });
             } else {
-                unsafe { ffi::b2DestroyJoint(self.id, self.wake_bodies_on_drop) };
+                unsafe { ffi::b2DestroyJoint(raw_joint_id(self.id), self.wake_bodies_on_drop) };
                 let _ = self.core.clear_joint_user_data(self.id);
             }
         }
@@ -1036,16 +1043,16 @@ impl<'w> Joint<'w> {
     /// Destroy this joint immediately.
     pub fn destroy(self, wake_bodies: bool) {
         crate::core::callback_state::assert_not_in_callback();
-        if unsafe { ffi::b2Joint_IsValid(self.id) } {
-            unsafe { ffi::b2DestroyJoint(self.id, wake_bodies) };
+        if unsafe { ffi::b2Joint_IsValid(raw_joint_id(self.id)) } {
+            unsafe { ffi::b2DestroyJoint(raw_joint_id(self.id), wake_bodies) };
             let _ = self.core.clear_joint_user_data(self.id);
         }
     }
 
     pub fn try_destroy(self, wake_bodies: bool) -> ApiResult<()> {
         self.check_valid()?;
-        if unsafe { ffi::b2Joint_IsValid(self.id) } {
-            unsafe { ffi::b2DestroyJoint(self.id, wake_bodies) };
+        if unsafe { ffi::b2Joint_IsValid(raw_joint_id(self.id)) } {
+            unsafe { ffi::b2DestroyJoint(raw_joint_id(self.id), wake_bodies) };
             let _ = self.core.clear_joint_user_data(self.id);
         }
         Ok(())
@@ -1093,13 +1100,13 @@ impl JointBase {
     /// Attached body A id.
     #[inline]
     pub fn body_a_id(&self) -> BodyId {
-        self.0.bodyIdA
+        BodyId::from_raw(self.0.bodyIdA)
     }
 
     /// Attached body B id.
     #[inline]
     pub fn body_b_id(&self) -> BodyId {
-        self.0.bodyIdB
+        BodyId::from_raw(self.0.bodyIdB)
     }
 
     /// Local frame on body A.
@@ -1165,14 +1172,14 @@ impl JointBaseBuilder {
     }
     /// Attach two bodies using scoped body handles.
     pub fn bodies<'w>(mut self, a: &Body<'w>, b: &Body<'w>) -> Self {
-        self.base.0.bodyIdA = a.id;
-        self.base.0.bodyIdB = b.id;
+        self.base.0.bodyIdA = a.id.into_raw();
+        self.base.0.bodyIdB = b.id.into_raw();
         self
     }
     /// Attach two bodies by raw ids.
     pub fn bodies_by_id(mut self, a: BodyId, b: BodyId) -> Self {
-        self.base.0.bodyIdA = a;
-        self.base.0.bodyIdB = b;
+        self.base.0.bodyIdA = a.into_raw();
+        self.base.0.bodyIdB = b.into_raw();
         self
     }
     /// Set local frames from positions and angles (radians).

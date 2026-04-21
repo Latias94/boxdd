@@ -61,8 +61,8 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
             app.created_joints += 1;
             // Limit a bit for stability
             unsafe {
-                boxdd_sys::ffi::b2RevoluteJoint_EnableLimit(jid, true);
-                boxdd_sys::ffi::b2RevoluteJoint_SetLimits(jid, -0.5, 0.5);
+                boxdd_sys::ffi::b2RevoluteJoint_EnableLimit(jid.into_raw(), true);
+                boxdd_sys::ffi::b2RevoluteJoint_SetLimits(jid.into_raw(), -0.5, 0.5);
             }
             prev = b;
         }

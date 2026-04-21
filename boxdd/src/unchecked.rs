@@ -17,8 +17,28 @@ use crate::types::{BodyId, ChainId, JointId, ShapeId, Vec2};
 use crate::{Body, Joint, Shape, Transform, World};
 
 #[inline]
+fn raw_body_id(id: BodyId) -> ffi::b2BodyId {
+    id.into_raw()
+}
+
+#[inline]
+fn raw_shape_id(id: ShapeId) -> ffi::b2ShapeId {
+    id.into_raw()
+}
+
+#[inline]
+fn raw_joint_id(id: JointId) -> ffi::b2JointId {
+    id.into_raw()
+}
+
+#[inline]
+fn raw_chain_id(id: ChainId) -> ffi::b2ChainId {
+    id.into_raw()
+}
+
+#[inline]
 unsafe fn body_transform_raw_unchecked_impl(id: BodyId) -> ffi::b2Transform {
-    unsafe { ffi::b2Body_GetTransform(id) }
+    unsafe { ffi::b2Body_GetTransform(raw_body_id(id)) }
 }
 
 #[inline]
@@ -28,114 +48,115 @@ unsafe fn body_transform_unchecked_impl(id: BodyId) -> Transform {
 
 #[inline]
 unsafe fn body_position_unchecked_impl(id: BodyId) -> Vec2 {
-    Vec2::from_raw(unsafe { ffi::b2Body_GetPosition(id) })
+    Vec2::from_raw(unsafe { ffi::b2Body_GetPosition(raw_body_id(id)) })
 }
 
 #[inline]
 unsafe fn body_linear_velocity_unchecked_impl(id: BodyId) -> Vec2 {
-    Vec2::from_raw(unsafe { ffi::b2Body_GetLinearVelocity(id) })
+    Vec2::from_raw(unsafe { ffi::b2Body_GetLinearVelocity(raw_body_id(id)) })
 }
 
 #[inline]
 unsafe fn body_angular_velocity_unchecked_impl(id: BodyId) -> f32 {
-    unsafe { ffi::b2Body_GetAngularVelocity(id) }
+    unsafe { ffi::b2Body_GetAngularVelocity(raw_body_id(id)) }
 }
 
 #[inline]
 unsafe fn set_body_linear_velocity_unchecked_impl(id: BodyId, v: Vec2) {
     let raw: ffi::b2Vec2 = v.into_raw();
-    unsafe { ffi::b2Body_SetLinearVelocity(id, raw) }
+    unsafe { ffi::b2Body_SetLinearVelocity(raw_body_id(id), raw) }
 }
 
 #[inline]
 unsafe fn set_body_angular_velocity_unchecked_impl(id: BodyId, w: f32) {
-    unsafe { ffi::b2Body_SetAngularVelocity(id, w) }
+    unsafe { ffi::b2Body_SetAngularVelocity(raw_body_id(id), w) }
 }
 
 #[inline]
 unsafe fn body_type_unchecked_impl(id: BodyId) -> BodyType {
-    BodyType::from_raw(unsafe { ffi::b2Body_GetType(id) })
+    BodyType::from_raw(unsafe { ffi::b2Body_GetType(raw_body_id(id)) })
 }
 
 #[inline]
 unsafe fn set_body_type_unchecked_impl(id: BodyId, body_type: BodyType) {
-    unsafe { ffi::b2Body_SetType(id, body_type.into_raw()) }
+    unsafe { ffi::b2Body_SetType(raw_body_id(id), body_type.into_raw()) }
 }
 
 #[inline]
 unsafe fn set_body_gravity_scale_unchecked_impl(id: BodyId, value: f32) {
-    unsafe { ffi::b2Body_SetGravityScale(id, value) }
+    unsafe { ffi::b2Body_SetGravityScale(raw_body_id(id), value) }
 }
 
 #[inline]
 unsafe fn body_gravity_scale_unchecked_impl(id: BodyId) -> f32 {
-    unsafe { ffi::b2Body_GetGravityScale(id) }
+    unsafe { ffi::b2Body_GetGravityScale(raw_body_id(id)) }
 }
 
 #[inline]
 unsafe fn shape_body_unchecked_impl(id: ShapeId) -> BodyId {
-    unsafe { ffi::b2Shape_GetBody(id) }
+    BodyId::from_raw(unsafe { ffi::b2Shape_GetBody(raw_shape_id(id)) })
 }
 
 #[inline]
 unsafe fn shape_type_unchecked_impl(id: ShapeId) -> ShapeType {
-    ShapeType::from_raw(unsafe { ffi::b2Shape_GetType(id) })
+    ShapeType::from_raw(unsafe { ffi::b2Shape_GetType(raw_shape_id(id)) })
         .expect("Box2D returned an unknown shape type")
 }
 
 #[inline]
 unsafe fn shape_density_unchecked_impl(id: ShapeId) -> f32 {
-    unsafe { ffi::b2Shape_GetDensity(id) }
+    unsafe { ffi::b2Shape_GetDensity(raw_shape_id(id)) }
 }
 
 #[inline]
 unsafe fn set_shape_density_unchecked_impl(id: ShapeId, density: f32, update_body_mass: bool) {
-    unsafe { ffi::b2Shape_SetDensity(id, density, update_body_mass) }
+    unsafe { ffi::b2Shape_SetDensity(raw_shape_id(id), density, update_body_mass) }
 }
 
 #[inline]
 unsafe fn set_shape_surface_material_unchecked_impl(id: ShapeId, material: &SurfaceMaterial) {
-    unsafe { ffi::b2Shape_SetSurfaceMaterial(id, &material.0) }
+    unsafe { ffi::b2Shape_SetSurfaceMaterial(raw_shape_id(id), &material.0) }
 }
 
 #[inline]
 unsafe fn joint_force_threshold_unchecked_impl(id: JointId) -> f32 {
-    unsafe { ffi::b2Joint_GetForceThreshold(id) }
+    unsafe { ffi::b2Joint_GetForceThreshold(raw_joint_id(id)) }
 }
 
 #[inline]
 unsafe fn set_joint_force_threshold_unchecked_impl(id: JointId, threshold: f32) {
-    unsafe { ffi::b2Joint_SetForceThreshold(id, threshold) }
+    unsafe { ffi::b2Joint_SetForceThreshold(raw_joint_id(id), threshold) }
 }
 
 #[inline]
 unsafe fn joint_user_data_ptr_unchecked_impl(id: JointId) -> *mut c_void {
-    unsafe { ffi::b2Joint_GetUserData(id) }
+    unsafe { ffi::b2Joint_GetUserData(raw_joint_id(id)) }
 }
 
 #[inline]
 unsafe fn set_joint_user_data_ptr_unchecked_impl(id: JointId, ptr: *mut c_void) {
-    unsafe { ffi::b2Joint_SetUserData(id, ptr) }
+    unsafe { ffi::b2Joint_SetUserData(raw_joint_id(id), ptr) }
 }
 
 #[inline]
 unsafe fn chain_segment_count_unchecked_impl(id: ChainId) -> i32 {
-    unsafe { ffi::b2Chain_GetSegmentCount(id) }
+    unsafe { ffi::b2Chain_GetSegmentCount(raw_chain_id(id)) }
 }
 
 #[inline]
 unsafe fn chain_segments_unchecked_impl(id: ChainId) -> Vec<ShapeId> {
     let count = unsafe { chain_segment_count_unchecked_impl(id) }.max(0) as usize;
+    let id = raw_chain_id(id);
     unsafe {
-        crate::core::ffi_vec::read_from_ffi(count, |ptr, count| {
-            ffi::b2Chain_GetSegments(id, ptr, count)
+        crate::core::ffi_vec::read_from_ffi(count, |ptr: *mut ShapeId, count| {
+            ffi::b2Chain_GetSegments(id, ptr.cast(), count)
         })
     }
 }
 
 #[inline]
 unsafe fn chain_surface_material_unchecked_impl(id: ChainId, index: i32) -> SurfaceMaterial {
-    SurfaceMaterial::from_raw(unsafe { ffi::b2Chain_GetSurfaceMaterial(id, index) })
+    SurfaceMaterial::from_raw(unsafe { ffi::b2Chain_GetSurfaceMaterial(raw_chain_id(id), index) })
 }
 
 #[inline]
@@ -144,7 +165,7 @@ unsafe fn set_chain_surface_material_unchecked_impl(
     index: i32,
     material: &SurfaceMaterial,
 ) {
-    unsafe { ffi::b2Chain_SetSurfaceMaterial(id, &material.0, index) }
+    unsafe { ffi::b2Chain_SetSurfaceMaterial(raw_chain_id(id), &material.0, index) }
 }
 
 pub trait WorldUncheckedExt {

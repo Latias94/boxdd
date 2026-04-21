@@ -12,6 +12,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ### Added
 - Global foundation helpers for allocated-byte inspection, `ticks` / `milliseconds_since` / `milliseconds_and_reset`, `yield_now`, `HASH_INIT`, `hash_bytes`, and `is_valid_float` without dropping to `boxdd_sys::ffi`.
+- Zero-allocation overlap visitor APIs: `visit_overlap_aabb`, `visit_overlap_polygon_points`, and `visit_overlap_polygon_points_with_offset`, plus matching `try_visit_*` entrypoints on `World` and `WorldHandle`.
 - Reusable-buffer query APIs: `*_into` / `try_*_into` for AABB overlap, ray-all, polygon overlap, shape cast, and offset query variants.
 - Reusable-buffer data extraction APIs for `contact_data`, `sensor_overlaps`, `shape_sensor_overlaps`, and `segments`.
 - Reusable-buffer debug draw command collection via `World::debug_draw_collect_into`.
@@ -48,6 +49,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - A release-level completeness matrix under `docs/workstreams/boxdd-0.3-fearless-refactor/completeness-matrix.md` to record which wrapper areas are safe-covered, raw-only, intentionally omitted, or candidates after `0.3`.
 
 ### Changed
+- Overlap query internals now route both `Vec` collection and reusable-buffer `*_into` forms through the same visitor-based callback path, reducing one more hot-path drift pocket.
 - Query internals now share reusable collection helpers instead of duplicating callback-to-`Vec` plumbing across each query entrypoint.
 - Debug draw command collection now supports caller-owned buffer reuse and preserves nested polygon vertex / string storage when command shapes remain stable.
 - Temporary polygon proxy point collection now uses a stack-first `SmallVec` path for Box2D's fixed-size proxy vertex limit.
@@ -68,6 +70,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Breaking: `Body::*contact_data*` and `Shape::*contact_data*` now use crate-owned `ContactData`; raw escape hatches are named `contact_data_raw` / `contact_data_raw_into` / `try_contact_data_raw_into` for consistency with the broader `*_raw` surface.
 - Breaking: `MassData` is now crate-owned, and its inertia field is renamed to Rust-style `rotational_inertia`.
 - Breaking: `MassData` and `MotionLocks` now cross the raw FFI boundary explicitly via `from_raw(...)` / `into_raw()` instead of implicit `From<ffi::...>` conversions.
+- Breaking: `BodyId`, `ShapeId`, `JointId`, `ChainId`, and `ContactId` are now crate-owned value types with explicit `from_raw(...)` / `into_raw()` conversions, and the safe API no longer exposes mixed raw-ID entrypoints.
 - Breaking: `BodyType`, `Aabb`, mover/query value types (`RayResult`, `Plane`, `CollisionPlane`, `PlaneSolverResult`), collision outputs (`SegmentDistanceResult`, `CastOutput`, `DistanceOutput`, `ToiState`, `ToiOutput`), and `Counters` now use explicit `from_raw(...)` and, where applicable, `into_raw()` APIs instead of implicit raw conversions.
 - Breaking: collision input value types (`DistanceInput`, `ShapeCastPairInput`, `Sweep`, `ToiInput`) now use explicit named raw conversion APIs instead of implicit `From<Self> for ffi::...>` conversions.
 - Breaking: `ManifoldPoint`, `Manifold`, and `ContactData` now cross the raw FFI boundary explicitly via `from_raw(...)` / `into_raw()` instead of implicit `From<ffi::...>` conversions.

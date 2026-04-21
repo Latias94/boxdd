@@ -10,13 +10,13 @@ use boxdd_sys::ffi;
 pub struct ContactBeginTouch<'a>(&'a ffi::b2ContactBeginTouchEvent);
 impl<'a> ContactBeginTouch<'a> {
     pub fn shape_a(&self) -> ShapeId {
-        self.0.shapeIdA
+        ShapeId::from_raw(self.0.shapeIdA)
     }
     pub fn shape_b(&self) -> ShapeId {
-        self.0.shapeIdB
+        ShapeId::from_raw(self.0.shapeIdB)
     }
     pub fn contact_id(&self) -> ContactId {
-        self.0.contactId
+        ContactId::from_raw(self.0.contactId)
     }
 }
 
@@ -24,10 +24,10 @@ impl<'a> ContactBeginTouch<'a> {
 pub struct ContactEndTouch<'a>(&'a ffi::b2ContactEndTouchEvent);
 impl<'a> ContactEndTouch<'a> {
     pub fn shape_a(&self) -> ShapeId {
-        self.0.shapeIdA
+        ShapeId::from_raw(self.0.shapeIdA)
     }
     pub fn shape_b(&self) -> ShapeId {
-        self.0.shapeIdB
+        ShapeId::from_raw(self.0.shapeIdB)
     }
 }
 
@@ -35,10 +35,10 @@ impl<'a> ContactEndTouch<'a> {
 pub struct ContactHit<'a>(&'a ffi::b2ContactHitEvent);
 impl<'a> ContactHit<'a> {
     pub fn shape_a(&self) -> ShapeId {
-        self.0.shapeIdA
+        ShapeId::from_raw(self.0.shapeIdA)
     }
     pub fn shape_b(&self) -> ShapeId {
-        self.0.shapeIdB
+        ShapeId::from_raw(self.0.shapeIdB)
     }
     pub fn point(&self) -> Vec2 {
         Vec2::from_raw(self.0.point)
@@ -132,17 +132,17 @@ fn contact_events_into_impl(world: ffi::b2WorldId, out: &mut ContactEvents) {
     };
 
     super::map_snapshot_into(&mut out.begin, begin, |e| ContactBeginTouchEvent {
-        shape_a: e.shapeIdA,
-        shape_b: e.shapeIdB,
-        contact_id: e.contactId,
+        shape_a: ShapeId::from_raw(e.shapeIdA),
+        shape_b: ShapeId::from_raw(e.shapeIdB),
+        contact_id: ContactId::from_raw(e.contactId),
     });
     super::map_snapshot_into(&mut out.end, end, |e| ContactEndTouchEvent {
-        shape_a: e.shapeIdA,
-        shape_b: e.shapeIdB,
+        shape_a: ShapeId::from_raw(e.shapeIdA),
+        shape_b: ShapeId::from_raw(e.shapeIdB),
     });
     super::map_snapshot_into(&mut out.hit, hit, |e| ContactHitEvent {
-        shape_a: e.shapeIdA,
-        shape_b: e.shapeIdB,
+        shape_a: ShapeId::from_raw(e.shapeIdA),
+        shape_b: ShapeId::from_raw(e.shapeIdB),
         point: Vec2::from_raw(e.point),
         normal: Vec2::from_raw(e.normal),
         approach_speed: e.approachSpeed,

@@ -23,6 +23,17 @@ impl From<ffi::b2BodyId> for IdKey {
     }
 }
 
+impl From<crate::types::BodyId> for IdKey {
+    #[inline]
+    fn from(id: crate::types::BodyId) -> Self {
+        Self {
+            index1: id.index1,
+            world0: id.world0,
+            generation: id.generation,
+        }
+    }
+}
+
 impl From<ffi::b2ShapeId> for IdKey {
     #[inline]
     fn from(id: ffi::b2ShapeId) -> Self {
@@ -34,9 +45,31 @@ impl From<ffi::b2ShapeId> for IdKey {
     }
 }
 
+impl From<crate::types::ShapeId> for IdKey {
+    #[inline]
+    fn from(id: crate::types::ShapeId) -> Self {
+        Self {
+            index1: id.index1,
+            world0: id.world0,
+            generation: id.generation,
+        }
+    }
+}
+
 impl From<ffi::b2JointId> for IdKey {
     #[inline]
     fn from(id: ffi::b2JointId) -> Self {
+        Self {
+            index1: id.index1,
+            world0: id.world0,
+            generation: id.generation,
+        }
+    }
+}
+
+impl From<crate::types::JointId> for IdKey {
+    #[inline]
+    fn from(id: crate::types::JointId) -> Self {
         Self {
             index1: id.index1,
             world0: id.world0,

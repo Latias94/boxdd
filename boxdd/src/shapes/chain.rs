@@ -57,20 +57,27 @@ pub struct OwnedChain {
     _not_send: PhantomData<Rc<()>>,
 }
 
+#[inline]
+fn raw_chain_id(id: ChainId) -> ffi::b2ChainId {
+    id.into_raw()
+}
+
 fn chain_segments_into_impl(id: ChainId, out: &mut Vec<ShapeId>) {
+    let id = raw_chain_id(id);
     let count = unsafe { ffi::b2Chain_GetSegmentCount(id) }.max(0) as usize;
     unsafe {
         crate::core::ffi_vec::fill_from_ffi(out, count, |ptr, count| {
-            ffi::b2Chain_GetSegments(id, ptr, count)
+            ffi::b2Chain_GetSegments(id, ptr.cast(), count)
         });
     }
 }
 
 fn chain_segments_impl(id: ChainId) -> Vec<ShapeId> {
+    let id = raw_chain_id(id);
     let count = unsafe { ffi::b2Chain_GetSegmentCount(id) }.max(0) as usize;
     unsafe {
-        crate::core::ffi_vec::read_from_ffi(count, |ptr, count| {
-            ffi::b2Chain_GetSegments(id, ptr, count)
+        crate::core::ffi_vec::read_from_ffi(count, |ptr: *mut ShapeId, count| {
+            ffi::b2Chain_GetSegments(id, ptr.cast(), count)
         })
     }
 }
@@ -108,32 +115,32 @@ fn try_chain_segments_into_impl(id: ChainId, out: &mut Vec<ShapeId>) -> ApiResul
 
 #[inline]
 fn chain_world_id_impl(id: ChainId) -> ffi::b2WorldId {
-    unsafe { ffi::b2Chain_GetWorld(id) }
+    unsafe { ffi::b2Chain_GetWorld(raw_chain_id(id)) }
 }
 
 #[inline]
 fn chain_is_valid_impl(id: ChainId) -> bool {
-    unsafe { ffi::b2Chain_IsValid(id) }
+    unsafe { ffi::b2Chain_IsValid(raw_chain_id(id)) }
 }
 
 #[inline]
 fn chain_segment_count_impl(id: ChainId) -> i32 {
-    unsafe { ffi::b2Chain_GetSegmentCount(id) }
+    unsafe { ffi::b2Chain_GetSegmentCount(raw_chain_id(id)) }
 }
 
 #[inline]
 fn chain_surface_material_count_impl(id: ChainId) -> i32 {
-    unsafe { ffi::b2Chain_GetSurfaceMaterialCount(id) }
+    unsafe { ffi::b2Chain_GetSurfaceMaterialCount(raw_chain_id(id)) }
 }
 
 #[inline]
 fn chain_set_surface_material_impl(id: ChainId, index: i32, material: &SurfaceMaterial) {
-    unsafe { ffi::b2Chain_SetSurfaceMaterial(id, &material.0, index) }
+    unsafe { ffi::b2Chain_SetSurfaceMaterial(raw_chain_id(id), &material.0, index) }
 }
 
 #[inline]
 fn chain_surface_material_impl(id: ChainId, index: i32) -> SurfaceMaterial {
-    SurfaceMaterial::from_raw(unsafe { ffi::b2Chain_GetSurfaceMaterial(id, index) })
+    SurfaceMaterial::from_raw(unsafe { ffi::b2Chain_GetSurfaceMaterial(raw_chain_id(id), index) })
 }
 
 impl OwnedChain {
@@ -255,7 +262,7 @@ impl OwnedChain {
                 self.core
                     .defer_destroy(crate::core::world_core::DeferredDestroy::Chain(self.id));
             } else {
-                unsafe { ffi::b2DestroyChain(self.id) }
+                unsafe { ffi::b2DestroyChain(raw_chain_id(self.id)) }
                 #[cfg(feature = "serialize")]
                 self.core.remove_chain(self.id);
             }
@@ -278,7 +285,7 @@ impl Drop for OwnedChain {
                 self.core
                     .defer_destroy(crate::core::world_core::DeferredDestroy::Chain(self.id));
             } else {
-                unsafe { ffi::b2DestroyChain(self.id) }
+                unsafe { ffi::b2DestroyChain(raw_chain_id(self.id)) }
                 #[cfg(feature = "serialize")]
                 self.core.remove_chain(self.id);
             }
@@ -392,7 +399,7 @@ impl<'w> Chain<'w> {
     pub fn destroy(self) {
         crate::core::callback_state::assert_not_in_callback();
         if chain_is_valid_impl(self.id) {
-            unsafe { ffi::b2DestroyChain(self.id) }
+            unsafe { ffi::b2DestroyChain(raw_chain_id(self.id)) }
             #[cfg(feature = "serialize")]
             self.core.remove_chain(self.id);
         }
@@ -401,7 +408,7 @@ impl<'w> Chain<'w> {
     pub fn try_destroy(self) -> ApiResult<()> {
         self.check_valid()?;
         if chain_is_valid_impl(self.id) {
-            unsafe { ffi::b2DestroyChain(self.id) }
+            unsafe { ffi::b2DestroyChain(raw_chain_id(self.id)) }
             #[cfg(feature = "serialize")]
             self.core.remove_chain(self.id);
         }
@@ -646,7 +653,7 @@ impl<'w> Body<'w> {
     pub fn create_chain(&mut self, def: &ChainDef) -> Chain<'w> {
         crate::core::debug_checks::assert_body_valid(self.id);
         assert_chain_def_valid(def);
-        let id = unsafe { ffi::b2CreateChain(self.id, &def.def) };
+        let id = ChainId::from_raw(unsafe { ffi::b2CreateChain(self.id.into_raw(), &def.def) });
         #[cfg(feature = "serialize")]
         {
             let meta = crate::core::serialize_registry::ChainCreateMeta::from_def(self.id, def);

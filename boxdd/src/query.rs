@@ -1,6 +1,6 @@
 //! Broad-phase queries, casts, and character-mover helpers.
 //!
-//! - AABB overlap: collect matching shape ids.
+//! - AABB and shape overlap: collect matching shape ids, reuse caller-owned buffers, or visit hits without a result container.
 //! - Ray casts: closest or all hits along a path.
 //! - Shape overlap / casting: build a temporary proxy from points + radius (accepts `Into<Vec2>` points).
 //! - Offset proxies: apply translation + rotation to the proxy for queries in local frames.
@@ -71,12 +71,58 @@ impl<'a, T> CollectCtx<'a, T> {
     }
 }
 
-unsafe extern "C" fn collect_shape_id_cb(
+struct VisitShapeIdCtx<'a, F> {
+    visit: &'a mut F,
+    stopped_early: bool,
+    panic: Option<PanicPayload>,
+}
+
+impl<'a, F> VisitShapeIdCtx<'a, F>
+where
+    F: FnMut(ShapeId) -> bool,
+{
+    fn new(visit: &'a mut F) -> Self {
+        Self {
+            visit,
+            stopped_early: false,
+            panic: None,
+        }
+    }
+
+    fn visit(&mut self, shape_id: ShapeId) -> bool {
+        if self.stopped_early || self.panic.is_some() {
+            return false;
+        }
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (self.visit)(shape_id))) {
+            Ok(true) => true,
+            Ok(false) => {
+                self.stopped_early = true;
+                false
+            }
+            Err(p) => {
+                self.panic = Some(p);
+                false
+            }
+        }
+    }
+
+    fn finish(self) -> bool {
+        if let Some(p) = self.panic {
+            std::panic::resume_unwind(p);
+        }
+        !self.stopped_early
+    }
+}
+
+unsafe extern "C" fn visit_shape_id_cb<F>(
     shape_id: ffi::b2ShapeId,
     ctx: *mut core::ffi::c_void,
-) -> bool {
-    let ctx = unsafe { &mut *(ctx as *mut CollectCtx<'_, ShapeId>) };
-    ctx.push(shape_id)
+) -> bool
+where
+    F: FnMut(ShapeId) -> bool,
+{
+    let ctx = unsafe { &mut *(ctx as *mut VisitShapeIdCtx<'_, F>) };
+    ctx.visit(ShapeId::from_raw(shape_id))
 }
 
 #[allow(clippy::unnecessary_cast)]
@@ -89,7 +135,7 @@ unsafe extern "C" fn collect_ray_result_cb(
 ) -> f32 {
     let ctx = unsafe { &mut *(ctx as *mut CollectCtx<'_, RayResult>) };
     if ctx.push(RayResult {
-        shape_id,
+        shape_id: ShapeId::from_raw(shape_id),
         point: Vec2::from_raw(point),
         normal: Vec2::from_raw(normal),
         fraction,
@@ -109,7 +155,7 @@ unsafe extern "C" fn collect_mover_plane_result_cb(
     let ctx = unsafe { &mut *(ctx as *mut CollectCtx<'_, MoverPlaneResult>) };
     let plane = unsafe { *plane };
     ctx.push(MoverPlaneResult {
-        shape_id,
+        shape_id: ShapeId::from_raw(shape_id),
         plane: Plane::from_raw(plane.plane),
         point: Vec2::from_raw(plane.point),
         hit: plane.hit,
@@ -120,6 +166,28 @@ fn make_capsule<V1: Into<Vec2>, V2: Into<Vec2>>(c1: V1, c2: V2, radius: f32) -> 
     crate::shapes::Capsule::new(c1, c2, radius).into_raw()
 }
 
+fn visit_overlap_aabb_impl<F>(
+    world: ffi::b2WorldId,
+    aabb: Aabb,
+    filter: QueryFilter,
+    visit: &mut F,
+) -> bool
+where
+    F: FnMut(ShapeId) -> bool,
+{
+    let mut ctx = VisitShapeIdCtx::new(visit);
+    unsafe {
+        let _ = ffi::b2World_OverlapAABB(
+            world,
+            aabb.into_raw(),
+            filter.0,
+            Some(visit_shape_id_cb::<F>),
+            &mut ctx as *mut _ as *mut _,
+        );
+    }
+    ctx.finish()
+}
+
 fn overlap_aabb_into_impl(
     world: ffi::b2WorldId,
     aabb: Aabb,
@@ -127,23 +195,39 @@ fn overlap_aabb_into_impl(
     out: &mut Vec<ShapeId>,
 ) {
     out.clear();
-    let mut ctx = CollectCtx::from_cleared(out);
-    unsafe {
-        let _ = ffi::b2World_OverlapAABB(
-            world,
-            aabb.into_raw(),
-            filter.0,
-            Some(collect_shape_id_cb),
-            &mut ctx as *mut _ as *mut _,
-        );
-    }
-    ctx.resume_unwind_if_needed();
+    let mut collect = |shape_id| {
+        out.push(shape_id);
+        true
+    };
+    let _ = visit_overlap_aabb_impl(world, aabb, filter, &mut collect);
 }
 
 fn overlap_aabb_impl(world: ffi::b2WorldId, aabb: Aabb, filter: QueryFilter) -> Vec<ShapeId> {
     let mut out = Vec::new();
     overlap_aabb_into_impl(world, aabb, filter, &mut out);
     out
+}
+
+fn visit_overlap_shape_proxy_impl<F>(
+    world: ffi::b2WorldId,
+    proxy: &ffi::b2ShapeProxy,
+    filter: QueryFilter,
+    visit: &mut F,
+) -> bool
+where
+    F: FnMut(ShapeId) -> bool,
+{
+    let mut ctx = VisitShapeIdCtx::new(visit);
+    unsafe {
+        let _ = ffi::b2World_OverlapShape(
+            world,
+            proxy,
+            filter.0,
+            Some(visit_shape_id_cb::<F>),
+            &mut ctx as *mut _ as *mut _,
+        );
+    }
+    ctx.finish()
 }
 
 fn cast_ray_closest_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
@@ -204,22 +288,31 @@ fn overlap_polygon_points_into_impl<I, P>(
     P: Into<Vec2>,
 {
     out.clear();
+    let mut collect = |shape_id| {
+        out.push(shape_id);
+        true
+    };
+    let _ = visit_overlap_polygon_points_impl(world, points, radius, filter, &mut collect);
+}
+
+fn visit_overlap_polygon_points_impl<I, P, F>(
+    world: ffi::b2WorldId,
+    points: I,
+    radius: f32,
+    filter: QueryFilter,
+    visit: &mut F,
+) -> bool
+where
+    I: IntoIterator<Item = P>,
+    P: Into<Vec2>,
+    F: FnMut(ShapeId) -> bool,
+{
     let pts = collect_proxy_points(points);
     if pts.is_empty() {
-        return;
+        return true;
     }
     let proxy = unsafe { ffi::b2MakeProxy(pts.as_ptr(), pts.len() as i32, radius) };
-    let mut ctx = CollectCtx::from_cleared(out);
-    unsafe {
-        let _ = ffi::b2World_OverlapShape(
-            world,
-            &proxy,
-            filter.0,
-            Some(collect_shape_id_cb),
-            &mut ctx as *mut _ as *mut _,
-        );
-    }
-    ctx.resume_unwind_if_needed();
+    visit_overlap_shape_proxy_impl(world, &proxy, filter, visit)
 }
 
 fn overlap_polygon_points_impl<I, P>(
@@ -350,9 +443,40 @@ fn overlap_polygon_points_with_offset_into_impl<I, P, V, A>(
     A: Into<f32>,
 {
     out.clear();
+    let mut collect = |shape_id| {
+        out.push(shape_id);
+        true
+    };
+    let _ = visit_overlap_polygon_points_with_offset_impl(
+        world,
+        points,
+        radius,
+        position,
+        angle_radians,
+        filter,
+        &mut collect,
+    );
+}
+
+fn visit_overlap_polygon_points_with_offset_impl<I, P, V, A, F>(
+    world: ffi::b2WorldId,
+    points: I,
+    radius: f32,
+    position: V,
+    angle_radians: A,
+    filter: QueryFilter,
+    visit: &mut F,
+) -> bool
+where
+    I: IntoIterator<Item = P>,
+    P: Into<Vec2>,
+    V: Into<Vec2>,
+    A: Into<f32>,
+    F: FnMut(ShapeId) -> bool,
+{
     let pts = collect_proxy_points(points);
     if pts.is_empty() {
-        return;
+        return true;
     }
     let (s, c) = angle_radians.into().sin_cos();
     let pos: ffi::b2Vec2 = position.into().into_raw();
@@ -365,17 +489,7 @@ fn overlap_polygon_points_with_offset_into_impl<I, P, V, A>(
             ffi::b2Rot { c, s },
         )
     };
-    let mut ctx = CollectCtx::from_cleared(out);
-    unsafe {
-        let _ = ffi::b2World_OverlapShape(
-            world,
-            &proxy,
-            filter.0,
-            Some(collect_shape_id_cb),
-            &mut ctx as *mut _ as *mut _,
-        );
-    }
-    ctx.resume_unwind_if_needed();
+    visit_overlap_shape_proxy_impl(world, &proxy, filter, visit)
 }
 
 fn overlap_polygon_points_with_offset_impl<I, P, V, A>(
@@ -738,7 +852,7 @@ impl RayResult {
     #[inline]
     pub fn from_raw(raw: ffi::b2RayResult) -> Self {
         Self {
-            shape_id: raw.shapeId,
+            shape_id: ShapeId::from_raw(raw.shapeId),
             point: Vec2::from_raw(raw.point),
             normal: Vec2::from_raw(raw.normal),
             fraction: raw.fraction,
@@ -978,6 +1092,18 @@ fn overlap_aabb_checked_impl(
     checked_query_impl(|| overlap_aabb_impl(raw_world_id, aabb, filter))
 }
 
+fn visit_overlap_aabb_checked_impl<F>(
+    raw_world_id: ffi::b2WorldId,
+    aabb: Aabb,
+    filter: QueryFilter,
+    visit: &mut F,
+) -> bool
+where
+    F: FnMut(ShapeId) -> bool,
+{
+    checked_query_impl(|| visit_overlap_aabb_impl(raw_world_id, aabb, filter, visit))
+}
+
 fn overlap_aabb_into_checked_impl(
     raw_world_id: ffi::b2WorldId,
     aabb: Aabb,
@@ -993,6 +1119,18 @@ fn try_overlap_aabb_impl(
     filter: QueryFilter,
 ) -> ApiResult<Vec<ShapeId>> {
     try_checked_query_impl(|| overlap_aabb_impl(raw_world_id, aabb, filter))
+}
+
+fn try_visit_overlap_aabb_impl<F>(
+    raw_world_id: ffi::b2WorldId,
+    aabb: Aabb,
+    filter: QueryFilter,
+    visit: &mut F,
+) -> ApiResult<bool>
+where
+    F: FnMut(ShapeId) -> bool,
+{
+    try_checked_query_impl(|| visit_overlap_aabb_impl(raw_world_id, aabb, filter, visit))
 }
 
 fn try_overlap_aabb_into_impl(
@@ -1075,6 +1213,23 @@ where
     checked_query_impl(|| overlap_polygon_points_impl(raw_world_id, points, radius, filter))
 }
 
+fn visit_overlap_polygon_points_checked_impl<I, P, F>(
+    raw_world_id: ffi::b2WorldId,
+    points: I,
+    radius: f32,
+    filter: QueryFilter,
+    visit: &mut F,
+) -> bool
+where
+    I: IntoIterator<Item = P>,
+    P: Into<Vec2>,
+    F: FnMut(ShapeId) -> bool,
+{
+    checked_query_impl(|| {
+        visit_overlap_polygon_points_impl(raw_world_id, points, radius, filter, visit)
+    })
+}
+
 fn overlap_polygon_points_into_checked_impl<I, P>(
     raw_world_id: ffi::b2WorldId,
     points: I,
@@ -1101,6 +1256,23 @@ where
     P: Into<Vec2>,
 {
     try_checked_query_impl(|| overlap_polygon_points_impl(raw_world_id, points, radius, filter))
+}
+
+fn try_visit_overlap_polygon_points_impl<I, P, F>(
+    raw_world_id: ffi::b2WorldId,
+    points: I,
+    radius: f32,
+    filter: QueryFilter,
+    visit: &mut F,
+) -> ApiResult<bool>
+where
+    I: IntoIterator<Item = P>,
+    P: Into<Vec2>,
+    F: FnMut(ShapeId) -> bool,
+{
+    try_checked_query_impl(|| {
+        visit_overlap_polygon_points_impl(raw_world_id, points, radius, filter, visit)
+    })
 }
 
 fn try_overlap_polygon_points_into_impl<I, P>(
@@ -1276,6 +1448,35 @@ where
     })
 }
 
+fn visit_overlap_polygon_points_with_offset_checked_impl<I, P, V, A, F>(
+    raw_world_id: ffi::b2WorldId,
+    points: I,
+    radius: f32,
+    position: V,
+    angle_radians: A,
+    filter: QueryFilter,
+    visit: &mut F,
+) -> bool
+where
+    I: IntoIterator<Item = P>,
+    P: Into<Vec2>,
+    V: Into<Vec2>,
+    A: Into<f32>,
+    F: FnMut(ShapeId) -> bool,
+{
+    checked_query_impl(|| {
+        visit_overlap_polygon_points_with_offset_impl(
+            raw_world_id,
+            points,
+            radius,
+            position,
+            angle_radians,
+            filter,
+            visit,
+        )
+    })
+}
+
 fn overlap_polygon_points_with_offset_into_checked_impl<I, P, V, A>(
     raw_world_id: ffi::b2WorldId,
     points: I,
@@ -1325,6 +1526,35 @@ where
             position,
             angle_radians,
             filter,
+        )
+    })
+}
+
+fn try_visit_overlap_polygon_points_with_offset_impl<I, P, V, A, F>(
+    raw_world_id: ffi::b2WorldId,
+    points: I,
+    radius: f32,
+    position: V,
+    angle_radians: A,
+    filter: QueryFilter,
+    visit: &mut F,
+) -> ApiResult<bool>
+where
+    I: IntoIterator<Item = P>,
+    P: Into<Vec2>,
+    V: Into<Vec2>,
+    A: Into<f32>,
+    F: FnMut(ShapeId) -> bool,
+{
+    try_checked_query_impl(|| {
+        visit_overlap_polygon_points_with_offset_impl(
+            raw_world_id,
+            points,
+            radius,
+            position,
+            angle_radians,
+            filter,
+            visit,
         )
     })
 }
@@ -1500,6 +1730,17 @@ impl World {
         overlap_aabb_into_checked_impl(self.raw(), aabb, filter, out);
     }
 
+    /// Visit matching shape ids in an AABB without allocating a result container.
+    ///
+    /// Return `true` from the visitor to continue, or `false` to stop early.
+    /// Returns `true` if all hits were visited, or `false` if the visitor stopped early.
+    pub fn visit_overlap_aabb<F>(&self, aabb: Aabb, filter: QueryFilter, mut visit: F) -> bool
+    where
+        F: FnMut(ShapeId) -> bool,
+    {
+        visit_overlap_aabb_checked_impl(self.raw(), aabb, filter, &mut visit)
+    }
+
     pub fn try_overlap_aabb(&self, aabb: Aabb, filter: QueryFilter) -> ApiResult<Vec<ShapeId>> {
         try_overlap_aabb_impl(self.raw(), aabb, filter)
     }
@@ -1511,6 +1752,18 @@ impl World {
         out: &mut Vec<ShapeId>,
     ) -> ApiResult<()> {
         try_overlap_aabb_into_impl(self.raw(), aabb, filter, out)
+    }
+
+    pub fn try_visit_overlap_aabb<F>(
+        &self,
+        aabb: Aabb,
+        filter: QueryFilter,
+        mut visit: F,
+    ) -> ApiResult<bool>
+    where
+        F: FnMut(ShapeId) -> bool,
+    {
+        try_visit_overlap_aabb_impl(self.raw(), aabb, filter, &mut visit)
     }
 
     /// Cast a ray and return the closest hit.
@@ -1625,6 +1878,25 @@ impl World {
         overlap_polygon_points_into_checked_impl(self.raw(), points, radius, filter, out);
     }
 
+    /// Visit matching shape ids for a temporary polygon proxy without allocating a result container.
+    ///
+    /// Return `true` from the visitor to continue, or `false` to stop early.
+    /// Returns `true` if all hits were visited, or `false` if the visitor stopped early.
+    pub fn visit_overlap_polygon_points<I, P, F>(
+        &self,
+        points: I,
+        radius: f32,
+        filter: QueryFilter,
+        mut visit: F,
+    ) -> bool
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+        F: FnMut(ShapeId) -> bool,
+    {
+        visit_overlap_polygon_points_checked_impl(self.raw(), points, radius, filter, &mut visit)
+    }
+
     pub fn try_overlap_polygon_points<I, P>(
         &self,
         points: I,
@@ -1650,6 +1922,21 @@ impl World {
         P: Into<Vec2>,
     {
         try_overlap_polygon_points_into_impl(self.raw(), points, radius, filter, out)
+    }
+
+    pub fn try_visit_overlap_polygon_points<I, P, F>(
+        &self,
+        points: I,
+        radius: f32,
+        filter: QueryFilter,
+        mut visit: F,
+    ) -> ApiResult<bool>
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+        F: FnMut(ShapeId) -> bool,
+    {
+        try_visit_overlap_polygon_points_impl(self.raw(), points, radius, filter, &mut visit)
     }
 
     /// Cast a polygon proxy and collect hits. Returns all intersections with fraction and contact info.
@@ -1851,6 +2138,37 @@ impl World {
         );
     }
 
+    /// Visit matching shape ids for an offset temporary polygon proxy without allocating a result container.
+    ///
+    /// Return `true` from the visitor to continue, or `false` to stop early.
+    /// Returns `true` if all hits were visited, or `false` if the visitor stopped early.
+    pub fn visit_overlap_polygon_points_with_offset<I, P, V, A, F>(
+        &self,
+        points: I,
+        radius: f32,
+        position: V,
+        angle_radians: A,
+        filter: QueryFilter,
+        mut visit: F,
+    ) -> bool
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+        V: Into<Vec2>,
+        A: Into<f32>,
+        F: FnMut(ShapeId) -> bool,
+    {
+        visit_overlap_polygon_points_with_offset_checked_impl(
+            self.raw(),
+            points,
+            radius,
+            position,
+            angle_radians,
+            filter,
+            &mut visit,
+        )
+    }
+
     pub fn try_overlap_polygon_points_with_offset<I, P, V, A>(
         &self,
         points: I,
@@ -1898,6 +2216,33 @@ impl World {
             angle_radians,
             filter,
             out,
+        )
+    }
+
+    pub fn try_visit_overlap_polygon_points_with_offset<I, P, V, A, F>(
+        &self,
+        points: I,
+        radius: f32,
+        position: V,
+        angle_radians: A,
+        filter: QueryFilter,
+        mut visit: F,
+    ) -> ApiResult<bool>
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+        V: Into<Vec2>,
+        A: Into<f32>,
+        F: FnMut(ShapeId) -> bool,
+    {
+        try_visit_overlap_polygon_points_with_offset_impl(
+            self.raw(),
+            points,
+            radius,
+            position,
+            angle_radians,
+            filter,
+            &mut visit,
         )
     }
 
@@ -2033,6 +2378,13 @@ impl WorldHandle {
         overlap_aabb_into_checked_impl(self.raw(), aabb, filter, out);
     }
 
+    pub fn visit_overlap_aabb<F>(&self, aabb: Aabb, filter: QueryFilter, mut visit: F) -> bool
+    where
+        F: FnMut(ShapeId) -> bool,
+    {
+        visit_overlap_aabb_checked_impl(self.raw(), aabb, filter, &mut visit)
+    }
+
     pub fn try_overlap_aabb(&self, aabb: Aabb, filter: QueryFilter) -> ApiResult<Vec<ShapeId>> {
         try_overlap_aabb_impl(self.raw(), aabb, filter)
     }
@@ -2044,6 +2396,18 @@ impl WorldHandle {
         out: &mut Vec<ShapeId>,
     ) -> ApiResult<()> {
         try_overlap_aabb_into_impl(self.raw(), aabb, filter, out)
+    }
+
+    pub fn try_visit_overlap_aabb<F>(
+        &self,
+        aabb: Aabb,
+        filter: QueryFilter,
+        mut visit: F,
+    ) -> ApiResult<bool>
+    where
+        F: FnMut(ShapeId) -> bool,
+    {
+        try_visit_overlap_aabb_impl(self.raw(), aabb, filter, &mut visit)
     }
 
     pub fn cast_ray_closest<VO: Into<Vec2>, VT: Into<Vec2>>(
@@ -2128,6 +2492,21 @@ impl WorldHandle {
         overlap_polygon_points_into_checked_impl(self.raw(), points, radius, filter, out);
     }
 
+    pub fn visit_overlap_polygon_points<I, P, F>(
+        &self,
+        points: I,
+        radius: f32,
+        filter: QueryFilter,
+        mut visit: F,
+    ) -> bool
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+        F: FnMut(ShapeId) -> bool,
+    {
+        visit_overlap_polygon_points_checked_impl(self.raw(), points, radius, filter, &mut visit)
+    }
+
     pub fn try_overlap_polygon_points<I, P>(
         &self,
         points: I,
@@ -2153,6 +2532,21 @@ impl WorldHandle {
         P: Into<Vec2>,
     {
         try_overlap_polygon_points_into_impl(self.raw(), points, radius, filter, out)
+    }
+
+    pub fn try_visit_overlap_polygon_points<I, P, F>(
+        &self,
+        points: I,
+        radius: f32,
+        filter: QueryFilter,
+        mut visit: F,
+    ) -> ApiResult<bool>
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+        F: FnMut(ShapeId) -> bool,
+    {
+        try_visit_overlap_polygon_points_impl(self.raw(), points, radius, filter, &mut visit)
     }
 
     pub fn cast_shape_points<I, P, VT>(
@@ -2329,6 +2723,33 @@ impl WorldHandle {
         );
     }
 
+    pub fn visit_overlap_polygon_points_with_offset<I, P, V, A, F>(
+        &self,
+        points: I,
+        radius: f32,
+        position: V,
+        angle_radians: A,
+        filter: QueryFilter,
+        mut visit: F,
+    ) -> bool
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+        V: Into<Vec2>,
+        A: Into<f32>,
+        F: FnMut(ShapeId) -> bool,
+    {
+        visit_overlap_polygon_points_with_offset_checked_impl(
+            self.raw(),
+            points,
+            radius,
+            position,
+            angle_radians,
+            filter,
+            &mut visit,
+        )
+    }
+
     pub fn try_overlap_polygon_points_with_offset<I, P, V, A>(
         &self,
         points: I,
@@ -2376,6 +2797,33 @@ impl WorldHandle {
             angle_radians,
             filter,
             out,
+        )
+    }
+
+    pub fn try_visit_overlap_polygon_points_with_offset<I, P, V, A, F>(
+        &self,
+        points: I,
+        radius: f32,
+        position: V,
+        angle_radians: A,
+        filter: QueryFilter,
+        mut visit: F,
+    ) -> ApiResult<bool>
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+        V: Into<Vec2>,
+        A: Into<f32>,
+        F: FnMut(ShapeId) -> bool,
+    {
+        try_visit_overlap_polygon_points_with_offset_impl(
+            self.raw(),
+            points,
+            radius,
+            position,
+            angle_radians,
+            filter,
+            &mut visit,
         )
     }
 

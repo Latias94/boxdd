@@ -9,7 +9,6 @@ use crate::{
     types::{BodyId, JointId, Vec2},
     world::World,
 };
-use boxdd_sys::ffi;
 // no Hash/Eq on FFI ids; use simple field comparisons and linear scans
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -324,7 +323,7 @@ impl SceneSnapshot {
         self.world.apply(&mut world);
 
         // Create bodies and shapes
-        let mut map: Vec<ffi::b2BodyId> = Vec::with_capacity(self.bodies.len());
+        let mut map: Vec<crate::types::BodyId> = Vec::with_capacity(self.bodies.len());
         for br in &self.bodies {
             let id = world.create_body_id(br.def.clone());
             if let Some(name) = &br.name {

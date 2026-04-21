@@ -73,7 +73,7 @@ fn run_once(
     let mut vel_sum = 0.0f32;
     for &b in &bodies {
         let p = world.body_position(b);
-        let v = unsafe { boxdd_sys::ffi::b2Body_GetLinearVelocity(b) };
+        let v = unsafe { boxdd_sys::ffi::b2Body_GetLinearVelocity(b.into_raw()) };
         pos_sum += p.x + p.y;
         vel_sum += v.x + v.y;
     }

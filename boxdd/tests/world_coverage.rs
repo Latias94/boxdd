@@ -1,6 +1,7 @@
 use boxdd::prelude::*;
 use boxdd::shapes;
 use boxdd::world::{Counters, Profile};
+use std::collections::HashSet;
 
 fn same_world_id(a: boxdd_sys::ffi::b2WorldId, b: boxdd_sys::ffi::b2WorldId) -> bool {
     a.index1 == b.index1 && a.generation == b.generation
@@ -202,6 +203,62 @@ fn mass_data_and_motion_locks_round_trip_through_explicit_raw_conversions() {
 
     let locks = MotionLocks::new(true, false, true);
     assert_eq!(MotionLocks::from_raw(locks.into_raw()), locks);
+}
+
+#[test]
+fn opaque_ids_round_trip_through_explicit_raw_conversions_and_hash() {
+    let body = BodyId::from_raw(boxdd_sys::ffi::b2BodyId {
+        index1: 11,
+        world0: 3,
+        generation: 7,
+    });
+    let shape = ShapeId::from_raw(boxdd_sys::ffi::b2ShapeId {
+        index1: 12,
+        world0: 3,
+        generation: 8,
+    });
+    let joint = JointId::from_raw(boxdd_sys::ffi::b2JointId {
+        index1: 13,
+        world0: 3,
+        generation: 9,
+    });
+    let chain = ChainId::from_raw(boxdd_sys::ffi::b2ChainId {
+        index1: 14,
+        world0: 3,
+        generation: 10,
+    });
+    let contact = ContactId::from_raw(boxdd_sys::ffi::b2ContactId {
+        index1: 15,
+        world0: 3,
+        padding: 0,
+        generation: 11,
+    });
+
+    assert_eq!(BodyId::from_raw(body.into_raw()), body);
+    assert_eq!(ShapeId::from_raw(shape.into_raw()), shape);
+    assert_eq!(JointId::from_raw(joint.into_raw()), joint);
+    assert_eq!(ChainId::from_raw(chain.into_raw()), chain);
+    assert_eq!(ContactId::from_raw(contact.into_raw()), contact);
+
+    let mut ids = HashSet::new();
+    assert!(ids.insert(body));
+    assert!(ids.contains(&body));
+
+    let mut shape_ids = HashSet::new();
+    assert!(shape_ids.insert(shape));
+    assert!(shape_ids.contains(&shape));
+
+    let mut joint_ids = HashSet::new();
+    assert!(joint_ids.insert(joint));
+    assert!(joint_ids.contains(&joint));
+
+    let mut chain_ids = HashSet::new();
+    assert!(chain_ids.insert(chain));
+    assert!(chain_ids.contains(&chain));
+
+    let mut contact_ids = HashSet::new();
+    assert!(contact_ids.insert(contact));
+    assert!(contact_ids.contains(&contact));
 }
 
 #[test]

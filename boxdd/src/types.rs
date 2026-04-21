@@ -164,16 +164,186 @@ impl From<Vec2> for glam::Vec2 {
     }
 }
 
-// Public id aliases to avoid exposing `ffi::` in user-facing API/docstrings.
-pub type BodyId = ffi::b2BodyId;
-pub type ShapeId = ffi::b2ShapeId;
-pub type JointId = ffi::b2JointId;
-pub type ChainId = ffi::b2ChainId;
+/// Opaque Box2D body identifier.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct BodyId {
+    pub index1: i32,
+    pub world0: u16,
+    pub generation: u16,
+}
+
+impl BodyId {
+    #[inline]
+    pub const fn from_raw(raw: ffi::b2BodyId) -> Self {
+        Self {
+            index1: raw.index1,
+            world0: raw.world0,
+            generation: raw.generation,
+        }
+    }
+
+    #[inline]
+    pub const fn into_raw(self) -> ffi::b2BodyId {
+        ffi::b2BodyId {
+            index1: self.index1,
+            world0: self.world0,
+            generation: self.generation,
+        }
+    }
+}
+
+const _: () = {
+    assert!(core::mem::size_of::<BodyId>() == core::mem::size_of::<ffi::b2BodyId>());
+    assert!(core::mem::align_of::<BodyId>() == core::mem::align_of::<ffi::b2BodyId>());
+};
+
+/// Opaque Box2D shape identifier.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ShapeId {
+    pub index1: i32,
+    pub world0: u16,
+    pub generation: u16,
+}
+
+impl ShapeId {
+    #[inline]
+    pub const fn from_raw(raw: ffi::b2ShapeId) -> Self {
+        Self {
+            index1: raw.index1,
+            world0: raw.world0,
+            generation: raw.generation,
+        }
+    }
+
+    #[inline]
+    pub const fn into_raw(self) -> ffi::b2ShapeId {
+        ffi::b2ShapeId {
+            index1: self.index1,
+            world0: self.world0,
+            generation: self.generation,
+        }
+    }
+}
+
+const _: () = {
+    assert!(core::mem::size_of::<ShapeId>() == core::mem::size_of::<ffi::b2ShapeId>());
+    assert!(core::mem::align_of::<ShapeId>() == core::mem::align_of::<ffi::b2ShapeId>());
+};
+
+/// Opaque Box2D joint identifier.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct JointId {
+    pub index1: i32,
+    pub world0: u16,
+    pub generation: u16,
+}
+
+impl JointId {
+    #[inline]
+    pub const fn from_raw(raw: ffi::b2JointId) -> Self {
+        Self {
+            index1: raw.index1,
+            world0: raw.world0,
+            generation: raw.generation,
+        }
+    }
+
+    #[inline]
+    pub const fn into_raw(self) -> ffi::b2JointId {
+        ffi::b2JointId {
+            index1: self.index1,
+            world0: self.world0,
+            generation: self.generation,
+        }
+    }
+}
+
+const _: () = {
+    assert!(core::mem::size_of::<JointId>() == core::mem::size_of::<ffi::b2JointId>());
+    assert!(core::mem::align_of::<JointId>() == core::mem::align_of::<ffi::b2JointId>());
+};
+
+/// Opaque Box2D chain identifier.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ChainId {
+    pub index1: i32,
+    pub world0: u16,
+    pub generation: u16,
+}
+
+impl ChainId {
+    #[inline]
+    pub const fn from_raw(raw: ffi::b2ChainId) -> Self {
+        Self {
+            index1: raw.index1,
+            world0: raw.world0,
+            generation: raw.generation,
+        }
+    }
+
+    #[inline]
+    pub const fn into_raw(self) -> ffi::b2ChainId {
+        ffi::b2ChainId {
+            index1: self.index1,
+            world0: self.world0,
+            generation: self.generation,
+        }
+    }
+}
+
+const _: () = {
+    assert!(core::mem::size_of::<ChainId>() == core::mem::size_of::<ffi::b2ChainId>());
+    assert!(core::mem::align_of::<ChainId>() == core::mem::align_of::<ffi::b2ChainId>());
+};
+
 /// Opaque Box2D contact identifier.
 ///
 /// Import [`crate::ContactIdExt`] or [`crate::prelude`] for direct validity checks and contact
 /// data reads.
-pub type ContactId = ffi::b2ContactId;
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ContactId {
+    pub index1: i32,
+    pub world0: u16,
+    pub padding: i16,
+    pub generation: u32,
+}
+
+impl ContactId {
+    #[inline]
+    pub const fn from_raw(raw: ffi::b2ContactId) -> Self {
+        Self {
+            index1: raw.index1,
+            world0: raw.world0,
+            padding: raw.padding,
+            generation: raw.generation,
+        }
+    }
+
+    #[inline]
+    pub const fn into_raw(self) -> ffi::b2ContactId {
+        ffi::b2ContactId {
+            index1: self.index1,
+            world0: self.world0,
+            padding: self.padding,
+            generation: self.generation,
+        }
+    }
+}
+
+const _: () = {
+    assert!(core::mem::size_of::<ContactId>() == core::mem::size_of::<ffi::b2ContactId>());
+    assert!(core::mem::align_of::<ContactId>() == core::mem::align_of::<ffi::b2ContactId>());
+};
 
 /// Mass properties (mass, center, inertia) used by Box2D.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -364,9 +534,9 @@ impl ContactData {
     #[inline]
     pub fn from_raw(raw: ffi::b2ContactData) -> Self {
         Self {
-            contact_id: raw.contactId,
-            shape_id_a: raw.shapeIdA,
-            shape_id_b: raw.shapeIdB,
+            contact_id: ContactId::from_raw(raw.contactId),
+            shape_id_a: ShapeId::from_raw(raw.shapeIdA),
+            shape_id_b: ShapeId::from_raw(raw.shapeIdB),
             manifold: Manifold::from_raw(raw.manifold),
         }
     }
@@ -374,9 +544,9 @@ impl ContactData {
     #[inline]
     pub fn into_raw(self) -> ffi::b2ContactData {
         ffi::b2ContactData {
-            contactId: self.contact_id,
-            shapeIdA: self.shape_id_a,
-            shapeIdB: self.shape_id_b,
+            contactId: self.contact_id.into_raw(),
+            shapeIdA: self.shape_id_a.into_raw(),
+            shapeIdB: self.shape_id_b.into_raw(),
             manifold: self.manifold.into_raw(),
         }
     }

@@ -4,6 +4,8 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
+use crate::types::{BodyId, ChainId, JointId, ShapeId};
+
 pub(crate) type CustomFilterCb = dyn Fn(&crate::world::CallbackWorld, crate::types::ShapeId, crate::types::ShapeId) -> bool
     + Send
     + Sync
@@ -69,16 +71,10 @@ unsafe impl Sync for WorldCore {}
 
 #[derive(Clone, Debug)]
 pub(crate) enum DeferredDestroy {
-    Body(ffi::b2BodyId),
-    Shape {
-        id: ffi::b2ShapeId,
-        update_body_mass: bool,
-    },
-    Joint {
-        id: ffi::b2JointId,
-        wake_bodies: bool,
-    },
-    Chain(ffi::b2ChainId),
+    Body(BodyId),
+    Shape { id: ShapeId, update_body_mass: bool },
+    Joint { id: JointId, wake_bodies: bool },
+    Chain(ChainId),
 }
 
 impl WorldCore {
@@ -149,7 +145,7 @@ impl WorldCore {
         for item in items {
             match item {
                 DeferredDestroy::Body(id) => {
-                    if unsafe { ffi::b2Body_IsValid(id) } {
+                    if unsafe { ffi::b2Body_IsValid(id.into_raw()) } {
                         #[cfg(feature = "serialize")]
                         {
                             let mut r = self.registries.lock().expect("registries mutex poisoned");
@@ -157,7 +153,7 @@ impl WorldCore {
                             r.remove_chains_for_body(id);
                             r.remove_body(id);
                         }
-                        unsafe { ffi::b2DestroyBody(id) };
+                        unsafe { ffi::b2DestroyBody(id.into_raw()) };
                     }
                     let old = self
                         .user_data
@@ -171,8 +167,8 @@ impl WorldCore {
                     id,
                     update_body_mass,
                 } => {
-                    if unsafe { ffi::b2Shape_IsValid(id) } {
-                        unsafe { ffi::b2DestroyShape(id, update_body_mass) };
+                    if unsafe { ffi::b2Shape_IsValid(id.into_raw()) } {
+                        unsafe { ffi::b2DestroyShape(id.into_raw(), update_body_mass) };
                         #[cfg(feature = "serialize")]
                         {
                             self.registries
@@ -190,8 +186,8 @@ impl WorldCore {
                     drop(old);
                 }
                 DeferredDestroy::Joint { id, wake_bodies } => {
-                    if unsafe { ffi::b2Joint_IsValid(id) } {
-                        unsafe { ffi::b2DestroyJoint(id, wake_bodies) };
+                    if unsafe { ffi::b2Joint_IsValid(id.into_raw()) } {
+                        unsafe { ffi::b2DestroyJoint(id.into_raw(), wake_bodies) };
                     }
                     let old = self
                         .user_data
@@ -202,8 +198,8 @@ impl WorldCore {
                     drop(old);
                 }
                 DeferredDestroy::Chain(id) => {
-                    if unsafe { ffi::b2Chain_IsValid(id) } {
-                        unsafe { ffi::b2DestroyChain(id) };
+                    if unsafe { ffi::b2Chain_IsValid(id.into_raw()) } {
+                        unsafe { ffi::b2DestroyChain(id.into_raw()) };
                         #[cfg(feature = "serialize")]
                         {
                             self.registries
@@ -229,7 +225,7 @@ impl WorldCore {
         had
     }
 
-    pub(crate) fn clear_body_user_data(&self, id: ffi::b2BodyId) -> bool {
+    pub(crate) fn clear_body_user_data(&self, id: BodyId) -> bool {
         let old = self
             .user_data
             .lock()
@@ -241,7 +237,7 @@ impl WorldCore {
         had
     }
 
-    pub(crate) fn clear_shape_user_data(&self, id: ffi::b2ShapeId) -> bool {
+    pub(crate) fn clear_shape_user_data(&self, id: ShapeId) -> bool {
         let old = self
             .user_data
             .lock()
@@ -253,7 +249,7 @@ impl WorldCore {
         had
     }
 
-    pub(crate) fn clear_joint_user_data(&self, id: ffi::b2JointId) -> bool {
+    pub(crate) fn clear_joint_user_data(&self, id: JointId) -> bool {
         let old = self
             .user_data
             .lock()
@@ -278,7 +274,7 @@ impl WorldCore {
 
     pub(crate) fn set_body_user_data<T: 'static>(
         &self,
-        id: ffi::b2BodyId,
+        id: BodyId,
         value: T,
     ) -> *mut core::ffi::c_void {
         let key = crate::core::user_data::IdKey::from(id);
@@ -294,7 +290,7 @@ impl WorldCore {
 
     pub(crate) fn set_shape_user_data<T: 'static>(
         &self,
-        id: ffi::b2ShapeId,
+        id: ShapeId,
         value: T,
     ) -> *mut core::ffi::c_void {
         let key = crate::core::user_data::IdKey::from(id);
@@ -310,7 +306,7 @@ impl WorldCore {
 
     pub(crate) fn set_joint_user_data<T: 'static>(
         &self,
-        id: ffi::b2JointId,
+        id: JointId,
         value: T,
     ) -> *mut core::ffi::c_void {
         let key = crate::core::user_data::IdKey::from(id);
@@ -340,7 +336,7 @@ impl WorldCore {
 
     pub(crate) fn try_with_body_user_data<T: 'static, R>(
         &self,
-        id: ffi::b2BodyId,
+        id: BodyId,
         f: impl FnOnce(&T) -> R,
     ) -> crate::error::ApiResult<Option<R>> {
         let key = crate::core::user_data::IdKey::from(id);
@@ -356,7 +352,7 @@ impl WorldCore {
 
     pub(crate) fn try_with_shape_user_data<T: 'static, R>(
         &self,
-        id: ffi::b2ShapeId,
+        id: ShapeId,
         f: impl FnOnce(&T) -> R,
     ) -> crate::error::ApiResult<Option<R>> {
         let key = crate::core::user_data::IdKey::from(id);
@@ -372,7 +368,7 @@ impl WorldCore {
 
     pub(crate) fn try_with_joint_user_data<T: 'static, R>(
         &self,
-        id: ffi::b2JointId,
+        id: JointId,
         f: impl FnOnce(&T) -> R,
     ) -> crate::error::ApiResult<Option<R>> {
         let key = crate::core::user_data::IdKey::from(id);
@@ -388,7 +384,7 @@ impl WorldCore {
 
     pub(crate) fn try_with_body_user_data_mut<T: 'static, R>(
         &self,
-        id: ffi::b2BodyId,
+        id: BodyId,
         f: impl FnOnce(&mut T) -> R,
     ) -> crate::error::ApiResult<Option<R>> {
         let key = crate::core::user_data::IdKey::from(id);
@@ -404,7 +400,7 @@ impl WorldCore {
 
     pub(crate) fn try_with_shape_user_data_mut<T: 'static, R>(
         &self,
-        id: ffi::b2ShapeId,
+        id: ShapeId,
         f: impl FnOnce(&mut T) -> R,
     ) -> crate::error::ApiResult<Option<R>> {
         let key = crate::core::user_data::IdKey::from(id);
@@ -420,7 +416,7 @@ impl WorldCore {
 
     pub(crate) fn try_with_joint_user_data_mut<T: 'static, R>(
         &self,
-        id: ffi::b2JointId,
+        id: JointId,
         f: impl FnOnce(&mut T) -> R,
     ) -> crate::error::ApiResult<Option<R>> {
         let key = crate::core::user_data::IdKey::from(id);
@@ -456,7 +452,7 @@ impl WorldCore {
 
     pub(crate) fn take_body_user_data<T: 'static>(
         &self,
-        id: ffi::b2BodyId,
+        id: BodyId,
     ) -> crate::error::ApiResult<Option<T>> {
         let key = crate::core::user_data::IdKey::from(id);
         let old = self
@@ -481,7 +477,7 @@ impl WorldCore {
 
     pub(crate) fn take_shape_user_data<T: 'static>(
         &self,
-        id: ffi::b2ShapeId,
+        id: ShapeId,
     ) -> crate::error::ApiResult<Option<T>> {
         let key = crate::core::user_data::IdKey::from(id);
         let old = self
@@ -506,7 +502,7 @@ impl WorldCore {
 
     pub(crate) fn take_joint_user_data<T: 'static>(
         &self,
-        id: ffi::b2JointId,
+        id: JointId,
     ) -> crate::error::ApiResult<Option<T>> {
         let key = crate::core::user_data::IdKey::from(id);
         let old = self
@@ -530,7 +526,7 @@ impl WorldCore {
     }
 
     #[cfg(feature = "serialize")]
-    pub(crate) fn record_body(&self, id: ffi::b2BodyId) {
+    pub(crate) fn record_body(&self, id: BodyId) {
         self.registries
             .lock()
             .expect("registries mutex poisoned")
@@ -550,7 +546,7 @@ impl WorldCore {
     }
 
     #[cfg(feature = "serialize")]
-    pub(crate) fn record_shape_flags(&self, sid: ffi::b2ShapeId, def: &ffi::b2ShapeDef) {
+    pub(crate) fn record_shape_flags(&self, sid: ShapeId, def: &ffi::b2ShapeDef) {
         self.registries
             .lock()
             .expect("registries mutex poisoned")
@@ -566,7 +562,7 @@ impl WorldCore {
     }
 
     #[cfg(feature = "serialize")]
-    pub(crate) fn remove_shape_flags(&self, sid: ffi::b2ShapeId) {
+    pub(crate) fn remove_shape_flags(&self, sid: ShapeId) {
         self.registries
             .lock()
             .expect("registries mutex poisoned")
@@ -574,7 +570,7 @@ impl WorldCore {
     }
 
     #[cfg(feature = "serialize")]
-    pub(crate) fn cleanup_before_destroy_body(&self, id: ffi::b2BodyId) {
+    pub(crate) fn cleanup_before_destroy_body(&self, id: BodyId) {
         crate::core::callback_state::assert_not_in_callback();
         let mut r = self.registries.lock().expect("registries mutex poisoned");
         r.remove_shape_flags_for_body(id);
