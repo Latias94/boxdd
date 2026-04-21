@@ -652,54 +652,45 @@ fn try_joint_kind_set2_checked_impl<A, B>(
     Ok(())
 }
 
-macro_rules! joint_scalar_get_impl {
-    ($name:ident, $ffi_get:path, $ty:ty) => {
-        #[inline]
-        fn $name(id: JointId) -> $ty {
-            unsafe { $ffi_get(id) }
-        }
-    };
+type JointScalarReadFn<T> = unsafe extern "C" fn(JointId) -> T;
+type JointScalarWriteFn<T> = unsafe extern "C" fn(JointId, T);
+type JointVec2ReadFn = unsafe extern "C" fn(JointId) -> ffi::b2Vec2;
+
+#[inline]
+fn joint_scalar_read_impl<T>(id: JointId, read: JointScalarReadFn<T>) -> T {
+    unsafe { read(id) }
 }
 
-macro_rules! joint_scalar_set_impl {
-    ($name:ident, $ffi_set:path, $ty:ty) => {
-        #[inline]
-        fn $name(id: JointId, value: $ty) {
-            unsafe { $ffi_set(id, value) }
-        }
-    };
+#[inline]
+fn joint_scalar_write_impl<T>(id: JointId, value: T, write: JointScalarWriteFn<T>) {
+    unsafe { write(id, value) }
 }
 
-macro_rules! joint_scalar_rw_impl {
-    ($get_name:ident, $set_name:ident, $ffi_get:path, $ffi_set:path, $ty:ty) => {
-        joint_scalar_get_impl!($get_name, $ffi_get, $ty);
-        joint_scalar_set_impl!($set_name, $ffi_set, $ty);
-    };
+#[inline]
+fn joint_vec2_read_impl(id: JointId, read: JointVec2ReadFn) -> Vec2 {
+    Vec2::from(unsafe { read(id) })
 }
 
-macro_rules! joint_vec2_get_impl {
-    ($name:ident, $ffi_get:path) => {
-        #[inline]
-        fn $name(id: JointId) -> Vec2 {
-            Vec2::from(unsafe { $ffi_get(id) })
-        }
-    };
+#[inline]
+fn distance_length_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2DistanceJoint_GetLength)
 }
 
-joint_scalar_rw_impl!(
-    distance_length_impl,
-    distance_set_length_impl,
-    ffi::b2DistanceJoint_GetLength,
-    ffi::b2DistanceJoint_SetLength,
-    f32
-);
-joint_scalar_rw_impl!(
-    distance_spring_enabled_impl,
-    distance_enable_spring_impl,
-    ffi::b2DistanceJoint_IsSpringEnabled,
-    ffi::b2DistanceJoint_EnableSpring,
-    bool
-);
+#[inline]
+fn distance_set_length_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2DistanceJoint_SetLength)
+}
+
+#[inline]
+fn distance_spring_enabled_impl(id: JointId) -> bool {
+    joint_scalar_read_impl(id, ffi::b2DistanceJoint_IsSpringEnabled)
+}
+
+#[inline]
+fn distance_enable_spring_impl(id: JointId, value: bool) {
+    joint_scalar_write_impl(id, value, ffi::b2DistanceJoint_EnableSpring)
+}
+
 #[inline]
 fn distance_spring_force_range_impl(id: JointId) -> (f32, f32) {
     let mut lower_force = 0.0f32;
@@ -719,394 +710,537 @@ fn distance_upper_spring_force_impl(id: JointId) -> f32 {
 fn distance_set_spring_force_range_impl(id: JointId, lower_force: f32, upper_force: f32) {
     unsafe { ffi::b2DistanceJoint_SetSpringForceRange(id, lower_force, upper_force) }
 }
-joint_scalar_rw_impl!(
-    distance_spring_hertz_impl,
-    distance_set_spring_hertz_impl,
-    ffi::b2DistanceJoint_GetSpringHertz,
-    ffi::b2DistanceJoint_SetSpringHertz,
-    f32
-);
-joint_scalar_rw_impl!(
-    distance_spring_damping_ratio_impl,
-    distance_set_spring_damping_ratio_impl,
-    ffi::b2DistanceJoint_GetSpringDampingRatio,
-    ffi::b2DistanceJoint_SetSpringDampingRatio,
-    f32
-);
-joint_scalar_rw_impl!(
-    distance_limit_enabled_impl,
-    distance_enable_limit_impl,
-    ffi::b2DistanceJoint_IsLimitEnabled,
-    ffi::b2DistanceJoint_EnableLimit,
-    bool
-);
-joint_scalar_get_impl!(
-    distance_min_length_impl,
-    ffi::b2DistanceJoint_GetMinLength,
-    f32
-);
-joint_scalar_get_impl!(
-    distance_max_length_impl,
-    ffi::b2DistanceJoint_GetMaxLength,
-    f32
-);
-joint_scalar_get_impl!(
-    distance_current_length_impl,
-    ffi::b2DistanceJoint_GetCurrentLength,
-    f32
-);
+
+#[inline]
+fn distance_spring_hertz_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2DistanceJoint_GetSpringHertz)
+}
+
+#[inline]
+fn distance_set_spring_hertz_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2DistanceJoint_SetSpringHertz)
+}
+
+#[inline]
+fn distance_spring_damping_ratio_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2DistanceJoint_GetSpringDampingRatio)
+}
+
+#[inline]
+fn distance_set_spring_damping_ratio_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2DistanceJoint_SetSpringDampingRatio)
+}
+
+#[inline]
+fn distance_limit_enabled_impl(id: JointId) -> bool {
+    joint_scalar_read_impl(id, ffi::b2DistanceJoint_IsLimitEnabled)
+}
+
+#[inline]
+fn distance_enable_limit_impl(id: JointId, value: bool) {
+    joint_scalar_write_impl(id, value, ffi::b2DistanceJoint_EnableLimit)
+}
+
+#[inline]
+fn distance_min_length_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2DistanceJoint_GetMinLength)
+}
+
+#[inline]
+fn distance_max_length_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2DistanceJoint_GetMaxLength)
+}
+
+#[inline]
+fn distance_current_length_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2DistanceJoint_GetCurrentLength)
+}
+
 #[inline]
 fn distance_set_length_range_impl(id: JointId, min_length: f32, max_length: f32) {
     unsafe { ffi::b2DistanceJoint_SetLengthRange(id, min_length, max_length) }
 }
-joint_scalar_rw_impl!(
-    distance_motor_enabled_impl,
-    distance_enable_motor_impl,
-    ffi::b2DistanceJoint_IsMotorEnabled,
-    ffi::b2DistanceJoint_EnableMotor,
-    bool
-);
-joint_scalar_rw_impl!(
-    distance_motor_speed_impl,
-    distance_set_motor_speed_impl,
-    ffi::b2DistanceJoint_GetMotorSpeed,
-    ffi::b2DistanceJoint_SetMotorSpeed,
-    f32
-);
-joint_scalar_rw_impl!(
-    distance_max_motor_force_impl,
-    distance_set_max_motor_force_impl,
-    ffi::b2DistanceJoint_GetMaxMotorForce,
-    ffi::b2DistanceJoint_SetMaxMotorForce,
-    f32
-);
-joint_scalar_get_impl!(
-    distance_motor_force_impl,
-    ffi::b2DistanceJoint_GetMotorForce,
-    f32
-);
 
-joint_scalar_rw_impl!(
-    prismatic_spring_enabled_impl,
-    prismatic_enable_spring_impl,
-    ffi::b2PrismaticJoint_IsSpringEnabled,
-    ffi::b2PrismaticJoint_EnableSpring,
-    bool
-);
-joint_scalar_rw_impl!(
-    prismatic_spring_hertz_impl,
-    prismatic_set_spring_hertz_impl,
-    ffi::b2PrismaticJoint_GetSpringHertz,
-    ffi::b2PrismaticJoint_SetSpringHertz,
-    f32
-);
-joint_scalar_rw_impl!(
-    prismatic_spring_damping_ratio_impl,
-    prismatic_set_spring_damping_ratio_impl,
-    ffi::b2PrismaticJoint_GetSpringDampingRatio,
-    ffi::b2PrismaticJoint_SetSpringDampingRatio,
-    f32
-);
-joint_scalar_rw_impl!(
-    prismatic_target_translation_impl,
-    prismatic_set_target_translation_impl,
-    ffi::b2PrismaticJoint_GetTargetTranslation,
-    ffi::b2PrismaticJoint_SetTargetTranslation,
-    f32
-);
-joint_scalar_rw_impl!(
-    prismatic_limit_enabled_impl,
-    prismatic_enable_limit_impl,
-    ffi::b2PrismaticJoint_IsLimitEnabled,
-    ffi::b2PrismaticJoint_EnableLimit,
-    bool
-);
-joint_scalar_get_impl!(
-    prismatic_lower_limit_impl,
-    ffi::b2PrismaticJoint_GetLowerLimit,
-    f32
-);
-joint_scalar_get_impl!(
-    prismatic_upper_limit_impl,
-    ffi::b2PrismaticJoint_GetUpperLimit,
-    f32
-);
+#[inline]
+fn distance_motor_enabled_impl(id: JointId) -> bool {
+    joint_scalar_read_impl(id, ffi::b2DistanceJoint_IsMotorEnabled)
+}
+
+#[inline]
+fn distance_enable_motor_impl(id: JointId, value: bool) {
+    joint_scalar_write_impl(id, value, ffi::b2DistanceJoint_EnableMotor)
+}
+
+#[inline]
+fn distance_motor_speed_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2DistanceJoint_GetMotorSpeed)
+}
+
+#[inline]
+fn distance_set_motor_speed_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2DistanceJoint_SetMotorSpeed)
+}
+
+#[inline]
+fn distance_max_motor_force_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2DistanceJoint_GetMaxMotorForce)
+}
+
+#[inline]
+fn distance_set_max_motor_force_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2DistanceJoint_SetMaxMotorForce)
+}
+
+#[inline]
+fn distance_motor_force_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2DistanceJoint_GetMotorForce)
+}
+
+#[inline]
+fn prismatic_spring_enabled_impl(id: JointId) -> bool {
+    joint_scalar_read_impl(id, ffi::b2PrismaticJoint_IsSpringEnabled)
+}
+
+#[inline]
+fn prismatic_enable_spring_impl(id: JointId, value: bool) {
+    joint_scalar_write_impl(id, value, ffi::b2PrismaticJoint_EnableSpring)
+}
+
+#[inline]
+fn prismatic_spring_hertz_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2PrismaticJoint_GetSpringHertz)
+}
+
+#[inline]
+fn prismatic_set_spring_hertz_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2PrismaticJoint_SetSpringHertz)
+}
+
+#[inline]
+fn prismatic_spring_damping_ratio_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2PrismaticJoint_GetSpringDampingRatio)
+}
+
+#[inline]
+fn prismatic_set_spring_damping_ratio_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2PrismaticJoint_SetSpringDampingRatio)
+}
+
+#[inline]
+fn prismatic_target_translation_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2PrismaticJoint_GetTargetTranslation)
+}
+
+#[inline]
+fn prismatic_set_target_translation_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2PrismaticJoint_SetTargetTranslation)
+}
+
+#[inline]
+fn prismatic_limit_enabled_impl(id: JointId) -> bool {
+    joint_scalar_read_impl(id, ffi::b2PrismaticJoint_IsLimitEnabled)
+}
+
+#[inline]
+fn prismatic_enable_limit_impl(id: JointId, value: bool) {
+    joint_scalar_write_impl(id, value, ffi::b2PrismaticJoint_EnableLimit)
+}
+
+#[inline]
+fn prismatic_lower_limit_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2PrismaticJoint_GetLowerLimit)
+}
+
+#[inline]
+fn prismatic_upper_limit_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2PrismaticJoint_GetUpperLimit)
+}
+
 #[inline]
 fn prismatic_set_limits_impl(id: JointId, lower: f32, upper: f32) {
     unsafe { ffi::b2PrismaticJoint_SetLimits(id, lower, upper) }
 }
-joint_scalar_rw_impl!(
-    prismatic_motor_enabled_impl,
-    prismatic_enable_motor_impl,
-    ffi::b2PrismaticJoint_IsMotorEnabled,
-    ffi::b2PrismaticJoint_EnableMotor,
-    bool
-);
-joint_scalar_rw_impl!(
-    prismatic_motor_speed_impl,
-    prismatic_set_motor_speed_impl,
-    ffi::b2PrismaticJoint_GetMotorSpeed,
-    ffi::b2PrismaticJoint_SetMotorSpeed,
-    f32
-);
-joint_scalar_rw_impl!(
-    prismatic_max_motor_force_impl,
-    prismatic_set_max_motor_force_impl,
-    ffi::b2PrismaticJoint_GetMaxMotorForce,
-    ffi::b2PrismaticJoint_SetMaxMotorForce,
-    f32
-);
-joint_scalar_get_impl!(
-    prismatic_motor_force_impl,
-    ffi::b2PrismaticJoint_GetMotorForce,
-    f32
-);
-joint_scalar_get_impl!(
-    prismatic_translation_impl,
-    ffi::b2PrismaticJoint_GetTranslation,
-    f32
-);
-joint_scalar_get_impl!(prismatic_speed_impl, ffi::b2PrismaticJoint_GetSpeed, f32);
 
-joint_scalar_rw_impl!(
-    revolute_spring_enabled_impl,
-    revolute_enable_spring_impl,
-    ffi::b2RevoluteJoint_IsSpringEnabled,
-    ffi::b2RevoluteJoint_EnableSpring,
-    bool
-);
-joint_scalar_rw_impl!(
-    revolute_spring_hertz_impl,
-    revolute_set_spring_hertz_impl,
-    ffi::b2RevoluteJoint_GetSpringHertz,
-    ffi::b2RevoluteJoint_SetSpringHertz,
-    f32
-);
-joint_scalar_rw_impl!(
-    revolute_spring_damping_ratio_impl,
-    revolute_set_spring_damping_ratio_impl,
-    ffi::b2RevoluteJoint_GetSpringDampingRatio,
-    ffi::b2RevoluteJoint_SetSpringDampingRatio,
-    f32
-);
-joint_scalar_rw_impl!(
-    revolute_target_angle_impl,
-    revolute_set_target_angle_impl,
-    ffi::b2RevoluteJoint_GetTargetAngle,
-    ffi::b2RevoluteJoint_SetTargetAngle,
-    f32
-);
-joint_scalar_get_impl!(revolute_angle_impl, ffi::b2RevoluteJoint_GetAngle, f32);
-joint_scalar_rw_impl!(
-    revolute_limit_enabled_impl,
-    revolute_enable_limit_impl,
-    ffi::b2RevoluteJoint_IsLimitEnabled,
-    ffi::b2RevoluteJoint_EnableLimit,
-    bool
-);
-joint_scalar_get_impl!(
-    revolute_lower_limit_impl,
-    ffi::b2RevoluteJoint_GetLowerLimit,
-    f32
-);
-joint_scalar_get_impl!(
-    revolute_upper_limit_impl,
-    ffi::b2RevoluteJoint_GetUpperLimit,
-    f32
-);
+#[inline]
+fn prismatic_motor_enabled_impl(id: JointId) -> bool {
+    joint_scalar_read_impl(id, ffi::b2PrismaticJoint_IsMotorEnabled)
+}
+
+#[inline]
+fn prismatic_enable_motor_impl(id: JointId, value: bool) {
+    joint_scalar_write_impl(id, value, ffi::b2PrismaticJoint_EnableMotor)
+}
+
+#[inline]
+fn prismatic_motor_speed_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2PrismaticJoint_GetMotorSpeed)
+}
+
+#[inline]
+fn prismatic_set_motor_speed_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2PrismaticJoint_SetMotorSpeed)
+}
+
+#[inline]
+fn prismatic_max_motor_force_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2PrismaticJoint_GetMaxMotorForce)
+}
+
+#[inline]
+fn prismatic_set_max_motor_force_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2PrismaticJoint_SetMaxMotorForce)
+}
+
+#[inline]
+fn prismatic_motor_force_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2PrismaticJoint_GetMotorForce)
+}
+
+#[inline]
+fn prismatic_translation_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2PrismaticJoint_GetTranslation)
+}
+
+#[inline]
+fn prismatic_speed_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2PrismaticJoint_GetSpeed)
+}
+
+#[inline]
+fn revolute_spring_enabled_impl(id: JointId) -> bool {
+    joint_scalar_read_impl(id, ffi::b2RevoluteJoint_IsSpringEnabled)
+}
+
+#[inline]
+fn revolute_enable_spring_impl(id: JointId, value: bool) {
+    joint_scalar_write_impl(id, value, ffi::b2RevoluteJoint_EnableSpring)
+}
+
+#[inline]
+fn revolute_spring_hertz_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2RevoluteJoint_GetSpringHertz)
+}
+
+#[inline]
+fn revolute_set_spring_hertz_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2RevoluteJoint_SetSpringHertz)
+}
+
+#[inline]
+fn revolute_spring_damping_ratio_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2RevoluteJoint_GetSpringDampingRatio)
+}
+
+#[inline]
+fn revolute_set_spring_damping_ratio_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2RevoluteJoint_SetSpringDampingRatio)
+}
+
+#[inline]
+fn revolute_target_angle_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2RevoluteJoint_GetTargetAngle)
+}
+
+#[inline]
+fn revolute_set_target_angle_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2RevoluteJoint_SetTargetAngle)
+}
+
+#[inline]
+fn revolute_angle_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2RevoluteJoint_GetAngle)
+}
+
+#[inline]
+fn revolute_limit_enabled_impl(id: JointId) -> bool {
+    joint_scalar_read_impl(id, ffi::b2RevoluteJoint_IsLimitEnabled)
+}
+
+#[inline]
+fn revolute_enable_limit_impl(id: JointId, value: bool) {
+    joint_scalar_write_impl(id, value, ffi::b2RevoluteJoint_EnableLimit)
+}
+
+#[inline]
+fn revolute_lower_limit_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2RevoluteJoint_GetLowerLimit)
+}
+
+#[inline]
+fn revolute_upper_limit_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2RevoluteJoint_GetUpperLimit)
+}
+
 #[inline]
 fn revolute_set_limits_impl(id: JointId, lower: f32, upper: f32) {
     unsafe { ffi::b2RevoluteJoint_SetLimits(id, lower, upper) }
 }
-joint_scalar_rw_impl!(
-    revolute_motor_enabled_impl,
-    revolute_enable_motor_impl,
-    ffi::b2RevoluteJoint_IsMotorEnabled,
-    ffi::b2RevoluteJoint_EnableMotor,
-    bool
-);
-joint_scalar_rw_impl!(
-    revolute_motor_speed_impl,
-    revolute_set_motor_speed_impl,
-    ffi::b2RevoluteJoint_GetMotorSpeed,
-    ffi::b2RevoluteJoint_SetMotorSpeed,
-    f32
-);
-joint_scalar_get_impl!(
-    revolute_motor_torque_impl,
-    ffi::b2RevoluteJoint_GetMotorTorque,
-    f32
-);
-joint_scalar_rw_impl!(
-    revolute_max_motor_torque_impl,
-    revolute_set_max_motor_torque_impl,
-    ffi::b2RevoluteJoint_GetMaxMotorTorque,
-    ffi::b2RevoluteJoint_SetMaxMotorTorque,
-    f32
-);
 
-joint_scalar_rw_impl!(
-    weld_linear_hertz_impl,
-    weld_set_linear_hertz_impl,
-    ffi::b2WeldJoint_GetLinearHertz,
-    ffi::b2WeldJoint_SetLinearHertz,
-    f32
-);
-joint_scalar_rw_impl!(
-    weld_linear_damping_ratio_impl,
-    weld_set_linear_damping_ratio_impl,
-    ffi::b2WeldJoint_GetLinearDampingRatio,
-    ffi::b2WeldJoint_SetLinearDampingRatio,
-    f32
-);
-joint_scalar_rw_impl!(
-    weld_angular_hertz_impl,
-    weld_set_angular_hertz_impl,
-    ffi::b2WeldJoint_GetAngularHertz,
-    ffi::b2WeldJoint_SetAngularHertz,
-    f32
-);
-joint_scalar_rw_impl!(
-    weld_angular_damping_ratio_impl,
-    weld_set_angular_damping_ratio_impl,
-    ffi::b2WeldJoint_GetAngularDampingRatio,
-    ffi::b2WeldJoint_SetAngularDampingRatio,
-    f32
-);
+#[inline]
+fn revolute_motor_enabled_impl(id: JointId) -> bool {
+    joint_scalar_read_impl(id, ffi::b2RevoluteJoint_IsMotorEnabled)
+}
 
-joint_scalar_rw_impl!(
-    wheel_spring_enabled_impl,
-    wheel_enable_spring_impl,
-    ffi::b2WheelJoint_IsSpringEnabled,
-    ffi::b2WheelJoint_EnableSpring,
-    bool
-);
-joint_scalar_rw_impl!(
-    wheel_spring_hertz_impl,
-    wheel_set_spring_hertz_impl,
-    ffi::b2WheelJoint_GetSpringHertz,
-    ffi::b2WheelJoint_SetSpringHertz,
-    f32
-);
-joint_scalar_rw_impl!(
-    wheel_spring_damping_ratio_impl,
-    wheel_set_spring_damping_ratio_impl,
-    ffi::b2WheelJoint_GetSpringDampingRatio,
-    ffi::b2WheelJoint_SetSpringDampingRatio,
-    f32
-);
-joint_scalar_rw_impl!(
-    wheel_limit_enabled_impl,
-    wheel_enable_limit_impl,
-    ffi::b2WheelJoint_IsLimitEnabled,
-    ffi::b2WheelJoint_EnableLimit,
-    bool
-);
-joint_scalar_get_impl!(wheel_lower_limit_impl, ffi::b2WheelJoint_GetLowerLimit, f32);
-joint_scalar_get_impl!(wheel_upper_limit_impl, ffi::b2WheelJoint_GetUpperLimit, f32);
+#[inline]
+fn revolute_enable_motor_impl(id: JointId, value: bool) {
+    joint_scalar_write_impl(id, value, ffi::b2RevoluteJoint_EnableMotor)
+}
+
+#[inline]
+fn revolute_motor_speed_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2RevoluteJoint_GetMotorSpeed)
+}
+
+#[inline]
+fn revolute_set_motor_speed_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2RevoluteJoint_SetMotorSpeed)
+}
+
+#[inline]
+fn revolute_motor_torque_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2RevoluteJoint_GetMotorTorque)
+}
+
+#[inline]
+fn revolute_max_motor_torque_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2RevoluteJoint_GetMaxMotorTorque)
+}
+
+#[inline]
+fn revolute_set_max_motor_torque_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2RevoluteJoint_SetMaxMotorTorque)
+}
+
+#[inline]
+fn weld_linear_hertz_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2WeldJoint_GetLinearHertz)
+}
+
+#[inline]
+fn weld_set_linear_hertz_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2WeldJoint_SetLinearHertz)
+}
+
+#[inline]
+fn weld_linear_damping_ratio_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2WeldJoint_GetLinearDampingRatio)
+}
+
+#[inline]
+fn weld_set_linear_damping_ratio_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2WeldJoint_SetLinearDampingRatio)
+}
+
+#[inline]
+fn weld_angular_hertz_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2WeldJoint_GetAngularHertz)
+}
+
+#[inline]
+fn weld_set_angular_hertz_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2WeldJoint_SetAngularHertz)
+}
+
+#[inline]
+fn weld_angular_damping_ratio_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2WeldJoint_GetAngularDampingRatio)
+}
+
+#[inline]
+fn weld_set_angular_damping_ratio_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2WeldJoint_SetAngularDampingRatio)
+}
+
+#[inline]
+fn wheel_spring_enabled_impl(id: JointId) -> bool {
+    joint_scalar_read_impl(id, ffi::b2WheelJoint_IsSpringEnabled)
+}
+
+#[inline]
+fn wheel_enable_spring_impl(id: JointId, value: bool) {
+    joint_scalar_write_impl(id, value, ffi::b2WheelJoint_EnableSpring)
+}
+
+#[inline]
+fn wheel_spring_hertz_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2WheelJoint_GetSpringHertz)
+}
+
+#[inline]
+fn wheel_set_spring_hertz_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2WheelJoint_SetSpringHertz)
+}
+
+#[inline]
+fn wheel_spring_damping_ratio_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2WheelJoint_GetSpringDampingRatio)
+}
+
+#[inline]
+fn wheel_set_spring_damping_ratio_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2WheelJoint_SetSpringDampingRatio)
+}
+
+#[inline]
+fn wheel_limit_enabled_impl(id: JointId) -> bool {
+    joint_scalar_read_impl(id, ffi::b2WheelJoint_IsLimitEnabled)
+}
+
+#[inline]
+fn wheel_enable_limit_impl(id: JointId, value: bool) {
+    joint_scalar_write_impl(id, value, ffi::b2WheelJoint_EnableLimit)
+}
+
+#[inline]
+fn wheel_lower_limit_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2WheelJoint_GetLowerLimit)
+}
+
+#[inline]
+fn wheel_upper_limit_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2WheelJoint_GetUpperLimit)
+}
+
 #[inline]
 fn wheel_set_limits_impl(id: JointId, lower: f32, upper: f32) {
     unsafe { ffi::b2WheelJoint_SetLimits(id, lower, upper) }
 }
-joint_scalar_rw_impl!(
-    wheel_motor_enabled_impl,
-    wheel_enable_motor_impl,
-    ffi::b2WheelJoint_IsMotorEnabled,
-    ffi::b2WheelJoint_EnableMotor,
-    bool
-);
-joint_scalar_rw_impl!(
-    wheel_motor_speed_impl,
-    wheel_set_motor_speed_impl,
-    ffi::b2WheelJoint_GetMotorSpeed,
-    ffi::b2WheelJoint_SetMotorSpeed,
-    f32
-);
-joint_scalar_get_impl!(
-    wheel_motor_torque_impl,
-    ffi::b2WheelJoint_GetMotorTorque,
-    f32
-);
-joint_scalar_rw_impl!(
-    wheel_max_motor_torque_impl,
-    wheel_set_max_motor_torque_impl,
-    ffi::b2WheelJoint_GetMaxMotorTorque,
-    ffi::b2WheelJoint_SetMaxMotorTorque,
-    f32
-);
 
-joint_vec2_get_impl!(
-    motor_linear_velocity_impl,
-    ffi::b2MotorJoint_GetLinearVelocity
-);
+#[inline]
+fn wheel_motor_enabled_impl(id: JointId) -> bool {
+    joint_scalar_read_impl(id, ffi::b2WheelJoint_IsMotorEnabled)
+}
+
+#[inline]
+fn wheel_enable_motor_impl(id: JointId, value: bool) {
+    joint_scalar_write_impl(id, value, ffi::b2WheelJoint_EnableMotor)
+}
+
+#[inline]
+fn wheel_motor_speed_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2WheelJoint_GetMotorSpeed)
+}
+
+#[inline]
+fn wheel_set_motor_speed_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2WheelJoint_SetMotorSpeed)
+}
+
+#[inline]
+fn wheel_motor_torque_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2WheelJoint_GetMotorTorque)
+}
+
+#[inline]
+fn wheel_max_motor_torque_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2WheelJoint_GetMaxMotorTorque)
+}
+
+#[inline]
+fn wheel_set_max_motor_torque_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2WheelJoint_SetMaxMotorTorque)
+}
+
+#[inline]
+fn motor_linear_velocity_impl(id: JointId) -> Vec2 {
+    joint_vec2_read_impl(id, ffi::b2MotorJoint_GetLinearVelocity)
+}
+
 #[inline]
 fn motor_set_linear_velocity_impl(id: JointId, value: Vec2) {
     let raw: ffi::b2Vec2 = value.into();
     unsafe { ffi::b2MotorJoint_SetLinearVelocity(id, raw) }
 }
-joint_scalar_rw_impl!(
-    motor_angular_velocity_impl,
-    motor_set_angular_velocity_impl,
-    ffi::b2MotorJoint_GetAngularVelocity,
-    ffi::b2MotorJoint_SetAngularVelocity,
-    f32
-);
-joint_scalar_rw_impl!(
-    motor_max_velocity_force_impl,
-    motor_set_max_velocity_force_impl,
-    ffi::b2MotorJoint_GetMaxVelocityForce,
-    ffi::b2MotorJoint_SetMaxVelocityForce,
-    f32
-);
-joint_scalar_rw_impl!(
-    motor_max_velocity_torque_impl,
-    motor_set_max_velocity_torque_impl,
-    ffi::b2MotorJoint_GetMaxVelocityTorque,
-    ffi::b2MotorJoint_SetMaxVelocityTorque,
-    f32
-);
-joint_scalar_rw_impl!(
-    motor_linear_hertz_impl,
-    motor_set_linear_hertz_impl,
-    ffi::b2MotorJoint_GetLinearHertz,
-    ffi::b2MotorJoint_SetLinearHertz,
-    f32
-);
-joint_scalar_rw_impl!(
-    motor_linear_damping_ratio_impl,
-    motor_set_linear_damping_ratio_impl,
-    ffi::b2MotorJoint_GetLinearDampingRatio,
-    ffi::b2MotorJoint_SetLinearDampingRatio,
-    f32
-);
-joint_scalar_rw_impl!(
-    motor_angular_hertz_impl,
-    motor_set_angular_hertz_impl,
-    ffi::b2MotorJoint_GetAngularHertz,
-    ffi::b2MotorJoint_SetAngularHertz,
-    f32
-);
-joint_scalar_rw_impl!(
-    motor_angular_damping_ratio_impl,
-    motor_set_angular_damping_ratio_impl,
-    ffi::b2MotorJoint_GetAngularDampingRatio,
-    ffi::b2MotorJoint_SetAngularDampingRatio,
-    f32
-);
-joint_scalar_rw_impl!(
-    motor_max_spring_force_impl,
-    motor_set_max_spring_force_impl,
-    ffi::b2MotorJoint_GetMaxSpringForce,
-    ffi::b2MotorJoint_SetMaxSpringForce,
-    f32
-);
-joint_scalar_rw_impl!(
-    motor_max_spring_torque_impl,
-    motor_set_max_spring_torque_impl,
-    ffi::b2MotorJoint_GetMaxSpringTorque,
-    ffi::b2MotorJoint_SetMaxSpringTorque,
-    f32
-);
+
+#[inline]
+fn motor_angular_velocity_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2MotorJoint_GetAngularVelocity)
+}
+
+#[inline]
+fn motor_set_angular_velocity_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2MotorJoint_SetAngularVelocity)
+}
+
+#[inline]
+fn motor_max_velocity_force_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2MotorJoint_GetMaxVelocityForce)
+}
+
+#[inline]
+fn motor_set_max_velocity_force_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2MotorJoint_SetMaxVelocityForce)
+}
+
+#[inline]
+fn motor_max_velocity_torque_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2MotorJoint_GetMaxVelocityTorque)
+}
+
+#[inline]
+fn motor_set_max_velocity_torque_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2MotorJoint_SetMaxVelocityTorque)
+}
+
+#[inline]
+fn motor_linear_hertz_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2MotorJoint_GetLinearHertz)
+}
+
+#[inline]
+fn motor_set_linear_hertz_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2MotorJoint_SetLinearHertz)
+}
+
+#[inline]
+fn motor_linear_damping_ratio_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2MotorJoint_GetLinearDampingRatio)
+}
+
+#[inline]
+fn motor_set_linear_damping_ratio_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2MotorJoint_SetLinearDampingRatio)
+}
+
+#[inline]
+fn motor_angular_hertz_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2MotorJoint_GetAngularHertz)
+}
+
+#[inline]
+fn motor_set_angular_hertz_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2MotorJoint_SetAngularHertz)
+}
+
+#[inline]
+fn motor_angular_damping_ratio_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2MotorJoint_GetAngularDampingRatio)
+}
+
+#[inline]
+fn motor_set_angular_damping_ratio_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2MotorJoint_SetAngularDampingRatio)
+}
+
+#[inline]
+fn motor_max_spring_force_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2MotorJoint_GetMaxSpringForce)
+}
+
+#[inline]
+fn motor_set_max_spring_force_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2MotorJoint_SetMaxSpringForce)
+}
+
+#[inline]
+fn motor_max_spring_torque_impl(id: JointId) -> f32 {
+    joint_scalar_read_impl(id, ffi::b2MotorJoint_GetMaxSpringTorque)
+}
+
+#[inline]
+fn motor_set_max_spring_torque_impl(id: JointId, value: f32) {
+    joint_scalar_write_impl(id, value, ffi::b2MotorJoint_SetMaxSpringTorque)
+}
 
 impl World {
     pub fn distance_length(&self, id: JointId) -> f32 {
