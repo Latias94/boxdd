@@ -89,7 +89,10 @@ impl World {
     /// any operation that can mutate those buffers (e.g. stepping the world or destroying bodies).
     ///
     /// Dropping `Owned*` handles inside `f` is OK; destruction is deferred until after this call.
-    pub unsafe fn with_body_events<T>(&self, f: impl FnOnce(&[ffi::b2BodyMoveEvent]) -> T) -> T {
+    pub unsafe fn with_body_events_raw<T>(
+        &self,
+        f: impl FnOnce(&[ffi::b2BodyMoveEvent]) -> T,
+    ) -> T {
         self.with_borrowed_event_buffers(|| {
             let raw = unsafe { ffi::b2World_GetBodyEvents(self.raw()) };
             let slice = if raw.moveCount > 0 && !raw.moveEvents.is_null() {

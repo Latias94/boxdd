@@ -182,7 +182,7 @@ impl World {
     /// any operation that can mutate those buffers (e.g. stepping the world or destroying bodies).
     ///
     /// Dropping `Owned*` handles inside `f` is OK; destruction is deferred until after this call.
-    pub unsafe fn with_contact_events<T>(
+    pub unsafe fn with_contact_events_raw<T>(
         &self,
         f: impl FnOnce(
             &[ffi::b2ContactBeginTouchEvent],

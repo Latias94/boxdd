@@ -1081,6 +1081,42 @@ impl World {
             .body_ids()
     }
 
+    /// Enumerate known body ids created via this wrapper into a caller-owned buffer.
+    #[cfg(feature = "serialize")]
+    pub fn body_ids_into(&self, out: &mut Vec<BodyId>) {
+        crate::core::callback_state::assert_not_in_callback();
+        self.core
+            .registries
+            .lock()
+            .expect("registries mutex poisoned")
+            .body_ids_into(out);
+    }
+
+    /// Enumerate known body ids created via this wrapper. Invalid/destroyed ids are filtered out.
+    #[cfg(feature = "serialize")]
+    pub fn try_body_ids(&self) -> crate::error::ApiResult<Vec<BodyId>> {
+        crate::core::callback_state::check_not_in_callback()?;
+        let mut out = Vec::new();
+        self.core
+            .registries
+            .lock()
+            .expect("registries mutex poisoned")
+            .body_ids_into(&mut out);
+        Ok(out)
+    }
+
+    /// Enumerate known body ids created via this wrapper into a caller-owned buffer.
+    #[cfg(feature = "serialize")]
+    pub fn try_body_ids_into(&self, out: &mut Vec<BodyId>) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        self.core
+            .registries
+            .lock()
+            .expect("registries mutex poisoned")
+            .body_ids_into(out);
+        Ok(())
+    }
+
     /// Return chain creation records captured at creation time using crate-owned value types.
     #[cfg(feature = "serialize")]
     pub fn chain_records(&self) -> Vec<ChainCreateRecord> {
@@ -1090,6 +1126,45 @@ impl World {
             .lock()
             .expect("registries mutex poisoned")
             .chain_records()
+    }
+
+    /// Return chain creation records captured at creation time into a caller-owned buffer.
+    #[cfg(feature = "serialize")]
+    pub fn chain_records_into(&self, out: &mut Vec<ChainCreateRecord>) {
+        crate::core::callback_state::assert_not_in_callback();
+        self.core
+            .registries
+            .lock()
+            .expect("registries mutex poisoned")
+            .chain_records_into(out);
+    }
+
+    /// Return chain creation records captured at creation time using crate-owned value types.
+    #[cfg(feature = "serialize")]
+    pub fn try_chain_records(&self) -> crate::error::ApiResult<Vec<ChainCreateRecord>> {
+        crate::core::callback_state::check_not_in_callback()?;
+        let mut out = Vec::new();
+        self.core
+            .registries
+            .lock()
+            .expect("registries mutex poisoned")
+            .chain_records_into(&mut out);
+        Ok(out)
+    }
+
+    /// Return chain creation records captured at creation time into a caller-owned buffer.
+    #[cfg(feature = "serialize")]
+    pub fn try_chain_records_into(
+        &self,
+        out: &mut Vec<ChainCreateRecord>,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        self.core
+            .registries
+            .lock()
+            .expect("registries mutex poisoned")
+            .chain_records_into(out);
+        Ok(())
     }
 
     /// Return recorded shape flags for shapes created via this wrapper.

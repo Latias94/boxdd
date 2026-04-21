@@ -2,6 +2,10 @@
 
 use boxdd::prelude::*;
 
+fn same_body_id(a: BodyId, b: BodyId) -> bool {
+    a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
+}
+
 #[test]
 fn shape_flags_removed_when_shape_destroyed() {
     let mut world = World::new(WorldDef::default()).unwrap();
@@ -53,6 +57,42 @@ fn registries_cleaned_when_body_destroyed() {
     assert!(world.shape_flags(sid).is_none());
     assert_eq!(world.chain_records().len(), 0);
     assert_eq!(world.body_ids().len(), 0);
+}
+
+#[test]
+fn serialize_registry_snapshots_reuse_caller_buffers() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body = world.create_body_id(BodyBuilder::new().build());
+    let chain_def = boxdd::shapes::chain::ChainDef::builder()
+        .points([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [3.0, 0.0]])
+        .build();
+    let _chain = world.create_chain_for_id(body, &chain_def);
+
+    let mut body_ids = world.body_ids();
+    body_ids.reserve(8);
+    let body_ids_ptr = body_ids.as_ptr();
+    world.body_ids_into(&mut body_ids);
+    assert_eq!(body_ids.as_ptr(), body_ids_ptr);
+    assert_eq!(body_ids.len(), 1);
+    assert!(same_body_id(body_ids[0], body));
+
+    world.try_body_ids_into(&mut body_ids).unwrap();
+    assert_eq!(body_ids.as_ptr(), body_ids_ptr);
+    assert_eq!(body_ids.len(), 1);
+    assert!(same_body_id(body_ids[0], body));
+
+    let mut chain_records = world.chain_records();
+    chain_records.reserve(8);
+    let chain_records_ptr = chain_records.as_ptr();
+    world.chain_records_into(&mut chain_records);
+    assert_eq!(chain_records.as_ptr(), chain_records_ptr);
+    assert_eq!(chain_records.len(), 1);
+    assert_eq!(chain_records[0].body.index1, body.index1);
+
+    world.try_chain_records_into(&mut chain_records).unwrap();
+    assert_eq!(chain_records.as_ptr(), chain_records_ptr);
+    assert_eq!(chain_records.len(), 1);
+    assert_eq!(chain_records[0].points.len(), 4);
 }
 
 #[test]

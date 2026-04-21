@@ -174,7 +174,7 @@
 //!   - By value: `world.contact_events()`/`sensor_events()`/`body_events()`/`joint_events()` return owned data for storage or cross‑frame use.
 //!   - Reusable buffers: `*_events_into(...)` reuse caller-owned owned-event storage across frames.
 //!   - Zero‑copy views: `with_*_events_view(...)` iterate without allocations (borrows internal buffers).
-//!   - Raw slices: `unsafe { with_*_events(...) }` expose FFI slices (borrows internal buffers).
+//!   - Raw slices: `unsafe { with_*_events_raw(...) }` expose FFI slices (borrows internal buffers).
 //! - Event APIs intentionally live on `World`, not `WorldHandle`, because they are tied to the
 //!   completed step's world-local event buffers and deferred-destroy flushing behavior.
 //!

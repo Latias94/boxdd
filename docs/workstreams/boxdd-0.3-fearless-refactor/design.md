@@ -115,7 +115,7 @@ The main intentional raw escape hatches are:
   storage or external systems already built around Box2D ids
 - explicit raw conversion points on crate-owned value types via `from_raw(...)` /
   `into_raw()`
-- raw event-slice visitors `unsafe { with_*_events(...) }` for zero-copy advanced
+- raw event-slice visitors `unsafe { with_*_events_raw(...) }` for zero-copy advanced
   consumers that need direct access to Box2D event buffers
 - `debug_draw_raw` for render backends that want zero-copy vertex slices and `CStr`
   strings instead of the safe converted callback surface
@@ -158,6 +158,7 @@ These seams are worth keeping only if:
 - explicit threading / async documentation and examples that preserve the current `!Send` / `!Sync` design instead of weakening it
 - clearer crate-level error-handling guidance for panic-by-default vs `try_*` usage
 - reusable-buffer event snapshot APIs so callers that need owned event data can still avoid per-frame allocation churn without dropping to raw or borrowed-only views
+- reusable-buffer wrapper metadata snapshots so crate-owned serialize registries such as `body_ids()` / `chain_records()` do not regress into allocation-only APIs beside the main query/event surface
 - serialize-time chain metadata cleanup so `ChainDef` helpers and `World::chain_records()` stay on crate-owned `Filter` / `Vec2` / `SurfaceMaterial` vocabulary instead of leaking raw `ffi` collections back into the public surface
 - definition value-object cleanup so `ShapeDef` / `ChainDef` can be inspected as normal crate-owned config values instead of acting like builder-only write shells
 - creation-definition cleanup so `BodyDef`, `JointBase`, and concrete joint defs no longer act like write-only shells, and obvious naming mistakes on config-only APIs are corrected even when that requires a breaking change

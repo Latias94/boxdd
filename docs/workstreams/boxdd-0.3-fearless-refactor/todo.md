@@ -31,7 +31,9 @@
 - [x] Continue creation-time definition cleanup so `BodyDef`, `JointBase`, and concrete `*JointDef` types are inspectable value objects, and remove the misnamed prismatic `max_motor_torque(...)` creation alias in favor of `max_motor_force(...)`.
 - [x] Finish the world-config slice so `WorldDef` and `ExplosionDef` are readable value objects instead of builder-only or write-only configuration shells.
 - [x] Tighten the remaining raw pointer user-data escape hatches so body/shape/joint APIs use explicit `*_raw` naming and keep regression coverage for the preserved pointer seam.
+- [x] Tighten raw event-buffer visitors so direct FFI-slice access uses `with_*_events_raw(...)` naming instead of blending in with the safe zero-copy event views.
 - [x] Finish raw-boundary symmetry for configuration wrappers so `BodyDef`, `ShapeDef`, `JointBase`, and concrete joint defs all expose named `from_raw(...)` / `into_raw()` escape hatches.
+- [x] Extend the reusable-buffer story to wrapper-owned serialize metadata so `World::body_ids()` and `World::chain_records()` also have `*_into(...)` / `try_*_into(...)` forms for allocation-sensitive tooling.
 
 ## In Progress
 

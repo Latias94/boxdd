@@ -140,7 +140,7 @@ fn raw_events_view_defers_destroys() {
     let id = body.id();
 
     unsafe {
-        world.with_contact_events(|begin, end, hit| {
+        world.with_contact_events_raw(|begin, end, hit| {
             let _ = (begin.len(), end.len(), hit.len());
             drop(body);
         });
@@ -156,7 +156,7 @@ fn raw_body_events_view_defers_destroys() {
     let id = body.id();
 
     unsafe {
-        world.with_body_events(|moves| {
+        world.with_body_events_raw(|moves| {
             let _ = moves.len();
             drop(body);
         });
@@ -177,7 +177,7 @@ fn raw_sensor_events_view_defers_shape_destroys() {
     let id = shape.id();
 
     unsafe {
-        world.with_sensor_events(|begin, end| {
+        world.with_sensor_events_raw(|begin, end| {
             let _ = (begin.len(), end.len());
             drop(shape);
         });
@@ -198,7 +198,7 @@ fn raw_joint_events_view_defers_joint_destroys() {
     let id = joint.id();
 
     unsafe {
-        world.with_joint_events(|events| {
+        world.with_joint_events_raw(|events| {
             let _ = events.len();
             drop(joint);
         });
@@ -214,10 +214,10 @@ fn nested_raw_event_views_delay_destroy_until_outermost_scope() {
     let id = body.id();
 
     unsafe {
-        world.with_contact_events(|begin, end, hit| {
+        world.with_contact_events_raw(|begin, end, hit| {
             let _ = (begin.len(), end.len(), hit.len());
 
-            world.with_body_events(|moves| {
+            world.with_body_events_raw(|moves| {
                 let _ = moves.len();
                 drop(body);
             });

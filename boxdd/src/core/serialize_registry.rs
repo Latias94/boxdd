@@ -177,24 +177,36 @@ impl Registries {
     }
 
     pub(crate) fn body_ids(&self) -> Vec<BodyId> {
-        self.bodies
-            .iter()
-            .copied()
-            .filter(|&bid| unsafe { ffi::b2Body_IsValid(bid) })
-            .collect()
+        let mut out = Vec::new();
+        self.body_ids_into(&mut out);
+        out
+    }
+
+    pub(crate) fn body_ids_into(&self, out: &mut Vec<BodyId>) {
+        out.clear();
+        out.extend(
+            self.bodies
+                .iter()
+                .copied()
+                .filter(|&bid| unsafe { ffi::b2Body_IsValid(bid) }),
+        );
     }
 
     pub(crate) fn chain_records(&self) -> Vec<ChainCreateRecord> {
-        self.chains
-            .iter()
-            .filter_map(|(id, meta)| {
-                if unsafe { ffi::b2Chain_IsValid(*id) } {
-                    Some(meta.to_record())
-                } else {
-                    None
-                }
-            })
-            .collect()
+        let mut out = Vec::new();
+        self.chain_records_into(&mut out);
+        out
+    }
+
+    pub(crate) fn chain_records_into(&self, out: &mut Vec<ChainCreateRecord>) {
+        out.clear();
+        out.extend(self.chains.iter().filter_map(|(id, meta)| {
+            if unsafe { ffi::b2Chain_IsValid(*id) } {
+                Some(meta.to_record())
+            } else {
+                None
+            }
+        }));
     }
 
     pub(crate) fn shape_flags(&self, sid: ShapeId) -> Option<ShapeFlagsRecord> {

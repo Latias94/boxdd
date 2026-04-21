@@ -138,7 +138,9 @@ Scope:
 - make creation-time config types such as `BodyDef`, `JointBase`, and concrete joint defs readable and correctly named instead of relying on builder-only mutation or legacy misnomers
 - make top-level world config values such as `WorldDef` / `ExplosionDef` readable in the same crate-owned vocabulary instead of leaving them as setup-only shells
 - tighten remaining raw pointer user-data seams so their naming is as explicit as the rest of the `*_raw` surface
+- tighten raw event-buffer visitors so borrowed FFI-slice APIs also use explicit `*_raw` naming instead of looking like ordinary safe zero-copy helpers
 - finish raw-boundary symmetry for builder/config wrappers so the remaining config values do not require direct field access just to cross back to Box2D structs
+- extend reusable-buffer extraction to wrapper-owned serialize metadata so the crate's own body/chain snapshots do not force fresh `Vec` allocation on every read
 - productize live shape runtime wrappers for AABB, point tests, ray casts, computed mass data, and runtime event toggles across owned/scoped/id APIs
 - productize the body runtime completeness slice around rotation, sleeping/awake/enabled/bullet/name state, attached ids, and body-level event toggles
 - productize the first joint runtime completeness slice around joint metadata, constraint tuning, local frames, and wake helpers across owned/scoped/id APIs
