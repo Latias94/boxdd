@@ -20,6 +20,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - In-place valid-filter variants for sensor overlap hot paths: `sensor_overlaps_valid_into` and `shape_sensor_overlaps_valid_into`.
 - Workstream documentation under `docs/workstreams/query-buffer-reuse/` to track the 0.3 allocation-hotpath refactor plan, milestones, and cleanup backlog.
 - Safe character mover APIs covering collision-plane collection and solver helpers: `collide_mover`, `collide_mover_into`, `solve_planes`, and `clip_vector`.
+- Recoverable mover-solver helpers: `try_solve_planes` and `try_clip_vector`, plus `CollisionPlane::validate()`.
 - A broader 0.3 umbrella workstream under `docs/workstreams/boxdd-0.3-fearless-refactor/` to track the rest of the fearless refactor plan.
 - Typed world-level material mixing callbacks for friction and restitution using `MaterialMixInput` and `user_material_id`.
 - A standalone `collision` module with safe `ShapeProxy`, `SimplexCache`, `DistanceInput`, `ShapeCastPairInput`, `Sweep`, `ToiInput`, `ToiState`, and `*_distance` / `shape_cast` / `time_of_impact` helpers.
@@ -76,6 +77,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Body creation, world creation, body mass-data mutation, and joint creation now front-load the obvious Box2D definition preconditions in the safe wrapper, so invalid defs fail as Rust panics or `ApiError::InvalidArgument` instead of depending on native assert builds.
 - World runtime tuning setters now validate gravity vectors and numeric threshold/tuning inputs in the safe wrapper, so `try_*` callers receive `ApiError::InvalidArgument` instead of relying on Box2D clamps or assert-enabled native builds.
 - `World::step`, AABB/query/cast/mover helpers, and standalone collision inputs now front-load the obvious Box2D assert preconditions in the safe wrapper, so invalid vectors/AABBs/radii/fractions fail as Rust panics or `ApiError::InvalidArgument` instead of depending on native assert builds.
+- `solve_planes` and `clip_vector` now validate mover-solver inputs in the safe wrapper, so invalid target vectors, plane normals, push limits, and clip-state pushes fail as Rust panics or `ApiError::InvalidArgument` instead of flowing unchecked into Box2D.
 - Breaking: `ShapeProxy::new(...)` now returns `None` for invalid Box2D coordinates or negative/non-finite radii in addition to the existing empty/too-many-point rejection.
 - Breaking: `BodyDef::from_raw(...)` and `WorldDef::from_raw(...)` are now `unsafe` because raw name pointers and raw task/material callback pointers can otherwise flow into later safe creation/stepping paths.
 - Threading docs now spell out that `worker_count` alone does not enable Box2D workers; task callbacks must also be installed through the explicit raw task-system path.

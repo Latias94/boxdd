@@ -14,7 +14,7 @@ pub use crate::{
     },
     query::{
         Aabb, CollisionPlane, MoverPlaneResult, Plane, PlaneSolverResult, QueryFilter, RayResult,
-        clip_vector, solve_planes,
+        clip_vector, solve_planes, try_clip_vector, try_solve_planes,
     },
     shapes::{
         self, Capsule, ChainSegment, Circle, MAX_POLYGON_VERTICES, OwnedShape, Polygon, Segment,

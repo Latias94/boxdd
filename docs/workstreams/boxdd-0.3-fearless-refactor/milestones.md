@@ -55,6 +55,7 @@ Scope:
 - normalize obvious Box2D assert preconditions into explicit safe-wrapper argument validation where the public runtime API already owns the semantics
 - extend that validation policy to creation-time definition objects and shared default constructors so `try_*` creation paths do not depend on native assert builds
 - extend that validation policy to `World::step`, world query/cast/mover entrypoints, and standalone collision inputs so the last obvious runtime assert pockets are encoded in Rust-side contracts too
+- close the remaining safe mover-pipeline contract gap by validating `solve_planes` / `clip_vector` inputs and exposing recoverable `try_*` variants for the solver stage too
 - consolidate the most mechanical joint creation entrypoints so joint-type additions cannot drift across scoped/id/owned/try variants
 - consolidate event-buffer borrow / cleanup plumbing so all event-view APIs share the same lifetime and deferred-destroy path
 - add reusable-buffer event snapshot getters so owned event extraction does not force fresh allocations beside the existing zero-copy views
@@ -73,6 +74,7 @@ Exit criteria:
 - obvious range/value misuse on the main runtime setter surface no longer depends on Box2D assert builds for failure behavior
 - obvious creation-time def misuse on body/joint creation paths no longer depends on Box2D assert builds, and shared joint-base defaults match upstream semantics
 - `World::step` and the world query/cast/mover hot paths no longer depend on Box2D assert builds for invalid AABBs, vectors, radii, or sub-step counts
+- the safe character mover pipeline now validates the solver/clipping stage too, instead of stopping at world collision-plane collection
 - joint creation families no longer duplicate per-type create/owned/id/try plumbing or callback-state handling
 - event-view APIs no longer duplicate the borrow-event-buffers / process-deferred-destroys template in every module
 - owned event snapshots no longer force fresh allocation when callers need persistent copies instead of borrowed event views

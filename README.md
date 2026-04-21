@@ -124,7 +124,7 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 
 ## Character Mover APIs
 - The safe wrapper now covers Box2D's geometric character mover pipeline.
-- Use `world.cast_mover(...)` to test motion, `world.collide_mover(...)` or `world.collide_mover_into(...)` to collect planes, `boxdd::solve_planes(...)` to solve them, and `boxdd::clip_vector(...)` to clip velocity against solved planes.
+- Use `world.cast_mover(...)` to test motion, `world.collide_mover(...)` or `world.collide_mover_into(...)` to collect planes, `boxdd::solve_planes(...)` / `boxdd::try_solve_planes(...)` to solve them, and `boxdd::clip_vector(...)` / `boxdd::try_clip_vector(...)` to clip velocity against solved planes.
 - See `examples/character_mover.rs` for a minimal end-to-end usage example.
 
 ## Collision Geometry APIs

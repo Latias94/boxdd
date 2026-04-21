@@ -1033,6 +1033,11 @@ impl CollisionPlane {
         Self::new(plane, Self::RIGID_PUSH_LIMIT, true)
     }
 
+    /// Validate this collision plane for Box2D mover solver helpers.
+    pub fn validate(&self) -> ApiResult<()> {
+        check_query_collision_plane_valid(self)
+    }
+
     #[inline]
     pub fn from_raw(raw: ffi::b2CollisionPlane) -> Self {
         Self {
@@ -1052,6 +1057,38 @@ impl CollisionPlane {
             clipVelocity: self.clip_velocity,
         }
     }
+}
+
+#[inline]
+fn assert_query_solver_collision_plane_valid(plane: &CollisionPlane) {
+    assert!(
+        check_query_solver_collision_plane_valid(plane).is_ok(),
+        "collision plane must be solver-valid, got {:?}",
+        plane
+    );
+}
+
+#[inline]
+fn check_query_solver_collision_plane_valid(plane: &CollisionPlane) -> ApiResult<()> {
+    if !plane.plane.is_valid() {
+        return Err(crate::error::ApiError::InvalidArgument);
+    }
+    check_query_non_negative_finite_scalar(plane.push_limit)
+}
+
+#[inline]
+fn assert_query_collision_plane_valid(plane: &CollisionPlane) {
+    assert!(
+        check_query_collision_plane_valid(plane).is_ok(),
+        "collision plane must be valid, got {:?}",
+        plane
+    );
+}
+
+#[inline]
+fn check_query_collision_plane_valid(plane: &CollisionPlane) -> ApiResult<()> {
+    check_query_solver_collision_plane_valid(plane)?;
+    check_query_non_negative_finite_scalar(plane.push)
 }
 
 const _: () = {
@@ -1108,9 +1145,14 @@ pub fn solve_planes<V: Into<Vec2>>(
     target_delta: V,
     planes: &mut [CollisionPlane],
 ) -> PlaneSolverResult {
+    let target_delta = target_delta.into();
+    assert_query_vec2_valid("target_delta", target_delta);
+    for plane in planes.iter() {
+        assert_query_solver_collision_plane_valid(plane);
+    }
     let raw = unsafe {
         ffi::b2SolvePlanes(
-            target_delta.into().into_raw(),
+            target_delta.into_raw(),
             raw_collision_planes_mut(planes),
             planes.len() as i32,
         )
@@ -1118,16 +1160,63 @@ pub fn solve_planes<V: Into<Vec2>>(
     PlaneSolverResult::from_raw(raw)
 }
 
+/// Solve the translation that best satisfies the supplied mover collision planes.
+///
+/// Returns `ApiError::InvalidArgument` when `target_delta` or any collision plane is invalid.
+#[inline]
+pub fn try_solve_planes<V: Into<Vec2>>(
+    target_delta: V,
+    planes: &mut [CollisionPlane],
+) -> ApiResult<PlaneSolverResult> {
+    let target_delta = target_delta.into();
+    check_query_vec2_valid(target_delta)?;
+    for plane in planes.iter() {
+        check_query_solver_collision_plane_valid(plane)?;
+    }
+    let raw = unsafe {
+        ffi::b2SolvePlanes(
+            target_delta.into_raw(),
+            raw_collision_planes_mut(planes),
+            planes.len() as i32,
+        )
+    };
+    Ok(PlaneSolverResult::from_raw(raw))
+}
+
 /// Clip a velocity or movement vector against solved collision planes.
 #[inline]
 pub fn clip_vector<V: Into<Vec2>>(vector: V, planes: &[CollisionPlane]) -> Vec2 {
+    let vector = vector.into();
+    assert_query_vec2_valid("vector", vector);
+    for plane in planes.iter() {
+        assert_query_collision_plane_valid(plane);
+    }
     Vec2::from_raw(unsafe {
         ffi::b2ClipVector(
-            vector.into().into_raw(),
+            vector.into_raw(),
             raw_collision_planes(planes),
             planes.len() as i32,
         )
     })
+}
+
+/// Clip a velocity or movement vector against solved collision planes.
+///
+/// Returns `ApiError::InvalidArgument` when `vector` or any collision plane state is invalid.
+#[inline]
+pub fn try_clip_vector<V: Into<Vec2>>(vector: V, planes: &[CollisionPlane]) -> ApiResult<Vec2> {
+    let vector = vector.into();
+    check_query_vec2_valid(vector)?;
+    for plane in planes.iter() {
+        check_query_collision_plane_valid(plane)?;
+    }
+    Ok(Vec2::from_raw(unsafe {
+        ffi::b2ClipVector(
+            vector.into_raw(),
+            raw_collision_planes(planes),
+            planes.len() as i32,
+        )
+    }))
 }
 
 #[inline]

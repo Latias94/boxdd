@@ -1,4 +1,4 @@
-use boxdd::{clip_vector, prelude::*, shapes, solve_planes};
+use boxdd::{clip_vector, prelude::*, shapes, solve_planes, try_clip_vector, try_solve_planes};
 
 #[test]
 fn mover_queries_and_solver_are_safe_and_reusable() {
@@ -76,4 +76,42 @@ fn mover_value_types_use_explicit_raw_conversions() {
     });
     assert_eq!(result.translation, Vec2::new(0.5, -0.25));
     assert_eq!(result.iteration_count, 4);
+}
+
+#[test]
+fn mover_solver_validation_and_try_paths_are_recoverable() {
+    let plane = Plane::new([0.0_f32, 1.0], 0.0);
+    let mut planes = [CollisionPlane::rigid(plane)];
+
+    assert!(planes[0].validate().is_ok());
+
+    let solved = try_solve_planes([0.0_f32, -0.2], &mut planes).unwrap();
+    assert!(solved.translation.is_valid());
+    assert!(planes[0].push >= 0.0);
+
+    let clipped = try_clip_vector([0.0_f32, -1.0], &planes).unwrap();
+    assert!(clipped.is_valid());
+
+    let invalid_plane = CollisionPlane::rigid(Plane::new([0.0_f32, 2.0], 0.0));
+    assert_eq!(
+        invalid_plane.validate().unwrap_err(),
+        ApiError::InvalidArgument
+    );
+
+    let mut invalid_planes = [invalid_plane];
+    assert_eq!(
+        try_solve_planes([0.0_f32, -0.2], &mut invalid_planes).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+
+    let mut invalid_push_planes = [CollisionPlane::rigid(plane)];
+    invalid_push_planes[0].push = f32::NAN;
+    assert_eq!(
+        try_clip_vector([0.0_f32, -1.0], &invalid_push_planes).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        try_solve_planes([f32::NAN, 0.0], &mut planes).unwrap_err(),
+        ApiError::InvalidArgument
+    );
 }
