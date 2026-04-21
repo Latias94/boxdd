@@ -5,14 +5,147 @@
 // Most APIs here are intentionally minimal; keep clippy's per-item safety doc requirement off.
 #![allow(clippy::missing_safety_doc)]
 
+use core::ffi::c_void;
+
 use boxdd_sys::ffi;
 
 use crate::body::{BodyType, OwnedBody};
 use crate::joints::OwnedJoint;
-use crate::shapes::chain::OwnedChain;
+use crate::shapes::chain::{Chain, OwnedChain};
 use crate::shapes::{OwnedShape, ShapeType, SurfaceMaterial};
 use crate::types::{BodyId, ChainId, JointId, ShapeId, Vec2};
 use crate::{Body, Joint, Shape, Transform, World};
+
+#[inline]
+unsafe fn body_transform_raw_unchecked_impl(id: BodyId) -> ffi::b2Transform {
+    unsafe { ffi::b2Body_GetTransform(id) }
+}
+
+#[inline]
+unsafe fn body_transform_unchecked_impl(id: BodyId) -> Transform {
+    Transform::from(unsafe { body_transform_raw_unchecked_impl(id) })
+}
+
+#[inline]
+unsafe fn body_position_unchecked_impl(id: BodyId) -> Vec2 {
+    Vec2::from(unsafe { ffi::b2Body_GetPosition(id) })
+}
+
+#[inline]
+unsafe fn body_linear_velocity_unchecked_impl(id: BodyId) -> Vec2 {
+    Vec2::from(unsafe { ffi::b2Body_GetLinearVelocity(id) })
+}
+
+#[inline]
+unsafe fn body_angular_velocity_unchecked_impl(id: BodyId) -> f32 {
+    unsafe { ffi::b2Body_GetAngularVelocity(id) }
+}
+
+#[inline]
+unsafe fn set_body_linear_velocity_unchecked_impl(id: BodyId, v: Vec2) {
+    let raw: ffi::b2Vec2 = v.into();
+    unsafe { ffi::b2Body_SetLinearVelocity(id, raw) }
+}
+
+#[inline]
+unsafe fn set_body_angular_velocity_unchecked_impl(id: BodyId, w: f32) {
+    unsafe { ffi::b2Body_SetAngularVelocity(id, w) }
+}
+
+#[inline]
+unsafe fn body_type_unchecked_impl(id: BodyId) -> BodyType {
+    BodyType::from_raw(unsafe { ffi::b2Body_GetType(id) })
+}
+
+#[inline]
+unsafe fn set_body_type_unchecked_impl(id: BodyId, body_type: BodyType) {
+    unsafe { ffi::b2Body_SetType(id, body_type.into_raw()) }
+}
+
+#[inline]
+unsafe fn set_body_gravity_scale_unchecked_impl(id: BodyId, value: f32) {
+    unsafe { ffi::b2Body_SetGravityScale(id, value) }
+}
+
+#[inline]
+unsafe fn body_gravity_scale_unchecked_impl(id: BodyId) -> f32 {
+    unsafe { ffi::b2Body_GetGravityScale(id) }
+}
+
+#[inline]
+unsafe fn shape_body_unchecked_impl(id: ShapeId) -> BodyId {
+    unsafe { ffi::b2Shape_GetBody(id) }
+}
+
+#[inline]
+unsafe fn shape_type_unchecked_impl(id: ShapeId) -> ShapeType {
+    ShapeType::from_raw(unsafe { ffi::b2Shape_GetType(id) })
+        .expect("Box2D returned an unknown shape type")
+}
+
+#[inline]
+unsafe fn shape_density_unchecked_impl(id: ShapeId) -> f32 {
+    unsafe { ffi::b2Shape_GetDensity(id) }
+}
+
+#[inline]
+unsafe fn set_shape_density_unchecked_impl(id: ShapeId, density: f32, update_body_mass: bool) {
+    unsafe { ffi::b2Shape_SetDensity(id, density, update_body_mass) }
+}
+
+#[inline]
+unsafe fn set_shape_surface_material_unchecked_impl(id: ShapeId, material: &SurfaceMaterial) {
+    unsafe { ffi::b2Shape_SetSurfaceMaterial(id, &material.0) }
+}
+
+#[inline]
+unsafe fn joint_force_threshold_unchecked_impl(id: JointId) -> f32 {
+    unsafe { ffi::b2Joint_GetForceThreshold(id) }
+}
+
+#[inline]
+unsafe fn set_joint_force_threshold_unchecked_impl(id: JointId, threshold: f32) {
+    unsafe { ffi::b2Joint_SetForceThreshold(id, threshold) }
+}
+
+#[inline]
+unsafe fn joint_user_data_ptr_unchecked_impl(id: JointId) -> *mut c_void {
+    unsafe { ffi::b2Joint_GetUserData(id) }
+}
+
+#[inline]
+unsafe fn set_joint_user_data_ptr_unchecked_impl(id: JointId, ptr: *mut c_void) {
+    unsafe { ffi::b2Joint_SetUserData(id, ptr) }
+}
+
+#[inline]
+unsafe fn chain_segment_count_unchecked_impl(id: ChainId) -> i32 {
+    unsafe { ffi::b2Chain_GetSegmentCount(id) }
+}
+
+#[inline]
+unsafe fn chain_segments_unchecked_impl(id: ChainId) -> Vec<ShapeId> {
+    let count = unsafe { chain_segment_count_unchecked_impl(id) }.max(0) as usize;
+    unsafe {
+        crate::core::ffi_vec::read_from_ffi(count, |ptr, count| {
+            ffi::b2Chain_GetSegments(id, ptr, count)
+        })
+    }
+}
+
+#[inline]
+unsafe fn chain_surface_material_unchecked_impl(id: ChainId, index: i32) -> SurfaceMaterial {
+    SurfaceMaterial::from_raw(unsafe { ffi::b2Chain_GetSurfaceMaterial(id, index) })
+}
+
+#[inline]
+unsafe fn set_chain_surface_material_unchecked_impl(
+    id: ChainId,
+    index: i32,
+    material: &SurfaceMaterial,
+) {
+    unsafe { ffi::b2Chain_SetSurfaceMaterial(id, &material.0, index) }
+}
 
 pub trait WorldUncheckedExt {
     unsafe fn body_transform_unchecked(&self, body: BodyId) -> Transform;
@@ -27,28 +160,31 @@ pub trait WorldUncheckedExt {
 
 impl WorldUncheckedExt for World {
     unsafe fn body_transform_unchecked(&self, body: BodyId) -> Transform {
-        Transform::from(unsafe { ffi::b2Body_GetTransform(body) })
+        unsafe { body_transform_unchecked_impl(body) }
     }
+
     unsafe fn body_position_unchecked(&self, body: BodyId) -> Vec2 {
-        Vec2::from(unsafe { ffi::b2Body_GetPosition(body) })
+        unsafe { body_position_unchecked_impl(body) }
     }
+
     unsafe fn set_body_linear_velocity_unchecked(&mut self, body: BodyId, v: Vec2) {
-        let vv: ffi::b2Vec2 = v.into();
-        unsafe { ffi::b2Body_SetLinearVelocity(body, vv) }
+        unsafe { set_body_linear_velocity_unchecked_impl(body, v) }
     }
+
     unsafe fn set_body_angular_velocity_unchecked(&mut self, body: BodyId, w: f32) {
-        unsafe { ffi::b2Body_SetAngularVelocity(body, w) }
+        unsafe { set_body_angular_velocity_unchecked_impl(body, w) }
     }
+
     unsafe fn set_body_type_unchecked(&mut self, body: BodyId, t: BodyType) {
-        unsafe { ffi::b2Body_SetType(body, t.into_raw()) }
+        unsafe { set_body_type_unchecked_impl(body, t) }
     }
 
     unsafe fn shape_body_unchecked(&self, shape: ShapeId) -> BodyId {
-        unsafe { ffi::b2Shape_GetBody(shape) }
+        unsafe { shape_body_unchecked_impl(shape) }
     }
+
     unsafe fn shape_type_unchecked(&self, shape: ShapeId) -> ShapeType {
-        ShapeType::from_raw(unsafe { ffi::b2Shape_GetType(shape) })
-            .expect("Box2D returned an unknown shape type")
+        unsafe { shape_type_unchecked_impl(shape) }
     }
 }
 
@@ -65,81 +201,89 @@ pub trait BodyUncheckedExt {
     unsafe fn gravity_scale_unchecked(&self) -> f32;
 }
 
-macro_rules! impl_body_unchecked_ext {
-    ($ty:ty, field $id:ident) => {
-        impl BodyUncheckedExt for $ty {
-            unsafe fn position_unchecked(&self) -> Vec2 {
-                Vec2::from(unsafe { ffi::b2Body_GetPosition(self.$id) })
-            }
-            unsafe fn linear_velocity_unchecked(&self) -> Vec2 {
-                Vec2::from(unsafe { ffi::b2Body_GetLinearVelocity(self.$id) })
-            }
-            unsafe fn angular_velocity_unchecked(&self) -> f32 {
-                unsafe { ffi::b2Body_GetAngularVelocity(self.$id) }
-            }
-            unsafe fn transform_unchecked(&self) -> ffi::b2Transform {
-                unsafe { ffi::b2Body_GetTransform(self.$id) }
-            }
-            unsafe fn set_linear_velocity_unchecked(&mut self, v: Vec2) {
-                let vv: ffi::b2Vec2 = v.into();
-                unsafe { ffi::b2Body_SetLinearVelocity(self.$id, vv) }
-            }
-            unsafe fn set_angular_velocity_unchecked(&mut self, w: f32) {
-                unsafe { ffi::b2Body_SetAngularVelocity(self.$id, w) }
-            }
-            unsafe fn body_type_unchecked(&self) -> BodyType {
-                BodyType::from_raw(unsafe { ffi::b2Body_GetType(self.$id) })
-            }
-            unsafe fn set_body_type_unchecked(&mut self, t: BodyType) {
-                unsafe { ffi::b2Body_SetType(self.$id, t.into_raw()) }
-            }
-            unsafe fn set_gravity_scale_unchecked(&mut self, v: f32) {
-                unsafe { ffi::b2Body_SetGravityScale(self.$id, v) }
-            }
-            unsafe fn gravity_scale_unchecked(&self) -> f32 {
-                unsafe { ffi::b2Body_GetGravityScale(self.$id) }
-            }
-        }
-    };
-    ($ty:ty, method $id:ident) => {
-        impl BodyUncheckedExt for $ty {
-            unsafe fn position_unchecked(&self) -> Vec2 {
-                Vec2::from(unsafe { ffi::b2Body_GetPosition(self.$id()) })
-            }
-            unsafe fn linear_velocity_unchecked(&self) -> Vec2 {
-                Vec2::from(unsafe { ffi::b2Body_GetLinearVelocity(self.$id()) })
-            }
-            unsafe fn angular_velocity_unchecked(&self) -> f32 {
-                unsafe { ffi::b2Body_GetAngularVelocity(self.$id()) }
-            }
-            unsafe fn transform_unchecked(&self) -> ffi::b2Transform {
-                unsafe { ffi::b2Body_GetTransform(self.$id()) }
-            }
-            unsafe fn set_linear_velocity_unchecked(&mut self, v: Vec2) {
-                let vv: ffi::b2Vec2 = v.into();
-                unsafe { ffi::b2Body_SetLinearVelocity(self.$id(), vv) }
-            }
-            unsafe fn set_angular_velocity_unchecked(&mut self, w: f32) {
-                unsafe { ffi::b2Body_SetAngularVelocity(self.$id(), w) }
-            }
-            unsafe fn body_type_unchecked(&self) -> BodyType {
-                BodyType::from_raw(unsafe { ffi::b2Body_GetType(self.$id()) })
-            }
-            unsafe fn set_body_type_unchecked(&mut self, t: BodyType) {
-                unsafe { ffi::b2Body_SetType(self.$id(), t.into_raw()) }
-            }
-            unsafe fn set_gravity_scale_unchecked(&mut self, v: f32) {
-                unsafe { ffi::b2Body_SetGravityScale(self.$id(), v) }
-            }
-            unsafe fn gravity_scale_unchecked(&self) -> f32 {
-                unsafe { ffi::b2Body_GetGravityScale(self.$id()) }
-            }
-        }
-    };
+impl BodyUncheckedExt for Body<'_> {
+    unsafe fn position_unchecked(&self) -> Vec2 {
+        unsafe { body_position_unchecked_impl(self.id) }
+    }
+
+    unsafe fn linear_velocity_unchecked(&self) -> Vec2 {
+        unsafe { body_linear_velocity_unchecked_impl(self.id) }
+    }
+
+    unsafe fn angular_velocity_unchecked(&self) -> f32 {
+        unsafe { body_angular_velocity_unchecked_impl(self.id) }
+    }
+
+    unsafe fn transform_unchecked(&self) -> ffi::b2Transform {
+        unsafe { body_transform_raw_unchecked_impl(self.id) }
+    }
+
+    unsafe fn set_linear_velocity_unchecked(&mut self, v: Vec2) {
+        unsafe { set_body_linear_velocity_unchecked_impl(self.id, v) }
+    }
+
+    unsafe fn set_angular_velocity_unchecked(&mut self, w: f32) {
+        unsafe { set_body_angular_velocity_unchecked_impl(self.id, w) }
+    }
+
+    unsafe fn body_type_unchecked(&self) -> BodyType {
+        unsafe { body_type_unchecked_impl(self.id) }
+    }
+
+    unsafe fn set_body_type_unchecked(&mut self, t: BodyType) {
+        unsafe { set_body_type_unchecked_impl(self.id, t) }
+    }
+
+    unsafe fn set_gravity_scale_unchecked(&mut self, v: f32) {
+        unsafe { set_body_gravity_scale_unchecked_impl(self.id, v) }
+    }
+
+    unsafe fn gravity_scale_unchecked(&self) -> f32 {
+        unsafe { body_gravity_scale_unchecked_impl(self.id) }
+    }
 }
 
-impl_body_unchecked_ext!(Body<'_>, field id);
-impl_body_unchecked_ext!(OwnedBody, method id);
+impl BodyUncheckedExt for OwnedBody {
+    unsafe fn position_unchecked(&self) -> Vec2 {
+        unsafe { body_position_unchecked_impl(self.id()) }
+    }
+
+    unsafe fn linear_velocity_unchecked(&self) -> Vec2 {
+        unsafe { body_linear_velocity_unchecked_impl(self.id()) }
+    }
+
+    unsafe fn angular_velocity_unchecked(&self) -> f32 {
+        unsafe { body_angular_velocity_unchecked_impl(self.id()) }
+    }
+
+    unsafe fn transform_unchecked(&self) -> ffi::b2Transform {
+        unsafe { body_transform_raw_unchecked_impl(self.id()) }
+    }
+
+    unsafe fn set_linear_velocity_unchecked(&mut self, v: Vec2) {
+        unsafe { set_body_linear_velocity_unchecked_impl(self.id(), v) }
+    }
+
+    unsafe fn set_angular_velocity_unchecked(&mut self, w: f32) {
+        unsafe { set_body_angular_velocity_unchecked_impl(self.id(), w) }
+    }
+
+    unsafe fn body_type_unchecked(&self) -> BodyType {
+        unsafe { body_type_unchecked_impl(self.id()) }
+    }
+
+    unsafe fn set_body_type_unchecked(&mut self, t: BodyType) {
+        unsafe { set_body_type_unchecked_impl(self.id(), t) }
+    }
+
+    unsafe fn set_gravity_scale_unchecked(&mut self, v: f32) {
+        unsafe { set_body_gravity_scale_unchecked_impl(self.id(), v) }
+    }
+
+    unsafe fn gravity_scale_unchecked(&self) -> f32 {
+        unsafe { body_gravity_scale_unchecked_impl(self.id()) }
+    }
+}
 
 pub trait ShapeUncheckedExt {
     unsafe fn shape_type_unchecked(&self) -> ShapeType;
@@ -149,96 +293,92 @@ pub trait ShapeUncheckedExt {
     unsafe fn set_surface_material_unchecked(&mut self, material: &SurfaceMaterial);
 }
 
-macro_rules! impl_shape_unchecked_ext {
-    ($ty:ty, field $id:ident) => {
-        impl ShapeUncheckedExt for $ty {
-            unsafe fn shape_type_unchecked(&self) -> ShapeType {
-                ShapeType::from_raw(unsafe { ffi::b2Shape_GetType(self.$id) })
-                    .expect("Box2D returned an unknown shape type")
-            }
-            unsafe fn body_id_unchecked(&self) -> BodyId {
-                unsafe { ffi::b2Shape_GetBody(self.$id) }
-            }
-            unsafe fn density_unchecked(&self) -> f32 {
-                unsafe { ffi::b2Shape_GetDensity(self.$id) }
-            }
-            unsafe fn set_density_unchecked(&mut self, density: f32, update_body_mass: bool) {
-                unsafe { ffi::b2Shape_SetDensity(self.$id, density, update_body_mass) }
-            }
-            unsafe fn set_surface_material_unchecked(&mut self, material: &SurfaceMaterial) {
-                unsafe { ffi::b2Shape_SetSurfaceMaterial(self.$id, &material.0) }
-            }
-        }
-    };
-    ($ty:ty, method $id:ident) => {
-        impl ShapeUncheckedExt for $ty {
-            unsafe fn shape_type_unchecked(&self) -> ShapeType {
-                ShapeType::from_raw(unsafe { ffi::b2Shape_GetType(self.$id()) })
-                    .expect("Box2D returned an unknown shape type")
-            }
-            unsafe fn body_id_unchecked(&self) -> BodyId {
-                unsafe { ffi::b2Shape_GetBody(self.$id()) }
-            }
-            unsafe fn density_unchecked(&self) -> f32 {
-                unsafe { ffi::b2Shape_GetDensity(self.$id()) }
-            }
-            unsafe fn set_density_unchecked(&mut self, density: f32, update_body_mass: bool) {
-                unsafe { ffi::b2Shape_SetDensity(self.$id(), density, update_body_mass) }
-            }
-            unsafe fn set_surface_material_unchecked(&mut self, material: &SurfaceMaterial) {
-                unsafe { ffi::b2Shape_SetSurfaceMaterial(self.$id(), &material.0) }
-            }
-        }
-    };
+impl ShapeUncheckedExt for Shape<'_> {
+    unsafe fn shape_type_unchecked(&self) -> ShapeType {
+        unsafe { shape_type_unchecked_impl(self.id) }
+    }
+
+    unsafe fn body_id_unchecked(&self) -> BodyId {
+        unsafe { shape_body_unchecked_impl(self.id) }
+    }
+
+    unsafe fn density_unchecked(&self) -> f32 {
+        unsafe { shape_density_unchecked_impl(self.id) }
+    }
+
+    unsafe fn set_density_unchecked(&mut self, density: f32, update_body_mass: bool) {
+        unsafe { set_shape_density_unchecked_impl(self.id, density, update_body_mass) }
+    }
+
+    unsafe fn set_surface_material_unchecked(&mut self, material: &SurfaceMaterial) {
+        unsafe { set_shape_surface_material_unchecked_impl(self.id, material) }
+    }
 }
 
-impl_shape_unchecked_ext!(Shape<'_>, field id);
-impl_shape_unchecked_ext!(OwnedShape, method id);
+impl ShapeUncheckedExt for OwnedShape {
+    unsafe fn shape_type_unchecked(&self) -> ShapeType {
+        unsafe { shape_type_unchecked_impl(self.id()) }
+    }
+
+    unsafe fn body_id_unchecked(&self) -> BodyId {
+        unsafe { shape_body_unchecked_impl(self.id()) }
+    }
+
+    unsafe fn density_unchecked(&self) -> f32 {
+        unsafe { shape_density_unchecked_impl(self.id()) }
+    }
+
+    unsafe fn set_density_unchecked(&mut self, density: f32, update_body_mass: bool) {
+        unsafe { set_shape_density_unchecked_impl(self.id(), density, update_body_mass) }
+    }
+
+    unsafe fn set_surface_material_unchecked(&mut self, material: &SurfaceMaterial) {
+        unsafe { set_shape_surface_material_unchecked_impl(self.id(), material) }
+    }
+}
 
 pub trait JointUncheckedExt {
     unsafe fn force_threshold_unchecked(&self) -> f32;
     unsafe fn set_force_threshold_unchecked(&mut self, threshold: f32);
-    unsafe fn user_data_ptr_unchecked(&self) -> *mut core::ffi::c_void;
-    unsafe fn set_user_data_ptr_unchecked(&mut self, p: *mut core::ffi::c_void);
+    unsafe fn user_data_ptr_unchecked(&self) -> *mut c_void;
+    unsafe fn set_user_data_ptr_unchecked(&mut self, p: *mut c_void);
 }
 
-macro_rules! impl_joint_unchecked_ext {
-    ($ty:ty, field $id:ident) => {
-        impl JointUncheckedExt for $ty {
-            unsafe fn force_threshold_unchecked(&self) -> f32 {
-                unsafe { ffi::b2Joint_GetForceThreshold(self.$id) }
-            }
-            unsafe fn set_force_threshold_unchecked(&mut self, threshold: f32) {
-                unsafe { ffi::b2Joint_SetForceThreshold(self.$id, threshold) }
-            }
-            unsafe fn user_data_ptr_unchecked(&self) -> *mut core::ffi::c_void {
-                unsafe { ffi::b2Joint_GetUserData(self.$id) }
-            }
-            unsafe fn set_user_data_ptr_unchecked(&mut self, p: *mut core::ffi::c_void) {
-                unsafe { ffi::b2Joint_SetUserData(self.$id, p) }
-            }
-        }
-    };
-    ($ty:ty, method $id:ident) => {
-        impl JointUncheckedExt for $ty {
-            unsafe fn force_threshold_unchecked(&self) -> f32 {
-                unsafe { ffi::b2Joint_GetForceThreshold(self.$id()) }
-            }
-            unsafe fn set_force_threshold_unchecked(&mut self, threshold: f32) {
-                unsafe { ffi::b2Joint_SetForceThreshold(self.$id(), threshold) }
-            }
-            unsafe fn user_data_ptr_unchecked(&self) -> *mut core::ffi::c_void {
-                unsafe { ffi::b2Joint_GetUserData(self.$id()) }
-            }
-            unsafe fn set_user_data_ptr_unchecked(&mut self, p: *mut core::ffi::c_void) {
-                unsafe { ffi::b2Joint_SetUserData(self.$id(), p) }
-            }
-        }
-    };
+impl JointUncheckedExt for Joint<'_> {
+    unsafe fn force_threshold_unchecked(&self) -> f32 {
+        unsafe { joint_force_threshold_unchecked_impl(self.id) }
+    }
+
+    unsafe fn set_force_threshold_unchecked(&mut self, threshold: f32) {
+        unsafe { set_joint_force_threshold_unchecked_impl(self.id, threshold) }
+    }
+
+    unsafe fn user_data_ptr_unchecked(&self) -> *mut c_void {
+        unsafe { joint_user_data_ptr_unchecked_impl(self.id) }
+    }
+
+    unsafe fn set_user_data_ptr_unchecked(&mut self, p: *mut c_void) {
+        unsafe { set_joint_user_data_ptr_unchecked_impl(self.id, p) }
+    }
 }
 
-impl_joint_unchecked_ext!(Joint<'_>, field id);
-impl_joint_unchecked_ext!(OwnedJoint, method id);
+impl JointUncheckedExt for OwnedJoint {
+    unsafe fn force_threshold_unchecked(&self) -> f32 {
+        unsafe { joint_force_threshold_unchecked_impl(self.id()) }
+    }
+
+    unsafe fn set_force_threshold_unchecked(&mut self, threshold: f32) {
+        unsafe { set_joint_force_threshold_unchecked_impl(self.id(), threshold) }
+    }
+
+    unsafe fn user_data_ptr_unchecked(&self) -> *mut c_void {
+        unsafe { joint_user_data_ptr_unchecked_impl(self.id()) }
+    }
+
+    unsafe fn set_user_data_ptr_unchecked(&mut self, p: *mut c_void) {
+        unsafe { set_joint_user_data_ptr_unchecked_impl(self.id(), p) }
+    }
+}
 
 pub trait ChainUncheckedExt {
     unsafe fn segment_count_unchecked(&self) -> i32;
@@ -247,65 +387,41 @@ pub trait ChainUncheckedExt {
     unsafe fn set_surface_material_unchecked(&mut self, index: i32, material: &SurfaceMaterial);
 }
 
-macro_rules! impl_chain_unchecked_ext {
-    ($ty:ty, field $id:ident) => {
-        impl ChainUncheckedExt for $ty {
-            unsafe fn segment_count_unchecked(&self) -> i32 {
-                unsafe { ffi::b2Chain_GetSegmentCount(self.$id) }
-            }
-            unsafe fn segments_unchecked(&self) -> Vec<ShapeId> {
-                let count = unsafe { ffi::b2Chain_GetSegmentCount(self.$id) }.max(0) as usize;
-                unsafe {
-                    crate::core::ffi_vec::read_from_ffi(count, |ptr, count| {
-                        ffi::b2Chain_GetSegments(self.$id, ptr, count)
-                    })
-                }
-            }
-            unsafe fn surface_material_unchecked(&self, index: i32) -> SurfaceMaterial {
-                SurfaceMaterial::from_raw(unsafe {
-                    ffi::b2Chain_GetSurfaceMaterial(self.$id, index)
-                })
-            }
-            unsafe fn set_surface_material_unchecked(
-                &mut self,
-                index: i32,
-                material: &SurfaceMaterial,
-            ) {
-                unsafe { ffi::b2Chain_SetSurfaceMaterial(self.$id, &material.0, index) }
-            }
-        }
-    };
-    ($ty:ty, method $id:ident) => {
-        impl ChainUncheckedExt for $ty {
-            unsafe fn segment_count_unchecked(&self) -> i32 {
-                unsafe { ffi::b2Chain_GetSegmentCount(self.$id()) }
-            }
-            unsafe fn segments_unchecked(&self) -> Vec<ShapeId> {
-                let count = unsafe { ffi::b2Chain_GetSegmentCount(self.$id()) }.max(0) as usize;
-                unsafe {
-                    crate::core::ffi_vec::read_from_ffi(count, |ptr, count| {
-                        ffi::b2Chain_GetSegments(self.$id(), ptr, count)
-                    })
-                }
-            }
-            unsafe fn surface_material_unchecked(&self, index: i32) -> SurfaceMaterial {
-                SurfaceMaterial::from_raw(unsafe {
-                    ffi::b2Chain_GetSurfaceMaterial(self.$id(), index)
-                })
-            }
-            unsafe fn set_surface_material_unchecked(
-                &mut self,
-                index: i32,
-                material: &SurfaceMaterial,
-            ) {
-                unsafe { ffi::b2Chain_SetSurfaceMaterial(self.$id(), &material.0, index) }
-            }
-        }
-    };
+impl ChainUncheckedExt for OwnedChain {
+    unsafe fn segment_count_unchecked(&self) -> i32 {
+        unsafe { chain_segment_count_unchecked_impl(self.id()) }
+    }
+
+    unsafe fn segments_unchecked(&self) -> Vec<ShapeId> {
+        unsafe { chain_segments_unchecked_impl(self.id()) }
+    }
+
+    unsafe fn surface_material_unchecked(&self, index: i32) -> SurfaceMaterial {
+        unsafe { chain_surface_material_unchecked_impl(self.id(), index) }
+    }
+
+    unsafe fn set_surface_material_unchecked(&mut self, index: i32, material: &SurfaceMaterial) {
+        unsafe { set_chain_surface_material_unchecked_impl(self.id(), index, material) }
+    }
 }
 
-impl_chain_unchecked_ext!(OwnedChain, method id);
-impl_chain_unchecked_ext!(crate::shapes::chain::Chain<'_>, field id);
+impl ChainUncheckedExt for Chain<'_> {
+    unsafe fn segment_count_unchecked(&self) -> i32 {
+        unsafe { chain_segment_count_unchecked_impl(self.id) }
+    }
+
+    unsafe fn segments_unchecked(&self) -> Vec<ShapeId> {
+        unsafe { chain_segments_unchecked_impl(self.id) }
+    }
+
+    unsafe fn surface_material_unchecked(&self, index: i32) -> SurfaceMaterial {
+        unsafe { chain_surface_material_unchecked_impl(self.id, index) }
+    }
+
+    unsafe fn set_surface_material_unchecked(&mut self, index: i32, material: &SurfaceMaterial) {
+        unsafe { set_chain_surface_material_unchecked_impl(self.id, index, material) }
+    }
+}
 
 // Re-export some ids to make `unchecked` imports feel self-contained.
 pub type UncheckedBodyId = BodyId;
