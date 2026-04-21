@@ -16,6 +16,20 @@ fn approx_mass_data(a: MassData, b: MassData, eps: f32) -> bool {
         && approx_eq(a.rotational_inertia, b.rotational_inertia, eps)
 }
 
+fn approx_polygon(a: &Polygon, b: &Polygon, eps: f32) -> bool {
+    a.count() == b.count()
+        && approx_vec2(a.centroid(), b.centroid(), eps)
+        && approx_eq(a.radius(), b.radius(), eps)
+        && a.vertices()
+            .iter()
+            .zip(b.vertices())
+            .all(|(lhs, rhs)| approx_vec2(*lhs, *rhs, eps))
+        && a.normals()
+            .iter()
+            .zip(b.normals())
+            .all(|(lhs, rhs)| approx_vec2(*lhs, *rhs, eps))
+}
+
 fn same_chain_id(a: ChainId, b: ChainId) -> bool {
     a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
 }
@@ -159,6 +173,59 @@ fn geometry_value_types_round_trip_through_explicit_raw_conversions() {
         assert!(approx_eq(lhs.x, rhs.x, f32::EPSILON));
         assert!(approx_eq(lhs.y, rhs.y, f32::EPSILON));
     }
+}
+
+#[test]
+fn polygon_helpers_cover_square_offset_and_hull_workflows() {
+    let square = shapes::square_polygon(1.25);
+    let square_by_method = Polygon::square_polygon(1.25);
+    let same_box = shapes::box_polygon(1.25, 1.25);
+    assert!(approx_polygon(&square, &square_by_method, 1.0e-6));
+    assert!(approx_polygon(&square, &same_box, 1.0e-6));
+
+    let transform = Transform::from_pos_angle([2.5_f32, -1.25], 0.35);
+    let offset_box = shapes::offset_box_polygon(1.5, 0.75, transform);
+    let expected_box = shapes::box_polygon(1.5, 0.75).transformed(transform);
+    assert!(approx_polygon(&offset_box, &expected_box, 1.0e-5));
+
+    let offset_rounded = shapes::offset_rounded_box_polygon(1.5, 0.75, 0.2, transform);
+    let expected_rounded = shapes::rounded_box_polygon(1.5, 0.75, 0.2).transformed(transform);
+    assert!(approx_polygon(&offset_rounded, &expected_rounded, 1.0e-5));
+
+    let hull_points = [
+        Vec2::new(-1.0, 0.0),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(0.0, -1.0),
+    ];
+    assert!(shapes::polygon_hull_is_valid(hull_points));
+
+    let offset_hull = shapes::offset_polygon_from_points(hull_points, 0.15, transform)
+        .expect("valid hull should build an offset polygon");
+    let expected_hull = shapes::polygon_from_points(hull_points, 0.15)
+        .expect("valid hull should build a polygon")
+        .transformed(transform);
+    assert!(approx_polygon(&offset_hull, &expected_hull, 1.0e-5));
+
+    let collinear = [
+        Vec2::new(-1.0, 0.0),
+        Vec2::new(0.0, 0.0),
+        Vec2::new(1.0, 0.0),
+    ];
+    assert!(!shapes::polygon_hull_is_valid(collinear));
+    assert!(shapes::polygon_from_points(collinear, 0.0).is_none());
+    assert!(shapes::offset_polygon_from_points(collinear, 0.0, transform).is_none());
+
+    let too_many_points: Vec<Vec2> = (0..=MAX_POLYGON_VERTICES)
+        .map(|i| Vec2::new(i as f32, (i % 2) as f32))
+        .collect();
+    assert!(!shapes::polygon_hull_is_valid(
+        too_many_points.iter().copied()
+    ));
+    assert!(
+        shapes::offset_polygon_from_points(too_many_points.iter().copied(), 0.0, transform)
+            .is_none()
+    );
 }
 
 #[test]

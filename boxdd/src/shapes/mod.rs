@@ -23,7 +23,9 @@ use std::sync::Arc;
 
 pub use geometry::{
     Capsule, ChainSegment, Circle, MAX_POLYGON_VERTICES, Polygon, Segment, box_polygon, capsule,
-    chain_segment, circle, polygon_from_points, rounded_box_polygon, segment,
+    chain_segment, circle, offset_box_polygon, offset_polygon_from_points,
+    offset_rounded_box_polygon, polygon_from_points, polygon_hull_is_valid, rounded_box_polygon,
+    segment, square_polygon,
 };
 
 /// Shape kinds reported by Box2D.

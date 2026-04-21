@@ -32,6 +32,41 @@ fn make_ray_input<VO: Into<Vec2>, VT: Into<Vec2>>(
     }
 }
 
+#[inline]
+fn collect_polygon_points<I, P>(
+    points: I,
+) -> Option<SmallVec<[ffi::b2Vec2; MAX_POLYGON_INPUT_POINTS]>>
+where
+    I: IntoIterator<Item = P>,
+    P: Into<Vec2>,
+{
+    let mut pts: SmallVec<[ffi::b2Vec2; MAX_POLYGON_INPUT_POINTS]> =
+        SmallVec::with_capacity(MAX_POLYGON_INPUT_POINTS);
+    for point in points {
+        if pts.len() == MAX_POLYGON_INPUT_POINTS {
+            return None;
+        }
+        pts.push(point.into().into());
+    }
+
+    if pts.is_empty() || pts.len() > MAX_POLYGON_VERTICES {
+        return None;
+    }
+
+    Some(pts)
+}
+
+#[inline]
+fn compute_hull_from_points<I, P>(points: I) -> Option<ffi::b2Hull>
+where
+    I: IntoIterator<Item = P>,
+    P: Into<Vec2>,
+{
+    let pts = collect_polygon_points(points)?;
+    let hull = unsafe { ffi::b2ComputeHull(pts.as_ptr(), pts.len() as i32) };
+    (hull.count > 0).then_some(hull)
+}
+
 /// Circle geometry in local shape space.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)]
@@ -313,8 +348,8 @@ impl Capsule {
 
 /// Convex polygon geometry in local shape space.
 ///
-/// Construct polygons with helpers such as [`box_polygon`], [`rounded_box_polygon`], or
-/// [`polygon_from_points`]
+/// Construct polygons with helpers such as [`square_polygon`], [`box_polygon`],
+/// [`rounded_box_polygon`], [`offset_box_polygon`], or [`polygon_from_points`]
 /// instead of filling raw vertices manually.
 #[doc(alias = "polygon")]
 #[derive(Copy, Clone)]
@@ -365,6 +400,11 @@ impl Polygon {
     }
 
     #[inline]
+    pub fn square_polygon(half_width: f32) -> Self {
+        Self::from_raw(unsafe { ffi::b2MakeSquare(half_width) })
+    }
+
+    #[inline]
     pub fn box_polygon(half_width: f32, half_height: f32) -> Self {
         Self::from_raw(unsafe { ffi::b2MakeBox(half_width, half_height) })
     }
@@ -375,30 +415,77 @@ impl Polygon {
     }
 
     #[inline]
+    pub fn offset_box_polygon(half_width: f32, half_height: f32, transform: Transform) -> Self {
+        Self::from_raw(unsafe {
+            ffi::b2MakeOffsetBox(
+                half_width,
+                half_height,
+                transform.position().into(),
+                transform.rotation().into(),
+            )
+        })
+    }
+
+    #[inline]
+    pub fn offset_rounded_box_polygon(
+        half_width: f32,
+        half_height: f32,
+        radius: f32,
+        transform: Transform,
+    ) -> Self {
+        Self::from_raw(unsafe {
+            ffi::b2MakeOffsetRoundedBox(
+                half_width,
+                half_height,
+                transform.position().into(),
+                transform.rotation().into(),
+                radius,
+            )
+        })
+    }
+
+    #[inline]
     pub fn from_points<I, P>(points: I, radius: f32) -> Option<Self>
     where
         I: IntoIterator<Item = P>,
         P: Into<Vec2>,
     {
-        let mut pts: SmallVec<[ffi::b2Vec2; MAX_POLYGON_INPUT_POINTS]> =
-            SmallVec::with_capacity(MAX_POLYGON_INPUT_POINTS);
-        for point in points {
-            if pts.len() == MAX_POLYGON_INPUT_POINTS {
-                return None;
-            }
-            pts.push(point.into().into());
-        }
-
-        if pts.is_empty() || pts.len() > MAX_POLYGON_VERTICES {
-            return None;
-        }
-
-        let hull = unsafe { ffi::b2ComputeHull(pts.as_ptr(), pts.len() as i32) };
-        if hull.count <= 0 {
-            return None;
-        }
-
+        let hull = compute_hull_from_points(points)?;
         Some(Self::from_raw(unsafe { ffi::b2MakePolygon(&hull, radius) }))
+    }
+
+    #[inline]
+    pub fn offset_from_points<I, P>(points: I, radius: f32, transform: Transform) -> Option<Self>
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+    {
+        let hull = compute_hull_from_points(points)?;
+        Some(Self::from_raw(unsafe {
+            if radius == 0.0 {
+                ffi::b2MakeOffsetPolygon(
+                    &hull,
+                    transform.position().into(),
+                    transform.rotation().into(),
+                )
+            } else {
+                ffi::b2MakeOffsetRoundedPolygon(
+                    &hull,
+                    transform.position().into(),
+                    transform.rotation().into(),
+                    radius,
+                )
+            }
+        }))
+    }
+
+    #[inline]
+    pub fn hull_is_valid<I, P>(points: I) -> bool
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<Vec2>,
+    {
+        compute_hull_from_points(points).is_some_and(|hull| unsafe { ffi::b2ValidateHull(&hull) })
     }
 
     #[inline]
@@ -483,10 +570,33 @@ pub fn box_polygon(half_width: f32, half_height: f32) -> Polygon {
     Polygon::box_polygon(half_width, half_height)
 }
 
+/// Axis-aligned square polygon helper.
+#[inline]
+pub fn square_polygon(half_width: f32) -> Polygon {
+    Polygon::square_polygon(half_width)
+}
+
 /// Axis-aligned rounded box polygon helper.
 #[inline]
 pub fn rounded_box_polygon(half_width: f32, half_height: f32, radius: f32) -> Polygon {
     Polygon::rounded_box_polygon(half_width, half_height, radius)
+}
+
+/// Offset box polygon helper using the crate's `Transform` vocabulary.
+#[inline]
+pub fn offset_box_polygon(half_width: f32, half_height: f32, transform: Transform) -> Polygon {
+    Polygon::offset_box_polygon(half_width, half_height, transform)
+}
+
+/// Offset rounded box polygon helper using the crate's `Transform` vocabulary.
+#[inline]
+pub fn offset_rounded_box_polygon(
+    half_width: f32,
+    half_height: f32,
+    radius: f32,
+    transform: Transform,
+) -> Polygon {
+    Polygon::offset_rounded_box_polygon(half_width, half_height, radius, transform)
 }
 
 /// Build a polygon from arbitrary points by computing a convex hull.
@@ -497,4 +607,28 @@ where
     P: Into<Vec2>,
 {
     Polygon::from_points(points, radius)
+}
+
+/// Build an offset polygon from arbitrary points by computing a convex hull first.
+#[inline]
+pub fn offset_polygon_from_points<I, P>(
+    points: I,
+    radius: f32,
+    transform: Transform,
+) -> Option<Polygon>
+where
+    I: IntoIterator<Item = P>,
+    P: Into<Vec2>,
+{
+    Polygon::offset_from_points(points, radius, transform)
+}
+
+/// Check whether a point set can produce a valid Box2D convex hull.
+#[inline]
+pub fn polygon_hull_is_valid<I, P>(points: I) -> bool
+where
+    I: IntoIterator<Item = P>,
+    P: Into<Vec2>,
+{
+    Polygon::hull_is_valid(points)
 }

@@ -8,7 +8,7 @@
 //! - Hot-path friendly APIs: keep the convenience `Vec`-returning methods, or reuse caller-owned buffers with `*_into`.
 //! - Character mover helpers: cast movers, collect collision planes, solve planes, and clip velocity without raw FFI.
 //! - Standalone collision geometry helpers: shape proxies, GJK distance, manifolds, shape cast, TOI, AABB validation/ray cast, and deterministic global math helpers.
-//! - Shape geometry uses crate-owned values (`Circle`, `Segment`, `ChainSegment`, `Capsule`, `Polygon`) across helpers, shape editing, and creation, including rounded-box polygon helpers without raw FFI.
+//! - Shape geometry uses crate-owned values (`Circle`, `Segment`, `ChainSegment`, `Capsule`, `Polygon`) across helpers, shape editing, and creation, including square/rounded/offset/hull-based polygon builders without raw FFI.
 //! - Live shapes expose safe runtime helpers for AABB, point tests, direct ray casts, computed mass data, and runtime event toggles.
 //! - Bodies expose safe runtime helpers for rotation, sleep/awake/enabled/bullet/name controls, attached shape/joint enumeration, and body-level contact/hit event toggles.
 //! - Joints expose safe runtime helpers for joint kind, connected body ids, `collide_connected`, constraint tuning, local frames, wake controls, and type-specific runtime state across distance/prismatic/revolute/weld/wheel/motor families.

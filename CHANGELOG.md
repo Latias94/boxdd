@@ -39,7 +39,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Owned event snapshot mirrors on `WorldHandle`: `*_events`, `*_events_into`, and `try_*` now match `World` for body/contact/sensor/joint event snapshots without exposing borrowed/raw event-buffer APIs there.
 - Recoverable rotation round-tripping for `mint::RowMatrix2/ColumnMatrix2` and `glam::Mat2`, via `Rot::try_from(...)`, `RotFromMintError`, and `RotFromGlamError`.
 - Reusable-buffer world event snapshot APIs: `body_events_into`, `contact_events_into`, `sensor_events_into`, `joint_events_into`, plus matching `try_*` variants for recoverable callback-sensitive event reads.
-- Safe rounded-box polygon helpers via `Polygon::rounded_box_polygon(...)` and `shapes::rounded_box_polygon(...)`.
+- Safe polygon construction helpers via `Polygon::{square_polygon,rounded_box_polygon,offset_box_polygon,offset_rounded_box_polygon,offset_from_points,hull_is_valid}` and the matching `shapes::*` free helpers.
 - Read-side definition APIs so `ShapeDef` exposes crate-owned getters for material/filter/flags, `ChainDef` exposes `points()` / `filter()` / `sensor_events_enabled()` plus `material_layout()`, and both definition builders can start from existing defs via `From<...>`.
 - Read-side creation-definition APIs so `BodyDef`, `JointBase`, and all concrete `*JointDef` types expose safe getters, and `BodyDef` / `JointBase` now offer `builder()` plus `From<...> for ...Builder` round-tripping.
 - Read-side world-configuration APIs so `WorldDef` exposes safe getters plus explicit `from_raw(...)` / `into_raw()` symmetry, and `ExplosionDef` can now be inspected through crate-owned getters instead of acting like a write-only config shell.
