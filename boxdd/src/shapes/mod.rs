@@ -617,40 +617,279 @@ pub(crate) fn check_polygon_geometry_valid(polygon: &Polygon) -> ApiResult<()> {
     polygon.validate()
 }
 
-pub(crate) fn create_circle_shape_for_body_impl(
+#[inline]
+fn record_shape_flags_on_create(
+    core: &crate::core::world_core::WorldCore,
+    id: ShapeId,
+    def: &ShapeDef,
+) {
+    #[cfg(feature = "serialize")]
+    core.record_shape_flags(id, &def.0);
+    #[cfg(not(feature = "serialize"))]
+    let _ = (core, id, def);
+}
+
+fn create_body_attached_shape_id_impl<G, R>(
     core: &crate::core::world_core::WorldCore,
     body: BodyId,
     def: &ShapeDef,
-    circle: &Circle,
+    geometry: &G,
+    assert_geometry_valid: impl FnOnce(&G),
+    into_raw: impl FnOnce(&G) -> R,
+    create_raw: impl FnOnce(ffi::b2BodyId, &ffi::b2ShapeDef, &R) -> ffi::b2ShapeId,
 ) -> ShapeId {
     crate::core::debug_checks::assert_body_valid(body);
     assert_shape_def_valid(def);
-    assert_circle_geometry_valid(circle);
-    let raw = circle.into_raw();
-    let id = ShapeId::from_raw(unsafe { ffi::b2CreateCircleShape(body.into_raw(), &def.0, &raw) });
-    #[cfg(feature = "serialize")]
-    core.record_shape_flags(id, &def.0);
-    #[cfg(not(feature = "serialize"))]
-    let _ = core;
+    assert_geometry_valid(geometry);
+    let raw = into_raw(geometry);
+    let id = ShapeId::from_raw(create_raw(body.into_raw(), &def.0, &raw));
+    record_shape_flags_on_create(core, id, def);
     id
 }
 
-pub(crate) fn try_create_circle_shape_for_body_impl(
+fn try_create_body_attached_shape_id_impl<G, R>(
     core: &crate::core::world_core::WorldCore,
     body: BodyId,
     def: &ShapeDef,
-    circle: &Circle,
+    geometry: &G,
+    check_geometry_valid: impl FnOnce(&G) -> ApiResult<()>,
+    into_raw: impl FnOnce(&G) -> R,
+    create_raw: impl FnOnce(ffi::b2BodyId, &ffi::b2ShapeDef, &R) -> ffi::b2ShapeId,
 ) -> ApiResult<ShapeId> {
     crate::core::debug_checks::check_body_valid(body)?;
     check_shape_def_valid(def)?;
-    check_circle_geometry_valid(circle)?;
-    let raw = circle.into_raw();
-    let id = ShapeId::from_raw(unsafe { ffi::b2CreateCircleShape(body.into_raw(), &def.0, &raw) });
-    #[cfg(feature = "serialize")]
-    core.record_shape_flags(id, &def.0);
-    #[cfg(not(feature = "serialize"))]
-    let _ = core;
+    check_geometry_valid(geometry)?;
+    let raw = into_raw(geometry);
+    let id = ShapeId::from_raw(create_raw(body.into_raw(), &def.0, &raw));
+    record_shape_flags_on_create(core, id, def);
     Ok(id)
+}
+
+fn create_body_attached_shape_handle<T, G>(
+    core: &Arc<crate::core::world_core::WorldCore>,
+    body: BodyId,
+    def: &ShapeDef,
+    geometry: &G,
+    create: impl FnOnce(&crate::core::world_core::WorldCore, BodyId, &ShapeDef, &G) -> ShapeId,
+    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+) -> T {
+    let id = create(core.as_ref(), body, def, geometry);
+    wrap(Arc::clone(core), id)
+}
+
+fn try_create_body_attached_shape_handle<T, G>(
+    core: &Arc<crate::core::world_core::WorldCore>,
+    body: BodyId,
+    def: &ShapeDef,
+    geometry: &G,
+    create: impl FnOnce(
+        &crate::core::world_core::WorldCore,
+        BodyId,
+        &ShapeDef,
+        &G,
+    ) -> ApiResult<ShapeId>,
+    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+) -> ApiResult<T> {
+    let id = create(core.as_ref(), body, def, geometry)?;
+    Ok(wrap(Arc::clone(core), id))
+}
+
+fn create_body_attached_box_shape_handle<T>(
+    core: &Arc<crate::core::world_core::WorldCore>,
+    body: BodyId,
+    def: &ShapeDef,
+    half_w: f32,
+    half_h: f32,
+    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+) -> T {
+    let polygon = box_polygon(half_w, half_h);
+    create_body_attached_shape_handle(
+        core,
+        body,
+        def,
+        &polygon,
+        create_polygon_shape_for_body_impl,
+        wrap,
+    )
+}
+
+fn try_create_body_attached_box_shape_handle<T>(
+    core: &Arc<crate::core::world_core::WorldCore>,
+    body: BodyId,
+    def: &ShapeDef,
+    half_w: f32,
+    half_h: f32,
+    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+) -> ApiResult<T> {
+    let polygon = crate::shapes::try_box_polygon(half_w, half_h)?;
+    try_create_body_attached_shape_handle(
+        core,
+        body,
+        def,
+        &polygon,
+        try_create_polygon_shape_for_body_impl,
+        wrap,
+    )
+}
+
+fn create_body_attached_circle_simple_shape_handle<T>(
+    core: &Arc<crate::core::world_core::WorldCore>,
+    body: BodyId,
+    def: &ShapeDef,
+    radius: f32,
+    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+) -> T {
+    let circle = circle([0.0_f32, 0.0], radius);
+    create_body_attached_shape_handle(
+        core,
+        body,
+        def,
+        &circle,
+        create_circle_shape_for_body_impl,
+        wrap,
+    )
+}
+
+fn try_create_body_attached_circle_simple_shape_handle<T>(
+    core: &Arc<crate::core::world_core::WorldCore>,
+    body: BodyId,
+    def: &ShapeDef,
+    radius: f32,
+    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+) -> ApiResult<T> {
+    let circle = circle([0.0_f32, 0.0], radius);
+    try_create_body_attached_shape_handle(
+        core,
+        body,
+        def,
+        &circle,
+        try_create_circle_shape_for_body_impl,
+        wrap,
+    )
+}
+
+fn create_body_attached_segment_simple_shape_handle<T, V: Into<crate::types::Vec2>>(
+    core: &Arc<crate::core::world_core::WorldCore>,
+    body: BodyId,
+    def: &ShapeDef,
+    p1: V,
+    p2: V,
+    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+) -> T {
+    let segment = segment(p1, p2);
+    create_body_attached_shape_handle(
+        core,
+        body,
+        def,
+        &segment,
+        create_segment_shape_for_body_impl,
+        wrap,
+    )
+}
+
+fn try_create_body_attached_segment_simple_shape_handle<T, V: Into<crate::types::Vec2>>(
+    core: &Arc<crate::core::world_core::WorldCore>,
+    body: BodyId,
+    def: &ShapeDef,
+    p1: V,
+    p2: V,
+    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+) -> ApiResult<T> {
+    let segment = segment(p1, p2);
+    try_create_body_attached_shape_handle(
+        core,
+        body,
+        def,
+        &segment,
+        try_create_segment_shape_for_body_impl,
+        wrap,
+    )
+}
+
+fn create_body_attached_capsule_simple_shape_handle<T, V: Into<crate::types::Vec2>>(
+    core: &Arc<crate::core::world_core::WorldCore>,
+    body: BodyId,
+    def: &ShapeDef,
+    c1: V,
+    c2: V,
+    radius: f32,
+    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+) -> T {
+    let capsule = capsule(c1, c2, radius);
+    create_body_attached_shape_handle(
+        core,
+        body,
+        def,
+        &capsule,
+        create_capsule_shape_for_body_impl,
+        wrap,
+    )
+}
+
+fn try_create_body_attached_capsule_simple_shape_handle<T, V: Into<crate::types::Vec2>>(
+    core: &Arc<crate::core::world_core::WorldCore>,
+    body: BodyId,
+    def: &ShapeDef,
+    c1: V,
+    c2: V,
+    radius: f32,
+    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+) -> ApiResult<T> {
+    let capsule = capsule(c1, c2, radius);
+    try_create_body_attached_shape_handle(
+        core,
+        body,
+        def,
+        &capsule,
+        try_create_capsule_shape_for_body_impl,
+        wrap,
+    )
+}
+
+fn create_body_attached_polygon_from_points_shape_handle<T, I, P>(
+    core: &Arc<crate::core::world_core::WorldCore>,
+    body: BodyId,
+    def: &ShapeDef,
+    points: I,
+    radius: f32,
+    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+) -> Option<T>
+where
+    I: IntoIterator<Item = P>,
+    P: Into<crate::types::Vec2>,
+{
+    let polygon = crate::shapes::polygon_from_points(points, radius)?;
+    Some(create_body_attached_shape_handle(
+        core,
+        body,
+        def,
+        &polygon,
+        create_polygon_shape_for_body_impl,
+        wrap,
+    ))
+}
+
+fn try_create_body_attached_polygon_from_points_shape_handle<T, I, P>(
+    core: &Arc<crate::core::world_core::WorldCore>,
+    body: BodyId,
+    def: &ShapeDef,
+    points: I,
+    radius: f32,
+    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+) -> ApiResult<T>
+where
+    I: IntoIterator<Item = P>,
+    P: Into<crate::types::Vec2>,
+{
+    let polygon = crate::shapes::try_polygon_from_points(points, radius)?;
+    try_create_body_attached_shape_handle(
+        core,
+        body,
+        def,
+        &polygon,
+        try_create_polygon_shape_for_body_impl,
+        wrap,
+    )
 }
 
 pub(crate) fn create_segment_shape_for_body_impl(
@@ -659,16 +898,15 @@ pub(crate) fn create_segment_shape_for_body_impl(
     def: &ShapeDef,
     segment: &Segment,
 ) -> ShapeId {
-    crate::core::debug_checks::assert_body_valid(body);
-    assert_shape_def_valid(def);
-    assert_segment_geometry_valid(segment);
-    let raw = segment.into_raw();
-    let id = ShapeId::from_raw(unsafe { ffi::b2CreateSegmentShape(body.into_raw(), &def.0, &raw) });
-    #[cfg(feature = "serialize")]
-    core.record_shape_flags(id, &def.0);
-    #[cfg(not(feature = "serialize"))]
-    let _ = core;
-    id
+    create_body_attached_shape_id_impl(
+        core,
+        body,
+        def,
+        segment,
+        assert_segment_geometry_valid,
+        |segment| segment.into_raw(),
+        |body, def, raw| unsafe { ffi::b2CreateSegmentShape(body, def, raw) },
+    )
 }
 
 pub(crate) fn try_create_segment_shape_for_body_impl(
@@ -677,16 +915,15 @@ pub(crate) fn try_create_segment_shape_for_body_impl(
     def: &ShapeDef,
     segment: &Segment,
 ) -> ApiResult<ShapeId> {
-    crate::core::debug_checks::check_body_valid(body)?;
-    check_shape_def_valid(def)?;
-    check_segment_geometry_valid(segment)?;
-    let raw = segment.into_raw();
-    let id = ShapeId::from_raw(unsafe { ffi::b2CreateSegmentShape(body.into_raw(), &def.0, &raw) });
-    #[cfg(feature = "serialize")]
-    core.record_shape_flags(id, &def.0);
-    #[cfg(not(feature = "serialize"))]
-    let _ = core;
-    Ok(id)
+    try_create_body_attached_shape_id_impl(
+        core,
+        body,
+        def,
+        segment,
+        check_segment_geometry_valid,
+        |segment| segment.into_raw(),
+        |body, def, raw| unsafe { ffi::b2CreateSegmentShape(body, def, raw) },
+    )
 }
 
 pub(crate) fn create_capsule_shape_for_body_impl(
@@ -695,16 +932,15 @@ pub(crate) fn create_capsule_shape_for_body_impl(
     def: &ShapeDef,
     capsule: &Capsule,
 ) -> ShapeId {
-    crate::core::debug_checks::assert_body_valid(body);
-    assert_shape_def_valid(def);
-    assert_capsule_geometry_valid(capsule);
-    let raw = capsule.into_raw();
-    let id = ShapeId::from_raw(unsafe { ffi::b2CreateCapsuleShape(body.into_raw(), &def.0, &raw) });
-    #[cfg(feature = "serialize")]
-    core.record_shape_flags(id, &def.0);
-    #[cfg(not(feature = "serialize"))]
-    let _ = core;
-    id
+    create_body_attached_shape_id_impl(
+        core,
+        body,
+        def,
+        capsule,
+        assert_capsule_geometry_valid,
+        |capsule| capsule.into_raw(),
+        |body, def, raw| unsafe { ffi::b2CreateCapsuleShape(body, def, raw) },
+    )
 }
 
 pub(crate) fn try_create_capsule_shape_for_body_impl(
@@ -713,16 +949,15 @@ pub(crate) fn try_create_capsule_shape_for_body_impl(
     def: &ShapeDef,
     capsule: &Capsule,
 ) -> ApiResult<ShapeId> {
-    crate::core::debug_checks::check_body_valid(body)?;
-    check_shape_def_valid(def)?;
-    check_capsule_geometry_valid(capsule)?;
-    let raw = capsule.into_raw();
-    let id = ShapeId::from_raw(unsafe { ffi::b2CreateCapsuleShape(body.into_raw(), &def.0, &raw) });
-    #[cfg(feature = "serialize")]
-    core.record_shape_flags(id, &def.0);
-    #[cfg(not(feature = "serialize"))]
-    let _ = core;
-    Ok(id)
+    try_create_body_attached_shape_id_impl(
+        core,
+        body,
+        def,
+        capsule,
+        check_capsule_geometry_valid,
+        |capsule| capsule.into_raw(),
+        |body, def, raw| unsafe { ffi::b2CreateCapsuleShape(body, def, raw) },
+    )
 }
 
 pub(crate) fn create_polygon_shape_for_body_impl(
@@ -731,16 +966,15 @@ pub(crate) fn create_polygon_shape_for_body_impl(
     def: &ShapeDef,
     polygon: &Polygon,
 ) -> ShapeId {
-    crate::core::debug_checks::assert_body_valid(body);
-    assert_shape_def_valid(def);
-    assert_polygon_geometry_valid(polygon);
-    let raw = polygon.into_raw();
-    let id = ShapeId::from_raw(unsafe { ffi::b2CreatePolygonShape(body.into_raw(), &def.0, &raw) });
-    #[cfg(feature = "serialize")]
-    core.record_shape_flags(id, &def.0);
-    #[cfg(not(feature = "serialize"))]
-    let _ = core;
-    id
+    create_body_attached_shape_id_impl(
+        core,
+        body,
+        def,
+        polygon,
+        assert_polygon_geometry_valid,
+        |polygon| polygon.into_raw(),
+        |body, def, raw| unsafe { ffi::b2CreatePolygonShape(body, def, raw) },
+    )
 }
 
 pub(crate) fn try_create_polygon_shape_for_body_impl(
@@ -749,16 +983,49 @@ pub(crate) fn try_create_polygon_shape_for_body_impl(
     def: &ShapeDef,
     polygon: &Polygon,
 ) -> ApiResult<ShapeId> {
-    crate::core::debug_checks::check_body_valid(body)?;
-    check_shape_def_valid(def)?;
-    check_polygon_geometry_valid(polygon)?;
-    let raw = polygon.into_raw();
-    let id = ShapeId::from_raw(unsafe { ffi::b2CreatePolygonShape(body.into_raw(), &def.0, &raw) });
-    #[cfg(feature = "serialize")]
-    core.record_shape_flags(id, &def.0);
-    #[cfg(not(feature = "serialize"))]
-    let _ = core;
-    Ok(id)
+    try_create_body_attached_shape_id_impl(
+        core,
+        body,
+        def,
+        polygon,
+        check_polygon_geometry_valid,
+        |polygon| polygon.into_raw(),
+        |body, def, raw| unsafe { ffi::b2CreatePolygonShape(body, def, raw) },
+    )
+}
+
+pub(crate) fn create_circle_shape_for_body_impl(
+    core: &crate::core::world_core::WorldCore,
+    body: BodyId,
+    def: &ShapeDef,
+    circle: &Circle,
+) -> ShapeId {
+    create_body_attached_shape_id_impl(
+        core,
+        body,
+        def,
+        circle,
+        assert_circle_geometry_valid,
+        |circle| circle.into_raw(),
+        |body, def, raw| unsafe { ffi::b2CreateCircleShape(body, def, raw) },
+    )
+}
+
+pub(crate) fn try_create_circle_shape_for_body_impl(
+    core: &crate::core::world_core::WorldCore,
+    body: BodyId,
+    def: &ShapeDef,
+    circle: &Circle,
+) -> ApiResult<ShapeId> {
+    try_create_body_attached_shape_id_impl(
+        core,
+        body,
+        def,
+        circle,
+        check_circle_geometry_valid,
+        |circle| circle.into_raw(),
+        |body, def, raw| unsafe { ffi::b2CreateCircleShape(body, def, raw) },
+    )
 }
 
 fn shape_set_density_checked_impl(id: ShapeId, density: f32, update_body_mass: bool) {
@@ -2712,18 +2979,36 @@ impl<'de> serde::Deserialize<'de> for ShapeDef {
 
 impl<'w> Body<'w> {
     pub fn create_circle_shape(&mut self, def: &ShapeDef, c: &Circle) -> Shape<'w> {
-        let id = create_circle_shape_for_body_impl(self.core.as_ref(), self.id, def, c);
-        Shape::new(Arc::clone(&self.core), id)
+        create_body_attached_shape_handle(
+            &self.core,
+            self.id,
+            def,
+            c,
+            create_circle_shape_for_body_impl,
+            Shape::new,
+        )
     }
 
     pub fn try_create_circle_shape(&mut self, def: &ShapeDef, c: &Circle) -> ApiResult<Shape<'w>> {
-        let id = try_create_circle_shape_for_body_impl(self.core.as_ref(), self.id, def, c)?;
-        Ok(Shape::new(Arc::clone(&self.core), id))
+        try_create_body_attached_shape_handle(
+            &self.core,
+            self.id,
+            def,
+            c,
+            try_create_circle_shape_for_body_impl,
+            Shape::new,
+        )
     }
 
     pub fn create_segment_shape(&mut self, def: &ShapeDef, s: &Segment) -> Shape<'w> {
-        let id = create_segment_shape_for_body_impl(self.core.as_ref(), self.id, def, s);
-        Shape::new(Arc::clone(&self.core), id)
+        create_body_attached_shape_handle(
+            &self.core,
+            self.id,
+            def,
+            s,
+            create_segment_shape_for_body_impl,
+            Shape::new,
+        )
     }
 
     pub fn try_create_segment_shape(
@@ -2731,13 +3016,25 @@ impl<'w> Body<'w> {
         def: &ShapeDef,
         s: &Segment,
     ) -> ApiResult<Shape<'w>> {
-        let id = try_create_segment_shape_for_body_impl(self.core.as_ref(), self.id, def, s)?;
-        Ok(Shape::new(Arc::clone(&self.core), id))
+        try_create_body_attached_shape_handle(
+            &self.core,
+            self.id,
+            def,
+            s,
+            try_create_segment_shape_for_body_impl,
+            Shape::new,
+        )
     }
 
     pub fn create_capsule_shape(&mut self, def: &ShapeDef, c: &Capsule) -> Shape<'w> {
-        let id = create_capsule_shape_for_body_impl(self.core.as_ref(), self.id, def, c);
-        Shape::new(Arc::clone(&self.core), id)
+        create_body_attached_shape_handle(
+            &self.core,
+            self.id,
+            def,
+            c,
+            create_capsule_shape_for_body_impl,
+            Shape::new,
+        )
     }
 
     pub fn try_create_capsule_shape(
@@ -2745,13 +3042,25 @@ impl<'w> Body<'w> {
         def: &ShapeDef,
         c: &Capsule,
     ) -> ApiResult<Shape<'w>> {
-        let id = try_create_capsule_shape_for_body_impl(self.core.as_ref(), self.id, def, c)?;
-        Ok(Shape::new(Arc::clone(&self.core), id))
+        try_create_body_attached_shape_handle(
+            &self.core,
+            self.id,
+            def,
+            c,
+            try_create_capsule_shape_for_body_impl,
+            Shape::new,
+        )
     }
 
     pub fn create_polygon_shape(&mut self, def: &ShapeDef, p: &Polygon) -> Shape<'w> {
-        let id = create_polygon_shape_for_body_impl(self.core.as_ref(), self.id, def, p);
-        Shape::new(Arc::clone(&self.core), id)
+        create_body_attached_shape_handle(
+            &self.core,
+            self.id,
+            def,
+            p,
+            create_polygon_shape_for_body_impl,
+            Shape::new,
+        )
     }
 
     pub fn try_create_polygon_shape(
@@ -2759,13 +3068,19 @@ impl<'w> Body<'w> {
         def: &ShapeDef,
         p: &Polygon,
     ) -> ApiResult<Shape<'w>> {
-        let id = try_create_polygon_shape_for_body_impl(self.core.as_ref(), self.id, def, p)?;
-        Ok(Shape::new(Arc::clone(&self.core), id))
+        try_create_body_attached_shape_handle(
+            &self.core,
+            self.id,
+            def,
+            p,
+            try_create_polygon_shape_for_body_impl,
+            Shape::new,
+        )
     }
 
     // Convenience creators
     pub fn create_box(&mut self, def: &ShapeDef, half_w: f32, half_h: f32) -> Shape<'w> {
-        self.create_polygon_shape(def, &box_polygon(half_w, half_h))
+        create_body_attached_box_shape_handle(&self.core, self.id, def, half_w, half_h, Shape::new)
     }
 
     pub fn try_create_box(
@@ -2774,13 +3089,24 @@ impl<'w> Body<'w> {
         half_w: f32,
         half_h: f32,
     ) -> ApiResult<Shape<'w>> {
-        let poly = crate::shapes::try_box_polygon(half_w, half_h)?;
-        self.try_create_polygon_shape(def, &poly)
+        try_create_body_attached_box_shape_handle(
+            &self.core,
+            self.id,
+            def,
+            half_w,
+            half_h,
+            Shape::new,
+        )
     }
 
     pub fn create_circle_simple(&mut self, def: &ShapeDef, radius: f32) -> Shape<'w> {
-        let c = circle([0.0_f32, 0.0], radius);
-        self.create_circle_shape(def, &c)
+        create_body_attached_circle_simple_shape_handle(
+            &self.core,
+            self.id,
+            def,
+            radius,
+            Shape::new,
+        )
     }
 
     pub fn try_create_circle_simple(
@@ -2788,8 +3114,13 @@ impl<'w> Body<'w> {
         def: &ShapeDef,
         radius: f32,
     ) -> ApiResult<Shape<'w>> {
-        let c = circle([0.0_f32, 0.0], radius);
-        self.try_create_circle_shape(def, &c)
+        try_create_body_attached_circle_simple_shape_handle(
+            &self.core,
+            self.id,
+            def,
+            radius,
+            Shape::new,
+        )
     }
 
     pub fn create_segment_simple<V: Into<crate::types::Vec2>>(
@@ -2798,8 +3129,14 @@ impl<'w> Body<'w> {
         p1: V,
         p2: V,
     ) -> Shape<'w> {
-        let seg = segment(p1, p2);
-        self.create_segment_shape(def, &seg)
+        create_body_attached_segment_simple_shape_handle(
+            &self.core,
+            self.id,
+            def,
+            p1,
+            p2,
+            Shape::new,
+        )
     }
 
     pub fn try_create_segment_simple<V: Into<crate::types::Vec2>>(
@@ -2808,8 +3145,14 @@ impl<'w> Body<'w> {
         p1: V,
         p2: V,
     ) -> ApiResult<Shape<'w>> {
-        let seg = segment(p1, p2);
-        self.try_create_segment_shape(def, &seg)
+        try_create_body_attached_segment_simple_shape_handle(
+            &self.core,
+            self.id,
+            def,
+            p1,
+            p2,
+            Shape::new,
+        )
     }
 
     pub fn create_capsule_simple<V: Into<crate::types::Vec2>>(
@@ -2819,8 +3162,15 @@ impl<'w> Body<'w> {
         c2: V,
         radius: f32,
     ) -> Shape<'w> {
-        let cap = capsule(c1, c2, radius);
-        self.create_capsule_shape(def, &cap)
+        create_body_attached_capsule_simple_shape_handle(
+            &self.core,
+            self.id,
+            def,
+            c1,
+            c2,
+            radius,
+            Shape::new,
+        )
     }
 
     pub fn try_create_capsule_simple<V: Into<crate::types::Vec2>>(
@@ -2830,8 +3180,15 @@ impl<'w> Body<'w> {
         c2: V,
         radius: f32,
     ) -> ApiResult<Shape<'w>> {
-        let cap = capsule(c1, c2, radius);
-        self.try_create_capsule_shape(def, &cap)
+        try_create_body_attached_capsule_simple_shape_handle(
+            &self.core,
+            self.id,
+            def,
+            c1,
+            c2,
+            radius,
+            Shape::new,
+        )
     }
 
     pub fn create_polygon_from_points<I, P>(
@@ -2844,8 +3201,14 @@ impl<'w> Body<'w> {
         I: IntoIterator<Item = P>,
         P: Into<crate::types::Vec2>,
     {
-        let poly = crate::shapes::polygon_from_points(points, radius)?;
-        Some(self.create_polygon_shape(def, &poly))
+        create_body_attached_polygon_from_points_shape_handle(
+            &self.core,
+            self.id,
+            def,
+            points,
+            radius,
+            Shape::new,
+        )
     }
 
     pub fn try_create_polygon_from_points<I, P>(
@@ -2858,28 +3221,49 @@ impl<'w> Body<'w> {
         I: IntoIterator<Item = P>,
         P: Into<crate::types::Vec2>,
     {
-        let poly = crate::shapes::try_polygon_from_points(points, radius)?;
-        self.try_create_polygon_shape(def, &poly)
+        try_create_body_attached_polygon_from_points_shape_handle(
+            &self.core,
+            self.id,
+            def,
+            points,
+            radius,
+            Shape::new,
+        )
     }
 }
 
 impl OwnedBody {
     pub fn create_circle_shape(&mut self, def: &ShapeDef, c: &Circle) -> OwnedShape {
-        let core = self.core_arc();
-        let id = create_circle_shape_for_body_impl(core.as_ref(), self.id(), def, c);
-        OwnedShape::new(core, id)
+        create_body_attached_shape_handle(
+            &self.core_arc(),
+            self.id(),
+            def,
+            c,
+            create_circle_shape_for_body_impl,
+            OwnedShape::new,
+        )
     }
 
     pub fn try_create_circle_shape(&mut self, def: &ShapeDef, c: &Circle) -> ApiResult<OwnedShape> {
-        let core = self.core_arc();
-        let id = try_create_circle_shape_for_body_impl(core.as_ref(), self.id(), def, c)?;
-        Ok(OwnedShape::new(core, id))
+        try_create_body_attached_shape_handle(
+            &self.core_arc(),
+            self.id(),
+            def,
+            c,
+            try_create_circle_shape_for_body_impl,
+            OwnedShape::new,
+        )
     }
 
     pub fn create_segment_shape(&mut self, def: &ShapeDef, s: &Segment) -> OwnedShape {
-        let core = self.core_arc();
-        let id = create_segment_shape_for_body_impl(core.as_ref(), self.id(), def, s);
-        OwnedShape::new(core, id)
+        create_body_attached_shape_handle(
+            &self.core_arc(),
+            self.id(),
+            def,
+            s,
+            create_segment_shape_for_body_impl,
+            OwnedShape::new,
+        )
     }
 
     pub fn try_create_segment_shape(
@@ -2887,15 +3271,25 @@ impl OwnedBody {
         def: &ShapeDef,
         s: &Segment,
     ) -> ApiResult<OwnedShape> {
-        let core = self.core_arc();
-        let id = try_create_segment_shape_for_body_impl(core.as_ref(), self.id(), def, s)?;
-        Ok(OwnedShape::new(core, id))
+        try_create_body_attached_shape_handle(
+            &self.core_arc(),
+            self.id(),
+            def,
+            s,
+            try_create_segment_shape_for_body_impl,
+            OwnedShape::new,
+        )
     }
 
     pub fn create_capsule_shape(&mut self, def: &ShapeDef, c: &Capsule) -> OwnedShape {
-        let core = self.core_arc();
-        let id = create_capsule_shape_for_body_impl(core.as_ref(), self.id(), def, c);
-        OwnedShape::new(core, id)
+        create_body_attached_shape_handle(
+            &self.core_arc(),
+            self.id(),
+            def,
+            c,
+            create_capsule_shape_for_body_impl,
+            OwnedShape::new,
+        )
     }
 
     pub fn try_create_capsule_shape(
@@ -2903,15 +3297,25 @@ impl OwnedBody {
         def: &ShapeDef,
         c: &Capsule,
     ) -> ApiResult<OwnedShape> {
-        let core = self.core_arc();
-        let id = try_create_capsule_shape_for_body_impl(core.as_ref(), self.id(), def, c)?;
-        Ok(OwnedShape::new(core, id))
+        try_create_body_attached_shape_handle(
+            &self.core_arc(),
+            self.id(),
+            def,
+            c,
+            try_create_capsule_shape_for_body_impl,
+            OwnedShape::new,
+        )
     }
 
     pub fn create_polygon_shape(&mut self, def: &ShapeDef, p: &Polygon) -> OwnedShape {
-        let core = self.core_arc();
-        let id = create_polygon_shape_for_body_impl(core.as_ref(), self.id(), def, p);
-        OwnedShape::new(core, id)
+        create_body_attached_shape_handle(
+            &self.core_arc(),
+            self.id(),
+            def,
+            p,
+            create_polygon_shape_for_body_impl,
+            OwnedShape::new,
+        )
     }
 
     pub fn try_create_polygon_shape(
@@ -2919,14 +3323,26 @@ impl OwnedBody {
         def: &ShapeDef,
         p: &Polygon,
     ) -> ApiResult<OwnedShape> {
-        let core = self.core_arc();
-        let id = try_create_polygon_shape_for_body_impl(core.as_ref(), self.id(), def, p)?;
-        Ok(OwnedShape::new(core, id))
+        try_create_body_attached_shape_handle(
+            &self.core_arc(),
+            self.id(),
+            def,
+            p,
+            try_create_polygon_shape_for_body_impl,
+            OwnedShape::new,
+        )
     }
 
     // Convenience creators
     pub fn create_box(&mut self, def: &ShapeDef, half_w: f32, half_h: f32) -> OwnedShape {
-        self.create_polygon_shape(def, &box_polygon(half_w, half_h))
+        create_body_attached_box_shape_handle(
+            &self.core_arc(),
+            self.id(),
+            def,
+            half_w,
+            half_h,
+            OwnedShape::new,
+        )
     }
 
     pub fn try_create_box(
@@ -2935,13 +3351,24 @@ impl OwnedBody {
         half_w: f32,
         half_h: f32,
     ) -> ApiResult<OwnedShape> {
-        let poly = crate::shapes::try_box_polygon(half_w, half_h)?;
-        self.try_create_polygon_shape(def, &poly)
+        try_create_body_attached_box_shape_handle(
+            &self.core_arc(),
+            self.id(),
+            def,
+            half_w,
+            half_h,
+            OwnedShape::new,
+        )
     }
 
     pub fn create_circle_simple(&mut self, def: &ShapeDef, radius: f32) -> OwnedShape {
-        let c = circle([0.0_f32, 0.0], radius);
-        self.create_circle_shape(def, &c)
+        create_body_attached_circle_simple_shape_handle(
+            &self.core_arc(),
+            self.id(),
+            def,
+            radius,
+            OwnedShape::new,
+        )
     }
 
     pub fn try_create_circle_simple(
@@ -2949,8 +3376,13 @@ impl OwnedBody {
         def: &ShapeDef,
         radius: f32,
     ) -> ApiResult<OwnedShape> {
-        let c = circle([0.0_f32, 0.0], radius);
-        self.try_create_circle_shape(def, &c)
+        try_create_body_attached_circle_simple_shape_handle(
+            &self.core_arc(),
+            self.id(),
+            def,
+            radius,
+            OwnedShape::new,
+        )
     }
 
     pub fn create_segment_simple<V: Into<crate::types::Vec2>>(
@@ -2959,8 +3391,14 @@ impl OwnedBody {
         p1: V,
         p2: V,
     ) -> OwnedShape {
-        let seg = segment(p1, p2);
-        self.create_segment_shape(def, &seg)
+        create_body_attached_segment_simple_shape_handle(
+            &self.core_arc(),
+            self.id(),
+            def,
+            p1,
+            p2,
+            OwnedShape::new,
+        )
     }
 
     pub fn try_create_segment_simple<V: Into<crate::types::Vec2>>(
@@ -2969,8 +3407,14 @@ impl OwnedBody {
         p1: V,
         p2: V,
     ) -> ApiResult<OwnedShape> {
-        let seg = segment(p1, p2);
-        self.try_create_segment_shape(def, &seg)
+        try_create_body_attached_segment_simple_shape_handle(
+            &self.core_arc(),
+            self.id(),
+            def,
+            p1,
+            p2,
+            OwnedShape::new,
+        )
     }
 
     pub fn create_capsule_simple<V: Into<crate::types::Vec2>>(
@@ -2980,8 +3424,15 @@ impl OwnedBody {
         c2: V,
         radius: f32,
     ) -> OwnedShape {
-        let cap = capsule(c1, c2, radius);
-        self.create_capsule_shape(def, &cap)
+        create_body_attached_capsule_simple_shape_handle(
+            &self.core_arc(),
+            self.id(),
+            def,
+            c1,
+            c2,
+            radius,
+            OwnedShape::new,
+        )
     }
 
     pub fn try_create_capsule_simple<V: Into<crate::types::Vec2>>(
@@ -2991,8 +3442,15 @@ impl OwnedBody {
         c2: V,
         radius: f32,
     ) -> ApiResult<OwnedShape> {
-        let cap = capsule(c1, c2, radius);
-        self.try_create_capsule_shape(def, &cap)
+        try_create_body_attached_capsule_simple_shape_handle(
+            &self.core_arc(),
+            self.id(),
+            def,
+            c1,
+            c2,
+            radius,
+            OwnedShape::new,
+        )
     }
 
     pub fn create_polygon_from_points<I, P>(
@@ -3005,8 +3463,14 @@ impl OwnedBody {
         I: IntoIterator<Item = P>,
         P: Into<crate::types::Vec2>,
     {
-        let poly = crate::shapes::polygon_from_points(points, radius)?;
-        Some(self.create_polygon_shape(def, &poly))
+        create_body_attached_polygon_from_points_shape_handle(
+            &self.core_arc(),
+            self.id(),
+            def,
+            points,
+            radius,
+            OwnedShape::new,
+        )
     }
 
     pub fn try_create_polygon_from_points<I, P>(
@@ -3019,8 +3483,14 @@ impl OwnedBody {
         I: IntoIterator<Item = P>,
         P: Into<crate::types::Vec2>,
     {
-        let poly = crate::shapes::try_polygon_from_points(points, radius)?;
-        self.try_create_polygon_shape(def, &poly)
+        try_create_body_attached_polygon_from_points_shape_handle(
+            &self.core_arc(),
+            self.id(),
+            def,
+            points,
+            radius,
+            OwnedShape::new,
+        )
     }
 }
 // Shapes: module note moved to top-level doc above.

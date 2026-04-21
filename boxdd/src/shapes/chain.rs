@@ -746,6 +746,28 @@ pub(crate) fn try_create_chain_for_body_impl(
     Ok(id)
 }
 
+fn create_body_attached_chain_handle<T>(
+    core: &Arc<crate::core::world_core::WorldCore>,
+    body: BodyId,
+    def: &ChainDef,
+    create: impl FnOnce(&crate::core::world_core::WorldCore, BodyId, &ChainDef) -> ChainId,
+    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ChainId) -> T,
+) -> T {
+    let id = create(core.as_ref(), body, def);
+    wrap(Arc::clone(core), id)
+}
+
+fn try_create_body_attached_chain_handle<T>(
+    core: &Arc<crate::core::world_core::WorldCore>,
+    body: BodyId,
+    def: &ChainDef,
+    create: impl FnOnce(&crate::core::world_core::WorldCore, BodyId, &ChainDef) -> ApiResult<ChainId>,
+    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ChainId) -> T,
+) -> ApiResult<T> {
+    let id = create(core.as_ref(), body, def)?;
+    Ok(wrap(Arc::clone(core), id))
+}
+
 impl ChainDef {
     pub fn validate(&self) -> ApiResult<()> {
         check_chain_def_valid(self)
@@ -755,27 +777,45 @@ impl ChainDef {
 impl<'w> Body<'w> {
     /// Create a chain shape attached to this body. Points/materials are cloned internally by Box2D.
     pub fn create_chain(&mut self, def: &ChainDef) -> Chain<'w> {
-        let id = create_chain_for_body_impl(self.core.as_ref(), self.id, def);
-        Chain::new(Arc::clone(&self.core), id)
+        create_body_attached_chain_handle(
+            &self.core,
+            self.id,
+            def,
+            create_chain_for_body_impl,
+            Chain::new,
+        )
     }
 
     pub fn try_create_chain(&mut self, def: &ChainDef) -> ApiResult<Chain<'w>> {
-        let id = try_create_chain_for_body_impl(self.core.as_ref(), self.id, def)?;
-        Ok(Chain::new(Arc::clone(&self.core), id))
+        try_create_body_attached_chain_handle(
+            &self.core,
+            self.id,
+            def,
+            try_create_chain_for_body_impl,
+            Chain::new,
+        )
     }
 }
 
 impl OwnedBody {
     /// Create a chain shape attached to this body. Points/materials are cloned internally by Box2D.
     pub fn create_chain(&mut self, def: &ChainDef) -> OwnedChain {
-        let core = self.core_arc();
-        let id = create_chain_for_body_impl(core.as_ref(), self.id(), def);
-        OwnedChain::new(core, id)
+        create_body_attached_chain_handle(
+            &self.core_arc(),
+            self.id(),
+            def,
+            create_chain_for_body_impl,
+            OwnedChain::new,
+        )
     }
 
     pub fn try_create_chain(&mut self, def: &ChainDef) -> ApiResult<OwnedChain> {
-        let core = self.core_arc();
-        let id = try_create_chain_for_body_impl(core.as_ref(), self.id(), def)?;
-        Ok(OwnedChain::new(core, id))
+        try_create_body_attached_chain_handle(
+            &self.core_arc(),
+            self.id(),
+            def,
+            try_create_chain_for_body_impl,
+            OwnedChain::new,
+        )
     }
 }

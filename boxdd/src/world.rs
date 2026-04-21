@@ -58,76 +58,20 @@ impl MaterialMixInput {
     }
 }
 
-fn world_create_circle_shape_for_impl(
-    world: &mut World,
-    body: BodyId,
-    def: &ShapeDef,
-    circle: &crate::shapes::Circle,
-) -> ShapeId {
-    crate::shapes::create_circle_shape_for_body_impl(world.core.as_ref(), body, def, circle)
+fn wrap_world_owned_handle<T, Id>(
+    core: &Arc<WorldCore>,
+    id: Id,
+    wrap: impl FnOnce(Arc<WorldCore>, Id) -> T,
+) -> T {
+    wrap(Arc::clone(core), id)
 }
 
-fn try_world_create_circle_shape_for_impl(
-    world: &mut World,
-    body: BodyId,
-    def: &ShapeDef,
-    circle: &crate::shapes::Circle,
-) -> crate::error::ApiResult<ShapeId> {
-    crate::shapes::try_create_circle_shape_for_body_impl(world.core.as_ref(), body, def, circle)
-}
-
-fn world_create_segment_shape_for_impl(
-    world: &mut World,
-    body: BodyId,
-    def: &ShapeDef,
-    segment: &crate::shapes::Segment,
-) -> ShapeId {
-    crate::shapes::create_segment_shape_for_body_impl(world.core.as_ref(), body, def, segment)
-}
-
-fn try_world_create_segment_shape_for_impl(
-    world: &mut World,
-    body: BodyId,
-    def: &ShapeDef,
-    segment: &crate::shapes::Segment,
-) -> crate::error::ApiResult<ShapeId> {
-    crate::shapes::try_create_segment_shape_for_body_impl(world.core.as_ref(), body, def, segment)
-}
-
-fn world_create_capsule_shape_for_impl(
-    world: &mut World,
-    body: BodyId,
-    def: &ShapeDef,
-    capsule: &crate::shapes::Capsule,
-) -> ShapeId {
-    crate::shapes::create_capsule_shape_for_body_impl(world.core.as_ref(), body, def, capsule)
-}
-
-fn try_world_create_capsule_shape_for_impl(
-    world: &mut World,
-    body: BodyId,
-    def: &ShapeDef,
-    capsule: &crate::shapes::Capsule,
-) -> crate::error::ApiResult<ShapeId> {
-    crate::shapes::try_create_capsule_shape_for_body_impl(world.core.as_ref(), body, def, capsule)
-}
-
-fn world_create_polygon_shape_for_impl(
-    world: &mut World,
-    body: BodyId,
-    def: &ShapeDef,
-    polygon: &crate::shapes::Polygon,
-) -> ShapeId {
-    crate::shapes::create_polygon_shape_for_body_impl(world.core.as_ref(), body, def, polygon)
-}
-
-fn try_world_create_polygon_shape_for_impl(
-    world: &mut World,
-    body: BodyId,
-    def: &ShapeDef,
-    polygon: &crate::shapes::Polygon,
-) -> crate::error::ApiResult<ShapeId> {
-    crate::shapes::try_create_polygon_shape_for_body_impl(world.core.as_ref(), body, def, polygon)
+fn try_wrap_world_owned_handle<T, Id, E>(
+    core: &Arc<WorldCore>,
+    id: Result<Id, E>,
+    wrap: impl FnOnce(Arc<WorldCore>, Id) -> T,
+) -> Result<T, E> {
+    id.map(|id| wrap(Arc::clone(core), id))
 }
 
 fn world_shape_set_circle_impl(shape: ShapeId, circle: &crate::shapes::Circle) {
@@ -3778,7 +3722,7 @@ impl World {
         def: &ShapeDef,
         circle: &crate::shapes::Circle,
     ) -> ShapeId {
-        world_create_circle_shape_for_impl(self, body, def, circle)
+        crate::shapes::create_circle_shape_for_body_impl(self.core.as_ref(), body, def, circle)
     }
 
     pub fn create_circle_shape_for_owned(
@@ -3787,8 +3731,11 @@ impl World {
         def: &ShapeDef,
         circle: &crate::shapes::Circle,
     ) -> crate::shapes::OwnedShape {
-        let sid = world_create_circle_shape_for_impl(self, body, def, circle);
-        crate::shapes::OwnedShape::new(self.core_arc(), sid)
+        wrap_world_owned_handle(
+            &self.core,
+            crate::shapes::create_circle_shape_for_body_impl(self.core.as_ref(), body, def, circle),
+            crate::shapes::OwnedShape::new,
+        )
     }
 
     pub fn try_create_circle_shape_for(
@@ -3797,7 +3744,7 @@ impl World {
         def: &ShapeDef,
         circle: &crate::shapes::Circle,
     ) -> crate::error::ApiResult<ShapeId> {
-        try_world_create_circle_shape_for_impl(self, body, def, circle)
+        crate::shapes::try_create_circle_shape_for_body_impl(self.core.as_ref(), body, def, circle)
     }
 
     pub fn try_create_circle_shape_for_owned(
@@ -3806,8 +3753,16 @@ impl World {
         def: &ShapeDef,
         circle: &crate::shapes::Circle,
     ) -> crate::error::ApiResult<crate::shapes::OwnedShape> {
-        let sid = try_world_create_circle_shape_for_impl(self, body, def, circle)?;
-        Ok(crate::shapes::OwnedShape::new(self.core_arc(), sid))
+        try_wrap_world_owned_handle(
+            &self.core,
+            crate::shapes::try_create_circle_shape_for_body_impl(
+                self.core.as_ref(),
+                body,
+                def,
+                circle,
+            ),
+            crate::shapes::OwnedShape::new,
+        )
     }
 
     pub fn create_segment_shape_for(
@@ -3816,7 +3771,7 @@ impl World {
         def: &ShapeDef,
         segment: &crate::shapes::Segment,
     ) -> ShapeId {
-        world_create_segment_shape_for_impl(self, body, def, segment)
+        crate::shapes::create_segment_shape_for_body_impl(self.core.as_ref(), body, def, segment)
     }
 
     pub fn create_segment_shape_for_owned(
@@ -3825,8 +3780,16 @@ impl World {
         def: &ShapeDef,
         segment: &crate::shapes::Segment,
     ) -> crate::shapes::OwnedShape {
-        let sid = world_create_segment_shape_for_impl(self, body, def, segment);
-        crate::shapes::OwnedShape::new(self.core_arc(), sid)
+        wrap_world_owned_handle(
+            &self.core,
+            crate::shapes::create_segment_shape_for_body_impl(
+                self.core.as_ref(),
+                body,
+                def,
+                segment,
+            ),
+            crate::shapes::OwnedShape::new,
+        )
     }
 
     pub fn try_create_segment_shape_for(
@@ -3835,7 +3798,12 @@ impl World {
         def: &ShapeDef,
         segment: &crate::shapes::Segment,
     ) -> crate::error::ApiResult<ShapeId> {
-        try_world_create_segment_shape_for_impl(self, body, def, segment)
+        crate::shapes::try_create_segment_shape_for_body_impl(
+            self.core.as_ref(),
+            body,
+            def,
+            segment,
+        )
     }
 
     pub fn try_create_segment_shape_for_owned(
@@ -3844,8 +3812,16 @@ impl World {
         def: &ShapeDef,
         segment: &crate::shapes::Segment,
     ) -> crate::error::ApiResult<crate::shapes::OwnedShape> {
-        let sid = try_world_create_segment_shape_for_impl(self, body, def, segment)?;
-        Ok(crate::shapes::OwnedShape::new(self.core_arc(), sid))
+        try_wrap_world_owned_handle(
+            &self.core,
+            crate::shapes::try_create_segment_shape_for_body_impl(
+                self.core.as_ref(),
+                body,
+                def,
+                segment,
+            ),
+            crate::shapes::OwnedShape::new,
+        )
     }
 
     pub fn create_capsule_shape_for(
@@ -3854,7 +3830,7 @@ impl World {
         def: &ShapeDef,
         capsule: &crate::shapes::Capsule,
     ) -> ShapeId {
-        world_create_capsule_shape_for_impl(self, body, def, capsule)
+        crate::shapes::create_capsule_shape_for_body_impl(self.core.as_ref(), body, def, capsule)
     }
 
     pub fn create_capsule_shape_for_owned(
@@ -3863,8 +3839,16 @@ impl World {
         def: &ShapeDef,
         capsule: &crate::shapes::Capsule,
     ) -> crate::shapes::OwnedShape {
-        let sid = world_create_capsule_shape_for_impl(self, body, def, capsule);
-        crate::shapes::OwnedShape::new(self.core_arc(), sid)
+        wrap_world_owned_handle(
+            &self.core,
+            crate::shapes::create_capsule_shape_for_body_impl(
+                self.core.as_ref(),
+                body,
+                def,
+                capsule,
+            ),
+            crate::shapes::OwnedShape::new,
+        )
     }
 
     pub fn try_create_capsule_shape_for(
@@ -3873,7 +3857,12 @@ impl World {
         def: &ShapeDef,
         capsule: &crate::shapes::Capsule,
     ) -> crate::error::ApiResult<ShapeId> {
-        try_world_create_capsule_shape_for_impl(self, body, def, capsule)
+        crate::shapes::try_create_capsule_shape_for_body_impl(
+            self.core.as_ref(),
+            body,
+            def,
+            capsule,
+        )
     }
 
     pub fn try_create_capsule_shape_for_owned(
@@ -3882,8 +3871,16 @@ impl World {
         def: &ShapeDef,
         capsule: &crate::shapes::Capsule,
     ) -> crate::error::ApiResult<crate::shapes::OwnedShape> {
-        let sid = try_world_create_capsule_shape_for_impl(self, body, def, capsule)?;
-        Ok(crate::shapes::OwnedShape::new(self.core_arc(), sid))
+        try_wrap_world_owned_handle(
+            &self.core,
+            crate::shapes::try_create_capsule_shape_for_body_impl(
+                self.core.as_ref(),
+                body,
+                def,
+                capsule,
+            ),
+            crate::shapes::OwnedShape::new,
+        )
     }
 
     pub fn create_polygon_shape_for(
@@ -3892,7 +3889,7 @@ impl World {
         def: &ShapeDef,
         polygon: &crate::shapes::Polygon,
     ) -> ShapeId {
-        world_create_polygon_shape_for_impl(self, body, def, polygon)
+        crate::shapes::create_polygon_shape_for_body_impl(self.core.as_ref(), body, def, polygon)
     }
 
     pub fn create_polygon_shape_for_owned(
@@ -3901,8 +3898,16 @@ impl World {
         def: &ShapeDef,
         polygon: &crate::shapes::Polygon,
     ) -> crate::shapes::OwnedShape {
-        let sid = world_create_polygon_shape_for_impl(self, body, def, polygon);
-        crate::shapes::OwnedShape::new(self.core_arc(), sid)
+        wrap_world_owned_handle(
+            &self.core,
+            crate::shapes::create_polygon_shape_for_body_impl(
+                self.core.as_ref(),
+                body,
+                def,
+                polygon,
+            ),
+            crate::shapes::OwnedShape::new,
+        )
     }
 
     pub fn try_create_polygon_shape_for(
@@ -3911,7 +3916,12 @@ impl World {
         def: &ShapeDef,
         polygon: &crate::shapes::Polygon,
     ) -> crate::error::ApiResult<ShapeId> {
-        try_world_create_polygon_shape_for_impl(self, body, def, polygon)
+        crate::shapes::try_create_polygon_shape_for_body_impl(
+            self.core.as_ref(),
+            body,
+            def,
+            polygon,
+        )
     }
 
     pub fn try_create_polygon_shape_for_owned(
@@ -3920,8 +3930,16 @@ impl World {
         def: &ShapeDef,
         polygon: &crate::shapes::Polygon,
     ) -> crate::error::ApiResult<crate::shapes::OwnedShape> {
-        let sid = try_world_create_polygon_shape_for_impl(self, body, def, polygon)?;
-        Ok(crate::shapes::OwnedShape::new(self.core_arc(), sid))
+        try_wrap_world_owned_handle(
+            &self.core,
+            crate::shapes::try_create_polygon_shape_for_body_impl(
+                self.core.as_ref(),
+                body,
+                def,
+                polygon,
+            ),
+            crate::shapes::OwnedShape::new,
+        )
     }
     pub fn destroy_shape_id(&mut self, shape: ShapeId, update_body_mass: bool) {
         crate::core::callback_state::assert_not_in_callback();
@@ -3957,8 +3975,9 @@ impl World {
         body: BodyId,
         def: &crate::shapes::chain::ChainDef,
     ) -> crate::shapes::chain::OwnedChain {
-        let cid = self.create_chain_for_id(body, def);
-        crate::shapes::chain::OwnedChain::new(self.core_arc(), cid)
+        let core = Arc::clone(&self.core);
+        let id = self.create_chain_for_id(body, def);
+        wrap_world_owned_handle(&core, id, crate::shapes::chain::OwnedChain::new)
     }
 
     pub fn try_create_chain_for_owned(
@@ -3966,8 +3985,9 @@ impl World {
         body: BodyId,
         def: &crate::shapes::chain::ChainDef,
     ) -> crate::error::ApiResult<crate::shapes::chain::OwnedChain> {
-        let cid = self.try_create_chain_for_id(body, def)?;
-        Ok(crate::shapes::chain::OwnedChain::new(self.core_arc(), cid))
+        let core = Arc::clone(&self.core);
+        let id = self.try_create_chain_for_id(body, def);
+        try_wrap_world_owned_handle(&core, id, crate::shapes::chain::OwnedChain::new)
     }
 
     pub fn destroy_chain_id(&mut self, chain: ChainId) {
