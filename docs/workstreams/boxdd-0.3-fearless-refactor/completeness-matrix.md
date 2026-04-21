@@ -19,6 +19,13 @@
 | `b2World_DumpMemoryStats` | intentional omission | Writes a fixed debug file and does not fit the main safe runtime surface. |
 | `b2World_RebuildStaticTree` | intentional omission | Upstream labels this as internal testing support. |
 
+## Global Utilities
+
+| Slice | Status | Notes |
+| --- | --- | --- |
+| deterministic math helpers and value validation | safe-covered | Public helpers cover deterministic `atan2`, cosine/sine, rotation-between-unit-vectors, plus `Vec2` / `Rot` / `Transform` / `Plane` validity checks. |
+| runtime version and global length-unit scale | safe-covered | `version()` plus `length_units_per_meter()` / `set_length_units_per_meter(...)` cover the remaining startup-level global Box2D utility surface. |
+
 ## Body
 
 | Slice | Status | Notes |

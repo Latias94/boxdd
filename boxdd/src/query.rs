@@ -767,6 +767,11 @@ impl Plane {
     }
 
     #[inline]
+    pub fn is_valid(self) -> bool {
+        unsafe { ffi::b2IsValidPlane(self.into_raw()) }
+    }
+
+    #[inline]
     pub fn from_raw(raw: ffi::b2Plane) -> Self {
         Self {
             normal: raw.normal.into(),

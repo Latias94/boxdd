@@ -52,6 +52,7 @@
 - [x] Start decomposing the typed joint runtime macro layer by replacing the `Distance` joint family with shared kind-checked helpers plus explicit `World` / `OwnedJoint` / `Joint` methods.
 - [x] Remove the remaining typed-joint runtime public macro layer by replacing the `Prismatic`, `Revolute`, `Weld`, `Wheel`, and `Motor` families with explicit methods and deleting the obsolete macro definitions.
 - [x] Replace the remaining `unchecked.rs` feature-gated handle implementation macros with shared private `unsafe` helpers plus explicit `World` / owned / scoped trait impls.
+- [x] Productize the remaining global Box2D utility slice with public deterministic math/version helpers plus `Vec2` / `Rot` / `Transform` / `Plane` validity checks instead of leaving tests and advanced callers on raw `ffi`.
 
 ## In Progress
 

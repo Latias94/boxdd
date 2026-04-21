@@ -1,6 +1,79 @@
 use crate::types::Vec2;
 use boxdd_sys::ffi;
 
+/// Box2D runtime version.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct Version {
+    pub major: i32,
+    pub minor: i32,
+    pub revision: i32,
+}
+
+impl Version {
+    #[inline]
+    pub const fn from_raw(raw: ffi::b2Version) -> Self {
+        Self {
+            major: raw.major,
+            minor: raw.minor,
+            revision: raw.revision,
+        }
+    }
+
+    #[inline]
+    pub const fn into_raw(self) -> ffi::b2Version {
+        ffi::b2Version {
+            major: self.major,
+            minor: self.minor,
+            revision: self.revision,
+        }
+    }
+}
+
+/// Get the linked Box2D version.
+#[inline]
+pub fn version() -> Version {
+    Version::from_raw(unsafe { ffi::b2GetVersion() })
+}
+
+/// Cross-platform deterministic `atan2` in the range `[-pi, pi]`.
+#[inline]
+pub fn atan2(y: f32, x: f32) -> f32 {
+    unsafe { ffi::b2Atan2(y, x) }
+}
+
+/// Cross-platform deterministic cosine/sine pair as a rotation value.
+#[inline]
+pub fn compute_cos_sin(radians: f32) -> Rot {
+    let raw = unsafe { ffi::b2ComputeCosSin(radians) };
+    Rot {
+        c: raw.cosine,
+        s: raw.sine,
+    }
+}
+
+/// Compute the rotation between two unit vectors.
+#[inline]
+pub fn rotation_between_unit_vectors<V1: Into<Vec2>, V2: Into<Vec2>>(v1: V1, v2: V2) -> Rot {
+    Rot::from(unsafe {
+        ffi::b2ComputeRotationBetweenUnitVectors(v1.into().into(), v2.into().into())
+    })
+}
+
+/// Get the current global Box2D length-units scale.
+#[inline]
+pub fn length_units_per_meter() -> f32 {
+    unsafe { ffi::b2GetLengthUnitsPerMeter() }
+}
+
+/// Set the global Box2D length-units scale.
+///
+/// Box2D requires this to be configured before any other Box2D usage.
+#[inline]
+pub fn set_length_units_per_meter(length_units: f32) {
+    unsafe { ffi::b2SetLengthUnitsPerMeter(length_units) }
+}
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct Rot {
@@ -16,12 +89,28 @@ impl Rot {
         Self { c, s }
     }
     #[inline]
+    pub fn cosine(self) -> f32 {
+        self.c
+    }
+    #[inline]
+    pub fn sine(self) -> f32 {
+        self.s
+    }
+    #[inline]
     pub fn from_degrees(deg: f32) -> Self {
         Self::from_radians(deg.to_radians())
     }
     #[inline]
     pub fn angle(self) -> f32 {
         self.s.atan2(self.c)
+    }
+    #[inline]
+    pub fn is_valid(self) -> bool {
+        unsafe { ffi::b2IsValidRotation(self.into()) }
+    }
+    #[inline]
+    pub fn from_unit_vectors<V1: Into<Vec2>, V2: Into<Vec2>>(v1: V1, v2: V2) -> Self {
+        rotation_between_unit_vectors(v1, v2)
     }
     #[inline]
     pub fn rotate_vec(self, v: Vec2) -> Vec2 {
@@ -343,6 +432,10 @@ impl Transform {
     #[inline]
     pub fn rotation(self) -> Rot {
         self.q
+    }
+    #[inline]
+    pub fn is_valid(self) -> bool {
+        unsafe { ffi::b2IsValidTransform(self.into()) }
     }
     #[inline]
     pub fn transform_point(self, v: Vec2) -> Vec2 {

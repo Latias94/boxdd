@@ -7,7 +7,7 @@
 //! - Ergonomics: builder patterns, world-space helpers, and optional math interop (`mint`/`cgmath`/`nalgebra`/`glam`).
 //! - Hot-path friendly APIs: keep the convenience `Vec`-returning methods, or reuse caller-owned buffers with `*_into`.
 //! - Character mover helpers: cast movers, collect collision planes, solve planes, and clip velocity without raw FFI.
-//! - Standalone collision geometry helpers: shape proxies, GJK distance, manifolds, shape cast, TOI, and AABB validation/ray cast.
+//! - Standalone collision geometry helpers: shape proxies, GJK distance, manifolds, shape cast, TOI, AABB validation/ray cast, and deterministic global math helpers.
 //! - Shape geometry uses crate-owned values (`Circle`, `Segment`, `ChainSegment`, `Capsule`, `Polygon`) across helpers, shape editing, and creation, including rounded-box polygon helpers without raw FFI.
 //! - Live shapes expose safe runtime helpers for AABB, point tests, direct ray casts, computed mass data, and runtime event toggles.
 //! - Bodies expose safe runtime helpers for rotation, sleep/awake/enabled/bullet/name controls, attached shape/joint enumeration, and body-level contact/hit event toggles.
@@ -256,7 +256,10 @@ pub use core::math::TransformFromGlamError;
 #[cfg(feature = "mint")]
 #[cfg_attr(docsrs, doc(cfg(feature = "mint")))]
 pub use core::math::TransformFromMintError;
-pub use core::math::{Rot, Transform};
+pub use core::math::{
+    Rot, Transform, Version, atan2, compute_cos_sin, length_units_per_meter,
+    rotation_between_unit_vectors, set_length_units_per_meter, version,
+};
 pub use debug_draw::{DebugDraw, DebugDrawCmd, DebugDrawOptions, HexColor};
 pub use error::{ApiError, ApiResult};
 pub use events::{

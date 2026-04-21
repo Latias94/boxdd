@@ -25,6 +25,11 @@ impl Vec2 {
     pub const fn new(x: f32, y: f32) -> Self {
         Self { x, y }
     }
+
+    #[inline]
+    pub fn is_valid(self) -> bool {
+        unsafe { ffi::b2IsValidVec2(self.into()) }
+    }
 }
 
 impl From<ffi::b2Vec2> for Vec2 {
