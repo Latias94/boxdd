@@ -42,6 +42,7 @@ The main gaps are:
 - callback registration on `World` has historically been asymmetric: material-mixing callbacks gained recoverable `try_*` setup, while custom filter / pre-solve registration lagged behind on panic-only helpers
 - owned world event snapshots have a safe zero-copy story via visitors, but until now the owned-copy path still forced fresh allocations unless users reworked their loop around borrowed views
 - `WorldHandle` mirrors many read-only runtime helpers, and now also mirrors owned event snapshots; borrowed/raw event views are still different because they depend on step-local world buffers and deferred-destroy flush timing
+- live chain material helpers used to leak Box2D's open-chain ghost-point placeholder layout instead of the runtime-visible live-segment vocabulary users actually manipulate
 
 If we do not address these now, the likely outcome is a sequence of small additive
 patches that preserve avoidable duplication and keep advanced users half inside the safe
@@ -69,6 +70,17 @@ API and half inside raw FFI.
 The crate should expose upstream concepts faithfully, but not at the expense of ergonomic
 or allocation-hostile APIs. A good safe wrapper should encode the common usage pattern,
 not merely rename C functions.
+
+This also means hiding upstream storage quirks when they are not part of the runtime concept
+users actually manipulate. Open-chain ghost-point material placeholders are a creation-time
+detail, so runtime chain material APIs should speak in live-segment indexing instead.
+
+The same principle applies to obvious parameter preconditions. If Box2D expects ordered
+ranges or non-negative finite material scalars, the safe wrapper should reject those
+arguments explicitly instead of making behavior depend on upstream assert builds.
+The same policy also applies to creation-time definition objects and shared defaults:
+safe `*Def` wrappers should preflight obvious native invariants, and crate-owned
+default constructors must mirror upstream defaults instead of approximating them.
 
 ### 2. Hot Paths Must Be Reusable
 
@@ -234,7 +246,8 @@ The preferred `WorldHandle` event boundary is therefore now explicit:
 
 `ContactId`, on the other hand, is no longer an intentional omission for `0.3.0`.
 Upstream only exposes validity and data-fetch helpers for contacts, so the crate now treats
-that tiny surface as part of the normal safe runtime API through `ContactIdExt`.
+that tiny surface as part of the normal safe runtime API directly on `ContactId` itself instead
+of hiding it behind a separate extension trait or a mostly-empty contact handle wrapper.
 
 ## Release Strategy
 

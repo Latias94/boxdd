@@ -97,6 +97,11 @@ impl DistanceJointDef {
         self.0
     }
 
+    #[inline]
+    pub fn validate(&self) -> ApiResult<()> {
+        super::check_distance_joint_def_valid(self)
+    }
+
     /// Target distance between anchors (meters).
     pub fn length(mut self, v: f32) -> Self {
         self.0.length = v;

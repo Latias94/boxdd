@@ -86,14 +86,351 @@ fn check_joint_def_bodies_valid(base: &ffi::b2JointDef) -> ApiResult<()> {
 
 type JointCreateFn<D> = unsafe extern "C" fn(ffi::b2WorldId, *const D) -> ffi::b2JointId;
 
+#[inline]
+fn assert_joint_def_body_pair_valid(base: &ffi::b2JointDef) {
+    let body_a = BodyId::from_raw(base.bodyIdA);
+    let body_b = BodyId::from_raw(base.bodyIdB);
+    assert!(
+        body_a.world0 == body_b.world0,
+        "joint bodies must belong to the same world"
+    );
+    assert!(body_a != body_b, "joint bodies must be distinct");
+}
+
+#[inline]
+fn check_joint_def_body_pair_valid(base: &ffi::b2JointDef) -> ApiResult<()> {
+    let body_a = BodyId::from_raw(base.bodyIdA);
+    let body_b = BodyId::from_raw(base.bodyIdB);
+    if body_a.world0 == body_b.world0 && body_a != body_b {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+#[inline]
+fn assert_joint_def_local_frames_valid(base: &ffi::b2JointDef) {
+    assert!(
+        crate::Transform::from_raw(base.localFrameA).is_valid(),
+        "joint localFrameA must be a valid Box2D transform"
+    );
+    assert!(
+        crate::Transform::from_raw(base.localFrameB).is_valid(),
+        "joint localFrameB must be a valid Box2D transform"
+    );
+}
+
+#[inline]
+fn check_joint_def_local_frames_valid(base: &ffi::b2JointDef) -> ApiResult<()> {
+    if crate::Transform::from_raw(base.localFrameA).is_valid()
+        && crate::Transform::from_raw(base.localFrameB).is_valid()
+    {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+#[inline]
+fn assert_joint_def_event_thresholds_valid(base: &ffi::b2JointDef) {
+    assert!(
+        crate::is_valid_float(base.forceThreshold) && base.forceThreshold >= 0.0,
+        "joint forceThreshold must be finite and >= 0.0, got {}",
+        base.forceThreshold
+    );
+    assert!(
+        crate::is_valid_float(base.torqueThreshold) && base.torqueThreshold >= 0.0,
+        "joint torqueThreshold must be finite and >= 0.0, got {}",
+        base.torqueThreshold
+    );
+}
+
+#[inline]
+fn check_joint_def_event_thresholds_valid(base: &ffi::b2JointDef) -> ApiResult<()> {
+    if crate::is_valid_float(base.forceThreshold)
+        && base.forceThreshold >= 0.0
+        && crate::is_valid_float(base.torqueThreshold)
+        && base.torqueThreshold >= 0.0
+    {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+#[inline]
+fn assert_joint_def_targets_world(world: &World, base: &ffi::b2JointDef) {
+    let target_world = world.raw().index1 - 1;
+    let body_a = BodyId::from_raw(base.bodyIdA);
+    let body_b = BodyId::from_raw(base.bodyIdB);
+    assert!(
+        body_a.world0 == target_world && body_b.world0 == target_world,
+        "joint bodies must belong to the target world"
+    );
+}
+
+#[inline]
+fn check_joint_def_targets_world(world: &World, base: &ffi::b2JointDef) -> ApiResult<()> {
+    let target_world = world.raw().index1 - 1;
+    let body_a = BodyId::from_raw(base.bodyIdA);
+    let body_b = BodyId::from_raw(base.bodyIdB);
+    if body_a.world0 == target_world && body_b.world0 == target_world {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+#[inline]
+fn assert_joint_base_raw_valid(base: &ffi::b2JointDef) {
+    assert_joint_def_bodies_valid(base);
+    assert_joint_def_body_pair_valid(base);
+    assert_joint_def_local_frames_valid(base);
+    assert_joint_def_event_thresholds_valid(base);
+}
+
+#[inline]
+fn check_joint_base_raw_valid(base: &ffi::b2JointDef) -> ApiResult<()> {
+    check_joint_def_bodies_valid(base)?;
+    check_joint_def_body_pair_valid(base)?;
+    check_joint_def_local_frames_valid(base)?;
+    check_joint_def_event_thresholds_valid(base)?;
+    Ok(())
+}
+
+pub(crate) fn check_joint_base_valid(base: &JointBase) -> ApiResult<()> {
+    check_joint_base_raw_valid(&base.0)
+}
+
+#[inline]
+fn distance_joint_def_cookie_is_valid(def: &ffi::b2DistanceJointDef) -> bool {
+    def.internalValue == unsafe { ffi::b2DefaultDistanceJointDef() }.internalValue
+}
+
+#[inline]
+fn motor_joint_def_cookie_is_valid(def: &ffi::b2MotorJointDef) -> bool {
+    def.internalValue == unsafe { ffi::b2DefaultMotorJointDef() }.internalValue
+}
+
+#[inline]
+fn filter_joint_def_cookie_is_valid(def: &ffi::b2FilterJointDef) -> bool {
+    def.internalValue == unsafe { ffi::b2DefaultFilterJointDef() }.internalValue
+}
+
+#[inline]
+fn prismatic_joint_def_cookie_is_valid(def: &ffi::b2PrismaticJointDef) -> bool {
+    def.internalValue == unsafe { ffi::b2DefaultPrismaticJointDef() }.internalValue
+}
+
+#[inline]
+fn revolute_joint_def_cookie_is_valid(def: &ffi::b2RevoluteJointDef) -> bool {
+    def.internalValue == unsafe { ffi::b2DefaultRevoluteJointDef() }.internalValue
+}
+
+#[inline]
+fn weld_joint_def_cookie_is_valid(def: &ffi::b2WeldJointDef) -> bool {
+    def.internalValue == unsafe { ffi::b2DefaultWeldJointDef() }.internalValue
+}
+
+#[inline]
+fn wheel_joint_def_cookie_is_valid(def: &ffi::b2WheelJointDef) -> bool {
+    def.internalValue == unsafe { ffi::b2DefaultWheelJointDef() }.internalValue
+}
+
+fn assert_distance_joint_def_raw_valid(def: &ffi::b2DistanceJointDef) {
+    assert_joint_base_raw_valid(&def.base);
+    assert!(
+        distance_joint_def_cookie_is_valid(def),
+        "invalid DistanceJointDef: not initialized from b2DefaultDistanceJointDef"
+    );
+    assert!(
+        crate::is_valid_float(def.length) && def.length > 0.0,
+        "invalid DistanceJointDef: length must be finite and > 0.0, got {}",
+        def.length
+    );
+    assert!(
+        def.lowerSpringForce <= def.upperSpringForce,
+        "invalid DistanceJointDef: lowerSpringForce must be <= upperSpringForce"
+    );
+}
+
+fn check_distance_joint_def_raw_valid(def: &ffi::b2DistanceJointDef) -> ApiResult<()> {
+    check_joint_base_raw_valid(&def.base)?;
+    if distance_joint_def_cookie_is_valid(def)
+        && crate::is_valid_float(def.length)
+        && def.length > 0.0
+        && def.lowerSpringForce <= def.upperSpringForce
+    {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+pub(crate) fn check_distance_joint_def_valid(def: &DistanceJointDef) -> ApiResult<()> {
+    check_distance_joint_def_raw_valid(&def.0)
+}
+
+fn assert_motor_joint_def_raw_valid(def: &ffi::b2MotorJointDef) {
+    assert_joint_base_raw_valid(&def.base);
+    assert!(
+        motor_joint_def_cookie_is_valid(def),
+        "invalid MotorJointDef: not initialized from b2DefaultMotorJointDef"
+    );
+}
+
+fn check_motor_joint_def_raw_valid(def: &ffi::b2MotorJointDef) -> ApiResult<()> {
+    check_joint_base_raw_valid(&def.base)?;
+    if motor_joint_def_cookie_is_valid(def) {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+pub(crate) fn check_motor_joint_def_valid(def: &MotorJointDef) -> ApiResult<()> {
+    check_motor_joint_def_raw_valid(&def.0)
+}
+
+fn assert_filter_joint_def_raw_valid(def: &ffi::b2FilterJointDef) {
+    assert_joint_base_raw_valid(&def.base);
+    assert!(
+        filter_joint_def_cookie_is_valid(def),
+        "invalid FilterJointDef: not initialized from b2DefaultFilterJointDef"
+    );
+}
+
+fn check_filter_joint_def_raw_valid(def: &ffi::b2FilterJointDef) -> ApiResult<()> {
+    check_joint_base_raw_valid(&def.base)?;
+    if filter_joint_def_cookie_is_valid(def) {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+pub(crate) fn check_filter_joint_def_valid(def: &FilterJointDef) -> ApiResult<()> {
+    check_filter_joint_def_raw_valid(&def.0)
+}
+
+fn assert_prismatic_joint_def_raw_valid(def: &ffi::b2PrismaticJointDef) {
+    assert_joint_base_raw_valid(&def.base);
+    assert!(
+        prismatic_joint_def_cookie_is_valid(def),
+        "invalid PrismaticJointDef: not initialized from b2DefaultPrismaticJointDef"
+    );
+    assert!(
+        def.lowerTranslation <= def.upperTranslation,
+        "invalid PrismaticJointDef: lowerTranslation must be <= upperTranslation"
+    );
+}
+
+fn check_prismatic_joint_def_raw_valid(def: &ffi::b2PrismaticJointDef) -> ApiResult<()> {
+    check_joint_base_raw_valid(&def.base)?;
+    if prismatic_joint_def_cookie_is_valid(def) && def.lowerTranslation <= def.upperTranslation {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+pub(crate) fn check_prismatic_joint_def_valid(def: &PrismaticJointDef) -> ApiResult<()> {
+    check_prismatic_joint_def_raw_valid(&def.0)
+}
+
+fn assert_revolute_joint_def_raw_valid(def: &ffi::b2RevoluteJointDef) {
+    assert_joint_base_raw_valid(&def.base);
+    assert!(
+        revolute_joint_def_cookie_is_valid(def),
+        "invalid RevoluteJointDef: not initialized from b2DefaultRevoluteJointDef"
+    );
+    assert!(
+        def.lowerAngle <= def.upperAngle,
+        "invalid RevoluteJointDef: lowerAngle must be <= upperAngle"
+    );
+    assert!(
+        def.lowerAngle >= -0.99 * ffi::B2_PI as f32,
+        "invalid RevoluteJointDef: lowerAngle must be >= -0.99 * PI"
+    );
+    assert!(
+        def.upperAngle <= 0.99 * ffi::B2_PI as f32,
+        "invalid RevoluteJointDef: upperAngle must be <= 0.99 * PI"
+    );
+}
+
+fn check_revolute_joint_def_raw_valid(def: &ffi::b2RevoluteJointDef) -> ApiResult<()> {
+    check_joint_base_raw_valid(&def.base)?;
+    if revolute_joint_def_cookie_is_valid(def)
+        && def.lowerAngle <= def.upperAngle
+        && def.lowerAngle >= -0.99 * ffi::B2_PI as f32
+        && def.upperAngle <= 0.99 * ffi::B2_PI as f32
+    {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+pub(crate) fn check_revolute_joint_def_valid(def: &RevoluteJointDef) -> ApiResult<()> {
+    check_revolute_joint_def_raw_valid(&def.0)
+}
+
+fn assert_weld_joint_def_raw_valid(def: &ffi::b2WeldJointDef) {
+    assert_joint_base_raw_valid(&def.base);
+    assert!(
+        weld_joint_def_cookie_is_valid(def),
+        "invalid WeldJointDef: not initialized from b2DefaultWeldJointDef"
+    );
+}
+
+fn check_weld_joint_def_raw_valid(def: &ffi::b2WeldJointDef) -> ApiResult<()> {
+    check_joint_base_raw_valid(&def.base)?;
+    if weld_joint_def_cookie_is_valid(def) {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+pub(crate) fn check_weld_joint_def_valid(def: &WeldJointDef) -> ApiResult<()> {
+    check_weld_joint_def_raw_valid(&def.0)
+}
+
+fn assert_wheel_joint_def_raw_valid(def: &ffi::b2WheelJointDef) {
+    assert_joint_base_raw_valid(&def.base);
+    assert!(
+        wheel_joint_def_cookie_is_valid(def),
+        "invalid WheelJointDef: not initialized from b2DefaultWheelJointDef"
+    );
+    assert!(
+        def.lowerTranslation <= def.upperTranslation,
+        "invalid WheelJointDef: lowerTranslation must be <= upperTranslation"
+    );
+}
+
+fn check_wheel_joint_def_raw_valid(def: &ffi::b2WheelJointDef) -> ApiResult<()> {
+    check_joint_base_raw_valid(&def.base)?;
+    if wheel_joint_def_cookie_is_valid(def) && def.lowerTranslation <= def.upperTranslation {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+pub(crate) fn check_wheel_joint_def_valid(def: &WheelJointDef) -> ApiResult<()> {
+    check_wheel_joint_def_raw_valid(&def.0)
+}
+
 fn create_joint_id_checked_impl<D>(
     world: &mut World,
     base: &ffi::b2JointDef,
     raw_def: &D,
     create: JointCreateFn<D>,
+    assert_def_valid: impl FnOnce(&D),
 ) -> JointId {
     crate::core::callback_state::assert_not_in_callback();
-    assert_joint_def_bodies_valid(base);
+    assert_joint_def_targets_world(world, base);
+    assert_def_valid(raw_def);
     JointId::from_raw(unsafe { create(world.raw(), raw_def) })
 }
 
@@ -102,9 +439,11 @@ fn try_create_joint_id_checked_impl<D>(
     base: &ffi::b2JointDef,
     raw_def: &D,
     create: JointCreateFn<D>,
+    check_def_valid: impl FnOnce(&D) -> ApiResult<()>,
 ) -> ApiResult<JointId> {
     crate::core::callback_state::check_not_in_callback()?;
-    check_joint_def_bodies_valid(base)?;
+    check_joint_def_targets_world(world, base)?;
+    check_def_valid(raw_def)?;
     Ok(JointId::from_raw(unsafe { create(world.raw(), raw_def) }))
 }
 
@@ -113,8 +452,9 @@ fn create_joint_scoped_checked_impl<'w, D>(
     base: &ffi::b2JointDef,
     raw_def: &D,
     create: JointCreateFn<D>,
+    assert_def_valid: impl FnOnce(&D),
 ) -> Joint<'w> {
-    let id = create_joint_id_checked_impl(world, base, raw_def, create);
+    let id = create_joint_id_checked_impl(world, base, raw_def, create, assert_def_valid);
     Joint::new(world.core_arc(), id)
 }
 
@@ -123,8 +463,9 @@ fn try_create_joint_scoped_checked_impl<'w, D>(
     base: &ffi::b2JointDef,
     raw_def: &D,
     create: JointCreateFn<D>,
+    check_def_valid: impl FnOnce(&D) -> ApiResult<()>,
 ) -> ApiResult<Joint<'w>> {
-    let id = try_create_joint_id_checked_impl(world, base, raw_def, create)?;
+    let id = try_create_joint_id_checked_impl(world, base, raw_def, create, check_def_valid)?;
     Ok(Joint::new(world.core_arc(), id))
 }
 
@@ -133,8 +474,9 @@ fn create_joint_owned_checked_impl<D>(
     base: &ffi::b2JointDef,
     raw_def: &D,
     create: JointCreateFn<D>,
+    assert_def_valid: impl FnOnce(&D),
 ) -> OwnedJoint {
-    let id = create_joint_id_checked_impl(world, base, raw_def, create);
+    let id = create_joint_id_checked_impl(world, base, raw_def, create, assert_def_valid);
     OwnedJoint::new(world.core_arc(), id)
 }
 
@@ -143,8 +485,9 @@ fn try_create_joint_owned_checked_impl<D>(
     base: &ffi::b2JointDef,
     raw_def: &D,
     create: JointCreateFn<D>,
+    check_def_valid: impl FnOnce(&D) -> ApiResult<()>,
 ) -> ApiResult<OwnedJoint> {
-    let id = try_create_joint_id_checked_impl(world, base, raw_def, create)?;
+    let id = try_create_joint_id_checked_impl(world, base, raw_def, create, check_def_valid)?;
     Ok(OwnedJoint::new(world.core_arc(), id))
 }
 
@@ -229,189 +572,441 @@ impl World {
 // Creation/destroy: scoped handles and ID style
 impl World {
     pub fn create_distance_joint<'w>(&'w mut self, def: &DistanceJointDef) -> Joint<'w> {
-        create_joint_scoped_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateDistanceJoint)
+        create_joint_scoped_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateDistanceJoint,
+            assert_distance_joint_def_raw_valid,
+        )
     }
 
     pub fn create_distance_joint_id(&mut self, def: &DistanceJointDef) -> JointId {
-        create_joint_id_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateDistanceJoint)
+        create_joint_id_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateDistanceJoint,
+            assert_distance_joint_def_raw_valid,
+        )
     }
 
     pub fn create_distance_joint_owned(&mut self, def: &DistanceJointDef) -> OwnedJoint {
-        create_joint_owned_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateDistanceJoint)
+        create_joint_owned_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateDistanceJoint,
+            assert_distance_joint_def_raw_valid,
+        )
     }
 
     pub fn try_create_distance_joint<'w>(
         &'w mut self,
         def: &DistanceJointDef,
     ) -> ApiResult<Joint<'w>> {
-        try_create_joint_scoped_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateDistanceJoint)
+        try_create_joint_scoped_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateDistanceJoint,
+            check_distance_joint_def_raw_valid,
+        )
     }
 
     pub fn try_create_distance_joint_id(&mut self, def: &DistanceJointDef) -> ApiResult<JointId> {
-        try_create_joint_id_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateDistanceJoint)
+        try_create_joint_id_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateDistanceJoint,
+            check_distance_joint_def_raw_valid,
+        )
     }
 
     pub fn try_create_distance_joint_owned(
         &mut self,
         def: &DistanceJointDef,
     ) -> ApiResult<OwnedJoint> {
-        try_create_joint_owned_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateDistanceJoint)
+        try_create_joint_owned_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateDistanceJoint,
+            check_distance_joint_def_raw_valid,
+        )
     }
 
     pub fn create_revolute_joint<'w>(&'w mut self, def: &RevoluteJointDef) -> Joint<'w> {
-        create_joint_scoped_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateRevoluteJoint)
+        create_joint_scoped_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateRevoluteJoint,
+            assert_revolute_joint_def_raw_valid,
+        )
     }
 
     pub fn create_revolute_joint_id(&mut self, def: &RevoluteJointDef) -> JointId {
-        create_joint_id_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateRevoluteJoint)
+        create_joint_id_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateRevoluteJoint,
+            assert_revolute_joint_def_raw_valid,
+        )
     }
 
     pub fn create_revolute_joint_owned(&mut self, def: &RevoluteJointDef) -> OwnedJoint {
-        create_joint_owned_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateRevoluteJoint)
+        create_joint_owned_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateRevoluteJoint,
+            assert_revolute_joint_def_raw_valid,
+        )
     }
 
     pub fn try_create_revolute_joint<'w>(
         &'w mut self,
         def: &RevoluteJointDef,
     ) -> ApiResult<Joint<'w>> {
-        try_create_joint_scoped_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateRevoluteJoint)
+        try_create_joint_scoped_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateRevoluteJoint,
+            check_revolute_joint_def_raw_valid,
+        )
     }
 
     pub fn try_create_revolute_joint_id(&mut self, def: &RevoluteJointDef) -> ApiResult<JointId> {
-        try_create_joint_id_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateRevoluteJoint)
+        try_create_joint_id_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateRevoluteJoint,
+            check_revolute_joint_def_raw_valid,
+        )
     }
 
     pub fn try_create_revolute_joint_owned(
         &mut self,
         def: &RevoluteJointDef,
     ) -> ApiResult<OwnedJoint> {
-        try_create_joint_owned_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateRevoluteJoint)
+        try_create_joint_owned_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateRevoluteJoint,
+            check_revolute_joint_def_raw_valid,
+        )
     }
 
     pub fn create_prismatic_joint<'w>(&'w mut self, def: &PrismaticJointDef) -> Joint<'w> {
-        create_joint_scoped_checked_impl(self, &def.0.base, &def.0, ffi::b2CreatePrismaticJoint)
+        create_joint_scoped_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreatePrismaticJoint,
+            assert_prismatic_joint_def_raw_valid,
+        )
     }
 
     pub fn create_prismatic_joint_id(&mut self, def: &PrismaticJointDef) -> JointId {
-        create_joint_id_checked_impl(self, &def.0.base, &def.0, ffi::b2CreatePrismaticJoint)
+        create_joint_id_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreatePrismaticJoint,
+            assert_prismatic_joint_def_raw_valid,
+        )
     }
 
     pub fn create_prismatic_joint_owned(&mut self, def: &PrismaticJointDef) -> OwnedJoint {
-        create_joint_owned_checked_impl(self, &def.0.base, &def.0, ffi::b2CreatePrismaticJoint)
+        create_joint_owned_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreatePrismaticJoint,
+            assert_prismatic_joint_def_raw_valid,
+        )
     }
 
     pub fn try_create_prismatic_joint<'w>(
         &'w mut self,
         def: &PrismaticJointDef,
     ) -> ApiResult<Joint<'w>> {
-        try_create_joint_scoped_checked_impl(self, &def.0.base, &def.0, ffi::b2CreatePrismaticJoint)
+        try_create_joint_scoped_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreatePrismaticJoint,
+            check_prismatic_joint_def_raw_valid,
+        )
     }
 
     pub fn try_create_prismatic_joint_id(&mut self, def: &PrismaticJointDef) -> ApiResult<JointId> {
-        try_create_joint_id_checked_impl(self, &def.0.base, &def.0, ffi::b2CreatePrismaticJoint)
+        try_create_joint_id_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreatePrismaticJoint,
+            check_prismatic_joint_def_raw_valid,
+        )
     }
 
     pub fn try_create_prismatic_joint_owned(
         &mut self,
         def: &PrismaticJointDef,
     ) -> ApiResult<OwnedJoint> {
-        try_create_joint_owned_checked_impl(self, &def.0.base, &def.0, ffi::b2CreatePrismaticJoint)
+        try_create_joint_owned_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreatePrismaticJoint,
+            check_prismatic_joint_def_raw_valid,
+        )
     }
 
     pub fn create_wheel_joint<'w>(&'w mut self, def: &WheelJointDef) -> Joint<'w> {
-        create_joint_scoped_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateWheelJoint)
+        create_joint_scoped_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateWheelJoint,
+            assert_wheel_joint_def_raw_valid,
+        )
     }
 
     pub fn create_wheel_joint_id(&mut self, def: &WheelJointDef) -> JointId {
-        create_joint_id_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateWheelJoint)
+        create_joint_id_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateWheelJoint,
+            assert_wheel_joint_def_raw_valid,
+        )
     }
 
     pub fn create_wheel_joint_owned(&mut self, def: &WheelJointDef) -> OwnedJoint {
-        create_joint_owned_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateWheelJoint)
+        create_joint_owned_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateWheelJoint,
+            assert_wheel_joint_def_raw_valid,
+        )
     }
 
     pub fn try_create_wheel_joint<'w>(&'w mut self, def: &WheelJointDef) -> ApiResult<Joint<'w>> {
-        try_create_joint_scoped_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateWheelJoint)
+        try_create_joint_scoped_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateWheelJoint,
+            check_wheel_joint_def_raw_valid,
+        )
     }
 
     pub fn try_create_wheel_joint_id(&mut self, def: &WheelJointDef) -> ApiResult<JointId> {
-        try_create_joint_id_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateWheelJoint)
+        try_create_joint_id_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateWheelJoint,
+            check_wheel_joint_def_raw_valid,
+        )
     }
 
     pub fn try_create_wheel_joint_owned(&mut self, def: &WheelJointDef) -> ApiResult<OwnedJoint> {
-        try_create_joint_owned_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateWheelJoint)
+        try_create_joint_owned_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateWheelJoint,
+            check_wheel_joint_def_raw_valid,
+        )
     }
 
     pub fn create_weld_joint<'w>(&'w mut self, def: &WeldJointDef) -> Joint<'w> {
-        create_joint_scoped_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateWeldJoint)
+        create_joint_scoped_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateWeldJoint,
+            assert_weld_joint_def_raw_valid,
+        )
     }
 
     pub fn create_weld_joint_id(&mut self, def: &WeldJointDef) -> JointId {
-        create_joint_id_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateWeldJoint)
+        create_joint_id_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateWeldJoint,
+            assert_weld_joint_def_raw_valid,
+        )
     }
 
     pub fn create_weld_joint_owned(&mut self, def: &WeldJointDef) -> OwnedJoint {
-        create_joint_owned_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateWeldJoint)
+        create_joint_owned_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateWeldJoint,
+            assert_weld_joint_def_raw_valid,
+        )
     }
 
     pub fn try_create_weld_joint<'w>(&'w mut self, def: &WeldJointDef) -> ApiResult<Joint<'w>> {
-        try_create_joint_scoped_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateWeldJoint)
+        try_create_joint_scoped_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateWeldJoint,
+            check_weld_joint_def_raw_valid,
+        )
     }
 
     pub fn try_create_weld_joint_id(&mut self, def: &WeldJointDef) -> ApiResult<JointId> {
-        try_create_joint_id_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateWeldJoint)
+        try_create_joint_id_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateWeldJoint,
+            check_weld_joint_def_raw_valid,
+        )
     }
 
     pub fn try_create_weld_joint_owned(&mut self, def: &WeldJointDef) -> ApiResult<OwnedJoint> {
-        try_create_joint_owned_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateWeldJoint)
+        try_create_joint_owned_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateWeldJoint,
+            check_weld_joint_def_raw_valid,
+        )
     }
 
     pub fn create_motor_joint<'w>(&'w mut self, def: &MotorJointDef) -> Joint<'w> {
-        create_joint_scoped_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateMotorJoint)
+        create_joint_scoped_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateMotorJoint,
+            assert_motor_joint_def_raw_valid,
+        )
     }
 
     pub fn create_motor_joint_id(&mut self, def: &MotorJointDef) -> JointId {
-        create_joint_id_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateMotorJoint)
+        create_joint_id_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateMotorJoint,
+            assert_motor_joint_def_raw_valid,
+        )
     }
 
     pub fn create_motor_joint_owned(&mut self, def: &MotorJointDef) -> OwnedJoint {
-        create_joint_owned_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateMotorJoint)
+        create_joint_owned_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateMotorJoint,
+            assert_motor_joint_def_raw_valid,
+        )
     }
 
     pub fn try_create_motor_joint<'w>(&'w mut self, def: &MotorJointDef) -> ApiResult<Joint<'w>> {
-        try_create_joint_scoped_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateMotorJoint)
+        try_create_joint_scoped_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateMotorJoint,
+            check_motor_joint_def_raw_valid,
+        )
     }
 
     pub fn try_create_motor_joint_id(&mut self, def: &MotorJointDef) -> ApiResult<JointId> {
-        try_create_joint_id_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateMotorJoint)
+        try_create_joint_id_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateMotorJoint,
+            check_motor_joint_def_raw_valid,
+        )
     }
 
     pub fn try_create_motor_joint_owned(&mut self, def: &MotorJointDef) -> ApiResult<OwnedJoint> {
-        try_create_joint_owned_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateMotorJoint)
+        try_create_joint_owned_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateMotorJoint,
+            check_motor_joint_def_raw_valid,
+        )
     }
 
     pub fn create_filter_joint<'w>(&'w mut self, def: &FilterJointDef) -> Joint<'w> {
-        create_joint_scoped_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateFilterJoint)
+        create_joint_scoped_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateFilterJoint,
+            assert_filter_joint_def_raw_valid,
+        )
     }
 
     pub fn create_filter_joint_id(&mut self, def: &FilterJointDef) -> JointId {
-        create_joint_id_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateFilterJoint)
+        create_joint_id_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateFilterJoint,
+            assert_filter_joint_def_raw_valid,
+        )
     }
 
     pub fn create_filter_joint_owned(&mut self, def: &FilterJointDef) -> OwnedJoint {
-        create_joint_owned_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateFilterJoint)
+        create_joint_owned_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateFilterJoint,
+            assert_filter_joint_def_raw_valid,
+        )
     }
 
     pub fn try_create_filter_joint<'w>(&'w mut self, def: &FilterJointDef) -> ApiResult<Joint<'w>> {
-        try_create_joint_scoped_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateFilterJoint)
+        try_create_joint_scoped_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateFilterJoint,
+            check_filter_joint_def_raw_valid,
+        )
     }
 
     pub fn try_create_filter_joint_id(&mut self, def: &FilterJointDef) -> ApiResult<JointId> {
-        try_create_joint_id_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateFilterJoint)
+        try_create_joint_id_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateFilterJoint,
+            check_filter_joint_def_raw_valid,
+        )
     }
 
     pub fn try_create_filter_joint_owned(&mut self, def: &FilterJointDef) -> ApiResult<OwnedJoint> {
-        try_create_joint_owned_checked_impl(self, &def.0.base, &def.0, ffi::b2CreateFilterJoint)
+        try_create_joint_owned_checked_impl(
+            self,
+            &def.0.base,
+            &def.0,
+            ffi::b2CreateFilterJoint,
+            check_filter_joint_def_raw_valid,
+        )
     }
 
     pub fn destroy_joint_id(&mut self, id: JointId, wake_bodies: bool) {
@@ -731,6 +1326,73 @@ fn check_joint_kind(id: JointId, expected: JointType) -> ApiResult<()> {
     Ok(())
 }
 
+const REVOLUTE_LIMIT_ABS_MAX: f32 = 0.99 * core::f32::consts::PI;
+
+#[track_caller]
+fn assert_ordered_joint_range(name: &str, lower: f32, upper: f32) {
+    assert!(
+        lower <= upper,
+        "{name} requires lower <= upper, got lower={lower}, upper={upper}"
+    );
+}
+
+fn check_ordered_joint_range(lower: f32, upper: f32) -> ApiResult<()> {
+    if lower <= upper {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+fn assert_distance_spring_force_range_valid(lower: &f32, upper: &f32) {
+    assert_ordered_joint_range("distance spring force range", *lower, *upper);
+}
+
+fn check_distance_spring_force_range_valid(lower: &f32, upper: &f32) -> ApiResult<()> {
+    check_ordered_joint_range(*lower, *upper)
+}
+
+fn assert_prismatic_limits_valid(lower: &f32, upper: &f32) {
+    assert_ordered_joint_range("prismatic limits", *lower, *upper);
+}
+
+fn check_prismatic_limits_valid(lower: &f32, upper: &f32) -> ApiResult<()> {
+    check_ordered_joint_range(*lower, *upper)
+}
+
+#[track_caller]
+fn assert_revolute_limits_valid(lower: &f32, upper: &f32) {
+    assert_ordered_joint_range("revolute limits", *lower, *upper);
+    assert!(
+        *lower >= -REVOLUTE_LIMIT_ABS_MAX,
+        "revolute lower limit must be >= {}, got {}",
+        -REVOLUTE_LIMIT_ABS_MAX,
+        *lower
+    );
+    assert!(
+        *upper <= REVOLUTE_LIMIT_ABS_MAX,
+        "revolute upper limit must be <= {}, got {}",
+        REVOLUTE_LIMIT_ABS_MAX,
+        *upper
+    );
+}
+
+fn check_revolute_limits_valid(lower: &f32, upper: &f32) -> ApiResult<()> {
+    if *lower <= *upper && *lower >= -REVOLUTE_LIMIT_ABS_MAX && *upper <= REVOLUTE_LIMIT_ABS_MAX {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+fn assert_wheel_limits_valid(lower: &f32, upper: &f32) {
+    assert_ordered_joint_range("wheel limits", *lower, *upper);
+}
+
+fn check_wheel_limits_valid(lower: &f32, upper: &f32) -> ApiResult<()> {
+    check_ordered_joint_range(*lower, *upper)
+}
+
 #[inline]
 fn joint_kind_get_checked_impl<T>(
     id: JointId,
@@ -787,6 +1449,20 @@ fn joint_kind_set2_checked_impl<A, B>(
 }
 
 #[inline]
+fn joint_kind_set2_checked_validated_impl<A, B>(
+    id: JointId,
+    expected: JointType,
+    a: A,
+    b: B,
+    validate: impl FnOnce(&A, &B),
+    f: impl FnOnce(JointId, A, B),
+) {
+    assert_joint_kind(id, expected);
+    validate(&a, &b);
+    f(id, a, b)
+}
+
+#[inline]
 fn try_joint_kind_set2_checked_impl<A, B>(
     id: JointId,
     expected: JointType,
@@ -795,6 +1471,21 @@ fn try_joint_kind_set2_checked_impl<A, B>(
     f: impl FnOnce(JointId, A, B),
 ) -> ApiResult<()> {
     check_joint_kind(id, expected)?;
+    f(id, a, b);
+    Ok(())
+}
+
+#[inline]
+fn try_joint_kind_set2_checked_validated_impl<A, B>(
+    id: JointId,
+    expected: JointType,
+    a: A,
+    b: B,
+    validate: impl FnOnce(&A, &B) -> ApiResult<()>,
+    f: impl FnOnce(JointId, A, B),
+) -> ApiResult<()> {
+    check_joint_kind(id, expected)?;
+    validate(&a, &b)?;
     f(id, a, b);
     Ok(())
 }
@@ -1455,11 +2146,12 @@ impl World {
         lower_force: f32,
         upper_force: f32,
     ) {
-        joint_kind_set2_checked_impl(
+        joint_kind_set2_checked_validated_impl(
             id,
             JointType::Distance,
             lower_force,
             upper_force,
+            assert_distance_spring_force_range_valid,
             distance_set_spring_force_range_impl,
         )
     }
@@ -1470,11 +2162,12 @@ impl World {
         lower_force: f32,
         upper_force: f32,
     ) -> ApiResult<()> {
-        try_joint_kind_set2_checked_impl(
+        try_joint_kind_set2_checked_validated_impl(
             id,
             JointType::Distance,
             lower_force,
             upper_force,
+            check_distance_spring_force_range_valid,
             distance_set_spring_force_range_impl,
         )
     }
@@ -1881,11 +2574,12 @@ impl OwnedJoint {
     }
 
     pub fn distance_set_spring_force_range(&mut self, lower_force: f32, upper_force: f32) {
-        joint_kind_set2_checked_impl(
+        joint_kind_set2_checked_validated_impl(
             self.id(),
             JointType::Distance,
             lower_force,
             upper_force,
+            assert_distance_spring_force_range_valid,
             distance_set_spring_force_range_impl,
         )
     }
@@ -1895,11 +2589,12 @@ impl OwnedJoint {
         lower_force: f32,
         upper_force: f32,
     ) -> ApiResult<()> {
-        try_joint_kind_set2_checked_impl(
+        try_joint_kind_set2_checked_validated_impl(
             self.id(),
             JointType::Distance,
             lower_force,
             upper_force,
+            check_distance_spring_force_range_valid,
             distance_set_spring_force_range_impl,
         )
     }
@@ -2227,11 +2922,12 @@ impl<'w> Joint<'w> {
     }
 
     pub fn distance_set_spring_force_range(&mut self, lower_force: f32, upper_force: f32) {
-        joint_kind_set2_checked_impl(
+        joint_kind_set2_checked_validated_impl(
             self.id(),
             JointType::Distance,
             lower_force,
             upper_force,
+            assert_distance_spring_force_range_valid,
             distance_set_spring_force_range_impl,
         )
     }
@@ -2241,11 +2937,12 @@ impl<'w> Joint<'w> {
         lower_force: f32,
         upper_force: f32,
     ) -> ApiResult<()> {
-        try_joint_kind_set2_checked_impl(
+        try_joint_kind_set2_checked_validated_impl(
             self.id(),
             JointType::Distance,
             lower_force,
             upper_force,
+            check_distance_spring_force_range_valid,
             distance_set_spring_force_range_impl,
         )
     }
@@ -2647,11 +3344,12 @@ impl World {
     }
 
     pub fn prismatic_set_limits(&mut self, id: JointId, lower: f32, upper: f32) {
-        joint_kind_set2_checked_impl(
+        joint_kind_set2_checked_validated_impl(
             id,
             JointType::Prismatic,
             lower,
             upper,
+            assert_prismatic_limits_valid,
             prismatic_set_limits_impl,
         )
     }
@@ -2662,11 +3360,12 @@ impl World {
         lower: f32,
         upper: f32,
     ) -> ApiResult<()> {
-        try_joint_kind_set2_checked_impl(
+        try_joint_kind_set2_checked_validated_impl(
             id,
             JointType::Prismatic,
             lower,
             upper,
+            check_prismatic_limits_valid,
             prismatic_set_limits_impl,
         )
     }
@@ -2917,11 +3616,12 @@ impl World {
     }
 
     pub fn revolute_set_limits(&mut self, id: JointId, lower: f32, upper: f32) {
-        joint_kind_set2_checked_impl(
+        joint_kind_set2_checked_validated_impl(
             id,
             JointType::Revolute,
             lower,
             upper,
+            assert_revolute_limits_valid,
             revolute_set_limits_impl,
         )
     }
@@ -2932,11 +3632,12 @@ impl World {
         lower: f32,
         upper: f32,
     ) -> ApiResult<()> {
-        try_joint_kind_set2_checked_impl(
+        try_joint_kind_set2_checked_validated_impl(
             id,
             JointType::Revolute,
             lower,
             upper,
+            check_revolute_limits_valid,
             revolute_set_limits_impl,
         )
     }
@@ -3412,21 +4113,23 @@ impl OwnedJoint {
     }
 
     pub fn prismatic_set_limits(&mut self, lower: f32, upper: f32) {
-        joint_kind_set2_checked_impl(
+        joint_kind_set2_checked_validated_impl(
             self.id(),
             JointType::Prismatic,
             lower,
             upper,
+            assert_prismatic_limits_valid,
             prismatic_set_limits_impl,
         )
     }
 
     pub fn try_prismatic_set_limits(&mut self, lower: f32, upper: f32) -> ApiResult<()> {
-        try_joint_kind_set2_checked_impl(
+        try_joint_kind_set2_checked_validated_impl(
             self.id(),
             JointType::Prismatic,
             lower,
             upper,
+            check_prismatic_limits_valid,
             prismatic_set_limits_impl,
         )
     }
@@ -3716,21 +4419,23 @@ impl OwnedJoint {
     }
 
     pub fn revolute_set_limits(&mut self, lower: f32, upper: f32) {
-        joint_kind_set2_checked_impl(
+        joint_kind_set2_checked_validated_impl(
             self.id(),
             JointType::Revolute,
             lower,
             upper,
+            assert_revolute_limits_valid,
             revolute_set_limits_impl,
         )
     }
 
     pub fn try_revolute_set_limits(&mut self, lower: f32, upper: f32) -> ApiResult<()> {
-        try_joint_kind_set2_checked_impl(
+        try_joint_kind_set2_checked_validated_impl(
             self.id(),
             JointType::Revolute,
             lower,
             upper,
+            check_revolute_limits_valid,
             revolute_set_limits_impl,
         )
     }
@@ -4014,21 +4719,23 @@ impl<'w> Joint<'w> {
     }
 
     pub fn prismatic_set_limits(&mut self, lower: f32, upper: f32) {
-        joint_kind_set2_checked_impl(
+        joint_kind_set2_checked_validated_impl(
             self.id(),
             JointType::Prismatic,
             lower,
             upper,
+            assert_prismatic_limits_valid,
             prismatic_set_limits_impl,
         )
     }
 
     pub fn try_prismatic_set_limits(&mut self, lower: f32, upper: f32) -> ApiResult<()> {
-        try_joint_kind_set2_checked_impl(
+        try_joint_kind_set2_checked_validated_impl(
             self.id(),
             JointType::Prismatic,
             lower,
             upper,
+            check_prismatic_limits_valid,
             prismatic_set_limits_impl,
         )
     }
@@ -4318,21 +5025,23 @@ impl<'w> Joint<'w> {
     }
 
     pub fn revolute_set_limits(&mut self, lower: f32, upper: f32) {
-        joint_kind_set2_checked_impl(
+        joint_kind_set2_checked_validated_impl(
             self.id(),
             JointType::Revolute,
             lower,
             upper,
+            assert_revolute_limits_valid,
             revolute_set_limits_impl,
         )
     }
 
     pub fn try_revolute_set_limits(&mut self, lower: f32, upper: f32) -> ApiResult<()> {
-        try_joint_kind_set2_checked_impl(
+        try_joint_kind_set2_checked_validated_impl(
             self.id(),
             JointType::Revolute,
             lower,
             upper,
+            check_revolute_limits_valid,
             revolute_set_limits_impl,
         )
     }
@@ -4620,11 +5329,25 @@ impl World {
     }
 
     pub fn wheel_set_limits(&mut self, id: JointId, lower: f32, upper: f32) {
-        joint_kind_set2_checked_impl(id, JointType::Wheel, lower, upper, wheel_set_limits_impl)
+        joint_kind_set2_checked_validated_impl(
+            id,
+            JointType::Wheel,
+            lower,
+            upper,
+            assert_wheel_limits_valid,
+            wheel_set_limits_impl,
+        )
     }
 
     pub fn try_wheel_set_limits(&mut self, id: JointId, lower: f32, upper: f32) -> ApiResult<()> {
-        try_joint_kind_set2_checked_impl(id, JointType::Wheel, lower, upper, wheel_set_limits_impl)
+        try_joint_kind_set2_checked_validated_impl(
+            id,
+            JointType::Wheel,
+            lower,
+            upper,
+            check_wheel_limits_valid,
+            wheel_set_limits_impl,
+        )
     }
 
     pub fn wheel_motor_enabled(&self, id: JointId) -> bool {
@@ -5315,21 +6038,23 @@ impl OwnedJoint {
     }
 
     pub fn wheel_set_limits(&mut self, lower: f32, upper: f32) {
-        joint_kind_set2_checked_impl(
+        joint_kind_set2_checked_validated_impl(
             self.id(),
             JointType::Wheel,
             lower,
             upper,
+            assert_wheel_limits_valid,
             wheel_set_limits_impl,
         )
     }
 
     pub fn try_wheel_set_limits(&mut self, lower: f32, upper: f32) -> ApiResult<()> {
-        try_joint_kind_set2_checked_impl(
+        try_joint_kind_set2_checked_validated_impl(
             self.id(),
             JointType::Wheel,
             lower,
             upper,
+            check_wheel_limits_valid,
             wheel_set_limits_impl,
         )
     }
@@ -5913,21 +6638,23 @@ impl<'w> Joint<'w> {
     }
 
     pub fn wheel_set_limits(&mut self, lower: f32, upper: f32) {
-        joint_kind_set2_checked_impl(
+        joint_kind_set2_checked_validated_impl(
             self.id(),
             JointType::Wheel,
             lower,
             upper,
+            assert_wheel_limits_valid,
             wheel_set_limits_impl,
         )
     }
 
     pub fn try_wheel_set_limits(&mut self, lower: f32, upper: f32) -> ApiResult<()> {
-        try_joint_kind_set2_checked_impl(
+        try_joint_kind_set2_checked_validated_impl(
             self.id(),
             JointType::Wheel,
             lower,
             upper,
+            check_wheel_limits_valid,
             wheel_set_limits_impl,
         )
     }

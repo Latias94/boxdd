@@ -65,11 +65,14 @@ fn world_create_circle_shape_for_impl(
     circle: &crate::shapes::Circle,
 ) -> ShapeId {
     crate::core::debug_checks::assert_body_valid(body);
+    crate::shapes::assert_shape_def_valid(def);
     let raw = circle.into_raw();
     let sid =
         ShapeId::from_raw(unsafe { ffi::b2CreateCircleShape(raw_body_id(body), &def.0, &raw) });
     #[cfg(feature = "serialize")]
     world.record_shape_flags(sid, &def.0);
+    #[cfg(not(feature = "serialize"))]
+    let _ = world;
     sid
 }
 
@@ -80,11 +83,14 @@ fn world_create_segment_shape_for_impl(
     segment: &crate::shapes::Segment,
 ) -> ShapeId {
     crate::core::debug_checks::assert_body_valid(body);
+    crate::shapes::assert_shape_def_valid(def);
     let raw = segment.into_raw();
     let sid =
         ShapeId::from_raw(unsafe { ffi::b2CreateSegmentShape(raw_body_id(body), &def.0, &raw) });
     #[cfg(feature = "serialize")]
     world.record_shape_flags(sid, &def.0);
+    #[cfg(not(feature = "serialize"))]
+    let _ = world;
     sid
 }
 
@@ -95,11 +101,14 @@ fn world_create_capsule_shape_for_impl(
     capsule: &crate::shapes::Capsule,
 ) -> ShapeId {
     crate::core::debug_checks::assert_body_valid(body);
+    crate::shapes::assert_shape_def_valid(def);
     let raw = capsule.into_raw();
     let sid =
         ShapeId::from_raw(unsafe { ffi::b2CreateCapsuleShape(raw_body_id(body), &def.0, &raw) });
     #[cfg(feature = "serialize")]
     world.record_shape_flags(sid, &def.0);
+    #[cfg(not(feature = "serialize"))]
+    let _ = world;
     sid
 }
 
@@ -110,11 +119,14 @@ fn world_create_polygon_shape_for_impl(
     polygon: &crate::shapes::Polygon,
 ) -> ShapeId {
     crate::core::debug_checks::assert_body_valid(body);
+    crate::shapes::assert_shape_def_valid(def);
     let raw = polygon.into_raw();
     let sid =
         ShapeId::from_raw(unsafe { ffi::b2CreatePolygonShape(raw_body_id(body), &def.0, &raw) });
     #[cfg(feature = "serialize")]
     world.record_shape_flags(sid, &def.0);
+    #[cfg(not(feature = "serialize"))]
+    let _ = world;
     sid
 }
 
@@ -2173,6 +2185,7 @@ impl World {
 
     pub fn set_body_mass_data(&mut self, body: BodyId, mass_data: MassData) {
         crate::core::debug_checks::assert_body_valid(body);
+        crate::body::assert_mass_data_valid(mass_data);
         unsafe { ffi::b2Body_SetMassData(raw_body_id(body), mass_data.into_raw()) };
     }
 
@@ -2182,6 +2195,7 @@ impl World {
         mass_data: MassData,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
+        crate::body::check_mass_data_valid(mass_data)?;
         unsafe { ffi::b2Body_SetMassData(raw_body_id(body), mass_data.into_raw()) };
         Ok(())
     }
@@ -2647,6 +2661,7 @@ impl World {
     /// Create a body owned by this world.
     pub fn create_body<'w>(&'w mut self, def: BodyDef) -> Body<'w> {
         crate::core::callback_state::assert_not_in_callback();
+        crate::body::assert_body_def_valid(&def);
         let raw = def.0;
         let id = BodyId::from_raw(unsafe { ffi::b2CreateBody(self.raw(), &raw) });
         #[cfg(feature = "serialize")]
@@ -2658,6 +2673,7 @@ impl World {
 
     pub fn try_create_body<'w>(&'w mut self, def: BodyDef) -> crate::error::ApiResult<Body<'w>> {
         crate::core::callback_state::check_not_in_callback()?;
+        crate::body::check_body_def_valid(&def)?;
         let raw = def.0;
         let id = BodyId::from_raw(unsafe { ffi::b2CreateBody(self.raw(), &raw) });
         #[cfg(feature = "serialize")]
@@ -2670,6 +2686,7 @@ impl World {
     /// Create a RAII-owned body. Dropping the returned handle destroys the body.
     pub fn create_body_owned(&mut self, def: BodyDef) -> crate::body::OwnedBody {
         crate::core::callback_state::assert_not_in_callback();
+        crate::body::assert_body_def_valid(&def);
         let raw = def.0;
         let id = BodyId::from_raw(unsafe { ffi::b2CreateBody(self.raw(), &raw) });
         #[cfg(feature = "serialize")]
@@ -2684,6 +2701,7 @@ impl World {
         def: BodyDef,
     ) -> crate::error::ApiResult<crate::body::OwnedBody> {
         crate::core::callback_state::check_not_in_callback()?;
+        crate::body::check_body_def_valid(&def)?;
         let raw = def.0;
         let id = BodyId::from_raw(unsafe { ffi::b2CreateBody(self.raw(), &raw) });
         #[cfg(feature = "serialize")]
@@ -2696,6 +2714,7 @@ impl World {
     /// ID-style body creation. Prefer when you want to store/pass ids without borrowing the world.
     pub fn create_body_id(&mut self, def: BodyDef) -> BodyId {
         crate::core::callback_state::assert_not_in_callback();
+        crate::body::assert_body_def_valid(&def);
         let raw = def.0;
         let id = BodyId::from_raw(unsafe { ffi::b2CreateBody(self.raw(), &raw) });
         #[cfg(feature = "serialize")]
@@ -2707,6 +2726,7 @@ impl World {
 
     pub fn try_create_body_id(&mut self, def: BodyDef) -> crate::error::ApiResult<BodyId> {
         crate::core::callback_state::check_not_in_callback()?;
+        crate::body::check_body_def_valid(&def)?;
         let raw = def.0;
         let id = BodyId::from_raw(unsafe { ffi::b2CreateBody(self.raw(), &raw) });
         #[cfg(feature = "serialize")]

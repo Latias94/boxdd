@@ -84,6 +84,11 @@ impl MotorJointDef {
         self.0
     }
 
+    #[inline]
+    pub fn validate(&self) -> ApiResult<()> {
+        super::check_motor_joint_def_valid(self)
+    }
+
     /// Target linear velocity of body B relative to A (m/s).
     pub fn linear_velocity<V: Into<crate::types::Vec2>>(mut self, v: V) -> Self {
         self.0.linearVelocity = v.into().into_raw();

@@ -11,7 +11,7 @@ pub mod helpers;
 use crate::body::Body;
 use crate::collision::CastOutput;
 use crate::debug_draw::HexColor;
-use crate::error::ApiResult;
+use crate::error::{ApiError, ApiResult};
 use crate::filter::Filter;
 use crate::query::Aabb;
 use crate::types::{BodyId, ChainId, ContactData, MassData, ShapeId, Vec2};
@@ -504,6 +504,113 @@ fn shape_set_restitution_impl(id: ShapeId, restitution: f32) {
 #[inline]
 fn shape_restitution_impl(id: ShapeId) -> f32 {
     unsafe { ffi::b2Shape_GetRestitution(raw_shape_id(id)) }
+}
+
+#[track_caller]
+fn assert_non_negative_finite_shape_scalar(name: &str, value: f32) {
+    assert!(
+        value.is_finite() && value >= 0.0,
+        "{name} must be finite and >= 0.0, got {value}"
+    );
+}
+
+fn check_non_negative_finite_shape_scalar(value: f32) -> ApiResult<()> {
+    if value.is_finite() && value >= 0.0 {
+        Ok(())
+    } else {
+        Err(ApiError::InvalidArgument)
+    }
+}
+
+#[inline]
+pub(crate) fn assert_surface_material_valid(material: &SurfaceMaterial) {
+    assert_non_negative_finite_shape_scalar("friction", material.friction());
+    assert_non_negative_finite_shape_scalar("restitution", material.restitution());
+    assert_non_negative_finite_shape_scalar("rolling_resistance", material.rolling_resistance());
+    assert!(
+        material.tangent_speed().is_finite(),
+        "tangent_speed must be finite, got {}",
+        material.tangent_speed()
+    );
+}
+
+#[inline]
+pub(crate) fn check_surface_material_valid(material: &SurfaceMaterial) -> ApiResult<()> {
+    check_non_negative_finite_shape_scalar(material.friction())?;
+    check_non_negative_finite_shape_scalar(material.restitution())?;
+    check_non_negative_finite_shape_scalar(material.rolling_resistance())?;
+    if material.tangent_speed().is_finite() {
+        Ok(())
+    } else {
+        Err(ApiError::InvalidArgument)
+    }
+}
+
+#[inline]
+fn shape_def_cookie_is_valid(def: &ShapeDef) -> bool {
+    def.0.internalValue == unsafe { ffi::b2DefaultShapeDef() }.internalValue
+}
+
+#[inline]
+pub(crate) fn assert_shape_def_valid(def: &ShapeDef) {
+    assert!(
+        shape_def_cookie_is_valid(def),
+        "invalid ShapeDef: not initialized from b2DefaultShapeDef"
+    );
+    assert_non_negative_finite_shape_scalar("density", def.density());
+    assert_surface_material_valid(&def.material());
+}
+
+#[inline]
+pub(crate) fn check_shape_def_valid(def: &ShapeDef) -> ApiResult<()> {
+    if !shape_def_cookie_is_valid(def) {
+        return Err(ApiError::InvalidArgument);
+    }
+    check_non_negative_finite_shape_scalar(def.density())?;
+    check_surface_material_valid(&def.material())
+}
+
+fn shape_set_density_checked_impl(id: ShapeId, density: f32, update_body_mass: bool) {
+    crate::core::debug_checks::assert_shape_valid(id);
+    assert_non_negative_finite_shape_scalar("density", density);
+    shape_set_density_impl(id, density, update_body_mass);
+}
+
+fn try_shape_set_density_checked_impl(
+    id: ShapeId,
+    density: f32,
+    update_body_mass: bool,
+) -> ApiResult<()> {
+    crate::core::debug_checks::check_shape_valid(id)?;
+    check_non_negative_finite_shape_scalar(density)?;
+    shape_set_density_impl(id, density, update_body_mass);
+    Ok(())
+}
+
+fn shape_set_friction_checked_impl(id: ShapeId, friction: f32) {
+    crate::core::debug_checks::assert_shape_valid(id);
+    assert_non_negative_finite_shape_scalar("friction", friction);
+    shape_set_friction_impl(id, friction);
+}
+
+fn try_shape_set_friction_checked_impl(id: ShapeId, friction: f32) -> ApiResult<()> {
+    crate::core::debug_checks::check_shape_valid(id)?;
+    check_non_negative_finite_shape_scalar(friction)?;
+    shape_set_friction_impl(id, friction);
+    Ok(())
+}
+
+fn shape_set_restitution_checked_impl(id: ShapeId, restitution: f32) {
+    crate::core::debug_checks::assert_shape_valid(id);
+    assert_non_negative_finite_shape_scalar("restitution", restitution);
+    shape_set_restitution_impl(id, restitution);
+}
+
+fn try_shape_set_restitution_checked_impl(id: ShapeId, restitution: f32) -> ApiResult<()> {
+    crate::core::debug_checks::check_shape_valid(id)?;
+    check_non_negative_finite_shape_scalar(restitution)?;
+    shape_set_restitution_impl(id, restitution);
+    Ok(())
 }
 
 #[inline]
@@ -1063,13 +1170,10 @@ impl OwnedShape {
     }
 
     pub fn set_density(&mut self, density: f32, update_body_mass: bool) {
-        self.assert_valid();
-        shape_set_density_impl(self.id, density, update_body_mass)
+        shape_set_density_checked_impl(self.id, density, update_body_mass)
     }
     pub fn try_set_density(&mut self, density: f32, update_body_mass: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_set_density_impl(self.id, density, update_body_mass);
-        Ok(())
+        try_shape_set_density_checked_impl(self.id, density, update_body_mass)
     }
     pub fn density(&self) -> f32 {
         self.assert_valid();
@@ -1091,13 +1195,10 @@ impl OwnedShape {
     }
 
     pub fn set_friction(&mut self, friction: f32) {
-        self.assert_valid();
-        shape_set_friction_impl(self.id, friction)
+        shape_set_friction_checked_impl(self.id, friction)
     }
     pub fn try_set_friction(&mut self, friction: f32) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_set_friction_impl(self.id, friction);
-        Ok(())
+        try_shape_set_friction_checked_impl(self.id, friction)
     }
     pub fn friction(&self) -> f32 {
         self.assert_valid();
@@ -1109,13 +1210,10 @@ impl OwnedShape {
     }
 
     pub fn set_restitution(&mut self, restitution: f32) {
-        self.assert_valid();
-        shape_set_restitution_impl(self.id, restitution)
+        shape_set_restitution_checked_impl(self.id, restitution)
     }
     pub fn try_set_restitution(&mut self, restitution: f32) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_set_restitution_impl(self.id, restitution);
-        Ok(())
+        try_shape_set_restitution_checked_impl(self.id, restitution)
     }
     pub fn restitution(&self) -> f32 {
         self.assert_valid();
@@ -1693,13 +1791,10 @@ impl<'w> Shape<'w> {
         Ok(shape_is_sensor_impl(self.id))
     }
     pub fn set_density(&mut self, density: f32, update_body_mass: bool) {
-        self.assert_valid();
-        shape_set_density_impl(self.id, density, update_body_mass)
+        shape_set_density_checked_impl(self.id, density, update_body_mass)
     }
     pub fn try_set_density(&mut self, density: f32, update_body_mass: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_set_density_impl(self.id, density, update_body_mass);
-        Ok(())
+        try_shape_set_density_checked_impl(self.id, density, update_body_mass)
     }
     pub fn density(&self) -> f32 {
         self.assert_valid();
@@ -1720,13 +1815,10 @@ impl<'w> Shape<'w> {
         Ok(shape_mass_data_impl(self.id))
     }
     pub fn set_friction(&mut self, friction: f32) {
-        self.assert_valid();
-        shape_set_friction_impl(self.id, friction)
+        shape_set_friction_checked_impl(self.id, friction)
     }
     pub fn try_set_friction(&mut self, friction: f32) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_set_friction_impl(self.id, friction);
-        Ok(())
+        try_shape_set_friction_checked_impl(self.id, friction)
     }
     pub fn friction(&self) -> f32 {
         self.assert_valid();
@@ -1737,13 +1829,10 @@ impl<'w> Shape<'w> {
         Ok(shape_friction_impl(self.id))
     }
     pub fn set_restitution(&mut self, restitution: f32) {
-        self.assert_valid();
-        shape_set_restitution_impl(self.id, restitution)
+        shape_set_restitution_checked_impl(self.id, restitution)
     }
     pub fn try_set_restitution(&mut self, restitution: f32) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_set_restitution_impl(self.id, restitution);
-        Ok(())
+        try_shape_set_restitution_checked_impl(self.id, restitution)
     }
     pub fn restitution(&self) -> f32 {
         self.assert_valid();
@@ -2054,6 +2143,11 @@ impl SurfaceMaterial {
         self.0.customColor = color.rgb_u32();
         self
     }
+
+    #[inline]
+    pub fn validate(&self) -> ApiResult<()> {
+        check_surface_material_valid(self)
+    }
 }
 
 impl PartialEq for SurfaceMaterial {
@@ -2163,6 +2257,11 @@ impl ShapeDef {
     #[inline]
     pub fn into_raw(self) -> ffi::b2ShapeDef {
         self.0
+    }
+
+    #[inline]
+    pub fn validate(&self) -> ApiResult<()> {
+        check_shape_def_valid(self)
     }
 }
 
@@ -2407,6 +2506,7 @@ impl<'de> serde::Deserialize<'de> for ShapeDef {
 impl<'w> Body<'w> {
     pub fn create_circle_shape(&mut self, def: &ShapeDef, c: &Circle) -> Shape<'w> {
         crate::core::debug_checks::assert_body_valid(self.id);
+        assert_shape_def_valid(def);
         let raw = c.into_raw();
         let id = ShapeId::from_raw(unsafe {
             ffi::b2CreateCircleShape(self.id.into_raw(), &def.0, &raw)
@@ -2417,6 +2517,7 @@ impl<'w> Body<'w> {
     }
     pub fn create_segment_shape(&mut self, def: &ShapeDef, s: &Segment) -> Shape<'w> {
         crate::core::debug_checks::assert_body_valid(self.id);
+        assert_shape_def_valid(def);
         let raw = s.into_raw();
         let id = ShapeId::from_raw(unsafe {
             ffi::b2CreateSegmentShape(self.id.into_raw(), &def.0, &raw)
@@ -2427,6 +2528,7 @@ impl<'w> Body<'w> {
     }
     pub fn create_capsule_shape(&mut self, def: &ShapeDef, c: &Capsule) -> Shape<'w> {
         crate::core::debug_checks::assert_body_valid(self.id);
+        assert_shape_def_valid(def);
         let raw = c.into_raw();
         let id = ShapeId::from_raw(unsafe {
             ffi::b2CreateCapsuleShape(self.id.into_raw(), &def.0, &raw)
@@ -2437,6 +2539,7 @@ impl<'w> Body<'w> {
     }
     pub fn create_polygon_shape(&mut self, def: &ShapeDef, p: &Polygon) -> Shape<'w> {
         crate::core::debug_checks::assert_body_valid(self.id);
+        assert_shape_def_valid(def);
         let raw = p.into_raw();
         let id = ShapeId::from_raw(unsafe {
             ffi::b2CreatePolygonShape(self.id.into_raw(), &def.0, &raw)

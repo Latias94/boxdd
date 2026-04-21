@@ -306,8 +306,8 @@ const _: () = {
 
 /// Opaque Box2D contact identifier.
 ///
-/// Import [`crate::ContactIdExt`] or [`crate::prelude`] for direct validity checks and contact
-/// data reads.
+/// `ContactId` values commonly come from contact events or contact-data snapshots and expose
+/// direct validity checks plus crate-owned/raw contact-data reads as inherent methods.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]

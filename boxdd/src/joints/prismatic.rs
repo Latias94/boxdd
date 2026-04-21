@@ -82,6 +82,11 @@ impl PrismaticJointDef {
         self.0
     }
 
+    #[inline]
+    pub fn validate(&self) -> ApiResult<()> {
+        super::check_prismatic_joint_def_valid(self)
+    }
+
     /// Enable/disable spring along the prismatic axis.
     pub fn enable_spring(mut self, flag: bool) -> Self {
         self.0.enableSpring = flag;

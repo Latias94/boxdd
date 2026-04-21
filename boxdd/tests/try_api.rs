@@ -600,6 +600,56 @@ fn try_shape_runtime_helpers_invalid_id_returns_err() {
 }
 
 #[test]
+fn try_shape_numeric_mutation_invalid_values_return_err() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body_id = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+    let sdef = ShapeDef::builder().density(1.0).build();
+    let poly = shapes::box_polygon(0.5, 0.5);
+    let mut shape = world.create_polygon_shape_for_owned(body_id, &sdef, &poly);
+
+    assert_eq!(
+        shape.try_set_density(-1.0, true).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        shape.try_set_friction(f32::NAN).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        shape.try_set_restitution(-0.25).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+}
+
+#[test]
+fn try_body_numeric_mutation_invalid_values_return_err() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let mut body = world.create_body_owned(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+
+    assert_eq!(
+        body.try_set_mass_data(MassData {
+            mass: -1.0,
+            center: Vec2::ZERO,
+            rotational_inertia: 0.0,
+        })
+        .unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        body.try_set_gravity_scale(f32::NAN).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        body.try_set_linear_damping(-0.5).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        body.try_set_angular_damping(f32::NAN).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+}
+
+#[test]
 fn try_owned_chain_mutation_invalid_id_returns_err() {
     let mut world = World::new(WorldDef::default()).unwrap();
     let body_id = world.create_body_id(BodyBuilder::new().build());
@@ -617,6 +667,46 @@ fn try_owned_chain_mutation_invalid_id_returns_err() {
 }
 
 #[test]
+fn try_owned_chain_material_index_out_of_range_returns_err() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body_id = world.create_body_id(BodyBuilder::new().build());
+    let materials = [
+        SurfaceMaterial::default().with_friction(0.05),
+        SurfaceMaterial::default().with_friction(0.10),
+        SurfaceMaterial::default().with_friction(0.20),
+        SurfaceMaterial::default().with_friction(0.30),
+        SurfaceMaterial::default().with_friction(0.40),
+        SurfaceMaterial::default().with_friction(0.50),
+        SurfaceMaterial::default().with_friction(0.60),
+    ];
+    let def = boxdd::shapes::chain::ChainDef::builder()
+        .points([
+            [-3.0_f32, 0.0],
+            [-2.0, 0.0],
+            [-1.0, 0.0],
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [2.0, 0.0],
+            [3.0, 0.0],
+        ])
+        .materials(&materials)
+        .build();
+    let mut chain = world.create_chain_for_owned(body_id, &def);
+
+    assert_eq!(chain.surface_material_count(), 4);
+    assert_eq!(
+        chain.try_surface_material(4).unwrap_err(),
+        ApiError::IndexOutOfRange
+    );
+    assert_eq!(
+        chain
+            .try_set_surface_material(4, &SurfaceMaterial::default())
+            .unwrap_err(),
+        ApiError::IndexOutOfRange
+    );
+}
+
+#[test]
 fn try_owned_joint_mutation_invalid_id_returns_err() {
     let mut world = World::new(WorldDef::default()).unwrap();
     let a = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
@@ -627,6 +717,62 @@ fn try_owned_joint_mutation_invalid_id_returns_err() {
 
     let err = joint.try_set_force_threshold(10.0).unwrap_err();
     assert_eq!(err, ApiError::InvalidJointId);
+}
+
+#[test]
+fn try_joint_range_mutation_invalid_arguments_return_err() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body_a = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+    let body_b = world.create_body_id(
+        BodyBuilder::new()
+            .body_type(BodyType::Dynamic)
+            .position([1.0_f32, 0.0])
+            .build(),
+    );
+
+    let mut distance = world.create_distance_joint_owned(
+        &DistanceJointDef::new(JointBaseBuilder::new().bodies_by_id(body_a, body_b).build())
+            .length(1.0),
+    );
+    assert_eq!(
+        distance
+            .try_distance_set_spring_force_range(2.0, 1.0)
+            .unwrap_err(),
+        ApiError::InvalidArgument
+    );
+
+    let base = world.joint_base_from_world_with_axis(
+        body_a,
+        body_b,
+        [0.0_f32, 0.0],
+        [1.0_f32, 0.0],
+        [1.0_f32, 0.0],
+    );
+
+    let prismatic = world.create_prismatic_joint_owned(&PrismaticJointDef::new(base.clone()));
+    let prismatic_id = prismatic.id();
+    assert_eq!(
+        world
+            .try_prismatic_set_limits(prismatic_id, 1.0, -1.0)
+            .unwrap_err(),
+        ApiError::InvalidArgument
+    );
+
+    let revolute = world.create_revolute_joint_owned(&RevoluteJointDef::new(base.clone()));
+    let revolute_id = revolute.id();
+    assert_eq!(
+        world
+            .try_revolute_set_limits(revolute_id, -4.0, 0.0)
+            .unwrap_err(),
+        ApiError::InvalidArgument
+    );
+
+    let wheel = world.create_wheel_joint_owned(&WheelJointDef::new(base));
+    let wheel_id = wheel.id();
+    assert_eq!(
+        world.try_wheel_set_limits(wheel_id, 0.5, -0.5).unwrap_err(),
+        ApiError::InvalidArgument
+    );
 }
 
 #[test]
@@ -985,6 +1131,43 @@ fn try_create_joint_invalid_body_returns_err() {
 
     let err = world.try_create_distance_joint_id(&def).unwrap_err();
     assert_eq!(err, ApiError::InvalidBodyId);
+}
+
+#[test]
+fn try_create_body_invalid_def_returns_err() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let def = BodyBuilder::new().linear_damping(f32::NAN).build();
+
+    let err = world.try_create_body_id(def).unwrap_err();
+    assert_eq!(err, ApiError::InvalidArgument);
+}
+
+#[test]
+fn try_create_joint_invalid_def_returns_err() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let a = world.create_body_id(BodyBuilder::new().build());
+    let b = world.create_body_id(BodyBuilder::new().build());
+
+    let same_body_base = JointBaseBuilder::new().bodies_by_id(a, a).build();
+    let same_body_def = DistanceJointDef::new(same_body_base).length(1.0);
+    assert_eq!(
+        world
+            .try_create_distance_joint_id(&same_body_def)
+            .unwrap_err(),
+        ApiError::InvalidArgument
+    );
+
+    let invalid_threshold_base = JointBaseBuilder::new()
+        .bodies_by_id(a, b)
+        .force_threshold(-1.0)
+        .build();
+    let invalid_threshold_def = MotorJointDef::new(invalid_threshold_base);
+    assert_eq!(
+        world
+            .try_create_motor_joint_id(&invalid_threshold_def)
+            .unwrap_err(),
+        ApiError::InvalidArgument
+    );
 }
 
 #[test]

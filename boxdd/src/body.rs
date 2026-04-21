@@ -1124,11 +1124,13 @@ impl OwnedBody {
 
     pub fn set_mass_data(&mut self, mass_data: MassData) {
         self.assert_valid();
+        assert_mass_data_valid(mass_data);
         body_set_mass_data_impl(self.id, mass_data);
     }
 
     pub fn try_set_mass_data(&mut self, mass_data: MassData) -> ApiResult<()> {
         self.check_valid()?;
+        check_mass_data_valid(mass_data)?;
         body_set_mass_data_impl(self.id, mass_data);
         Ok(())
     }
@@ -1222,11 +1224,18 @@ impl OwnedBody {
     }
     pub fn set_gravity_scale(&mut self, v: f32) {
         self.assert_valid();
+        assert!(
+            crate::is_valid_float(v),
+            "gravity_scale must be finite, got {v}"
+        );
         body_set_gravity_scale_impl(self.id, v)
     }
 
     pub fn try_set_gravity_scale(&mut self, v: f32) -> ApiResult<()> {
         self.check_valid()?;
+        if !crate::is_valid_float(v) {
+            return Err(ApiError::InvalidArgument);
+        }
         body_set_gravity_scale_impl(self.id, v);
         Ok(())
     }
@@ -1241,10 +1250,12 @@ impl OwnedBody {
     }
     pub fn set_linear_damping(&mut self, v: f32) {
         self.assert_valid();
+        assert_non_negative_finite_body_scalar("linear_damping", v);
         body_set_linear_damping_impl(self.id, v)
     }
     pub fn try_set_linear_damping(&mut self, v: f32) -> ApiResult<()> {
         self.check_valid()?;
+        check_non_negative_finite_body_scalar(v)?;
         body_set_linear_damping_impl(self.id, v);
         Ok(())
     }
@@ -1258,10 +1269,12 @@ impl OwnedBody {
     }
     pub fn set_angular_damping(&mut self, v: f32) {
         self.assert_valid();
+        assert_non_negative_finite_body_scalar("angular_damping", v);
         body_set_angular_damping_impl(self.id, v)
     }
     pub fn try_set_angular_damping(&mut self, v: f32) -> ApiResult<()> {
         self.check_valid()?;
+        check_non_negative_finite_body_scalar(v)?;
         body_set_angular_damping_impl(self.id, v);
         Ok(())
     }
@@ -1610,6 +1623,110 @@ impl BodyType {
     }
 }
 
+#[inline]
+fn body_type_is_known(raw: ffi::b2BodyType) -> bool {
+    raw == ffi::b2BodyType_b2_staticBody
+        || raw == ffi::b2BodyType_b2_kinematicBody
+        || raw == ffi::b2BodyType_b2_dynamicBody
+}
+
+#[inline]
+fn body_def_cookie_is_valid(def: &BodyDef) -> bool {
+    def.0.internalValue == unsafe { ffi::b2DefaultBodyDef() }.internalValue
+}
+
+#[inline]
+fn assert_non_negative_finite_body_scalar(name: &str, value: f32) {
+    assert!(
+        value.is_finite() && value >= 0.0,
+        "{name} must be finite and >= 0.0, got {value}"
+    );
+}
+
+#[inline]
+fn check_non_negative_finite_body_scalar(value: f32) -> ApiResult<()> {
+    if value.is_finite() && value >= 0.0 {
+        Ok(())
+    } else {
+        Err(ApiError::InvalidArgument)
+    }
+}
+
+#[inline]
+pub(crate) fn assert_mass_data_valid(mass_data: MassData) {
+    assert_non_negative_finite_body_scalar("mass", mass_data.mass);
+    assert_non_negative_finite_body_scalar("rotational_inertia", mass_data.rotational_inertia);
+    assert!(
+        mass_data.center.is_valid(),
+        "mass_data.center must be a valid Box2D vector, got {:?}",
+        mass_data.center
+    );
+}
+
+#[inline]
+pub(crate) fn check_mass_data_valid(mass_data: MassData) -> ApiResult<()> {
+    check_non_negative_finite_body_scalar(mass_data.mass)?;
+    check_non_negative_finite_body_scalar(mass_data.rotational_inertia)?;
+    if mass_data.center.is_valid() {
+        Ok(())
+    } else {
+        Err(ApiError::InvalidArgument)
+    }
+}
+
+pub(crate) fn assert_body_def_valid(def: &BodyDef) {
+    assert!(
+        body_def_cookie_is_valid(def),
+        "invalid BodyDef: not initialized from b2DefaultBodyDef"
+    );
+    assert!(
+        body_type_is_known(def.0.type_),
+        "invalid BodyDef: unknown body type value {}",
+        def.0.type_
+    );
+    assert!(
+        Vec2::from_raw(def.0.position).is_valid(),
+        "invalid BodyDef: position must be a valid Box2D vector"
+    );
+    assert!(
+        crate::Rot::from_raw(def.0.rotation).is_valid(),
+        "invalid BodyDef: rotation must be a valid Box2D rotation"
+    );
+    assert!(
+        Vec2::from_raw(def.0.linearVelocity).is_valid(),
+        "invalid BodyDef: linearVelocity must be a valid Box2D vector"
+    );
+    assert!(
+        crate::is_valid_float(def.0.angularVelocity),
+        "invalid BodyDef: angularVelocity must be finite"
+    );
+    assert_non_negative_finite_body_scalar("linearDamping", def.0.linearDamping);
+    assert_non_negative_finite_body_scalar("angularDamping", def.0.angularDamping);
+    assert_non_negative_finite_body_scalar("sleepThreshold", def.0.sleepThreshold);
+    assert!(
+        crate::is_valid_float(def.0.gravityScale),
+        "invalid BodyDef: gravityScale must be finite"
+    );
+}
+
+pub(crate) fn check_body_def_valid(def: &BodyDef) -> ApiResult<()> {
+    if !body_def_cookie_is_valid(def)
+        || !body_type_is_known(def.0.type_)
+        || !Vec2::from_raw(def.0.position).is_valid()
+        || !crate::Rot::from_raw(def.0.rotation).is_valid()
+        || !Vec2::from_raw(def.0.linearVelocity).is_valid()
+        || !crate::is_valid_float(def.0.angularVelocity)
+        || check_non_negative_finite_body_scalar(def.0.linearDamping).is_err()
+        || check_non_negative_finite_body_scalar(def.0.angularDamping).is_err()
+        || check_non_negative_finite_body_scalar(def.0.sleepThreshold).is_err()
+        || !crate::is_valid_float(def.0.gravityScale)
+    {
+        Err(ApiError::InvalidArgument)
+    } else {
+        Ok(())
+    }
+}
+
 /// Body definition wrapper with builder API.
 #[derive(Clone, Debug)]
 pub struct BodyDef(pub(crate) ffi::b2BodyDef);
@@ -1721,6 +1838,11 @@ impl BodyDef {
     #[inline]
     pub fn into_raw(self) -> ffi::b2BodyDef {
         self.0
+    }
+
+    #[inline]
+    pub fn validate(&self) -> ApiResult<()> {
+        check_body_def_valid(self)
     }
 }
 
@@ -2344,11 +2466,13 @@ impl<'w> Body<'w> {
 
     pub fn set_mass_data(&mut self, mass_data: MassData) {
         self.assert_valid();
+        assert_mass_data_valid(mass_data);
         body_set_mass_data_impl(self.id, mass_data);
     }
 
     pub fn try_set_mass_data(&mut self, mass_data: MassData) -> ApiResult<()> {
         self.check_valid()?;
+        check_mass_data_valid(mass_data)?;
         body_set_mass_data_impl(self.id, mass_data);
         Ok(())
     }
@@ -2442,11 +2566,18 @@ impl<'w> Body<'w> {
     }
     pub fn set_gravity_scale(&mut self, v: f32) {
         self.assert_valid();
+        assert!(
+            crate::is_valid_float(v),
+            "gravity_scale must be finite, got {v}"
+        );
         body_set_gravity_scale_impl(self.id, v)
     }
 
     pub fn try_set_gravity_scale(&mut self, v: f32) -> ApiResult<()> {
         self.check_valid()?;
+        if !crate::is_valid_float(v) {
+            return Err(ApiError::InvalidArgument);
+        }
         body_set_gravity_scale_impl(self.id, v);
         Ok(())
     }
@@ -2461,10 +2592,12 @@ impl<'w> Body<'w> {
     }
     pub fn set_linear_damping(&mut self, v: f32) {
         self.assert_valid();
+        assert_non_negative_finite_body_scalar("linear_damping", v);
         body_set_linear_damping_impl(self.id, v)
     }
     pub fn try_set_linear_damping(&mut self, v: f32) -> ApiResult<()> {
         self.check_valid()?;
+        check_non_negative_finite_body_scalar(v)?;
         body_set_linear_damping_impl(self.id, v);
         Ok(())
     }
@@ -2478,11 +2611,13 @@ impl<'w> Body<'w> {
     }
     pub fn set_angular_damping(&mut self, v: f32) {
         self.assert_valid();
+        assert_non_negative_finite_body_scalar("angular_damping", v);
         body_set_angular_damping_impl(self.id, v)
     }
 
     pub fn try_set_angular_damping(&mut self, v: f32) -> ApiResult<()> {
         self.check_valid()?;
+        check_non_negative_finite_body_scalar(v)?;
         body_set_angular_damping_impl(self.id, v);
         Ok(())
     }

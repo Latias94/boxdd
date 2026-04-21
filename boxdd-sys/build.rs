@@ -164,6 +164,17 @@ fn generate_bindings(_manifest_dir: &Path, _out_dir: &Path) {
     unreachable!("generate_bindings is only available with the `bindgen` feature enabled");
 }
 
+fn add_msvc_c_standard_flag(build: &mut cc::Build) {
+    match build.is_flag_supported("/std:c17") {
+        Ok(true) => {
+            build.flag("/std:c17");
+        }
+        Ok(false) | Err(_) => {
+            build.flag_if_supported("/std:c11");
+        }
+    }
+}
+
 fn build_box2d_from_source(manifest_dir: &Path, target_env: &str, target_os: &str, is_debug: bool) {
     let third_party = manifest_dir.join("third-party");
     let box2d_root = third_party.join("box2d");
@@ -203,8 +214,7 @@ fn build_box2d_from_source(manifest_dir: &Path, target_env: &str, target_os: &st
             build.debug(false);
             build.opt_level(2);
         }
-        build.flag_if_supported("/std:c17");
-        build.flag_if_supported("/std:c11");
+        add_msvc_c_standard_flag(&mut build);
         if cfg!(feature = "validate") {
             build.define("BOX2D_VALIDATE", None);
         }

@@ -39,7 +39,7 @@
 - [x] Align the remaining raw contact-data buffer APIs with the explicit `*_raw` naming scheme by renaming `contact_data_into_raw(...)` to `contact_data_raw_into(...)`, and consolidate the body/shape handle implementations behind shared private definitions.
 - [x] Continue the owned/scoped duplication audit by consolidating the remaining high-frequency enumeration helpers (`Body::{shape_count,shapes,joint_count,joints}`, `Shape::sensor_overlaps*`, and `Chain::segments*`) behind single private definitions without changing the public API.
 - [x] Continue the feature-gated duplication audit by consolidating the `unchecked` body/shape/joint/chain extension trait implementations so owned/scoped handles share the same internal raw FFI definitions.
-- [x] Close the remaining obvious contact inspection gap by adding safe `ContactIdExt` helpers plus `ApiError::InvalidContactId` instead of forcing users back to raw `ffi::b2Contact_*`.
+- [x] Close the remaining obvious contact inspection gap by adding direct safe `ContactId` helpers plus `ApiError::InvalidContactId` instead of forcing users back to raw `ffi::b2Contact_*`.
 - [x] Add a release-level completeness matrix that classifies major wrapper areas as `safe-covered`, `raw-only`, `intentional omission`, or `candidate after 0.3`.
 - [x] Expand `WorldHandle` event support with owned snapshots only (`*_events`, `*_events_into`, `try_*`) while keeping borrowed/raw event-buffer APIs on `World`.
 - [x] Replace the temporary `World` / `WorldHandle` event-snapshot macro layer with private free-function helpers so the mirror stays explicit and aligned with the workstream's anti-macro duplication rules.
@@ -100,6 +100,9 @@
 - [x] Consolidate shared `Shape` / `OwnedShape` internals for geometry, material, filter, and sensor-capacity accessors.
 - [x] Consolidate shared `Body` / `OwnedBody` internals for state, transform, force/impulse, mass, and common flag accessors.
 - [x] Consolidate shared `Chain` / `OwnedChain` internals for validity, segment/material access, and common raw escape hatches.
+- [x] Normalize live chain surface-material counts and indexing around visible segments so open-chain ghost placeholder entries no longer leak through the safe runtime API.
+- [x] Front-load obvious Box2D assert preconditions in the safe runtime surface so shape numeric setters and joint range/limit setters return recoverable errors instead of depending on upstream assert builds.
+- [x] Front-load obvious creation-time definition preconditions in the safe wrapper (`BodyDef`, `ShapeDef`, shared `JointBase`, and concrete joint defs), and fix `JointBase::default()` to mirror upstream Box2D defaults instead of a partial zeroed approximation.
 - [x] Make `BodyType`, `Aabb`, mover/query value types, collision outputs, and `Counters` use explicit `from_raw(...)` / `into_raw()` APIs where applicable instead of implicit raw conversions.
 - [x] Make collision input value types (`DistanceInput`, `ShapeCastPairInput`, `Sweep`, `ToiInput`) cross the raw boundary explicitly with named `into_raw()` / `from_raw()` APIs instead of implicit conversions.
 - [x] Make contact/manifold value types (`ManifoldPoint`, `Manifold`, `ContactData`) use explicit raw conversion APIs instead of implicit `From<ffi::...>` shims.
@@ -117,6 +120,7 @@
 - [x] Review remaining public raw escape hatches and document which are intentional (`world_id_raw`, raw event slices, debug draw raw paths, etc.).
 - [x] Add more targeted regression coverage where intentional raw escape hatches still rely on callback-sensitive or zero-copy behavior.
 - [x] Continue the completeness audit against upstream Box2D v3 and record any intentionally unwrapped or raw-only areas that should be revisited after `0.3.0`.
+- [x] Re-evaluate the lightweight contact-inspection slice: move `ContactIdExt` onto `ContactId` as inherent methods and record that a first-class `Contact` handle remains an intentional omission for `0.3.0`.
 - [ ] Revisit the remaining `candidate after 0.3` entries from the completeness matrix and decide which ones deserve the first post-`0.3` wrapper pass.
 
 ## Release Checklist

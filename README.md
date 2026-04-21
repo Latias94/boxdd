@@ -26,10 +26,14 @@
 - Global foundation helpers now cover allocated-byte inspection, timing ticks/millisecond helpers, thread yielding, and deterministic hashing without dropping to raw `ffi`.
 - Standalone collision geometry helpers cover shape proxies, GJK distance, contact manifolds, chain-segment manifolds, shape cast, TOI, and `Aabb::is_valid` / `Aabb::ray_cast` without raw `ffi`.
 - Shape creation and editing now use crate-owned geometry values, and chain segments can be inspected through the crate-owned `ChainSegment` type.
+- Chain runtime material access now uses visible segment indexing on open chains instead of leaking Box2D's ghost-placeholder storage layout.
+- Safe shape/joint mutators now front-load obvious Box2D assert preconditions such as non-negative material scalars and ordered joint limits.
+- Safe body/joint creation now validates obvious Box2D definition preconditions before entering native code, and definition value objects expose `validate()` helpers for preflight checks.
 - Live shape runtime helpers now cover `aabb`, `test_point`, direct `ray_cast`, computed `mass_data`, and runtime event toggles without raw `ffi`.
 - Body runtime helpers now cover `rotation`, sleep/awake/enabled/bullet/name controls, attached `shapes/joints` enumeration, and body-level contact/hit event toggles.
 - Joint runtime helpers now cover both common metadata/control and type-specific distance/prismatic/revolute/weld/wheel/motor state across owned/scoped/id-style APIs.
 - Opaque ids (`BodyId`, `ShapeId`, `JointId`, `ChainId`, `ContactId`) are now crate-owned value types; raw interop is explicit through `from_raw(...)` / `into_raw()`.
+- `ContactId` now exposes direct `is_valid` / `data` / `data_raw` and `try_*` helpers as inherent methods; no extension-trait import is required to inspect contact ids from events or snapshots.
 - Shape classification, mass properties, and contact extraction now use crate-owned value types such as `ShapeType`, `MassData`, `ContactData`, and `Manifold`.
 - Body motion constraints use the crate-owned `MotionLocks` type instead of raw Box2D flags.
 - Crate-owned `MassData` and `MotionLocks` cross the FFI boundary explicitly via `from_raw(...)` / `into_raw()` when raw interop is still needed.
@@ -70,7 +74,8 @@ world.step(1.0/60.0, 4);
 ## Error Handling
 - The default safe APIs panic on misuse such as stale ids or calling Box2D while the world is locked in a callback. This keeps the common path terse and avoids Rust-level UB.
 - At engine/runtime boundaries, prefer `try_*` APIs and handle `ApiError` explicitly.
-- `ApiError` covers stale ids, callback-locked access, invalid typed-joint family use, invalid chain defs, interior NUL strings, typed user-data mismatches, and material-callback slot exhaustion.
+- `ApiError` covers stale ids, callback-locked access, invalid arguments, out-of-range runtime indices, invalid typed-joint family use, invalid chain defs, interior NUL strings, typed user-data mismatches, and material-callback slot exhaustion.
+- `BodyDef`, `ShapeDef`, `SurfaceMaterial`, `JointBase`, and concrete `*JointDef` values expose `validate()` so tooling and editor flows can reject invalid config before calling `create_*`.
 - World-level runtime tuning and explosion helpers now also expose `try_*` variants when callback locking should be handled recoverably.
 
 ## World Runtime Extras

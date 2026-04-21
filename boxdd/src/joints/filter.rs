@@ -32,6 +32,11 @@ impl FilterJointDef {
     pub fn into_raw(self) -> ffi::b2FilterJointDef {
         self.0
     }
+
+    #[inline]
+    pub fn validate(&self) -> ApiResult<()> {
+        super::check_filter_joint_def_valid(self)
+    }
 }
 
 /// Builder for a filter joint that disables collision between two bodies while keeping them in the same island.

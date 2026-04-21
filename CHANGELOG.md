@@ -35,8 +35,11 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Live shape runtime wrappers for `aabb`, `test_point`, direct `ray_cast`, computed `mass_data`, and runtime event toggles across `Shape`, `OwnedShape`, and `World::shape_*`, plus symmetric `try_sensor_overlaps_valid` helpers.
 - Body runtime wrappers for rotation, sleep/awake/enabled/bullet/name controls, attached `shapes/joints` enumeration with reusable-buffer `*_into` variants, and body-level contact/hit event toggles across `Body`, `OwnedBody`, and `World::body_*`.
 - Joint runtime wrappers for joint type/body ids, `collide_connected`, constraint tuning, local frames, wake helpers, and type-specific distance/prismatic/revolute/weld/wheel/motor getters/setters across `Joint`, `OwnedJoint`, and `World`.
-- `ContactIdExt` with direct safe `is_valid` / `data` / `data_raw` helpers and recoverable `try_*` variants, plus `ApiError::InvalidContactId` for stale contact ids.
+- `ContactId` now exposes direct safe `is_valid` / `data` / `data_raw` inherent helpers and recoverable `try_*` variants, plus `ApiError::InvalidContactId` for stale contact ids.
 - `ApiError::InvalidJointType` for recoverable `try_*` typed-joint runtime misuse when a valid joint is accessed through the wrong family surface.
+- `ApiError::InvalidArgument` for recoverable safe-wrapper validation of obvious Box2D assert preconditions such as non-negative shape material scalars and ordered joint limit/range setters.
+- `validate()` helpers on `BodyDef`, `ShapeDef`, `SurfaceMaterial`, `JointBase`, and concrete joint-definition value objects so engines can preflight definition state before crossing the FFI boundary.
+- `ApiError::IndexOutOfRange` for recoverable range-checked runtime index misuse, starting with chain surface-material access.
 - World runtime extras for `Profile` timings, `ExplosionDef`, `World::explode` / `try_explode`, and speculative collision control.
 - `BodyBuilder::allow_fast_rotation`, computed body AABB helpers across `Body`, `OwnedBody`, and `World::body_aabb`, plus read-only `WorldHandle` runtime getters for gravity/counters/profile/awake-count/runtime-tuning state.
 - Read-only `WorldHandle::body_*` mirrors for body-by-id runtime queries, covering transforms, velocities, point/vector conversions, mass data, damping/flags, motion locks, and attached shape/joint enumeration without requiring a mutable `World` borrow.
@@ -66,6 +69,11 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Collision/AABB regression tests now validate the public safe API instead of calling `boxdd_sys::ffi` directly.
 - The testbed manifold viewer now uses the public safe collision API instead of `boxdd_sys::ffi::b2Collide*`.
 - Owned/scoped `Shape`, `Body`, and `Chain` handles now share private helper implementations for geometry/material/state accessors, body naming, typed user-data plumbing, and common raw escape hatches, reducing internal drift risk without changing the public API.
+- Runtime shape numeric setters and joint limit/range setters now validate their obvious Box2D assert preconditions in the safe wrapper first, so `try_*` callers receive `ApiError::InvalidArgument` instead of depending on upstream assert builds.
+- Body creation, body mass-data mutation, and joint creation now front-load the obvious Box2D definition preconditions in the safe wrapper, so invalid defs fail as Rust panics or `ApiError::InvalidArgument` instead of depending on native assert builds.
+- Breaking: `JointBase::default()` now mirrors Box2D's actual upstream defaults (`forceThreshold = FLT_MAX`, `torqueThreshold = FLT_MAX`, `constraintHertz = 60`, `constraintDampingRatio = 2`, and `drawScale = length_units_per_meter()`) instead of a partial zeroed approximation.
+- Breaking: `ContactIdExt` has been removed; its `is_valid` / `data` / `data_raw` / `try_*` helpers now live directly on `ContactId`.
+- Breaking: `Chain` / `OwnedChain` runtime material count/get/set helpers now use visible live-segment indexing on open chains instead of Box2D's raw ghost-placeholder material layout; recoverable out-of-range access returns `ApiError::IndexOutOfRange`.
 - Breaking: `Body::transform` / `OwnedBody::transform` now return safe `Transform`; raw FFI access moved to `transform_raw` / `try_transform_raw`.
 - Breaking: core math types `Vec2`, `Rot`, and `Transform` now cross the raw FFI boundary explicitly via `from_raw(...)` / `into_raw()` instead of implicit `From<ffi::...>` conversions, aligning the last core value types with the rest of the crate-owned 0.3 surface.
 - Breaking: shape creation, editing, and geometry getters now use safe geometry values instead of raw `ffi::b2Circle` / `b2Segment` / `b2Capsule` / `b2Polygon`.

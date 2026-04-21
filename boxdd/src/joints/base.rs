@@ -1069,10 +1069,13 @@ pub struct JointBase(pub(crate) ffi::b2JointDef);
 
 impl Default for JointBase {
     fn default() -> Self {
-        // No default constructor provided for b2JointDef; zero is OK for POD and we'll set fields explicitly.
-        // Use identity frames by default.
+        // Box2D does not export a b2DefaultJointDef helper, so mirror the upstream defaults here.
         let mut base: ffi::b2JointDef = unsafe { core::mem::zeroed() };
-        base.drawScale = 1.0;
+        base.forceThreshold = f32::MAX;
+        base.torqueThreshold = f32::MAX;
+        base.constraintHertz = 60.0;
+        base.constraintDampingRatio = 2.0;
+        base.drawScale = crate::length_units_per_meter();
         base.localFrameA = ffi::b2Transform {
             p: ffi::b2Vec2 { x: 0.0, y: 0.0 },
             q: ffi::b2Rot { c: 1.0, s: 0.0 },
@@ -1155,6 +1158,11 @@ impl JointBase {
     #[inline]
     pub fn into_raw(self) -> ffi::b2JointDef {
         self.0
+    }
+
+    #[inline]
+    pub fn validate(&self) -> ApiResult<()> {
+        super::check_joint_base_valid(self)
     }
 }
 

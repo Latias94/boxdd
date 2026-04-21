@@ -34,6 +34,32 @@ fn create_dynamic_body(world: &mut World, position: [f32; 2]) -> BodyId {
 }
 
 #[test]
+fn joint_base_default_matches_upstream_defaults() {
+    let base = JointBase::default();
+    let tuning = base.constraint_tuning();
+
+    assert!(approx_eq(base.force_threshold(), f32::MAX, 0.0));
+    assert!(approx_eq(base.torque_threshold(), f32::MAX, 0.0));
+    assert!(approx_eq(tuning.hertz, 60.0, 1.0e-6));
+    assert!(approx_eq(tuning.damping_ratio, 2.0, 1.0e-6));
+    assert!(approx_eq(
+        base.draw_scale(),
+        boxdd::length_units_per_meter(),
+        1.0e-6
+    ));
+    assert!(approx_transform(
+        base.local_frame_a(),
+        Transform::IDENTITY,
+        1.0e-6
+    ));
+    assert!(approx_transform(
+        base.local_frame_b(),
+        Transform::IDENTITY,
+        1.0e-6
+    ));
+}
+
+#[test]
 fn joint_defs_are_readable_value_types() {
     let mut world = World::new(WorldDef::default()).unwrap();
     let body_a = create_dynamic_body(&mut world, [-1.0, 0.0]);

@@ -50,8 +50,8 @@
 
 | Slice | Status | Notes |
 | --- | --- | --- |
-| creation, materials, filters, points, material-layout inspection | safe-covered | `ChainDef` is now a readable value object. |
-| segment extraction and reusable-buffer variants | safe-covered | Owned/scoped handle paths share one internal implementation. |
+| creation, filters, points, and creation-time material-layout inspection | safe-covered | `ChainDef` is now a readable value object and still exposes Box2D's stored-point material layout explicitly. |
+| runtime segment extraction, reusable-buffer variants, and live material access | safe-covered | Owned/scoped handle paths share one internal implementation, and live material APIs normalize open-chain ghost placeholders down to visible segment indexing. |
 | raw world-id seam | raw-only | Kept explicitly as `world_id_raw`. |
 
 ## Joint Common Surface
@@ -73,8 +73,8 @@
 
 | Slice | Status | Notes |
 | --- | --- | --- |
-| `ContactId` validity checks and direct contact-data reads | safe-covered | `ContactIdExt` covers `is_valid`, `data`, `data_raw`, and `try_*` variants. |
-| first-class `Contact` handle type | candidate after 0.3 | Not necessary for current upstream surface, which only exposes validation and snapshot fetch by id. |
+| `ContactId` validity checks and direct contact-data reads | safe-covered | `ContactId` itself covers `is_valid`, `data`, `data_raw`, and `try_*` variants. |
+| first-class `Contact` handle type | intentional omission | Current upstream contact surface is still just validity plus snapshot-by-id reads, so a dedicated handle would add indirection without new capability. |
 
 ## WorldHandle
 

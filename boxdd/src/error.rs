@@ -7,6 +7,8 @@
 //! Common `ApiError` categories are:
 //! - stale ids after an object was destroyed
 //! - calling Box2D while the world is locked inside a callback
+//! - out-of-range runtime indices on validated handles
+//! - invalid numeric values or argument ranges that would otherwise trip Box2D asserts
 //! - invalid definitions or strings crossing the FFI boundary
 //! - typed user-data mismatches
 //! - callback resource exhaustion for advanced callback registration
@@ -34,6 +36,12 @@ pub enum ApiError {
 
     #[error("invalid ChainDef")]
     InvalidChainDef,
+
+    #[error("index out of range for this API")]
+    IndexOutOfRange,
+
+    #[error("invalid argument for this API")]
+    InvalidArgument,
 
     #[error("string contains an interior NUL byte")]
     NulByteInString,

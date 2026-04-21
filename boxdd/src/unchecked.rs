@@ -156,7 +156,9 @@ unsafe fn chain_segments_unchecked_impl(id: ChainId) -> Vec<ShapeId> {
 
 #[inline]
 unsafe fn chain_surface_material_unchecked_impl(id: ChainId, index: i32) -> SurfaceMaterial {
-    SurfaceMaterial::from_raw(unsafe { ffi::b2Chain_GetSurfaceMaterial(raw_chain_id(id), index) })
+    SurfaceMaterial::from_raw(unsafe {
+        ffi::b2Chain_GetRuntimeSurfaceMaterial(raw_chain_id(id), index)
+    })
 }
 
 #[inline]
@@ -165,7 +167,7 @@ unsafe fn set_chain_surface_material_unchecked_impl(
     index: i32,
     material: &SurfaceMaterial,
 ) {
-    unsafe { ffi::b2Chain_SetSurfaceMaterial(raw_chain_id(id), &material.0, index) }
+    unsafe { ffi::b2Chain_SetRuntimeSurfaceMaterial(raw_chain_id(id), &material.0, index) }
 }
 
 pub trait WorldUncheckedExt {

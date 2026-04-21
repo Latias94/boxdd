@@ -51,6 +51,9 @@ Scope:
 - review `World` / `WorldHandle` duplication and consolidate the mirrored query surface where the API intentionally stays symmetric
 - review owned/scoped handle duplication outside the hottest paths
 - consolidate the most mechanical `Shape` / `OwnedShape`, `Body` / `OwnedBody`, and `Chain` / `OwnedChain` internals behind shared private helpers
+- normalize live chain material helpers around visible segment indexing so open-chain ghost placeholder entries stay a `ChainDef` detail instead of leaking through the runtime API
+- normalize obvious Box2D assert preconditions into explicit safe-wrapper argument validation where the public runtime API already owns the semantics
+- extend that validation policy to creation-time definition objects and shared default constructors so `try_*` creation paths do not depend on native assert builds
 - consolidate the most mechanical joint creation entrypoints so joint-type additions cannot drift across scoped/id/owned/try variants
 - consolidate event-buffer borrow / cleanup plumbing so all event-view APIs share the same lifetime and deferred-destroy path
 - add reusable-buffer event snapshot getters so owned event extraction does not force fresh allocations beside the existing zero-copy views
@@ -65,6 +68,9 @@ Exit criteria:
 - no obvious per-frame allocation trap remains undocumented or unaddressed on the main safe surface
 - overlap queries support all three intended hot-path styles: owned `Vec`, reusable-buffer `*_into`, and zero-allocation `visit_*`
 - high-churn owned/scoped handle pairs no longer duplicate the same FFI access logic across every hot-path accessor
+- live chain material count/get/set helpers no longer leak Box2D's open-chain ghost placeholder indexing through the safe runtime surface
+- obvious range/value misuse on the main runtime setter surface no longer depends on Box2D assert builds for failure behavior
+- obvious creation-time def misuse on body/joint creation paths no longer depends on Box2D assert builds, and shared joint-base defaults match upstream semantics
 - joint creation families no longer duplicate per-type create/owned/id/try plumbing or callback-state handling
 - event-view APIs no longer duplicate the borrow-event-buffers / process-deferred-destroys template in every module
 - owned event snapshots no longer force fresh allocation when callers need persistent copies instead of borrowed event views

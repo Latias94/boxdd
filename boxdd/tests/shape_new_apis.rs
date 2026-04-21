@@ -38,6 +38,10 @@ fn same_shape_id(a: ShapeId, b: ShapeId) -> bool {
     a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
 }
 
+fn same_world_id(a: boxdd_sys::ffi::b2WorldId, b: boxdd_sys::ffi::b2WorldId) -> bool {
+    a.index1 == b.index1 && a.generation == b.generation
+}
+
 #[test]
 fn shape_closest_point_and_apply_wind_smoke() {
     let mut world = World::new(WorldDef::default()).unwrap();
@@ -311,6 +315,31 @@ fn shape_def_is_a_readable_value_type_and_can_seed_a_builder() {
 }
 
 #[test]
+fn defs_expose_validation_for_invalid_numeric_inputs() {
+    assert!(BodyDef::default().validate().is_ok());
+    assert!(SurfaceMaterial::default().validate().is_ok());
+    assert!(ShapeDef::default().validate().is_ok());
+
+    let invalid_body = BodyBuilder::new().linear_damping(f32::NAN).build();
+    assert_eq!(
+        invalid_body.validate().unwrap_err(),
+        ApiError::InvalidArgument
+    );
+
+    let invalid_material = SurfaceMaterial::default().with_friction(-1.0);
+    assert_eq!(
+        invalid_material.validate().unwrap_err(),
+        ApiError::InvalidArgument
+    );
+
+    let invalid_shape = ShapeDef::builder().density(-1.0).build();
+    assert_eq!(
+        invalid_shape.validate().unwrap_err(),
+        ApiError::InvalidArgument
+    );
+}
+
+#[test]
 fn chain_def_exposes_points_flags_and_material_layout() {
     let points = [
         Vec2::new(-2.0, 0.0),
@@ -379,6 +408,133 @@ fn chain_def_exposes_points_flags_and_material_layout() {
         }
         other => panic!("expected multiple material layout, got {other:?}"),
     }
+}
+
+#[test]
+fn chain_runtime_queries_and_material_mutation_are_available_across_owned_and_scoped_handles() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body = world.create_body_id(BodyBuilder::new().build());
+    let materials = [
+        SurfaceMaterial::default().with_friction(0.05),
+        SurfaceMaterial::default().with_friction(0.10),
+        SurfaceMaterial::default().with_friction(0.20),
+        SurfaceMaterial::default().with_friction(0.30),
+        SurfaceMaterial::default().with_friction(0.40),
+        SurfaceMaterial::default().with_friction(0.50),
+        SurfaceMaterial::default().with_friction(0.60),
+    ];
+    let mut chain = world.create_chain_for_owned(
+        body,
+        &ChainDef::builder()
+            .points([
+                [-3.0_f32, 0.0],
+                [-2.0, 0.0],
+                [-1.0, 0.0],
+                [0.0, 0.0],
+                [1.0, 0.0],
+                [2.0, 0.0],
+                [3.0, 0.0],
+            ])
+            .materials(&materials)
+            .build(),
+    );
+    let chain_id = chain.id();
+    let world_id = world.world_id_raw();
+
+    assert!(same_world_id(chain.world_id_raw(), world_id));
+    assert!(same_world_id(chain.try_world_id_raw().unwrap(), world_id));
+    assert!(chain.is_valid());
+    assert!(chain.try_is_valid().unwrap());
+
+    let baseline_segments = chain.segments();
+    assert_eq!(chain.segment_count() as usize, baseline_segments.len());
+    assert_eq!(
+        chain.try_segment_count().unwrap() as usize,
+        baseline_segments.len()
+    );
+    assert_eq!(baseline_segments.len(), 4);
+
+    let mut segments = Vec::with_capacity(8);
+    let segments_ptr = segments.as_ptr();
+    chain.segments_into(&mut segments);
+    assert_eq!(segments, baseline_segments);
+    assert_eq!(segments.as_ptr(), segments_ptr);
+    chain.try_segments_into(&mut segments).unwrap();
+    assert_eq!(segments, baseline_segments);
+
+    let visible_materials = [materials[1], materials[2], materials[3], materials[4]];
+
+    assert_eq!(
+        chain.surface_material_count() as usize,
+        visible_materials.len()
+    );
+    assert_eq!(
+        chain.try_surface_material_count().unwrap() as usize,
+        visible_materials.len()
+    );
+    assert_eq!(chain.surface_material(0), visible_materials[0]);
+    assert_eq!(chain.try_surface_material(2).unwrap(), visible_materials[2]);
+
+    let updated_owned = SurfaceMaterial::default()
+        .with_friction(0.85)
+        .with_restitution(0.15);
+    let updated_scoped = SurfaceMaterial::default()
+        .with_friction(0.95)
+        .with_restitution(0.25);
+    let updated_scoped_try = SurfaceMaterial::default()
+        .with_friction(0.75)
+        .with_restitution(0.35);
+
+    chain.set_surface_material(1, &updated_owned);
+    assert_eq!(chain.surface_material(1), updated_owned);
+    chain
+        .try_set_surface_material(2, &updated_scoped_try)
+        .unwrap();
+    assert_eq!(chain.surface_material(2), updated_scoped_try);
+
+    {
+        let mut scoped = world.chain(chain_id).expect("chain should still be valid");
+        assert!(same_world_id(scoped.world_id_raw(), world_id));
+        assert!(same_world_id(scoped.try_world_id_raw().unwrap(), world_id));
+        assert!(scoped.is_valid());
+        assert!(scoped.try_is_valid().unwrap());
+        assert_eq!(scoped.segment_count() as usize, baseline_segments.len());
+        assert_eq!(
+            scoped.try_segment_count().unwrap() as usize,
+            baseline_segments.len()
+        );
+
+        let mut scoped_segments = Vec::with_capacity(8);
+        let scoped_segments_ptr = scoped_segments.as_ptr();
+        scoped.segments_into(&mut scoped_segments);
+        assert_eq!(scoped_segments, baseline_segments);
+        assert_eq!(scoped_segments.as_ptr(), scoped_segments_ptr);
+        scoped.try_segments_into(&mut scoped_segments).unwrap();
+        assert_eq!(scoped_segments, baseline_segments);
+
+        assert_eq!(
+            scoped.surface_material_count() as usize,
+            visible_materials.len()
+        );
+        assert_eq!(
+            scoped.try_surface_material_count().unwrap() as usize,
+            visible_materials.len()
+        );
+        assert_eq!(scoped.surface_material(1), updated_owned);
+        assert_eq!(scoped.try_surface_material(2).unwrap(), updated_scoped_try);
+
+        scoped.set_surface_material(0, &updated_scoped);
+        assert_eq!(scoped.surface_material(0), updated_scoped);
+        scoped
+            .try_set_surface_material(3, &updated_scoped_try)
+            .unwrap();
+        assert_eq!(scoped.surface_material(3), updated_scoped_try);
+    }
+
+    assert_eq!(chain.surface_material(0), updated_scoped);
+    assert_eq!(chain.surface_material(1), updated_owned);
+    assert_eq!(chain.surface_material(2), updated_scoped_try);
+    assert_eq!(chain.surface_material(3), updated_scoped_try);
 }
 
 #[test]

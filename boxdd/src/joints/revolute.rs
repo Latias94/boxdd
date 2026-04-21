@@ -87,6 +87,11 @@ impl RevoluteJointDef {
         self.0
     }
 
+    #[inline]
+    pub fn validate(&self) -> ApiResult<()> {
+        super::check_revolute_joint_def_valid(self)
+    }
+
     pub fn target_angle(mut self, v: f32) -> Self {
         self.0.targetAngle = v;
         self

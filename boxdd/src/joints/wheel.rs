@@ -82,6 +82,11 @@ impl WheelJointDef {
         self.0
     }
 
+    #[inline]
+    pub fn validate(&self) -> ApiResult<()> {
+        super::check_wheel_joint_def_valid(self)
+    }
+
     /// Enable/disable suspension spring.
     pub fn enable_spring(mut self, flag: bool) -> Self {
         self.0.enableSpring = flag;

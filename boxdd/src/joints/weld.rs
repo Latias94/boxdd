@@ -53,6 +53,11 @@ impl WeldJointDef {
         self.0
     }
 
+    #[inline]
+    pub fn validate(&self) -> ApiResult<()> {
+        super::check_weld_joint_def_valid(self)
+    }
+
     /// Linear stiffness (Hz) for weld constraint.
     pub fn linear_hertz(mut self, v: f32) -> Self {
         self.0.linearHertz = v;
