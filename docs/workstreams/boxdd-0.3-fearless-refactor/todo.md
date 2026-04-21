@@ -50,6 +50,7 @@
 - [x] Remove the last `world.rs` shape create/set macro layer so world-owned geometry creation and editing helpers use ordinary private functions plus explicit methods.
 - [x] Replace the `joints/mod.rs` world joint-creation macro layer with generic private creation helpers plus explicit per-family scoped/id/owned/`try_*` methods.
 - [x] Start decomposing the typed joint runtime macro layer by replacing the `Distance` joint family with shared kind-checked helpers plus explicit `World` / `OwnedJoint` / `Joint` methods.
+- [x] Remove the remaining typed-joint runtime public macro layer by replacing the `Prismatic`, `Revolute`, `Weld`, `Wheel`, and `Motor` families with explicit methods and deleting the obsolete macro definitions.
 
 ## In Progress
 
