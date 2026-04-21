@@ -279,6 +279,11 @@ fn shape_parent_chain_id_impl(id: ShapeId) -> Option<ChainId> {
 }
 
 #[inline]
+fn shape_is_valid_impl(id: ShapeId) -> bool {
+    unsafe { ffi::b2Shape_IsValid(id) }
+}
+
+#[inline]
 fn shape_type_raw_impl(id: ShapeId) -> ffi::b2ShapeType {
     unsafe { ffi::b2Shape_GetType(id) }
 }
@@ -569,6 +574,152 @@ fn shape_take_user_data_impl<T: 'static>(
     Ok(value)
 }
 
+fn shape_world_id_checked_impl(id: ShapeId) -> ffi::b2WorldId {
+    crate::core::debug_checks::assert_shape_valid(id);
+    shape_world_id_impl(id)
+}
+
+fn try_shape_world_id_raw_impl(id: ShapeId) -> ApiResult<ffi::b2WorldId> {
+    crate::core::debug_checks::check_shape_valid(id)?;
+    Ok(shape_world_id_impl(id))
+}
+
+fn shape_parent_chain_id_checked_impl(id: ShapeId) -> Option<ChainId> {
+    crate::core::debug_checks::assert_shape_valid(id);
+    shape_parent_chain_id_impl(id)
+}
+
+fn try_shape_parent_chain_id_impl(id: ShapeId) -> ApiResult<Option<ChainId>> {
+    crate::core::debug_checks::check_shape_valid(id)?;
+    Ok(shape_parent_chain_id_impl(id))
+}
+
+fn shape_is_valid_checked_impl(id: ShapeId) -> bool {
+    crate::core::callback_state::assert_not_in_callback();
+    shape_is_valid_impl(id)
+}
+
+fn try_shape_is_valid_impl(id: ShapeId) -> ApiResult<bool> {
+    crate::core::callback_state::check_not_in_callback()?;
+    Ok(shape_is_valid_impl(id))
+}
+
+unsafe fn shape_set_user_data_ptr_raw_checked_impl(
+    world_core: &crate::core::world_core::WorldCore,
+    id: ShapeId,
+    p: *mut c_void,
+) {
+    crate::core::debug_checks::assert_shape_valid(id);
+    unsafe { shape_set_user_data_ptr_impl(world_core, id, p) }
+}
+
+unsafe fn try_shape_set_user_data_ptr_raw_impl(
+    world_core: &crate::core::world_core::WorldCore,
+    id: ShapeId,
+    p: *mut c_void,
+) -> ApiResult<()> {
+    crate::core::debug_checks::check_shape_valid(id)?;
+    unsafe { shape_set_user_data_ptr_impl(world_core, id, p) }
+    Ok(())
+}
+
+fn shape_user_data_ptr_raw_checked_impl(id: ShapeId) -> *mut c_void {
+    crate::core::debug_checks::assert_shape_valid(id);
+    shape_user_data_ptr_impl(id)
+}
+
+fn try_shape_user_data_ptr_raw_impl(id: ShapeId) -> ApiResult<*mut c_void> {
+    crate::core::debug_checks::check_shape_valid(id)?;
+    Ok(shape_user_data_ptr_impl(id))
+}
+
+fn shape_set_user_data_checked_impl<T: 'static>(
+    world_core: &crate::core::world_core::WorldCore,
+    id: ShapeId,
+    value: T,
+) {
+    crate::core::debug_checks::assert_shape_valid(id);
+    shape_set_user_data_impl(world_core, id, value);
+}
+
+fn try_shape_set_user_data_checked_impl<T: 'static>(
+    world_core: &crate::core::world_core::WorldCore,
+    id: ShapeId,
+    value: T,
+) -> ApiResult<()> {
+    crate::core::debug_checks::check_shape_valid(id)?;
+    shape_set_user_data_impl(world_core, id, value);
+    Ok(())
+}
+
+fn shape_clear_user_data_checked_impl(
+    world_core: &crate::core::world_core::WorldCore,
+    id: ShapeId,
+) -> bool {
+    crate::core::debug_checks::assert_shape_valid(id);
+    shape_clear_user_data_impl(world_core, id)
+}
+
+fn try_shape_clear_user_data_checked_impl(
+    world_core: &crate::core::world_core::WorldCore,
+    id: ShapeId,
+) -> ApiResult<bool> {
+    crate::core::debug_checks::check_shape_valid(id)?;
+    Ok(shape_clear_user_data_impl(world_core, id))
+}
+
+fn shape_with_user_data_checked_impl<T: 'static, R>(
+    world_core: &crate::core::world_core::WorldCore,
+    id: ShapeId,
+    f: impl FnOnce(&T) -> R,
+) -> Option<R> {
+    crate::core::debug_checks::assert_shape_valid(id);
+    shape_with_user_data_impl(world_core, id, f).expect("user data type mismatch")
+}
+
+fn try_shape_with_user_data_checked_impl<T: 'static, R>(
+    world_core: &crate::core::world_core::WorldCore,
+    id: ShapeId,
+    f: impl FnOnce(&T) -> R,
+) -> ApiResult<Option<R>> {
+    crate::core::debug_checks::check_shape_valid(id)?;
+    shape_with_user_data_impl(world_core, id, f)
+}
+
+fn shape_with_user_data_mut_checked_impl<T: 'static, R>(
+    world_core: &crate::core::world_core::WorldCore,
+    id: ShapeId,
+    f: impl FnOnce(&mut T) -> R,
+) -> Option<R> {
+    crate::core::debug_checks::assert_shape_valid(id);
+    shape_with_user_data_mut_impl(world_core, id, f).expect("user data type mismatch")
+}
+
+fn try_shape_with_user_data_mut_checked_impl<T: 'static, R>(
+    world_core: &crate::core::world_core::WorldCore,
+    id: ShapeId,
+    f: impl FnOnce(&mut T) -> R,
+) -> ApiResult<Option<R>> {
+    crate::core::debug_checks::check_shape_valid(id)?;
+    shape_with_user_data_mut_impl(world_core, id, f)
+}
+
+fn shape_take_user_data_checked_impl<T: 'static>(
+    world_core: &crate::core::world_core::WorldCore,
+    id: ShapeId,
+) -> Option<T> {
+    crate::core::debug_checks::assert_shape_valid(id);
+    shape_take_user_data_impl(world_core, id).expect("user data type mismatch")
+}
+
+fn try_shape_take_user_data_checked_impl<T: 'static>(
+    world_core: &crate::core::world_core::WorldCore,
+    id: ShapeId,
+) -> ApiResult<Option<T>> {
+    crate::core::debug_checks::check_shape_valid(id)?;
+    shape_take_user_data_impl(world_core, id)
+}
+
 impl OwnedShape {
     pub(crate) fn new(core: Arc<crate::core::world_core::WorldCore>, id: ShapeId) -> Self {
         core.owned_shapes
@@ -587,33 +738,27 @@ impl OwnedShape {
     }
 
     pub fn world_id_raw(&self) -> ffi::b2WorldId {
-        self.assert_valid();
-        shape_world_id_impl(self.id)
+        shape_world_id_checked_impl(self.id)
     }
 
     pub fn try_world_id_raw(&self) -> ApiResult<ffi::b2WorldId> {
-        self.check_valid()?;
-        Ok(shape_world_id_impl(self.id))
+        try_shape_world_id_raw_impl(self.id)
     }
 
     pub fn parent_chain_id(&self) -> Option<ChainId> {
-        self.assert_valid();
-        shape_parent_chain_id_impl(self.id)
+        shape_parent_chain_id_checked_impl(self.id)
     }
 
     pub fn try_parent_chain_id(&self) -> ApiResult<Option<ChainId>> {
-        self.check_valid()?;
-        Ok(shape_parent_chain_id_impl(self.id))
+        try_shape_parent_chain_id_impl(self.id)
     }
 
     pub fn is_valid(&self) -> bool {
-        crate::core::callback_state::assert_not_in_callback();
-        unsafe { ffi::b2Shape_IsValid(self.id) }
+        shape_is_valid_checked_impl(self.id)
     }
 
     pub fn try_is_valid(&self) -> ApiResult<bool> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(unsafe { ffi::b2Shape_IsValid(self.id) })
+        try_shape_is_valid_impl(self.id)
     }
 
     #[inline]
@@ -1084,8 +1229,7 @@ impl OwnedShape {
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn set_user_data_ptr_raw(&mut self, p: *mut c_void) {
-        self.assert_valid();
-        unsafe { shape_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
+        unsafe { shape_set_user_data_ptr_raw_checked_impl(self.core.as_ref(), self.id, p) }
     }
     /// Set an opaque user data pointer on this shape.
     ///
@@ -1094,18 +1238,14 @@ impl OwnedShape {
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn try_set_user_data_ptr_raw(&mut self, p: *mut c_void) -> ApiResult<()> {
-        self.check_valid()?;
-        unsafe { shape_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
-        Ok(())
+        unsafe { try_shape_set_user_data_ptr_raw_impl(self.core.as_ref(), self.id, p) }
     }
     pub fn user_data_ptr_raw(&self) -> *mut c_void {
-        self.assert_valid();
-        shape_user_data_ptr_impl(self.id)
+        shape_user_data_ptr_raw_checked_impl(self.id)
     }
 
     pub fn try_user_data_ptr_raw(&self) -> ApiResult<*mut c_void> {
-        self.check_valid()?;
-        Ok(shape_user_data_ptr_impl(self.id))
+        try_shape_user_data_ptr_raw_impl(self.id)
     }
 
     /// Set typed user data on this shape.
@@ -1113,62 +1253,50 @@ impl OwnedShape {
     /// This stores a `Box<T>` internally and sets Box2D's user data pointer to it. The allocation
     /// is automatically freed when cleared or when the shape is destroyed.
     pub fn set_user_data<T: 'static>(&mut self, value: T) {
-        self.assert_valid();
-        shape_set_user_data_impl(self.core.as_ref(), self.id, value);
+        shape_set_user_data_checked_impl(self.core.as_ref(), self.id, value);
     }
 
     pub fn try_set_user_data<T: 'static>(&mut self, value: T) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_set_user_data_impl(self.core.as_ref(), self.id, value);
-        Ok(())
+        try_shape_set_user_data_checked_impl(self.core.as_ref(), self.id, value)
     }
 
     /// Clear typed user data on this shape. Returns whether any typed data was present.
     pub fn clear_user_data(&mut self) -> bool {
-        self.assert_valid();
-        shape_clear_user_data_impl(self.core.as_ref(), self.id)
+        shape_clear_user_data_checked_impl(self.core.as_ref(), self.id)
     }
 
     pub fn try_clear_user_data(&mut self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(shape_clear_user_data_impl(self.core.as_ref(), self.id))
+        try_shape_clear_user_data_checked_impl(self.core.as_ref(), self.id)
     }
 
     pub fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
-        self.assert_valid();
-        shape_with_user_data_impl(self.core.as_ref(), self.id, f).expect("user data type mismatch")
+        shape_with_user_data_checked_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn try_with_user_data<T: 'static, R>(
         &self,
         f: impl FnOnce(&T) -> R,
     ) -> ApiResult<Option<R>> {
-        self.check_valid()?;
-        shape_with_user_data_impl(self.core.as_ref(), self.id, f)
+        try_shape_with_user_data_checked_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn with_user_data_mut<T: 'static, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
-        self.assert_valid();
-        shape_with_user_data_mut_impl(self.core.as_ref(), self.id, f)
-            .expect("user data type mismatch")
+        shape_with_user_data_mut_checked_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn try_with_user_data_mut<T: 'static, R>(
         &mut self,
         f: impl FnOnce(&mut T) -> R,
     ) -> ApiResult<Option<R>> {
-        self.check_valid()?;
-        shape_with_user_data_mut_impl(self.core.as_ref(), self.id, f)
+        try_shape_with_user_data_mut_checked_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn take_user_data<T: 'static>(&mut self) -> Option<T> {
-        self.assert_valid();
-        shape_take_user_data_impl(self.core.as_ref(), self.id).expect("user data type mismatch")
+        shape_take_user_data_checked_impl(self.core.as_ref(), self.id)
     }
 
     pub fn try_take_user_data<T: 'static>(&mut self) -> ApiResult<Option<T>> {
-        self.check_valid()?;
-        shape_take_user_data_impl(self.core.as_ref(), self.id)
+        try_shape_take_user_data_checked_impl(self.core.as_ref(), self.id)
     }
 
     pub fn update_body_mass_on_drop(mut self, flag: bool) -> Self {
@@ -1253,33 +1381,27 @@ impl<'w> Shape<'w> {
     }
 
     pub fn world_id_raw(&self) -> ffi::b2WorldId {
-        self.assert_valid();
-        shape_world_id_impl(self.id)
+        shape_world_id_checked_impl(self.id)
     }
 
     pub fn try_world_id_raw(&self) -> ApiResult<ffi::b2WorldId> {
-        self.check_valid()?;
-        Ok(shape_world_id_impl(self.id))
+        try_shape_world_id_raw_impl(self.id)
     }
 
     pub fn parent_chain_id(&self) -> Option<ChainId> {
-        self.assert_valid();
-        shape_parent_chain_id_impl(self.id)
+        shape_parent_chain_id_checked_impl(self.id)
     }
 
     pub fn try_parent_chain_id(&self) -> ApiResult<Option<ChainId>> {
-        self.check_valid()?;
-        Ok(shape_parent_chain_id_impl(self.id))
+        try_shape_parent_chain_id_impl(self.id)
     }
 
     pub fn is_valid(&self) -> bool {
-        crate::core::callback_state::assert_not_in_callback();
-        unsafe { ffi::b2Shape_IsValid(self.id) }
+        shape_is_valid_checked_impl(self.id)
     }
 
     pub fn try_is_valid(&self) -> ApiResult<bool> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(unsafe { ffi::b2Shape_IsValid(self.id) })
+        try_shape_is_valid_impl(self.id)
     }
 
     pub fn shape_type(&self) -> ShapeType {
@@ -1656,8 +1778,7 @@ impl<'w> Shape<'w> {
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn set_user_data_ptr_raw(&mut self, p: *mut core::ffi::c_void) {
-        self.assert_valid();
-        unsafe { shape_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
+        unsafe { shape_set_user_data_ptr_raw_checked_impl(self.core.as_ref(), self.id, p) }
     }
     /// Set an opaque user data pointer on this shape.
     ///
@@ -1666,18 +1787,14 @@ impl<'w> Shape<'w> {
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn try_set_user_data_ptr_raw(&mut self, p: *mut core::ffi::c_void) -> ApiResult<()> {
-        self.check_valid()?;
-        unsafe { shape_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
-        Ok(())
+        unsafe { try_shape_set_user_data_ptr_raw_impl(self.core.as_ref(), self.id, p) }
     }
     pub fn user_data_ptr_raw(&self) -> *mut core::ffi::c_void {
-        self.assert_valid();
-        shape_user_data_ptr_impl(self.id)
+        shape_user_data_ptr_raw_checked_impl(self.id)
     }
 
     pub fn try_user_data_ptr_raw(&self) -> ApiResult<*mut core::ffi::c_void> {
-        self.check_valid()?;
-        Ok(shape_user_data_ptr_impl(self.id))
+        try_shape_user_data_ptr_raw_impl(self.id)
     }
 
     /// Set typed user data on this shape.
@@ -1685,62 +1802,50 @@ impl<'w> Shape<'w> {
     /// This stores a `Box<T>` internally and sets Box2D's user data pointer to it. The allocation
     /// is automatically freed when cleared or when the shape is destroyed.
     pub fn set_user_data<T: 'static>(&mut self, value: T) {
-        self.assert_valid();
-        shape_set_user_data_impl(self.core.as_ref(), self.id, value);
+        shape_set_user_data_checked_impl(self.core.as_ref(), self.id, value);
     }
 
     pub fn try_set_user_data<T: 'static>(&mut self, value: T) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_set_user_data_impl(self.core.as_ref(), self.id, value);
-        Ok(())
+        try_shape_set_user_data_checked_impl(self.core.as_ref(), self.id, value)
     }
 
     /// Clear typed user data on this shape. Returns whether any typed data was present.
     pub fn clear_user_data(&mut self) -> bool {
-        self.assert_valid();
-        shape_clear_user_data_impl(self.core.as_ref(), self.id)
+        shape_clear_user_data_checked_impl(self.core.as_ref(), self.id)
     }
 
     pub fn try_clear_user_data(&mut self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(shape_clear_user_data_impl(self.core.as_ref(), self.id))
+        try_shape_clear_user_data_checked_impl(self.core.as_ref(), self.id)
     }
 
     pub fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
-        self.assert_valid();
-        shape_with_user_data_impl(self.core.as_ref(), self.id, f).expect("user data type mismatch")
+        shape_with_user_data_checked_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn try_with_user_data<T: 'static, R>(
         &self,
         f: impl FnOnce(&T) -> R,
     ) -> ApiResult<Option<R>> {
-        self.check_valid()?;
-        shape_with_user_data_impl(self.core.as_ref(), self.id, f)
+        try_shape_with_user_data_checked_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn with_user_data_mut<T: 'static, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
-        self.assert_valid();
-        shape_with_user_data_mut_impl(self.core.as_ref(), self.id, f)
-            .expect("user data type mismatch")
+        shape_with_user_data_mut_checked_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn try_with_user_data_mut<T: 'static, R>(
         &mut self,
         f: impl FnOnce(&mut T) -> R,
     ) -> ApiResult<Option<R>> {
-        self.check_valid()?;
-        shape_with_user_data_mut_impl(self.core.as_ref(), self.id, f)
+        try_shape_with_user_data_mut_checked_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn take_user_data<T: 'static>(&mut self) -> Option<T> {
-        self.assert_valid();
-        shape_take_user_data_impl(self.core.as_ref(), self.id).expect("user data type mismatch")
+        shape_take_user_data_checked_impl(self.core.as_ref(), self.id)
     }
 
     pub fn try_take_user_data<T: 'static>(&mut self) -> ApiResult<Option<T>> {
-        self.check_valid()?;
-        shape_take_user_data_impl(self.core.as_ref(), self.id)
+        try_shape_take_user_data_checked_impl(self.core.as_ref(), self.id)
     }
 
     pub fn contact_data(&self) -> Vec<ContactData> {

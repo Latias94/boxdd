@@ -264,6 +264,119 @@ fn joint_take_user_data_impl<T: 'static>(
     Ok(value)
 }
 
+fn joint_is_valid_checked_impl(id: JointId) -> bool {
+    crate::core::callback_state::assert_not_in_callback();
+    joint_is_valid_impl(id)
+}
+
+fn try_joint_is_valid_impl(id: JointId) -> ApiResult<bool> {
+    crate::core::callback_state::check_not_in_callback()?;
+    Ok(joint_is_valid_impl(id))
+}
+
+unsafe fn joint_set_user_data_ptr_raw_checked_impl(
+    world_core: &WorldCore,
+    id: JointId,
+    p: *mut c_void,
+) {
+    crate::core::debug_checks::assert_joint_valid(id);
+    unsafe { joint_set_user_data_ptr_impl(world_core, id, p) }
+}
+
+unsafe fn try_joint_set_user_data_ptr_raw_impl(
+    world_core: &WorldCore,
+    id: JointId,
+    p: *mut c_void,
+) -> ApiResult<()> {
+    crate::core::debug_checks::check_joint_valid(id)?;
+    unsafe { joint_set_user_data_ptr_impl(world_core, id, p) }
+    Ok(())
+}
+
+fn joint_user_data_ptr_raw_checked_impl(id: JointId) -> *mut c_void {
+    crate::core::debug_checks::assert_joint_valid(id);
+    joint_user_data_ptr_impl(id)
+}
+
+fn try_joint_user_data_ptr_raw_impl(id: JointId) -> ApiResult<*mut c_void> {
+    crate::core::debug_checks::check_joint_valid(id)?;
+    Ok(joint_user_data_ptr_impl(id))
+}
+
+fn joint_set_user_data_checked_impl<T: 'static>(world_core: &WorldCore, id: JointId, value: T) {
+    crate::core::debug_checks::assert_joint_valid(id);
+    joint_set_user_data_impl(world_core, id, value);
+}
+
+fn try_joint_set_user_data_checked_impl<T: 'static>(
+    world_core: &WorldCore,
+    id: JointId,
+    value: T,
+) -> ApiResult<()> {
+    crate::core::debug_checks::check_joint_valid(id)?;
+    joint_set_user_data_impl(world_core, id, value);
+    Ok(())
+}
+
+fn joint_clear_user_data_checked_impl(world_core: &WorldCore, id: JointId) -> bool {
+    crate::core::debug_checks::assert_joint_valid(id);
+    joint_clear_user_data_impl(world_core, id)
+}
+
+fn try_joint_clear_user_data_checked_impl(world_core: &WorldCore, id: JointId) -> ApiResult<bool> {
+    crate::core::debug_checks::check_joint_valid(id)?;
+    Ok(joint_clear_user_data_impl(world_core, id))
+}
+
+fn joint_with_user_data_checked_impl<T: 'static, R>(
+    world_core: &WorldCore,
+    id: JointId,
+    f: impl FnOnce(&T) -> R,
+) -> Option<R> {
+    crate::core::debug_checks::assert_joint_valid(id);
+    joint_with_user_data_impl(world_core, id, f).expect("user data type mismatch")
+}
+
+fn try_joint_with_user_data_checked_impl<T: 'static, R>(
+    world_core: &WorldCore,
+    id: JointId,
+    f: impl FnOnce(&T) -> R,
+) -> ApiResult<Option<R>> {
+    crate::core::debug_checks::check_joint_valid(id)?;
+    joint_with_user_data_impl(world_core, id, f)
+}
+
+fn joint_with_user_data_mut_checked_impl<T: 'static, R>(
+    world_core: &WorldCore,
+    id: JointId,
+    f: impl FnOnce(&mut T) -> R,
+) -> Option<R> {
+    crate::core::debug_checks::assert_joint_valid(id);
+    joint_with_user_data_mut_impl(world_core, id, f).expect("user data type mismatch")
+}
+
+fn try_joint_with_user_data_mut_checked_impl<T: 'static, R>(
+    world_core: &WorldCore,
+    id: JointId,
+    f: impl FnOnce(&mut T) -> R,
+) -> ApiResult<Option<R>> {
+    crate::core::debug_checks::check_joint_valid(id)?;
+    joint_with_user_data_mut_impl(world_core, id, f)
+}
+
+fn joint_take_user_data_checked_impl<T: 'static>(world_core: &WorldCore, id: JointId) -> Option<T> {
+    crate::core::debug_checks::assert_joint_valid(id);
+    joint_take_user_data_impl(world_core, id).expect("user data type mismatch")
+}
+
+fn try_joint_take_user_data_checked_impl<T: 'static>(
+    world_core: &WorldCore,
+    id: JointId,
+) -> ApiResult<Option<T>> {
+    crate::core::debug_checks::check_joint_valid(id)?;
+    joint_take_user_data_impl(world_core, id)
+}
+
 impl OwnedJoint {
     pub(crate) fn new(core: Arc<WorldCore>, id: JointId) -> Self {
         core.owned_joints
@@ -282,13 +395,11 @@ impl OwnedJoint {
     }
 
     pub fn is_valid(&self) -> bool {
-        crate::core::callback_state::assert_not_in_callback();
-        joint_is_valid_impl(self.id)
+        joint_is_valid_checked_impl(self.id)
     }
 
     pub fn try_is_valid(&self) -> ApiResult<bool> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(joint_is_valid_impl(self.id))
+        try_joint_is_valid_impl(self.id)
     }
 
     #[inline]
@@ -501,8 +612,7 @@ impl OwnedJoint {
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn set_user_data_ptr_raw(&mut self, p: *mut c_void) {
-        self.assert_valid();
-        unsafe { joint_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
+        unsafe { joint_set_user_data_ptr_raw_checked_impl(self.core.as_ref(), self.id, p) }
     }
     /// Set an opaque user data pointer on this joint.
     ///
@@ -511,18 +621,14 @@ impl OwnedJoint {
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn try_set_user_data_ptr_raw(&mut self, p: *mut c_void) -> ApiResult<()> {
-        self.check_valid()?;
-        unsafe { joint_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
-        Ok(())
+        unsafe { try_joint_set_user_data_ptr_raw_impl(self.core.as_ref(), self.id, p) }
     }
     pub fn user_data_ptr_raw(&self) -> *mut c_void {
-        self.assert_valid();
-        joint_user_data_ptr_impl(self.id)
+        joint_user_data_ptr_raw_checked_impl(self.id)
     }
 
     pub fn try_user_data_ptr_raw(&self) -> ApiResult<*mut c_void> {
-        self.check_valid()?;
-        Ok(joint_user_data_ptr_impl(self.id))
+        try_joint_user_data_ptr_raw_impl(self.id)
     }
 
     /// Set typed user data on this joint.
@@ -530,62 +636,50 @@ impl OwnedJoint {
     /// This stores a `Box<T>` internally and sets Box2D's user data pointer to it. The allocation
     /// is automatically freed when cleared or when the joint is destroyed.
     pub fn set_user_data<T: 'static>(&mut self, value: T) {
-        self.assert_valid();
-        joint_set_user_data_impl(self.core.as_ref(), self.id, value);
+        joint_set_user_data_checked_impl(self.core.as_ref(), self.id, value);
     }
 
     pub fn try_set_user_data<T: 'static>(&mut self, value: T) -> ApiResult<()> {
-        self.check_valid()?;
-        joint_set_user_data_impl(self.core.as_ref(), self.id, value);
-        Ok(())
+        try_joint_set_user_data_checked_impl(self.core.as_ref(), self.id, value)
     }
 
     /// Clear typed user data on this joint. Returns whether any typed data was present.
     pub fn clear_user_data(&mut self) -> bool {
-        self.assert_valid();
-        joint_clear_user_data_impl(self.core.as_ref(), self.id)
+        joint_clear_user_data_checked_impl(self.core.as_ref(), self.id)
     }
 
     pub fn try_clear_user_data(&mut self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(joint_clear_user_data_impl(self.core.as_ref(), self.id))
+        try_joint_clear_user_data_checked_impl(self.core.as_ref(), self.id)
     }
 
     pub fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
-        self.assert_valid();
-        joint_with_user_data_impl(self.core.as_ref(), self.id, f).expect("user data type mismatch")
+        joint_with_user_data_checked_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn try_with_user_data<T: 'static, R>(
         &self,
         f: impl FnOnce(&T) -> R,
     ) -> ApiResult<Option<R>> {
-        self.check_valid()?;
-        joint_with_user_data_impl(self.core.as_ref(), self.id, f)
+        try_joint_with_user_data_checked_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn with_user_data_mut<T: 'static, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
-        self.assert_valid();
-        joint_with_user_data_mut_impl(self.core.as_ref(), self.id, f)
-            .expect("user data type mismatch")
+        joint_with_user_data_mut_checked_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn try_with_user_data_mut<T: 'static, R>(
         &mut self,
         f: impl FnOnce(&mut T) -> R,
     ) -> ApiResult<Option<R>> {
-        self.check_valid()?;
-        joint_with_user_data_mut_impl(self.core.as_ref(), self.id, f)
+        try_joint_with_user_data_mut_checked_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn take_user_data<T: 'static>(&mut self) -> Option<T> {
-        self.assert_valid();
-        joint_take_user_data_impl(self.core.as_ref(), self.id).expect("user data type mismatch")
+        joint_take_user_data_checked_impl(self.core.as_ref(), self.id)
     }
 
     pub fn try_take_user_data<T: 'static>(&mut self) -> ApiResult<Option<T>> {
-        self.check_valid()?;
-        joint_take_user_data_impl(self.core.as_ref(), self.id)
+        try_joint_take_user_data_checked_impl(self.core.as_ref(), self.id)
     }
 
     pub fn wake_bodies_on_drop(mut self, flag: bool) -> Self {
@@ -664,13 +758,11 @@ impl<'w> Joint<'w> {
     }
 
     pub fn is_valid(&self) -> bool {
-        crate::core::callback_state::assert_not_in_callback();
-        joint_is_valid_impl(self.id)
+        joint_is_valid_checked_impl(self.id)
     }
 
     pub fn try_is_valid(&self) -> ApiResult<bool> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(joint_is_valid_impl(self.id))
+        try_joint_is_valid_impl(self.id)
     }
 
     pub fn joint_type(&self) -> JointType {
@@ -871,8 +963,7 @@ impl<'w> Joint<'w> {
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn set_user_data_ptr_raw(&mut self, p: *mut c_void) {
-        self.assert_valid();
-        unsafe { joint_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
+        unsafe { joint_set_user_data_ptr_raw_checked_impl(self.core.as_ref(), self.id, p) }
     }
     /// Set an opaque user data pointer on this joint.
     ///
@@ -881,18 +972,14 @@ impl<'w> Joint<'w> {
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn try_set_user_data_ptr_raw(&mut self, p: *mut c_void) -> ApiResult<()> {
-        self.check_valid()?;
-        unsafe { joint_set_user_data_ptr_impl(self.core.as_ref(), self.id, p) }
-        Ok(())
+        unsafe { try_joint_set_user_data_ptr_raw_impl(self.core.as_ref(), self.id, p) }
     }
     pub fn user_data_ptr_raw(&self) -> *mut c_void {
-        self.assert_valid();
-        joint_user_data_ptr_impl(self.id)
+        joint_user_data_ptr_raw_checked_impl(self.id)
     }
 
     pub fn try_user_data_ptr_raw(&self) -> ApiResult<*mut c_void> {
-        self.check_valid()?;
-        Ok(joint_user_data_ptr_impl(self.id))
+        try_joint_user_data_ptr_raw_impl(self.id)
     }
 
     /// Set typed user data on this joint.
@@ -900,62 +987,50 @@ impl<'w> Joint<'w> {
     /// This stores a `Box<T>` internally and sets Box2D's user data pointer to it. The allocation
     /// is automatically freed when cleared or when the joint is destroyed.
     pub fn set_user_data<T: 'static>(&mut self, value: T) {
-        self.assert_valid();
-        joint_set_user_data_impl(self.core.as_ref(), self.id, value);
+        joint_set_user_data_checked_impl(self.core.as_ref(), self.id, value);
     }
 
     pub fn try_set_user_data<T: 'static>(&mut self, value: T) -> ApiResult<()> {
-        self.check_valid()?;
-        joint_set_user_data_impl(self.core.as_ref(), self.id, value);
-        Ok(())
+        try_joint_set_user_data_checked_impl(self.core.as_ref(), self.id, value)
     }
 
     /// Clear typed user data on this joint. Returns whether any typed data was present.
     pub fn clear_user_data(&mut self) -> bool {
-        self.assert_valid();
-        joint_clear_user_data_impl(self.core.as_ref(), self.id)
+        joint_clear_user_data_checked_impl(self.core.as_ref(), self.id)
     }
 
     pub fn try_clear_user_data(&mut self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(joint_clear_user_data_impl(self.core.as_ref(), self.id))
+        try_joint_clear_user_data_checked_impl(self.core.as_ref(), self.id)
     }
 
     pub fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
-        self.assert_valid();
-        joint_with_user_data_impl(self.core.as_ref(), self.id, f).expect("user data type mismatch")
+        joint_with_user_data_checked_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn try_with_user_data<T: 'static, R>(
         &self,
         f: impl FnOnce(&T) -> R,
     ) -> ApiResult<Option<R>> {
-        self.check_valid()?;
-        joint_with_user_data_impl(self.core.as_ref(), self.id, f)
+        try_joint_with_user_data_checked_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn with_user_data_mut<T: 'static, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
-        self.assert_valid();
-        joint_with_user_data_mut_impl(self.core.as_ref(), self.id, f)
-            .expect("user data type mismatch")
+        joint_with_user_data_mut_checked_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn try_with_user_data_mut<T: 'static, R>(
         &mut self,
         f: impl FnOnce(&mut T) -> R,
     ) -> ApiResult<Option<R>> {
-        self.check_valid()?;
-        joint_with_user_data_mut_impl(self.core.as_ref(), self.id, f)
+        try_joint_with_user_data_mut_checked_impl(self.core.as_ref(), self.id, f)
     }
 
     pub fn take_user_data<T: 'static>(&mut self) -> Option<T> {
-        self.assert_valid();
-        joint_take_user_data_impl(self.core.as_ref(), self.id).expect("user data type mismatch")
+        joint_take_user_data_checked_impl(self.core.as_ref(), self.id)
     }
 
     pub fn try_take_user_data<T: 'static>(&mut self) -> ApiResult<Option<T>> {
-        self.check_valid()?;
-        joint_take_user_data_impl(self.core.as_ref(), self.id)
+        try_joint_take_user_data_checked_impl(self.core.as_ref(), self.id)
     }
 
     /// Destroy this joint immediately.
