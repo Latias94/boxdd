@@ -72,6 +72,7 @@ Scope:
 - collapse the mirrored `Joint` / `OwnedJoint` common runtime wrapper bodies behind one private handle layer while keeping ownership-only destroy/drop and wake-on-drop seams explicit
 - collapse the mirrored typed joint family wrappers so `Distance`, `Prismatic`, `Revolute`, `Weld`, `Wheel`, and `Motor` each route owned/scoped runtime methods through one private handle layer
 - split the stabilized joint runtime layer out of the oversized `joints/mod.rs` file so common runtime-by-id APIs and their helper plumbing live behind an explicit module boundary
+- split the stabilized typed joint runtime layer out of `joints/mod.rs` as well so family-specific runtime logic has its own module boundary instead of remaining embedded beside joint creation and definition code
 
 Exit criteria:
 
@@ -100,6 +101,7 @@ Exit criteria:
 - mirrored `Joint` / `OwnedJoint` common runtime wrappers now share one internal source for validity, joint metadata, attached body ids, collide-connected control, constraint tuning, local frames, thresholds, wake helpers, and user-data forwarding, while ownership-only destroy/drop behavior stays explicit
 - mirrored typed joint runtime wrappers for owned/scoped handles now share internal sources for typed getters/setters and validated range mutation across `Distance`, `Prismatic`, `Revolute`, `Weld`, `Wheel`, and `Motor`, instead of maintaining drifting handle-specific copies
 - `joints/mod.rs` no longer mixes stable runtime infrastructure and creation/definition code in one monolithic block; the common runtime-by-id layer now has an explicit module home that future follow-up splits can build on
+- `joints/mod.rs` also no longer carries the entire typed runtime layer inline; family-specific runtime FFI glue and wrapper forwarding now live behind a separate module boundary that future family-by-family cleanup can refine further
 
 ## M4: Advanced Wrapper Coverage
 
