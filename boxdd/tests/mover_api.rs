@@ -23,7 +23,7 @@ fn mover_queries_and_solver_are_safe_and_reusable() {
     let radius = 0.25;
 
     let fraction = world.cast_mover(c1, c2, radius, [2.0_f32, 0.0], QueryFilter::default());
-    assert!(fraction >= 0.0 && fraction < 1.0);
+    assert!((0.0..1.0).contains(&fraction));
 
     let mut plane_results = Vec::with_capacity(8);
     let plane_results_ptr = plane_results.as_ptr();

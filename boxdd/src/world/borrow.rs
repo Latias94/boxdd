@@ -1,7 +1,7 @@
 use super::*;
 
-fn borrow_world_scoped_handle<'w, T, Id: Copy>(
-    world: &'w mut World,
+fn borrow_world_scoped_handle<T, Id: Copy>(
+    world: &mut World,
     id: Id,
     is_valid: impl FnOnce(Id) -> bool,
     wrap: impl FnOnce(Arc<WorldCore>, Id) -> T,
@@ -14,8 +14,8 @@ fn borrow_world_scoped_handle<'w, T, Id: Copy>(
     }
 }
 
-fn try_borrow_world_scoped_handle<'w, T, Id: Copy>(
-    world: &'w mut World,
+fn try_borrow_world_scoped_handle<T, Id: Copy>(
+    world: &mut World,
     id: Id,
     invalid: crate::error::ApiError,
     is_valid: impl FnOnce(Id) -> bool,

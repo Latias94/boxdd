@@ -477,24 +477,13 @@ impl MaterialsState {
 
 // Reusable per-frame buffers shared across scenes so the interactive testbed
 // reflects the same hot-path guidance as the public examples and docs.
+#[derive(Default)]
 pub struct TestbedScratch {
     pub body_events: Vec<bd::BodyMoveEvent>,
     pub sensor_events: bd::SensorEvents,
     pub contact_events: bd::ContactEvents,
     pub joint_events: Vec<bd::JointEvent>,
     pub ray_hits: Vec<bd::RayResult>,
-}
-
-impl Default for TestbedScratch {
-    fn default() -> Self {
-        Self {
-            body_events: Vec::new(),
-            sensor_events: bd::SensorEvents::default(),
-            contact_events: bd::ContactEvents::default(),
-            joint_events: Vec::new(),
-            ray_hits: Vec::new(),
-        }
-    }
 }
 
 impl TestbedScratch {

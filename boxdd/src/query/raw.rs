@@ -514,6 +514,7 @@ pub(super) fn overlap_polygon_points_with_offset_impl(
     out
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn cast_shape_points_with_offset_into_impl(
     world: ffi::b2WorldId,
     points: &ProxyPoints,

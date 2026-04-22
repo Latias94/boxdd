@@ -73,43 +73,48 @@ fn assert_collision_input_valid(name: &str, valid: bool) {
     assert!(valid, "{name} contains invalid Box2D input");
 }
 
-#[inline]
-fn ray_cast_axis(
+struct RayCastAxisInput {
     origin: f32,
     translation: f32,
     lower: f32,
     upper: f32,
     enter_normal: Vec2,
     exit_normal: Vec2,
-    tmin: &mut f32,
-    tmax: &mut f32,
-    normal: &mut Vec2,
-) -> bool {
-    if translation.abs() < f32::EPSILON {
-        return lower <= origin && origin <= upper;
+}
+
+struct RayCastAxisState {
+    tmin: f32,
+    tmax: f32,
+    normal: Vec2,
+}
+
+#[inline]
+fn ray_cast_axis(input: RayCastAxisInput, state: &mut RayCastAxisState) -> bool {
+    if input.translation.abs() < f32::EPSILON {
+        return input.lower <= input.origin && input.origin <= input.upper;
     }
 
-    let inv_translation = 1.0 / translation;
-    let mut t1 = (lower - origin) * inv_translation;
-    let mut t2 = (upper - origin) * inv_translation;
-    let mut n1 = enter_normal;
-    let mut n2 = exit_normal;
+    let inv_translation = 1.0 / input.translation;
+    let mut t1 = (input.lower - input.origin) * inv_translation;
+    let mut t2 = (input.upper - input.origin) * inv_translation;
+    let mut n1 = input.enter_normal;
+    let mut n2 = input.exit_normal;
 
     if t1 > t2 {
         core::mem::swap(&mut t1, &mut t2);
         core::mem::swap(&mut n1, &mut n2);
     }
 
-    if t1 > *tmin {
-        *tmin = t1;
-        *normal = n1;
+    if t1 > state.tmin {
+        state.tmin = t1;
+        state.normal = n1;
     }
 
-    if t2 < *tmax {
-        *tmax = t2;
+    if t2 < state.tmax {
+        state.tmax = t2;
     }
 
-    *tmin <= *tmax
+    state.tmin <= state.tmax
 }
 
 /// A Box2D point-cloud proxy used by distance, shape-cast, and TOI algorithms.
@@ -1452,49 +1457,51 @@ impl Aabb {
 
         let origin = origin.into();
         let translation = translation.into();
-        let mut tmin = 0.0_f32;
-        let mut tmax = 1.0_f32;
-        let mut normal = Vec2::ZERO;
+        let mut axis_state = RayCastAxisState {
+            tmin: 0.0,
+            tmax: 1.0,
+            normal: Vec2::ZERO,
+        };
 
         if !ray_cast_axis(
-            origin.x,
-            translation.x,
-            self.lower.x,
-            self.upper.x,
-            Vec2::new(-1.0, 0.0),
-            Vec2::new(1.0, 0.0),
-            &mut tmin,
-            &mut tmax,
-            &mut normal,
+            RayCastAxisInput {
+                origin: origin.x,
+                translation: translation.x,
+                lower: self.lower.x,
+                upper: self.upper.x,
+                enter_normal: Vec2::new(-1.0, 0.0),
+                exit_normal: Vec2::new(1.0, 0.0),
+            },
+            &mut axis_state,
         ) {
             return CastOutput::MISS;
         }
 
         if !ray_cast_axis(
-            origin.y,
-            translation.y,
-            self.lower.y,
-            self.upper.y,
-            Vec2::new(0.0, -1.0),
-            Vec2::new(0.0, 1.0),
-            &mut tmin,
-            &mut tmax,
-            &mut normal,
+            RayCastAxisInput {
+                origin: origin.y,
+                translation: translation.y,
+                lower: self.lower.y,
+                upper: self.upper.y,
+                enter_normal: Vec2::new(0.0, -1.0),
+                exit_normal: Vec2::new(0.0, 1.0),
+            },
+            &mut axis_state,
         ) {
             return CastOutput::MISS;
         }
 
-        if !(0.0..=1.0).contains(&tmin) {
+        if !(0.0..=1.0).contains(&axis_state.tmin) {
             return CastOutput::MISS;
         }
 
         CastOutput {
-            normal,
+            normal: axis_state.normal,
             point: Vec2::new(
-                origin.x + tmin * translation.x,
-                origin.y + tmin * translation.y,
+                origin.x + axis_state.tmin * translation.x,
+                origin.y + axis_state.tmin * translation.y,
             ),
-            fraction: tmin,
+            fraction: axis_state.tmin,
             iterations: 0,
             hit: true,
         }

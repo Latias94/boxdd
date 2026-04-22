@@ -85,10 +85,10 @@ unsafe extern "C" fn serial_enqueue_task(
     task_context: *mut core::ffi::c_void,
     _user_context: *mut core::ffi::c_void,
 ) -> *mut core::ffi::c_void {
-    if item_count > 0 {
-        if let Some(task) = task {
-            unsafe { task(0, item_count, 0, task_context) };
-        }
+    if item_count > 0
+        && let Some(task) = task
+    {
+        unsafe { task(0, item_count, 0, task_context) };
     }
     core::ptr::null_mut()
 }

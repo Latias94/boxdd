@@ -24,18 +24,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_restitution(0.1);
 
     // A few dynamic bodies each with a different shape
-    let s_circle = ShapeDef::builder()
-        .density(1.0)
-        .material(rubber.clone())
-        .build();
-    let s_poly = ShapeDef::builder()
-        .density(1.0)
-        .material(metal.clone())
-        .build();
-    let s_caps = ShapeDef::builder()
-        .density(1.0)
-        .material(ice.clone())
-        .build();
+    let s_circle = ShapeDef::builder().density(1.0).material(rubber).build();
+    let s_poly = ShapeDef::builder().density(1.0).material(metal).build();
+    let s_caps = ShapeDef::builder().density(1.0).material(ice).build();
 
     let b_circle = world.create_body_id(
         BodyBuilder::new()

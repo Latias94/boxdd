@@ -111,6 +111,7 @@ impl World {
     }
 
     /// Cast an offset polygon proxy and write all hits into `out`.
+    #[allow(clippy::too_many_arguments)]
     pub fn cast_shape_points_with_offset_into<I, P, V, A, VT>(
         &self,
         points: I,
@@ -166,6 +167,7 @@ impl World {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn try_cast_shape_points_with_offset_into<I, P, V, A, VT>(
         &self,
         points: I,

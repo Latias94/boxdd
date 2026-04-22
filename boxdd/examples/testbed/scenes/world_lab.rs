@@ -95,7 +95,6 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
             }
             if reset_needed {
                 let _ = app.reset();
-                return;
             }
         }
         1 => {

@@ -129,6 +129,7 @@ where
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn cast_shape_points_with_offset_into_checked_impl<I, P, V, A, VT>(
     raw_world_id: ffi::b2WorldId,
     points: I,
@@ -204,6 +205,7 @@ where
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn try_cast_shape_points_with_offset_into_impl<I, P, V, A, VT>(
     raw_world_id: ffi::b2WorldId,
     points: I,
