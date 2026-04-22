@@ -140,6 +140,341 @@ pub enum Scene {
     Issues,
 }
 
+pub struct OverlapQueryState {
+    pub center_x: f32,
+    pub center_y: f32,
+    pub half_x: f32,
+    pub half_y: f32,
+    pub owned_hits: usize,
+    pub reused_hits: usize,
+    pub visit_hits: usize,
+    pub polygon_hits: usize,
+    pub visit_stopped_early: bool,
+    pub reused_hit_buffer: Vec<bd::types::ShapeId>,
+}
+
+impl Default for OverlapQueryState {
+    fn default() -> Self {
+        Self {
+            center_x: 0.0,
+            center_y: 2.0,
+            half_x: 2.0,
+            half_y: 1.0,
+            owned_hits: 0,
+            reused_hits: 0,
+            visit_hits: 0,
+            polygon_hits: 0,
+            visit_stopped_early: false,
+            reused_hit_buffer: Vec::new(),
+        }
+    }
+}
+
+impl OverlapQueryState {
+    fn reset_runtime(&mut self) {
+        self.owned_hits = 0;
+        self.reused_hits = 0;
+        self.visit_hits = 0;
+        self.polygon_hits = 0;
+        self.visit_stopped_early = false;
+        self.reused_hit_buffer.clear();
+    }
+}
+
+pub struct QueryCastState {
+    pub mode: i32,
+    pub ray_origin_x: f32,
+    pub ray_origin_y: f32,
+    pub ray_dx: f32,
+    pub ray_dy: f32,
+    pub ray_hits: usize,
+    pub ray_hit_buffer: Vec<bd::RayResult>,
+    pub shape_pos_y: f32,
+    pub shape_angle: f32,
+    pub shape_tx: f32,
+    pub shape_ty: f32,
+    pub shape_radius: f32,
+    pub shape_hits: usize,
+    pub shape_min_fraction: f32,
+    pub shape_hit_buffer: Vec<bd::RayResult>,
+    pub toi_start_x: f32,
+    pub toi_start_y: f32,
+    pub toi_angle: f32,
+    pub toi_dx: f32,
+    pub toi_dy: f32,
+    pub toi_radius: f32,
+    pub toi_state: bd::ToiState,
+    pub toi_fraction: f32,
+}
+
+impl Default for QueryCastState {
+    fn default() -> Self {
+        Self {
+            mode: 0,
+            ray_origin_x: -10.0,
+            ray_origin_y: 10.0,
+            ray_dx: 25.0,
+            ray_dy: -12.0,
+            ray_hits: 0,
+            ray_hit_buffer: Vec::new(),
+            shape_pos_y: 6.0,
+            shape_angle: 0.0,
+            shape_tx: 0.0,
+            shape_ty: -6.0,
+            shape_radius: 0.02,
+            shape_hits: 0,
+            shape_min_fraction: 1.0,
+            shape_hit_buffer: Vec::new(),
+            toi_start_x: -2.0,
+            toi_start_y: 6.0,
+            toi_angle: 0.0,
+            toi_dx: 4.0,
+            toi_dy: -4.5,
+            toi_radius: 0.02,
+            toi_state: bd::ToiState::Unknown,
+            toi_fraction: 1.0,
+        }
+    }
+}
+
+impl QueryCastState {
+    fn reset_runtime(&mut self) {
+        self.ray_hits = 0;
+        self.ray_hit_buffer.clear();
+        self.shape_hits = 0;
+        self.shape_min_fraction = 1.0;
+        self.shape_hit_buffer.clear();
+        self.toi_state = bd::ToiState::Unknown;
+        self.toi_fraction = 1.0;
+    }
+}
+
+pub struct BodiesLabState {
+    pub mode: usize,
+    pub set_velocity_x: f32,
+    pub set_velocity_y: f32,
+    pub set_velocity_body: Option<bd::types::BodyId>,
+    pub kinematic_speed: f32,
+    pub kinematic_platform: Option<bd::types::BodyId>,
+    pub wake_touch_count: usize,
+    pub wake_touch_ground_body: Option<bd::types::BodyId>,
+}
+
+impl Default for BodiesLabState {
+    fn default() -> Self {
+        Self {
+            mode: 0,
+            set_velocity_x: 0.0,
+            set_velocity_y: -20.0,
+            set_velocity_body: None,
+            kinematic_speed: 2.0,
+            kinematic_platform: None,
+            wake_touch_count: 0,
+            wake_touch_ground_body: None,
+        }
+    }
+}
+
+impl BodiesLabState {
+    fn reset_runtime(&mut self) {
+        self.set_velocity_body = None;
+        self.kinematic_platform = None;
+        self.wake_touch_count = 0;
+        self.wake_touch_ground_body = None;
+    }
+}
+
+pub struct WorldLabState {
+    pub mode: usize,
+    pub sleeping: bool,
+    pub continuous: bool,
+    pub contact_softening: bool,
+    pub restitution_threshold: f32,
+    pub hit_event_threshold: f32,
+    pub warm_starting: bool,
+    pub maximum_linear_speed: f32,
+    pub contact_speed: f32,
+    pub explosion_center_x: f32,
+    pub explosion_center_y: f32,
+    pub explosion_radius: f32,
+    pub explosion_falloff: f32,
+    pub explosion_impulse: f32,
+}
+
+impl Default for WorldLabState {
+    fn default() -> Self {
+        Self {
+            mode: 0,
+            sleeping: true,
+            continuous: false,
+            contact_softening: false,
+            restitution_threshold: 1.0,
+            hit_event_threshold: 0.0,
+            warm_starting: true,
+            maximum_linear_speed: 100.0,
+            contact_speed: 2.0,
+            explosion_center_x: 0.0,
+            explosion_center_y: 3.0,
+            explosion_radius: 3.0,
+            explosion_falloff: 0.1,
+            explosion_impulse: 2.0,
+        }
+    }
+}
+
+pub struct ManifoldState {
+    pub a_x: f32,
+    pub a_y: f32,
+    pub a_angle: f32,
+    pub a_half_x: f32,
+    pub a_half_y: f32,
+    pub b_x: f32,
+    pub b_y: f32,
+    pub b_angle: f32,
+    pub b_half_x: f32,
+    pub b_half_y: f32,
+    pub contact_count: usize,
+    pub normal_x: f32,
+    pub normal_y: f32,
+    pub point1_x: f32,
+    pub point1_y: f32,
+    pub point2_x: f32,
+    pub point2_y: f32,
+    pub mode: i32,
+    pub b_radius: f32,
+    pub show_metrics: bool,
+    pub separation1: f32,
+    pub separation2: f32,
+    pub impulse1: f32,
+    pub impulse2: f32,
+    pub total_impulse1: f32,
+    pub total_impulse2: f32,
+    pub segment_half_len: f32,
+}
+
+impl Default for ManifoldState {
+    fn default() -> Self {
+        Self {
+            a_x: -0.8,
+            a_y: 3.0,
+            a_angle: 0.0,
+            a_half_x: 0.7,
+            a_half_y: 0.5,
+            b_x: 0.8,
+            b_y: 3.2,
+            b_angle: 0.2,
+            b_half_x: 0.6,
+            b_half_y: 0.4,
+            contact_count: 0,
+            normal_x: 0.0,
+            normal_y: 0.0,
+            point1_x: 0.0,
+            point1_y: 0.0,
+            point2_x: 0.0,
+            point2_y: 0.0,
+            mode: 0,
+            b_radius: 0.5,
+            show_metrics: false,
+            separation1: 0.0,
+            separation2: 0.0,
+            impulse1: 0.0,
+            impulse2: 0.0,
+            total_impulse1: 0.0,
+            total_impulse2: 0.0,
+            segment_half_len: 1.0,
+        }
+    }
+}
+
+impl ManifoldState {
+    fn reset_runtime(&mut self) {
+        self.contact_count = 0;
+        self.normal_x = 0.0;
+        self.normal_y = 0.0;
+        self.point1_x = 0.0;
+        self.point1_y = 0.0;
+        self.point2_x = 0.0;
+        self.point2_y = 0.0;
+        self.separation1 = 0.0;
+        self.separation2 = 0.0;
+        self.impulse1 = 0.0;
+        self.impulse2 = 0.0;
+        self.total_impulse1 = 0.0;
+        self.total_impulse2 = 0.0;
+    }
+}
+
+pub struct MaterialsState {
+    pub conveyor_speed: f32,
+    pub rolling_resistance: f32,
+    pub spawned_count: usize,
+    pub wind_x: f32,
+    pub wind_y: f32,
+    pub drag: f32,
+    pub lift: f32,
+    pub wake_on_wind: bool,
+    pub spawned_shapes: Vec<bd::types::ShapeId>,
+    pub left_belt_shape: Option<bd::types::ShapeId>,
+    pub right_belt_shape: Option<bd::types::ShapeId>,
+    pub belt_friction: f32,
+    pub belt_restitution: f32,
+    pub shape_friction: f32,
+    pub shape_restitution: f32,
+    pub left_belt_body: Option<bd::types::BodyId>,
+    pub right_belt_body: Option<bd::types::BodyId>,
+    pub belt_half_len: f32,
+    pub belt_thickness: f32,
+    pub left_belt_x: f32,
+    pub left_belt_y: f32,
+    pub right_belt_x: f32,
+    pub right_belt_y: f32,
+    pub left_belt_angle_deg: f32,
+    pub right_belt_angle_deg: f32,
+}
+
+impl Default for MaterialsState {
+    fn default() -> Self {
+        Self {
+            conveyor_speed: 1.5,
+            rolling_resistance: 0.5,
+            spawned_count: 0,
+            wind_x: 2.0,
+            wind_y: 0.0,
+            drag: 1.0,
+            lift: 0.0,
+            wake_on_wind: false,
+            spawned_shapes: Vec::new(),
+            left_belt_shape: None,
+            right_belt_shape: None,
+            belt_friction: 0.9,
+            belt_restitution: 0.0,
+            shape_friction: 0.6,
+            shape_restitution: 0.2,
+            left_belt_body: None,
+            right_belt_body: None,
+            belt_half_len: 4.5,
+            belt_thickness: 0.2,
+            left_belt_x: -3.0,
+            left_belt_y: 0.5,
+            right_belt_x: 3.0,
+            right_belt_y: 2.5,
+            left_belt_angle_deg: 0.0,
+            right_belt_angle_deg: 0.0,
+        }
+    }
+}
+
+impl MaterialsState {
+    fn reset_runtime(&mut self) {
+        self.spawned_count = 0;
+        self.spawned_shapes.clear();
+        self.left_belt_shape = None;
+        self.right_belt_shape = None;
+        self.left_belt_body = None;
+        self.right_belt_body = None;
+    }
+}
+
 pub struct PhysicsApp {
     pub world: bd::World,
     pub scene: Scene,
@@ -165,8 +500,6 @@ pub struct PhysicsApp {
     pub dd_draw_islands: bool,
     pub dd_force_scale: f32,
     pub dd_joint_scale: f32,
-    // Query-cast scene mode switcher
-    pub cast_mode: i32,
     // Stats
     pub created_bodies: usize,
     pub created_shapes: usize,
@@ -230,16 +563,8 @@ pub struct PhysicsApp {
     pub robust_hit_count: usize,
     // Benchmark
     pub bench_bodies: i32,
-    // Overlap query scene
-    pub q_center_x: f32,
-    pub q_center_y: f32,
-    pub q_half_x: f32,
-    pub q_half_y: f32,
-    pub q_overlaps: usize,
-    pub q_reused_hits: usize,
-    pub q_visit_hits: usize,
-    pub q_polygon_hits: usize,
-    pub q_visit_stopped_early: bool,
+    pub overlap_queries: OverlapQueryState,
+    pub query_casts: QueryCastState,
     // Character mover
     pub cm_c1_y: f32,
     pub cm_c2_y: f32,
@@ -274,23 +599,6 @@ pub struct PhysicsApp {
     pub soft_scale: f32,
     // Convex hull
     pub hull_points: i32,
-    // Collision: shape cast
-    pub sc_pos_y: f32,
-    pub sc_angle: f32,
-    pub sc_tx: f32,
-    pub sc_ty: f32,
-    pub sc_radius: f32,
-    pub sc_hits: usize,
-    pub sc_min_fraction: f32,
-    // Collision: TOI
-    pub toi_start_x: f32,
-    pub toi_start_y: f32,
-    pub toi_angle: f32,
-    pub toi_dx: f32,
-    pub toi_dy: f32,
-    pub toi_radius: f32,
-    pub toi_state: bd::ToiState,
-    pub toi_fraction: f32,
     // Continuous: ghost bumps
     pub gb_speed: f32,
     pub gb_bump_h: f32,
@@ -299,28 +607,10 @@ pub struct PhysicsApp {
     pub cr_threshold: f32,
     pub cr_restitution: f32,
     pub cr_drop_y: f32,
-    // Collision: ray world
-    pub rw_origin_x: f32,
-    pub rw_origin_y: f32,
-    pub rw_dx: f32,
-    pub rw_dy: f32,
-    pub rw_hits: usize,
-    // World: explosion
-    pub ex_center_x: f32,
-    pub ex_center_y: f32,
-    pub ex_radius: f32,
-    pub ex_falloff: f32,
-    pub ex_impulse: f32,
     // Joints: filter
     pub fj_disable_collide: bool,
     pub fj_hits: usize,
-    // Bodies: set velocity
-    pub bsv_vx: f32,
-    pub bsv_vy: f32,
-    pub bsv_body: Option<bd::types::BodyId>,
-    // Bodies: kinematic
-    pub bk_speed: f32,
-    pub bk_platform: Option<bd::types::BodyId>,
+    pub bodies_lab: BodiesLabState,
     // Collision: shape distance (rect-rect)
     pub sd_a_x: f32,
     pub sd_a_y: f32,
@@ -346,34 +636,7 @@ pub struct PhysicsApp {
     pub js_max_lin: f32,
     pub js_min_ang: f32,
     pub js_max_ang: f32,
-    // Manifold (simple viewer)
-    pub mf_a_x: f32,
-    pub mf_a_y: f32,
-    pub mf_a_angle: f32,
-    pub mf_a_hx: f32,
-    pub mf_a_hy: f32,
-    pub mf_b_x: f32,
-    pub mf_b_y: f32,
-    pub mf_b_angle: f32,
-    pub mf_b_hx: f32,
-    pub mf_b_hy: f32,
-    pub mf_contacts: usize,
-    pub mf_normal_x: f32,
-    pub mf_normal_y: f32,
-    pub mf_point_x: f32,
-    pub mf_point_y: f32,
-    pub mf_point2_x: f32,
-    pub mf_point2_y: f32,
-    pub mf_mode: i32, // 0=Poly-Poly, 1=Circle-Poly, 2=Capsule-Poly
-    pub mf_b_radius: f32,
-    pub mf_show_metrics: bool,
-    pub mf_sep1: f32,
-    pub mf_sep2: f32,
-    pub mf_impulse1: f32,
-    pub mf_impulse2: f32,
-    pub mf_total_impulse1: f32,
-    pub mf_total_impulse2: f32,
-    pub mf_seg_half: f32,
+    pub manifold: ManifoldState,
     // Pinball
     pub pb_restitution: f32,
     pub pb_ball_radius: f32,
@@ -404,47 +667,11 @@ pub struct PhysicsApp {
     pub bj_force_thres: f32,
     pub bj_torque_thres: f32,
     pub bj_broken: usize,
-    // Wake touching
-    pub wt_wakes: usize,
-    pub wt_ground_body: Option<bd::types::BodyId>,
     // Weld joint
     pub wj_hz: f32,
     pub wj_dr: f32,
-    // World tuning
-    pub wt_sleeping: bool,
-    pub wt_continuous: bool,
-    pub wt_softening: bool,
-    pub wt_restitution_thres: f32,
-    pub wt_hit_thres: f32,
-    pub wt_warm_starting: bool,
-    pub wt_max_linear_speed: f32,
-    pub wt_contact_speed: f32,
-    // Materials
-    pub mat_conv_speed: f32,
-    pub mat_roll_res: f32,
-    pub mat_spawned: usize,
-    pub mat_wind_x: f32,
-    pub mat_wind_y: f32,
-    pub mat_drag: f32,
-    pub mat_lift: f32,
-    pub mat_wake: bool,
-    pub mat_shapes: Vec<bd::types::ShapeId>,
-    pub mat_belt_left: Option<bd::types::ShapeId>,
-    pub mat_belt_right: Option<bd::types::ShapeId>,
-    pub mat_belt_friction: f32,
-    pub mat_belt_restitution: f32,
-    pub mat_shape_friction: f32,
-    pub mat_shape_restitution: f32,
-    pub mat_belt_left_body: Option<bd::types::BodyId>,
-    pub mat_belt_right_body: Option<bd::types::BodyId>,
-    pub mat_belt_half_len: f32,
-    pub mat_belt_thickness: f32,
-    pub mat_belt_left_x: f32,
-    pub mat_belt_left_y: f32,
-    pub mat_belt_right_x: f32,
-    pub mat_belt_right_y: f32,
-    pub mat_belt_left_angle_deg: f32,
-    pub mat_belt_right_angle_deg: f32,
+    pub world_lab: WorldLabState,
+    pub materials: MaterialsState,
     // Shape editing
     pub se_body: Option<bd::types::BodyId>,
     pub se_shape: Option<bd::types::ShapeId>,
@@ -456,10 +683,270 @@ pub struct PhysicsApp {
     pub jl_mode: usize,
     // Continuous Lab
     pub cl_mode: usize,
-    // Bodies Lab
-    pub bl_mode: usize,
-    // World Lab
-    pub wl_mode: usize,
+}
+
+type SceneBuildFn = fn(&mut PhysicsApp, bd::types::BodyId);
+type SceneTickFn = fn(&mut PhysicsApp);
+type SceneUiFn = fn(&mut PhysicsApp, &imgui::Ui);
+type SceneOverlayFn = fn(&PhysicsApp, &imgui::Ui);
+
+struct SceneSpec {
+    id: Scene,
+    name: &'static str,
+    build: SceneBuildFn,
+    tick: Option<SceneTickFn>,
+    ui: SceneUiFn,
+    overlay: Option<SceneOverlayFn>,
+}
+
+const SCENE_SPECS: [SceneSpec; 30] = [
+    SceneSpec {
+        id: Scene::Pyramid,
+        name: "Pyramid",
+        build: pyramid::build,
+        tick: None,
+        ui: pyramid::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::Bridge,
+        name: "Bridge",
+        build: bridge::build,
+        tick: None,
+        ui: bridge::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::Car,
+        name: "Car",
+        build: car::build,
+        tick: None,
+        ui: car::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::ChainWalkway,
+        name: "Chain Walkway",
+        build: chain_walkway::build,
+        tick: None,
+        ui: chain_walkway::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::Sensors,
+        name: "Sensors",
+        build: sensors::build,
+        tick: None,
+        ui: sensors::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::Contacts,
+        name: "Contacts",
+        build: contacts::build,
+        tick: None,
+        ui: contacts::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::ContinuousLab,
+        name: "Continuous: Lab",
+        build: continuous_lab::build,
+        tick: Some(continuous_lab::tick),
+        ui: continuous_lab::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::Stacking,
+        name: "Stacking",
+        build: stacking::build,
+        tick: None,
+        ui: stacking::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::Shapes,
+        name: "Shapes Variety",
+        build: shapes::build,
+        tick: Some(shapes::tick),
+        ui: shapes::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::Robustness,
+        name: "Robustness",
+        build: robustness::build,
+        tick: Some(robustness::tick),
+        ui: robustness::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::Events,
+        name: "Events Summary",
+        build: events::build,
+        tick: Some(events::tick),
+        ui: events::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::Benchmark,
+        name: "Benchmark",
+        build: benchmark::build,
+        tick: Some(benchmark::tick),
+        ui: benchmark::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::Determinism,
+        name: "Determinism",
+        build: determinism::build,
+        tick: Some(determinism::tick),
+        ui: determinism::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::OverlapQueries,
+        name: "Queries: Overlap",
+        build: overlap_queries::build,
+        tick: Some(overlap_queries::tick),
+        ui: overlap_queries::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::CharacterMover,
+        name: "Character Mover",
+        build: character_mover::build,
+        tick: Some(character_mover::tick),
+        ui: character_mover::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::JointsLab,
+        name: "Joints: Lab (Unified)",
+        build: joints_lab::build,
+        tick: Some(joints_lab::tick),
+        ui: joints_lab::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::SoftBody,
+        name: "Soft Body (Donut)",
+        build: soft_body::build,
+        tick: Some(soft_body::tick),
+        ui: soft_body::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::ConvexHull,
+        name: "Convex Hull",
+        build: convex_hull::build,
+        tick: Some(convex_hull::tick),
+        ui: convex_hull::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::BodiesLab,
+        name: "Bodies: Lab",
+        build: bodies_lab::build,
+        tick: Some(bodies_lab::tick),
+        ui: bodies_lab::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::ShapeDistance,
+        name: "Collision: Shape Distance",
+        build: shape_distance::build,
+        tick: Some(shape_distance::tick),
+        ui: shape_distance::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::JointSeparation,
+        name: "Joints: Separation",
+        build: joint_separation::build,
+        tick: Some(joint_separation::tick),
+        ui: joint_separation::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::Manifold,
+        name: "Collision: Manifold (basic)",
+        build: manifold::build,
+        tick: Some(manifold::tick),
+        ui: manifold::ui_params,
+        overlay: Some(manifold::debug_overlay),
+    },
+    SceneSpec {
+        id: Scene::QueryCasts,
+        name: "Queries: Casts & TOI",
+        build: query_casts::build,
+        tick: Some(query_casts::tick),
+        ui: query_casts::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::WorldTuning,
+        name: "World: Lab",
+        build: world_lab::build,
+        tick: None,
+        ui: world_lab::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::MotionLocks,
+        name: "Joints: Motion Locks",
+        build: motion_locks::build,
+        tick: None,
+        ui: motion_locks::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::BreakableJoint,
+        name: "Joints: Breakable",
+        build: breakable_joint::build,
+        tick: Some(breakable_joint::tick),
+        ui: breakable_joint::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::Materials,
+        name: "Materials: Conveyor & Rolling",
+        build: materials::build,
+        tick: Some(materials::tick),
+        ui: materials::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::ShapeEditing,
+        name: "Shape Editing",
+        build: shape_editing::build,
+        tick: None,
+        ui: shape_editing::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::Doohickey,
+        name: "Doohickey",
+        build: doohickey::build,
+        tick: Some(doohickey::tick),
+        ui: doohickey::ui_params,
+        overlay: None,
+    },
+    SceneSpec {
+        id: Scene::Issues,
+        name: "Issues",
+        build: issues::build,
+        tick: Some(issues::tick),
+        ui: issues::ui_params,
+        overlay: None,
+    },
+];
+
+fn scene_spec(scene: Scene) -> &'static SceneSpec {
+    SCENE_SPECS
+        .iter()
+        .find(|spec| spec.id == scene)
+        .expect("scene registry must cover all Scene variants")
 }
 
 impl PhysicsApp {
@@ -499,7 +986,6 @@ impl PhysicsApp {
             dd_draw_islands: false,
             dd_force_scale: 1.0,
             dd_joint_scale: 1.0,
-            cast_mode: 0,
             pyramid_rows: 10,
             pyramid_cols: 10,
             bridge_planks: 20,
@@ -543,15 +1029,8 @@ impl PhysicsApp {
             robust_bullet_speed: 80.0,
             robust_hit_count: 0,
             bench_bodies: 200,
-            q_center_x: 0.0,
-            q_center_y: 2.0,
-            q_half_x: 2.0,
-            q_half_y: 1.0,
-            q_overlaps: 0,
-            q_reused_hits: 0,
-            q_visit_hits: 0,
-            q_polygon_hits: 0,
-            q_visit_stopped_early: false,
+            overlap_queries: OverlapQueryState::default(),
+            query_casts: QueryCastState::default(),
             cm_c1_y: 1.0,
             cm_c2_y: 1.8,
             cm_radius: 0.25,
@@ -580,44 +1059,15 @@ impl PhysicsApp {
             wheel_dr: 0.7,
             soft_scale: 1.0,
             hull_points: 16,
-            sc_pos_y: 6.0,
-            sc_angle: 0.0,
-            sc_tx: 0.0,
-            sc_ty: -6.0,
-            sc_radius: 0.02,
-            sc_hits: 0,
-            sc_min_fraction: 1.0,
-            toi_start_x: -2.0,
-            toi_start_y: 6.0,
-            toi_angle: 0.0,
-            toi_dx: 4.0,
-            toi_dy: -4.5,
-            toi_radius: 0.02,
-            toi_state: bd::ToiState::Unknown,
-            toi_fraction: 1.0,
             gb_speed: 40.0,
             gb_bump_h: 0.2,
             gb_hits: 0,
             cr_threshold: 1.0,
             cr_restitution: 0.7,
             cr_drop_y: 8.0,
-            rw_origin_x: -10.0,
-            rw_origin_y: 10.0,
-            rw_dx: 25.0,
-            rw_dy: -12.0,
-            rw_hits: 0,
-            ex_center_x: 0.0,
-            ex_center_y: 3.0,
-            ex_radius: 3.0,
-            ex_falloff: 0.1,
-            ex_impulse: 2.0,
             fj_disable_collide: true,
             fj_hits: 0,
-            bsv_vx: 0.0,
-            bsv_vy: -20.0,
-            bsv_body: None,
-            bk_speed: 2.0,
-            bk_platform: None,
+            bodies_lab: BodiesLabState::default(),
             sd_a_x: -2.0,
             sd_a_y: 2.0,
             sd_a_angle: 0.0,
@@ -641,33 +1091,7 @@ impl PhysicsApp {
             js_max_lin: 0.0,
             js_min_ang: 0.0,
             js_max_ang: 0.0,
-            mf_a_x: -0.8,
-            mf_a_y: 3.0,
-            mf_a_angle: 0.0,
-            mf_a_hx: 0.7,
-            mf_a_hy: 0.5,
-            mf_b_x: 0.8,
-            mf_b_y: 3.2,
-            mf_b_angle: 0.2,
-            mf_b_hx: 0.6,
-            mf_b_hy: 0.4,
-            mf_contacts: 0,
-            mf_normal_x: 0.0,
-            mf_normal_y: 0.0,
-            mf_point_x: 0.0,
-            mf_point_y: 0.0,
-            mf_point2_x: 0.0,
-            mf_point2_y: 0.0,
-            mf_mode: 0,
-            mf_b_radius: 0.5,
-            mf_show_metrics: false,
-            mf_sep1: 0.0,
-            mf_sep2: 0.0,
-            mf_impulse1: 0.0,
-            mf_impulse2: 0.0,
-            mf_total_impulse1: 0.0,
-            mf_total_impulse2: 0.0,
-            mf_seg_half: 1.0,
+            manifold: ManifoldState::default(),
             pb_restitution: 0.8,
             pb_ball_radius: 0.25,
             pb_ball_count: 0,
@@ -694,43 +1118,10 @@ impl PhysicsApp {
             bj_force_thres: 50.0,
             bj_torque_thres: 0.0,
             bj_broken: 0,
-            wt_wakes: 0,
-            wt_ground_body: None,
             wj_hz: 8.0,
             wj_dr: 0.7,
-            wt_sleeping: true,
-            wt_continuous: false,
-            wt_softening: false,
-            wt_restitution_thres: 1.0,
-            wt_hit_thres: 0.0,
-            wt_warm_starting: true,
-            wt_max_linear_speed: 100.0,
-            wt_contact_speed: 2.0,
-            mat_conv_speed: 1.5,
-            mat_roll_res: 0.5,
-            mat_spawned: 0,
-            mat_wind_x: 2.0,
-            mat_wind_y: 0.0,
-            mat_drag: 1.0,
-            mat_lift: 0.0,
-            mat_wake: false,
-            mat_shapes: Vec::new(),
-            mat_belt_left: None,
-            mat_belt_right: None,
-            mat_belt_friction: 0.9,
-            mat_belt_restitution: 0.0,
-            mat_shape_friction: 0.6,
-            mat_shape_restitution: 0.2,
-            mat_belt_left_body: None,
-            mat_belt_right_body: None,
-            mat_belt_half_len: 4.5,
-            mat_belt_thickness: 0.2,
-            mat_belt_left_x: -3.0,
-            mat_belt_left_y: 0.5,
-            mat_belt_right_x: 3.0,
-            mat_belt_right_y: 2.5,
-            mat_belt_left_angle_deg: 0.0,
-            mat_belt_right_angle_deg: 0.0,
+            world_lab: WorldLabState::default(),
+            materials: MaterialsState::default(),
             se_body: None,
             se_shape: None,
             se_mode: 0,
@@ -739,8 +1130,6 @@ impl PhysicsApp {
             se_radius: 0.2,
             jl_mode: 0,
             cl_mode: 0,
-            bl_mode: 0,
-            wl_mode: 0,
         };
         app.build_scene();
         Ok(app)
@@ -757,19 +1146,19 @@ impl PhysicsApp {
             }
             Scene::WorldTuning => {
                 b = b
-                    .enable_sleep(self.wt_sleeping)
-                    .enable_continuous(self.wt_continuous)
-                    .enable_contact_softening(self.wt_softening)
-                    .maximum_linear_speed(self.wt_max_linear_speed)
-                    .contact_speed(self.wt_contact_speed)
-                    .restitution_threshold(self.wt_restitution_thres)
-                    .hit_event_threshold(self.wt_hit_thres);
+                    .enable_sleep(self.world_lab.sleeping)
+                    .enable_continuous(self.world_lab.continuous)
+                    .enable_contact_softening(self.world_lab.contact_softening)
+                    .maximum_linear_speed(self.world_lab.maximum_linear_speed)
+                    .contact_speed(self.world_lab.contact_speed)
+                    .restitution_threshold(self.world_lab.restitution_threshold)
+                    .hit_event_threshold(self.world_lab.hit_event_threshold);
             }
             _ => {}
         }
         self.world = bd::World::new(b.build())?;
         if matches!(self.scene, Scene::WorldTuning) {
-            self.world.enable_warm_starting(self.wt_warm_starting);
+            self.world.enable_warm_starting(self.world_lab.warm_starting);
         }
         self.ev_moves = 0;
         self.ev_sens_beg = 0;
@@ -779,32 +1168,16 @@ impl PhysicsApp {
         self.ev_con_hit = 0;
         self.ev_joint = 0;
         self.robust_hit_count = 0;
-        self.q_overlaps = 0;
-        self.q_reused_hits = 0;
-        self.q_visit_hits = 0;
-        self.q_polygon_hits = 0;
-        self.q_visit_stopped_early = false;
+        self.overlap_queries.reset_runtime();
         self.cm_fraction = 1.0;
-        self.sc_hits = 0;
-        self.sc_min_fraction = 1.0;
-        self.toi_state = bd::ToiState::Unknown;
-        self.toi_fraction = 1.0;
+        self.query_casts.reset_runtime();
         self.gb_hits = 0;
-        // Reset new scene stats
-        self.mf_contacts = 0;
-        self.mf_normal_x = 0.0;
-        self.mf_normal_y = 0.0;
-        self.mf_point_x = 0.0;
-        self.mf_point_y = 0.0;
+        self.manifold.reset_runtime();
         self.pb_ball_count = 0;
         self.ml_body = None;
         self.bj_broken = 0;
-        self.wt_wakes = 0;
-        self.wt_ground_body = None;
-        self.mf_point2_x = 0.0;
-        self.mf_point2_y = 0.0;
-        self.mat_spawned = 0;
-        self.mat_shapes.clear();
+        self.bodies_lab.reset_runtime();
+        self.materials.reset_runtime();
         self.build_scene();
         Ok(())
     }
@@ -827,22 +1200,8 @@ impl PhysicsApp {
             self.cnt_islands = c.island_count;
             self.cnt_awake = self.world.awake_body_count();
         }
-        match self.scene {
-            Scene::Events => events::tick(self),
-            Scene::Robustness => robustness::tick(self),
-            Scene::OverlapQueries => overlap_queries::tick(self),
-            Scene::QueryCasts => query_casts::tick(self),
-            Scene::CharacterMover => character_mover::tick(self),
-            Scene::Shapes => shapes::tick(self),
-            Scene::Benchmark => benchmark::tick(self),
-            Scene::Determinism => determinism::tick(self),
-            Scene::ContinuousLab => continuous_lab::tick(self),
-            Scene::Manifold => manifold::tick(self),
-            Scene::BreakableJoint => breakable_joint::tick(self),
-            Scene::Materials => materials::tick(self),
-            Scene::JointsLab => joints_lab::tick(self),
-            Scene::Issues => issues::tick(self),
-            _ => {}
+        if let Some(tick) = scene_spec(self.scene).tick {
+            tick(self);
         }
     }
 
@@ -871,43 +1230,11 @@ impl PhysicsApp {
             if ui.slider("Time Scale", 0.1, 2.0, &mut ts) { self.time_scale = ts; }
             ui.separator();
 
-            let names = [
-                "Pyramid",
-                "Bridge",
-                "Car",
-                "Chain Walkway",
-                "Sensors",
-                "Contacts",
-                "Continuous: Lab",
-                "Stacking",
-                "Shapes Variety",
-                "Robustness",
-                "Events Summary",
-                "Benchmark",
-                "Determinism",
-                "Queries: Overlap",
-                "Character Mover",
-                "Joints: Lab (Unified)",
-                "Soft Body (Donut)",
-                "Convex Hull",
-                "Bodies: Lab",
-                "Collision: Shape Distance",
-                "Joints: Separation",
-                "Collision: Manifold (basic)",
-                "Queries: Casts & TOI",
-                "World: Lab",
-                "Joints: Motion Locks",
-                "Joints: Breakable",
-                "Materials: Conveyor & Rolling",
-                "Shape Editing",
-                "Doohickey",
-                "Issues",
-            ];
             let mut idx = self.scene_index();
-            if let Some(_c) = ui.begin_combo("Scene", names[idx]) {
-                for (i, &name) in names.iter().enumerate() {
+            if let Some(_c) = ui.begin_combo("Scene", scene_spec(self.scene).name) {
+                for (i, spec) in SCENE_SPECS.iter().enumerate() {
                     let selected = i == idx;
-                    if ui.selectable_config(name).selected(selected).build() {
+                    if ui.selectable_config(spec.name).selected(selected).build() {
                         idx = i;
                         self.scene = self.scene_from_index(idx);
                         let _ = self.reset();
@@ -935,38 +1262,7 @@ impl PhysicsApp {
             ));
             ui.separator();
             ui.text("Scene Params");
-            match self.scene {
-                Scene::Pyramid => pyramid::ui_params(self, ui),
-                Scene::Stacking => stacking::ui_params(self, ui),
-                Scene::Bridge => bridge::ui_params(self, ui),
-                Scene::Car => car::ui_params(self, ui),
-                Scene::ChainWalkway => chain_walkway::ui_params(self, ui),
-                Scene::Sensors => sensors::ui_params(self, ui),
-                Scene::Contacts => contacts::ui_params(self, ui),
-                Scene::ContinuousLab => continuous_lab::ui_params(self, ui),
-                Scene::Shapes => shapes::ui_params(self, ui),
-                Scene::Events => events::ui_params(self, ui),
-                Scene::Robustness => robustness::ui_params(self, ui),
-                Scene::Benchmark => benchmark::ui_params(self, ui),
-                Scene::Determinism => determinism::ui_params(self, ui),
-                Scene::OverlapQueries => overlap_queries::ui_params(self, ui),
-                Scene::CharacterMover => character_mover::ui_params(self, ui),
-                Scene::JointsLab => joints_lab::ui_params(self, ui),
-                Scene::SoftBody => soft_body::ui_params(self, ui),
-                Scene::ConvexHull => convex_hull::ui_params(self, ui),
-                Scene::BodiesLab => bodies_lab::ui_params(self, ui),
-                Scene::ShapeDistance => shape_distance::ui_params(self, ui),
-                Scene::JointSeparation => joint_separation::ui_params(self, ui),
-                Scene::Manifold => manifold::ui_params(self, ui),
-                Scene::QueryCasts => query_casts::ui_params(self, ui),
-                Scene::WorldTuning => world_lab::ui_params(self, ui),
-                Scene::MotionLocks => motion_locks::ui_params(self, ui),
-                Scene::BreakableJoint => breakable_joint::ui_params(self, ui),
-                Scene::Materials => materials::ui_params(self, ui),
-                Scene::ShapeEditing => shape_editing::ui_params(self, ui),
-                Scene::Doohickey => doohickey::ui_params(self, ui),
-                Scene::Issues => issues::ui_params(self, ui),
-            }
+            (scene_spec(self.scene).ui)(self, ui);
             ui.separator();
             ui.text("Debug Draw");
             ui.checkbox("Shapes", &mut self.dd_draw_shapes);
@@ -993,33 +1289,10 @@ impl PhysicsApp {
         });
     }
 
-    /// Draw small scene-specific overlays on top of world debug draw.
     pub fn debug_overlay(&self, ui: &imgui::Ui) {
-        // Currently only used by the Manifold scene.
-        if self.scene == Scene::Manifold {
-                let dl = ui.get_foreground_draw_list();
-                let ds = ui.io().display_size();
-                let origin = [ds[0] * 0.5, ds[1] * 0.5];
-                let s = self.pixels_per_meter; // pixels per meter (shared with debug draw)
-                let w2s = |x: f32, y: f32| [origin[0] + x * s, ds[1] - (origin[1] + y * s)];
-
-                // Contact point
-                let p = w2s(self.mf_point_x, self.mf_point_y);
-                let col = 0xffff55ffu32; // magenta point
-                dl.add_circle(p, 5.0, col).thickness(2.0).build();
-                // Second point if available
-                if self.mf_contacts > 1 {
-                    let p2 = w2s(self.mf_point2_x, self.mf_point2_y);
-                    dl.add_circle(p2, 5.0, 0xff55ffffu32).thickness(2.0).build();
-                }
-
-                // Normal arrow (from contact point)
-                let nx = self.mf_normal_x;
-                let ny = self.mf_normal_y;
-                let len = 0.7_f32; // meters
-                let q = w2s(self.mf_point_x + nx * len, self.mf_point_y + ny * len);
-                dl.add_line(p, q, 0xffffff00u32).thickness(2.0).build();
-            }
+        if let Some(overlay) = scene_spec(self.scene).overlay {
+            overlay(self, ui);
+        }
     }
 
     pub fn build_scene(&mut self) {
@@ -1034,38 +1307,7 @@ impl PhysicsApp {
             &bd::shapes::box_polygon(50.0, 1.0),
         );
         self.created_shapes += 1;
-        match self.scene {
-            Scene::Pyramid => pyramid::build(self, ground),
-            Scene::Stacking => stacking::build(self, ground),
-            Scene::Bridge => bridge::build(self, ground),
-            Scene::Car => car::build(self, ground),
-            Scene::ChainWalkway => chain_walkway::build(self, ground),
-            Scene::Sensors => sensors::build(self, ground),
-            Scene::Contacts => contacts::build(self, ground),
-            Scene::ContinuousLab => continuous_lab::build(self, ground),
-            Scene::Shapes => shapes::build(self, ground),
-            Scene::Events => events::build(self, ground),
-            Scene::Robustness => robustness::build(self, ground),
-            Scene::Benchmark => benchmark::build(self, ground),
-            Scene::Determinism => determinism::build(self, ground),
-            Scene::OverlapQueries => overlap_queries::build(self, ground),
-            Scene::CharacterMover => character_mover::build(self, ground),
-            Scene::JointsLab => joints_lab::build(self, ground),
-            Scene::SoftBody => soft_body::build(self, ground),
-            Scene::ConvexHull => convex_hull::build(self, ground),
-            Scene::QueryCasts => query_casts::build(self, ground),
-            Scene::BodiesLab => bodies_lab::build(self, ground),
-            Scene::ShapeDistance => shape_distance::build(self, ground),
-            Scene::JointSeparation => joint_separation::build(self, ground),
-            Scene::Manifold => manifold::build(self, ground),
-            Scene::MotionLocks => motion_locks::build(self, ground),
-            Scene::BreakableJoint => breakable_joint::build(self, ground),
-            Scene::WorldTuning => world_lab::build(self, ground),
-            Scene::Materials => materials::build(self, ground),
-            Scene::ShapeEditing => shape_editing::build(self, ground),
-            Scene::Doohickey => doohickey::build(self, ground),
-            Scene::Issues => issues::build(self, ground),
-        }
+        (scene_spec(self.scene).build)(self, ground);
     }
 
     pub fn step_once(&mut self) {
@@ -1078,74 +1320,17 @@ impl PhysicsApp {
     }
 
     pub fn scene_index(&self) -> usize {
-        match self.scene {
-            Scene::Pyramid => 0,
-            Scene::Bridge => 1,
-            Scene::Car => 2,
-            Scene::ChainWalkway => 3,
-            Scene::Sensors => 4,
-            Scene::Contacts => 5,
-            Scene::ContinuousLab => 6,
-            Scene::Stacking => 7,
-            Scene::Shapes => 8,
-            Scene::Robustness => 9,
-            Scene::Events => 10,
-            Scene::Benchmark => 11,
-            Scene::Determinism => 12,
-            Scene::OverlapQueries => 13,
-            Scene::CharacterMover => 14,
-            Scene::JointsLab => 15,
-            Scene::SoftBody => 16,
-            Scene::ConvexHull => 17,
-            Scene::BodiesLab => 18,
-            Scene::ShapeDistance => 19,
-            Scene::JointSeparation => 20,
-            Scene::Manifold => 21,
-            Scene::QueryCasts => 22,
-            Scene::WorldTuning => 23,
-            Scene::MotionLocks => 24,
-            Scene::BreakableJoint => 25,
-            Scene::Materials => 26,
-            Scene::ShapeEditing => 27,
-            Scene::Doohickey => 28,
-            Scene::Issues => 29,
-        }
+        SCENE_SPECS
+            .iter()
+            .position(|spec| spec.id == self.scene)
+            .expect("scene registry must cover all Scene variants")
     }
 
     pub fn scene_from_index(&self, i: usize) -> Scene {
-        match i {
-            0 => Scene::Pyramid,
-            1 => Scene::Bridge,
-            2 => Scene::Car,
-            3 => Scene::ChainWalkway,
-            4 => Scene::Sensors,
-            5 => Scene::Contacts,
-            6 => Scene::ContinuousLab,
-            7 => Scene::Stacking,
-            8 => Scene::Shapes,
-            9 => Scene::Robustness,
-            10 => Scene::Events,
-            11 => Scene::Benchmark,
-            12 => Scene::Determinism,
-            13 => Scene::OverlapQueries,
-            14 => Scene::CharacterMover,
-            15 => Scene::JointsLab,
-            16 => Scene::SoftBody,
-            17 => Scene::ConvexHull,
-            18 => Scene::BodiesLab,
-            19 => Scene::ShapeDistance,
-            20 => Scene::JointSeparation,
-            21 => Scene::Manifold,
-            22 => Scene::QueryCasts,
-            23 => Scene::WorldTuning,
-            24 => Scene::MotionLocks,
-            25 => Scene::BreakableJoint,
-            26 => Scene::Materials,
-            27 => Scene::ShapeEditing,
-            28 => Scene::Doohickey,
-            29 => Scene::Issues,
-            _ => Scene::Pyramid,
-        }
+        SCENE_SPECS
+            .get(i)
+            .map(|spec| spec.id)
+            .unwrap_or(Scene::Pyramid)
     }
 
     pub fn debug_draw_options(&self) -> bd::DebugDrawOptions {

@@ -8,56 +8,44 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
-## [boxdd 0.3.0] - 2026-04-20
+## [boxdd 0.3.0]
 
-### Highlights
-- Hot-path world queries, contact extraction, sensor-overlap reads, chain segment reads, debug-draw collection, and event snapshots now support reusable caller-owned buffers via `*_into` APIs, and overlap queries also support zero-allocation `visit_*` forms.
-- The safe wrapper now covers Box2D's character-mover workflow end to end: `cast_mover`, `collide_mover`, `solve_planes`, `clip_vector`, and matching recoverable `try_*` variants.
-- A new standalone `boxdd::collision` module exposes safe world-free distance, shape-cast, TOI, manifold, and AABB helpers using crate-owned value types.
-- Runtime coverage is substantially broader across `World`, `WorldHandle`, `Body`, `Shape`, `Joint`, and `ContactId`, including read-only id-based mirrors on `WorldHandle`, richer event APIs, and direct `ContactId` inspection helpers.
-- Core wrapper vocabulary is now crate-owned and explicit: ids, geometry values, `ShapeType`, `MassData`, `ContactData`, `Manifold`, `MotionLocks`, `HexColor`, and raw FFI crossings use named `from_raw(...)` / `into_raw()` boundaries.
-
-### Added
-- Reusable-buffer query APIs for overlap, ray-all, shape-cast, mover-plane collection, contact data, sensor overlaps, chain segments, debug-draw collection, and owned event snapshots.
-- Safe standalone collision helpers for `ShapeProxy`, segment distance, GJK distance, shape cast, TOI, circle/capsule/segment/polygon manifold generation, and chain-segment manifolds.
-- Crate-owned geometry values (`Circle`, `Segment`, `ChainSegment`, `Capsule`, `Polygon`) with validation plus world-free `mass_data`, `aabb`, `contains_point`, `ray_cast`, and transform helpers.
-- Recoverable `try_*` validation paths across world stepping, world queries, mover helpers, geometry helpers, shape creation/editing, and standalone collision input types.
-- Readable definition/config value objects and validation helpers for `BodyDef`, `ShapeDef`, `ChainDef`, `JointBase`, concrete joint defs, `WorldDef`, and `ExplosionDef`.
-- World/runtime completeness coverage for body state, shape runtime queries, common and typed joint runtime APIs, `Profile`, explosions, speculative collision controls, and `BodyBuilder::allow_fast_rotation`.
-- Read-only `WorldHandle::{body_*,shape_*,joint_*}` query surfaces and owned event snapshot mirrors.
-- Math interop and rotation round-tripping improvements for `mint`, `glam`, `cgmath`, and `nalgebra`, plus global foundation helpers such as byte-count inspection, deterministic hashing, and timing utilities.
-- New example coverage for the dedicated physics-thread ownership model and refreshed testbed/examples around the expanded safe API.
+### Upgrade Summary
+- Per-frame hot paths are first-class now. Keep the simple `Vec`-returning APIs for one-off use, or switch to `*_into` and `visit_*` when you want reusable buffers or zero result-container allocation.
+- The safe API now covers Box2D's character mover flow end to end: `cast_mover`, `collide_mover`, `solve_planes`, `clip_vector`, and matching recoverable `try_*` variants.
+- `boxdd::collision` is now a real standalone geometry surface for world-free distance queries, shape casts, TOI, manifolds, and `Aabb::ray_cast`, so advanced collision code no longer has to drop to `boxdd_sys::ffi`.
+- Runtime coverage is much broader across `World`, `WorldHandle`, `Body`, `Shape`, `Joint`, and `ContactId`, including read-only `WorldHandle` follow-up queries, richer event access, runtime tuning, explosions, and typed joint state/control.
+- Docs and examples now point users toward the intended `0.3` workflows: hot-path reuse, overlap vs cast queries, standalone collision, dedicated physics-thread ownership, and stored `WorldHandle` reads.
 
 ### Breaking Changes
-- The crate now consistently uses explicit raw-boundary APIs. Crate-owned ids, math types, geometry values, filters, mass/contact/manifold values, colors, and several query/collision value types no longer rely on implicit raw `From` conversions.
-- Geometry creation/editing and geometry getters now use crate-owned safe geometry values instead of raw Box2D structs.
-- Raw escape hatches were renamed to make FFI boundaries explicit. This includes `world_id_raw`, `*_user_data_ptr_raw`, `with_*_events_raw(...)`, `transform_raw`, `shape_type_raw`, and `contact_data_raw*`.
-- `Body::transform` / `OwnedBody::transform` now return safe `Transform`; raw access moved to `transform_raw` / `try_transform_raw`.
-- `ContactIdExt` was removed; its inspection helpers now live directly on `ContactId`.
-- `Chain` / `OwnedChain` runtime material access on open chains now uses visible live-segment indexing instead of Box2D's ghost-placeholder layout.
-- `BodyDef::from_raw(...)` and `WorldDef::from_raw(...)` are now `unsafe`, because raw callbacks/pointers can flow into later safe runtime paths.
-- `JointBase::default()` now mirrors upstream Box2D defaults instead of a partial zeroed approximation.
-- `ShapeDefBuilder::filter(...)` and `ChainDefBuilder::filter(...)` now take the crate-owned `Filter`; raw paths are explicitly named `filter_raw(...)`.
-- `MassData` is now crate-owned, and its inertia field is exposed as `rotational_inertia`.
-- `PrismaticJointDef::max_motor_torque(...)` was removed in favor of the correct `max_motor_force(...)` naming.
+- Crate-owned ids, math types, geometry values, filters, manifolds, contact data, and related helper values now cross the Box2D raw boundary explicitly through named `from_raw(...)` / `into_raw()` APIs instead of implicit conversions.
+- Geometry creation, editing, and geometry getters now use crate-owned safe geometry types instead of raw Box2D structs.
+- Raw escape hatches were renamed to make FFI seams obvious. Expect names such as `world_id_raw`, `transform_raw`, `*_user_data_ptr_raw`, `with_*_events_raw(...)`, `shape_type_raw`, and `contact_data_raw_*`.
+- `Body::transform` and `OwnedBody::transform` now return the safe `Transform` type. Raw access moved to `transform_raw` / `try_transform_raw`.
+- `ContactIdExt` was removed. Its inspection helpers now live directly on `ContactId`.
+- Open-chain runtime material access now uses visible live-segment indexing instead of Box2D's ghost-placeholder storage layout.
+- `BodyDef::from_raw(...)` and `WorldDef::from_raw(...)` are now `unsafe`, because raw callbacks and pointers can flow back into later safe runtime paths.
+- `MassData` is now crate-owned, its inertia field is named `rotational_inertia`, and `PrismaticJointDef::max_motor_torque(...)` was removed in favor of `max_motor_force(...)`.
 
 ### Migration Notes
-- If your code previously relied on raw ids or raw geometry structs, switch to the crate-owned wrapper types and use `from_raw(...)` / `into_raw()` only at explicit FFI seams.
-- If you previously used `ContactIdExt`, import nothing extra and call the same helpers directly on `ContactId`.
-- If you used raw event or user-data pointer helpers, update call sites to the new `*_raw` names.
-- For per-frame gameplay loops, prefer the new `*_into` and `visit_*` forms over the owned-`Vec` convenience methods.
-- If you expose Box2D config values through editor/tooling flows, call `validate()` on `WorldDef`, `BodyDef`, `ShapeDef`, `JointBase`, and concrete joint defs before creation.
+- If you previously passed raw Box2D ids or geometry structs through the safe wrapper, switch to the crate-owned wrapper types and keep raw conversions at explicit FFI seams only.
+- If you used `ContactIdExt`, remove that import and call the same helpers directly on `ContactId`.
+- If you used raw event, transform, or user-data-pointer helpers, update call sites to the new `*_raw` names.
+- For gameplay code that runs every frame, prefer `*_into` and `visit_*` over the owned-`Vec` convenience APIs.
+- For editor or tooling flows, call `validate()` on `WorldDef`, `BodyDef`, `ShapeDef`, `ChainDef`, `JointBase`, and concrete joint defs before creating runtime objects.
 
-### Changed
-- The safe API now front-loads many obvious Box2D preconditions instead of depending on upstream assert-enabled builds; recoverable `try_*` paths return `ApiError::InvalidArgument` or `ApiError::InCallback` where appropriate.
-- Event access is now clearer and more symmetric: owned snapshots support buffer reuse, zero-copy views and raw event slices have matching `try_*` variants, and `WorldHandle` intentionally mirrors only the owned snapshot side.
-- Examples, threading guidance, and error-handling docs were refreshed to emphasize the recommended safe-wrapper workflows instead of older raw-FFI-adjacent patterns.
-- The optional Dear ImGui testbed stack was refreshed to the current `dear-imgui-*` generation used by the repository.
+### Also Changed
+- The safe API now front-loads many obvious Box2D preconditions instead of depending on upstream assert-enabled builds. Recoverable `try_*` paths return `ApiError::InvalidArgument`, `ApiError::InCallback`, or `ApiError::InvalidJointType` where appropriate.
+- Event access is more consistent: owned snapshots support buffer reuse, zero-copy views and raw event slices have matching `try_*` forms, and `WorldHandle` intentionally mirrors only the owned-snapshot side.
+- Math interop was expanded and rounded out across `mint`, `glam`, `cgmath`, and `nalgebra`, and the threading/error-handling docs now make the intended single-owner physics model much clearer.
+- The optional Dear ImGui testbed stack was refreshed to the current `dear-imgui-*` generation used by this repository.
+- The interactive testbed was reorganized around a central scene registry plus scene-local state blocks, and its overlap/cast/material demos now follow the intended `0.3` reusable-buffer and live-update workflows more faithfully.
 
 ### Fixed
 - World-space joint builders no longer drop previously configured base fields such as `collide_connected` when filling runtime-computed body ids and local frames.
 - Wrong-family typed joint `try_*` calls now fail with `ApiError::InvalidJointType` instead of relying on upstream Box2D family asserts alone.
 - `cgmath::Basis2 -> Rot` round-tripping no longer flips the angle sign.
+- The materials testbed scene now keeps conveyor body ids and applies preset-driven transform updates correctly instead of silently desynchronizing the UI from the live world.
 
 ## [boxdd 0.2.0] - 2025-12-17
 

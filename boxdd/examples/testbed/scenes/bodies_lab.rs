@@ -4,7 +4,8 @@ use dear_imgui_rs as imgui;
 // Bodies Lab: Set Velocity, Kinematic Platform, Wake Touching
 
 pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
-    match app.bl_mode {
+    let state = &mut app.bodies_lab;
+    match state.mode {
         // Set Velocity
         0 => {
             let g = app.world.create_body_id(bd::BodyBuilder::new().position([0.0, -0.25]).build());
@@ -22,7 +23,7 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
             app.created_bodies += 1;
             app.world.create_polygon_shape_for(body, &bd::ShapeDef::builder().density(1.0).build(), &bd::shapes::box_polygon(0.5, 0.5));
             app.created_shapes += 1;
-            app.bsv_body = Some(body);
+            state.set_velocity_body = Some(body);
         }
         // Kinematic Platform
         1 => {
@@ -37,8 +38,9 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
             app.created_bodies += 1;
             app.world.create_polygon_shape_for(platform, &bd::ShapeDef::builder().density(0.0).build(), &bd::shapes::box_polygon(2.0, 0.25));
             app.created_shapes += 1;
-            app.world.set_body_linear_velocity(platform, [app.bk_speed, 0.0]);
-            app.bk_platform = Some(platform);
+            app.world
+                .set_body_linear_velocity(platform, [state.kinematic_speed, 0.0]);
+            state.kinematic_platform = Some(platform);
             let sdef = bd::ShapeDef::builder().density(1.0).build();
             for i in 0..5 {
                 let b = app
@@ -57,7 +59,7 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
             app.created_bodies += 1;
             app.world.create_polygon_shape_for(waker, &bd::ShapeDef::builder().density(0.0).build(), &bd::shapes::box_polygon(5.0, 0.25));
             app.created_shapes += 1;
-            app.wt_ground_body = Some(waker);
+            state.wake_touch_ground_body = Some(waker);
             let sdef = bd::ShapeDef::builder().density(1.0).build();
             for i in 0..4 {
                 for j in 0..3 {
@@ -84,15 +86,18 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
 
 #[allow(dead_code)]
 pub fn tick(app: &mut super::PhysicsApp) {
-    match app.bl_mode {
+    let state = &mut app.bodies_lab;
+    match state.mode {
         0 => {
-            if let Some(id) = app.bsv_body {
-                app.world.set_body_linear_velocity(id, [app.bsv_vx, app.bsv_vy]);
+            if let Some(id) = state.set_velocity_body {
+                app.world
+                    .set_body_linear_velocity(id, [state.set_velocity_x, state.set_velocity_y]);
             }
         }
         1 => {
-            if let Some(id) = app.bk_platform {
-                app.world.set_body_linear_velocity(id, [app.bk_speed, 0.0]);
+            if let Some(id) = state.kinematic_platform {
+                app.world
+                    .set_body_linear_velocity(id, [state.kinematic_speed, 0.0]);
             }
         }
         _ => {}
@@ -100,35 +105,41 @@ pub fn tick(app: &mut super::PhysicsApp) {
 }
 
 pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
+    let state = &mut app.bodies_lab;
     let names = ["Set Velocity", "Kinematic", "Wake Touching"];
-    let mut m = app.bl_mode;
-    if ui.combo_simple_string("Bodies Lab", &mut m, &names) && m != app.bl_mode {
-        app.bl_mode = m;
+    let mut m = state.mode;
+    if ui.combo_simple_string("Bodies Lab", &mut m, &names) && m != state.mode {
+        state.mode = m;
         let _ = app.reset();
         return;
     }
-    match app.bl_mode {
+    match state.mode {
         0 => {
-            let mut vx = app.bsv_vx;
-            let mut vy = app.bsv_vy;
+            let mut vx = state.set_velocity_x;
+            let mut vy = state.set_velocity_y;
             let changed = ui.slider("VX", -50.0, 50.0, &mut vx) || ui.slider("VY", -50.0, 50.0, &mut vy);
             if changed {
-                app.bsv_vx = vx;
-                app.bsv_vy = vy;
+                state.set_velocity_x = vx;
+                state.set_velocity_y = vy;
             }
         }
         1 => {
-            let mut sp = app.bk_speed;
-            if ui.slider("Speed", -10.0, 10.0, &mut sp) { app.bk_speed = sp; }
+            let mut sp = state.kinematic_speed;
+            if ui.slider("Speed", -10.0, 10.0, &mut sp) {
+                state.kinematic_speed = sp;
+            }
         }
         2 => {
             if ui.button("Wake Touching (platform)")
-                && let Some(id) = app.wt_ground_body
+                && let Some(id) = state.wake_touch_ground_body
             {
                 app.world.body_wake_touching(id);
-                app.wt_wakes += 1;
+                state.wake_touch_count += 1;
             }
-            ui.text(format!("Wake Touching: triggered {} times", app.wt_wakes));
+            ui.text(format!(
+                "Wake Touching: triggered {} times",
+                state.wake_touch_count
+            ));
         }
         _ => {}
     }

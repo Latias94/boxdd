@@ -24,39 +24,41 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
 }
 
 pub fn tick(app: &mut super::PhysicsApp) {
+    let state = &mut app.overlap_queries;
     let filter = bd::QueryFilter::default();
     let aabb = bd::Aabb::from_center_half_extents(
-        [app.q_center_x, app.q_center_y],
-        [app.q_half_x, app.q_half_y],
+        [state.center_x, state.center_y],
+        [state.half_x, state.half_y],
     );
 
     let owned_hits = app.world.overlap_aabb(aabb, filter);
-    app.q_overlaps = owned_hits.len();
+    state.owned_hits = owned_hits.len();
 
-    let mut reused_hits = Vec::new();
-    app.world.overlap_aabb_into(aabb, filter, &mut reused_hits);
-    app.q_reused_hits = reused_hits.len();
+    state.reused_hit_buffer.clear();
+    app.world
+        .overlap_aabb_into(aabb, filter, &mut state.reused_hit_buffer);
+    state.reused_hits = state.reused_hit_buffer.len();
 
     let mut visited_hits = 0usize;
     let _ = app.world.visit_overlap_aabb(aabb, filter, |_| {
         visited_hits += 1;
         true
     });
-    app.q_visit_hits = visited_hits;
+    state.visit_hits = visited_hits;
 
     let mut stopped_early = false;
     let completed = app.world.visit_overlap_aabb(aabb, filter, |_| {
         stopped_early = true;
         false
     });
-    app.q_visit_stopped_early = stopped_early && !completed;
+    state.visit_stopped_early = stopped_early && !completed;
 
-    app.q_polygon_hits = app
+    state.polygon_hits = app
         .world
         .overlap_polygon_points_with_offset(
-            rect_points(app.q_half_x * 0.55, app.q_half_y * 0.55),
+            rect_points(state.half_x * 0.55, state.half_y * 0.55),
             0.01,
-            [app.q_center_x, app.q_center_y],
+            [state.center_x, state.center_y],
             0.0_f32,
             filter,
         )
@@ -64,26 +66,27 @@ pub fn tick(app: &mut super::PhysicsApp) {
 }
 
 pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
-    let mut cx = app.q_center_x;
-    let mut cy = app.q_center_y;
-    let mut hx = app.q_half_x;
-    let mut hy = app.q_half_y;
+    let state = &mut app.overlap_queries;
+    let mut cx = state.center_x;
+    let mut cy = state.center_y;
+    let mut hx = state.half_x;
+    let mut hy = state.half_y;
     let changed = ui.slider("Center X", -8.0, 8.0, &mut cx)
         || ui.slider("Center Y", -1.0, 8.0, &mut cy)
         || ui.slider("Half X", 0.2, 4.0, &mut hx)
         || ui.slider("Half Y", 0.2, 3.0, &mut hy);
     if changed {
-        app.q_center_x = cx;
-        app.q_center_y = cy;
-        app.q_half_x = hx.max(0.2);
-        app.q_half_y = hy.max(0.2);
+        state.center_x = cx;
+        state.center_y = cy;
+        state.half_x = hx.max(0.2);
+        state.half_y = hy.max(0.2);
     }
     ui.text(format!(
         "AABB overlap: owned={} reused={} visited={}",
-        app.q_overlaps, app.q_reused_hits, app.q_visit_hits
+        state.owned_hits, state.reused_hits, state.visit_hits
     ));
     ui.text(format!(
         "Offset polygon overlap: {} early_exit={}",
-        app.q_polygon_hits, app.q_visit_stopped_early
+        state.polygon_hits, state.visit_stopped_early
     ));
 }

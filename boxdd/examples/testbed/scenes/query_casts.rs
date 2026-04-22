@@ -8,7 +8,7 @@ fn rect_points(hx: f32, hy: f32) -> [[f32; 2]; 4] {
 }
 
 pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
-    match app.cast_mode {
+    match app.query_casts.mode {
         0 => {
             let sdef = bd::ShapeDef::builder().density(0.0).build();
             let block = app
@@ -64,32 +64,41 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
 }
 
 pub fn tick(app: &mut super::PhysicsApp) {
-    match app.cast_mode {
+    let state = &mut app.query_casts;
+    match state.mode {
         0 => {
-            let hits = app.world.cast_ray_all(
-                [app.rw_origin_x, app.rw_origin_y],
-                [app.rw_dx, app.rw_dy],
+            state.ray_hit_buffer.clear();
+            app.world.cast_ray_all_into(
+                [state.ray_origin_x, state.ray_origin_y],
+                [state.ray_dx, state.ray_dy],
                 bd::QueryFilter::default(),
+                &mut state.ray_hit_buffer,
             );
-            app.rw_hits = hits.len();
+            state.ray_hits = state.ray_hit_buffer.len();
         }
         1 => {
             let rect = rect_points(0.5, 0.25);
-            let hits = app.world.cast_shape_points_with_offset(
+            state.shape_hit_buffer.clear();
+            app.world.cast_shape_points_with_offset_into(
                 rect,
-                app.sc_radius,
-                [0.0_f32, app.sc_pos_y],
-                app.sc_angle,
-                [app.sc_tx, app.sc_ty],
+                state.shape_radius,
+                [0.0_f32, state.shape_pos_y],
+                state.shape_angle,
+                [state.shape_tx, state.shape_ty],
                 bd::QueryFilter::default(),
+                &mut state.shape_hit_buffer,
             );
-            app.sc_hits = hits.len();
-            app.sc_min_fraction = hits.iter().map(|h| h.fraction).fold(1.0, f32::min);
+            state.shape_hits = state.shape_hit_buffer.len();
+            state.shape_min_fraction = state
+                .shape_hit_buffer
+                .iter()
+                .map(|h| h.fraction)
+                .fold(1.0, f32::min);
         }
         2 => {
-            let pillar = bd::ShapeProxy::new(rect_points(0.5, 1.0), app.toi_radius)
+            let pillar = bd::ShapeProxy::new(rect_points(0.5, 1.0), state.toi_radius)
                 .expect("pillar proxy must stay within the Box2D shape-proxy point limit");
-            let mover = bd::ShapeProxy::new(rect_points(0.4, 0.4), app.toi_radius)
+            let mover = bd::ShapeProxy::new(rect_points(0.4, 0.4), state.toi_radius)
                 .expect("mover proxy must stay within the Box2D shape-proxy point limit");
             let out = bd::time_of_impact(bd::ToiInput::new(
                 pillar,
@@ -103,14 +112,14 @@ pub fn tick(app: &mut super::PhysicsApp) {
                 ),
                 bd::Sweep::new(
                     [0.0_f32, 0.0],
-                    [app.toi_start_x, app.toi_start_y],
-                    [app.toi_start_x + app.toi_dx, app.toi_start_y + app.toi_dy],
-                    bd::Rot::from_radians(app.toi_angle),
-                    bd::Rot::from_radians(app.toi_angle),
+                    [state.toi_start_x, state.toi_start_y],
+                    [state.toi_start_x + state.toi_dx, state.toi_start_y + state.toi_dy],
+                    bd::Rot::from_radians(state.toi_angle),
+                    bd::Rot::from_radians(state.toi_angle),
                 ),
             ));
-            app.toi_state = out.state;
-            app.toi_fraction = out.fraction;
+            state.toi_state = out.state;
+            state.toi_fraction = out.fraction;
         }
         _ => {}
     }
@@ -118,65 +127,67 @@ pub fn tick(app: &mut super::PhysicsApp) {
 
 pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
     let names = ["Ray Cast", "Shape Cast", "TOI"];
-    let mut idx = app.cast_mode.clamp(0, 2) as usize;
+    let idx = app.query_casts.mode.clamp(0, 2) as usize;
     if let Some(_c) = ui.begin_combo("Mode", names[idx]) {
         for (i, &name) in names.iter().enumerate() {
             let selected = i == idx;
             if ui.selectable_config(name).selected(selected).build() {
-                idx = i;
-                app.cast_mode = i as i32;
+                app.query_casts.mode = i as i32;
                 let _ = app.reset();
+                return;
             }
         }
     }
-    match app.cast_mode {
+    match app.query_casts.mode {
         0 => {
-            let mut ox = app.rw_origin_x;
-            let mut oy = app.rw_origin_y;
-            let mut dx = app.rw_dx;
-            let mut dy = app.rw_dy;
+            let mut ox = app.query_casts.ray_origin_x;
+            let mut oy = app.query_casts.ray_origin_y;
+            let mut dx = app.query_casts.ray_dx;
+            let mut dy = app.query_casts.ray_dy;
             let changed = ui.slider("Origin X", -50.0, 50.0, &mut ox)
                 || ui.slider("Origin Y", -10.0, 50.0, &mut oy)
                 || ui.slider("Dir X", -100.0, 100.0, &mut dx)
                 || ui.slider("Dir Y", -100.0, 100.0, &mut dy);
             if changed {
-                app.rw_origin_x = ox;
-                app.rw_origin_y = oy;
-                app.rw_dx = dx;
-                app.rw_dy = dy;
+                let state = &mut app.query_casts;
+                state.ray_origin_x = ox;
+                state.ray_origin_y = oy;
+                state.ray_dx = dx;
+                state.ray_dy = dy;
             }
-            ui.text(format!("Ray cast hits={}", app.rw_hits));
+            ui.text(format!("Ray cast hits={}", app.query_casts.ray_hits));
         }
         1 => {
-            let mut y = app.sc_pos_y;
-            let mut ang = app.sc_angle;
-            let mut dx = app.sc_tx;
-            let mut dy = app.sc_ty;
-            let mut r = app.sc_radius;
+            let mut y = app.query_casts.shape_pos_y;
+            let mut ang = app.query_casts.shape_angle;
+            let mut dx = app.query_casts.shape_tx;
+            let mut dy = app.query_casts.shape_ty;
+            let mut r = app.query_casts.shape_radius;
             let changed = ui.slider("Pos Y", 0.0, 10.0, &mut y)
                 || ui.slider("Angle (rad)", -std::f32::consts::PI, std::f32::consts::PI, &mut ang)
                 || ui.slider("Cast dX", -5.0, 5.0, &mut dx)
                 || ui.slider("Cast dY", -10.0, 0.0, &mut dy)
                 || ui.slider("Radius", 0.0, 0.25, &mut r);
             if changed {
-                app.sc_pos_y = y;
-                app.sc_angle = ang;
-                app.sc_tx = dx;
-                app.sc_ty = dy;
-                app.sc_radius = r.max(0.0);
+                let state = &mut app.query_casts;
+                state.shape_pos_y = y;
+                state.shape_angle = ang;
+                state.shape_tx = dx;
+                state.shape_ty = dy;
+                state.shape_radius = r.max(0.0);
             }
             ui.text(format!(
                 "Shape Cast: hits={} min_fraction={:.3}",
-                app.sc_hits, app.sc_min_fraction
+                app.query_casts.shape_hits, app.query_casts.shape_min_fraction
             ));
         }
         2 => {
-            let mut sx = app.toi_start_x;
-            let mut sy = app.toi_start_y;
-            let mut ang = app.toi_angle;
-            let mut dx = app.toi_dx;
-            let mut dy = app.toi_dy;
-            let mut r = app.toi_radius;
+            let mut sx = app.query_casts.toi_start_x;
+            let mut sy = app.query_casts.toi_start_y;
+            let mut ang = app.query_casts.toi_angle;
+            let mut dx = app.query_casts.toi_dx;
+            let mut dy = app.query_casts.toi_dy;
+            let mut r = app.query_casts.toi_radius;
             let changed = ui.slider("Start X", -5.0, 5.0, &mut sx)
                 || ui.slider("Start Y", 0.0, 10.0, &mut sy)
                 || ui.slider("Angle (rad)", -std::f32::consts::PI, std::f32::consts::PI, &mut ang)
@@ -184,16 +195,17 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
                 || ui.slider("dY", -10.0, 10.0, &mut dy)
                 || ui.slider("Radius", 0.0, 0.25, &mut r);
             if changed {
-                app.toi_start_x = sx;
-                app.toi_start_y = sy;
-                app.toi_angle = ang;
-                app.toi_dx = dx;
-                app.toi_dy = dy;
-                app.toi_radius = r.max(0.0);
+                let state = &mut app.query_casts;
+                state.toi_start_x = sx;
+                state.toi_start_y = sy;
+                state.toi_angle = ang;
+                state.toi_dx = dx;
+                state.toi_dy = dy;
+                state.toi_radius = r.max(0.0);
             }
             ui.text(format!(
                 "TOI: state={:?} fraction={:.3}",
-                app.toi_state, app.toi_fraction
+                app.query_casts.toi_state, app.query_casts.toi_fraction
             ));
         }
         _ => {}

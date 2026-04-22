@@ -309,6 +309,7 @@ Scope:
 - upgrade the optional Dear ImGui testbed stack to the current generation and keep the testbed example building
 - re-curate the example set after the `0.3` API expansion so examples teach the recommended safe workflows instead of historical API shapes
 - perform a second example-pass taxonomy cleanup so overlap queries, cast workflows, mover flows, and standalone collision geometry each have a clearly named example
+- keep the interactive testbed maintainable after that catalog pass by centralizing scene routing, grouping scene-local state, and fixing stale demo paths that no longer reflect the recommended reusable-buffer workflows
 - refresh README/example references so new users discover the main `0.3` workflows quickly
 - rewrite the `0.3.0` changelog into a release-note style document centered on user-visible additions, breaking changes, migration notes, and fixes
 
@@ -318,5 +319,6 @@ Exit criteria:
 - the Dear ImGui testbed stack builds on the chosen dependency versions without carrying outdated API comments or glue
 - the example catalog matches the promoted `0.3` workflows instead of pre-refactor crate history
 - example names, README descriptions, and source contents agree on their teaching goal instead of mixing overlap, cast, mover, or collision topics in one file
+- the interactive testbed no longer depends on one growing flat `PhysicsApp` state bag, and its overlap/cast/material demos exercise the same reusable-buffer/update patterns that `0.3` recommends to downstream users
 - README commands and example pointers line up with the curated example set
 - `CHANGELOG.md` communicates the release to downstream users without burying them in internal refactor detail
