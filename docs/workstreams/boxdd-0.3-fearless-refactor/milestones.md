@@ -70,6 +70,7 @@ Scope:
 - document the remaining intentional raw escape hatches and keep callback-sensitive raw paths under regression tests
 - consolidate the remaining high-churn joint-handle internals so scoped and owned joint handles share the same helper path for user data and threshold/state accessors
 - collapse the mirrored `Joint` / `OwnedJoint` common runtime wrapper bodies behind one private handle layer while keeping ownership-only destroy/drop and wake-on-drop seams explicit
+- collapse the mirrored typed joint family wrappers so `Distance`, `Prismatic`, `Revolute`, `Weld`, `Wheel`, and `Motor` each route owned/scoped runtime methods through one private handle layer
 
 Exit criteria:
 
@@ -96,6 +97,7 @@ Exit criteria:
 - the remaining intentional raw surfaces are explicitly documented instead of being discovered only by source spelunking
 - joint handles no longer duplicate the same user-data and threshold/state FFI plumbing across owned/scoped variants
 - mirrored `Joint` / `OwnedJoint` common runtime wrappers now share one internal source for validity, joint metadata, attached body ids, collide-connected control, constraint tuning, local frames, thresholds, wake helpers, and user-data forwarding, while ownership-only destroy/drop behavior stays explicit
+- mirrored typed joint runtime wrappers for owned/scoped handles now share internal sources for typed getters/setters and validated range mutation across `Distance`, `Prismatic`, `Revolute`, `Weld`, `Wheel`, and `Motor`, instead of maintaining drifting handle-specific copies
 
 ## M4: Advanced Wrapper Coverage
 

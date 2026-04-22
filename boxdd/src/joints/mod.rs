@@ -2484,113 +2484,127 @@ impl WorldHandle {
     }
 }
 
-impl OwnedJoint {
-    pub fn distance_length(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_length_impl)
-    }
+trait DistanceJointRuntimeHandle {
+    fn distance_joint_id(&self) -> JointId;
 
-    pub fn try_distance_length(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_length_impl)
-    }
-
-    pub fn distance_set_length(&mut self, length: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
+    fn distance_length(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.distance_joint_id(),
             JointType::Distance,
-            length,
-            distance_set_length_impl,
+            distance_length_impl,
         )
     }
 
-    pub fn try_distance_set_length(&mut self, length: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            length,
-            distance_set_length_impl,
-        )
-    }
-
-    pub fn distance_spring_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_spring_enabled_impl)
-    }
-
-    pub fn try_distance_spring_enabled(&self) -> ApiResult<bool> {
+    fn try_distance_length(&self) -> ApiResult<f32> {
         try_joint_kind_get_checked_impl(
-            self.id(),
+            self.distance_joint_id(),
+            JointType::Distance,
+            distance_length_impl,
+        )
+    }
+
+    fn distance_set_length(&mut self, length: f32) {
+        joint_kind_set_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            length,
+            distance_set_length_impl,
+        );
+    }
+
+    fn try_distance_set_length(&mut self, length: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            length,
+            distance_set_length_impl,
+        )
+    }
+
+    fn distance_spring_enabled(&self) -> bool {
+        joint_kind_get_checked_impl(
+            self.distance_joint_id(),
             JointType::Distance,
             distance_spring_enabled_impl,
         )
     }
 
-    pub fn distance_enable_spring(&mut self, enable: bool) {
+    fn try_distance_spring_enabled(&self) -> ApiResult<bool> {
+        try_joint_kind_get_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            distance_spring_enabled_impl,
+        )
+    }
+
+    fn distance_enable_spring(&mut self, enable: bool) {
         joint_kind_set_checked_impl(
-            self.id(),
+            self.distance_joint_id(),
             JointType::Distance,
             enable,
             distance_enable_spring_impl,
-        )
+        );
     }
 
-    pub fn try_distance_enable_spring(&mut self, enable: bool) -> ApiResult<()> {
+    fn try_distance_enable_spring(&mut self, enable: bool) -> ApiResult<()> {
         try_joint_kind_set_checked_impl(
-            self.id(),
+            self.distance_joint_id(),
             JointType::Distance,
             enable,
             distance_enable_spring_impl,
         )
     }
 
-    pub fn distance_lower_spring_force(&self) -> f32 {
+    fn distance_lower_spring_force(&self) -> f32 {
         joint_kind_get_checked_impl(
-            self.id(),
+            self.distance_joint_id(),
             JointType::Distance,
             distance_lower_spring_force_impl,
         )
     }
 
-    pub fn try_distance_lower_spring_force(&self) -> ApiResult<f32> {
+    fn try_distance_lower_spring_force(&self) -> ApiResult<f32> {
         try_joint_kind_get_checked_impl(
-            self.id(),
+            self.distance_joint_id(),
             JointType::Distance,
             distance_lower_spring_force_impl,
         )
     }
 
-    pub fn distance_upper_spring_force(&self) -> f32 {
+    fn distance_upper_spring_force(&self) -> f32 {
         joint_kind_get_checked_impl(
-            self.id(),
+            self.distance_joint_id(),
             JointType::Distance,
             distance_upper_spring_force_impl,
         )
     }
 
-    pub fn try_distance_upper_spring_force(&self) -> ApiResult<f32> {
+    fn try_distance_upper_spring_force(&self) -> ApiResult<f32> {
         try_joint_kind_get_checked_impl(
-            self.id(),
+            self.distance_joint_id(),
             JointType::Distance,
             distance_upper_spring_force_impl,
         )
     }
 
-    pub fn distance_set_spring_force_range(&mut self, lower_force: f32, upper_force: f32) {
+    fn distance_set_spring_force_range(&mut self, lower_force: f32, upper_force: f32) {
         joint_kind_set2_checked_validated_impl(
-            self.id(),
+            self.distance_joint_id(),
             JointType::Distance,
             lower_force,
             upper_force,
             assert_distance_spring_force_range_valid,
             distance_set_spring_force_range_impl,
-        )
+        );
     }
 
-    pub fn try_distance_set_spring_force_range(
+    fn try_distance_set_spring_force_range(
         &mut self,
         lower_force: f32,
         upper_force: f32,
     ) -> ApiResult<()> {
         try_joint_kind_set2_checked_validated_impl(
-            self.id(),
+            self.distance_joint_id(),
             JointType::Distance,
             lower_force,
             upper_force,
@@ -2599,123 +2613,169 @@ impl OwnedJoint {
         )
     }
 
-    pub fn distance_spring_hertz(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_spring_hertz_impl)
-    }
-
-    pub fn try_distance_spring_hertz(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_spring_hertz_impl)
-    }
-
-    pub fn distance_set_spring_hertz(&mut self, hertz: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            hertz,
-            distance_set_spring_hertz_impl,
-        )
-    }
-
-    pub fn try_distance_set_spring_hertz(&mut self, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            hertz,
-            distance_set_spring_hertz_impl,
-        )
-    }
-
-    pub fn distance_spring_damping_ratio(&self) -> f32 {
+    fn distance_spring_hertz(&self) -> f32 {
         joint_kind_get_checked_impl(
-            self.id(),
+            self.distance_joint_id(),
             JointType::Distance,
-            distance_spring_damping_ratio_impl,
+            distance_spring_hertz_impl,
         )
     }
 
-    pub fn try_distance_spring_damping_ratio(&self) -> ApiResult<f32> {
+    fn try_distance_spring_hertz(&self) -> ApiResult<f32> {
         try_joint_kind_get_checked_impl(
-            self.id(),
+            self.distance_joint_id(),
+            JointType::Distance,
+            distance_spring_hertz_impl,
+        )
+    }
+
+    fn distance_set_spring_hertz(&mut self, hertz: f32) {
+        joint_kind_set_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            hertz,
+            distance_set_spring_hertz_impl,
+        );
+    }
+
+    fn try_distance_set_spring_hertz(&mut self, hertz: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            hertz,
+            distance_set_spring_hertz_impl,
+        )
+    }
+
+    fn distance_spring_damping_ratio(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.distance_joint_id(),
             JointType::Distance,
             distance_spring_damping_ratio_impl,
         )
     }
 
-    pub fn distance_set_spring_damping_ratio(&mut self, damping_ratio: f32) {
+    fn try_distance_spring_damping_ratio(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            distance_spring_damping_ratio_impl,
+        )
+    }
+
+    fn distance_set_spring_damping_ratio(&mut self, damping_ratio: f32) {
         joint_kind_set_checked_impl(
-            self.id(),
+            self.distance_joint_id(),
+            JointType::Distance,
+            damping_ratio,
+            distance_set_spring_damping_ratio_impl,
+        );
+    }
+
+    fn try_distance_set_spring_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.distance_joint_id(),
             JointType::Distance,
             damping_ratio,
             distance_set_spring_damping_ratio_impl,
         )
     }
 
-    pub fn try_distance_set_spring_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
+    fn distance_limit_enabled(&self) -> bool {
+        joint_kind_get_checked_impl(
+            self.distance_joint_id(),
             JointType::Distance,
-            damping_ratio,
-            distance_set_spring_damping_ratio_impl,
+            distance_limit_enabled_impl,
         )
     }
 
-    pub fn distance_limit_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_limit_enabled_impl)
-    }
-
-    pub fn try_distance_limit_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_limit_enabled_impl)
-    }
-
-    pub fn distance_enable_limit(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            enable,
-            distance_enable_limit_impl,
-        )
-    }
-
-    pub fn try_distance_enable_limit(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            enable,
-            distance_enable_limit_impl,
-        )
-    }
-
-    pub fn distance_min_length(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_min_length_impl)
-    }
-
-    pub fn try_distance_min_length(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_min_length_impl)
-    }
-
-    pub fn distance_max_length(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_max_length_impl)
-    }
-
-    pub fn try_distance_max_length(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_max_length_impl)
-    }
-
-    pub fn distance_current_length(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_current_length_impl)
-    }
-
-    pub fn try_distance_current_length(&self) -> ApiResult<f32> {
+    fn try_distance_limit_enabled(&self) -> ApiResult<bool> {
         try_joint_kind_get_checked_impl(
-            self.id(),
+            self.distance_joint_id(),
+            JointType::Distance,
+            distance_limit_enabled_impl,
+        )
+    }
+
+    fn distance_enable_limit(&mut self, enable: bool) {
+        joint_kind_set_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            enable,
+            distance_enable_limit_impl,
+        );
+    }
+
+    fn try_distance_enable_limit(&mut self, enable: bool) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            enable,
+            distance_enable_limit_impl,
+        )
+    }
+
+    fn distance_min_length(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            distance_min_length_impl,
+        )
+    }
+
+    fn try_distance_min_length(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            distance_min_length_impl,
+        )
+    }
+
+    fn distance_max_length(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            distance_max_length_impl,
+        )
+    }
+
+    fn try_distance_max_length(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            distance_max_length_impl,
+        )
+    }
+
+    fn distance_current_length(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.distance_joint_id(),
             JointType::Distance,
             distance_current_length_impl,
         )
     }
 
-    pub fn distance_set_length_range(&mut self, min_length: f32, max_length: f32) {
+    fn try_distance_current_length(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            distance_current_length_impl,
+        )
+    }
+
+    fn distance_set_length_range(&mut self, min_length: f32, max_length: f32) {
         joint_kind_set2_checked_impl(
-            self.id(),
+            self.distance_joint_id(),
+            JointType::Distance,
+            min_length,
+            max_length,
+            distance_set_length_range_impl,
+        );
+    }
+
+    fn try_distance_set_length_range(&mut self, min_length: f32, max_length: f32) -> ApiResult<()> {
+        try_joint_kind_set2_checked_impl(
+            self.distance_joint_id(),
             JointType::Distance,
             min_length,
             max_length,
@@ -2723,460 +2783,452 @@ impl OwnedJoint {
         )
     }
 
+    fn distance_motor_enabled(&self) -> bool {
+        joint_kind_get_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            distance_motor_enabled_impl,
+        )
+    }
+
+    fn try_distance_motor_enabled(&self) -> ApiResult<bool> {
+        try_joint_kind_get_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            distance_motor_enabled_impl,
+        )
+    }
+
+    fn distance_enable_motor(&mut self, enable: bool) {
+        joint_kind_set_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            enable,
+            distance_enable_motor_impl,
+        );
+    }
+
+    fn try_distance_enable_motor(&mut self, enable: bool) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            enable,
+            distance_enable_motor_impl,
+        )
+    }
+
+    fn distance_motor_speed(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            distance_motor_speed_impl,
+        )
+    }
+
+    fn try_distance_motor_speed(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            distance_motor_speed_impl,
+        )
+    }
+
+    fn distance_set_motor_speed(&mut self, speed: f32) {
+        joint_kind_set_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            speed,
+            distance_set_motor_speed_impl,
+        );
+    }
+
+    fn try_distance_set_motor_speed(&mut self, speed: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            speed,
+            distance_set_motor_speed_impl,
+        )
+    }
+
+    fn distance_max_motor_force(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            distance_max_motor_force_impl,
+        )
+    }
+
+    fn try_distance_max_motor_force(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            distance_max_motor_force_impl,
+        )
+    }
+
+    fn distance_set_max_motor_force(&mut self, force: f32) {
+        joint_kind_set_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            force,
+            distance_set_max_motor_force_impl,
+        );
+    }
+
+    fn try_distance_set_max_motor_force(&mut self, force: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            force,
+            distance_set_max_motor_force_impl,
+        )
+    }
+
+    fn distance_motor_force(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            distance_motor_force_impl,
+        )
+    }
+
+    fn try_distance_motor_force(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            distance_motor_force_impl,
+        )
+    }
+}
+
+impl DistanceJointRuntimeHandle for OwnedJoint {
+    fn distance_joint_id(&self) -> JointId {
+        self.id()
+    }
+}
+
+impl<'w> DistanceJointRuntimeHandle for Joint<'w> {
+    fn distance_joint_id(&self) -> JointId {
+        self.id()
+    }
+}
+
+impl OwnedJoint {
+    pub fn distance_length(&self) -> f32 {
+        DistanceJointRuntimeHandle::distance_length(self)
+    }
+    pub fn try_distance_length(&self) -> ApiResult<f32> {
+        DistanceJointRuntimeHandle::try_distance_length(self)
+    }
+    pub fn distance_set_length(&mut self, length: f32) {
+        DistanceJointRuntimeHandle::distance_set_length(self, length)
+    }
+    pub fn try_distance_set_length(&mut self, length: f32) -> ApiResult<()> {
+        DistanceJointRuntimeHandle::try_distance_set_length(self, length)
+    }
+    pub fn distance_spring_enabled(&self) -> bool {
+        DistanceJointRuntimeHandle::distance_spring_enabled(self)
+    }
+    pub fn try_distance_spring_enabled(&self) -> ApiResult<bool> {
+        DistanceJointRuntimeHandle::try_distance_spring_enabled(self)
+    }
+    pub fn distance_enable_spring(&mut self, enable: bool) {
+        DistanceJointRuntimeHandle::distance_enable_spring(self, enable)
+    }
+    pub fn try_distance_enable_spring(&mut self, enable: bool) -> ApiResult<()> {
+        DistanceJointRuntimeHandle::try_distance_enable_spring(self, enable)
+    }
+    pub fn distance_lower_spring_force(&self) -> f32 {
+        DistanceJointRuntimeHandle::distance_lower_spring_force(self)
+    }
+    pub fn try_distance_lower_spring_force(&self) -> ApiResult<f32> {
+        DistanceJointRuntimeHandle::try_distance_lower_spring_force(self)
+    }
+    pub fn distance_upper_spring_force(&self) -> f32 {
+        DistanceJointRuntimeHandle::distance_upper_spring_force(self)
+    }
+    pub fn try_distance_upper_spring_force(&self) -> ApiResult<f32> {
+        DistanceJointRuntimeHandle::try_distance_upper_spring_force(self)
+    }
+    pub fn distance_set_spring_force_range(&mut self, lower_force: f32, upper_force: f32) {
+        DistanceJointRuntimeHandle::distance_set_spring_force_range(self, lower_force, upper_force)
+    }
+    pub fn try_distance_set_spring_force_range(
+        &mut self,
+        lower_force: f32,
+        upper_force: f32,
+    ) -> ApiResult<()> {
+        DistanceJointRuntimeHandle::try_distance_set_spring_force_range(
+            self,
+            lower_force,
+            upper_force,
+        )
+    }
+    pub fn distance_spring_hertz(&self) -> f32 {
+        DistanceJointRuntimeHandle::distance_spring_hertz(self)
+    }
+    pub fn try_distance_spring_hertz(&self) -> ApiResult<f32> {
+        DistanceJointRuntimeHandle::try_distance_spring_hertz(self)
+    }
+    pub fn distance_set_spring_hertz(&mut self, hertz: f32) {
+        DistanceJointRuntimeHandle::distance_set_spring_hertz(self, hertz)
+    }
+    pub fn try_distance_set_spring_hertz(&mut self, hertz: f32) -> ApiResult<()> {
+        DistanceJointRuntimeHandle::try_distance_set_spring_hertz(self, hertz)
+    }
+    pub fn distance_spring_damping_ratio(&self) -> f32 {
+        DistanceJointRuntimeHandle::distance_spring_damping_ratio(self)
+    }
+    pub fn try_distance_spring_damping_ratio(&self) -> ApiResult<f32> {
+        DistanceJointRuntimeHandle::try_distance_spring_damping_ratio(self)
+    }
+    pub fn distance_set_spring_damping_ratio(&mut self, damping_ratio: f32) {
+        DistanceJointRuntimeHandle::distance_set_spring_damping_ratio(self, damping_ratio)
+    }
+    pub fn try_distance_set_spring_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
+        DistanceJointRuntimeHandle::try_distance_set_spring_damping_ratio(self, damping_ratio)
+    }
+    pub fn distance_limit_enabled(&self) -> bool {
+        DistanceJointRuntimeHandle::distance_limit_enabled(self)
+    }
+    pub fn try_distance_limit_enabled(&self) -> ApiResult<bool> {
+        DistanceJointRuntimeHandle::try_distance_limit_enabled(self)
+    }
+    pub fn distance_enable_limit(&mut self, enable: bool) {
+        DistanceJointRuntimeHandle::distance_enable_limit(self, enable)
+    }
+    pub fn try_distance_enable_limit(&mut self, enable: bool) -> ApiResult<()> {
+        DistanceJointRuntimeHandle::try_distance_enable_limit(self, enable)
+    }
+    pub fn distance_min_length(&self) -> f32 {
+        DistanceJointRuntimeHandle::distance_min_length(self)
+    }
+    pub fn try_distance_min_length(&self) -> ApiResult<f32> {
+        DistanceJointRuntimeHandle::try_distance_min_length(self)
+    }
+    pub fn distance_max_length(&self) -> f32 {
+        DistanceJointRuntimeHandle::distance_max_length(self)
+    }
+    pub fn try_distance_max_length(&self) -> ApiResult<f32> {
+        DistanceJointRuntimeHandle::try_distance_max_length(self)
+    }
+    pub fn distance_current_length(&self) -> f32 {
+        DistanceJointRuntimeHandle::distance_current_length(self)
+    }
+    pub fn try_distance_current_length(&self) -> ApiResult<f32> {
+        DistanceJointRuntimeHandle::try_distance_current_length(self)
+    }
+    pub fn distance_set_length_range(&mut self, min_length: f32, max_length: f32) {
+        DistanceJointRuntimeHandle::distance_set_length_range(self, min_length, max_length)
+    }
     pub fn try_distance_set_length_range(
         &mut self,
         min_length: f32,
         max_length: f32,
     ) -> ApiResult<()> {
-        try_joint_kind_set2_checked_impl(
-            self.id(),
-            JointType::Distance,
-            min_length,
-            max_length,
-            distance_set_length_range_impl,
-        )
+        DistanceJointRuntimeHandle::try_distance_set_length_range(self, min_length, max_length)
     }
-
     pub fn distance_motor_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_motor_enabled_impl)
+        DistanceJointRuntimeHandle::distance_motor_enabled(self)
     }
-
     pub fn try_distance_motor_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_motor_enabled_impl)
+        DistanceJointRuntimeHandle::try_distance_motor_enabled(self)
     }
-
     pub fn distance_enable_motor(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            enable,
-            distance_enable_motor_impl,
-        )
+        DistanceJointRuntimeHandle::distance_enable_motor(self, enable)
     }
-
     pub fn try_distance_enable_motor(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            enable,
-            distance_enable_motor_impl,
-        )
+        DistanceJointRuntimeHandle::try_distance_enable_motor(self, enable)
     }
-
     pub fn distance_motor_speed(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_motor_speed_impl)
+        DistanceJointRuntimeHandle::distance_motor_speed(self)
     }
-
     pub fn try_distance_motor_speed(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_motor_speed_impl)
+        DistanceJointRuntimeHandle::try_distance_motor_speed(self)
     }
-
     pub fn distance_set_motor_speed(&mut self, speed: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            speed,
-            distance_set_motor_speed_impl,
-        )
+        DistanceJointRuntimeHandle::distance_set_motor_speed(self, speed)
     }
-
     pub fn try_distance_set_motor_speed(&mut self, speed: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            speed,
-            distance_set_motor_speed_impl,
-        )
+        DistanceJointRuntimeHandle::try_distance_set_motor_speed(self, speed)
     }
-
     pub fn distance_max_motor_force(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Distance,
-            distance_max_motor_force_impl,
-        )
+        DistanceJointRuntimeHandle::distance_max_motor_force(self)
     }
-
     pub fn try_distance_max_motor_force(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Distance,
-            distance_max_motor_force_impl,
-        )
+        DistanceJointRuntimeHandle::try_distance_max_motor_force(self)
     }
-
     pub fn distance_set_max_motor_force(&mut self, force: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            force,
-            distance_set_max_motor_force_impl,
-        )
+        DistanceJointRuntimeHandle::distance_set_max_motor_force(self, force)
     }
-
     pub fn try_distance_set_max_motor_force(&mut self, force: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            force,
-            distance_set_max_motor_force_impl,
-        )
+        DistanceJointRuntimeHandle::try_distance_set_max_motor_force(self, force)
     }
-
     pub fn distance_motor_force(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_motor_force_impl)
+        DistanceJointRuntimeHandle::distance_motor_force(self)
     }
-
     pub fn try_distance_motor_force(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_motor_force_impl)
+        DistanceJointRuntimeHandle::try_distance_motor_force(self)
     }
 }
 
 impl<'w> Joint<'w> {
     pub fn distance_length(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_length_impl)
+        DistanceJointRuntimeHandle::distance_length(self)
     }
-
     pub fn try_distance_length(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_length_impl)
+        DistanceJointRuntimeHandle::try_distance_length(self)
     }
-
     pub fn distance_set_length(&mut self, length: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            length,
-            distance_set_length_impl,
-        )
+        DistanceJointRuntimeHandle::distance_set_length(self, length)
     }
-
     pub fn try_distance_set_length(&mut self, length: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            length,
-            distance_set_length_impl,
-        )
+        DistanceJointRuntimeHandle::try_distance_set_length(self, length)
     }
-
     pub fn distance_spring_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_spring_enabled_impl)
+        DistanceJointRuntimeHandle::distance_spring_enabled(self)
     }
-
     pub fn try_distance_spring_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Distance,
-            distance_spring_enabled_impl,
-        )
+        DistanceJointRuntimeHandle::try_distance_spring_enabled(self)
     }
-
     pub fn distance_enable_spring(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            enable,
-            distance_enable_spring_impl,
-        )
+        DistanceJointRuntimeHandle::distance_enable_spring(self, enable)
     }
-
     pub fn try_distance_enable_spring(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            enable,
-            distance_enable_spring_impl,
-        )
+        DistanceJointRuntimeHandle::try_distance_enable_spring(self, enable)
     }
-
     pub fn distance_lower_spring_force(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Distance,
-            distance_lower_spring_force_impl,
-        )
+        DistanceJointRuntimeHandle::distance_lower_spring_force(self)
     }
-
     pub fn try_distance_lower_spring_force(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Distance,
-            distance_lower_spring_force_impl,
-        )
+        DistanceJointRuntimeHandle::try_distance_lower_spring_force(self)
     }
-
     pub fn distance_upper_spring_force(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Distance,
-            distance_upper_spring_force_impl,
-        )
+        DistanceJointRuntimeHandle::distance_upper_spring_force(self)
     }
-
     pub fn try_distance_upper_spring_force(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Distance,
-            distance_upper_spring_force_impl,
-        )
+        DistanceJointRuntimeHandle::try_distance_upper_spring_force(self)
     }
-
     pub fn distance_set_spring_force_range(&mut self, lower_force: f32, upper_force: f32) {
-        joint_kind_set2_checked_validated_impl(
-            self.id(),
-            JointType::Distance,
-            lower_force,
-            upper_force,
-            assert_distance_spring_force_range_valid,
-            distance_set_spring_force_range_impl,
-        )
+        DistanceJointRuntimeHandle::distance_set_spring_force_range(self, lower_force, upper_force)
     }
-
     pub fn try_distance_set_spring_force_range(
         &mut self,
         lower_force: f32,
         upper_force: f32,
     ) -> ApiResult<()> {
-        try_joint_kind_set2_checked_validated_impl(
-            self.id(),
-            JointType::Distance,
+        DistanceJointRuntimeHandle::try_distance_set_spring_force_range(
+            self,
             lower_force,
             upper_force,
-            check_distance_spring_force_range_valid,
-            distance_set_spring_force_range_impl,
         )
     }
-
     pub fn distance_spring_hertz(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_spring_hertz_impl)
+        DistanceJointRuntimeHandle::distance_spring_hertz(self)
     }
-
     pub fn try_distance_spring_hertz(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_spring_hertz_impl)
+        DistanceJointRuntimeHandle::try_distance_spring_hertz(self)
     }
-
     pub fn distance_set_spring_hertz(&mut self, hertz: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            hertz,
-            distance_set_spring_hertz_impl,
-        )
+        DistanceJointRuntimeHandle::distance_set_spring_hertz(self, hertz)
     }
-
     pub fn try_distance_set_spring_hertz(&mut self, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            hertz,
-            distance_set_spring_hertz_impl,
-        )
+        DistanceJointRuntimeHandle::try_distance_set_spring_hertz(self, hertz)
     }
-
     pub fn distance_spring_damping_ratio(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Distance,
-            distance_spring_damping_ratio_impl,
-        )
+        DistanceJointRuntimeHandle::distance_spring_damping_ratio(self)
     }
-
     pub fn try_distance_spring_damping_ratio(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Distance,
-            distance_spring_damping_ratio_impl,
-        )
+        DistanceJointRuntimeHandle::try_distance_spring_damping_ratio(self)
     }
-
     pub fn distance_set_spring_damping_ratio(&mut self, damping_ratio: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            damping_ratio,
-            distance_set_spring_damping_ratio_impl,
-        )
+        DistanceJointRuntimeHandle::distance_set_spring_damping_ratio(self, damping_ratio)
     }
-
     pub fn try_distance_set_spring_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            damping_ratio,
-            distance_set_spring_damping_ratio_impl,
-        )
+        DistanceJointRuntimeHandle::try_distance_set_spring_damping_ratio(self, damping_ratio)
     }
-
     pub fn distance_limit_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_limit_enabled_impl)
+        DistanceJointRuntimeHandle::distance_limit_enabled(self)
     }
-
     pub fn try_distance_limit_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_limit_enabled_impl)
+        DistanceJointRuntimeHandle::try_distance_limit_enabled(self)
     }
-
     pub fn distance_enable_limit(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            enable,
-            distance_enable_limit_impl,
-        )
+        DistanceJointRuntimeHandle::distance_enable_limit(self, enable)
     }
-
     pub fn try_distance_enable_limit(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            enable,
-            distance_enable_limit_impl,
-        )
+        DistanceJointRuntimeHandle::try_distance_enable_limit(self, enable)
     }
-
     pub fn distance_min_length(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_min_length_impl)
+        DistanceJointRuntimeHandle::distance_min_length(self)
     }
-
     pub fn try_distance_min_length(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_min_length_impl)
+        DistanceJointRuntimeHandle::try_distance_min_length(self)
     }
-
     pub fn distance_max_length(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_max_length_impl)
+        DistanceJointRuntimeHandle::distance_max_length(self)
     }
-
     pub fn try_distance_max_length(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_max_length_impl)
+        DistanceJointRuntimeHandle::try_distance_max_length(self)
     }
-
     pub fn distance_current_length(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_current_length_impl)
+        DistanceJointRuntimeHandle::distance_current_length(self)
     }
-
     pub fn try_distance_current_length(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Distance,
-            distance_current_length_impl,
-        )
+        DistanceJointRuntimeHandle::try_distance_current_length(self)
     }
-
     pub fn distance_set_length_range(&mut self, min_length: f32, max_length: f32) {
-        joint_kind_set2_checked_impl(
-            self.id(),
-            JointType::Distance,
-            min_length,
-            max_length,
-            distance_set_length_range_impl,
-        )
+        DistanceJointRuntimeHandle::distance_set_length_range(self, min_length, max_length)
     }
-
     pub fn try_distance_set_length_range(
         &mut self,
         min_length: f32,
         max_length: f32,
     ) -> ApiResult<()> {
-        try_joint_kind_set2_checked_impl(
-            self.id(),
-            JointType::Distance,
-            min_length,
-            max_length,
-            distance_set_length_range_impl,
-        )
+        DistanceJointRuntimeHandle::try_distance_set_length_range(self, min_length, max_length)
     }
-
     pub fn distance_motor_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_motor_enabled_impl)
+        DistanceJointRuntimeHandle::distance_motor_enabled(self)
     }
-
     pub fn try_distance_motor_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_motor_enabled_impl)
+        DistanceJointRuntimeHandle::try_distance_motor_enabled(self)
     }
-
     pub fn distance_enable_motor(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            enable,
-            distance_enable_motor_impl,
-        )
+        DistanceJointRuntimeHandle::distance_enable_motor(self, enable)
     }
-
     pub fn try_distance_enable_motor(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            enable,
-            distance_enable_motor_impl,
-        )
+        DistanceJointRuntimeHandle::try_distance_enable_motor(self, enable)
     }
-
     pub fn distance_motor_speed(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_motor_speed_impl)
+        DistanceJointRuntimeHandle::distance_motor_speed(self)
     }
-
     pub fn try_distance_motor_speed(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_motor_speed_impl)
+        DistanceJointRuntimeHandle::try_distance_motor_speed(self)
     }
-
     pub fn distance_set_motor_speed(&mut self, speed: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            speed,
-            distance_set_motor_speed_impl,
-        )
+        DistanceJointRuntimeHandle::distance_set_motor_speed(self, speed)
     }
-
     pub fn try_distance_set_motor_speed(&mut self, speed: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            speed,
-            distance_set_motor_speed_impl,
-        )
+        DistanceJointRuntimeHandle::try_distance_set_motor_speed(self, speed)
     }
-
     pub fn distance_max_motor_force(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Distance,
-            distance_max_motor_force_impl,
-        )
+        DistanceJointRuntimeHandle::distance_max_motor_force(self)
     }
-
     pub fn try_distance_max_motor_force(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Distance,
-            distance_max_motor_force_impl,
-        )
+        DistanceJointRuntimeHandle::try_distance_max_motor_force(self)
     }
-
     pub fn distance_set_max_motor_force(&mut self, force: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            force,
-            distance_set_max_motor_force_impl,
-        )
+        DistanceJointRuntimeHandle::distance_set_max_motor_force(self, force)
     }
-
     pub fn try_distance_set_max_motor_force(&mut self, force: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Distance,
-            force,
-            distance_set_max_motor_force_impl,
-        )
+        DistanceJointRuntimeHandle::try_distance_set_max_motor_force(self, force)
     }
-
     pub fn distance_motor_force(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_motor_force_impl)
+        DistanceJointRuntimeHandle::distance_motor_force(self)
     }
-
     pub fn try_distance_motor_force(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Distance, distance_motor_force_impl)
+        DistanceJointRuntimeHandle::try_distance_motor_force(self)
     }
 }
 
@@ -3929,203 +3981,225 @@ impl WorldHandle {
     }
 }
 
-impl OwnedJoint {
-    pub fn prismatic_spring_enabled(&self) -> bool {
+trait PrismaticJointRuntimeHandle {
+    fn prismatic_joint_id(&self) -> JointId;
+
+    fn prismatic_spring_enabled(&self) -> bool {
         joint_kind_get_checked_impl(
-            self.id(),
+            self.prismatic_joint_id(),
             JointType::Prismatic,
             prismatic_spring_enabled_impl,
         )
     }
 
-    pub fn try_prismatic_spring_enabled(&self) -> ApiResult<bool> {
+    fn try_prismatic_spring_enabled(&self) -> ApiResult<bool> {
         try_joint_kind_get_checked_impl(
-            self.id(),
+            self.prismatic_joint_id(),
             JointType::Prismatic,
             prismatic_spring_enabled_impl,
         )
     }
 
-    pub fn prismatic_enable_spring(&mut self, enable: bool) {
+    fn prismatic_enable_spring(&mut self, enable: bool) {
         joint_kind_set_checked_impl(
-            self.id(),
+            self.prismatic_joint_id(),
             JointType::Prismatic,
             enable,
             prismatic_enable_spring_impl,
-        )
+        );
     }
 
-    pub fn try_prismatic_enable_spring(&mut self, enable: bool) -> ApiResult<()> {
+    fn try_prismatic_enable_spring(&mut self, enable: bool) -> ApiResult<()> {
         try_joint_kind_set_checked_impl(
-            self.id(),
+            self.prismatic_joint_id(),
             JointType::Prismatic,
             enable,
             prismatic_enable_spring_impl,
         )
     }
 
-    pub fn prismatic_spring_hertz(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_spring_hertz_impl)
-    }
-
-    pub fn try_prismatic_spring_hertz(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.id(),
+    fn prismatic_spring_hertz(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.prismatic_joint_id(),
             JointType::Prismatic,
             prismatic_spring_hertz_impl,
         )
     }
 
-    pub fn prismatic_set_spring_hertz(&mut self, hertz: f32) {
+    fn try_prismatic_spring_hertz(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            prismatic_spring_hertz_impl,
+        )
+    }
+
+    fn prismatic_set_spring_hertz(&mut self, hertz: f32) {
         joint_kind_set_checked_impl(
-            self.id(),
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            hertz,
+            prismatic_set_spring_hertz_impl,
+        );
+    }
+
+    fn try_prismatic_set_spring_hertz(&mut self, hertz: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.prismatic_joint_id(),
             JointType::Prismatic,
             hertz,
             prismatic_set_spring_hertz_impl,
         )
     }
 
-    pub fn try_prismatic_set_spring_hertz(&mut self, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            hertz,
-            prismatic_set_spring_hertz_impl,
-        )
-    }
-
-    pub fn prismatic_spring_damping_ratio(&self) -> f32 {
+    fn prismatic_spring_damping_ratio(&self) -> f32 {
         joint_kind_get_checked_impl(
-            self.id(),
+            self.prismatic_joint_id(),
             JointType::Prismatic,
             prismatic_spring_damping_ratio_impl,
         )
     }
 
-    pub fn try_prismatic_spring_damping_ratio(&self) -> ApiResult<f32> {
+    fn try_prismatic_spring_damping_ratio(&self) -> ApiResult<f32> {
         try_joint_kind_get_checked_impl(
-            self.id(),
+            self.prismatic_joint_id(),
             JointType::Prismatic,
             prismatic_spring_damping_ratio_impl,
         )
     }
 
-    pub fn prismatic_set_spring_damping_ratio(&mut self, damping_ratio: f32) {
+    fn prismatic_set_spring_damping_ratio(&mut self, damping_ratio: f32) {
         joint_kind_set_checked_impl(
-            self.id(),
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            damping_ratio,
+            prismatic_set_spring_damping_ratio_impl,
+        );
+    }
+
+    fn try_prismatic_set_spring_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.prismatic_joint_id(),
             JointType::Prismatic,
             damping_ratio,
             prismatic_set_spring_damping_ratio_impl,
         )
     }
 
-    pub fn try_prismatic_set_spring_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            damping_ratio,
-            prismatic_set_spring_damping_ratio_impl,
-        )
-    }
-
-    pub fn prismatic_target_translation(&self) -> f32 {
+    fn prismatic_target_translation(&self) -> f32 {
         joint_kind_get_checked_impl(
-            self.id(),
+            self.prismatic_joint_id(),
             JointType::Prismatic,
             prismatic_target_translation_impl,
         )
     }
 
-    pub fn try_prismatic_target_translation(&self) -> ApiResult<f32> {
+    fn try_prismatic_target_translation(&self) -> ApiResult<f32> {
         try_joint_kind_get_checked_impl(
-            self.id(),
+            self.prismatic_joint_id(),
             JointType::Prismatic,
             prismatic_target_translation_impl,
         )
     }
 
-    pub fn prismatic_set_target_translation(&mut self, translation: f32) {
+    fn prismatic_set_target_translation(&mut self, translation: f32) {
         joint_kind_set_checked_impl(
-            self.id(),
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            translation,
+            prismatic_set_target_translation_impl,
+        );
+    }
+
+    fn try_prismatic_set_target_translation(&mut self, translation: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.prismatic_joint_id(),
             JointType::Prismatic,
             translation,
             prismatic_set_target_translation_impl,
         )
     }
 
-    pub fn try_prismatic_set_target_translation(&mut self, translation: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            translation,
-            prismatic_set_target_translation_impl,
-        )
-    }
-
-    pub fn prismatic_limit_enabled(&self) -> bool {
+    fn prismatic_limit_enabled(&self) -> bool {
         joint_kind_get_checked_impl(
-            self.id(),
+            self.prismatic_joint_id(),
             JointType::Prismatic,
             prismatic_limit_enabled_impl,
         )
     }
 
-    pub fn try_prismatic_limit_enabled(&self) -> ApiResult<bool> {
+    fn try_prismatic_limit_enabled(&self) -> ApiResult<bool> {
         try_joint_kind_get_checked_impl(
-            self.id(),
+            self.prismatic_joint_id(),
             JointType::Prismatic,
             prismatic_limit_enabled_impl,
         )
     }
 
-    pub fn prismatic_enable_limit(&mut self, enable: bool) {
+    fn prismatic_enable_limit(&mut self, enable: bool) {
         joint_kind_set_checked_impl(
-            self.id(),
+            self.prismatic_joint_id(),
             JointType::Prismatic,
             enable,
             prismatic_enable_limit_impl,
-        )
+        );
     }
 
-    pub fn try_prismatic_enable_limit(&mut self, enable: bool) -> ApiResult<()> {
+    fn try_prismatic_enable_limit(&mut self, enable: bool) -> ApiResult<()> {
         try_joint_kind_set_checked_impl(
-            self.id(),
+            self.prismatic_joint_id(),
             JointType::Prismatic,
             enable,
             prismatic_enable_limit_impl,
         )
     }
 
-    pub fn prismatic_lower_limit(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_lower_limit_impl)
+    fn prismatic_lower_limit(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            prismatic_lower_limit_impl,
+        )
     }
 
-    pub fn try_prismatic_lower_limit(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_lower_limit_impl)
+    fn try_prismatic_lower_limit(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            prismatic_lower_limit_impl,
+        )
     }
 
-    pub fn prismatic_upper_limit(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_upper_limit_impl)
+    fn prismatic_upper_limit(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            prismatic_upper_limit_impl,
+        )
     }
 
-    pub fn try_prismatic_upper_limit(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_upper_limit_impl)
+    fn try_prismatic_upper_limit(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            prismatic_upper_limit_impl,
+        )
     }
 
-    pub fn prismatic_set_limits(&mut self, lower: f32, upper: f32) {
+    fn prismatic_set_limits(&mut self, lower: f32, upper: f32) {
         joint_kind_set2_checked_validated_impl(
-            self.id(),
+            self.prismatic_joint_id(),
             JointType::Prismatic,
             lower,
             upper,
             assert_prismatic_limits_valid,
             prismatic_set_limits_impl,
-        )
+        );
     }
 
-    pub fn try_prismatic_set_limits(&mut self, lower: f32, upper: f32) -> ApiResult<()> {
+    fn try_prismatic_set_limits(&mut self, lower: f32, upper: f32) -> ApiResult<()> {
         try_joint_kind_set2_checked_validated_impl(
-            self.id(),
+            self.prismatic_joint_id(),
             JointType::Prismatic,
             lower,
             upper,
@@ -4134,304 +4208,928 @@ impl OwnedJoint {
         )
     }
 
+    fn prismatic_motor_enabled(&self) -> bool {
+        joint_kind_get_checked_impl(
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            prismatic_motor_enabled_impl,
+        )
+    }
+
+    fn try_prismatic_motor_enabled(&self) -> ApiResult<bool> {
+        try_joint_kind_get_checked_impl(
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            prismatic_motor_enabled_impl,
+        )
+    }
+
+    fn prismatic_enable_motor(&mut self, enable: bool) {
+        joint_kind_set_checked_impl(
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            enable,
+            prismatic_enable_motor_impl,
+        );
+    }
+
+    fn try_prismatic_enable_motor(&mut self, enable: bool) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            enable,
+            prismatic_enable_motor_impl,
+        )
+    }
+
+    fn prismatic_motor_speed(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            prismatic_motor_speed_impl,
+        )
+    }
+
+    fn try_prismatic_motor_speed(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            prismatic_motor_speed_impl,
+        )
+    }
+
+    fn prismatic_set_motor_speed(&mut self, speed: f32) {
+        joint_kind_set_checked_impl(
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            speed,
+            prismatic_set_motor_speed_impl,
+        );
+    }
+
+    fn try_prismatic_set_motor_speed(&mut self, speed: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            speed,
+            prismatic_set_motor_speed_impl,
+        )
+    }
+
+    fn prismatic_max_motor_force(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            prismatic_max_motor_force_impl,
+        )
+    }
+
+    fn try_prismatic_max_motor_force(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            prismatic_max_motor_force_impl,
+        )
+    }
+
+    fn prismatic_set_max_motor_force(&mut self, force: f32) {
+        joint_kind_set_checked_impl(
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            force,
+            prismatic_set_max_motor_force_impl,
+        );
+    }
+
+    fn try_prismatic_set_max_motor_force(&mut self, force: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            force,
+            prismatic_set_max_motor_force_impl,
+        )
+    }
+
+    fn prismatic_motor_force(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            prismatic_motor_force_impl,
+        )
+    }
+
+    fn try_prismatic_motor_force(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            prismatic_motor_force_impl,
+        )
+    }
+
+    fn prismatic_translation(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            prismatic_translation_impl,
+        )
+    }
+
+    fn try_prismatic_translation(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            prismatic_translation_impl,
+        )
+    }
+
+    fn prismatic_speed(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            prismatic_speed_impl,
+        )
+    }
+
+    fn try_prismatic_speed(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.prismatic_joint_id(),
+            JointType::Prismatic,
+            prismatic_speed_impl,
+        )
+    }
+}
+
+impl PrismaticJointRuntimeHandle for OwnedJoint {
+    fn prismatic_joint_id(&self) -> JointId {
+        self.id()
+    }
+}
+
+impl OwnedJoint {
+    pub fn prismatic_spring_enabled(&self) -> bool {
+        PrismaticJointRuntimeHandle::prismatic_spring_enabled(self)
+    }
+    pub fn try_prismatic_spring_enabled(&self) -> ApiResult<bool> {
+        PrismaticJointRuntimeHandle::try_prismatic_spring_enabled(self)
+    }
+    pub fn prismatic_enable_spring(&mut self, enable: bool) {
+        PrismaticJointRuntimeHandle::prismatic_enable_spring(self, enable)
+    }
+    pub fn try_prismatic_enable_spring(&mut self, enable: bool) -> ApiResult<()> {
+        PrismaticJointRuntimeHandle::try_prismatic_enable_spring(self, enable)
+    }
+    pub fn prismatic_spring_hertz(&self) -> f32 {
+        PrismaticJointRuntimeHandle::prismatic_spring_hertz(self)
+    }
+    pub fn try_prismatic_spring_hertz(&self) -> ApiResult<f32> {
+        PrismaticJointRuntimeHandle::try_prismatic_spring_hertz(self)
+    }
+    pub fn prismatic_set_spring_hertz(&mut self, hertz: f32) {
+        PrismaticJointRuntimeHandle::prismatic_set_spring_hertz(self, hertz)
+    }
+    pub fn try_prismatic_set_spring_hertz(&mut self, hertz: f32) -> ApiResult<()> {
+        PrismaticJointRuntimeHandle::try_prismatic_set_spring_hertz(self, hertz)
+    }
+    pub fn prismatic_spring_damping_ratio(&self) -> f32 {
+        PrismaticJointRuntimeHandle::prismatic_spring_damping_ratio(self)
+    }
+    pub fn try_prismatic_spring_damping_ratio(&self) -> ApiResult<f32> {
+        PrismaticJointRuntimeHandle::try_prismatic_spring_damping_ratio(self)
+    }
+    pub fn prismatic_set_spring_damping_ratio(&mut self, damping_ratio: f32) {
+        PrismaticJointRuntimeHandle::prismatic_set_spring_damping_ratio(self, damping_ratio)
+    }
+    pub fn try_prismatic_set_spring_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
+        PrismaticJointRuntimeHandle::try_prismatic_set_spring_damping_ratio(self, damping_ratio)
+    }
+    pub fn prismatic_target_translation(&self) -> f32 {
+        PrismaticJointRuntimeHandle::prismatic_target_translation(self)
+    }
+    pub fn try_prismatic_target_translation(&self) -> ApiResult<f32> {
+        PrismaticJointRuntimeHandle::try_prismatic_target_translation(self)
+    }
+    pub fn prismatic_set_target_translation(&mut self, translation: f32) {
+        PrismaticJointRuntimeHandle::prismatic_set_target_translation(self, translation)
+    }
+    pub fn try_prismatic_set_target_translation(&mut self, translation: f32) -> ApiResult<()> {
+        PrismaticJointRuntimeHandle::try_prismatic_set_target_translation(self, translation)
+    }
+    pub fn prismatic_limit_enabled(&self) -> bool {
+        PrismaticJointRuntimeHandle::prismatic_limit_enabled(self)
+    }
+    pub fn try_prismatic_limit_enabled(&self) -> ApiResult<bool> {
+        PrismaticJointRuntimeHandle::try_prismatic_limit_enabled(self)
+    }
+    pub fn prismatic_enable_limit(&mut self, enable: bool) {
+        PrismaticJointRuntimeHandle::prismatic_enable_limit(self, enable)
+    }
+    pub fn try_prismatic_enable_limit(&mut self, enable: bool) -> ApiResult<()> {
+        PrismaticJointRuntimeHandle::try_prismatic_enable_limit(self, enable)
+    }
+    pub fn prismatic_lower_limit(&self) -> f32 {
+        PrismaticJointRuntimeHandle::prismatic_lower_limit(self)
+    }
+    pub fn try_prismatic_lower_limit(&self) -> ApiResult<f32> {
+        PrismaticJointRuntimeHandle::try_prismatic_lower_limit(self)
+    }
+    pub fn prismatic_upper_limit(&self) -> f32 {
+        PrismaticJointRuntimeHandle::prismatic_upper_limit(self)
+    }
+    pub fn try_prismatic_upper_limit(&self) -> ApiResult<f32> {
+        PrismaticJointRuntimeHandle::try_prismatic_upper_limit(self)
+    }
+    pub fn prismatic_set_limits(&mut self, lower: f32, upper: f32) {
+        PrismaticJointRuntimeHandle::prismatic_set_limits(self, lower, upper)
+    }
+    pub fn try_prismatic_set_limits(&mut self, lower: f32, upper: f32) -> ApiResult<()> {
+        PrismaticJointRuntimeHandle::try_prismatic_set_limits(self, lower, upper)
+    }
     pub fn prismatic_motor_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            prismatic_motor_enabled_impl,
-        )
+        PrismaticJointRuntimeHandle::prismatic_motor_enabled(self)
     }
-
     pub fn try_prismatic_motor_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            prismatic_motor_enabled_impl,
-        )
+        PrismaticJointRuntimeHandle::try_prismatic_motor_enabled(self)
     }
-
     pub fn prismatic_enable_motor(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            enable,
-            prismatic_enable_motor_impl,
-        )
+        PrismaticJointRuntimeHandle::prismatic_enable_motor(self, enable)
     }
-
     pub fn try_prismatic_enable_motor(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            enable,
-            prismatic_enable_motor_impl,
-        )
+        PrismaticJointRuntimeHandle::try_prismatic_enable_motor(self, enable)
     }
-
     pub fn prismatic_motor_speed(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_motor_speed_impl)
+        PrismaticJointRuntimeHandle::prismatic_motor_speed(self)
     }
-
     pub fn try_prismatic_motor_speed(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_motor_speed_impl)
+        PrismaticJointRuntimeHandle::try_prismatic_motor_speed(self)
     }
-
     pub fn prismatic_set_motor_speed(&mut self, speed: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            speed,
-            prismatic_set_motor_speed_impl,
-        )
+        PrismaticJointRuntimeHandle::prismatic_set_motor_speed(self, speed)
     }
-
     pub fn try_prismatic_set_motor_speed(&mut self, speed: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            speed,
-            prismatic_set_motor_speed_impl,
-        )
+        PrismaticJointRuntimeHandle::try_prismatic_set_motor_speed(self, speed)
     }
-
     pub fn prismatic_max_motor_force(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            prismatic_max_motor_force_impl,
-        )
+        PrismaticJointRuntimeHandle::prismatic_max_motor_force(self)
     }
-
     pub fn try_prismatic_max_motor_force(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            prismatic_max_motor_force_impl,
-        )
+        PrismaticJointRuntimeHandle::try_prismatic_max_motor_force(self)
     }
-
     pub fn prismatic_set_max_motor_force(&mut self, force: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            force,
-            prismatic_set_max_motor_force_impl,
-        )
+        PrismaticJointRuntimeHandle::prismatic_set_max_motor_force(self, force)
     }
-
     pub fn try_prismatic_set_max_motor_force(&mut self, force: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            force,
-            prismatic_set_max_motor_force_impl,
-        )
+        PrismaticJointRuntimeHandle::try_prismatic_set_max_motor_force(self, force)
     }
-
     pub fn prismatic_motor_force(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_motor_force_impl)
+        PrismaticJointRuntimeHandle::prismatic_motor_force(self)
     }
-
     pub fn try_prismatic_motor_force(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_motor_force_impl)
+        PrismaticJointRuntimeHandle::try_prismatic_motor_force(self)
     }
-
     pub fn prismatic_translation(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_translation_impl)
+        PrismaticJointRuntimeHandle::prismatic_translation(self)
     }
-
     pub fn try_prismatic_translation(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_translation_impl)
+        PrismaticJointRuntimeHandle::try_prismatic_translation(self)
     }
-
     pub fn prismatic_speed(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_speed_impl)
+        PrismaticJointRuntimeHandle::prismatic_speed(self)
     }
-
     pub fn try_prismatic_speed(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_speed_impl)
+        PrismaticJointRuntimeHandle::try_prismatic_speed(self)
     }
 
     pub fn revolute_spring_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_spring_enabled_impl)
+        RevoluteJointRuntimeHandle::revolute_spring_enabled(self)
+    }
+    pub fn try_revolute_spring_enabled(&self) -> ApiResult<bool> {
+        RevoluteJointRuntimeHandle::try_revolute_spring_enabled(self)
+    }
+    pub fn revolute_enable_spring(&mut self, enable: bool) {
+        RevoluteJointRuntimeHandle::revolute_enable_spring(self, enable)
+    }
+    pub fn try_revolute_enable_spring(&mut self, enable: bool) -> ApiResult<()> {
+        RevoluteJointRuntimeHandle::try_revolute_enable_spring(self, enable)
+    }
+    pub fn revolute_spring_hertz(&self) -> f32 {
+        RevoluteJointRuntimeHandle::revolute_spring_hertz(self)
+    }
+    pub fn try_revolute_spring_hertz(&self) -> ApiResult<f32> {
+        RevoluteJointRuntimeHandle::try_revolute_spring_hertz(self)
+    }
+    pub fn revolute_set_spring_hertz(&mut self, hertz: f32) {
+        RevoluteJointRuntimeHandle::revolute_set_spring_hertz(self, hertz)
+    }
+    pub fn try_revolute_set_spring_hertz(&mut self, hertz: f32) -> ApiResult<()> {
+        RevoluteJointRuntimeHandle::try_revolute_set_spring_hertz(self, hertz)
+    }
+    pub fn revolute_spring_damping_ratio(&self) -> f32 {
+        RevoluteJointRuntimeHandle::revolute_spring_damping_ratio(self)
+    }
+    pub fn try_revolute_spring_damping_ratio(&self) -> ApiResult<f32> {
+        RevoluteJointRuntimeHandle::try_revolute_spring_damping_ratio(self)
+    }
+    pub fn revolute_set_spring_damping_ratio(&mut self, damping_ratio: f32) {
+        RevoluteJointRuntimeHandle::revolute_set_spring_damping_ratio(self, damping_ratio)
+    }
+    pub fn try_revolute_set_spring_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
+        RevoluteJointRuntimeHandle::try_revolute_set_spring_damping_ratio(self, damping_ratio)
+    }
+    pub fn revolute_target_angle(&self) -> f32 {
+        RevoluteJointRuntimeHandle::revolute_target_angle(self)
+    }
+    pub fn try_revolute_target_angle(&self) -> ApiResult<f32> {
+        RevoluteJointRuntimeHandle::try_revolute_target_angle(self)
+    }
+    pub fn revolute_set_target_angle(&mut self, angle: f32) {
+        RevoluteJointRuntimeHandle::revolute_set_target_angle(self, angle)
+    }
+    pub fn try_revolute_set_target_angle(&mut self, angle: f32) -> ApiResult<()> {
+        RevoluteJointRuntimeHandle::try_revolute_set_target_angle(self, angle)
+    }
+    pub fn revolute_angle(&self) -> f32 {
+        RevoluteJointRuntimeHandle::revolute_angle(self)
+    }
+    pub fn try_revolute_angle(&self) -> ApiResult<f32> {
+        RevoluteJointRuntimeHandle::try_revolute_angle(self)
+    }
+    pub fn revolute_limit_enabled(&self) -> bool {
+        RevoluteJointRuntimeHandle::revolute_limit_enabled(self)
+    }
+    pub fn try_revolute_limit_enabled(&self) -> ApiResult<bool> {
+        RevoluteJointRuntimeHandle::try_revolute_limit_enabled(self)
+    }
+    pub fn revolute_enable_limit(&mut self, enable: bool) {
+        RevoluteJointRuntimeHandle::revolute_enable_limit(self, enable)
+    }
+    pub fn try_revolute_enable_limit(&mut self, enable: bool) -> ApiResult<()> {
+        RevoluteJointRuntimeHandle::try_revolute_enable_limit(self, enable)
+    }
+    pub fn revolute_lower_limit(&self) -> f32 {
+        RevoluteJointRuntimeHandle::revolute_lower_limit(self)
+    }
+    pub fn try_revolute_lower_limit(&self) -> ApiResult<f32> {
+        RevoluteJointRuntimeHandle::try_revolute_lower_limit(self)
+    }
+    pub fn revolute_upper_limit(&self) -> f32 {
+        RevoluteJointRuntimeHandle::revolute_upper_limit(self)
+    }
+    pub fn try_revolute_upper_limit(&self) -> ApiResult<f32> {
+        RevoluteJointRuntimeHandle::try_revolute_upper_limit(self)
+    }
+    pub fn revolute_set_limits(&mut self, lower: f32, upper: f32) {
+        RevoluteJointRuntimeHandle::revolute_set_limits(self, lower, upper)
+    }
+    pub fn try_revolute_set_limits(&mut self, lower: f32, upper: f32) -> ApiResult<()> {
+        RevoluteJointRuntimeHandle::try_revolute_set_limits(self, lower, upper)
+    }
+    pub fn revolute_motor_enabled(&self) -> bool {
+        RevoluteJointRuntimeHandle::revolute_motor_enabled(self)
+    }
+    pub fn try_revolute_motor_enabled(&self) -> ApiResult<bool> {
+        RevoluteJointRuntimeHandle::try_revolute_motor_enabled(self)
+    }
+    pub fn revolute_enable_motor(&mut self, enable: bool) {
+        RevoluteJointRuntimeHandle::revolute_enable_motor(self, enable)
+    }
+    pub fn try_revolute_enable_motor(&mut self, enable: bool) -> ApiResult<()> {
+        RevoluteJointRuntimeHandle::try_revolute_enable_motor(self, enable)
+    }
+    pub fn revolute_motor_speed(&self) -> f32 {
+        RevoluteJointRuntimeHandle::revolute_motor_speed(self)
+    }
+    pub fn try_revolute_motor_speed(&self) -> ApiResult<f32> {
+        RevoluteJointRuntimeHandle::try_revolute_motor_speed(self)
+    }
+    pub fn revolute_set_motor_speed(&mut self, speed: f32) {
+        RevoluteJointRuntimeHandle::revolute_set_motor_speed(self, speed)
+    }
+    pub fn try_revolute_set_motor_speed(&mut self, speed: f32) -> ApiResult<()> {
+        RevoluteJointRuntimeHandle::try_revolute_set_motor_speed(self, speed)
+    }
+    pub fn revolute_motor_torque(&self) -> f32 {
+        RevoluteJointRuntimeHandle::revolute_motor_torque(self)
+    }
+    pub fn try_revolute_motor_torque(&self) -> ApiResult<f32> {
+        RevoluteJointRuntimeHandle::try_revolute_motor_torque(self)
+    }
+    pub fn revolute_max_motor_torque(&self) -> f32 {
+        RevoluteJointRuntimeHandle::revolute_max_motor_torque(self)
+    }
+    pub fn try_revolute_max_motor_torque(&self) -> ApiResult<f32> {
+        RevoluteJointRuntimeHandle::try_revolute_max_motor_torque(self)
+    }
+    pub fn revolute_set_max_motor_torque(&mut self, torque: f32) {
+        RevoluteJointRuntimeHandle::revolute_set_max_motor_torque(self, torque)
+    }
+    pub fn try_revolute_set_max_motor_torque(&mut self, torque: f32) -> ApiResult<()> {
+        RevoluteJointRuntimeHandle::try_revolute_set_max_motor_torque(self, torque)
+    }
+}
+
+impl<'w> PrismaticJointRuntimeHandle for Joint<'w> {
+    fn prismatic_joint_id(&self) -> JointId {
+        self.id()
+    }
+}
+
+impl<'w> Joint<'w> {
+    pub fn prismatic_spring_enabled(&self) -> bool {
+        PrismaticJointRuntimeHandle::prismatic_spring_enabled(self)
+    }
+    pub fn try_prismatic_spring_enabled(&self) -> ApiResult<bool> {
+        PrismaticJointRuntimeHandle::try_prismatic_spring_enabled(self)
+    }
+    pub fn prismatic_enable_spring(&mut self, enable: bool) {
+        PrismaticJointRuntimeHandle::prismatic_enable_spring(self, enable)
+    }
+    pub fn try_prismatic_enable_spring(&mut self, enable: bool) -> ApiResult<()> {
+        PrismaticJointRuntimeHandle::try_prismatic_enable_spring(self, enable)
+    }
+    pub fn prismatic_spring_hertz(&self) -> f32 {
+        PrismaticJointRuntimeHandle::prismatic_spring_hertz(self)
+    }
+    pub fn try_prismatic_spring_hertz(&self) -> ApiResult<f32> {
+        PrismaticJointRuntimeHandle::try_prismatic_spring_hertz(self)
+    }
+    pub fn prismatic_set_spring_hertz(&mut self, hertz: f32) {
+        PrismaticJointRuntimeHandle::prismatic_set_spring_hertz(self, hertz)
+    }
+    pub fn try_prismatic_set_spring_hertz(&mut self, hertz: f32) -> ApiResult<()> {
+        PrismaticJointRuntimeHandle::try_prismatic_set_spring_hertz(self, hertz)
+    }
+    pub fn prismatic_spring_damping_ratio(&self) -> f32 {
+        PrismaticJointRuntimeHandle::prismatic_spring_damping_ratio(self)
+    }
+    pub fn try_prismatic_spring_damping_ratio(&self) -> ApiResult<f32> {
+        PrismaticJointRuntimeHandle::try_prismatic_spring_damping_ratio(self)
+    }
+    pub fn prismatic_set_spring_damping_ratio(&mut self, damping_ratio: f32) {
+        PrismaticJointRuntimeHandle::prismatic_set_spring_damping_ratio(self, damping_ratio)
+    }
+    pub fn try_prismatic_set_spring_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
+        PrismaticJointRuntimeHandle::try_prismatic_set_spring_damping_ratio(self, damping_ratio)
+    }
+    pub fn prismatic_target_translation(&self) -> f32 {
+        PrismaticJointRuntimeHandle::prismatic_target_translation(self)
+    }
+    pub fn try_prismatic_target_translation(&self) -> ApiResult<f32> {
+        PrismaticJointRuntimeHandle::try_prismatic_target_translation(self)
+    }
+    pub fn prismatic_set_target_translation(&mut self, translation: f32) {
+        PrismaticJointRuntimeHandle::prismatic_set_target_translation(self, translation)
+    }
+    pub fn try_prismatic_set_target_translation(&mut self, translation: f32) -> ApiResult<()> {
+        PrismaticJointRuntimeHandle::try_prismatic_set_target_translation(self, translation)
+    }
+    pub fn prismatic_limit_enabled(&self) -> bool {
+        PrismaticJointRuntimeHandle::prismatic_limit_enabled(self)
+    }
+    pub fn try_prismatic_limit_enabled(&self) -> ApiResult<bool> {
+        PrismaticJointRuntimeHandle::try_prismatic_limit_enabled(self)
+    }
+    pub fn prismatic_enable_limit(&mut self, enable: bool) {
+        PrismaticJointRuntimeHandle::prismatic_enable_limit(self, enable)
+    }
+    pub fn try_prismatic_enable_limit(&mut self, enable: bool) -> ApiResult<()> {
+        PrismaticJointRuntimeHandle::try_prismatic_enable_limit(self, enable)
+    }
+    pub fn prismatic_lower_limit(&self) -> f32 {
+        PrismaticJointRuntimeHandle::prismatic_lower_limit(self)
+    }
+    pub fn try_prismatic_lower_limit(&self) -> ApiResult<f32> {
+        PrismaticJointRuntimeHandle::try_prismatic_lower_limit(self)
+    }
+    pub fn prismatic_upper_limit(&self) -> f32 {
+        PrismaticJointRuntimeHandle::prismatic_upper_limit(self)
+    }
+    pub fn try_prismatic_upper_limit(&self) -> ApiResult<f32> {
+        PrismaticJointRuntimeHandle::try_prismatic_upper_limit(self)
+    }
+    pub fn prismatic_set_limits(&mut self, lower: f32, upper: f32) {
+        PrismaticJointRuntimeHandle::prismatic_set_limits(self, lower, upper)
+    }
+    pub fn try_prismatic_set_limits(&mut self, lower: f32, upper: f32) -> ApiResult<()> {
+        PrismaticJointRuntimeHandle::try_prismatic_set_limits(self, lower, upper)
+    }
+    pub fn prismatic_motor_enabled(&self) -> bool {
+        PrismaticJointRuntimeHandle::prismatic_motor_enabled(self)
+    }
+    pub fn try_prismatic_motor_enabled(&self) -> ApiResult<bool> {
+        PrismaticJointRuntimeHandle::try_prismatic_motor_enabled(self)
+    }
+    pub fn prismatic_enable_motor(&mut self, enable: bool) {
+        PrismaticJointRuntimeHandle::prismatic_enable_motor(self, enable)
+    }
+    pub fn try_prismatic_enable_motor(&mut self, enable: bool) -> ApiResult<()> {
+        PrismaticJointRuntimeHandle::try_prismatic_enable_motor(self, enable)
+    }
+    pub fn prismatic_motor_speed(&self) -> f32 {
+        PrismaticJointRuntimeHandle::prismatic_motor_speed(self)
+    }
+    pub fn try_prismatic_motor_speed(&self) -> ApiResult<f32> {
+        PrismaticJointRuntimeHandle::try_prismatic_motor_speed(self)
+    }
+    pub fn prismatic_set_motor_speed(&mut self, speed: f32) {
+        PrismaticJointRuntimeHandle::prismatic_set_motor_speed(self, speed)
+    }
+    pub fn try_prismatic_set_motor_speed(&mut self, speed: f32) -> ApiResult<()> {
+        PrismaticJointRuntimeHandle::try_prismatic_set_motor_speed(self, speed)
+    }
+    pub fn prismatic_max_motor_force(&self) -> f32 {
+        PrismaticJointRuntimeHandle::prismatic_max_motor_force(self)
+    }
+    pub fn try_prismatic_max_motor_force(&self) -> ApiResult<f32> {
+        PrismaticJointRuntimeHandle::try_prismatic_max_motor_force(self)
+    }
+    pub fn prismatic_set_max_motor_force(&mut self, force: f32) {
+        PrismaticJointRuntimeHandle::prismatic_set_max_motor_force(self, force)
+    }
+    pub fn try_prismatic_set_max_motor_force(&mut self, force: f32) -> ApiResult<()> {
+        PrismaticJointRuntimeHandle::try_prismatic_set_max_motor_force(self, force)
+    }
+    pub fn prismatic_motor_force(&self) -> f32 {
+        PrismaticJointRuntimeHandle::prismatic_motor_force(self)
+    }
+    pub fn try_prismatic_motor_force(&self) -> ApiResult<f32> {
+        PrismaticJointRuntimeHandle::try_prismatic_motor_force(self)
+    }
+    pub fn prismatic_translation(&self) -> f32 {
+        PrismaticJointRuntimeHandle::prismatic_translation(self)
+    }
+    pub fn try_prismatic_translation(&self) -> ApiResult<f32> {
+        PrismaticJointRuntimeHandle::try_prismatic_translation(self)
+    }
+    pub fn prismatic_speed(&self) -> f32 {
+        PrismaticJointRuntimeHandle::prismatic_speed(self)
+    }
+    pub fn try_prismatic_speed(&self) -> ApiResult<f32> {
+        PrismaticJointRuntimeHandle::try_prismatic_speed(self)
     }
 
+    pub fn revolute_spring_enabled(&self) -> bool {
+        RevoluteJointRuntimeHandle::revolute_spring_enabled(self)
+    }
     pub fn try_revolute_spring_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(
-            self.id(),
+        RevoluteJointRuntimeHandle::try_revolute_spring_enabled(self)
+    }
+    pub fn revolute_enable_spring(&mut self, enable: bool) {
+        RevoluteJointRuntimeHandle::revolute_enable_spring(self, enable)
+    }
+    pub fn try_revolute_enable_spring(&mut self, enable: bool) -> ApiResult<()> {
+        RevoluteJointRuntimeHandle::try_revolute_enable_spring(self, enable)
+    }
+    pub fn revolute_spring_hertz(&self) -> f32 {
+        RevoluteJointRuntimeHandle::revolute_spring_hertz(self)
+    }
+    pub fn try_revolute_spring_hertz(&self) -> ApiResult<f32> {
+        RevoluteJointRuntimeHandle::try_revolute_spring_hertz(self)
+    }
+    pub fn revolute_set_spring_hertz(&mut self, hertz: f32) {
+        RevoluteJointRuntimeHandle::revolute_set_spring_hertz(self, hertz)
+    }
+    pub fn try_revolute_set_spring_hertz(&mut self, hertz: f32) -> ApiResult<()> {
+        RevoluteJointRuntimeHandle::try_revolute_set_spring_hertz(self, hertz)
+    }
+    pub fn revolute_spring_damping_ratio(&self) -> f32 {
+        RevoluteJointRuntimeHandle::revolute_spring_damping_ratio(self)
+    }
+    pub fn try_revolute_spring_damping_ratio(&self) -> ApiResult<f32> {
+        RevoluteJointRuntimeHandle::try_revolute_spring_damping_ratio(self)
+    }
+    pub fn revolute_set_spring_damping_ratio(&mut self, damping_ratio: f32) {
+        RevoluteJointRuntimeHandle::revolute_set_spring_damping_ratio(self, damping_ratio)
+    }
+    pub fn try_revolute_set_spring_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
+        RevoluteJointRuntimeHandle::try_revolute_set_spring_damping_ratio(self, damping_ratio)
+    }
+    pub fn revolute_target_angle(&self) -> f32 {
+        RevoluteJointRuntimeHandle::revolute_target_angle(self)
+    }
+    pub fn try_revolute_target_angle(&self) -> ApiResult<f32> {
+        RevoluteJointRuntimeHandle::try_revolute_target_angle(self)
+    }
+    pub fn revolute_set_target_angle(&mut self, angle: f32) {
+        RevoluteJointRuntimeHandle::revolute_set_target_angle(self, angle)
+    }
+    pub fn try_revolute_set_target_angle(&mut self, angle: f32) -> ApiResult<()> {
+        RevoluteJointRuntimeHandle::try_revolute_set_target_angle(self, angle)
+    }
+    pub fn revolute_angle(&self) -> f32 {
+        RevoluteJointRuntimeHandle::revolute_angle(self)
+    }
+    pub fn try_revolute_angle(&self) -> ApiResult<f32> {
+        RevoluteJointRuntimeHandle::try_revolute_angle(self)
+    }
+    pub fn revolute_limit_enabled(&self) -> bool {
+        RevoluteJointRuntimeHandle::revolute_limit_enabled(self)
+    }
+    pub fn try_revolute_limit_enabled(&self) -> ApiResult<bool> {
+        RevoluteJointRuntimeHandle::try_revolute_limit_enabled(self)
+    }
+    pub fn revolute_enable_limit(&mut self, enable: bool) {
+        RevoluteJointRuntimeHandle::revolute_enable_limit(self, enable)
+    }
+    pub fn try_revolute_enable_limit(&mut self, enable: bool) -> ApiResult<()> {
+        RevoluteJointRuntimeHandle::try_revolute_enable_limit(self, enable)
+    }
+    pub fn revolute_lower_limit(&self) -> f32 {
+        RevoluteJointRuntimeHandle::revolute_lower_limit(self)
+    }
+    pub fn try_revolute_lower_limit(&self) -> ApiResult<f32> {
+        RevoluteJointRuntimeHandle::try_revolute_lower_limit(self)
+    }
+    pub fn revolute_upper_limit(&self) -> f32 {
+        RevoluteJointRuntimeHandle::revolute_upper_limit(self)
+    }
+    pub fn try_revolute_upper_limit(&self) -> ApiResult<f32> {
+        RevoluteJointRuntimeHandle::try_revolute_upper_limit(self)
+    }
+    pub fn revolute_set_limits(&mut self, lower: f32, upper: f32) {
+        RevoluteJointRuntimeHandle::revolute_set_limits(self, lower, upper)
+    }
+    pub fn try_revolute_set_limits(&mut self, lower: f32, upper: f32) -> ApiResult<()> {
+        RevoluteJointRuntimeHandle::try_revolute_set_limits(self, lower, upper)
+    }
+    pub fn revolute_motor_enabled(&self) -> bool {
+        RevoluteJointRuntimeHandle::revolute_motor_enabled(self)
+    }
+    pub fn try_revolute_motor_enabled(&self) -> ApiResult<bool> {
+        RevoluteJointRuntimeHandle::try_revolute_motor_enabled(self)
+    }
+    pub fn revolute_enable_motor(&mut self, enable: bool) {
+        RevoluteJointRuntimeHandle::revolute_enable_motor(self, enable)
+    }
+    pub fn try_revolute_enable_motor(&mut self, enable: bool) -> ApiResult<()> {
+        RevoluteJointRuntimeHandle::try_revolute_enable_motor(self, enable)
+    }
+    pub fn revolute_motor_speed(&self) -> f32 {
+        RevoluteJointRuntimeHandle::revolute_motor_speed(self)
+    }
+    pub fn try_revolute_motor_speed(&self) -> ApiResult<f32> {
+        RevoluteJointRuntimeHandle::try_revolute_motor_speed(self)
+    }
+    pub fn revolute_set_motor_speed(&mut self, speed: f32) {
+        RevoluteJointRuntimeHandle::revolute_set_motor_speed(self, speed)
+    }
+    pub fn try_revolute_set_motor_speed(&mut self, speed: f32) -> ApiResult<()> {
+        RevoluteJointRuntimeHandle::try_revolute_set_motor_speed(self, speed)
+    }
+    pub fn revolute_motor_torque(&self) -> f32 {
+        RevoluteJointRuntimeHandle::revolute_motor_torque(self)
+    }
+    pub fn try_revolute_motor_torque(&self) -> ApiResult<f32> {
+        RevoluteJointRuntimeHandle::try_revolute_motor_torque(self)
+    }
+    pub fn revolute_max_motor_torque(&self) -> f32 {
+        RevoluteJointRuntimeHandle::revolute_max_motor_torque(self)
+    }
+    pub fn try_revolute_max_motor_torque(&self) -> ApiResult<f32> {
+        RevoluteJointRuntimeHandle::try_revolute_max_motor_torque(self)
+    }
+    pub fn revolute_set_max_motor_torque(&mut self, torque: f32) {
+        RevoluteJointRuntimeHandle::revolute_set_max_motor_torque(self, torque)
+    }
+    pub fn try_revolute_set_max_motor_torque(&mut self, torque: f32) -> ApiResult<()> {
+        RevoluteJointRuntimeHandle::try_revolute_set_max_motor_torque(self, torque)
+    }
+}
+
+trait RevoluteJointRuntimeHandle {
+    fn revolute_joint_id(&self) -> JointId;
+
+    fn revolute_spring_enabled(&self) -> bool {
+        joint_kind_get_checked_impl(
+            self.revolute_joint_id(),
             JointType::Revolute,
             revolute_spring_enabled_impl,
         )
     }
 
-    pub fn revolute_enable_spring(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            enable,
-            revolute_enable_spring_impl,
-        )
-    }
-
-    pub fn try_revolute_enable_spring(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            enable,
-            revolute_enable_spring_impl,
-        )
-    }
-
-    pub fn revolute_spring_hertz(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_spring_hertz_impl)
-    }
-
-    pub fn try_revolute_spring_hertz(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_spring_hertz_impl)
-    }
-
-    pub fn revolute_set_spring_hertz(&mut self, hertz: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            hertz,
-            revolute_set_spring_hertz_impl,
-        )
-    }
-
-    pub fn try_revolute_set_spring_hertz(&mut self, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            hertz,
-            revolute_set_spring_hertz_impl,
-        )
-    }
-
-    pub fn revolute_spring_damping_ratio(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            revolute_spring_damping_ratio_impl,
-        )
-    }
-
-    pub fn try_revolute_spring_damping_ratio(&self) -> ApiResult<f32> {
+    fn try_revolute_spring_enabled(&self) -> ApiResult<bool> {
         try_joint_kind_get_checked_impl(
-            self.id(),
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            revolute_spring_enabled_impl,
+        )
+    }
+
+    fn revolute_enable_spring(&mut self, enable: bool) {
+        joint_kind_set_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            enable,
+            revolute_enable_spring_impl,
+        );
+    }
+
+    fn try_revolute_enable_spring(&mut self, enable: bool) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            enable,
+            revolute_enable_spring_impl,
+        )
+    }
+
+    fn revolute_spring_hertz(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            revolute_spring_hertz_impl,
+        )
+    }
+
+    fn try_revolute_spring_hertz(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            revolute_spring_hertz_impl,
+        )
+    }
+
+    fn revolute_set_spring_hertz(&mut self, hertz: f32) {
+        joint_kind_set_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            hertz,
+            revolute_set_spring_hertz_impl,
+        );
+    }
+
+    fn try_revolute_set_spring_hertz(&mut self, hertz: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            hertz,
+            revolute_set_spring_hertz_impl,
+        )
+    }
+
+    fn revolute_spring_damping_ratio(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.revolute_joint_id(),
             JointType::Revolute,
             revolute_spring_damping_ratio_impl,
         )
     }
 
-    pub fn revolute_set_spring_damping_ratio(&mut self, damping_ratio: f32) {
+    fn try_revolute_spring_damping_ratio(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            revolute_spring_damping_ratio_impl,
+        )
+    }
+
+    fn revolute_set_spring_damping_ratio(&mut self, damping_ratio: f32) {
         joint_kind_set_checked_impl(
-            self.id(),
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            damping_ratio,
+            revolute_set_spring_damping_ratio_impl,
+        );
+    }
+
+    fn try_revolute_set_spring_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.revolute_joint_id(),
             JointType::Revolute,
             damping_ratio,
             revolute_set_spring_damping_ratio_impl,
         )
     }
 
-    pub fn try_revolute_set_spring_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
+    fn revolute_target_angle(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.revolute_joint_id(),
             JointType::Revolute,
-            damping_ratio,
-            revolute_set_spring_damping_ratio_impl,
+            revolute_target_angle_impl,
         )
     }
 
-    pub fn revolute_target_angle(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_target_angle_impl)
+    fn try_revolute_target_angle(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            revolute_target_angle_impl,
+        )
     }
 
-    pub fn try_revolute_target_angle(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_target_angle_impl)
-    }
-
-    pub fn revolute_set_target_angle(&mut self, angle: f32) {
+    fn revolute_set_target_angle(&mut self, angle: f32) {
         joint_kind_set_checked_impl(
-            self.id(),
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            angle,
+            revolute_set_target_angle_impl,
+        );
+    }
+
+    fn try_revolute_set_target_angle(&mut self, angle: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.revolute_joint_id(),
             JointType::Revolute,
             angle,
             revolute_set_target_angle_impl,
         )
     }
 
-    pub fn try_revolute_set_target_angle(&mut self, angle: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
+    fn revolute_angle(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.revolute_joint_id(),
             JointType::Revolute,
-            angle,
-            revolute_set_target_angle_impl,
+            revolute_angle_impl,
         )
     }
 
-    pub fn revolute_angle(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_angle_impl)
+    fn try_revolute_angle(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            revolute_angle_impl,
+        )
     }
 
-    pub fn try_revolute_angle(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_angle_impl)
+    fn revolute_limit_enabled(&self) -> bool {
+        joint_kind_get_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            revolute_limit_enabled_impl,
+        )
     }
 
-    pub fn revolute_limit_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_limit_enabled_impl)
+    fn try_revolute_limit_enabled(&self) -> ApiResult<bool> {
+        try_joint_kind_get_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            revolute_limit_enabled_impl,
+        )
     }
 
-    pub fn try_revolute_limit_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_limit_enabled_impl)
-    }
-
-    pub fn revolute_enable_limit(&mut self, enable: bool) {
+    fn revolute_enable_limit(&mut self, enable: bool) {
         joint_kind_set_checked_impl(
-            self.id(),
+            self.revolute_joint_id(),
             JointType::Revolute,
             enable,
             revolute_enable_limit_impl,
-        )
+        );
     }
 
-    pub fn try_revolute_enable_limit(&mut self, enable: bool) -> ApiResult<()> {
+    fn try_revolute_enable_limit(&mut self, enable: bool) -> ApiResult<()> {
         try_joint_kind_set_checked_impl(
-            self.id(),
+            self.revolute_joint_id(),
             JointType::Revolute,
             enable,
             revolute_enable_limit_impl,
         )
     }
 
-    pub fn revolute_lower_limit(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_lower_limit_impl)
+    fn revolute_lower_limit(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            revolute_lower_limit_impl,
+        )
     }
 
-    pub fn try_revolute_lower_limit(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_lower_limit_impl)
+    fn try_revolute_lower_limit(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            revolute_lower_limit_impl,
+        )
     }
 
-    pub fn revolute_upper_limit(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_upper_limit_impl)
+    fn revolute_upper_limit(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            revolute_upper_limit_impl,
+        )
     }
 
-    pub fn try_revolute_upper_limit(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_upper_limit_impl)
+    fn try_revolute_upper_limit(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            revolute_upper_limit_impl,
+        )
     }
 
-    pub fn revolute_set_limits(&mut self, lower: f32, upper: f32) {
+    fn revolute_set_limits(&mut self, lower: f32, upper: f32) {
         joint_kind_set2_checked_validated_impl(
-            self.id(),
+            self.revolute_joint_id(),
             JointType::Revolute,
             lower,
             upper,
             assert_revolute_limits_valid,
             revolute_set_limits_impl,
-        )
+        );
     }
 
-    pub fn try_revolute_set_limits(&mut self, lower: f32, upper: f32) -> ApiResult<()> {
+    fn try_revolute_set_limits(&mut self, lower: f32, upper: f32) -> ApiResult<()> {
         try_joint_kind_set2_checked_validated_impl(
-            self.id(),
+            self.revolute_joint_id(),
             JointType::Revolute,
             lower,
             upper,
@@ -4440,94 +5138,118 @@ impl OwnedJoint {
         )
     }
 
-    pub fn revolute_motor_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_motor_enabled_impl)
-    }
-
-    pub fn try_revolute_motor_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_motor_enabled_impl)
-    }
-
-    pub fn revolute_enable_motor(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            enable,
-            revolute_enable_motor_impl,
-        )
-    }
-
-    pub fn try_revolute_enable_motor(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            enable,
-            revolute_enable_motor_impl,
-        )
-    }
-
-    pub fn revolute_motor_speed(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_motor_speed_impl)
-    }
-
-    pub fn try_revolute_motor_speed(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_motor_speed_impl)
-    }
-
-    pub fn revolute_set_motor_speed(&mut self, speed: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            speed,
-            revolute_set_motor_speed_impl,
-        )
-    }
-
-    pub fn try_revolute_set_motor_speed(&mut self, speed: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            speed,
-            revolute_set_motor_speed_impl,
-        )
-    }
-
-    pub fn revolute_motor_torque(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_motor_torque_impl)
-    }
-
-    pub fn try_revolute_motor_torque(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_motor_torque_impl)
-    }
-
-    pub fn revolute_max_motor_torque(&self) -> f32 {
+    fn revolute_motor_enabled(&self) -> bool {
         joint_kind_get_checked_impl(
-            self.id(),
+            self.revolute_joint_id(),
             JointType::Revolute,
-            revolute_max_motor_torque_impl,
+            revolute_motor_enabled_impl,
         )
     }
 
-    pub fn try_revolute_max_motor_torque(&self) -> ApiResult<f32> {
+    fn try_revolute_motor_enabled(&self) -> ApiResult<bool> {
         try_joint_kind_get_checked_impl(
-            self.id(),
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            revolute_motor_enabled_impl,
+        )
+    }
+
+    fn revolute_enable_motor(&mut self, enable: bool) {
+        joint_kind_set_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            enable,
+            revolute_enable_motor_impl,
+        );
+    }
+
+    fn try_revolute_enable_motor(&mut self, enable: bool) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            enable,
+            revolute_enable_motor_impl,
+        )
+    }
+
+    fn revolute_motor_speed(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            revolute_motor_speed_impl,
+        )
+    }
+
+    fn try_revolute_motor_speed(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            revolute_motor_speed_impl,
+        )
+    }
+
+    fn revolute_set_motor_speed(&mut self, speed: f32) {
+        joint_kind_set_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            speed,
+            revolute_set_motor_speed_impl,
+        );
+    }
+
+    fn try_revolute_set_motor_speed(&mut self, speed: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            speed,
+            revolute_set_motor_speed_impl,
+        )
+    }
+
+    fn revolute_motor_torque(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            revolute_motor_torque_impl,
+        )
+    }
+
+    fn try_revolute_motor_torque(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            revolute_motor_torque_impl,
+        )
+    }
+
+    fn revolute_max_motor_torque(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.revolute_joint_id(),
             JointType::Revolute,
             revolute_max_motor_torque_impl,
         )
     }
 
-    pub fn revolute_set_max_motor_torque(&mut self, torque: f32) {
+    fn try_revolute_max_motor_torque(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.revolute_joint_id(),
+            JointType::Revolute,
+            revolute_max_motor_torque_impl,
+        )
+    }
+
+    fn revolute_set_max_motor_torque(&mut self, torque: f32) {
         joint_kind_set_checked_impl(
-            self.id(),
+            self.revolute_joint_id(),
             JointType::Revolute,
             torque,
             revolute_set_max_motor_torque_impl,
-        )
+        );
     }
 
-    pub fn try_revolute_set_max_motor_torque(&mut self, torque: f32) -> ApiResult<()> {
+    fn try_revolute_set_max_motor_torque(&mut self, torque: f32) -> ApiResult<()> {
         try_joint_kind_set_checked_impl(
-            self.id(),
+            self.revolute_joint_id(),
             JointType::Revolute,
             torque,
             revolute_set_max_motor_torque_impl,
@@ -4535,609 +5257,847 @@ impl OwnedJoint {
     }
 }
 
-impl<'w> Joint<'w> {
-    pub fn prismatic_spring_enabled(&self) -> bool {
+impl RevoluteJointRuntimeHandle for OwnedJoint {
+    fn revolute_joint_id(&self) -> JointId {
+        self.id()
+    }
+}
+
+impl<'w> RevoluteJointRuntimeHandle for Joint<'w> {
+    fn revolute_joint_id(&self) -> JointId {
+        self.id()
+    }
+}
+
+trait WeldJointRuntimeHandle {
+    fn weld_joint_id(&self) -> JointId;
+
+    fn weld_linear_hertz(&self) -> f32 {
         joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            prismatic_spring_enabled_impl,
+            self.weld_joint_id(),
+            JointType::Weld,
+            weld_linear_hertz_impl,
         )
     }
 
-    pub fn try_prismatic_spring_enabled(&self) -> ApiResult<bool> {
+    fn try_weld_linear_hertz(&self) -> ApiResult<f32> {
         try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            prismatic_spring_enabled_impl,
+            self.weld_joint_id(),
+            JointType::Weld,
+            weld_linear_hertz_impl,
         )
     }
 
-    pub fn prismatic_enable_spring(&mut self, enable: bool) {
+    fn weld_set_linear_hertz(&mut self, hertz: f32) {
         joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            enable,
-            prismatic_enable_spring_impl,
-        )
-    }
-
-    pub fn try_prismatic_enable_spring(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            enable,
-            prismatic_enable_spring_impl,
-        )
-    }
-
-    pub fn prismatic_spring_hertz(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_spring_hertz_impl)
-    }
-
-    pub fn try_prismatic_spring_hertz(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            prismatic_spring_hertz_impl,
-        )
-    }
-
-    pub fn prismatic_set_spring_hertz(&mut self, hertz: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
+            self.weld_joint_id(),
+            JointType::Weld,
             hertz,
-            prismatic_set_spring_hertz_impl,
-        )
+            weld_set_linear_hertz_impl,
+        );
     }
 
-    pub fn try_prismatic_set_spring_hertz(&mut self, hertz: f32) -> ApiResult<()> {
+    fn try_weld_set_linear_hertz(&mut self, hertz: f32) -> ApiResult<()> {
         try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
+            self.weld_joint_id(),
+            JointType::Weld,
             hertz,
-            prismatic_set_spring_hertz_impl,
+            weld_set_linear_hertz_impl,
         )
     }
 
-    pub fn prismatic_spring_damping_ratio(&self) -> f32 {
+    fn weld_linear_damping_ratio(&self) -> f32 {
         joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            prismatic_spring_damping_ratio_impl,
+            self.weld_joint_id(),
+            JointType::Weld,
+            weld_linear_damping_ratio_impl,
         )
     }
 
-    pub fn try_prismatic_spring_damping_ratio(&self) -> ApiResult<f32> {
+    fn try_weld_linear_damping_ratio(&self) -> ApiResult<f32> {
         try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            prismatic_spring_damping_ratio_impl,
+            self.weld_joint_id(),
+            JointType::Weld,
+            weld_linear_damping_ratio_impl,
         )
     }
 
-    pub fn prismatic_set_spring_damping_ratio(&mut self, damping_ratio: f32) {
+    fn weld_set_linear_damping_ratio(&mut self, damping_ratio: f32) {
         joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
+            self.weld_joint_id(),
+            JointType::Weld,
             damping_ratio,
-            prismatic_set_spring_damping_ratio_impl,
-        )
+            weld_set_linear_damping_ratio_impl,
+        );
     }
 
-    pub fn try_prismatic_set_spring_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
+    fn try_weld_set_linear_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
         try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
+            self.weld_joint_id(),
+            JointType::Weld,
             damping_ratio,
-            prismatic_set_spring_damping_ratio_impl,
+            weld_set_linear_damping_ratio_impl,
         )
     }
 
-    pub fn prismatic_target_translation(&self) -> f32 {
+    fn weld_angular_hertz(&self) -> f32 {
         joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            prismatic_target_translation_impl,
+            self.weld_joint_id(),
+            JointType::Weld,
+            weld_angular_hertz_impl,
         )
     }
 
-    pub fn try_prismatic_target_translation(&self) -> ApiResult<f32> {
+    fn try_weld_angular_hertz(&self) -> ApiResult<f32> {
         try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            prismatic_target_translation_impl,
+            self.weld_joint_id(),
+            JointType::Weld,
+            weld_angular_hertz_impl,
         )
     }
 
-    pub fn prismatic_set_target_translation(&mut self, translation: f32) {
+    fn weld_set_angular_hertz(&mut self, hertz: f32) {
         joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            translation,
-            prismatic_set_target_translation_impl,
-        )
+            self.weld_joint_id(),
+            JointType::Weld,
+            hertz,
+            weld_set_angular_hertz_impl,
+        );
     }
 
-    pub fn try_prismatic_set_target_translation(&mut self, translation: f32) -> ApiResult<()> {
+    fn try_weld_set_angular_hertz(&mut self, hertz: f32) -> ApiResult<()> {
         try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            translation,
-            prismatic_set_target_translation_impl,
+            self.weld_joint_id(),
+            JointType::Weld,
+            hertz,
+            weld_set_angular_hertz_impl,
         )
     }
 
-    pub fn prismatic_limit_enabled(&self) -> bool {
+    fn weld_angular_damping_ratio(&self) -> f32 {
         joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            prismatic_limit_enabled_impl,
+            self.weld_joint_id(),
+            JointType::Weld,
+            weld_angular_damping_ratio_impl,
         )
     }
 
-    pub fn try_prismatic_limit_enabled(&self) -> ApiResult<bool> {
+    fn try_weld_angular_damping_ratio(&self) -> ApiResult<f32> {
         try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            prismatic_limit_enabled_impl,
+            self.weld_joint_id(),
+            JointType::Weld,
+            weld_angular_damping_ratio_impl,
         )
     }
 
-    pub fn prismatic_enable_limit(&mut self, enable: bool) {
+    fn weld_set_angular_damping_ratio(&mut self, damping_ratio: f32) {
         joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            enable,
-            prismatic_enable_limit_impl,
-        )
+            self.weld_joint_id(),
+            JointType::Weld,
+            damping_ratio,
+            weld_set_angular_damping_ratio_impl,
+        );
     }
 
-    pub fn try_prismatic_enable_limit(&mut self, enable: bool) -> ApiResult<()> {
+    fn try_weld_set_angular_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
         try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            enable,
-            prismatic_enable_limit_impl,
+            self.weld_joint_id(),
+            JointType::Weld,
+            damping_ratio,
+            weld_set_angular_damping_ratio_impl,
+        )
+    }
+}
+
+impl WeldJointRuntimeHandle for OwnedJoint {
+    fn weld_joint_id(&self) -> JointId {
+        self.id()
+    }
+}
+
+impl<'w> WeldJointRuntimeHandle for Joint<'w> {
+    fn weld_joint_id(&self) -> JointId {
+        self.id()
+    }
+}
+
+trait WheelJointRuntimeHandle {
+    fn wheel_joint_id(&self) -> JointId;
+
+    fn wheel_spring_enabled(&self) -> bool {
+        joint_kind_get_checked_impl(
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            wheel_spring_enabled_impl,
         )
     }
 
-    pub fn prismatic_lower_limit(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_lower_limit_impl)
+    fn try_wheel_spring_enabled(&self) -> ApiResult<bool> {
+        try_joint_kind_get_checked_impl(
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            wheel_spring_enabled_impl,
+        )
     }
 
-    pub fn try_prismatic_lower_limit(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_lower_limit_impl)
+    fn wheel_enable_spring(&mut self, enable: bool) {
+        joint_kind_set_checked_impl(
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            enable,
+            wheel_enable_spring_impl,
+        );
     }
 
-    pub fn prismatic_upper_limit(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_upper_limit_impl)
+    fn try_wheel_enable_spring(&mut self, enable: bool) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            enable,
+            wheel_enable_spring_impl,
+        )
     }
 
-    pub fn try_prismatic_upper_limit(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_upper_limit_impl)
+    fn wheel_spring_hertz(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            wheel_spring_hertz_impl,
+        )
     }
 
-    pub fn prismatic_set_limits(&mut self, lower: f32, upper: f32) {
+    fn try_wheel_spring_hertz(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            wheel_spring_hertz_impl,
+        )
+    }
+
+    fn wheel_set_spring_hertz(&mut self, hertz: f32) {
+        joint_kind_set_checked_impl(
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            hertz,
+            wheel_set_spring_hertz_impl,
+        );
+    }
+
+    fn try_wheel_set_spring_hertz(&mut self, hertz: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            hertz,
+            wheel_set_spring_hertz_impl,
+        )
+    }
+
+    fn wheel_spring_damping_ratio(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            wheel_spring_damping_ratio_impl,
+        )
+    }
+
+    fn try_wheel_spring_damping_ratio(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            wheel_spring_damping_ratio_impl,
+        )
+    }
+
+    fn wheel_set_spring_damping_ratio(&mut self, damping_ratio: f32) {
+        joint_kind_set_checked_impl(
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            damping_ratio,
+            wheel_set_spring_damping_ratio_impl,
+        );
+    }
+
+    fn try_wheel_set_spring_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            damping_ratio,
+            wheel_set_spring_damping_ratio_impl,
+        )
+    }
+
+    fn wheel_limit_enabled(&self) -> bool {
+        joint_kind_get_checked_impl(
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            wheel_limit_enabled_impl,
+        )
+    }
+
+    fn try_wheel_limit_enabled(&self) -> ApiResult<bool> {
+        try_joint_kind_get_checked_impl(
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            wheel_limit_enabled_impl,
+        )
+    }
+
+    fn wheel_enable_limit(&mut self, enable: bool) {
+        joint_kind_set_checked_impl(
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            enable,
+            wheel_enable_limit_impl,
+        );
+    }
+
+    fn try_wheel_enable_limit(&mut self, enable: bool) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            enable,
+            wheel_enable_limit_impl,
+        )
+    }
+
+    fn wheel_lower_limit(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            wheel_lower_limit_impl,
+        )
+    }
+
+    fn try_wheel_lower_limit(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            wheel_lower_limit_impl,
+        )
+    }
+
+    fn wheel_upper_limit(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            wheel_upper_limit_impl,
+        )
+    }
+
+    fn try_wheel_upper_limit(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            wheel_upper_limit_impl,
+        )
+    }
+
+    fn wheel_set_limits(&mut self, lower: f32, upper: f32) {
         joint_kind_set2_checked_validated_impl(
-            self.id(),
-            JointType::Prismatic,
+            self.wheel_joint_id(),
+            JointType::Wheel,
             lower,
             upper,
-            assert_prismatic_limits_valid,
-            prismatic_set_limits_impl,
-        )
+            assert_wheel_limits_valid,
+            wheel_set_limits_impl,
+        );
     }
 
-    pub fn try_prismatic_set_limits(&mut self, lower: f32, upper: f32) -> ApiResult<()> {
+    fn try_wheel_set_limits(&mut self, lower: f32, upper: f32) -> ApiResult<()> {
         try_joint_kind_set2_checked_validated_impl(
-            self.id(),
-            JointType::Prismatic,
+            self.wheel_joint_id(),
+            JointType::Wheel,
             lower,
             upper,
-            check_prismatic_limits_valid,
-            prismatic_set_limits_impl,
+            check_wheel_limits_valid,
+            wheel_set_limits_impl,
         )
     }
 
-    pub fn prismatic_motor_enabled(&self) -> bool {
+    fn wheel_motor_enabled(&self) -> bool {
         joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            prismatic_motor_enabled_impl,
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            wheel_motor_enabled_impl,
         )
     }
 
-    pub fn try_prismatic_motor_enabled(&self) -> ApiResult<bool> {
+    fn try_wheel_motor_enabled(&self) -> ApiResult<bool> {
         try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            prismatic_motor_enabled_impl,
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            wheel_motor_enabled_impl,
         )
     }
 
-    pub fn prismatic_enable_motor(&mut self, enable: bool) {
+    fn wheel_enable_motor(&mut self, enable: bool) {
         joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
+            self.wheel_joint_id(),
+            JointType::Wheel,
             enable,
-            prismatic_enable_motor_impl,
-        )
+            wheel_enable_motor_impl,
+        );
     }
 
-    pub fn try_prismatic_enable_motor(&mut self, enable: bool) -> ApiResult<()> {
+    fn try_wheel_enable_motor(&mut self, enable: bool) -> ApiResult<()> {
         try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
+            self.wheel_joint_id(),
+            JointType::Wheel,
             enable,
-            prismatic_enable_motor_impl,
+            wheel_enable_motor_impl,
         )
     }
 
-    pub fn prismatic_motor_speed(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_motor_speed_impl)
-    }
-
-    pub fn try_prismatic_motor_speed(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_motor_speed_impl)
-    }
-
-    pub fn prismatic_set_motor_speed(&mut self, speed: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            speed,
-            prismatic_set_motor_speed_impl,
-        )
-    }
-
-    pub fn try_prismatic_set_motor_speed(&mut self, speed: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            speed,
-            prismatic_set_motor_speed_impl,
-        )
-    }
-
-    pub fn prismatic_max_motor_force(&self) -> f32 {
+    fn wheel_motor_speed(&self) -> f32 {
         joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            prismatic_max_motor_force_impl,
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            wheel_motor_speed_impl,
         )
     }
 
-    pub fn try_prismatic_max_motor_force(&self) -> ApiResult<f32> {
+    fn try_wheel_motor_speed(&self) -> ApiResult<f32> {
         try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            prismatic_max_motor_force_impl,
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            wheel_motor_speed_impl,
         )
     }
 
-    pub fn prismatic_set_max_motor_force(&mut self, force: f32) {
+    fn wheel_set_motor_speed(&mut self, speed: f32) {
         joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            force,
-            prismatic_set_max_motor_force_impl,
-        )
-    }
-
-    pub fn try_prismatic_set_max_motor_force(&mut self, force: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Prismatic,
-            force,
-            prismatic_set_max_motor_force_impl,
-        )
-    }
-
-    pub fn prismatic_motor_force(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_motor_force_impl)
-    }
-
-    pub fn try_prismatic_motor_force(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_motor_force_impl)
-    }
-
-    pub fn prismatic_translation(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_translation_impl)
-    }
-
-    pub fn try_prismatic_translation(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_translation_impl)
-    }
-
-    pub fn prismatic_speed(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_speed_impl)
-    }
-
-    pub fn try_prismatic_speed(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Prismatic, prismatic_speed_impl)
-    }
-
-    pub fn revolute_spring_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_spring_enabled_impl)
-    }
-
-    pub fn try_revolute_spring_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            revolute_spring_enabled_impl,
-        )
-    }
-
-    pub fn revolute_enable_spring(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            enable,
-            revolute_enable_spring_impl,
-        )
-    }
-
-    pub fn try_revolute_enable_spring(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            enable,
-            revolute_enable_spring_impl,
-        )
-    }
-
-    pub fn revolute_spring_hertz(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_spring_hertz_impl)
-    }
-
-    pub fn try_revolute_spring_hertz(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_spring_hertz_impl)
-    }
-
-    pub fn revolute_set_spring_hertz(&mut self, hertz: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            hertz,
-            revolute_set_spring_hertz_impl,
-        )
-    }
-
-    pub fn try_revolute_set_spring_hertz(&mut self, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            hertz,
-            revolute_set_spring_hertz_impl,
-        )
-    }
-
-    pub fn revolute_spring_damping_ratio(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            revolute_spring_damping_ratio_impl,
-        )
-    }
-
-    pub fn try_revolute_spring_damping_ratio(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            revolute_spring_damping_ratio_impl,
-        )
-    }
-
-    pub fn revolute_set_spring_damping_ratio(&mut self, damping_ratio: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            damping_ratio,
-            revolute_set_spring_damping_ratio_impl,
-        )
-    }
-
-    pub fn try_revolute_set_spring_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            damping_ratio,
-            revolute_set_spring_damping_ratio_impl,
-        )
-    }
-
-    pub fn revolute_target_angle(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_target_angle_impl)
-    }
-
-    pub fn try_revolute_target_angle(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_target_angle_impl)
-    }
-
-    pub fn revolute_set_target_angle(&mut self, angle: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            angle,
-            revolute_set_target_angle_impl,
-        )
-    }
-
-    pub fn try_revolute_set_target_angle(&mut self, angle: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            angle,
-            revolute_set_target_angle_impl,
-        )
-    }
-
-    pub fn revolute_angle(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_angle_impl)
-    }
-
-    pub fn try_revolute_angle(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_angle_impl)
-    }
-
-    pub fn revolute_limit_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_limit_enabled_impl)
-    }
-
-    pub fn try_revolute_limit_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_limit_enabled_impl)
-    }
-
-    pub fn revolute_enable_limit(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            enable,
-            revolute_enable_limit_impl,
-        )
-    }
-
-    pub fn try_revolute_enable_limit(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            enable,
-            revolute_enable_limit_impl,
-        )
-    }
-
-    pub fn revolute_lower_limit(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_lower_limit_impl)
-    }
-
-    pub fn try_revolute_lower_limit(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_lower_limit_impl)
-    }
-
-    pub fn revolute_upper_limit(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_upper_limit_impl)
-    }
-
-    pub fn try_revolute_upper_limit(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_upper_limit_impl)
-    }
-
-    pub fn revolute_set_limits(&mut self, lower: f32, upper: f32) {
-        joint_kind_set2_checked_validated_impl(
-            self.id(),
-            JointType::Revolute,
-            lower,
-            upper,
-            assert_revolute_limits_valid,
-            revolute_set_limits_impl,
-        )
-    }
-
-    pub fn try_revolute_set_limits(&mut self, lower: f32, upper: f32) -> ApiResult<()> {
-        try_joint_kind_set2_checked_validated_impl(
-            self.id(),
-            JointType::Revolute,
-            lower,
-            upper,
-            check_revolute_limits_valid,
-            revolute_set_limits_impl,
-        )
-    }
-
-    pub fn revolute_motor_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_motor_enabled_impl)
-    }
-
-    pub fn try_revolute_motor_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_motor_enabled_impl)
-    }
-
-    pub fn revolute_enable_motor(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            enable,
-            revolute_enable_motor_impl,
-        )
-    }
-
-    pub fn try_revolute_enable_motor(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            enable,
-            revolute_enable_motor_impl,
-        )
-    }
-
-    pub fn revolute_motor_speed(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_motor_speed_impl)
-    }
-
-    pub fn try_revolute_motor_speed(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_motor_speed_impl)
-    }
-
-    pub fn revolute_set_motor_speed(&mut self, speed: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
+            self.wheel_joint_id(),
+            JointType::Wheel,
             speed,
-            revolute_set_motor_speed_impl,
-        )
+            wheel_set_motor_speed_impl,
+        );
     }
 
-    pub fn try_revolute_set_motor_speed(&mut self, speed: f32) -> ApiResult<()> {
+    fn try_wheel_set_motor_speed(&mut self, speed: f32) -> ApiResult<()> {
         try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
+            self.wheel_joint_id(),
+            JointType::Wheel,
             speed,
-            revolute_set_motor_speed_impl,
+            wheel_set_motor_speed_impl,
         )
     }
 
-    pub fn revolute_motor_torque(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_motor_torque_impl)
-    }
-
-    pub fn try_revolute_motor_torque(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Revolute, revolute_motor_torque_impl)
-    }
-
-    pub fn revolute_max_motor_torque(&self) -> f32 {
+    fn wheel_motor_torque(&self) -> f32 {
         joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            revolute_max_motor_torque_impl,
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            wheel_motor_torque_impl,
         )
     }
 
-    pub fn try_revolute_max_motor_torque(&self) -> ApiResult<f32> {
+    fn try_wheel_motor_torque(&self) -> ApiResult<f32> {
         try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            revolute_max_motor_torque_impl,
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            wheel_motor_torque_impl,
         )
     }
 
-    pub fn revolute_set_max_motor_torque(&mut self, torque: f32) {
+    fn wheel_max_motor_torque(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            wheel_max_motor_torque_impl,
+        )
+    }
+
+    fn try_wheel_max_motor_torque(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            wheel_max_motor_torque_impl,
+        )
+    }
+
+    fn wheel_set_max_motor_torque(&mut self, torque: f32) {
         joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
+            self.wheel_joint_id(),
+            JointType::Wheel,
             torque,
-            revolute_set_max_motor_torque_impl,
+            wheel_set_max_motor_torque_impl,
+        );
+    }
+
+    fn try_wheel_set_max_motor_torque(&mut self, torque: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.wheel_joint_id(),
+            JointType::Wheel,
+            torque,
+            wheel_set_max_motor_torque_impl,
+        )
+    }
+}
+
+impl WheelJointRuntimeHandle for OwnedJoint {
+    fn wheel_joint_id(&self) -> JointId {
+        self.id()
+    }
+}
+
+impl<'w> WheelJointRuntimeHandle for Joint<'w> {
+    fn wheel_joint_id(&self) -> JointId {
+        self.id()
+    }
+}
+
+trait MotorJointRuntimeHandle {
+    fn motor_joint_id(&self) -> JointId;
+
+    fn motor_linear_velocity(&self) -> Vec2 {
+        joint_kind_get_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            motor_linear_velocity_impl,
         )
     }
 
-    pub fn try_revolute_set_max_motor_torque(&mut self, torque: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Revolute,
-            torque,
-            revolute_set_max_motor_torque_impl,
+    fn try_motor_linear_velocity(&self) -> ApiResult<Vec2> {
+        try_joint_kind_get_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            motor_linear_velocity_impl,
         )
+    }
+
+    fn motor_set_linear_velocity<V: Into<Vec2>>(&mut self, v: V) {
+        joint_kind_set_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            v.into(),
+            motor_set_linear_velocity_impl,
+        );
+    }
+
+    fn try_motor_set_linear_velocity<V: Into<Vec2>>(&mut self, v: V) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            v.into(),
+            motor_set_linear_velocity_impl,
+        )
+    }
+
+    fn motor_angular_velocity(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            motor_angular_velocity_impl,
+        )
+    }
+
+    fn try_motor_angular_velocity(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            motor_angular_velocity_impl,
+        )
+    }
+
+    fn motor_set_angular_velocity(&mut self, w: f32) {
+        joint_kind_set_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            w,
+            motor_set_angular_velocity_impl,
+        );
+    }
+
+    fn try_motor_set_angular_velocity(&mut self, w: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            w,
+            motor_set_angular_velocity_impl,
+        )
+    }
+
+    fn motor_max_velocity_force(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            motor_max_velocity_force_impl,
+        )
+    }
+
+    fn try_motor_max_velocity_force(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            motor_max_velocity_force_impl,
+        )
+    }
+
+    fn motor_set_max_velocity_force(&mut self, f: f32) {
+        joint_kind_set_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            f,
+            motor_set_max_velocity_force_impl,
+        );
+    }
+
+    fn try_motor_set_max_velocity_force(&mut self, f: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            f,
+            motor_set_max_velocity_force_impl,
+        )
+    }
+
+    fn motor_max_velocity_torque(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            motor_max_velocity_torque_impl,
+        )
+    }
+
+    fn try_motor_max_velocity_torque(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            motor_max_velocity_torque_impl,
+        )
+    }
+
+    fn motor_set_max_velocity_torque(&mut self, t: f32) {
+        joint_kind_set_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            t,
+            motor_set_max_velocity_torque_impl,
+        );
+    }
+
+    fn try_motor_set_max_velocity_torque(&mut self, t: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            t,
+            motor_set_max_velocity_torque_impl,
+        )
+    }
+
+    fn motor_linear_hertz(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            motor_linear_hertz_impl,
+        )
+    }
+
+    fn try_motor_linear_hertz(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            motor_linear_hertz_impl,
+        )
+    }
+
+    fn motor_set_linear_hertz(&mut self, hertz: f32) {
+        joint_kind_set_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            hertz,
+            motor_set_linear_hertz_impl,
+        );
+    }
+
+    fn try_motor_set_linear_hertz(&mut self, hertz: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            hertz,
+            motor_set_linear_hertz_impl,
+        )
+    }
+
+    fn motor_linear_damping_ratio(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            motor_linear_damping_ratio_impl,
+        )
+    }
+
+    fn try_motor_linear_damping_ratio(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            motor_linear_damping_ratio_impl,
+        )
+    }
+
+    fn motor_set_linear_damping_ratio(&mut self, damping: f32) {
+        joint_kind_set_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            damping,
+            motor_set_linear_damping_ratio_impl,
+        );
+    }
+
+    fn try_motor_set_linear_damping_ratio(&mut self, damping: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            damping,
+            motor_set_linear_damping_ratio_impl,
+        )
+    }
+
+    fn motor_angular_hertz(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            motor_angular_hertz_impl,
+        )
+    }
+
+    fn try_motor_angular_hertz(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            motor_angular_hertz_impl,
+        )
+    }
+
+    fn motor_set_angular_hertz(&mut self, hertz: f32) {
+        joint_kind_set_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            hertz,
+            motor_set_angular_hertz_impl,
+        );
+    }
+
+    fn try_motor_set_angular_hertz(&mut self, hertz: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            hertz,
+            motor_set_angular_hertz_impl,
+        )
+    }
+
+    fn motor_angular_damping_ratio(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            motor_angular_damping_ratio_impl,
+        )
+    }
+
+    fn try_motor_angular_damping_ratio(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            motor_angular_damping_ratio_impl,
+        )
+    }
+
+    fn motor_set_angular_damping_ratio(&mut self, damping: f32) {
+        joint_kind_set_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            damping,
+            motor_set_angular_damping_ratio_impl,
+        );
+    }
+
+    fn try_motor_set_angular_damping_ratio(&mut self, damping: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            damping,
+            motor_set_angular_damping_ratio_impl,
+        )
+    }
+
+    fn motor_max_spring_force(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            motor_max_spring_force_impl,
+        )
+    }
+
+    fn try_motor_max_spring_force(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            motor_max_spring_force_impl,
+        )
+    }
+
+    fn motor_set_max_spring_force(&mut self, f: f32) {
+        joint_kind_set_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            f,
+            motor_set_max_spring_force_impl,
+        );
+    }
+
+    fn try_motor_set_max_spring_force(&mut self, f: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            f,
+            motor_set_max_spring_force_impl,
+        )
+    }
+
+    fn motor_max_spring_torque(&self) -> f32 {
+        joint_kind_get_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            motor_max_spring_torque_impl,
+        )
+    }
+
+    fn try_motor_max_spring_torque(&self) -> ApiResult<f32> {
+        try_joint_kind_get_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            motor_max_spring_torque_impl,
+        )
+    }
+
+    fn motor_set_max_spring_torque(&mut self, t: f32) {
+        joint_kind_set_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            t,
+            motor_set_max_spring_torque_impl,
+        );
+    }
+
+    fn try_motor_set_max_spring_torque(&mut self, t: f32) -> ApiResult<()> {
+        try_joint_kind_set_checked_impl(
+            self.motor_joint_id(),
+            JointType::Motor,
+            t,
+            motor_set_max_spring_torque_impl,
+        )
+    }
+}
+
+impl MotorJointRuntimeHandle for OwnedJoint {
+    fn motor_joint_id(&self) -> JointId {
+        self.id()
+    }
+}
+
+impl<'w> MotorJointRuntimeHandle for Joint<'w> {
+    fn motor_joint_id(&self) -> JointId {
+        self.id()
     }
 }
 
@@ -5815,1201 +6775,559 @@ impl WorldHandle {
 
 impl OwnedJoint {
     pub fn weld_linear_hertz(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Weld, weld_linear_hertz_impl)
+        WeldJointRuntimeHandle::weld_linear_hertz(self)
     }
-
     pub fn try_weld_linear_hertz(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Weld, weld_linear_hertz_impl)
+        WeldJointRuntimeHandle::try_weld_linear_hertz(self)
     }
-
     pub fn weld_set_linear_hertz(&mut self, hertz: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Weld,
-            hertz,
-            weld_set_linear_hertz_impl,
-        )
+        WeldJointRuntimeHandle::weld_set_linear_hertz(self, hertz)
     }
-
     pub fn try_weld_set_linear_hertz(&mut self, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Weld,
-            hertz,
-            weld_set_linear_hertz_impl,
-        )
+        WeldJointRuntimeHandle::try_weld_set_linear_hertz(self, hertz)
     }
-
     pub fn weld_linear_damping_ratio(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Weld, weld_linear_damping_ratio_impl)
+        WeldJointRuntimeHandle::weld_linear_damping_ratio(self)
     }
-
     pub fn try_weld_linear_damping_ratio(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Weld, weld_linear_damping_ratio_impl)
+        WeldJointRuntimeHandle::try_weld_linear_damping_ratio(self)
     }
-
     pub fn weld_set_linear_damping_ratio(&mut self, damping_ratio: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Weld,
-            damping_ratio,
-            weld_set_linear_damping_ratio_impl,
-        )
+        WeldJointRuntimeHandle::weld_set_linear_damping_ratio(self, damping_ratio)
     }
-
     pub fn try_weld_set_linear_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Weld,
-            damping_ratio,
-            weld_set_linear_damping_ratio_impl,
-        )
+        WeldJointRuntimeHandle::try_weld_set_linear_damping_ratio(self, damping_ratio)
     }
-
     pub fn weld_angular_hertz(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Weld, weld_angular_hertz_impl)
+        WeldJointRuntimeHandle::weld_angular_hertz(self)
     }
-
     pub fn try_weld_angular_hertz(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Weld, weld_angular_hertz_impl)
+        WeldJointRuntimeHandle::try_weld_angular_hertz(self)
     }
-
     pub fn weld_set_angular_hertz(&mut self, hertz: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Weld,
-            hertz,
-            weld_set_angular_hertz_impl,
-        )
+        WeldJointRuntimeHandle::weld_set_angular_hertz(self, hertz)
     }
-
     pub fn try_weld_set_angular_hertz(&mut self, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Weld,
-            hertz,
-            weld_set_angular_hertz_impl,
-        )
+        WeldJointRuntimeHandle::try_weld_set_angular_hertz(self, hertz)
     }
-
     pub fn weld_angular_damping_ratio(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Weld, weld_angular_damping_ratio_impl)
+        WeldJointRuntimeHandle::weld_angular_damping_ratio(self)
     }
-
     pub fn try_weld_angular_damping_ratio(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Weld, weld_angular_damping_ratio_impl)
+        WeldJointRuntimeHandle::try_weld_angular_damping_ratio(self)
     }
-
     pub fn weld_set_angular_damping_ratio(&mut self, damping_ratio: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Weld,
-            damping_ratio,
-            weld_set_angular_damping_ratio_impl,
-        )
+        WeldJointRuntimeHandle::weld_set_angular_damping_ratio(self, damping_ratio)
     }
-
     pub fn try_weld_set_angular_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Weld,
-            damping_ratio,
-            weld_set_angular_damping_ratio_impl,
-        )
+        WeldJointRuntimeHandle::try_weld_set_angular_damping_ratio(self, damping_ratio)
     }
-
     pub fn wheel_spring_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_spring_enabled_impl)
+        WheelJointRuntimeHandle::wheel_spring_enabled(self)
     }
-
     pub fn try_wheel_spring_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_spring_enabled_impl)
+        WheelJointRuntimeHandle::try_wheel_spring_enabled(self)
     }
-
     pub fn wheel_enable_spring(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            enable,
-            wheel_enable_spring_impl,
-        )
+        WheelJointRuntimeHandle::wheel_enable_spring(self, enable)
     }
-
     pub fn try_wheel_enable_spring(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            enable,
-            wheel_enable_spring_impl,
-        )
+        WheelJointRuntimeHandle::try_wheel_enable_spring(self, enable)
     }
-
     pub fn wheel_spring_hertz(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_spring_hertz_impl)
+        WheelJointRuntimeHandle::wheel_spring_hertz(self)
     }
-
     pub fn try_wheel_spring_hertz(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_spring_hertz_impl)
+        WheelJointRuntimeHandle::try_wheel_spring_hertz(self)
     }
-
     pub fn wheel_set_spring_hertz(&mut self, hertz: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            hertz,
-            wheel_set_spring_hertz_impl,
-        )
+        WheelJointRuntimeHandle::wheel_set_spring_hertz(self, hertz)
     }
-
     pub fn try_wheel_set_spring_hertz(&mut self, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            hertz,
-            wheel_set_spring_hertz_impl,
-        )
+        WheelJointRuntimeHandle::try_wheel_set_spring_hertz(self, hertz)
     }
-
     pub fn wheel_spring_damping_ratio(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_spring_damping_ratio_impl)
+        WheelJointRuntimeHandle::wheel_spring_damping_ratio(self)
     }
-
     pub fn try_wheel_spring_damping_ratio(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            wheel_spring_damping_ratio_impl,
-        )
+        WheelJointRuntimeHandle::try_wheel_spring_damping_ratio(self)
     }
-
     pub fn wheel_set_spring_damping_ratio(&mut self, damping_ratio: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            damping_ratio,
-            wheel_set_spring_damping_ratio_impl,
-        )
+        WheelJointRuntimeHandle::wheel_set_spring_damping_ratio(self, damping_ratio)
     }
-
     pub fn try_wheel_set_spring_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            damping_ratio,
-            wheel_set_spring_damping_ratio_impl,
-        )
+        WheelJointRuntimeHandle::try_wheel_set_spring_damping_ratio(self, damping_ratio)
     }
-
     pub fn wheel_limit_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_limit_enabled_impl)
+        WheelJointRuntimeHandle::wheel_limit_enabled(self)
     }
-
     pub fn try_wheel_limit_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_limit_enabled_impl)
+        WheelJointRuntimeHandle::try_wheel_limit_enabled(self)
     }
-
     pub fn wheel_enable_limit(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(self.id(), JointType::Wheel, enable, wheel_enable_limit_impl)
+        WheelJointRuntimeHandle::wheel_enable_limit(self, enable)
     }
-
     pub fn try_wheel_enable_limit(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            enable,
-            wheel_enable_limit_impl,
-        )
+        WheelJointRuntimeHandle::try_wheel_enable_limit(self, enable)
     }
-
     pub fn wheel_lower_limit(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_lower_limit_impl)
+        WheelJointRuntimeHandle::wheel_lower_limit(self)
     }
-
     pub fn try_wheel_lower_limit(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_lower_limit_impl)
+        WheelJointRuntimeHandle::try_wheel_lower_limit(self)
     }
-
     pub fn wheel_upper_limit(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_upper_limit_impl)
+        WheelJointRuntimeHandle::wheel_upper_limit(self)
     }
-
     pub fn try_wheel_upper_limit(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_upper_limit_impl)
+        WheelJointRuntimeHandle::try_wheel_upper_limit(self)
     }
-
     pub fn wheel_set_limits(&mut self, lower: f32, upper: f32) {
-        joint_kind_set2_checked_validated_impl(
-            self.id(),
-            JointType::Wheel,
-            lower,
-            upper,
-            assert_wheel_limits_valid,
-            wheel_set_limits_impl,
-        )
+        WheelJointRuntimeHandle::wheel_set_limits(self, lower, upper)
     }
-
     pub fn try_wheel_set_limits(&mut self, lower: f32, upper: f32) -> ApiResult<()> {
-        try_joint_kind_set2_checked_validated_impl(
-            self.id(),
-            JointType::Wheel,
-            lower,
-            upper,
-            check_wheel_limits_valid,
-            wheel_set_limits_impl,
-        )
+        WheelJointRuntimeHandle::try_wheel_set_limits(self, lower, upper)
     }
-
     pub fn wheel_motor_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_motor_enabled_impl)
+        WheelJointRuntimeHandle::wheel_motor_enabled(self)
     }
-
     pub fn try_wheel_motor_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_motor_enabled_impl)
+        WheelJointRuntimeHandle::try_wheel_motor_enabled(self)
     }
-
     pub fn wheel_enable_motor(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(self.id(), JointType::Wheel, enable, wheel_enable_motor_impl)
+        WheelJointRuntimeHandle::wheel_enable_motor(self, enable)
     }
-
     pub fn try_wheel_enable_motor(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            enable,
-            wheel_enable_motor_impl,
-        )
+        WheelJointRuntimeHandle::try_wheel_enable_motor(self, enable)
     }
-
     pub fn wheel_motor_speed(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_motor_speed_impl)
+        WheelJointRuntimeHandle::wheel_motor_speed(self)
     }
-
     pub fn try_wheel_motor_speed(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_motor_speed_impl)
+        WheelJointRuntimeHandle::try_wheel_motor_speed(self)
     }
-
     pub fn wheel_set_motor_speed(&mut self, speed: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            speed,
-            wheel_set_motor_speed_impl,
-        )
+        WheelJointRuntimeHandle::wheel_set_motor_speed(self, speed)
     }
-
     pub fn try_wheel_set_motor_speed(&mut self, speed: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            speed,
-            wheel_set_motor_speed_impl,
-        )
+        WheelJointRuntimeHandle::try_wheel_set_motor_speed(self, speed)
     }
-
     pub fn wheel_motor_torque(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_motor_torque_impl)
+        WheelJointRuntimeHandle::wheel_motor_torque(self)
     }
-
     pub fn try_wheel_motor_torque(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_motor_torque_impl)
+        WheelJointRuntimeHandle::try_wheel_motor_torque(self)
     }
-
     pub fn wheel_max_motor_torque(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_max_motor_torque_impl)
+        WheelJointRuntimeHandle::wheel_max_motor_torque(self)
     }
-
     pub fn try_wheel_max_motor_torque(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_max_motor_torque_impl)
+        WheelJointRuntimeHandle::try_wheel_max_motor_torque(self)
     }
-
     pub fn wheel_set_max_motor_torque(&mut self, torque: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            torque,
-            wheel_set_max_motor_torque_impl,
-        )
+        WheelJointRuntimeHandle::wheel_set_max_motor_torque(self, torque)
     }
-
     pub fn try_wheel_set_max_motor_torque(&mut self, torque: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            torque,
-            wheel_set_max_motor_torque_impl,
-        )
+        WheelJointRuntimeHandle::try_wheel_set_max_motor_torque(self, torque)
     }
-
     pub fn motor_linear_velocity(&self) -> Vec2 {
-        joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_linear_velocity_impl)
+        MotorJointRuntimeHandle::motor_linear_velocity(self)
     }
-
     pub fn try_motor_linear_velocity(&self) -> ApiResult<Vec2> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_linear_velocity_impl)
+        MotorJointRuntimeHandle::try_motor_linear_velocity(self)
     }
-
     pub fn motor_set_linear_velocity<V: Into<Vec2>>(&mut self, v: V) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            v.into(),
-            motor_set_linear_velocity_impl,
-        )
+        MotorJointRuntimeHandle::motor_set_linear_velocity(self, v)
     }
-
     pub fn try_motor_set_linear_velocity<V: Into<Vec2>>(&mut self, v: V) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            v.into(),
-            motor_set_linear_velocity_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_set_linear_velocity(self, v)
     }
-
     pub fn motor_angular_velocity(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_angular_velocity_impl)
+        MotorJointRuntimeHandle::motor_angular_velocity(self)
     }
-
     pub fn try_motor_angular_velocity(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_angular_velocity_impl)
+        MotorJointRuntimeHandle::try_motor_angular_velocity(self)
     }
-
     pub fn motor_set_angular_velocity(&mut self, w: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            w,
-            motor_set_angular_velocity_impl,
-        )
+        MotorJointRuntimeHandle::motor_set_angular_velocity(self, w)
     }
-
     pub fn try_motor_set_angular_velocity(&mut self, w: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            w,
-            motor_set_angular_velocity_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_set_angular_velocity(self, w)
     }
-
     pub fn motor_max_velocity_force(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_max_velocity_force_impl)
+        MotorJointRuntimeHandle::motor_max_velocity_force(self)
     }
-
     pub fn try_motor_max_velocity_force(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_max_velocity_force_impl)
+        MotorJointRuntimeHandle::try_motor_max_velocity_force(self)
     }
-
     pub fn motor_set_max_velocity_force(&mut self, f: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            f,
-            motor_set_max_velocity_force_impl,
-        )
+        MotorJointRuntimeHandle::motor_set_max_velocity_force(self, f)
     }
-
     pub fn try_motor_set_max_velocity_force(&mut self, f: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            f,
-            motor_set_max_velocity_force_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_set_max_velocity_force(self, f)
     }
-
     pub fn motor_max_velocity_torque(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_max_velocity_torque_impl)
+        MotorJointRuntimeHandle::motor_max_velocity_torque(self)
     }
-
     pub fn try_motor_max_velocity_torque(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_max_velocity_torque_impl)
+        MotorJointRuntimeHandle::try_motor_max_velocity_torque(self)
     }
-
     pub fn motor_set_max_velocity_torque(&mut self, t: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            t,
-            motor_set_max_velocity_torque_impl,
-        )
+        MotorJointRuntimeHandle::motor_set_max_velocity_torque(self, t)
     }
-
     pub fn try_motor_set_max_velocity_torque(&mut self, t: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            t,
-            motor_set_max_velocity_torque_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_set_max_velocity_torque(self, t)
     }
-
     pub fn motor_linear_hertz(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_linear_hertz_impl)
+        MotorJointRuntimeHandle::motor_linear_hertz(self)
     }
-
     pub fn try_motor_linear_hertz(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_linear_hertz_impl)
+        MotorJointRuntimeHandle::try_motor_linear_hertz(self)
     }
-
     pub fn motor_set_linear_hertz(&mut self, hertz: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            hertz,
-            motor_set_linear_hertz_impl,
-        )
+        MotorJointRuntimeHandle::motor_set_linear_hertz(self, hertz)
     }
-
     pub fn try_motor_set_linear_hertz(&mut self, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            hertz,
-            motor_set_linear_hertz_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_set_linear_hertz(self, hertz)
     }
-
     pub fn motor_linear_damping_ratio(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_linear_damping_ratio_impl)
+        MotorJointRuntimeHandle::motor_linear_damping_ratio(self)
     }
-
     pub fn try_motor_linear_damping_ratio(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Motor,
-            motor_linear_damping_ratio_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_linear_damping_ratio(self)
     }
-
     pub fn motor_set_linear_damping_ratio(&mut self, damping: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            damping,
-            motor_set_linear_damping_ratio_impl,
-        )
+        MotorJointRuntimeHandle::motor_set_linear_damping_ratio(self, damping)
     }
-
     pub fn try_motor_set_linear_damping_ratio(&mut self, damping: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            damping,
-            motor_set_linear_damping_ratio_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_set_linear_damping_ratio(self, damping)
     }
-
     pub fn motor_angular_hertz(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_angular_hertz_impl)
+        MotorJointRuntimeHandle::motor_angular_hertz(self)
     }
-
     pub fn try_motor_angular_hertz(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_angular_hertz_impl)
+        MotorJointRuntimeHandle::try_motor_angular_hertz(self)
     }
-
     pub fn motor_set_angular_hertz(&mut self, hertz: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            hertz,
-            motor_set_angular_hertz_impl,
-        )
+        MotorJointRuntimeHandle::motor_set_angular_hertz(self, hertz)
     }
-
     pub fn try_motor_set_angular_hertz(&mut self, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            hertz,
-            motor_set_angular_hertz_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_set_angular_hertz(self, hertz)
     }
-
     pub fn motor_angular_damping_ratio(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Motor,
-            motor_angular_damping_ratio_impl,
-        )
+        MotorJointRuntimeHandle::motor_angular_damping_ratio(self)
     }
-
     pub fn try_motor_angular_damping_ratio(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Motor,
-            motor_angular_damping_ratio_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_angular_damping_ratio(self)
     }
-
     pub fn motor_set_angular_damping_ratio(&mut self, damping: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            damping,
-            motor_set_angular_damping_ratio_impl,
-        )
+        MotorJointRuntimeHandle::motor_set_angular_damping_ratio(self, damping)
     }
-
     pub fn try_motor_set_angular_damping_ratio(&mut self, damping: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            damping,
-            motor_set_angular_damping_ratio_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_set_angular_damping_ratio(self, damping)
     }
-
     pub fn motor_max_spring_force(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_max_spring_force_impl)
+        MotorJointRuntimeHandle::motor_max_spring_force(self)
     }
-
     pub fn try_motor_max_spring_force(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_max_spring_force_impl)
+        MotorJointRuntimeHandle::try_motor_max_spring_force(self)
     }
-
     pub fn motor_set_max_spring_force(&mut self, f: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            f,
-            motor_set_max_spring_force_impl,
-        )
+        MotorJointRuntimeHandle::motor_set_max_spring_force(self, f)
     }
-
     pub fn try_motor_set_max_spring_force(&mut self, f: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            f,
-            motor_set_max_spring_force_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_set_max_spring_force(self, f)
     }
-
     pub fn motor_max_spring_torque(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_max_spring_torque_impl)
+        MotorJointRuntimeHandle::motor_max_spring_torque(self)
     }
-
     pub fn try_motor_max_spring_torque(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_max_spring_torque_impl)
+        MotorJointRuntimeHandle::try_motor_max_spring_torque(self)
     }
-
     pub fn motor_set_max_spring_torque(&mut self, t: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            t,
-            motor_set_max_spring_torque_impl,
-        )
+        MotorJointRuntimeHandle::motor_set_max_spring_torque(self, t)
     }
-
     pub fn try_motor_set_max_spring_torque(&mut self, t: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            t,
-            motor_set_max_spring_torque_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_set_max_spring_torque(self, t)
     }
 }
 
 impl<'w> Joint<'w> {
     pub fn weld_linear_hertz(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Weld, weld_linear_hertz_impl)
+        WeldJointRuntimeHandle::weld_linear_hertz(self)
     }
-
     pub fn try_weld_linear_hertz(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Weld, weld_linear_hertz_impl)
+        WeldJointRuntimeHandle::try_weld_linear_hertz(self)
     }
-
     pub fn weld_set_linear_hertz(&mut self, hertz: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Weld,
-            hertz,
-            weld_set_linear_hertz_impl,
-        )
+        WeldJointRuntimeHandle::weld_set_linear_hertz(self, hertz)
     }
-
     pub fn try_weld_set_linear_hertz(&mut self, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Weld,
-            hertz,
-            weld_set_linear_hertz_impl,
-        )
+        WeldJointRuntimeHandle::try_weld_set_linear_hertz(self, hertz)
     }
-
     pub fn weld_linear_damping_ratio(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Weld, weld_linear_damping_ratio_impl)
+        WeldJointRuntimeHandle::weld_linear_damping_ratio(self)
     }
-
     pub fn try_weld_linear_damping_ratio(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Weld, weld_linear_damping_ratio_impl)
+        WeldJointRuntimeHandle::try_weld_linear_damping_ratio(self)
     }
-
     pub fn weld_set_linear_damping_ratio(&mut self, damping_ratio: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Weld,
-            damping_ratio,
-            weld_set_linear_damping_ratio_impl,
-        )
+        WeldJointRuntimeHandle::weld_set_linear_damping_ratio(self, damping_ratio)
     }
-
     pub fn try_weld_set_linear_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Weld,
-            damping_ratio,
-            weld_set_linear_damping_ratio_impl,
-        )
+        WeldJointRuntimeHandle::try_weld_set_linear_damping_ratio(self, damping_ratio)
     }
-
     pub fn weld_angular_hertz(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Weld, weld_angular_hertz_impl)
+        WeldJointRuntimeHandle::weld_angular_hertz(self)
     }
-
     pub fn try_weld_angular_hertz(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Weld, weld_angular_hertz_impl)
+        WeldJointRuntimeHandle::try_weld_angular_hertz(self)
     }
-
     pub fn weld_set_angular_hertz(&mut self, hertz: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Weld,
-            hertz,
-            weld_set_angular_hertz_impl,
-        )
+        WeldJointRuntimeHandle::weld_set_angular_hertz(self, hertz)
     }
-
     pub fn try_weld_set_angular_hertz(&mut self, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Weld,
-            hertz,
-            weld_set_angular_hertz_impl,
-        )
+        WeldJointRuntimeHandle::try_weld_set_angular_hertz(self, hertz)
     }
-
     pub fn weld_angular_damping_ratio(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Weld, weld_angular_damping_ratio_impl)
+        WeldJointRuntimeHandle::weld_angular_damping_ratio(self)
     }
-
     pub fn try_weld_angular_damping_ratio(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Weld, weld_angular_damping_ratio_impl)
+        WeldJointRuntimeHandle::try_weld_angular_damping_ratio(self)
     }
-
     pub fn weld_set_angular_damping_ratio(&mut self, damping_ratio: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Weld,
-            damping_ratio,
-            weld_set_angular_damping_ratio_impl,
-        )
+        WeldJointRuntimeHandle::weld_set_angular_damping_ratio(self, damping_ratio)
     }
-
     pub fn try_weld_set_angular_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Weld,
-            damping_ratio,
-            weld_set_angular_damping_ratio_impl,
-        )
+        WeldJointRuntimeHandle::try_weld_set_angular_damping_ratio(self, damping_ratio)
     }
-
     pub fn wheel_spring_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_spring_enabled_impl)
+        WheelJointRuntimeHandle::wheel_spring_enabled(self)
     }
-
     pub fn try_wheel_spring_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_spring_enabled_impl)
+        WheelJointRuntimeHandle::try_wheel_spring_enabled(self)
     }
-
     pub fn wheel_enable_spring(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            enable,
-            wheel_enable_spring_impl,
-        )
+        WheelJointRuntimeHandle::wheel_enable_spring(self, enable)
     }
-
     pub fn try_wheel_enable_spring(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            enable,
-            wheel_enable_spring_impl,
-        )
+        WheelJointRuntimeHandle::try_wheel_enable_spring(self, enable)
     }
-
     pub fn wheel_spring_hertz(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_spring_hertz_impl)
+        WheelJointRuntimeHandle::wheel_spring_hertz(self)
     }
-
     pub fn try_wheel_spring_hertz(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_spring_hertz_impl)
+        WheelJointRuntimeHandle::try_wheel_spring_hertz(self)
     }
-
     pub fn wheel_set_spring_hertz(&mut self, hertz: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            hertz,
-            wheel_set_spring_hertz_impl,
-        )
+        WheelJointRuntimeHandle::wheel_set_spring_hertz(self, hertz)
     }
-
     pub fn try_wheel_set_spring_hertz(&mut self, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            hertz,
-            wheel_set_spring_hertz_impl,
-        )
+        WheelJointRuntimeHandle::try_wheel_set_spring_hertz(self, hertz)
     }
-
     pub fn wheel_spring_damping_ratio(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_spring_damping_ratio_impl)
+        WheelJointRuntimeHandle::wheel_spring_damping_ratio(self)
     }
-
     pub fn try_wheel_spring_damping_ratio(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            wheel_spring_damping_ratio_impl,
-        )
+        WheelJointRuntimeHandle::try_wheel_spring_damping_ratio(self)
     }
-
     pub fn wheel_set_spring_damping_ratio(&mut self, damping_ratio: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            damping_ratio,
-            wheel_set_spring_damping_ratio_impl,
-        )
+        WheelJointRuntimeHandle::wheel_set_spring_damping_ratio(self, damping_ratio)
     }
-
     pub fn try_wheel_set_spring_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            damping_ratio,
-            wheel_set_spring_damping_ratio_impl,
-        )
+        WheelJointRuntimeHandle::try_wheel_set_spring_damping_ratio(self, damping_ratio)
     }
-
     pub fn wheel_limit_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_limit_enabled_impl)
+        WheelJointRuntimeHandle::wheel_limit_enabled(self)
     }
-
     pub fn try_wheel_limit_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_limit_enabled_impl)
+        WheelJointRuntimeHandle::try_wheel_limit_enabled(self)
     }
-
     pub fn wheel_enable_limit(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(self.id(), JointType::Wheel, enable, wheel_enable_limit_impl)
+        WheelJointRuntimeHandle::wheel_enable_limit(self, enable)
     }
-
     pub fn try_wheel_enable_limit(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            enable,
-            wheel_enable_limit_impl,
-        )
+        WheelJointRuntimeHandle::try_wheel_enable_limit(self, enable)
     }
-
     pub fn wheel_lower_limit(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_lower_limit_impl)
+        WheelJointRuntimeHandle::wheel_lower_limit(self)
     }
-
     pub fn try_wheel_lower_limit(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_lower_limit_impl)
+        WheelJointRuntimeHandle::try_wheel_lower_limit(self)
     }
-
     pub fn wheel_upper_limit(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_upper_limit_impl)
+        WheelJointRuntimeHandle::wheel_upper_limit(self)
     }
-
     pub fn try_wheel_upper_limit(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_upper_limit_impl)
+        WheelJointRuntimeHandle::try_wheel_upper_limit(self)
     }
-
     pub fn wheel_set_limits(&mut self, lower: f32, upper: f32) {
-        joint_kind_set2_checked_validated_impl(
-            self.id(),
-            JointType::Wheel,
-            lower,
-            upper,
-            assert_wheel_limits_valid,
-            wheel_set_limits_impl,
-        )
+        WheelJointRuntimeHandle::wheel_set_limits(self, lower, upper)
     }
-
     pub fn try_wheel_set_limits(&mut self, lower: f32, upper: f32) -> ApiResult<()> {
-        try_joint_kind_set2_checked_validated_impl(
-            self.id(),
-            JointType::Wheel,
-            lower,
-            upper,
-            check_wheel_limits_valid,
-            wheel_set_limits_impl,
-        )
+        WheelJointRuntimeHandle::try_wheel_set_limits(self, lower, upper)
     }
-
     pub fn wheel_motor_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_motor_enabled_impl)
+        WheelJointRuntimeHandle::wheel_motor_enabled(self)
     }
-
     pub fn try_wheel_motor_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_motor_enabled_impl)
+        WheelJointRuntimeHandle::try_wheel_motor_enabled(self)
     }
-
     pub fn wheel_enable_motor(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(self.id(), JointType::Wheel, enable, wheel_enable_motor_impl)
+        WheelJointRuntimeHandle::wheel_enable_motor(self, enable)
     }
-
     pub fn try_wheel_enable_motor(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            enable,
-            wheel_enable_motor_impl,
-        )
+        WheelJointRuntimeHandle::try_wheel_enable_motor(self, enable)
     }
-
     pub fn wheel_motor_speed(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_motor_speed_impl)
+        WheelJointRuntimeHandle::wheel_motor_speed(self)
     }
-
     pub fn try_wheel_motor_speed(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_motor_speed_impl)
+        WheelJointRuntimeHandle::try_wheel_motor_speed(self)
     }
-
     pub fn wheel_set_motor_speed(&mut self, speed: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            speed,
-            wheel_set_motor_speed_impl,
-        )
+        WheelJointRuntimeHandle::wheel_set_motor_speed(self, speed)
     }
-
     pub fn try_wheel_set_motor_speed(&mut self, speed: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            speed,
-            wheel_set_motor_speed_impl,
-        )
+        WheelJointRuntimeHandle::try_wheel_set_motor_speed(self, speed)
     }
-
     pub fn wheel_motor_torque(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_motor_torque_impl)
+        WheelJointRuntimeHandle::wheel_motor_torque(self)
     }
-
     pub fn try_wheel_motor_torque(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_motor_torque_impl)
+        WheelJointRuntimeHandle::try_wheel_motor_torque(self)
     }
-
     pub fn wheel_max_motor_torque(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_max_motor_torque_impl)
+        WheelJointRuntimeHandle::wheel_max_motor_torque(self)
     }
-
     pub fn try_wheel_max_motor_torque(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Wheel, wheel_max_motor_torque_impl)
+        WheelJointRuntimeHandle::try_wheel_max_motor_torque(self)
     }
-
     pub fn wheel_set_max_motor_torque(&mut self, torque: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            torque,
-            wheel_set_max_motor_torque_impl,
-        )
+        WheelJointRuntimeHandle::wheel_set_max_motor_torque(self, torque)
     }
-
     pub fn try_wheel_set_max_motor_torque(&mut self, torque: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Wheel,
-            torque,
-            wheel_set_max_motor_torque_impl,
-        )
+        WheelJointRuntimeHandle::try_wheel_set_max_motor_torque(self, torque)
     }
-
     pub fn motor_linear_velocity(&self) -> Vec2 {
-        joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_linear_velocity_impl)
+        MotorJointRuntimeHandle::motor_linear_velocity(self)
     }
-
     pub fn try_motor_linear_velocity(&self) -> ApiResult<Vec2> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_linear_velocity_impl)
+        MotorJointRuntimeHandle::try_motor_linear_velocity(self)
     }
-
     pub fn motor_set_linear_velocity<V: Into<Vec2>>(&mut self, v: V) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            v.into(),
-            motor_set_linear_velocity_impl,
-        )
+        MotorJointRuntimeHandle::motor_set_linear_velocity(self, v)
     }
-
     pub fn try_motor_set_linear_velocity<V: Into<Vec2>>(&mut self, v: V) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            v.into(),
-            motor_set_linear_velocity_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_set_linear_velocity(self, v)
     }
-
     pub fn motor_angular_velocity(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_angular_velocity_impl)
+        MotorJointRuntimeHandle::motor_angular_velocity(self)
     }
-
     pub fn try_motor_angular_velocity(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_angular_velocity_impl)
+        MotorJointRuntimeHandle::try_motor_angular_velocity(self)
     }
-
     pub fn motor_set_angular_velocity(&mut self, w: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            w,
-            motor_set_angular_velocity_impl,
-        )
+        MotorJointRuntimeHandle::motor_set_angular_velocity(self, w)
     }
-
     pub fn try_motor_set_angular_velocity(&mut self, w: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            w,
-            motor_set_angular_velocity_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_set_angular_velocity(self, w)
     }
-
     pub fn motor_max_velocity_force(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_max_velocity_force_impl)
+        MotorJointRuntimeHandle::motor_max_velocity_force(self)
     }
-
     pub fn try_motor_max_velocity_force(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_max_velocity_force_impl)
+        MotorJointRuntimeHandle::try_motor_max_velocity_force(self)
     }
-
     pub fn motor_set_max_velocity_force(&mut self, f: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            f,
-            motor_set_max_velocity_force_impl,
-        )
+        MotorJointRuntimeHandle::motor_set_max_velocity_force(self, f)
     }
-
     pub fn try_motor_set_max_velocity_force(&mut self, f: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            f,
-            motor_set_max_velocity_force_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_set_max_velocity_force(self, f)
     }
-
     pub fn motor_max_velocity_torque(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_max_velocity_torque_impl)
+        MotorJointRuntimeHandle::motor_max_velocity_torque(self)
     }
-
     pub fn try_motor_max_velocity_torque(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_max_velocity_torque_impl)
+        MotorJointRuntimeHandle::try_motor_max_velocity_torque(self)
     }
-
     pub fn motor_set_max_velocity_torque(&mut self, t: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            t,
-            motor_set_max_velocity_torque_impl,
-        )
+        MotorJointRuntimeHandle::motor_set_max_velocity_torque(self, t)
     }
-
     pub fn try_motor_set_max_velocity_torque(&mut self, t: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            t,
-            motor_set_max_velocity_torque_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_set_max_velocity_torque(self, t)
     }
-
     pub fn motor_linear_hertz(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_linear_hertz_impl)
+        MotorJointRuntimeHandle::motor_linear_hertz(self)
     }
-
     pub fn try_motor_linear_hertz(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_linear_hertz_impl)
+        MotorJointRuntimeHandle::try_motor_linear_hertz(self)
     }
-
     pub fn motor_set_linear_hertz(&mut self, hertz: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            hertz,
-            motor_set_linear_hertz_impl,
-        )
+        MotorJointRuntimeHandle::motor_set_linear_hertz(self, hertz)
     }
-
     pub fn try_motor_set_linear_hertz(&mut self, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            hertz,
-            motor_set_linear_hertz_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_set_linear_hertz(self, hertz)
     }
-
     pub fn motor_linear_damping_ratio(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_linear_damping_ratio_impl)
+        MotorJointRuntimeHandle::motor_linear_damping_ratio(self)
     }
-
     pub fn try_motor_linear_damping_ratio(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Motor,
-            motor_linear_damping_ratio_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_linear_damping_ratio(self)
     }
-
     pub fn motor_set_linear_damping_ratio(&mut self, damping: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            damping,
-            motor_set_linear_damping_ratio_impl,
-        )
+        MotorJointRuntimeHandle::motor_set_linear_damping_ratio(self, damping)
     }
-
     pub fn try_motor_set_linear_damping_ratio(&mut self, damping: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            damping,
-            motor_set_linear_damping_ratio_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_set_linear_damping_ratio(self, damping)
     }
-
     pub fn motor_angular_hertz(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_angular_hertz_impl)
+        MotorJointRuntimeHandle::motor_angular_hertz(self)
     }
-
     pub fn try_motor_angular_hertz(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_angular_hertz_impl)
+        MotorJointRuntimeHandle::try_motor_angular_hertz(self)
     }
-
     pub fn motor_set_angular_hertz(&mut self, hertz: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            hertz,
-            motor_set_angular_hertz_impl,
-        )
+        MotorJointRuntimeHandle::motor_set_angular_hertz(self, hertz)
     }
-
     pub fn try_motor_set_angular_hertz(&mut self, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            hertz,
-            motor_set_angular_hertz_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_set_angular_hertz(self, hertz)
     }
-
     pub fn motor_angular_damping_ratio(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Motor,
-            motor_angular_damping_ratio_impl,
-        )
+        MotorJointRuntimeHandle::motor_angular_damping_ratio(self)
     }
-
     pub fn try_motor_angular_damping_ratio(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.id(),
-            JointType::Motor,
-            motor_angular_damping_ratio_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_angular_damping_ratio(self)
     }
-
     pub fn motor_set_angular_damping_ratio(&mut self, damping: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            damping,
-            motor_set_angular_damping_ratio_impl,
-        )
+        MotorJointRuntimeHandle::motor_set_angular_damping_ratio(self, damping)
     }
-
     pub fn try_motor_set_angular_damping_ratio(&mut self, damping: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            damping,
-            motor_set_angular_damping_ratio_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_set_angular_damping_ratio(self, damping)
     }
-
     pub fn motor_max_spring_force(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_max_spring_force_impl)
+        MotorJointRuntimeHandle::motor_max_spring_force(self)
     }
-
     pub fn try_motor_max_spring_force(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_max_spring_force_impl)
+        MotorJointRuntimeHandle::try_motor_max_spring_force(self)
     }
-
     pub fn motor_set_max_spring_force(&mut self, f: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            f,
-            motor_set_max_spring_force_impl,
-        )
+        MotorJointRuntimeHandle::motor_set_max_spring_force(self, f)
     }
-
     pub fn try_motor_set_max_spring_force(&mut self, f: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            f,
-            motor_set_max_spring_force_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_set_max_spring_force(self, f)
     }
-
     pub fn motor_max_spring_torque(&self) -> f32 {
-        joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_max_spring_torque_impl)
+        MotorJointRuntimeHandle::motor_max_spring_torque(self)
     }
-
     pub fn try_motor_max_spring_torque(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(self.id(), JointType::Motor, motor_max_spring_torque_impl)
+        MotorJointRuntimeHandle::try_motor_max_spring_torque(self)
     }
-
     pub fn motor_set_max_spring_torque(&mut self, t: f32) {
-        joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            t,
-            motor_set_max_spring_torque_impl,
-        )
+        MotorJointRuntimeHandle::motor_set_max_spring_torque(self, t)
     }
-
     pub fn try_motor_set_max_spring_torque(&mut self, t: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.id(),
-            JointType::Motor,
-            t,
-            motor_set_max_spring_torque_impl,
-        )
+        MotorJointRuntimeHandle::try_motor_set_max_spring_torque(self, t)
     }
 }
 

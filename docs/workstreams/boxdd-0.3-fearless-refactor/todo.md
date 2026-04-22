@@ -131,6 +131,7 @@
 - [x] Consolidate shared debug-draw callback panic plumbing and option wiring across the safe and raw debug-draw paths, and add dedicated `debug_draw_raw` regression coverage.
 - [x] Consolidate shared `Joint` / `OwnedJoint` internals for common state accessors, threshold controls, and raw/typed user-data plumbing.
 - [x] Collapse the mirrored `Joint` / `OwnedJoint` common runtime wrappers behind one private handle trait while keeping ownership-only destroy/drop behavior explicit.
+- [x] Collapse the mirrored `Distance`, `Prismatic`, `Revolute`, `Weld`, `Wheel`, and `Motor` joint runtime wrappers for `Joint` / `OwnedJoint` behind private handle traits so the full typed runtime family surface shares one internal source per joint kind.
 
 ## Next
 
