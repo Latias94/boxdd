@@ -84,6 +84,7 @@ fn try_joint_read_checked_impl<R>(id: JointId, f: impl FnOnce(JointId) -> R) -> 
 }
 
 #[inline]
+#[cfg_attr(not(feature = "serialize"), allow(dead_code))]
 pub(crate) fn joint_is_valid_impl(id: JointId) -> bool {
     base::joint_is_valid_impl(id)
 }

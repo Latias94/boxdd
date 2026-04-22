@@ -13,6 +13,7 @@ If you are new to `boxdd`, start with the first section instead of scanning file
 
 ## Queries and Hot Paths
 
+- `buffer_reuse.rs`: focused `*_into` and `visit_*` hot-path reuse patterns
 - `queries.rs`: broad-phase overlap and query basics
 - `query_casts.rs`: combined overlap, ray, and shape-cast workflows
 - `raycast.rs`: focused ray-cast sample
@@ -44,6 +45,7 @@ If you are new to `boxdd`, start with the first section instead of scanning file
 
 - `scene_serialize.rs`: scene snapshot round-trip (`--features serialize`)
 - `physics_thread.rs`: dedicated-thread ownership model for apps that are otherwise multi-threaded or async-driven
+- `world_handle_reads.rs`: stored read-only `WorldHandle` queries over bodies and shapes returned from world queries
 - `wasm_wasi_smoke.rs`: minimal WASM/WASI-oriented smoke example
 
 ## Interactive Testbed
