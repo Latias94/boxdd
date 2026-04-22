@@ -22,8 +22,8 @@ smallvec = "1"
 serde = { version = "1", features = ["derive"], optional = true }
 cgmath = { version = "0.18", optional = true }
 nalgebra = { version = "0.34", optional = true }
-glam = { version = "0.30", optional = true }
-bytemuck = { version = "1.23", optional = true }
+glam = { version = "0.32", optional = true }
+bytemuck = { version = "1.25", optional = true }
 
 [features]
 default = []
@@ -59,11 +59,11 @@ features = []
 rustdoc-args = ["--cfg", "docsrs"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-dear-imgui-rs = "0.3"
-dear-imgui-winit = "0.3"
-dear-imgui-glow = "0.3"
+dear-imgui-rs = "0.11"
+dear-imgui-winit = "0.11"
+dear-imgui-glow = "0.11"
 winit = "0.30"
-glow = "0.16"
+glow = "0.17"
 glutin = "0.32"
 glutin-winit = "0.5"
 env_logger = "0.11"

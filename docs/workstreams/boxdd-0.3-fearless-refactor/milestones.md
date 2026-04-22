@@ -97,6 +97,11 @@ Scope:
 - continue the `world/creation.rs` follow-up decomposition by splitting body lifecycle, world-space joint-base builders, and shape/chain creation helpers into `world/creation/{body_lifecycle,joint_builders,shape_creation}.rs` so the creation/lifecycle surface also becomes a thin coordination root
 - continue the `shapes/geometry.rs` follow-up decomposition by splitting per-type geometry implementations into `shapes/geometry/{circle,segment,chain_segment,capsule,polygon}.rs` so the geometry surface can evolve by value type without one oversized helper-and-impl sink
 - continue the `world/body_api.rs` follow-up decomposition by splitting pure body reads/enumeration and mutable state/control helpers into `world/body_api/{reads,control}.rs` so the body-id runtime surface also becomes a thin coordination root
+- continue the `shapes/runtime.rs` follow-up decomposition again by splitting core runtime helpers, contact extraction, sensor-overlap queries, and the shared handle trait into `shapes/runtime/{base,contact_queries,sensor_queries,handle}.rs` so the post-split shape runtime also becomes a thin coordination root
+- continue the `joints/creation.rs` follow-up decomposition by splitting joint-def validation, world builder entrypoints, and per-family create/destroy methods into `joints/creation/{validation,builders,world_api}.rs` so the joint-creation surface also becomes a thin coordination root
+- continue the `world/shape_api.rs` follow-up decomposition by splitting geometry mutation, runtime reads/event toggles, and sensor-overlap queries into `world/shape_api/{control,reads,sensor_queries}.rs` so the shape-id runtime surface also becomes a thin coordination root
+- continue the `query/checked.rs` follow-up decomposition by splitting callback-state helpers, overlap queries, ray queries, shape casts, and mover queries into `query/checked/{common,overlap_queries,ray_queries,shape_casts,mover_queries}.rs` so the checked-query helper layer also becomes a thin coordination root
+- continue the `query/world_api/{world_queries,handle_queries}.rs` follow-up decomposition by splitting overlap, ray, shape-cast, and mover entrypoints into dedicated child modules so the explicit `World` / `WorldHandle` query receivers stay parallel without rebuilding another oversized entrypoint pair
 - split the world-owned creation/lifecycle layer out of `world.rs` so body/shape/chain creation, destroy helpers, and world-space joint-base builders live behind a dedicated `world/creation.rs` module instead of inflating the root
 - split the remaining body-by-id runtime helper block out of `world.rs` so `World` body-id queries/mutations live behind a dedicated `world/body_api.rs` module instead of remaining in the root
 - split the callback-sensitive scoped id-borrow helpers out of `world.rs` so `body` / `shape` / `joint` / `chain` borrowing lives behind a dedicated `world/borrow.rs` module
@@ -145,6 +150,8 @@ Exit criteria:
 - the public shape wrappers and body-local shape creation convenience layer now have explicit module homes too, so `shapes/mod.rs` no longer mixes wrapper method bodies with value objects and creation entrypoints
 - the remaining internal shape runtime and validation plumbing now lives in `shapes/runtime.rs`, leaving `shapes/mod.rs` as a thin public root with re-exports plus shared imports for child modules
 - `shapes/runtime.rs` is no longer a single monolithic follow-up sink either: validation now lives in `shapes/runtime/validation.rs`, body-attached creation plumbing in `shapes/runtime/creation.rs`, and user-data plus checked helper plumbing in `shapes/runtime/user_data.rs`, leaving the root focused on core runtime queries and the shared handle trait
+- `shapes/runtime.rs` is now thinner again: core runtime helpers live in `shapes/runtime/base.rs`, contact extraction in `shapes/runtime/contact_queries.rs`, sensor-overlap queries in `shapes/runtime/sensor_queries.rs`, and the shared owned/scoped runtime-handle trait in `shapes/runtime/handle.rs`, leaving the root focused on shared imports and module coordination
+- `joints/creation.rs` is now thinner as well: joint-def validation lives in `joints/creation/validation.rs`, world convenience builder entrypoints in `joints/creation/builders.rs`, and per-family create/destroy helpers in `joints/creation/world_api.rs`, leaving the root focused on shared imports and module coordination
 - the world-configuration value-object layer now has its own module too, so `world.rs` no longer mixes `WorldDef` / `WorldBuilder` / config validation with the callback-heavy runtime body
 - lightweight world-owned stats and snapshot value objects now live in a dedicated metrics module too, so `world.rs` no longer carries passive `Counters` / `Profile` / owned-handle count structs beside the live runtime surface
 - `WorldHandle` / `CallbackWorld` and their stored-read-only query methods now live behind a dedicated handle module too, so `world.rs` no longer mixes mutable runtime entrypoints with callback-safe or stored-query read APIs
@@ -155,6 +162,9 @@ Exit criteria:
 - `world/creation.rs` is now thin as well: body lifecycle lives in `world/creation/body_lifecycle.rs`, world-space joint-base helpers in `world/creation/joint_builders.rs`, and shape/chain creation plus destruction in `world/creation/shape_creation.rs`, leaving the root focused on shared imports and module coordination
 - `shapes/geometry.rs` is now thinner as well: the per-type geometry implementations live in `shapes/geometry/{circle,segment,chain_segment,capsule,polygon}.rs`, leaving the root focused on shared validation/hull helpers, type definitions, and free constructors
 - `world/body_api.rs` is now thinner as well: pure body reads/enumeration live in `world/body_api/reads.rs` and mutable state/control helpers live in `world/body_api/control.rs`, leaving the root focused on shared imports and module coordination
+- `world/shape_api.rs` is now thinner as well: geometry mutation/control lives in `world/shape_api/control.rs`, runtime reads and event-flag getters live in `world/shape_api/reads.rs`, and sensor-overlap queries live in `world/shape_api/sensor_queries.rs`, leaving the root focused on shared imports and module coordination
+- `query/checked.rs` is now thinner as well: callback-state helpers live in `query/checked/common.rs`, overlap queries in `query/checked/overlap_queries.rs`, ray casts in `query/checked/ray_queries.rs`, shape casts in `query/checked/shape_casts.rs`, and mover helpers in `query/checked/mover_queries.rs`, leaving the root focused on shared imports and module coordination
+- `query/world_api/{world_queries,handle_queries}.rs` are now thinner as well: both explicit receiver roots route overlap, ray, shape-cast, and mover entrypoints through dedicated child modules instead of rebuilding another oversized query-entrypoint pair
 - the world-owned creation/lifecycle layer now lives in `world/creation.rs`, so `world.rs` no longer mixes body/shape/chain creation, destroy helpers, and world-space joint-base builders with the remaining id-scoped runtime accessors
 - the body-by-id runtime getter/mutation surface now lives in `world/body_api.rs`, so `world.rs` no longer mixes those helpers with the remaining world coordination code
 - the scoped id-borrow helper surface now lives in `world/borrow.rs`, so callback-sensitive handle borrowing no longer shares the same file as unrelated runtime/query code
@@ -288,3 +298,23 @@ Exit criteria:
 - wrong-family typed joint `try_*` misuse reports `ApiError::InvalidJointType` instead of depending on Box2D assert builds
 - common world runtime diagnostics/tuning extras and callback-registration helpers no longer hide in side modules or panic-only seams when recoverable `try_*` behavior is appropriate
 - `ContactId` no longer requires raw FFI for direct validity checks or contact-data inspection
+
+## M8: Release Hardening and Communication
+
+Status: shipped
+
+Scope:
+
+- refresh direct dependencies for `boxdd` and `boxdd-sys` where the upgrade cost is justified
+- upgrade the optional Dear ImGui testbed stack to the current generation and keep the testbed example building
+- re-curate the example set after the `0.3` API expansion so examples teach the recommended safe workflows instead of historical API shapes
+- refresh README/example references so new users discover the main `0.3` workflows quickly
+- rewrite the `0.3.0` changelog into a release-note style document centered on user-visible additions, breaking changes, migration notes, and fixes
+
+Exit criteria:
+
+- dependency versions are intentionally current enough for the release, or any deferred pins are documented
+- the Dear ImGui testbed stack builds on the chosen dependency versions without carrying outdated API comments or glue
+- the example catalog matches the promoted `0.3` workflows instead of pre-refactor crate history
+- README commands and example pointers line up with the curated example set
+- `CHANGELOG.md` communicates the release to downstream users without burying them in internal refactor detail

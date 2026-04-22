@@ -161,14 +161,29 @@
 
 ## Next
 
+- [x] Freeze further fearless module splitting unless a release-blocking issue is discovered; prioritize `0.3.0` release hardening instead.
+- [x] Audit all direct dependencies across `boxdd` and `boxdd-sys`, upgrade the ones that can move safely for `0.3.0`, and keep intentionally stable pins such as `winit 0.30` instead of chasing beta-only upstream releases.
+- [x] Upgrade the `dear-imgui-rs` / `dear-imgui-winit` / `dear-imgui-glow` testbed stack to the current generation and keep the testbed example building on that stack.
+- [x] Revisit the example catalog after the `0.3` API expansion by adding a grouped example index and promoting the recommended workflows instead of leaving users to discover them alphabetically.
+- [x] Refresh README example references and example descriptions so the visible entrypoints emphasize `*_into`, `visit_*`, mover, collision, event, serialization, and threading workflows added during `0.3`.
+- [x] Rewrite the `0.3.0` changelog into a user-facing release note focused on highlights, breaking changes, migration notes, and externally visible fixes rather than internal refactor chronology.
 - [ ] Audit any remaining owned/scoped handle duplication outside the already-refactored internals and confirm it is worth keeping.
 - [x] Continue decomposing `world/handle.rs` by splitting callback-safe user-data reads plus the world/body/shape stored-query slices into dedicated child modules, leaving `world/handle.rs` as a thin coordination root.
 - [x] Continue decomposing `query/world_api.rs` by splitting the explicit `World` and `WorldHandle` query entrypoints into dedicated child modules, leaving `query/world_api.rs` as a thin coordination root.
 - [x] Continue decomposing `world/creation.rs` by splitting body lifecycle, world-space joint-base builders, and shape/chain creation helpers into dedicated child modules, leaving `world/creation.rs` as a thin coordination root.
 - [x] Continue decomposing `shapes/geometry.rs` by splitting per-type geometry implementations into dedicated child modules, leaving the root focused on shared validation/hull helpers, type definitions, and free constructors.
 - [x] Continue decomposing `world/body_api.rs` by splitting pure body reads/enumeration and mutable state/control helpers into dedicated child modules, leaving `world/body_api.rs` as a thin coordination root.
-- [ ] Audit the remaining large world/shape child modules (`world/shape_api.rs`, the shared helper roots that remain under `shapes`, and any child that starts regrowing) and decide which one should be split next for the best maintenance win without churning the now-thin roots.
-- [ ] Audit the remaining large post-split shape/joint hotspots (the shared helper roots that remain in `shapes`, the remaining `joints` support modules, and the still-large `world` child modules) and choose the next highest-payoff structural split instead of mechanically chasing line counts.
+- [x] Audit the remaining large world/shape child modules (`world/shape_api.rs`, the shared helper roots that remain under `shapes`, and any child that starts regrowing) and choose `world/shape_api.rs` as the next split because it was the clearest remaining world follow-up sink after `world/body_api.rs`.
+- [x] Continue decomposing `world/shape_api.rs` by splitting geometry mutation, runtime reads/event flags, and sensor-overlap queries into dedicated child modules, leaving `world/shape_api.rs` as a thin coordination root.
+- [x] Audit the remaining large post-split shape/joint hotspots (starting with `shapes/runtime.rs`, plus the remaining `joints` support modules and any regrowing `world` child) and choose `shapes/runtime.rs` as the next split because it still mixed contact/sensor extraction, core runtime helpers, and the shared handle trait after the earlier validation/creation/user-data split.
+- [x] Continue decomposing `shapes/runtime.rs` by splitting core runtime helpers, contact extraction, sensor-overlap queries, and the shared handle trait into `shapes/runtime/{base,contact_queries,sensor_queries,handle}.rs`, leaving `shapes/runtime.rs` as a thin coordination root.
+- [x] Audit the next large post-split joint/query hotspots (starting with `joints/creation.rs`, plus `query/checked.rs` and any regrowing wrapper module) and choose `joints/creation.rs` as the next split because it still mixed joint-def validation, world builder entrypoints, and per-family create/destroy methods in one file.
+- [x] Continue decomposing `joints/creation.rs` by splitting joint-def validation, world builder entrypoints, and per-family create/destroy methods into `joints/creation/{validation,builders,world_api}.rs`, leaving `joints/creation.rs` as a thin coordination root.
+- [x] Audit the next large query/runtime hotspots (starting with `query/checked.rs`, plus `body/runtime/handle.rs` and any regrowing wrapper module) and choose `query/checked.rs` as the next split because it still mixed callback-state guards, overlap/ray/shape-cast/mover helpers, and shared validation glue in one file.
+- [x] Continue decomposing `query/checked.rs` by splitting callback-state helpers, overlap queries, ray queries, shape casts, and mover queries into `query/checked/{common,overlap_queries,ray_queries,shape_casts,mover_queries}.rs`, leaving `query/checked.rs` as a thin coordination root.
+- [x] Audit the remaining large query entrypoint hotspots (`query/world_api/{world_queries,handle_queries}.rs`, plus `body/runtime/handle.rs` and any regrowing wrapper module) and choose the public query entrypoint pair as the next split because it still mixed overlap/ray/shape-cast/mover entrypoints in two oversized receiver files even after `query/checked.rs` became modular.
+- [x] Continue decomposing `query/world_api/{world_queries,handle_queries}.rs` by splitting overlap, ray, shape-cast, and mover entrypoints into dedicated child modules, leaving both roots as thin coordination files while keeping the explicit `World` / `WorldHandle` surfaces intact.
+- [ ] Audit the next large runtime/helper hotspots (starting with `body/runtime/handle.rs`, `shapes/chain.rs`, and `query/types.rs`) and choose the next highest-payoff structural split instead of mechanically chasing line counts.
 - [x] Review remaining public raw escape hatches and document which are intentional (`world_id_raw`, raw event slices, debug draw raw paths, etc.).
 - [x] Add more targeted regression coverage where intentional raw escape hatches still rely on callback-sensitive or zero-copy behavior.
 - [x] Continue the completeness audit against upstream Box2D v3 and record any intentionally unwrapped or raw-only areas that should be revisited after `0.3.0`.
@@ -181,6 +196,7 @@
 - [x] Run `cargo fmt --all`.
 - [x] Run targeted mover tests.
 - [x] Run `cargo nextest run -p boxdd`.
-- [x] Review `README.md` and examples for `0.3.0` API consistency.
-- [x] Finalize `CHANGELOG.md` wording for the full `0.3.0` release.
+- [ ] Review and refresh dependency versions for the release branch, including the optional testbed stack.
+- [ ] Re-audit examples for `0.3.0` API consistency after the dependency refresh and any example regrouping.
+- [ ] Rewrite `CHANGELOG.md` into the final user-facing `0.3.0` release note format.
 - [ ] Publish `boxdd 0.3.0`.

@@ -372,7 +372,6 @@ fn build_with_cc_wasm(manifest_dir: &Path, target_env: &str, is_debug: bool) {
         build.opt_level(2);
     }
     build.flag_if_supported("-std=c17");
-    build.static_flag(true);
     build.compile("box2d");
 }
 
@@ -417,6 +416,5 @@ fn build_with_cc_wasi(manifest_dir: &Path, is_debug: bool) {
         build.opt_level(2);
     }
     build.flag_if_supported("-std=c17");
-    build.static_flag(true);
     build.compile("box2d");
 }

@@ -47,14 +47,19 @@ The main gaps are:
 - the first `shapes/mod.rs` split helped, but `shapes/runtime.rs` was still a second mixed-responsibility sink until the runtime helper, validation/creation, and user-data layers started moving into dedicated child modules
 - `joints/base.rs` also remained a mixed-responsibility sink even after `JointBase` moved out, until the runtime-handle, user-data, owned, and scoped wrapper layers started moving into dedicated child modules
 - the `world` module is still the largest mixed-responsibility hotspot in the crate, even after the world-config, lightweight stats, stored-handle, callback-heavy runtime, and creation/lifecycle layers are peeled off
-- the follow-up world decomposition is now underway: `world/body_api.rs`, `world/borrow.rs`, `world/shape_api.rs`, and `world/tests.rs` have already peeled most mixed concerns out of the root, but the next follow-up should target the largest remaining world submodules instead of declaring victory too early
+- the follow-up world decomposition is now underway: `world/body_api.rs`, `world/borrow.rs`, `world/shape_api.rs`, and `world/tests.rs` have already peeled most mixed concerns out of the root, and the next follow-up should keep targeting the largest remaining world or shape helper sinks instead of declaring victory too early
 - `world/runtime.rs` was the first of those large child modules to show the same pattern, because read-only helper plumbing, step/tuning control, and callback registration/trampolines were still cohabiting one file until they started moving into dedicated child modules too
 - `body/runtime.rs` shows the same follow-up pattern as well: contact/attachment collection, typed user-data plumbing, and the shared owned/scoped runtime-handle trait were still cohabiting one file until they started moving into dedicated child modules
+- `shapes/runtime.rs` followed the same pattern after the first shape split too: contact extraction, sensor-overlap extraction, core shape-runtime helper FFI, and the shared owned/scoped runtime-handle trait still cohabited one file until they started moving into dedicated child modules as well
 - `world/handle.rs` followed the same pattern after the root split: callback-safe user-data reads, world-level diagnostics, body-by-id reads, and shape-by-id reads were still cohabiting one file until they started moving into dedicated child modules too
 - `query/world_api.rs` followed the same pattern too: the explicit `World` and `WorldHandle` query surfaces intentionally stayed public and parallel, but they no longer needed to cohabit one file once the module root became a pure coordination layer
+- `joints/creation.rs` followed the same pattern too: raw joint-def validation, target-world checks, world convenience builders, and per-family create/destroy entrypoints lived in one file until they started moving into dedicated child modules
 - `world/creation.rs` followed the same pattern too: body lifecycle, world-space joint-base helpers, and shape/chain creation helpers were still cohabiting one file even though they are maintained on different cadence and belong to different follow-up concerns
 - `shapes/geometry.rs` followed the same pattern too: shared geometry validation/hull helpers, five crate-owned value types, and the free constructor helpers all lived in one file until the per-type implementations started moving into dedicated child modules
 - `world/body_api.rs` followed the same pattern too: pure body reads/enumeration and mutable state/control helpers lived in one file until they started moving into dedicated child modules
+- `world/shape_api.rs` followed the same pattern too: geometry mutation helpers, general shape runtime reads, event-toggle plumbing, and sensor-overlap queries lived in one file until they started moving into dedicated child modules
+- `query/checked.rs` followed the same pattern too: callback-state checks, overlap collection/visitors, ray casts, shape casts, and mover queries lived in one file until they started moving into dedicated child modules
+- `query/world_api/{world_queries,handle_queries}.rs` followed the same pattern too: the explicit `World` and `WorldHandle` receivers intentionally stayed public and parallel, but their overlap/ray/shape-cast/mover entrypoints no longer needed to cohabit two oversized files once the checked helper layer became modular
 
 If we do not address these now, the likely outcome is a sequence of small additive
 patches that preserve avoidable duplication and keep advanced users half inside the safe
@@ -217,7 +222,7 @@ deliberate exclusions.
 - serialize-time chain metadata cleanup so `ChainDef` helpers and `World::chain_records()` stay on crate-owned `Filter` / `Vec2` / `SurfaceMaterial` vocabulary instead of leaking raw `ffi` collections back into the public surface
 - definition value-object cleanup so `ShapeDef` / `ChainDef` can be inspected as normal crate-owned config values instead of acting like builder-only write shells
 - split the oversized `shapes/mod.rs` root along value-object, creation, owned/scoped wrapper, and internal runtime-helper boundaries so shape follow-up work no longer lands in one giant file
-- keep decomposing `shapes/runtime.rs` after that first root split too, so validation, body-attached creation plumbing, and user-data/checked helper layers stop cohabiting with the remaining runtime handle core
+- keep decomposing `shapes/runtime.rs` after that first root split too, so validation, body-attached creation plumbing, user-data/checked helper layers, contact extraction, sensor-overlap extraction, core runtime helpers, and the shared handle trait stop rebuilding another oversized follow-up sink
 - creation-definition cleanup so `BodyDef`, `JointBase`, and concrete joint defs no longer act like write-only shells, and obvious naming mistakes on config-only APIs are corrected even when that requires a breaking change
 - world-config cleanup so top-level setup values such as `WorldDef` and `ExplosionDef` follow the same readable crate-owned value-object rules as the rest of the safe API
 - continue decomposing the oversized `world.rs` root after the config/stats split so stored read-only `WorldHandle` queries and the mutable `World` runtime surface stop cohabiting one giant file
@@ -228,9 +233,13 @@ deliberate exclusions.
 - keep decomposing `body/runtime.rs` after the main `body.rs` split too, so attachment/contact helpers, typed user-data plumbing, and the shared runtime-handle trait stop cohabiting in one follow-up sink
 - keep decomposing `world/handle.rs` after the main `world.rs` split too, so callback-safe user-data reads and the world/body/shape stored-query slices stop cohabiting in one follow-up sink
 - keep decomposing `query/world_api.rs` after the main `query.rs` split too, so the mirrored `World` and `WorldHandle` query entrypoints stay explicit without rebuilding another oversized two-receiver file
+- keep decomposing `joints/creation.rs` after the main `joints/mod.rs` split too, so joint-def validation, world builder entrypoints, and per-family create/destroy methods stop cohabiting in one follow-up sink
 - keep decomposing `world/creation.rs` after the main `world.rs` split too, so body lifecycle, world-space joint-base builders, and shape/chain creation helpers stop cohabiting in one follow-up sink
 - keep decomposing `shapes/geometry.rs` after the earlier shape-module split too, so per-type geometry behavior can move independently without rebuilding another oversized value-types-plus-helpers sink
 - keep decomposing `world/body_api.rs` after the main `world.rs` split too, so pure body reads/enumeration and mutable state/control helpers stop cohabiting in one follow-up sink
+- keep decomposing `world/shape_api.rs` after the main `world.rs` split too, so geometry mutation helpers, runtime reads/event toggles, and sensor-overlap queries stop cohabiting in one follow-up sink
+- keep decomposing `query/checked.rs` after the main `query.rs` split too, so callback-state guards, overlap helpers, ray casts, shape casts, and mover helpers stop cohabiting in one follow-up sink
+- keep decomposing `query/world_api/{world_queries,handle_queries}.rs` after the first world/query split too, so the explicit `World` and `WorldHandle` query receivers stay parallel without rebuilding another oversized query-entrypoint pair
 - config raw-boundary cleanup so builder-oriented wrappers such as `BodyDef`, `ShapeDef`, `JointBase`, and concrete joint defs cross back to raw Box2D structs through explicit named escape hatches when users truly need that seam
 - keep borrowed/raw event APIs centered on `World`; if `WorldHandle` mirrors event reads, keep that mirror limited to owned snapshots only
 
@@ -243,15 +252,20 @@ deliberate exclusions.
 - continue the completeness audit after shipping the live-shape runtime wrappers, especially for any remaining body/joint/world-handle runtime gaps
 - keep `shapes/mod.rs` as a thin public root after the split, and route future shape internals into dedicated submodules instead of rebuilding another giant mixed-responsibility file
 - after introducing `shapes/runtime/validation.rs`, `shapes/runtime/creation.rs`, and `shapes/runtime/user_data.rs`, keep future shape follow-up work landing in dedicated runtime child modules instead of rebuilding another oversized `shapes/runtime.rs`
+- after introducing `shapes/runtime/{base,contact_queries,sensor_queries,handle}.rs` alongside the earlier validation/creation/user-data split, keep future shape-runtime follow-up work landing in those child modules instead of rebuilding another oversized `shapes/runtime.rs`
 - after introducing `body/runtime/attachments.rs`, `body/runtime/user_data.rs`, and `body/runtime/handle.rs`, keep future body follow-up work landing in those child modules instead of rebuilding another oversized `body/runtime.rs`
 - keep `joints/base.rs` as a thin coordination root after the handle split too; future joint-handle follow-up work should land in child modules instead of rebuilding another mixed-responsibility file
 - keep `world.rs` moving toward a thin coordination root too: future world follow-up work should land in dedicated submodules instead of rebuilding another giant mixed-responsibility file around `World` / `WorldHandle`
 - after introducing `world/runtime/reads.rs`, `world/runtime/control.rs`, and `world/runtime/callbacks.rs`, keep future runtime follow-up work landing in those child modules instead of rebuilding another oversized `world/runtime.rs`
 - after introducing `world/handle/{callback_world,world_reads,body_reads,shape_reads}.rs`, keep future stored-query follow-up work landing in those child modules instead of rebuilding another oversized `world/handle.rs`
 - after introducing `query/world_api/{world_queries,handle_queries}.rs`, keep future query-entrypoint follow-up work landing in those child modules instead of rebuilding another oversized `query/world_api.rs`
+- after introducing `joints/creation/{validation,builders,world_api}.rs`, keep future joint-creation follow-up work landing in those child modules instead of rebuilding another oversized `joints/creation.rs`
 - after introducing `world/creation/{body_lifecycle,joint_builders,shape_creation}.rs`, keep future creation/lifecycle follow-up work landing in those child modules instead of rebuilding another oversized `world/creation.rs`
 - after introducing `shapes/geometry/{circle,segment,chain_segment,capsule,polygon}.rs`, keep future geometry follow-up work landing in those child modules instead of rebuilding another oversized `shapes/geometry.rs`
 - after introducing `world/body_api/{reads,control}.rs`, keep future body-id runtime follow-up work landing in those child modules instead of rebuilding another oversized `world/body_api.rs`
+- after introducing `world/shape_api/{control,reads,sensor_queries}.rs`, keep future shape-id runtime follow-up work landing in those child modules instead of rebuilding another oversized `world/shape_api.rs`
+- after introducing `query/checked/{common,overlap_queries,ray_queries,shape_casts,mover_queries}.rs`, keep future checked-query follow-up work landing in those child modules instead of rebuilding another oversized `query/checked.rs`
+- after introducing `query/world_api/world_queries/{overlap_queries,ray_queries,shape_casts,mover_queries}.rs` and `query/world_api/handle_queries/{overlap_queries,ray_queries,shape_casts,mover_queries}.rs`, keep future explicit query entrypoint work landing in those child modules instead of rebuilding oversized `world_queries.rs` / `handle_queries.rs`
 - after `world/definition.rs`, `world/metrics.rs`, `world/handle.rs`, `world/runtime.rs`, `world/creation.rs`, `world/body_api.rs`, `world/borrow.rs`, `world/shape_api.rs`, and `world/tests.rs`, the next world decomposition pass should focus on splitting the largest runtime/query child modules instead of reopening the thin root
 - keep world-space joint builders behaviorally coherent when runtime-computed frames or body ids are filled, so base flags such as `collide_connected` are not silently lost
 - keep callback-sensitive event-buffer borrowing on a single internal path so deferred-destroy behavior cannot diverge across body/contact/sensor/joint views
@@ -307,3 +321,16 @@ The bar is:
 - the result is easier to explain, test, and maintain
 
 This workstream is the umbrella record for that effort.
+
+The release is now in a packaging and communication phase as well, not only an API-design
+phase.
+
+That means the final `0.3.0` pass should explicitly cover:
+
+- dependency refresh where the newer versions improve maintenance or example quality
+- example curation, including re-grouping or rewriting examples that no longer reflect the
+  best safe-wrapper workflows after the `0.3` API expansion
+- README and example command cleanup so users can discover the new hot-path, mover,
+  collision, threading, and event APIs without reading the entire changelog
+- a user-facing changelog rewrite that highlights what downstream users must know, while
+  leaving internal module-split history in the workstream docs instead of the release notes

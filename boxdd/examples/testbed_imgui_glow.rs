@@ -1,4 +1,4 @@
-//! Dear ImGui + Winit 0.30 + Glow testbed (dear-imgui 0.2 APIs)
+//! Dear ImGui + Winit 0.30 + Glow testbed (dear-imgui 0.11 stack)
 //! Enable with: `cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed`
 
 #[cfg(feature = "imgui-glow-testbed")]

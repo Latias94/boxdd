@@ -104,17 +104,24 @@ world.step(1.0/60.0, 4);
 git submodule update --init --recursive
 cargo build
 
-# run some examples
+# run a few representative examples
 cargo r --example world_basics
-cargo r --example joints
 cargo r --example queries
-cargo r --example sensors
+cargo r --example character_mover
+cargo r --example physics_thread
+cargo r --example scene_serialize --features serialize
 cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 ```
 
 ## Examples
-- The `examples/` folder covers worlds/bodies/shapes, joints, queries/casts, events/sensors, CCD, and debug draw.
-- `examples/physics_thread.rs` shows the recommended dedicated physics-thread + channel pattern when your game/app is otherwise multi-threaded.
+- The example catalog is now grouped by topic in [`boxdd/examples/README.md`](boxdd/examples/README.md), so users can start from the workflows they care about instead of scanning file names.
+- Recommended starting points:
+  - `world_basics`: minimal world/body/shape setup
+  - `queries`, `query_casts`, `character_mover`: the main `0.3` query and mover workflows
+  - `events_summary`, `events_view`: owned vs borrowed event access
+  - `scene_serialize`: snapshot/restore flows behind the `serialize` feature
+  - `physics_thread`: the recommended dedicated physics-thread ownership model
+  - `testbed_imgui_glow`: optional interactive testbed on the current `dear-imgui-*` stack
 
 ## Hot Path APIs
 - Convenience methods like `world.overlap_aabb(...)` and `world.cast_ray_all(...)` still return owned `Vec`s for one-off use.
