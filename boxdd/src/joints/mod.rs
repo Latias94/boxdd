@@ -19,6 +19,7 @@ mod prismatic;
 mod revolute;
 mod runtime;
 mod runtime_typed;
+mod runtime_typed_distance;
 mod weld;
 mod wheel;
 

@@ -134,6 +134,7 @@
 - [x] Collapse the mirrored `Distance`, `Prismatic`, `Revolute`, `Weld`, `Wheel`, and `Motor` joint runtime wrappers for `Joint` / `OwnedJoint` behind private handle traits so the full typed runtime family surface shares one internal source per joint kind.
 - [x] Split the stabilized joint runtime infrastructure out of `joints/mod.rs` into a dedicated `joints/runtime.rs` module so common joint-id runtime APIs, kind/range validation, and low-level runtime helper plumbing stop bloating the creation/definition file.
 - [x] Split the stabilized typed joint runtime layer out of `joints/mod.rs` into `joints/runtime_typed.rs` so family-specific runtime FFI shims, world/id helpers, and owned/scoped wrapper forwarding no longer live in the same monolithic file as joint definitions and creation.
+- [x] Start splitting `joints/runtime_typed.rs` by family and extract the full `Distance` runtime slice into `joints/runtime_typed_distance.rs`, leaving the remaining families on the shared file until their interleaved sections are untangled.
 
 ## Next
 
