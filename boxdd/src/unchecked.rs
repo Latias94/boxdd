@@ -144,6 +144,11 @@ unsafe fn chain_segment_count_unchecked_impl(id: ChainId) -> i32 {
 }
 
 #[inline]
+unsafe fn chain_raw_surface_material_count_unchecked_impl(id: ChainId) -> i32 {
+    unsafe { ffi::b2Chain_GetSurfaceMaterialCount(raw_chain_id(id)) }
+}
+
+#[inline]
 unsafe fn chain_segments_unchecked_impl(id: ChainId) -> Vec<ShapeId> {
     let count = unsafe { chain_segment_count_unchecked_impl(id) }.max(0) as usize;
     let id = raw_chain_id(id);
@@ -156,9 +161,18 @@ unsafe fn chain_segments_unchecked_impl(id: ChainId) -> Vec<ShapeId> {
 
 #[inline]
 unsafe fn chain_surface_material_unchecked_impl(id: ChainId, index: i32) -> SurfaceMaterial {
-    SurfaceMaterial::from_raw(unsafe {
-        ffi::b2Chain_GetRuntimeSurfaceMaterial(raw_chain_id(id), index)
-    })
+    let raw_count = unsafe { chain_raw_surface_material_count_unchecked_impl(id) };
+    let segment_count = unsafe { chain_segment_count_unchecked_impl(id) };
+    if raw_count == 1 {
+        SurfaceMaterial::from_raw(unsafe { ffi::b2Chain_GetSurfaceMaterial(raw_chain_id(id), 0) })
+    } else if raw_count == segment_count {
+        SurfaceMaterial::from_raw(unsafe {
+            ffi::b2Chain_GetSurfaceMaterial(raw_chain_id(id), index)
+        })
+    } else {
+        let segment = unsafe { chain_segments_unchecked_impl(id) }[index as usize];
+        SurfaceMaterial::from_raw(unsafe { ffi::b2Shape_GetSurfaceMaterial(raw_shape_id(segment)) })
+    }
 }
 
 #[inline]
@@ -167,7 +181,16 @@ unsafe fn set_chain_surface_material_unchecked_impl(
     index: i32,
     material: &SurfaceMaterial,
 ) {
-    unsafe { ffi::b2Chain_SetRuntimeSurfaceMaterial(raw_chain_id(id), &material.0, index) }
+    let raw_count = unsafe { chain_raw_surface_material_count_unchecked_impl(id) };
+    let segment_count = unsafe { chain_segment_count_unchecked_impl(id) };
+    if raw_count == 1 {
+        unsafe { ffi::b2Chain_SetSurfaceMaterial(raw_chain_id(id), &material.0, 0) }
+    } else if raw_count == segment_count {
+        unsafe { ffi::b2Chain_SetSurfaceMaterial(raw_chain_id(id), &material.0, index) }
+    } else {
+        let segment = unsafe { chain_segments_unchecked_impl(id) }[index as usize];
+        unsafe { ffi::b2Shape_SetSurfaceMaterial(raw_shape_id(segment), &material.0) }
+    }
 }
 
 pub trait WorldUncheckedExt {

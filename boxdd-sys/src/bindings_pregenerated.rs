@@ -2949,25 +2949,6 @@ unsafe extern "C" {
     ) -> b2SurfaceMaterial;
 }
 unsafe extern "C" {
-    #[doc = " Extension used by boxdd to normalize runtime chain materials to visible segments.\n Returns 1 for single-material chains, otherwise the number of live segments."]
-    pub fn b2Chain_GetRuntimeSurfaceMaterialCount(
-        chainId: b2ChainId,
-    ) -> ::std::os::raw::c_int;
-}
-unsafe extern "C" {
-    #[doc = " Extension used by boxdd to set a runtime-visible chain material by live segment index."]
-    pub fn b2Chain_SetRuntimeSurfaceMaterial(
-        chainId: b2ChainId,
-        material: *const b2SurfaceMaterial,
-        materialIndex: ::std::os::raw::c_int,
-    );
-}
-unsafe extern "C" {
-    #[doc = " Extension used by boxdd to get a runtime-visible chain material by live segment index."]
-    pub fn b2Chain_GetRuntimeSurfaceMaterial(
-        chainId: b2ChainId,
-        materialIndex: ::std::os::raw::c_int,
-    ) -> b2SurfaceMaterial;
 }
 unsafe extern "C" {
     #[doc = " Chain identifier validation. Provides validation for up to 64K allocations."]

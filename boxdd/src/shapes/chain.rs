@@ -153,20 +153,53 @@ fn chain_segment_count_impl(id: ChainId) -> i32 {
 }
 
 #[inline]
+fn chain_raw_surface_material_count_impl(id: ChainId) -> i32 {
+    unsafe { ffi::b2Chain_GetSurfaceMaterialCount(raw_chain_id(id)) }
+}
+
+#[inline]
+fn chain_runtime_surface_material_layout_impl(id: ChainId) -> (i32, i32) {
+    let raw_count = chain_raw_surface_material_count_impl(id);
+    let segment_count = chain_segment_count_impl(id);
+    debug_assert!(
+        raw_count == 1 || raw_count == segment_count || raw_count == segment_count + 3,
+        "unexpected chain material layout: raw_count={raw_count}, segment_count={segment_count}"
+    );
+    (raw_count, segment_count)
+}
+
+#[inline]
 fn chain_surface_material_count_impl(id: ChainId) -> i32 {
-    unsafe { ffi::b2Chain_GetRuntimeSurfaceMaterialCount(raw_chain_id(id)) }
+    let (raw_count, segment_count) = chain_runtime_surface_material_layout_impl(id);
+    if raw_count == 1 { 1 } else { segment_count }
 }
 
 #[inline]
 fn chain_set_surface_material_impl(id: ChainId, index: i32, material: &SurfaceMaterial) {
-    unsafe { ffi::b2Chain_SetRuntimeSurfaceMaterial(raw_chain_id(id), &material.0, index) }
+    let (raw_count, segment_count) = chain_runtime_surface_material_layout_impl(id);
+    if raw_count == 1 {
+        unsafe { ffi::b2Chain_SetSurfaceMaterial(raw_chain_id(id), &material.0, 0) }
+    } else if raw_count == segment_count {
+        unsafe { ffi::b2Chain_SetSurfaceMaterial(raw_chain_id(id), &material.0, index) }
+    } else {
+        let segment = chain_segments_impl(id)[index as usize];
+        crate::shapes::shape_set_surface_material_impl(segment, material);
+    }
 }
 
 #[inline]
 fn chain_surface_material_impl(id: ChainId, index: i32) -> SurfaceMaterial {
-    SurfaceMaterial::from_raw(unsafe {
-        ffi::b2Chain_GetRuntimeSurfaceMaterial(raw_chain_id(id), index)
-    })
+    let (raw_count, segment_count) = chain_runtime_surface_material_layout_impl(id);
+    if raw_count == 1 {
+        SurfaceMaterial::from_raw(unsafe { ffi::b2Chain_GetSurfaceMaterial(raw_chain_id(id), 0) })
+    } else if raw_count == segment_count {
+        SurfaceMaterial::from_raw(unsafe {
+            ffi::b2Chain_GetSurfaceMaterial(raw_chain_id(id), index)
+        })
+    } else {
+        let segment = chain_segments_impl(id)[index as usize];
+        crate::shapes::shape_surface_material_impl(segment)
+    }
 }
 
 #[track_caller]

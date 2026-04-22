@@ -8,6 +8,21 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [boxdd 0.4.0] - Unreleased
+
+### Changed
+- `Chain::{surface_material_count,surface_material,set_surface_material}` keep runtime-visible live-segment semantics on open chains, but that normalization now lives in Rust instead of a custom Box2D patch.
+- The safe wrapper no longer depends on boxdd-only `b2Chain_*RuntimeSurfaceMaterial*` symbols in `boxdd-sys`.
+
+### Notes
+- `0.3.0` remains published as-is; this follow-up release is the clean path back to official upstream Box2D sources for repository checkouts and CI.
+
+## [boxdd-sys 0.4.0] - Unreleased
+
+### Changed
+- Vendored Box2D sources realign with the official upstream submodule commit instead of a local-only patched commit.
+- Removed the boxdd-specific runtime chain material FFI additions from the published bindings surface.
+
 ## [boxdd 0.3.0] - 2026-04-22
 
 ### Upgrade Summary

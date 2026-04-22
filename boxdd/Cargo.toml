@@ -1,6 +1,6 @@
 [package]
 name = "boxdd"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 description = "Safe, ergonomic Rust bindings for Box2D v3"
 license = "MIT OR Apache-2.0"
@@ -15,7 +15,7 @@ categories = ["game-engines"]
 exclude = ["examples/**", "tests/**"]
 
 [dependencies]
-boxdd-sys = { version = "0.3.0", path = "../boxdd-sys" }
+boxdd-sys = { version = "0.4.0", path = "../boxdd-sys" }
 thiserror = "2"
 mint = { version = "0.5", optional = true }
 smallvec = "1"
