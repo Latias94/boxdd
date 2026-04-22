@@ -47,6 +47,15 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - `cgmath::Basis2 -> Rot` round-tripping no longer flips the angle sign.
 - The materials testbed scene now keeps conveyor body ids and applies preset-driven transform updates correctly instead of silently desynchronizing the UI from the live world.
 
+## [boxdd-sys 0.3.0] - 2026-04-22
+
+### Changed
+- Low-level bindings now cover the newer chain runtime surface-material functions used by `boxdd 0.3`.
+- Release metadata now aligns with the `boxdd 0.3` publish order, so downstream verification resolves the intended `boxdd-sys 0.3.0` crate instead of the older `0.2.1` release.
+
+### Notes
+- No separate upstream Box2D revision change is introduced in this release beyond the binding surface needed by the safe wrapper.
+
 ## [boxdd 0.2.0] - 2025-12-17
 
 ### Added
