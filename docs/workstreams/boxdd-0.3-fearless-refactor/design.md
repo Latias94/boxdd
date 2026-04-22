@@ -330,6 +330,9 @@ That means the final `0.3.0` pass should explicitly cover:
 - dependency refresh where the newer versions improve maintenance or example quality
 - example curation, including re-grouping or rewriting examples that no longer reflect the
   best safe-wrapper workflows after the `0.3` API expansion
+- example taxonomy cleanup where file names, README descriptions, and example contents agree on
+  the intended teaching goal (for example: overlap queries vs cast workflows vs standalone
+  collision geometry)
 - README and example command cleanup so users can discover the new hot-path, mover,
   collision, threading, and event APIs without reading the entire changelog
 - a user-facing changelog rewrite that highlights what downstream users must know, while

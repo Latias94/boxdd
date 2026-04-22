@@ -18,8 +18,11 @@ pub mod benchmark {
 pub mod determinism {
     include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/determinism.rs"));
 }
-pub mod queries_casts {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/queries_casts.rs"));
+pub mod overlap_queries {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/examples/testbed/scenes/overlap_queries.rs"
+    ));
 }
 pub mod character_mover {
     include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/character_mover.rs"));
@@ -89,8 +92,11 @@ pub mod materials {
 pub mod shape_editing {
     include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/shape_editing.rs"));
 }
-pub mod collision_tools {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/collision_tools.rs"));
+pub mod query_casts {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/examples/testbed/scenes/query_casts.rs"
+    ));
 }
 // Extra samples ported from top-level examples
 pub mod doohickey {
@@ -115,7 +121,7 @@ pub enum Scene {
     Events,
     Benchmark,
     Determinism,
-    QueriesCasts,
+    OverlapQueries,
     CharacterMover,
     JointsLab,
     SoftBody,
@@ -129,7 +135,7 @@ pub enum Scene {
     WorldTuning,
     Materials,
     ShapeEditing,
-    CollisionTools,
+    QueryCasts,
     Doohickey,
     Issues,
 }
@@ -159,8 +165,8 @@ pub struct PhysicsApp {
     pub dd_draw_islands: bool,
     pub dd_force_scale: f32,
     pub dd_joint_scale: f32,
-    // Collision tools unified
-    pub ct_mode: i32,
+    // Query-cast scene mode switcher
+    pub cast_mode: i32,
     // Stats
     pub created_bodies: usize,
     pub created_shapes: usize,
@@ -224,11 +230,16 @@ pub struct PhysicsApp {
     pub robust_hit_count: usize,
     // Benchmark
     pub bench_bodies: i32,
-    // Queries & casts quick stats
-    pub q_ray_origin_y: f32,
-    pub q_ray_length: f32,
+    // Overlap query scene
+    pub q_center_x: f32,
+    pub q_center_y: f32,
+    pub q_half_x: f32,
+    pub q_half_y: f32,
     pub q_overlaps: usize,
-    pub q_ray_hits: usize,
+    pub q_reused_hits: usize,
+    pub q_visit_hits: usize,
+    pub q_polygon_hits: usize,
+    pub q_visit_stopped_early: bool,
     // Character mover
     pub cm_c1_y: f32,
     pub cm_c2_y: f32,
@@ -271,15 +282,15 @@ pub struct PhysicsApp {
     pub sc_radius: f32,
     pub sc_hits: usize,
     pub sc_min_fraction: f32,
-    // Collision: TOI (shape cast proxy)
+    // Collision: TOI
     pub toi_start_x: f32,
     pub toi_start_y: f32,
     pub toi_angle: f32,
     pub toi_dx: f32,
     pub toi_dy: f32,
     pub toi_radius: f32,
-    pub toi_hits: usize,
-    pub toi_min_fraction: f32,
+    pub toi_state: bd::ToiState,
+    pub toi_fraction: f32,
     // Continuous: ghost bumps
     pub gb_speed: f32,
     pub gb_bump_h: f32,
@@ -294,12 +305,6 @@ pub struct PhysicsApp {
     pub rw_dx: f32,
     pub rw_dy: f32,
     pub rw_hits: usize,
-    // Collision: overlap world
-    pub ow_center_x: f32,
-    pub ow_center_y: f32,
-    pub ow_half_x: f32,
-    pub ow_half_y: f32,
-    pub ow_hits: usize,
     // World: explosion
     pub ex_center_x: f32,
     pub ex_center_y: f32,
@@ -494,7 +499,7 @@ impl PhysicsApp {
             dd_draw_islands: false,
             dd_force_scale: 1.0,
             dd_joint_scale: 1.0,
-            ct_mode: 0,
+            cast_mode: 0,
             pyramid_rows: 10,
             pyramid_cols: 10,
             bridge_planks: 20,
@@ -538,10 +543,15 @@ impl PhysicsApp {
             robust_bullet_speed: 80.0,
             robust_hit_count: 0,
             bench_bodies: 200,
-            q_ray_origin_y: 10.0,
-            q_ray_length: 100.0,
+            q_center_x: 0.0,
+            q_center_y: 2.0,
+            q_half_x: 2.0,
+            q_half_y: 1.0,
             q_overlaps: 0,
-            q_ray_hits: 0,
+            q_reused_hits: 0,
+            q_visit_hits: 0,
+            q_polygon_hits: 0,
+            q_visit_stopped_early: false,
             cm_c1_y: 1.0,
             cm_c2_y: 1.8,
             cm_radius: 0.25,
@@ -583,8 +593,8 @@ impl PhysicsApp {
             toi_dx: 4.0,
             toi_dy: -4.5,
             toi_radius: 0.02,
-            toi_hits: 0,
-            toi_min_fraction: 1.0,
+            toi_state: bd::ToiState::Unknown,
+            toi_fraction: 1.0,
             gb_speed: 40.0,
             gb_bump_h: 0.2,
             gb_hits: 0,
@@ -596,11 +606,6 @@ impl PhysicsApp {
             rw_dx: 25.0,
             rw_dy: -12.0,
             rw_hits: 0,
-            ow_center_x: 0.0,
-            ow_center_y: 2.0,
-            ow_half_x: 2.0,
-            ow_half_y: 1.0,
-            ow_hits: 0,
             ex_center_x: 0.0,
             ex_center_y: 3.0,
             ex_radius: 3.0,
@@ -775,12 +780,15 @@ impl PhysicsApp {
         self.ev_joint = 0;
         self.robust_hit_count = 0;
         self.q_overlaps = 0;
-        self.q_ray_hits = 0;
+        self.q_reused_hits = 0;
+        self.q_visit_hits = 0;
+        self.q_polygon_hits = 0;
+        self.q_visit_stopped_early = false;
         self.cm_fraction = 1.0;
         self.sc_hits = 0;
         self.sc_min_fraction = 1.0;
-        self.toi_hits = 0;
-        self.toi_min_fraction = 1.0;
+        self.toi_state = bd::ToiState::Unknown;
+        self.toi_fraction = 1.0;
         self.gb_hits = 0;
         // Reset new scene stats
         self.mf_contacts = 0;
@@ -822,7 +830,8 @@ impl PhysicsApp {
         match self.scene {
             Scene::Events => events::tick(self),
             Scene::Robustness => robustness::tick(self),
-            Scene::QueriesCasts => queries_casts::tick(self),
+            Scene::OverlapQueries => overlap_queries::tick(self),
+            Scene::QueryCasts => query_casts::tick(self),
             Scene::CharacterMover => character_mover::tick(self),
             Scene::Shapes => shapes::tick(self),
             Scene::Benchmark => benchmark::tick(self),
@@ -876,7 +885,7 @@ impl PhysicsApp {
                 "Events Summary",
                 "Benchmark",
                 "Determinism",
-                "Queries & Casts",
+                "Queries: Overlap",
                 "Character Mover",
                 "Joints: Lab (Unified)",
                 "Soft Body (Donut)",
@@ -885,7 +894,7 @@ impl PhysicsApp {
                 "Collision: Shape Distance",
                 "Joints: Separation",
                 "Collision: Manifold (basic)",
-                "Collision Tools (Ray/Overlap/Cast/TOI)",
+                "Queries: Casts & TOI",
                 "World: Lab",
                 "Joints: Motion Locks",
                 "Joints: Breakable",
@@ -940,7 +949,7 @@ impl PhysicsApp {
                 Scene::Robustness => robustness::ui_params(self, ui),
                 Scene::Benchmark => benchmark::ui_params(self, ui),
                 Scene::Determinism => determinism::ui_params(self, ui),
-                Scene::QueriesCasts => queries_casts::ui_params(self, ui),
+                Scene::OverlapQueries => overlap_queries::ui_params(self, ui),
                 Scene::CharacterMover => character_mover::ui_params(self, ui),
                 Scene::JointsLab => joints_lab::ui_params(self, ui),
                 Scene::SoftBody => soft_body::ui_params(self, ui),
@@ -949,7 +958,7 @@ impl PhysicsApp {
                 Scene::ShapeDistance => shape_distance::ui_params(self, ui),
                 Scene::JointSeparation => joint_separation::ui_params(self, ui),
                 Scene::Manifold => manifold::ui_params(self, ui),
-                Scene::CollisionTools => collision_tools::ui_params(self, ui),
+                Scene::QueryCasts => query_casts::ui_params(self, ui),
                 Scene::WorldTuning => world_lab::ui_params(self, ui),
                 Scene::MotionLocks => motion_locks::ui_params(self, ui),
                 Scene::BreakableJoint => breakable_joint::ui_params(self, ui),
@@ -1039,12 +1048,12 @@ impl PhysicsApp {
             Scene::Robustness => robustness::build(self, ground),
             Scene::Benchmark => benchmark::build(self, ground),
             Scene::Determinism => determinism::build(self, ground),
-            Scene::QueriesCasts => queries_casts::build(self, ground),
+            Scene::OverlapQueries => overlap_queries::build(self, ground),
             Scene::CharacterMover => character_mover::build(self, ground),
             Scene::JointsLab => joints_lab::build(self, ground),
             Scene::SoftBody => soft_body::build(self, ground),
             Scene::ConvexHull => convex_hull::build(self, ground),
-            Scene::CollisionTools => collision_tools::build(self, ground),
+            Scene::QueryCasts => query_casts::build(self, ground),
             Scene::BodiesLab => bodies_lab::build(self, ground),
             Scene::ShapeDistance => shape_distance::build(self, ground),
             Scene::JointSeparation => joint_separation::build(self, ground),
@@ -1083,7 +1092,7 @@ impl PhysicsApp {
             Scene::Events => 10,
             Scene::Benchmark => 11,
             Scene::Determinism => 12,
-            Scene::QueriesCasts => 13,
+            Scene::OverlapQueries => 13,
             Scene::CharacterMover => 14,
             Scene::JointsLab => 15,
             Scene::SoftBody => 16,
@@ -1092,7 +1101,7 @@ impl PhysicsApp {
             Scene::ShapeDistance => 19,
             Scene::JointSeparation => 20,
             Scene::Manifold => 21,
-            Scene::CollisionTools => 22,
+            Scene::QueryCasts => 22,
             Scene::WorldTuning => 23,
             Scene::MotionLocks => 24,
             Scene::BreakableJoint => 25,
@@ -1118,7 +1127,7 @@ impl PhysicsApp {
             10 => Scene::Events,
             11 => Scene::Benchmark,
             12 => Scene::Determinism,
-            13 => Scene::QueriesCasts,
+            13 => Scene::OverlapQueries,
             14 => Scene::CharacterMover,
             15 => Scene::JointsLab,
             16 => Scene::SoftBody,
@@ -1127,7 +1136,7 @@ impl PhysicsApp {
             19 => Scene::ShapeDistance,
             20 => Scene::JointSeparation,
             21 => Scene::Manifold,
-            22 => Scene::CollisionTools,
+            22 => Scene::QueryCasts,
             23 => Scene::WorldTuning,
             24 => Scene::MotionLocks,
             25 => Scene::BreakableJoint,

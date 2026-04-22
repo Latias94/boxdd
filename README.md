@@ -117,7 +117,8 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 - The example catalog is now grouped by topic in [`boxdd/examples/README.md`](boxdd/examples/README.md), so users can start from the workflows they care about instead of scanning file names.
 - Recommended starting points:
   - `world_basics`: minimal world/body/shape setup
-  - `buffer_reuse`, `queries`, `query_casts`, `character_mover`: the main `0.3` query and mover workflows
+  - `buffer_reuse`, `queries`, `query_casts`, `character_mover`: the main `0.3` hot-path, overlap, cast, and mover workflows
+  - `collision_basics`: standalone collision geometry helpers without constructing a `World`
   - `events_summary`, `events_view`: owned vs borrowed event access
   - `world_handle_reads`: stored read-only `WorldHandle` follow-up queries after id-producing world queries
   - `scene_serialize`: snapshot/restore flows behind the `serialize` feature

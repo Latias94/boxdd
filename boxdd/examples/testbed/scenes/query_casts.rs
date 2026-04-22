@@ -1,24 +1,43 @@
 use boxdd as bd;
 use dear_imgui_rs as imgui;
 
-// Collision Tools: unify Ray, Overlap, Shape Cast, TOI into one scene with a mode toggle.
+// Query casts: world ray/shape casts plus standalone TOI.
 
-#[allow(dead_code)]
-fn rect_points(hx: f32, hy: f32) -> [[f32; 2]; 4] { [[-hx, -hy], [hx, -hy], [hx, hy], [-hx, hy]] }
-#[allow(dead_code)]
-fn box_pts(h: f32) -> [[f32; 2]; 4] { [[-h, -h], [h, -h], [h, h], [-h, h]] }
+fn rect_points(hx: f32, hy: f32) -> [[f32; 2]; 4] {
+    [[-hx, -hy], [hx, -hy], [hx, hy], [-hx, hy]]
+}
 
 pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
-    match app.ct_mode {
-        0 => { /* Ray: no special world setup */ }
-        1 => { /* Overlap: no special world setup */ }
-        2 => {
-            // Shape Cast: add a couple of static obstacles to cast into
+    match app.cast_mode {
+        0 => {
             let sdef = bd::ShapeDef::builder().density(0.0).build();
+            let block = app
+                .world
+                .create_body_id(bd::BodyBuilder::new().position([0.0_f32, 2.5]).build());
+            app.created_bodies += 1;
             let _ = app
                 .world
-                .create_polygon_shape_for(ground, &sdef, &bd::shapes::box_polygon(0.75, 0.25));
+                .create_polygon_shape_for(block, &sdef, &bd::shapes::box_polygon(0.5, 0.5));
             app.created_shapes += 1;
+
+            let wall = app
+                .world
+                .create_body_id(bd::BodyBuilder::new().position([2.2_f32, 1.6]).build());
+            app.created_bodies += 1;
+            let _ = app
+                .world
+                .create_polygon_shape_for(wall, &sdef, &bd::shapes::box_polygon(0.4, 0.9));
+            app.created_shapes += 1;
+        }
+        1 => {
+            let sdef = bd::ShapeDef::builder().density(0.0).build();
+            let _ = app.world.create_polygon_shape_for(
+                ground,
+                &sdef,
+                &bd::shapes::box_polygon(0.75, 0.25),
+            );
+            app.created_shapes += 1;
+
             let obs = app
                 .world
                 .create_body_id(bd::BodyBuilder::new().position([1.5_f32, 1.0]).build());
@@ -28,8 +47,7 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
                 .create_polygon_shape_for(obs, &sdef, &bd::shapes::box_polygon(0.4, 0.8));
             app.created_shapes += 1;
         }
-        3 => {
-            // TOI (via shape cast fraction): add a static pillar to hit
+        2 => {
             let pillar = app
                 .world
                 .create_body_id(bd::BodyBuilder::new().position([0.0_f32, 1.0]).build());
@@ -45,11 +63,9 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
     }
 }
 
-#[allow(dead_code)]
 pub fn tick(app: &mut super::PhysicsApp) {
-    match app.ct_mode {
+    match app.cast_mode {
         0 => {
-            // Ray world
             let hits = app.world.cast_ray_all(
                 [app.rw_origin_x, app.rw_origin_y],
                 [app.rw_dx, app.rw_dy],
@@ -58,16 +74,6 @@ pub fn tick(app: &mut super::PhysicsApp) {
             app.rw_hits = hits.len();
         }
         1 => {
-            // Overlap AABB
-            let aabb = bd::Aabb::from_center_half_extents(
-                [app.ow_center_x, app.ow_center_y],
-                [app.ow_half_x, app.ow_half_y],
-            );
-            let ids = app.world.overlap_aabb(aabb, bd::QueryFilter::default());
-            app.ow_hits = ids.len();
-        }
-        2 => {
-            // Shape cast rectangle
             let rect = rect_points(0.5, 0.25);
             let hits = app.world.cast_shape_points_with_offset(
                 rect,
@@ -80,39 +86,50 @@ pub fn tick(app: &mut super::PhysicsApp) {
             app.sc_hits = hits.len();
             app.sc_min_fraction = hits.iter().map(|h| h.fraction).fold(1.0, f32::min);
         }
-        3 => {
-            // TOI-like metric via shape cast fraction on a box
-            let a = box_pts(0.4);
-            let hits = app.world.cast_shape_points_with_offset(
-                a,
-                app.toi_radius,
-                [app.toi_start_x, app.toi_start_y],
-                app.toi_angle,
-                [app.toi_dx, app.toi_dy],
-                bd::QueryFilter::default(),
-            );
-            app.toi_hits = hits.len();
-            app.toi_min_fraction = hits.iter().map(|h| h.fraction).fold(1.0, f32::min);
+        2 => {
+            let pillar = bd::ShapeProxy::new(rect_points(0.5, 1.0), app.toi_radius)
+                .expect("pillar proxy must stay within the Box2D shape-proxy point limit");
+            let mover = bd::ShapeProxy::new(rect_points(0.4, 0.4), app.toi_radius)
+                .expect("mover proxy must stay within the Box2D shape-proxy point limit");
+            let out = bd::time_of_impact(bd::ToiInput::new(
+                pillar,
+                mover,
+                bd::Sweep::new(
+                    [0.0_f32, 0.0],
+                    [0.0, 1.0],
+                    [0.0, 1.0],
+                    bd::Rot::IDENTITY,
+                    bd::Rot::IDENTITY,
+                ),
+                bd::Sweep::new(
+                    [0.0_f32, 0.0],
+                    [app.toi_start_x, app.toi_start_y],
+                    [app.toi_start_x + app.toi_dx, app.toi_start_y + app.toi_dy],
+                    bd::Rot::from_radians(app.toi_angle),
+                    bd::Rot::from_radians(app.toi_angle),
+                ),
+            ));
+            app.toi_state = out.state;
+            app.toi_fraction = out.fraction;
         }
         _ => {}
     }
 }
 
 pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
-    // Mode switcher
-    let names = ["Ray", "Overlap", "Shape Cast", "TOI"];
-    let mut idx = app.ct_mode.clamp(0, 3) as usize;
+    let names = ["Ray Cast", "Shape Cast", "TOI"];
+    let mut idx = app.cast_mode.clamp(0, 2) as usize;
     if let Some(_c) = ui.begin_combo("Mode", names[idx]) {
         for (i, &name) in names.iter().enumerate() {
             let selected = i == idx;
             if ui.selectable_config(name).selected(selected).build() {
                 idx = i;
-                app.ct_mode = i as i32;
+                app.cast_mode = i as i32;
                 let _ = app.reset();
             }
         }
     }
-    match app.ct_mode {
+    match app.cast_mode {
         0 => {
             let mut ox = app.rw_origin_x;
             let mut oy = app.rw_origin_y;
@@ -128,26 +145,9 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
                 app.rw_dx = dx;
                 app.rw_dy = dy;
             }
-            ui.text(format!("Ray World: hits={}", app.rw_hits));
+            ui.text(format!("Ray cast hits={}", app.rw_hits));
         }
         1 => {
-            let mut cx = app.ow_center_x;
-            let mut cy = app.ow_center_y;
-            let mut hx = app.ow_half_x;
-            let mut hy = app.ow_half_y;
-            let changed = ui.slider("Center X", -25.0, 25.0, &mut cx)
-                || ui.slider("Center Y", -5.0, 25.0, &mut cy)
-                || ui.slider("Half X", 0.1, 10.0, &mut hx)
-                || ui.slider("Half Y", 0.1, 10.0, &mut hy);
-            if changed {
-                app.ow_center_x = cx;
-                app.ow_center_y = cy;
-                app.ow_half_x = hx.max(0.1);
-                app.ow_half_y = hy.max(0.1);
-            }
-            ui.text(format!("Overlap World: matches={}", app.ow_hits));
-        }
-        2 => {
             let mut y = app.sc_pos_y;
             let mut ang = app.sc_angle;
             let mut dx = app.sc_tx;
@@ -170,7 +170,7 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
                 app.sc_hits, app.sc_min_fraction
             ));
         }
-        3 => {
+        2 => {
             let mut sx = app.toi_start_x;
             let mut sy = app.toi_start_y;
             let mut ang = app.toi_angle;
@@ -192,8 +192,8 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
                 app.toi_radius = r.max(0.0);
             }
             ui.text(format!(
-                "TOI (shape-cast) hits={} min_fraction={:.3}",
-                app.toi_hits, app.toi_min_fraction
+                "TOI: state={:?} fraction={:.3}",
+                app.toi_state, app.toi_fraction
             ));
         }
         _ => {}

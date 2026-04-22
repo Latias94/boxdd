@@ -14,12 +14,12 @@ If you are new to `boxdd`, start with the first section instead of scanning file
 ## Queries and Hot Paths
 
 - `buffer_reuse.rs`: focused `*_into` and `visit_*` hot-path reuse patterns
-- `queries.rs`: broad-phase overlap and query basics
-- `query_casts.rs`: combined overlap, ray, and shape-cast workflows
+- `queries.rs`: overlap query styles (`overlap_aabb`, `*_into`, `visit_*`, polygon overlap helpers)
+- `query_casts.rs`: ray-cast and shape-cast overview without mover overlap
 - `raycast.rs`: focused ray-cast sample
 - `shapecast.rs`: focused shape-cast sample
 - `character_mover.rs`: the full safe mover pipeline (`cast_mover`, `collide_mover`, `solve_planes`, `clip_vector`)
-- `collision_basics.rs`: standalone `boxdd::collision` APIs outside a live world
+- `collision_basics.rs`: standalone low-level collision geometry (`segment_distance`, `shape_distance`, `shape_cast`, TOI, manifolds, `Aabb::ray_cast`) without a live world
 - `debug_draw.rs`: collected/safe debug draw flows
 
 ## Events and Contacts

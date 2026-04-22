@@ -167,6 +167,10 @@
 - [x] Revisit the example catalog after the `0.3` API expansion by adding a grouped example index and promoting the recommended workflows instead of leaving users to discover them alphabetically.
 - [x] Refresh README example references and example descriptions so the visible entrypoints emphasize `*_into`, `visit_*`, mover, collision, event, serialization, and threading workflows added during `0.3`.
 - [x] Rewrite the `0.3.0` changelog into a user-facing release note focused on highlights, breaking changes, migration notes, and externally visible fixes rather than internal refactor chronology.
+- [x] Align the interactive testbed's overlap/cast scenes with the curated example taxonomy, and replace the old TOI-like shape-cast approximation with real `time_of_impact`.
+- [ ] Run a second-pass example taxonomy cleanup so overlap, cast, mover, event, and standalone collision examples each teach one clear workflow.
+- [ ] Rewrite `queries.rs` and `query_casts.rs` so overlap queries and cast workflows stop overlapping conceptually.
+- [ ] Rewrite `collision_basics.rs` so it demonstrates standalone `boxdd::collision` algorithms instead of world contact events.
 - [ ] Audit any remaining owned/scoped handle duplication outside the already-refactored internals and confirm it is worth keeping.
 - [x] Continue decomposing `world/handle.rs` by splitting callback-safe user-data reads plus the world/body/shape stored-query slices into dedicated child modules, leaving `world/handle.rs` as a thin coordination root.
 - [x] Continue decomposing `query/world_api.rs` by splitting the explicit `World` and `WorldHandle` query entrypoints into dedicated child modules, leaving `query/world_api.rs` as a thin coordination root.
@@ -197,6 +201,6 @@
 - [x] Run targeted mover tests.
 - [x] Run `cargo nextest run -p boxdd`.
 - [ ] Review and refresh dependency versions for the release branch, including the optional testbed stack.
-- [ ] Re-audit examples for `0.3.0` API consistency after the dependency refresh and any example regrouping.
+- [ ] Re-audit examples for `0.3.0` API consistency after the dependency refresh and any example regrouping, including query/cast role clarity and standalone collision coverage.
 - [ ] Rewrite `CHANGELOG.md` into the final user-facing `0.3.0` release note format.
 - [ ] Publish `boxdd 0.3.0`.
