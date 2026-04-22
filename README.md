@@ -14,8 +14,8 @@
 - `boxdd-sys`: low-level FFI for the official Box2D v3 C API (vendored)
 - `boxdd`: safe layer (world, bodies, shapes, joints, queries, events, debug draw)
 
-## 0.4 Highlights
-- `0.4` realigns `boxdd-sys` with the official upstream Box2D submodule again, so repository checkouts and CI no longer depend on a local-only Box2D patch commit.
+## 0.4.0 Highlights
+- `0.4.0` realigns `boxdd-sys` with the official upstream Box2D submodule again, so repository checkouts and CI no longer depend on a local-only Box2D patch commit.
 - Hot-path APIs are first-class: keep the simple `Vec`-returning calls for one-off use, or move per-frame code to `*_into` and `visit_*`.
 - `boxdd::collision` now exposes standalone distance, shape-cast, TOI, manifold, and `Aabb::ray_cast` helpers without dropping to raw `ffi`.
 - Character-mover support is complete on the safe surface: `cast_mover`, `collide_mover`, `solve_planes`, and `clip_vector`.
@@ -128,7 +128,7 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 - The example catalog is now grouped by topic in [`boxdd/examples/README.md`](boxdd/examples/README.md), so users can start from the workflows they care about instead of scanning file names.
 - Recommended starting points:
   - `world_basics`: minimal world/body/shape setup
-  - `buffer_reuse`, `queries`, `query_casts`, `character_mover`: the main `0.4` hot-path, overlap, cast, and mover workflows
+  - `buffer_reuse`, `queries`, `query_casts`, `character_mover`: the main `0.4.0` hot-path, overlap, cast, and mover workflows
   - `mint_interop`: optional `mint` vector/point/matrix interop sample behind the `mint` feature
   - `collision_basics`: standalone collision geometry helpers without constructing a `World`
   - `events_summary`, `events_view`: owned-with-reuse vs borrowed zero-copy event access
