@@ -740,6 +740,823 @@ fn try_body_take_user_data_checked_impl<T: 'static>(
     body_take_user_data_impl(world_core, id)
 }
 
+trait BodyRuntimeHandle {
+    fn body_id(&self) -> BodyId;
+    fn body_world_core(&self) -> &WorldCore;
+
+    #[inline]
+    fn assert_valid(&self) {
+        crate::core::debug_checks::assert_body_valid(self.body_id());
+    }
+
+    #[inline]
+    fn check_valid(&self) -> ApiResult<()> {
+        crate::core::debug_checks::check_body_valid(self.body_id())
+    }
+
+    fn world_id_raw(&self) -> ffi::b2WorldId {
+        body_world_id_checked_impl(self.body_id())
+    }
+
+    fn try_world_id_raw(&self) -> ApiResult<ffi::b2WorldId> {
+        try_body_world_id_raw_impl(self.body_id())
+    }
+
+    fn is_valid(&self) -> bool {
+        body_is_valid_checked_impl(self.body_id())
+    }
+
+    fn try_is_valid(&self) -> ApiResult<bool> {
+        try_body_is_valid_impl(self.body_id())
+    }
+
+    fn position(&self) -> Vec2 {
+        self.assert_valid();
+        body_position_impl(self.body_id())
+    }
+
+    fn try_position(&self) -> ApiResult<Vec2> {
+        self.check_valid()?;
+        Ok(body_position_impl(self.body_id()))
+    }
+
+    fn linear_velocity(&self) -> Vec2 {
+        self.assert_valid();
+        body_linear_velocity_impl(self.body_id())
+    }
+
+    fn try_linear_velocity(&self) -> ApiResult<Vec2> {
+        self.check_valid()?;
+        Ok(body_linear_velocity_impl(self.body_id()))
+    }
+
+    fn angular_velocity(&self) -> f32 {
+        self.assert_valid();
+        body_angular_velocity_impl(self.body_id())
+    }
+
+    fn try_angular_velocity(&self) -> ApiResult<f32> {
+        self.check_valid()?;
+        Ok(body_angular_velocity_impl(self.body_id()))
+    }
+
+    fn rotation(&self) -> crate::Rot {
+        self.assert_valid();
+        body_rotation_impl(self.body_id())
+    }
+
+    fn try_rotation(&self) -> ApiResult<crate::Rot> {
+        self.check_valid()?;
+        Ok(body_rotation_impl(self.body_id()))
+    }
+
+    fn rotation_raw(&self) -> ffi::b2Rot {
+        self.assert_valid();
+        body_rotation_raw_impl(self.body_id())
+    }
+
+    fn try_rotation_raw(&self) -> ApiResult<ffi::b2Rot> {
+        self.check_valid()?;
+        Ok(body_rotation_raw_impl(self.body_id()))
+    }
+
+    fn transform(&self) -> crate::Transform {
+        self.assert_valid();
+        body_transform_impl(self.body_id())
+    }
+
+    fn try_transform(&self) -> ApiResult<crate::Transform> {
+        self.check_valid()?;
+        Ok(body_transform_impl(self.body_id()))
+    }
+
+    fn transform_raw(&self) -> ffi::b2Transform {
+        self.assert_valid();
+        body_transform_raw_impl(self.body_id())
+    }
+
+    fn try_transform_raw(&self) -> ApiResult<ffi::b2Transform> {
+        self.check_valid()?;
+        Ok(body_transform_raw_impl(self.body_id()))
+    }
+
+    fn aabb(&self) -> Aabb {
+        self.assert_valid();
+        body_aabb_impl(self.body_id())
+    }
+
+    fn try_aabb(&self) -> ApiResult<Aabb> {
+        self.check_valid()?;
+        Ok(body_aabb_impl(self.body_id()))
+    }
+
+    fn local_point<V: Into<Vec2>>(&self, world_point: V) -> Vec2 {
+        self.assert_valid();
+        body_local_point_impl(self.body_id(), world_point)
+    }
+
+    fn try_local_point<V: Into<Vec2>>(&self, world_point: V) -> ApiResult<Vec2> {
+        self.check_valid()?;
+        Ok(body_local_point_impl(self.body_id(), world_point))
+    }
+
+    fn world_point<V: Into<Vec2>>(&self, local_point: V) -> Vec2 {
+        self.assert_valid();
+        body_world_point_impl(self.body_id(), local_point)
+    }
+
+    fn try_world_point<V: Into<Vec2>>(&self, local_point: V) -> ApiResult<Vec2> {
+        self.check_valid()?;
+        Ok(body_world_point_impl(self.body_id(), local_point))
+    }
+
+    fn local_vector<V: Into<Vec2>>(&self, world_vector: V) -> Vec2 {
+        self.assert_valid();
+        body_local_vector_impl(self.body_id(), world_vector)
+    }
+
+    fn try_local_vector<V: Into<Vec2>>(&self, world_vector: V) -> ApiResult<Vec2> {
+        self.check_valid()?;
+        Ok(body_local_vector_impl(self.body_id(), world_vector))
+    }
+
+    fn world_vector<V: Into<Vec2>>(&self, local_vector: V) -> Vec2 {
+        self.assert_valid();
+        body_world_vector_impl(self.body_id(), local_vector)
+    }
+
+    fn try_world_vector<V: Into<Vec2>>(&self, local_vector: V) -> ApiResult<Vec2> {
+        self.check_valid()?;
+        Ok(body_world_vector_impl(self.body_id(), local_vector))
+    }
+
+    fn local_point_velocity<V: Into<Vec2>>(&self, local_point: V) -> Vec2 {
+        self.assert_valid();
+        body_local_point_velocity_impl(self.body_id(), local_point)
+    }
+
+    fn try_local_point_velocity<V: Into<Vec2>>(&self, local_point: V) -> ApiResult<Vec2> {
+        self.check_valid()?;
+        Ok(body_local_point_velocity_impl(self.body_id(), local_point))
+    }
+
+    fn world_point_velocity<V: Into<Vec2>>(&self, world_point: V) -> Vec2 {
+        self.assert_valid();
+        body_world_point_velocity_impl(self.body_id(), world_point)
+    }
+
+    fn try_world_point_velocity<V: Into<Vec2>>(&self, world_point: V) -> ApiResult<Vec2> {
+        self.check_valid()?;
+        Ok(body_world_point_velocity_impl(self.body_id(), world_point))
+    }
+
+    fn set_position_and_rotation<V: Into<Vec2>>(&mut self, position: V, angle_radians: f32) {
+        self.assert_valid();
+        body_set_position_and_rotation_impl(self.body_id(), position, angle_radians);
+    }
+
+    fn try_set_position_and_rotation<V: Into<Vec2>>(
+        &mut self,
+        position: V,
+        angle_radians: f32,
+    ) -> ApiResult<()> {
+        self.check_valid()?;
+        body_set_position_and_rotation_impl(self.body_id(), position, angle_radians);
+        Ok(())
+    }
+
+    fn set_linear_velocity<V: Into<Vec2>>(&mut self, velocity: V) {
+        self.assert_valid();
+        body_set_linear_velocity_impl(self.body_id(), velocity)
+    }
+
+    fn try_set_linear_velocity<V: Into<Vec2>>(&mut self, velocity: V) -> ApiResult<()> {
+        self.check_valid()?;
+        body_set_linear_velocity_impl(self.body_id(), velocity);
+        Ok(())
+    }
+
+    fn set_angular_velocity(&mut self, angular_velocity: f32) {
+        self.assert_valid();
+        body_set_angular_velocity_impl(self.body_id(), angular_velocity)
+    }
+
+    fn try_set_angular_velocity(&mut self, angular_velocity: f32) -> ApiResult<()> {
+        self.check_valid()?;
+        body_set_angular_velocity_impl(self.body_id(), angular_velocity);
+        Ok(())
+    }
+
+    fn set_target_transform(&mut self, target: crate::Transform, time_step: f32, wake: bool) {
+        self.assert_valid();
+        body_set_target_transform_impl(self.body_id(), target, time_step, wake);
+    }
+
+    fn try_set_target_transform(
+        &mut self,
+        target: crate::Transform,
+        time_step: f32,
+        wake: bool,
+    ) -> ApiResult<()> {
+        self.check_valid()?;
+        body_set_target_transform_impl(self.body_id(), target, time_step, wake);
+        Ok(())
+    }
+
+    fn contact_data(&self) -> Vec<ContactData> {
+        body_contact_data_checked_impl(self.body_id())
+    }
+
+    fn contact_data_into(&self, out: &mut Vec<ContactData>) {
+        body_contact_data_into_checked_impl(self.body_id(), out);
+    }
+
+    fn try_contact_data(&self) -> ApiResult<Vec<ContactData>> {
+        try_body_contact_data_impl(self.body_id())
+    }
+
+    fn try_contact_data_into(&self, out: &mut Vec<ContactData>) -> ApiResult<()> {
+        try_body_contact_data_into_impl(self.body_id(), out)
+    }
+
+    fn contact_data_raw(&self) -> Vec<ffi::b2ContactData> {
+        body_contact_data_raw_checked_impl(self.body_id())
+    }
+
+    fn contact_data_raw_into(&self, out: &mut Vec<ffi::b2ContactData>) {
+        body_contact_data_raw_into_checked_impl(self.body_id(), out);
+    }
+
+    fn try_contact_data_raw(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
+        try_body_contact_data_raw_impl(self.body_id())
+    }
+
+    fn try_contact_data_raw_into(&self, out: &mut Vec<ffi::b2ContactData>) -> ApiResult<()> {
+        try_body_contact_data_raw_into_impl(self.body_id(), out)
+    }
+
+    fn apply_force<F: Into<Vec2>, P: Into<Vec2>>(&mut self, force: F, point: P, wake: bool) {
+        self.assert_valid();
+        body_apply_force_impl(self.body_id(), force, point, wake);
+    }
+
+    fn try_apply_force<F: Into<Vec2>, P: Into<Vec2>>(
+        &mut self,
+        force: F,
+        point: P,
+        wake: bool,
+    ) -> ApiResult<()> {
+        self.check_valid()?;
+        body_apply_force_impl(self.body_id(), force, point, wake);
+        Ok(())
+    }
+
+    fn apply_force_to_center<V: Into<Vec2>>(&mut self, force: V, wake: bool) {
+        self.assert_valid();
+        body_apply_force_to_center_impl(self.body_id(), force, wake);
+    }
+
+    fn try_apply_force_to_center<V: Into<Vec2>>(&mut self, force: V, wake: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        body_apply_force_to_center_impl(self.body_id(), force, wake);
+        Ok(())
+    }
+
+    fn apply_torque(&mut self, torque: f32, wake: bool) {
+        self.assert_valid();
+        body_apply_torque_impl(self.body_id(), torque, wake)
+    }
+
+    fn try_apply_torque(&mut self, torque: f32, wake: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        body_apply_torque_impl(self.body_id(), torque, wake);
+        Ok(())
+    }
+
+    fn clear_forces(&mut self) {
+        self.assert_valid();
+        body_clear_forces_impl(self.body_id());
+    }
+
+    fn try_clear_forces(&mut self) -> ApiResult<()> {
+        self.check_valid()?;
+        body_clear_forces_impl(self.body_id());
+        Ok(())
+    }
+
+    fn apply_linear_impulse<F: Into<Vec2>, P: Into<Vec2>>(
+        &mut self,
+        impulse: F,
+        point: P,
+        wake: bool,
+    ) {
+        self.assert_valid();
+        body_apply_linear_impulse_impl(self.body_id(), impulse, point, wake);
+    }
+
+    fn try_apply_linear_impulse<F: Into<Vec2>, P: Into<Vec2>>(
+        &mut self,
+        impulse: F,
+        point: P,
+        wake: bool,
+    ) -> ApiResult<()> {
+        self.check_valid()?;
+        body_apply_linear_impulse_impl(self.body_id(), impulse, point, wake);
+        Ok(())
+    }
+
+    fn apply_linear_impulse_to_center<V: Into<Vec2>>(&mut self, impulse: V, wake: bool) {
+        self.assert_valid();
+        body_apply_linear_impulse_to_center_impl(self.body_id(), impulse, wake);
+    }
+
+    fn try_apply_linear_impulse_to_center<V: Into<Vec2>>(
+        &mut self,
+        impulse: V,
+        wake: bool,
+    ) -> ApiResult<()> {
+        self.check_valid()?;
+        body_apply_linear_impulse_to_center_impl(self.body_id(), impulse, wake);
+        Ok(())
+    }
+
+    fn apply_angular_impulse(&mut self, impulse: f32, wake: bool) {
+        self.assert_valid();
+        body_apply_angular_impulse_impl(self.body_id(), impulse, wake)
+    }
+
+    fn try_apply_angular_impulse(&mut self, impulse: f32, wake: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        body_apply_angular_impulse_impl(self.body_id(), impulse, wake);
+        Ok(())
+    }
+
+    fn mass(&self) -> f32 {
+        self.assert_valid();
+        body_mass_impl(self.body_id())
+    }
+
+    fn try_mass(&self) -> ApiResult<f32> {
+        self.check_valid()?;
+        Ok(body_mass_impl(self.body_id()))
+    }
+
+    fn rotational_inertia(&self) -> f32 {
+        self.assert_valid();
+        body_rotational_inertia_impl(self.body_id())
+    }
+
+    fn try_rotational_inertia(&self) -> ApiResult<f32> {
+        self.check_valid()?;
+        Ok(body_rotational_inertia_impl(self.body_id()))
+    }
+
+    fn local_center_of_mass(&self) -> Vec2 {
+        self.assert_valid();
+        body_local_center_of_mass_impl(self.body_id())
+    }
+
+    fn try_local_center_of_mass(&self) -> ApiResult<Vec2> {
+        self.check_valid()?;
+        Ok(body_local_center_of_mass_impl(self.body_id()))
+    }
+
+    fn world_center_of_mass(&self) -> Vec2 {
+        self.assert_valid();
+        body_world_center_of_mass_impl(self.body_id())
+    }
+
+    fn try_world_center_of_mass(&self) -> ApiResult<Vec2> {
+        self.check_valid()?;
+        Ok(body_world_center_of_mass_impl(self.body_id()))
+    }
+
+    fn mass_data(&self) -> MassData {
+        self.assert_valid();
+        body_mass_data_impl(self.body_id())
+    }
+
+    fn try_mass_data(&self) -> ApiResult<MassData> {
+        self.check_valid()?;
+        Ok(body_mass_data_impl(self.body_id()))
+    }
+
+    fn set_mass_data(&mut self, mass_data: MassData) {
+        self.assert_valid();
+        assert_mass_data_valid(mass_data);
+        body_set_mass_data_impl(self.body_id(), mass_data);
+    }
+
+    fn try_set_mass_data(&mut self, mass_data: MassData) -> ApiResult<()> {
+        self.check_valid()?;
+        check_mass_data_valid(mass_data)?;
+        body_set_mass_data_impl(self.body_id(), mass_data);
+        Ok(())
+    }
+
+    fn apply_mass_from_shapes(&mut self) {
+        self.assert_valid();
+        body_apply_mass_from_shapes_impl(self.body_id());
+    }
+
+    fn try_apply_mass_from_shapes(&mut self) -> ApiResult<()> {
+        self.check_valid()?;
+        body_apply_mass_from_shapes_impl(self.body_id());
+        Ok(())
+    }
+
+    fn shape_count(&self) -> i32 {
+        body_shape_count_checked_impl(self.body_id())
+    }
+
+    fn try_shape_count(&self) -> ApiResult<i32> {
+        try_body_shape_count_impl(self.body_id())
+    }
+
+    fn shapes(&self) -> Vec<ShapeId> {
+        body_shapes_checked_impl(self.body_id())
+    }
+
+    fn shapes_into(&self, out: &mut Vec<ShapeId>) {
+        body_shapes_into_checked_impl(self.body_id(), out);
+    }
+
+    fn try_shapes(&self) -> ApiResult<Vec<ShapeId>> {
+        try_body_shapes_impl(self.body_id())
+    }
+
+    fn try_shapes_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
+        try_body_shapes_into_impl(self.body_id(), out)
+    }
+
+    fn joint_count(&self) -> i32 {
+        body_joint_count_checked_impl(self.body_id())
+    }
+
+    fn try_joint_count(&self) -> ApiResult<i32> {
+        try_body_joint_count_impl(self.body_id())
+    }
+
+    fn joints(&self) -> Vec<JointId> {
+        body_joints_checked_impl(self.body_id())
+    }
+
+    fn joints_into(&self, out: &mut Vec<JointId>) {
+        body_joints_into_checked_impl(self.body_id(), out);
+    }
+
+    fn try_joints(&self) -> ApiResult<Vec<JointId>> {
+        try_body_joints_impl(self.body_id())
+    }
+
+    fn try_joints_into(&self, out: &mut Vec<JointId>) -> ApiResult<()> {
+        try_body_joints_into_impl(self.body_id(), out)
+    }
+
+    fn body_type(&self) -> BodyType {
+        self.assert_valid();
+        body_type_impl(self.body_id())
+    }
+
+    fn try_body_type(&self) -> ApiResult<BodyType> {
+        self.check_valid()?;
+        Ok(body_type_impl(self.body_id()))
+    }
+
+    fn set_body_type(&mut self, body_type: BodyType) {
+        self.assert_valid();
+        body_set_type_impl(self.body_id(), body_type)
+    }
+
+    fn try_set_body_type(&mut self, body_type: BodyType) -> ApiResult<()> {
+        self.check_valid()?;
+        body_set_type_impl(self.body_id(), body_type);
+        Ok(())
+    }
+
+    fn gravity_scale(&self) -> f32 {
+        self.assert_valid();
+        body_gravity_scale_impl(self.body_id())
+    }
+
+    fn try_gravity_scale(&self) -> ApiResult<f32> {
+        self.check_valid()?;
+        Ok(body_gravity_scale_impl(self.body_id()))
+    }
+
+    fn set_gravity_scale(&mut self, gravity_scale: f32) {
+        self.assert_valid();
+        assert!(
+            crate::is_valid_float(gravity_scale),
+            "gravity_scale must be finite, got {gravity_scale}"
+        );
+        body_set_gravity_scale_impl(self.body_id(), gravity_scale)
+    }
+
+    fn try_set_gravity_scale(&mut self, gravity_scale: f32) -> ApiResult<()> {
+        self.check_valid()?;
+        if !crate::is_valid_float(gravity_scale) {
+            return Err(ApiError::InvalidArgument);
+        }
+        body_set_gravity_scale_impl(self.body_id(), gravity_scale);
+        Ok(())
+    }
+
+    fn linear_damping(&self) -> f32 {
+        self.assert_valid();
+        body_linear_damping_impl(self.body_id())
+    }
+
+    fn try_linear_damping(&self) -> ApiResult<f32> {
+        self.check_valid()?;
+        Ok(body_linear_damping_impl(self.body_id()))
+    }
+
+    fn set_linear_damping(&mut self, linear_damping: f32) {
+        self.assert_valid();
+        assert_non_negative_finite_body_scalar("linear_damping", linear_damping);
+        body_set_linear_damping_impl(self.body_id(), linear_damping)
+    }
+
+    fn try_set_linear_damping(&mut self, linear_damping: f32) -> ApiResult<()> {
+        self.check_valid()?;
+        check_non_negative_finite_body_scalar(linear_damping)?;
+        body_set_linear_damping_impl(self.body_id(), linear_damping);
+        Ok(())
+    }
+
+    fn angular_damping(&self) -> f32 {
+        self.assert_valid();
+        body_angular_damping_impl(self.body_id())
+    }
+
+    fn try_angular_damping(&self) -> ApiResult<f32> {
+        self.check_valid()?;
+        Ok(body_angular_damping_impl(self.body_id()))
+    }
+
+    fn set_angular_damping(&mut self, angular_damping: f32) {
+        self.assert_valid();
+        assert_non_negative_finite_body_scalar("angular_damping", angular_damping);
+        body_set_angular_damping_impl(self.body_id(), angular_damping)
+    }
+
+    fn try_set_angular_damping(&mut self, angular_damping: f32) -> ApiResult<()> {
+        self.check_valid()?;
+        check_non_negative_finite_body_scalar(angular_damping)?;
+        body_set_angular_damping_impl(self.body_id(), angular_damping);
+        Ok(())
+    }
+
+    fn enable_sleep(&mut self, flag: bool) {
+        self.assert_valid();
+        body_enable_sleep_impl(self.body_id(), flag)
+    }
+
+    fn try_enable_sleep(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        body_enable_sleep_impl(self.body_id(), flag);
+        Ok(())
+    }
+
+    fn is_sleep_enabled(&self) -> bool {
+        self.assert_valid();
+        body_is_sleep_enabled_impl(self.body_id())
+    }
+
+    fn try_is_sleep_enabled(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(body_is_sleep_enabled_impl(self.body_id()))
+    }
+
+    fn set_sleep_threshold(&mut self, sleep_threshold: f32) {
+        self.assert_valid();
+        body_set_sleep_threshold_impl(self.body_id(), sleep_threshold)
+    }
+
+    fn try_set_sleep_threshold(&mut self, sleep_threshold: f32) -> ApiResult<()> {
+        self.check_valid()?;
+        body_set_sleep_threshold_impl(self.body_id(), sleep_threshold);
+        Ok(())
+    }
+
+    fn sleep_threshold(&self) -> f32 {
+        self.assert_valid();
+        body_sleep_threshold_impl(self.body_id())
+    }
+
+    fn try_sleep_threshold(&self) -> ApiResult<f32> {
+        self.check_valid()?;
+        Ok(body_sleep_threshold_impl(self.body_id()))
+    }
+
+    fn is_awake(&self) -> bool {
+        self.assert_valid();
+        body_is_awake_impl(self.body_id())
+    }
+
+    fn try_is_awake(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(body_is_awake_impl(self.body_id()))
+    }
+
+    fn set_awake(&mut self, awake: bool) {
+        self.assert_valid();
+        body_set_awake_impl(self.body_id(), awake)
+    }
+
+    fn try_set_awake(&mut self, awake: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        body_set_awake_impl(self.body_id(), awake);
+        Ok(())
+    }
+
+    fn is_enabled(&self) -> bool {
+        self.assert_valid();
+        body_is_enabled_impl(self.body_id())
+    }
+
+    fn try_is_enabled(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(body_is_enabled_impl(self.body_id()))
+    }
+
+    fn enable(&mut self) {
+        self.assert_valid();
+        body_enable_impl(self.body_id())
+    }
+
+    fn try_enable(&mut self) -> ApiResult<()> {
+        self.check_valid()?;
+        body_enable_impl(self.body_id());
+        Ok(())
+    }
+
+    fn disable(&mut self) {
+        self.assert_valid();
+        body_disable_impl(self.body_id())
+    }
+
+    fn try_disable(&mut self) -> ApiResult<()> {
+        self.check_valid()?;
+        body_disable_impl(self.body_id());
+        Ok(())
+    }
+
+    fn is_bullet(&self) -> bool {
+        self.assert_valid();
+        body_is_bullet_impl(self.body_id())
+    }
+
+    fn try_is_bullet(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(body_is_bullet_impl(self.body_id()))
+    }
+
+    fn set_bullet(&mut self, flag: bool) {
+        self.assert_valid();
+        body_set_bullet_impl(self.body_id(), flag)
+    }
+
+    fn try_set_bullet(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        body_set_bullet_impl(self.body_id(), flag);
+        Ok(())
+    }
+
+    fn enable_contact_events(&mut self, flag: bool) {
+        self.assert_valid();
+        body_enable_contact_events_impl(self.body_id(), flag)
+    }
+
+    fn try_enable_contact_events(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        body_enable_contact_events_impl(self.body_id(), flag);
+        Ok(())
+    }
+
+    fn enable_hit_events(&mut self, flag: bool) {
+        self.assert_valid();
+        body_enable_hit_events_impl(self.body_id(), flag)
+    }
+
+    fn try_enable_hit_events(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        body_enable_hit_events_impl(self.body_id(), flag);
+        Ok(())
+    }
+
+    fn set_name(&mut self, name: &str) {
+        self.assert_valid();
+        let cstr = CString::new(name).expect("body name contains an interior NUL byte");
+        body_set_name_impl(self.body_id(), &cstr)
+    }
+
+    fn try_set_name(&mut self, name: &str) -> ApiResult<()> {
+        self.check_valid()?;
+        let cstr = CString::new(name).map_err(|_| ApiError::NulByteInString)?;
+        body_set_name_impl(self.body_id(), &cstr);
+        Ok(())
+    }
+
+    fn name(&self) -> Option<String> {
+        self.assert_valid();
+        body_name_impl(self.body_id())
+    }
+
+    fn try_name(&self) -> ApiResult<Option<String>> {
+        self.check_valid()?;
+        Ok(body_name_impl(self.body_id()))
+    }
+
+    unsafe fn set_user_data_ptr_raw(&mut self, user_data: *mut c_void) {
+        unsafe {
+            body_set_user_data_ptr_raw_checked_impl(
+                self.body_world_core(),
+                self.body_id(),
+                user_data,
+            )
+        }
+    }
+
+    unsafe fn try_set_user_data_ptr_raw(&mut self, user_data: *mut c_void) -> ApiResult<()> {
+        unsafe {
+            try_body_set_user_data_ptr_raw_impl(self.body_world_core(), self.body_id(), user_data)
+        }
+    }
+
+    fn user_data_ptr_raw(&self) -> *mut c_void {
+        body_user_data_ptr_raw_checked_impl(self.body_id())
+    }
+
+    fn try_user_data_ptr_raw(&self) -> ApiResult<*mut c_void> {
+        try_body_user_data_ptr_raw_impl(self.body_id())
+    }
+
+    fn set_user_data<T: 'static>(&mut self, value: T) {
+        body_set_user_data_checked_impl(self.body_world_core(), self.body_id(), value);
+    }
+
+    fn try_set_user_data<T: 'static>(&mut self, value: T) -> ApiResult<()> {
+        try_body_set_user_data_checked_impl(self.body_world_core(), self.body_id(), value)
+    }
+
+    fn clear_user_data(&mut self) -> bool {
+        body_clear_user_data_checked_impl(self.body_world_core(), self.body_id())
+    }
+
+    fn try_clear_user_data(&mut self) -> ApiResult<bool> {
+        try_body_clear_user_data_checked_impl(self.body_world_core(), self.body_id())
+    }
+
+    fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
+        body_with_user_data_checked_impl(self.body_world_core(), self.body_id(), f)
+    }
+
+    fn try_with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> ApiResult<Option<R>> {
+        try_body_with_user_data_checked_impl(self.body_world_core(), self.body_id(), f)
+    }
+
+    fn with_user_data_mut<T: 'static, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
+        body_with_user_data_mut_checked_impl(self.body_world_core(), self.body_id(), f)
+    }
+
+    fn try_with_user_data_mut<T: 'static, R>(
+        &mut self,
+        f: impl FnOnce(&mut T) -> R,
+    ) -> ApiResult<Option<R>> {
+        try_body_with_user_data_mut_checked_impl(self.body_world_core(), self.body_id(), f)
+    }
+
+    fn take_user_data<T: 'static>(&mut self) -> Option<T> {
+        body_take_user_data_checked_impl(self.body_world_core(), self.body_id())
+    }
+
+    fn try_take_user_data<T: 'static>(&mut self) -> ApiResult<Option<T>> {
+        try_body_take_user_data_checked_impl(self.body_world_core(), self.body_id())
+    }
+}
+
+impl BodyRuntimeHandle for OwnedBody {
+    fn body_id(&self) -> BodyId {
+        self.id
+    }
+
+    fn body_world_core(&self) -> &WorldCore {
+        self.core.as_ref()
+    }
+}
+
+impl<'w> BodyRuntimeHandle for Body<'w> {
+    fn body_id(&self) -> BodyId {
+        self.id
+    }
+
+    fn body_world_core(&self) -> &WorldCore {
+        self.core.as_ref()
+    }
+}
+
 impl OwnedBody {
     pub(crate) fn new(core: Arc<crate::core::world_core::WorldCore>, id: BodyId) -> Self {
         core.owned_bodies
@@ -761,174 +1578,135 @@ impl OwnedBody {
     }
 
     pub fn world_id_raw(&self) -> ffi::b2WorldId {
-        body_world_id_checked_impl(self.id)
+        BodyRuntimeHandle::world_id_raw(self)
     }
 
     pub fn try_world_id_raw(&self) -> ApiResult<ffi::b2WorldId> {
-        try_body_world_id_raw_impl(self.id)
+        BodyRuntimeHandle::try_world_id_raw(self)
     }
 
     pub fn is_valid(&self) -> bool {
-        body_is_valid_checked_impl(self.id)
+        BodyRuntimeHandle::is_valid(self)
     }
 
     pub fn try_is_valid(&self) -> ApiResult<bool> {
-        try_body_is_valid_impl(self.id)
-    }
-
-    #[inline]
-    fn assert_valid(&self) {
-        crate::core::debug_checks::assert_body_valid(self.id);
-    }
-
-    #[inline]
-    fn check_valid(&self) -> ApiResult<()> {
-        crate::core::debug_checks::check_body_valid(self.id)
+        BodyRuntimeHandle::try_is_valid(self)
     }
 
     pub fn position(&self) -> Vec2 {
-        self.assert_valid();
-        body_position_impl(self.id)
+        BodyRuntimeHandle::position(self)
     }
 
     pub fn try_position(&self) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(body_position_impl(self.id))
+        BodyRuntimeHandle::try_position(self)
     }
 
     pub fn linear_velocity(&self) -> Vec2 {
-        self.assert_valid();
-        body_linear_velocity_impl(self.id)
+        BodyRuntimeHandle::linear_velocity(self)
     }
 
     pub fn try_linear_velocity(&self) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(body_linear_velocity_impl(self.id))
+        BodyRuntimeHandle::try_linear_velocity(self)
     }
 
     pub fn angular_velocity(&self) -> f32 {
-        self.assert_valid();
-        body_angular_velocity_impl(self.id)
+        BodyRuntimeHandle::angular_velocity(self)
     }
 
     pub fn try_angular_velocity(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(body_angular_velocity_impl(self.id))
+        BodyRuntimeHandle::try_angular_velocity(self)
     }
 
     pub fn rotation(&self) -> crate::Rot {
-        self.assert_valid();
-        body_rotation_impl(self.id)
+        BodyRuntimeHandle::rotation(self)
     }
 
     pub fn try_rotation(&self) -> ApiResult<crate::Rot> {
-        self.check_valid()?;
-        Ok(body_rotation_impl(self.id))
+        BodyRuntimeHandle::try_rotation(self)
     }
 
     pub fn rotation_raw(&self) -> ffi::b2Rot {
-        self.assert_valid();
-        body_rotation_raw_impl(self.id)
+        BodyRuntimeHandle::rotation_raw(self)
     }
 
     pub fn try_rotation_raw(&self) -> ApiResult<ffi::b2Rot> {
-        self.check_valid()?;
-        Ok(body_rotation_raw_impl(self.id))
+        BodyRuntimeHandle::try_rotation_raw(self)
     }
 
     pub fn transform(&self) -> crate::Transform {
-        self.assert_valid();
-        body_transform_impl(self.id)
+        BodyRuntimeHandle::transform(self)
     }
 
     pub fn try_transform(&self) -> ApiResult<crate::Transform> {
-        self.check_valid()?;
-        Ok(body_transform_impl(self.id))
+        BodyRuntimeHandle::try_transform(self)
     }
 
     pub fn transform_raw(&self) -> ffi::b2Transform {
-        self.assert_valid();
-        body_transform_raw_impl(self.id)
+        BodyRuntimeHandle::transform_raw(self)
     }
 
     pub fn try_transform_raw(&self) -> ApiResult<ffi::b2Transform> {
-        self.check_valid()?;
-        Ok(body_transform_raw_impl(self.id))
+        BodyRuntimeHandle::try_transform_raw(self)
     }
 
     pub fn aabb(&self) -> Aabb {
-        self.assert_valid();
-        body_aabb_impl(self.id)
+        BodyRuntimeHandle::aabb(self)
     }
 
     pub fn try_aabb(&self) -> ApiResult<Aabb> {
-        self.check_valid()?;
-        Ok(body_aabb_impl(self.id))
+        BodyRuntimeHandle::try_aabb(self)
     }
 
     pub fn local_point<V: Into<Vec2>>(&self, world_point: V) -> Vec2 {
-        self.assert_valid();
-        body_local_point_impl(self.id, world_point)
+        BodyRuntimeHandle::local_point(self, world_point)
     }
 
     pub fn try_local_point<V: Into<Vec2>>(&self, world_point: V) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(body_local_point_impl(self.id, world_point))
+        BodyRuntimeHandle::try_local_point(self, world_point)
     }
 
     pub fn world_point<V: Into<Vec2>>(&self, local_point: V) -> Vec2 {
-        self.assert_valid();
-        body_world_point_impl(self.id, local_point)
+        BodyRuntimeHandle::world_point(self, local_point)
     }
 
     pub fn try_world_point<V: Into<Vec2>>(&self, local_point: V) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(body_world_point_impl(self.id, local_point))
+        BodyRuntimeHandle::try_world_point(self, local_point)
     }
 
     pub fn local_vector<V: Into<Vec2>>(&self, world_vector: V) -> Vec2 {
-        self.assert_valid();
-        body_local_vector_impl(self.id, world_vector)
+        BodyRuntimeHandle::local_vector(self, world_vector)
     }
 
     pub fn try_local_vector<V: Into<Vec2>>(&self, world_vector: V) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(body_local_vector_impl(self.id, world_vector))
+        BodyRuntimeHandle::try_local_vector(self, world_vector)
     }
 
     pub fn world_vector<V: Into<Vec2>>(&self, local_vector: V) -> Vec2 {
-        self.assert_valid();
-        body_world_vector_impl(self.id, local_vector)
+        BodyRuntimeHandle::world_vector(self, local_vector)
     }
 
     pub fn try_world_vector<V: Into<Vec2>>(&self, local_vector: V) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(body_world_vector_impl(self.id, local_vector))
+        BodyRuntimeHandle::try_world_vector(self, local_vector)
     }
 
     pub fn local_point_velocity<V: Into<Vec2>>(&self, local_point: V) -> Vec2 {
-        self.assert_valid();
-        body_local_point_velocity_impl(self.id, local_point)
+        BodyRuntimeHandle::local_point_velocity(self, local_point)
     }
 
     pub fn try_local_point_velocity<V: Into<Vec2>>(&self, local_point: V) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(body_local_point_velocity_impl(self.id, local_point))
+        BodyRuntimeHandle::try_local_point_velocity(self, local_point)
     }
 
     pub fn world_point_velocity<V: Into<Vec2>>(&self, world_point: V) -> Vec2 {
-        self.assert_valid();
-        body_world_point_velocity_impl(self.id, world_point)
+        BodyRuntimeHandle::world_point_velocity(self, world_point)
     }
 
     pub fn try_world_point_velocity<V: Into<Vec2>>(&self, world_point: V) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(body_world_point_velocity_impl(self.id, world_point))
+        BodyRuntimeHandle::try_world_point_velocity(self, world_point)
     }
 
     pub fn set_position_and_rotation<V: Into<Vec2>>(&mut self, p: V, angle_radians: f32) {
-        self.assert_valid();
-        body_set_position_and_rotation_impl(self.id, p, angle_radians);
+        BodyRuntimeHandle::set_position_and_rotation(self, p, angle_radians);
     }
 
     pub fn try_set_position_and_rotation<V: Into<Vec2>>(
@@ -936,36 +1714,27 @@ impl OwnedBody {
         p: V,
         angle_radians: f32,
     ) -> ApiResult<()> {
-        self.check_valid()?;
-        body_set_position_and_rotation_impl(self.id, p, angle_radians);
-        Ok(())
+        BodyRuntimeHandle::try_set_position_and_rotation(self, p, angle_radians)
     }
 
     pub fn set_linear_velocity<V: Into<Vec2>>(&mut self, v: V) {
-        self.assert_valid();
-        body_set_linear_velocity_impl(self.id, v)
+        BodyRuntimeHandle::set_linear_velocity(self, v)
     }
 
     pub fn try_set_linear_velocity<V: Into<Vec2>>(&mut self, v: V) -> ApiResult<()> {
-        self.check_valid()?;
-        body_set_linear_velocity_impl(self.id, v);
-        Ok(())
+        BodyRuntimeHandle::try_set_linear_velocity(self, v)
     }
 
     pub fn set_angular_velocity(&mut self, w: f32) {
-        self.assert_valid();
-        body_set_angular_velocity_impl(self.id, w)
+        BodyRuntimeHandle::set_angular_velocity(self, w)
     }
 
     pub fn try_set_angular_velocity(&mut self, w: f32) -> ApiResult<()> {
-        self.check_valid()?;
-        body_set_angular_velocity_impl(self.id, w);
-        Ok(())
+        BodyRuntimeHandle::try_set_angular_velocity(self, w)
     }
 
     pub fn set_target_transform(&mut self, target: crate::Transform, time_step: f32, wake: bool) {
-        self.assert_valid();
-        body_set_target_transform_impl(self.id, target, time_step, wake);
+        BodyRuntimeHandle::set_target_transform(self, target, time_step, wake);
     }
 
     pub fn try_set_target_transform(
@@ -974,14 +1743,11 @@ impl OwnedBody {
         time_step: f32,
         wake: bool,
     ) -> ApiResult<()> {
-        self.check_valid()?;
-        body_set_target_transform_impl(self.id, target, time_step, wake);
-        Ok(())
+        BodyRuntimeHandle::try_set_target_transform(self, target, time_step, wake)
     }
 
     pub fn apply_force_to_center<V: Into<Vec2>>(&mut self, force: V, wake: bool) {
-        self.assert_valid();
-        body_apply_force_to_center_impl(self.id, force, wake);
+        BodyRuntimeHandle::apply_force_to_center(self, force, wake);
     }
 
     pub fn try_apply_force_to_center<V: Into<Vec2>>(
@@ -989,14 +1755,11 @@ impl OwnedBody {
         force: V,
         wake: bool,
     ) -> ApiResult<()> {
-        self.check_valid()?;
-        body_apply_force_to_center_impl(self.id, force, wake);
-        Ok(())
+        BodyRuntimeHandle::try_apply_force_to_center(self, force, wake)
     }
 
     pub fn apply_force<F: Into<Vec2>, P: Into<Vec2>>(&mut self, force: F, point: P, wake: bool) {
-        self.assert_valid();
-        body_apply_force_impl(self.id, force, point, wake);
+        BodyRuntimeHandle::apply_force(self, force, point, wake);
     }
 
     pub fn try_apply_force<F: Into<Vec2>, P: Into<Vec2>>(
@@ -1005,34 +1768,25 @@ impl OwnedBody {
         point: P,
         wake: bool,
     ) -> ApiResult<()> {
-        self.check_valid()?;
-        body_apply_force_impl(self.id, force, point, wake);
-        Ok(())
+        BodyRuntimeHandle::try_apply_force(self, force, point, wake)
     }
     pub fn apply_torque(&mut self, torque: f32, wake: bool) {
-        self.assert_valid();
-        body_apply_torque_impl(self.id, torque, wake)
+        BodyRuntimeHandle::apply_torque(self, torque, wake)
     }
 
     pub fn try_apply_torque(&mut self, torque: f32, wake: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        body_apply_torque_impl(self.id, torque, wake);
-        Ok(())
+        BodyRuntimeHandle::try_apply_torque(self, torque, wake)
     }
 
     pub fn clear_forces(&mut self) {
-        self.assert_valid();
-        body_clear_forces_impl(self.id);
+        BodyRuntimeHandle::clear_forces(self);
     }
 
     pub fn try_clear_forces(&mut self) -> ApiResult<()> {
-        self.check_valid()?;
-        body_clear_forces_impl(self.id);
-        Ok(())
+        BodyRuntimeHandle::try_clear_forces(self)
     }
     pub fn apply_linear_impulse_to_center<V: Into<Vec2>>(&mut self, impulse: V, wake: bool) {
-        self.assert_valid();
-        body_apply_linear_impulse_to_center_impl(self.id, impulse, wake);
+        BodyRuntimeHandle::apply_linear_impulse_to_center(self, impulse, wake);
     }
 
     pub fn try_apply_linear_impulse_to_center<V: Into<Vec2>>(
@@ -1040,9 +1794,7 @@ impl OwnedBody {
         impulse: V,
         wake: bool,
     ) -> ApiResult<()> {
-        self.check_valid()?;
-        body_apply_linear_impulse_to_center_impl(self.id, impulse, wake);
-        Ok(())
+        BodyRuntimeHandle::try_apply_linear_impulse_to_center(self, impulse, wake)
     }
 
     pub fn apply_linear_impulse<F: Into<Vec2>, P: Into<Vec2>>(
@@ -1051,12 +1803,10 @@ impl OwnedBody {
         point: P,
         wake: bool,
     ) {
-        self.assert_valid();
-        body_apply_linear_impulse_impl(self.id, impulse, point, wake);
+        BodyRuntimeHandle::apply_linear_impulse(self, impulse, point, wake);
     }
     pub fn apply_angular_impulse(&mut self, impulse: f32, wake: bool) {
-        self.assert_valid();
-        body_apply_angular_impulse_impl(self.id, impulse, wake)
+        BodyRuntimeHandle::apply_angular_impulse(self, impulse, wake)
     }
 
     pub fn try_apply_linear_impulse<F: Into<Vec2>, P: Into<Vec2>>(
@@ -1065,405 +1815,311 @@ impl OwnedBody {
         point: P,
         wake: bool,
     ) -> ApiResult<()> {
-        self.check_valid()?;
-        body_apply_linear_impulse_impl(self.id, impulse, point, wake);
-        Ok(())
+        BodyRuntimeHandle::try_apply_linear_impulse(self, impulse, point, wake)
     }
 
     pub fn try_apply_angular_impulse(&mut self, impulse: f32, wake: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        body_apply_angular_impulse_impl(self.id, impulse, wake);
-        Ok(())
+        BodyRuntimeHandle::try_apply_angular_impulse(self, impulse, wake)
     }
 
     pub fn mass(&self) -> f32 {
-        self.assert_valid();
-        body_mass_impl(self.id)
+        BodyRuntimeHandle::mass(self)
     }
 
     pub fn try_mass(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(body_mass_impl(self.id))
+        BodyRuntimeHandle::try_mass(self)
     }
 
     pub fn rotational_inertia(&self) -> f32 {
-        self.assert_valid();
-        body_rotational_inertia_impl(self.id)
+        BodyRuntimeHandle::rotational_inertia(self)
     }
 
     pub fn try_rotational_inertia(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(body_rotational_inertia_impl(self.id))
+        BodyRuntimeHandle::try_rotational_inertia(self)
     }
 
     pub fn local_center_of_mass(&self) -> Vec2 {
-        self.assert_valid();
-        body_local_center_of_mass_impl(self.id)
+        BodyRuntimeHandle::local_center_of_mass(self)
     }
 
     pub fn try_local_center_of_mass(&self) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(body_local_center_of_mass_impl(self.id))
+        BodyRuntimeHandle::try_local_center_of_mass(self)
     }
 
     pub fn world_center_of_mass(&self) -> Vec2 {
-        self.assert_valid();
-        body_world_center_of_mass_impl(self.id)
+        BodyRuntimeHandle::world_center_of_mass(self)
     }
 
     pub fn try_world_center_of_mass(&self) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(body_world_center_of_mass_impl(self.id))
+        BodyRuntimeHandle::try_world_center_of_mass(self)
     }
 
     pub fn mass_data(&self) -> MassData {
-        self.assert_valid();
-        body_mass_data_impl(self.id)
+        BodyRuntimeHandle::mass_data(self)
     }
 
     pub fn try_mass_data(&self) -> ApiResult<MassData> {
-        self.check_valid()?;
-        Ok(body_mass_data_impl(self.id))
+        BodyRuntimeHandle::try_mass_data(self)
     }
 
     pub fn set_mass_data(&mut self, mass_data: MassData) {
-        self.assert_valid();
-        assert_mass_data_valid(mass_data);
-        body_set_mass_data_impl(self.id, mass_data);
+        BodyRuntimeHandle::set_mass_data(self, mass_data);
     }
 
     pub fn try_set_mass_data(&mut self, mass_data: MassData) -> ApiResult<()> {
-        self.check_valid()?;
-        check_mass_data_valid(mass_data)?;
-        body_set_mass_data_impl(self.id, mass_data);
-        Ok(())
+        BodyRuntimeHandle::try_set_mass_data(self, mass_data)
     }
 
     pub fn apply_mass_from_shapes(&mut self) {
-        self.assert_valid();
-        body_apply_mass_from_shapes_impl(self.id);
+        BodyRuntimeHandle::apply_mass_from_shapes(self);
     }
 
     pub fn try_apply_mass_from_shapes(&mut self) -> ApiResult<()> {
-        self.check_valid()?;
-        body_apply_mass_from_shapes_impl(self.id);
-        Ok(())
+        BodyRuntimeHandle::try_apply_mass_from_shapes(self)
     }
 
     pub fn shape_count(&self) -> i32 {
-        body_shape_count_checked_impl(self.id)
+        BodyRuntimeHandle::shape_count(self)
     }
 
     pub fn try_shape_count(&self) -> ApiResult<i32> {
-        try_body_shape_count_impl(self.id)
+        BodyRuntimeHandle::try_shape_count(self)
     }
 
     pub fn shapes(&self) -> Vec<ShapeId> {
-        body_shapes_checked_impl(self.id)
+        BodyRuntimeHandle::shapes(self)
     }
 
     pub fn shapes_into(&self, out: &mut Vec<ShapeId>) {
-        body_shapes_into_checked_impl(self.id, out);
+        BodyRuntimeHandle::shapes_into(self, out);
     }
 
     pub fn try_shapes(&self) -> ApiResult<Vec<ShapeId>> {
-        try_body_shapes_impl(self.id)
+        BodyRuntimeHandle::try_shapes(self)
     }
 
     pub fn try_shapes_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
-        try_body_shapes_into_impl(self.id, out)
+        BodyRuntimeHandle::try_shapes_into(self, out)
     }
 
     pub fn joint_count(&self) -> i32 {
-        body_joint_count_checked_impl(self.id)
+        BodyRuntimeHandle::joint_count(self)
     }
 
     pub fn try_joint_count(&self) -> ApiResult<i32> {
-        try_body_joint_count_impl(self.id)
+        BodyRuntimeHandle::try_joint_count(self)
     }
 
     pub fn joints(&self) -> Vec<JointId> {
-        body_joints_checked_impl(self.id)
+        BodyRuntimeHandle::joints(self)
     }
 
     pub fn joints_into(&self, out: &mut Vec<JointId>) {
-        body_joints_into_checked_impl(self.id, out);
+        BodyRuntimeHandle::joints_into(self, out);
     }
 
     pub fn try_joints(&self) -> ApiResult<Vec<JointId>> {
-        try_body_joints_impl(self.id)
+        BodyRuntimeHandle::try_joints(self)
     }
 
     pub fn try_joints_into(&self, out: &mut Vec<JointId>) -> ApiResult<()> {
-        try_body_joints_into_impl(self.id, out)
+        BodyRuntimeHandle::try_joints_into(self, out)
     }
 
     pub fn body_type(&self) -> BodyType {
-        self.assert_valid();
-        body_type_impl(self.id)
+        BodyRuntimeHandle::body_type(self)
     }
 
     pub fn try_body_type(&self) -> ApiResult<BodyType> {
-        self.check_valid()?;
-        Ok(body_type_impl(self.id))
+        BodyRuntimeHandle::try_body_type(self)
     }
     pub fn set_body_type(&mut self, t: BodyType) {
-        self.assert_valid();
-        body_set_type_impl(self.id, t)
+        BodyRuntimeHandle::set_body_type(self, t)
     }
 
     pub fn try_set_body_type(&mut self, t: BodyType) -> ApiResult<()> {
-        self.check_valid()?;
-        body_set_type_impl(self.id, t);
-        Ok(())
+        BodyRuntimeHandle::try_set_body_type(self, t)
     }
 
     pub fn gravity_scale(&self) -> f32 {
-        self.assert_valid();
-        body_gravity_scale_impl(self.id)
+        BodyRuntimeHandle::gravity_scale(self)
     }
     pub fn try_gravity_scale(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(body_gravity_scale_impl(self.id))
+        BodyRuntimeHandle::try_gravity_scale(self)
     }
     pub fn set_gravity_scale(&mut self, v: f32) {
-        self.assert_valid();
-        assert!(
-            crate::is_valid_float(v),
-            "gravity_scale must be finite, got {v}"
-        );
-        body_set_gravity_scale_impl(self.id, v)
+        BodyRuntimeHandle::set_gravity_scale(self, v)
     }
 
     pub fn try_set_gravity_scale(&mut self, v: f32) -> ApiResult<()> {
-        self.check_valid()?;
-        if !crate::is_valid_float(v) {
-            return Err(ApiError::InvalidArgument);
-        }
-        body_set_gravity_scale_impl(self.id, v);
-        Ok(())
+        BodyRuntimeHandle::try_set_gravity_scale(self, v)
     }
 
     pub fn linear_damping(&self) -> f32 {
-        self.assert_valid();
-        body_linear_damping_impl(self.id)
+        BodyRuntimeHandle::linear_damping(self)
     }
     pub fn try_linear_damping(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(body_linear_damping_impl(self.id))
+        BodyRuntimeHandle::try_linear_damping(self)
     }
     pub fn set_linear_damping(&mut self, v: f32) {
-        self.assert_valid();
-        assert_non_negative_finite_body_scalar("linear_damping", v);
-        body_set_linear_damping_impl(self.id, v)
+        BodyRuntimeHandle::set_linear_damping(self, v)
     }
     pub fn try_set_linear_damping(&mut self, v: f32) -> ApiResult<()> {
-        self.check_valid()?;
-        check_non_negative_finite_body_scalar(v)?;
-        body_set_linear_damping_impl(self.id, v);
-        Ok(())
+        BodyRuntimeHandle::try_set_linear_damping(self, v)
     }
     pub fn angular_damping(&self) -> f32 {
-        self.assert_valid();
-        body_angular_damping_impl(self.id)
+        BodyRuntimeHandle::angular_damping(self)
     }
     pub fn try_angular_damping(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(body_angular_damping_impl(self.id))
+        BodyRuntimeHandle::try_angular_damping(self)
     }
     pub fn set_angular_damping(&mut self, v: f32) {
-        self.assert_valid();
-        assert_non_negative_finite_body_scalar("angular_damping", v);
-        body_set_angular_damping_impl(self.id, v)
+        BodyRuntimeHandle::set_angular_damping(self, v)
     }
     pub fn try_set_angular_damping(&mut self, v: f32) -> ApiResult<()> {
-        self.check_valid()?;
-        check_non_negative_finite_body_scalar(v)?;
-        body_set_angular_damping_impl(self.id, v);
-        Ok(())
+        BodyRuntimeHandle::try_set_angular_damping(self, v)
     }
 
     pub fn enable_sleep(&mut self, flag: bool) {
-        self.assert_valid();
-        body_enable_sleep_impl(self.id, flag)
+        BodyRuntimeHandle::enable_sleep(self, flag)
     }
 
     pub fn try_enable_sleep(&mut self, flag: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        body_enable_sleep_impl(self.id, flag);
-        Ok(())
+        BodyRuntimeHandle::try_enable_sleep(self, flag)
     }
 
     pub fn is_sleep_enabled(&self) -> bool {
-        self.assert_valid();
-        body_is_sleep_enabled_impl(self.id)
+        BodyRuntimeHandle::is_sleep_enabled(self)
     }
 
     pub fn try_is_sleep_enabled(&self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(body_is_sleep_enabled_impl(self.id))
+        BodyRuntimeHandle::try_is_sleep_enabled(self)
     }
 
     pub fn set_sleep_threshold(&mut self, sleep_threshold: f32) {
-        self.assert_valid();
-        body_set_sleep_threshold_impl(self.id, sleep_threshold)
+        BodyRuntimeHandle::set_sleep_threshold(self, sleep_threshold)
     }
 
     pub fn try_set_sleep_threshold(&mut self, sleep_threshold: f32) -> ApiResult<()> {
-        self.check_valid()?;
-        body_set_sleep_threshold_impl(self.id, sleep_threshold);
-        Ok(())
+        BodyRuntimeHandle::try_set_sleep_threshold(self, sleep_threshold)
     }
 
     pub fn sleep_threshold(&self) -> f32 {
-        self.assert_valid();
-        body_sleep_threshold_impl(self.id)
+        BodyRuntimeHandle::sleep_threshold(self)
     }
 
     pub fn try_sleep_threshold(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(body_sleep_threshold_impl(self.id))
+        BodyRuntimeHandle::try_sleep_threshold(self)
     }
 
     pub fn is_awake(&self) -> bool {
-        self.assert_valid();
-        body_is_awake_impl(self.id)
+        BodyRuntimeHandle::is_awake(self)
     }
     pub fn try_is_awake(&self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(body_is_awake_impl(self.id))
+        BodyRuntimeHandle::try_is_awake(self)
     }
     pub fn set_awake(&mut self, awake: bool) {
-        self.assert_valid();
-        body_set_awake_impl(self.id, awake)
+        BodyRuntimeHandle::set_awake(self, awake)
     }
     pub fn try_set_awake(&mut self, awake: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        body_set_awake_impl(self.id, awake);
-        Ok(())
+        BodyRuntimeHandle::try_set_awake(self, awake)
     }
 
     pub fn is_enabled(&self) -> bool {
-        self.assert_valid();
-        body_is_enabled_impl(self.id)
+        BodyRuntimeHandle::is_enabled(self)
     }
     pub fn try_is_enabled(&self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(body_is_enabled_impl(self.id))
+        BodyRuntimeHandle::try_is_enabled(self)
     }
     pub fn enable(&mut self) {
-        self.assert_valid();
-        body_enable_impl(self.id)
+        BodyRuntimeHandle::enable(self)
     }
     pub fn try_enable(&mut self) -> ApiResult<()> {
-        self.check_valid()?;
-        body_enable_impl(self.id);
-        Ok(())
+        BodyRuntimeHandle::try_enable(self)
     }
     pub fn disable(&mut self) {
-        self.assert_valid();
-        body_disable_impl(self.id)
+        BodyRuntimeHandle::disable(self)
     }
     pub fn try_disable(&mut self) -> ApiResult<()> {
-        self.check_valid()?;
-        body_disable_impl(self.id);
-        Ok(())
+        BodyRuntimeHandle::try_disable(self)
     }
 
     pub fn is_bullet(&self) -> bool {
-        self.assert_valid();
-        body_is_bullet_impl(self.id)
+        BodyRuntimeHandle::is_bullet(self)
     }
     pub fn try_is_bullet(&self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(body_is_bullet_impl(self.id))
+        BodyRuntimeHandle::try_is_bullet(self)
     }
     pub fn set_bullet(&mut self, flag: bool) {
-        self.assert_valid();
-        body_set_bullet_impl(self.id, flag)
+        BodyRuntimeHandle::set_bullet(self, flag)
     }
 
     pub fn try_set_bullet(&mut self, flag: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        body_set_bullet_impl(self.id, flag);
-        Ok(())
+        BodyRuntimeHandle::try_set_bullet(self, flag)
     }
 
     pub fn enable_contact_events(&mut self, flag: bool) {
-        self.assert_valid();
-        body_enable_contact_events_impl(self.id, flag)
+        BodyRuntimeHandle::enable_contact_events(self, flag)
     }
 
     pub fn try_enable_contact_events(&mut self, flag: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        body_enable_contact_events_impl(self.id, flag);
-        Ok(())
+        BodyRuntimeHandle::try_enable_contact_events(self, flag)
     }
 
     pub fn enable_hit_events(&mut self, flag: bool) {
-        self.assert_valid();
-        body_enable_hit_events_impl(self.id, flag)
+        BodyRuntimeHandle::enable_hit_events(self, flag)
     }
 
     pub fn try_enable_hit_events(&mut self, flag: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        body_enable_hit_events_impl(self.id, flag);
-        Ok(())
+        BodyRuntimeHandle::try_enable_hit_events(self, flag)
     }
 
     pub fn set_name(&mut self, name: &str) {
-        self.assert_valid();
-        let cs = CString::new(name).expect("body name contains an interior NUL byte");
-        body_set_name_impl(self.id, &cs)
+        BodyRuntimeHandle::set_name(self, name)
     }
 
     pub fn try_set_name(&mut self, name: &str) -> ApiResult<()> {
-        self.check_valid()?;
-        let cs = CString::new(name).map_err(|_| ApiError::NulByteInString)?;
-        body_set_name_impl(self.id, &cs);
-        Ok(())
+        BodyRuntimeHandle::try_set_name(self, name)
     }
 
     pub fn name(&self) -> Option<String> {
-        self.assert_valid();
-        body_name_impl(self.id)
+        BodyRuntimeHandle::name(self)
     }
 
     pub fn try_name(&self) -> ApiResult<Option<String>> {
-        self.check_valid()?;
-        Ok(body_name_impl(self.id))
+        BodyRuntimeHandle::try_name(self)
     }
 
     pub fn contact_data(&self) -> Vec<ContactData> {
-        body_contact_data_checked_impl(self.id)
+        BodyRuntimeHandle::contact_data(self)
     }
 
     pub fn contact_data_into(&self, out: &mut Vec<ContactData>) {
-        body_contact_data_into_checked_impl(self.id, out);
+        BodyRuntimeHandle::contact_data_into(self, out);
     }
 
     pub fn try_contact_data(&self) -> ApiResult<Vec<ContactData>> {
-        try_body_contact_data_impl(self.id)
+        BodyRuntimeHandle::try_contact_data(self)
     }
 
     pub fn try_contact_data_into(&self, out: &mut Vec<ContactData>) -> ApiResult<()> {
-        try_body_contact_data_into_impl(self.id, out)
+        BodyRuntimeHandle::try_contact_data_into(self, out)
     }
 
     pub fn contact_data_raw(&self) -> Vec<ffi::b2ContactData> {
-        body_contact_data_raw_checked_impl(self.id)
+        BodyRuntimeHandle::contact_data_raw(self)
     }
 
     pub fn contact_data_raw_into(&self, out: &mut Vec<ffi::b2ContactData>) {
-        body_contact_data_raw_into_checked_impl(self.id, out);
+        BodyRuntimeHandle::contact_data_raw_into(self, out);
     }
 
     pub fn try_contact_data_raw(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
-        try_body_contact_data_raw_impl(self.id)
+        BodyRuntimeHandle::try_contact_data_raw(self)
     }
 
     pub fn try_contact_data_raw_into(&self, out: &mut Vec<ffi::b2ContactData>) -> ApiResult<()> {
-        try_body_contact_data_raw_into_impl(self.id, out)
+        BodyRuntimeHandle::try_contact_data_raw_into(self, out)
     }
 
     /// Borrow the raw id for ID-style APIs.
@@ -1480,7 +2136,7 @@ impl OwnedBody {
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn set_user_data_ptr_raw(&mut self, p: *mut c_void) {
-        unsafe { body_set_user_data_ptr_raw_checked_impl(self.core.as_ref(), self.id, p) }
+        unsafe { BodyRuntimeHandle::set_user_data_ptr_raw(self, p) }
     }
 
     /// Set an opaque user data pointer on this body.
@@ -1490,14 +2146,14 @@ impl OwnedBody {
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn try_set_user_data_ptr_raw(&mut self, p: *mut c_void) -> ApiResult<()> {
-        unsafe { try_body_set_user_data_ptr_raw_impl(self.core.as_ref(), self.id, p) }
+        unsafe { BodyRuntimeHandle::try_set_user_data_ptr_raw(self, p) }
     }
     pub fn user_data_ptr_raw(&self) -> *mut c_void {
-        body_user_data_ptr_raw_checked_impl(self.id)
+        BodyRuntimeHandle::user_data_ptr_raw(self)
     }
 
     pub fn try_user_data_ptr_raw(&self) -> ApiResult<*mut c_void> {
-        try_body_user_data_ptr_raw_impl(self.id)
+        BodyRuntimeHandle::try_user_data_ptr_raw(self)
     }
 
     /// Set typed user data on this body.
@@ -1505,50 +2161,50 @@ impl OwnedBody {
     /// This stores a `Box<T>` internally and sets Box2D's user data pointer to it. The allocation
     /// is automatically freed when cleared or when the body is destroyed.
     pub fn set_user_data<T: 'static>(&mut self, value: T) {
-        body_set_user_data_checked_impl(self.core.as_ref(), self.id, value);
+        BodyRuntimeHandle::set_user_data(self, value);
     }
 
     pub fn try_set_user_data<T: 'static>(&mut self, value: T) -> ApiResult<()> {
-        try_body_set_user_data_checked_impl(self.core.as_ref(), self.id, value)
+        BodyRuntimeHandle::try_set_user_data(self, value)
     }
 
     /// Clear typed user data on this body. Returns whether any typed data was present.
     pub fn clear_user_data(&mut self) -> bool {
-        body_clear_user_data_checked_impl(self.core.as_ref(), self.id)
+        BodyRuntimeHandle::clear_user_data(self)
     }
 
     pub fn try_clear_user_data(&mut self) -> ApiResult<bool> {
-        try_body_clear_user_data_checked_impl(self.core.as_ref(), self.id)
+        BodyRuntimeHandle::try_clear_user_data(self)
     }
 
     pub fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
-        body_with_user_data_checked_impl(self.core.as_ref(), self.id, f)
+        BodyRuntimeHandle::with_user_data(self, f)
     }
 
     pub fn try_with_user_data<T: 'static, R>(
         &self,
         f: impl FnOnce(&T) -> R,
     ) -> ApiResult<Option<R>> {
-        try_body_with_user_data_checked_impl(self.core.as_ref(), self.id, f)
+        BodyRuntimeHandle::try_with_user_data(self, f)
     }
 
     pub fn with_user_data_mut<T: 'static, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
-        body_with_user_data_mut_checked_impl(self.core.as_ref(), self.id, f)
+        BodyRuntimeHandle::with_user_data_mut(self, f)
     }
 
     pub fn try_with_user_data_mut<T: 'static, R>(
         &mut self,
         f: impl FnOnce(&mut T) -> R,
     ) -> ApiResult<Option<R>> {
-        try_body_with_user_data_mut_checked_impl(self.core.as_ref(), self.id, f)
+        BodyRuntimeHandle::try_with_user_data_mut(self, f)
     }
 
     pub fn take_user_data<T: 'static>(&mut self) -> Option<T> {
-        body_take_user_data_checked_impl(self.core.as_ref(), self.id)
+        BodyRuntimeHandle::take_user_data(self)
     }
 
     pub fn try_take_user_data<T: 'static>(&mut self) -> ApiResult<Option<T>> {
-        try_body_take_user_data_checked_impl(self.core.as_ref(), self.id)
+        BodyRuntimeHandle::try_take_user_data(self)
     }
 
     /// Disarm RAII and return the raw id for manual lifetime management.
@@ -2080,207 +2736,161 @@ impl<'w> Body<'w> {
         }
     }
 
-    #[inline]
-    fn assert_valid(&self) {
-        crate::core::debug_checks::assert_body_valid(self.id);
-    }
-
-    #[inline]
-    fn check_valid(&self) -> ApiResult<()> {
-        crate::core::debug_checks::check_body_valid(self.id)
-    }
-
     pub fn id(&self) -> BodyId {
         self.id
     }
 
     pub fn world_id_raw(&self) -> ffi::b2WorldId {
-        body_world_id_checked_impl(self.id)
+        BodyRuntimeHandle::world_id_raw(self)
     }
 
     pub fn try_world_id_raw(&self) -> ApiResult<ffi::b2WorldId> {
-        try_body_world_id_raw_impl(self.id)
+        BodyRuntimeHandle::try_world_id_raw(self)
     }
 
     pub fn is_valid(&self) -> bool {
-        body_is_valid_checked_impl(self.id)
+        BodyRuntimeHandle::is_valid(self)
     }
 
     pub fn try_is_valid(&self) -> ApiResult<bool> {
-        try_body_is_valid_impl(self.id)
+        BodyRuntimeHandle::try_is_valid(self)
     }
 
     // Queries
     pub fn position(&self) -> Vec2 {
-        self.assert_valid();
-        body_position_impl(self.id)
+        BodyRuntimeHandle::position(self)
     }
 
     pub fn try_position(&self) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(body_position_impl(self.id))
+        BodyRuntimeHandle::try_position(self)
     }
 
     pub fn linear_velocity(&self) -> Vec2 {
-        self.assert_valid();
-        body_linear_velocity_impl(self.id)
+        BodyRuntimeHandle::linear_velocity(self)
     }
 
     pub fn try_linear_velocity(&self) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(body_linear_velocity_impl(self.id))
+        BodyRuntimeHandle::try_linear_velocity(self)
     }
 
     pub fn angular_velocity(&self) -> f32 {
-        self.assert_valid();
-        body_angular_velocity_impl(self.id)
+        BodyRuntimeHandle::angular_velocity(self)
     }
 
     pub fn try_angular_velocity(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(body_angular_velocity_impl(self.id))
+        BodyRuntimeHandle::try_angular_velocity(self)
     }
 
     pub fn rotation(&self) -> crate::Rot {
-        self.assert_valid();
-        body_rotation_impl(self.id)
+        BodyRuntimeHandle::rotation(self)
     }
 
     pub fn try_rotation(&self) -> ApiResult<crate::Rot> {
-        self.check_valid()?;
-        Ok(body_rotation_impl(self.id))
+        BodyRuntimeHandle::try_rotation(self)
     }
 
     pub fn rotation_raw(&self) -> ffi::b2Rot {
-        self.assert_valid();
-        body_rotation_raw_impl(self.id)
+        BodyRuntimeHandle::rotation_raw(self)
     }
 
     pub fn try_rotation_raw(&self) -> ApiResult<ffi::b2Rot> {
-        self.check_valid()?;
-        Ok(body_rotation_raw_impl(self.id))
+        BodyRuntimeHandle::try_rotation_raw(self)
     }
 
     pub fn transform(&self) -> crate::Transform {
-        self.assert_valid();
-        body_transform_impl(self.id)
+        BodyRuntimeHandle::transform(self)
     }
 
     pub fn try_transform(&self) -> ApiResult<crate::Transform> {
-        self.check_valid()?;
-        Ok(body_transform_impl(self.id))
+        BodyRuntimeHandle::try_transform(self)
     }
 
     pub fn transform_raw(&self) -> ffi::b2Transform {
-        self.assert_valid();
-        body_transform_raw_impl(self.id)
+        BodyRuntimeHandle::transform_raw(self)
     }
 
     pub fn try_transform_raw(&self) -> ApiResult<ffi::b2Transform> {
-        self.check_valid()?;
-        Ok(body_transform_raw_impl(self.id))
+        BodyRuntimeHandle::try_transform_raw(self)
     }
 
     pub fn aabb(&self) -> Aabb {
-        self.assert_valid();
-        body_aabb_impl(self.id)
+        BodyRuntimeHandle::aabb(self)
     }
 
     pub fn try_aabb(&self) -> ApiResult<Aabb> {
-        self.check_valid()?;
-        Ok(body_aabb_impl(self.id))
+        BodyRuntimeHandle::try_aabb(self)
     }
 
     pub fn local_point<V: Into<Vec2>>(&self, world_point: V) -> Vec2 {
-        self.assert_valid();
-        body_local_point_impl(self.id, world_point)
+        BodyRuntimeHandle::local_point(self, world_point)
     }
 
     pub fn try_local_point<V: Into<Vec2>>(&self, world_point: V) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(body_local_point_impl(self.id, world_point))
+        BodyRuntimeHandle::try_local_point(self, world_point)
     }
 
     pub fn world_point<V: Into<Vec2>>(&self, local_point: V) -> Vec2 {
-        self.assert_valid();
-        body_world_point_impl(self.id, local_point)
+        BodyRuntimeHandle::world_point(self, local_point)
     }
 
     pub fn try_world_point<V: Into<Vec2>>(&self, local_point: V) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(body_world_point_impl(self.id, local_point))
+        BodyRuntimeHandle::try_world_point(self, local_point)
     }
 
     pub fn local_vector<V: Into<Vec2>>(&self, world_vector: V) -> Vec2 {
-        self.assert_valid();
-        body_local_vector_impl(self.id, world_vector)
+        BodyRuntimeHandle::local_vector(self, world_vector)
     }
 
     pub fn try_local_vector<V: Into<Vec2>>(&self, world_vector: V) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(body_local_vector_impl(self.id, world_vector))
+        BodyRuntimeHandle::try_local_vector(self, world_vector)
     }
 
     pub fn world_vector<V: Into<Vec2>>(&self, local_vector: V) -> Vec2 {
-        self.assert_valid();
-        body_world_vector_impl(self.id, local_vector)
+        BodyRuntimeHandle::world_vector(self, local_vector)
     }
 
     pub fn try_world_vector<V: Into<Vec2>>(&self, local_vector: V) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(body_world_vector_impl(self.id, local_vector))
+        BodyRuntimeHandle::try_world_vector(self, local_vector)
     }
 
     pub fn local_point_velocity<V: Into<Vec2>>(&self, local_point: V) -> Vec2 {
-        self.assert_valid();
-        body_local_point_velocity_impl(self.id, local_point)
+        BodyRuntimeHandle::local_point_velocity(self, local_point)
     }
 
     pub fn try_local_point_velocity<V: Into<Vec2>>(&self, local_point: V) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(body_local_point_velocity_impl(self.id, local_point))
+        BodyRuntimeHandle::try_local_point_velocity(self, local_point)
     }
 
     pub fn world_point_velocity<V: Into<Vec2>>(&self, world_point: V) -> Vec2 {
-        self.assert_valid();
-        body_world_point_velocity_impl(self.id, world_point)
+        BodyRuntimeHandle::world_point_velocity(self, world_point)
     }
 
     pub fn try_world_point_velocity<V: Into<Vec2>>(&self, world_point: V) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(body_world_point_velocity_impl(self.id, world_point))
+        BodyRuntimeHandle::try_world_point_velocity(self, world_point)
     }
 
     // Mutations
     pub fn set_position_and_rotation<V: Into<Vec2>>(&mut self, p: V, angle_radians: f32) {
-        self.assert_valid();
-        body_set_position_and_rotation_impl(self.id, p, angle_radians);
+        BodyRuntimeHandle::set_position_and_rotation(self, p, angle_radians);
     }
     pub fn set_linear_velocity<V: Into<Vec2>>(&mut self, v: V) {
-        self.assert_valid();
-        body_set_linear_velocity_impl(self.id, v)
+        BodyRuntimeHandle::set_linear_velocity(self, v)
     }
 
     pub fn try_set_linear_velocity<V: Into<Vec2>>(&mut self, v: V) -> ApiResult<()> {
-        self.check_valid()?;
-        body_set_linear_velocity_impl(self.id, v);
-        Ok(())
+        BodyRuntimeHandle::try_set_linear_velocity(self, v)
     }
 
     pub fn set_angular_velocity(&mut self, w: f32) {
-        self.assert_valid();
-        body_set_angular_velocity_impl(self.id, w)
+        BodyRuntimeHandle::set_angular_velocity(self, w)
     }
 
     pub fn try_set_angular_velocity(&mut self, w: f32) -> ApiResult<()> {
-        self.check_valid()?;
-        body_set_angular_velocity_impl(self.id, w);
-        Ok(())
+        BodyRuntimeHandle::try_set_angular_velocity(self, w)
     }
 
     pub fn set_target_transform(&mut self, target: crate::Transform, time_step: f32, wake: bool) {
-        self.assert_valid();
-        body_set_target_transform_impl(self.id, target, time_step, wake);
+        BodyRuntimeHandle::set_target_transform(self, target, time_step, wake);
     }
 
     pub fn try_set_target_transform(
@@ -2289,47 +2899,44 @@ impl<'w> Body<'w> {
         time_step: f32,
         wake: bool,
     ) -> ApiResult<()> {
-        self.check_valid()?;
-        body_set_target_transform_impl(self.id, target, time_step, wake);
-        Ok(())
+        BodyRuntimeHandle::try_set_target_transform(self, target, time_step, wake)
     }
 
     pub fn contact_data(&self) -> Vec<ContactData> {
-        body_contact_data_checked_impl(self.id)
+        BodyRuntimeHandle::contact_data(self)
     }
 
     pub fn contact_data_into(&self, out: &mut Vec<ContactData>) {
-        body_contact_data_into_checked_impl(self.id, out);
+        BodyRuntimeHandle::contact_data_into(self, out);
     }
 
     pub fn try_contact_data(&self) -> ApiResult<Vec<ContactData>> {
-        try_body_contact_data_impl(self.id)
+        BodyRuntimeHandle::try_contact_data(self)
     }
 
     pub fn try_contact_data_into(&self, out: &mut Vec<ContactData>) -> ApiResult<()> {
-        try_body_contact_data_into_impl(self.id, out)
+        BodyRuntimeHandle::try_contact_data_into(self, out)
     }
 
     pub fn contact_data_raw(&self) -> Vec<ffi::b2ContactData> {
-        body_contact_data_raw_checked_impl(self.id)
+        BodyRuntimeHandle::contact_data_raw(self)
     }
 
     pub fn contact_data_raw_into(&self, out: &mut Vec<ffi::b2ContactData>) {
-        body_contact_data_raw_into_checked_impl(self.id, out);
+        BodyRuntimeHandle::contact_data_raw_into(self, out);
     }
 
     pub fn try_contact_data_raw(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
-        try_body_contact_data_raw_impl(self.id)
+        BodyRuntimeHandle::try_contact_data_raw(self)
     }
 
     pub fn try_contact_data_raw_into(&self, out: &mut Vec<ffi::b2ContactData>) -> ApiResult<()> {
-        try_body_contact_data_raw_into_impl(self.id, out)
+        BodyRuntimeHandle::try_contact_data_raw_into(self, out)
     }
 
     // Forces/impulses
     pub fn apply_force<F: Into<Vec2>, P: Into<Vec2>>(&mut self, force: F, point: P, wake: bool) {
-        self.assert_valid();
-        body_apply_force_impl(self.id, force, point, wake);
+        BodyRuntimeHandle::apply_force(self, force, point, wake);
     }
 
     pub fn try_apply_force<F: Into<Vec2>, P: Into<Vec2>>(
@@ -2338,13 +2945,10 @@ impl<'w> Body<'w> {
         point: P,
         wake: bool,
     ) -> ApiResult<()> {
-        self.check_valid()?;
-        body_apply_force_impl(self.id, force, point, wake);
-        Ok(())
+        BodyRuntimeHandle::try_apply_force(self, force, point, wake)
     }
     pub fn apply_force_to_center<V: Into<Vec2>>(&mut self, force: V, wake: bool) {
-        self.assert_valid();
-        body_apply_force_to_center_impl(self.id, force, wake);
+        BodyRuntimeHandle::apply_force_to_center(self, force, wake);
     }
 
     pub fn try_apply_force_to_center<V: Into<Vec2>>(
@@ -2352,30 +2956,22 @@ impl<'w> Body<'w> {
         force: V,
         wake: bool,
     ) -> ApiResult<()> {
-        self.check_valid()?;
-        body_apply_force_to_center_impl(self.id, force, wake);
-        Ok(())
+        BodyRuntimeHandle::try_apply_force_to_center(self, force, wake)
     }
     pub fn apply_torque(&mut self, torque: f32, wake: bool) {
-        self.assert_valid();
-        body_apply_torque_impl(self.id, torque, wake)
+        BodyRuntimeHandle::apply_torque(self, torque, wake)
     }
 
     pub fn try_apply_torque(&mut self, torque: f32, wake: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        body_apply_torque_impl(self.id, torque, wake);
-        Ok(())
+        BodyRuntimeHandle::try_apply_torque(self, torque, wake)
     }
 
     pub fn clear_forces(&mut self) {
-        self.assert_valid();
-        body_clear_forces_impl(self.id);
+        BodyRuntimeHandle::clear_forces(self);
     }
 
     pub fn try_clear_forces(&mut self) -> ApiResult<()> {
-        self.check_valid()?;
-        body_clear_forces_impl(self.id);
-        Ok(())
+        BodyRuntimeHandle::try_clear_forces(self)
     }
 
     pub fn apply_linear_impulse<F: Into<Vec2>, P: Into<Vec2>>(
@@ -2384,8 +2980,7 @@ impl<'w> Body<'w> {
         point: P,
         wake: bool,
     ) {
-        self.assert_valid();
-        body_apply_linear_impulse_impl(self.id, impulse, point, wake);
+        BodyRuntimeHandle::apply_linear_impulse(self, impulse, point, wake);
     }
 
     pub fn try_apply_linear_impulse<F: Into<Vec2>, P: Into<Vec2>>(
@@ -2394,13 +2989,10 @@ impl<'w> Body<'w> {
         point: P,
         wake: bool,
     ) -> ApiResult<()> {
-        self.check_valid()?;
-        body_apply_linear_impulse_impl(self.id, impulse, point, wake);
-        Ok(())
+        BodyRuntimeHandle::try_apply_linear_impulse(self, impulse, point, wake)
     }
     pub fn apply_linear_impulse_to_center<V: Into<Vec2>>(&mut self, impulse: V, wake: bool) {
-        self.assert_valid();
-        body_apply_linear_impulse_to_center_impl(self.id, impulse, wake);
+        BodyRuntimeHandle::apply_linear_impulse_to_center(self, impulse, wake);
     }
 
     pub fn try_apply_linear_impulse_to_center<V: Into<Vec2>>(
@@ -2408,385 +3000,290 @@ impl<'w> Body<'w> {
         impulse: V,
         wake: bool,
     ) -> ApiResult<()> {
-        self.check_valid()?;
-        body_apply_linear_impulse_to_center_impl(self.id, impulse, wake);
-        Ok(())
+        BodyRuntimeHandle::try_apply_linear_impulse_to_center(self, impulse, wake)
     }
     pub fn apply_angular_impulse(&mut self, impulse: f32, wake: bool) {
-        self.assert_valid();
-        body_apply_angular_impulse_impl(self.id, impulse, wake)
+        BodyRuntimeHandle::apply_angular_impulse(self, impulse, wake)
     }
 
     pub fn try_apply_angular_impulse(&mut self, impulse: f32, wake: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        body_apply_angular_impulse_impl(self.id, impulse, wake);
-        Ok(())
+        BodyRuntimeHandle::try_apply_angular_impulse(self, impulse, wake)
     }
 
     pub fn mass(&self) -> f32 {
-        self.assert_valid();
-        body_mass_impl(self.id)
+        BodyRuntimeHandle::mass(self)
     }
 
     pub fn try_mass(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(body_mass_impl(self.id))
+        BodyRuntimeHandle::try_mass(self)
     }
 
     pub fn rotational_inertia(&self) -> f32 {
-        self.assert_valid();
-        body_rotational_inertia_impl(self.id)
+        BodyRuntimeHandle::rotational_inertia(self)
     }
 
     pub fn try_rotational_inertia(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(body_rotational_inertia_impl(self.id))
+        BodyRuntimeHandle::try_rotational_inertia(self)
     }
 
     pub fn local_center_of_mass(&self) -> Vec2 {
-        self.assert_valid();
-        body_local_center_of_mass_impl(self.id)
+        BodyRuntimeHandle::local_center_of_mass(self)
     }
 
     pub fn try_local_center_of_mass(&self) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(body_local_center_of_mass_impl(self.id))
+        BodyRuntimeHandle::try_local_center_of_mass(self)
     }
 
     pub fn world_center_of_mass(&self) -> Vec2 {
-        self.assert_valid();
-        body_world_center_of_mass_impl(self.id)
+        BodyRuntimeHandle::world_center_of_mass(self)
     }
 
     pub fn try_world_center_of_mass(&self) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(body_world_center_of_mass_impl(self.id))
+        BodyRuntimeHandle::try_world_center_of_mass(self)
     }
 
     pub fn mass_data(&self) -> MassData {
-        self.assert_valid();
-        body_mass_data_impl(self.id)
+        BodyRuntimeHandle::mass_data(self)
     }
 
     pub fn try_mass_data(&self) -> ApiResult<MassData> {
-        self.check_valid()?;
-        Ok(body_mass_data_impl(self.id))
+        BodyRuntimeHandle::try_mass_data(self)
     }
 
     pub fn set_mass_data(&mut self, mass_data: MassData) {
-        self.assert_valid();
-        assert_mass_data_valid(mass_data);
-        body_set_mass_data_impl(self.id, mass_data);
+        BodyRuntimeHandle::set_mass_data(self, mass_data);
     }
 
     pub fn try_set_mass_data(&mut self, mass_data: MassData) -> ApiResult<()> {
-        self.check_valid()?;
-        check_mass_data_valid(mass_data)?;
-        body_set_mass_data_impl(self.id, mass_data);
-        Ok(())
+        BodyRuntimeHandle::try_set_mass_data(self, mass_data)
     }
 
     pub fn apply_mass_from_shapes(&mut self) {
-        self.assert_valid();
-        body_apply_mass_from_shapes_impl(self.id);
+        BodyRuntimeHandle::apply_mass_from_shapes(self);
     }
 
     pub fn try_apply_mass_from_shapes(&mut self) -> ApiResult<()> {
-        self.check_valid()?;
-        body_apply_mass_from_shapes_impl(self.id);
-        Ok(())
+        BodyRuntimeHandle::try_apply_mass_from_shapes(self)
     }
 
     pub fn shape_count(&self) -> i32 {
-        body_shape_count_checked_impl(self.id)
+        BodyRuntimeHandle::shape_count(self)
     }
 
     pub fn try_shape_count(&self) -> ApiResult<i32> {
-        try_body_shape_count_impl(self.id)
+        BodyRuntimeHandle::try_shape_count(self)
     }
 
     pub fn shapes(&self) -> Vec<ShapeId> {
-        body_shapes_checked_impl(self.id)
+        BodyRuntimeHandle::shapes(self)
     }
 
     pub fn shapes_into(&self, out: &mut Vec<ShapeId>) {
-        body_shapes_into_checked_impl(self.id, out);
+        BodyRuntimeHandle::shapes_into(self, out);
     }
 
     pub fn try_shapes(&self) -> ApiResult<Vec<ShapeId>> {
-        try_body_shapes_impl(self.id)
+        BodyRuntimeHandle::try_shapes(self)
     }
 
     pub fn try_shapes_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
-        try_body_shapes_into_impl(self.id, out)
+        BodyRuntimeHandle::try_shapes_into(self, out)
     }
 
     pub fn joint_count(&self) -> i32 {
-        body_joint_count_checked_impl(self.id)
+        BodyRuntimeHandle::joint_count(self)
     }
 
     pub fn try_joint_count(&self) -> ApiResult<i32> {
-        try_body_joint_count_impl(self.id)
+        BodyRuntimeHandle::try_joint_count(self)
     }
 
     pub fn joints(&self) -> Vec<JointId> {
-        body_joints_checked_impl(self.id)
+        BodyRuntimeHandle::joints(self)
     }
 
     pub fn joints_into(&self, out: &mut Vec<JointId>) {
-        body_joints_into_checked_impl(self.id, out);
+        BodyRuntimeHandle::joints_into(self, out);
     }
 
     pub fn try_joints(&self) -> ApiResult<Vec<JointId>> {
-        try_body_joints_impl(self.id)
+        BodyRuntimeHandle::try_joints(self)
     }
 
     pub fn try_joints_into(&self, out: &mut Vec<JointId>) -> ApiResult<()> {
-        try_body_joints_into_impl(self.id, out)
+        BodyRuntimeHandle::try_joints_into(self, out)
     }
 
     pub fn body_type(&self) -> BodyType {
-        self.assert_valid();
-        body_type_impl(self.id)
+        BodyRuntimeHandle::body_type(self)
     }
 
     pub fn try_body_type(&self) -> ApiResult<BodyType> {
-        self.check_valid()?;
-        Ok(body_type_impl(self.id))
+        BodyRuntimeHandle::try_body_type(self)
     }
     pub fn set_body_type(&mut self, t: BodyType) {
-        self.assert_valid();
-        body_set_type_impl(self.id, t)
+        BodyRuntimeHandle::set_body_type(self, t)
     }
 
     pub fn try_set_body_type(&mut self, t: BodyType) -> ApiResult<()> {
-        self.check_valid()?;
-        body_set_type_impl(self.id, t);
-        Ok(())
+        BodyRuntimeHandle::try_set_body_type(self, t)
     }
 
     pub fn gravity_scale(&self) -> f32 {
-        self.assert_valid();
-        body_gravity_scale_impl(self.id)
+        BodyRuntimeHandle::gravity_scale(self)
     }
     pub fn try_gravity_scale(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(body_gravity_scale_impl(self.id))
+        BodyRuntimeHandle::try_gravity_scale(self)
     }
     pub fn set_gravity_scale(&mut self, v: f32) {
-        self.assert_valid();
-        assert!(
-            crate::is_valid_float(v),
-            "gravity_scale must be finite, got {v}"
-        );
-        body_set_gravity_scale_impl(self.id, v)
+        BodyRuntimeHandle::set_gravity_scale(self, v)
     }
 
     pub fn try_set_gravity_scale(&mut self, v: f32) -> ApiResult<()> {
-        self.check_valid()?;
-        if !crate::is_valid_float(v) {
-            return Err(ApiError::InvalidArgument);
-        }
-        body_set_gravity_scale_impl(self.id, v);
-        Ok(())
+        BodyRuntimeHandle::try_set_gravity_scale(self, v)
     }
 
     pub fn linear_damping(&self) -> f32 {
-        self.assert_valid();
-        body_linear_damping_impl(self.id)
+        BodyRuntimeHandle::linear_damping(self)
     }
     pub fn try_linear_damping(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(body_linear_damping_impl(self.id))
+        BodyRuntimeHandle::try_linear_damping(self)
     }
     pub fn set_linear_damping(&mut self, v: f32) {
-        self.assert_valid();
-        assert_non_negative_finite_body_scalar("linear_damping", v);
-        body_set_linear_damping_impl(self.id, v)
+        BodyRuntimeHandle::set_linear_damping(self, v)
     }
     pub fn try_set_linear_damping(&mut self, v: f32) -> ApiResult<()> {
-        self.check_valid()?;
-        check_non_negative_finite_body_scalar(v)?;
-        body_set_linear_damping_impl(self.id, v);
-        Ok(())
+        BodyRuntimeHandle::try_set_linear_damping(self, v)
     }
     pub fn angular_damping(&self) -> f32 {
-        self.assert_valid();
-        body_angular_damping_impl(self.id)
+        BodyRuntimeHandle::angular_damping(self)
     }
     pub fn try_angular_damping(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(body_angular_damping_impl(self.id))
+        BodyRuntimeHandle::try_angular_damping(self)
     }
     pub fn set_angular_damping(&mut self, v: f32) {
-        self.assert_valid();
-        assert_non_negative_finite_body_scalar("angular_damping", v);
-        body_set_angular_damping_impl(self.id, v)
+        BodyRuntimeHandle::set_angular_damping(self, v)
     }
 
     pub fn try_set_angular_damping(&mut self, v: f32) -> ApiResult<()> {
-        self.check_valid()?;
-        check_non_negative_finite_body_scalar(v)?;
-        body_set_angular_damping_impl(self.id, v);
-        Ok(())
+        BodyRuntimeHandle::try_set_angular_damping(self, v)
     }
 
     pub fn enable_sleep(&mut self, flag: bool) {
-        self.assert_valid();
-        body_enable_sleep_impl(self.id, flag)
+        BodyRuntimeHandle::enable_sleep(self, flag)
     }
 
     pub fn try_enable_sleep(&mut self, flag: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        body_enable_sleep_impl(self.id, flag);
-        Ok(())
+        BodyRuntimeHandle::try_enable_sleep(self, flag)
     }
 
     pub fn is_sleep_enabled(&self) -> bool {
-        self.assert_valid();
-        body_is_sleep_enabled_impl(self.id)
+        BodyRuntimeHandle::is_sleep_enabled(self)
     }
 
     pub fn try_is_sleep_enabled(&self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(body_is_sleep_enabled_impl(self.id))
+        BodyRuntimeHandle::try_is_sleep_enabled(self)
     }
 
     pub fn set_sleep_threshold(&mut self, sleep_threshold: f32) {
-        self.assert_valid();
-        body_set_sleep_threshold_impl(self.id, sleep_threshold)
+        BodyRuntimeHandle::set_sleep_threshold(self, sleep_threshold)
     }
 
     pub fn try_set_sleep_threshold(&mut self, sleep_threshold: f32) -> ApiResult<()> {
-        self.check_valid()?;
-        body_set_sleep_threshold_impl(self.id, sleep_threshold);
-        Ok(())
+        BodyRuntimeHandle::try_set_sleep_threshold(self, sleep_threshold)
     }
 
     pub fn sleep_threshold(&self) -> f32 {
-        self.assert_valid();
-        body_sleep_threshold_impl(self.id)
+        BodyRuntimeHandle::sleep_threshold(self)
     }
 
     pub fn try_sleep_threshold(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(body_sleep_threshold_impl(self.id))
+        BodyRuntimeHandle::try_sleep_threshold(self)
     }
 
     pub fn is_awake(&self) -> bool {
-        self.assert_valid();
-        body_is_awake_impl(self.id)
+        BodyRuntimeHandle::is_awake(self)
     }
     pub fn set_awake(&mut self, awake: bool) {
-        self.assert_valid();
-        body_set_awake_impl(self.id, awake)
+        BodyRuntimeHandle::set_awake(self, awake)
     }
 
     pub fn try_is_awake(&self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(body_is_awake_impl(self.id))
+        BodyRuntimeHandle::try_is_awake(self)
     }
 
     pub fn try_set_awake(&mut self, awake: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        body_set_awake_impl(self.id, awake);
-        Ok(())
+        BodyRuntimeHandle::try_set_awake(self, awake)
     }
 
     pub fn is_enabled(&self) -> bool {
-        self.assert_valid();
-        body_is_enabled_impl(self.id)
+        BodyRuntimeHandle::is_enabled(self)
     }
     pub fn enable(&mut self) {
-        self.assert_valid();
-        body_enable_impl(self.id)
+        BodyRuntimeHandle::enable(self)
     }
     pub fn disable(&mut self) {
-        self.assert_valid();
-        body_disable_impl(self.id)
+        BodyRuntimeHandle::disable(self)
     }
 
     pub fn try_is_enabled(&self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(body_is_enabled_impl(self.id))
+        BodyRuntimeHandle::try_is_enabled(self)
     }
 
     pub fn try_enable(&mut self) -> ApiResult<()> {
-        self.check_valid()?;
-        body_enable_impl(self.id);
-        Ok(())
+        BodyRuntimeHandle::try_enable(self)
     }
 
     pub fn try_disable(&mut self) -> ApiResult<()> {
-        self.check_valid()?;
-        body_disable_impl(self.id);
-        Ok(())
+        BodyRuntimeHandle::try_disable(self)
     }
 
     pub fn is_bullet(&self) -> bool {
-        self.assert_valid();
-        body_is_bullet_impl(self.id)
+        BodyRuntimeHandle::is_bullet(self)
     }
     pub fn set_bullet(&mut self, flag: bool) {
-        self.assert_valid();
-        body_set_bullet_impl(self.id, flag)
+        BodyRuntimeHandle::set_bullet(self, flag)
     }
 
     pub fn try_is_bullet(&self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(body_is_bullet_impl(self.id))
+        BodyRuntimeHandle::try_is_bullet(self)
     }
 
     pub fn try_set_bullet(&mut self, flag: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        body_set_bullet_impl(self.id, flag);
-        Ok(())
+        BodyRuntimeHandle::try_set_bullet(self, flag)
     }
 
     pub fn enable_contact_events(&mut self, flag: bool) {
-        self.assert_valid();
-        body_enable_contact_events_impl(self.id, flag)
+        BodyRuntimeHandle::enable_contact_events(self, flag)
     }
 
     pub fn try_enable_contact_events(&mut self, flag: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        body_enable_contact_events_impl(self.id, flag);
-        Ok(())
+        BodyRuntimeHandle::try_enable_contact_events(self, flag)
     }
 
     pub fn enable_hit_events(&mut self, flag: bool) {
-        self.assert_valid();
-        body_enable_hit_events_impl(self.id, flag)
+        BodyRuntimeHandle::enable_hit_events(self, flag)
     }
 
     pub fn try_enable_hit_events(&mut self, flag: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        body_enable_hit_events_impl(self.id, flag);
-        Ok(())
+        BodyRuntimeHandle::try_enable_hit_events(self, flag)
     }
 
     // Names and user data (raw pointer)
     pub fn set_name(&mut self, name: &str) {
-        self.assert_valid();
-        let cs = CString::new(name).expect("body name contains an interior NUL byte");
-        body_set_name_impl(self.id, &cs)
+        BodyRuntimeHandle::set_name(self, name)
     }
 
     pub fn try_set_name(&mut self, name: &str) -> ApiResult<()> {
-        self.check_valid()?;
-        let cs = CString::new(name).map_err(|_| ApiError::NulByteInString)?;
-        body_set_name_impl(self.id, &cs);
-        Ok(())
+        BodyRuntimeHandle::try_set_name(self, name)
     }
 
     pub fn name(&self) -> Option<String> {
-        self.assert_valid();
-        body_name_impl(self.id)
+        BodyRuntimeHandle::name(self)
     }
 
     pub fn try_name(&self) -> ApiResult<Option<String>> {
-        self.check_valid()?;
-        Ok(body_name_impl(self.id))
+        BodyRuntimeHandle::try_name(self)
     }
     /// Set an opaque user data pointer on this body.
     ///
@@ -2797,7 +3294,7 @@ impl<'w> Body<'w> {
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn set_user_data_ptr_raw(&mut self, p: *mut c_void) {
-        unsafe { body_set_user_data_ptr_raw_checked_impl(self.core.as_ref(), self.id, p) }
+        unsafe { BodyRuntimeHandle::set_user_data_ptr_raw(self, p) }
     }
 
     /// Set an opaque user data pointer on this body.
@@ -2807,14 +3304,14 @@ impl<'w> Body<'w> {
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn try_set_user_data_ptr_raw(&mut self, p: *mut c_void) -> ApiResult<()> {
-        unsafe { try_body_set_user_data_ptr_raw_impl(self.core.as_ref(), self.id, p) }
+        unsafe { BodyRuntimeHandle::try_set_user_data_ptr_raw(self, p) }
     }
     pub fn user_data_ptr_raw(&self) -> *mut c_void {
-        body_user_data_ptr_raw_checked_impl(self.id)
+        BodyRuntimeHandle::user_data_ptr_raw(self)
     }
 
     pub fn try_user_data_ptr_raw(&self) -> ApiResult<*mut c_void> {
-        try_body_user_data_ptr_raw_impl(self.id)
+        BodyRuntimeHandle::try_user_data_ptr_raw(self)
     }
 
     /// Set typed user data on this body.
@@ -2822,50 +3319,50 @@ impl<'w> Body<'w> {
     /// This stores a `Box<T>` internally and sets Box2D's user data pointer to it. The allocation
     /// is automatically freed when cleared or when the body is destroyed.
     pub fn set_user_data<T: 'static>(&mut self, value: T) {
-        body_set_user_data_checked_impl(self.core.as_ref(), self.id, value);
+        BodyRuntimeHandle::set_user_data(self, value);
     }
 
     pub fn try_set_user_data<T: 'static>(&mut self, value: T) -> ApiResult<()> {
-        try_body_set_user_data_checked_impl(self.core.as_ref(), self.id, value)
+        BodyRuntimeHandle::try_set_user_data(self, value)
     }
 
     /// Clear typed user data on this body. Returns whether any typed data was present.
     pub fn clear_user_data(&mut self) -> bool {
-        body_clear_user_data_checked_impl(self.core.as_ref(), self.id)
+        BodyRuntimeHandle::clear_user_data(self)
     }
 
     pub fn try_clear_user_data(&mut self) -> ApiResult<bool> {
-        try_body_clear_user_data_checked_impl(self.core.as_ref(), self.id)
+        BodyRuntimeHandle::try_clear_user_data(self)
     }
 
     pub fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
-        body_with_user_data_checked_impl(self.core.as_ref(), self.id, f)
+        BodyRuntimeHandle::with_user_data(self, f)
     }
 
     pub fn try_with_user_data<T: 'static, R>(
         &self,
         f: impl FnOnce(&T) -> R,
     ) -> ApiResult<Option<R>> {
-        try_body_with_user_data_checked_impl(self.core.as_ref(), self.id, f)
+        BodyRuntimeHandle::try_with_user_data(self, f)
     }
 
     pub fn with_user_data_mut<T: 'static, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
-        body_with_user_data_mut_checked_impl(self.core.as_ref(), self.id, f)
+        BodyRuntimeHandle::with_user_data_mut(self, f)
     }
 
     pub fn try_with_user_data_mut<T: 'static, R>(
         &mut self,
         f: impl FnOnce(&mut T) -> R,
     ) -> ApiResult<Option<R>> {
-        try_body_with_user_data_mut_checked_impl(self.core.as_ref(), self.id, f)
+        BodyRuntimeHandle::try_with_user_data_mut(self, f)
     }
 
     pub fn take_user_data<T: 'static>(&mut self) -> Option<T> {
-        body_take_user_data_checked_impl(self.core.as_ref(), self.id)
+        BodyRuntimeHandle::take_user_data(self)
     }
 
     pub fn try_take_user_data<T: 'static>(&mut self) -> ApiResult<Option<T>> {
-        try_body_take_user_data_checked_impl(self.core.as_ref(), self.id)
+        BodyRuntimeHandle::try_take_user_data(self)
     }
 
     /// Borrow the raw id for ID-style APIs.

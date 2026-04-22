@@ -100,6 +100,7 @@
 - [x] Make `Filter` use explicit raw conversions instead of implicit `From<ffi::b2Filter>` impls.
 - [x] Consolidate shared `Shape` / `OwnedShape` internals for geometry, material, filter, and sensor-capacity accessors.
 - [x] Consolidate shared `Body` / `OwnedBody` internals for state, transform, force/impulse, mass, and common flag accessors.
+- [x] Collapse the mirrored `Body` / `OwnedBody` runtime wrappers behind one private handle trait while keeping ownership-only seams (`core_arc`, `as_id`, destroy/drop) explicit.
 - [x] Consolidate shared `Chain` / `OwnedChain` internals for validity, segment/material access, and common raw escape hatches.
 - [x] Collapse the mirrored `Chain` / `OwnedChain` runtime wrapper bodies behind one private handle trait so checked world-id, validity, segment, and material forwarding cannot drift again.
 - [x] Collapse the mirrored `Shape` / `OwnedShape` runtime wrappers behind one private handle trait while keeping explicit ownership-only seams (`as_id`, destroy/drop, `update_body_mass_on_drop`) separate.
