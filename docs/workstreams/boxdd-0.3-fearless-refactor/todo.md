@@ -101,6 +101,8 @@
 - [x] Consolidate shared `Shape` / `OwnedShape` internals for geometry, material, filter, and sensor-capacity accessors.
 - [x] Consolidate shared `Body` / `OwnedBody` internals for state, transform, force/impulse, mass, and common flag accessors.
 - [x] Consolidate shared `Chain` / `OwnedChain` internals for validity, segment/material access, and common raw escape hatches.
+- [x] Collapse the mirrored `Chain` / `OwnedChain` runtime wrapper bodies behind one private handle trait so checked world-id, validity, segment, and material forwarding cannot drift again.
+- [x] Collapse the mirrored `Shape` / `OwnedShape` runtime wrappers behind one private handle trait while keeping explicit ownership-only seams (`as_id`, destroy/drop, `update_body_mass_on_drop`) separate.
 - [x] Normalize live chain surface-material counts and indexing around visible segments so open-chain ghost placeholder entries no longer leak through the safe runtime API.
 - [x] Front-load obvious Box2D assert preconditions in the safe runtime surface so shape numeric setters and joint range/limit setters return recoverable errors instead of depending on upstream assert builds.
 - [x] Front-load obvious creation-time definition preconditions in the safe wrapper (`BodyDef`, `ShapeDef`, shared `JointBase`, and concrete joint defs), and fix `JointBase::default()` to mirror upstream Box2D defaults instead of a partial zeroed approximation.

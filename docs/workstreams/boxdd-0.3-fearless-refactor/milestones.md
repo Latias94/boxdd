@@ -51,6 +51,8 @@ Scope:
 - review `World` / `WorldHandle` duplication and consolidate the mirrored query surface where the API intentionally stays symmetric
 - review owned/scoped handle duplication outside the hottest paths
 - consolidate the most mechanical `Shape` / `OwnedShape`, `Body` / `OwnedBody`, and `Chain` / `OwnedChain` internals behind shared private helpers
+- collapse the mirrored `Chain` / `OwnedChain` runtime wrapper bodies behind one private handle layer so checked read/write forwarding keeps one internal source of truth
+- collapse the mirrored `Shape` / `OwnedShape` runtime wrapper bodies behind one private handle layer while keeping explicit ownership-only seams (`as_id`, destroy/drop, `update_body_mass_on_drop`) separate
 - close the `OwnedBody` local creation parity gap so stored body handles can create owned shapes and chains directly instead of detouring through `World::create_*_for_owned`
 - collapse the follow-up `Body` / `OwnedBody` local creation convenience plumbing so the new parity layer does not reintroduce internal drift
 - delete the now-obsolete world-level shape-create forwarding layer and collapse world-owned creation wrappers onto the same owned-handle helper pattern
@@ -73,6 +75,8 @@ Exit criteria:
 - no obvious per-frame allocation trap remains undocumented or unaddressed on the main safe surface
 - overlap queries support all three intended hot-path styles: owned `Vec`, reusable-buffer `*_into`, and zero-allocation `visit_*`
 - high-churn owned/scoped handle pairs no longer duplicate the same FFI access logic across every hot-path accessor
+- mirrored `Chain` / `OwnedChain` runtime wrappers no longer duplicate checked world-id, validity, segment, and material forwarding logic
+- mirrored `Shape` / `OwnedShape` runtime wrappers now share one internal source for validity, identity, event toggles, geometry, material/filter state, user-data, and hot-path contact/sensor forwarding, while ownership-only behavior stays explicit
 - `OwnedBody` no longer forces local shape/chain creation back through world-owned helper entrypoints when the safe surface already owns the relationship
 - the `OwnedBody` parity work does not leave a second duplicated convenience layer behind; local create helpers now share one private wrapper path
 - world-level owned creation helpers no longer add a separate forwarding layer on top of the shared body-attached shape/chain creation internals

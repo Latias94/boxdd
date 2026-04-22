@@ -268,6 +268,90 @@ fn try_destroy_scoped_chain_impl(
     Ok(())
 }
 
+trait ChainRuntimeHandle {
+    fn chain_id(&self) -> ChainId;
+
+    fn handle_world_id_raw(&self) -> ffi::b2WorldId {
+        chain_world_id_checked_impl(self.chain_id())
+    }
+
+    fn try_handle_world_id_raw(&self) -> ApiResult<ffi::b2WorldId> {
+        try_chain_world_id_raw_impl(self.chain_id())
+    }
+
+    fn handle_is_valid(&self) -> bool {
+        chain_is_valid_checked_impl(self.chain_id())
+    }
+
+    fn try_handle_is_valid(&self) -> ApiResult<bool> {
+        try_chain_is_valid_impl(self.chain_id())
+    }
+
+    fn handle_segment_count(&self) -> i32 {
+        chain_segment_count_checked_impl(self.chain_id())
+    }
+
+    fn try_handle_segment_count(&self) -> ApiResult<i32> {
+        try_chain_segment_count_impl(self.chain_id())
+    }
+
+    fn handle_segments(&self) -> Vec<ShapeId> {
+        chain_segments_checked_impl(self.chain_id())
+    }
+
+    fn handle_segments_into(&self, out: &mut Vec<ShapeId>) {
+        chain_segments_into_checked_impl(self.chain_id(), out);
+    }
+
+    fn try_handle_segments(&self) -> ApiResult<Vec<ShapeId>> {
+        try_chain_segments_impl(self.chain_id())
+    }
+
+    fn try_handle_segments_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
+        try_chain_segments_into_impl(self.chain_id(), out)
+    }
+
+    fn handle_surface_material_count(&self) -> i32 {
+        chain_surface_material_count_checked_impl(self.chain_id())
+    }
+
+    fn try_handle_surface_material_count(&self) -> ApiResult<i32> {
+        try_chain_surface_material_count_impl(self.chain_id())
+    }
+
+    fn handle_set_surface_material(&mut self, index: i32, material: &SurfaceMaterial) {
+        chain_set_surface_material_checked_impl(self.chain_id(), index, material)
+    }
+
+    fn try_handle_set_surface_material(
+        &mut self,
+        index: i32,
+        material: &SurfaceMaterial,
+    ) -> ApiResult<()> {
+        try_chain_set_surface_material_impl(self.chain_id(), index, material)
+    }
+
+    fn handle_surface_material(&self, index: i32) -> SurfaceMaterial {
+        chain_surface_material_checked_impl(self.chain_id(), index)
+    }
+
+    fn try_handle_surface_material(&self, index: i32) -> ApiResult<SurfaceMaterial> {
+        try_chain_surface_material_impl(self.chain_id(), index)
+    }
+}
+
+impl ChainRuntimeHandle for OwnedChain {
+    fn chain_id(&self) -> ChainId {
+        self.id
+    }
+}
+
+impl<'w> ChainRuntimeHandle for Chain<'w> {
+    fn chain_id(&self) -> ChainId {
+        self.id
+    }
+}
+
 impl OwnedChain {
     pub(crate) fn new(core: Arc<crate::core::world_core::WorldCore>, id: ChainId) -> Self {
         core.owned_chains
@@ -285,19 +369,19 @@ impl OwnedChain {
     }
 
     pub fn world_id_raw(&self) -> ffi::b2WorldId {
-        chain_world_id_checked_impl(self.id)
+        ChainRuntimeHandle::handle_world_id_raw(self)
     }
 
     pub fn try_world_id_raw(&self) -> ApiResult<ffi::b2WorldId> {
-        try_chain_world_id_raw_impl(self.id)
+        ChainRuntimeHandle::try_handle_world_id_raw(self)
     }
 
     pub fn is_valid(&self) -> bool {
-        chain_is_valid_checked_impl(self.id)
+        ChainRuntimeHandle::handle_is_valid(self)
     }
 
     pub fn try_is_valid(&self) -> ApiResult<bool> {
-        try_chain_is_valid_impl(self.id)
+        ChainRuntimeHandle::try_handle_is_valid(self)
     }
 
     /// Borrow the raw id for ID-style APIs.
@@ -306,28 +390,28 @@ impl OwnedChain {
     }
 
     pub fn segment_count(&self) -> i32 {
-        chain_segment_count_checked_impl(self.id)
+        ChainRuntimeHandle::handle_segment_count(self)
     }
 
     pub fn try_segment_count(&self) -> ApiResult<i32> {
-        try_chain_segment_count_impl(self.id)
+        ChainRuntimeHandle::try_handle_segment_count(self)
     }
 
     /// Collect all segment shape ids for this chain.
     pub fn segments(&self) -> Vec<ShapeId> {
-        chain_segments_checked_impl(self.id)
+        ChainRuntimeHandle::handle_segments(self)
     }
 
     pub fn segments_into(&self, out: &mut Vec<ShapeId>) {
-        chain_segments_into_checked_impl(self.id, out);
+        ChainRuntimeHandle::handle_segments_into(self, out);
     }
 
     pub fn try_segments(&self) -> ApiResult<Vec<ShapeId>> {
-        try_chain_segments_impl(self.id)
+        ChainRuntimeHandle::try_handle_segments(self)
     }
 
     pub fn try_segments_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
-        try_chain_segments_into_impl(self.id, out)
+        ChainRuntimeHandle::try_handle_segments_into(self, out)
     }
 
     /// Number of runtime-visible material slots on this chain.
@@ -335,29 +419,29 @@ impl OwnedChain {
     /// Open chains normalize Box2D's ghost-point placeholder layout down to the number of
     /// live segments. Single-material chains still report `1`.
     pub fn surface_material_count(&self) -> i32 {
-        chain_surface_material_count_checked_impl(self.id)
+        ChainRuntimeHandle::handle_surface_material_count(self)
     }
     pub fn try_surface_material_count(&self) -> ApiResult<i32> {
-        try_chain_surface_material_count_impl(self.id)
+        ChainRuntimeHandle::try_handle_surface_material_count(self)
     }
     /// Set a runtime-visible material slot by segment index.
     pub fn set_surface_material(&mut self, index: i32, material: &SurfaceMaterial) {
-        chain_set_surface_material_checked_impl(self.id, index, material)
+        ChainRuntimeHandle::handle_set_surface_material(self, index, material)
     }
     pub fn try_set_surface_material(
         &mut self,
         index: i32,
         material: &SurfaceMaterial,
     ) -> ApiResult<()> {
-        try_chain_set_surface_material_impl(self.id, index, material)
+        ChainRuntimeHandle::try_handle_set_surface_material(self, index, material)
     }
     /// Read a runtime-visible material slot by segment index.
     pub fn surface_material(&self, index: i32) -> SurfaceMaterial {
-        chain_surface_material_checked_impl(self.id, index)
+        ChainRuntimeHandle::handle_surface_material(self, index)
     }
 
     pub fn try_surface_material(&self, index: i32) -> ApiResult<SurfaceMaterial> {
-        try_chain_surface_material_impl(self.id, index)
+        ChainRuntimeHandle::try_handle_surface_material(self, index)
     }
 
     pub fn into_id(mut self) -> ChainId {
@@ -401,44 +485,44 @@ impl<'w> Chain<'w> {
     }
 
     pub fn world_id_raw(&self) -> ffi::b2WorldId {
-        chain_world_id_checked_impl(self.id)
+        ChainRuntimeHandle::handle_world_id_raw(self)
     }
 
     pub fn try_world_id_raw(&self) -> ApiResult<ffi::b2WorldId> {
-        try_chain_world_id_raw_impl(self.id)
+        ChainRuntimeHandle::try_handle_world_id_raw(self)
     }
 
     pub fn is_valid(&self) -> bool {
-        chain_is_valid_checked_impl(self.id)
+        ChainRuntimeHandle::handle_is_valid(self)
     }
 
     pub fn try_is_valid(&self) -> ApiResult<bool> {
-        try_chain_is_valid_impl(self.id)
+        ChainRuntimeHandle::try_handle_is_valid(self)
     }
 
     pub fn segment_count(&self) -> i32 {
-        chain_segment_count_checked_impl(self.id)
+        ChainRuntimeHandle::handle_segment_count(self)
     }
 
     pub fn try_segment_count(&self) -> ApiResult<i32> {
-        try_chain_segment_count_impl(self.id)
+        ChainRuntimeHandle::try_handle_segment_count(self)
     }
 
     /// Collect all segment shape ids for this chain.
     pub fn segments(&self) -> Vec<ShapeId> {
-        chain_segments_checked_impl(self.id)
+        ChainRuntimeHandle::handle_segments(self)
     }
 
     pub fn segments_into(&self, out: &mut Vec<ShapeId>) {
-        chain_segments_into_checked_impl(self.id, out);
+        ChainRuntimeHandle::handle_segments_into(self, out);
     }
 
     pub fn try_segments(&self) -> ApiResult<Vec<ShapeId>> {
-        try_chain_segments_impl(self.id)
+        ChainRuntimeHandle::try_handle_segments(self)
     }
 
     pub fn try_segments_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
-        try_chain_segments_into_impl(self.id, out)
+        ChainRuntimeHandle::try_handle_segments_into(self, out)
     }
 
     /// Number of runtime-visible material slots on this chain.
@@ -446,15 +530,15 @@ impl<'w> Chain<'w> {
     /// Open chains normalize Box2D's ghost-point placeholder layout down to the number of
     /// live segments. Single-material chains still report `1`.
     pub fn surface_material_count(&self) -> i32 {
-        chain_surface_material_count_checked_impl(self.id)
+        ChainRuntimeHandle::handle_surface_material_count(self)
     }
     pub fn try_surface_material_count(&self) -> ApiResult<i32> {
-        try_chain_surface_material_count_impl(self.id)
+        ChainRuntimeHandle::try_handle_surface_material_count(self)
     }
 
     /// Set a runtime-visible material slot by segment index.
     pub fn set_surface_material(&mut self, index: i32, material: &SurfaceMaterial) {
-        chain_set_surface_material_checked_impl(self.id, index, material)
+        ChainRuntimeHandle::handle_set_surface_material(self, index, material)
     }
 
     pub fn try_set_surface_material(
@@ -462,16 +546,16 @@ impl<'w> Chain<'w> {
         index: i32,
         material: &SurfaceMaterial,
     ) -> ApiResult<()> {
-        try_chain_set_surface_material_impl(self.id, index, material)
+        ChainRuntimeHandle::try_handle_set_surface_material(self, index, material)
     }
 
     /// Read a runtime-visible material slot by segment index.
     pub fn surface_material(&self, index: i32) -> SurfaceMaterial {
-        chain_surface_material_checked_impl(self.id, index)
+        ChainRuntimeHandle::handle_surface_material(self, index)
     }
 
     pub fn try_surface_material(&self, index: i32) -> ApiResult<SurfaceMaterial> {
-        try_chain_surface_material_impl(self.id, index)
+        ChainRuntimeHandle::try_handle_surface_material(self, index)
     }
 
     /// Destroy this chain immediately.

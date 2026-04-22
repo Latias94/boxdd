@@ -1303,6 +1303,587 @@ fn try_shape_take_user_data_checked_impl<T: 'static>(
     shape_take_user_data_impl(world_core, id)
 }
 
+trait ShapeRuntimeHandle {
+    fn shape_id(&self) -> ShapeId;
+    fn shape_world_core(&self) -> &crate::core::world_core::WorldCore;
+
+    #[inline]
+    fn assert_valid(&self) {
+        crate::core::debug_checks::assert_shape_valid(self.shape_id());
+    }
+
+    #[inline]
+    fn check_valid(&self) -> ApiResult<()> {
+        crate::core::debug_checks::check_shape_valid(self.shape_id())
+    }
+
+    fn world_id_raw(&self) -> ffi::b2WorldId {
+        shape_world_id_checked_impl(self.shape_id())
+    }
+
+    fn try_world_id_raw(&self) -> ApiResult<ffi::b2WorldId> {
+        try_shape_world_id_raw_impl(self.shape_id())
+    }
+
+    fn parent_chain_id(&self) -> Option<ChainId> {
+        shape_parent_chain_id_checked_impl(self.shape_id())
+    }
+
+    fn try_parent_chain_id(&self) -> ApiResult<Option<ChainId>> {
+        try_shape_parent_chain_id_impl(self.shape_id())
+    }
+
+    fn is_valid(&self) -> bool {
+        shape_is_valid_checked_impl(self.shape_id())
+    }
+
+    fn try_is_valid(&self) -> ApiResult<bool> {
+        try_shape_is_valid_impl(self.shape_id())
+    }
+
+    unsafe fn set_user_data_ptr_raw(&mut self, p: *mut c_void) {
+        unsafe {
+            shape_set_user_data_ptr_raw_checked_impl(self.shape_world_core(), self.shape_id(), p)
+        }
+    }
+
+    unsafe fn try_set_user_data_ptr_raw(&mut self, p: *mut c_void) -> ApiResult<()> {
+        unsafe { try_shape_set_user_data_ptr_raw_impl(self.shape_world_core(), self.shape_id(), p) }
+    }
+
+    fn user_data_ptr_raw(&self) -> *mut c_void {
+        shape_user_data_ptr_raw_checked_impl(self.shape_id())
+    }
+
+    fn try_user_data_ptr_raw(&self) -> ApiResult<*mut c_void> {
+        try_shape_user_data_ptr_raw_impl(self.shape_id())
+    }
+
+    fn set_user_data<T: 'static>(&mut self, value: T) {
+        shape_set_user_data_checked_impl(self.shape_world_core(), self.shape_id(), value);
+    }
+
+    fn try_set_user_data<T: 'static>(&mut self, value: T) -> ApiResult<()> {
+        try_shape_set_user_data_checked_impl(self.shape_world_core(), self.shape_id(), value)
+    }
+
+    fn clear_user_data(&mut self) -> bool {
+        shape_clear_user_data_checked_impl(self.shape_world_core(), self.shape_id())
+    }
+
+    fn try_clear_user_data(&mut self) -> ApiResult<bool> {
+        try_shape_clear_user_data_checked_impl(self.shape_world_core(), self.shape_id())
+    }
+
+    fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
+        shape_with_user_data_checked_impl(self.shape_world_core(), self.shape_id(), f)
+    }
+
+    fn try_with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> ApiResult<Option<R>> {
+        try_shape_with_user_data_checked_impl(self.shape_world_core(), self.shape_id(), f)
+    }
+
+    fn with_user_data_mut<T: 'static, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
+        shape_with_user_data_mut_checked_impl(self.shape_world_core(), self.shape_id(), f)
+    }
+
+    fn try_with_user_data_mut<T: 'static, R>(
+        &mut self,
+        f: impl FnOnce(&mut T) -> R,
+    ) -> ApiResult<Option<R>> {
+        try_shape_with_user_data_mut_checked_impl(self.shape_world_core(), self.shape_id(), f)
+    }
+
+    fn take_user_data<T: 'static>(&mut self) -> Option<T> {
+        shape_take_user_data_checked_impl(self.shape_world_core(), self.shape_id())
+    }
+
+    fn try_take_user_data<T: 'static>(&mut self) -> ApiResult<Option<T>> {
+        try_shape_take_user_data_checked_impl(self.shape_world_core(), self.shape_id())
+    }
+
+    fn contact_data(&self) -> Vec<ContactData> {
+        shape_contact_data_checked_impl(self.shape_id())
+    }
+
+    fn contact_data_into(&self, out: &mut Vec<ContactData>) {
+        shape_contact_data_into_checked_impl(self.shape_id(), out);
+    }
+
+    fn try_contact_data(&self) -> ApiResult<Vec<ContactData>> {
+        try_shape_contact_data_impl(self.shape_id())
+    }
+
+    fn try_contact_data_into(&self, out: &mut Vec<ContactData>) -> ApiResult<()> {
+        try_shape_contact_data_into_impl(self.shape_id(), out)
+    }
+
+    fn contact_data_raw(&self) -> Vec<ffi::b2ContactData> {
+        shape_contact_data_raw_checked_impl(self.shape_id())
+    }
+
+    fn contact_data_raw_into(&self, out: &mut Vec<ffi::b2ContactData>) {
+        shape_contact_data_raw_into_checked_impl(self.shape_id(), out);
+    }
+
+    fn try_contact_data_raw(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
+        try_shape_contact_data_raw_impl(self.shape_id())
+    }
+
+    fn try_contact_data_raw_into(&self, out: &mut Vec<ffi::b2ContactData>) -> ApiResult<()> {
+        try_shape_contact_data_raw_into_impl(self.shape_id(), out)
+    }
+
+    fn sensor_capacity(&self) -> i32 {
+        shape_sensor_capacity_checked_impl(self.shape_id())
+    }
+
+    fn try_sensor_capacity(&self) -> ApiResult<i32> {
+        try_shape_sensor_capacity_impl(self.shape_id())
+    }
+
+    fn sensor_overlaps(&self) -> Vec<ShapeId> {
+        shape_sensor_overlaps_checked_impl(self.shape_id())
+    }
+
+    fn sensor_overlaps_into(&self, out: &mut Vec<ShapeId>) {
+        shape_sensor_overlaps_into_checked_impl(self.shape_id(), out);
+    }
+
+    fn try_sensor_overlaps(&self) -> ApiResult<Vec<ShapeId>> {
+        try_shape_sensor_overlaps_impl(self.shape_id())
+    }
+
+    fn try_sensor_overlaps_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
+        try_shape_sensor_overlaps_into_impl(self.shape_id(), out)
+    }
+
+    fn sensor_overlaps_valid(&self) -> Vec<ShapeId> {
+        shape_sensor_overlaps_valid_checked_impl(self.shape_id())
+    }
+
+    fn try_sensor_overlaps_valid(&self) -> ApiResult<Vec<ShapeId>> {
+        try_shape_sensor_overlaps_valid_impl(self.shape_id())
+    }
+
+    fn sensor_overlaps_valid_into(&self, out: &mut Vec<ShapeId>) {
+        shape_sensor_overlaps_valid_into_checked_impl(self.shape_id(), out);
+    }
+
+    fn try_sensor_overlaps_valid_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
+        try_shape_sensor_overlaps_valid_into_impl(self.shape_id(), out)
+    }
+
+    fn is_sensor(&self) -> bool {
+        self.assert_valid();
+        shape_is_sensor_impl(self.shape_id())
+    }
+
+    fn try_is_sensor(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(shape_is_sensor_impl(self.shape_id()))
+    }
+
+    fn enable_sensor_events(&mut self, flag: bool) {
+        self.assert_valid();
+        shape_enable_sensor_events_impl(self.shape_id(), flag)
+    }
+
+    fn try_enable_sensor_events(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_enable_sensor_events_impl(self.shape_id(), flag);
+        Ok(())
+    }
+
+    fn sensor_events_enabled(&self) -> bool {
+        self.assert_valid();
+        shape_sensor_events_enabled_impl(self.shape_id())
+    }
+
+    fn try_sensor_events_enabled(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(shape_sensor_events_enabled_impl(self.shape_id()))
+    }
+
+    fn enable_contact_events(&mut self, flag: bool) {
+        self.assert_valid();
+        shape_enable_contact_events_impl(self.shape_id(), flag)
+    }
+
+    fn try_enable_contact_events(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_enable_contact_events_impl(self.shape_id(), flag);
+        Ok(())
+    }
+
+    fn contact_events_enabled(&self) -> bool {
+        self.assert_valid();
+        shape_contact_events_enabled_impl(self.shape_id())
+    }
+
+    fn try_contact_events_enabled(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(shape_contact_events_enabled_impl(self.shape_id()))
+    }
+
+    fn enable_pre_solve_events(&mut self, flag: bool) {
+        self.assert_valid();
+        shape_enable_pre_solve_events_impl(self.shape_id(), flag)
+    }
+
+    fn try_enable_pre_solve_events(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_enable_pre_solve_events_impl(self.shape_id(), flag);
+        Ok(())
+    }
+
+    fn pre_solve_events_enabled(&self) -> bool {
+        self.assert_valid();
+        shape_pre_solve_events_enabled_impl(self.shape_id())
+    }
+
+    fn try_pre_solve_events_enabled(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(shape_pre_solve_events_enabled_impl(self.shape_id()))
+    }
+
+    fn enable_hit_events(&mut self, flag: bool) {
+        self.assert_valid();
+        shape_enable_hit_events_impl(self.shape_id(), flag)
+    }
+
+    fn try_enable_hit_events(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_enable_hit_events_impl(self.shape_id(), flag);
+        Ok(())
+    }
+
+    fn hit_events_enabled(&self) -> bool {
+        self.assert_valid();
+        shape_hit_events_enabled_impl(self.shape_id())
+    }
+
+    fn try_hit_events_enabled(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(shape_hit_events_enabled_impl(self.shape_id()))
+    }
+
+    fn shape_type(&self) -> ShapeType {
+        self.assert_valid();
+        shape_type_impl(self.shape_id())
+    }
+
+    fn try_shape_type(&self) -> ApiResult<ShapeType> {
+        self.check_valid()?;
+        Ok(shape_type_impl(self.shape_id()))
+    }
+
+    fn shape_type_raw(&self) -> ffi::b2ShapeType {
+        self.assert_valid();
+        shape_type_raw_impl(self.shape_id())
+    }
+
+    fn try_shape_type_raw(&self) -> ApiResult<ffi::b2ShapeType> {
+        self.check_valid()?;
+        Ok(shape_type_raw_impl(self.shape_id()))
+    }
+
+    fn body_id(&self) -> BodyId {
+        self.assert_valid();
+        shape_body_id_impl(self.shape_id())
+    }
+
+    fn try_body_id(&self) -> ApiResult<BodyId> {
+        self.check_valid()?;
+        Ok(shape_body_id_impl(self.shape_id()))
+    }
+
+    fn circle(&self) -> Circle {
+        self.assert_valid();
+        shape_circle_impl(self.shape_id())
+    }
+
+    fn segment(&self) -> Segment {
+        self.assert_valid();
+        shape_segment_impl(self.shape_id())
+    }
+
+    fn chain_segment(&self) -> ChainSegment {
+        self.assert_valid();
+        shape_chain_segment_impl(self.shape_id())
+    }
+
+    fn capsule(&self) -> Capsule {
+        self.assert_valid();
+        shape_capsule_impl(self.shape_id())
+    }
+
+    fn polygon(&self) -> Polygon {
+        self.assert_valid();
+        shape_polygon_impl(self.shape_id())
+    }
+
+    fn closest_point<V: Into<Vec2>>(&self, target: V) -> Vec2 {
+        self.assert_valid();
+        shape_closest_point_impl(self.shape_id(), target)
+    }
+
+    fn try_closest_point<V: Into<Vec2>>(&self, target: V) -> ApiResult<Vec2> {
+        self.check_valid()?;
+        Ok(shape_closest_point_impl(self.shape_id(), target))
+    }
+
+    fn aabb(&self) -> Aabb {
+        self.assert_valid();
+        shape_aabb_impl(self.shape_id())
+    }
+
+    fn try_aabb(&self) -> ApiResult<Aabb> {
+        self.check_valid()?;
+        Ok(shape_aabb_impl(self.shape_id()))
+    }
+
+    fn test_point<V: Into<Vec2>>(&self, point: V) -> bool {
+        self.assert_valid();
+        shape_test_point_impl(self.shape_id(), point)
+    }
+
+    fn try_test_point<V: Into<Vec2>>(&self, point: V) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(shape_test_point_impl(self.shape_id(), point))
+    }
+
+    fn ray_cast<VO: Into<Vec2>, VT: Into<Vec2>>(&self, origin: VO, translation: VT) -> CastOutput {
+        self.assert_valid();
+        shape_ray_cast_impl(self.shape_id(), origin, translation)
+    }
+
+    fn try_ray_cast<VO: Into<Vec2>, VT: Into<Vec2>>(
+        &self,
+        origin: VO,
+        translation: VT,
+    ) -> ApiResult<CastOutput> {
+        self.check_valid()?;
+        Ok(shape_ray_cast_impl(self.shape_id(), origin, translation))
+    }
+
+    fn apply_wind<V: Into<Vec2>>(&mut self, wind: V, drag: f32, lift: f32, wake: bool) {
+        self.assert_valid();
+        shape_apply_wind_impl(self.shape_id(), wind, drag, lift, wake)
+    }
+
+    fn try_apply_wind<V: Into<Vec2>>(
+        &mut self,
+        wind: V,
+        drag: f32,
+        lift: f32,
+        wake: bool,
+    ) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_apply_wind_impl(self.shape_id(), wind, drag, lift, wake);
+        Ok(())
+    }
+
+    fn set_circle(&mut self, circle: &Circle) {
+        self.assert_valid();
+        assert_circle_geometry_valid(circle);
+        shape_set_circle_impl(self.shape_id(), circle)
+    }
+
+    fn try_set_circle(&mut self, circle: &Circle) -> ApiResult<()> {
+        self.check_valid()?;
+        check_circle_geometry_valid(circle)?;
+        shape_set_circle_impl(self.shape_id(), circle);
+        Ok(())
+    }
+
+    fn set_segment(&mut self, segment: &Segment) {
+        self.assert_valid();
+        assert_segment_geometry_valid(segment);
+        shape_set_segment_impl(self.shape_id(), segment)
+    }
+
+    fn try_set_segment(&mut self, segment: &Segment) -> ApiResult<()> {
+        self.check_valid()?;
+        check_segment_geometry_valid(segment)?;
+        shape_set_segment_impl(self.shape_id(), segment);
+        Ok(())
+    }
+
+    fn set_capsule(&mut self, capsule: &Capsule) {
+        self.assert_valid();
+        assert_capsule_geometry_valid(capsule);
+        shape_set_capsule_impl(self.shape_id(), capsule)
+    }
+
+    fn try_set_capsule(&mut self, capsule: &Capsule) -> ApiResult<()> {
+        self.check_valid()?;
+        check_capsule_geometry_valid(capsule)?;
+        shape_set_capsule_impl(self.shape_id(), capsule);
+        Ok(())
+    }
+
+    fn set_polygon(&mut self, polygon: &Polygon) {
+        self.assert_valid();
+        assert_polygon_geometry_valid(polygon);
+        shape_set_polygon_impl(self.shape_id(), polygon)
+    }
+
+    fn try_set_polygon(&mut self, polygon: &Polygon) -> ApiResult<()> {
+        self.check_valid()?;
+        check_polygon_geometry_valid(polygon)?;
+        shape_set_polygon_impl(self.shape_id(), polygon);
+        Ok(())
+    }
+
+    fn filter(&self) -> Filter {
+        self.assert_valid();
+        shape_filter_impl(self.shape_id())
+    }
+
+    fn try_filter(&self) -> ApiResult<Filter> {
+        self.check_valid()?;
+        Ok(shape_filter_impl(self.shape_id()))
+    }
+
+    fn set_filter(&mut self, filter: Filter) {
+        self.assert_valid();
+        shape_set_filter_impl(self.shape_id(), filter)
+    }
+
+    fn try_set_filter(&mut self, filter: Filter) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_set_filter_impl(self.shape_id(), filter);
+        Ok(())
+    }
+
+    fn set_density(&mut self, density: f32, update_body_mass: bool) {
+        shape_set_density_checked_impl(self.shape_id(), density, update_body_mass)
+    }
+
+    fn try_set_density(&mut self, density: f32, update_body_mass: bool) -> ApiResult<()> {
+        try_shape_set_density_checked_impl(self.shape_id(), density, update_body_mass)
+    }
+
+    fn density(&self) -> f32 {
+        self.assert_valid();
+        shape_density_impl(self.shape_id())
+    }
+
+    fn try_density(&self) -> ApiResult<f32> {
+        self.check_valid()?;
+        Ok(shape_density_impl(self.shape_id()))
+    }
+
+    fn mass_data(&self) -> MassData {
+        self.assert_valid();
+        shape_mass_data_impl(self.shape_id())
+    }
+
+    fn try_mass_data(&self) -> ApiResult<MassData> {
+        self.check_valid()?;
+        Ok(shape_mass_data_impl(self.shape_id()))
+    }
+
+    fn set_friction(&mut self, friction: f32) {
+        shape_set_friction_checked_impl(self.shape_id(), friction)
+    }
+
+    fn try_set_friction(&mut self, friction: f32) -> ApiResult<()> {
+        try_shape_set_friction_checked_impl(self.shape_id(), friction)
+    }
+
+    fn friction(&self) -> f32 {
+        self.assert_valid();
+        shape_friction_impl(self.shape_id())
+    }
+
+    fn try_friction(&self) -> ApiResult<f32> {
+        self.check_valid()?;
+        Ok(shape_friction_impl(self.shape_id()))
+    }
+
+    fn set_restitution(&mut self, restitution: f32) {
+        shape_set_restitution_checked_impl(self.shape_id(), restitution)
+    }
+
+    fn try_set_restitution(&mut self, restitution: f32) -> ApiResult<()> {
+        try_shape_set_restitution_checked_impl(self.shape_id(), restitution)
+    }
+
+    fn restitution(&self) -> f32 {
+        self.assert_valid();
+        shape_restitution_impl(self.shape_id())
+    }
+
+    fn try_restitution(&self) -> ApiResult<f32> {
+        self.check_valid()?;
+        Ok(shape_restitution_impl(self.shape_id()))
+    }
+
+    fn set_user_material(&mut self, material: u64) {
+        self.assert_valid();
+        shape_set_user_material_impl(self.shape_id(), material)
+    }
+
+    fn try_set_user_material(&mut self, material: u64) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_set_user_material_impl(self.shape_id(), material);
+        Ok(())
+    }
+
+    fn user_material(&self) -> u64 {
+        self.assert_valid();
+        shape_user_material_impl(self.shape_id())
+    }
+
+    fn try_user_material(&self) -> ApiResult<u64> {
+        self.check_valid()?;
+        Ok(shape_user_material_impl(self.shape_id()))
+    }
+
+    fn set_surface_material(&mut self, material: &SurfaceMaterial) {
+        self.assert_valid();
+        shape_set_surface_material_impl(self.shape_id(), material)
+    }
+
+    fn try_set_surface_material(&mut self, material: &SurfaceMaterial) -> ApiResult<()> {
+        self.check_valid()?;
+        shape_set_surface_material_impl(self.shape_id(), material);
+        Ok(())
+    }
+
+    fn surface_material(&self) -> SurfaceMaterial {
+        self.assert_valid();
+        shape_surface_material_impl(self.shape_id())
+    }
+
+    fn try_surface_material(&self) -> ApiResult<SurfaceMaterial> {
+        self.check_valid()?;
+        Ok(shape_surface_material_impl(self.shape_id()))
+    }
+}
+
+impl ShapeRuntimeHandle for OwnedShape {
+    fn shape_id(&self) -> ShapeId {
+        self.id
+    }
+
+    fn shape_world_core(&self) -> &crate::core::world_core::WorldCore {
+        self.core.as_ref()
+    }
+}
+
+impl<'w> ShapeRuntimeHandle for Shape<'w> {
+    fn shape_id(&self) -> ShapeId {
+        self.id
+    }
+
+    fn shape_world_core(&self) -> &crate::core::world_core::WorldCore {
+        self.core.as_ref()
+    }
+}
+
 impl OwnedShape {
     pub(crate) fn new(core: Arc<crate::core::world_core::WorldCore>, id: ShapeId) -> Self {
         core.owned_shapes
@@ -1321,37 +1902,27 @@ impl OwnedShape {
     }
 
     pub fn world_id_raw(&self) -> ffi::b2WorldId {
-        shape_world_id_checked_impl(self.id)
+        ShapeRuntimeHandle::world_id_raw(self)
     }
 
     pub fn try_world_id_raw(&self) -> ApiResult<ffi::b2WorldId> {
-        try_shape_world_id_raw_impl(self.id)
+        ShapeRuntimeHandle::try_world_id_raw(self)
     }
 
     pub fn parent_chain_id(&self) -> Option<ChainId> {
-        shape_parent_chain_id_checked_impl(self.id)
+        ShapeRuntimeHandle::parent_chain_id(self)
     }
 
     pub fn try_parent_chain_id(&self) -> ApiResult<Option<ChainId>> {
-        try_shape_parent_chain_id_impl(self.id)
+        ShapeRuntimeHandle::try_parent_chain_id(self)
     }
 
     pub fn is_valid(&self) -> bool {
-        shape_is_valid_checked_impl(self.id)
+        ShapeRuntimeHandle::is_valid(self)
     }
 
     pub fn try_is_valid(&self) -> ApiResult<bool> {
-        try_shape_is_valid_impl(self.id)
-    }
-
-    #[inline]
-    fn assert_valid(&self) {
-        crate::core::debug_checks::assert_shape_valid(self.id);
-    }
-
-    #[inline]
-    fn check_valid(&self) -> ApiResult<()> {
-        crate::core::debug_checks::check_shape_valid(self.id)
+        ShapeRuntimeHandle::try_is_valid(self)
     }
 
     /// Borrow the raw id for ID-style APIs.
@@ -1360,180 +1931,141 @@ impl OwnedShape {
     }
 
     pub fn is_sensor(&self) -> bool {
-        self.assert_valid();
-        shape_is_sensor_impl(self.id)
+        ShapeRuntimeHandle::is_sensor(self)
     }
 
     pub fn try_is_sensor(&self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(shape_is_sensor_impl(self.id))
+        ShapeRuntimeHandle::try_is_sensor(self)
     }
 
     pub fn enable_sensor_events(&mut self, flag: bool) {
-        self.assert_valid();
-        shape_enable_sensor_events_impl(self.id, flag)
+        ShapeRuntimeHandle::enable_sensor_events(self, flag)
     }
 
     pub fn try_enable_sensor_events(&mut self, flag: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_enable_sensor_events_impl(self.id, flag);
-        Ok(())
+        ShapeRuntimeHandle::try_enable_sensor_events(self, flag)
     }
 
     pub fn sensor_events_enabled(&self) -> bool {
-        self.assert_valid();
-        shape_sensor_events_enabled_impl(self.id)
+        ShapeRuntimeHandle::sensor_events_enabled(self)
     }
 
     pub fn try_sensor_events_enabled(&self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(shape_sensor_events_enabled_impl(self.id))
+        ShapeRuntimeHandle::try_sensor_events_enabled(self)
     }
 
     pub fn enable_contact_events(&mut self, flag: bool) {
-        self.assert_valid();
-        shape_enable_contact_events_impl(self.id, flag)
+        ShapeRuntimeHandle::enable_contact_events(self, flag)
     }
 
     pub fn try_enable_contact_events(&mut self, flag: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_enable_contact_events_impl(self.id, flag);
-        Ok(())
+        ShapeRuntimeHandle::try_enable_contact_events(self, flag)
     }
 
     pub fn contact_events_enabled(&self) -> bool {
-        self.assert_valid();
-        shape_contact_events_enabled_impl(self.id)
+        ShapeRuntimeHandle::contact_events_enabled(self)
     }
 
     pub fn try_contact_events_enabled(&self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(shape_contact_events_enabled_impl(self.id))
+        ShapeRuntimeHandle::try_contact_events_enabled(self)
     }
 
     pub fn enable_pre_solve_events(&mut self, flag: bool) {
-        self.assert_valid();
-        shape_enable_pre_solve_events_impl(self.id, flag)
+        ShapeRuntimeHandle::enable_pre_solve_events(self, flag)
     }
 
     pub fn try_enable_pre_solve_events(&mut self, flag: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_enable_pre_solve_events_impl(self.id, flag);
-        Ok(())
+        ShapeRuntimeHandle::try_enable_pre_solve_events(self, flag)
     }
 
     pub fn pre_solve_events_enabled(&self) -> bool {
-        self.assert_valid();
-        shape_pre_solve_events_enabled_impl(self.id)
+        ShapeRuntimeHandle::pre_solve_events_enabled(self)
     }
 
     pub fn try_pre_solve_events_enabled(&self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(shape_pre_solve_events_enabled_impl(self.id))
+        ShapeRuntimeHandle::try_pre_solve_events_enabled(self)
     }
 
     pub fn enable_hit_events(&mut self, flag: bool) {
-        self.assert_valid();
-        shape_enable_hit_events_impl(self.id, flag)
+        ShapeRuntimeHandle::enable_hit_events(self, flag)
     }
 
     pub fn try_enable_hit_events(&mut self, flag: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_enable_hit_events_impl(self.id, flag);
-        Ok(())
+        ShapeRuntimeHandle::try_enable_hit_events(self, flag)
     }
 
     pub fn hit_events_enabled(&self) -> bool {
-        self.assert_valid();
-        shape_hit_events_enabled_impl(self.id)
+        ShapeRuntimeHandle::hit_events_enabled(self)
     }
 
     pub fn try_hit_events_enabled(&self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(shape_hit_events_enabled_impl(self.id))
+        ShapeRuntimeHandle::try_hit_events_enabled(self)
     }
 
     pub fn shape_type(&self) -> ShapeType {
-        self.assert_valid();
-        shape_type_impl(self.id)
+        ShapeRuntimeHandle::shape_type(self)
     }
 
     pub fn try_shape_type(&self) -> ApiResult<ShapeType> {
-        self.check_valid()?;
-        Ok(shape_type_impl(self.id))
+        ShapeRuntimeHandle::try_shape_type(self)
     }
 
     pub fn shape_type_raw(&self) -> ffi::b2ShapeType {
-        self.assert_valid();
-        shape_type_raw_impl(self.id)
+        ShapeRuntimeHandle::shape_type_raw(self)
     }
 
     pub fn try_shape_type_raw(&self) -> ApiResult<ffi::b2ShapeType> {
-        self.check_valid()?;
-        Ok(shape_type_raw_impl(self.id))
+        ShapeRuntimeHandle::try_shape_type_raw(self)
     }
 
     pub fn body_id(&self) -> BodyId {
-        self.assert_valid();
-        shape_body_id_impl(self.id)
+        ShapeRuntimeHandle::body_id(self)
     }
 
     pub fn try_body_id(&self) -> ApiResult<BodyId> {
-        self.check_valid()?;
-        Ok(shape_body_id_impl(self.id))
+        ShapeRuntimeHandle::try_body_id(self)
     }
 
     // Geometry
     pub fn circle(&self) -> Circle {
-        self.assert_valid();
-        shape_circle_impl(self.id)
+        ShapeRuntimeHandle::circle(self)
     }
     pub fn segment(&self) -> Segment {
-        self.assert_valid();
-        shape_segment_impl(self.id)
+        ShapeRuntimeHandle::segment(self)
     }
     pub fn chain_segment(&self) -> ChainSegment {
-        self.assert_valid();
-        shape_chain_segment_impl(self.id)
+        ShapeRuntimeHandle::chain_segment(self)
     }
     pub fn capsule(&self) -> Capsule {
-        self.assert_valid();
-        shape_capsule_impl(self.id)
+        ShapeRuntimeHandle::capsule(self)
     }
     pub fn polygon(&self) -> Polygon {
-        self.assert_valid();
-        shape_polygon_impl(self.id)
+        ShapeRuntimeHandle::polygon(self)
     }
 
     /// Return the closest point on this shape to `target` (in world coordinates).
     pub fn closest_point<V: Into<Vec2>>(&self, target: V) -> Vec2 {
-        self.assert_valid();
-        shape_closest_point_impl(self.id, target)
+        ShapeRuntimeHandle::closest_point(self, target)
     }
 
     pub fn try_closest_point<V: Into<Vec2>>(&self, target: V) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(shape_closest_point_impl(self.id, target))
+        ShapeRuntimeHandle::try_closest_point(self, target)
     }
 
     pub fn aabb(&self) -> Aabb {
-        self.assert_valid();
-        shape_aabb_impl(self.id)
+        ShapeRuntimeHandle::aabb(self)
     }
 
     pub fn try_aabb(&self) -> ApiResult<Aabb> {
-        self.check_valid()?;
-        Ok(shape_aabb_impl(self.id))
+        ShapeRuntimeHandle::try_aabb(self)
     }
 
     pub fn test_point<V: Into<Vec2>>(&self, point: V) -> bool {
-        self.assert_valid();
-        shape_test_point_impl(self.id, point)
+        ShapeRuntimeHandle::test_point(self, point)
     }
 
     pub fn try_test_point<V: Into<Vec2>>(&self, point: V) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(shape_test_point_impl(self.id, point))
+        ShapeRuntimeHandle::try_test_point(self, point)
     }
 
     pub fn ray_cast<VO: Into<Vec2>, VT: Into<Vec2>>(
@@ -1541,8 +2073,7 @@ impl OwnedShape {
         origin: VO,
         translation: VT,
     ) -> CastOutput {
-        self.assert_valid();
-        shape_ray_cast_impl(self.id, origin, translation)
+        ShapeRuntimeHandle::ray_cast(self, origin, translation)
     }
 
     pub fn try_ray_cast<VO: Into<Vec2>, VT: Into<Vec2>>(
@@ -1550,14 +2081,12 @@ impl OwnedShape {
         origin: VO,
         translation: VT,
     ) -> ApiResult<CastOutput> {
-        self.check_valid()?;
-        Ok(shape_ray_cast_impl(self.id, origin, translation))
+        ShapeRuntimeHandle::try_ray_cast(self, origin, translation)
     }
 
     /// Apply wind force/torque approximation to the shape.
     pub fn apply_wind<V: Into<Vec2>>(&mut self, wind: V, drag: f32, lift: f32, wake: bool) {
-        self.assert_valid();
-        shape_apply_wind_impl(self.id, wind, drag, lift, wake)
+        ShapeRuntimeHandle::apply_wind(self, wind, drag, lift, wake)
     }
 
     pub fn try_apply_wind<V: Into<Vec2>>(
@@ -1567,239 +2096,194 @@ impl OwnedShape {
         lift: f32,
         wake: bool,
     ) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_apply_wind_impl(self.id, wind, drag, lift, wake);
-        Ok(())
+        ShapeRuntimeHandle::try_apply_wind(self, wind, drag, lift, wake)
     }
 
     pub fn set_circle(&mut self, c: &Circle) {
-        self.assert_valid();
-        assert_circle_geometry_valid(c);
-        shape_set_circle_impl(self.id, c)
+        ShapeRuntimeHandle::set_circle(self, c)
     }
     pub fn try_set_circle(&mut self, c: &Circle) -> ApiResult<()> {
-        self.check_valid()?;
-        check_circle_geometry_valid(c)?;
-        shape_set_circle_impl(self.id, c);
-        Ok(())
+        ShapeRuntimeHandle::try_set_circle(self, c)
     }
     pub fn set_segment(&mut self, s: &Segment) {
-        self.assert_valid();
-        assert_segment_geometry_valid(s);
-        shape_set_segment_impl(self.id, s)
+        ShapeRuntimeHandle::set_segment(self, s)
     }
     pub fn try_set_segment(&mut self, s: &Segment) -> ApiResult<()> {
-        self.check_valid()?;
-        check_segment_geometry_valid(s)?;
-        shape_set_segment_impl(self.id, s);
-        Ok(())
+        ShapeRuntimeHandle::try_set_segment(self, s)
     }
     pub fn set_capsule(&mut self, c: &Capsule) {
-        self.assert_valid();
-        assert_capsule_geometry_valid(c);
-        shape_set_capsule_impl(self.id, c)
+        ShapeRuntimeHandle::set_capsule(self, c)
     }
     pub fn try_set_capsule(&mut self, c: &Capsule) -> ApiResult<()> {
-        self.check_valid()?;
-        check_capsule_geometry_valid(c)?;
-        shape_set_capsule_impl(self.id, c);
-        Ok(())
+        ShapeRuntimeHandle::try_set_capsule(self, c)
     }
     pub fn set_polygon(&mut self, p: &Polygon) {
-        self.assert_valid();
-        assert_polygon_geometry_valid(p);
-        shape_set_polygon_impl(self.id, p)
+        ShapeRuntimeHandle::set_polygon(self, p)
     }
     pub fn try_set_polygon(&mut self, p: &Polygon) -> ApiResult<()> {
-        self.check_valid()?;
-        check_polygon_geometry_valid(p)?;
-        shape_set_polygon_impl(self.id, p);
-        Ok(())
+        ShapeRuntimeHandle::try_set_polygon(self, p)
     }
 
     pub fn filter(&self) -> Filter {
-        self.assert_valid();
-        shape_filter_impl(self.id)
+        ShapeRuntimeHandle::filter(self)
     }
     pub fn try_filter(&self) -> ApiResult<Filter> {
-        self.check_valid()?;
-        Ok(shape_filter_impl(self.id))
+        ShapeRuntimeHandle::try_filter(self)
     }
     pub fn set_filter(&mut self, f: Filter) {
-        self.assert_valid();
-        shape_set_filter_impl(self.id, f)
+        ShapeRuntimeHandle::set_filter(self, f)
     }
     pub fn try_set_filter(&mut self, f: Filter) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_set_filter_impl(self.id, f);
-        Ok(())
+        ShapeRuntimeHandle::try_set_filter(self, f)
     }
 
     pub fn set_density(&mut self, density: f32, update_body_mass: bool) {
-        shape_set_density_checked_impl(self.id, density, update_body_mass)
+        ShapeRuntimeHandle::set_density(self, density, update_body_mass)
     }
     pub fn try_set_density(&mut self, density: f32, update_body_mass: bool) -> ApiResult<()> {
-        try_shape_set_density_checked_impl(self.id, density, update_body_mass)
+        ShapeRuntimeHandle::try_set_density(self, density, update_body_mass)
     }
     pub fn density(&self) -> f32 {
-        self.assert_valid();
-        shape_density_impl(self.id)
+        ShapeRuntimeHandle::density(self)
     }
     pub fn try_density(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(shape_density_impl(self.id))
+        ShapeRuntimeHandle::try_density(self)
     }
 
     pub fn mass_data(&self) -> MassData {
-        self.assert_valid();
-        shape_mass_data_impl(self.id)
+        ShapeRuntimeHandle::mass_data(self)
     }
 
     pub fn try_mass_data(&self) -> ApiResult<MassData> {
-        self.check_valid()?;
-        Ok(shape_mass_data_impl(self.id))
+        ShapeRuntimeHandle::try_mass_data(self)
     }
 
     pub fn set_friction(&mut self, friction: f32) {
-        shape_set_friction_checked_impl(self.id, friction)
+        ShapeRuntimeHandle::set_friction(self, friction)
     }
     pub fn try_set_friction(&mut self, friction: f32) -> ApiResult<()> {
-        try_shape_set_friction_checked_impl(self.id, friction)
+        ShapeRuntimeHandle::try_set_friction(self, friction)
     }
     pub fn friction(&self) -> f32 {
-        self.assert_valid();
-        shape_friction_impl(self.id)
+        ShapeRuntimeHandle::friction(self)
     }
     pub fn try_friction(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(shape_friction_impl(self.id))
+        ShapeRuntimeHandle::try_friction(self)
     }
 
     pub fn set_restitution(&mut self, restitution: f32) {
-        shape_set_restitution_checked_impl(self.id, restitution)
+        ShapeRuntimeHandle::set_restitution(self, restitution)
     }
     pub fn try_set_restitution(&mut self, restitution: f32) -> ApiResult<()> {
-        try_shape_set_restitution_checked_impl(self.id, restitution)
+        ShapeRuntimeHandle::try_set_restitution(self, restitution)
     }
     pub fn restitution(&self) -> f32 {
-        self.assert_valid();
-        shape_restitution_impl(self.id)
+        ShapeRuntimeHandle::restitution(self)
     }
     pub fn try_restitution(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(shape_restitution_impl(self.id))
+        ShapeRuntimeHandle::try_restitution(self)
     }
 
     pub fn set_user_material(&mut self, material: u64) {
-        self.assert_valid();
-        shape_set_user_material_impl(self.id, material)
+        ShapeRuntimeHandle::set_user_material(self, material)
     }
     pub fn try_set_user_material(&mut self, material: u64) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_set_user_material_impl(self.id, material);
-        Ok(())
+        ShapeRuntimeHandle::try_set_user_material(self, material)
     }
     pub fn user_material(&self) -> u64 {
-        self.assert_valid();
-        shape_user_material_impl(self.id)
+        ShapeRuntimeHandle::user_material(self)
     }
     pub fn try_user_material(&self) -> ApiResult<u64> {
-        self.check_valid()?;
-        Ok(shape_user_material_impl(self.id))
+        ShapeRuntimeHandle::try_user_material(self)
     }
 
     pub fn set_surface_material(&mut self, material: &SurfaceMaterial) {
-        self.assert_valid();
-        shape_set_surface_material_impl(self.id, material)
+        ShapeRuntimeHandle::set_surface_material(self, material)
     }
     pub fn try_set_surface_material(&mut self, material: &SurfaceMaterial) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_set_surface_material_impl(self.id, material);
-        Ok(())
+        ShapeRuntimeHandle::try_set_surface_material(self, material)
     }
     pub fn surface_material(&self) -> SurfaceMaterial {
-        self.assert_valid();
-        shape_surface_material_impl(self.id)
+        ShapeRuntimeHandle::surface_material(self)
     }
     pub fn try_surface_material(&self) -> ApiResult<SurfaceMaterial> {
-        self.check_valid()?;
-        Ok(shape_surface_material_impl(self.id))
+        ShapeRuntimeHandle::try_surface_material(self)
     }
 
     pub fn contact_data(&self) -> Vec<ContactData> {
-        shape_contact_data_checked_impl(self.id)
+        ShapeRuntimeHandle::contact_data(self)
     }
 
     pub fn contact_data_into(&self, out: &mut Vec<ContactData>) {
-        shape_contact_data_into_checked_impl(self.id, out);
+        ShapeRuntimeHandle::contact_data_into(self, out);
     }
 
     pub fn try_contact_data(&self) -> ApiResult<Vec<ContactData>> {
-        try_shape_contact_data_impl(self.id)
+        ShapeRuntimeHandle::try_contact_data(self)
     }
 
     pub fn try_contact_data_into(&self, out: &mut Vec<ContactData>) -> ApiResult<()> {
-        try_shape_contact_data_into_impl(self.id, out)
+        ShapeRuntimeHandle::try_contact_data_into(self, out)
     }
 
     pub fn contact_data_raw(&self) -> Vec<ffi::b2ContactData> {
-        shape_contact_data_raw_checked_impl(self.id)
+        ShapeRuntimeHandle::contact_data_raw(self)
     }
 
     pub fn contact_data_raw_into(&self, out: &mut Vec<ffi::b2ContactData>) {
-        shape_contact_data_raw_into_checked_impl(self.id, out);
+        ShapeRuntimeHandle::contact_data_raw_into(self, out);
     }
 
     pub fn try_contact_data_raw(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
-        try_shape_contact_data_raw_impl(self.id)
+        ShapeRuntimeHandle::try_contact_data_raw(self)
     }
 
     pub fn try_contact_data_raw_into(&self, out: &mut Vec<ffi::b2ContactData>) -> ApiResult<()> {
-        try_shape_contact_data_raw_into_impl(self.id, out)
+        ShapeRuntimeHandle::try_contact_data_raw_into(self, out)
     }
 
     /// Get the maximum capacity required for retrieving all overlapped shapes on this sensor shape.
     pub fn sensor_capacity(&self) -> i32 {
-        shape_sensor_capacity_checked_impl(self.id)
+        ShapeRuntimeHandle::sensor_capacity(self)
     }
 
     pub fn try_sensor_capacity(&self) -> ApiResult<i32> {
-        try_shape_sensor_capacity_impl(self.id)
+        ShapeRuntimeHandle::try_sensor_capacity(self)
     }
 
     /// Get overlapped shapes for this sensor shape. If this is not a sensor, returns empty.
     /// Note: overlaps may contain destroyed shapes; use `sensor_overlaps_valid` to filter.
     pub fn sensor_overlaps(&self) -> Vec<ShapeId> {
-        shape_sensor_overlaps_checked_impl(self.id)
+        ShapeRuntimeHandle::sensor_overlaps(self)
     }
 
     pub fn sensor_overlaps_into(&self, out: &mut Vec<ShapeId>) {
-        shape_sensor_overlaps_into_checked_impl(self.id, out);
+        ShapeRuntimeHandle::sensor_overlaps_into(self, out);
     }
 
     pub fn try_sensor_overlaps(&self) -> ApiResult<Vec<ShapeId>> {
-        try_shape_sensor_overlaps_impl(self.id)
+        ShapeRuntimeHandle::try_sensor_overlaps(self)
     }
 
     pub fn try_sensor_overlaps_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
-        try_shape_sensor_overlaps_into_impl(self.id, out)
+        ShapeRuntimeHandle::try_sensor_overlaps_into(self, out)
     }
 
     /// Get overlapped shapes and filter out invalid (destroyed) shape ids.
     pub fn sensor_overlaps_valid(&self) -> Vec<ShapeId> {
-        shape_sensor_overlaps_valid_checked_impl(self.id)
+        ShapeRuntimeHandle::sensor_overlaps_valid(self)
     }
 
     pub fn try_sensor_overlaps_valid(&self) -> ApiResult<Vec<ShapeId>> {
-        try_shape_sensor_overlaps_valid_impl(self.id)
+        ShapeRuntimeHandle::try_sensor_overlaps_valid(self)
     }
 
     pub fn sensor_overlaps_valid_into(&self, out: &mut Vec<ShapeId>) {
-        shape_sensor_overlaps_valid_into_checked_impl(self.id, out);
+        ShapeRuntimeHandle::sensor_overlaps_valid_into(self, out);
     }
 
     pub fn try_sensor_overlaps_valid_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
-        try_shape_sensor_overlaps_valid_into_impl(self.id, out)
+        ShapeRuntimeHandle::try_sensor_overlaps_valid_into(self, out)
     }
 
     /// Set an opaque user data pointer on this shape.
@@ -1811,7 +2295,7 @@ impl OwnedShape {
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn set_user_data_ptr_raw(&mut self, p: *mut c_void) {
-        unsafe { shape_set_user_data_ptr_raw_checked_impl(self.core.as_ref(), self.id, p) }
+        unsafe { ShapeRuntimeHandle::set_user_data_ptr_raw(self, p) }
     }
     /// Set an opaque user data pointer on this shape.
     ///
@@ -1820,14 +2304,14 @@ impl OwnedShape {
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn try_set_user_data_ptr_raw(&mut self, p: *mut c_void) -> ApiResult<()> {
-        unsafe { try_shape_set_user_data_ptr_raw_impl(self.core.as_ref(), self.id, p) }
+        unsafe { ShapeRuntimeHandle::try_set_user_data_ptr_raw(self, p) }
     }
     pub fn user_data_ptr_raw(&self) -> *mut c_void {
-        shape_user_data_ptr_raw_checked_impl(self.id)
+        ShapeRuntimeHandle::user_data_ptr_raw(self)
     }
 
     pub fn try_user_data_ptr_raw(&self) -> ApiResult<*mut c_void> {
-        try_shape_user_data_ptr_raw_impl(self.id)
+        ShapeRuntimeHandle::try_user_data_ptr_raw(self)
     }
 
     /// Set typed user data on this shape.
@@ -1835,50 +2319,50 @@ impl OwnedShape {
     /// This stores a `Box<T>` internally and sets Box2D's user data pointer to it. The allocation
     /// is automatically freed when cleared or when the shape is destroyed.
     pub fn set_user_data<T: 'static>(&mut self, value: T) {
-        shape_set_user_data_checked_impl(self.core.as_ref(), self.id, value);
+        ShapeRuntimeHandle::set_user_data(self, value);
     }
 
     pub fn try_set_user_data<T: 'static>(&mut self, value: T) -> ApiResult<()> {
-        try_shape_set_user_data_checked_impl(self.core.as_ref(), self.id, value)
+        ShapeRuntimeHandle::try_set_user_data(self, value)
     }
 
     /// Clear typed user data on this shape. Returns whether any typed data was present.
     pub fn clear_user_data(&mut self) -> bool {
-        shape_clear_user_data_checked_impl(self.core.as_ref(), self.id)
+        ShapeRuntimeHandle::clear_user_data(self)
     }
 
     pub fn try_clear_user_data(&mut self) -> ApiResult<bool> {
-        try_shape_clear_user_data_checked_impl(self.core.as_ref(), self.id)
+        ShapeRuntimeHandle::try_clear_user_data(self)
     }
 
     pub fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
-        shape_with_user_data_checked_impl(self.core.as_ref(), self.id, f)
+        ShapeRuntimeHandle::with_user_data(self, f)
     }
 
     pub fn try_with_user_data<T: 'static, R>(
         &self,
         f: impl FnOnce(&T) -> R,
     ) -> ApiResult<Option<R>> {
-        try_shape_with_user_data_checked_impl(self.core.as_ref(), self.id, f)
+        ShapeRuntimeHandle::try_with_user_data(self, f)
     }
 
     pub fn with_user_data_mut<T: 'static, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
-        shape_with_user_data_mut_checked_impl(self.core.as_ref(), self.id, f)
+        ShapeRuntimeHandle::with_user_data_mut(self, f)
     }
 
     pub fn try_with_user_data_mut<T: 'static, R>(
         &mut self,
         f: impl FnOnce(&mut T) -> R,
     ) -> ApiResult<Option<R>> {
-        try_shape_with_user_data_mut_checked_impl(self.core.as_ref(), self.id, f)
+        ShapeRuntimeHandle::try_with_user_data_mut(self, f)
     }
 
     pub fn take_user_data<T: 'static>(&mut self) -> Option<T> {
-        shape_take_user_data_checked_impl(self.core.as_ref(), self.id)
+        ShapeRuntimeHandle::take_user_data(self)
     }
 
     pub fn try_take_user_data<T: 'static>(&mut self) -> ApiResult<Option<T>> {
-        try_shape_take_user_data_checked_impl(self.core.as_ref(), self.id)
+        ShapeRuntimeHandle::try_take_user_data(self)
     }
 
     pub fn update_body_mass_on_drop(mut self, flag: bool) -> Self {
@@ -1951,13 +2435,8 @@ impl<'w> Shape<'w> {
     }
 
     #[inline]
-    fn assert_valid(&self) {
-        crate::core::debug_checks::assert_shape_valid(self.id);
-    }
-
-    #[inline]
     fn check_valid(&self) -> ApiResult<()> {
-        crate::core::debug_checks::check_shape_valid(self.id)
+        ShapeRuntimeHandle::check_valid(self)
     }
 
     pub fn id(&self) -> ShapeId {
@@ -1965,194 +2444,157 @@ impl<'w> Shape<'w> {
     }
 
     pub fn world_id_raw(&self) -> ffi::b2WorldId {
-        shape_world_id_checked_impl(self.id)
+        ShapeRuntimeHandle::world_id_raw(self)
     }
 
     pub fn try_world_id_raw(&self) -> ApiResult<ffi::b2WorldId> {
-        try_shape_world_id_raw_impl(self.id)
+        ShapeRuntimeHandle::try_world_id_raw(self)
     }
 
     pub fn parent_chain_id(&self) -> Option<ChainId> {
-        shape_parent_chain_id_checked_impl(self.id)
+        ShapeRuntimeHandle::parent_chain_id(self)
     }
 
     pub fn try_parent_chain_id(&self) -> ApiResult<Option<ChainId>> {
-        try_shape_parent_chain_id_impl(self.id)
+        ShapeRuntimeHandle::try_parent_chain_id(self)
     }
 
     pub fn is_valid(&self) -> bool {
-        shape_is_valid_checked_impl(self.id)
+        ShapeRuntimeHandle::is_valid(self)
     }
 
     pub fn try_is_valid(&self) -> ApiResult<bool> {
-        try_shape_is_valid_impl(self.id)
+        ShapeRuntimeHandle::try_is_valid(self)
     }
 
     pub fn shape_type(&self) -> ShapeType {
-        self.assert_valid();
-        shape_type_impl(self.id)
+        ShapeRuntimeHandle::shape_type(self)
     }
 
     pub fn try_shape_type(&self) -> ApiResult<ShapeType> {
-        self.check_valid()?;
-        Ok(shape_type_impl(self.id))
+        ShapeRuntimeHandle::try_shape_type(self)
     }
 
     pub fn shape_type_raw(&self) -> ffi::b2ShapeType {
-        self.assert_valid();
-        shape_type_raw_impl(self.id)
+        ShapeRuntimeHandle::shape_type_raw(self)
     }
 
     pub fn try_shape_type_raw(&self) -> ApiResult<ffi::b2ShapeType> {
-        self.check_valid()?;
-        Ok(shape_type_raw_impl(self.id))
+        ShapeRuntimeHandle::try_shape_type_raw(self)
     }
 
     pub fn body_id(&self) -> BodyId {
-        self.assert_valid();
-        shape_body_id_impl(self.id)
+        ShapeRuntimeHandle::body_id(self)
     }
 
     pub fn try_body_id(&self) -> ApiResult<BodyId> {
-        self.check_valid()?;
-        Ok(shape_body_id_impl(self.id))
+        ShapeRuntimeHandle::try_body_id(self)
     }
 
     pub fn enable_sensor_events(&mut self, flag: bool) {
-        self.assert_valid();
-        shape_enable_sensor_events_impl(self.id, flag)
+        ShapeRuntimeHandle::enable_sensor_events(self, flag)
     }
 
     pub fn try_enable_sensor_events(&mut self, flag: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_enable_sensor_events_impl(self.id, flag);
-        Ok(())
+        ShapeRuntimeHandle::try_enable_sensor_events(self, flag)
     }
 
     pub fn sensor_events_enabled(&self) -> bool {
-        self.assert_valid();
-        shape_sensor_events_enabled_impl(self.id)
+        ShapeRuntimeHandle::sensor_events_enabled(self)
     }
 
     pub fn try_sensor_events_enabled(&self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(shape_sensor_events_enabled_impl(self.id))
+        ShapeRuntimeHandle::try_sensor_events_enabled(self)
     }
 
     pub fn enable_contact_events(&mut self, flag: bool) {
-        self.assert_valid();
-        shape_enable_contact_events_impl(self.id, flag)
+        ShapeRuntimeHandle::enable_contact_events(self, flag)
     }
 
     pub fn try_enable_contact_events(&mut self, flag: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_enable_contact_events_impl(self.id, flag);
-        Ok(())
+        ShapeRuntimeHandle::try_enable_contact_events(self, flag)
     }
 
     pub fn contact_events_enabled(&self) -> bool {
-        self.assert_valid();
-        shape_contact_events_enabled_impl(self.id)
+        ShapeRuntimeHandle::contact_events_enabled(self)
     }
 
     pub fn try_contact_events_enabled(&self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(shape_contact_events_enabled_impl(self.id))
+        ShapeRuntimeHandle::try_contact_events_enabled(self)
     }
 
     pub fn enable_pre_solve_events(&mut self, flag: bool) {
-        self.assert_valid();
-        shape_enable_pre_solve_events_impl(self.id, flag)
+        ShapeRuntimeHandle::enable_pre_solve_events(self, flag)
     }
 
     pub fn try_enable_pre_solve_events(&mut self, flag: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_enable_pre_solve_events_impl(self.id, flag);
-        Ok(())
+        ShapeRuntimeHandle::try_enable_pre_solve_events(self, flag)
     }
 
     pub fn pre_solve_events_enabled(&self) -> bool {
-        self.assert_valid();
-        shape_pre_solve_events_enabled_impl(self.id)
+        ShapeRuntimeHandle::pre_solve_events_enabled(self)
     }
 
     pub fn try_pre_solve_events_enabled(&self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(shape_pre_solve_events_enabled_impl(self.id))
+        ShapeRuntimeHandle::try_pre_solve_events_enabled(self)
     }
 
     pub fn enable_hit_events(&mut self, flag: bool) {
-        self.assert_valid();
-        shape_enable_hit_events_impl(self.id, flag)
+        ShapeRuntimeHandle::enable_hit_events(self, flag)
     }
 
     pub fn try_enable_hit_events(&mut self, flag: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_enable_hit_events_impl(self.id, flag);
-        Ok(())
+        ShapeRuntimeHandle::try_enable_hit_events(self, flag)
     }
 
     pub fn hit_events_enabled(&self) -> bool {
-        self.assert_valid();
-        shape_hit_events_enabled_impl(self.id)
+        ShapeRuntimeHandle::hit_events_enabled(self)
     }
 
     pub fn try_hit_events_enabled(&self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(shape_hit_events_enabled_impl(self.id))
+        ShapeRuntimeHandle::try_hit_events_enabled(self)
     }
 
     // Getters
     pub fn circle(&self) -> Circle {
-        self.assert_valid();
-        shape_circle_impl(self.id)
+        ShapeRuntimeHandle::circle(self)
     }
     pub fn segment(&self) -> Segment {
-        self.assert_valid();
-        shape_segment_impl(self.id)
+        ShapeRuntimeHandle::segment(self)
     }
     pub fn chain_segment(&self) -> ChainSegment {
-        self.assert_valid();
-        shape_chain_segment_impl(self.id)
+        ShapeRuntimeHandle::chain_segment(self)
     }
     pub fn capsule(&self) -> Capsule {
-        self.assert_valid();
-        shape_capsule_impl(self.id)
+        ShapeRuntimeHandle::capsule(self)
     }
     pub fn polygon(&self) -> Polygon {
-        self.assert_valid();
-        shape_polygon_impl(self.id)
+        ShapeRuntimeHandle::polygon(self)
     }
 
     /// Return the closest point on this shape to `target` (in world coordinates).
     pub fn closest_point<V: Into<Vec2>>(&self, target: V) -> Vec2 {
-        self.assert_valid();
-        shape_closest_point_impl(self.id, target)
+        ShapeRuntimeHandle::closest_point(self, target)
     }
 
     pub fn try_closest_point<V: Into<Vec2>>(&self, target: V) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(shape_closest_point_impl(self.id, target))
+        ShapeRuntimeHandle::try_closest_point(self, target)
     }
 
     pub fn aabb(&self) -> Aabb {
-        self.assert_valid();
-        shape_aabb_impl(self.id)
+        ShapeRuntimeHandle::aabb(self)
     }
 
     pub fn try_aabb(&self) -> ApiResult<Aabb> {
-        self.check_valid()?;
-        Ok(shape_aabb_impl(self.id))
+        ShapeRuntimeHandle::try_aabb(self)
     }
 
     pub fn test_point<V: Into<Vec2>>(&self, point: V) -> bool {
-        self.assert_valid();
-        shape_test_point_impl(self.id, point)
+        ShapeRuntimeHandle::test_point(self, point)
     }
 
     pub fn try_test_point<V: Into<Vec2>>(&self, point: V) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(shape_test_point_impl(self.id, point))
+        ShapeRuntimeHandle::try_test_point(self, point)
     }
 
     pub fn ray_cast<VO: Into<Vec2>, VT: Into<Vec2>>(
@@ -2160,8 +2602,7 @@ impl<'w> Shape<'w> {
         origin: VO,
         translation: VT,
     ) -> CastOutput {
-        self.assert_valid();
-        shape_ray_cast_impl(self.id, origin, translation)
+        ShapeRuntimeHandle::ray_cast(self, origin, translation)
     }
 
     pub fn try_ray_cast<VO: Into<Vec2>, VT: Into<Vec2>>(
@@ -2169,14 +2610,12 @@ impl<'w> Shape<'w> {
         origin: VO,
         translation: VT,
     ) -> ApiResult<CastOutput> {
-        self.check_valid()?;
-        Ok(shape_ray_cast_impl(self.id, origin, translation))
+        ShapeRuntimeHandle::try_ray_cast(self, origin, translation)
     }
 
     /// Apply wind force/torque approximation to the shape.
     pub fn apply_wind<V: Into<Vec2>>(&mut self, wind: V, drag: f32, lift: f32, wake: bool) {
-        self.assert_valid();
-        shape_apply_wind_impl(self.id, wind, drag, lift, wake)
+        ShapeRuntimeHandle::apply_wind(self, wind, drag, lift, wake)
     }
 
     pub fn try_apply_wind<V: Into<Vec2>>(
@@ -2186,169 +2625,122 @@ impl<'w> Shape<'w> {
         lift: f32,
         wake: bool,
     ) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_apply_wind_impl(self.id, wind, drag, lift, wake);
-        Ok(())
+        ShapeRuntimeHandle::try_apply_wind(self, wind, drag, lift, wake)
     }
 
     // Setters
     pub fn set_circle(&mut self, c: &Circle) {
-        self.assert_valid();
-        assert_circle_geometry_valid(c);
-        shape_set_circle_impl(self.id, c)
+        ShapeRuntimeHandle::set_circle(self, c)
     }
     pub fn try_set_circle(&mut self, c: &Circle) -> ApiResult<()> {
-        self.check_valid()?;
-        check_circle_geometry_valid(c)?;
-        shape_set_circle_impl(self.id, c);
-        Ok(())
+        ShapeRuntimeHandle::try_set_circle(self, c)
     }
     pub fn set_segment(&mut self, s: &Segment) {
-        self.assert_valid();
-        assert_segment_geometry_valid(s);
-        shape_set_segment_impl(self.id, s)
+        ShapeRuntimeHandle::set_segment(self, s)
     }
     pub fn try_set_segment(&mut self, s: &Segment) -> ApiResult<()> {
-        self.check_valid()?;
-        check_segment_geometry_valid(s)?;
-        shape_set_segment_impl(self.id, s);
-        Ok(())
+        ShapeRuntimeHandle::try_set_segment(self, s)
     }
     pub fn set_capsule(&mut self, c: &Capsule) {
-        self.assert_valid();
-        assert_capsule_geometry_valid(c);
-        shape_set_capsule_impl(self.id, c)
+        ShapeRuntimeHandle::set_capsule(self, c)
     }
     pub fn try_set_capsule(&mut self, c: &Capsule) -> ApiResult<()> {
-        self.check_valid()?;
-        check_capsule_geometry_valid(c)?;
-        shape_set_capsule_impl(self.id, c);
-        Ok(())
+        ShapeRuntimeHandle::try_set_capsule(self, c)
     }
     pub fn set_polygon(&mut self, p: &Polygon) {
-        self.assert_valid();
-        assert_polygon_geometry_valid(p);
-        shape_set_polygon_impl(self.id, p)
+        ShapeRuntimeHandle::set_polygon(self, p)
     }
     pub fn try_set_polygon(&mut self, p: &Polygon) -> ApiResult<()> {
-        self.check_valid()?;
-        check_polygon_geometry_valid(p)?;
-        shape_set_polygon_impl(self.id, p);
-        Ok(())
+        ShapeRuntimeHandle::try_set_polygon(self, p)
     }
 
     pub fn filter(&self) -> Filter {
-        self.assert_valid();
-        shape_filter_impl(self.id)
+        ShapeRuntimeHandle::filter(self)
     }
     pub fn try_filter(&self) -> ApiResult<Filter> {
-        self.check_valid()?;
-        Ok(shape_filter_impl(self.id))
+        ShapeRuntimeHandle::try_filter(self)
     }
     pub fn set_filter(&mut self, f: Filter) {
-        self.assert_valid();
-        shape_set_filter_impl(self.id, f)
+        ShapeRuntimeHandle::set_filter(self, f)
     }
     pub fn try_set_filter(&mut self, f: Filter) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_set_filter_impl(self.id, f);
-        Ok(())
+        ShapeRuntimeHandle::try_set_filter(self, f)
     }
 
     // Material and physical properties
     pub fn is_sensor(&self) -> bool {
-        self.assert_valid();
-        shape_is_sensor_impl(self.id)
+        ShapeRuntimeHandle::is_sensor(self)
     }
     pub fn try_is_sensor(&self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(shape_is_sensor_impl(self.id))
+        ShapeRuntimeHandle::try_is_sensor(self)
     }
     pub fn set_density(&mut self, density: f32, update_body_mass: bool) {
-        shape_set_density_checked_impl(self.id, density, update_body_mass)
+        ShapeRuntimeHandle::set_density(self, density, update_body_mass)
     }
     pub fn try_set_density(&mut self, density: f32, update_body_mass: bool) -> ApiResult<()> {
-        try_shape_set_density_checked_impl(self.id, density, update_body_mass)
+        ShapeRuntimeHandle::try_set_density(self, density, update_body_mass)
     }
     pub fn density(&self) -> f32 {
-        self.assert_valid();
-        shape_density_impl(self.id)
+        ShapeRuntimeHandle::density(self)
     }
     pub fn try_density(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(shape_density_impl(self.id))
+        ShapeRuntimeHandle::try_density(self)
     }
 
     pub fn mass_data(&self) -> MassData {
-        self.assert_valid();
-        shape_mass_data_impl(self.id)
+        ShapeRuntimeHandle::mass_data(self)
     }
 
     pub fn try_mass_data(&self) -> ApiResult<MassData> {
-        self.check_valid()?;
-        Ok(shape_mass_data_impl(self.id))
+        ShapeRuntimeHandle::try_mass_data(self)
     }
     pub fn set_friction(&mut self, friction: f32) {
-        shape_set_friction_checked_impl(self.id, friction)
+        ShapeRuntimeHandle::set_friction(self, friction)
     }
     pub fn try_set_friction(&mut self, friction: f32) -> ApiResult<()> {
-        try_shape_set_friction_checked_impl(self.id, friction)
+        ShapeRuntimeHandle::try_set_friction(self, friction)
     }
     pub fn friction(&self) -> f32 {
-        self.assert_valid();
-        shape_friction_impl(self.id)
+        ShapeRuntimeHandle::friction(self)
     }
     pub fn try_friction(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(shape_friction_impl(self.id))
+        ShapeRuntimeHandle::try_friction(self)
     }
     pub fn set_restitution(&mut self, restitution: f32) {
-        shape_set_restitution_checked_impl(self.id, restitution)
+        ShapeRuntimeHandle::set_restitution(self, restitution)
     }
     pub fn try_set_restitution(&mut self, restitution: f32) -> ApiResult<()> {
-        try_shape_set_restitution_checked_impl(self.id, restitution)
+        ShapeRuntimeHandle::try_set_restitution(self, restitution)
     }
     pub fn restitution(&self) -> f32 {
-        self.assert_valid();
-        shape_restitution_impl(self.id)
+        ShapeRuntimeHandle::restitution(self)
     }
     pub fn try_restitution(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(shape_restitution_impl(self.id))
+        ShapeRuntimeHandle::try_restitution(self)
     }
     pub fn set_user_material(&mut self, material: u64) {
-        self.assert_valid();
-        shape_set_user_material_impl(self.id, material)
+        ShapeRuntimeHandle::set_user_material(self, material)
     }
     pub fn try_set_user_material(&mut self, material: u64) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_set_user_material_impl(self.id, material);
-        Ok(())
+        ShapeRuntimeHandle::try_set_user_material(self, material)
     }
     pub fn user_material(&self) -> u64 {
-        self.assert_valid();
-        shape_user_material_impl(self.id)
+        ShapeRuntimeHandle::user_material(self)
     }
     pub fn try_user_material(&self) -> ApiResult<u64> {
-        self.check_valid()?;
-        Ok(shape_user_material_impl(self.id))
+        ShapeRuntimeHandle::try_user_material(self)
     }
     pub fn set_surface_material(&mut self, material: &SurfaceMaterial) {
-        self.assert_valid();
-        shape_set_surface_material_impl(self.id, material)
+        ShapeRuntimeHandle::set_surface_material(self, material)
     }
     pub fn try_set_surface_material(&mut self, material: &SurfaceMaterial) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_set_surface_material_impl(self.id, material);
-        Ok(())
+        ShapeRuntimeHandle::try_set_surface_material(self, material)
     }
     pub fn surface_material(&self) -> SurfaceMaterial {
-        self.assert_valid();
-        shape_surface_material_impl(self.id)
+        ShapeRuntimeHandle::surface_material(self)
     }
     pub fn try_surface_material(&self) -> ApiResult<SurfaceMaterial> {
-        self.check_valid()?;
-        Ok(shape_surface_material_impl(self.id))
+        ShapeRuntimeHandle::try_surface_material(self)
     }
 
     // Opaque user pointer (engine-owned)
@@ -2361,7 +2753,7 @@ impl<'w> Shape<'w> {
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn set_user_data_ptr_raw(&mut self, p: *mut core::ffi::c_void) {
-        unsafe { shape_set_user_data_ptr_raw_checked_impl(self.core.as_ref(), self.id, p) }
+        unsafe { ShapeRuntimeHandle::set_user_data_ptr_raw(self, p) }
     }
     /// Set an opaque user data pointer on this shape.
     ///
@@ -2370,14 +2762,14 @@ impl<'w> Shape<'w> {
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn try_set_user_data_ptr_raw(&mut self, p: *mut core::ffi::c_void) -> ApiResult<()> {
-        unsafe { try_shape_set_user_data_ptr_raw_impl(self.core.as_ref(), self.id, p) }
+        unsafe { ShapeRuntimeHandle::try_set_user_data_ptr_raw(self, p) }
     }
     pub fn user_data_ptr_raw(&self) -> *mut core::ffi::c_void {
-        shape_user_data_ptr_raw_checked_impl(self.id)
+        ShapeRuntimeHandle::user_data_ptr_raw(self)
     }
 
     pub fn try_user_data_ptr_raw(&self) -> ApiResult<*mut core::ffi::c_void> {
-        try_shape_user_data_ptr_raw_impl(self.id)
+        ShapeRuntimeHandle::try_user_data_ptr_raw(self)
     }
 
     /// Set typed user data on this shape.
@@ -2385,126 +2777,126 @@ impl<'w> Shape<'w> {
     /// This stores a `Box<T>` internally and sets Box2D's user data pointer to it. The allocation
     /// is automatically freed when cleared or when the shape is destroyed.
     pub fn set_user_data<T: 'static>(&mut self, value: T) {
-        shape_set_user_data_checked_impl(self.core.as_ref(), self.id, value);
+        ShapeRuntimeHandle::set_user_data(self, value);
     }
 
     pub fn try_set_user_data<T: 'static>(&mut self, value: T) -> ApiResult<()> {
-        try_shape_set_user_data_checked_impl(self.core.as_ref(), self.id, value)
+        ShapeRuntimeHandle::try_set_user_data(self, value)
     }
 
     /// Clear typed user data on this shape. Returns whether any typed data was present.
     pub fn clear_user_data(&mut self) -> bool {
-        shape_clear_user_data_checked_impl(self.core.as_ref(), self.id)
+        ShapeRuntimeHandle::clear_user_data(self)
     }
 
     pub fn try_clear_user_data(&mut self) -> ApiResult<bool> {
-        try_shape_clear_user_data_checked_impl(self.core.as_ref(), self.id)
+        ShapeRuntimeHandle::try_clear_user_data(self)
     }
 
     pub fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
-        shape_with_user_data_checked_impl(self.core.as_ref(), self.id, f)
+        ShapeRuntimeHandle::with_user_data(self, f)
     }
 
     pub fn try_with_user_data<T: 'static, R>(
         &self,
         f: impl FnOnce(&T) -> R,
     ) -> ApiResult<Option<R>> {
-        try_shape_with_user_data_checked_impl(self.core.as_ref(), self.id, f)
+        ShapeRuntimeHandle::try_with_user_data(self, f)
     }
 
     pub fn with_user_data_mut<T: 'static, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
-        shape_with_user_data_mut_checked_impl(self.core.as_ref(), self.id, f)
+        ShapeRuntimeHandle::with_user_data_mut(self, f)
     }
 
     pub fn try_with_user_data_mut<T: 'static, R>(
         &mut self,
         f: impl FnOnce(&mut T) -> R,
     ) -> ApiResult<Option<R>> {
-        try_shape_with_user_data_mut_checked_impl(self.core.as_ref(), self.id, f)
+        ShapeRuntimeHandle::try_with_user_data_mut(self, f)
     }
 
     pub fn take_user_data<T: 'static>(&mut self) -> Option<T> {
-        shape_take_user_data_checked_impl(self.core.as_ref(), self.id)
+        ShapeRuntimeHandle::take_user_data(self)
     }
 
     pub fn try_take_user_data<T: 'static>(&mut self) -> ApiResult<Option<T>> {
-        try_shape_take_user_data_checked_impl(self.core.as_ref(), self.id)
+        ShapeRuntimeHandle::try_take_user_data(self)
     }
 
     pub fn contact_data(&self) -> Vec<ContactData> {
-        shape_contact_data_checked_impl(self.id)
+        ShapeRuntimeHandle::contact_data(self)
     }
 
     pub fn contact_data_into(&self, out: &mut Vec<ContactData>) {
-        shape_contact_data_into_checked_impl(self.id, out);
+        ShapeRuntimeHandle::contact_data_into(self, out);
     }
 
     pub fn try_contact_data(&self) -> ApiResult<Vec<ContactData>> {
-        try_shape_contact_data_impl(self.id)
+        ShapeRuntimeHandle::try_contact_data(self)
     }
 
     pub fn try_contact_data_into(&self, out: &mut Vec<ContactData>) -> ApiResult<()> {
-        try_shape_contact_data_into_impl(self.id, out)
+        ShapeRuntimeHandle::try_contact_data_into(self, out)
     }
 
     pub fn contact_data_raw(&self) -> Vec<ffi::b2ContactData> {
-        shape_contact_data_raw_checked_impl(self.id)
+        ShapeRuntimeHandle::contact_data_raw(self)
     }
 
     pub fn contact_data_raw_into(&self, out: &mut Vec<ffi::b2ContactData>) {
-        shape_contact_data_raw_into_checked_impl(self.id, out);
+        ShapeRuntimeHandle::contact_data_raw_into(self, out);
     }
 
     pub fn try_contact_data_raw(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
-        try_shape_contact_data_raw_impl(self.id)
+        ShapeRuntimeHandle::try_contact_data_raw(self)
     }
 
     pub fn try_contact_data_raw_into(&self, out: &mut Vec<ffi::b2ContactData>) -> ApiResult<()> {
-        try_shape_contact_data_raw_into_impl(self.id, out)
+        ShapeRuntimeHandle::try_contact_data_raw_into(self, out)
     }
 
     /// Get the maximum capacity required for retrieving all overlapped shapes on this sensor shape.
     pub fn sensor_capacity(&self) -> i32 {
-        shape_sensor_capacity_checked_impl(self.id)
+        ShapeRuntimeHandle::sensor_capacity(self)
     }
 
     pub fn try_sensor_capacity(&self) -> ApiResult<i32> {
-        try_shape_sensor_capacity_impl(self.id)
+        ShapeRuntimeHandle::try_sensor_capacity(self)
     }
 
     /// Get overlapped shapes for this sensor shape. If this is not a sensor, returns empty.
     /// Note: overlaps may contain destroyed shapes; use `sensor_overlaps_valid` to filter.
     pub fn sensor_overlaps(&self) -> Vec<ShapeId> {
-        shape_sensor_overlaps_checked_impl(self.id)
+        ShapeRuntimeHandle::sensor_overlaps(self)
     }
 
     pub fn sensor_overlaps_into(&self, out: &mut Vec<ShapeId>) {
-        shape_sensor_overlaps_into_checked_impl(self.id, out);
+        ShapeRuntimeHandle::sensor_overlaps_into(self, out);
     }
 
     pub fn try_sensor_overlaps(&self) -> ApiResult<Vec<ShapeId>> {
-        try_shape_sensor_overlaps_impl(self.id)
+        ShapeRuntimeHandle::try_sensor_overlaps(self)
     }
 
     pub fn try_sensor_overlaps_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
-        try_shape_sensor_overlaps_into_impl(self.id, out)
+        ShapeRuntimeHandle::try_sensor_overlaps_into(self, out)
     }
 
     /// Get overlapped shapes and filter out invalid (destroyed) shape ids.
     pub fn sensor_overlaps_valid(&self) -> Vec<ShapeId> {
-        shape_sensor_overlaps_valid_checked_impl(self.id)
+        ShapeRuntimeHandle::sensor_overlaps_valid(self)
     }
 
     pub fn try_sensor_overlaps_valid(&self) -> ApiResult<Vec<ShapeId>> {
-        try_shape_sensor_overlaps_valid_impl(self.id)
+        ShapeRuntimeHandle::try_sensor_overlaps_valid(self)
     }
 
     pub fn sensor_overlaps_valid_into(&self, out: &mut Vec<ShapeId>) {
-        shape_sensor_overlaps_valid_into_checked_impl(self.id, out);
+        ShapeRuntimeHandle::sensor_overlaps_valid_into(self, out);
     }
 
     pub fn try_sensor_overlaps_valid_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
-        try_shape_sensor_overlaps_valid_into_impl(self.id, out)
+        ShapeRuntimeHandle::try_sensor_overlaps_valid_into(self, out)
     }
 
     /// Destroy this shape immediately.
