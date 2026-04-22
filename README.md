@@ -14,7 +14,15 @@
 - `boxdd-sys`: low-level FFI for the official Box2D v3 C API (vendored)
 - `boxdd`: safe layer (world, bodies, shapes, joints, queries, events, debug draw)
 
-## Highlights
+## 0.3 Highlights
+- Hot-path APIs are first-class: keep the simple `Vec`-returning calls for one-off use, or move per-frame code to `*_into` and `visit_*`.
+- `boxdd::collision` now exposes standalone distance, shape-cast, TOI, manifold, and `Aabb::ray_cast` helpers without dropping to raw `ffi`.
+- Character-mover support is complete on the safe surface: `cast_mover`, `collide_mover`, `solve_planes`, and `clip_vector`.
+- `WorldHandle` is now a practical read-only follow-up surface for body, shape, joint, query, and owned-event inspection.
+- Raw FFI boundaries are explicit and easier to reason about: use crate-owned ids/value types plus named `from_raw(...)`, `into_raw()`, and `*_raw` escape hatches.
+- The examples and testbed were reorganized around the intended `0.3` workflows instead of a loose grab bag of demos.
+
+## Detailed Highlights
 - Safe, ergonomic Rust wrapper over the official Box2D v3 C API.
 - Math interop (features: `mint`/`cgmath`/`nalgebra`/`glam`): any `Into<Vec2>` accepts the corresponding 2D vector/point types, plus arrays/tuples.
 - Two error-handling styles: panic-on-misuse by default, plus `try_*` APIs returning `ApiResult<T>` for recoverable errors.

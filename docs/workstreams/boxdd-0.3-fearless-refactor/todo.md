@@ -207,4 +207,5 @@
 - [x] Review and refresh dependency versions for the release branch, including the optional testbed stack.
 - [x] Re-audit examples for `0.3.0` API consistency after the dependency refresh and any example regrouping, including query/cast role clarity and standalone collision coverage.
 - [x] Rewrite `CHANGELOG.md` into the final user-facing `0.3.0` release note format.
+- [x] Tighten the root `README` highlights and the `0.3` changelog wording so users can map the large refactor to concrete interfaces, modules, and examples quickly without extra release-guide sprawl.
 - [ ] Publish `boxdd 0.3.0`.

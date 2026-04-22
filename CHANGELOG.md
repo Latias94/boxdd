@@ -8,20 +8,19 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
-## [boxdd 0.3.0]
+## [boxdd 0.3.0] - 2026-04-22
 
 ### Upgrade Summary
-- Per-frame hot paths are first-class now. Keep the simple `Vec`-returning APIs for one-off use, or switch to `*_into` and `visit_*` when you want reusable buffers or zero result-container allocation.
-- The safe API now covers Box2D's character mover flow end to end: `cast_mover`, `collide_mover`, `solve_planes`, `clip_vector`, and matching recoverable `try_*` variants.
-- `boxdd::collision` is now a real standalone geometry surface for world-free distance queries, shape casts, TOI, manifolds, and `Aabb::ray_cast`, so advanced collision code no longer has to drop to `boxdd_sys::ffi`.
-- Runtime coverage is much broader across `World`, `WorldHandle`, `Body`, `Shape`, `Joint`, and `ContactId`, including read-only `WorldHandle` follow-up queries, richer event access, runtime tuning, explosions, and typed joint state/control.
-- Docs and examples now point users toward the intended `0.3` workflows: hot-path reuse, overlap vs cast queries, standalone collision, dedicated physics-thread ownership, stored `WorldHandle` reads, and optional `mint` math interop.
+- Hot-path APIs are first-class now: keep the simple `Vec`-returning calls for one-off use, or move per-frame code to `*_into` and `visit_*`.
+- The safe API now covers the full character-mover flow plus standalone collision helpers in `boxdd::collision`.
+- Runtime coverage is much broader across `World`, `WorldHandle`, `Body`, `Shape`, `Joint`, and `ContactId`.
+- Examples and testbed now teach the intended `0.3` workflows directly: reusable buffers, overlap vs cast queries, stored `WorldHandle` reads, dedicated physics-thread ownership, and optional `mint` interop.
 
 ### Breaking Changes
-- Crate-owned ids, math types, geometry values, filters, manifolds, contact data, and related helper values now cross the Box2D raw boundary explicitly through named `from_raw(...)` / `into_raw()` APIs instead of implicit conversions.
+- Crate-owned ids, math types, geometry values, filters, manifolds, and contact data now cross the raw boundary explicitly through named `from_raw(...)` / `into_raw()` APIs.
 - Geometry creation, editing, and geometry getters now use crate-owned safe geometry types instead of raw Box2D structs.
-- Raw escape hatches were renamed to make FFI seams obvious. Expect names such as `world_id_raw`, `transform_raw`, `*_user_data_ptr_raw`, `with_*_events_raw(...)`, `shape_type_raw`, and `contact_data_raw_*`.
-- `Body::transform` and `OwnedBody::transform` now return the safe `Transform` type. Raw access moved to `transform_raw` / `try_transform_raw`.
+- Raw escape hatches were renamed to make FFI seams obvious, including names such as `world_id_raw`, `transform_raw`, `*_user_data_ptr_raw`, `with_*_events_raw(...)`, and `contact_data_raw_*`.
+- `Body::transform` and `OwnedBody::transform` now return the safe `Transform` type; raw access moved to `transform_raw` / `try_transform_raw`.
 - `ContactIdExt` was removed. Its inspection helpers now live directly on `ContactId`.
 - Open-chain runtime material access now uses visible live-segment indexing instead of Box2D's ghost-placeholder storage layout.
 - `BodyDef::from_raw(...)` and `WorldDef::from_raw(...)` are now `unsafe`, because raw callbacks and pointers can flow back into later safe runtime paths.
@@ -37,8 +36,8 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 ### Also Changed
 - The safe API now front-loads many obvious Box2D preconditions instead of depending on upstream assert-enabled builds. Recoverable `try_*` paths return `ApiError::InvalidArgument`, `ApiError::InCallback`, or `ApiError::InvalidJointType` where appropriate.
 - Event access is more consistent: owned snapshots support buffer reuse, zero-copy views and raw event slices have matching `try_*` forms, and `WorldHandle` intentionally mirrors only the owned-snapshot side.
-- Math interop was expanded and rounded out across `mint`, `glam`, `cgmath`, and `nalgebra`, and the threading/error-handling docs now make the intended single-owner physics model much clearer.
-- The example catalog was reorganized by workflow, and the focused samples now more clearly separate reusable-buffer queries, event snapshots vs views, stored `WorldHandle` reads, and optional `mint` interop.
+- Math interop was expanded across `mint`, `glam`, `cgmath`, and `nalgebra`, and the threading/error-handling docs now make the intended single-owner physics model much clearer.
+- The example catalog was reorganized by workflow, with focused samples for reusable-buffer queries, event snapshots vs views, stored `WorldHandle` reads, and optional `mint` interop.
 - The optional Dear ImGui testbed stack was refreshed to the current `dear-imgui-*` generation used by this repository.
 - The interactive testbed was reorganized around a central scene registry plus scene-local state blocks, and its overlap/cast/event/material demos now follow the intended `0.3` reusable-buffer and live-update workflows more faithfully with a clearer grouped control panel.
 
