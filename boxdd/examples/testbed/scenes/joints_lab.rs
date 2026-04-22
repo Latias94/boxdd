@@ -405,7 +405,9 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
 pub fn tick(app: &mut super::PhysicsApp) {
     if app.jl_mode == 6 {
         // filter joint scene uses contact hit accumulation
-        let ce = app.world.contact_events();
-        app.fj_hits += ce.hit.len();
+        let world = &app.world;
+        let scratch = &mut app.scratch;
+        world.contact_events_into(&mut scratch.contact_events);
+        app.fj_hits += scratch.contact_events.hit.len();
     }
 }

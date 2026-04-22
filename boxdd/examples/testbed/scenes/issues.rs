@@ -38,10 +38,13 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
 }
 
 pub fn tick(app: &mut super::PhysicsApp) {
-    // Reuse events counters for convenience
-    let se = app.world.sensor_events();
-    app.ev_sens_beg += se.begin.len();
-    app.ev_sens_end += se.end.len();
+    // Reuse the shared scratch buffers so the issue repro scene does not
+    // allocate fresh sensor snapshots every frame.
+    let world = &app.world;
+    let scratch = &mut app.scratch;
+    world.sensor_events_into(&mut scratch.sensor_events);
+    app.ev_sens_beg += scratch.sensor_events.begin.len();
+    app.ev_sens_end += scratch.sensor_events.end.len();
 }
 
 pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {

@@ -48,24 +48,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = world.create_polygon_shape_for(a, &dyn_def, &shapes::box_polygon(0.4, 0.4));
     let _ = world.create_polygon_shape_for(b, &dyn_def, &shapes::box_polygon(0.4, 0.4));
 
+    let mut move_count = 0usize;
+    let mut sleep_transitions = 0usize;
+    let mut sensor_begin = 0usize;
+    let mut sensor_end = 0usize;
+    let mut contact_begin = 0usize;
+    let mut contact_end = 0usize;
+    let mut contact_hit = 0usize;
+    let mut joint_count = 0usize;
+
     for _ in 0..60 {
         world.step(1.0 / 60.0, 8);
 
         // Zero-copy views (borrows internal Box2D buffers)
         world.with_body_events_view(|moves| {
             for m in moves {
-                let _ = (m.body_id(), m.fell_asleep());
+                let _ = m.body_id();
+                move_count += 1;
+                sleep_transitions += usize::from(m.fell_asleep());
             }
         });
         world.with_sensor_events_view(|beg, end| {
-            let _ = (beg.count(), end.count());
+            sensor_begin += beg.count();
+            sensor_end += end.count();
         });
         world.with_contact_events_view(|b, e, h| {
-            let _ = (b.count(), e.count(), h.count());
+            contact_begin += b.count();
+            contact_end += e.count();
+            contact_hit += h.count();
         });
         world.with_joint_events_view(|j| {
-            let _ = j.count();
+            joint_count += j.count();
         });
     }
+    println!(
+        "events_view: move={} asleep={} sensor(b={},e={}) contact(b={},e={},hit={}) joints={}",
+        move_count,
+        sleep_transitions,
+        sensor_begin,
+        sensor_end,
+        contact_begin,
+        contact_end,
+        contact_hit,
+        joint_count
+    );
     Ok(())
 }

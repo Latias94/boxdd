@@ -475,6 +475,41 @@ impl MaterialsState {
     }
 }
 
+// Reusable per-frame buffers shared across scenes so the interactive testbed
+// reflects the same hot-path guidance as the public examples and docs.
+pub struct TestbedScratch {
+    pub body_events: Vec<bd::BodyMoveEvent>,
+    pub sensor_events: bd::SensorEvents,
+    pub contact_events: bd::ContactEvents,
+    pub joint_events: Vec<bd::JointEvent>,
+    pub ray_hits: Vec<bd::RayResult>,
+}
+
+impl Default for TestbedScratch {
+    fn default() -> Self {
+        Self {
+            body_events: Vec::new(),
+            sensor_events: bd::SensorEvents::default(),
+            contact_events: bd::ContactEvents::default(),
+            joint_events: Vec::new(),
+            ray_hits: Vec::new(),
+        }
+    }
+}
+
+impl TestbedScratch {
+    fn reset_runtime(&mut self) {
+        self.body_events.clear();
+        self.sensor_events.begin.clear();
+        self.sensor_events.end.clear();
+        self.contact_events.begin.clear();
+        self.contact_events.end.clear();
+        self.contact_events.hit.clear();
+        self.joint_events.clear();
+        self.ray_hits.clear();
+    }
+}
+
 pub struct PhysicsApp {
     pub world: bd::World,
     pub scene: Scene,
@@ -504,6 +539,7 @@ pub struct PhysicsApp {
     pub created_bodies: usize,
     pub created_shapes: usize,
     pub created_joints: usize,
+    pub scratch: TestbedScratch,
     // Step stats
     pub step_ms: f32,
     pub cnt_bodies: i32,
@@ -962,6 +998,7 @@ impl PhysicsApp {
             created_bodies: 0,
             created_shapes: 0,
             created_joints: 0,
+            scratch: TestbedScratch::default(),
             step_ms: 0.0,
             cnt_bodies: 0,
             cnt_shapes: 0,
@@ -1168,6 +1205,7 @@ impl PhysicsApp {
         self.ev_con_hit = 0;
         self.ev_joint = 0;
         self.robust_hit_count = 0;
+        self.scratch.reset_runtime();
         self.overlap_queries.reset_runtime();
         self.cm_fraction = 1.0;
         self.query_casts.reset_runtime();
@@ -1206,87 +1244,143 @@ impl PhysicsApp {
     }
 
     pub fn ui(&mut self, ui: &imgui::Ui) {
-        ui.window("BoxDD Testbed").build(|| {
-            if ui.button(if self.running { "Pause" } else { "Play" }) {
-                self.running = !self.running;
-            }
-            ui.same_line();
-            if ui.button("Step") {
-                self.step_once();
-            }
-            ui.same_line();
-            if ui.button("Reset") {
-                let _ = self.reset();
-            }
-            ui.separator();
+        ui.window("BoxDD Testbed")
+            .size([380.0, 700.0], imgui::Condition::FirstUseEver)
+            .position([16.0, 16.0], imgui::Condition::FirstUseEver)
+            .size_constraints([340.0, 420.0], [540.0, 1080.0])
+            .build(|| {
+                self.ui_transport_controls(ui);
+                ui.separator();
+                self.ui_scene_section(ui);
+                self.ui_global_section(ui);
+                self.ui_debug_draw_section(ui);
+                self.ui_stats_section(ui);
+            });
+    }
 
-            // Global tunables
-            ui.text("Global");
-            let mut ppm = self.pixels_per_meter;
-            if ui.slider("Pixels / Meter", 5.0, 120.0, &mut ppm) {
-                self.pixels_per_meter = ppm.max(1.0);
-            }
-            let mut ts = self.time_scale;
-            if ui.slider("Time Scale", 0.1, 2.0, &mut ts) { self.time_scale = ts; }
-            ui.separator();
+    fn panel_section_flags(default_open: bool) -> imgui::TreeNodeFlags {
+        let mut flags = imgui::TreeNodeFlags::FRAMED | imgui::TreeNodeFlags::SPAN_AVAIL_WIDTH;
+        if default_open {
+            flags |= imgui::TreeNodeFlags::DEFAULT_OPEN;
+        }
+        flags
+    }
 
-            let mut idx = self.scene_index();
-            if let Some(_c) = ui.begin_combo("Scene", scene_spec(self.scene).name) {
-                for (i, spec) in SCENE_SPECS.iter().enumerate() {
-                    let selected = i == idx;
-                    if ui.selectable_config(spec.name).selected(selected).build() {
-                        idx = i;
-                        self.scene = self.scene_from_index(idx);
-                        let _ = self.reset();
-                    }
+    fn ui_transport_controls(&mut self, ui: &imgui::Ui) {
+        if ui.button(if self.running { "Pause" } else { "Play" }) {
+            self.running = !self.running;
+        }
+        ui.same_line();
+        if ui.button("Step") {
+            self.step_once();
+        }
+        ui.same_line();
+        if ui.button("Reset") {
+            let _ = self.reset();
+        }
+        ui.text(format!("Scene: {}", scene_spec(self.scene).name));
+    }
+
+    fn ui_scene_section(&mut self, ui: &imgui::Ui) {
+        if !ui.collapsing_header("Scene", Self::panel_section_flags(true)) {
+            return;
+        }
+
+        let mut idx = self.scene_index();
+        if let Some(_c) = ui.begin_combo("Scene##scene_select", scene_spec(self.scene).name) {
+            for (i, spec) in SCENE_SPECS.iter().enumerate() {
+                let selected = i == idx;
+                if ui.selectable_config(spec.name).selected(selected).build() {
+                    idx = i;
+                    self.scene = self.scene_from_index(idx);
+                    let _ = self.reset();
                 }
             }
-            ui.separator();
-            let mut g = self.gravity_y;
-            if ui.slider("Gravity Y", -30.0, 10.0, &mut g) {
-                self.gravity_y = g;
-                let _ = self.reset();
-            }
-            let mut ss = self.sub_steps;
-            if ui.slider("Substeps", 1, 32, &mut ss) {
-                self.sub_steps = ss;
-            }
-            let mut run = self.running;
-            if ui.checkbox("Running", &mut run) {
-                self.running = run;
-            }
-            let c = self.world.counters();
-            ui.text(format!(
-                "Counters: bodies={} shapes={} contacts={} joints={}",
-                c.body_count, c.shape_count, c.contact_count, c.joint_count
-            ));
-            ui.separator();
-            ui.text("Scene Params");
-            (scene_spec(self.scene).ui)(self, ui);
-            ui.separator();
-            ui.text("Debug Draw");
-            ui.checkbox("Shapes", &mut self.dd_draw_shapes);
-            ui.same_line(); ui.checkbox("Joints", &mut self.dd_draw_joints);
-            ui.checkbox("Joint Extras", &mut self.dd_draw_joint_extras);
-            ui.same_line(); ui.checkbox("AABBs", &mut self.dd_draw_bounds);
-            ui.checkbox("Mass/COM", &mut self.dd_draw_mass);
-            ui.same_line(); ui.checkbox("Body Names", &mut self.dd_draw_body_names);
-            ui.checkbox("Contacts", &mut self.dd_draw_contacts);
-            ui.same_line(); ui.checkbox("Contact Features", &mut self.dd_draw_contact_features);
-            ui.checkbox("Contact Normals", &mut self.dd_draw_contact_normals);
-            ui.same_line(); ui.checkbox("Contact Forces", &mut self.dd_draw_contact_forces);
-            ui.checkbox("Friction Forces", &mut self.dd_draw_friction_forces);
-            ui.same_line(); ui.checkbox("Islands", &mut self.dd_draw_islands);
-            let mut fs = self.dd_force_scale; let mut js = self.dd_joint_scale;
-            let _ = ui.slider("Force Scale", 0.0, 10.0, &mut fs);
-            let _ = ui.slider("Joint Scale", 0.1, 5.0, &mut js);
-            self.dd_force_scale = fs; self.dd_joint_scale = js;
-            ui.separator();
-            ui.text(format!(
-                "Stats: step={:.2} ms, awake={}, bodies={}, shapes={}, joints={}, contacts={}, islands={}",
-                self.step_ms, self.cnt_awake, self.cnt_bodies, self.cnt_shapes, self.cnt_joints, self.cnt_contacts, self.cnt_islands
-            ));
-        });
+        }
+
+        ui.text("Parameters");
+        (scene_spec(self.scene).ui)(self, ui);
+    }
+
+    fn ui_global_section(&mut self, ui: &imgui::Ui) {
+        if !ui.collapsing_header("Global", Self::panel_section_flags(true)) {
+            return;
+        }
+
+        let mut ppm = self.pixels_per_meter;
+        if ui.slider("Pixels / Meter", 5.0, 120.0, &mut ppm) {
+            self.pixels_per_meter = ppm.max(1.0);
+        }
+
+        let mut ts = self.time_scale;
+        if ui.slider("Time Scale", 0.1, 2.0, &mut ts) {
+            self.time_scale = ts;
+        }
+
+        let mut g = self.gravity_y;
+        if ui.slider("Gravity Y", -30.0, 10.0, &mut g) {
+            self.gravity_y = g;
+            let _ = self.reset();
+        }
+
+        let mut ss = self.sub_steps;
+        if ui.slider("Substeps", 1, 32, &mut ss) {
+            self.sub_steps = ss;
+        }
+
+        ui.checkbox("Running", &mut self.running);
+    }
+
+    fn ui_debug_draw_section(&mut self, ui: &imgui::Ui) {
+        if !ui.collapsing_header("Debug Draw", Self::panel_section_flags(false)) {
+            return;
+        }
+
+        ui.checkbox("Shapes", &mut self.dd_draw_shapes);
+        ui.same_line();
+        ui.checkbox("Joints", &mut self.dd_draw_joints);
+        ui.checkbox("Joint Extras", &mut self.dd_draw_joint_extras);
+        ui.same_line();
+        ui.checkbox("AABBs", &mut self.dd_draw_bounds);
+        ui.checkbox("Mass/COM", &mut self.dd_draw_mass);
+        ui.same_line();
+        ui.checkbox("Body Names", &mut self.dd_draw_body_names);
+        ui.checkbox("Contacts", &mut self.dd_draw_contacts);
+        ui.same_line();
+        ui.checkbox("Contact Features", &mut self.dd_draw_contact_features);
+        ui.checkbox("Contact Normals", &mut self.dd_draw_contact_normals);
+        ui.same_line();
+        ui.checkbox("Contact Forces", &mut self.dd_draw_contact_forces);
+        ui.checkbox("Friction Forces", &mut self.dd_draw_friction_forces);
+        ui.same_line();
+        ui.checkbox("Islands", &mut self.dd_draw_islands);
+
+        let mut fs = self.dd_force_scale;
+        let mut js = self.dd_joint_scale;
+        let _ = ui.slider("Force Scale", 0.0, 10.0, &mut fs);
+        let _ = ui.slider("Joint Scale", 0.1, 5.0, &mut js);
+        self.dd_force_scale = fs;
+        self.dd_joint_scale = js;
+    }
+
+    fn ui_stats_section(&self, ui: &imgui::Ui) {
+        if !ui.collapsing_header("Stats", Self::panel_section_flags(true)) {
+            return;
+        }
+
+        let c = self.world.counters();
+        ui.text(format!(
+            "Live: bodies={} shapes={} contacts={} joints={}",
+            c.body_count, c.shape_count, c.contact_count, c.joint_count
+        ));
+        ui.text(format!(
+            "Build: created bodies={} shapes={} joints={}",
+            self.created_bodies, self.created_shapes, self.created_joints
+        ));
+        ui.text(format!(
+            "Step: {:.2} ms, awake={}, islands={}",
+            self.step_ms, self.cnt_awake, self.cnt_islands
+        ));
     }
 
     pub fn debug_overlay(&self, ui: &imgui::Ui) {

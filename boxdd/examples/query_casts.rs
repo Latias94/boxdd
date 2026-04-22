@@ -18,10 +18,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let closest = world.cast_ray_closest([0.0_f32, 5.0], [0.0, -8.0], filter);
 
-    let mut ray_hits = Vec::new();
+    let mut ray_hits = Vec::with_capacity(8);
     world.cast_ray_all_into([0.0_f32, 5.0], [0.0, -8.0], filter, &mut ray_hits);
 
-    let sweep_hits = world.cast_shape_points(
+    let mut sweep_hits = Vec::with_capacity(8);
+    world.cast_shape_points_into(
         [
             Vec2::new(-1.6, 1.0),
             Vec2::new(-0.8, 1.0),
@@ -31,9 +32,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         0.02,
         [3.6_f32, 0.0],
         filter,
+        &mut sweep_hits,
     );
 
-    let offset_hits = world.cast_shape_points_with_offset(
+    let mut offset_hits = Vec::with_capacity(8);
+    world.cast_shape_points_with_offset_into(
         [
             Vec2::new(-0.4, -0.3),
             Vec2::new(0.4, -0.3),
@@ -45,15 +48,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         0.35_f32,
         [3.5_f32, -1.6],
         filter,
+        &mut offset_hits,
     );
+
+    let sweep_min_fraction = sweep_hits.iter().map(|h| h.fraction).fold(1.0, f32::min);
+    let offset_min_fraction = offset_hits.iter().map(|h| h.fraction).fold(1.0, f32::min);
 
     println!(
         "cast_ray_closest: hit={} fraction={:.3}",
         closest.hit, closest.fraction
     );
     println!("cast_ray_all_into hits: {}", ray_hits.len());
-    println!("cast_shape_points hits: {}", sweep_hits.len());
-    println!("cast_shape_points_with_offset hits: {}", offset_hits.len());
+    println!(
+        "cast_shape_points_into hits: {} earliest_fraction={:.3}",
+        sweep_hits.len(),
+        sweep_min_fraction
+    );
+    println!(
+        "cast_shape_points_with_offset_into hits: {} earliest_fraction={:.3}",
+        offset_hits.len(),
+        offset_min_fraction
+    );
 
     Ok(())
 }

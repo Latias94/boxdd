@@ -108,6 +108,7 @@ cargo build
 cargo r --example world_basics
 cargo r --example queries
 cargo r --example character_mover
+cargo r --example mint_interop --features mint
 cargo r --example physics_thread
 cargo r --example scene_serialize --features serialize
 cargo r --example testbed_imgui_glow --features imgui-glow-testbed
@@ -118,9 +119,10 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 - Recommended starting points:
   - `world_basics`: minimal world/body/shape setup
   - `buffer_reuse`, `queries`, `query_casts`, `character_mover`: the main `0.3` hot-path, overlap, cast, and mover workflows
+  - `mint_interop`: optional `mint` vector/point/matrix interop sample behind the `mint` feature
   - `collision_basics`: standalone collision geometry helpers without constructing a `World`
-  - `events_summary`, `events_view`: owned vs borrowed event access
-  - `world_handle_reads`: stored read-only `WorldHandle` follow-up queries after id-producing world queries
+  - `events_summary`, `events_view`: owned-with-reuse vs borrowed zero-copy event access
+  - `world_handle_reads`: stored read-only `WorldHandle` follow-up queries after id-producing world queries, including reusable-buffer overlap reads
   - `scene_serialize`: snapshot/restore flows behind the `serialize` feature
   - `physics_thread`: the recommended dedicated physics-thread ownership model
   - `testbed_imgui_glow`: optional interactive testbed on the current `dear-imgui-*` stack

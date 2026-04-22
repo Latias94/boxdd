@@ -80,3 +80,8 @@ required-features = ["imgui-glow-testbed"]
 name = "scene_serialize"
 path = "examples/scene_serialize.rs"
 required-features = ["serialize"]
+
+[[example]]
+name = "mint_interop"
+path = "examples/mint_interop.rs"
+required-features = ["mint"]

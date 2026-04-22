@@ -52,6 +52,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // No joints needed; focus on body/sensor/contact/hit events.
 
     // Step and collect events
+    let mut body_events = Vec::with_capacity(32);
+    let mut sensor_events = SensorEvents::default();
+    let mut contact_events = ContactEvents::default();
+    let mut joint_events = Vec::with_capacity(16);
+
     let mut moves = 0usize;
     let mut sens_beg = 0usize;
     let mut sens_end = 0usize;
@@ -61,19 +66,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut joint_ev = 0usize;
     for _ in 0..240 {
         world.step(1.0 / 60.0, 8);
-        moves += world.body_events().len();
-        let se = world.sensor_events();
-        sens_beg += se.begin.len();
-        sens_end += se.end.len();
-        let ce = world.contact_events();
-        con_beg += ce.begin.len();
-        con_end += ce.end.len();
-        con_hit += ce.hit.len();
-        joint_ev += world.joint_events().len();
+        world.body_events_into(&mut body_events);
+        world.sensor_events_into(&mut sensor_events);
+        world.contact_events_into(&mut contact_events);
+        world.joint_events_into(&mut joint_events);
+
+        moves += body_events.len();
+        sens_beg += sensor_events.begin.len();
+        sens_end += sensor_events.end.len();
+        con_beg += contact_events.begin.len();
+        con_end += contact_events.end.len();
+        con_hit += contact_events.hit.len();
+        joint_ev += joint_events.len();
     }
     let c = world.counters();
     println!(
-        "events_summary: move={} sensor(b={},e={}) contact(b={},e={},hit={}) joints={} counters bodies={} shapes={} contacts={} joints={} islands={}",
+        "events_summary_into: move={} sensor(b={},e={}) contact(b={},e={},hit={}) joints={} counters bodies={} shapes={} contacts={} joints={} islands={}",
         moves,
         sens_beg,
         sens_end,

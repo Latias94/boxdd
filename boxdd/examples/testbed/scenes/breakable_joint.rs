@@ -42,9 +42,11 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
 
 pub fn tick(app: &mut super::PhysicsApp) {
     // Count joint events (breaks)
-    let evs = app.world.joint_events();
-    if !evs.is_empty() {
-        app.bj_broken += evs.len();
+    let world = &app.world;
+    let scratch = &mut app.scratch;
+    world.joint_events_into(&mut scratch.joint_events);
+    if !scratch.joint_events.is_empty() {
+        app.bj_broken += scratch.joint_events.len();
     }
 }
 
@@ -62,8 +64,15 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
         // Apply impulse to left box to stress the joint
         // Best-effort: search the body at approximately [-2, 4] (first dynamic we created)
         // In this minimal setup we simply cast a ray and nudge the first hit body.
-        let hits = app.world.cast_ray_all([-3.0, 4.0], [2.0, 0.0], bd::QueryFilter::default());
-        if let Some(h) = hits.first() {
+        let world = &app.world;
+        let scratch = &mut app.scratch;
+        world.cast_ray_all_into(
+            [-3.0, 4.0],
+            [2.0, 0.0],
+            bd::QueryFilter::default(),
+            &mut scratch.ray_hits,
+        );
+        if let Some(h) = scratch.ray_hits.first() {
             // Convert hit shape to body id
             let sid = h.shape_id;
             let bid = app.world.shape_body_id(sid);

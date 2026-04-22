@@ -27,8 +27,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let handle = world.handle();
-    let shape_ids =
-        handle.overlap_aabb(Aabb::new([-1.0, -1.0], [1.0, 3.0]), QueryFilter::default());
+    let mut shape_ids = Vec::with_capacity(8);
+    handle.overlap_aabb_into(
+        Aabb::new([-1.0, -1.0], [1.0, 3.0]),
+        QueryFilter::default(),
+        &mut shape_ids,
+    );
 
     for shape in shape_ids {
         let body = handle.shape_body_id(shape);

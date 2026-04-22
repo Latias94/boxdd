@@ -52,7 +52,10 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
 }
 
 pub fn tick(app: &mut super::PhysicsApp) {
-    app.robust_hit_count += app.world.contact_events().hit.len();
+    let world = &app.world;
+    let scratch = &mut app.scratch;
+    world.contact_events_into(&mut scratch.contact_events);
+    app.robust_hit_count += scratch.contact_events.hit.len();
 }
 
 pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {

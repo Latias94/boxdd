@@ -11,11 +11,15 @@ If you are new to `boxdd`, start with the first section instead of scanning file
 - `shapes_variety.rs`: safe shape geometry creation across the common built-in shape types
 - `joints.rs` and `joints_presets.rs`: common joint setup paths
 
+## Math Interop
+
+- `mint_interop.rs`: `mint::Vector2` / `mint::Point2` / matrix conversions across world setup, `Aabb`, `Rot`, and `Transform` (`--features mint`)
+
 ## Queries and Hot Paths
 
 - `buffer_reuse.rs`: focused `*_into` and `visit_*` hot-path reuse patterns
 - `queries.rs`: overlap query styles (`overlap_aabb`, `*_into`, `visit_*`, polygon overlap helpers)
-- `query_casts.rs`: ray-cast and shape-cast overview without mover overlap
+- `query_casts.rs`: ray-cast and shape-cast overview using reusable cast-hit buffers without mover overlap
 - `raycast.rs`: focused ray-cast sample
 - `shapecast.rs`: focused shape-cast sample
 - `character_mover.rs`: the full safe mover pipeline (`cast_mover`, `collide_mover`, `solve_planes`, `clip_vector`)
@@ -24,7 +28,7 @@ If you are new to `boxdd`, start with the first section instead of scanning file
 
 ## Events and Contacts
 
-- `events_summary.rs`: owned event snapshots
+- `events_summary.rs`: owned event snapshots with reusable `*_events_into(...)` buffers
 - `events_view.rs`: borrowed zero-copy event views
 - `sensors.rs`: sensor events and overlap behavior
 - `contacts.rs`: contact behavior and inspection
@@ -41,11 +45,11 @@ If you are new to `boxdd`, start with the first section instead of scanning file
 - `issues.rs`: targeted regressions or issue-driven examples
 - `doohickey.rs`, `donut.rs`, `convex_hull.rs`, `benchmark.rs`: specialized geometry or stress samples
 
-## Serialization and Threading
+## Integration and Ownership Models
 
 - `scene_serialize.rs`: scene snapshot round-trip (`--features serialize`)
 - `physics_thread.rs`: dedicated-thread ownership model for apps that are otherwise multi-threaded or async-driven
-- `world_handle_reads.rs`: stored read-only `WorldHandle` queries over bodies and shapes returned from world queries
+- `world_handle_reads.rs`: stored read-only `WorldHandle` queries, including reusable-buffer overlap reads and follow-up body/shape inspection
 - `wasm_wasi_smoke.rs`: minimal WASM/WASI-oriented smoke example
 
 ## Interactive Testbed

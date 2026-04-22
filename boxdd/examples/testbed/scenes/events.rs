@@ -47,15 +47,23 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
 }
 
 pub fn tick(app: &mut super::PhysicsApp) {
-    app.ev_moves += app.world.body_events().len();
-    let se = app.world.sensor_events();
-    app.ev_sens_beg += se.begin.len();
-    app.ev_sens_end += se.end.len();
-    let ce = app.world.contact_events();
-    app.ev_con_beg += ce.begin.len();
-    app.ev_con_end += ce.end.len();
-    app.ev_con_hit += ce.hit.len();
-    app.ev_joint += app.world.joint_events().len();
+    let world = &app.world;
+    let scratch = &mut app.scratch;
+
+    world.body_events_into(&mut scratch.body_events);
+    app.ev_moves += scratch.body_events.len();
+
+    world.sensor_events_into(&mut scratch.sensor_events);
+    app.ev_sens_beg += scratch.sensor_events.begin.len();
+    app.ev_sens_end += scratch.sensor_events.end.len();
+
+    world.contact_events_into(&mut scratch.contact_events);
+    app.ev_con_beg += scratch.contact_events.begin.len();
+    app.ev_con_end += scratch.contact_events.end.len();
+    app.ev_con_hit += scratch.contact_events.hit.len();
+
+    world.joint_events_into(&mut scratch.joint_events);
+    app.ev_joint += scratch.joint_events.len();
 }
 
 pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {

@@ -207,8 +207,10 @@ pub fn tick(app: &mut super::PhysicsApp) {
     match app.cl_mode {
         1 => {
             // ghost bumps: accumulate hits
-            let ce = app.world.contact_events();
-            app.gb_hits += ce.hit.len();
+            let world = &app.world;
+            let scratch = &mut app.scratch;
+            world.contact_events_into(&mut scratch.contact_events);
+            app.gb_hits += scratch.contact_events.hit.len();
         }
         3 => {
             // pinball flipper hold control

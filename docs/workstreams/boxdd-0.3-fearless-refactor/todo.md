@@ -171,6 +171,8 @@
 - [x] Refactor the interactive testbed scene router behind one scene registry so scene labels plus `build` / `tick` / `ui` / overlay hooks stay in one place, and fix the previously unwired scene `tick` paths that could silently drift.
 - [x] Group the interactive testbed's scene-local state by workflow (`overlap_queries`, `query_casts`, `bodies_lab`, `world_lab`, `materials`, and `manifold`) so `PhysicsApp` stops accumulating unrelated flat fields, and fix the stale materials belt-body/preset update paths while the hot-path query demos start reusing their buffers across frames.
 - [x] Run a second-pass example taxonomy cleanup so overlap, cast, mover, event, and standalone collision examples each teach one clear workflow.
+- [x] Refresh the post-taxonomy examples again so the public query/event/handle demos (`query_casts`, `events_summary`, `events_view`, `sensors`, `world_handle_reads`) actually exercise the `0.3` reusable-buffer and zero-copy patterns that the README now recommends.
+- [x] Remove the stray tracked `boxdd-sys/Cargo.lock`, and finish the testbed release-hardening pass so the interactive control panel is easier to scan while event/query-heavy scenes reuse persistent scratch buffers instead of reallocating snapshots every frame.
 - [x] Rewrite `queries.rs` and `query_casts.rs` so overlap queries and cast workflows stop overlapping conceptually.
 - [x] Rewrite `collision_basics.rs` so it demonstrates standalone `boxdd::collision` algorithms instead of world contact events.
 - [ ] Audit any remaining owned/scoped handle duplication outside the already-refactored internals and confirm it is worth keeping.
@@ -202,7 +204,7 @@
 - [x] Run `cargo fmt --all`.
 - [x] Run targeted mover tests.
 - [x] Run `cargo nextest run -p boxdd`.
-- [ ] Review and refresh dependency versions for the release branch, including the optional testbed stack.
+- [x] Review and refresh dependency versions for the release branch, including the optional testbed stack.
 - [x] Re-audit examples for `0.3.0` API consistency after the dependency refresh and any example regrouping, including query/cast role clarity and standalone collision coverage.
 - [x] Rewrite `CHANGELOG.md` into the final user-facing `0.3.0` release note format.
 - [ ] Publish `boxdd 0.3.0`.
