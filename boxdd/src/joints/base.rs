@@ -384,6 +384,305 @@ fn try_joint_take_user_data_checked_impl<T: 'static>(
     joint_take_user_data_impl(world_core, id)
 }
 
+trait JointRuntimeHandle {
+    fn joint_id(&self) -> JointId;
+    fn joint_world_core(&self) -> &WorldCore;
+
+    #[inline]
+    fn assert_valid(&self) {
+        crate::core::debug_checks::assert_joint_valid(self.joint_id());
+    }
+
+    #[inline]
+    fn check_valid(&self) -> ApiResult<()> {
+        crate::core::debug_checks::check_joint_valid(self.joint_id())
+    }
+
+    fn is_valid(&self) -> bool {
+        joint_is_valid_checked_impl(self.joint_id())
+    }
+
+    fn try_is_valid(&self) -> ApiResult<bool> {
+        try_joint_is_valid_impl(self.joint_id())
+    }
+
+    fn joint_type(&self) -> JointType {
+        self.assert_valid();
+        joint_type_impl(self.joint_id())
+    }
+
+    fn try_joint_type(&self) -> ApiResult<JointType> {
+        self.check_valid()?;
+        Ok(joint_type_impl(self.joint_id()))
+    }
+
+    fn joint_type_raw(&self) -> ffi::b2JointType {
+        self.assert_valid();
+        joint_type_raw_impl(self.joint_id())
+    }
+
+    fn try_joint_type_raw(&self) -> ApiResult<ffi::b2JointType> {
+        self.check_valid()?;
+        Ok(joint_type_raw_impl(self.joint_id()))
+    }
+
+    fn body_a_id(&self) -> BodyId {
+        self.assert_valid();
+        joint_body_a_id_impl(self.joint_id())
+    }
+
+    fn try_body_a_id(&self) -> ApiResult<BodyId> {
+        self.check_valid()?;
+        Ok(joint_body_a_id_impl(self.joint_id()))
+    }
+
+    fn body_b_id(&self) -> BodyId {
+        self.assert_valid();
+        joint_body_b_id_impl(self.joint_id())
+    }
+
+    fn try_body_b_id(&self) -> ApiResult<BodyId> {
+        self.check_valid()?;
+        Ok(joint_body_b_id_impl(self.joint_id()))
+    }
+
+    fn collide_connected(&self) -> bool {
+        self.assert_valid();
+        joint_collide_connected_impl(self.joint_id())
+    }
+
+    fn try_collide_connected(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(joint_collide_connected_impl(self.joint_id()))
+    }
+
+    fn set_collide_connected(&mut self, flag: bool) {
+        self.assert_valid();
+        joint_set_collide_connected_impl(self.joint_id(), flag);
+    }
+
+    fn try_set_collide_connected(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        joint_set_collide_connected_impl(self.joint_id(), flag);
+        Ok(())
+    }
+
+    fn constraint_tuning(&self) -> ConstraintTuning {
+        self.assert_valid();
+        joint_constraint_tuning_impl(self.joint_id())
+    }
+
+    fn try_constraint_tuning(&self) -> ApiResult<ConstraintTuning> {
+        self.check_valid()?;
+        Ok(joint_constraint_tuning_impl(self.joint_id()))
+    }
+
+    fn set_constraint_tuning(&mut self, tuning: ConstraintTuning) {
+        self.assert_valid();
+        joint_set_constraint_tuning_impl(self.joint_id(), tuning);
+    }
+
+    fn try_set_constraint_tuning(&mut self, tuning: ConstraintTuning) -> ApiResult<()> {
+        self.check_valid()?;
+        joint_set_constraint_tuning_impl(self.joint_id(), tuning);
+        Ok(())
+    }
+
+    fn local_frame_a(&self) -> crate::Transform {
+        self.assert_valid();
+        joint_local_frame_a_impl(self.joint_id())
+    }
+
+    fn try_local_frame_a(&self) -> ApiResult<crate::Transform> {
+        self.check_valid()?;
+        Ok(joint_local_frame_a_impl(self.joint_id()))
+    }
+
+    fn local_frame_b(&self) -> crate::Transform {
+        self.assert_valid();
+        joint_local_frame_b_impl(self.joint_id())
+    }
+
+    fn try_local_frame_b(&self) -> ApiResult<crate::Transform> {
+        self.check_valid()?;
+        Ok(joint_local_frame_b_impl(self.joint_id()))
+    }
+
+    fn wake_bodies(&mut self) {
+        self.assert_valid();
+        joint_wake_bodies_impl(self.joint_id());
+    }
+
+    fn try_wake_bodies(&mut self) -> ApiResult<()> {
+        self.check_valid()?;
+        joint_wake_bodies_impl(self.joint_id());
+        Ok(())
+    }
+
+    fn linear_separation(&self) -> f32 {
+        self.assert_valid();
+        joint_linear_separation_impl(self.joint_id())
+    }
+
+    fn try_linear_separation(&self) -> ApiResult<f32> {
+        self.check_valid()?;
+        Ok(joint_linear_separation_impl(self.joint_id()))
+    }
+
+    fn angular_separation(&self) -> f32 {
+        self.assert_valid();
+        joint_angular_separation_impl(self.joint_id())
+    }
+
+    fn try_angular_separation(&self) -> ApiResult<f32> {
+        self.check_valid()?;
+        Ok(joint_angular_separation_impl(self.joint_id()))
+    }
+
+    fn constraint_force(&self) -> Vec2 {
+        self.assert_valid();
+        joint_constraint_force_impl(self.joint_id())
+    }
+
+    fn try_constraint_force(&self) -> ApiResult<Vec2> {
+        self.check_valid()?;
+        Ok(joint_constraint_force_impl(self.joint_id()))
+    }
+
+    fn constraint_torque(&self) -> f32 {
+        self.assert_valid();
+        joint_constraint_torque_impl(self.joint_id())
+    }
+
+    fn try_constraint_torque(&self) -> ApiResult<f32> {
+        self.check_valid()?;
+        Ok(joint_constraint_torque_impl(self.joint_id()))
+    }
+
+    fn force_threshold(&self) -> f32 {
+        self.assert_valid();
+        joint_force_threshold_impl(self.joint_id())
+    }
+
+    fn try_force_threshold(&self) -> ApiResult<f32> {
+        self.check_valid()?;
+        Ok(joint_force_threshold_impl(self.joint_id()))
+    }
+
+    fn set_force_threshold(&mut self, threshold: f32) {
+        self.assert_valid();
+        joint_set_force_threshold_impl(self.joint_id(), threshold);
+    }
+
+    fn try_set_force_threshold(&mut self, threshold: f32) -> ApiResult<()> {
+        self.check_valid()?;
+        joint_set_force_threshold_impl(self.joint_id(), threshold);
+        Ok(())
+    }
+
+    fn torque_threshold(&self) -> f32 {
+        self.assert_valid();
+        joint_torque_threshold_impl(self.joint_id())
+    }
+
+    fn try_torque_threshold(&self) -> ApiResult<f32> {
+        self.check_valid()?;
+        Ok(joint_torque_threshold_impl(self.joint_id()))
+    }
+
+    fn set_torque_threshold(&mut self, threshold: f32) {
+        self.assert_valid();
+        joint_set_torque_threshold_impl(self.joint_id(), threshold);
+    }
+
+    fn try_set_torque_threshold(&mut self, threshold: f32) -> ApiResult<()> {
+        self.check_valid()?;
+        joint_set_torque_threshold_impl(self.joint_id(), threshold);
+        Ok(())
+    }
+
+    unsafe fn set_user_data_ptr_raw(&mut self, p: *mut c_void) {
+        unsafe {
+            joint_set_user_data_ptr_raw_checked_impl(self.joint_world_core(), self.joint_id(), p)
+        }
+    }
+
+    unsafe fn try_set_user_data_ptr_raw(&mut self, p: *mut c_void) -> ApiResult<()> {
+        unsafe { try_joint_set_user_data_ptr_raw_impl(self.joint_world_core(), self.joint_id(), p) }
+    }
+
+    fn user_data_ptr_raw(&self) -> *mut c_void {
+        joint_user_data_ptr_raw_checked_impl(self.joint_id())
+    }
+
+    fn try_user_data_ptr_raw(&self) -> ApiResult<*mut c_void> {
+        try_joint_user_data_ptr_raw_impl(self.joint_id())
+    }
+
+    fn set_user_data<T: 'static>(&mut self, value: T) {
+        joint_set_user_data_checked_impl(self.joint_world_core(), self.joint_id(), value);
+    }
+
+    fn try_set_user_data<T: 'static>(&mut self, value: T) -> ApiResult<()> {
+        try_joint_set_user_data_checked_impl(self.joint_world_core(), self.joint_id(), value)
+    }
+
+    fn clear_user_data(&mut self) -> bool {
+        joint_clear_user_data_checked_impl(self.joint_world_core(), self.joint_id())
+    }
+
+    fn try_clear_user_data(&mut self) -> ApiResult<bool> {
+        try_joint_clear_user_data_checked_impl(self.joint_world_core(), self.joint_id())
+    }
+
+    fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
+        joint_with_user_data_checked_impl(self.joint_world_core(), self.joint_id(), f)
+    }
+
+    fn try_with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> ApiResult<Option<R>> {
+        try_joint_with_user_data_checked_impl(self.joint_world_core(), self.joint_id(), f)
+    }
+
+    fn with_user_data_mut<T: 'static, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
+        joint_with_user_data_mut_checked_impl(self.joint_world_core(), self.joint_id(), f)
+    }
+
+    fn try_with_user_data_mut<T: 'static, R>(
+        &mut self,
+        f: impl FnOnce(&mut T) -> R,
+    ) -> ApiResult<Option<R>> {
+        try_joint_with_user_data_mut_checked_impl(self.joint_world_core(), self.joint_id(), f)
+    }
+
+    fn take_user_data<T: 'static>(&mut self) -> Option<T> {
+        joint_take_user_data_checked_impl(self.joint_world_core(), self.joint_id())
+    }
+
+    fn try_take_user_data<T: 'static>(&mut self) -> ApiResult<Option<T>> {
+        try_joint_take_user_data_checked_impl(self.joint_world_core(), self.joint_id())
+    }
+}
+
+impl JointRuntimeHandle for OwnedJoint {
+    fn joint_id(&self) -> JointId {
+        self.id
+    }
+
+    fn joint_world_core(&self) -> &WorldCore {
+        self.core.as_ref()
+    }
+}
+
+impl<'w> JointRuntimeHandle for Joint<'w> {
+    fn joint_id(&self) -> JointId {
+        self.id
+    }
+
+    fn joint_world_core(&self) -> &WorldCore {
+        self.core.as_ref()
+    }
+}
+
 impl OwnedJoint {
     pub(crate) fn new(core: Arc<WorldCore>, id: JointId) -> Self {
         core.owned_joints
@@ -402,21 +701,11 @@ impl OwnedJoint {
     }
 
     pub fn is_valid(&self) -> bool {
-        joint_is_valid_checked_impl(self.id)
+        JointRuntimeHandle::is_valid(self)
     }
 
     pub fn try_is_valid(&self) -> ApiResult<bool> {
-        try_joint_is_valid_impl(self.id)
-    }
-
-    #[inline]
-    fn assert_valid(&self) {
-        crate::core::debug_checks::assert_joint_valid(self.id);
-    }
-
-    #[inline]
-    fn check_valid(&self) -> ApiResult<()> {
-        crate::core::debug_checks::check_joint_valid(self.id)
+        JointRuntimeHandle::try_is_valid(self)
     }
 
     /// Borrow the raw id for ID-style APIs.
@@ -425,191 +714,148 @@ impl OwnedJoint {
     }
 
     pub fn joint_type(&self) -> JointType {
-        self.assert_valid();
-        joint_type_impl(self.id)
+        JointRuntimeHandle::joint_type(self)
     }
 
     pub fn try_joint_type(&self) -> ApiResult<JointType> {
-        self.check_valid()?;
-        Ok(joint_type_impl(self.id))
+        JointRuntimeHandle::try_joint_type(self)
     }
 
     pub fn joint_type_raw(&self) -> ffi::b2JointType {
-        self.assert_valid();
-        joint_type_raw_impl(self.id)
+        JointRuntimeHandle::joint_type_raw(self)
     }
 
     pub fn try_joint_type_raw(&self) -> ApiResult<ffi::b2JointType> {
-        self.check_valid()?;
-        Ok(joint_type_raw_impl(self.id))
+        JointRuntimeHandle::try_joint_type_raw(self)
     }
 
     pub fn body_a_id(&self) -> BodyId {
-        self.assert_valid();
-        joint_body_a_id_impl(self.id)
+        JointRuntimeHandle::body_a_id(self)
     }
 
     pub fn try_body_a_id(&self) -> ApiResult<BodyId> {
-        self.check_valid()?;
-        Ok(joint_body_a_id_impl(self.id))
+        JointRuntimeHandle::try_body_a_id(self)
     }
 
     pub fn body_b_id(&self) -> BodyId {
-        self.assert_valid();
-        joint_body_b_id_impl(self.id)
+        JointRuntimeHandle::body_b_id(self)
     }
 
     pub fn try_body_b_id(&self) -> ApiResult<BodyId> {
-        self.check_valid()?;
-        Ok(joint_body_b_id_impl(self.id))
+        JointRuntimeHandle::try_body_b_id(self)
     }
 
     pub fn collide_connected(&self) -> bool {
-        self.assert_valid();
-        joint_collide_connected_impl(self.id)
+        JointRuntimeHandle::collide_connected(self)
     }
 
     pub fn try_collide_connected(&self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(joint_collide_connected_impl(self.id))
+        JointRuntimeHandle::try_collide_connected(self)
     }
 
     pub fn set_collide_connected(&mut self, flag: bool) {
-        self.assert_valid();
-        joint_set_collide_connected_impl(self.id, flag)
+        JointRuntimeHandle::set_collide_connected(self, flag)
     }
 
     pub fn try_set_collide_connected(&mut self, flag: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        joint_set_collide_connected_impl(self.id, flag);
-        Ok(())
+        JointRuntimeHandle::try_set_collide_connected(self, flag)
     }
 
     pub fn constraint_tuning(&self) -> ConstraintTuning {
-        self.assert_valid();
-        joint_constraint_tuning_impl(self.id)
+        JointRuntimeHandle::constraint_tuning(self)
     }
 
     pub fn try_constraint_tuning(&self) -> ApiResult<ConstraintTuning> {
-        self.check_valid()?;
-        Ok(joint_constraint_tuning_impl(self.id))
+        JointRuntimeHandle::try_constraint_tuning(self)
     }
 
     pub fn set_constraint_tuning(&mut self, tuning: ConstraintTuning) {
-        self.assert_valid();
-        joint_set_constraint_tuning_impl(self.id, tuning)
+        JointRuntimeHandle::set_constraint_tuning(self, tuning)
     }
 
     pub fn try_set_constraint_tuning(&mut self, tuning: ConstraintTuning) -> ApiResult<()> {
-        self.check_valid()?;
-        joint_set_constraint_tuning_impl(self.id, tuning);
-        Ok(())
+        JointRuntimeHandle::try_set_constraint_tuning(self, tuning)
     }
 
     pub fn local_frame_a(&self) -> crate::Transform {
-        self.assert_valid();
-        joint_local_frame_a_impl(self.id)
+        JointRuntimeHandle::local_frame_a(self)
     }
 
     pub fn try_local_frame_a(&self) -> ApiResult<crate::Transform> {
-        self.check_valid()?;
-        Ok(joint_local_frame_a_impl(self.id))
+        JointRuntimeHandle::try_local_frame_a(self)
     }
 
     pub fn local_frame_b(&self) -> crate::Transform {
-        self.assert_valid();
-        joint_local_frame_b_impl(self.id)
+        JointRuntimeHandle::local_frame_b(self)
     }
 
     pub fn try_local_frame_b(&self) -> ApiResult<crate::Transform> {
-        self.check_valid()?;
-        Ok(joint_local_frame_b_impl(self.id))
+        JointRuntimeHandle::try_local_frame_b(self)
     }
 
     pub fn wake_bodies(&mut self) {
-        self.assert_valid();
-        joint_wake_bodies_impl(self.id)
+        JointRuntimeHandle::wake_bodies(self)
     }
 
     pub fn try_wake_bodies(&mut self) -> ApiResult<()> {
-        self.check_valid()?;
-        joint_wake_bodies_impl(self.id);
-        Ok(())
+        JointRuntimeHandle::try_wake_bodies(self)
     }
 
     pub fn linear_separation(&self) -> f32 {
-        self.assert_valid();
-        joint_linear_separation_impl(self.id)
+        JointRuntimeHandle::linear_separation(self)
     }
 
     pub fn try_linear_separation(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(joint_linear_separation_impl(self.id))
+        JointRuntimeHandle::try_linear_separation(self)
     }
 
     pub fn angular_separation(&self) -> f32 {
-        self.assert_valid();
-        joint_angular_separation_impl(self.id)
+        JointRuntimeHandle::angular_separation(self)
     }
 
     pub fn try_angular_separation(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(joint_angular_separation_impl(self.id))
+        JointRuntimeHandle::try_angular_separation(self)
     }
 
     pub fn constraint_force(&self) -> Vec2 {
-        self.assert_valid();
-        joint_constraint_force_impl(self.id)
+        JointRuntimeHandle::constraint_force(self)
     }
 
     pub fn try_constraint_force(&self) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(joint_constraint_force_impl(self.id))
+        JointRuntimeHandle::try_constraint_force(self)
     }
 
     pub fn constraint_torque(&self) -> f32 {
-        self.assert_valid();
-        joint_constraint_torque_impl(self.id)
+        JointRuntimeHandle::constraint_torque(self)
     }
 
     pub fn try_constraint_torque(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(joint_constraint_torque_impl(self.id))
+        JointRuntimeHandle::try_constraint_torque(self)
     }
 
     pub fn force_threshold(&self) -> f32 {
-        self.assert_valid();
-        joint_force_threshold_impl(self.id)
+        JointRuntimeHandle::force_threshold(self)
     }
     pub fn try_force_threshold(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(joint_force_threshold_impl(self.id))
+        JointRuntimeHandle::try_force_threshold(self)
     }
     pub fn set_force_threshold(&mut self, threshold: f32) {
-        self.assert_valid();
-        joint_set_force_threshold_impl(self.id, threshold)
+        JointRuntimeHandle::set_force_threshold(self, threshold)
     }
     pub fn try_set_force_threshold(&mut self, threshold: f32) -> ApiResult<()> {
-        self.check_valid()?;
-        joint_set_force_threshold_impl(self.id, threshold);
-        Ok(())
+        JointRuntimeHandle::try_set_force_threshold(self, threshold)
     }
     pub fn torque_threshold(&self) -> f32 {
-        self.assert_valid();
-        joint_torque_threshold_impl(self.id)
+        JointRuntimeHandle::torque_threshold(self)
     }
     pub fn try_torque_threshold(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(joint_torque_threshold_impl(self.id))
+        JointRuntimeHandle::try_torque_threshold(self)
     }
     pub fn set_torque_threshold(&mut self, threshold: f32) {
-        self.assert_valid();
-        joint_set_torque_threshold_impl(self.id, threshold)
+        JointRuntimeHandle::set_torque_threshold(self, threshold)
     }
     pub fn try_set_torque_threshold(&mut self, threshold: f32) -> ApiResult<()> {
-        self.check_valid()?;
-        joint_set_torque_threshold_impl(self.id, threshold);
-        Ok(())
+        JointRuntimeHandle::try_set_torque_threshold(self, threshold)
     }
 
     /// Set an opaque user data pointer on this joint.
@@ -619,7 +865,7 @@ impl OwnedJoint {
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn set_user_data_ptr_raw(&mut self, p: *mut c_void) {
-        unsafe { joint_set_user_data_ptr_raw_checked_impl(self.core.as_ref(), self.id, p) }
+        unsafe { JointRuntimeHandle::set_user_data_ptr_raw(self, p) }
     }
     /// Set an opaque user data pointer on this joint.
     ///
@@ -628,14 +874,14 @@ impl OwnedJoint {
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn try_set_user_data_ptr_raw(&mut self, p: *mut c_void) -> ApiResult<()> {
-        unsafe { try_joint_set_user_data_ptr_raw_impl(self.core.as_ref(), self.id, p) }
+        unsafe { JointRuntimeHandle::try_set_user_data_ptr_raw(self, p) }
     }
     pub fn user_data_ptr_raw(&self) -> *mut c_void {
-        joint_user_data_ptr_raw_checked_impl(self.id)
+        JointRuntimeHandle::user_data_ptr_raw(self)
     }
 
     pub fn try_user_data_ptr_raw(&self) -> ApiResult<*mut c_void> {
-        try_joint_user_data_ptr_raw_impl(self.id)
+        JointRuntimeHandle::try_user_data_ptr_raw(self)
     }
 
     /// Set typed user data on this joint.
@@ -643,50 +889,50 @@ impl OwnedJoint {
     /// This stores a `Box<T>` internally and sets Box2D's user data pointer to it. The allocation
     /// is automatically freed when cleared or when the joint is destroyed.
     pub fn set_user_data<T: 'static>(&mut self, value: T) {
-        joint_set_user_data_checked_impl(self.core.as_ref(), self.id, value);
+        JointRuntimeHandle::set_user_data(self, value);
     }
 
     pub fn try_set_user_data<T: 'static>(&mut self, value: T) -> ApiResult<()> {
-        try_joint_set_user_data_checked_impl(self.core.as_ref(), self.id, value)
+        JointRuntimeHandle::try_set_user_data(self, value)
     }
 
     /// Clear typed user data on this joint. Returns whether any typed data was present.
     pub fn clear_user_data(&mut self) -> bool {
-        joint_clear_user_data_checked_impl(self.core.as_ref(), self.id)
+        JointRuntimeHandle::clear_user_data(self)
     }
 
     pub fn try_clear_user_data(&mut self) -> ApiResult<bool> {
-        try_joint_clear_user_data_checked_impl(self.core.as_ref(), self.id)
+        JointRuntimeHandle::try_clear_user_data(self)
     }
 
     pub fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
-        joint_with_user_data_checked_impl(self.core.as_ref(), self.id, f)
+        JointRuntimeHandle::with_user_data(self, f)
     }
 
     pub fn try_with_user_data<T: 'static, R>(
         &self,
         f: impl FnOnce(&T) -> R,
     ) -> ApiResult<Option<R>> {
-        try_joint_with_user_data_checked_impl(self.core.as_ref(), self.id, f)
+        JointRuntimeHandle::try_with_user_data(self, f)
     }
 
     pub fn with_user_data_mut<T: 'static, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
-        joint_with_user_data_mut_checked_impl(self.core.as_ref(), self.id, f)
+        JointRuntimeHandle::with_user_data_mut(self, f)
     }
 
     pub fn try_with_user_data_mut<T: 'static, R>(
         &mut self,
         f: impl FnOnce(&mut T) -> R,
     ) -> ApiResult<Option<R>> {
-        try_joint_with_user_data_mut_checked_impl(self.core.as_ref(), self.id, f)
+        JointRuntimeHandle::try_with_user_data_mut(self, f)
     }
 
     pub fn take_user_data<T: 'static>(&mut self) -> Option<T> {
-        joint_take_user_data_checked_impl(self.core.as_ref(), self.id)
+        JointRuntimeHandle::take_user_data(self)
     }
 
     pub fn try_take_user_data<T: 'static>(&mut self) -> ApiResult<Option<T>> {
-        try_joint_take_user_data_checked_impl(self.core.as_ref(), self.id)
+        JointRuntimeHandle::try_take_user_data(self)
     }
 
     pub fn wake_bodies_on_drop(mut self, flag: bool) -> Self {
@@ -750,217 +996,164 @@ impl<'w> Joint<'w> {
         }
     }
 
-    #[inline]
-    fn assert_valid(&self) {
-        crate::core::debug_checks::assert_joint_valid(self.id);
-    }
-
-    #[inline]
-    fn check_valid(&self) -> ApiResult<()> {
-        crate::core::debug_checks::check_joint_valid(self.id)
-    }
-
     pub fn id(&self) -> JointId {
         self.id
     }
 
     pub fn is_valid(&self) -> bool {
-        joint_is_valid_checked_impl(self.id)
+        JointRuntimeHandle::is_valid(self)
     }
 
     pub fn try_is_valid(&self) -> ApiResult<bool> {
-        try_joint_is_valid_impl(self.id)
+        JointRuntimeHandle::try_is_valid(self)
     }
 
     pub fn joint_type(&self) -> JointType {
-        self.assert_valid();
-        joint_type_impl(self.id)
+        JointRuntimeHandle::joint_type(self)
     }
 
     pub fn try_joint_type(&self) -> ApiResult<JointType> {
-        self.check_valid()?;
-        Ok(joint_type_impl(self.id))
+        JointRuntimeHandle::try_joint_type(self)
     }
 
     pub fn joint_type_raw(&self) -> ffi::b2JointType {
-        self.assert_valid();
-        joint_type_raw_impl(self.id)
+        JointRuntimeHandle::joint_type_raw(self)
     }
 
     pub fn try_joint_type_raw(&self) -> ApiResult<ffi::b2JointType> {
-        self.check_valid()?;
-        Ok(joint_type_raw_impl(self.id))
+        JointRuntimeHandle::try_joint_type_raw(self)
     }
 
     pub fn body_a_id(&self) -> BodyId {
-        self.assert_valid();
-        joint_body_a_id_impl(self.id)
+        JointRuntimeHandle::body_a_id(self)
     }
 
     pub fn try_body_a_id(&self) -> ApiResult<BodyId> {
-        self.check_valid()?;
-        Ok(joint_body_a_id_impl(self.id))
+        JointRuntimeHandle::try_body_a_id(self)
     }
 
     pub fn body_b_id(&self) -> BodyId {
-        self.assert_valid();
-        joint_body_b_id_impl(self.id)
+        JointRuntimeHandle::body_b_id(self)
     }
 
     pub fn try_body_b_id(&self) -> ApiResult<BodyId> {
-        self.check_valid()?;
-        Ok(joint_body_b_id_impl(self.id))
+        JointRuntimeHandle::try_body_b_id(self)
     }
 
     pub fn collide_connected(&self) -> bool {
-        self.assert_valid();
-        joint_collide_connected_impl(self.id)
+        JointRuntimeHandle::collide_connected(self)
     }
 
     pub fn try_collide_connected(&self) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(joint_collide_connected_impl(self.id))
+        JointRuntimeHandle::try_collide_connected(self)
     }
 
     pub fn set_collide_connected(&mut self, flag: bool) {
-        self.assert_valid();
-        joint_set_collide_connected_impl(self.id, flag)
+        JointRuntimeHandle::set_collide_connected(self, flag)
     }
 
     pub fn try_set_collide_connected(&mut self, flag: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        joint_set_collide_connected_impl(self.id, flag);
-        Ok(())
+        JointRuntimeHandle::try_set_collide_connected(self, flag)
     }
 
     pub fn constraint_tuning(&self) -> ConstraintTuning {
-        self.assert_valid();
-        joint_constraint_tuning_impl(self.id)
+        JointRuntimeHandle::constraint_tuning(self)
     }
 
     pub fn try_constraint_tuning(&self) -> ApiResult<ConstraintTuning> {
-        self.check_valid()?;
-        Ok(joint_constraint_tuning_impl(self.id))
+        JointRuntimeHandle::try_constraint_tuning(self)
     }
 
     pub fn set_constraint_tuning(&mut self, tuning: ConstraintTuning) {
-        self.assert_valid();
-        joint_set_constraint_tuning_impl(self.id, tuning)
+        JointRuntimeHandle::set_constraint_tuning(self, tuning)
     }
 
     pub fn try_set_constraint_tuning(&mut self, tuning: ConstraintTuning) -> ApiResult<()> {
-        self.check_valid()?;
-        joint_set_constraint_tuning_impl(self.id, tuning);
-        Ok(())
+        JointRuntimeHandle::try_set_constraint_tuning(self, tuning)
     }
 
     pub fn local_frame_a(&self) -> crate::Transform {
-        self.assert_valid();
-        joint_local_frame_a_impl(self.id)
+        JointRuntimeHandle::local_frame_a(self)
     }
 
     pub fn try_local_frame_a(&self) -> ApiResult<crate::Transform> {
-        self.check_valid()?;
-        Ok(joint_local_frame_a_impl(self.id))
+        JointRuntimeHandle::try_local_frame_a(self)
     }
 
     pub fn local_frame_b(&self) -> crate::Transform {
-        self.assert_valid();
-        joint_local_frame_b_impl(self.id)
+        JointRuntimeHandle::local_frame_b(self)
     }
 
     pub fn try_local_frame_b(&self) -> ApiResult<crate::Transform> {
-        self.check_valid()?;
-        Ok(joint_local_frame_b_impl(self.id))
+        JointRuntimeHandle::try_local_frame_b(self)
     }
 
     pub fn wake_bodies(&mut self) {
-        self.assert_valid();
-        joint_wake_bodies_impl(self.id)
+        JointRuntimeHandle::wake_bodies(self)
     }
 
     pub fn try_wake_bodies(&mut self) -> ApiResult<()> {
-        self.check_valid()?;
-        joint_wake_bodies_impl(self.id);
-        Ok(())
+        JointRuntimeHandle::try_wake_bodies(self)
     }
 
     pub fn linear_separation(&self) -> f32 {
-        self.assert_valid();
-        joint_linear_separation_impl(self.id)
+        JointRuntimeHandle::linear_separation(self)
     }
 
     pub fn try_linear_separation(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(joint_linear_separation_impl(self.id))
+        JointRuntimeHandle::try_linear_separation(self)
     }
 
     pub fn angular_separation(&self) -> f32 {
-        self.assert_valid();
-        joint_angular_separation_impl(self.id)
+        JointRuntimeHandle::angular_separation(self)
     }
 
     pub fn try_angular_separation(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(joint_angular_separation_impl(self.id))
+        JointRuntimeHandle::try_angular_separation(self)
     }
 
     pub fn constraint_force(&self) -> Vec2 {
-        self.assert_valid();
-        joint_constraint_force_impl(self.id)
+        JointRuntimeHandle::constraint_force(self)
     }
 
     pub fn try_constraint_force(&self) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(joint_constraint_force_impl(self.id))
+        JointRuntimeHandle::try_constraint_force(self)
     }
 
     pub fn constraint_torque(&self) -> f32 {
-        self.assert_valid();
-        joint_constraint_torque_impl(self.id)
+        JointRuntimeHandle::constraint_torque(self)
     }
 
     pub fn try_constraint_torque(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(joint_constraint_torque_impl(self.id))
+        JointRuntimeHandle::try_constraint_torque(self)
     }
 
     pub fn force_threshold(&self) -> f32 {
-        self.assert_valid();
-        joint_force_threshold_impl(self.id)
+        JointRuntimeHandle::force_threshold(self)
     }
     pub fn set_force_threshold(&mut self, threshold: f32) {
-        self.assert_valid();
-        joint_set_force_threshold_impl(self.id, threshold)
+        JointRuntimeHandle::set_force_threshold(self, threshold)
     }
 
     pub fn try_force_threshold(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(joint_force_threshold_impl(self.id))
+        JointRuntimeHandle::try_force_threshold(self)
     }
     pub fn try_set_force_threshold(&mut self, threshold: f32) -> ApiResult<()> {
-        self.check_valid()?;
-        joint_set_force_threshold_impl(self.id, threshold);
-        Ok(())
+        JointRuntimeHandle::try_set_force_threshold(self, threshold)
     }
 
     pub fn torque_threshold(&self) -> f32 {
-        self.assert_valid();
-        joint_torque_threshold_impl(self.id)
+        JointRuntimeHandle::torque_threshold(self)
     }
     pub fn set_torque_threshold(&mut self, threshold: f32) {
-        self.assert_valid();
-        joint_set_torque_threshold_impl(self.id, threshold)
+        JointRuntimeHandle::set_torque_threshold(self, threshold)
     }
 
     pub fn try_torque_threshold(&self) -> ApiResult<f32> {
-        self.check_valid()?;
-        Ok(joint_torque_threshold_impl(self.id))
+        JointRuntimeHandle::try_torque_threshold(self)
     }
     pub fn try_set_torque_threshold(&mut self, threshold: f32) -> ApiResult<()> {
-        self.check_valid()?;
-        joint_set_torque_threshold_impl(self.id, threshold);
-        Ok(())
+        JointRuntimeHandle::try_set_torque_threshold(self, threshold)
     }
 
     /// Set an opaque user data pointer on this joint.
@@ -970,7 +1163,7 @@ impl<'w> Joint<'w> {
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn set_user_data_ptr_raw(&mut self, p: *mut c_void) {
-        unsafe { joint_set_user_data_ptr_raw_checked_impl(self.core.as_ref(), self.id, p) }
+        unsafe { JointRuntimeHandle::set_user_data_ptr_raw(self, p) }
     }
     /// Set an opaque user data pointer on this joint.
     ///
@@ -979,14 +1172,14 @@ impl<'w> Joint<'w> {
     ///
     /// If typed user data was previously set via `set_user_data`, it will be cleared and dropped.
     pub unsafe fn try_set_user_data_ptr_raw(&mut self, p: *mut c_void) -> ApiResult<()> {
-        unsafe { try_joint_set_user_data_ptr_raw_impl(self.core.as_ref(), self.id, p) }
+        unsafe { JointRuntimeHandle::try_set_user_data_ptr_raw(self, p) }
     }
     pub fn user_data_ptr_raw(&self) -> *mut c_void {
-        joint_user_data_ptr_raw_checked_impl(self.id)
+        JointRuntimeHandle::user_data_ptr_raw(self)
     }
 
     pub fn try_user_data_ptr_raw(&self) -> ApiResult<*mut c_void> {
-        try_joint_user_data_ptr_raw_impl(self.id)
+        JointRuntimeHandle::try_user_data_ptr_raw(self)
     }
 
     /// Set typed user data on this joint.
@@ -994,50 +1187,50 @@ impl<'w> Joint<'w> {
     /// This stores a `Box<T>` internally and sets Box2D's user data pointer to it. The allocation
     /// is automatically freed when cleared or when the joint is destroyed.
     pub fn set_user_data<T: 'static>(&mut self, value: T) {
-        joint_set_user_data_checked_impl(self.core.as_ref(), self.id, value);
+        JointRuntimeHandle::set_user_data(self, value);
     }
 
     pub fn try_set_user_data<T: 'static>(&mut self, value: T) -> ApiResult<()> {
-        try_joint_set_user_data_checked_impl(self.core.as_ref(), self.id, value)
+        JointRuntimeHandle::try_set_user_data(self, value)
     }
 
     /// Clear typed user data on this joint. Returns whether any typed data was present.
     pub fn clear_user_data(&mut self) -> bool {
-        joint_clear_user_data_checked_impl(self.core.as_ref(), self.id)
+        JointRuntimeHandle::clear_user_data(self)
     }
 
     pub fn try_clear_user_data(&mut self) -> ApiResult<bool> {
-        try_joint_clear_user_data_checked_impl(self.core.as_ref(), self.id)
+        JointRuntimeHandle::try_clear_user_data(self)
     }
 
     pub fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
-        joint_with_user_data_checked_impl(self.core.as_ref(), self.id, f)
+        JointRuntimeHandle::with_user_data(self, f)
     }
 
     pub fn try_with_user_data<T: 'static, R>(
         &self,
         f: impl FnOnce(&T) -> R,
     ) -> ApiResult<Option<R>> {
-        try_joint_with_user_data_checked_impl(self.core.as_ref(), self.id, f)
+        JointRuntimeHandle::try_with_user_data(self, f)
     }
 
     pub fn with_user_data_mut<T: 'static, R>(&mut self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
-        joint_with_user_data_mut_checked_impl(self.core.as_ref(), self.id, f)
+        JointRuntimeHandle::with_user_data_mut(self, f)
     }
 
     pub fn try_with_user_data_mut<T: 'static, R>(
         &mut self,
         f: impl FnOnce(&mut T) -> R,
     ) -> ApiResult<Option<R>> {
-        try_joint_with_user_data_mut_checked_impl(self.core.as_ref(), self.id, f)
+        JointRuntimeHandle::try_with_user_data_mut(self, f)
     }
 
     pub fn take_user_data<T: 'static>(&mut self) -> Option<T> {
-        joint_take_user_data_checked_impl(self.core.as_ref(), self.id)
+        JointRuntimeHandle::take_user_data(self)
     }
 
     pub fn try_take_user_data<T: 'static>(&mut self) -> ApiResult<Option<T>> {
-        try_joint_take_user_data_checked_impl(self.core.as_ref(), self.id)
+        JointRuntimeHandle::try_take_user_data(self)
     }
 
     /// Destroy this joint immediately.

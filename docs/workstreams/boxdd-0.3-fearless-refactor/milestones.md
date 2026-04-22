@@ -69,6 +69,7 @@ Scope:
 - consolidate shared debug-draw callback bridging so safe/raw draw paths cannot drift in panic forwarding, callback locking, or option wiring
 - document the remaining intentional raw escape hatches and keep callback-sensitive raw paths under regression tests
 - consolidate the remaining high-churn joint-handle internals so scoped and owned joint handles share the same helper path for user data and threshold/state accessors
+- collapse the mirrored `Joint` / `OwnedJoint` common runtime wrapper bodies behind one private handle layer while keeping ownership-only destroy/drop and wake-on-drop seams explicit
 
 Exit criteria:
 
@@ -94,6 +95,7 @@ Exit criteria:
 - safe/raw debug-draw paths no longer duplicate the same callback panic bridge and option wiring, and the remaining raw path has direct regression coverage
 - the remaining intentional raw surfaces are explicitly documented instead of being discovered only by source spelunking
 - joint handles no longer duplicate the same user-data and threshold/state FFI plumbing across owned/scoped variants
+- mirrored `Joint` / `OwnedJoint` common runtime wrappers now share one internal source for validity, joint metadata, attached body ids, collide-connected control, constraint tuning, local frames, thresholds, wake helpers, and user-data forwarding, while ownership-only destroy/drop behavior stays explicit
 
 ## M4: Advanced Wrapper Coverage
 
