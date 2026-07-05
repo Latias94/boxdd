@@ -13,9 +13,20 @@
 ## Crates
 - `boxdd-sys`: low-level FFI for the official Box2D v3 C API (vendored)
 - `boxdd`: safe layer (world, bodies, shapes, joints, queries, events, debug draw)
+- `bevy_boxdd`: Bevy ECS integration for `boxdd` with fixed-step systems and physics messages
+
+## Engineering Status
+- API coverage matrix: `docs/api-coverage.md` tracks every vendored Box2D `B2_API` symbol.
+- Official sample parity: `docs/upstream-parity/box2d-sample-matrix.md` indexes upstream samples against Rust artifacts.
+- GitHub Pages source: `docs/pages/index.html` provides a static documentation and example hub.
+- Bevy integration: `bevy_boxdd` exposes `RigidBody`, `Collider`, `PhysicsMaterial`, transform sync, and body/contact/sensor messages.
 
 ## 0.4.0 Highlights
 - `0.4.0` realigns `boxdd-sys` with the official upstream Box2D submodule again, so repository checkouts and CI no longer depend on a local-only Box2D patch commit.
+- Workspace metadata is centralized for `boxdd`, `boxdd-sys`, `bevy_boxdd`, and `xtask`.
+- `xtask` now validates API coverage, official sample parity, and the static Pages hub.
+- `boxdd::dynamic_tree` wraps the standalone Box2D broad-phase tree as an owned safe Rust type.
+- `bevy_boxdd` provides a first Bevy 0.19 integration crate without adding Bevy dependencies to the core binding.
 - Hot-path APIs are first-class: keep the simple `Vec`-returning calls for one-off use, or move per-frame code to `*_into` and `visit_*`.
 - `boxdd::collision` now exposes standalone distance, shape-cast, TOI, manifold, and `Aabb::ray_cast` helpers without dropping to raw `ffi`.
 - Character-mover support is complete on the safe surface: `cast_mover`, `collide_mover`, `solve_planes`, and `clip_vector`.
@@ -114,14 +125,23 @@ world.step(1.0/60.0, 4);
 git submodule update --init --recursive
 cargo build
 
+# validate upstream accounting assets
+cargo run -p xtask -- api-coverage --check
+cargo run -p xtask -- sample-parity --check
+cargo run -p xtask -- validate-pages
+
 # run a few representative examples
 cargo r --example world_basics
 cargo r --example queries
 cargo r --example character_mover
+cargo r --example dynamic_tree
 cargo r --example mint_interop --features mint
 cargo r --example physics_thread
 cargo r --example scene_serialize --features serialize
 cargo r --example testbed_imgui_glow --features imgui-glow-testbed
+
+# check the Bevy adapter without pulling it into the core crate
+cargo test -p bevy_boxdd --test plugin
 ```
 
 ## Examples
@@ -129,6 +149,7 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 - Recommended starting points:
   - `world_basics`: minimal world/body/shape setup
   - `buffer_reuse`, `queries`, `query_casts`, `character_mover`: the main `0.4.0` hot-path, overlap, cast, and mover workflows
+  - `dynamic_tree`: standalone broad-phase tree ownership and query/cast workflows
   - `mint_interop`: optional `mint` vector/point/matrix interop sample behind the `mint` feature
   - `collision_basics`: standalone collision geometry helpers without constructing a `World`
   - `events_summary`, `events_view`: owned-with-reuse vs borrowed zero-copy event access
@@ -136,6 +157,7 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
   - `scene_serialize`: snapshot/restore flows behind the `serialize` feature
   - `physics_thread`: the recommended dedicated physics-thread ownership model
   - `testbed_imgui_glow`: optional interactive testbed on the current `dear-imgui-*` stack
+  - `bevy_boxdd/examples/falling_box_2d.rs`: Bevy adapter smoke example
 
 ## Hot Path APIs
 - Convenience methods like `world.overlap_aabb(...)` and `world.cast_ray_all(...)` still return owned `Vec`s for one-off use.

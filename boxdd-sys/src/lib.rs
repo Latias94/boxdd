@@ -4,6 +4,8 @@
 
 pub mod ffi {
     #![allow(clippy::approx_constant)]
+    #![allow(rustdoc::bare_urls)]
+    #![allow(rustdoc::broken_intra_doc_links)]
     // Prefer wasm-specific pregenerated bindings when targeting wasm32
     #[cfg(all(target_arch = "wasm32", has_wasm_pregenerated))]
     include!("wasm_bindings_pregenerated.rs");

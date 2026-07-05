@@ -21,6 +21,9 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
@@ -32,18 +35,31 @@ jobs:
           # `boxdd-sys` keeps `bindgen` behind an optional feature to avoid requiring libclang.
           cargo clippy -p boxdd-sys --all-targets -- -D warnings
           cargo clippy -p boxdd --all-targets --all-features -- -D warnings
+          cargo clippy -p bevy_boxdd --all-targets --no-default-features -- -D warnings
+
+      - name: upstream accounting checks
+        run: |
+          cargo run -p xtask -- api-coverage --check
+          cargo run -p xtask -- sample-parity --check
+          cargo run -p xtask -- validate-pages
 
       - name: tests (core)
         run: |
-          cargo test
-          cargo test --features serialize
-          cargo test --features unchecked
-          cargo test --features mint
-          cargo test --features bytemuck
-          cargo test --features cgmath
-          cargo test --features nalgebra
-          cargo test --features glam
-          cargo test --features "bytemuck glam"
+          cargo nextest run -p boxdd
+          cargo nextest run -p boxdd-sys --test layout
+          cargo nextest run -p bevy_boxdd --test plugin
+          cargo nextest run -p boxdd --features serialize
+          cargo nextest run -p boxdd --features unchecked
+          cargo nextest run -p boxdd --features mint
+          cargo nextest run -p boxdd --features bytemuck
+          cargo nextest run -p boxdd --features cgmath
+          cargo nextest run -p boxdd --features nalgebra
+          cargo nextest run -p boxdd --features glam
+          cargo nextest run -p boxdd --features "bytemuck glam"
+
+      - name: examples smoke
+        run: |
+          cargo run -p boxdd --example dynamic_tree
 
       - name: system-link smoke (BOX2D_LIB_DIR)
         shell: bash
@@ -82,7 +98,7 @@ jobs:
 
       - name: Docs
         env:
-          RUSTDOCFLAGS: --cfg docsrs
+          RUSTDOCFLAGS: -D warnings --cfg docsrs
         run: cargo doc --no-deps --workspace
 
       - name: Docs (docs.rs offline mode)

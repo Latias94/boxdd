@@ -20,6 +20,7 @@ If you are new to `boxdd`, start with the first section instead of scanning file
 - `buffer_reuse.rs`: focused `*_into` and `visit_*` hot-path reuse patterns
 - `queries.rs`: overlap query styles (`overlap_aabb`, `*_into`, `visit_*`, polygon overlap helpers)
 - `query_casts.rs`: ray-cast and shape-cast overview using reusable cast-hit buffers without mover overlap
+- `dynamic_tree.rs`: standalone Box2D broad-phase tree ownership, query, ray-cast, and shape-cast helpers
 - `raycast.rs`: focused ray-cast sample
 - `shapecast.rs`: focused shape-cast sample
 - `character_mover.rs`: the full safe mover pipeline (`cast_mover`, `collide_mover`, `solve_planes`, `clip_vector`)
@@ -51,6 +52,7 @@ If you are new to `boxdd`, start with the first section instead of scanning file
 - `physics_thread.rs`: dedicated-thread ownership model for apps that are otherwise multi-threaded or async-driven
 - `world_handle_reads.rs`: stored read-only `WorldHandle` queries, including reusable-buffer overlap reads and follow-up body/shape inspection
 - `wasm_wasi_smoke.rs`: minimal WASM/WASI-oriented smoke example
+- `../../bevy_boxdd/examples/falling_box_2d.rs`: Bevy ECS adapter smoke example for body/shape creation and transform sync
 
 ## Interactive Testbed
 

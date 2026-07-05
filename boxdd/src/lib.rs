@@ -228,6 +228,7 @@ pub mod body;
 pub mod collision;
 pub mod contact;
 pub mod debug_draw;
+pub mod dynamic_tree;
 pub mod error;
 pub mod events;
 pub mod filter;
@@ -296,6 +297,7 @@ pub use core::math::{
     rotation_between_unit_vectors, set_length_units_per_meter, ticks, version, yield_now,
 };
 pub use debug_draw::{DebugDraw, DebugDrawCmd, DebugDrawOptions, HexColor};
+pub use dynamic_tree::{DynamicTree, TreeProxyId, TreeRayCastInput, TreeShapeCastInput, TreeStats};
 pub use error::{ApiError, ApiResult};
 pub use events::{
     BodyMoveEvent, ContactBeginTouchEvent, ContactEndTouchEvent, ContactEvents, ContactHitEvent,

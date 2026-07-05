@@ -3,6 +3,7 @@ pub use crate::{
     MaterialMixInput, OutstandingOwnedHandles, OwnedBody, OwnedHandleCounts, World, WorldBuilder,
     WorldDef, WorldHandle,
     debug_draw::{DebugDraw, DebugDrawCmd, DebugDrawOptions, HexColor, RawDebugDraw},
+    dynamic_tree::{DynamicTree, TreeProxyId, TreeRayCastInput, TreeShapeCastInput, TreeStats},
     events::{
         BodyMoveEvent, ContactBeginTouchEvent, ContactEndTouchEvent, ContactEvents,
         ContactHitEvent, JointEvent, SensorBeginTouchEvent, SensorEndTouchEvent, SensorEvents,

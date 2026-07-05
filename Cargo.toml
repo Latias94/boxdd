@@ -1,6 +1,40 @@
 [workspace]
 members = [
+    "bevy_boxdd",
     "boxdd",
     "boxdd-sys",
+    "xtask",
 ]
-resolver = "2"
+resolver = "3"
+
+[workspace.package]
+version = "0.4.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Latias94/boxdd"
+homepage = "https://github.com/Latias94/boxdd"
+documentation = "https://docs.rs/boxdd"
+
+[workspace.dependencies]
+boxdd = { version = "0.4.0", path = "boxdd" }
+boxdd-sys = { version = "0.4.0", path = "boxdd-sys" }
+thiserror = "2"
+mint = "0.5"
+smallvec = "1"
+serde = { version = "1", features = ["derive"] }
+cgmath = "0.18"
+nalgebra = "0.34"
+glam = "0.32"
+bytemuck = "1.25"
+serde_json = "1"
+cc = "1"
+bindgen = "0.72"
+pkg-config = "0.3"
+flate2 = "1"
+tar = "0.4"
+bevy_app = "0.19.0"
+bevy_ecs = "0.19.0"
+bevy_math = "0.19.0"
+bevy_time = "0.19.0"
+bevy_transform = "0.19.0"
+log = "0.4"

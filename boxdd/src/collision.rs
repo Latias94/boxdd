@@ -128,6 +128,11 @@ pub struct ShapeProxy {
 }
 
 impl ShapeProxy {
+    #[inline]
+    pub(crate) const fn from_raw(raw: ffi::b2ShapeProxy) -> Self {
+        Self { raw }
+    }
+
     /// Build a proxy from `1..=MAX_SHAPE_PROXY_POINTS` points and an external radius.
     pub fn new<I, P>(points: I, radius: f32) -> Option<Self>
     where
@@ -197,8 +202,13 @@ impl ShapeProxy {
     }
 
     #[inline]
-    fn raw(self) -> ffi::b2ShapeProxy {
+    pub(crate) fn into_raw(self) -> ffi::b2ShapeProxy {
         self.raw
+    }
+
+    #[inline]
+    fn raw(self) -> ffi::b2ShapeProxy {
+        self.into_raw()
     }
 }
 

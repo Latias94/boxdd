@@ -1,11 +1,11 @@
 [package]
 name = "boxdd"
-version = "0.4.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 description = "Safe, ergonomic Rust bindings for Box2D v3"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/Latias94/boxdd"
-homepage = "https://github.com/Latias94/boxdd"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 readme = "../README.md"
 documentation = "https://docs.rs/boxdd"
 keywords = ["box2d", "physics", "game", "simulation"]
@@ -15,15 +15,15 @@ categories = ["game-engines"]
 exclude = ["examples/**", "tests/**"]
 
 [dependencies]
-boxdd-sys = { version = "0.4.0", path = "../boxdd-sys" }
-thiserror = "2"
-mint = { version = "0.5", optional = true }
-smallvec = "1"
-serde = { version = "1", features = ["derive"], optional = true }
-cgmath = { version = "0.18", optional = true }
-nalgebra = { version = "0.34", optional = true }
-glam = { version = "0.32", optional = true }
-bytemuck = { version = "1.25", optional = true }
+boxdd-sys = { workspace = true }
+thiserror = { workspace = true }
+mint = { workspace = true, optional = true }
+smallvec = { workspace = true }
+serde = { workspace = true, optional = true }
+cgmath = { workspace = true, optional = true }
+nalgebra = { workspace = true, optional = true }
+glam = { workspace = true, optional = true }
+bytemuck = { workspace = true, optional = true }
 
 [features]
 default = []
@@ -69,7 +69,7 @@ glutin-winit = "0.5"
 env_logger = "0.11"
 
 [dev-dependencies]
-serde_json = "1"
+serde_json = { workspace = true }
 
 [[example]]
 name = "testbed_imgui_glow"

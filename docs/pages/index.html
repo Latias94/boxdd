@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>boxdd Demo Hub</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f8fb;
+      --fg: #17202a;
+      --muted: #5e6b78;
+      --line: #ccd5df;
+      --panel: #ffffff;
+      --accent: #0f7a6c;
+      --accent-2: #2457a6;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #121416;
+        --fg: #f0f3f5;
+        --muted: #a7b0ba;
+        --line: #303943;
+        --panel: #1a1f24;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      letter-spacing: 0;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .wrap {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.4fr 0.8fr;
+      gap: 32px;
+      padding: 48px 0 36px;
+      align-items: end;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(2rem, 6vw, 4.25rem);
+      line-height: 0.95;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 760px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 1.05rem;
+      line-height: 1.65;
+    }
+
+    .status-panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      background: var(--bg);
+    }
+
+    .status-panel h2,
+    section h2 {
+      margin: 0 0 14px;
+      font-size: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+
+    .metric {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 10px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .metric:first-of-type {
+      border-top: 0;
+    }
+
+    .metric strong {
+      font-size: 1.5rem;
+    }
+
+    main {
+      padding: 32px 0 56px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    a.tile {
+      display: block;
+      min-height: 148px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: inherit;
+      text-decoration: none;
+      background: var(--panel);
+    }
+
+    a.tile:hover {
+      border-color: var(--accent);
+    }
+
+    .tile h3 {
+      margin: 0 0 10px;
+      font-size: 1.1rem;
+    }
+
+    .tile p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1px;
+      margin: 28px 0 0;
+      border: 1px solid var(--line);
+      background: var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .flow div {
+      min-height: 88px;
+      padding: 14px;
+      background: var(--panel);
+    }
+
+    .flow strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--accent-2);
+    }
+
+    footer {
+      padding: 24px 0 40px;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+    }
+
+    @media (max-width: 820px) {
+      .hero,
+      .grid,
+      .flow {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap hero">
+      <div>
+        <h1>boxdd</h1>
+        <p class="lead">Safe Rust bindings for Box2D v3, with upstream API coverage, official sample parity, and examples that map back to the C engine they demonstrate.</p>
+      </div>
+      <aside class="status-panel" aria-label="Project status">
+        <h2>Status</h2>
+        <div class="metric"><span>Vendored API symbols</span><strong>430</strong></div>
+        <div class="metric"><span>Official samples indexed</span><strong>133</strong></div>
+        <div class="metric"><span>Workspace crates</span><strong>3</strong></div>
+      </aside>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section aria-labelledby="start-here">
+      <h2 id="start-here">Start Here</h2>
+      <div class="grid">
+        <a class="tile" href="../../README.md">
+          <h3>README</h3>
+          <p>Workspace overview, quickstart, feature flags, and crate-level guidance.</p>
+        </a>
+        <a class="tile" href="examples/index.html">
+          <h3>Examples</h3>
+          <p>Curated Rust examples for world setup, bodies, queries, joints, sensors, and collision helpers.</p>
+        </a>
+        <a class="tile" href="../api-coverage.md">
+          <h3>API Coverage</h3>
+          <p>Machine-checked accounting for every vendored Box2D `B2_API` symbol.</p>
+        </a>
+        <a class="tile" href="../upstream-parity/box2d-sample-matrix.md">
+          <h3>Sample Parity</h3>
+          <p>Trace official Box2D samples to Rust artifacts or explicit upstream-reference rows.</p>
+        </a>
+        <a class="tile" href="../../bevy_boxdd/README.md">
+          <h3>Bevy Adapter</h3>
+          <p>Fixed-step Bevy ECS integration with native body/shape creation and physics messages.</p>
+        </a>
+        <a class="tile" href="../development/ci.md">
+          <h3>CI Gates</h3>
+          <p>Local and CI checks for API coverage, sample parity, ABI layout, docs, and adapter tests.</p>
+        </a>
+        <a class="tile" href="https://docs.rs/boxdd">
+          <h3>docs.rs API</h3>
+          <p>Published Rust API documentation for the safe binding crate.</p>
+        </a>
+        <a class="tile" href="https://docs.rs/boxdd-sys">
+          <h3>FFI Docs</h3>
+          <p>Low-level raw bindings for users who need to inspect the C boundary.</p>
+        </a>
+      </div>
+    </section>
+
+    <section aria-labelledby="validation-flow">
+      <h2 id="validation-flow">Validation Flow</h2>
+      <div class="flow">
+        <div><strong>Headers</strong>Scan vendored `include/box2d` for `B2_API` symbols.</div>
+        <div><strong>Fixture</strong>Classify every symbol as safe, raw, omitted, or deferred.</div>
+        <div><strong>Samples</strong>Scan official sample registrations and validate the parity matrix.</div>
+        <div><strong>CI</strong>Run coverage, sample parity, docs, feature, and package checks before release.</div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">This hub is static. A live WASM demo is deferred until the FFI callback and platform boundary is audited.</div>
+  </footer>
+</body>
+</html>

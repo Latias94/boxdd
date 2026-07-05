@@ -1,0 +1,38 @@
+[package]
+name = "bevy_boxdd"
+version.workspace = true
+edition.workspace = true
+description = "Bevy integration for the boxdd Rust bindings to Box2D"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/bevy_boxdd"
+readme = "README.md"
+keywords = ["box2d", "bevy", "physics", "game", "simulation"]
+categories = ["game-engines", "api-bindings"]
+
+[features]
+default = []
+
+[dependencies]
+boxdd.workspace = true
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+bevy_math.workspace = true
+bevy_time.workspace = true
+bevy_transform.workspace = true
+log.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+bevy = "0.19.0"
+
+[package.metadata.docs.rs]
+all-features = false
+no-default-features = false
+features = []
+rustdoc-args = ["--cfg", "docsrs"]
+
+[[example]]
+name = "falling_box_2d"
+path = "examples/falling_box_2d.rs"
