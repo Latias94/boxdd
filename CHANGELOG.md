@@ -26,6 +26,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Added default-running lifecycle tests for callback locks, panic containment, query callbacks, dynamic-tree callbacks, event-view deferred destruction, reusable event buffers, and world destroy/recycle behavior.
 
 ### Changed
+- Updated dependency requirements to current crates.io releases: `nalgebra 0.35`, `glam 0.33`, and the native Dear ImGui testbed stack `dear-imgui-rs 0.15`, `dear-imgui-winit 0.15`, and `dear-imgui-glow 0.15`; refreshed `Cargo.lock` for the latest compatible transitive crates.
 - Pages are generated from `bevy_boxdd/examples/testbed_2d/scenes.rs` so the published example list stays aligned with the runnable Bevy Web scenes.
 - `xtask build-pages-wasm` now builds both the Emscripten Box2D provider assets and the Bevy testbed wasm assets required by Pages.
 - Updated Pages CI to install `wasm-bindgen-cli 0.2.126` before building the browser runtime assets.
@@ -38,6 +39,8 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Fixed callback panic recovery so catching a Rust panic from a Box2D callback no longer poisons the internal panic payload mutex and prevents later `World::step` calls.
 
 ### Migration Notes
+- If your app also depends directly on `nalgebra` or `glam` and uses `boxdd`'s optional interop features, align those direct dependencies with `nalgebra 0.35` and `glam 0.33` so conversions use the same crate versions.
+- Native testbed integrations should use the `dear-imgui-* 0.15` crates with this workspace; browser Pages examples continue to use Bevy + egui instead of Dear ImGui.
 - Browser builds should use `BOXDD_SYS_WASM_MODE=provider` for `wasm32-unknown-unknown`; the default wasm mode remains compile-only unless `BOXDD_SYS_WASM_CC` or a supported source toolchain is configured.
 - Existing Bevy body, collider, contact, sensor, and transform-sync code does not need to change; the new Bevy APIs are additive.
 - For Bevy ray casts, prefer `BoxddPhysicsContext::try_cast_ray_closest_entity`, `try_cast_ray_all_entities`, or `try_cast_ray_all_entities_into` when you want ECS entities back with the native hit data.
