@@ -26,7 +26,9 @@ cargo run -p xtask -- build-pages-wasm
 cargo run -p xtask -- validate-pages
 ```
 
-`provider-smoke-app` builds the Rust wasm module with `BOXDD_SYS_WASM_MODE=provider` and records the exact `b2*` imports it needs from `box2d-sys-v0`. `provider-smoke` additionally builds `box2d-sys-v0.js`/`.wasm` with Emscripten and runs the shared-memory smoke under Node. `build-pages-wasm` runs `generate-pages`, compiles the Bevy testbed wasm, patches the wasm-bindgen import glue to use the provider shim, builds the Emscripten provider exports required by that Bevy wasm, and publishes assets under both `docs/pages/wasm/generated` and `docs/pages/bevy-testbed/generated`.
+`provider-smoke-app` builds the Rust wasm module with `BOXDD_SYS_WASM_MODE=provider` and records the exact `b2*` imports it needs from `box2d-sys-v0`. `provider-smoke` additionally builds `box2d-sys-v0.js`/`.wasm` with Emscripten and runs the shared-memory smoke under Node. `build-pages-wasm` runs `generate-pages`, compiles the Bevy testbed wasm with the size-oriented `wasm-release` profile, patches the wasm-bindgen import glue to use the provider shim, builds the Emscripten provider exports required by that Bevy wasm, optimizes the final Bevy/provider wasm assets with `wasm-opt -Oz` when Binaryen is available, and publishes assets under both `docs/pages/wasm/generated` and `docs/pages/bevy-testbed/generated`.
+
+Set `BOXDD_PAGES_WASM_PROFILE=debug` or `release` to override the default `wasm-release` profile. Set `BOXDD_PAGES_WASM_OPT=0` to skip `wasm-opt` post-processing when debugging generated wasm.
 
 ## Build modes
 

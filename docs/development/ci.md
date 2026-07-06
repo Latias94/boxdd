@@ -21,6 +21,7 @@ rustup target add wasm32-unknown-unknown
 cargo install wasm-bindgen-cli --version 0.2.126 --locked
 cargo run -p xtask -- provider-smoke
 cargo run -p xtask -- build-pages-wasm
+# Optional for local builds: expose Binaryen's wasm-opt on PATH or through EMSDK/upstream/bin for smaller Pages assets.
 cargo nextest run -p boxdd --test api_coverage --test collision_validation --test joint_new_apis --test world_callbacks --test panic_across_ffi_is_caught --test world_and_queries --test dynamic_tree --test events_and_sensors --test world_destroy_and_recycle --test material_mix_callbacks --test user_data --test ffi_lifecycle --test buffer_reuse
 cargo nextest run -p boxdd-sys --test layout
 cargo nextest run -p bevy_boxdd --test plugin
@@ -40,7 +41,7 @@ Use `cargo test` only as a fallback when nextest is unavailable.
 - `sample-parity --check` scans upstream sample registrations, preserves manual mappings, and rejects non-benchmark rows that fall back to bare upstream references without an explicit deferral.
 - `generate-pages` rebuilds the GitHub Pages Bevy Web example index from `bevy_boxdd/examples/testbed_2d/scenes.rs`.
 - `provider-smoke` builds a Rust `wasm32-unknown-unknown` app, builds an Emscripten Box2D provider module, and verifies the shared-memory runtime under Node.
-- `build-pages-wasm` rebuilds the example index, compiles the Bevy + egui testbed through `wasm-bindgen`, builds the Emscripten Box2D provider, and writes runtime assets in `docs/pages/wasm/generated` plus `docs/pages/bevy-testbed/generated`.
+- `build-pages-wasm` rebuilds the example index, compiles the Bevy + egui testbed with the `wasm-release` profile, runs `wasm-bindgen`, builds the Emscripten Box2D provider, runs `wasm-opt -Oz` when available, and writes runtime assets in `docs/pages/wasm/generated` plus `docs/pages/bevy-testbed/generated`.
 - `validate-pages` rejects stale generated Pages HTML, stale loader JavaScript, missing runtime assets, and broken local links.
 - `boxdd-sys` layout tests protect representative ABI assumptions at the raw FFI boundary.
 - `bevy_boxdd` plugin tests verify ECS creation, transform sync, distance/revolute joint lifecycle, contact/sensor messages, entity ray/AABB query mappings, debug draw collection, recoverable input errors, and public non-send boundaries without adding Bevy dependencies to the core crate.
@@ -52,6 +53,6 @@ CI should keep heavy checks staged:
 - Fast lint: `cargo fmt`, clippy for `boxdd-sys`, `boxdd`, `bevy_boxdd`.
 - Core tests: nextest or cargo test for the targeted API coverage, layout, dynamic tree, and Bevy plugin suites.
 - Feature matrix: focused `cargo check` for `boxdd` optional math/serialization features.
-- Pages runtime: install `wasm32-unknown-unknown`, `wasm-bindgen-cli 0.2.126`, and Emscripten SDK, then run `cargo run -p xtask -- build-pages-wasm` and `cargo run -p xtask -- validate-pages`.
+- Pages runtime: install `wasm32-unknown-unknown`, `wasm-bindgen-cli 0.2.126`, and Emscripten SDK, expose `emsdk/upstream/bin` so `wasm-opt` can be found, then run `cargo run -p xtask -- build-pages-wasm` and `cargo run -p xtask -- validate-pages`.
 - Docs: set `RUSTDOCFLAGS` to `-D warnings --cfg docsrs`, then run `cargo doc --workspace --no-deps`.
 - Packaging: `cargo package -p boxdd --allow-dirty --no-verify`, `cargo package -p boxdd-sys --allow-dirty --no-verify`, and `cargo package -p bevy_boxdd --allow-dirty --no-verify` as metadata smoke checks. Run full package verification without `--no-verify` before publishing.

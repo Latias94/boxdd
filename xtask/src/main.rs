@@ -11,6 +11,8 @@ type Result<T> = std::result::Result<T, Error>;
 
 const PROVIDER_MODULE: &str = "box2d-sys-v0";
 const WASM_TARGET: &str = "wasm32-unknown-unknown";
+const PAGES_WASM_PROFILE_ENV: &str = "BOXDD_PAGES_WASM_PROFILE";
+const PAGES_WASM_OPT_ENV: &str = "BOXDD_PAGES_WASM_OPT";
 const PROVIDER_SMOKE_PACKAGE: &str = "boxdd-provider-smoke";
 const PROVIDER_SMOKE_WASM: &str = "boxdd_provider_smoke.wasm";
 const PAGES_WASM_DIR: &str = "wasm/generated";
@@ -148,13 +150,37 @@ enum ExampleIndexLocation {
 enum BuildProfile {
     Debug,
     Release,
+    WasmRelease,
 }
 
 impl BuildProfile {
-    fn from_env() -> Self {
-        match env::var("BOXDD_PAGES_WASM_PROFILE").ok().as_deref() {
-            Some("release") | Some("Release") | Some("RELEASE") => Self::Release,
-            _ => Self::Debug,
+    fn for_provider_smoke() -> Result<Self> {
+        Self::from_env_or(Self::Debug)
+    }
+
+    fn for_pages() -> Result<Self> {
+        Self::from_env_or(Self::WasmRelease)
+    }
+
+    fn from_env_or(default: Self) -> Result<Self> {
+        match env::var(PAGES_WASM_PROFILE_ENV) {
+            Ok(value) => Self::parse(&value).ok_or_else(|| {
+                Error::Message(format!(
+                    "invalid {PAGES_WASM_PROFILE_ENV} value `{value}`; expected debug, release, or wasm-release"
+                ))
+            }),
+            Err(_) => Ok(default),
+        }
+    }
+
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "debug" | "Debug" | "DEBUG" => Some(Self::Debug),
+            "release" | "Release" | "RELEASE" => Some(Self::Release),
+            "wasm-release" | "WASM-RELEASE" | "wasm_release" | "WASM_RELEASE" => {
+                Some(Self::WasmRelease)
+            }
+            _ => None,
         }
     }
 
@@ -162,6 +188,7 @@ impl BuildProfile {
         match self {
             Self::Debug => &[],
             Self::Release => &["--release"],
+            Self::WasmRelease => &["--profile", "wasm-release"],
         }
     }
 
@@ -169,6 +196,15 @@ impl BuildProfile {
         match self {
             Self::Debug => "debug",
             Self::Release => "release",
+            Self::WasmRelease => "wasm-release",
+        }
+    }
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Debug => "debug",
+            Self::Release => "release",
+            Self::WasmRelease => "wasm-release",
         }
     }
 }
@@ -237,6 +273,10 @@ Commands:
   build-pages-wasm  Build browser provider and Bevy testbed assets into docs/pages
   generate-pages Generate the GitHub Pages Bevy example index from SCENE_REGISTRY
   validate-pages Validate generated pages and local links in docs/pages/**/*.html
+
+Environment:
+  BOXDD_PAGES_WASM_PROFILE=debug|release|wasm-release  Select the Rust profile for Pages wasm; default: wasm-release
+  BOXDD_PAGES_WASM_OPT=0                              Disable optional wasm-opt -Oz post-processing
 "
     );
 }
@@ -1165,6 +1205,7 @@ fn build_pages_wasm(root: &Path) -> Result<()> {
     let provider_wasm = provider.with_extension("wasm");
     ensure_file(&provider, "Box2D provider module")?;
     ensure_file(&provider_wasm, "Box2D provider wasm")?;
+    optimize_wasm_if_available(&provider_wasm, "Box2D provider wasm")?;
 
     let generated = pages_wasm_generated_dir(root);
     replace_dir_under(&generated, &root.join("docs/pages"))?;
@@ -1198,7 +1239,7 @@ fn pages_bevy_testbed_dir(root: &Path) -> PathBuf {
 }
 
 fn build_provider_smoke_app(root: &Path) -> Result<PathBuf> {
-    let profile = BuildProfile::from_env();
+    let profile = BuildProfile::for_provider_smoke()?;
     let mut command = Command::new("cargo");
     command
         .arg("rustc")
@@ -1242,6 +1283,7 @@ fn build_bevy_web_app(root: &Path) -> Result<BevyWebArtifacts> {
     let out_dir = root.join("target").join("boxdd-bevy-testbed-web");
     replace_dir_under(&out_dir, &root.join("target"))?;
 
+    let profile = BuildProfile::for_pages()?;
     let mut command = Command::new("cargo");
     command
         .arg("rustc")
@@ -1251,15 +1293,18 @@ fn build_bevy_web_app(root: &Path) -> Result<BevyWebArtifacts> {
         .arg(BEVY_WEB_EXAMPLE)
         .arg("--target")
         .arg(WASM_TARGET)
-        .arg("--release")
+        .args(profile.cargo_args())
         .env("BOXDD_SYS_WASM_MODE", "provider");
     add_wasm_app_link_args(&mut command, &[]);
-    run_command(&mut command, "build Bevy testbed wasm")?;
+    run_command(
+        &mut command,
+        &format!("build Bevy testbed wasm ({})", profile.label()),
+    )?;
 
     let wasm = root
         .join("target")
         .join(WASM_TARGET)
-        .join("release")
+        .join(profile.target_dir())
         .join("examples")
         .join(format!("{BEVY_WEB_EXAMPLE}.wasm"));
     ensure_file(&wasm, "Bevy testbed wasm")?;
@@ -1277,6 +1322,7 @@ fn build_bevy_web_app(root: &Path) -> Result<BevyWebArtifacts> {
 
     patch_bevy_bindgen_imports(&out_dir.join(BEVY_WEB_JS))?;
     let bevy_wasm = out_dir.join(BEVY_WEB_WASM);
+    optimize_wasm_if_available(&bevy_wasm, "Bevy testbed wasm")?;
     let imports = collect_provider_imports(&bevy_wasm)?;
     write_browser_provider_shim(&out_dir, &imports)?;
 
@@ -1684,6 +1730,75 @@ fn ensure_file(path: &Path, label: &str) -> Result<PathBuf> {
     }
 }
 
+fn optimize_wasm_if_available(wasm: &Path, label: &str) -> Result<()> {
+    if !pages_wasm_opt_enabled() {
+        println!("wasm-opt skipped for {label}: disabled by {PAGES_WASM_OPT_ENV}");
+        return Ok(());
+    }
+
+    let Some(wasm_opt) = find_wasm_opt() else {
+        println!("wasm-opt skipped for {label}: install Binaryen or expose EMSDK/upstream/bin");
+        return Ok(());
+    };
+
+    let before = file_size(wasm)?;
+    let tmp = wasm.with_extension("wasm-opt.tmp");
+    let mut command = Command::new(wasm_opt);
+    command
+        .arg("-Oz")
+        .arg("--enable-bulk-memory")
+        .arg("--enable-bulk-memory-opt")
+        .arg("--strip-debug")
+        .arg("--strip-producers")
+        .arg(wasm)
+        .arg("-o")
+        .arg(&tmp);
+    run_command(&mut command, &format!("optimize {label} with wasm-opt"))?;
+
+    fs::copy(&tmp, wasm).map_err(|source| Error::io(wasm, source))?;
+    fs::remove_file(&tmp).map_err(|source| Error::io(&tmp, source))?;
+
+    let after = file_size(wasm)?;
+    let saved = before.saturating_sub(after);
+    let pct = if before == 0 {
+        0.0
+    } else {
+        saved as f64 * 100.0 / before as f64
+    };
+    println!(
+        "{label} optimized: {} -> {} ({saved} bytes saved, {pct:.1}%)",
+        format_bytes(before),
+        format_bytes(after)
+    );
+    Ok(())
+}
+
+fn pages_wasm_opt_enabled() -> bool {
+    !matches!(
+        env::var(PAGES_WASM_OPT_ENV).ok().as_deref(),
+        Some("0" | "false" | "False" | "FALSE" | "off" | "OFF" | "no" | "NO")
+    )
+}
+
+fn file_size(path: &Path) -> Result<u64> {
+    fs::metadata(path)
+        .map(|metadata| metadata.len())
+        .map_err(|source| Error::io(path, source))
+}
+
+fn format_bytes(bytes: u64) -> String {
+    const KIB: f64 = 1024.0;
+    const MIB: f64 = KIB * 1024.0;
+    let bytes_f = bytes as f64;
+    if bytes_f >= MIB {
+        format!("{:.2} MiB", bytes_f / MIB)
+    } else if bytes_f >= KIB {
+        format!("{:.2} KiB", bytes_f / KIB)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
 fn ensure_runnable_tool(tool: &str, version_arg: &str, message: &str) -> Result<()> {
     if runnable_tool(tool, version_arg).is_some() {
         Ok(())
@@ -1693,12 +1808,40 @@ fn ensure_runnable_tool(tool: &str, version_arg: &str, message: &str) -> Result<
 }
 
 fn runnable_tool(tool: &str, version_arg: &str) -> Option<PathBuf> {
-    Command::new(tool)
+    runnable_path(Path::new(tool), version_arg).map(|_| PathBuf::from(tool))
+}
+
+fn runnable_path(path: &Path, version_arg: &str) -> Option<PathBuf> {
+    Command::new(path)
         .arg(version_arg)
         .output()
         .ok()
         .filter(|output| output.status.success())
-        .map(|_| PathBuf::from(tool))
+        .map(|_| path.to_path_buf())
+}
+
+fn find_wasm_opt() -> Option<PathBuf> {
+    if let Some(path) = runnable_tool("wasm-opt", "--version") {
+        return Some(path);
+    }
+
+    let mut candidates = Vec::new();
+    if let Ok(emsdk) = env::var("EMSDK") {
+        candidates.push(PathBuf::from(emsdk).join("upstream").join("bin"));
+    }
+
+    for dir in candidates {
+        for name in ["wasm-opt", "wasm-opt.exe"] {
+            let candidate = dir.join(name);
+            if candidate.exists()
+                && let Some(path) = runnable_path(&candidate, "--version")
+            {
+                return Some(path);
+            }
+        }
+    }
+
+    None
 }
 
 fn find_emcc() -> Result<EmccInvocation> {
@@ -2662,6 +2805,43 @@ mod tests {
             .expect("system clock should be after unix epoch")
             .as_nanos();
         env::temp_dir().join(format!("boxdd-xtask-{name}-{}-{nonce}", std::process::id()))
+    }
+
+    #[test]
+    fn build_profile_parses_supported_values() {
+        assert!(matches!(
+            BuildProfile::parse("debug"),
+            Some(BuildProfile::Debug)
+        ));
+        assert!(matches!(
+            BuildProfile::parse("release"),
+            Some(BuildProfile::Release)
+        ));
+        assert!(matches!(
+            BuildProfile::parse("wasm-release"),
+            Some(BuildProfile::WasmRelease)
+        ));
+        assert!(matches!(
+            BuildProfile::parse("WASM_RELEASE"),
+            Some(BuildProfile::WasmRelease)
+        ));
+        assert!(BuildProfile::parse("fast").is_none());
+    }
+
+    #[test]
+    fn wasm_release_profile_uses_custom_cargo_profile() {
+        assert_eq!(
+            BuildProfile::WasmRelease.cargo_args(),
+            &["--profile", "wasm-release"]
+        );
+        assert_eq!(BuildProfile::WasmRelease.target_dir(), "wasm-release");
+    }
+
+    #[test]
+    fn format_bytes_uses_binary_units() {
+        assert_eq!(format_bytes(31), "31 B");
+        assert_eq!(format_bytes(1536), "1.50 KiB");
+        assert_eq!(format_bytes(2 * 1024 * 1024), "2.00 MiB");
     }
 
     #[test]

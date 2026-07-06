@@ -47,6 +47,7 @@ jobs:
           echo "EMSDK=${RUNNER_TEMP}/emsdk" >> "$GITHUB_ENV"
           echo "${RUNNER_TEMP}/emsdk" >> "$GITHUB_PATH"
           echo "${RUNNER_TEMP}/emsdk/upstream/emscripten" >> "$GITHUB_PATH"
+          echo "${RUNNER_TEMP}/emsdk/upstream/bin" >> "$GITHUB_PATH"
 
       - name: Build Pages WASM assets
         run: cargo run -p xtask -- build-pages-wasm

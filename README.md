@@ -137,6 +137,8 @@ cargo run -p xtask -- validate-pages
 cargo install wasm-bindgen-cli --version 0.2.126 --locked
 cargo run -p xtask -- provider-smoke
 cargo run -p xtask -- build-pages-wasm
+# Pages wasm defaults to the size-oriented wasm-release profile and uses wasm-opt when available.
+# For debugging, set BOXDD_PAGES_WASM_PROFILE=debug and BOXDD_PAGES_WASM_OPT=0.
 
 # run a few representative examples
 cargo r --example world_basics
@@ -158,7 +160,7 @@ cargo run -p bevy_boxdd --example debug_draw_gizmos_2d
 ## Examples
 - The example catalog is now grouped by topic in [`boxdd/examples/README.md`](boxdd/examples/README.md), so users can start from the workflows they care about instead of scanning file names.
 - Browser Pages are generated from [`bevy_boxdd/examples/testbed_2d`](bevy_boxdd/examples/testbed_2d) and run official Box2D sample-style scenes such as Single Box, Large Pyramid, Skinny Box, Restitution, Sensor Funnel, Bridge, and Revolute.
-- Provider smoke assets live in [`examples-wasm/provider-smoke`](examples-wasm/provider-smoke); Pages runtime assets can be rebuilt with `cargo run -p xtask -- build-pages-wasm` when Emscripten SDK and `wasm-bindgen-cli` are available.
+- Provider smoke assets live in [`examples-wasm/provider-smoke`](examples-wasm/provider-smoke); Pages runtime assets can be rebuilt with `cargo run -p xtask -- build-pages-wasm` when Emscripten SDK and `wasm-bindgen-cli` are available. Pages wasm uses the `wasm-release` profile by default and runs `wasm-opt -Oz` when Binaryen is available.
 - Recommended starting points:
   - `world_basics`: minimal world/body/shape setup
   - `buffer_reuse`, `queries`, `query_casts`, `character_mover`: the main `0.4.0` hot-path, overlap, cast, and mover workflows
