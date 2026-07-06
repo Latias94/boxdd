@@ -1989,6 +1989,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "boxdd-provider-smoke"
+version = "0.4.0"
+dependencies = [
+ "boxdd",
+]
+
+[[package]]
 name = "boxdd-sys"
 version = "0.4.0"
 dependencies = [

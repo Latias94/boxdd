@@ -26,9 +26,13 @@ High-level wrappers live in the companion crate `boxdd`.
 
 ## WASM (experimental)
 - Targets
+  - `wasm32-unknown-unknown`: compile-only by default, or use `BOXDD_SYS_WASM_MODE=provider` to import Box2D symbols from a browser/Emscripten provider module.
   - `wasm32-unknown-emscripten`: builds C when `EMSDK` is set.
   - `wasm32-wasip1`: prefers `WASI_SDK_PATH` for clang/sysroot; otherwise check-only.
-  - `wasm32-unknown-unknown`: opt-in native C with `BOXDD_SYS_WASM_CC=1`.
+- Modes
+  - `BOXDD_SYS_WASM_MODE=compile-only`: generate/check bindings and skip native C linkage.
+  - `BOXDD_SYS_WASM_MODE=provider`: import symbols from the `box2d-sys-v0` wasm import module; used by `examples-wasm/provider-smoke` and GitHub Pages runtime assets.
+  - `BOXDD_SYS_WASM_MODE=source`: compile vendored Box2D C for wasm when the target/toolchain supports it. `BOXDD_SYS_WASM_CC=1` also opts `wasm32-unknown-unknown` into source mode.
 - Notes
   - No prebuilt for WASM targets.
   - Bindgen requires libclang.

@@ -4,9 +4,35 @@ use std::{
     fmt::Write as _,
     fs, io,
     path::{Path, PathBuf},
+    process::Command,
 };
 
 type Result<T> = std::result::Result<T, Error>;
+
+const PROVIDER_MODULE: &str = "box2d-sys-v0";
+const WASM_TARGET: &str = "wasm32-unknown-unknown";
+const PROVIDER_SMOKE_PACKAGE: &str = "boxdd-provider-smoke";
+const PROVIDER_SMOKE_WASM: &str = "boxdd_provider_smoke.wasm";
+const PAGES_WASM_DIR: &str = "wasm/generated";
+const PROVIDER_SMOKE_EXPORTS: &[&str] = &[
+    "boxdd_provider_smoke",
+    "boxdd_provider_drop_millimeters",
+    "boxdd_provider_ray_hit_millimeters",
+    "boxdd_provider_shape_cast_permyriad",
+    "boxdd_provider_joint_error_millimeters",
+];
+const RUNTIME_EXPORTS: &[&str] = &[
+    "boxdd_runtime_init",
+    "boxdd_runtime_step",
+    "boxdd_runtime_body_count",
+    "boxdd_runtime_body_shape",
+    "boxdd_runtime_body_x_millimeters",
+    "boxdd_runtime_body_y_millimeters",
+    "boxdd_runtime_body_angle_milliradians",
+    "boxdd_runtime_body_half_width_millimeters",
+    "boxdd_runtime_body_half_height_millimeters",
+    "boxdd_runtime_body_radius_millimeters",
+];
 
 #[derive(Debug)]
 enum Error {
@@ -72,6 +98,35 @@ enum ExampleIndexLocation {
     ExamplesDirectory,
 }
 
+#[derive(Copy, Clone)]
+enum BuildProfile {
+    Debug,
+    Release,
+}
+
+impl BuildProfile {
+    fn from_env() -> Self {
+        match env::var("BOXDD_PAGES_WASM_PROFILE").ok().as_deref() {
+            Some("release") | Some("Release") | Some("RELEASE") => Self::Release,
+            _ => Self::Debug,
+        }
+    }
+
+    const fn cargo_args(self) -> &'static [&'static str] {
+        match self {
+            Self::Debug => &[],
+            Self::Release => &["--release"],
+        }
+    }
+
+    const fn target_dir(self) -> &'static str {
+        match self {
+            Self::Debug => "debug",
+            Self::Release => "release",
+        }
+    }
+}
+
 fn main() {
     if let Err(error) = run() {
         eprintln!("error: {error}");
@@ -93,6 +148,9 @@ fn run() -> Result<()> {
         }
         [cmd, rest @ ..] if cmd == "api-coverage" => api_coverage(&root, rest),
         [cmd, rest @ ..] if cmd == "sample-parity" => sample_parity(&root, rest),
+        [cmd] if cmd == "provider-smoke-app" => provider_smoke_app(&root),
+        [cmd] if cmd == "provider-smoke" => provider_smoke(&root),
+        [cmd] if cmd == "build-pages-wasm" => build_pages_wasm(&root),
         [cmd] if cmd == "generate-pages" => generate_pages(&root),
         [cmd] if cmd == "validate-pages" => validate_pages(&root),
         [cmd, ..] => Err(Error::Message(format!(
@@ -119,12 +177,18 @@ Usage:
   cargo run -p xtask -- sample-parity --write
   cargo run -p xtask -- api-coverage --check
   cargo run -p xtask -- api-coverage --write
+  cargo run -p xtask -- provider-smoke-app
+  cargo run -p xtask -- provider-smoke
+  cargo run -p xtask -- build-pages-wasm
   cargo run -p xtask -- generate-pages
   cargo run -p xtask -- validate-pages
 
 Commands:
   api-coverage  Validate or regenerate docs/api-coverage.md and its fixture
   sample-parity  Validate or regenerate docs/upstream-parity/box2d-sample-matrix.md
+  provider-smoke-app  Build the Rust wasm provider-smoke app and export list
+  provider-smoke  Build the Rust app, build the Box2D provider with emcc, and run Node smoke
+  build-pages-wasm  Build browser runtime assets into docs/pages/wasm/generated
   generate-pages Generate the GitHub Pages example index from Rust examples
   validate-pages Validate generated pages and local links in docs/pages/**/*.html
 "
@@ -987,6 +1051,443 @@ fn validate_sample_matrix(
     }
 }
 
+fn provider_smoke_app(root: &Path) -> Result<()> {
+    let app = build_provider_smoke_app(root)?;
+    let imports = collect_provider_imports(&app)?;
+    write_exports_json(&provider_smoke_dir(root), &imports)?;
+    println!(
+        "provider smoke app ready: {} ({} provider imports)",
+        app.display(),
+        imports.len()
+    );
+    Ok(())
+}
+
+fn provider_smoke(root: &Path) -> Result<()> {
+    let app_wasm = build_provider_smoke_app(root)?;
+    let imports = collect_provider_imports(&app_wasm)?;
+    let out_dir = provider_smoke_dir(root);
+    let exports = write_exports_json(&out_dir, &imports)?;
+    let provider = build_box2d_provider(root, &out_dir, &exports)?;
+    let app_copy = out_dir.join(PROVIDER_SMOKE_WASM);
+    write_node_runner(&out_dir, &provider, &app_copy, &imports)?;
+
+    let runner = out_dir.join("run-provider-smoke.mjs");
+    let mut command = Command::new("node");
+    command.arg(runner);
+    run_command(&mut command, "run provider shared-memory smoke")
+}
+
+fn build_pages_wasm(root: &Path) -> Result<()> {
+    generate_pages(root)?;
+    let app_wasm = build_provider_smoke_app(root)?;
+    let imports = collect_provider_imports(&app_wasm)?;
+    let out_dir = provider_smoke_dir(root);
+    let exports = write_exports_json(&out_dir, &imports)?;
+    let provider = build_box2d_provider(root, &out_dir, &exports)?;
+    let provider_wasm = provider.with_extension("wasm");
+    ensure_file(&provider, "Box2D provider module")?;
+    ensure_file(&provider_wasm, "Box2D provider wasm")?;
+
+    let generated = pages_wasm_generated_dir(root);
+    replace_dir_under(&generated, &root.join("docs/pages"))?;
+    copy_file(&provider, &generated.join("box2d-sys-v0.js"))?;
+    copy_file(&provider_wasm, &generated.join("box2d-sys-v0.wasm"))?;
+    copy_file(
+        &out_dir.join(PROVIDER_SMOKE_WASM),
+        &generated.join(PROVIDER_SMOKE_WASM),
+    )?;
+
+    println!(
+        "pages wasm assets ready: {} ({} provider imports)",
+        generated.display(),
+        imports.len()
+    );
+    Ok(())
+}
+
+fn provider_smoke_dir(root: &Path) -> PathBuf {
+    root.join("target").join("boxdd-provider-smoke")
+}
+
+fn pages_wasm_generated_dir(root: &Path) -> PathBuf {
+    root.join("docs").join("pages").join(PAGES_WASM_DIR)
+}
+
+fn build_provider_smoke_app(root: &Path) -> Result<PathBuf> {
+    let profile = BuildProfile::from_env();
+    let mut command = Command::new("cargo");
+    command
+        .arg("rustc")
+        .arg("-p")
+        .arg(PROVIDER_SMOKE_PACKAGE)
+        .arg("--lib")
+        .arg("--target")
+        .arg(WASM_TARGET)
+        .args(profile.cargo_args())
+        .env("BOXDD_SYS_WASM_MODE", "provider");
+    add_wasm_app_link_args(&mut command, &[PROVIDER_SMOKE_EXPORTS, RUNTIME_EXPORTS]);
+    run_command(&mut command, "build provider-smoke Rust wasm")?;
+
+    let wasm = root
+        .join("target")
+        .join(WASM_TARGET)
+        .join(profile.target_dir())
+        .join(PROVIDER_SMOKE_WASM);
+    ensure_file(&wasm, "provider-smoke wasm artifact")?;
+
+    let out_dir = provider_smoke_dir(root);
+    replace_dir_under(&out_dir, &root.join("target"))?;
+    copy_file(&wasm, &out_dir.join(PROVIDER_SMOKE_WASM))?;
+    Ok(wasm)
+}
+
+fn add_wasm_app_link_args(command: &mut Command, export_groups: &[&[&str]]) {
+    command.arg("--").arg("-C").arg("link-arg=--import-memory");
+    for export in export_groups.iter().flat_map(|exports| exports.iter()) {
+        command.arg("-C").arg(format!("link-arg=--export={export}"));
+    }
+}
+
+fn collect_provider_imports(wasm: &Path) -> Result<Vec<String>> {
+    ensure_runnable_tool(
+        "node",
+        "--version",
+        "Node.js is required for provider smoke",
+    )?;
+    let script = r#"
+const fs = require('node:fs');
+const wasmPath = process.argv[1];
+const providerModule = process.argv[2];
+const module = new WebAssembly.Module(fs.readFileSync(wasmPath));
+const names = WebAssembly.Module.imports(module)
+  .filter((i) => i.kind === 'function' && i.module === providerModule)
+  .map((i) => i.name)
+  .sort();
+for (const name of names) console.log(name);
+"#;
+    let output = Command::new("node")
+        .arg("-e")
+        .arg(script)
+        .arg(wasm)
+        .arg(PROVIDER_MODULE)
+        .output()
+        .map_err(|source| Error::io("node", source))?;
+    if !output.status.success() {
+        return Err(Error::Message(format!(
+            "failed to inspect wasm imports with node: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )));
+    }
+    let imports = String::from_utf8(output.stdout)
+        .map_err(|err| Error::Message(format!("node printed invalid UTF-8: {err}")))?
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    if imports.is_empty() {
+        return Err(Error::Message(format!(
+            "{} does not import any functions from {PROVIDER_MODULE}",
+            wasm.display()
+        )));
+    }
+    Ok(imports)
+}
+
+fn write_exports_json(out_dir: &Path, imports: &[String]) -> Result<PathBuf> {
+    fs::create_dir_all(out_dir).map_err(|source| Error::io(out_dir, source))?;
+    let mut exported = imports
+        .iter()
+        .map(|name| format!("\"_{name}\""))
+        .collect::<Vec<_>>();
+    exported.sort();
+    let path = out_dir.join("box2d-provider-exports.json");
+    fs::write(&path, format!("[{}]", exported.join(",")))
+        .map_err(|source| Error::io(&path, source))?;
+    Ok(path)
+}
+
+fn build_box2d_provider(root: &Path, out_dir: &Path, exports_json: &Path) -> Result<PathBuf> {
+    let emcc = find_emcc()?;
+    let box2d_root = root.join("boxdd-sys").join("third-party").join("box2d");
+    let include_dir = box2d_root.join("include");
+    let src_dir = box2d_root.join("src");
+    let provider = out_dir.join("box2d-sys-v0.js");
+
+    let mut c_files = Vec::new();
+    collect_c_files(&src_dir, &mut c_files)?;
+    c_files.sort();
+
+    let mut command = Command::new(emcc);
+    command
+        .arg("-std=c17")
+        .arg("-O2")
+        .arg("-s")
+        .arg("MODULARIZE=1")
+        .arg("-s")
+        .arg("EXPORT_ES6=1")
+        .arg("-s")
+        .arg("ENVIRONMENT=node,web")
+        .arg("-s")
+        .arg("GLOBAL_BASE=67108864")
+        .arg("-s")
+        .arg("IMPORTED_MEMORY=1")
+        .arg("-s")
+        .arg("ALLOW_MEMORY_GROWTH=1")
+        .arg("-s")
+        .arg("INITIAL_MEMORY=134217728")
+        .arg("-s")
+        .arg("MAXIMUM_MEMORY=536870912")
+        .arg("-s")
+        .arg("FILESYSTEM=0")
+        .arg("-s")
+        .arg("NO_EXIT_RUNTIME=1")
+        .arg("-s")
+        .arg("MALLOC=emmalloc")
+        .arg("-s")
+        .arg("ASSERTIONS=1")
+        .arg("-s")
+        .arg("STACK_SIZE=1048576")
+        .arg("-s")
+        .arg("ERROR_ON_UNDEFINED_SYMBOLS=1")
+        .arg("-s")
+        .arg(format!(
+            "EXPORTED_FUNCTIONS=@{}",
+            exports_json.to_string_lossy().replace('\\', "/")
+        ))
+        .arg("-D_POSIX_C_SOURCE=199309L")
+        .arg("-DBOX2D_DISABLE_SIMD")
+        .arg("-I")
+        .arg(&include_dir)
+        .arg("-I")
+        .arg(&src_dir);
+    for file in c_files {
+        command.arg(file);
+    }
+    command.arg("-o").arg(&provider);
+    run_command(&mut command, "build Box2D provider wasm")?;
+    Ok(provider)
+}
+
+fn collect_c_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in fs::read_dir(dir).map_err(|source| Error::io(dir, source))? {
+        let path = entry.map_err(|source| Error::io(dir, source))?.path();
+        if path.is_dir() {
+            collect_c_files(&path, out)?;
+        } else if path.extension().is_some_and(|ext| ext == "c") {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn run_command(command: &mut Command, label: &str) -> Result<()> {
+    let status = command
+        .status()
+        .map_err(|source| Error::io(label, source))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(Error::Message(format!(
+            "{label} failed with status {status}"
+        )))
+    }
+}
+
+fn write_node_runner(
+    out_dir: &Path,
+    provider: &Path,
+    app_wasm: &Path,
+    imports: &[String],
+) -> Result<()> {
+    let provider_name = provider
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| Error::Message("invalid provider file name".to_owned()))?;
+    let app_name = app_wasm
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| Error::Message("invalid app wasm file name".to_owned()))?;
+    let imports_array = imports
+        .iter()
+        .map(|name| format!("  \"{name}\""))
+        .collect::<Vec<_>>()
+        .join(",\n");
+    let runner = format!(
+        r#"import fs from 'node:fs';
+import {{ dirname, join }} from 'node:path';
+import {{ fileURLToPath }} from 'node:url';
+import createProvider from './{provider_name}';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const memory = new WebAssembly.Memory({{ initial: 2048, maximum: 8192 }});
+const provider = await createProvider({{
+  wasmMemory: memory,
+  locateFile: (path) => join(here, path),
+  print: (text) => console.log(`[box2d-sys-v0] ${{text}}`),
+  printErr: (text) => console.warn(`[box2d-sys-v0] ${{text}}`),
+}});
+
+if (provider.wasmMemory && provider.wasmMemory !== memory) {{
+  throw new Error('provider did not use the shared WebAssembly.Memory');
+}}
+
+const providerImports = [
+{imports_array}
+];
+const importObject = {{
+  env: {{ memory }},
+  '{PROVIDER_MODULE}': {{}},
+}};
+
+for (const name of providerImports) {{
+  const exported = provider[`_${{name}}`] || provider[name];
+  if (typeof exported !== 'function') {{
+    throw new Error(`provider is missing export for ${{name}}`);
+  }}
+  importObject['{PROVIDER_MODULE}'][name] = exported;
+}}
+
+const appBytes = fs.readFileSync(join(here, '{app_name}'));
+const {{ instance }} = await WebAssembly.instantiate(appBytes, importObject);
+if (typeof instance.exports.boxdd_provider_smoke !== 'function') {{
+  throw new Error('boxdd_provider_smoke export is missing from Rust wasm');
+}}
+
+const code = instance.exports.boxdd_provider_smoke();
+if (code !== 0) {{
+  throw new Error(`boxdd provider smoke failed with code ${{code}}`);
+}}
+
+const metricExports = {{
+  dropMillimeters: 'boxdd_provider_drop_millimeters',
+  rayHitMillimeters: 'boxdd_provider_ray_hit_millimeters',
+  shapeCastPermyriad: 'boxdd_provider_shape_cast_permyriad',
+  jointErrorMillimeters: 'boxdd_provider_joint_error_millimeters',
+}};
+const metrics = {{}};
+for (const [label, exportName] of Object.entries(metricExports)) {{
+  const exported = instance.exports[exportName];
+  if (typeof exported !== 'function') {{
+    throw new Error(`${{exportName}} export is missing from Rust wasm`);
+  }}
+  const value = exported();
+  if (value < 0) {{
+    throw new Error(`${{exportName}} failed with code ${{value}}`);
+  }}
+  metrics[label] = value;
+}}
+
+const runtimeInit = instance.exports.boxdd_runtime_init();
+if (runtimeInit !== 0) {{
+  throw new Error(`boxdd runtime init failed with code ${{runtimeInit}}`);
+}}
+for (let i = 0; i < 30; i += 1) {{
+  const frame = instance.exports.boxdd_runtime_step();
+  if (frame < 0) throw new Error(`boxdd runtime step failed with code ${{frame}}`);
+}}
+const runtimeBodies = instance.exports.boxdd_runtime_body_count();
+if (runtimeBodies <= 0) {{
+  throw new Error(`boxdd runtime body count failed with code ${{runtimeBodies}}`);
+}}
+
+console.log(
+  `boxdd provider smoke passed: drop_mm=${{metrics.dropMillimeters}}, ` +
+    `ray_hit_mm=${{metrics.rayHitMillimeters}}, ` +
+    `shape_cast_permyriad=${{metrics.shapeCastPermyriad}}, ` +
+    `joint_error_mm=${{metrics.jointErrorMillimeters}}, ` +
+    `runtime_bodies=${{runtimeBodies}}`
+);
+"#
+    );
+    let package_json = out_dir.join("package.json");
+    fs::write(&package_json, r#"{"type":"module"}"#)
+        .map_err(|source| Error::io(&package_json, source))?;
+    let path = out_dir.join("run-provider-smoke.mjs");
+    fs::write(&path, runner).map_err(|source| Error::io(&path, source))
+}
+
+fn replace_dir_under(dir: &Path, allowed_root: &Path) -> Result<()> {
+    fs::create_dir_all(allowed_root).map_err(|source| Error::io(allowed_root, source))?;
+    if dir.exists() {
+        let canonical_dir = dir
+            .canonicalize()
+            .map_err(|source| Error::io(dir, source))?;
+        let canonical_root = allowed_root
+            .canonicalize()
+            .map_err(|source| Error::io(allowed_root, source))?;
+        if !canonical_dir.starts_with(&canonical_root) {
+            return Err(Error::Message(format!(
+                "refusing to remove directory outside {}: {}",
+                canonical_root.display(),
+                canonical_dir.display()
+            )));
+        }
+        fs::remove_dir_all(&canonical_dir).map_err(|source| Error::io(&canonical_dir, source))?;
+    }
+    fs::create_dir_all(dir).map_err(|source| Error::io(dir, source))
+}
+
+fn copy_file(from: &Path, to: &Path) -> Result<()> {
+    if let Some(parent) = to.parent() {
+        fs::create_dir_all(parent).map_err(|source| Error::io(parent, source))?;
+    }
+    fs::copy(from, to).map_err(|source| Error::io(to, source))?;
+    Ok(())
+}
+
+fn ensure_file(path: &Path, label: &str) -> Result<PathBuf> {
+    if path.is_file() {
+        Ok(path.to_path_buf())
+    } else {
+        Err(Error::Message(format!(
+            "{label} not found: {}",
+            path.display()
+        )))
+    }
+}
+
+fn ensure_runnable_tool(tool: &str, version_arg: &str, message: &str) -> Result<()> {
+    if runnable_tool(tool, version_arg).is_some() {
+        Ok(())
+    } else {
+        Err(Error::Message(message.to_owned()))
+    }
+}
+
+fn runnable_tool(tool: &str, version_arg: &str) -> Option<PathBuf> {
+    Command::new(tool)
+        .arg(version_arg)
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|_| PathBuf::from(tool))
+}
+
+fn find_emcc() -> Result<PathBuf> {
+    if let Some(path) = runnable_tool("emcc", "--version") {
+        return Ok(path);
+    }
+
+    if let Ok(root) = env::var("EMSDK") {
+        let emscripten = PathBuf::from(root).join("upstream").join("emscripten");
+        for name in ["emcc", "emcc.exe", "emcc.bat"] {
+            let candidate = emscripten.join(name);
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+        }
+    }
+
+    Err(Error::Message(
+        "failed to locate emcc; install emsdk, run emsdk_env, or set EMSDK to the emsdk root"
+            .to_owned(),
+    ))
+}
+
 fn generate_pages(root: &Path) -> Result<()> {
     let examples = collect_page_examples(root)?;
     let pages = expected_pages(root, &examples);
@@ -1000,6 +1501,7 @@ fn generate_pages(root: &Path) -> Result<()> {
         }
         fs::write(&path, html).map_err(|source| Error::io(&path, source))?;
     }
+    write_wasm_runtime_loader(&pages_dir)?;
 
     println!(
         "generated pages: {} examples under {}",
@@ -1331,6 +1833,7 @@ fn expected_pages(root: &Path, examples: &[PageExample]) -> BTreeMap<PathBuf, St
         pages_dir.join("examples/index.html"),
         example_index_page(examples, ExampleIndexLocation::ExamplesDirectory),
     );
+    pages.insert(pages_dir.join("wasm/index.html"), wasm_runtime_page());
     for example in examples {
         pages.insert(
             pages_dir
@@ -1375,6 +1878,7 @@ fn example_index_page(examples: &[PageExample], location: ExampleIndexLocation) 
     <header class="topbar">
       <a href="{home_href}">boxdd Examples</a>
       <nav>
+        <a href="{runtime_href}">Runtime</a>
         <a href="{examples_href}">Examples</a>
         <a href="https://github.com/Latias94/boxdd">GitHub</a>
         <a href="https://docs.rs/boxdd">Docs.rs</a>
@@ -1383,7 +1887,15 @@ fn example_index_page(examples: &[PageExample], location: ExampleIndexLocation) 
     <main class="directory-main">
       <p class="eyebrow">Generated example index</p>
       <h1>Find the Rust example that matches the workflow</h1>
-      <p class="lead">This page is generated from the checked-in Cargo examples and the desktop testbed scene registry. Each card opens a concrete source/command page. Browser WASM is not advertised here until boxdd has a real browser runtime.</p>
+      <p class="lead">This page is generated from the checked-in Cargo examples, the desktop testbed scene registry, and the browser provider runtime smoke.</p>
+      <section class="runtime-panel">
+        <div>
+          <span>Browser runtime</span>
+          <strong>Run Box2D through Rust WASM</strong>
+          <p>The runtime page loads the Rust `boxdd-provider-smoke` wasm module and the Emscripten-built Box2D provider module with shared memory, then draws live simulation state on canvas.</p>
+        </div>
+        <a href="{runtime_href}">Open runtime</a>
+      </section>
       <section class="card-grid">
 {cards}
       </section>
@@ -1395,6 +1907,7 @@ fn example_index_page(examples: &[PageExample], location: ExampleIndexLocation) 
         css = example_page_css(),
         home_href = location.home_href(),
         examples_href = location.examples_href(),
+        runtime_href = location.runtime_href(),
         cards = cards,
     )
 }
@@ -1453,6 +1966,209 @@ fn example_page(example: &PageExample) -> String {
     )
 }
 
+fn wasm_runtime_page() -> String {
+    format!(
+        r#"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>boxdd Browser Runtime</title>
+  <link rel="icon" href="data:,">
+  <meta name="description" content="Real browser runtime for boxdd backed by Rust WASM and a Box2D provider module.">
+  <style>{css}</style>
+</head>
+<body>
+  <div class="runtime-shell">
+    <header class="topbar">
+      <a href="../">boxdd Examples</a>
+      <nav>
+        <a href="../examples/">All examples</a>
+        <a href="https://github.com/Latias94/boxdd/tree/main/examples-wasm/provider-smoke">Source</a>
+      </nav>
+    </header>
+    <main class="runtime-main">
+      <section class="runtime-copy">
+        <p class="eyebrow">Real browser runtime</p>
+        <h1>Rust WASM plus Box2D provider</h1>
+        <p class="lead">This canvas is driven by the checked-in `boxdd-provider-smoke` runtime. The Rust module imports Box2D C API symbols from the provider module and both modules share one WebAssembly memory.</p>
+        <div id="runtime-status" class="runtime-status" data-state="loading" role="status" aria-live="polite">
+          <strong>Loading runtime</strong>
+          <span>Preparing Rust wasm and the Box2D provider module.</span>
+        </div>
+        <dl class="metric-grid">
+          <div><dt>Drop</dt><dd id="metric-drop">--</dd></div>
+          <div><dt>Ray</dt><dd id="metric-ray">--</dd></div>
+          <div><dt>Shape cast</dt><dd id="metric-cast">--</dd></div>
+          <div><dt>Joint</dt><dd id="metric-joint">--</dd></div>
+        </dl>
+      </section>
+      <section class="runtime-stage">
+        <canvas id="runtime-canvas" width="960" height="560" aria-label="Live Box2D browser runtime"></canvas>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="loader.js"></script>
+</body>
+</html>
+"#,
+        css = example_page_css()
+    )
+}
+
+fn write_wasm_runtime_loader(pages_dir: &Path) -> Result<()> {
+    let wasm_dir = pages_dir.join("wasm");
+    fs::create_dir_all(&wasm_dir).map_err(|source| Error::io(&wasm_dir, source))?;
+    let path = wasm_dir.join("loader.js");
+    fs::write(&path, wasm_runtime_loader_js()).map_err(|source| Error::io(&path, source))
+}
+
+fn wasm_runtime_loader_js() -> &'static str {
+    r##"const statusPanel = document.querySelector("#runtime-status");
+const canvas = document.querySelector("#runtime-canvas");
+const ctx = canvas.getContext("2d");
+const metrics = {
+  drop: document.querySelector("#metric-drop"),
+  ray: document.querySelector("#metric-ray"),
+  cast: document.querySelector("#metric-cast"),
+  joint: document.querySelector("#metric-joint"),
+};
+
+function setStatus(state, title, detail) {
+  statusPanel.dataset.state = state;
+  statusPanel.replaceChildren();
+  const titleNode = document.createElement("strong");
+  titleNode.textContent = title;
+  const detailNode = document.createElement("span");
+  detailNode.textContent = detail;
+  statusPanel.append(titleNode, detailNode);
+}
+
+function generatedUrl(path) {
+  return new URL(`generated/${path}`, import.meta.url);
+}
+
+function providerFunction(provider, name) {
+  const exported = provider[`_${name}`] || provider[name];
+  if (typeof exported !== "function") {
+    throw new Error(`Box2D provider is missing export ${name}`);
+  }
+  return exported;
+}
+
+async function loadRuntime() {
+  setStatus("loading", "Loading Box2D provider", "Creating the shared WebAssembly memory.");
+  const memory = new WebAssembly.Memory({ initial: 2048, maximum: 8192 });
+  const { default: createProvider } = await import(generatedUrl("box2d-sys-v0.js").href);
+  const provider = await createProvider({
+    wasmMemory: memory,
+    locateFile: (path) => generatedUrl(path).href,
+    print: (text) => console.log(`[box2d-sys-v0] ${text}`),
+    printErr: (text) => console.warn(`[box2d-sys-v0] ${text}`),
+  });
+
+  if (provider.wasmMemory && provider.wasmMemory !== memory) {
+    throw new Error("Box2D provider did not use the shared WebAssembly.Memory");
+  }
+
+  setStatus("loading", "Loading Rust runtime", "Instantiating the boxdd provider-smoke wasm module.");
+  const appBytes = await fetch(generatedUrl("boxdd_provider_smoke.wasm")).then((response) => {
+    if (!response.ok) throw new Error(`failed to fetch Rust wasm: ${response.status}`);
+    return response.arrayBuffer();
+  });
+  const importObject = { env: { memory }, "box2d-sys-v0": {} };
+  const inspectModule = await WebAssembly.compile(appBytes);
+  for (const entry of WebAssembly.Module.imports(inspectModule)) {
+    if (entry.kind === "function" && entry.module === "box2d-sys-v0") {
+      importObject["box2d-sys-v0"][entry.name] = providerFunction(provider, entry.name);
+    }
+  }
+  const instance = await WebAssembly.instantiate(inspectModule, importObject);
+  const exports = instance.exports;
+  const smoke = exports.boxdd_provider_smoke();
+  if (smoke !== 0) throw new Error(`provider smoke failed with code ${smoke}`);
+  const init = exports.boxdd_runtime_init();
+  if (init !== 0) throw new Error(`runtime init failed with code ${init}`);
+  return exports;
+}
+
+function setMetric(node, value, suffix) {
+  node.textContent = `${value}${suffix}`;
+}
+
+function draw(exports) {
+  const width = canvas.width;
+  const height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#05080c";
+  ctx.fillRect(0, 0, width, height);
+  ctx.strokeStyle = "#27313a";
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= width; x += 48) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+  }
+  for (let y = 0; y <= height; y += 48) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.stroke();
+  }
+
+  const scale = 58;
+  const worldToCanvas = (x, y) => [width / 2 + x * scale, height - 92 - y * scale];
+  ctx.fillStyle = "#2dd4bf";
+  ctx.fillRect(0, height - 92 + scale, width, 8);
+  const count = exports.boxdd_runtime_body_count();
+  for (let i = 0; i < count; i += 1) {
+    const shape = exports.boxdd_runtime_body_shape(i);
+    const x = exports.boxdd_runtime_body_x_millimeters(i) / 1000;
+    const y = exports.boxdd_runtime_body_y_millimeters(i) / 1000;
+    const angle = exports.boxdd_runtime_body_angle_milliradians(i) / 1000;
+    const [cx, cy] = worldToCanvas(x, y);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-angle);
+    if (shape === 2) {
+      const radius = exports.boxdd_runtime_body_radius_millimeters(i) / 1000 * scale;
+      ctx.fillStyle = "#facc15";
+      ctx.beginPath();
+      ctx.arc(0, 0, radius, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      const hw = exports.boxdd_runtime_body_half_width_millimeters(i) / 1000 * scale;
+      const hh = exports.boxdd_runtime_body_half_height_millimeters(i) / 1000 * scale;
+      ctx.fillStyle = i % 2 === 0 ? "#38bdf8" : "#a78bfa";
+      ctx.fillRect(-hw, -hh, hw * 2, hh * 2);
+    }
+    ctx.restore();
+  }
+}
+
+loadRuntime()
+  .then((exports) => {
+    setMetric(metrics.drop, exports.boxdd_provider_drop_millimeters(), " mm");
+    setMetric(metrics.ray, exports.boxdd_provider_ray_hit_millimeters(), " mm");
+    setMetric(metrics.cast, exports.boxdd_provider_shape_cast_permyriad(), " / 10000");
+    setMetric(metrics.joint, exports.boxdd_provider_joint_error_millimeters(), " mm");
+    setStatus("running", "Runtime running", "The canvas is stepping a real Box2D world through Rust wasm.");
+    const tick = () => {
+      for (let i = 0; i < 2; i += 1) exports.boxdd_runtime_step();
+      draw(exports);
+      requestAnimationFrame(tick);
+    };
+    tick();
+  })
+  .catch((error) => {
+    console.error(error);
+    const message = error instanceof Error ? error.message : String(error);
+    setStatus("error", "Runtime failed", message);
+  });
+"##
+}
+
 impl ExampleIndexLocation {
     fn home_href(self) -> &'static str {
         match self {
@@ -1465,6 +2181,13 @@ impl ExampleIndexLocation {
         match self {
             Self::Root => "examples/",
             Self::ExamplesDirectory => "./",
+        }
+    }
+
+    fn runtime_href(self) -> &'static str {
+        match self {
+            Self::Root => "wasm/",
+            Self::ExamplesDirectory => "../wasm/",
         }
     }
 
@@ -1499,6 +2222,12 @@ a:hover { text-decoration: underline; text-underline-offset: 4px; }
 .directory-main h1, .detail-main h1 { max-width: 840px; margin: 0; font-size: clamp(34px, 6vw, 58px); line-height: 1; letter-spacing: 0; }
 .eyebrow { color: var(--accent); font-size: 12px; font-weight: 800; letter-spacing: 0; text-transform: uppercase; }
 .lead { max-width: 760px; color: var(--muted); font-size: 17px; line-height: 1.55; }
+.runtime-panel { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; justify-content: space-between; max-width: 980px; margin: 28px 0; border: 1px solid #36515d; border-radius: 8px; background: #0b1720; padding: 18px; }
+.runtime-panel div { max-width: 700px; }
+.runtime-panel span { color: var(--accent); font-size: 12px; font-weight: 800; text-transform: uppercase; }
+.runtime-panel strong { display: block; margin-top: 7px; font-size: 20px; }
+.runtime-panel p { margin: 8px 0 0; color: var(--muted); line-height: 1.5; }
+.runtime-panel a { border: 1px solid #67e8f9; border-radius: 6px; color: #ecfeff; padding: 10px 14px; font-weight: 800; }
 .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 12px; margin-top: 28px; }
 .card { display: grid; min-height: 170px; gap: 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); padding: 16px; }
 .card:hover { border-color: #52525b; text-decoration: none; }
@@ -1511,6 +2240,24 @@ pre { margin: 12px 0 10px; overflow-x: auto; border-radius: 6px; background: #02
 code { color: var(--accent-strong); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 14px; }
 .command-panel p { margin: 0; color: var(--muted); line-height: 1.5; }
 .source-panel a { display: inline-block; margin-top: 10px; color: var(--foreground); overflow-wrap: anywhere; }
+.runtime-shell { min-height: 100vh; }
+.runtime-main { display: grid; grid-template-columns: minmax(320px, 440px) minmax(0, 1fr); gap: 24px; width: min(1360px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0; }
+.runtime-copy { min-width: 0; }
+.runtime-copy h1 { margin: 0; font-size: 38px; line-height: 1; letter-spacing: 0; }
+.runtime-status { border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--muted); padding: 14px; line-height: 1.45; }
+.runtime-status strong { display: block; margin-bottom: 4px; color: var(--foreground); }
+.runtime-status[data-state="error"] strong { color: #fca5a5; }
+.runtime-status[data-state="running"] strong { color: #86efac; }
+.metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 16px 0 0; }
+.metric-grid div { border: 1px solid var(--border); border-radius: 8px; background: var(--card); padding: 12px; }
+.metric-grid dt { color: var(--muted); font-size: 12px; text-transform: uppercase; }
+.metric-grid dd { margin: 6px 0 0; color: var(--accent-strong); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 18px; }
+.runtime-stage { min-width: 0; border: 1px solid var(--border); border-radius: 8px; background: #05080c; overflow: hidden; }
+#runtime-canvas { display: block; width: 100%; height: min(70vh, 640px); min-height: 420px; }
+@media (max-width: 920px) {
+  .runtime-main { grid-template-columns: 1fr; }
+  #runtime-canvas { height: 420px; }
+}
 "#
 }
 
@@ -1642,6 +2389,32 @@ fn validate_pages(root: &Path) -> Result<()> {
                     "{} links to missing local target `{}`",
                     file.strip_prefix(root).unwrap_or(file).display(),
                     link
+                ));
+            }
+        }
+    }
+
+    let loader = pages_dir.join("wasm/loader.js");
+    if !loader.exists() {
+        errors.push("missing generated wasm runtime loader docs/pages/wasm/loader.js".to_owned());
+    } else {
+        let actual = fs::read_to_string(&loader).map_err(|source| Error::io(&loader, source))?;
+        if normalize_newlines(&actual) != normalize_newlines(wasm_runtime_loader_js()) {
+            errors.push(
+                "docs/pages/wasm/loader.js is stale; run `cargo run -p xtask -- generate-pages`"
+                    .to_owned(),
+            );
+        }
+    }
+
+    let wasm_generated = pages_wasm_generated_dir(root);
+    if wasm_generated.exists() {
+        for asset in ["box2d-sys-v0.js", "box2d-sys-v0.wasm", PROVIDER_SMOKE_WASM] {
+            let path = wasm_generated.join(asset);
+            if !path.is_file() {
+                errors.push(format!(
+                    "missing wasm runtime asset {}; run `cargo run -p xtask -- build-pages-wasm`",
+                    path.strip_prefix(root).unwrap_or(&path).display()
                 ));
             }
         }

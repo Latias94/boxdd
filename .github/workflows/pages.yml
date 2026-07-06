@@ -16,22 +16,37 @@ concurrency:
 
 jobs:
   build:
-    name: Generate and upload static site
+    name: Build and upload static site
     runs-on: ubuntu-latest
+    env:
+      EMSDK_VERSION: "6.0.2"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Generate example pages
-        run: cargo run -p xtask -- generate-pages
+      - name: Install Emscripten SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "${EMSDK_VERSION}" https://github.com/emscripten-core/emsdk.git "${RUNNER_TEMP}/emsdk"
+          "${RUNNER_TEMP}/emsdk/emsdk" install "${EMSDK_VERSION}"
+          "${RUNNER_TEMP}/emsdk/emsdk" activate "${EMSDK_VERSION}"
+          echo "EMSDK=${RUNNER_TEMP}/emsdk" >> "$GITHUB_ENV"
+          echo "${RUNNER_TEMP}/emsdk" >> "$GITHUB_PATH"
+          echo "${RUNNER_TEMP}/emsdk/upstream/emscripten" >> "$GITHUB_PATH"
 
-      - name: Validate example pages
+      - name: Build Pages WASM assets
+        run: cargo run -p xtask -- build-pages-wasm
+
+      - name: Validate Pages content
         run: cargo run -p xtask -- validate-pages
 
       - name: Configure Pages

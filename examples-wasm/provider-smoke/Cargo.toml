@@ -1,0 +1,15 @@
+[package]
+name = "boxdd-provider-smoke"
+version.workspace = true
+edition.workspace = true
+publish = false
+description = "Browser-style provider smoke for boxdd"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+boxdd.workspace = true

@@ -10,6 +10,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 ## [Unreleased]
 
 ### Added
+- Added a browser-ready WASM provider runtime with `examples-wasm/provider-smoke`, `xtask provider-smoke`, and generated GitHub Pages assets that run Rust `boxdd` against an Emscripten Box2D module in shared memory.
 - Added Bevy entity-mapped AABB overlap helpers: `BoxddPhysicsContext::try_overlap_aabb_entities` and `try_overlap_aabb_entities_into` return `BoxddShapeHit` values with the native `ShapeId` and mapped Bevy `Entity`.
 - Added Bevy product workflow examples for AABB overlap highlighting, debug draw rendering with Gizmos, compound child colliders, and collision category/mask filters.
 - Added executable FFI lifecycle coverage for public `!Send`/`!Sync` guarantees, explicit destroy user-data cleanup, and raw pointer replacement semantics.
@@ -23,6 +24,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Added default-running lifecycle tests for callback locks, panic containment, query callbacks, dynamic-tree callbacks, event-view deferred destruction, reusable event buffers, and world destroy/recycle behavior.
 
 ### Changed
+- GitHub Pages now builds live WASM runtime assets with Emscripten instead of publishing only a static example catalog.
 - Centralized workspace metadata and shared dependencies across `boxdd`, `boxdd-sys`, `bevy_boxdd`, and `xtask`.
 - Reworked GitHub Pages from hand-written documentation tiles into a generated example index that points users to concrete source files and run commands.
 - Updated the Bevy ray-query example to use entity-mapped `BoxddPhysicsContext` helpers instead of requiring users to combine native ray casts with manual shape-to-entity lookups.
@@ -33,6 +35,8 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Fixed callback panic recovery so catching a Rust panic from a Box2D callback no longer poisons the internal panic payload mutex and prevents later `World::step` calls.
 
 ### Migration Notes
+- Browser builds should use `BOXDD_SYS_WASM_MODE=provider` for `wasm32-unknown-unknown`; the default wasm mode remains compile-only unless `BOXDD_SYS_WASM_CC` or a supported source toolchain is configured.
+- If you publish `docs/pages`, run `cargo run -p xtask -- build-pages-wasm` instead of only `generate-pages` so `docs/pages/wasm/generated` contains the provider artifacts.
 - Existing Bevy body, collider, contact, sensor, and transform-sync code does not need to change; the new Bevy APIs are additive.
 - For Bevy ray casts, prefer `BoxddPhysicsContext::try_cast_ray_closest_entity`, `try_cast_ray_all_entities`, or `try_cast_ray_all_entities_into` when you want ECS entities back with the native hit data.
 - For Bevy area queries, prefer `BoxddPhysicsContext::try_overlap_aabb_entities` or `try_overlap_aabb_entities_into` when you want ECS entities back with native `ShapeId` values.

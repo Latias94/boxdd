@@ -18,7 +18,7 @@
 ## Engineering Status
 - API coverage matrix: `docs/api-coverage.md` tracks every vendored Box2D `B2_API` symbol; the current safe layer accounts for 424 of 430 symbols, with 4 raw-only and 2 omitted by rationale.
 - Official sample parity: `docs/upstream-parity/box2d-sample-matrix.md` maps non-benchmark upstream samples to Rust examples, tests, or testbed scenes. Benchmark rows may remain indexed references when that is the useful artifact.
-- GitHub Pages source: `docs/pages/index.html` is generated from checked-in Cargo examples and testbed scenes, so the site works as an example index instead of a hand-written marketing page.
+- GitHub Pages source: `docs/pages/index.html` is generated from checked-in Cargo examples and testbed scenes, and `docs/pages/wasm/` contains a live browser runtime backed by Rust wasm plus an Emscripten Box2D provider.
 - Bevy integration: `bevy_boxdd` exposes `RigidBody`, `Collider`, `PhysicsMaterial`, distance/revolute `JointDescriptor`, transform sync, entity-mapped ray and AABB overlap helpers through `BoxddPhysicsContext`, debug draw command collection, recoverable error messages, and body/contact/sensor messages.
 
 ## 0.4.0 Highlights
@@ -133,6 +133,10 @@ cargo run -p xtask -- sample-parity --check
 cargo run -p xtask -- generate-pages
 cargo run -p xtask -- validate-pages
 
+# build the browser runtime assets when Emscripten SDK is available
+cargo run -p xtask -- provider-smoke
+cargo run -p xtask -- build-pages-wasm
+
 # run a few representative examples
 cargo r --example world_basics
 cargo r --example queries
@@ -152,6 +156,7 @@ cargo run -p bevy_boxdd --example debug_draw_gizmos_2d
 
 ## Examples
 - The example catalog is now grouped by topic in [`boxdd/examples/README.md`](boxdd/examples/README.md), so users can start from the workflows they care about instead of scanning file names.
+- Browser runtime assets live in [`examples-wasm/provider-smoke`](examples-wasm/provider-smoke) and can be rebuilt with `cargo run -p xtask -- build-pages-wasm` when Emscripten SDK is available.
 - Recommended starting points:
   - `world_basics`: minimal world/body/shape setup
   - `buffer_reuse`, `queries`, `query_casts`, `character_mover`: the main `0.4.0` hot-path, overlap, cast, and mover workflows

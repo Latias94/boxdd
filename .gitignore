@@ -2,3 +2,4 @@
 .idea
 repo-ref/
 /boxdd-sys/Cargo.lock
+/docs/pages/wasm/generated
