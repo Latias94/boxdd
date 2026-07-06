@@ -6,7 +6,6 @@ static FILTER_CALLS: AtomicUsize = AtomicUsize::new(0);
 static PRESOLVE_CALLS: AtomicUsize = AtomicUsize::new(0);
 
 #[test]
-#[ignore]
 fn custom_filter_closure_disables_contact() {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     let _g = LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
@@ -54,7 +53,6 @@ fn custom_filter_closure_disables_contact() {
 }
 
 #[test]
-#[ignore]
 fn pre_solve_closure_blocks_contact_this_step() {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     let _g = LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();

@@ -483,3 +483,82 @@ fn world_handle_queries_match_world_queries() {
         assert!(approx_eq(handle_plane.point.y, world_plane.point.y, 1e-6));
     }
 }
+
+#[test]
+fn overlap_query_callback_panic_is_caught_and_resumed() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+
+    let body = world.create_body_id(BodyBuilder::new().build());
+    let shape_def = ShapeDef::builder().density(0.0).build();
+    let _shape = world.create_polygon_shape_for(body, &shape_def, &shapes::box_polygon(0.5, 0.5));
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        world.visit_overlap_aabb(
+            Aabb::new([-1.0_f32, -1.0], [1.0, 1.0]),
+            QueryFilter::default(),
+            |_| -> bool {
+                panic!("boom in overlap query");
+            },
+        );
+    }));
+    assert!(result.is_err());
+
+    let mut visited = 0;
+    let completed = world.visit_overlap_aabb(
+        Aabb::new([-1.0_f32, -1.0], [1.0, 1.0]),
+        QueryFilter::default(),
+        |_| {
+            visited += 1;
+            true
+        },
+    );
+    assert!(completed);
+    assert_eq!(visited, 1);
+}
+
+#[test]
+fn handle_try_overlap_query_callback_panic_is_caught_and_resumed() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+
+    let body = world.create_body_id(BodyBuilder::new().build());
+    let shape_def = ShapeDef::builder().density(0.0).build();
+    let _shape = world.create_polygon_shape_for(body, &shape_def, &shapes::box_polygon(0.5, 0.5));
+    let handle = world.handle();
+    let points = [
+        Vec2::new(-0.25, -0.25),
+        Vec2::new(0.25, -0.25),
+        Vec2::new(0.25, 0.25),
+        Vec2::new(-0.25, 0.25),
+    ];
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = handle.try_visit_overlap_polygon_points_with_offset(
+            points,
+            0.0,
+            [0.0_f32, 0.0],
+            0.0_f32,
+            QueryFilter::default(),
+            |_| -> bool {
+                panic!("boom in handle overlap query");
+            },
+        );
+    }));
+    assert!(result.is_err());
+
+    let mut visited = 0;
+    let completed = handle
+        .try_visit_overlap_polygon_points_with_offset(
+            points,
+            0.0,
+            [0.0_f32, 0.0],
+            0.0_f32,
+            QueryFilter::default(),
+            |_| {
+                visited += 1;
+                true
+            },
+        )
+        .unwrap();
+    assert!(completed);
+    assert_eq!(visited, 1);
+}

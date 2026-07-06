@@ -131,3 +131,39 @@ fn debug_draw_reentrant_boxdd_call_panics() {
     }));
     assert!(r.is_err());
 }
+
+#[test]
+fn debug_draw_reentrant_try_boxdd_call_returns_in_callback() {
+    struct ReenterTry {
+        body: OwnedBody,
+        observed: Option<ApiError>,
+    }
+
+    impl DebugDraw for ReenterTry {
+        fn draw_solid_polygon(
+            &mut self,
+            _transform: boxdd::Transform,
+            _vertices: &[Vec2],
+            _radius: f32,
+            _color: HexColor,
+        ) {
+            self.observed = Some(self.body.try_position().unwrap_err());
+        }
+    }
+
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body = world.create_body_owned(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+    let body_id = body.id();
+    let sdef = ShapeDef::builder().density(1.0).build();
+    let poly = shapes::box_polygon(0.5, 0.5);
+    let _ = world.create_polygon_shape_for(body_id, &sdef, &poly);
+
+    let mut drawer = ReenterTry {
+        body,
+        observed: None,
+    };
+    world.debug_draw(&mut drawer, DebugDrawOptions::default());
+
+    assert_eq!(drawer.observed, Some(ApiError::InCallback));
+    assert!(drawer.body.try_position().is_ok());
+}

@@ -9,7 +9,7 @@ This document records the lifetime rules that keep the safe wrapper from turning
 - `World`, owned handles, and Bevy physics context are `!Send`/`!Sync` unless a future audit proves otherwise.
 - Definition objects are copied into Box2D at creation time. Raw pointer-bearing definition constructors stay explicit and unsafe where needed.
 - Event buffers produced by Box2D are transient after `World::step`. Safe snapshot methods copy; zero-copy view methods borrow only within a closure.
-- Query and dynamic-tree callbacks catch panics before crossing the FFI boundary and resume unwinding after Box2D returns.
+- Query, dynamic-tree, custom filter, pre-solve, and debug-draw callbacks catch panics before crossing the FFI boundary and resume unwinding after Box2D returns.
 
 ## Callback-sensitive APIs
 
@@ -22,6 +22,22 @@ Keep this model for:
 - custom filter and pre-solve callbacks
 - material mixing callbacks
 - dynamic tree query/ray/shape callbacks
+
+## Executable coverage
+
+The lifecycle rules above are covered by default-running tests:
+
+- `world_callbacks.rs` exercises custom filter and pre-solve callbacks without ignored tests.
+- `panic_across_ffi_is_caught.rs` covers custom filter, pre-solve, debug draw, raw debug draw, and `try_*` reentry returning `ApiError::InCallback`.
+- `material_mix_callbacks.rs` covers material-mixing callback behavior and panic capture.
+- `world_and_queries.rs` covers world and handle overlap-query callback panic capture and post-panic world reuse.
+- `dynamic_tree.rs` covers query, ray-cast, and shape-cast callback panic capture with post-panic tree reuse.
+- `events_and_sensors.rs` covers contact/sensor event views matching owned snapshots, owned snapshots surviving later steps, and owned-handle drops being deferred until event-view closures exit.
+- `user_data.rs` covers typed user data through callback contexts plus nested raw event views and deferred destruction.
+- `buffer_reuse.rs` covers reusable owned snapshot buffers for body, contact, sensor, and joint events.
+- `world_destroy_and_recycle.rs` covers repeated explicit destruction and world recycling as normal, non-ignored tests.
+
+Do not add a lifecycle exemption by marking a test ignored. If a callback or event-buffer test is unstable, replace it with a deterministic setup or document why the behavior must remain manual-only.
 
 ## Bevy adapter boundary
 

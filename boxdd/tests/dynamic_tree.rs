@@ -99,3 +99,51 @@ fn invalid_inputs_are_recoverable() {
             .is_err()
     );
 }
+
+#[test]
+fn dynamic_tree_callback_panics_are_caught_and_resumed() {
+    let mut tree = DynamicTree::new();
+    let proxy = tree.create_proxy(aabb(0.0, 0.0, 2.0, 2.0), u64::MAX, 7);
+
+    let query_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        tree.query_all(aabb(-1.0, -1.0, 3.0, 3.0), &mut |_, _| -> bool {
+            panic!("boom in dynamic tree query");
+        });
+    }));
+    assert!(query_result.is_err());
+    assert_tree_query_finds_proxy(&tree, proxy);
+
+    let ray_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        tree.ray_cast(
+            TreeRayCastInput::new(Vec2::new(-4.0, 1.0), Vec2::new(10.0, 0.0)),
+            u64::MAX,
+            &mut |_, _, _| -> f32 {
+                panic!("boom in dynamic tree ray cast");
+            },
+        );
+    }));
+    assert!(ray_result.is_err());
+    assert_tree_query_finds_proxy(&tree, proxy);
+
+    let shape = ShapeProxy::new([Vec2::ZERO], 0.25).expect("valid shape proxy");
+    let shape_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        tree.shape_cast(
+            TreeShapeCastInput::new(shape, Vec2::new(4.0, 0.0)),
+            u64::MAX,
+            &mut |_, _, _| -> f32 {
+                panic!("boom in dynamic tree shape cast");
+            },
+        );
+    }));
+    assert!(shape_result.is_err());
+    assert_tree_query_finds_proxy(&tree, proxy);
+}
+
+fn assert_tree_query_finds_proxy(tree: &DynamicTree, expected: TreeProxyId) {
+    let mut hits = Vec::new();
+    tree.query_all(aabb(-1.0, -1.0, 3.0, 3.0), &mut |id, data| {
+        hits.push((id, data));
+        true
+    });
+    assert_eq!(hits, vec![(expected, 7)]);
+}

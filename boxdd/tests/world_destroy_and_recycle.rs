@@ -2,7 +2,6 @@ use boxdd::{prelude::*, shapes};
 use std::sync::{Mutex, OnceLock};
 
 #[test]
-#[ignore]
 fn create_then_destroy_all_bodies_and_recycle() {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     let _g = LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
@@ -44,7 +43,6 @@ fn create_then_destroy_all_bodies_and_recycle() {
 }
 
 #[test]
-#[ignore]
 fn recycle_many_worlds_smoke() {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     let _g = LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
