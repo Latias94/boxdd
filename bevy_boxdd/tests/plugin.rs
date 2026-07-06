@@ -245,6 +245,47 @@ fn sensor_messages_include_begin_end_entity_mappings() {
 }
 
 #[test]
+fn invalid_shape_inputs_emit_recoverable_error_messages() {
+    let mut app = app_with_settings(BoxddPhysicsSettings::default());
+
+    let invalid_collider = app
+        .world_mut()
+        .spawn((
+            RigidBody::Dynamic,
+            Collider::circle(0.0),
+            Transform::from_xyz(-1.0, 1.0, 0.0),
+        ))
+        .id();
+    let invalid_material = app
+        .world_mut()
+        .spawn((
+            RigidBody::Dynamic,
+            Collider::circle(0.25),
+            PhysicsMaterial {
+                density: -1.0,
+                ..Default::default()
+            },
+            Transform::from_xyz(1.0, 1.0, 0.0),
+        ))
+        .id();
+
+    step_fixed(&mut app, 1);
+
+    let errors = read_messages::<BoxddErrorMessage>(&app);
+    for entity in [invalid_collider, invalid_material] {
+        assert!(
+            errors.iter().any(|message| {
+                message.operation == BoxddOperation::CreateShape
+                    && message.entity == Some(entity)
+                    && message.error == BoxddPluginError::Api(boxdd::ApiError::InvalidArgument)
+            }),
+            "expected a recoverable CreateShape error for {entity:?}, got {errors:?}"
+        );
+        assert!(!app.world().entity(entity).contains::<BoxddShape>());
+    }
+}
+
+#[test]
 fn physics_context_ray_query_maps_hits_to_entities() {
     let mut app = app_with_settings(BoxddPhysicsSettings {
         gravity: Vec2::ZERO,
