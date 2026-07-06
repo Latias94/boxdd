@@ -86,6 +86,7 @@ jobs:
         run: cargo run -p boxdd-sys --features package-bin --bin package --release --target ${{ matrix.target }}
         env:
           BOXDD_SYS_PACKAGE_DIR: ${{ github.workspace }}/packages
+          BOXDD_SYS_PACKAGE_CRT: ${{ matrix.crt || '' }}
           TARGET: ${{ matrix.target }}
 
       - name: Upload to release

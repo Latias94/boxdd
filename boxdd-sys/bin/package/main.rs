@@ -62,6 +62,41 @@ fn compose_archive_name(
     }
 }
 
+fn normalize_crt(value: &str) -> Result<&'static str, String> {
+    let normalized = value.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "" => Ok(""),
+        "md" => Ok("md"),
+        "mt" => Ok("mt"),
+        _ => Err(format!(
+            "BOXDD_SYS_PACKAGE_CRT must be empty, `md`, or `mt`; got `{}`",
+            value
+        )),
+    }
+}
+
+fn detect_crt(
+    target_os: &str,
+    target_env: &str,
+    target_features: &str,
+    explicit_crt: &str,
+) -> Result<&'static str, String> {
+    let explicit_crt = normalize_crt(explicit_crt)?;
+    if !explicit_crt.is_empty() {
+        return Ok(explicit_crt);
+    }
+
+    if target_os == "windows" && target_env == "msvc" {
+        if target_features.split(',').any(|f| f == "crt-static") {
+            Ok("mt")
+        } else {
+            Ok("md")
+        }
+    } else {
+        Ok("")
+    }
+}
+
 fn compose_manifest_bytes(
     crate_short: &str,
     version: &str,
@@ -188,15 +223,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let target_features = env::var("CARGO_CFG_TARGET_FEATURE").unwrap_or_default();
-    let crt = if target_os == "windows" && target_env == "msvc" {
-        if target_features.split(',').any(|f| f == "crt-static") {
-            "mt"
-        } else {
-            "md"
-        }
-    } else {
-        ""
-    };
+    let explicit_crt = env::var("BOXDD_SYS_PACKAGE_CRT").unwrap_or_default();
+    let crt = detect_crt(&target_os, &target_env, &target_features, &explicit_crt)?;
 
     let link_type = "static";
 
@@ -273,4 +301,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tar.finish()?;
     println!("Package created: {}", out_path.display());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn archive_name_includes_windows_crt_suffix() {
+        assert_eq!(
+            compose_archive_name(
+                "boxdd",
+                "0.5.0",
+                "x86_64-pc-windows-msvc",
+                "static",
+                None,
+                "mt"
+            ),
+            "boxdd-prebuilt-0.5.0-x86_64-pc-windows-msvc-static-mt.tar.gz"
+        );
+    }
+
+    #[test]
+    fn explicit_crt_overrides_missing_cargo_cfg() {
+        assert_eq!(detect_crt("", "", "", "md").unwrap(), "md");
+        assert_eq!(detect_crt("", "", "", "MT").unwrap(), "mt");
+    }
+
+    #[test]
+    fn cargo_cfg_detects_windows_crt_when_available() {
+        assert_eq!(
+            detect_crt("windows", "msvc", "crt-static,sse2", "").unwrap(),
+            "mt"
+        );
+        assert_eq!(detect_crt("windows", "msvc", "sse2", "").unwrap(), "md");
+        assert_eq!(detect_crt("linux", "gnu", "", "").unwrap(), "");
+    }
+
+    #[test]
+    fn invalid_explicit_crt_is_rejected() {
+        assert!(detect_crt("", "", "", "dynamic").is_err());
+    }
 }
