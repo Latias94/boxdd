@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>boxdd FFI Safety</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f8fb;
+      --fg: #17202a;
+      --muted: #5e6b78;
+      --line: #ccd5df;
+      --panel: #ffffff;
+      --accent: #0f7a6c;
+      --accent-2: #2457a6;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #121416;
+        --fg: #f0f3f5;
+        --muted: #a7b0ba;
+        --line: #303943;
+        --panel: #1a1f24;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      letter-spacing: 0;
+    }
+
+    .wrap {
+      width: min(1080px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    header {
+      padding: 38px 0 28px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(2rem, 6vw, 3.75rem);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 0.95rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    p,
+    li {
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    a {
+      color: var(--accent);
+    }
+
+    main {
+      padding: 30px 0 56px;
+    }
+
+    section + section {
+      margin-top: 34px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .tile {
+      min-height: 136px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    .tile strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--accent-2);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--panel);
+    }
+
+    th,
+    td {
+      padding: 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 0.85rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+
+    @media (max-width: 780px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      table,
+      thead,
+      tbody,
+      tr,
+      th,
+      td {
+        display: block;
+      }
+
+      thead {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>FFI Safety</h1>
+      <p>The safe <code>boxdd</code> crate wraps Box2D's C API with explicit ownership, callback, raw pointer, and event-buffer rules. This page points to the audit trail and the tests that keep those rules executable.</p>
+      <p><a href="../index.html">Back to hub</a> · <a href="../../development/ffi-lifetime-audit.md">Lifetime audit</a> · <a href="../../development/rustdoc-alignment.md">Rustdoc alignment</a> · <a href="../../../README.md">README</a></p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section aria-labelledby="principles">
+      <h2 id="principles">Principles</h2>
+      <div class="grid">
+        <div class="tile"><strong>Single-owner world</strong><p><code>World</code>, owned handles, and the Bevy physics context stay on one thread. Worker-count configuration does not make the public world API sendable.</p></div>
+        <div class="tile"><strong>Callback containment</strong><p>Rust closures invoked by Box2D are guarded so panics are caught before crossing C callbacks and resumed after Box2D returns to Rust.</p></div>
+        <div class="tile"><strong>Explicit raw seams</strong><p>Raw ids, raw event slices, raw transforms, and raw user-data pointers use named <code>*_raw</code>, <code>from_raw</code>, or <code>into_raw</code> APIs so FFI ownership stays visible.</p></div>
+      </div>
+    </section>
+
+    <section aria-labelledby="hazards">
+      <h2 id="hazards">Hazards And Evidence</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Hazard</th>
+            <th>Guard</th>
+            <th>Evidence</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Calling Box2D while it has locked the world for a callback.</td>
+            <td>Callback guard returns <code>ApiError::InCallback</code> on <code>try_*</code> paths and panics on misuse-style convenience paths.</td>
+            <td><a href="../../../boxdd/tests/try_api.rs">try_api.rs</a>, <a href="../../../boxdd/tests/panic_across_ffi_is_caught.rs">panic_across_ffi_is_caught.rs</a></td>
+          </tr>
+          <tr>
+            <td>Rust panic escaping through a C callback boundary.</td>
+            <td>Callback trampolines use panic capture and resume unwinding after the native call completes.</td>
+            <td><a href="../../../boxdd/tests/panic_across_ffi_is_caught.rs">panic_across_ffi_is_caught.rs</a>, <a href="../../../boxdd/tests/dynamic_tree.rs">dynamic_tree.rs</a></td>
+          </tr>
+          <tr>
+            <td>Borrowing Box2D event buffers after the next step.</td>
+            <td>Owned snapshots copy data; view/raw access is closure-scoped and defers destroys until the borrowed scope exits.</td>
+            <td><a href="../../../boxdd/tests/events_and_sensors.rs">events_and_sensors.rs</a>, <a href="../../../boxdd/tests/user_data.rs">user_data.rs</a></td>
+          </tr>
+          <tr>
+            <td>Stale ids after body, shape, joint, or chain destruction.</td>
+            <td>Safe handle methods validate ids; recoverable paths return <code>ApiError::Invalid*Id</code> instead of entering native code with stale ids.</td>
+            <td><a href="../../../boxdd/tests/handle_validity_panics.rs">handle_validity_panics.rs</a>, <a href="../../../boxdd/tests/world_destroy_and_recycle.rs">world_destroy_and_recycle.rs</a></td>
+          </tr>
+          <tr>
+            <td>Caller-owned raw user-data pointers outliving Rust values.</td>
+            <td>Raw pointer setters stay unsafe and explicitly named; typed user data is owned by the world store and dropped on clear/destroy paths.</td>
+            <td><a href="../../../boxdd/tests/user_data.rs">user_data.rs</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section aria-labelledby="when-adding">
+      <h2 id="when-adding">When Adding Wrappers</h2>
+      <p>Before exposing a safe convenience API, check whether the upstream function borrows caller memory after return, invokes a Rust closure from C, returns pointers into Box2D-owned storage, can run during callbacks, or destroys objects that invalidate ids stored elsewhere. If any answer is yes, update the <a href="../../development/ffi-lifetime-audit.md">lifetime audit</a> and add focused tests before release.</p>
+    </section>
+  </main>
+</body>
+</html>
