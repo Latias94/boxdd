@@ -70,6 +70,7 @@ env_logger = "0.11"
 
 [dev-dependencies]
 serde_json = { workspace = true }
+static_assertions = { workspace = true }
 
 [[example]]
 name = "testbed_imgui_glow"

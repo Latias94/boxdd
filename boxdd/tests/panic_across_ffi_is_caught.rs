@@ -22,6 +22,11 @@ fn custom_filter_panic_is_caught_and_resumed_after_step() {
         world.step(1.0 / 60.0, 1);
     }));
     assert!(r.is_err());
+
+    world.clear_custom_filter();
+    world.step(1.0 / 60.0, 1);
+    assert!(world.try_body_position(a).is_ok());
+    assert!(world.try_body_position(b).is_ok());
 }
 
 #[test]

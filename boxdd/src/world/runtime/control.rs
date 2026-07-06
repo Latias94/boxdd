@@ -42,14 +42,16 @@ impl World {
             .core
             .callback_panicked
             .load(std::sync::atomic::Ordering::Relaxed)
-            && let Some(payload) = self
+        {
+            let payload = self
                 .core
                 .callback_panic
                 .lock()
                 .expect("callback_panic mutex poisoned")
-                .take()
-        {
-            std::panic::resume_unwind(payload);
+                .take();
+            if let Some(payload) = payload {
+                std::panic::resume_unwind(payload);
+            }
         }
     }
 
