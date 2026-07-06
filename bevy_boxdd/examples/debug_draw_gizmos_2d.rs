@@ -133,17 +133,21 @@ fn draw_boxdd_gizmos(
 }
 
 fn draw_loop(gizmos: &mut Gizmos, points: impl IntoIterator<Item = boxdd::Vec2>, color: Color) {
-    let points = points
-        .into_iter()
-        .map(boxdd::Vec2::to_bevy_vec2)
-        .collect::<Vec<_>>();
-    for pair in points.windows(2) {
-        gizmos.line_2d(pair[0], pair[1], color);
+    let mut points = points.into_iter().map(boxdd::Vec2::to_bevy_vec2);
+    let Some(first) = points.next() else {
+        return;
+    };
+
+    let mut last = first;
+    let mut count = 1usize;
+    for point in points {
+        gizmos.line_2d(last, point, color);
+        last = point;
+        count += 1;
     }
-    if let (Some(first), Some(last)) = (points.first(), points.last())
-        && points.len() > 2
-    {
-        gizmos.line_2d(*last, *first, color);
+
+    if count > 2 {
+        gizmos.line_2d(last, first, color);
     }
 }
 
