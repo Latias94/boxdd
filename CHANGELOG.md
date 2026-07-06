@@ -1,15 +1,16 @@
 # Changelog
 
-This project contains two crates:
+This project contains three crates:
 - `boxdd`: safe, ergonomic Rust wrapper over the Box2D v3 C API
 - `boxdd-sys`: low-level FFI bindings + vendored Box2D sources
+- `bevy_boxdd`: Bevy ECS integration for `boxdd`
 
 The format is based on Keep a Changelog, and this project follows Semantic Versioning.
 
 ## [Unreleased]
 
 ### Added
-- Added `bevy_boxdd`, a Bevy 0.19 adapter crate with ECS components, fixed-step systems, transform synchronization, physics messages, recoverable error messages, query access, and examples for falling bodies, contacts, sensors, ray queries, and kinematic platforms.
+- Added `bevy_boxdd`, a Bevy 0.19 adapter crate with fixed-step body/collider sync, contact and sensor messages, recoverable plugin errors, ECS-authored distance and revolute joints, entity-mapped ray queries, debug draw command collection, and examples for the main Bevy workflows.
 - Added `boxdd::dynamic_tree`, a safe owned wrapper for Box2D's standalone broad-phase dynamic tree.
 - Added `xtask` validation for Box2D API coverage, official sample parity, and the static Pages hub.
 - Added machine-checked API coverage docs and fixtures for the vendored Box2D `B2_API` surface.
@@ -21,8 +22,15 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 ### Changed
 - Centralized workspace metadata and shared dependencies across `boxdd`, `boxdd-sys`, `bevy_boxdd`, and `xtask`.
 - Expanded docs and example catalog entries for dynamic tree, Bevy integration, CI gates, rustdoc alignment, FFI lifetime boundaries, and WASM status.
+- Updated the Bevy ray-query example to use entity-mapped `BoxddPhysicsContext` helpers instead of requiring users to combine native ray casts with manual shape-to-entity lookups.
 - Tightened official sample parity so non-benchmark upstream samples must map to real Rust artifacts or carry an explicit deferral rationale.
 - Reduced raw-only API coverage by adding safe wrappers for straightforward shape-cast and joint runtime gaps; remaining raw/omitted rows now carry explicit rationale.
+
+### Migration Notes
+- Existing Bevy body, collider, contact, sensor, and transform-sync code does not need to change; the new Bevy APIs are additive.
+- For Bevy ray casts, prefer `BoxddPhysicsContext::try_cast_ray_closest_entity`, `try_cast_ray_all_entities`, or `try_cast_ray_all_entities_into` when you want ECS entities back with the native hit data.
+- For Bevy joints, spawn a `JointDescriptor::distance(...)` or `JointDescriptor::revolute(...)` entity that references two entities with `RigidBody`; after fixed update, read `BoxddJoint` only if you need the native `JointId`.
+- For Bevy debug rendering, collect `boxdd::DebugDrawCmd` values with `BoxddPhysicsContext::try_debug_draw_collect_into` and render them in your app or tooling, keeping renderer dependencies outside `bevy_boxdd`.
 
 ## [boxdd 0.4.0] - 2026-04-22
 
