@@ -203,12 +203,17 @@
           <tr>
             <td>Stale ids after body, shape, joint, or chain destruction.</td>
             <td>Safe handle methods validate ids; recoverable paths return <code>ApiError::Invalid*Id</code> instead of entering native code with stale ids.</td>
-            <td><a href="../../../boxdd/tests/handle_validity_panics.rs">handle_validity_panics.rs</a>, <a href="../../../boxdd/tests/world_destroy_and_recycle.rs">world_destroy_and_recycle.rs</a></td>
+            <td><a href="../../../boxdd/tests/handle_validity_panics.rs">handle_validity_panics.rs</a>, <a href="../../../boxdd/tests/world_destroy_and_recycle.rs">world_destroy_and_recycle.rs</a>, <a href="../../../boxdd/tests/ffi_lifecycle.rs">ffi_lifecycle.rs</a></td>
           </tr>
           <tr>
             <td>Caller-owned raw user-data pointers outliving Rust values.</td>
             <td>Raw pointer setters stay unsafe and explicitly named; typed user data is owned by the world store and dropped on clear/destroy paths.</td>
-            <td><a href="../../../boxdd/tests/user_data.rs">user_data.rs</a></td>
+            <td><a href="../../../boxdd/tests/user_data.rs">user_data.rs</a>, <a href="../../../boxdd/tests/ffi_lifecycle.rs">ffi_lifecycle.rs</a></td>
+          </tr>
+          <tr>
+            <td>Public world and handle types accidentally becoming sendable.</td>
+            <td>Public world, owned handle, and Bevy context types are compile-asserted as <code>!Send</code>/<code>!Sync</code>.</td>
+            <td><a href="../../../boxdd/tests/ffi_lifecycle.rs">ffi_lifecycle.rs</a>, <a href="../../../bevy_boxdd/tests/plugin.rs">plugin.rs</a></td>
           </tr>
         </tbody>
       </table>

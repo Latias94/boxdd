@@ -158,7 +158,7 @@
   <header>
     <div class="wrap">
       <h1>bevy_boxdd</h1>
-      <p>Fixed-step Bevy ECS integration for <code>boxdd</code>, keeping the native Box2D world in a non-send resource while exposing ECS authoring, messages, entity queries, joints, and debug draw command collection.</p>
+      <p>Fixed-step Bevy ECS integration for <code>boxdd</code>, keeping the native Box2D world in a non-send resource while exposing ECS authoring, messages, ray/AABB entity queries, joints, child colliders, filters, and debug draw command collection.</p>
       <p><a href="../index.html">Back to hub</a> · <a href="../../../bevy_boxdd/README.md">Crate README</a> · <a href="../examples/index.html">Examples</a> · <a href="https://docs.rs/bevy_boxdd">docs.rs</a></p>
     </div>
   </header>
@@ -167,7 +167,7 @@
     <section aria-labelledby="model">
       <h2 id="model">Model</h2>
       <div class="grid">
-        <div class="tile"><strong>ECS authoring</strong><p>Spawn <code>RigidBody</code>, <code>Collider</code>, <code>PhysicsMaterial</code>, velocity, impulse, transform sync, and joint descriptor components. Runtime native ids are inserted as <code>BoxddBody</code>, <code>BoxddShape</code>, and <code>BoxddJoint</code>.</p></div>
+        <div class="tile"><strong>ECS authoring</strong><p>Spawn <code>RigidBody</code>, <code>Collider</code>, <code>PhysicsMaterial</code>, velocity, impulse, transform sync, and joint descriptor components. Colliders may live on the body entity or child entities. Runtime native ids are inserted as <code>BoxddBody</code>, <code>BoxddShape</code>, and <code>BoxddJoint</code>.</p></div>
         <div class="tile"><strong>Native ownership</strong><p><code>BoxddPhysicsContext</code> owns the <code>boxdd::World</code> as a Bevy non-send resource. Systems move plain ids, values, and entities through messages instead of moving the native world across threads.</p></div>
         <div class="tile"><strong>Renderer boundary</strong><p>The crate collects render-agnostic <code>boxdd::DebugDrawCmd</code> values. Applications and examples decide whether to draw them with Gizmos, meshes, sprites, or external tooling.</p></div>
       </div>
@@ -196,8 +196,8 @@
           </tr>
           <tr>
             <td>Entity queries</td>
-            <td>Use <code>BoxddPhysicsContext</code> helpers when you want native query data mapped back to Bevy entities.</td>
-            <td><a href="../../../bevy_boxdd/examples/ray_query_2d.rs">ray_query_2d.rs</a></td>
+            <td>Use <code>BoxddPhysicsContext</code> helpers when you want native ray or AABB overlap data mapped back to Bevy entities.</td>
+            <td><a href="../../../bevy_boxdd/examples/ray_query_2d.rs">ray_query_2d.rs</a>, <a href="../../../bevy_boxdd/examples/overlap_query_2d.rs">overlap_query_2d.rs</a></td>
           </tr>
           <tr>
             <td>App-driven kinematics</td>
@@ -210,9 +210,19 @@
             <td><a href="../../../bevy_boxdd/examples/joint_bridge_2d.rs">joint_bridge_2d.rs</a></td>
           </tr>
           <tr>
+            <td>Compound bodies</td>
+            <td>Attach multiple child <code>Collider</code> entities to one parent <code>RigidBody</code> when one logical object needs several shapes.</td>
+            <td><a href="../../../bevy_boxdd/examples/child_colliders_2d.rs">child_colliders_2d.rs</a></td>
+          </tr>
+          <tr>
+            <td>Collision filters</td>
+            <td>Set <code>PhysicsMaterial::filter</code> category and mask bits to make gameplay layers collide only with intended layers.</td>
+            <td><a href="../../../bevy_boxdd/examples/collision_filter_2d.rs">collision_filter_2d.rs</a></td>
+          </tr>
+          <tr>
             <td>Debug draw inspection</td>
             <td>Collect <code>DebugDrawCmd</code> values from <code>BoxddPhysicsContext</code> and render or log them in app code.</td>
-            <td><a href="../../../bevy_boxdd/examples/debug_draw_collect_2d.rs">debug_draw_collect_2d.rs</a></td>
+            <td><a href="../../../bevy_boxdd/examples/debug_draw_collect_2d.rs">debug_draw_collect_2d.rs</a>, <a href="../../../bevy_boxdd/examples/debug_draw_gizmos_2d.rs">debug_draw_gizmos_2d.rs</a></td>
           </tr>
         </tbody>
       </table>

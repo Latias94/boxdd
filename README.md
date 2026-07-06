@@ -13,26 +13,26 @@
 ## Crates
 - `boxdd-sys`: low-level FFI for the official Box2D v3 C API (vendored)
 - `boxdd`: safe layer (world, bodies, shapes, joints, queries, events, debug draw)
-- `bevy_boxdd`: Bevy ECS integration for `boxdd` with fixed-step systems, ECS-authored joints, entity-mapped queries, debug draw collection, and physics messages
+- `bevy_boxdd`: Bevy ECS integration for `boxdd` with fixed-step systems, ECS-authored joints, entity-mapped ray/AABB queries, debug draw collection, and physics messages
 
 ## Engineering Status
 - API coverage matrix: `docs/api-coverage.md` tracks every vendored Box2D `B2_API` symbol; the current safe layer accounts for 424 of 430 symbols, with 4 raw-only and 2 omitted by rationale.
 - Official sample parity: `docs/upstream-parity/box2d-sample-matrix.md` maps non-benchmark upstream samples to Rust examples, tests, or testbed scenes. Benchmark rows may remain indexed references when that is the useful artifact.
 - GitHub Pages source: `docs/pages/index.html` provides a static documentation and example hub.
-- Bevy integration: `bevy_boxdd` exposes `RigidBody`, `Collider`, `PhysicsMaterial`, distance/revolute `JointDescriptor`, transform sync, entity-mapped query helpers through `BoxddPhysicsContext`, debug draw command collection, recoverable error messages, and body/contact/sensor messages.
+- Bevy integration: `bevy_boxdd` exposes `RigidBody`, `Collider`, `PhysicsMaterial`, distance/revolute `JointDescriptor`, transform sync, entity-mapped ray and AABB overlap helpers through `BoxddPhysicsContext`, debug draw command collection, recoverable error messages, and body/contact/sensor messages.
 
 ## 0.4.0 Highlights
 - `0.4.0` realigns `boxdd-sys` with the official upstream Box2D submodule again, so repository checkouts and CI no longer depend on a local-only Box2D patch commit.
 - Workspace metadata is centralized for `boxdd`, `boxdd-sys`, `bevy_boxdd`, and `xtask`.
 - `xtask` now validates API coverage, strict official sample parity, and the static Pages hub.
 - `boxdd::dynamic_tree` wraps the standalone Box2D broad-phase tree as an owned safe Rust type.
-- `bevy_boxdd` provides a Bevy 0.19 integration crate without adding Bevy dependencies to the core binding, with compiling examples for contacts, sensors, ray queries, kinematic transform sync, ECS joints, and debug draw collection.
+- `bevy_boxdd` provides a Bevy 0.19 integration crate without adding Bevy dependencies to the core binding, with compiling examples for contacts, sensors, ray/AABB queries, kinematic transform sync, ECS joints, child colliders, collision filters, and debug draw collection.
 - Hot-path APIs are first-class: keep the simple `Vec`-returning calls for one-off use, or move per-frame code to `*_into` and `visit_*`.
 - `boxdd::collision` now exposes standalone distance, shape-cast, TOI, manifold, and `Aabb::ray_cast` helpers without dropping to raw `ffi`.
 - Shape geometry helpers now expose shape-specific `shape_cast` / `try_shape_cast` entrypoints for circle, capsule, segment, and polygon values.
 - Character-mover support is complete on the safe surface: `cast_mover`, `collide_mover`, `solve_planes`, and `clip_vector`.
 - `WorldHandle` is now a practical read-only follow-up surface for body, shape, joint, query, and owned-event inspection.
-- Callback, query, dynamic-tree, material-mix, event-view, and world recycle lifecycle tests now run by default instead of relying on ignored safety tests.
+- Callback, query, dynamic-tree, material-mix, event-view, public non-send, typed user-data, and world recycle lifecycle tests now run by default instead of relying on ignored safety tests.
 - Raw FFI boundaries are explicit and easier to reason about: use crate-owned ids/value types plus named `from_raw(...)`, `into_raw()`, and `*_raw` escape hatches.
 - Open-chain runtime material access still uses visible live-segment indexing on the safe API, but that normalization now lives in Rust instead of a custom Box2D patch.
 - The examples and testbed were reorganized around the intended current workflows instead of a loose grab bag of demos.
@@ -145,6 +145,8 @@ cargo r --example testbed_imgui_glow --features imgui-glow-testbed
 # check the Bevy adapter without pulling it into the core crate
 cargo nextest run -p bevy_boxdd --test plugin
 cargo check -p bevy_boxdd --examples
+cargo run -p bevy_boxdd --example overlap_query_2d
+cargo run -p bevy_boxdd --example debug_draw_gizmos_2d
 ```
 
 ## Examples
@@ -161,7 +163,7 @@ cargo check -p bevy_boxdd --examples
   - `physics_thread`: the recommended dedicated physics-thread ownership model
   - `testbed_imgui_glow`: optional interactive testbed on the current `dear-imgui-*` stack
   - `bevy_boxdd/examples/falling_box_2d.rs`: Bevy adapter smoke example
-  - `bevy_boxdd/examples/contact_events_2d.rs`, `sensor_events_2d.rs`, `ray_query_2d.rs`, `kinematic_platform_2d.rs`, `joint_bridge_2d.rs`, `debug_draw_collect_2d.rs`: Bevy messages, entity query access, app-driven kinematic sync, ECS joints, and debug draw command collection
+  - `bevy_boxdd/examples/contact_events_2d.rs`, `sensor_events_2d.rs`, `ray_query_2d.rs`, `overlap_query_2d.rs`, `kinematic_platform_2d.rs`, `joint_bridge_2d.rs`, `child_colliders_2d.rs`, `collision_filter_2d.rs`, `debug_draw_collect_2d.rs`, `debug_draw_gizmos_2d.rs`: Bevy messages, entity query access, app-driven kinematic sync, ECS joints, child colliders, collision filters, and debug draw command rendering
 
 ## Hot Path APIs
 - Convenience methods like `world.overlap_aabb(...)` and `world.cast_ray_all(...)` still return owned `Vec`s for one-off use.

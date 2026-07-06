@@ -56,8 +56,11 @@ If you are new to `boxdd`, start with the first section instead of scanning file
 - `world_handle_reads.rs`: stored read-only `WorldHandle` queries, including reusable-buffer overlap reads and follow-up body/shape inspection
 - `wasm_wasi_smoke.rs`: minimal WASM/WASI-oriented smoke example
 - `../../bevy_boxdd/examples/falling_box_2d.rs`: Bevy ECS adapter smoke example for body/shape creation and transform sync
+- `../../bevy_boxdd/examples/ray_query_2d.rs` and `../../bevy_boxdd/examples/overlap_query_2d.rs`: Bevy entity-mapped query helpers for rays and AABB overlaps
 - `../../bevy_boxdd/examples/joint_bridge_2d.rs`: Bevy ECS distance/revolute joint authoring
-- `../../bevy_boxdd/examples/debug_draw_collect_2d.rs`: Bevy-side debug draw command collection without renderer coupling
+- `../../bevy_boxdd/examples/child_colliders_2d.rs`: Bevy parent body with multiple child collider entities
+- `../../bevy_boxdd/examples/collision_filter_2d.rs`: Bevy `PhysicsMaterial::filter` category and mask setup
+- `../../bevy_boxdd/examples/debug_draw_collect_2d.rs` and `../../bevy_boxdd/examples/debug_draw_gizmos_2d.rs`: Bevy-side debug draw command collection with and without renderer coupling
 
 ## Interactive Testbed
 
