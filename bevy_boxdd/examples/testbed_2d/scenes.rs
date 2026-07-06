@@ -394,8 +394,10 @@ fn spawn_tilted_stack(
                 commands,
                 meshes,
                 materials,
-                Vec2::splat(0.25),
-                0.04,
+                RoundedBoxShape {
+                    half_extents: Vec2::splat(0.25),
+                    radius: 0.04,
+                },
                 Transform::from_xyz(x, y, 2.0).with_rotation(Quat::from_rotation_z(0.03)),
                 dynamic_material(0.45, 0.0),
                 Color::srgb(0.24, 0.55, 0.88),
@@ -921,12 +923,16 @@ fn spawn_box<'a>(
     ))
 }
 
+struct RoundedBoxShape {
+    half_extents: Vec2,
+    radius: f32,
+}
+
 fn spawn_rounded_box<'a>(
     commands: &'a mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
-    half_extents: Vec2,
-    radius: f32,
+    shape: RoundedBoxShape,
     transform: Transform,
     material: PhysicsMaterial,
     color: Color,
@@ -934,9 +940,12 @@ fn spawn_rounded_box<'a>(
     commands.spawn((
         TestbedEntity,
         rigid_body_for(material),
-        Collider::rounded_rectangle(half_extents.x, half_extents.y, radius),
+        Collider::rounded_rectangle(shape.half_extents.x, shape.half_extents.y, shape.radius),
         material,
-        Mesh2d(meshes.add(Rectangle::new(half_extents.x * 2.0, half_extents.y * 2.0))),
+        Mesh2d(meshes.add(Rectangle::new(
+            shape.half_extents.x * 2.0,
+            shape.half_extents.y * 2.0,
+        ))),
         MeshMaterial2d(materials.add(color)),
         transform,
     ))
