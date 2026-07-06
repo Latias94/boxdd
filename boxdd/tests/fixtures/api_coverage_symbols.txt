@@ -187,11 +187,11 @@ b2GetSweepTransform|safe|Math|Referenced by the Rust safe layer.
 b2GetTicks|safe|Foundation|Referenced by the Rust safe layer.
 b2GetVersion|safe|Foundation|Referenced by the Rust safe layer.
 b2Hash|safe|Foundation|Referenced by the Rust safe layer.
-b2InternalAssertFcn|raw|Foundation|Available through boxdd_sys::ffi; safe wrapper not assigned yet.
+b2InternalAssertFcn|raw|Foundation|Raw only: upstream internal assert implementation, not a stable safe API surface.
 b2IsValidAABB|safe|Collision|Referenced by the Rust safe layer.
 b2IsValidFloat|safe|Foundation|Referenced by the Rust safe layer.
 b2IsValidPlane|safe|Foundation|Referenced by the Rust safe layer.
-b2IsValidRay|raw|Foundation|Available through boxdd_sys::ffi; safe wrapper not assigned yet.
+b2IsValidRay|safe|Foundation|Referenced by the Rust safe layer.
 b2IsValidRotation|safe|Math|Referenced by the Rust safe layer.
 b2IsValidTransform|safe|Math|Referenced by the Rust safe layer.
 b2IsValidVec2|safe|Math|Referenced by the Rust safe layer.
@@ -209,13 +209,13 @@ b2Joint_GetLocalFrameB|safe|Joint|Referenced by the Rust safe layer.
 b2Joint_GetTorqueThreshold|safe|Joint|Referenced by the Rust safe layer.
 b2Joint_GetType|safe|Joint|Referenced by the Rust safe layer.
 b2Joint_GetUserData|safe|Joint|Referenced by the Rust safe layer.
-b2Joint_GetWorld|raw|Joint|Available through boxdd_sys::ffi; safe wrapper not assigned yet.
+b2Joint_GetWorld|safe|Joint|Referenced by the Rust safe layer.
 b2Joint_IsValid|safe|Joint|Referenced by the Rust safe layer.
 b2Joint_SetCollideConnected|safe|Joint|Referenced by the Rust safe layer.
 b2Joint_SetConstraintTuning|safe|Joint|Referenced by the Rust safe layer.
 b2Joint_SetForceThreshold|safe|Joint|Referenced by the Rust safe layer.
-b2Joint_SetLocalFrameA|raw|Joint|Available through boxdd_sys::ffi; safe wrapper not assigned yet.
-b2Joint_SetLocalFrameB|raw|Joint|Available through boxdd_sys::ffi; safe wrapper not assigned yet.
+b2Joint_SetLocalFrameA|safe|Joint|Referenced by the Rust safe layer.
+b2Joint_SetLocalFrameB|safe|Joint|Referenced by the Rust safe layer.
 b2Joint_SetTorqueThreshold|safe|Joint|Referenced by the Rust safe layer.
 b2Joint_SetUserData|safe|Joint|Referenced by the Rust safe layer.
 b2Joint_WakeBodies|safe|Joint|Referenced by the Rust safe layer.
@@ -300,15 +300,15 @@ b2RevoluteJoint_SetSpringDampingRatio|safe|Joint|Referenced by the Rust safe lay
 b2RevoluteJoint_SetSpringHertz|safe|Joint|Referenced by the Rust safe layer.
 b2RevoluteJoint_SetTargetAngle|safe|Joint|Referenced by the Rust safe layer.
 b2SegmentDistance|safe|Collision|Referenced by the Rust safe layer.
-b2SetAllocator|raw|Foundation|Available through boxdd_sys::ffi; safe wrapper not assigned yet.
-b2SetAssertFcn|raw|Foundation|Available through boxdd_sys::ffi; safe wrapper not assigned yet.
+b2SetAllocator|raw|Foundation|Raw only: process-global allocator hook needs a scoped startup guard before safe exposure.
+b2SetAssertFcn|raw|Foundation|Raw only: process-global assert callback has panic/callback unwinding semantics that need a dedicated design.
 b2SetLengthUnitsPerMeter|safe|Math|Referenced by the Rust safe layer.
-b2SetLogFcn|raw|Foundation|Available through boxdd_sys::ffi; safe wrapper not assigned yet.
+b2SetLogFcn|raw|Foundation|Raw only: process-global log callback needs a scoped callback guard before safe exposure.
 b2ShapeCast|safe|Shape|Referenced by the Rust safe layer.
-b2ShapeCastCapsule|raw|Shape|Available through boxdd_sys::ffi; safe wrapper not assigned yet.
-b2ShapeCastCircle|raw|Shape|Available through boxdd_sys::ffi; safe wrapper not assigned yet.
-b2ShapeCastPolygon|raw|Shape|Available through boxdd_sys::ffi; safe wrapper not assigned yet.
-b2ShapeCastSegment|raw|Shape|Available through boxdd_sys::ffi; safe wrapper not assigned yet.
+b2ShapeCastCapsule|safe|Shape|Referenced by the Rust safe layer.
+b2ShapeCastCircle|safe|Shape|Referenced by the Rust safe layer.
+b2ShapeCastPolygon|safe|Shape|Referenced by the Rust safe layer.
+b2ShapeCastSegment|safe|Shape|Referenced by the Rust safe layer.
 b2ShapeDistance|safe|Shape|Referenced by the Rust safe layer.
 b2Shape_ApplyWind|safe|Shape|Referenced by the Rust safe layer.
 b2Shape_AreContactEventsEnabled|safe|Shape|Referenced by the Rust safe layer.
@@ -393,7 +393,7 @@ b2World_CastRayClosest|safe|World|Referenced by the Rust safe layer.
 b2World_CastShape|safe|World|Referenced by the Rust safe layer.
 b2World_CollideMover|safe|World|Referenced by the Rust safe layer.
 b2World_Draw|safe|World|Referenced by the Rust safe layer.
-b2World_DumpMemoryStats|omitted|World|Intentionally omitted from the safe API; use upstream diagnostics tooling when needed.
+b2World_DumpMemoryStats|omitted|World|Intentionally omitted: upstream writes fixed diagnostic output, so callers should use upstream diagnostics tooling explicitly.
 b2World_EnableContinuous|safe|World|Referenced by the Rust safe layer.
 b2World_EnableSleeping|safe|World|Referenced by the Rust safe layer.
 b2World_EnableSpeculative|safe|World|Referenced by the Rust safe layer.
@@ -417,7 +417,7 @@ b2World_IsValid|safe|World|Referenced by the Rust safe layer.
 b2World_IsWarmStartingEnabled|safe|World|Referenced by the Rust safe layer.
 b2World_OverlapAABB|safe|World|Referenced by the Rust safe layer.
 b2World_OverlapShape|safe|World|Referenced by the Rust safe layer.
-b2World_RebuildStaticTree|omitted|World|Intentionally omitted from the safe API; use upstream diagnostics tooling when needed.
+b2World_RebuildStaticTree|omitted|World|Intentionally omitted: upstream labels this as internal testing support, not stable runtime API.
 b2World_SetContactTuning|safe|World|Referenced by the Rust safe layer.
 b2World_SetCustomFilterCallback|safe|World|Referenced by the Rust safe layer.
 b2World_SetFrictionCallback|safe|World|Referenced by the Rust safe layer.

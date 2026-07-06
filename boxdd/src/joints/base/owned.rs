@@ -68,6 +68,14 @@ impl OwnedJoint {
         JointRuntimeHandle::try_body_b_id(self)
     }
 
+    pub fn world_id_raw(&self) -> ffi::b2WorldId {
+        JointRuntimeHandle::world_id_raw(self)
+    }
+
+    pub fn try_world_id_raw(&self) -> ApiResult<ffi::b2WorldId> {
+        JointRuntimeHandle::try_world_id_raw(self)
+    }
+
     pub fn collide_connected(&self) -> bool {
         JointRuntimeHandle::collide_connected(self)
     }
@@ -114,6 +122,22 @@ impl OwnedJoint {
 
     pub fn try_local_frame_b(&self) -> ApiResult<crate::Transform> {
         JointRuntimeHandle::try_local_frame_b(self)
+    }
+
+    pub fn set_local_frame_a(&mut self, frame: crate::Transform) {
+        JointRuntimeHandle::set_local_frame_a(self, frame)
+    }
+
+    pub fn try_set_local_frame_a(&mut self, frame: crate::Transform) -> ApiResult<()> {
+        JointRuntimeHandle::try_set_local_frame_a(self, frame)
+    }
+
+    pub fn set_local_frame_b(&mut self, frame: crate::Transform) {
+        JointRuntimeHandle::set_local_frame_b(self, frame)
+    }
+
+    pub fn try_set_local_frame_b(&mut self, frame: crate::Transform) -> ApiResult<()> {
+        JointRuntimeHandle::try_set_local_frame_b(self, frame)
     }
 
     pub fn wake_bodies(&mut self) {

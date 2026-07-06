@@ -118,4 +118,27 @@ impl Circle {
             ffi::b2RayCastCircle(&raw, &input)
         }))
     }
+
+    #[inline]
+    pub fn shape_cast(self, input: ShapeCastInput) -> CastOutput {
+        assert_circle_helper_geometry_valid(self);
+        assert!(
+            input.validate().is_ok(),
+            "shape cast input contains invalid Box2D data"
+        );
+        let raw = self.into_raw();
+        let input = input.into_raw();
+        CastOutput::from_raw(unsafe { ffi::b2ShapeCastCircle(&raw, &input) })
+    }
+
+    #[inline]
+    pub fn try_shape_cast(self, input: ShapeCastInput) -> ApiResult<CastOutput> {
+        check_circle_helper_geometry_valid(self)?;
+        input.validate()?;
+        let raw = self.into_raw();
+        let input = input.into_raw();
+        Ok(CastOutput::from_raw(unsafe {
+            ffi::b2ShapeCastCircle(&raw, &input)
+        }))
+    }
 }

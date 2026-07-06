@@ -915,12 +915,47 @@ fn try_joint_range_mutation_invalid_arguments_return_err() {
         &DistanceJointDef::new(JointBaseBuilder::new().bodies_by_id(body_a, body_b).build())
             .length(1.0),
     );
+    let distance_id = distance.id();
+    let invalid_frame = Transform::from_pos_angle([f32::NAN, 0.0], 0.0);
     assert_eq!(
         distance
             .try_distance_set_spring_force_range(2.0, 1.0)
             .unwrap_err(),
         ApiError::InvalidArgument
     );
+    assert_eq!(
+        distance.try_set_local_frame_a(invalid_frame).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        distance.try_set_local_frame_b(invalid_frame).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        world
+            .try_set_joint_local_frame_a(distance_id, invalid_frame)
+            .unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        world
+            .try_set_joint_local_frame_b(distance_id, invalid_frame)
+            .unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    {
+        let mut scoped = world
+            .joint(distance_id)
+            .expect("joint should still be valid");
+        assert_eq!(
+            scoped.try_set_local_frame_a(invalid_frame).unwrap_err(),
+            ApiError::InvalidArgument
+        );
+        assert_eq!(
+            scoped.try_set_local_frame_b(invalid_frame).unwrap_err(),
+            ApiError::InvalidArgument
+        );
+    }
 
     let base = world.joint_base_from_world_with_axis(
         body_a,
@@ -986,6 +1021,10 @@ fn try_joint_runtime_helpers_invalid_id_returns_err() {
     assert_eq!(joint.try_body_a_id().unwrap_err(), ApiError::InvalidJointId);
     assert_eq!(joint.try_body_b_id().unwrap_err(), ApiError::InvalidJointId);
     assert_eq!(
+        joint.try_world_id_raw().unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
         joint.try_collide_connected().unwrap_err(),
         ApiError::InvalidJointId
     );
@@ -1008,7 +1047,19 @@ fn try_joint_runtime_helpers_invalid_id_returns_err() {
         ApiError::InvalidJointId
     );
     assert_eq!(
+        joint
+            .try_set_local_frame_a(Transform::IDENTITY)
+            .unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
         joint.try_local_frame_b().unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        joint
+            .try_set_local_frame_b(Transform::IDENTITY)
+            .unwrap_err(),
         ApiError::InvalidJointId
     );
     assert_eq!(
@@ -1030,6 +1081,10 @@ fn try_joint_runtime_helpers_invalid_id_returns_err() {
     );
     assert_eq!(
         world.try_joint_body_b_id(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        world.try_joint_world_id_raw(joint_id).unwrap_err(),
         ApiError::InvalidJointId
     );
     assert_eq!(
@@ -1057,7 +1112,19 @@ fn try_joint_runtime_helpers_invalid_id_returns_err() {
         ApiError::InvalidJointId
     );
     assert_eq!(
+        world
+            .try_set_joint_local_frame_a(joint_id, Transform::IDENTITY)
+            .unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
         world.try_joint_local_frame_b(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        world
+            .try_set_joint_local_frame_b(joint_id, Transform::IDENTITY)
+            .unwrap_err(),
         ApiError::InvalidJointId
     );
     assert_eq!(
@@ -1093,7 +1160,15 @@ fn try_joint_runtime_helpers_invalid_id_returns_err() {
         ApiError::InvalidJointId
     );
     assert_eq!(
+        handle.try_joint_world_id_raw(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
         handle.try_joint_local_frame_a(joint_id).unwrap_err(),
+        ApiError::InvalidJointId
+    );
+    assert_eq!(
+        handle.try_joint_local_frame_b(joint_id).unwrap_err(),
         ApiError::InvalidJointId
     );
     assert_eq!(

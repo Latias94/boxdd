@@ -1,5 +1,5 @@
 use crate::{
-    collision::CastOutput,
+    collision::{CastOutput, ShapeCastInput},
     core::math::Transform,
     error::{ApiError, ApiResult},
     query::Aabb,
@@ -34,9 +34,12 @@ fn make_ray_input<VO: Into<Vec2>, VT: Into<Vec2>>(
 ) -> ffi::b2RayCastInput {
     let origin = origin.into();
     let translation = translation.into();
-    assert_valid_geometry_vec2("origin", origin);
-    assert_valid_geometry_vec2("translation", translation);
-    raw_ray_input(origin, translation)
+    let input = raw_ray_input(origin, translation);
+    assert!(
+        raw_ray_input_is_valid(&input),
+        "ray input must be valid Box2D ray data, got origin={origin:?}, translation={translation:?}"
+    );
+    input
 }
 
 #[inline]
@@ -46,9 +49,9 @@ fn try_make_ray_input<VO: Into<Vec2>, VT: Into<Vec2>>(
 ) -> ApiResult<ffi::b2RayCastInput> {
     let origin = origin.into();
     let translation = translation.into();
-    check_valid_geometry_vec2(origin)?;
-    check_valid_geometry_vec2(translation)?;
-    Ok(raw_ray_input(origin, translation))
+    let input = raw_ray_input(origin, translation);
+    geometry_is_valid_or_err(raw_ray_input_is_valid(&input))?;
+    Ok(input)
 }
 
 #[inline]
@@ -58,6 +61,11 @@ fn raw_ray_input(origin: Vec2, translation: Vec2) -> ffi::b2RayCastInput {
         translation: translation.into_raw(),
         maxFraction: 1.0,
     }
+}
+
+#[inline]
+fn raw_ray_input_is_valid(input: &ffi::b2RayCastInput) -> bool {
+    unsafe { ffi::b2IsValidRay(input) }
 }
 
 #[inline]

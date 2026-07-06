@@ -21,6 +21,10 @@ fn same_body_id(a: BodyId, b: BodyId) -> bool {
     a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
 }
 
+fn same_world_id(a: boxdd_sys::ffi::b2WorldId, b: boxdd_sys::ffi::b2WorldId) -> bool {
+    a.index1 == b.index1 && a.generation == b.generation
+}
+
 fn create_dynamic_body(world: &mut World, position: [f32; 2]) -> BodyId {
     let body = world.create_body_id(
         BodyBuilder::new()
@@ -334,6 +338,12 @@ fn joint_runtime_metadata_and_tuning_are_available_across_owned_scoped_and_world
     let updated_from_scoped = ConstraintTuning::new(8.0, 0.75);
     let updated_from_owned = ConstraintTuning::new(5.0, 0.5);
     let updated_from_world = ConstraintTuning::new(2.0, 0.1);
+    let scoped_frame_a = Transform::from_pos_angle([0.5_f32, -0.25], 0.1);
+    let scoped_frame_b = Transform::from_pos_angle([1.25_f32, 1.75], -0.2);
+    let owned_frame_a = Transform::from_pos_angle([0.75_f32, -0.1], 0.15);
+    let owned_frame_b = Transform::from_pos_angle([1.5_f32, 1.5], -0.25);
+    let world_frame_a = Transform::from_pos_angle([1.0_f32, 0.0], 0.2);
+    let world_frame_b = Transform::from_pos_angle([1.75_f32, 1.25], -0.3);
     let initial_force_threshold = 2.5;
     let initial_torque_threshold = 3.5;
     let updated_force_threshold = 6.0;
@@ -356,6 +366,7 @@ fn joint_runtime_metadata_and_tuning_are_available_across_owned_scoped_and_world
 
     let mut joint = world.create_distance_joint_owned(&DistanceJointDef::new(base).length(3.5));
     let joint_id = joint.id();
+    let world_id = world.world_id_raw();
 
     assert_eq!(joint.joint_type(), JointType::Distance);
     assert_eq!(joint.try_joint_type().unwrap(), JointType::Distance);
@@ -371,6 +382,8 @@ fn joint_runtime_metadata_and_tuning_are_available_across_owned_scoped_and_world
     assert!(same_body_id(joint.try_body_a_id().unwrap(), body_a));
     assert!(same_body_id(joint.body_b_id(), body_b));
     assert!(same_body_id(joint.try_body_b_id().unwrap(), body_b));
+    assert!(same_world_id(joint.world_id_raw(), world_id));
+    assert!(same_world_id(joint.try_world_id_raw().unwrap(), world_id));
     assert!(joint.collide_connected());
     assert!(joint.try_collide_connected().unwrap());
     assert!(approx_tuning(
@@ -423,6 +436,11 @@ fn joint_runtime_metadata_and_tuning_are_available_across_owned_scoped_and_world
     assert!(same_body_id(
         world.try_joint_body_b_id(joint_id).unwrap(),
         body_b
+    ));
+    assert!(same_world_id(world.joint_world_id_raw(joint_id), world_id));
+    assert!(same_world_id(
+        world.try_joint_world_id_raw(joint_id).unwrap(),
+        world_id
     ));
     assert!(world.joint_collide_connected(joint_id));
     assert!(world.try_joint_collide_connected(joint_id).unwrap());
@@ -483,6 +501,8 @@ fn joint_runtime_metadata_and_tuning_are_available_across_owned_scoped_and_world
         assert_eq!(scoped.try_joint_type().unwrap(), JointType::Distance);
         assert!(same_body_id(scoped.body_a_id(), body_a));
         assert!(same_body_id(scoped.body_b_id(), body_b));
+        assert!(same_world_id(scoped.world_id_raw(), world_id));
+        assert!(same_world_id(scoped.try_world_id_raw().unwrap(), world_id));
         assert!(scoped.collide_connected());
         assert!(approx_tuning(
             scoped.constraint_tuning(),
@@ -504,6 +524,8 @@ fn joint_runtime_metadata_and_tuning_are_available_across_owned_scoped_and_world
         scoped
             .try_set_constraint_tuning(updated_from_scoped)
             .unwrap();
+        scoped.set_local_frame_a(scoped_frame_a);
+        scoped.try_set_local_frame_b(scoped_frame_b).unwrap();
     }
 
     assert!(!joint.collide_connected());
@@ -512,19 +534,45 @@ fn joint_runtime_metadata_and_tuning_are_available_across_owned_scoped_and_world
         updated_from_scoped,
         1.0e-6
     ));
+    assert!(approx_transform(
+        joint.local_frame_a(),
+        scoped_frame_a,
+        1.0e-6
+    ));
+    assert!(approx_transform(
+        joint.local_frame_b(),
+        scoped_frame_b,
+        1.0e-6
+    ));
 
     joint.set_collide_connected(true);
     joint.try_set_constraint_tuning(updated_from_owned).unwrap();
+    joint.set_local_frame_a(owned_frame_a);
+    joint.try_set_local_frame_b(owned_frame_b).unwrap();
     assert!(joint.collide_connected());
     assert!(approx_tuning(
         joint.constraint_tuning(),
         updated_from_owned,
         1.0e-6
     ));
+    assert!(approx_transform(
+        joint.local_frame_a(),
+        owned_frame_a,
+        1.0e-6
+    ));
+    assert!(approx_transform(
+        joint.local_frame_b(),
+        owned_frame_b,
+        1.0e-6
+    ));
 
     world.set_joint_collide_connected(joint_id, false);
     world
         .try_set_joint_constraint_tuning(joint_id, updated_from_world)
+        .unwrap();
+    world.set_joint_local_frame_a(joint_id, world_frame_a);
+    world
+        .try_set_joint_local_frame_b(joint_id, world_frame_b)
         .unwrap();
     world.set_joint_force_threshold(joint_id, updated_force_threshold);
     world
@@ -534,6 +582,16 @@ fn joint_runtime_metadata_and_tuning_are_available_across_owned_scoped_and_world
     assert!(approx_tuning(
         joint.constraint_tuning(),
         updated_from_world,
+        1.0e-6
+    ));
+    assert!(approx_transform(
+        joint.local_frame_a(),
+        world_frame_a,
+        1.0e-6
+    ));
+    assert!(approx_transform(
+        joint.local_frame_b(),
+        world_frame_b,
         1.0e-6
     ));
     assert!(approx_eq(
@@ -611,6 +669,7 @@ fn world_handle_joint_runtime_queries_match_world_queries() {
     let joint_ids = handle.body_joints(body_a);
     assert_eq!(joint_ids.len(), 1);
     assert_eq!(joint_ids[0], joint_id);
+    let world_id = world.world_id_raw();
 
     assert_eq!(handle.joint_type(joint_id), world.joint_type(joint_id));
     assert_eq!(
@@ -632,6 +691,11 @@ fn world_handle_joint_runtime_queries_match_world_queries() {
     assert!(same_body_id(
         handle.try_joint_body_b_id(joint_id).unwrap(),
         world.joint_body_b_id(joint_id)
+    ));
+    assert!(same_world_id(handle.joint_world_id_raw(joint_id), world_id));
+    assert!(same_world_id(
+        handle.try_joint_world_id_raw(joint_id).unwrap(),
+        world_id
     ));
     assert_eq!(
         handle.joint_collide_connected(joint_id),

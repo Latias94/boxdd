@@ -124,4 +124,27 @@ impl Capsule {
             ffi::b2RayCastCapsule(&raw, &input)
         }))
     }
+
+    #[inline]
+    pub fn shape_cast(self, input: ShapeCastInput) -> CastOutput {
+        assert_capsule_helper_geometry_valid(self);
+        assert!(
+            input.validate().is_ok(),
+            "shape cast input contains invalid Box2D data"
+        );
+        let raw = self.into_raw();
+        let input = input.into_raw();
+        CastOutput::from_raw(unsafe { ffi::b2ShapeCastCapsule(&raw, &input) })
+    }
+
+    #[inline]
+    pub fn try_shape_cast(self, input: ShapeCastInput) -> ApiResult<CastOutput> {
+        check_capsule_helper_geometry_valid(self)?;
+        input.validate()?;
+        let raw = self.into_raw();
+        let input = input.into_raw();
+        Ok(CastOutput::from_raw(unsafe {
+            ffi::b2ShapeCastCapsule(&raw, &input)
+        }))
+    }
 }

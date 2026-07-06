@@ -221,6 +221,60 @@ impl fmt::Debug for ShapeProxy {
     }
 }
 
+/// Input for shape-specific casts against circles, capsules, segments, and polygons.
+#[doc(alias = "shape_cast_input")]
+#[derive(Copy, Clone, Debug)]
+pub struct ShapeCastInput {
+    pub proxy: ShapeProxy,
+    pub translation: Vec2,
+    pub max_fraction: f32,
+    pub can_encroach: bool,
+}
+
+impl ShapeCastInput {
+    /// Build a shape cast over `proxy` moving by `translation`.
+    #[inline]
+    pub fn new<T: Into<Vec2>>(proxy: ShapeProxy, translation: T) -> Self {
+        Self {
+            proxy,
+            translation: translation.into(),
+            max_fraction: 1.0,
+            can_encroach: false,
+        }
+    }
+
+    /// Limit the portion of `translation` considered by the cast.
+    #[inline]
+    pub fn with_max_fraction(mut self, max_fraction: f32) -> Self {
+        self.max_fraction = max_fraction;
+        self
+    }
+
+    /// Allow encroachment when initially touching.
+    #[inline]
+    pub fn with_can_encroach(mut self, can_encroach: bool) -> Self {
+        self.can_encroach = can_encroach;
+        self
+    }
+
+    /// Validate this input before crossing the Box2D FFI boundary.
+    pub fn validate(&self) -> ApiResult<()> {
+        self.proxy.validate()?;
+        check_collision_vec2_valid(self.translation)?;
+        check_collision_unit_interval_scalar(self.max_fraction)
+    }
+
+    #[inline]
+    pub fn into_raw(self) -> ffi::b2ShapeCastInput {
+        ffi::b2ShapeCastInput {
+            proxy: self.proxy.into_raw(),
+            translation: self.translation.into_raw(),
+            maxFraction: self.max_fraction,
+            canEncroach: self.can_encroach,
+        }
+    }
+}
+
 /// Warm-start cache for repeated GJK distance calls.
 #[doc(alias = "simplex_cache")]
 #[derive(Copy, Clone)]

@@ -233,18 +233,12 @@ fn classify_api_symbols(symbols: &BTreeSet<String>, safe_source: &str) -> Vec<Ap
     symbols
         .iter()
         .map(|symbol| {
-            let (status, notes) = if intentionally_omitted_symbol(symbol) {
-                (
-                    "omitted",
-                    "Intentionally omitted from the safe API; use upstream diagnostics tooling when needed.",
-                )
+            let (status, notes) = if let Some(notes) = omitted_symbol_note(symbol) {
+                ("omitted", notes)
             } else if safe_source.contains(symbol) {
                 ("safe", "Referenced by the Rust safe layer.")
             } else {
-                (
-                    "raw",
-                    "Available through boxdd_sys::ffi; safe wrapper not assigned yet.",
-                )
+                ("raw", raw_symbol_note(symbol))
             };
             ApiRow {
                 symbol: symbol.clone(),
@@ -256,11 +250,34 @@ fn classify_api_symbols(symbols: &BTreeSet<String>, safe_source: &str) -> Vec<Ap
         .collect()
 }
 
-fn intentionally_omitted_symbol(symbol: &str) -> bool {
-    matches!(
-        symbol,
-        "b2World_DumpMemoryStats" | "b2World_RebuildStaticTree"
-    )
+fn omitted_symbol_note(symbol: &str) -> Option<&'static str> {
+    match symbol {
+        "b2World_DumpMemoryStats" => Some(
+            "Intentionally omitted: upstream writes fixed diagnostic output, so callers should use upstream diagnostics tooling explicitly.",
+        ),
+        "b2World_RebuildStaticTree" => Some(
+            "Intentionally omitted: upstream labels this as internal testing support, not stable runtime API.",
+        ),
+        _ => None,
+    }
+}
+
+fn raw_symbol_note(symbol: &str) -> &'static str {
+    match symbol {
+        "b2InternalAssertFcn" => {
+            "Raw only: upstream internal assert implementation, not a stable safe API surface."
+        }
+        "b2SetAllocator" => {
+            "Raw only: process-global allocator hook needs a scoped startup guard before safe exposure."
+        }
+        "b2SetAssertFcn" => {
+            "Raw only: process-global assert callback has panic/callback unwinding semantics that need a dedicated design."
+        }
+        "b2SetLogFcn" => {
+            "Raw only: process-global log callback needs a scoped callback guard before safe exposure."
+        }
+        _ => "Available through boxdd_sys::ffi; safe wrapper not assigned yet.",
+    }
 }
 
 fn api_surface(symbol: &str) -> &'static str {

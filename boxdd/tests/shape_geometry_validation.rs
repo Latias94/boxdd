@@ -1,4 +1,6 @@
-use boxdd::{ApiError, BodyBuilder, Polygon, ShapeDef, World, WorldDef, shapes};
+use boxdd::{
+    ApiError, BodyBuilder, Polygon, ShapeCastInput, ShapeDef, ShapeProxy, World, WorldDef, shapes,
+};
 
 fn assert_cast_output_eq(actual: boxdd::CastOutput, expected: boxdd::CastOutput) {
     assert_eq!(actual.normal, expected.normal);
@@ -128,6 +130,59 @@ fn standalone_geometry_try_helpers_reject_invalid_inputs() {
 }
 
 #[test]
+fn standalone_shape_specific_shape_casts_match_try_variants() {
+    let proxy = ShapeProxy::new([[0.0_f32, -3.0]], 0.05).expect("valid cast proxy");
+    let input = ShapeCastInput::new(proxy, [0.0_f32, 6.0]);
+    let circle = shapes::circle([0.0_f32, 0.0], 0.5);
+    let capsule = shapes::capsule([-0.5_f32, 0.0], [0.5_f32, 0.0], 0.25);
+    let segment = shapes::segment([-1.0_f32, 0.0], [1.0_f32, 0.0]);
+    let polygon = shapes::box_polygon(0.5, 0.5);
+
+    for output in [
+        circle.shape_cast(input),
+        circle.try_shape_cast(input).unwrap(),
+        capsule.shape_cast(input),
+        capsule.try_shape_cast(input).unwrap(),
+        segment.shape_cast(input),
+        segment.try_shape_cast(input).unwrap(),
+        polygon.shape_cast(input),
+        polygon.try_shape_cast(input).unwrap(),
+    ] {
+        assert!(output.hit);
+        assert!(output.fraction >= 0.0 && output.fraction <= 1.0);
+    }
+
+    assert_cast_output_eq(
+        circle.shape_cast(input),
+        circle.try_shape_cast(input).unwrap(),
+    );
+    assert_cast_output_eq(
+        capsule.shape_cast(input),
+        capsule.try_shape_cast(input).unwrap(),
+    );
+    assert_cast_output_eq(
+        segment.shape_cast(input),
+        segment.try_shape_cast(input).unwrap(),
+    );
+    assert_cast_output_eq(
+        polygon.shape_cast(input),
+        polygon.try_shape_cast(input).unwrap(),
+    );
+}
+
+#[test]
+fn standalone_shape_specific_shape_casts_reject_invalid_inputs() {
+    let proxy = ShapeProxy::new([[0.0_f32, -3.0]], 0.05).expect("valid cast proxy");
+    let input = ShapeCastInput::new(proxy, [f32::NAN, 0.0]);
+    let circle = shapes::circle([0.0_f32, 0.0], 0.5);
+
+    assert_eq!(
+        circle.try_shape_cast(input).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+}
+
+#[test]
 fn safe_standalone_geometry_helpers_panic_on_invalid_inputs() {
     let circle = shapes::circle([0.0_f32, 0.0], 0.5);
     let invalid_transform = boxdd::Transform::from_pos_angle([f32::NAN, 0.0], 0.0);
@@ -151,6 +206,13 @@ fn safe_standalone_geometry_helpers_panic_on_invalid_inputs() {
         circle.ray_cast([0.0_f32, 0.0], [f32::NAN, 0.0]);
     }));
     assert!(ray_result.is_err());
+
+    let proxy = ShapeProxy::new([[0.0_f32, -3.0]], 0.05).expect("valid cast proxy");
+    let invalid_shape_cast = ShapeCastInput::new(proxy, [f32::NAN, 0.0]);
+    let shape_cast_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        circle.shape_cast(invalid_shape_cast);
+    }));
+    assert!(shape_cast_result.is_err());
 
     let polygon = shapes::box_polygon(1.0, 1.0);
     let transform_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

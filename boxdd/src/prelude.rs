@@ -1,7 +1,7 @@
 pub use crate::{
     ApiError, ApiResult, Body, BodyBuilder, BodyDef, BodyType, CallbackWorld, Filter,
-    MaterialMixInput, OutstandingOwnedHandles, OwnedBody, OwnedHandleCounts, World, WorldBuilder,
-    WorldDef, WorldHandle,
+    MaterialMixInput, OutstandingOwnedHandles, OwnedBody, OwnedHandleCounts, ShapeCastInput, World,
+    WorldBuilder, WorldDef, WorldHandle,
     debug_draw::{DebugDraw, DebugDrawCmd, DebugDrawOptions, HexColor, RawDebugDraw},
     dynamic_tree::{DynamicTree, TreeProxyId, TreeRayCastInput, TreeShapeCastInput, TreeStats},
     events::{

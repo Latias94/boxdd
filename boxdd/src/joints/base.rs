@@ -3,6 +3,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::core::world_core::WorldCore;
+use crate::error::{ApiError, ApiResult};
 use crate::types::{BodyId, JointId, Vec2};
 use crate::world::World;
 use boxdd_sys::ffi;
@@ -133,6 +134,11 @@ pub(crate) fn joint_body_b_id_impl(id: JointId) -> BodyId {
 }
 
 #[inline]
+pub(crate) fn joint_world_id_raw_impl(id: JointId) -> ffi::b2WorldId {
+    unsafe { ffi::b2Joint_GetWorld(raw_joint_id(id)) }
+}
+
+#[inline]
 pub(crate) fn joint_linear_separation_impl(id: JointId) -> f32 {
     unsafe { ffi::b2Joint_GetLinearSeparation(raw_joint_id(id)) }
 }
@@ -185,6 +191,34 @@ pub(crate) fn joint_local_frame_a_impl(id: JointId) -> crate::Transform {
 #[inline]
 pub(crate) fn joint_local_frame_b_impl(id: JointId) -> crate::Transform {
     crate::Transform::from_raw(unsafe { ffi::b2Joint_GetLocalFrameB(raw_joint_id(id)) })
+}
+
+#[track_caller]
+pub(crate) fn assert_joint_local_frame_valid(frame: crate::Transform) {
+    assert!(
+        frame.is_valid(),
+        "joint local frame must be a valid Box2D transform, got {:?}",
+        frame
+    );
+}
+
+#[inline]
+pub(crate) fn check_joint_local_frame_valid(frame: crate::Transform) -> ApiResult<()> {
+    if frame.is_valid() {
+        Ok(())
+    } else {
+        Err(ApiError::InvalidArgument)
+    }
+}
+
+#[inline]
+pub(crate) fn joint_set_local_frame_a_impl(id: JointId, frame: crate::Transform) {
+    unsafe { ffi::b2Joint_SetLocalFrameA(raw_joint_id(id), frame.into_raw()) }
+}
+
+#[inline]
+pub(crate) fn joint_set_local_frame_b_impl(id: JointId, frame: crate::Transform) {
+    unsafe { ffi::b2Joint_SetLocalFrameB(raw_joint_id(id), frame.into_raw()) }
 }
 
 #[inline]

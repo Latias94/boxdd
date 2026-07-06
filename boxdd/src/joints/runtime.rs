@@ -34,6 +34,14 @@ impl World {
         try_joint_read_checked_impl(id, base::joint_body_b_id_impl)
     }
 
+    pub fn joint_world_id_raw(&self, id: JointId) -> ffi::b2WorldId {
+        joint_read_checked_impl(id, base::joint_world_id_raw_impl)
+    }
+
+    pub fn try_joint_world_id_raw(&self, id: JointId) -> ApiResult<ffi::b2WorldId> {
+        try_joint_read_checked_impl(id, base::joint_world_id_raw_impl)
+    }
+
     pub fn joint_collide_connected(&self, id: JointId) -> bool {
         joint_read_checked_impl(id, base::joint_collide_connected_impl)
     }
@@ -84,12 +92,46 @@ impl World {
         try_joint_read_checked_impl(id, base::joint_local_frame_a_impl)
     }
 
+    pub fn set_joint_local_frame_a(&mut self, id: JointId, frame: crate::Transform) {
+        assert_joint_valid(id);
+        base::assert_joint_local_frame_valid(frame);
+        base::joint_set_local_frame_a_impl(id, frame)
+    }
+
+    pub fn try_set_joint_local_frame_a(
+        &mut self,
+        id: JointId,
+        frame: crate::Transform,
+    ) -> ApiResult<()> {
+        check_joint_valid(id)?;
+        base::check_joint_local_frame_valid(frame)?;
+        base::joint_set_local_frame_a_impl(id, frame);
+        Ok(())
+    }
+
     pub fn joint_local_frame_b(&self, id: JointId) -> crate::Transform {
         joint_read_checked_impl(id, base::joint_local_frame_b_impl)
     }
 
     pub fn try_joint_local_frame_b(&self, id: JointId) -> ApiResult<crate::Transform> {
         try_joint_read_checked_impl(id, base::joint_local_frame_b_impl)
+    }
+
+    pub fn set_joint_local_frame_b(&mut self, id: JointId, frame: crate::Transform) {
+        assert_joint_valid(id);
+        base::assert_joint_local_frame_valid(frame);
+        base::joint_set_local_frame_b_impl(id, frame)
+    }
+
+    pub fn try_set_joint_local_frame_b(
+        &mut self,
+        id: JointId,
+        frame: crate::Transform,
+    ) -> ApiResult<()> {
+        check_joint_valid(id)?;
+        base::check_joint_local_frame_valid(frame)?;
+        base::joint_set_local_frame_b_impl(id, frame);
+        Ok(())
     }
 
     pub fn joint_wake_bodies(&mut self, id: JointId) {
@@ -197,6 +239,14 @@ impl WorldHandle {
 
     pub fn try_joint_body_b_id(&self, id: JointId) -> ApiResult<BodyId> {
         try_joint_read_checked_impl(id, base::joint_body_b_id_impl)
+    }
+
+    pub fn joint_world_id_raw(&self, id: JointId) -> ffi::b2WorldId {
+        joint_read_checked_impl(id, base::joint_world_id_raw_impl)
+    }
+
+    pub fn try_joint_world_id_raw(&self, id: JointId) -> ApiResult<ffi::b2WorldId> {
+        try_joint_read_checked_impl(id, base::joint_world_id_raw_impl)
     }
 
     pub fn joint_collide_connected(&self, id: JointId) -> bool {

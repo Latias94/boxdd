@@ -84,6 +84,16 @@ pub(crate) trait JointRuntimeHandle {
         Ok(joint_body_b_id_impl(self.joint_id()))
     }
 
+    fn world_id_raw(&self) -> ffi::b2WorldId {
+        self.assert_valid();
+        joint_world_id_raw_impl(self.joint_id())
+    }
+
+    fn try_world_id_raw(&self) -> ApiResult<ffi::b2WorldId> {
+        self.check_valid()?;
+        Ok(joint_world_id_raw_impl(self.joint_id()))
+    }
+
     fn collide_connected(&self) -> bool {
         self.assert_valid();
         joint_collide_connected_impl(self.joint_id())
@@ -144,6 +154,32 @@ pub(crate) trait JointRuntimeHandle {
     fn try_local_frame_b(&self) -> ApiResult<crate::Transform> {
         self.check_valid()?;
         Ok(joint_local_frame_b_impl(self.joint_id()))
+    }
+
+    fn set_local_frame_a(&mut self, frame: crate::Transform) {
+        self.assert_valid();
+        assert_joint_local_frame_valid(frame);
+        joint_set_local_frame_a_impl(self.joint_id(), frame);
+    }
+
+    fn try_set_local_frame_a(&mut self, frame: crate::Transform) -> ApiResult<()> {
+        self.check_valid()?;
+        check_joint_local_frame_valid(frame)?;
+        joint_set_local_frame_a_impl(self.joint_id(), frame);
+        Ok(())
+    }
+
+    fn set_local_frame_b(&mut self, frame: crate::Transform) {
+        self.assert_valid();
+        assert_joint_local_frame_valid(frame);
+        joint_set_local_frame_b_impl(self.joint_id(), frame);
+    }
+
+    fn try_set_local_frame_b(&mut self, frame: crate::Transform) -> ApiResult<()> {
+        self.check_valid()?;
+        check_joint_local_frame_valid(frame)?;
+        joint_set_local_frame_b_impl(self.joint_id(), frame);
+        Ok(())
     }
 
     fn wake_bodies(&mut self) {

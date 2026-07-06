@@ -263,8 +263,8 @@ pub use body::OwnedBody;
 pub use body::{Body, BodyBuilder, BodyDef, BodyType};
 pub use collision::{
     CastOutput, DistanceInput, DistanceOutput, MAX_SHAPE_PROXY_POINTS, SegmentDistanceResult,
-    ShapeCastPairInput, ShapeProxy, SimplexCache, Sweep, ToiInput, ToiOutput, ToiState,
-    collide_capsule_and_circle, collide_capsules, collide_chain_segment_and_capsule,
+    ShapeCastInput, ShapeCastPairInput, ShapeProxy, SimplexCache, Sweep, ToiInput, ToiOutput,
+    ToiState, collide_capsule_and_circle, collide_capsules, collide_chain_segment_and_capsule,
     collide_chain_segment_and_circle, collide_chain_segment_and_polygon, collide_circles,
     collide_polygon_and_capsule, collide_polygon_and_circle, collide_polygons,
     collide_segment_and_capsule, collide_segment_and_circle, collide_segment_and_polygon,
