@@ -20,20 +20,15 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 ### Changed
 - Browser examples now load smaller WASM builds by default and show byte-level download progress while the Box2D provider and Bevy runtime load.
 - Updated optional math and native testbed dependencies to current releases: `nalgebra 0.35`, `glam 0.33`, and `dear-imgui-* 0.15`.
-- Reworked Bevy ray-query examples to return Bevy `Entity` values directly instead of forcing users to join native shape hits back to ECS entities by hand.
 - More Box2D shape-cast and joint runtime APIs are available as safe wrappers, so fewer cases need `boxdd_sys::ffi`.
 
 ### Fixed
 - Catching a Rust panic from a Box2D callback no longer poisons the internal panic payload mutex and prevents later `World::step` calls.
 
 ### Migration Notes
-- Most `boxdd` 0.4 code can upgrade to 0.5 without source changes. If you do not use Bevy, browser examples, or optional math/testbed integrations, there is probably nothing to change.
+- Most `boxdd` 0.4 code can upgrade to 0.5 without source changes. The new Bevy and browser-example support is opt-in.
 - If your app uses the optional `nalgebra` or `glam` features and also depends on those crates directly, update your direct dependencies to `nalgebra 0.35` and `glam 0.33`.
 - If you build the native Dear ImGui testbed, update the Dear ImGui crates to `dear-imgui-rs 0.15`, `dear-imgui-winit 0.15`, and `dear-imgui-glow 0.15`.
-- If you use `bevy_boxdd`, prefer the new entity-returning query helpers: `try_cast_ray_closest_entity`, `try_cast_ray_all_entities`, `try_cast_ray_all_entities_into`, `try_overlap_aabb_entities`, and `try_overlap_aabb_entities_into`.
-- If you author Bevy joints, spawn `JointDescriptor::distance(...)` or `JointDescriptor::revolute(...)` on an entity that references two `RigidBody` entities. Read `BoxddJoint` after fixed update only when you need the native `JointId`.
-- If you render Bevy debug geometry yourself, collect `boxdd::DebugDrawCmd` values with `BoxddPhysicsContext::try_debug_draw_collect_into` and render them in your own renderer or tooling.
-- If you build browser examples, use `BOXDD_SYS_WASM_MODE=provider` for `wasm32-unknown-unknown`. Set `BOXDD_PAGES_WASM_PROFILE=debug` or `release` for non-default Pages builds, and set `BOXDD_PAGES_WASM_OPT=0` when you want to skip `wasm-opt`.
 
 ## [boxdd 0.4.0] - 2026-04-22
 
