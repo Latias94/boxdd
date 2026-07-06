@@ -31,6 +31,8 @@ a:hover { text-decoration: underline; text-underline-offset: 4px; }
 #bevy-canvas { display: block; width: 100%; height: 100%; outline: none; touch-action: none; }
 #bevy-status { position: absolute; left: 18px; bottom: 18px; max-width: min(560px, calc(100% - 36px)); border: 1px solid var(--border); border-radius: 8px; background: rgba(15, 15, 18, 0.94); padding: 12px 14px; color: var(--muted); font-size: 14px; line-height: 1.45; }
 #bevy-status strong { display: block; margin-bottom: 4px; color: var(--foreground); font-size: 15px; }
+#bevy-status progress { display: block; width: min(360px, 100%); height: 8px; margin-top: 10px; accent-color: var(--accent); }
+#bevy-status small { display: block; margin-top: 6px; color: #d4d4d8; font-size: 12px; }
 #bevy-status[data-state="error"] strong { color: var(--danger); }
 #bevy-status[data-state="running"] { opacity: 0; pointer-events: none; transition: opacity 180ms ease; }
 .directory { min-height: 100%; }

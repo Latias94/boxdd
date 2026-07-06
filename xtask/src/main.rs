@@ -1351,7 +1351,17 @@ fn patch_bevy_bindgen_imports(js: &Path) -> Result<()> {
             js.display()
         )));
     }
-    fs::write(js, patched).map_err(|source| Error::io(js, source))
+    let decode_patched = patched.replace(
+        "cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len))",
+        "cachedTextDecoder.decode(getUint8ArrayMemory0().slice(ptr, ptr + len))",
+    );
+    if decode_patched == patched {
+        return Err(Error::Message(format!(
+            "wasm-bindgen output does not decode strings from wasm memory: {}",
+            js.display()
+        )));
+    }
+    fs::write(js, decode_patched).map_err(|source| Error::io(js, source))
 }
 
 fn write_browser_provider_shim(out_dir: &Path, imports: &[String]) -> Result<PathBuf> {
@@ -1492,6 +1502,8 @@ fn build_box2d_provider(root: &Path, out_dir: &Path, exports_json: &Path) -> Res
         .arg("EXPORT_ES6=1")
         .arg("-s")
         .arg("ENVIRONMENT=node,web")
+        .arg("-s")
+        .arg("INCOMING_MODULE_JS_API=['wasmMemory','wasmBinary','locateFile','print','printErr']")
         .arg("-s")
         .arg("GLOBAL_BASE=67108864")
         .arg("-s")
@@ -1748,6 +1760,7 @@ fn optimize_wasm_if_available(wasm: &Path, label: &str) -> Result<()> {
         .arg("-Oz")
         .arg("--enable-bulk-memory")
         .arg("--enable-bulk-memory-opt")
+        .arg("--enable-nontrapping-float-to-int")
         .arg("--strip-debug")
         .arg("--strip-producers")
         .arg(wasm)
@@ -2384,7 +2397,7 @@ const sceneId = appRoot?.dataset.sceneId || "";
 const sceneName = appRoot?.dataset.sceneName || "Bevy testbed";
 const isExamplePage = Boolean(sceneId);
 
-function setStatus(state, title, detail) {
+function setStatus(state, title, detail, progress) {
   statusPanel.dataset.state = state;
   statusPanel.replaceChildren();
 
@@ -2393,14 +2406,94 @@ function setStatus(state, title, detail) {
   const detailNode = document.createElement("span");
   detailNode.textContent = detail;
   statusPanel.append(titleNode, detailNode);
+
+  if (progress) {
+    const progressNode = document.createElement("progress");
+    progressNode.value = progress.loaded;
+    if (progress.total) {
+      progressNode.max = progress.total;
+    } else {
+      progressNode.removeAttribute("value");
+    }
+
+    const progressText = document.createElement("small");
+    progressText.textContent = progressTextFor(progress.loaded, progress.total);
+    statusPanel.append(progressNode, progressText);
+  }
 }
 
 function generatedUrl(path) {
   return new URL(path, import.meta.url);
 }
 
+function progressTextFor(loaded, total) {
+  if (total) {
+    const percent = Math.min(100, Math.round((loaded / total) * 100));
+    return `${formatBytes(loaded)} / ${formatBytes(total)} (${percent}%)`;
+  }
+  return `${formatBytes(loaded)} downloaded`;
+}
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 B";
+  }
+  const units = ["B", "KiB", "MiB", "GiB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return unit === 0 ? `${value} ${units[unit]}` : `${value.toFixed(2)} ${units[unit]}`;
+}
+
+async function fetchArrayBufferWithProgress(url, label) {
+  setStatus("loading", `Downloading ${label}`, "Starting download.", { loaded: 0, total: 0 });
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`${label} download failed with HTTP ${response.status}`);
+  }
+
+  const total = Number(response.headers.get("Content-Length")) || 0;
+  if (!response.body) {
+    const buffer = await response.arrayBuffer();
+    setStatus("loading", `Downloading ${label}`, "Download complete.", {
+      loaded: buffer.byteLength,
+      total: total || buffer.byteLength,
+    });
+    return buffer;
+  }
+
+  const reader = response.body.getReader();
+  const chunks = [];
+  let loaded = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    chunks.push(value);
+    loaded += value.byteLength;
+    setStatus("loading", `Downloading ${label}`, "Downloading runtime asset.", { loaded, total });
+  }
+
+  const bytes = new Uint8Array(loaded);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  setStatus("loading", `Downloading ${label}`, "Download complete.", { loaded, total: total || loaded });
+  return bytes.buffer;
+}
+
 async function main() {
   const providerGenerated = new URL("../wasm/generated/", import.meta.url);
+  const providerWasmUrl = new URL("box2d-sys-v0.wasm", providerGenerated);
+  const bevyWasmUrl = generatedUrl("generated/bevy_boxdd_testbed_bg.wasm");
+
+  setStatus("loading", "Loading JavaScript modules", `Preparing the browser runtime for ${sceneName}.`);
   const [
     { default: createProvider },
     { default: initBevyTestbed },
@@ -2413,9 +2506,11 @@ async function main() {
     ]);
   const memory = new WebAssembly.Memory({ initial: 4096, maximum: 8192 });
 
-  setStatus("loading", "Loading Box2D provider", `Preparing the shared Box2D C provider for ${sceneName}.`);
+  const providerWasm = await fetchArrayBufferWithProgress(providerWasmUrl, "Box2D provider wasm");
+  setStatus("loading", "Starting Box2D provider", `Instantiating the shared Box2D C provider for ${sceneName}.`);
   const provider = await createProvider({
     wasmMemory: memory,
+    wasmBinary: providerWasm,
     locateFile: (path) => new URL(path, providerGenerated).href,
     print: (text) => console.log(`[box2d-sys-v0] ${text}`),
     printErr: (text) => console.warn(`[box2d-sys-v0] ${text}`),
@@ -2426,10 +2521,11 @@ async function main() {
   }
 
   setBox2dProvider(provider);
-  setStatus("loading", `Loading ${sceneName}`, "Starting the Rust Bevy + egui wasm module.");
+  const bevyWasm = await fetchArrayBufferWithProgress(bevyWasmUrl, `${sceneName} Bevy wasm`);
+  setStatus("loading", `Starting ${sceneName}`, "Instantiating the Rust Bevy + egui wasm module.");
 
   const bevyExports = await initBevyTestbed({
-    module_or_path: generatedUrl("generated/bevy_boxdd_testbed_bg.wasm"),
+    module_or_path: bevyWasm,
     memory,
   });
   setBoxddAppExports(bevyExports);
@@ -2496,6 +2592,8 @@ a:hover { text-decoration: underline; text-underline-offset: 4px; }
 #bevy-canvas { display: block; width: 100%; height: 100%; outline: none; touch-action: none; }
 #bevy-status { position: absolute; left: 18px; bottom: 18px; max-width: min(560px, calc(100% - 36px)); border: 1px solid var(--border); border-radius: 8px; background: rgba(15, 15, 18, 0.94); padding: 12px 14px; color: var(--muted); font-size: 14px; line-height: 1.45; }
 #bevy-status strong { display: block; margin-bottom: 4px; color: var(--foreground); font-size: 15px; }
+#bevy-status progress { display: block; width: min(360px, 100%); height: 8px; margin-top: 10px; accent-color: var(--accent); }
+#bevy-status small { display: block; margin-top: 6px; color: #d4d4d8; font-size: 12px; }
 #bevy-status[data-state="error"] strong { color: var(--danger); }
 #bevy-status[data-state="running"] { opacity: 0; pointer-events: none; transition: opacity 180ms ease; }
 .directory { min-height: 100%; }

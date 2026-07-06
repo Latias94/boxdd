@@ -26,7 +26,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Added default-running lifecycle tests for callback locks, panic containment, query callbacks, dynamic-tree callbacks, event-view deferred destruction, reusable event buffers, and world destroy/recycle behavior.
 
 ### Changed
-- Pages WASM builds now use a size-oriented `wasm-release` profile by default, run `wasm-opt -Oz` when Binaryen is available, and print before/after wasm sizes for the Bevy testbed and Box2D provider assets.
+- Pages WASM builds now use a size-oriented `wasm-release` profile by default, run `wasm-opt -Oz` when Binaryen is available, print before/after wasm sizes for the Bevy testbed and Box2D provider assets, and show byte-level browser download progress while loading examples.
 - Updated dependency requirements to current crates.io releases: `nalgebra 0.35`, `glam 0.33`, and the native Dear ImGui testbed stack `dear-imgui-rs 0.15`, `dear-imgui-winit 0.15`, and `dear-imgui-glow 0.15`; refreshed `Cargo.lock` for the latest compatible transitive crates.
 - Pages are generated from `bevy_boxdd/examples/testbed_2d/scenes.rs` so the published example list stays aligned with the runnable Bevy Web scenes.
 - `xtask build-pages-wasm` now builds both the Emscripten Box2D provider assets and the Bevy testbed wasm assets required by Pages.
