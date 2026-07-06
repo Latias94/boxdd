@@ -9,16 +9,20 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 ## [Unreleased]
 
 ### Added
-- Added `bevy_boxdd`, a Bevy 0.19 adapter crate with ECS components, fixed-step systems, transform synchronization, physics messages, and a falling-box example.
+- Added `bevy_boxdd`, a Bevy 0.19 adapter crate with ECS components, fixed-step systems, transform synchronization, physics messages, recoverable error messages, query access, and examples for falling bodies, contacts, sensors, ray queries, and kinematic platforms.
 - Added `boxdd::dynamic_tree`, a safe owned wrapper for Box2D's standalone broad-phase dynamic tree.
 - Added `xtask` validation for Box2D API coverage, official sample parity, and the static Pages hub.
 - Added machine-checked API coverage docs and fixtures for the vendored Box2D `B2_API` surface.
 - Added `boxdd-sys` ABI/layout tests for representative FFI structs and smoke symbols.
 - Added static GitHub Pages source under `docs/pages/`.
+- Added shape-specific standalone `shape_cast` / `try_shape_cast` helpers for circle, capsule, segment, and polygon geometry.
+- Added default-running lifecycle tests for callback locks, panic containment, query callbacks, dynamic-tree callbacks, event-view deferred destruction, reusable event buffers, and world destroy/recycle behavior.
 
 ### Changed
 - Centralized workspace metadata and shared dependencies across `boxdd`, `boxdd-sys`, `bevy_boxdd`, and `xtask`.
 - Expanded docs and example catalog entries for dynamic tree, Bevy integration, CI gates, rustdoc alignment, FFI lifetime boundaries, and WASM status.
+- Tightened official sample parity so non-benchmark upstream samples must map to real Rust artifacts or carry an explicit deferral rationale.
+- Reduced raw-only API coverage by adding safe wrappers for straightforward shape-cast and joint runtime gaps; remaining raw/omitted rows now carry explicit rationale.
 
 ## [boxdd 0.4.0] - 2026-04-22
 

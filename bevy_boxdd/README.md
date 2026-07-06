@@ -41,6 +41,10 @@ fn setup(mut commands: Commands) {
 - `boxdd::World` is `!Send`/`!Sync`; the plugin stores it as a non-send Bevy resource.
 - Contact and sensor messages are only emitted for shapes whose `PhysicsMaterial` enables the
   matching Box2D event flags.
+- `BoxddPhysicsContext` exposes the native `boxdd::World` plus body/shape-to-entity mappings for
+  query workflows that need to turn Box2D ids back into ECS entities.
+- Recoverable plugin failures are emitted as `BoxddErrorMessage` by default, including invalid
+  collider or material inputs that fail before shape creation.
 
 ## Examples
 

@@ -26,7 +26,9 @@ Header comments are the best source for per-function semantics. Manual pages are
 - `events`: event buffer lifetime and snapshot vs zero-copy tradeoffs.
 - `query`: filter semantics, callback early exit, buffer reuse.
 - `dynamic_tree`: standalone broad phase ownership, proxy lifecycle, callback panic containment.
-- `bevy_boxdd`: XY/Z-rotation transform mapping, non-send world context, message emission requirements.
+- `collision` and `shapes::geometry`: standalone distance/cast/manifold helpers, shape-specific casts, and recoverable validation for malformed inputs.
+- `joints`: local-frame runtime getters/setters, world id escape hatches, and typed-joint error behavior.
+- `bevy_boxdd`: XY/Z-rotation transform mapping, non-send world context, query mapping, recoverable error messages, and contact/sensor message emission requirements.
 
 ## Drift checks
 
