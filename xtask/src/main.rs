@@ -1,6 +1,8 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    env, fs, io,
+    env,
+    fmt::Write as _,
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -46,6 +48,11 @@ struct MatrixRow {
     status: String,
     artifact: String,
     source: String,
+}
+
+struct SampleCoverage {
+    status: &'static str,
+    artifact: String,
 }
 
 fn main() {
@@ -476,7 +483,12 @@ fn sample_parity(root: &Path, args: &[String]) -> Result<()> {
 
     match mode {
         SampleParityMode::Write => {
-            write_sample_matrix(&matrix_path, &samples)?;
+            let existing_rows = if matrix_path.exists() {
+                read_sample_matrix(&matrix_path)?
+            } else {
+                Vec::new()
+            };
+            write_sample_matrix(&matrix_path, &samples, &existing_rows)?;
             println!(
                 "wrote {} upstream sample rows to {}",
                 samples.len(),
@@ -488,9 +500,10 @@ fn sample_parity(root: &Path, args: &[String]) -> Result<()> {
             let rows = read_sample_matrix(&matrix_path)?;
             validate_sample_matrix(root, &samples, &rows)?;
             println!(
-                "sample parity ok: {} upstream samples covered by {} matrix rows",
+                "sample parity ok: {} upstream samples covered by {} matrix rows ({})",
                 samples.len(),
-                rows.len()
+                rows.len(),
+                sample_status_summary(&rows)
             );
             Ok(())
         }
@@ -500,6 +513,22 @@ fn sample_parity(root: &Path, args: &[String]) -> Result<()> {
 enum SampleParityMode {
     Check,
     Write,
+}
+
+fn sample_status_summary(rows: &[MatrixRow]) -> String {
+    let mut counts = BTreeMap::<&str, usize>::new();
+    for row in rows {
+        *counts.entry(&row.status).or_default() += 1;
+    }
+
+    let mut summary = String::new();
+    for (index, (status, count)) in counts.into_iter().enumerate() {
+        if index > 0 {
+            summary.push_str(", ");
+        }
+        let _ = write!(&mut summary, "{status}: {count}");
+    }
+    summary
 }
 
 fn discover_upstream_samples(root: &Path) -> Result<BTreeSet<Sample>> {
@@ -573,10 +602,28 @@ fn quoted_strings(line: &str) -> Vec<String> {
     strings
 }
 
-fn write_sample_matrix(path: &Path, samples: &BTreeSet<Sample>) -> Result<()> {
+fn write_sample_matrix(
+    path: &Path,
+    samples: &BTreeSet<Sample>,
+    existing_rows: &[MatrixRow],
+) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|source| Error::io(parent, source))?;
     }
+
+    let existing_by_key: BTreeMap<_, _> = existing_rows
+        .iter()
+        .map(|row| {
+            (
+                (
+                    row.category.as_str(),
+                    row.name.as_str(),
+                    row.source.as_str(),
+                ),
+                row,
+            )
+        })
+        .collect();
 
     let mut output = String::new();
     output.push_str("# Box2D Sample Parity Matrix\n\n");
@@ -588,19 +635,154 @@ fn write_sample_matrix(path: &Path, samples: &BTreeSet<Sample>) -> Result<()> {
     output.push_str("- `TestOnly` means the sample is represented by a regression or API test rather than a user-facing example.\n");
     output.push_str("- `Deferred` means the sample is intentionally not covered yet and must carry a rationale in the artifact column.\n");
     output.push_str("- `UpstreamReference` means the upstream sample is indexed for traceability but has no Rust port yet.\n\n");
+    output.push_str("`UpstreamReference` is allowed only for benchmark rows. All non-benchmark rows must name a Rust artifact or an explicit deferral rationale.\n\n");
     output.push_str("## Matrix\n\n");
     output.push_str("| Category | Sample | Status | Artifact | Source |\n");
     output.push_str("|---|---|---|---|---|\n");
     for sample in samples {
+        let key = (
+            sample.category.as_str(),
+            sample.name.as_str(),
+            sample.source.as_str(),
+        );
+        let seeded_coverage;
+        let (status, artifact) = if let Some(row) = existing_by_key
+            .get(&key)
+            .filter(|row| !is_unassigned_sample_row(row))
+        {
+            (row.status.as_str(), row.artifact.as_str())
+        } else {
+            seeded_coverage = sample_coverage(sample);
+            (seeded_coverage.status, seeded_coverage.artifact.as_str())
+        };
         output.push_str(&format!(
-            "| `{}` | `{}` | `UpstreamReference` | Upstream sample indexed; Rust port not assigned yet. | `{}` |\n",
+            "| `{}` | `{}` | `{}` | {} | `{}` |\n",
             escape_table_cell(&sample.category),
             escape_table_cell(&sample.name),
+            escape_table_cell(status),
+            escape_table_cell(artifact),
             escape_table_cell(&sample.source)
         ));
     }
 
     fs::write(path, output).map_err(|source| Error::io(path, source))
+}
+
+fn sample_coverage(sample: &Sample) -> SampleCoverage {
+    let artifact = match sample.category.as_str() {
+        "Benchmark" => {
+            return SampleCoverage {
+                status: "UpstreamReference",
+                artifact: "Upstream performance sample indexed; exact benchmark parity is not assigned to the safe API examples.".to_owned(),
+            };
+        }
+        "Bodies" => link_artifact("boxdd/examples/bodies.rs"),
+        "Character" => link_artifact("boxdd/examples/character_mover.rs"),
+        "Collision" => collision_sample_artifact(&sample.name),
+        "Continuous" => continuous_sample_artifact(&sample.name),
+        "Determinism" => link_artifact("boxdd/examples/determinism.rs"),
+        "Events" => events_sample_artifact(&sample.name),
+        "Geometry" => link_artifact("boxdd/examples/convex_hull.rs"),
+        "Issues" => link_artifact("boxdd/examples/issues.rs"),
+        "Joints" => joints_sample_artifact(&sample.name),
+        "Robustness" => link_artifact("boxdd/examples/robustness.rs"),
+        "Shapes" => shapes_sample_artifact(&sample.name),
+        "Stacking" => stacking_sample_artifact(&sample.name),
+        "World" => link_artifact("boxdd/examples/world_basics.rs"),
+        _ => {
+            return SampleCoverage {
+                status: "Deferred",
+                artifact: format!(
+                    "No Rust artifact has been assigned for the `{}` category yet.",
+                    sample.category
+                ),
+            };
+        }
+    };
+
+    SampleCoverage {
+        status: "TeachingAdaptation",
+        artifact,
+    }
+}
+
+fn is_unassigned_sample_row(row: &MatrixRow) -> bool {
+    row.status == "UpstreamReference"
+        && row
+            .artifact
+            .contains("Upstream sample indexed; Rust port not assigned yet.")
+}
+
+fn link_artifact(path: &str) -> String {
+    format!("[`{path}`]({path})")
+}
+
+fn collision_sample_artifact(name: &str) -> String {
+    match name {
+        "Ray Cast" => link_artifact("boxdd/examples/raycast.rs"),
+        "Shape Cast" => link_artifact("boxdd/examples/shapecast.rs"),
+        "Cast World" => link_artifact("boxdd/examples/query_casts.rs"),
+        "Overlap World" => link_artifact("boxdd/examples/queries.rs"),
+        "Dynamic Tree" => link_artifact("boxdd/examples/dynamic_tree.rs"),
+        "Manifold" | "Smooth Manifold" => link_artifact("boxdd/tests/manifold_collision.rs"),
+        "Shape Distance" => link_artifact("boxdd/tests/distance.rs"),
+        "Time of Impact" => link_artifact("boxdd/examples/continuous_bullet.rs"),
+        _ => link_artifact("boxdd/examples/collision_basics.rs"),
+    }
+}
+
+fn continuous_sample_artifact(name: &str) -> String {
+    match name {
+        "Chain Drop" | "Chain Slide" | "Segment Slide" => {
+            link_artifact("boxdd/examples/chain_walkway.rs")
+        }
+        "Speculative Fallback" | "Speculative Ghost" | "Speculative Sliver" => {
+            link_artifact("boxdd/examples/robustness.rs")
+        }
+        _ => link_artifact("boxdd/examples/continuous_bullet.rs"),
+    }
+}
+
+fn events_sample_artifact(name: &str) -> String {
+    match name {
+        "Contact" | "Persistent Contact" => link_artifact("boxdd/examples/contacts.rs"),
+        "Foot Sensor" | "Sensor Bookend" | "Sensor Funnel" | "Sensor Hits" | "Sensor Types" => {
+            link_artifact("boxdd/examples/sensors.rs")
+        }
+        _ => link_artifact("boxdd/examples/events_summary.rs"),
+    }
+}
+
+fn joints_sample_artifact(name: &str) -> String {
+    match name {
+        "Bridge" | "Cantilever" => link_artifact("boxdd/examples/bridge.rs"),
+        "Driving" => link_artifact("boxdd/examples/car.rs"),
+        "Doohickey" => link_artifact("boxdd/examples/doohickey.rs"),
+        "Prismatic" | "Gear Lift" | "Scissor Lift" => {
+            link_artifact("boxdd/examples/prismatic_elevator.rs")
+        }
+        "Revolute" => link_artifact("boxdd/examples/revolute_motor.rs"),
+        "Wheel" => link_artifact("boxdd/examples/prismatic_wheel.rs"),
+        _ => link_artifact("boxdd/examples/joints.rs"),
+    }
+}
+
+fn shapes_sample_artifact(name: &str) -> String {
+    match name {
+        "Chain Link" | "Chain Shape" => link_artifact("boxdd/examples/chain_walkway.rs"),
+        "Filter" | "Custom Filter" => link_artifact("boxdd/tests/world_callbacks.rs"),
+        "Modify Geometry" => link_artifact("boxdd/examples/shapes_variety.rs"),
+        "Tangent Speed" => link_artifact("boxdd/examples/contacts.rs"),
+        _ => link_artifact("boxdd/examples/shapes_variety.rs"),
+    }
+}
+
+fn stacking_sample_artifact(name: &str) -> String {
+    match name {
+        "Vertical Stack" | "Tilted Stack" => link_artifact("boxdd/examples/stacking.rs"),
+        "Single Box" => link_artifact("boxdd/examples/basic.rs"),
+        _ => link_artifact("boxdd/examples/pyramid.rs"),
+    }
 }
 
 fn read_sample_matrix(path: &Path) -> Result<Vec<MatrixRow>> {
@@ -701,22 +883,48 @@ fn validate_sample_matrix(
                 row.category, row.name
             ));
         }
+        if row.status == "UpstreamReference" && row.category != "Benchmark" {
+            errors.push(format!(
+                "`{}` / `{}` must map to a Rust artifact or Deferred rationale; UpstreamReference is reserved for Benchmark rows",
+                row.category, row.name
+            ));
+        }
         if matches!(
             row.status.as_str(),
             "FaithfulPort" | "TeachingAdaptation" | "TestOnly"
         ) {
-            let artifact = strip_markdown_link_target(&row.artifact);
-            let artifact_path = root.join(artifact);
-            if !artifact_path.exists() {
+            let artifacts = artifact_paths(&row.artifact);
+            if artifacts.is_empty() {
                 errors.push(format!(
-                    "artifact `{}` for `{}` / `{}` does not exist",
-                    artifact, row.category, row.name
+                    "{} row for `{}` / `{}` needs at least one Rust artifact",
+                    row.status, row.category, row.name
+                ));
+            }
+            for artifact in &artifacts {
+                let artifact_path = root.join(artifact);
+                if !artifact_path.exists() {
+                    errors.push(format!(
+                        "artifact `{}` for `{}` / `{}` does not exist",
+                        artifact, row.category, row.name
+                    ));
+                }
+            }
+            if row.status == "TestOnly"
+                && !artifacts.iter().any(|artifact| {
+                    artifact.starts_with("boxdd/tests/")
+                        || artifact.starts_with("boxdd-sys/tests/")
+                        || artifact.starts_with("bevy_boxdd/tests/")
+                })
+            {
+                errors.push(format!(
+                    "TestOnly row for `{}` / `{}` must name a tests/ artifact",
+                    row.category, row.name
                 ));
             }
         }
-        if row.status == "Deferred" && row.artifact.trim().is_empty() {
+        if row.status == "Deferred" && !has_deferred_rationale(&row.artifact) {
             errors.push(format!(
-                "deferred row for `{}` / `{}` needs a rationale",
+                "deferred row for `{}` / `{}` needs a specific rationale",
                 row.category, row.name
             ));
         }
@@ -847,6 +1055,46 @@ fn strip_markdown_link_target(value: &str) -> &str {
     strip_code_ticks(value)
 }
 
+fn artifact_paths(value: &str) -> Vec<String> {
+    let mut paths = Vec::new();
+    let mut rest = value;
+    while let Some(start) = rest.find("](") {
+        rest = &rest[start + 2..];
+        let Some(end) = rest.find(')') else {
+            break;
+        };
+        push_artifact_path(rest[..end].trim(), &mut paths);
+        rest = &rest[end + 1..];
+    }
+
+    if paths.is_empty() {
+        for part in value.split([',', ';']) {
+            push_artifact_path(strip_markdown_link_target(part).trim(), &mut paths);
+        }
+    }
+
+    paths
+}
+
+fn push_artifact_path(value: &str, paths: &mut Vec<String>) {
+    let value = strip_code_ticks(value);
+    if value.is_empty() || value.contains(' ') || value.contains(':') {
+        return;
+    }
+    if value.ends_with(".rs") || value.ends_with(".md") || value.ends_with(".html") {
+        paths.push(value.replace('\\', "/"));
+    }
+}
+
+fn has_deferred_rationale(value: &str) -> bool {
+    let value = value.trim();
+    !value.is_empty()
+        && value.len() >= 24
+        && !value.eq_ignore_ascii_case("tbd")
+        && !value.eq_ignore_ascii_case("todo")
+        && !value.eq_ignore_ascii_case("deferred")
+}
+
 #[allow(dead_code)]
 fn group_by_category(samples: &BTreeSet<Sample>) -> BTreeMap<&str, Vec<&Sample>> {
     let mut grouped: BTreeMap<&str, Vec<&Sample>> = BTreeMap::new();
@@ -854,4 +1102,126 @@ fn group_by_category(samples: &BTreeSet<Sample>) -> BTreeMap<&str, Vec<&Sample>>
         grouped.entry(&sample.category).or_default().push(sample);
     }
     grouped
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn sample(category: &str, name: &str, source: &str) -> Sample {
+        Sample {
+            category: category.to_owned(),
+            name: name.to_owned(),
+            source: source.to_owned(),
+        }
+    }
+
+    fn row(category: &str, name: &str, status: &str, artifact: &str, source: &str) -> MatrixRow {
+        MatrixRow {
+            category: category.to_owned(),
+            name: name.to_owned(),
+            status: status.to_owned(),
+            artifact: artifact.to_owned(),
+            source: source.to_owned(),
+        }
+    }
+
+    fn unique_test_root(name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        env::temp_dir().join(format!("boxdd-xtask-{name}-{}-{nonce}", std::process::id()))
+    }
+
+    #[test]
+    fn non_benchmark_upstream_reference_fails() {
+        let root = unique_test_root("strict-reference");
+        fs::create_dir_all(&root).expect("test root should be created");
+        let source = "boxdd-sys/third-party/box2d/samples/sample_collision.cpp:1201";
+        let mut samples = BTreeSet::new();
+        samples.insert(sample("Collision", "Ray Cast", source));
+        let rows = [row(
+            "Collision",
+            "Ray Cast",
+            "UpstreamReference",
+            "Upstream sample indexed; Rust port not assigned yet.",
+            source,
+        )];
+
+        let error = validate_sample_matrix(&root, &samples, &rows)
+            .expect_err("non-benchmark upstream reference must fail");
+        assert!(error.to_string().contains("UpstreamReference is reserved"));
+        fs::remove_dir_all(&root).expect("test root should be cleaned up");
+    }
+
+    #[test]
+    fn mapped_artifacts_allow_multiple_paths() {
+        let root = unique_test_root("multiple-artifacts");
+        let example = root.join("boxdd/examples/raycast.rs");
+        let test = root.join("boxdd/tests/world_and_queries.rs");
+        fs::create_dir_all(example.parent().expect("example parent")).expect("example parent");
+        fs::create_dir_all(test.parent().expect("test parent")).expect("test parent");
+        fs::write(&example, "").expect("example should be written");
+        fs::write(&test, "").expect("test should be written");
+
+        let source = "boxdd-sys/third-party/box2d/samples/sample_collision.cpp:1201";
+        let mut samples = BTreeSet::new();
+        samples.insert(sample("Collision", "Ray Cast", source));
+        let rows = [row(
+            "Collision",
+            "Ray Cast",
+            "TeachingAdaptation",
+            "[`boxdd/examples/raycast.rs`](boxdd/examples/raycast.rs), `boxdd/tests/world_and_queries.rs`",
+            source,
+        )];
+
+        validate_sample_matrix(&root, &samples, &rows).expect("all mapped artifacts exist");
+        fs::remove_dir_all(&root).expect("test root should be cleaned up");
+    }
+
+    #[test]
+    fn write_preserves_existing_manual_mapping() {
+        let root = unique_test_root("preserve-write");
+        let matrix = root.join("docs/upstream-parity/box2d-sample-matrix.md");
+        let source = "boxdd-sys/third-party/box2d/samples/sample_collision.cpp:1201";
+        let mut samples = BTreeSet::new();
+        samples.insert(sample("Collision", "Ray Cast", source));
+        let rows = [row(
+            "Collision",
+            "Ray Cast",
+            "TeachingAdaptation",
+            "`boxdd/examples/raycast.rs`",
+            source,
+        )];
+
+        write_sample_matrix(&matrix, &samples, &rows).expect("matrix should be written");
+        let content = fs::read_to_string(&matrix).expect("matrix should be readable");
+        assert!(content.contains("`TeachingAdaptation`"));
+        assert!(content.contains("`boxdd/examples/raycast.rs`"));
+        fs::remove_dir_all(&root).expect("test root should be cleaned up");
+    }
+
+    #[test]
+    fn write_replaces_default_unassigned_mapping() {
+        let root = unique_test_root("replace-default");
+        let matrix = root.join("docs/upstream-parity/box2d-sample-matrix.md");
+        let source = "boxdd-sys/third-party/box2d/samples/sample_collision.cpp:1201";
+        let mut samples = BTreeSet::new();
+        samples.insert(sample("Collision", "Ray Cast", source));
+        let rows = [row(
+            "Collision",
+            "Ray Cast",
+            "UpstreamReference",
+            "Upstream sample indexed; Rust port not assigned yet.",
+            source,
+        )];
+
+        write_sample_matrix(&matrix, &samples, &rows).expect("matrix should be written");
+        let content = fs::read_to_string(&matrix).expect("matrix should be readable");
+        assert!(content.contains("`TeachingAdaptation`"));
+        assert!(content.contains("boxdd/examples/raycast.rs"));
+        fs::remove_dir_all(&root).expect("test root should be cleaned up");
+    }
 }

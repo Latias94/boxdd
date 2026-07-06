@@ -188,8 +188,8 @@
       <aside class="status-panel" aria-label="Project status">
         <h2>Status</h2>
         <div class="metric"><span>Vendored API symbols</span><strong>430</strong></div>
-        <div class="metric"><span>Official samples indexed</span><strong>133</strong></div>
-        <div class="metric"><span>Workspace crates</span><strong>3</strong></div>
+        <div class="metric"><span>Official sample rows</span><strong>133</strong></div>
+        <div class="metric"><span>Workspace crates</span><strong>4</strong></div>
       </aside>
     </div>
   </header>
@@ -212,7 +212,7 @@
         </a>
         <a class="tile" href="../upstream-parity/box2d-sample-matrix.md">
           <h3>Sample Parity</h3>
-          <p>Trace official Box2D samples to Rust artifacts or explicit upstream-reference rows.</p>
+          <p>Trace official Box2D samples to Rust artifacts, with benchmark-only upstream-reference rows.</p>
         </a>
         <a class="tile" href="../../bevy_boxdd/README.md">
           <h3>Bevy Adapter</h3>
@@ -238,7 +238,7 @@
       <div class="flow">
         <div><strong>Headers</strong>Scan vendored `include/box2d` for `B2_API` symbols.</div>
         <div><strong>Fixture</strong>Classify every symbol as safe, raw, omitted, or deferred.</div>
-        <div><strong>Samples</strong>Scan official sample registrations and validate the parity matrix.</div>
+        <div><strong>Samples</strong>Scan official sample registrations and require non-benchmark rows to map to Rust artifacts.</div>
         <div><strong>CI</strong>Run coverage, sample parity, docs, feature, and package checks before release.</div>
       </div>
     </section>

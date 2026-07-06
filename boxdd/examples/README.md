@@ -2,6 +2,9 @@
 
 This catalog groups the examples by the workflow they are meant to teach.
 
+Official Box2D sample parity is tracked in `../../docs/upstream-parity/box2d-sample-matrix.md`.
+`cargo run -p xtask -- sample-parity --check` requires every non-benchmark upstream sample row to map to a Rust example, test, or testbed scene.
+
 If you are new to `boxdd`, start with the first section instead of scanning file names alphabetically.
 
 ## Recommended First Examples
