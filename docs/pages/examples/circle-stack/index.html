@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Circle Stack - boxdd Bevy Example</title>
+  <link rel="icon" href="data:,">
+  <meta name="description" content="Dynamic circles stack and roll through the same contact solver path as the official sample.">
+  <style>
+:root {
+  color-scheme: dark;
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #0f0f12;
+  --muted: #a1a1aa;
+  --border: #27272a;
+  --accent: #2dd4bf;
+  --danger: #f87171;
+}
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; background: var(--background); color: var(--foreground); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+a { color: var(--foreground); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 4px; }
+.shell { display: grid; grid-template-rows: auto minmax(0, 1fr); width: 100%; height: 100%; }
+.topbar { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); background: rgba(9, 9, 11, 0.94); padding: 14px 18px; }
+.topbar h1 { margin: 4px 0 0; font-size: 20px; line-height: 1.2; letter-spacing: 0; }
+.topbar p { display: flex; flex-wrap: wrap; gap: 8px; margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+.topbar p span, .eyebrow { color: var(--accent); font-weight: 700; text-transform: uppercase; }
+.topbar nav { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 14px; }
+#bevy-app { position: relative; min-width: 0; min-height: 0; background: #020617; }
+#bevy-canvas { display: block; width: 100%; height: 100%; outline: none; touch-action: none; }
+#bevy-status { position: absolute; left: 18px; bottom: 18px; max-width: min(560px, calc(100% - 36px)); border: 1px solid var(--border); border-radius: 8px; background: rgba(15, 15, 18, 0.94); padding: 12px 14px; color: var(--muted); font-size: 14px; line-height: 1.45; }
+#bevy-status strong { display: block; margin-bottom: 4px; color: var(--foreground); font-size: 15px; }
+#bevy-status[data-state="error"] strong { color: var(--danger); }
+#bevy-status[data-state="running"] { opacity: 0; pointer-events: none; transition: opacity 180ms ease; }
+.directory { min-height: 100%; }
+.directory-main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 54px 0; }
+.directory-main h1 { margin: 0; font-size: clamp(34px, 6vw, 58px); line-height: 1; letter-spacing: 0; }
+.lead { max-width: 720px; color: var(--muted); font-size: 17px; }
+.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 28px; }
+.card { display: grid; min-height: 150px; gap: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); padding: 16px; }
+.card:hover { border-color: #52525b; text-decoration: none; }
+.card span { color: var(--accent); font-size: 12px; font-weight: 700; text-transform: uppercase; }
+.card strong { font-size: 18px; }
+.card small { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.card em { color: #d4d4d8; font-size: 12px; font-style: normal; line-height: 1.45; }
+.upstream-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.upstream-list span { border: 1px solid var(--border); border-radius: 999px; background: rgba(39, 39, 42, 0.7); padding: 4px 7px; color: #d4d4d8; font-size: 12px; line-height: 1.2; text-transform: none; }
+</style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div>
+        <a href="../../">boxdd Examples</a>
+        <h1>Circle Stack</h1>
+        <p><span>Stacking</span>Dynamic circles stack and roll through the same contact solver path as the official sample.</p>
+        <div class="upstream-list"><span>Stacking / Circle Stack · teaching adaptation</span></div>
+      </div>
+      <nav>
+        <a href="../">All Bevy examples</a>
+        <a href="https://github.com/Latias94/boxdd/tree/main/bevy_boxdd/examples/testbed_2d">Source</a>
+      </nav>
+    </header>
+    <main id="bevy-app" data-scene-id="circle-stack" data-scene-name="Circle Stack" data-scene-category="Stacking">
+      <canvas id="bevy-canvas" tabindex="0"></canvas>
+      <div id="bevy-status" role="status" aria-live="polite">
+        <strong>Loading Circle Stack</strong>
+        <span>Preparing the shared Box2D provider and the Rust Bevy wasm module.</span>
+      </div>
+    </main>
+  </div>
+  <script type="module" src="../../bevy-testbed/loader.js"></script>
+</body>
+</html>

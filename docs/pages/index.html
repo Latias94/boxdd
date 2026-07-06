@@ -3,67 +3,49 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>boxdd Examples</title>
+  <title>boxdd Bevy Examples</title>
   <link rel="icon" href="data:,">
-  <meta name="description" content="Generated example index for boxdd and bevy_boxdd.">
+  <meta name="description" content="Direct Bevy Web examples for boxdd.">
   <style>
 :root {
   color-scheme: dark;
   --background: #09090b;
   --foreground: #fafafa;
-  --card: #101014;
+  --card: #0f0f12;
   --muted: #a1a1aa;
   --border: #27272a;
-  --accent: #38bdf8;
-  --accent-strong: #facc15;
+  --accent: #2dd4bf;
+  --danger: #f87171;
 }
 * { box-sizing: border-box; }
-html, body { width: 100%; min-height: 100%; margin: 0; background: var(--background); color: var(--foreground); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+html, body { width: 100%; height: 100%; margin: 0; background: var(--background); color: var(--foreground); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 a { color: var(--foreground); text-decoration: none; }
 a:hover { text-decoration: underline; text-underline-offset: 4px; }
+.shell { display: grid; grid-template-rows: auto minmax(0, 1fr); width: 100%; height: 100%; }
 .topbar { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); background: rgba(9, 9, 11, 0.94); padding: 14px 18px; }
-.topbar > a { color: var(--accent); font-weight: 700; }
+.topbar h1 { margin: 4px 0 0; font-size: 20px; line-height: 1.2; letter-spacing: 0; }
+.topbar p { display: flex; flex-wrap: wrap; gap: 8px; margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+.topbar p span, .eyebrow { color: var(--accent); font-weight: 700; text-transform: uppercase; }
 .topbar nav { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 14px; }
-.directory-main, .detail-main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 54px 0; }
-.directory-main h1, .detail-main h1 { max-width: 840px; margin: 0; font-size: clamp(34px, 6vw, 58px); line-height: 1; letter-spacing: 0; }
-.eyebrow { color: var(--accent); font-size: 12px; font-weight: 800; letter-spacing: 0; text-transform: uppercase; }
-.lead { max-width: 760px; color: var(--muted); font-size: 17px; line-height: 1.55; }
-.runtime-panel { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; justify-content: space-between; max-width: 980px; margin: 28px 0; border: 1px solid #36515d; border-radius: 8px; background: #0b1720; padding: 18px; }
-.runtime-panel div { max-width: 700px; }
-.runtime-panel span { color: var(--accent); font-size: 12px; font-weight: 800; text-transform: uppercase; }
-.runtime-panel strong { display: block; margin-top: 7px; font-size: 20px; }
-.runtime-panel p { margin: 8px 0 0; color: var(--muted); line-height: 1.5; }
-.runtime-panel a { border: 1px solid #67e8f9; border-radius: 6px; color: #ecfeff; padding: 10px 14px; font-weight: 800; }
-.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 12px; margin-top: 28px; }
-.card { display: grid; min-height: 170px; gap: 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); padding: 16px; }
+#bevy-app { position: relative; min-width: 0; min-height: 0; background: #020617; }
+#bevy-canvas { display: block; width: 100%; height: 100%; outline: none; touch-action: none; }
+#bevy-status { position: absolute; left: 18px; bottom: 18px; max-width: min(560px, calc(100% - 36px)); border: 1px solid var(--border); border-radius: 8px; background: rgba(15, 15, 18, 0.94); padding: 12px 14px; color: var(--muted); font-size: 14px; line-height: 1.45; }
+#bevy-status strong { display: block; margin-bottom: 4px; color: var(--foreground); font-size: 15px; }
+#bevy-status[data-state="error"] strong { color: var(--danger); }
+#bevy-status[data-state="running"] { opacity: 0; pointer-events: none; transition: opacity 180ms ease; }
+.directory { min-height: 100%; }
+.directory-main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 54px 0; }
+.directory-main h1 { margin: 0; font-size: clamp(34px, 6vw, 58px); line-height: 1; letter-spacing: 0; }
+.lead { max-width: 720px; color: var(--muted); font-size: 17px; }
+.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 28px; }
+.card { display: grid; min-height: 150px; gap: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); padding: 16px; }
 .card:hover { border-color: #52525b; text-decoration: none; }
-.card span, .command-panel span, .source-panel span { color: var(--accent); font-size: 12px; font-weight: 800; text-transform: uppercase; }
-.card strong { font-size: 18px; line-height: 1.25; }
+.card span { color: var(--accent); font-size: 12px; font-weight: 700; text-transform: uppercase; }
+.card strong { font-size: 18px; }
 .card small { color: var(--muted); font-size: 13px; line-height: 1.5; }
-.card em { align-self: end; color: #d4d4d8; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 12px; font-style: normal; line-height: 1.45; overflow-wrap: anywhere; }
-.command-panel, .source-panel { max-width: 860px; margin-top: 24px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); padding: 18px; }
-pre { margin: 12px 0 10px; overflow-x: auto; border-radius: 6px; background: #020617; padding: 14px; }
-code { color: var(--accent-strong); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 14px; }
-.command-panel p { margin: 0; color: var(--muted); line-height: 1.5; }
-.source-panel a { display: inline-block; margin-top: 10px; color: var(--foreground); overflow-wrap: anywhere; }
-.runtime-shell { min-height: 100vh; }
-.runtime-main { display: grid; grid-template-columns: minmax(320px, 440px) minmax(0, 1fr); gap: 24px; width: min(1360px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0; }
-.runtime-copy { min-width: 0; }
-.runtime-copy h1 { margin: 0; font-size: 38px; line-height: 1; letter-spacing: 0; }
-.runtime-status { border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--muted); padding: 14px; line-height: 1.45; }
-.runtime-status strong { display: block; margin-bottom: 4px; color: var(--foreground); }
-.runtime-status[data-state="error"] strong { color: #fca5a5; }
-.runtime-status[data-state="running"] strong { color: #86efac; }
-.metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 16px 0 0; }
-.metric-grid div { border: 1px solid var(--border); border-radius: 8px; background: var(--card); padding: 12px; }
-.metric-grid dt { color: var(--muted); font-size: 12px; text-transform: uppercase; }
-.metric-grid dd { margin: 6px 0 0; color: var(--accent-strong); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 18px; }
-.runtime-stage { min-width: 0; border: 1px solid var(--border); border-radius: 8px; background: #05080c; overflow: hidden; }
-#runtime-canvas { display: block; width: 100%; height: min(70vh, 640px); min-height: 420px; }
-@media (max-width: 920px) {
-  .runtime-main { grid-template-columns: 1fr; }
-  #runtime-canvas { height: 420px; }
-}
+.card em { color: #d4d4d8; font-size: 12px; font-style: normal; line-height: 1.45; }
+.upstream-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.upstream-list span { border: 1px solid var(--border); border-radius: 999px; background: rgba(39, 39, 42, 0.7); padding: 4px 7px; color: #d4d4d8; font-size: 12px; line-height: 1.2; text-transform: none; }
 </style>
 </head>
 <body>
@@ -71,108 +53,29 @@ code { color: var(--accent-strong); font-family: ui-monospace, SFMono-Regular, M
     <header class="topbar">
       <a href="./">boxdd Examples</a>
       <nav>
-        <a href="wasm/">Runtime</a>
-        <a href="examples/">Examples</a>
         <a href="https://github.com/Latias94/boxdd">GitHub</a>
         <a href="https://docs.rs/boxdd">Docs.rs</a>
       </nav>
     </header>
     <main class="directory-main">
-      <p class="eyebrow">Generated example index</p>
-      <h1>Find the Rust example that matches the workflow</h1>
-      <p class="lead">This page is generated from the checked-in Cargo examples, the desktop testbed scene registry, and the browser provider runtime smoke.</p>
-      <section class="runtime-panel">
-        <div>
-          <span>Browser runtime</span>
-          <strong>Run Box2D through Rust WASM</strong>
-          <p>The runtime page loads the Rust `boxdd-provider-smoke` wasm module and the Emscripten-built Box2D provider module with shared memory, then draws live simulation state on canvas.</p>
-        </div>
-        <a href="wasm/">Open runtime</a>
-      </section>
+      <p class="eyebrow">Bevy Web examples</p>
+      <h1>Run a Box2D scene</h1>
+      <p class="lead">Each entry opens a dedicated Bevy + egui WASM page backed by the same Box2D provider runtime.</p>
       <section class="card-grid">
-        <a class="card" href="examples/bevy-child-colliders-2d/"><span>Bevy ECS</span><strong>Child Colliders 2D</strong><small>Compound body authoring with parent body and child collider entities.</small><em>cargo run -p bevy_boxdd --example child_colliders_2d</em></a>
-        <a class="card" href="examples/bevy-collision-filter-2d/"><span>Bevy ECS</span><strong>Collision Filter 2D</strong><small>Collision category and mask setup through `PhysicsMaterial::filter`.</small><em>cargo run -p bevy_boxdd --example collision_filter_2d</em></a>
-        <a class="card" href="examples/bevy-contact-events-2d/"><span>Bevy ECS</span><strong>Contact Events 2D</strong><small>Contact begin/end/hit messages mapped back to Bevy entities.</small><em>cargo run -p bevy_boxdd --example contact_events_2d</em></a>
-        <a class="card" href="examples/bevy-debug-draw-collect-2d/"><span>Bevy ECS</span><strong>Debug Draw Collect 2D</strong><small>Render-agnostic debug draw command collection from the Bevy context.</small><em>cargo run -p bevy_boxdd --example debug_draw_collect_2d</em></a>
-        <a class="card" href="examples/bevy-debug-draw-gizmos-2d/"><span>Bevy ECS</span><strong>Debug Draw Gizmos 2D</strong><small>Rendering collected debug draw commands through Bevy Gizmos.</small><em>cargo run -p bevy_boxdd --example debug_draw_gizmos_2d</em></a>
-        <a class="card" href="examples/bevy-falling-box-2d/"><span>Bevy ECS</span><strong>Falling Box 2D</strong><small>Basic body, collider, material, fixed-step stepping, and transform sync.</small><em>cargo run -p bevy_boxdd --example falling_box_2d</em></a>
-        <a class="card" href="examples/bevy-joint-bridge-2d/"><span>Bevy ECS</span><strong>Joint Bridge 2D</strong><small>Distance and revolute joint descriptors authored as ECS components.</small><em>cargo run -p bevy_boxdd --example joint_bridge_2d</em></a>
-        <a class="card" href="examples/bevy-kinematic-platform-2d/"><span>Bevy ECS</span><strong>Kinematic Platform 2D</strong><small>Driving a kinematic body from Bevy transforms with `BevyToPhysics` sync.</small><em>cargo run -p bevy_boxdd --example kinematic_platform_2d</em></a>
-        <a class="card" href="examples/bevy-overlap-query-2d/"><span>Bevy ECS</span><strong>Overlap Query 2D</strong><small>Entity-mapped AABB overlap queries for triggers, pickups, and editor selection.</small><em>cargo run -p bevy_boxdd --example overlap_query_2d</em></a>
-        <a class="card" href="examples/bevy-ray-query-2d/"><span>Bevy ECS</span><strong>Ray Query 2D</strong><small>Entity-mapped ray queries through `BoxddPhysicsContext`.</small><em>cargo run -p bevy_boxdd --example ray_query_2d</em></a>
-        <a class="card" href="examples/bevy-sensor-events-2d/"><span>Bevy ECS</span><strong>Sensor Events 2D</strong><small>Sensor begin/end messages for trigger-style overlaps.</small><em>cargo run -p bevy_boxdd --example sensor_events_2d</em></a>
-        <a class="card" href="examples/core-debug-draw/"><span>Core Examples</span><strong>Debug Draw</strong><small>Collected debug draw commands through the safe API.</small><em>cargo run -p boxdd --example debug_draw</em></a>
-        <a class="card" href="examples/core-basic/"><span>Core World</span><strong>Basic</strong><small>Small foundation scene for the core safe API.</small><em>cargo run -p boxdd --example basic</em></a>
-        <a class="card" href="examples/core-bodies/"><span>Core World</span><strong>Bodies</strong><small>Body runtime control helpers such as velocity, damping, sleep, and transforms.</small><em>cargo run -p boxdd --example bodies</em></a>
-        <a class="card" href="examples/core-world-basics/"><span>Core World</span><strong>World Basics</strong><small>Minimal world, body, shape creation, stepping, and cleanup.</small><em>cargo run -p boxdd --example world_basics</em></a>
-        <a class="card" href="examples/core-world-handle-reads/"><span>Core World</span><strong>World Handle Reads</strong><small>Source example for `world_handle_reads`.</small><em>cargo run -p boxdd --example world_handle_reads</em></a>
-        <a class="card" href="examples/core-contacts/"><span>Events</span><strong>Contacts</strong><small>Contact begin/end/hit behavior and inspection.</small><em>cargo run -p boxdd --example contacts</em></a>
-        <a class="card" href="examples/core-events-summary/"><span>Events</span><strong>Events Summary</strong><small>Owned event snapshots and reusable event buffers.</small><em>cargo run -p boxdd --example events_summary</em></a>
-        <a class="card" href="examples/core-events-view/"><span>Events</span><strong>Events View</strong><small>Borrowed zero-copy event views scoped to a closure.</small><em>cargo run -p boxdd --example events_view</em></a>
-        <a class="card" href="examples/core-sensors/"><span>Events</span><strong>Sensors</strong><small>Sensor begin/end messages and trigger-style overlap behavior.</small><em>cargo run -p boxdd --example sensors</em></a>
-        <a class="card" href="examples/core-chain-walkway/"><span>Gameplay Scenes</span><strong>Chain Walkway</strong><small>Chain segments and moving bodies over connected terrain.</small><em>cargo run -p boxdd --example chain_walkway</em></a>
-        <a class="card" href="examples/core-continuous-bullet/"><span>Gameplay Scenes</span><strong>Continuous Bullet</strong><small>Continuous collision for fast bullet-style motion.</small><em>cargo run -p boxdd --example continuous_bullet</em></a>
-        <a class="card" href="examples/core-issues/"><span>Gameplay Scenes</span><strong>Issues</strong><small>Source example for `issues`.</small><em>cargo run -p boxdd --example issues</em></a>
-        <a class="card" href="examples/core-kinematic-platform/"><span>Gameplay Scenes</span><strong>Kinematic Platform</strong><small>Kinematic-body interaction pattern.</small><em>cargo run -p boxdd --example kinematic_platform</em></a>
-        <a class="card" href="examples/core-pyramid/"><span>Gameplay Scenes</span><strong>Pyramid</strong><small>Source example for `pyramid`.</small><em>cargo run -p boxdd --example pyramid</em></a>
-        <a class="card" href="examples/core-robustness/"><span>Gameplay Scenes</span><strong>Robustness</strong><small>Source example for `robustness`.</small><em>cargo run -p boxdd --example robustness</em></a>
-        <a class="card" href="examples/core-stacking/"><span>Gameplay Scenes</span><strong>Stacking</strong><small>Source example for `stacking`.</small><em>cargo run -p boxdd --example stacking</em></a>
-        <a class="card" href="examples/core-determinism/"><span>Integration</span><strong>Determinism</strong><small>Deterministic stepping expectations.</small><em>cargo run -p boxdd --example determinism</em></a>
-        <a class="card" href="examples/core-mint-interop/"><span>Integration</span><strong>Mint Interop</strong><small>Math interop with `mint` vectors and transforms.</small><em>cargo run -p boxdd --example mint_interop --features mint</em></a>
-        <a class="card" href="examples/core-physics-thread/"><span>Integration</span><strong>Physics Thread</strong><small>Dedicated-thread ownership model for multi-threaded apps.</small><em>cargo run -p boxdd --example physics_thread</em></a>
-        <a class="card" href="examples/core-scene-serialize/"><span>Integration</span><strong>Scene Serialize</strong><small>Scene snapshot round-trip using the `serialize` feature.</small><em>cargo run -p boxdd --example scene_serialize --features serialize</em></a>
-        <a class="card" href="examples/core-wasm-wasi-smoke/"><span>Integration</span><strong>WASM WASI Smoke</strong><small>Minimal WASI-oriented smoke example for the wasm target.</small><em>cargo build -p boxdd --example wasm_wasi_smoke --target wasm32-wasip1</em></a>
-        <a class="card" href="examples/core-testbed-imgui-glow/"><span>Interactive Testbed</span><strong>Testbed ImGui Glow</strong><small>Native ImGui + Glow desktop testbed that hosts many scenes behind one UI.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/core-bridge/"><span>Joints</span><strong>Bridge</strong><small>Distance-joint bridge scene.</small><em>cargo run -p boxdd --example bridge</em></a>
-        <a class="card" href="examples/core-car/"><span>Joints</span><strong>Car</strong><small>Vehicle-style wheel and motor control sample.</small><em>cargo run -p boxdd --example car</em></a>
-        <a class="card" href="examples/core-doohickey/"><span>Joints</span><strong>Doohickey</strong><small>Source example for `doohickey`.</small><em>cargo run -p boxdd --example doohickey</em></a>
-        <a class="card" href="examples/core-joints/"><span>Joints</span><strong>Joints</strong><small>Joint setup across the common safe wrapper paths.</small><em>cargo run -p boxdd --example joints</em></a>
-        <a class="card" href="examples/core-joints-presets/"><span>Joints</span><strong>Joints Presets</strong><small>Higher-level joint presets for common setups.</small><em>cargo run -p boxdd --example joints_presets</em></a>
-        <a class="card" href="examples/core-prismatic-elevator/"><span>Joints</span><strong>Prismatic Elevator</strong><small>Source example for `prismatic_elevator`.</small><em>cargo run -p boxdd --example prismatic_elevator</em></a>
-        <a class="card" href="examples/core-prismatic-wheel/"><span>Joints</span><strong>Prismatic Wheel</strong><small>Source example for `prismatic_wheel`.</small><em>cargo run -p boxdd --example prismatic_wheel</em></a>
-        <a class="card" href="examples/core-revolute-motor/"><span>Joints</span><strong>Revolute Motor</strong><small>Source example for `revolute_motor`.</small><em>cargo run -p boxdd --example revolute_motor</em></a>
-        <a class="card" href="examples/core-benchmark/"><span>Performance</span><strong>Benchmark</strong><small>Performance-oriented stress sample.</small><em>cargo run -p boxdd --example benchmark --release</em></a>
-        <a class="card" href="examples/core-buffer-reuse/"><span>Queries And Collision</span><strong>Buffer Reuse</strong><small>Hot-path `*_into` and visitor APIs that reuse caller-owned buffers.</small><em>cargo run -p boxdd --example buffer_reuse</em></a>
-        <a class="card" href="examples/core-character-mover/"><span>Queries And Collision</span><strong>Character Mover</strong><small>Mover casts, plane solving, and clipped movement against world geometry.</small><em>cargo run -p boxdd --example character_mover</em></a>
-        <a class="card" href="examples/core-collision-basics/"><span>Queries And Collision</span><strong>Collision Basics</strong><small>Standalone low-level collision helpers without a live world.</small><em>cargo run -p boxdd --example collision_basics</em></a>
-        <a class="card" href="examples/core-dynamic-tree/"><span>Queries And Collision</span><strong>Dynamic Tree</strong><small>Standalone Box2D broad-phase tree ownership and query helpers.</small><em>cargo run -p boxdd --example dynamic_tree</em></a>
-        <a class="card" href="examples/core-queries/"><span>Queries And Collision</span><strong>Queries</strong><small>AABB overlap query styles, reusable buffers, visitor callbacks, and polygon overlap helpers.</small><em>cargo run -p boxdd --example queries</em></a>
-        <a class="card" href="examples/core-query-casts/"><span>Queries And Collision</span><strong>Query Casts</strong><small>Ray casts, shape casts, and reusable cast-hit buffers.</small><em>cargo run -p boxdd --example query_casts</em></a>
-        <a class="card" href="examples/core-raycast/"><span>Queries And Collision</span><strong>Raycast</strong><small>Focused world ray-cast walkthrough.</small><em>cargo run -p boxdd --example raycast</em></a>
-        <a class="card" href="examples/core-shapecast/"><span>Queries And Collision</span><strong>Shapecast</strong><small>Focused shape-cast walkthrough.</small><em>cargo run -p boxdd --example shapecast</em></a>
-        <a class="card" href="examples/core-convex-hull/"><span>Shapes</span><strong>Convex Hull</strong><small>Source example for `convex_hull`.</small><em>cargo run -p boxdd --example convex_hull</em></a>
-        <a class="card" href="examples/core-donut/"><span>Shapes</span><strong>Donut</strong><small>Source example for `donut`.</small><em>cargo run -p boxdd --example donut</em></a>
-        <a class="card" href="examples/core-shapes-variety/"><span>Shapes</span><strong>Shapes Variety</strong><small>Source example for `shapes_variety`.</small><em>cargo run -p boxdd --example shapes_variety</em></a>
-        <a class="card" href="examples/testbed-bodies-lab/"><span>Testbed Bodies</span><strong>Bodies: Lab</strong><small>Interactive ImGui testbed scene backed by the `bodies_lab` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-collision-manifold-basic/"><span>Testbed Collision</span><strong>Collision: Manifold (basic)</strong><small>Interactive ImGui testbed scene backed by the `manifold` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-collision-shape-distance/"><span>Testbed Collision</span><strong>Collision: Shape Distance</strong><small>Interactive ImGui testbed scene backed by the `shape_distance` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-continuous-lab/"><span>Testbed Continuous</span><strong>Continuous: Lab</strong><small>Interactive ImGui testbed scene backed by the `continuous_lab` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-joints-breakable/"><span>Testbed Joints</span><strong>Joints: Breakable</strong><small>Interactive ImGui testbed scene backed by the `breakable_joint` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-joints-lab-unified/"><span>Testbed Joints</span><strong>Joints: Lab (Unified)</strong><small>Interactive ImGui testbed scene backed by the `joints_lab` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-joints-motion-locks/"><span>Testbed Joints</span><strong>Joints: Motion Locks</strong><small>Interactive ImGui testbed scene backed by the `motion_locks` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-joints-separation/"><span>Testbed Joints</span><strong>Joints: Separation</strong><small>Interactive ImGui testbed scene backed by the `joint_separation` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-materials-conveyor-rolling/"><span>Testbed Materials</span><strong>Materials: Conveyor &amp; Rolling</strong><small>Interactive ImGui testbed scene backed by the `materials` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-queries-casts-toi/"><span>Testbed Queries</span><strong>Queries: Casts &amp; TOI</strong><small>Interactive ImGui testbed scene backed by the `query_casts` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-queries-overlap/"><span>Testbed Queries</span><strong>Queries: Overlap</strong><small>Interactive ImGui testbed scene backed by the `overlap_queries` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-benchmark/"><span>Testbed Scenes</span><strong>Benchmark</strong><small>Interactive ImGui testbed scene backed by the `benchmark` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-bridge/"><span>Testbed Scenes</span><strong>Bridge</strong><small>Interactive ImGui testbed scene backed by the `bridge` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-car/"><span>Testbed Scenes</span><strong>Car</strong><small>Interactive ImGui testbed scene backed by the `car` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-chain-walkway/"><span>Testbed Scenes</span><strong>Chain Walkway</strong><small>Interactive ImGui testbed scene backed by the `chain_walkway` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-character-mover/"><span>Testbed Scenes</span><strong>Character Mover</strong><small>Interactive ImGui testbed scene backed by the `character_mover` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-contacts/"><span>Testbed Scenes</span><strong>Contacts</strong><small>Interactive ImGui testbed scene backed by the `contacts` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-convex-hull/"><span>Testbed Scenes</span><strong>Convex Hull</strong><small>Interactive ImGui testbed scene backed by the `convex_hull` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-determinism/"><span>Testbed Scenes</span><strong>Determinism</strong><small>Interactive ImGui testbed scene backed by the `determinism` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-doohickey/"><span>Testbed Scenes</span><strong>Doohickey</strong><small>Interactive ImGui testbed scene backed by the `doohickey` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-events-summary/"><span>Testbed Scenes</span><strong>Events Summary</strong><small>Interactive ImGui testbed scene backed by the `events` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-issues/"><span>Testbed Scenes</span><strong>Issues</strong><small>Interactive ImGui testbed scene backed by the `issues` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-pyramid/"><span>Testbed Scenes</span><strong>Pyramid</strong><small>Interactive ImGui testbed scene backed by the `pyramid` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-robustness/"><span>Testbed Scenes</span><strong>Robustness</strong><small>Interactive ImGui testbed scene backed by the `robustness` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-sensors/"><span>Testbed Scenes</span><strong>Sensors</strong><small>Interactive ImGui testbed scene backed by the `sensors` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-shape-editing/"><span>Testbed Scenes</span><strong>Shape Editing</strong><small>Interactive ImGui testbed scene backed by the `shape_editing` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-shapes-variety/"><span>Testbed Scenes</span><strong>Shapes Variety</strong><small>Interactive ImGui testbed scene backed by the `shapes` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-soft-body-donut/"><span>Testbed Scenes</span><strong>Soft Body (Donut)</strong><small>Interactive ImGui testbed scene backed by the `soft_body` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-stacking/"><span>Testbed Scenes</span><strong>Stacking</strong><small>Interactive ImGui testbed scene backed by the `stacking` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
-        <a class="card" href="examples/testbed-world-lab/"><span>Testbed World</span><strong>World: Lab</strong><small>Interactive ImGui testbed scene backed by the `world_lab` scene module.</small><em>cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed</em></a>
+        <a class="card" href="examples/single-box/"><span>Stacking</span><strong>Single Box</strong><small>A dynamic box starts with horizontal velocity and settles on a long static segment.</small><em>Stacking / Single Box</em></a>
+        <a class="card" href="examples/tilted-stack/"><span>Stacking</span><strong>Tilted Stack</strong><small>Offset columns of rounded boxes show solver stability under uneven stacking pressure.</small><em>Stacking / Tilted Stack</em></a>
+        <a class="card" href="examples/circle-stack/"><span>Stacking</span><strong>Circle Stack</strong><small>Dynamic circles stack and roll through the same contact solver path as the official sample.</small><em>Stacking / Circle Stack</em></a>
+        <a class="card" href="examples/pyramid/"><span>Benchmark</span><strong>Large Pyramid</strong><small>A browser-sized version of the classic Box2D pyramid solver stress sample.</small><em>Benchmark / Large Pyramid</em></a>
+        <a class="card" href="examples/body-type/"><span>Bodies</span><strong>Body Type</strong><small>Static, kinematic, and dynamic bodies share one scene so body behavior is visible.</small><em>Bodies / Body Type</em></a>
+        <a class="card" href="examples/kinematic-platform/"><span>Bodies</span><strong>Kinematic</strong><small>An app-controlled platform drives dynamic boxes through Bevy-to-Box2D transform sync.</small><em>Bodies / Kinematic</em></a>
+        <a class="card" href="examples/continuous-bullet/"><span>Continuous</span><strong>Skinny Box</strong><small>A fast bullet body targets a thin wall with continuous collision enabled.</small><em>Continuous / Skinny Box</em></a>
+        <a class="card" href="examples/restitution/"><span>Shapes</span><strong>Restitution</strong><small>Identical circles fall onto pads with increasing restitution values.</small><em>Shapes / Restitution</em></a>
+        <a class="card" href="examples/friction/"><span>Shapes</span><strong>Friction</strong><small>Boxes slide across ramps and floors with different friction coefficients.</small><em>Shapes / Friction</em></a>
+        <a class="card" href="examples/shape-filter/"><span>Shapes</span><strong>Filter</strong><small>Category and mask bits split bodies into groups that collide or pass through each other.</small><em>Shapes / Filter</em></a>
+        <a class="card" href="examples/sensor-funnel/"><span>Events</span><strong>Sensor Funnel</strong><small>Falling visitors pass through a transparent sensor and update the egui counters.</small><em>Events / Sensor Funnel</em></a>
+        <a class="card" href="examples/contact-event/"><span>Events</span><strong>Contact</strong><small>Contact begin, end, and hit events are enabled on dynamic bodies and reflected in the panel.</small><em>Events / Contact</em></a>
+        <a class="card" href="examples/bridge/"><span>Joints</span><strong>Bridge</strong><small>Distance joints connect planks into a bridge and a dropped weight disturbs the chain.</small><em>Joints / Distance Joint, Joints / Bridge</em></a>
+        <a class="card" href="examples/revolute/"><span>Joints</span><strong>Revolute</strong><small>A revolute joint creates a pendulum that strikes a small stack.</small><em>Joints / Revolute</em></a>
       </section>
     </main>
   </div>

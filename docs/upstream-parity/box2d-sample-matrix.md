@@ -25,7 +25,7 @@ Rows are validated by `cargo run -p xtask -- sample-parity --check`.
 | `Benchmark` | `CreateDestroy` | `UpstreamReference` | Upstream performance sample indexed; exact benchmark parity is not assigned to the safe API examples. | `boxdd-sys/third-party/box2d/samples/sample_benchmark.cpp:849` |
 | `Benchmark` | `Joint Grid` | `UpstreamReference` | Upstream performance sample indexed; exact benchmark parity is not assigned to the safe API examples. | `boxdd-sys/third-party/box2d/samples/sample_benchmark.cpp:990` |
 | `Benchmark` | `Kinematic` | `UpstreamReference` | Upstream performance sample indexed; exact benchmark parity is not assigned to the safe API examples. | `boxdd-sys/third-party/box2d/samples/sample_benchmark.cpp:1169` |
-| `Benchmark` | `Large Pyramid` | `UpstreamReference` | Upstream performance sample indexed; exact benchmark parity is not assigned to the safe API examples. | `boxdd-sys/third-party/box2d/samples/sample_benchmark.cpp:694` |
+| `Benchmark` | `Large Pyramid` | `TeachingAdaptation` | [`bevy_boxdd/examples/testbed_2d/scenes.rs`](bevy_boxdd/examples/testbed_2d/scenes.rs), [`boxdd/examples/pyramid.rs`](boxdd/examples/pyramid.rs) | `boxdd-sys/third-party/box2d/samples/sample_benchmark.cpp:694` |
 | `Benchmark` | `Many Pyramids` | `UpstreamReference` | Upstream performance sample indexed; exact benchmark parity is not assigned to the safe API examples. | `boxdd-sys/third-party/box2d/samples/sample_benchmark.cpp:718` |
 | `Benchmark` | `Many Tumblers` | `UpstreamReference` | Upstream performance sample indexed; exact benchmark parity is not assigned to the safe API examples. | `boxdd-sys/third-party/box2d/samples/sample_benchmark.cpp:670` |
 | `Benchmark` | `Rain` | `UpstreamReference` | Upstream performance sample indexed; exact benchmark parity is not assigned to the safe API examples. | `boxdd-sys/third-party/box2d/samples/sample_benchmark.cpp:1646` |
@@ -37,8 +37,8 @@ Rows are validated by `cargo run -p xtask -- sample-parity --check`.
 | `Benchmark` | `Tumbler` | `UpstreamReference` | Upstream performance sample indexed; exact benchmark parity is not assigned to the safe API examples. | `boxdd-sys/third-party/box2d/samples/sample_benchmark.cpp:456` |
 | `Benchmark` | `Washer` | `UpstreamReference` | Upstream performance sample indexed; exact benchmark parity is not assigned to the safe API examples. | `boxdd-sys/third-party/box2d/samples/sample_benchmark.cpp:479` |
 | `Bodies` | `Bad` | `TeachingAdaptation` | [`boxdd/examples/bodies.rs`](boxdd/examples/bodies.rs) | `boxdd-sys/third-party/box2d/samples/sample_bodies.cpp:752` |
-| `Bodies` | `Body Type` | `TeachingAdaptation` | [`boxdd/examples/bodies.rs`](boxdd/examples/bodies.rs) | `boxdd-sys/third-party/box2d/samples/sample_bodies.cpp:299` |
-| `Bodies` | `Kinematic` | `TeachingAdaptation` | [`boxdd/examples/bodies.rs`](boxdd/examples/bodies.rs) | `boxdd-sys/third-party/box2d/samples/sample_bodies.cpp:894` |
+| `Bodies` | `Body Type` | `TeachingAdaptation` | [`bevy_boxdd/examples/testbed_2d/scenes.rs`](bevy_boxdd/examples/testbed_2d/scenes.rs), [`boxdd/examples/bodies.rs`](boxdd/examples/bodies.rs) | `boxdd-sys/third-party/box2d/samples/sample_bodies.cpp:299` |
+| `Bodies` | `Kinematic` | `TeachingAdaptation` | [`bevy_boxdd/examples/testbed_2d/scenes.rs`](bevy_boxdd/examples/testbed_2d/scenes.rs), [`boxdd/examples/bodies.rs`](boxdd/examples/bodies.rs) | `boxdd-sys/third-party/box2d/samples/sample_bodies.cpp:894` |
 | `Bodies` | `Mixed Locks` | `TeachingAdaptation` | [`boxdd/examples/bodies.rs`](boxdd/examples/bodies.rs) | `boxdd-sys/third-party/box2d/samples/sample_bodies.cpp:1004` |
 | `Bodies` | `Pivot` | `TeachingAdaptation` | [`boxdd/examples/bodies.rs`](boxdd/examples/bodies.rs) | `boxdd-sys/third-party/box2d/samples/sample_bodies.cpp:823` |
 | `Bodies` | `Set Velocity` | `TeachingAdaptation` | [`boxdd/examples/bodies.rs`](boxdd/examples/bodies.rs) | `boxdd-sys/third-party/box2d/samples/sample_bodies.cpp:1058` |
@@ -66,21 +66,21 @@ Rows are validated by `cargo run -p xtask -- sample-parity --check`.
 | `Continuous` | `Pixel Imperfect` | `TeachingAdaptation` | [`boxdd/examples/continuous_bullet.rs`](boxdd/examples/continuous_bullet.rs) | `boxdd-sys/third-party/box2d/samples/sample_continuous.cpp:1150` |
 | `Continuous` | `Restitution Threshold` | `TeachingAdaptation` | [`boxdd/examples/continuous_bullet.rs`](boxdd/examples/continuous_bullet.rs) | `boxdd-sys/third-party/box2d/samples/sample_continuous.cpp:1220` |
 | `Continuous` | `Segment Slide` | `TeachingAdaptation` | [`boxdd/examples/chain_walkway.rs`](boxdd/examples/chain_walkway.rs) | `boxdd-sys/third-party/box2d/samples/sample_continuous.cpp:514` |
-| `Continuous` | `Skinny Box` | `TeachingAdaptation` | [`boxdd/examples/continuous_bullet.rs`](boxdd/examples/continuous_bullet.rs) | `boxdd-sys/third-party/box2d/samples/sample_continuous.cpp:644` |
+| `Continuous` | `Skinny Box` | `TeachingAdaptation` | [`bevy_boxdd/examples/testbed_2d/scenes.rs`](bevy_boxdd/examples/testbed_2d/scenes.rs), [`boxdd/examples/continuous_bullet.rs`](boxdd/examples/continuous_bullet.rs) | `boxdd-sys/third-party/box2d/samples/sample_continuous.cpp:644` |
 | `Continuous` | `Speculative Fallback` | `TeachingAdaptation` | [`boxdd/examples/robustness.rs`](boxdd/examples/robustness.rs) | `boxdd-sys/third-party/box2d/samples/sample_continuous.cpp:990` |
 | `Continuous` | `Speculative Ghost` | `TeachingAdaptation` | [`boxdd/examples/robustness.rs`](boxdd/examples/robustness.rs) | `boxdd-sys/third-party/box2d/samples/sample_continuous.cpp:1083` |
 | `Continuous` | `Speculative Sliver` | `TeachingAdaptation` | [`boxdd/examples/robustness.rs`](boxdd/examples/robustness.rs) | `boxdd-sys/third-party/box2d/samples/sample_continuous.cpp:1034` |
 | `Continuous` | `Wedge` | `TeachingAdaptation` | [`boxdd/examples/continuous_bullet.rs`](boxdd/examples/continuous_bullet.rs) | `boxdd-sys/third-party/box2d/samples/sample_continuous.cpp:1774` |
 | `Determinism` | `Falling Hinges` | `TeachingAdaptation` | [`boxdd/examples/determinism.rs`](boxdd/examples/determinism.rs) | `boxdd-sys/third-party/box2d/samples/sample_determinism.cpp:62` |
 | `Events` | `Body Move` | `TeachingAdaptation` | [`boxdd/examples/events_summary.rs`](boxdd/examples/events_summary.rs) | `boxdd-sys/third-party/box2d/samples/sample_events.cpp:1653` |
-| `Events` | `Contact` | `TeachingAdaptation` | [`boxdd/examples/contacts.rs`](boxdd/examples/contacts.rs) | `boxdd-sys/third-party/box2d/samples/sample_events.cpp:1228` |
+| `Events` | `Contact` | `TeachingAdaptation` | [`bevy_boxdd/examples/testbed_2d/scenes.rs`](bevy_boxdd/examples/testbed_2d/scenes.rs), [`boxdd/examples/contacts.rs`](boxdd/examples/contacts.rs) | `boxdd-sys/third-party/box2d/samples/sample_events.cpp:1228` |
 | `Events` | `Foot Sensor` | `TeachingAdaptation` | [`boxdd/examples/sensors.rs`](boxdd/examples/sensors.rs) | `boxdd-sys/third-party/box2d/samples/sample_events.cpp:811` |
 | `Events` | `Joint` | `TeachingAdaptation` | [`boxdd/examples/events_summary.rs`](boxdd/examples/events_summary.rs) | `boxdd-sys/third-party/box2d/samples/sample_events.cpp:2078` |
 | `Events` | `Persistent Contact` | `TeachingAdaptation` | [`boxdd/examples/contacts.rs`](boxdd/examples/contacts.rs) | `boxdd-sys/third-party/box2d/samples/sample_events.cpp:2180` |
 | `Events` | `Platformer` | `TeachingAdaptation` | [`boxdd/examples/events_summary.rs`](boxdd/examples/events_summary.rs) | `boxdd-sys/third-party/box2d/samples/sample_events.cpp:1463` |
 | `Events` | `Projectile Event` | `TeachingAdaptation` | [`boxdd/examples/events_summary.rs`](boxdd/examples/events_summary.rs) | `boxdd-sys/third-party/box2d/samples/sample_events.cpp:2579` |
 | `Events` | `Sensor Bookend` | `TeachingAdaptation` | [`boxdd/examples/sensors.rs`](boxdd/examples/sensors.rs) | `boxdd-sys/third-party/box2d/samples/sample_events.cpp:676` |
-| `Events` | `Sensor Funnel` | `TeachingAdaptation` | [`boxdd/examples/sensors.rs`](boxdd/examples/sensors.rs) | `boxdd-sys/third-party/box2d/samples/sample_events.cpp:340` |
+| `Events` | `Sensor Funnel` | `TeachingAdaptation` | [`bevy_boxdd/examples/testbed_2d/scenes.rs`](bevy_boxdd/examples/testbed_2d/scenes.rs), [`boxdd/examples/sensors.rs`](boxdd/examples/sensors.rs) | `boxdd-sys/third-party/box2d/samples/sample_events.cpp:340` |
 | `Events` | `Sensor Hits` | `TeachingAdaptation` | [`boxdd/examples/sensors.rs`](boxdd/examples/sensors.rs) | `boxdd-sys/third-party/box2d/samples/sample_events.cpp:2414` |
 | `Events` | `Sensor Types` | `TeachingAdaptation` | [`boxdd/examples/sensors.rs`](boxdd/examples/sensors.rs) | `boxdd-sys/third-party/box2d/samples/sample_events.cpp:1848` |
 | `Geometry` | `Convex Hull` | `TeachingAdaptation` | [`boxdd/examples/convex_hull.rs`](boxdd/examples/convex_hull.rs) | `boxdd-sys/third-party/box2d/samples/sample_geometry.cpp:214` |
@@ -93,9 +93,9 @@ Rows are validated by `cargo run -p xtask -- sample-parity --check`.
 | `Issues` | `Unstable Windmill` | `TeachingAdaptation` | [`boxdd/examples/issues.rs`](boxdd/examples/issues.rs) | `boxdd-sys/third-party/box2d/samples/sample_issues.cpp:756` |
 | `Joints` | `Ball & Chain` | `TeachingAdaptation` | [`boxdd/examples/joints.rs`](boxdd/examples/joints.rs) | `boxdd-sys/third-party/box2d/samples/sample_joints.cpp:1390` |
 | `Joints` | `Breakable` | `TeachingAdaptation` | [`boxdd/examples/joints.rs`](boxdd/examples/joints.rs) | `boxdd-sys/third-party/box2d/samples/sample_joints.cpp:2018` |
-| `Joints` | `Bridge` | `TeachingAdaptation` | [`boxdd/examples/bridge.rs`](boxdd/examples/bridge.rs) | `boxdd-sys/third-party/box2d/samples/sample_joints.cpp:1277` |
+| `Joints` | `Bridge` | `TeachingAdaptation` | [`bevy_boxdd/examples/testbed_2d/scenes.rs`](bevy_boxdd/examples/testbed_2d/scenes.rs), [`boxdd/examples/bridge.rs`](boxdd/examples/bridge.rs) | `boxdd-sys/third-party/box2d/samples/sample_joints.cpp:1277` |
 | `Joints` | `Cantilever` | `TeachingAdaptation` | [`boxdd/examples/bridge.rs`](boxdd/examples/bridge.rs) | `boxdd-sys/third-party/box2d/samples/sample_joints.cpp:1551` |
-| `Joints` | `Distance Joint` | `TeachingAdaptation` | [`boxdd/examples/joints.rs`](boxdd/examples/joints.rs) | `boxdd-sys/third-party/box2d/samples/sample_joints.cpp:245` |
+| `Joints` | `Distance Joint` | `TeachingAdaptation` | [`bevy_boxdd/examples/testbed_2d/scenes.rs`](bevy_boxdd/examples/testbed_2d/scenes.rs), [`boxdd/examples/joints.rs`](boxdd/examples/joints.rs) | `boxdd-sys/third-party/box2d/samples/sample_joints.cpp:245` |
 | `Joints` | `Doohickey` | `TeachingAdaptation` | [`boxdd/examples/doohickey.rs`](boxdd/examples/doohickey.rs) | `boxdd-sys/third-party/box2d/samples/sample_joints.cpp:2797` |
 | `Joints` | `Door` | `TeachingAdaptation` | [`boxdd/examples/joints.rs`](boxdd/examples/joints.rs) | `boxdd-sys/third-party/box2d/samples/sample_joints.cpp:3472` |
 | `Joints` | `Driving` | `TeachingAdaptation` | [`boxdd/examples/car.rs`](boxdd/examples/car.rs) | `boxdd-sys/third-party/box2d/samples/sample_joints.cpp:2630` |
@@ -105,7 +105,7 @@ Rows are validated by `cargo run -p xtask -- sample-parity --check`.
 | `Joints` | `Motor Joint` | `TeachingAdaptation` | [`boxdd/examples/joints.rs`](boxdd/examples/joints.rs) | `boxdd-sys/third-party/box2d/samples/sample_joints.cpp:421` |
 | `Joints` | `Prismatic` | `TeachingAdaptation` | [`boxdd/examples/prismatic_elevator.rs`](boxdd/examples/prismatic_elevator.rs) | `boxdd-sys/third-party/box2d/samples/sample_joints.cpp:963` |
 | `Joints` | `Ragdoll` | `TeachingAdaptation` | [`boxdd/examples/joints.rs`](boxdd/examples/joints.rs) | `boxdd-sys/third-party/box2d/samples/sample_joints.cpp:2718` |
-| `Joints` | `Revolute` | `TeachingAdaptation` | [`boxdd/examples/revolute_motor.rs`](boxdd/examples/revolute_motor.rs) | `boxdd-sys/third-party/box2d/samples/sample_joints.cpp:803` |
+| `Joints` | `Revolute` | `TeachingAdaptation` | [`bevy_boxdd/examples/testbed_2d/scenes.rs`](bevy_boxdd/examples/testbed_2d/scenes.rs), [`boxdd/examples/revolute_motor.rs`](boxdd/examples/revolute_motor.rs) | `boxdd-sys/third-party/box2d/samples/sample_joints.cpp:803` |
 | `Joints` | `Scale Ragdoll` | `TeachingAdaptation` | [`boxdd/examples/joints.rs`](boxdd/examples/joints.rs) | `boxdd-sys/third-party/box2d/samples/sample_joints.cpp:3540` |
 | `Joints` | `Scissor Lift` | `TeachingAdaptation` | [`boxdd/examples/prismatic_elevator.rs`](boxdd/examples/prismatic_elevator.rs) | `boxdd-sys/third-party/box2d/samples/sample_joints.cpp:3018` |
 | `Joints` | `Separation` | `TeachingAdaptation` | [`boxdd/examples/joints.rs`](boxdd/examples/joints.rs) | `boxdd-sys/third-party/box2d/samples/sample_joints.cpp:2247` |
@@ -128,12 +128,12 @@ Rows are validated by `cargo run -p xtask -- sample-parity --check`.
 | `Shapes` | `Custom Filter` | `TeachingAdaptation` | [`boxdd/tests/world_callbacks.rs`](boxdd/tests/world_callbacks.rs) | `boxdd-sys/third-party/box2d/samples/sample_shapes.cpp:756` |
 | `Shapes` | `Ellipse` | `TeachingAdaptation` | [`boxdd/examples/shapes_variety.rs`](boxdd/examples/shapes_variety.rs) | `boxdd-sys/third-party/box2d/samples/sample_shapes.cpp:1611` |
 | `Shapes` | `Explosion` | `TeachingAdaptation` | [`boxdd/examples/shapes_variety.rs`](boxdd/examples/shapes_variety.rs) | `boxdd-sys/third-party/box2d/samples/sample_shapes.cpp:1786` |
-| `Shapes` | `Filter` | `TeachingAdaptation` | [`boxdd/tests/world_callbacks.rs`](boxdd/tests/world_callbacks.rs) | `boxdd-sys/third-party/box2d/samples/sample_shapes.cpp:661` |
-| `Shapes` | `Friction` | `TeachingAdaptation` | [`boxdd/examples/shapes_variety.rs`](boxdd/examples/shapes_variety.rs) | `boxdd-sys/third-party/box2d/samples/sample_shapes.cpp:944` |
+| `Shapes` | `Filter` | `TeachingAdaptation` | [`bevy_boxdd/examples/testbed_2d/scenes.rs`](bevy_boxdd/examples/testbed_2d/scenes.rs), [`boxdd/tests/world_callbacks.rs`](boxdd/tests/world_callbacks.rs) | `boxdd-sys/third-party/box2d/samples/sample_shapes.cpp:661` |
+| `Shapes` | `Friction` | `TeachingAdaptation` | [`bevy_boxdd/examples/testbed_2d/scenes.rs`](bevy_boxdd/examples/testbed_2d/scenes.rs), [`boxdd/examples/shapes_variety.rs`](boxdd/examples/shapes_variety.rs) | `boxdd-sys/third-party/box2d/samples/sample_shapes.cpp:944` |
 | `Shapes` | `Modify Geometry` | `TeachingAdaptation` | [`boxdd/examples/shapes_variety.rs`](boxdd/examples/shapes_variety.rs) | `boxdd-sys/third-party/box2d/samples/sample_shapes.cpp:1395` |
 | `Shapes` | `Offset` | `TeachingAdaptation` | [`boxdd/examples/shapes_variety.rs`](boxdd/examples/shapes_variety.rs) | `boxdd-sys/third-party/box2d/samples/sample_shapes.cpp:1669` |
 | `Shapes` | `Recreate Static` | `TeachingAdaptation` | [`boxdd/examples/shapes_variety.rs`](boxdd/examples/shapes_variety.rs) | `boxdd-sys/third-party/box2d/samples/sample_shapes.cpp:1844` |
-| `Shapes` | `Restitution` | `TeachingAdaptation` | [`boxdd/examples/shapes_variety.rs`](boxdd/examples/shapes_variety.rs) | `boxdd-sys/third-party/box2d/samples/sample_shapes.cpp:877` |
+| `Shapes` | `Restitution` | `TeachingAdaptation` | [`bevy_boxdd/examples/testbed_2d/scenes.rs`](bevy_boxdd/examples/testbed_2d/scenes.rs), [`boxdd/examples/shapes_variety.rs`](boxdd/examples/shapes_variety.rs) | `boxdd-sys/third-party/box2d/samples/sample_shapes.cpp:877` |
 | `Shapes` | `Rolling Resistance` | `TeachingAdaptation` | [`boxdd/examples/shapes_variety.rs`](boxdd/examples/shapes_variety.rs) | `boxdd-sys/third-party/box2d/samples/sample_shapes.cpp:1035` |
 | `Shapes` | `Rounded` | `TeachingAdaptation` | [`boxdd/examples/shapes_variety.rs`](boxdd/examples/shapes_variety.rs) | `boxdd-sys/third-party/box2d/samples/sample_shapes.cpp:1546` |
 | `Shapes` | `Tangent Speed` | `TeachingAdaptation` | [`boxdd/examples/contacts.rs`](boxdd/examples/contacts.rs) | `boxdd-sys/third-party/box2d/samples/sample_shapes.cpp:1233` |
@@ -142,11 +142,11 @@ Rows are validated by `cargo run -p xtask -- sample-parity --check`.
 | `Stacking` | `Capsule Stack` | `TeachingAdaptation` | [`boxdd/examples/pyramid.rs`](boxdd/examples/pyramid.rs) | `boxdd-sys/third-party/box2d/samples/sample_stacking.cpp:554` |
 | `Stacking` | `Card House` | `TeachingAdaptation` | [`boxdd/examples/pyramid.rs`](boxdd/examples/pyramid.rs) | `boxdd-sys/third-party/box2d/samples/sample_stacking.cpp:1003` |
 | `Stacking` | `Circle Impulse` | `TeachingAdaptation` | [`boxdd/examples/pyramid.rs`](boxdd/examples/pyramid.rs) | `boxdd-sys/third-party/box2d/samples/sample_events.cpp:2727` |
-| `Stacking` | `Circle Stack` | `TeachingAdaptation` | [`boxdd/examples/pyramid.rs`](boxdd/examples/pyramid.rs) | `boxdd-sys/third-party/box2d/samples/sample_stacking.cpp:493` |
+| `Stacking` | `Circle Stack` | `TeachingAdaptation` | [`bevy_boxdd/examples/testbed_2d/scenes.rs`](bevy_boxdd/examples/testbed_2d/scenes.rs), [`boxdd/examples/pyramid.rs`](boxdd/examples/pyramid.rs) | `boxdd-sys/third-party/box2d/samples/sample_stacking.cpp:493` |
 | `Stacking` | `Cliff` | `TeachingAdaptation` | [`boxdd/examples/pyramid.rs`](boxdd/examples/pyramid.rs) | `boxdd-sys/third-party/box2d/samples/sample_stacking.cpp:703` |
 | `Stacking` | `Confined` | `TeachingAdaptation` | [`boxdd/examples/pyramid.rs`](boxdd/examples/pyramid.rs) | `boxdd-sys/third-party/box2d/samples/sample_stacking.cpp:926` |
 | `Stacking` | `Double Domino` | `TeachingAdaptation` | [`boxdd/examples/pyramid.rs`](boxdd/examples/pyramid.rs) | `boxdd-sys/third-party/box2d/samples/sample_stacking.cpp:854` |
-| `Stacking` | `Single Box` | `TeachingAdaptation` | [`boxdd/examples/basic.rs`](boxdd/examples/basic.rs) | `boxdd-sys/third-party/box2d/samples/sample_stacking.cpp:65` |
-| `Stacking` | `Tilted Stack` | `TeachingAdaptation` | [`boxdd/examples/stacking.rs`](boxdd/examples/stacking.rs) | `boxdd-sys/third-party/box2d/samples/sample_stacking.cpp:136` |
+| `Stacking` | `Single Box` | `TeachingAdaptation` | [`bevy_boxdd/examples/testbed_2d/scenes.rs`](bevy_boxdd/examples/testbed_2d/scenes.rs), [`boxdd/examples/basic.rs`](boxdd/examples/basic.rs) | `boxdd-sys/third-party/box2d/samples/sample_stacking.cpp:65` |
+| `Stacking` | `Tilted Stack` | `TeachingAdaptation` | [`bevy_boxdd/examples/testbed_2d/scenes.rs`](bevy_boxdd/examples/testbed_2d/scenes.rs), [`boxdd/examples/stacking.rs`](boxdd/examples/stacking.rs) | `boxdd-sys/third-party/box2d/samples/sample_stacking.cpp:136` |
 | `Stacking` | `Vertical Stack` | `TeachingAdaptation` | [`boxdd/examples/stacking.rs`](boxdd/examples/stacking.rs) | `boxdd-sys/third-party/box2d/samples/sample_stacking.cpp:394` |
 | `World` | `Large World` | `TeachingAdaptation` | [`boxdd/examples/world_basics.rs`](boxdd/examples/world_basics.rs) | `boxdd-sys/third-party/box2d/samples/sample_world.cpp:246` |

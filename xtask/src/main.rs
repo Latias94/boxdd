@@ -14,6 +14,13 @@ const WASM_TARGET: &str = "wasm32-unknown-unknown";
 const PROVIDER_SMOKE_PACKAGE: &str = "boxdd-provider-smoke";
 const PROVIDER_SMOKE_WASM: &str = "boxdd_provider_smoke.wasm";
 const PAGES_WASM_DIR: &str = "wasm/generated";
+const BEVY_EXAMPLES_DIR: &str = "examples";
+const BEVY_WEB_EXAMPLE: &str = "testbed_2d";
+const BEVY_WEB_OUT_DIR: &str = "bevy-testbed/generated";
+const BEVY_WEB_OUT_NAME: &str = "bevy_boxdd_testbed";
+const BEVY_WEB_JS: &str = "bevy_boxdd_testbed.js";
+const BEVY_WEB_WASM: &str = "bevy_boxdd_testbed_bg.wasm";
+const BEVY_PROVIDER_SHIM: &str = "box2d-provider-shim.js";
 const PROVIDER_SMOKE_EXPORTS: &[&str] = &[
     "boxdd_provider_smoke",
     "boxdd_provider_drop_millimeters",
@@ -81,15 +88,54 @@ struct SampleCoverage {
     artifact: String,
 }
 
-#[derive(Debug, Clone)]
-struct PageExample {
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct RegistrySample {
     id: String,
-    area: String,
-    title: String,
-    summary: String,
-    source: String,
-    command: String,
-    run_note: String,
+    category: String,
+    name: String,
+    description: String,
+    upstream: Vec<RegistryUpstreamSample>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct RegistryUpstreamSample {
+    category: String,
+    name: String,
+    mode: String,
+}
+
+#[derive(Debug, Default)]
+struct PageSampleBuilder {
+    id: Option<String>,
+    category: Option<String>,
+    name: Option<String>,
+    description: Option<String>,
+    upstream: Vec<RegistryUpstreamSample>,
+}
+
+#[derive(Debug, Default)]
+struct UpstreamSampleBuilder {
+    category: Option<String>,
+    name: Option<String>,
+    mode: Option<String>,
+}
+
+struct BevyWebArtifacts {
+    out_dir: PathBuf,
+    imports: Vec<String>,
+}
+
+struct EmccInvocation {
+    program: PathBuf,
+    args: Vec<PathBuf>,
+}
+
+impl EmccInvocation {
+    fn command(&self) -> Command {
+        let mut command = Command::new(&self.program);
+        command.args(&self.args);
+        command
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -188,8 +234,8 @@ Commands:
   sample-parity  Validate or regenerate docs/upstream-parity/box2d-sample-matrix.md
   provider-smoke-app  Build the Rust wasm provider-smoke app and export list
   provider-smoke  Build the Rust app, build the Box2D provider with emcc, and run Node smoke
-  build-pages-wasm  Build browser runtime assets into docs/pages/wasm/generated
-  generate-pages Generate the GitHub Pages example index from Rust examples
+  build-pages-wasm  Build browser provider and Bevy testbed assets into docs/pages
+  generate-pages Generate the GitHub Pages Bevy example index from SCENE_REGISTRY
   validate-pages Validate generated pages and local links in docs/pages/**/*.html
 "
     );
@@ -771,13 +817,17 @@ fn write_sample_matrix(
 
 fn sample_coverage(sample: &Sample) -> SampleCoverage {
     let artifact = match sample.category.as_str() {
+        "Benchmark" if sample.name == "Large Pyramid" => link_artifacts(&[
+            "bevy_boxdd/examples/testbed_2d/scenes.rs",
+            "boxdd/examples/pyramid.rs",
+        ]),
         "Benchmark" => {
             return SampleCoverage {
                 status: "UpstreamReference",
                 artifact: "Upstream performance sample indexed; exact benchmark parity is not assigned to the safe API examples.".to_owned(),
             };
         }
-        "Bodies" => link_artifact("boxdd/examples/bodies.rs"),
+        "Bodies" => bodies_sample_artifact(&sample.name),
         "Character" => link_artifact("boxdd/examples/character_mover.rs"),
         "Collision" => collision_sample_artifact(&sample.name),
         "Continuous" => continuous_sample_artifact(&sample.name),
@@ -818,6 +868,25 @@ fn link_artifact(path: &str) -> String {
     format!("[`{path}`]({path})")
 }
 
+fn link_artifacts(paths: &[&str]) -> String {
+    paths
+        .iter()
+        .map(|path| link_artifact(path))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn with_bevy_testbed(path: &str) -> String {
+    link_artifacts(&["bevy_boxdd/examples/testbed_2d/scenes.rs", path])
+}
+
+fn bodies_sample_artifact(name: &str) -> String {
+    match name {
+        "Body Type" | "Kinematic" => with_bevy_testbed("boxdd/examples/bodies.rs"),
+        _ => link_artifact("boxdd/examples/bodies.rs"),
+    }
+}
+
 fn collision_sample_artifact(name: &str) -> String {
     match name {
         "Ray Cast" => link_artifact("boxdd/examples/raycast.rs"),
@@ -840,14 +909,17 @@ fn continuous_sample_artifact(name: &str) -> String {
         "Speculative Fallback" | "Speculative Ghost" | "Speculative Sliver" => {
             link_artifact("boxdd/examples/robustness.rs")
         }
+        "Skinny Box" => with_bevy_testbed("boxdd/examples/continuous_bullet.rs"),
         _ => link_artifact("boxdd/examples/continuous_bullet.rs"),
     }
 }
 
 fn events_sample_artifact(name: &str) -> String {
     match name {
-        "Contact" | "Persistent Contact" => link_artifact("boxdd/examples/contacts.rs"),
-        "Foot Sensor" | "Sensor Bookend" | "Sensor Funnel" | "Sensor Hits" | "Sensor Types" => {
+        "Contact" => with_bevy_testbed("boxdd/examples/contacts.rs"),
+        "Persistent Contact" => link_artifact("boxdd/examples/contacts.rs"),
+        "Sensor Funnel" => with_bevy_testbed("boxdd/examples/sensors.rs"),
+        "Foot Sensor" | "Sensor Bookend" | "Sensor Hits" | "Sensor Types" => {
             link_artifact("boxdd/examples/sensors.rs")
         }
         _ => link_artifact("boxdd/examples/events_summary.rs"),
@@ -856,13 +928,15 @@ fn events_sample_artifact(name: &str) -> String {
 
 fn joints_sample_artifact(name: &str) -> String {
     match name {
-        "Bridge" | "Cantilever" => link_artifact("boxdd/examples/bridge.rs"),
+        "Bridge" => with_bevy_testbed("boxdd/examples/bridge.rs"),
+        "Cantilever" => link_artifact("boxdd/examples/bridge.rs"),
         "Driving" => link_artifact("boxdd/examples/car.rs"),
         "Doohickey" => link_artifact("boxdd/examples/doohickey.rs"),
         "Prismatic" | "Gear Lift" | "Scissor Lift" => {
             link_artifact("boxdd/examples/prismatic_elevator.rs")
         }
-        "Revolute" => link_artifact("boxdd/examples/revolute_motor.rs"),
+        "Distance Joint" => with_bevy_testbed("boxdd/examples/joints.rs"),
+        "Revolute" => with_bevy_testbed("boxdd/examples/revolute_motor.rs"),
         "Wheel" => link_artifact("boxdd/examples/prismatic_wheel.rs"),
         _ => link_artifact("boxdd/examples/joints.rs"),
     }
@@ -871,8 +945,10 @@ fn joints_sample_artifact(name: &str) -> String {
 fn shapes_sample_artifact(name: &str) -> String {
     match name {
         "Chain Link" | "Chain Shape" => link_artifact("boxdd/examples/chain_walkway.rs"),
-        "Filter" | "Custom Filter" => link_artifact("boxdd/tests/world_callbacks.rs"),
+        "Filter" => with_bevy_testbed("boxdd/tests/world_callbacks.rs"),
+        "Custom Filter" => link_artifact("boxdd/tests/world_callbacks.rs"),
         "Modify Geometry" => link_artifact("boxdd/examples/shapes_variety.rs"),
+        "Friction" | "Restitution" => with_bevy_testbed("boxdd/examples/shapes_variety.rs"),
         "Tangent Speed" => link_artifact("boxdd/examples/contacts.rs"),
         _ => link_artifact("boxdd/examples/shapes_variety.rs"),
     }
@@ -880,8 +956,10 @@ fn shapes_sample_artifact(name: &str) -> String {
 
 fn stacking_sample_artifact(name: &str) -> String {
     match name {
-        "Vertical Stack" | "Tilted Stack" => link_artifact("boxdd/examples/stacking.rs"),
-        "Single Box" => link_artifact("boxdd/examples/basic.rs"),
+        "Tilted Stack" => with_bevy_testbed("boxdd/examples/stacking.rs"),
+        "Vertical Stack" => link_artifact("boxdd/examples/stacking.rs"),
+        "Single Box" => with_bevy_testbed("boxdd/examples/basic.rs"),
+        "Circle Stack" => with_bevy_testbed("boxdd/examples/pyramid.rs"),
         _ => link_artifact("boxdd/examples/pyramid.rs"),
     }
 }
@@ -1080,10 +1158,9 @@ fn provider_smoke(root: &Path) -> Result<()> {
 
 fn build_pages_wasm(root: &Path) -> Result<()> {
     generate_pages(root)?;
-    let app_wasm = build_provider_smoke_app(root)?;
-    let imports = collect_provider_imports(&app_wasm)?;
+    let bevy_artifacts = build_bevy_web_app(root)?;
     let out_dir = provider_smoke_dir(root);
-    let exports = write_exports_json(&out_dir, &imports)?;
+    let exports = write_exports_json(&out_dir, &bevy_artifacts.imports)?;
     let provider = build_box2d_provider(root, &out_dir, &exports)?;
     let provider_wasm = provider.with_extension("wasm");
     ensure_file(&provider, "Box2D provider module")?;
@@ -1093,15 +1170,13 @@ fn build_pages_wasm(root: &Path) -> Result<()> {
     replace_dir_under(&generated, &root.join("docs/pages"))?;
     copy_file(&provider, &generated.join("box2d-sys-v0.js"))?;
     copy_file(&provider_wasm, &generated.join("box2d-sys-v0.wasm"))?;
-    copy_file(
-        &out_dir.join(PROVIDER_SMOKE_WASM),
-        &generated.join(PROVIDER_SMOKE_WASM),
-    )?;
+    copy_bevy_web_artifacts(root, &bevy_artifacts)?;
 
     println!(
-        "pages wasm assets ready: {} ({} provider imports)",
+        "pages wasm assets ready: {} and {} ({} Bevy imports)",
         generated.display(),
-        imports.len()
+        pages_bevy_generated_dir(root).display(),
+        bevy_artifacts.imports.len()
     );
     Ok(())
 }
@@ -1112,6 +1187,14 @@ fn provider_smoke_dir(root: &Path) -> PathBuf {
 
 fn pages_wasm_generated_dir(root: &Path) -> PathBuf {
     root.join("docs").join("pages").join(PAGES_WASM_DIR)
+}
+
+fn pages_bevy_generated_dir(root: &Path) -> PathBuf {
+    root.join("docs").join("pages").join(BEVY_WEB_OUT_DIR)
+}
+
+fn pages_bevy_testbed_dir(root: &Path) -> PathBuf {
+    root.join("docs").join("pages").join("bevy-testbed")
 }
 
 fn build_provider_smoke_app(root: &Path) -> Result<PathBuf> {
@@ -1147,6 +1230,138 @@ fn add_wasm_app_link_args(command: &mut Command, export_groups: &[&[&str]]) {
     for export in export_groups.iter().flat_map(|exports| exports.iter()) {
         command.arg("-C").arg(format!("link-arg=--export={export}"));
     }
+}
+
+fn build_bevy_web_app(root: &Path) -> Result<BevyWebArtifacts> {
+    ensure_runnable_tool(
+        "wasm-bindgen",
+        "--version",
+        "wasm-bindgen-cli is required for Bevy Web examples",
+    )?;
+
+    let out_dir = root.join("target").join("boxdd-bevy-testbed-web");
+    replace_dir_under(&out_dir, &root.join("target"))?;
+
+    let mut command = Command::new("cargo");
+    command
+        .arg("rustc")
+        .arg("-p")
+        .arg("bevy_boxdd")
+        .arg("--example")
+        .arg(BEVY_WEB_EXAMPLE)
+        .arg("--target")
+        .arg(WASM_TARGET)
+        .arg("--release")
+        .env("BOXDD_SYS_WASM_MODE", "provider");
+    add_wasm_app_link_args(&mut command, &[]);
+    run_command(&mut command, "build Bevy testbed wasm")?;
+
+    let wasm = root
+        .join("target")
+        .join(WASM_TARGET)
+        .join("release")
+        .join("examples")
+        .join(format!("{BEVY_WEB_EXAMPLE}.wasm"));
+    ensure_file(&wasm, "Bevy testbed wasm")?;
+
+    let mut bindgen = Command::new("wasm-bindgen");
+    bindgen
+        .arg("--target")
+        .arg("web")
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .arg("--out-name")
+        .arg(BEVY_WEB_OUT_NAME)
+        .arg(&wasm);
+    run_command(&mut bindgen, "run wasm-bindgen for Bevy testbed")?;
+
+    patch_bevy_bindgen_imports(&out_dir.join(BEVY_WEB_JS))?;
+    let bevy_wasm = out_dir.join(BEVY_WEB_WASM);
+    let imports = collect_provider_imports(&bevy_wasm)?;
+    write_browser_provider_shim(&out_dir, &imports)?;
+
+    Ok(BevyWebArtifacts { out_dir, imports })
+}
+
+fn patch_bevy_bindgen_imports(js: &Path) -> Result<()> {
+    let source = fs::read_to_string(js).map_err(|source| Error::io(js, source))?;
+    let patched_imports = source.replace(
+        &format!("from \"{PROVIDER_MODULE}\""),
+        &format!("from \"./{BEVY_PROVIDER_SHIM}\""),
+    );
+    if patched_imports == source {
+        return Err(Error::Message(format!(
+            "wasm-bindgen output does not import {PROVIDER_MODULE}: {}",
+            js.display()
+        )));
+    }
+    let patched = patched_imports.replace(
+        "    wasm = instance.exports;\n",
+        "    wasm = instance.exports;\n    if (typeof import1.setBoxddAppExports === \"function\") {\n        import1.setBoxddAppExports(wasm);\n    }\n",
+    );
+    if patched == patched_imports {
+        return Err(Error::Message(format!(
+            "wasm-bindgen output does not assign instance exports: {}",
+            js.display()
+        )));
+    }
+    fs::write(js, patched).map_err(|source| Error::io(js, source))
+}
+
+fn write_browser_provider_shim(out_dir: &Path, imports: &[String]) -> Result<PathBuf> {
+    let exports = imports
+        .iter()
+        .map(|name| {
+            format!("export function {name}(...args) {{ return callProvider(\"{name}\", args); }}")
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let shim = format!(
+        r#"let provider;
+
+export function setBox2dProvider(nextProvider) {{
+  provider = nextProvider;
+}}
+
+export function setBoxddAppExports(exports) {{
+  if (!provider) {{
+    throw new Error("Box2D provider is not initialized");
+  }}
+  provider.boxddAppExports = exports;
+}}
+
+function resolveProviderExport(name) {{
+  if (!provider) {{
+    throw new Error("Box2D provider is not initialized");
+  }}
+  const exported = provider[`_${{name}}`] || provider[name];
+  if (typeof exported !== "function") {{
+    throw new Error(`Box2D provider is missing export ${{name}}`);
+  }}
+  return exported;
+}}
+
+function callProvider(name, args) {{
+  return resolveProviderExport(name)(...args);
+}}
+
+{exports}
+"#
+    );
+    let path = out_dir.join(BEVY_PROVIDER_SHIM);
+    fs::write(&path, shim).map_err(|source| Error::io(&path, source))?;
+    Ok(path)
+}
+
+fn copy_bevy_web_artifacts(root: &Path, artifacts: &BevyWebArtifacts) -> Result<()> {
+    let generated = pages_bevy_generated_dir(root);
+    replace_dir_under(&generated, &root.join("docs/pages"))?;
+
+    for file in [BEVY_WEB_JS, BEVY_WEB_WASM, BEVY_PROVIDER_SHIM] {
+        copy_file(&artifacts.out_dir.join(file), &generated.join(file))?;
+    }
+
+    Ok(())
 }
 
 fn collect_provider_imports(wasm: &Path) -> Result<Vec<String>> {
@@ -1221,7 +1436,7 @@ fn build_box2d_provider(root: &Path, out_dir: &Path, exports_json: &Path) -> Res
     collect_c_files(&src_dir, &mut c_files)?;
     c_files.sort();
 
-    let mut command = Command::new(emcc);
+    let mut command = emcc.command();
     command
         .arg("-std=c17")
         .arg("-O2")
@@ -1269,7 +1484,26 @@ fn build_box2d_provider(root: &Path, out_dir: &Path, exports_json: &Path) -> Res
     }
     command.arg("-o").arg(&provider);
     run_command(&mut command, "build Box2D provider wasm")?;
+    patch_box2d_provider_runtime(&provider)?;
     Ok(provider)
+}
+
+fn patch_box2d_provider_runtime(provider: &Path) -> Result<()> {
+    let source = fs::read_to_string(provider).map_err(|source| Error::io(provider, source))?;
+    let patched = source.replace(
+        "function getMemoryBuffer(){try{var b=wasmMemory.toResizableBuffer();return b}catch{}return wasmMemory.buffer}",
+        "function getMemoryBuffer(){return wasmMemory.buffer}",
+    );
+    if patched == source && source.contains("toResizableBuffer") {
+        return Err(Error::Message(format!(
+            "{} uses toResizableBuffer but xtask could not patch the provider memory view",
+            provider.display()
+        )));
+    }
+    if patched != source {
+        fs::write(provider, patched).map_err(|source| Error::io(provider, source))?;
+    }
+    Ok(())
 }
 
 fn collect_c_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
@@ -1467,18 +1701,34 @@ fn runnable_tool(tool: &str, version_arg: &str) -> Option<PathBuf> {
         .map(|_| PathBuf::from(tool))
 }
 
-fn find_emcc() -> Result<PathBuf> {
+fn find_emcc() -> Result<EmccInvocation> {
     if let Some(path) = runnable_tool("emcc", "--version") {
-        return Ok(path);
+        return Ok(EmccInvocation {
+            program: path,
+            args: Vec::new(),
+        });
     }
 
     if let Ok(root) = env::var("EMSDK") {
-        let emscripten = PathBuf::from(root).join("upstream").join("emscripten");
+        let emsdk = PathBuf::from(root);
+        let emscripten = emsdk.join("upstream").join("emscripten");
         for name in ["emcc", "emcc.exe", "emcc.bat"] {
             let candidate = emscripten.join(name);
             if candidate.exists() {
-                return Ok(candidate);
+                return Ok(EmccInvocation {
+                    program: candidate,
+                    args: Vec::new(),
+                });
             }
+        }
+        let emcc_py = emscripten.join("emcc.py");
+        if emcc_py.exists()
+            && let Some(python) = find_emsdk_python(&emsdk)
+        {
+            return Ok(EmccInvocation {
+                program: python,
+                args: vec![emcc_py],
+            });
         }
     }
 
@@ -1488,9 +1738,24 @@ fn find_emcc() -> Result<PathBuf> {
     ))
 }
 
+fn find_emsdk_python(emsdk: &Path) -> Option<PathBuf> {
+    let python_dir = emsdk.join("python");
+    let mut candidates = Vec::new();
+    if let Ok(entries) = fs::read_dir(&python_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path().join("python.exe");
+            if path.exists() {
+                candidates.push(path);
+            }
+        }
+    }
+    candidates.sort();
+    candidates.pop()
+}
+
 fn generate_pages(root: &Path) -> Result<()> {
-    let examples = collect_page_examples(root)?;
-    let pages = expected_pages(root, &examples);
+    let samples = read_testbed_registry(root)?;
+    let pages = expected_bevy_pages(root, &samples);
     let pages_dir = root.join("docs/pages");
     let examples_dir = pages_dir.join("examples");
 
@@ -1501,14 +1766,269 @@ fn generate_pages(root: &Path) -> Result<()> {
         }
         fs::write(&path, html).map_err(|source| Error::io(&path, source))?;
     }
-    write_wasm_runtime_loader(&pages_dir)?;
+    write_bevy_testbed_loader(root)?;
+    remove_file_if_exists(&pages_dir.join("wasm/index.html"))?;
+    remove_file_if_exists(&pages_dir.join("wasm/loader.js"))?;
 
     println!(
-        "generated pages: {} examples under {}",
-        examples.len(),
+        "generated pages: {} Bevy WASM examples under {}",
+        samples.len(),
         pages_dir.display()
     );
     Ok(())
+}
+
+fn expected_bevy_pages(root: &Path, samples: &[RegistrySample]) -> BTreeMap<PathBuf, String> {
+    let pages_dir = root.join("docs/pages");
+    let mut pages = BTreeMap::new();
+    pages.insert(
+        pages_dir.join("index.html"),
+        bevy_example_index_page(samples, ExampleIndexLocation::Root),
+    );
+    pages.insert(
+        pages_dir.join(BEVY_EXAMPLES_DIR).join("index.html"),
+        bevy_example_index_page(samples, ExampleIndexLocation::ExamplesDirectory),
+    );
+    pages.insert(
+        pages_bevy_testbed_dir(root).join("index.html"),
+        bevy_testbed_page(),
+    );
+    for sample in samples {
+        pages.insert(
+            pages_dir
+                .join(BEVY_EXAMPLES_DIR)
+                .join(&sample.id)
+                .join("index.html"),
+            bevy_example_page(sample),
+        );
+    }
+    pages
+}
+
+fn remove_file_if_exists(path: &Path) -> Result<()> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(Error::io(path, source)),
+    }
+}
+
+fn write_bevy_testbed_loader(root: &Path) -> Result<()> {
+    let dir = pages_bevy_testbed_dir(root);
+    fs::create_dir_all(&dir).map_err(|source| Error::io(&dir, source))?;
+    let path = dir.join("loader.js");
+    fs::write(&path, bevy_testbed_loader_js()).map_err(|source| Error::io(&path, source))
+}
+
+fn read_testbed_registry(root: &Path) -> Result<Vec<RegistrySample>> {
+    let scenes = root
+        .join("bevy_boxdd")
+        .join("examples")
+        .join("testbed_2d")
+        .join("scenes.rs");
+    let source = fs::read_to_string(&scenes).map_err(|source| Error::io(&scenes, source))?;
+    let mut samples = Vec::new();
+    let mut current: Option<PageSampleBuilder> = None;
+    let mut current_upstream: Option<UpstreamSampleBuilder> = None;
+    let mut in_registry = false;
+
+    for line in source.lines() {
+        if line.contains("pub const SCENE_REGISTRY") {
+            in_registry = true;
+            continue;
+        }
+        if !in_registry {
+            continue;
+        }
+
+        let trimmed = line.trim();
+        if let Some(upstream) = current_upstream.as_mut() {
+            read_upstream_fields(upstream, trimmed);
+            if trimmed == "}," || trimmed.ends_with("},") || trimmed.ends_with("}],") {
+                let upstream = current_upstream
+                    .take()
+                    .expect("upstream builder should be present");
+                current
+                    .as_mut()
+                    .ok_or_else(|| {
+                        Error::Message(format!(
+                            "upstream sample outside registry entry in {}",
+                            scenes.display()
+                        ))
+                    })?
+                    .upstream
+                    .push(upstream.build()?);
+            }
+            continue;
+        }
+        if trimmed == "];" {
+            break;
+        }
+        if trimmed.starts_with("TestbedSceneMetadata {") {
+            current = Some(PageSampleBuilder::default());
+            continue;
+        }
+        if trimmed == "}," {
+            let builder = current.take().ok_or_else(|| {
+                Error::Message(format!(
+                    "unexpected registry entry terminator in {}",
+                    scenes.display()
+                ))
+            })?;
+            samples.push(builder.build()?);
+            continue;
+        }
+
+        let Some(builder) = current.as_mut() else {
+            continue;
+        };
+        if trimmed.contains("UpstreamSampleRef {") {
+            let mut upstream = UpstreamSampleBuilder::default();
+            read_upstream_fields(&mut upstream, trimmed);
+            if trimmed.ends_with("},") || trimmed.ends_with("}],") {
+                builder.upstream.push(upstream.build()?);
+            } else {
+                current_upstream = Some(upstream);
+            }
+        } else if let Some(value) = extract_string_field(trimmed, "id") {
+            builder.id = Some(value);
+        } else if let Some(value) = extract_string_field(trimmed, "category") {
+            builder.category = Some(value);
+        } else if let Some(value) = extract_string_field(trimmed, "name") {
+            builder.name = Some(value);
+        } else if let Some(value) = extract_string_field(trimmed, "description") {
+            builder.description = Some(value);
+        }
+    }
+
+    validate_registry_catalog(&samples)?;
+    Ok(samples)
+}
+
+impl PageSampleBuilder {
+    fn build(self) -> Result<RegistrySample> {
+        Ok(RegistrySample {
+            id: required_registry_field(self.id, "id")?,
+            category: required_registry_field(self.category, "category")?,
+            name: required_registry_field(self.name, "name")?,
+            description: required_registry_field(self.description, "description")?,
+            upstream: self.upstream,
+        })
+    }
+}
+
+impl UpstreamSampleBuilder {
+    fn build(self) -> Result<RegistryUpstreamSample> {
+        Ok(RegistryUpstreamSample {
+            category: required_registry_field(self.category, "upstream.category")?,
+            name: required_registry_field(self.name, "upstream.name")?,
+            mode: required_registry_field(self.mode, "upstream.mode")?,
+        })
+    }
+}
+
+fn required_registry_field(value: Option<String>, field: &str) -> Result<String> {
+    value.ok_or_else(|| Error::Message(format!("SCENE_REGISTRY entry is missing `{field}`")))
+}
+
+fn read_upstream_fields(builder: &mut UpstreamSampleBuilder, line: &str) {
+    if let Some(value) = extract_string_field(line, "category") {
+        builder.category = Some(value);
+    }
+    if let Some(value) = extract_string_field(line, "name") {
+        builder.name = Some(value);
+    }
+    if let Some(value) = extract_parity_mode_field(line) {
+        builder.mode = Some(value);
+    }
+}
+
+fn extract_parity_mode_field(line: &str) -> Option<String> {
+    let needle = "mode: ParityMode::";
+    let start = line.find(needle)? + needle.len();
+    let tail = &line[start..];
+    let end = tail
+        .find(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+        .unwrap_or(tail.len());
+    Some(tail[..end].to_owned())
+}
+
+fn validate_registry_catalog(samples: &[RegistrySample]) -> Result<()> {
+    if samples.is_empty() {
+        return Err(Error::Message(
+            "testbed registry must contain at least one entry".to_owned(),
+        ));
+    }
+
+    let mut seen = BTreeSet::new();
+    for sample in samples {
+        validate_registry_field(sample, "id", &sample.id)?;
+        validate_registry_field(sample, "category", &sample.category)?;
+        validate_registry_field(sample, "name", &sample.name)?;
+        validate_registry_field(sample, "description", &sample.description)?;
+        if sample.upstream.is_empty() {
+            return Err(Error::Message(format!(
+                "testbed registry sample `{}` must include upstream sample references",
+                sample.id
+            )));
+        }
+        if !is_slug(&sample.id) {
+            return Err(Error::Message(format!(
+                "testbed registry id `{}` must be a lowercase ASCII slug",
+                sample.id
+            )));
+        }
+        if !seen.insert(sample.id.as_str()) {
+            return Err(Error::Message(format!(
+                "duplicate testbed registry id `{}`",
+                sample.id
+            )));
+        }
+
+        let mut upstream_seen = BTreeSet::new();
+        for upstream in &sample.upstream {
+            validate_registry_field(sample, "upstream.category", &upstream.category)?;
+            validate_registry_field(sample, "upstream.name", &upstream.name)?;
+            validate_registry_field(sample, "upstream.mode", &upstream.mode)?;
+            if !matches!(
+                upstream.mode.as_str(),
+                "FaithfulPort" | "TeachingAdaptation"
+            ) {
+                return Err(Error::Message(format!(
+                    "testbed registry sample `{}` uses unsupported upstream parity mode `{}`",
+                    sample.id, upstream.mode
+                )));
+            }
+            if !upstream_seen.insert((upstream.category.as_str(), upstream.name.as_str())) {
+                return Err(Error::Message(format!(
+                    "testbed registry sample `{}` duplicates upstream ref `{}` / `{}`",
+                    sample.id, upstream.category, upstream.name
+                )));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_registry_field(sample: &RegistrySample, field: &str, value: &str) -> Result<()> {
+    if value.trim().is_empty() {
+        Err(Error::Message(format!(
+            "testbed registry sample `{}` has an empty `{field}` field",
+            sample.id
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+fn is_slug(value: &str) -> bool {
+    !value.is_empty()
+        && !value.starts_with('-')
+        && !value.ends_with('-')
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
 fn reset_generated_examples_dir(pages_dir: &Path, examples_dir: &Path) -> Result<()> {
@@ -1534,329 +2054,17 @@ fn reset_generated_examples_dir(pages_dir: &Path, examples_dir: &Path) -> Result
     fs::create_dir_all(&examples_dir).map_err(|source| Error::io(&examples_dir, source))
 }
 
-fn collect_page_examples(root: &Path) -> Result<Vec<PageExample>> {
-    let mut examples = Vec::new();
-    collect_boxdd_examples(root, &mut examples)?;
-    collect_bevy_examples(root, &mut examples)?;
-    collect_testbed_scenes(root, &mut examples)?;
-
-    let mut seen = BTreeSet::new();
-    let mut errors = Vec::new();
-    for example in &examples {
-        if !seen.insert(example.id.clone()) {
-            errors.push(format!("duplicate Pages example id `{}`", example.id));
-        }
-        let source = root.join(&example.source);
-        if !source.exists() {
-            errors.push(format!(
-                "Pages example `{}` points at missing source `{}`",
-                example.id, example.source
-            ));
-        }
-    }
-    if !errors.is_empty() {
-        return Err(Error::Message(errors.join("\n")));
-    }
-
-    examples.sort_by(|left, right| {
-        left.area
-            .cmp(&right.area)
-            .then_with(|| left.title.cmp(&right.title))
-            .then_with(|| left.id.cmp(&right.id))
-    });
-    Ok(examples)
-}
-
-fn collect_boxdd_examples(root: &Path, out: &mut Vec<PageExample>) -> Result<()> {
-    let examples_dir = root.join("boxdd/examples");
-    for source in collect_top_level_rs_files(&examples_dir)? {
-        let stem = file_stem(&source)?;
-        let source = repo_relative_path(root, &source);
-        let title = titleize_identifier(&stem);
-        out.push(PageExample {
-            id: format!("core-{}", slugify(&stem)),
-            area: boxdd_example_area(&stem).to_owned(),
-            title,
-            summary: boxdd_example_summary(&stem),
-            source,
-            command: boxdd_example_command(&stem),
-            run_note: boxdd_example_run_note(&stem),
-        });
-    }
-    Ok(())
-}
-
-fn collect_bevy_examples(root: &Path, out: &mut Vec<PageExample>) -> Result<()> {
-    let examples_dir = root.join("bevy_boxdd/examples");
-    for source in collect_top_level_rs_files(&examples_dir)? {
-        let stem = file_stem(&source)?;
-        let source = repo_relative_path(root, &source);
-        out.push(PageExample {
-            id: format!("bevy-{}", slugify(&stem)),
-            area: "Bevy ECS".to_owned(),
-            title: titleize_identifier(&stem),
-            summary: bevy_example_summary(&stem),
-            source,
-            command: format!("cargo run -p bevy_boxdd --example {stem}"),
-            run_note: "Runs as a native Bevy example. It is listed here because no browser Bevy build is published for boxdd yet.".to_owned(),
-        });
-    }
-    Ok(())
-}
-
-fn collect_testbed_scenes(root: &Path, out: &mut Vec<PageExample>) -> Result<()> {
-    let scenes_mod = root.join("boxdd/examples/testbed/scenes/mod.rs");
-    let source =
-        fs::read_to_string(&scenes_mod).map_err(|source| Error::io(&scenes_mod, source))?;
-    let mut in_spec = false;
-    let mut name: Option<String> = None;
-    let mut module: Option<String> = None;
-
-    for line in source.lines() {
-        let trimmed = line.trim();
-        if trimmed == "SceneSpec {" {
-            in_spec = true;
-            name = None;
-            module = None;
-            continue;
-        }
-        if !in_spec {
-            continue;
-        }
-        if let Some(value) = extract_string_field(trimmed, "name") {
-            name = Some(value);
-        } else if let Some(after_build) = trimmed.strip_prefix("build: ") {
-            if let Some((module_name, _)) = after_build.split_once("::build") {
-                module = Some(module_name.trim().to_owned());
-            }
-        } else if trimmed == "}," {
-            let name = name.take().ok_or_else(|| {
-                Error::Message(format!(
-                    "SceneSpec in {} is missing name",
-                    scenes_mod.display()
-                ))
-            })?;
-            let module = module.take().ok_or_else(|| {
-                Error::Message(format!("SceneSpec `{name}` is missing build module"))
-            })?;
-            let source = format!("boxdd/examples/testbed/scenes/{module}.rs");
-            out.push(PageExample {
-                id: format!("testbed-{}", slugify(&name)),
-                area: testbed_scene_area(&name),
-                title: name.clone(),
-                summary: format!(
-                    "Interactive ImGui testbed scene backed by the `{module}` scene module."
-                ),
-                source,
-                command:
-                    "cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed"
-                        .to_owned(),
-                run_note: format!(
-                    "Open the desktop testbed and choose `{name}` from the Scene selector."
-                ),
-            });
-            in_spec = false;
-        }
-    }
-    Ok(())
-}
-
-fn collect_top_level_rs_files(dir: &Path) -> Result<Vec<PathBuf>> {
-    let mut files = Vec::new();
-    for entry in fs::read_dir(dir).map_err(|source| Error::io(dir, source))? {
-        let entry = entry.map_err(|source| Error::io(dir, source))?;
-        let path = entry.path();
-        if path.is_file() && path.extension().is_some_and(|ext| ext == "rs") {
-            files.push(path);
-        }
-    }
-    files.sort();
-    Ok(files)
-}
-
-fn file_stem(path: &Path) -> Result<String> {
-    path.file_stem()
-        .and_then(|stem| stem.to_str())
-        .map(str::to_owned)
-        .ok_or_else(|| {
-            Error::Message(format!(
-                "invalid Rust example file name: {}",
-                path.display()
-            ))
-        })
-}
-
-fn repo_relative_path(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root)
-        .unwrap_or(path)
-        .to_string_lossy()
-        .replace('\\', "/")
-}
-
-fn boxdd_example_area(stem: &str) -> &'static str {
-    match stem {
-        "world_basics" | "basic" | "bodies" | "world_handle_reads" => "Core World",
-        "shapes_variety" | "convex_hull" | "donut" => "Shapes",
-        "queries" | "query_casts" | "raycast" | "shapecast" | "dynamic_tree" | "buffer_reuse"
-        | "character_mover" | "collision_basics" => "Queries And Collision",
-        "events_summary" | "events_view" | "sensors" | "contacts" => "Events",
-        "joints" | "joints_presets" | "bridge" | "car" | "revolute_motor"
-        | "prismatic_elevator" | "prismatic_wheel" | "doohickey" => "Joints",
-        "stacking" | "pyramid" | "chain_walkway" | "continuous_bullet" | "kinematic_platform"
-        | "robustness" | "issues" => "Gameplay Scenes",
-        "mint_interop" | "scene_serialize" | "physics_thread" | "wasm_wasi_smoke"
-        | "determinism" => "Integration",
-        "testbed_imgui_glow" => "Interactive Testbed",
-        "benchmark" => "Performance",
-        _ => "Core Examples",
-    }
-}
-
-fn boxdd_example_summary(stem: &str) -> String {
-    match stem {
-        "world_basics" => "Minimal world, body, shape creation, stepping, and cleanup.".to_owned(),
-        "basic" => "Small foundation scene for the core safe API.".to_owned(),
-        "bodies" => "Body runtime control helpers such as velocity, damping, sleep, and transforms.".to_owned(),
-        "buffer_reuse" => "Hot-path `*_into` and visitor APIs that reuse caller-owned buffers.".to_owned(),
-        "queries" => "AABB overlap query styles, reusable buffers, visitor callbacks, and polygon overlap helpers.".to_owned(),
-        "query_casts" => "Ray casts, shape casts, and reusable cast-hit buffers.".to_owned(),
-        "dynamic_tree" => "Standalone Box2D broad-phase tree ownership and query helpers.".to_owned(),
-        "raycast" => "Focused world ray-cast walkthrough.".to_owned(),
-        "shapecast" => "Focused shape-cast walkthrough.".to_owned(),
-        "character_mover" => "Mover casts, plane solving, and clipped movement against world geometry.".to_owned(),
-        "collision_basics" => "Standalone low-level collision helpers without a live world.".to_owned(),
-        "debug_draw" => "Collected debug draw commands through the safe API.".to_owned(),
-        "events_summary" => "Owned event snapshots and reusable event buffers.".to_owned(),
-        "events_view" => "Borrowed zero-copy event views scoped to a closure.".to_owned(),
-        "sensors" => "Sensor begin/end messages and trigger-style overlap behavior.".to_owned(),
-        "contacts" => "Contact begin/end/hit behavior and inspection.".to_owned(),
-        "joints" => "Joint setup across the common safe wrapper paths.".to_owned(),
-        "joints_presets" => "Higher-level joint presets for common setups.".to_owned(),
-        "bridge" => "Distance-joint bridge scene.".to_owned(),
-        "car" => "Vehicle-style wheel and motor control sample.".to_owned(),
-        "chain_walkway" => "Chain segments and moving bodies over connected terrain.".to_owned(),
-        "continuous_bullet" => "Continuous collision for fast bullet-style motion.".to_owned(),
-        "determinism" => "Deterministic stepping expectations.".to_owned(),
-        "kinematic_platform" => "Kinematic-body interaction pattern.".to_owned(),
-        "physics_thread" => "Dedicated-thread ownership model for multi-threaded apps.".to_owned(),
-        "scene_serialize" => "Scene snapshot round-trip using the `serialize` feature.".to_owned(),
-        "mint_interop" => "Math interop with `mint` vectors and transforms.".to_owned(),
-        "wasm_wasi_smoke" => "Minimal WASI-oriented smoke example for the wasm target.".to_owned(),
-        "testbed_imgui_glow" => "Native ImGui + Glow desktop testbed that hosts many scenes behind one UI.".to_owned(),
-        "benchmark" => "Performance-oriented stress sample.".to_owned(),
-        _ => format!("Source example for `{stem}`."),
-    }
-}
-
-fn boxdd_example_command(stem: &str) -> String {
-    match stem {
-        "scene_serialize" => {
-            "cargo run -p boxdd --example scene_serialize --features serialize".to_owned()
-        }
-        "mint_interop" => "cargo run -p boxdd --example mint_interop --features mint".to_owned(),
-        "testbed_imgui_glow" => {
-            "cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed"
-                .to_owned()
-        }
-        "benchmark" => "cargo run -p boxdd --example benchmark --release".to_owned(),
-        "wasm_wasi_smoke" => {
-            "cargo build -p boxdd --example wasm_wasi_smoke --target wasm32-wasip1".to_owned()
-        }
-        _ => format!("cargo run -p boxdd --example {stem}"),
-    }
-}
-
-fn boxdd_example_run_note(stem: &str) -> String {
-    match stem {
-        "wasm_wasi_smoke" => {
-            "This is a compile/runtime smoke target for WASI; it is not a browser page.".to_owned()
-        }
-        "testbed_imgui_glow" => {
-            "Requires native windowing and the `imgui-glow-testbed` feature.".to_owned()
-        }
-        "scene_serialize" => "Requires the `serialize` feature.".to_owned(),
-        "mint_interop" => "Requires the `mint` feature.".to_owned(),
-        _ => "Runs as a native Cargo example.".to_owned(),
-    }
-}
-
-fn bevy_example_summary(stem: &str) -> String {
-    match stem {
-        "falling_box_2d" => {
-            "Basic body, collider, material, fixed-step stepping, and transform sync.".to_owned()
-        }
-        "contact_events_2d" => {
-            "Contact begin/end/hit messages mapped back to Bevy entities.".to_owned()
-        }
-        "sensor_events_2d" => "Sensor begin/end messages for trigger-style overlaps.".to_owned(),
-        "ray_query_2d" => "Entity-mapped ray queries through `BoxddPhysicsContext`.".to_owned(),
-        "overlap_query_2d" => {
-            "Entity-mapped AABB overlap queries for triggers, pickups, and editor selection."
-                .to_owned()
-        }
-        "kinematic_platform_2d" => {
-            "Driving a kinematic body from Bevy transforms with `BevyToPhysics` sync.".to_owned()
-        }
-        "joint_bridge_2d" => {
-            "Distance and revolute joint descriptors authored as ECS components.".to_owned()
-        }
-        "child_colliders_2d" => {
-            "Compound body authoring with parent body and child collider entities.".to_owned()
-        }
-        "collision_filter_2d" => {
-            "Collision category and mask setup through `PhysicsMaterial::filter`.".to_owned()
-        }
-        "debug_draw_collect_2d" => {
-            "Render-agnostic debug draw command collection from the Bevy context.".to_owned()
-        }
-        "debug_draw_gizmos_2d" => {
-            "Rendering collected debug draw commands through Bevy Gizmos.".to_owned()
-        }
-        _ => format!("Bevy ECS example for `{stem}`."),
-    }
-}
-
-fn testbed_scene_area(name: &str) -> String {
-    name.split_once(':')
-        .map(|(prefix, _)| format!("Testbed {prefix}"))
-        .unwrap_or_else(|| "Testbed Scenes".to_owned())
-}
-
-fn expected_pages(root: &Path, examples: &[PageExample]) -> BTreeMap<PathBuf, String> {
-    let pages_dir = root.join("docs/pages");
-    let mut pages = BTreeMap::new();
-    pages.insert(
-        pages_dir.join("index.html"),
-        example_index_page(examples, ExampleIndexLocation::Root),
-    );
-    pages.insert(
-        pages_dir.join("examples/index.html"),
-        example_index_page(examples, ExampleIndexLocation::ExamplesDirectory),
-    );
-    pages.insert(pages_dir.join("wasm/index.html"), wasm_runtime_page());
-    for example in examples {
-        pages.insert(
-            pages_dir
-                .join("examples")
-                .join(&example.id)
-                .join("index.html"),
-            example_page(example),
-        );
-    }
-    pages
-}
-
-fn example_index_page(examples: &[PageExample], location: ExampleIndexLocation) -> String {
-    let cards = examples
+fn bevy_example_index_page(samples: &[RegistrySample], location: ExampleIndexLocation) -> String {
+    let links = samples
         .iter()
-        .map(|example| {
+        .map(|sample| {
             format!(
-                "        <a class=\"card\" href=\"{href}\"><span>{area}</span><strong>{title}</strong><small>{summary}</small><em>{command}</em></a>",
-                href = location.example_href(&example.id),
-                area = escape_html(&example.area),
-                title = escape_html(&example.title),
-                summary = escape_html(&example.summary),
-                command = escape_html(&example.command),
+                "        <a class=\"card\" href=\"{href}\"><span>{category}</span><strong>{name}</strong><small>{description}</small><em>{upstream}</em></a>",
+                href = location.example_href(&sample.id),
+                category = escape_html(&sample.category),
+                name = escape_html(&sample.name),
+                description = escape_html(&sample.description),
+                upstream = upstream_summary(&sample.upstream)
             )
         })
         .collect::<Vec<_>>()
@@ -1868,9 +2076,9 @@ fn example_index_page(examples: &[PageExample], location: ExampleIndexLocation) 
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>boxdd Examples</title>
+  <title>boxdd Bevy Examples</title>
   <link rel="icon" href="data:,">
-  <meta name="description" content="Generated example index for boxdd and bevy_boxdd.">
+  <meta name="description" content="Direct Bevy Web examples for boxdd.">
   <style>{css}</style>
 </head>
 <body>
@@ -1878,26 +2086,16 @@ fn example_index_page(examples: &[PageExample], location: ExampleIndexLocation) 
     <header class="topbar">
       <a href="{home_href}">boxdd Examples</a>
       <nav>
-        <a href="{runtime_href}">Runtime</a>
-        <a href="{examples_href}">Examples</a>
         <a href="https://github.com/Latias94/boxdd">GitHub</a>
         <a href="https://docs.rs/boxdd">Docs.rs</a>
       </nav>
     </header>
     <main class="directory-main">
-      <p class="eyebrow">Generated example index</p>
-      <h1>Find the Rust example that matches the workflow</h1>
-      <p class="lead">This page is generated from the checked-in Cargo examples, the desktop testbed scene registry, and the browser provider runtime smoke.</p>
-      <section class="runtime-panel">
-        <div>
-          <span>Browser runtime</span>
-          <strong>Run Box2D through Rust WASM</strong>
-          <p>The runtime page loads the Rust `boxdd-provider-smoke` wasm module and the Emscripten-built Box2D provider module with shared memory, then draws live simulation state on canvas.</p>
-        </div>
-        <a href="{runtime_href}">Open runtime</a>
-      </section>
+      <p class="eyebrow">Bevy Web examples</p>
+      <h1>Run a Box2D scene</h1>
+      <p class="lead">Each entry opens a dedicated Bevy + egui WASM page backed by the same Box2D provider runtime.</p>
       <section class="card-grid">
-{cards}
+{links}
       </section>
     </main>
   </div>
@@ -1906,106 +2104,41 @@ fn example_index_page(examples: &[PageExample], location: ExampleIndexLocation) 
 "#,
         css = example_page_css(),
         home_href = location.home_href(),
-        examples_href = location.examples_href(),
-        runtime_href = location.runtime_href(),
-        cards = cards,
+        links = links
     )
 }
 
-fn example_page(example: &PageExample) -> String {
-    let source_url = format!(
-        "https://github.com/Latias94/boxdd/blob/main/{}",
-        example.source
-    );
+fn bevy_testbed_page() -> String {
     format!(
         r#"<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{title} - boxdd Example</title>
+  <title>boxdd Bevy Testbed</title>
   <link rel="icon" href="data:,">
-  <meta name="description" content="{summary}">
+  <meta name="description" content="Bevy + egui WASM testbed for boxdd.">
   <style>{css}</style>
 </head>
 <body>
-  <div class="detail">
+  <div class="shell">
     <header class="topbar">
-      <a href="../../">boxdd Examples</a>
+      <div>
+        <a href="../">boxdd Examples</a>
+        <h1>Bevy Testbed</h1>
+        <p><span>All scenes</span> Switch scenes from the egui panel.</p>
+      </div>
       <nav>
-        <a href="../">All examples</a>
-        <a href="{source_url}">Source</a>
+        <a href="../examples/">All Bevy examples</a>
+        <a href="https://github.com/Latias94/boxdd/tree/main/bevy_boxdd/examples/testbed_2d">Source</a>
       </nav>
     </header>
-    <main class="detail-main">
-      <p class="eyebrow">{area}</p>
-      <h1>{title}</h1>
-      <p class="lead">{summary}</p>
-      <section class="command-panel">
-        <span>Run</span>
-        <pre><code>{command}</code></pre>
-        <p>{run_note}</p>
-      </section>
-      <section class="source-panel">
-        <span>Source</span>
-        <a href="{source_url}">{source}</a>
-      </section>
-    </main>
-  </div>
-</body>
-</html>
-"#,
-        css = example_page_css(),
-        title = escape_html(&example.title),
-        summary = escape_html(&example.summary),
-        area = escape_html(&example.area),
-        command = escape_html(&example.command),
-        run_note = escape_html(&example.run_note),
-        source = escape_html(&example.source),
-        source_url = source_url,
-    )
-}
-
-fn wasm_runtime_page() -> String {
-    format!(
-        r#"<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>boxdd Browser Runtime</title>
-  <link rel="icon" href="data:,">
-  <meta name="description" content="Real browser runtime for boxdd backed by Rust WASM and a Box2D provider module.">
-  <style>{css}</style>
-</head>
-<body>
-  <div class="runtime-shell">
-    <header class="topbar">
-      <a href="../">boxdd Examples</a>
-      <nav>
-        <a href="../examples/">All examples</a>
-        <a href="https://github.com/Latias94/boxdd/tree/main/examples-wasm/provider-smoke">Source</a>
-      </nav>
-    </header>
-    <main class="runtime-main">
-      <section class="runtime-copy">
-        <p class="eyebrow">Real browser runtime</p>
-        <h1>Rust WASM plus Box2D provider</h1>
-        <p class="lead">This canvas is driven by the checked-in `boxdd-provider-smoke` runtime. The Rust module imports Box2D C API symbols from the provider module and both modules share one WebAssembly memory.</p>
-        <div id="runtime-status" class="runtime-status" data-state="loading" role="status" aria-live="polite">
-          <strong>Loading runtime</strong>
-          <span>Preparing Rust wasm and the Box2D provider module.</span>
-        </div>
-        <dl class="metric-grid">
-          <div><dt>Drop</dt><dd id="metric-drop">--</dd></div>
-          <div><dt>Ray</dt><dd id="metric-ray">--</dd></div>
-          <div><dt>Shape cast</dt><dd id="metric-cast">--</dd></div>
-          <div><dt>Joint</dt><dd id="metric-joint">--</dd></div>
-        </dl>
-      </section>
-      <section class="runtime-stage">
-        <canvas id="runtime-canvas" width="960" height="560" aria-label="Live Box2D browser runtime"></canvas>
-      </section>
+    <main id="bevy-app" data-scene-id="" data-scene-name="Bevy Testbed" data-scene-category="All scenes">
+      <canvas id="bevy-canvas" tabindex="0"></canvas>
+      <div id="bevy-status" role="status" aria-live="polite">
+        <strong>Loading Bevy Testbed</strong>
+        <span>Preparing the shared Box2D provider and the Rust Bevy wasm module.</span>
+      </div>
     </main>
   </div>
   <script type="module" src="loader.js"></script>
@@ -2016,27 +2149,102 @@ fn wasm_runtime_page() -> String {
     )
 }
 
-fn write_wasm_runtime_loader(pages_dir: &Path) -> Result<()> {
-    let wasm_dir = pages_dir.join("wasm");
-    fs::create_dir_all(&wasm_dir).map_err(|source| Error::io(&wasm_dir, source))?;
-    let path = wasm_dir.join("loader.js");
-    fs::write(&path, wasm_runtime_loader_js()).map_err(|source| Error::io(&path, source))
+fn bevy_example_page(sample: &RegistrySample) -> String {
+    format!(
+        r#"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{name} - boxdd Bevy Example</title>
+  <link rel="icon" href="data:,">
+  <meta name="description" content="{description}">
+  <style>{css}</style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div>
+        <a href="../../">boxdd Examples</a>
+        <h1>{name}</h1>
+        <p><span>{category}</span>{description}</p>
+        {upstream}
+      </div>
+      <nav>
+        <a href="../">All Bevy examples</a>
+        <a href="https://github.com/Latias94/boxdd/tree/main/bevy_boxdd/examples/testbed_2d">Source</a>
+      </nav>
+    </header>
+    <main id="bevy-app" data-scene-id="{id}" data-scene-name="{name}" data-scene-category="{category}">
+      <canvas id="bevy-canvas" tabindex="0"></canvas>
+      <div id="bevy-status" role="status" aria-live="polite">
+        <strong>Loading {name}</strong>
+        <span>Preparing the shared Box2D provider and the Rust Bevy wasm module.</span>
+      </div>
+    </main>
+  </div>
+  <script type="module" src="../../bevy-testbed/loader.js"></script>
+</body>
+</html>
+"#,
+        id = escape_html(&sample.id),
+        name = escape_html(&sample.name),
+        category = escape_html(&sample.category),
+        description = escape_html(&sample.description),
+        upstream = source_list_html(sample),
+        css = example_page_css()
+    )
 }
 
-fn wasm_runtime_loader_js() -> &'static str {
-    r##"const statusPanel = document.querySelector("#runtime-status");
-const canvas = document.querySelector("#runtime-canvas");
-const ctx = canvas.getContext("2d");
-const metrics = {
-  drop: document.querySelector("#metric-drop"),
-  ray: document.querySelector("#metric-ray"),
-  cast: document.querySelector("#metric-cast"),
-  joint: document.querySelector("#metric-joint"),
-};
+fn upstream_summary(upstream: &[RegistryUpstreamSample]) -> String {
+    let mut labels = upstream
+        .iter()
+        .take(3)
+        .map(|sample| format!("{} / {}", sample.category, sample.name))
+        .collect::<Vec<_>>();
+    if upstream.len() > labels.len() {
+        labels.push(format!("+{} more", upstream.len() - labels.len()));
+    }
+    escape_html(&labels.join(", "))
+}
+
+fn source_list_html(sample: &RegistrySample) -> String {
+    let mut items = String::new();
+    for upstream in &sample.upstream {
+        write!(
+            items,
+            "<span>{category} / {name} · {mode}</span>",
+            category = escape_html(&upstream.category),
+            name = escape_html(&upstream.name),
+            mode = escape_html(&parity_mode_label(&upstream.mode))
+        )
+        .expect("writing to String cannot fail");
+    }
+    format!(r#"<div class="upstream-list">{items}</div>"#)
+}
+
+fn parity_mode_label(mode: &str) -> String {
+    let mut label = String::new();
+    for (index, ch) in mode.chars().enumerate() {
+        if index > 0 && ch.is_ascii_uppercase() {
+            label.push(' ');
+        }
+        label.push(ch.to_ascii_lowercase());
+    }
+    label
+}
+
+fn bevy_testbed_loader_js() -> &'static str {
+    r##"const statusPanel = document.querySelector("#bevy-status");
+const appRoot = document.querySelector("#bevy-app");
+const sceneId = appRoot?.dataset.sceneId || "";
+const sceneName = appRoot?.dataset.sceneName || "Bevy testbed";
+const isExamplePage = Boolean(sceneId);
 
 function setStatus(state, title, detail) {
   statusPanel.dataset.state = state;
   statusPanel.replaceChildren();
+
   const titleNode = document.createElement("strong");
   titleNode.textContent = title;
   const detailNode = document.createElement("span");
@@ -2045,24 +2253,27 @@ function setStatus(state, title, detail) {
 }
 
 function generatedUrl(path) {
-  return new URL(`generated/${path}`, import.meta.url);
+  return new URL(path, import.meta.url);
 }
 
-function providerFunction(provider, name) {
-  const exported = provider[`_${name}`] || provider[name];
-  if (typeof exported !== "function") {
-    throw new Error(`Box2D provider is missing export ${name}`);
-  }
-  return exported;
-}
+async function main() {
+  const providerGenerated = new URL("../wasm/generated/", import.meta.url);
+  const [
+    { default: createProvider },
+    { default: initBevyTestbed },
+    { setBox2dProvider, setBoxddAppExports },
+  ] =
+    await Promise.all([
+      import(new URL("box2d-sys-v0.js", providerGenerated).href),
+      import(generatedUrl("generated/bevy_boxdd_testbed.js").href),
+      import(generatedUrl("generated/box2d-provider-shim.js").href),
+    ]);
+  const memory = new WebAssembly.Memory({ initial: 4096, maximum: 8192 });
 
-async function loadRuntime() {
-  setStatus("loading", "Loading Box2D provider", "Creating the shared WebAssembly memory.");
-  const memory = new WebAssembly.Memory({ initial: 2048, maximum: 8192 });
-  const { default: createProvider } = await import(generatedUrl("box2d-sys-v0.js").href);
+  setStatus("loading", "Loading Box2D provider", `Preparing the shared Box2D C provider for ${sceneName}.`);
   const provider = await createProvider({
     wasmMemory: memory,
-    locateFile: (path) => generatedUrl(path).href,
+    locateFile: (path) => new URL(path, providerGenerated).href,
     print: (text) => console.log(`[box2d-sys-v0] ${text}`),
     printErr: (text) => console.warn(`[box2d-sys-v0] ${text}`),
   });
@@ -2071,101 +2282,32 @@ async function loadRuntime() {
     throw new Error("Box2D provider did not use the shared WebAssembly.Memory");
   }
 
-  setStatus("loading", "Loading Rust runtime", "Instantiating the boxdd provider-smoke wasm module.");
-  const appBytes = await fetch(generatedUrl("boxdd_provider_smoke.wasm")).then((response) => {
-    if (!response.ok) throw new Error(`failed to fetch Rust wasm: ${response.status}`);
-    return response.arrayBuffer();
+  setBox2dProvider(provider);
+  setStatus("loading", `Loading ${sceneName}`, "Starting the Rust Bevy + egui wasm module.");
+
+  const bevyExports = await initBevyTestbed({
+    module_or_path: generatedUrl("generated/bevy_boxdd_testbed_bg.wasm"),
+    memory,
   });
-  const importObject = { env: { memory }, "box2d-sys-v0": {} };
-  const inspectModule = await WebAssembly.compile(appBytes);
-  for (const entry of WebAssembly.Module.imports(inspectModule)) {
-    if (entry.kind === "function" && entry.module === "box2d-sys-v0") {
-      importObject["box2d-sys-v0"][entry.name] = providerFunction(provider, entry.name);
-    }
-  }
-  const instance = await WebAssembly.instantiate(inspectModule, importObject);
-  const exports = instance.exports;
-  const smoke = exports.boxdd_provider_smoke();
-  if (smoke !== 0) throw new Error(`provider smoke failed with code ${smoke}`);
-  const init = exports.boxdd_runtime_init();
-  if (init !== 0) throw new Error(`runtime init failed with code ${init}`);
-  return exports;
+  setBoxddAppExports(bevyExports);
+
+  window.BOXDD_BEVY_TESTBED_READY = true;
+  window.BOXDD_BEVY_EXAMPLE_READY = true;
+  window.BOXDD_BEVY_SCENE_ID = sceneId;
+  setStatus(
+    "running",
+    `${sceneName} running`,
+    isExamplePage
+      ? "This dedicated example page is running the selected Box2D scene in Bevy."
+      : "The scene browser, egui controls, and Box2D simulation are running in this canvas.",
+  );
 }
 
-function setMetric(node, value, suffix) {
-  node.textContent = `${value}${suffix}`;
-}
-
-function draw(exports) {
-  const width = canvas.width;
-  const height = canvas.height;
-  ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = "#05080c";
-  ctx.fillRect(0, 0, width, height);
-  ctx.strokeStyle = "#27313a";
-  ctx.lineWidth = 1;
-  for (let x = 0; x <= width; x += 48) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, height);
-    ctx.stroke();
-  }
-  for (let y = 0; y <= height; y += 48) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(width, y);
-    ctx.stroke();
-  }
-
-  const scale = 58;
-  const worldToCanvas = (x, y) => [width / 2 + x * scale, height - 92 - y * scale];
-  ctx.fillStyle = "#2dd4bf";
-  ctx.fillRect(0, height - 92 + scale, width, 8);
-  const count = exports.boxdd_runtime_body_count();
-  for (let i = 0; i < count; i += 1) {
-    const shape = exports.boxdd_runtime_body_shape(i);
-    const x = exports.boxdd_runtime_body_x_millimeters(i) / 1000;
-    const y = exports.boxdd_runtime_body_y_millimeters(i) / 1000;
-    const angle = exports.boxdd_runtime_body_angle_milliradians(i) / 1000;
-    const [cx, cy] = worldToCanvas(x, y);
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(-angle);
-    if (shape === 2) {
-      const radius = exports.boxdd_runtime_body_radius_millimeters(i) / 1000 * scale;
-      ctx.fillStyle = "#facc15";
-      ctx.beginPath();
-      ctx.arc(0, 0, radius, 0, Math.PI * 2);
-      ctx.fill();
-    } else {
-      const hw = exports.boxdd_runtime_body_half_width_millimeters(i) / 1000 * scale;
-      const hh = exports.boxdd_runtime_body_half_height_millimeters(i) / 1000 * scale;
-      ctx.fillStyle = i % 2 === 0 ? "#38bdf8" : "#a78bfa";
-      ctx.fillRect(-hw, -hh, hw * 2, hh * 2);
-    }
-    ctx.restore();
-  }
-}
-
-loadRuntime()
-  .then((exports) => {
-    setMetric(metrics.drop, exports.boxdd_provider_drop_millimeters(), " mm");
-    setMetric(metrics.ray, exports.boxdd_provider_ray_hit_millimeters(), " mm");
-    setMetric(metrics.cast, exports.boxdd_provider_shape_cast_permyriad(), " / 10000");
-    setMetric(metrics.joint, exports.boxdd_provider_joint_error_millimeters(), " mm");
-    setStatus("running", "Runtime running", "The canvas is stepping a real Box2D world through Rust wasm.");
-    const tick = () => {
-      for (let i = 0; i < 2; i += 1) exports.boxdd_runtime_step();
-      draw(exports);
-      requestAnimationFrame(tick);
-    };
-    tick();
-  })
-  .catch((error) => {
-    console.error(error);
-    const message = error instanceof Error ? error.message : String(error);
-    setStatus("error", "Runtime failed", message);
-  });
+main().catch((error) => {
+  console.error(error);
+  const message = error instanceof Error ? error.message : String(error);
+  setStatus("error", `${sceneName} failed`, message);
+});
 "##
 }
 
@@ -2174,20 +2316,6 @@ impl ExampleIndexLocation {
         match self {
             Self::Root => "./",
             Self::ExamplesDirectory => "../",
-        }
-    }
-
-    fn examples_href(self) -> &'static str {
-        match self {
-            Self::Root => "examples/",
-            Self::ExamplesDirectory => "./",
-        }
-    }
-
-    fn runtime_href(self) -> &'static str {
-        match self {
-            Self::Root => "wasm/",
-            Self::ExamplesDirectory => "../wasm/",
         }
     }
 
@@ -2205,113 +2333,42 @@ fn example_page_css() -> &'static str {
   color-scheme: dark;
   --background: #09090b;
   --foreground: #fafafa;
-  --card: #101014;
+  --card: #0f0f12;
   --muted: #a1a1aa;
   --border: #27272a;
-  --accent: #38bdf8;
-  --accent-strong: #facc15;
+  --accent: #2dd4bf;
+  --danger: #f87171;
 }
 * { box-sizing: border-box; }
-html, body { width: 100%; min-height: 100%; margin: 0; background: var(--background); color: var(--foreground); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+html, body { width: 100%; height: 100%; margin: 0; background: var(--background); color: var(--foreground); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 a { color: var(--foreground); text-decoration: none; }
 a:hover { text-decoration: underline; text-underline-offset: 4px; }
+.shell { display: grid; grid-template-rows: auto minmax(0, 1fr); width: 100%; height: 100%; }
 .topbar { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); background: rgba(9, 9, 11, 0.94); padding: 14px 18px; }
-.topbar > a { color: var(--accent); font-weight: 700; }
+.topbar h1 { margin: 4px 0 0; font-size: 20px; line-height: 1.2; letter-spacing: 0; }
+.topbar p { display: flex; flex-wrap: wrap; gap: 8px; margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+.topbar p span, .eyebrow { color: var(--accent); font-weight: 700; text-transform: uppercase; }
 .topbar nav { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 14px; }
-.directory-main, .detail-main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 54px 0; }
-.directory-main h1, .detail-main h1 { max-width: 840px; margin: 0; font-size: clamp(34px, 6vw, 58px); line-height: 1; letter-spacing: 0; }
-.eyebrow { color: var(--accent); font-size: 12px; font-weight: 800; letter-spacing: 0; text-transform: uppercase; }
-.lead { max-width: 760px; color: var(--muted); font-size: 17px; line-height: 1.55; }
-.runtime-panel { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; justify-content: space-between; max-width: 980px; margin: 28px 0; border: 1px solid #36515d; border-radius: 8px; background: #0b1720; padding: 18px; }
-.runtime-panel div { max-width: 700px; }
-.runtime-panel span { color: var(--accent); font-size: 12px; font-weight: 800; text-transform: uppercase; }
-.runtime-panel strong { display: block; margin-top: 7px; font-size: 20px; }
-.runtime-panel p { margin: 8px 0 0; color: var(--muted); line-height: 1.5; }
-.runtime-panel a { border: 1px solid #67e8f9; border-radius: 6px; color: #ecfeff; padding: 10px 14px; font-weight: 800; }
-.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 12px; margin-top: 28px; }
-.card { display: grid; min-height: 170px; gap: 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); padding: 16px; }
+#bevy-app { position: relative; min-width: 0; min-height: 0; background: #020617; }
+#bevy-canvas { display: block; width: 100%; height: 100%; outline: none; touch-action: none; }
+#bevy-status { position: absolute; left: 18px; bottom: 18px; max-width: min(560px, calc(100% - 36px)); border: 1px solid var(--border); border-radius: 8px; background: rgba(15, 15, 18, 0.94); padding: 12px 14px; color: var(--muted); font-size: 14px; line-height: 1.45; }
+#bevy-status strong { display: block; margin-bottom: 4px; color: var(--foreground); font-size: 15px; }
+#bevy-status[data-state="error"] strong { color: var(--danger); }
+#bevy-status[data-state="running"] { opacity: 0; pointer-events: none; transition: opacity 180ms ease; }
+.directory { min-height: 100%; }
+.directory-main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 54px 0; }
+.directory-main h1 { margin: 0; font-size: clamp(34px, 6vw, 58px); line-height: 1; letter-spacing: 0; }
+.lead { max-width: 720px; color: var(--muted); font-size: 17px; }
+.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 28px; }
+.card { display: grid; min-height: 150px; gap: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); padding: 16px; }
 .card:hover { border-color: #52525b; text-decoration: none; }
-.card span, .command-panel span, .source-panel span { color: var(--accent); font-size: 12px; font-weight: 800; text-transform: uppercase; }
-.card strong { font-size: 18px; line-height: 1.25; }
+.card span { color: var(--accent); font-size: 12px; font-weight: 700; text-transform: uppercase; }
+.card strong { font-size: 18px; }
 .card small { color: var(--muted); font-size: 13px; line-height: 1.5; }
-.card em { align-self: end; color: #d4d4d8; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 12px; font-style: normal; line-height: 1.45; overflow-wrap: anywhere; }
-.command-panel, .source-panel { max-width: 860px; margin-top: 24px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); padding: 18px; }
-pre { margin: 12px 0 10px; overflow-x: auto; border-radius: 6px; background: #020617; padding: 14px; }
-code { color: var(--accent-strong); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 14px; }
-.command-panel p { margin: 0; color: var(--muted); line-height: 1.5; }
-.source-panel a { display: inline-block; margin-top: 10px; color: var(--foreground); overflow-wrap: anywhere; }
-.runtime-shell { min-height: 100vh; }
-.runtime-main { display: grid; grid-template-columns: minmax(320px, 440px) minmax(0, 1fr); gap: 24px; width: min(1360px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0; }
-.runtime-copy { min-width: 0; }
-.runtime-copy h1 { margin: 0; font-size: 38px; line-height: 1; letter-spacing: 0; }
-.runtime-status { border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--muted); padding: 14px; line-height: 1.45; }
-.runtime-status strong { display: block; margin-bottom: 4px; color: var(--foreground); }
-.runtime-status[data-state="error"] strong { color: #fca5a5; }
-.runtime-status[data-state="running"] strong { color: #86efac; }
-.metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 16px 0 0; }
-.metric-grid div { border: 1px solid var(--border); border-radius: 8px; background: var(--card); padding: 12px; }
-.metric-grid dt { color: var(--muted); font-size: 12px; text-transform: uppercase; }
-.metric-grid dd { margin: 6px 0 0; color: var(--accent-strong); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 18px; }
-.runtime-stage { min-width: 0; border: 1px solid var(--border); border-radius: 8px; background: #05080c; overflow: hidden; }
-#runtime-canvas { display: block; width: 100%; height: min(70vh, 640px); min-height: 420px; }
-@media (max-width: 920px) {
-  .runtime-main { grid-template-columns: 1fr; }
-  #runtime-canvas { height: 420px; }
-}
+.card em { color: #d4d4d8; font-size: 12px; font-style: normal; line-height: 1.45; }
+.upstream-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.upstream-list span { border: 1px solid var(--border); border-radius: 999px; background: rgba(39, 39, 42, 0.7); padding: 4px 7px; color: #d4d4d8; font-size: 12px; line-height: 1.2; text-transform: none; }
 "#
-}
-
-fn slugify(value: &str) -> String {
-    let mut out = String::new();
-    let mut last_dash = false;
-    for ch in value.chars() {
-        let ch = ch.to_ascii_lowercase();
-        if ch.is_ascii_alphanumeric() {
-            out.push(ch);
-            last_dash = false;
-        } else if !last_dash && !out.is_empty() {
-            out.push('-');
-            last_dash = true;
-        }
-    }
-    while out.ends_with('-') {
-        out.pop();
-    }
-    out
-}
-
-fn titleize_identifier(value: &str) -> String {
-    value
-        .split('_')
-        .filter(|part| !part.is_empty())
-        .map(title_word)
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn title_word(word: &str) -> String {
-    match word {
-        "2d" => "2D".to_owned(),
-        "aabb" => "AABB".to_owned(),
-        "ffi" => "FFI".to_owned(),
-        "glow" => "Glow".to_owned(),
-        "imgui" => "ImGui".to_owned(),
-        "toi" => "TOI".to_owned(),
-        "wasi" => "WASI".to_owned(),
-        "wasm" => "WASM".to_owned(),
-        _ => {
-            let mut chars = word.chars();
-            match chars.next() {
-                Some(first) => {
-                    let mut out = String::new();
-                    out.push(first.to_ascii_uppercase());
-                    out.push_str(chars.as_str());
-                    out
-                }
-                None => String::new(),
-            }
-        }
-    }
 }
 
 fn extract_string_field(line: &str, field: &str) -> Option<String> {
@@ -2337,8 +2394,8 @@ fn escape_html(value: &str) -> String {
 
 fn validate_pages(root: &Path) -> Result<()> {
     let pages_dir = root.join("docs/pages");
-    let examples = collect_page_examples(root)?;
-    let expected_pages = expected_pages(root, &examples);
+    let samples = read_testbed_registry(root)?;
+    let expected_pages = expected_bevy_pages(root, &samples);
     let html_files = collect_html_files(&pages_dir)?;
     if html_files.is_empty() {
         return Err(Error::Message(format!(
@@ -2394,26 +2451,52 @@ fn validate_pages(root: &Path) -> Result<()> {
         }
     }
 
-    let loader = pages_dir.join("wasm/loader.js");
+    let loader = pages_bevy_testbed_dir(root).join("loader.js");
     if !loader.exists() {
-        errors.push("missing generated wasm runtime loader docs/pages/wasm/loader.js".to_owned());
+        errors.push(
+            "missing generated Bevy testbed loader docs/pages/bevy-testbed/loader.js".to_owned(),
+        );
     } else {
         let actual = fs::read_to_string(&loader).map_err(|source| Error::io(&loader, source))?;
-        if normalize_newlines(&actual) != normalize_newlines(wasm_runtime_loader_js()) {
+        if normalize_newlines(&actual) != normalize_newlines(bevy_testbed_loader_js()) {
             errors.push(
-                "docs/pages/wasm/loader.js is stale; run `cargo run -p xtask -- generate-pages`"
-                    .to_owned(),
+                "docs/pages/bevy-testbed/loader.js is stale; run `cargo run -p xtask -- generate-pages`".to_owned(),
             );
+        }
+        for required in [
+            "box2d-provider-shim.js",
+            "setBox2dProvider",
+            "setBoxddAppExports",
+            "bevyExports",
+        ] {
+            if !actual.contains(required) {
+                errors.push(format!(
+                    "{} is missing required Bevy provider glue `{required}`",
+                    loader.strip_prefix(root).unwrap_or(&loader).display()
+                ));
+            }
         }
     }
 
     let wasm_generated = pages_wasm_generated_dir(root);
     if wasm_generated.exists() {
-        for asset in ["box2d-sys-v0.js", "box2d-sys-v0.wasm", PROVIDER_SMOKE_WASM] {
+        for asset in ["box2d-sys-v0.js", "box2d-sys-v0.wasm"] {
             let path = wasm_generated.join(asset);
             if !path.is_file() {
                 errors.push(format!(
-                    "missing wasm runtime asset {}; run `cargo run -p xtask -- build-pages-wasm`",
+                    "missing provider wasm asset {}; run `cargo run -p xtask -- build-pages-wasm`",
+                    path.strip_prefix(root).unwrap_or(&path).display()
+                ));
+            }
+        }
+    }
+    let bevy_generated = pages_bevy_generated_dir(root);
+    if bevy_generated.exists() {
+        for asset in [BEVY_WEB_JS, BEVY_WEB_WASM, BEVY_PROVIDER_SHIM] {
+            let path = bevy_generated.join(asset);
+            if !path.is_file() {
+                errors.push(format!(
+                    "missing Bevy wasm asset {}; run `cargo run -p xtask -- build-pages-wasm`",
                     path.strip_prefix(root).unwrap_or(&path).display()
                 ));
             }
@@ -2422,9 +2505,9 @@ fn validate_pages(root: &Path) -> Result<()> {
 
     if errors.is_empty() {
         println!(
-            "pages ok: {} html files checked, {} generated examples",
+            "pages ok: {} html files checked, {} Bevy WASM examples",
             html_files.len(),
-            examples.len()
+            samples.len()
         );
         Ok(())
     } else {

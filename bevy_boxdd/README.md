@@ -53,6 +53,8 @@ fn setup(mut commands: Commands) {
 
 Run examples with `cargo run -p bevy_boxdd --example <name>`.
 
+The GitHub Pages site builds `testbed_2d` to WebAssembly and exposes each scene as a dedicated Bevy + egui browser route.
+
 | Example | Shows |
 | --- | --- |
 | `falling_box_2d` | Basic body, collider, material, fixed-step stepping, and transform sync. |
@@ -66,3 +68,4 @@ Run examples with `cargo run -p bevy_boxdd --example <name>`.
 | `collision_filter_2d` | Collision category and mask setup through `PhysicsMaterial::filter`. |
 | `debug_draw_collect_2d` | Collecting render-agnostic `boxdd::DebugDrawCmd` values from the Bevy context. |
 | `debug_draw_gizmos_2d` | Rendering collected `boxdd::DebugDrawCmd` values with Bevy Gizmos. |
+| `testbed_2d` | Browser-oriented Bevy + egui testbed with official Box2D sample-style scenes for stacking, bodies, continuous collision, materials, events, and joints. |

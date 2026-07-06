@@ -18,13 +18,13 @@
 ## Engineering Status
 - API coverage matrix: `docs/api-coverage.md` tracks every vendored Box2D `B2_API` symbol; the current safe layer accounts for 424 of 430 symbols, with 4 raw-only and 2 omitted by rationale.
 - Official sample parity: `docs/upstream-parity/box2d-sample-matrix.md` maps non-benchmark upstream samples to Rust examples, tests, or testbed scenes. Benchmark rows may remain indexed references when that is the useful artifact.
-- GitHub Pages source: `docs/pages/index.html` is generated from checked-in Cargo examples and testbed scenes, and `docs/pages/wasm/` contains a live browser runtime backed by Rust wasm plus an Emscripten Box2D provider.
+- GitHub Pages source: `docs/pages/index.html` is a generated Bevy Web example index; each `examples/<scene-id>/` route relative to the Pages root runs the shared Bevy + egui + `boxdd` WASM testbed backed by an Emscripten Box2D provider.
 - Bevy integration: `bevy_boxdd` exposes `RigidBody`, `Collider`, `PhysicsMaterial`, distance/revolute `JointDescriptor`, transform sync, entity-mapped ray and AABB overlap helpers through `BoxddPhysicsContext`, debug draw command collection, recoverable error messages, and body/contact/sensor messages.
 
 ## 0.4.0 Highlights
 - `0.4.0` realigns `boxdd-sys` with the official upstream Box2D submodule again, so repository checkouts and CI no longer depend on a local-only Box2D patch commit.
 - Workspace metadata is centralized for `boxdd`, `boxdd-sys`, `bevy_boxdd`, and `xtask`.
-- `xtask` now validates API coverage, strict official sample parity, and the generated Pages example index.
+- `xtask` now validates API coverage, strict official sample parity, and the generated Pages Bevy WASM example index.
 - `boxdd::dynamic_tree` wraps the standalone Box2D broad-phase tree as an owned safe Rust type.
 - `bevy_boxdd` provides a Bevy 0.19 integration crate without adding Bevy dependencies to the core binding, with compiling examples for contacts, sensors, ray/AABB queries, kinematic transform sync, ECS joints, child colliders, collision filters, and debug draw collection.
 - Hot-path APIs are first-class: keep the simple `Vec`-returning calls for one-off use, or move per-frame code to `*_into` and `visit_*`.
@@ -133,7 +133,8 @@ cargo run -p xtask -- sample-parity --check
 cargo run -p xtask -- generate-pages
 cargo run -p xtask -- validate-pages
 
-# build the browser runtime assets when Emscripten SDK is available
+# build the browser runtime assets when Emscripten SDK and wasm-bindgen CLI are available
+cargo install wasm-bindgen-cli --version 0.2.126 --locked
 cargo run -p xtask -- provider-smoke
 cargo run -p xtask -- build-pages-wasm
 
@@ -156,7 +157,8 @@ cargo run -p bevy_boxdd --example debug_draw_gizmos_2d
 
 ## Examples
 - The example catalog is now grouped by topic in [`boxdd/examples/README.md`](boxdd/examples/README.md), so users can start from the workflows they care about instead of scanning file names.
-- Browser runtime assets live in [`examples-wasm/provider-smoke`](examples-wasm/provider-smoke) and can be rebuilt with `cargo run -p xtask -- build-pages-wasm` when Emscripten SDK is available.
+- Browser Pages are generated from [`bevy_boxdd/examples/testbed_2d`](bevy_boxdd/examples/testbed_2d) and run official Box2D sample-style scenes such as Single Box, Large Pyramid, Skinny Box, Restitution, Sensor Funnel, Bridge, and Revolute.
+- Provider smoke assets live in [`examples-wasm/provider-smoke`](examples-wasm/provider-smoke); Pages runtime assets can be rebuilt with `cargo run -p xtask -- build-pages-wasm` when Emscripten SDK and `wasm-bindgen-cli` are available.
 - Recommended starting points:
   - `world_basics`: minimal world/body/shape setup
   - `buffer_reuse`, `queries`, `query_casts`, `character_mover`: the main `0.4.0` hot-path, overlap, cast, and mover workflows
@@ -168,6 +170,7 @@ cargo run -p bevy_boxdd --example debug_draw_gizmos_2d
   - `scene_serialize`: snapshot/restore flows behind the `serialize` feature
   - `physics_thread`: the recommended dedicated physics-thread ownership model
   - `testbed_imgui_glow`: optional interactive testbed on the current `dear-imgui-*` stack
+  - `bevy_boxdd/examples/testbed_2d`: Bevy + egui browser testbed used by GitHub Pages
   - `bevy_boxdd/examples/falling_box_2d.rs`: Bevy adapter smoke example
   - `bevy_boxdd/examples/contact_events_2d.rs`, `sensor_events_2d.rs`, `ray_query_2d.rs`, `overlap_query_2d.rs`, `kinematic_platform_2d.rs`, `joint_bridge_2d.rs`, `child_colliders_2d.rs`, `collision_filter_2d.rs`, `debug_draw_collect_2d.rs`, `debug_draw_gizmos_2d.rs`: Bevy messages, entity query access, app-driven kinematic sync, ECS joints, child colliders, collision filters, and debug draw command rendering
 
