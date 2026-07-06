@@ -3,7 +3,8 @@
 Bevy integration for `boxdd`, the Rust bindings to the official Box2D v3 C API.
 
 This crate keeps the core physics binding engine-agnostic and provides Bevy-native ECS components,
-fixed-step systems, transform synchronization, and physics messages.
+fixed-step systems, transform synchronization, ECS-authored joints, entity-mapped queries, debug
+draw command collection, and physics messages.
 
 ## Quick Start
 
@@ -41,10 +42,12 @@ fn setup(mut commands: Commands) {
 - `boxdd::World` is `!Send`/`!Sync`; the plugin stores it as a non-send Bevy resource.
 - Contact and sensor messages are only emitted for shapes whose `PhysicsMaterial` enables the
   matching Box2D event flags.
-- `BoxddPhysicsContext` exposes the native `boxdd::World` plus body/shape-to-entity mappings for
-  query workflows that need to turn Box2D ids back into ECS entities.
+- `JointDescriptor` supports ECS-authored distance and revolute joints and inserts `BoxddJoint`
+  after the native joint is created.
+- `BoxddPhysicsContext` exposes the native `boxdd::World` plus body/shape/joint-to-entity mappings,
+  entity-level ray helpers, and reusable debug-draw command collection.
 - Recoverable plugin failures are emitted as `BoxddErrorMessage` by default, including invalid
-  collider or material inputs that fail before shape creation.
+  collider, material, or joint inputs that fail before native creation.
 
 ## Examples
 
@@ -55,5 +58,7 @@ Run examples with `cargo run -p bevy_boxdd --example <name>`.
 | `falling_box_2d` | Basic body, collider, material, fixed-step stepping, and transform sync. |
 | `contact_events_2d` | Contact begin/end/hit messages mapped back to Bevy entities. |
 | `sensor_events_2d` | Sensor begin/end messages for trigger-style overlaps. |
-| `ray_query_2d` | Reading `BoxddPhysicsContext` and ray-casting against plugin-created shapes. |
+| `ray_query_2d` | Entity-mapped ray queries through `BoxddPhysicsContext`. |
 | `kinematic_platform_2d` | Driving a kinematic body from Bevy transforms with `BevyToPhysics` sync. |
+| `joint_bridge_2d` | Distance and revolute joint descriptors authored as ECS components. |
+| `debug_draw_collect_2d` | Collecting render-agnostic `boxdd::DebugDrawCmd` values from the Bevy context. |

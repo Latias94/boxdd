@@ -303,6 +303,208 @@ fn physics_context_ray_query_maps_hits_to_entities() {
     step_fixed(&mut app, 1);
 
     let context = app.world().non_send::<BoxddPhysicsContext>();
+    let hit = context
+        .try_cast_ray_closest_entity(
+            Vec2::new(0.0, 2.0),
+            Vec2::new(0.0, -4.0),
+            boxdd::QueryFilter::default(),
+        )
+        .unwrap()
+        .expect("expected the ray to hit the plugin-created ground");
+
+    assert!(hit.hit.hit, "expected the native hit flag to be set");
+    assert_eq!(hit.entity, Some(ground));
+}
+
+#[test]
+fn physics_context_ray_query_all_reuses_entity_hit_buffer() {
+    let mut app = app_with_settings(BoxddPhysicsSettings {
+        gravity: Vec2::ZERO,
+        ..Default::default()
+    });
+    let ground = app
+        .world_mut()
+        .spawn((
+            RigidBody::Static,
+            Collider::rectangle(2.0, 0.25),
+            Transform::from_xyz(0.0, 0.0, 0.0),
+        ))
+        .id();
+
+    step_fixed(&mut app, 1);
+
+    let mut context = app.world_mut().non_send_mut::<BoxddPhysicsContext>();
+    let mut hits = Vec::new();
+    context
+        .try_cast_ray_all_entities_into(
+            Vec2::new(0.0, 2.0),
+            Vec2::new(0.0, -4.0),
+            boxdd::QueryFilter::default(),
+            &mut hits,
+        )
+        .unwrap();
+
+    assert!(
+        hits.iter()
+            .any(|hit| hit.hit.hit && hit.entity == Some(ground)),
+        "expected all-ray helper to map at least one hit to the ground entity, got {hits:?}"
+    );
+    let hit_count = hits.len();
+    let error = context
+        .try_cast_ray_all_entities_into(
+            Vec2::new(f32::NAN, 2.0),
+            Vec2::new(0.0, -4.0),
+            boxdd::QueryFilter::default(),
+            &mut hits,
+        )
+        .unwrap_err();
+    assert_eq!(error, boxdd::ApiError::InvalidArgument);
+    assert_eq!(hits.len(), hit_count);
+    assert!(
+        hits.iter().any(|hit| hit.entity == Some(ground)),
+        "fallible all-ray helper should preserve the caller buffer on error"
+    );
+
+    context
+        .try_cast_ray_all_entities_into(
+            Vec2::new(10.0, 2.0),
+            Vec2::new(0.0, -4.0),
+            boxdd::QueryFilter::default(),
+            &mut hits,
+        )
+        .unwrap();
+    assert!(hits.is_empty(), "missed rays should clear stale hits");
+}
+
+#[test]
+fn physics_context_collects_debug_draw_commands() {
+    let mut app = app_with_settings(BoxddPhysicsSettings {
+        gravity: Vec2::ZERO,
+        ..Default::default()
+    });
+    app.world_mut().spawn((
+        RigidBody::Static,
+        Collider::rectangle(2.0, 0.25),
+        Transform::from_xyz(0.0, 0.0, 0.0),
+    ));
+
+    step_fixed(&mut app, 1);
+
+    let mut context = app.world_mut().non_send_mut::<BoxddPhysicsContext>();
+    let mut commands = Vec::new();
+    context
+        .try_debug_draw_collect_into(&mut commands, boxdd::DebugDrawOptions::default())
+        .unwrap();
+
+    assert!(
+        !commands.is_empty(),
+        "expected debug draw collection to emit commands for plugin-created shapes"
+    );
+}
+
+#[test]
+fn disabled_physics_context_helpers_return_empty_results() {
+    let mut context = BoxddPhysicsContext::disabled();
+
+    let closest = context
+        .try_cast_ray_closest_entity(
+            Vec2::ZERO,
+            Vec2::new(1.0, 0.0),
+            boxdd::QueryFilter::default(),
+        )
+        .unwrap();
+    assert!(closest.is_none());
+
+    let all_hits = context
+        .try_cast_ray_all_entities(
+            Vec2::ZERO,
+            Vec2::new(1.0, 0.0),
+            boxdd::QueryFilter::default(),
+        )
+        .unwrap();
+    assert!(all_hits.is_empty());
+
+    let commands = context
+        .try_debug_draw_collect(boxdd::DebugDrawOptions::default())
+        .unwrap();
+    assert!(commands.is_empty());
+}
+
+#[test]
+fn physics_context_ray_query_all_allocating_helper_maps_entities() {
+    let mut app = app_with_settings(BoxddPhysicsSettings {
+        gravity: Vec2::ZERO,
+        ..Default::default()
+    });
+    let ground = app
+        .world_mut()
+        .spawn((
+            RigidBody::Static,
+            Collider::rectangle(2.0, 0.25),
+            Transform::from_xyz(0.0, 0.0, 0.0),
+        ))
+        .id();
+
+    step_fixed(&mut app, 1);
+
+    let mut context = app.world_mut().non_send_mut::<BoxddPhysicsContext>();
+    let hits = context
+        .try_cast_ray_all_entities(
+            Vec2::new(0.0, 2.0),
+            Vec2::new(0.0, -4.0),
+            boxdd::QueryFilter::default(),
+        )
+        .unwrap();
+
+    assert!(
+        hits.iter().any(|hit| hit.entity == Some(ground)),
+        "expected allocating all-ray helper to map a hit to the ground entity, got {hits:?}"
+    );
+}
+
+#[test]
+fn physics_context_debug_draw_allocating_helper_returns_commands() {
+    let mut app = app_with_settings(BoxddPhysicsSettings {
+        gravity: Vec2::ZERO,
+        ..Default::default()
+    });
+    app.world_mut().spawn((
+        RigidBody::Static,
+        Collider::circle(0.5),
+        Transform::from_xyz(0.0, 0.0, 0.0),
+    ));
+
+    step_fixed(&mut app, 1);
+
+    let mut context = app.world_mut().non_send_mut::<BoxddPhysicsContext>();
+    let commands = context
+        .try_debug_draw_collect(boxdd::DebugDrawOptions::default())
+        .unwrap();
+
+    assert!(
+        !commands.is_empty(),
+        "expected allocating debug draw helper to return commands"
+    );
+}
+
+#[test]
+fn native_ray_query_still_available_for_advanced_users() {
+    let mut app = app_with_settings(BoxddPhysicsSettings {
+        gravity: Vec2::ZERO,
+        ..Default::default()
+    });
+    let ground = app
+        .world_mut()
+        .spawn((
+            RigidBody::Static,
+            Collider::rectangle(2.0, 0.25),
+            Transform::from_xyz(0.0, 0.0, 0.0),
+        ))
+        .id();
+
+    step_fixed(&mut app, 1);
+
+    let context = app.world().non_send::<BoxddPhysicsContext>();
     let world = context.world().expect("physics world should be available");
     let hit = world.cast_ray_closest(
         boxdd::Vec2::new(0.0, 2.0),
@@ -354,4 +556,323 @@ fn kinematic_body_transform_drives_native_body_in_fixed_update() {
         .position();
 
     assert_eq!(position, boxdd::Vec2::new(2.0, 1.5));
+}
+
+#[test]
+fn distance_joint_descriptor_creates_native_joint() {
+    let mut app = app_with_settings(BoxddPhysicsSettings {
+        gravity: Vec2::ZERO,
+        ..Default::default()
+    });
+
+    let body_a = app
+        .world_mut()
+        .spawn((RigidBody::Static, Transform::from_xyz(0.0, 0.0, 0.0)))
+        .id();
+    let body_b = app
+        .world_mut()
+        .spawn((RigidBody::Dynamic, Transform::from_xyz(1.0, 0.0, 0.0)))
+        .id();
+    let joint_entity = app
+        .world_mut()
+        .spawn(JointDescriptor::distance(
+            body_a,
+            body_b,
+            Vec2::new(0.0, 0.0),
+            Vec2::new(1.0, 0.0),
+        ))
+        .id();
+
+    step_fixed(&mut app, 1);
+
+    let joint = app
+        .world()
+        .entity(joint_entity)
+        .get::<BoxddJoint>()
+        .expect("joint component should be inserted")
+        .id();
+    let context = app.world().non_send::<BoxddPhysicsContext>();
+    assert_eq!(
+        context.world().unwrap().try_joint_type(joint).unwrap(),
+        boxdd::JointType::Distance
+    );
+    assert_eq!(context.joint_entity(joint), Some(joint_entity));
+}
+
+#[test]
+fn revolute_joint_descriptor_creates_native_joint() {
+    let mut app = app_with_settings(BoxddPhysicsSettings {
+        gravity: Vec2::ZERO,
+        ..Default::default()
+    });
+
+    let body_a = app
+        .world_mut()
+        .spawn((RigidBody::Static, Transform::from_xyz(0.0, 0.0, 0.0)))
+        .id();
+    let body_b = app
+        .world_mut()
+        .spawn((RigidBody::Dynamic, Transform::from_xyz(0.0, 1.0, 0.0)))
+        .id();
+    let joint_entity = app
+        .world_mut()
+        .spawn(JointDescriptor::revolute(
+            body_a,
+            body_b,
+            Vec2::new(0.0, 0.5),
+        ))
+        .id();
+
+    step_fixed(&mut app, 1);
+
+    let joint = app
+        .world()
+        .entity(joint_entity)
+        .get::<BoxddJoint>()
+        .expect("joint component should be inserted")
+        .id();
+    let context = app.world().non_send::<BoxddPhysicsContext>();
+    assert_eq!(
+        context.world().unwrap().try_joint_type(joint).unwrap(),
+        boxdd::JointType::Revolute
+    );
+}
+
+#[test]
+fn changing_joint_descriptor_recreates_native_joint() {
+    let mut app = app_with_settings(BoxddPhysicsSettings {
+        gravity: Vec2::ZERO,
+        ..Default::default()
+    });
+
+    let body_a = app
+        .world_mut()
+        .spawn((RigidBody::Static, Transform::from_xyz(0.0, 0.0, 0.0)))
+        .id();
+    let body_b = app
+        .world_mut()
+        .spawn((RigidBody::Dynamic, Transform::from_xyz(1.0, 0.0, 0.0)))
+        .id();
+    let joint_entity = app
+        .world_mut()
+        .spawn(JointDescriptor::distance(
+            body_a,
+            body_b,
+            Vec2::new(0.0, 0.0),
+            Vec2::new(1.0, 0.0),
+        ))
+        .id();
+
+    step_fixed(&mut app, 1);
+    let first_joint = app
+        .world()
+        .entity(joint_entity)
+        .get::<BoxddJoint>()
+        .unwrap()
+        .id();
+
+    app.world_mut()
+        .entity_mut(joint_entity)
+        .insert(JointDescriptor::revolute(
+            body_a,
+            body_b,
+            Vec2::new(0.5, 0.0),
+        ));
+    step_fixed(&mut app, 1);
+
+    let second_joint = app
+        .world()
+        .entity(joint_entity)
+        .get::<BoxddJoint>()
+        .unwrap()
+        .id();
+    let context = app.world().non_send::<BoxddPhysicsContext>();
+    let world = context.world().unwrap();
+    assert_ne!(first_joint, second_joint);
+    assert_eq!(
+        world.try_joint_type(first_joint).unwrap_err(),
+        boxdd::ApiError::InvalidJointId
+    );
+    assert_eq!(
+        world.try_joint_type(second_joint).unwrap(),
+        boxdd::JointType::Revolute
+    );
+}
+
+#[test]
+fn joint_created_after_bevy_transform_change_uses_fresh_native_transform() {
+    let mut app = app_with_settings(BoxddPhysicsSettings {
+        gravity: Vec2::ZERO,
+        ..Default::default()
+    });
+
+    let body_a = app
+        .world_mut()
+        .spawn((RigidBody::Static, Transform::from_xyz(0.0, 0.0, 0.0)))
+        .id();
+    let body_b = app
+        .world_mut()
+        .spawn((RigidBody::Dynamic, Transform::from_xyz(1.0, 0.0, 0.0)))
+        .id();
+
+    step_fixed(&mut app, 1);
+
+    app.world_mut()
+        .entity_mut(body_a)
+        .get_mut::<Transform>()
+        .unwrap()
+        .translation = Vec2::new(2.0, 0.0).extend(0.0);
+    let joint_entity = app
+        .world_mut()
+        .spawn(JointDescriptor::distance(
+            body_a,
+            body_b,
+            Vec2::new(2.0, 0.0),
+            Vec2::new(1.0, 0.0),
+        ))
+        .id();
+
+    step_fixed(&mut app, 1);
+
+    let joint = app
+        .world()
+        .entity(joint_entity)
+        .get::<BoxddJoint>()
+        .unwrap()
+        .id();
+    let context = app.world().non_send::<BoxddPhysicsContext>();
+    let local_frame_a = context
+        .world()
+        .unwrap()
+        .try_joint_local_frame_a(joint)
+        .unwrap();
+
+    assert_eq!(local_frame_a.position(), boxdd::Vec2::new(0.0, 0.0));
+}
+
+#[test]
+fn removing_joint_descriptor_destroys_native_joint() {
+    let mut app = app_with_settings(BoxddPhysicsSettings {
+        gravity: Vec2::ZERO,
+        ..Default::default()
+    });
+
+    let body_a = app
+        .world_mut()
+        .spawn((RigidBody::Static, Transform::from_xyz(0.0, 0.0, 0.0)))
+        .id();
+    let body_b = app
+        .world_mut()
+        .spawn((RigidBody::Dynamic, Transform::from_xyz(1.0, 0.0, 0.0)))
+        .id();
+    let joint_entity = app
+        .world_mut()
+        .spawn(JointDescriptor::distance(
+            body_a,
+            body_b,
+            Vec2::new(0.0, 0.0),
+            Vec2::new(1.0, 0.0),
+        ))
+        .id();
+
+    step_fixed(&mut app, 1);
+    let joint = app
+        .world()
+        .entity(joint_entity)
+        .get::<BoxddJoint>()
+        .unwrap()
+        .id();
+
+    app.world_mut()
+        .entity_mut(joint_entity)
+        .remove::<JointDescriptor>();
+    step_fixed(&mut app, 1);
+
+    assert!(!app.world().entity(joint_entity).contains::<BoxddJoint>());
+    let context = app.world().non_send::<BoxddPhysicsContext>();
+    assert_eq!(context.joint_entity(joint), None);
+    assert_eq!(
+        context.world().unwrap().try_joint_type(joint).unwrap_err(),
+        boxdd::ApiError::InvalidJointId
+    );
+}
+
+#[test]
+fn joint_missing_endpoint_body_emits_recoverable_error() {
+    let mut app = app_with_settings(BoxddPhysicsSettings {
+        gravity: Vec2::ZERO,
+        ..Default::default()
+    });
+
+    let body_a = app
+        .world_mut()
+        .spawn((RigidBody::Static, Transform::from_xyz(0.0, 0.0, 0.0)))
+        .id();
+    let missing_body = app.world_mut().spawn_empty().id();
+    let joint_entity = app
+        .world_mut()
+        .spawn(JointDescriptor::revolute(
+            body_a,
+            missing_body,
+            Vec2::new(0.0, 0.0),
+        ))
+        .id();
+
+    step_fixed(&mut app, 1);
+
+    let errors = read_messages::<BoxddErrorMessage>(&app);
+    assert!(
+        errors.iter().any(|message| {
+            message.operation == BoxddOperation::CreateJoint
+                && message.entity == Some(joint_entity)
+                && message.error == BoxddPluginError::Api(boxdd::ApiError::InvalidBodyId)
+        }),
+        "expected recoverable CreateJoint error for missing endpoint, got {errors:?}"
+    );
+    assert!(!app.world().entity(joint_entity).contains::<BoxddJoint>());
+}
+
+#[test]
+fn removing_endpoint_body_removes_dependent_joint() {
+    let mut app = app_with_settings(BoxddPhysicsSettings {
+        gravity: Vec2::ZERO,
+        ..Default::default()
+    });
+
+    let body_a = app
+        .world_mut()
+        .spawn((RigidBody::Static, Transform::from_xyz(0.0, 0.0, 0.0)))
+        .id();
+    let body_b = app
+        .world_mut()
+        .spawn((RigidBody::Dynamic, Transform::from_xyz(1.0, 0.0, 0.0)))
+        .id();
+    let joint_entity = app
+        .world_mut()
+        .spawn(JointDescriptor::distance(
+            body_a,
+            body_b,
+            Vec2::new(0.0, 0.0),
+            Vec2::new(1.0, 0.0),
+        ))
+        .id();
+
+    step_fixed(&mut app, 1);
+    let joint = app
+        .world()
+        .entity(joint_entity)
+        .get::<BoxddJoint>()
+        .unwrap()
+        .id();
+
+    app.world_mut().entity_mut(body_b).remove::<RigidBody>();
+    step_fixed(&mut app, 1);
+
+    assert!(!app.world().entity(joint_entity).contains::<BoxddJoint>());
+    let context = app.world().non_send::<BoxddPhysicsContext>();
+    assert_eq!(context.joint_entity(joint), None);
+    assert_eq!(
+        context.world().unwrap().try_joint_type(joint).unwrap_err(),
+        boxdd::ApiError::InvalidJointId
+    );
 }

@@ -1,10 +1,13 @@
 //! Bevy resources that own the native physics world and plugin settings.
 
-use crate::components::{Collider, PhysicsMaterial};
+use crate::components::{Collider, JointDescriptor, PhysicsMaterial};
 use crate::math::to_boxdd_vec2;
 use bevy_ecs::prelude::{Entity, Resource};
 use bevy_math::Vec2 as BevyVec2;
-use boxdd::{BodyId, ShapeId, World, WorldDef};
+use boxdd::{
+    ApiResult, BodyId, DebugDrawCmd, DebugDrawOptions, JointId, QueryFilter, RayResult, ShapeId,
+    World, WorldDef,
+};
 use std::collections::HashMap;
 
 /// How the plugin reports recoverable errors from fixed-update systems.
@@ -56,7 +59,20 @@ pub struct BoxddPhysicsContext {
     pub(crate) shape_to_entity: HashMap<ShapeId, Entity>,
     pub(crate) shape_to_body_entity: HashMap<Entity, Entity>,
     pub(crate) shape_descriptors: HashMap<Entity, ShapeDescriptor>,
+    pub(crate) entity_to_joint: HashMap<Entity, JointId>,
+    pub(crate) joint_to_entity: HashMap<JointId, Entity>,
+    pub(crate) joint_descriptors: HashMap<Entity, JointDescriptor>,
+    ray_hits: Vec<RayResult>,
     pub(crate) last_step_failed: bool,
+}
+
+/// Ray-cast hit enriched with the Bevy entity mapped to the native shape.
+#[derive(Copy, Clone, Debug)]
+pub struct BoxddRayHit {
+    /// Native Box2D ray result.
+    pub hit: RayResult,
+    /// Bevy entity mapped to `hit.shape_id`, if the shape is owned by this plugin.
+    pub entity: Option<Entity>,
 }
 
 impl std::fmt::Debug for BoxddPhysicsContext {
@@ -65,6 +81,7 @@ impl std::fmt::Debug for BoxddPhysicsContext {
             .field("world_enabled", &self.world.is_some())
             .field("body_count", &self.entity_to_body.len())
             .field("shape_count", &self.entity_to_shape.len())
+            .field("joint_count", &self.entity_to_joint.len())
             .field("last_step_failed", &self.last_step_failed)
             .finish()
     }
@@ -94,6 +111,10 @@ impl BoxddPhysicsContext {
             shape_to_entity: HashMap::new(),
             shape_to_body_entity: HashMap::new(),
             shape_descriptors: HashMap::new(),
+            entity_to_joint: HashMap::new(),
+            joint_to_entity: HashMap::new(),
+            joint_descriptors: HashMap::new(),
+            ray_hits: Vec::new(),
             last_step_failed: true,
         }
     }
@@ -108,6 +129,10 @@ impl BoxddPhysicsContext {
             shape_to_entity: HashMap::new(),
             shape_to_body_entity: HashMap::new(),
             shape_descriptors: HashMap::new(),
+            entity_to_joint: HashMap::new(),
+            joint_to_entity: HashMap::new(),
+            joint_descriptors: HashMap::new(),
+            ray_hits: Vec::new(),
             last_step_failed: false,
         }
     }
@@ -130,6 +155,101 @@ impl BoxddPhysicsContext {
     /// Returns the Bevy entity mapped to a native shape id.
     pub fn shape_entity(&self, shape_id: ShapeId) -> Option<Entity> {
         self.shape_to_entity.get(&shape_id).copied()
+    }
+
+    /// Returns the Bevy entity mapped to a native joint id.
+    pub fn joint_entity(&self, joint_id: JointId) -> Option<Entity> {
+        self.joint_to_entity.get(&joint_id).copied()
+    }
+
+    /// Casts a ray and returns the closest hit with the mapped Bevy shape entity.
+    pub fn try_cast_ray_closest_entity(
+        &self,
+        origin: BevyVec2,
+        translation: BevyVec2,
+        filter: QueryFilter,
+    ) -> ApiResult<Option<BoxddRayHit>> {
+        let Some(world) = self.world() else {
+            return Ok(None);
+        };
+        let hit = world.try_cast_ray_closest(
+            to_boxdd_vec2(origin),
+            to_boxdd_vec2(translation),
+            filter,
+        )?;
+        Ok(hit.hit.then(|| self.ray_hit_with_entity(hit)))
+    }
+
+    /// Casts a ray and writes all hits with mapped Bevy shape entities into `out`.
+    pub fn try_cast_ray_all_entities_into(
+        &mut self,
+        origin: BevyVec2,
+        translation: BevyVec2,
+        filter: QueryFilter,
+        out: &mut Vec<BoxddRayHit>,
+    ) -> ApiResult<()> {
+        let Some(world) = self.world.as_ref() else {
+            self.ray_hits.clear();
+            out.clear();
+            return Ok(());
+        };
+        world.try_cast_ray_all_into(
+            to_boxdd_vec2(origin),
+            to_boxdd_vec2(translation),
+            filter,
+            &mut self.ray_hits,
+        )?;
+        out.clear();
+        out.reserve(self.ray_hits.len());
+        out.extend(
+            self.ray_hits
+                .iter()
+                .copied()
+                .map(|hit| self.ray_hit_with_entity(hit)),
+        );
+        Ok(())
+    }
+
+    /// Casts a ray and returns all hits with mapped Bevy shape entities.
+    pub fn try_cast_ray_all_entities(
+        &mut self,
+        origin: BevyVec2,
+        translation: BevyVec2,
+        filter: QueryFilter,
+    ) -> ApiResult<Vec<BoxddRayHit>> {
+        let mut out = Vec::new();
+        self.try_cast_ray_all_entities_into(origin, translation, filter, &mut out)?;
+        Ok(out)
+    }
+
+    /// Collects Box2D debug-draw commands into a caller-owned buffer.
+    pub fn try_debug_draw_collect_into(
+        &mut self,
+        out: &mut Vec<DebugDrawCmd>,
+        options: DebugDrawOptions,
+    ) -> ApiResult<()> {
+        let Some(world) = self.world_mut() else {
+            out.clear();
+            return Ok(());
+        };
+        world.try_debug_draw_collect_into(out, options)
+    }
+
+    /// Collects Box2D debug-draw commands into a new vector.
+    pub fn try_debug_draw_collect(
+        &mut self,
+        options: DebugDrawOptions,
+    ) -> ApiResult<Vec<DebugDrawCmd>> {
+        let mut out = Vec::new();
+        self.try_debug_draw_collect_into(&mut out, options)?;
+        Ok(out)
+    }
+
+    fn ray_hit_with_entity(&self, hit: RayResult) -> BoxddRayHit {
+        BoxddRayHit {
+            hit,
+            entity: self.shape_entity(hit.shape_id),
+        }
     }
 
     pub(crate) fn insert_body(&mut self, entity: Entity, body_id: BodyId) {
@@ -181,6 +301,43 @@ impl BoxddPhysicsContext {
 
     pub(crate) fn shape_descriptor(&self, shape_entity: Entity) -> Option<ShapeDescriptor> {
         self.shape_descriptors.get(&shape_entity).copied()
+    }
+
+    pub(crate) fn insert_joint(
+        &mut self,
+        entity: Entity,
+        descriptor: JointDescriptor,
+        joint_id: JointId,
+    ) {
+        self.entity_to_joint.insert(entity, joint_id);
+        self.joint_to_entity.insert(joint_id, entity);
+        self.joint_descriptors.insert(entity, descriptor);
+    }
+
+    pub(crate) fn remove_joint(&mut self, entity: Entity, joint_id: JointId) {
+        self.entity_to_joint.remove(&entity);
+        self.joint_to_entity.remove(&joint_id);
+        self.joint_descriptors.remove(&entity);
+    }
+
+    pub(crate) fn joint_descriptor(&self, entity: Entity) -> Option<JointDescriptor> {
+        self.joint_descriptors.get(&entity).copied()
+    }
+
+    pub(crate) fn joints_connected_to_body(&self, body_entity: Entity) -> Vec<(Entity, JointId)> {
+        self.joint_descriptors
+            .iter()
+            .filter_map(|(joint_entity, descriptor)| {
+                (descriptor.entity_a == body_entity || descriptor.entity_b == body_entity)
+                    .then(|| {
+                        self.entity_to_joint
+                            .get(joint_entity)
+                            .copied()
+                            .map(|joint_id| (*joint_entity, joint_id))
+                    })
+                    .flatten()
+            })
+            .collect()
     }
 }
 

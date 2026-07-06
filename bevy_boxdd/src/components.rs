@@ -1,9 +1,10 @@
 //! Bevy ECS components used to author and observe Box2D physics objects.
 
-use bevy_ecs::prelude::Component;
+use bevy_ecs::prelude::{Component, Entity};
 use bevy_math::Vec2 as BevyVec2;
 use boxdd::{
-    ApiError, ApiResult, BodyId, BodyType, Filter, MotionLocks, ShapeDef, ShapeId, SurfaceMaterial,
+    ApiError, ApiResult, BodyId, BodyType, Filter, JointId, MotionLocks, ShapeDef, ShapeId,
+    SurfaceMaterial,
 };
 
 /// Maximum number of vertices accepted by [`Collider::ConvexPolygon`].
@@ -356,6 +357,182 @@ pub struct BoxddShape(pub ShapeId);
 impl BoxddShape {
     /// Returns the native Box2D shape id.
     pub const fn id(self) -> ShapeId {
+        self.0
+    }
+}
+
+/// Joint descriptor used to connect two Bevy body entities with a native Box2D joint.
+#[derive(Component, Copy, Clone, Debug, PartialEq)]
+pub struct JointDescriptor {
+    /// First body entity connected by the joint.
+    pub entity_a: Entity,
+    /// Second body entity connected by the joint.
+    pub entity_b: Entity,
+    /// Joint-specific settings.
+    pub kind: JointKind,
+    /// Whether the connected bodies are allowed to collide.
+    pub collide_connected: bool,
+    /// Force threshold used for native joint events.
+    pub force_threshold: f32,
+    /// Torque threshold used for native joint events.
+    pub torque_threshold: f32,
+    /// Shared constraint tuning frequency in Hertz.
+    pub constraint_hertz: f32,
+    /// Shared constraint damping ratio.
+    pub constraint_damping_ratio: f32,
+    /// Debug draw scale used by Box2D debug drawing.
+    pub draw_scale: f32,
+}
+
+impl JointDescriptor {
+    /// Creates a distance joint descriptor using world-space anchors.
+    pub const fn distance(
+        entity_a: Entity,
+        entity_b: Entity,
+        anchor_a: BevyVec2,
+        anchor_b: BevyVec2,
+    ) -> Self {
+        Self::new(
+            entity_a,
+            entity_b,
+            JointKind::Distance(DistanceJointDescriptor {
+                anchor_a,
+                anchor_b,
+                length: None,
+            }),
+        )
+    }
+
+    /// Creates a revolute joint descriptor using a world-space anchor.
+    pub const fn revolute(entity_a: Entity, entity_b: Entity, anchor: BevyVec2) -> Self {
+        Self::new(
+            entity_a,
+            entity_b,
+            JointKind::Revolute(RevoluteJointDescriptor { anchor }),
+        )
+    }
+
+    /// Creates a descriptor from a joint kind and default shared tuning.
+    pub const fn new(entity_a: Entity, entity_b: Entity, kind: JointKind) -> Self {
+        Self {
+            entity_a,
+            entity_b,
+            kind,
+            collide_connected: false,
+            force_threshold: f32::MAX,
+            torque_threshold: f32::MAX,
+            constraint_hertz: 60.0,
+            constraint_damping_ratio: 2.0,
+            draw_scale: 1.0,
+        }
+    }
+
+    /// Sets whether connected bodies should collide with each other.
+    pub const fn with_collide_connected(mut self, flag: bool) -> Self {
+        self.collide_connected = flag;
+        self
+    }
+
+    /// Sets force and torque thresholds used for native joint events.
+    pub const fn with_event_thresholds(mut self, force: f32, torque: f32) -> Self {
+        self.force_threshold = force;
+        self.torque_threshold = torque;
+        self
+    }
+
+    /// Sets the shared native constraint tuning.
+    pub const fn with_constraint_tuning(mut self, hertz: f32, damping_ratio: f32) -> Self {
+        self.constraint_hertz = hertz;
+        self.constraint_damping_ratio = damping_ratio;
+        self
+    }
+
+    /// Sets the native debug-draw scale for this joint.
+    pub const fn with_draw_scale(mut self, scale: f32) -> Self {
+        self.draw_scale = scale;
+        self
+    }
+
+    /// Validates finite descriptor values before native joint creation.
+    pub fn validate(self) -> ApiResult<()> {
+        if self.entity_a == self.entity_b {
+            return Err(ApiError::InvalidArgument);
+        }
+        validate_nonnegative_scalar(self.force_threshold)?;
+        validate_nonnegative_scalar(self.torque_threshold)?;
+        validate_positive_scalar(self.constraint_hertz)?;
+        validate_nonnegative_scalar(self.constraint_damping_ratio)?;
+        validate_positive_scalar(self.draw_scale)?;
+        self.kind.validate()
+    }
+}
+
+/// Supported ECS-authored joint kinds.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum JointKind {
+    /// Distance joint between two world-space anchors.
+    Distance(DistanceJointDescriptor),
+    /// Revolute joint around one world-space anchor.
+    Revolute(RevoluteJointDescriptor),
+}
+
+impl JointKind {
+    fn validate(self) -> ApiResult<()> {
+        match self {
+            Self::Distance(descriptor) => descriptor.validate(),
+            Self::Revolute(descriptor) => descriptor.validate(),
+        }
+    }
+}
+
+/// Distance joint authoring data.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct DistanceJointDescriptor {
+    /// World-space anchor on body A.
+    pub anchor_a: BevyVec2,
+    /// World-space anchor on body B.
+    pub anchor_b: BevyVec2,
+    /// Optional target length. When omitted, the distance between anchors is used.
+    pub length: Option<f32>,
+}
+
+impl DistanceJointDescriptor {
+    /// Sets an explicit target length.
+    pub const fn with_length(mut self, length: f32) -> Self {
+        self.length = Some(length);
+        self
+    }
+
+    fn validate(self) -> ApiResult<()> {
+        validate_vec2(self.anchor_a)?;
+        validate_vec2(self.anchor_b)?;
+        if let Some(length) = self.length {
+            validate_positive_scalar(length)?;
+        }
+        Ok(())
+    }
+}
+
+/// Revolute joint authoring data.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct RevoluteJointDescriptor {
+    /// World-space hinge anchor.
+    pub anchor: BevyVec2,
+}
+
+impl RevoluteJointDescriptor {
+    fn validate(self) -> ApiResult<()> {
+        validate_vec2(self.anchor)
+    }
+}
+
+/// Native Box2D joint id inserted after the plugin creates a joint.
+#[derive(Component, Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct BoxddJoint(pub JointId);
+
+impl BoxddJoint {
+    /// Returns the native Box2D joint id.
+    pub const fn id(self) -> JointId {
         self.0
     }
 }

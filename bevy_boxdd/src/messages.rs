@@ -33,10 +33,14 @@ pub enum BoxddOperation {
     CreateBody,
     /// Creating a native shape from a [`crate::Collider`] entity.
     CreateShape,
+    /// Creating a native joint from a [`crate::JointDescriptor`] entity.
+    CreateJoint,
     /// Destroying a native body after ECS removal or descriptor invalidation.
     DestroyBody,
     /// Destroying a native shape after ECS removal or descriptor invalidation.
     DestroyShape,
+    /// Destroying a native joint after ECS removal or descriptor invalidation.
+    DestroyJoint,
     /// Applying velocity or one-shot impulse components.
     ApplyBodyControl,
     /// Applying changed body settings.

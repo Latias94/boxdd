@@ -3,9 +3,10 @@
 pub use crate::{
     AngularImpulse, AngularVelocity, BevyQuatBoxddExt, BevyTransformBoxddExt, BevyVec2BoxddExt,
     BodySettings, BoxddBody, BoxddBodyMoveMessage, BoxddContactBeginMessage,
-    BoxddContactEndMessage, BoxddContactHitMessage, BoxddErrorMessage, BoxddOperation,
+    BoxddContactEndMessage, BoxddContactHitMessage, BoxddErrorMessage, BoxddJoint, BoxddOperation,
     BoxddPhysicsContext, BoxddPhysicsPlugin, BoxddPhysicsSettings, BoxddPluginError,
-    BoxddQuatBevyExt, BoxddSensorBeginMessage, BoxddSensorEndMessage, BoxddShape,
-    BoxddTransformBevyExt, BoxddVec2BevyExt, Collider, LinearImpulse, LinearVelocity,
-    PhysicsMaterial, RigidBody, TransformSyncMode, boxdd,
+    BoxddQuatBevyExt, BoxddRayHit, BoxddSensorBeginMessage, BoxddSensorEndMessage, BoxddShape,
+    BoxddTransformBevyExt, BoxddVec2BevyExt, Collider, DistanceJointDescriptor, JointDescriptor,
+    JointKind, LinearImpulse, LinearVelocity, PhysicsMaterial, RevoluteJointDescriptor, RigidBody,
+    TransformSyncMode, boxdd,
 };

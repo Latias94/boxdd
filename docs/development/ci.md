@@ -35,7 +35,7 @@ Use `cargo test` only as a fallback when nextest is unavailable.
 - `sample-parity --check` scans upstream sample registrations, preserves manual mappings, and rejects non-benchmark rows that fall back to bare upstream references without an explicit deferral.
 - `validate-pages` keeps the static GitHub Pages hub link-valid without requiring a browser runtime.
 - `boxdd-sys` layout tests protect representative ABI assumptions at the raw FFI boundary.
-- `bevy_boxdd` plugin tests verify ECS creation, transform sync, contact/sensor messages, query mappings, and recoverable shape input errors without adding Bevy dependencies to the core crate.
+- `bevy_boxdd` plugin tests verify ECS creation, transform sync, distance/revolute joint lifecycle, contact/sensor messages, entity query mappings, debug draw collection, and recoverable input errors without adding Bevy dependencies to the core crate.
 
 ## CI shape
 

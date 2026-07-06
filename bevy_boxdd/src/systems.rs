@@ -1,8 +1,9 @@
 //! Fixed-update systems registered by [`crate::BoxddPhysicsPlugin`].
 
 use crate::components::{
-    AngularImpulse, AngularVelocity, BodySettings, BoxddBody, BoxddShape, Collider, LinearImpulse,
-    LinearVelocity, PhysicsMaterial, RigidBody, TransformSyncMode,
+    AngularImpulse, AngularVelocity, BodySettings, BoxddBody, BoxddJoint, BoxddShape, Collider,
+    DistanceJointDescriptor, JointDescriptor, JointKind, LinearImpulse, LinearVelocity,
+    PhysicsMaterial, RevoluteJointDescriptor, RigidBody, TransformSyncMode,
 };
 use crate::errors::report_error;
 use crate::math::{apply_boxdd_transform, to_boxdd_angle, to_boxdd_translation, to_boxdd_vec2};
@@ -22,7 +23,8 @@ use bevy_time::{Fixed, Time};
 use bevy_transform::components::Transform;
 use boxdd::{
     ApiError, ApiResult, BodyDef, BodyId, Capsule as BoxddCapsule, Circle as BoxddCircle,
-    Polygon as BoxddPolygon, Segment as BoxddSegment, ShapeDef, ShapeId,
+    DistanceJointDef, JointBaseBuilder, JointId, Polygon as BoxddPolygon, RevoluteJointDef,
+    Segment as BoxddSegment, ShapeDef, ShapeId,
 };
 
 type MissingBodyItem<'a> = (
@@ -52,6 +54,10 @@ type TrackedShapeItem<'a> = (
     Option<&'a BoxddBody>,
     Option<&'a ChildOf>,
 );
+
+type MissingJointItem<'a> = (Entity, &'a JointDescriptor);
+
+type TrackedJointItem<'a> = (Entity, &'a BoxddJoint, Option<&'a JointDescriptor>);
 
 type BodyControlItem<'a> = (
     Entity,
@@ -324,6 +330,66 @@ pub fn cleanup_removed_colliders(
     }
 }
 
+/// Destroys or recreates native joints when joint entities are removed or changed.
+pub fn cleanup_removed_joints(
+    mut commands: Commands,
+    mut context: NonSendMut<BoxddPhysicsContext>,
+    settings: Res<BoxddPhysicsSettings>,
+    mut errors: MessageWriter<BoxddErrorMessage>,
+    joints: Query<TrackedJointItem<'_>>,
+    bodies: Query<&BoxddBody>,
+) {
+    if context.world().is_none() {
+        return;
+    }
+
+    let stale_joint_entities = context
+        .entity_to_joint
+        .iter()
+        .filter_map(|(entity, joint_id)| {
+            let should_remove = match joints.get(*entity) {
+                Ok((_, _, descriptor)) => {
+                    let descriptor = descriptor.copied();
+                    let tracked_descriptor = context.joint_descriptor(*entity);
+                    let endpoints_available = descriptor
+                        .map(|descriptor| {
+                            bodies.get(descriptor.entity_a).is_ok()
+                                && bodies.get(descriptor.entity_b).is_ok()
+                        })
+                        .unwrap_or(false);
+
+                    descriptor.is_none() || descriptor != tracked_descriptor || !endpoints_available
+                }
+                Err(_) => true,
+            };
+            should_remove.then_some((*entity, *joint_id))
+        })
+        .collect::<Vec<_>>();
+
+    for (entity, joint_id) in stale_joint_entities {
+        let result = context
+            .world_mut()
+            .expect("checked above")
+            .try_destroy_joint_id(joint_id, true);
+
+        match result {
+            Ok(()) => {
+                context.remove_joint(entity, joint_id);
+                commands.entity(entity).remove::<BoxddJoint>();
+            }
+            Err(error) => report_error(
+                &settings,
+                &mut errors,
+                BoxddErrorMessage {
+                    operation: BoxddOperation::DestroyJoint,
+                    entity: Some(entity),
+                    error: error.into(),
+                },
+            ),
+        }
+    }
+}
+
 /// Destroys native bodies when their Bevy body entities are removed or no longer have [`RigidBody`].
 ///
 /// Shapes owned by the removed body are detached from their Bevy entities too.
@@ -366,11 +432,12 @@ pub fn cleanup_removed_bodies(
                         .flatten()
                 })
                 .collect::<Vec<_>>();
-            (entity, body_id, shape_entities)
+            let joint_entities = context.joints_connected_to_body(entity);
+            (entity, body_id, shape_entities, joint_entities)
         })
         .collect::<Vec<_>>();
 
-    for (entity, body_id, shape_entities) in stale {
+    for (entity, body_id, shape_entities, joint_entities) in stale {
         let result = context
             .world_mut()
             .expect("checked above")
@@ -383,12 +450,60 @@ pub fn cleanup_removed_bodies(
                 for (shape_entity, _) in shape_entities {
                     commands.entity(shape_entity).remove::<BoxddShape>();
                 }
+                for (joint_entity, joint_id) in joint_entities {
+                    context.remove_joint(joint_entity, joint_id);
+                    commands.entity(joint_entity).remove::<BoxddJoint>();
+                }
             }
             Err(error) => report_error(
                 &settings,
                 &mut errors,
                 BoxddErrorMessage {
                     operation: BoxddOperation::DestroyBody,
+                    entity: Some(entity),
+                    error: error.into(),
+                },
+            ),
+        }
+    }
+}
+
+/// Creates native Box2D joints for entities with [`JointDescriptor`] but no [`BoxddJoint`].
+pub fn create_missing_joints(
+    mut commands: Commands,
+    mut context: NonSendMut<BoxddPhysicsContext>,
+    settings: Res<BoxddPhysicsSettings>,
+    mut errors: MessageWriter<BoxddErrorMessage>,
+    joints: Query<MissingJointItem<'_>, Without<BoxddJoint>>,
+    bodies: Query<&BoxddBody>,
+) {
+    if context.world().is_none() {
+        return;
+    }
+
+    for (entity, descriptor) in &joints {
+        let result = descriptor
+            .validate()
+            .and_then(|()| resolve_joint_bodies(*descriptor, &bodies))
+            .and_then(|(body_a, body_b)| {
+                create_joint(
+                    context.world_mut().expect("checked above"),
+                    *descriptor,
+                    body_a,
+                    body_b,
+                )
+            });
+
+        match result {
+            Ok(joint_id) => {
+                context.insert_joint(entity, *descriptor, joint_id);
+                commands.entity(entity).insert(BoxddJoint(joint_id));
+            }
+            Err(error) => report_error(
+                &settings,
+                &mut errors,
+                BoxddErrorMessage {
+                    operation: BoxddOperation::CreateJoint,
                     entity: Some(entity),
                     error: error.into(),
                 },
@@ -409,6 +524,21 @@ fn resolve_collider_body<'a>(
 
     let parent = parent?.parent();
     bodies.get(parent).ok().map(|body| (parent, body))
+}
+
+fn resolve_joint_bodies(
+    descriptor: JointDescriptor,
+    bodies: &Query<'_, '_, &BoxddBody>,
+) -> ApiResult<(BodyId, BodyId)> {
+    let body_a = bodies
+        .get(descriptor.entity_a)
+        .map_err(|_| ApiError::InvalidBodyId)?
+        .0;
+    let body_b = bodies
+        .get(descriptor.entity_b)
+        .map_err(|_| ApiError::InvalidBodyId)?
+        .0;
+    Ok((body_a, body_b))
 }
 
 /// Applies velocity and one-shot impulse components to native bodies.
@@ -837,6 +967,91 @@ fn create_shape(
             world.try_create_polygon_shape_for(body_id, shape_def, &polygon)
         }
     }
+}
+
+fn create_joint(
+    world: &mut boxdd::World,
+    descriptor: JointDescriptor,
+    body_a: BodyId,
+    body_b: BodyId,
+) -> ApiResult<JointId> {
+    match descriptor.kind {
+        JointKind::Distance(distance) => {
+            create_distance_joint(world, descriptor, body_a, body_b, distance)
+        }
+        JointKind::Revolute(revolute) => {
+            create_revolute_joint(world, descriptor, body_a, body_b, revolute)
+        }
+    }
+}
+
+fn create_distance_joint(
+    world: &mut boxdd::World,
+    descriptor: JointDescriptor,
+    body_a: BodyId,
+    body_b: BodyId,
+    distance: DistanceJointDescriptor,
+) -> ApiResult<JointId> {
+    let length = distance
+        .length
+        .unwrap_or_else(|| distance.anchor_a.distance(distance.anchor_b));
+    if !length.is_finite() || length <= 0.0 {
+        return Err(ApiError::InvalidArgument);
+    }
+
+    let base = joint_base_from_world_points(
+        world,
+        descriptor,
+        body_a,
+        body_b,
+        distance.anchor_a,
+        distance.anchor_b,
+    );
+    let def = DistanceJointDef::new(base).length(length);
+    world.try_create_distance_joint_id(&def)
+}
+
+fn create_revolute_joint(
+    world: &mut boxdd::World,
+    descriptor: JointDescriptor,
+    body_a: BodyId,
+    body_b: BodyId,
+    revolute: RevoluteJointDescriptor,
+) -> ApiResult<JointId> {
+    let base = joint_base_from_world_points(
+        world,
+        descriptor,
+        body_a,
+        body_b,
+        revolute.anchor,
+        revolute.anchor,
+    );
+    let def = RevoluteJointDef::new(base);
+    world.try_create_revolute_joint_id(&def)
+}
+
+fn joint_base_from_world_points(
+    world: &boxdd::World,
+    descriptor: JointDescriptor,
+    body_a: BodyId,
+    body_b: BodyId,
+    anchor_a: BevyVec2,
+    anchor_b: BevyVec2,
+) -> boxdd::JointBase {
+    let base = world.joint_base_from_world_points(
+        body_a,
+        body_b,
+        to_boxdd_vec2(anchor_a),
+        to_boxdd_vec2(anchor_b),
+    );
+    JointBaseBuilder::from(base)
+        .collide_connected(descriptor.collide_connected)
+        .force_threshold(descriptor.force_threshold)
+        .torque_threshold(descriptor.torque_threshold)
+        .constraint_hertz(descriptor.constraint_hertz)
+        .constraint_damping_ratio(descriptor.constraint_damping_ratio)
+        .draw_scale(descriptor.draw_scale)
+        .build()
 }
 
 fn apply_control_result(

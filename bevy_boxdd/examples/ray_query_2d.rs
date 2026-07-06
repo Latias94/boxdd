@@ -31,19 +31,19 @@ fn report_first_ray_hit(context: NonSend<BoxddPhysicsContext>, mut reported: Loc
         return;
     }
 
-    let Some(world) = context.world() else {
+    let Ok(Some(hit)) = context.try_cast_ray_closest_entity(
+        Vec2::new(0.0, 3.0),
+        Vec2::new(0.0, -6.0),
+        boxdd::QueryFilter::default(),
+    ) else {
         return;
     };
 
-    let hit = world.cast_ray_closest(
-        boxdd::Vec2::new(0.0, 3.0),
-        boxdd::Vec2::new(0.0, -6.0),
-        boxdd::QueryFilter::default(),
+    info!(
+        entity = ?hit.entity,
+        point = ?hit.hit.point,
+        normal = ?hit.hit.normal,
+        "ray hit"
     );
-
-    if hit.hit {
-        let entity = context.shape_entity(hit.shape_id);
-        info!(?entity, point = ?hit.point, normal = ?hit.normal, "ray hit");
-        *reported = true;
-    }
+    *reported = true;
 }
