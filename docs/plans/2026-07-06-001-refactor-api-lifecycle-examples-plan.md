@@ -26,7 +26,7 @@ execution: code
 
 ### Summary
 
-This plan hardens the parts of `boxdd` that users and maintainers use to trust the binding: every official sample must be mapped to a Rust artifact or a defended deferral, raw API rows must shrink or be explicitly justified, FFI lifecycle rules must be executable tests, and `bevy_boxdd` must demonstrate events and queries beyond a falling box.
+This plan hardens the parts of `boxdd` that users and maintainers use to trust the binding: every non-benchmark official sample must be mapped to a Rust artifact or a defended deferral, benchmark rows must stay explicitly indexed when no Rust benchmark artifact is useful, raw API rows must shrink or be explicitly justified, FFI lifecycle rules must be executable tests, and `bevy_boxdd` must demonstrate events and queries beyond a falling box.
 
 ### Problem Frame
 
@@ -230,12 +230,12 @@ Implementation should not let examples and matrices drift independently.
 | `cargo run -p xtask -- api-coverage --check` | U2, U5 | API fixture and docs match vendored headers. |
 | `cargo run -p xtask -- sample-parity --check` | U1, U5 | Sample matrix maps every upstream row under the stricter policy. |
 | `cargo run -p xtask -- validate-pages` | U1, U5 | Pages local links remain valid. |
-| `cargo nextest run -p boxdd --test api_coverage --test collision_validation --test joint_new_apis --test world_callbacks --test panic_across_ffi_is_caught --test dynamic_tree --test events_and_sensors` | U2, U3 | Focused safe-wrapper and lifecycle tests pass. |
+| `cargo nextest run -p boxdd --test api_coverage --test collision_validation --test joint_new_apis --test world_callbacks --test panic_across_ffi_is_caught --test world_and_queries --test dynamic_tree --test events_and_sensors --test world_destroy_and_recycle --test material_mix_callbacks --test user_data --test buffer_reuse` | U2, U3 | Focused safe-wrapper and lifecycle tests pass. |
 | `cargo nextest run -p bevy_boxdd --test plugin` | U4 | Bevy plugin behavior tests pass. |
 | `cargo check -p bevy_boxdd --examples` | U4 | New Bevy examples compile. |
 | `cargo clippy -p boxdd --all-targets --all-features -- -D warnings` | U2, U3, U5 | Safe API changes are lint-clean. |
 | `cargo clippy -p bevy_boxdd --all-targets --no-default-features -- -D warnings` | U4, U5 | Bevy changes are lint-clean without default features. |
-| `RUSTDOCFLAGS='-D warnings --cfg docsrs' cargo doc --workspace --no-deps` | U2, U4, U5 | Public docs build without warnings. |
+| `$env:RUSTDOCFLAGS='-D warnings --cfg docsrs'; cargo doc --workspace --no-deps` | U2, U4, U5 | Public docs build without warnings in PowerShell. |
 | `cargo package -p boxdd --allow-dirty --no-verify`, `cargo package -p boxdd-sys --allow-dirty --no-verify`, `cargo package -p bevy_boxdd --allow-dirty --no-verify` | U5 | Packaging metadata remains valid. |
 
 ---
