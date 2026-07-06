@@ -12,45 +12,28 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 ## [0.5.0] - 2026-07-06
 
 ### Added
-- Added a live GitHub Pages experience at <https://frankorz.com/boxdd/>: the root page is now a Bevy Web example index, and each example route runs the shared Bevy + egui + `boxdd` WASM testbed in the browser.
-- Added official Box2D sample-aligned Bevy WASM scenes for Stacking, Benchmark, Bodies, Continuous, Shapes, Events, and Joints, including Single Box, Tilted Stack, Circle Stack, Large Pyramid, Body Type, Kinematic, Skinny Box, Restitution, Friction, Filter, Sensor Funnel, Contact, Bridge, and Revolute.
-- Added a generated Bevy testbed loader and provider shim that connect the Rust Bevy wasm module to the Emscripten `box2d-sys-v0` provider through shared `WebAssembly.Memory`.
-- Added a browser-ready WASM provider runtime with `examples-wasm/provider-smoke` and `xtask provider-smoke`, so the shared-memory Box2D provider can be verified outside the Bevy Pages UI.
-- Added Bevy entity-mapped AABB overlap helpers: `BoxddPhysicsContext::try_overlap_aabb_entities` and `try_overlap_aabb_entities_into` return `BoxddShapeHit` values with the native `ShapeId` and mapped Bevy `Entity`.
-- Added Bevy product workflow examples for AABB overlap highlighting, debug draw rendering with Gizmos, compound child colliders, and collision category/mask filters.
-- Added executable FFI lifecycle coverage for public `!Send`/`!Sync` guarantees, explicit destroy user-data cleanup, and raw pointer replacement semantics.
-- Added `bevy_boxdd`, a Bevy 0.19 adapter crate with fixed-step body/collider sync, contact and sensor messages, recoverable plugin errors, ECS-authored distance and revolute joints, entity-mapped ray queries, debug draw command collection, and examples for the main Bevy workflows.
-- Added `boxdd::dynamic_tree`, a safe owned wrapper for Box2D's standalone broad-phase dynamic tree.
-- Added `xtask` validation for Box2D API coverage, official sample parity, and the generated Pages example index.
-- Added machine-checked API coverage docs and fixtures for the vendored Box2D `B2_API` surface.
-- Added `boxdd-sys` ABI/layout tests for representative FFI structs and smoke symbols.
-- Added shape-specific standalone `shape_cast` / `try_shape_cast` helpers for circle, capsule, segment, and polygon geometry.
-- Added default-running lifecycle tests for callback locks, panic containment, query callbacks, dynamic-tree callbacks, event-view deferred destruction, reusable event buffers, and world destroy/recycle behavior.
+- Live Bevy + egui browser examples at <https://frankorz.com/boxdd/>. The examples cover common Box2D scenes such as Single Box, Large Pyramid, Restitution, Friction, Sensor Funnel, Bridge, and Revolute.
+- `bevy_boxdd`, a Bevy 0.19 integration crate with fixed-step body and collider sync, contact and sensor messages, ECS-authored distance and revolute joints, entity-mapped ray/AABB queries, debug draw collection, and focused workflow examples.
+- `boxdd::dynamic_tree`, a safe owned wrapper for Box2D's standalone broad-phase dynamic tree.
+- Shape-specific standalone `shape_cast` / `try_shape_cast` helpers for circle, capsule, segment, and polygon geometry.
 
 ### Changed
-- Pages WASM builds now use a size-oriented `wasm-release` profile by default, run `wasm-opt -Oz` when Binaryen is available, print before/after wasm sizes for the Bevy testbed and Box2D provider assets, and show byte-level browser download progress while loading examples.
-- Updated dependency requirements to current crates.io releases: `nalgebra 0.35`, `glam 0.33`, and the native Dear ImGui testbed stack `dear-imgui-rs 0.15`, `dear-imgui-winit 0.15`, and `dear-imgui-glow 0.15`; refreshed `Cargo.lock` for the latest compatible transitive crates.
-- Pages are generated from `bevy_boxdd/examples/testbed_2d/scenes.rs` so the published example list stays aligned with the runnable Bevy Web scenes.
-- `xtask build-pages-wasm` now builds both the Emscripten Box2D provider assets and the Bevy testbed wasm assets required by Pages.
-- Updated Pages CI to install `wasm-bindgen-cli 0.2.126` before building the browser runtime assets.
-- Centralized workspace metadata and shared dependencies across `boxdd`, `boxdd-sys`, `bevy_boxdd`, and `xtask`.
-- Updated the Bevy ray-query example to use entity-mapped `BoxddPhysicsContext` helpers instead of requiring users to combine native ray casts with manual shape-to-entity lookups.
-- Tightened official sample parity so non-benchmark upstream samples must map to real Rust artifacts or carry an explicit deferral rationale.
-- Reduced raw-only API coverage by adding safe wrappers for straightforward shape-cast and joint runtime gaps; remaining raw/omitted rows now carry explicit rationale.
+- Browser examples now load smaller WASM builds by default and show byte-level download progress while the Box2D provider and Bevy runtime load.
+- Updated optional math and native testbed dependencies to current releases: `nalgebra 0.35`, `glam 0.33`, and `dear-imgui-* 0.15`.
+- Reworked Bevy ray-query examples to return Bevy `Entity` values directly instead of forcing users to join native shape hits back to ECS entities by hand.
+- More Box2D shape-cast and joint runtime APIs are available as safe wrappers, so fewer cases need `boxdd_sys::ffi`.
 
 ### Fixed
-- Fixed callback panic recovery so catching a Rust panic from a Box2D callback no longer poisons the internal panic payload mutex and prevents later `World::step` calls.
+- Catching a Rust panic from a Box2D callback no longer poisons the internal panic payload mutex and prevents later `World::step` calls.
 
 ### Migration Notes
-- For faster or more debuggable Pages builds, set `BOXDD_PAGES_WASM_PROFILE=debug` or `release`; set `BOXDD_PAGES_WASM_OPT=0` to skip `wasm-opt` post-processing.
-- If your app also depends directly on `nalgebra` or `glam` and uses `boxdd`'s optional interop features, align those direct dependencies with `nalgebra 0.35` and `glam 0.33` so conversions use the same crate versions.
-- Native testbed integrations should use the `dear-imgui-* 0.15` crates with this workspace; browser Pages examples continue to use Bevy + egui instead of Dear ImGui.
-- Browser builds should use `BOXDD_SYS_WASM_MODE=provider` for `wasm32-unknown-unknown`; the default wasm mode remains compile-only unless `BOXDD_SYS_WASM_CC` or a supported source toolchain is configured.
-- Existing Bevy body, collider, contact, sensor, and transform-sync code does not need to change; the new Bevy APIs are additive.
-- For Bevy ray casts, prefer `BoxddPhysicsContext::try_cast_ray_closest_entity`, `try_cast_ray_all_entities`, or `try_cast_ray_all_entities_into` when you want ECS entities back with the native hit data.
-- For Bevy area queries, prefer `BoxddPhysicsContext::try_overlap_aabb_entities` or `try_overlap_aabb_entities_into` when you want ECS entities back with native `ShapeId` values.
-- For Bevy joints, spawn a `JointDescriptor::distance(...)` or `JointDescriptor::revolute(...)` entity that references two entities with `RigidBody`; after fixed update, read `BoxddJoint` only if you need the native `JointId`.
-- For Bevy debug rendering, collect `boxdd::DebugDrawCmd` values with `BoxddPhysicsContext::try_debug_draw_collect_into` and render them in your app or tooling, keeping renderer dependencies outside `bevy_boxdd`.
+- Most `boxdd` 0.4 code can upgrade to 0.5 without source changes. If you do not use Bevy, browser examples, or optional math/testbed integrations, there is probably nothing to change.
+- If your app uses the optional `nalgebra` or `glam` features and also depends on those crates directly, update your direct dependencies to `nalgebra 0.35` and `glam 0.33`.
+- If you build the native Dear ImGui testbed, update the Dear ImGui crates to `dear-imgui-rs 0.15`, `dear-imgui-winit 0.15`, and `dear-imgui-glow 0.15`.
+- If you use `bevy_boxdd`, prefer the new entity-returning query helpers: `try_cast_ray_closest_entity`, `try_cast_ray_all_entities`, `try_cast_ray_all_entities_into`, `try_overlap_aabb_entities`, and `try_overlap_aabb_entities_into`.
+- If you author Bevy joints, spawn `JointDescriptor::distance(...)` or `JointDescriptor::revolute(...)` on an entity that references two `RigidBody` entities. Read `BoxddJoint` after fixed update only when you need the native `JointId`.
+- If you render Bevy debug geometry yourself, collect `boxdd::DebugDrawCmd` values with `BoxddPhysicsContext::try_debug_draw_collect_into` and render them in your own renderer or tooling.
+- If you build browser examples, use `BOXDD_SYS_WASM_MODE=provider` for `wasm32-unknown-unknown`. Set `BOXDD_PAGES_WASM_PROFILE=debug` or `release` for non-default Pages builds, and set `BOXDD_PAGES_WASM_OPT=0` when you want to skip `wasm-opt`.
 
 ## [boxdd 0.4.0] - 2026-04-22
 
