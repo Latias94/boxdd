@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Debug Draw Gizmos 2D - boxdd Example</title>
+  <link rel="icon" href="data:,">
+  <meta name="description" content="Rendering collected debug draw commands through Bevy Gizmos.">
+  <style>
+:root {
+  color-scheme: dark;
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #101014;
+  --muted: #a1a1aa;
+  --border: #27272a;
+  --accent: #38bdf8;
+  --accent-strong: #facc15;
+}
+* { box-sizing: border-box; }
+html, body { width: 100%; min-height: 100%; margin: 0; background: var(--background); color: var(--foreground); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+a { color: var(--foreground); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 4px; }
+.topbar { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); background: rgba(9, 9, 11, 0.94); padding: 14px 18px; }
+.topbar > a { color: var(--accent); font-weight: 700; }
+.topbar nav { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 14px; }
+.directory-main, .detail-main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 54px 0; }
+.directory-main h1, .detail-main h1 { max-width: 840px; margin: 0; font-size: clamp(34px, 6vw, 58px); line-height: 1; letter-spacing: 0; }
+.eyebrow { color: var(--accent); font-size: 12px; font-weight: 800; letter-spacing: 0; text-transform: uppercase; }
+.lead { max-width: 760px; color: var(--muted); font-size: 17px; line-height: 1.55; }
+.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 12px; margin-top: 28px; }
+.card { display: grid; min-height: 170px; gap: 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); padding: 16px; }
+.card:hover { border-color: #52525b; text-decoration: none; }
+.card span, .command-panel span, .source-panel span { color: var(--accent); font-size: 12px; font-weight: 800; text-transform: uppercase; }
+.card strong { font-size: 18px; line-height: 1.25; }
+.card small { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.card em { align-self: end; color: #d4d4d8; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 12px; font-style: normal; line-height: 1.45; overflow-wrap: anywhere; }
+.command-panel, .source-panel { max-width: 860px; margin-top: 24px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); padding: 18px; }
+pre { margin: 12px 0 10px; overflow-x: auto; border-radius: 6px; background: #020617; padding: 14px; }
+code { color: var(--accent-strong); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 14px; }
+.command-panel p { margin: 0; color: var(--muted); line-height: 1.5; }
+.source-panel a { display: inline-block; margin-top: 10px; color: var(--foreground); overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+  <div class="detail">
+    <header class="topbar">
+      <a href="../../">boxdd Examples</a>
+      <nav>
+        <a href="../">All examples</a>
+        <a href="https://github.com/Latias94/boxdd/blob/main/bevy_boxdd/examples/debug_draw_gizmos_2d.rs">Source</a>
+      </nav>
+    </header>
+    <main class="detail-main">
+      <p class="eyebrow">Bevy ECS</p>
+      <h1>Debug Draw Gizmos 2D</h1>
+      <p class="lead">Rendering collected debug draw commands through Bevy Gizmos.</p>
+      <section class="command-panel">
+        <span>Run</span>
+        <pre><code>cargo run -p bevy_boxdd --example debug_draw_gizmos_2d</code></pre>
+        <p>Runs as a native Bevy example. It is listed here because no browser Bevy build is published for boxdd yet.</p>
+      </section>
+      <section class="source-panel">
+        <span>Source</span>
+        <a href="https://github.com/Latias94/boxdd/blob/main/bevy_boxdd/examples/debug_draw_gizmos_2d.rs">bevy_boxdd/examples/debug_draw_gizmos_2d.rs</a>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

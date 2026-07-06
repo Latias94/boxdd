@@ -55,6 +55,23 @@ struct SampleCoverage {
     artifact: String,
 }
 
+#[derive(Debug, Clone)]
+struct PageExample {
+    id: String,
+    area: String,
+    title: String,
+    summary: String,
+    source: String,
+    command: String,
+    run_note: String,
+}
+
+#[derive(Copy, Clone)]
+enum ExampleIndexLocation {
+    Root,
+    ExamplesDirectory,
+}
+
 fn main() {
     if let Err(error) = run() {
         eprintln!("error: {error}");
@@ -76,6 +93,7 @@ fn run() -> Result<()> {
         }
         [cmd, rest @ ..] if cmd == "api-coverage" => api_coverage(&root, rest),
         [cmd, rest @ ..] if cmd == "sample-parity" => sample_parity(&root, rest),
+        [cmd] if cmd == "generate-pages" => generate_pages(&root),
         [cmd] if cmd == "validate-pages" => validate_pages(&root),
         [cmd, ..] => Err(Error::Message(format!(
             "unknown xtask command `{cmd}`; run `cargo run -p xtask -- help`"
@@ -101,12 +119,14 @@ Usage:
   cargo run -p xtask -- sample-parity --write
   cargo run -p xtask -- api-coverage --check
   cargo run -p xtask -- api-coverage --write
+  cargo run -p xtask -- generate-pages
   cargo run -p xtask -- validate-pages
 
 Commands:
   api-coverage  Validate or regenerate docs/api-coverage.md and its fixture
   sample-parity  Validate or regenerate docs/upstream-parity/box2d-sample-matrix.md
-  validate-pages Validate local links in docs/pages/**/*.html
+  generate-pages Generate the GitHub Pages example index from Rust examples
+  validate-pages Validate generated pages and local links in docs/pages/**/*.html
 "
     );
 }
@@ -171,7 +191,7 @@ fn discover_b2_api_symbols(root: &Path) -> Result<BTreeSet<String>> {
     for entry in fs::read_dir(&include_dir).map_err(|source| Error::io(&include_dir, source))? {
         let entry = entry.map_err(|source| Error::io(&include_dir, source))?;
         let path = entry.path();
-        if !path.extension().is_some_and(|ext| ext == "h") {
+        if path.extension().is_none_or(|ext| ext != "h") {
             continue;
         }
         let content = fs::read_to_string(&path).map_err(|source| Error::io(&path, source))?;
@@ -967,8 +987,611 @@ fn validate_sample_matrix(
     }
 }
 
+fn generate_pages(root: &Path) -> Result<()> {
+    let examples = collect_page_examples(root)?;
+    let pages = expected_pages(root, &examples);
+    let pages_dir = root.join("docs/pages");
+    let examples_dir = pages_dir.join("examples");
+
+    reset_generated_examples_dir(&pages_dir, &examples_dir)?;
+    for (path, html) in pages {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|source| Error::io(parent, source))?;
+        }
+        fs::write(&path, html).map_err(|source| Error::io(&path, source))?;
+    }
+
+    println!(
+        "generated pages: {} examples under {}",
+        examples.len(),
+        pages_dir.display()
+    );
+    Ok(())
+}
+
+fn reset_generated_examples_dir(pages_dir: &Path, examples_dir: &Path) -> Result<()> {
+    if !examples_dir.exists() {
+        fs::create_dir_all(examples_dir).map_err(|source| Error::io(examples_dir, source))?;
+        return Ok(());
+    }
+    let pages_dir = pages_dir
+        .canonicalize()
+        .map_err(|source| Error::io(pages_dir, source))?;
+    let examples_dir = examples_dir
+        .canonicalize()
+        .map_err(|source| Error::io(examples_dir, source))?;
+    if !examples_dir.starts_with(&pages_dir)
+        || examples_dir.file_name().and_then(|name| name.to_str()) != Some("examples")
+    {
+        return Err(Error::Message(format!(
+            "refusing to replace unexpected generated examples dir: {}",
+            examples_dir.display()
+        )));
+    }
+    fs::remove_dir_all(&examples_dir).map_err(|source| Error::io(&examples_dir, source))?;
+    fs::create_dir_all(&examples_dir).map_err(|source| Error::io(&examples_dir, source))
+}
+
+fn collect_page_examples(root: &Path) -> Result<Vec<PageExample>> {
+    let mut examples = Vec::new();
+    collect_boxdd_examples(root, &mut examples)?;
+    collect_bevy_examples(root, &mut examples)?;
+    collect_testbed_scenes(root, &mut examples)?;
+
+    let mut seen = BTreeSet::new();
+    let mut errors = Vec::new();
+    for example in &examples {
+        if !seen.insert(example.id.clone()) {
+            errors.push(format!("duplicate Pages example id `{}`", example.id));
+        }
+        let source = root.join(&example.source);
+        if !source.exists() {
+            errors.push(format!(
+                "Pages example `{}` points at missing source `{}`",
+                example.id, example.source
+            ));
+        }
+    }
+    if !errors.is_empty() {
+        return Err(Error::Message(errors.join("\n")));
+    }
+
+    examples.sort_by(|left, right| {
+        left.area
+            .cmp(&right.area)
+            .then_with(|| left.title.cmp(&right.title))
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    Ok(examples)
+}
+
+fn collect_boxdd_examples(root: &Path, out: &mut Vec<PageExample>) -> Result<()> {
+    let examples_dir = root.join("boxdd/examples");
+    for source in collect_top_level_rs_files(&examples_dir)? {
+        let stem = file_stem(&source)?;
+        let source = repo_relative_path(root, &source);
+        let title = titleize_identifier(&stem);
+        out.push(PageExample {
+            id: format!("core-{}", slugify(&stem)),
+            area: boxdd_example_area(&stem).to_owned(),
+            title,
+            summary: boxdd_example_summary(&stem),
+            source,
+            command: boxdd_example_command(&stem),
+            run_note: boxdd_example_run_note(&stem),
+        });
+    }
+    Ok(())
+}
+
+fn collect_bevy_examples(root: &Path, out: &mut Vec<PageExample>) -> Result<()> {
+    let examples_dir = root.join("bevy_boxdd/examples");
+    for source in collect_top_level_rs_files(&examples_dir)? {
+        let stem = file_stem(&source)?;
+        let source = repo_relative_path(root, &source);
+        out.push(PageExample {
+            id: format!("bevy-{}", slugify(&stem)),
+            area: "Bevy ECS".to_owned(),
+            title: titleize_identifier(&stem),
+            summary: bevy_example_summary(&stem),
+            source,
+            command: format!("cargo run -p bevy_boxdd --example {stem}"),
+            run_note: "Runs as a native Bevy example. It is listed here because no browser Bevy build is published for boxdd yet.".to_owned(),
+        });
+    }
+    Ok(())
+}
+
+fn collect_testbed_scenes(root: &Path, out: &mut Vec<PageExample>) -> Result<()> {
+    let scenes_mod = root.join("boxdd/examples/testbed/scenes/mod.rs");
+    let source =
+        fs::read_to_string(&scenes_mod).map_err(|source| Error::io(&scenes_mod, source))?;
+    let mut in_spec = false;
+    let mut name: Option<String> = None;
+    let mut module: Option<String> = None;
+
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if trimmed == "SceneSpec {" {
+            in_spec = true;
+            name = None;
+            module = None;
+            continue;
+        }
+        if !in_spec {
+            continue;
+        }
+        if let Some(value) = extract_string_field(trimmed, "name") {
+            name = Some(value);
+        } else if let Some(after_build) = trimmed.strip_prefix("build: ") {
+            if let Some((module_name, _)) = after_build.split_once("::build") {
+                module = Some(module_name.trim().to_owned());
+            }
+        } else if trimmed == "}," {
+            let name = name.take().ok_or_else(|| {
+                Error::Message(format!(
+                    "SceneSpec in {} is missing name",
+                    scenes_mod.display()
+                ))
+            })?;
+            let module = module.take().ok_or_else(|| {
+                Error::Message(format!("SceneSpec `{name}` is missing build module"))
+            })?;
+            let source = format!("boxdd/examples/testbed/scenes/{module}.rs");
+            out.push(PageExample {
+                id: format!("testbed-{}", slugify(&name)),
+                area: testbed_scene_area(&name),
+                title: name.clone(),
+                summary: format!(
+                    "Interactive ImGui testbed scene backed by the `{module}` scene module."
+                ),
+                source,
+                command:
+                    "cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed"
+                        .to_owned(),
+                run_note: format!(
+                    "Open the desktop testbed and choose `{name}` from the Scene selector."
+                ),
+            });
+            in_spec = false;
+        }
+    }
+    Ok(())
+}
+
+fn collect_top_level_rs_files(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+    for entry in fs::read_dir(dir).map_err(|source| Error::io(dir, source))? {
+        let entry = entry.map_err(|source| Error::io(dir, source))?;
+        let path = entry.path();
+        if path.is_file() && path.extension().is_some_and(|ext| ext == "rs") {
+            files.push(path);
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
+fn file_stem(path: &Path) -> Result<String> {
+    path.file_stem()
+        .and_then(|stem| stem.to_str())
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            Error::Message(format!(
+                "invalid Rust example file name: {}",
+                path.display()
+            ))
+        })
+}
+
+fn repo_relative_path(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+fn boxdd_example_area(stem: &str) -> &'static str {
+    match stem {
+        "world_basics" | "basic" | "bodies" | "world_handle_reads" => "Core World",
+        "shapes_variety" | "convex_hull" | "donut" => "Shapes",
+        "queries" | "query_casts" | "raycast" | "shapecast" | "dynamic_tree" | "buffer_reuse"
+        | "character_mover" | "collision_basics" => "Queries And Collision",
+        "events_summary" | "events_view" | "sensors" | "contacts" => "Events",
+        "joints" | "joints_presets" | "bridge" | "car" | "revolute_motor"
+        | "prismatic_elevator" | "prismatic_wheel" | "doohickey" => "Joints",
+        "stacking" | "pyramid" | "chain_walkway" | "continuous_bullet" | "kinematic_platform"
+        | "robustness" | "issues" => "Gameplay Scenes",
+        "mint_interop" | "scene_serialize" | "physics_thread" | "wasm_wasi_smoke"
+        | "determinism" => "Integration",
+        "testbed_imgui_glow" => "Interactive Testbed",
+        "benchmark" => "Performance",
+        _ => "Core Examples",
+    }
+}
+
+fn boxdd_example_summary(stem: &str) -> String {
+    match stem {
+        "world_basics" => "Minimal world, body, shape creation, stepping, and cleanup.".to_owned(),
+        "basic" => "Small foundation scene for the core safe API.".to_owned(),
+        "bodies" => "Body runtime control helpers such as velocity, damping, sleep, and transforms.".to_owned(),
+        "buffer_reuse" => "Hot-path `*_into` and visitor APIs that reuse caller-owned buffers.".to_owned(),
+        "queries" => "AABB overlap query styles, reusable buffers, visitor callbacks, and polygon overlap helpers.".to_owned(),
+        "query_casts" => "Ray casts, shape casts, and reusable cast-hit buffers.".to_owned(),
+        "dynamic_tree" => "Standalone Box2D broad-phase tree ownership and query helpers.".to_owned(),
+        "raycast" => "Focused world ray-cast walkthrough.".to_owned(),
+        "shapecast" => "Focused shape-cast walkthrough.".to_owned(),
+        "character_mover" => "Mover casts, plane solving, and clipped movement against world geometry.".to_owned(),
+        "collision_basics" => "Standalone low-level collision helpers without a live world.".to_owned(),
+        "debug_draw" => "Collected debug draw commands through the safe API.".to_owned(),
+        "events_summary" => "Owned event snapshots and reusable event buffers.".to_owned(),
+        "events_view" => "Borrowed zero-copy event views scoped to a closure.".to_owned(),
+        "sensors" => "Sensor begin/end messages and trigger-style overlap behavior.".to_owned(),
+        "contacts" => "Contact begin/end/hit behavior and inspection.".to_owned(),
+        "joints" => "Joint setup across the common safe wrapper paths.".to_owned(),
+        "joints_presets" => "Higher-level joint presets for common setups.".to_owned(),
+        "bridge" => "Distance-joint bridge scene.".to_owned(),
+        "car" => "Vehicle-style wheel and motor control sample.".to_owned(),
+        "chain_walkway" => "Chain segments and moving bodies over connected terrain.".to_owned(),
+        "continuous_bullet" => "Continuous collision for fast bullet-style motion.".to_owned(),
+        "determinism" => "Deterministic stepping expectations.".to_owned(),
+        "kinematic_platform" => "Kinematic-body interaction pattern.".to_owned(),
+        "physics_thread" => "Dedicated-thread ownership model for multi-threaded apps.".to_owned(),
+        "scene_serialize" => "Scene snapshot round-trip using the `serialize` feature.".to_owned(),
+        "mint_interop" => "Math interop with `mint` vectors and transforms.".to_owned(),
+        "wasm_wasi_smoke" => "Minimal WASI-oriented smoke example for the wasm target.".to_owned(),
+        "testbed_imgui_glow" => "Native ImGui + Glow desktop testbed that hosts many scenes behind one UI.".to_owned(),
+        "benchmark" => "Performance-oriented stress sample.".to_owned(),
+        _ => format!("Source example for `{stem}`."),
+    }
+}
+
+fn boxdd_example_command(stem: &str) -> String {
+    match stem {
+        "scene_serialize" => {
+            "cargo run -p boxdd --example scene_serialize --features serialize".to_owned()
+        }
+        "mint_interop" => "cargo run -p boxdd --example mint_interop --features mint".to_owned(),
+        "testbed_imgui_glow" => {
+            "cargo run -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed"
+                .to_owned()
+        }
+        "benchmark" => "cargo run -p boxdd --example benchmark --release".to_owned(),
+        "wasm_wasi_smoke" => {
+            "cargo build -p boxdd --example wasm_wasi_smoke --target wasm32-wasip1".to_owned()
+        }
+        _ => format!("cargo run -p boxdd --example {stem}"),
+    }
+}
+
+fn boxdd_example_run_note(stem: &str) -> String {
+    match stem {
+        "wasm_wasi_smoke" => {
+            "This is a compile/runtime smoke target for WASI; it is not a browser page.".to_owned()
+        }
+        "testbed_imgui_glow" => {
+            "Requires native windowing and the `imgui-glow-testbed` feature.".to_owned()
+        }
+        "scene_serialize" => "Requires the `serialize` feature.".to_owned(),
+        "mint_interop" => "Requires the `mint` feature.".to_owned(),
+        _ => "Runs as a native Cargo example.".to_owned(),
+    }
+}
+
+fn bevy_example_summary(stem: &str) -> String {
+    match stem {
+        "falling_box_2d" => {
+            "Basic body, collider, material, fixed-step stepping, and transform sync.".to_owned()
+        }
+        "contact_events_2d" => {
+            "Contact begin/end/hit messages mapped back to Bevy entities.".to_owned()
+        }
+        "sensor_events_2d" => "Sensor begin/end messages for trigger-style overlaps.".to_owned(),
+        "ray_query_2d" => "Entity-mapped ray queries through `BoxddPhysicsContext`.".to_owned(),
+        "overlap_query_2d" => {
+            "Entity-mapped AABB overlap queries for triggers, pickups, and editor selection."
+                .to_owned()
+        }
+        "kinematic_platform_2d" => {
+            "Driving a kinematic body from Bevy transforms with `BevyToPhysics` sync.".to_owned()
+        }
+        "joint_bridge_2d" => {
+            "Distance and revolute joint descriptors authored as ECS components.".to_owned()
+        }
+        "child_colliders_2d" => {
+            "Compound body authoring with parent body and child collider entities.".to_owned()
+        }
+        "collision_filter_2d" => {
+            "Collision category and mask setup through `PhysicsMaterial::filter`.".to_owned()
+        }
+        "debug_draw_collect_2d" => {
+            "Render-agnostic debug draw command collection from the Bevy context.".to_owned()
+        }
+        "debug_draw_gizmos_2d" => {
+            "Rendering collected debug draw commands through Bevy Gizmos.".to_owned()
+        }
+        _ => format!("Bevy ECS example for `{stem}`."),
+    }
+}
+
+fn testbed_scene_area(name: &str) -> String {
+    name.split_once(':')
+        .map(|(prefix, _)| format!("Testbed {prefix}"))
+        .unwrap_or_else(|| "Testbed Scenes".to_owned())
+}
+
+fn expected_pages(root: &Path, examples: &[PageExample]) -> BTreeMap<PathBuf, String> {
+    let pages_dir = root.join("docs/pages");
+    let mut pages = BTreeMap::new();
+    pages.insert(
+        pages_dir.join("index.html"),
+        example_index_page(examples, ExampleIndexLocation::Root),
+    );
+    pages.insert(
+        pages_dir.join("examples/index.html"),
+        example_index_page(examples, ExampleIndexLocation::ExamplesDirectory),
+    );
+    for example in examples {
+        pages.insert(
+            pages_dir
+                .join("examples")
+                .join(&example.id)
+                .join("index.html"),
+            example_page(example),
+        );
+    }
+    pages
+}
+
+fn example_index_page(examples: &[PageExample], location: ExampleIndexLocation) -> String {
+    let cards = examples
+        .iter()
+        .map(|example| {
+            format!(
+                "        <a class=\"card\" href=\"{href}\"><span>{area}</span><strong>{title}</strong><small>{summary}</small><em>{command}</em></a>",
+                href = location.example_href(&example.id),
+                area = escape_html(&example.area),
+                title = escape_html(&example.title),
+                summary = escape_html(&example.summary),
+                command = escape_html(&example.command),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        r#"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>boxdd Examples</title>
+  <link rel="icon" href="data:,">
+  <meta name="description" content="Generated example index for boxdd and bevy_boxdd.">
+  <style>{css}</style>
+</head>
+<body>
+  <div class="directory">
+    <header class="topbar">
+      <a href="{home_href}">boxdd Examples</a>
+      <nav>
+        <a href="{examples_href}">Examples</a>
+        <a href="https://github.com/Latias94/boxdd">GitHub</a>
+        <a href="https://docs.rs/boxdd">Docs.rs</a>
+      </nav>
+    </header>
+    <main class="directory-main">
+      <p class="eyebrow">Generated example index</p>
+      <h1>Find the Rust example that matches the workflow</h1>
+      <p class="lead">This page is generated from the checked-in Cargo examples and the desktop testbed scene registry. Each card opens a concrete source/command page. Browser WASM is not advertised here until boxdd has a real browser runtime.</p>
+      <section class="card-grid">
+{cards}
+      </section>
+    </main>
+  </div>
+</body>
+</html>
+"#,
+        css = example_page_css(),
+        home_href = location.home_href(),
+        examples_href = location.examples_href(),
+        cards = cards,
+    )
+}
+
+fn example_page(example: &PageExample) -> String {
+    let source_url = format!(
+        "https://github.com/Latias94/boxdd/blob/main/{}",
+        example.source
+    );
+    format!(
+        r#"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title} - boxdd Example</title>
+  <link rel="icon" href="data:,">
+  <meta name="description" content="{summary}">
+  <style>{css}</style>
+</head>
+<body>
+  <div class="detail">
+    <header class="topbar">
+      <a href="../../">boxdd Examples</a>
+      <nav>
+        <a href="../">All examples</a>
+        <a href="{source_url}">Source</a>
+      </nav>
+    </header>
+    <main class="detail-main">
+      <p class="eyebrow">{area}</p>
+      <h1>{title}</h1>
+      <p class="lead">{summary}</p>
+      <section class="command-panel">
+        <span>Run</span>
+        <pre><code>{command}</code></pre>
+        <p>{run_note}</p>
+      </section>
+      <section class="source-panel">
+        <span>Source</span>
+        <a href="{source_url}">{source}</a>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
+"#,
+        css = example_page_css(),
+        title = escape_html(&example.title),
+        summary = escape_html(&example.summary),
+        area = escape_html(&example.area),
+        command = escape_html(&example.command),
+        run_note = escape_html(&example.run_note),
+        source = escape_html(&example.source),
+        source_url = source_url,
+    )
+}
+
+impl ExampleIndexLocation {
+    fn home_href(self) -> &'static str {
+        match self {
+            Self::Root => "./",
+            Self::ExamplesDirectory => "../",
+        }
+    }
+
+    fn examples_href(self) -> &'static str {
+        match self {
+            Self::Root => "examples/",
+            Self::ExamplesDirectory => "./",
+        }
+    }
+
+    fn example_href(self, id: &str) -> String {
+        match self {
+            Self::Root => format!("examples/{id}/"),
+            Self::ExamplesDirectory => format!("{id}/"),
+        }
+    }
+}
+
+fn example_page_css() -> &'static str {
+    r#"
+:root {
+  color-scheme: dark;
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #101014;
+  --muted: #a1a1aa;
+  --border: #27272a;
+  --accent: #38bdf8;
+  --accent-strong: #facc15;
+}
+* { box-sizing: border-box; }
+html, body { width: 100%; min-height: 100%; margin: 0; background: var(--background); color: var(--foreground); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+a { color: var(--foreground); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 4px; }
+.topbar { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); background: rgba(9, 9, 11, 0.94); padding: 14px 18px; }
+.topbar > a { color: var(--accent); font-weight: 700; }
+.topbar nav { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 14px; }
+.directory-main, .detail-main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 54px 0; }
+.directory-main h1, .detail-main h1 { max-width: 840px; margin: 0; font-size: clamp(34px, 6vw, 58px); line-height: 1; letter-spacing: 0; }
+.eyebrow { color: var(--accent); font-size: 12px; font-weight: 800; letter-spacing: 0; text-transform: uppercase; }
+.lead { max-width: 760px; color: var(--muted); font-size: 17px; line-height: 1.55; }
+.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 12px; margin-top: 28px; }
+.card { display: grid; min-height: 170px; gap: 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); padding: 16px; }
+.card:hover { border-color: #52525b; text-decoration: none; }
+.card span, .command-panel span, .source-panel span { color: var(--accent); font-size: 12px; font-weight: 800; text-transform: uppercase; }
+.card strong { font-size: 18px; line-height: 1.25; }
+.card small { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.card em { align-self: end; color: #d4d4d8; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 12px; font-style: normal; line-height: 1.45; overflow-wrap: anywhere; }
+.command-panel, .source-panel { max-width: 860px; margin-top: 24px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); padding: 18px; }
+pre { margin: 12px 0 10px; overflow-x: auto; border-radius: 6px; background: #020617; padding: 14px; }
+code { color: var(--accent-strong); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 14px; }
+.command-panel p { margin: 0; color: var(--muted); line-height: 1.5; }
+.source-panel a { display: inline-block; margin-top: 10px; color: var(--foreground); overflow-wrap: anywhere; }
+"#
+}
+
+fn slugify(value: &str) -> String {
+    let mut out = String::new();
+    let mut last_dash = false;
+    for ch in value.chars() {
+        let ch = ch.to_ascii_lowercase();
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch);
+            last_dash = false;
+        } else if !last_dash && !out.is_empty() {
+            out.push('-');
+            last_dash = true;
+        }
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    out
+}
+
+fn titleize_identifier(value: &str) -> String {
+    value
+        .split('_')
+        .filter(|part| !part.is_empty())
+        .map(title_word)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn title_word(word: &str) -> String {
+    match word {
+        "2d" => "2D".to_owned(),
+        "aabb" => "AABB".to_owned(),
+        "ffi" => "FFI".to_owned(),
+        "glow" => "Glow".to_owned(),
+        "imgui" => "ImGui".to_owned(),
+        "toi" => "TOI".to_owned(),
+        "wasi" => "WASI".to_owned(),
+        "wasm" => "WASM".to_owned(),
+        _ => {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => {
+                    let mut out = String::new();
+                    out.push(first.to_ascii_uppercase());
+                    out.push_str(chars.as_str());
+                    out
+                }
+                None => String::new(),
+            }
+        }
+    }
+}
+
+fn extract_string_field(line: &str, field: &str) -> Option<String> {
+    let prefix = format!("{field}: ");
+    let rest = line.strip_prefix(&prefix)?;
+    extract_quoted_string(rest)
+}
+
+fn extract_quoted_string(value: &str) -> Option<String> {
+    let start = value.find('"')?;
+    let rest = &value[start + 1..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_owned())
+}
+
+fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
 fn validate_pages(root: &Path) -> Result<()> {
     let pages_dir = root.join("docs/pages");
+    let examples = collect_page_examples(root)?;
+    let expected_pages = expected_pages(root, &examples);
     let html_files = collect_html_files(&pages_dir)?;
     if html_files.is_empty() {
         return Err(Error::Message(format!(
@@ -977,7 +1600,32 @@ fn validate_pages(root: &Path) -> Result<()> {
         )));
     }
 
+    let expected_paths: BTreeSet<PathBuf> = expected_pages.keys().cloned().collect();
+    let actual_paths: BTreeSet<PathBuf> = html_files.iter().cloned().collect();
     let mut errors = Vec::new();
+    for stale in actual_paths.difference(&expected_paths) {
+        errors.push(format!(
+            "{} is not generated by `cargo run -p xtask -- generate-pages`",
+            stale.strip_prefix(root).unwrap_or(stale).display()
+        ));
+    }
+    for (path, expected) in &expected_pages {
+        if !path.exists() {
+            errors.push(format!(
+                "missing generated page {}",
+                path.strip_prefix(root).unwrap_or(path).display()
+            ));
+            continue;
+        }
+        let actual = fs::read_to_string(path).map_err(|source| Error::io(path, source))?;
+        if normalize_newlines(&actual) != normalize_newlines(expected) {
+            errors.push(format!(
+                "{} is stale; run `cargo run -p xtask -- generate-pages`",
+                path.strip_prefix(root).unwrap_or(path).display()
+            ));
+        }
+    }
+
     for file in &html_files {
         let content = fs::read_to_string(file).map_err(|source| Error::io(file, source))?;
         for link in extract_links(&content) {
@@ -1000,11 +1648,19 @@ fn validate_pages(root: &Path) -> Result<()> {
     }
 
     if errors.is_empty() {
-        println!("pages ok: {} html files checked", html_files.len());
+        println!(
+            "pages ok: {} html files checked, {} generated examples",
+            html_files.len(),
+            examples.len()
+        );
         Ok(())
     } else {
         Err(Error::Message(errors.join("\n")))
     }
+}
+
+fn normalize_newlines(value: &str) -> String {
+    value.replace("\r\n", "\n")
 }
 
 fn collect_html_files(dir: &Path) -> Result<Vec<PathBuf>> {
@@ -1064,10 +1720,10 @@ fn strip_code_ticks(value: &str) -> &str {
 }
 
 fn strip_markdown_link_target(value: &str) -> &str {
-    if let Some(start) = value.find("](") {
-        if let Some(end) = value[start + 2..].find(')') {
-            return &value[start + 2..start + 2 + end];
-        }
+    if let Some(start) = value.find("](")
+        && let Some(end) = value[start + 2..].find(')')
+    {
+        return &value[start + 2..start + 2 + end];
     }
     strip_code_ticks(value)
 }

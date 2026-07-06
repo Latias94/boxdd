@@ -30,7 +30,10 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Validate static hub
+      - name: Generate example pages
+        run: cargo run -p xtask -- generate-pages
+
+      - name: Validate example pages
         run: cargo run -p xtask -- validate-pages
 
       - name: Configure Pages

@@ -18,13 +18,13 @@
 ## Engineering Status
 - API coverage matrix: `docs/api-coverage.md` tracks every vendored Box2D `B2_API` symbol; the current safe layer accounts for 424 of 430 symbols, with 4 raw-only and 2 omitted by rationale.
 - Official sample parity: `docs/upstream-parity/box2d-sample-matrix.md` maps non-benchmark upstream samples to Rust examples, tests, or testbed scenes. Benchmark rows may remain indexed references when that is the useful artifact.
-- GitHub Pages source: `docs/pages/index.html` provides a static documentation and example hub.
+- GitHub Pages source: `docs/pages/index.html` is generated from checked-in Cargo examples and testbed scenes, so the site works as an example index instead of a hand-written marketing page.
 - Bevy integration: `bevy_boxdd` exposes `RigidBody`, `Collider`, `PhysicsMaterial`, distance/revolute `JointDescriptor`, transform sync, entity-mapped ray and AABB overlap helpers through `BoxddPhysicsContext`, debug draw command collection, recoverable error messages, and body/contact/sensor messages.
 
 ## 0.4.0 Highlights
 - `0.4.0` realigns `boxdd-sys` with the official upstream Box2D submodule again, so repository checkouts and CI no longer depend on a local-only Box2D patch commit.
 - Workspace metadata is centralized for `boxdd`, `boxdd-sys`, `bevy_boxdd`, and `xtask`.
-- `xtask` now validates API coverage, strict official sample parity, and the static Pages hub.
+- `xtask` now validates API coverage, strict official sample parity, and the generated Pages example index.
 - `boxdd::dynamic_tree` wraps the standalone Box2D broad-phase tree as an owned safe Rust type.
 - `bevy_boxdd` provides a Bevy 0.19 integration crate without adding Bevy dependencies to the core binding, with compiling examples for contacts, sensors, ray/AABB queries, kinematic transform sync, ECS joints, child colliders, collision filters, and debug draw collection.
 - Hot-path APIs are first-class: keep the simple `Vec`-returning calls for one-off use, or move per-frame code to `*_into` and `visit_*`.
@@ -130,6 +130,7 @@ cargo build
 # validate upstream accounting assets
 cargo run -p xtask -- api-coverage --check
 cargo run -p xtask -- sample-parity --check
+cargo run -p xtask -- generate-pages
 cargo run -p xtask -- validate-pages
 
 # run a few representative examples

@@ -1,6 +1,6 @@
 # WASM Status
 
-`boxdd-sys` can be checked for `wasm32-unknown-unknown` and `wasm32-wasip1`, but the workspace intentionally ships a static Pages hub before a live browser demo.
+`boxdd-sys` can be checked for `wasm32-unknown-unknown` and `wasm32-wasip1`, but the workspace intentionally ships a generated source/example Pages index before a live browser demo.
 
 ## Current support target
 
@@ -18,7 +18,7 @@ A full browser demo needs a separate audit for:
 - deterministic fixed timestep inside `requestAnimationFrame`
 - asset packaging for GitHub Pages
 
-Until that work is complete, `docs/pages` stays static and links to source examples plus coverage matrices.
+Until that work is complete, `docs/pages` is generated from checked-in examples and links to concrete source files plus run commands instead of pretending those examples are browser-runnable.
 
 ## Bevy adapter
 

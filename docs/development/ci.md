@@ -15,6 +15,7 @@ cargo check -p bevy_boxdd --no-default-features
 cargo check -p bevy_boxdd --examples
 cargo run -p xtask -- api-coverage --check
 cargo run -p xtask -- sample-parity --check
+cargo run -p xtask -- generate-pages
 cargo run -p xtask -- validate-pages
 cargo nextest run -p boxdd --test api_coverage --test collision_validation --test joint_new_apis --test world_callbacks --test panic_across_ffi_is_caught --test world_and_queries --test dynamic_tree --test events_and_sensors --test world_destroy_and_recycle --test material_mix_callbacks --test user_data --test ffi_lifecycle --test buffer_reuse
 cargo nextest run -p boxdd-sys --test layout
@@ -33,7 +34,8 @@ Use `cargo test` only as a fallback when nextest is unavailable.
 
 - `api-coverage --check` scans vendored `include/box2d` headers for `B2_API` symbols and ensures every public C API has an explicit Rust status.
 - `sample-parity --check` scans upstream sample registrations, preserves manual mappings, and rejects non-benchmark rows that fall back to bare upstream references without an explicit deferral.
-- `validate-pages` keeps the static GitHub Pages hub link-valid without requiring a browser runtime.
+- `generate-pages` rebuilds the GitHub Pages example index from checked-in Rust examples and testbed scenes.
+- `validate-pages` rejects stale generated Pages HTML and broken local links without requiring a browser runtime.
 - `boxdd-sys` layout tests protect representative ABI assumptions at the raw FFI boundary.
 - `bevy_boxdd` plugin tests verify ECS creation, transform sync, distance/revolute joint lifecycle, contact/sensor messages, entity ray/AABB query mappings, debug draw collection, recoverable input errors, and public non-send boundaries without adding Bevy dependencies to the core crate.
 

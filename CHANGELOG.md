@@ -15,16 +15,16 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Added executable FFI lifecycle coverage for public `!Send`/`!Sync` guarantees, explicit destroy user-data cleanup, and raw pointer replacement semantics.
 - Added `bevy_boxdd`, a Bevy 0.19 adapter crate with fixed-step body/collider sync, contact and sensor messages, recoverable plugin errors, ECS-authored distance and revolute joints, entity-mapped ray queries, debug draw command collection, and examples for the main Bevy workflows.
 - Added `boxdd::dynamic_tree`, a safe owned wrapper for Box2D's standalone broad-phase dynamic tree.
-- Added `xtask` validation for Box2D API coverage, official sample parity, and the static Pages hub.
+- Added `xtask` validation for Box2D API coverage, official sample parity, and the generated Pages example index.
 - Added machine-checked API coverage docs and fixtures for the vendored Box2D `B2_API` surface.
 - Added `boxdd-sys` ABI/layout tests for representative FFI structs and smoke symbols.
-- Added static GitHub Pages source under `docs/pages/`.
+- Added generated GitHub Pages example source under `docs/pages/`, with one index card and detail page per checked-in core, Bevy, and testbed example.
 - Added shape-specific standalone `shape_cast` / `try_shape_cast` helpers for circle, capsule, segment, and polygon geometry.
 - Added default-running lifecycle tests for callback locks, panic containment, query callbacks, dynamic-tree callbacks, event-view deferred destruction, reusable event buffers, and world destroy/recycle behavior.
 
 ### Changed
 - Centralized workspace metadata and shared dependencies across `boxdd`, `boxdd-sys`, `bevy_boxdd`, and `xtask`.
-- Expanded docs, GitHub Pages, and example catalog entries for dynamic tree, Bevy integration, Bevy product workflows, CI gates, rustdoc alignment, FFI lifetime boundaries, and WASM status.
+- Reworked GitHub Pages from hand-written documentation tiles into a generated example index that points users to concrete source files and run commands.
 - Updated the Bevy ray-query example to use entity-mapped `BoxddPhysicsContext` helpers instead of requiring users to combine native ray casts with manual shape-to-entity lookups.
 - Tightened official sample parity so non-benchmark upstream samples must map to real Rust artifacts or carry an explicit deferral rationale.
 - Reduced raw-only API coverage by adding safe wrappers for straightforward shape-cast and joint runtime gaps; remaining raw/omitted rows now carry explicit rationale.
