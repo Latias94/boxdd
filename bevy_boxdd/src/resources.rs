@@ -5,8 +5,8 @@ use crate::math::to_boxdd_vec2;
 use bevy_ecs::prelude::{Entity, Resource};
 use bevy_math::Vec2 as BevyVec2;
 use boxdd::{
-    ApiResult, BodyId, DebugDrawCmd, DebugDrawOptions, JointId, QueryFilter, RayResult, ShapeId,
-    World, WorldDef,
+    Aabb, ApiResult, BodyId, DebugDrawCmd, DebugDrawOptions, JointId, QueryFilter, RayResult,
+    ShapeId, World, WorldDef,
 };
 use std::collections::HashMap;
 
@@ -63,6 +63,7 @@ pub struct BoxddPhysicsContext {
     pub(crate) joint_to_entity: HashMap<JointId, Entity>,
     pub(crate) joint_descriptors: HashMap<Entity, JointDescriptor>,
     ray_hits: Vec<RayResult>,
+    shape_hits: Vec<ShapeId>,
     pub(crate) last_step_failed: bool,
 }
 
@@ -72,6 +73,15 @@ pub struct BoxddRayHit {
     /// Native Box2D ray result.
     pub hit: RayResult,
     /// Bevy entity mapped to `hit.shape_id`, if the shape is owned by this plugin.
+    pub entity: Option<Entity>,
+}
+
+/// AABB overlap hit enriched with the Bevy entity mapped to the native shape.
+#[derive(Copy, Clone, Debug)]
+pub struct BoxddShapeHit {
+    /// Native Box2D shape id returned by the overlap query.
+    pub shape_id: ShapeId,
+    /// Bevy entity mapped to `shape_id`, if the shape is owned by this plugin.
     pub entity: Option<Entity>,
 }
 
@@ -115,6 +125,7 @@ impl BoxddPhysicsContext {
             joint_to_entity: HashMap::new(),
             joint_descriptors: HashMap::new(),
             ray_hits: Vec::new(),
+            shape_hits: Vec::new(),
             last_step_failed: true,
         }
     }
@@ -133,6 +144,7 @@ impl BoxddPhysicsContext {
             joint_to_entity: HashMap::new(),
             joint_descriptors: HashMap::new(),
             ray_hits: Vec::new(),
+            shape_hits: Vec::new(),
             last_step_failed: false,
         }
     }
@@ -222,6 +234,41 @@ impl BoxddPhysicsContext {
         Ok(out)
     }
 
+    /// Queries an AABB and writes all hits with mapped Bevy shape entities into `out`.
+    pub fn try_overlap_aabb_entities_into(
+        &mut self,
+        aabb: Aabb,
+        filter: QueryFilter,
+        out: &mut Vec<BoxddShapeHit>,
+    ) -> ApiResult<()> {
+        let Some(world) = self.world.as_ref() else {
+            self.shape_hits.clear();
+            out.clear();
+            return Ok(());
+        };
+        world.try_overlap_aabb_into(aabb, filter, &mut self.shape_hits)?;
+        out.clear();
+        out.reserve(self.shape_hits.len());
+        out.extend(
+            self.shape_hits
+                .iter()
+                .copied()
+                .map(|shape_id| self.shape_hit_with_entity(shape_id)),
+        );
+        Ok(())
+    }
+
+    /// Queries an AABB and returns all hits with mapped Bevy shape entities.
+    pub fn try_overlap_aabb_entities(
+        &mut self,
+        aabb: Aabb,
+        filter: QueryFilter,
+    ) -> ApiResult<Vec<BoxddShapeHit>> {
+        let mut out = Vec::new();
+        self.try_overlap_aabb_entities_into(aabb, filter, &mut out)?;
+        Ok(out)
+    }
+
     /// Collects Box2D debug-draw commands into a caller-owned buffer.
     pub fn try_debug_draw_collect_into(
         &mut self,
@@ -249,6 +296,13 @@ impl BoxddPhysicsContext {
         BoxddRayHit {
             hit,
             entity: self.shape_entity(hit.shape_id),
+        }
+    }
+
+    fn shape_hit_with_entity(&self, shape_id: ShapeId) -> BoxddShapeHit {
+        BoxddShapeHit {
+            shape_id,
+            entity: self.shape_entity(shape_id),
         }
     }
 

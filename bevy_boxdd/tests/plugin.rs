@@ -4,6 +4,9 @@ use bevy_ecs::message::{Message, Messages};
 use bevy_ecs::prelude::Entity;
 use bevy_math::Vec2;
 use bevy_transform::components::Transform;
+use static_assertions::assert_not_impl_any;
+
+assert_not_impl_any!(BoxddPhysicsContext: Send, Sync);
 
 fn step_fixed(app: &mut App, steps: usize) {
     for _ in 0..steps {
@@ -377,6 +380,156 @@ fn physics_context_ray_query_all_reuses_entity_hit_buffer() {
 }
 
 #[test]
+fn physics_context_overlap_aabb_maps_hits_to_entities() {
+    let mut app = app_with_settings(BoxddPhysicsSettings {
+        gravity: Vec2::ZERO,
+        ..Default::default()
+    });
+    let ground = app
+        .world_mut()
+        .spawn((
+            RigidBody::Static,
+            Collider::rectangle(2.0, 0.25),
+            Transform::from_xyz(0.0, 0.0, 0.0),
+        ))
+        .id();
+
+    step_fixed(&mut app, 1);
+
+    let mut context = app.world_mut().non_send_mut::<BoxddPhysicsContext>();
+    let hits = context
+        .try_overlap_aabb_entities(
+            boxdd::Aabb::from_center_half_extents([0.0_f32, 0.0], [2.0, 1.0]),
+            boxdd::QueryFilter::default(),
+        )
+        .unwrap();
+
+    assert!(
+        hits.iter().any(|hit| hit.entity == Some(ground)),
+        "expected overlap helper to map a hit to the ground entity, got {hits:?}"
+    );
+}
+
+#[test]
+fn physics_context_overlap_aabb_reuses_entity_hit_buffer() {
+    let mut app = app_with_settings(BoxddPhysicsSettings {
+        gravity: Vec2::ZERO,
+        ..Default::default()
+    });
+    let ground = app
+        .world_mut()
+        .spawn((
+            RigidBody::Static,
+            Collider::rectangle(2.0, 0.25),
+            Transform::from_xyz(0.0, 0.0, 0.0),
+        ))
+        .id();
+
+    step_fixed(&mut app, 1);
+
+    let mut context = app.world_mut().non_send_mut::<BoxddPhysicsContext>();
+    let mut hits = Vec::new();
+    context
+        .try_overlap_aabb_entities_into(
+            boxdd::Aabb::from_center_half_extents([0.0_f32, 0.0], [2.0, 1.0]),
+            boxdd::QueryFilter::default(),
+            &mut hits,
+        )
+        .unwrap();
+
+    assert!(
+        hits.iter().any(|hit| hit.entity == Some(ground)),
+        "expected overlap helper to map a hit to the ground entity, got {hits:?}"
+    );
+    let hit_count = hits.len();
+    let error = context
+        .try_overlap_aabb_entities_into(
+            boxdd::Aabb::new([1.0_f32, 1.0], [-1.0, -1.0]),
+            boxdd::QueryFilter::default(),
+            &mut hits,
+        )
+        .unwrap_err();
+    assert_eq!(error, boxdd::ApiError::InvalidArgument);
+    assert_eq!(hits.len(), hit_count);
+    assert!(
+        hits.iter().any(|hit| hit.entity == Some(ground)),
+        "fallible overlap helper should preserve the caller buffer on error"
+    );
+
+    context
+        .try_overlap_aabb_entities_into(
+            boxdd::Aabb::from_center_half_extents([10.0_f32, 10.0], [1.0, 1.0]),
+            boxdd::QueryFilter::default(),
+            &mut hits,
+        )
+        .unwrap();
+    assert!(
+        hits.is_empty(),
+        "missed overlap queries should clear stale hits"
+    );
+}
+
+#[test]
+fn physics_context_overlap_aabb_honors_query_filter() {
+    const PLAYER: u64 = 0x0002;
+    const TERRAIN: u64 = 0x0004;
+
+    let mut app = app_with_settings(BoxddPhysicsSettings {
+        gravity: Vec2::ZERO,
+        ..Default::default()
+    });
+    let player = app
+        .world_mut()
+        .spawn((
+            RigidBody::Static,
+            Collider::circle(0.4),
+            PhysicsMaterial {
+                filter: boxdd::Filter {
+                    category_bits: PLAYER,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            Transform::from_xyz(0.0, 0.0, 0.0),
+        ))
+        .id();
+    let terrain = app
+        .world_mut()
+        .spawn((
+            RigidBody::Static,
+            Collider::circle(0.4),
+            PhysicsMaterial {
+                filter: boxdd::Filter {
+                    category_bits: TERRAIN,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            Transform::from_xyz(0.25, 0.0, 0.0),
+        ))
+        .id();
+
+    step_fixed(&mut app, 1);
+
+    let mut context = app.world_mut().non_send_mut::<BoxddPhysicsContext>();
+    let hits = context
+        .try_overlap_aabb_entities(
+            boxdd::Aabb::from_center_half_extents([0.0_f32, 0.0], [1.0, 1.0]),
+            boxdd::QueryFilter::default().mask(PLAYER),
+        )
+        .unwrap();
+
+    assert!(
+        hits.iter().any(|hit| hit.entity == Some(player)),
+        "expected filtered overlap to include the player shape, got {hits:?}"
+    );
+    assert!(
+        hits.iter().all(|hit| hit.entity != Some(terrain)),
+        "expected filtered overlap to exclude terrain shape, got {hits:?}"
+    );
+}
+
+#[test]
 fn physics_context_collects_debug_draw_commands() {
     let mut app = app_with_settings(BoxddPhysicsSettings {
         gravity: Vec2::ZERO,
@@ -423,6 +576,14 @@ fn disabled_physics_context_helpers_return_empty_results() {
         )
         .unwrap();
     assert!(all_hits.is_empty());
+
+    let shape_hits = context
+        .try_overlap_aabb_entities(
+            boxdd::Aabb::from_center_half_extents([0.0_f32, 0.0], [1.0, 1.0]),
+            boxdd::QueryFilter::default(),
+        )
+        .unwrap();
+    assert!(shape_hits.is_empty());
 
     let commands = context
         .try_debug_draw_collect(boxdd::DebugDrawOptions::default())
