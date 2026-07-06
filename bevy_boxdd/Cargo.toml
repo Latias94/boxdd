@@ -36,3 +36,19 @@ rustdoc-args = ["--cfg", "docsrs"]
 [[example]]
 name = "falling_box_2d"
 path = "examples/falling_box_2d.rs"
+
+[[example]]
+name = "contact_events_2d"
+path = "examples/contact_events_2d.rs"
+
+[[example]]
+name = "sensor_events_2d"
+path = "examples/sensor_events_2d.rs"
+
+[[example]]
+name = "ray_query_2d"
+path = "examples/ray_query_2d.rs"
+
+[[example]]
+name = "kinematic_platform_2d"
+path = "examples/kinematic_platform_2d.rs"

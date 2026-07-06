@@ -41,3 +41,15 @@ fn setup(mut commands: Commands) {
 - `boxdd::World` is `!Send`/`!Sync`; the plugin stores it as a non-send Bevy resource.
 - Contact and sensor messages are only emitted for shapes whose `PhysicsMaterial` enables the
   matching Box2D event flags.
+
+## Examples
+
+Run examples with `cargo run -p bevy_boxdd --example <name>`.
+
+| Example | Shows |
+| --- | --- |
+| `falling_box_2d` | Basic body, collider, material, fixed-step stepping, and transform sync. |
+| `contact_events_2d` | Contact begin/end/hit messages mapped back to Bevy entities. |
+| `sensor_events_2d` | Sensor begin/end messages for trigger-style overlaps. |
+| `ray_query_2d` | Reading `BoxddPhysicsContext` and ray-casting against plugin-created shapes. |
+| `kinematic_platform_2d` | Driving a kinematic body from Bevy transforms with `BevyToPhysics` sync. |
