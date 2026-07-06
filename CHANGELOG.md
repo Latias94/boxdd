@@ -9,8 +9,10 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-06
+
 ### Added
-- Added a GitHub Pages experience for boxdd: the root page is now a Bevy Web example index, and each example route runs the shared Bevy + egui + `boxdd` WASM testbed in the browser.
+- Added a live GitHub Pages experience at <https://frankorz.com/boxdd/>: the root page is now a Bevy Web example index, and each example route runs the shared Bevy + egui + `boxdd` WASM testbed in the browser.
 - Added official Box2D sample-aligned Bevy WASM scenes for Stacking, Benchmark, Bodies, Continuous, Shapes, Events, and Joints, including Single Box, Tilted Stack, Circle Stack, Large Pyramid, Body Type, Kinematic, Skinny Box, Restitution, Friction, Filter, Sensor Funnel, Contact, Bridge, and Revolute.
 - Added a generated Bevy testbed loader and provider shim that connect the Rust Bevy wasm module to the Emscripten `box2d-sys-v0` provider through shared `WebAssembly.Memory`.
 - Added a browser-ready WASM provider runtime with `examples-wasm/provider-smoke` and `xtask provider-smoke`, so the shared-memory Box2D provider can be verified outside the Bevy Pages UI.

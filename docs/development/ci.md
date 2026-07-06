@@ -28,12 +28,14 @@ cargo nextest run -p bevy_boxdd --test plugin
 cargo clippy -p boxdd --all-targets --all-features -- -D warnings
 cargo clippy -p bevy_boxdd --all-targets --no-default-features -- -D warnings
 $env:RUSTDOCFLAGS='-D warnings --cfg docsrs'; cargo doc --workspace --no-deps
-cargo package -p boxdd --allow-dirty --no-verify
 cargo package -p boxdd-sys --allow-dirty --no-verify
+cargo package -p boxdd --allow-dirty --no-verify
 cargo package -p bevy_boxdd --allow-dirty --no-verify
 ```
 
 Use `cargo test` only as a fallback when nextest is unavailable.
+
+For a fresh version line, run packaging and publishing in dependency order. `boxdd-sys` packages first; `boxdd` package verification can resolve only after `boxdd-sys <version>` is available from crates.io; `bevy_boxdd` package verification can resolve only after `boxdd <version>` is available from crates.io.
 
 ## Gate rationale
 
@@ -55,4 +57,4 @@ CI should keep heavy checks staged:
 - Feature matrix: focused `cargo check` for `boxdd` optional math/serialization features.
 - Pages runtime: install `wasm32-unknown-unknown`, `wasm-bindgen-cli 0.2.126`, and Emscripten SDK, expose `emsdk/upstream/bin` so `wasm-opt` can be found, then run `cargo run -p xtask -- build-pages-wasm` and `cargo run -p xtask -- validate-pages`.
 - Docs: set `RUSTDOCFLAGS` to `-D warnings --cfg docsrs`, then run `cargo doc --workspace --no-deps`.
-- Packaging: `cargo package -p boxdd --allow-dirty --no-verify`, `cargo package -p boxdd-sys --allow-dirty --no-verify`, and `cargo package -p bevy_boxdd --allow-dirty --no-verify` as metadata smoke checks. Run full package verification without `--no-verify` before publishing.
+- Packaging: `cargo package -p boxdd-sys --allow-dirty --no-verify`, then `boxdd`, then `bevy_boxdd` as metadata smoke checks in publish order. For a new shared workspace version, dependent package checks are expected to wait until the previous crate in the chain is visible on crates.io. Run full package verification without `--no-verify` before publishing each crate.

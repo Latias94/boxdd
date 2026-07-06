@@ -4,6 +4,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/boxdd.svg?style=flat-square)](https://crates.io/crates/boxdd)
 [![Docs](https://docs.rs/boxdd/badge.svg)](https://docs.rs/boxdd)
+[![Live Examples](https://img.shields.io/badge/examples-Bevy%20WASM-2dd4bf?style=flat-square)](https://frankorz.com/boxdd/)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg?style=flat-square)](#license)
 
 ![boxdd](https://raw.githubusercontent.com/Latias94/boxdd/main/screenshots/boxdd.gif)
@@ -18,11 +19,12 @@
 ## Engineering Status
 - API coverage matrix: `docs/api-coverage.md` tracks every vendored Box2D `B2_API` symbol; the current safe layer accounts for 424 of 430 symbols, with 4 raw-only and 2 omitted by rationale.
 - Official sample parity: `docs/upstream-parity/box2d-sample-matrix.md` maps non-benchmark upstream samples to Rust examples, tests, or testbed scenes. Benchmark rows may remain indexed references when that is the useful artifact.
-- GitHub Pages source: `docs/pages/index.html` is a generated Bevy Web example index; each `examples/<scene-id>/` route relative to the Pages root runs the shared Bevy + egui + `boxdd` WASM testbed backed by an Emscripten Box2D provider.
+- Live examples: <https://frankorz.com/boxdd/> is a generated Bevy Web example index; each `examples/<scene-id>/` route runs the shared Bevy + egui + `boxdd` WASM testbed backed by an Emscripten Box2D provider.
 - Bevy integration: `bevy_boxdd` exposes `RigidBody`, `Collider`, `PhysicsMaterial`, distance/revolute `JointDescriptor`, transform sync, entity-mapped ray and AABB overlap helpers through `BoxddPhysicsContext`, debug draw command collection, recoverable error messages, and body/contact/sensor messages.
 
-## 0.4.0 Highlights
-- `0.4.0` realigns `boxdd-sys` with the official upstream Box2D submodule again, so repository checkouts and CI no longer depend on a local-only Box2D patch commit.
+## 0.5.0 Highlights
+- `0.5.0` is the productization release: it adds a live Bevy + egui browser testbed at <https://frankorz.com/boxdd/>, expands Bevy workflows, and makes release checks visible through `xtask`.
+- Pages WASM builds now use the size-oriented `wasm-release` profile by default, run `wasm-opt -Oz` when Binaryen is available, and show byte-level download progress while examples load.
 - Workspace metadata is centralized for `boxdd`, `boxdd-sys`, `bevy_boxdd`, and `xtask`.
 - `xtask` now validates API coverage, strict official sample parity, and the generated Pages Bevy WASM example index.
 - `boxdd::dynamic_tree` wraps the standalone Box2D broad-phase tree as an owned safe Rust type.
@@ -163,7 +165,7 @@ cargo run -p bevy_boxdd --example debug_draw_gizmos_2d
 - Provider smoke assets live in [`examples-wasm/provider-smoke`](examples-wasm/provider-smoke); Pages runtime assets can be rebuilt with `cargo run -p xtask -- build-pages-wasm` when Emscripten SDK and `wasm-bindgen-cli` are available. Pages wasm uses the `wasm-release` profile by default and runs `wasm-opt -Oz` when Binaryen is available.
 - Recommended starting points:
   - `world_basics`: minimal world/body/shape setup
-  - `buffer_reuse`, `queries`, `query_casts`, `character_mover`: the main `0.4.0` hot-path, overlap, cast, and mover workflows
+  - `buffer_reuse`, `queries`, `query_casts`, `character_mover`: the main hot-path, overlap, cast, and mover workflows
   - `dynamic_tree`: standalone broad-phase tree ownership and query/cast workflows
   - `mint_interop`: optional `mint` vector/point/matrix interop sample behind the `mint` feature
   - `collision_basics`: standalone collision geometry helpers without constructing a `World`
