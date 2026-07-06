@@ -61,3 +61,19 @@ path = "examples/joint_bridge_2d.rs"
 [[example]]
 name = "debug_draw_collect_2d"
 path = "examples/debug_draw_collect_2d.rs"
+
+[[example]]
+name = "overlap_query_2d"
+path = "examples/overlap_query_2d.rs"
+
+[[example]]
+name = "debug_draw_gizmos_2d"
+path = "examples/debug_draw_gizmos_2d.rs"
+
+[[example]]
+name = "child_colliders_2d"
+path = "examples/child_colliders_2d.rs"
+
+[[example]]
+name = "collision_filter_2d"
+path = "examples/collision_filter_2d.rs"
