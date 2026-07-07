@@ -3,6 +3,7 @@ name: Build Prebuilt Binaries (boxdd-sys)
 on:
   push:
     tags:
+      - 'v*'
       - 'boxdd-sys-v*'
   release:
     types: [published]
@@ -88,6 +89,31 @@ jobs:
           BOXDD_SYS_PACKAGE_DIR: ${{ github.workspace }}/packages
           BOXDD_SYS_PACKAGE_CRT: ${{ matrix.crt || '' }}
           TARGET: ${{ matrix.target }}
+
+      - name: Verify package artifact name
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $packageRoot = Join-Path '${{ github.workspace }}' 'packages'
+          $packageFiles = @(Get-ChildItem -LiteralPath $packageRoot -Filter '*.tar.gz' -File)
+          if ($packageFiles.Count -ne 1) {
+            $names = ($packageFiles | ForEach-Object { $_.Name }) -join ', '
+            throw "Expected exactly one prebuilt package, found $($packageFiles.Count): $names"
+          }
+
+          $targetTriple = '${{ matrix.target }}'
+          $crt = '${{ matrix.crt }}'
+          if ([string]::IsNullOrWhiteSpace($crt)) {
+            $expectedPattern = "boxdd-prebuilt-*-$targetTriple-static.tar.gz"
+          } else {
+            $expectedPattern = "boxdd-prebuilt-*-$targetTriple-static-$crt.tar.gz"
+          }
+
+          if ($packageFiles[0].Name -notlike $expectedPattern) {
+            throw "Unexpected package name '$($packageFiles[0].Name)'; expected pattern '$expectedPattern'"
+          }
+
+          Write-Host "Verified package artifact: $($packageFiles[0].Name)"
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2

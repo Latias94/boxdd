@@ -10,7 +10,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 ## [Unreleased]
 
 ### Fixed
-- Windows prebuilt release artifacts now use explicit `md` / `mt` CRT suffixes, so MSVC users can choose the runtime they expect.
+- Windows prebuilt release artifacts now use explicit `md` / `mt` CRT suffixes, and CI fails if a release build produces an ambiguous package name.
 
 ## [0.5.0] - 2026-07-06
 
