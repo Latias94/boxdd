@@ -55,10 +55,30 @@ pub struct SensorBeginTouchEvent {
     pub visitor_shape: ShapeId,
 }
 
+impl SensorBeginTouchEvent {
+    /// Copy a native sensor-begin event into an owned Rust value.
+    pub fn from_raw(raw: ffi::b2SensorBeginTouchEvent) -> Self {
+        Self {
+            sensor_shape: ShapeId::from_raw(raw.sensorShapeId),
+            visitor_shape: ShapeId::from_raw(raw.visitorShapeId),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct SensorEndTouchEvent {
     pub sensor_shape: ShapeId,
     pub visitor_shape: ShapeId,
+}
+
+impl SensorEndTouchEvent {
+    /// Copy a native sensor-end event into an owned Rust value.
+    pub fn from_raw(raw: ffi::b2SensorEndTouchEvent) -> Self {
+        Self {
+            sensor_shape: ShapeId::from_raw(raw.sensorShapeId),
+            visitor_shape: ShapeId::from_raw(raw.visitorShapeId),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -80,13 +100,11 @@ fn sensor_events_into_impl(world: ffi::b2WorldId, out: &mut SensorEvents) {
         &[][..]
     };
 
-    super::map_snapshot_into(&mut out.begin, begin, |e| SensorBeginTouchEvent {
-        sensor_shape: ShapeId::from_raw(e.sensorShapeId),
-        visitor_shape: ShapeId::from_raw(e.visitorShapeId),
+    super::map_snapshot_into(&mut out.begin, begin, |event| {
+        SensorBeginTouchEvent::from_raw(*event)
     });
-    super::map_snapshot_into(&mut out.end, end, |e| SensorEndTouchEvent {
-        sensor_shape: ShapeId::from_raw(e.sensorShapeId),
-        visitor_shape: ShapeId::from_raw(e.visitorShapeId),
+    super::map_snapshot_into(&mut out.end, end, |event| {
+        SensorEndTouchEvent::from_raw(*event)
     });
 }
 

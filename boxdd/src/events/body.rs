@@ -10,6 +10,17 @@ pub struct BodyMoveEvent {
     pub fell_asleep: bool,
 }
 
+impl BodyMoveEvent {
+    /// Copy a native body-move event into an owned Rust value.
+    pub fn from_raw(raw: ffi::b2BodyMoveEvent) -> Self {
+        Self {
+            body_id: BodyId::from_raw(raw.bodyId),
+            transform: Transform::from_raw(raw.transform),
+            fell_asleep: raw.fellAsleep,
+        }
+    }
+}
+
 /// Zero-copy view wrapper for a body move event.
 /// Borrowed data is valid only within the closure passed to
 /// `with_body_events_view`.
@@ -45,11 +56,7 @@ fn body_events_into_impl(world: ffi::b2WorldId, out: &mut Vec<BodyMoveEvent>) {
     } else {
         &[][..]
     };
-    super::map_snapshot_into(out, slice, |e| BodyMoveEvent {
-        body_id: BodyId::from_raw(e.bodyId),
-        transform: Transform::from_raw(e.transform),
-        fell_asleep: e.fellAsleep,
-    });
+    super::map_snapshot_into(out, slice, |event| BodyMoveEvent::from_raw(*event));
 }
 
 fn body_events_snapshot_impl(world: ffi::b2WorldId) -> Vec<BodyMoveEvent> {

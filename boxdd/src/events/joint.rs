@@ -7,6 +7,15 @@ pub struct JointEvent {
     pub joint_id: JointId,
 }
 
+impl JointEvent {
+    /// Copy a native joint event into an owned Rust value.
+    pub fn from_raw(raw: ffi::b2JointEvent) -> Self {
+        Self {
+            joint_id: JointId::from_raw(raw.jointId),
+        }
+    }
+}
+
 /// Zero-copy view wrapper for a joint event.
 /// Borrowed data is valid only within the closure passed to
 /// `with_joint_events_view`.
@@ -36,9 +45,7 @@ fn joint_events_into_impl(world: ffi::b2WorldId, out: &mut Vec<JointEvent>) {
     } else {
         &[][..]
     };
-    super::map_snapshot_into(out, slice, |e| JointEvent {
-        joint_id: JointId::from_raw(e.jointId),
-    });
+    super::map_snapshot_into(out, slice, |event| JointEvent::from_raw(*event));
 }
 
 fn joint_events_snapshot_impl(world: ffi::b2WorldId) -> Vec<JointEvent> {

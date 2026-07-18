@@ -91,10 +91,31 @@ pub struct ContactBeginTouchEvent {
     pub contact_id: ContactId,
 }
 
+impl ContactBeginTouchEvent {
+    /// Copy a native contact-begin event into an owned Rust value.
+    pub fn from_raw(raw: ffi::b2ContactBeginTouchEvent) -> Self {
+        Self {
+            shape_a: ShapeId::from_raw(raw.shapeIdA),
+            shape_b: ShapeId::from_raw(raw.shapeIdB),
+            contact_id: ContactId::from_raw(raw.contactId),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ContactEndTouchEvent {
     pub shape_a: ShapeId,
     pub shape_b: ShapeId,
+}
+
+impl ContactEndTouchEvent {
+    /// Copy a native contact-end event into an owned Rust value.
+    pub fn from_raw(raw: ffi::b2ContactEndTouchEvent) -> Self {
+        Self {
+            shape_a: ShapeId::from_raw(raw.shapeIdA),
+            shape_b: ShapeId::from_raw(raw.shapeIdB),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -104,6 +125,19 @@ pub struct ContactHitEvent {
     pub point: Vec2,
     pub normal: Vec2,
     pub approach_speed: f32,
+}
+
+impl ContactHitEvent {
+    /// Copy a native contact-hit event into an owned Rust value.
+    pub fn from_raw(raw: ffi::b2ContactHitEvent) -> Self {
+        Self {
+            shape_a: ShapeId::from_raw(raw.shapeIdA),
+            shape_b: ShapeId::from_raw(raw.shapeIdB),
+            point: Vec2::from_raw(raw.point),
+            normal: Vec2::from_raw(raw.normal),
+            approach_speed: raw.approachSpeed,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -131,22 +165,13 @@ fn contact_events_into_impl(world: ffi::b2WorldId, out: &mut ContactEvents) {
         &[][..]
     };
 
-    super::map_snapshot_into(&mut out.begin, begin, |e| ContactBeginTouchEvent {
-        shape_a: ShapeId::from_raw(e.shapeIdA),
-        shape_b: ShapeId::from_raw(e.shapeIdB),
-        contact_id: ContactId::from_raw(e.contactId),
+    super::map_snapshot_into(&mut out.begin, begin, |event| {
+        ContactBeginTouchEvent::from_raw(*event)
     });
-    super::map_snapshot_into(&mut out.end, end, |e| ContactEndTouchEvent {
-        shape_a: ShapeId::from_raw(e.shapeIdA),
-        shape_b: ShapeId::from_raw(e.shapeIdB),
+    super::map_snapshot_into(&mut out.end, end, |event| {
+        ContactEndTouchEvent::from_raw(*event)
     });
-    super::map_snapshot_into(&mut out.hit, hit, |e| ContactHitEvent {
-        shape_a: ShapeId::from_raw(e.shapeIdA),
-        shape_b: ShapeId::from_raw(e.shapeIdB),
-        point: Vec2::from_raw(e.point),
-        normal: Vec2::from_raw(e.normal),
-        approach_speed: e.approachSpeed,
-    });
+    super::map_snapshot_into(&mut out.hit, hit, |event| ContactHitEvent::from_raw(*event));
 }
 
 fn contact_events_snapshot_impl(world: ffi::b2WorldId) -> ContactEvents {
