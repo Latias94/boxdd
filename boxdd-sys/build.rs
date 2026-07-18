@@ -21,6 +21,8 @@ struct BuildConfig {
     is_docsrs: bool,
     skip_cc: bool,
     force_bindgen: bool,
+    #[cfg_attr(not(feature = "bindgen"), allow(dead_code))]
+    bindgen_target: String,
     wasm_mode: Option<WasmMode>,
 }
 
@@ -32,6 +34,8 @@ impl BuildConfig {
         let is_docsrs = env::var("DOCS_RS").is_ok() || env::var("CARGO_CFG_DOCSRS").is_ok();
         let skip_cc = parse_bool_env("BOXDD_SYS_SKIP_CC");
         let force_bindgen = parse_bool_env("BOXDD_SYS_FORCE_BINDGEN");
+        let bindgen_target = env::var("BOXDD_SYS_BINDGEN_TARGET")
+            .unwrap_or_else(|_| env::var("TARGET").expect("Cargo must provide TARGET"));
         let wasm_mode = (target_arch == "wasm32").then(|| {
             env::var("BOXDD_SYS_WASM_MODE")
                 .ok()
@@ -49,6 +53,7 @@ impl BuildConfig {
             is_docsrs,
             skip_cc,
             force_bindgen,
+            bindgen_target,
             wasm_mode,
         }
     }
@@ -109,6 +114,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=BOX2D_LIB_DIR");
     println!("cargo:rerun-if-env-changed=BOXDD_SYS_LINK_KIND");
     println!("cargo:rerun-if-env-changed=BOXDD_SYS_FORCE_BINDGEN");
+    println!("cargo:rerun-if-env-changed=BOXDD_SYS_BINDGEN_TARGET");
     println!("cargo:rerun-if-env-changed=BOXDD_SYS_STRICT_FEATURES");
     println!("cargo:rerun-if-env-changed=EMSDK");
     println!("cargo:rerun-if-env-changed=WASI_SDK_PATH");
@@ -143,7 +149,11 @@ fn main() {
 
     if config.force_bindgen || (!has_pregenerated && !config.is_docsrs) {
         #[cfg(feature = "bindgen")]
-        generate_bindings(&config.manifest_dir, &config.out_dir);
+        generate_bindings(
+            &config.manifest_dir,
+            &config.out_dir,
+            &config.bindgen_target,
+        );
         #[cfg(not(feature = "bindgen"))]
         {
             if config.force_bindgen {
@@ -247,7 +257,7 @@ fn generate_wasm_provider_bindings(pregenerated: &Path, out_dir: &Path) {
 }
 
 #[cfg(feature = "bindgen")]
-fn generate_bindings(manifest_dir: &Path, out_dir: &Path) {
+fn generate_bindings(manifest_dir: &Path, out_dir: &Path, target: &str) {
     let include_root = manifest_dir
         .join("third-party")
         .join("box2d")
@@ -257,6 +267,7 @@ fn generate_bindings(manifest_dir: &Path, out_dir: &Path) {
         .header(header.to_string_lossy())
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .clang_args(["-x", "c", "-std=c17"])
+        .clang_arg(format!("--target={target}"))
         .clang_arg(format!("-I{}", include_root.display()))
         .allowlist_function("b2.*")
         .allowlist_type("b2.*")
@@ -272,7 +283,7 @@ fn generate_bindings(manifest_dir: &Path, out_dir: &Path) {
 
 #[cfg(not(feature = "bindgen"))]
 #[allow(dead_code)]
-fn generate_bindings(_manifest_dir: &Path, _out_dir: &Path) {
+fn generate_bindings(_manifest_dir: &Path, _out_dir: &Path, _target: &str) {
     unreachable!("generate_bindings is only available with the `bindgen` feature enabled");
 }
 

@@ -260,23 +260,34 @@ impl DynamicTree {
         Ok(())
     }
 
-    /// Set the category bits on a proxy.
-    pub fn set_category_bits(&mut self, proxy: TreeProxyId, category_bits: u64) {
-        self.try_set_category_bits(proxy, category_bits)
-            .expect("proxy id must belong to this dynamic tree");
+    /// Replace a proxy with equivalent state and new category bits.
+    ///
+    /// The returned id identifies the replacement; `proxy` is invalid after this call.
+    pub fn replace_category_bits(&mut self, proxy: TreeProxyId, category_bits: u64) -> TreeProxyId {
+        self.try_replace_category_bits(proxy, category_bits)
+            .expect("proxy id must belong to this dynamic tree")
     }
 
-    /// Set the category bits on a proxy with recoverable validation.
-    pub fn try_set_category_bits(
+    /// Replace a proxy with recoverable validation.
+    ///
+    /// The pinned Box2D revision cannot call its in-place category setter for arbitrary user data
+    /// in assertion-enabled builds because the setter reads aliased internal union storage. Creating
+    /// a replacement preserves the documented AABB and user-data behavior without depending on that
+    /// private representation.
+    pub fn try_replace_category_bits(
         &mut self,
         proxy: TreeProxyId,
         category_bits: u64,
-    ) -> ApiResult<()> {
+    ) -> ApiResult<TreeProxyId> {
         self.check_proxy(proxy)?;
-        unsafe {
-            ffi::b2DynamicTree_SetCategoryBits(&mut self.raw, proxy.into_raw(), category_bits);
+        let aabb = self.try_aabb(proxy)?;
+        let user_data = self.try_user_data(proxy)?;
+        let replacement = self.try_create_proxy(aabb, category_bits, user_data)?;
+        if let Err(error) = self.try_destroy_proxy(proxy) {
+            let _ = self.try_destroy_proxy(replacement);
+            return Err(error);
         }
-        Ok(())
+        Ok(replacement)
     }
 
     /// Get the category bits on a proxy.

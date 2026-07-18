@@ -257,7 +257,10 @@ impl Polygon {
         I: IntoIterator<Item = P>,
         P: Into<Vec2>,
     {
-        compute_hull_from_points(points).is_some_and(|hull| unsafe { ffi::b2ValidateHull(&hull) })
+        let Some(hull) = compute_hull_from_points(points) else {
+            return false;
+        };
+        unsafe { ffi::b2ValidateHull(&hull) }
     }
 
     #[inline]

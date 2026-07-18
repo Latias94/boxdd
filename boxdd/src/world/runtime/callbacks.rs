@@ -452,12 +452,12 @@ impl World {
     /// Clear the friction mixing callback and restore Box2D's default mixing rule.
     pub fn clear_friction_callback(&mut self) {
         crate::core::callback_state::assert_not_in_callback();
-        if let Some(slot) = *self
+        let slot = *self
             .core
             .material_mix_slot
             .lock()
-            .expect("material_mix_slot mutex poisoned")
-        {
+            .expect("material_mix_slot mutex poisoned");
+        if let Some(slot) = slot {
             unsafe { ffi::b2World_SetFrictionCallback(self.raw(), None) };
             crate::core::material_mix_registry::set_friction_ptr(slot, core::ptr::null_mut());
             *self
@@ -519,12 +519,12 @@ impl World {
     /// Clear the restitution mixing callback and restore Box2D's default mixing rule.
     pub fn clear_restitution_callback(&mut self) {
         crate::core::callback_state::assert_not_in_callback();
-        if let Some(slot) = *self
+        let slot = *self
             .core
             .material_mix_slot
             .lock()
-            .expect("material_mix_slot mutex poisoned")
-        {
+            .expect("material_mix_slot mutex poisoned");
+        if let Some(slot) = slot {
             unsafe { ffi::b2World_SetRestitutionCallback(self.raw(), None) };
             crate::core::material_mix_registry::set_restitution_ptr(slot, core::ptr::null_mut());
             *self

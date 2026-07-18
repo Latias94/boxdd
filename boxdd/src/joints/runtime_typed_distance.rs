@@ -169,6 +169,14 @@ impl World {
         )
     }
 
+    pub fn distance_spring_force_range(&self, id: JointId) -> (f32, f32) {
+        joint_kind_get_checked_impl(id, JointType::Distance, distance_spring_force_range_impl)
+    }
+
+    pub fn try_distance_spring_force_range(&self, id: JointId) -> ApiResult<(f32, f32)> {
+        try_joint_kind_get_checked_impl(id, JointType::Distance, distance_spring_force_range_impl)
+    }
+
     pub fn distance_lower_spring_force(&self, id: JointId) -> f32 {
         joint_kind_get_checked_impl(id, JointType::Distance, distance_lower_spring_force_impl)
     }
@@ -432,6 +440,14 @@ impl WorldHandle {
         try_joint_kind_get_checked_impl(id, JointType::Distance, distance_spring_enabled_impl)
     }
 
+    pub fn distance_spring_force_range(&self, id: JointId) -> (f32, f32) {
+        joint_kind_get_checked_impl(id, JointType::Distance, distance_spring_force_range_impl)
+    }
+
+    pub fn try_distance_spring_force_range(&self, id: JointId) -> ApiResult<(f32, f32)> {
+        try_joint_kind_get_checked_impl(id, JointType::Distance, distance_spring_force_range_impl)
+    }
+
     pub fn distance_lower_spring_force(&self, id: JointId) -> f32 {
         joint_kind_get_checked_impl(id, JointType::Distance, distance_lower_spring_force_impl)
     }
@@ -597,6 +613,22 @@ trait DistanceJointRuntimeHandle {
             JointType::Distance,
             enable,
             distance_enable_spring_impl,
+        )
+    }
+
+    fn distance_spring_force_range(&self) -> (f32, f32) {
+        joint_kind_get_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            distance_spring_force_range_impl,
+        )
+    }
+
+    fn try_distance_spring_force_range(&self) -> ApiResult<(f32, f32)> {
+        try_joint_kind_get_checked_impl(
+            self.distance_joint_id(),
+            JointType::Distance,
+            distance_spring_force_range_impl,
         )
     }
 
@@ -984,6 +1016,12 @@ impl OwnedJoint {
     pub fn try_distance_enable_spring(&mut self, enable: bool) -> ApiResult<()> {
         DistanceJointRuntimeHandle::try_distance_enable_spring(self, enable)
     }
+    pub fn distance_spring_force_range(&self) -> (f32, f32) {
+        DistanceJointRuntimeHandle::distance_spring_force_range(self)
+    }
+    pub fn try_distance_spring_force_range(&self) -> ApiResult<(f32, f32)> {
+        DistanceJointRuntimeHandle::try_distance_spring_force_range(self)
+    }
     pub fn distance_lower_spring_force(&self) -> f32 {
         DistanceJointRuntimeHandle::distance_lower_spring_force(self)
     }
@@ -1142,6 +1180,12 @@ impl<'w> Joint<'w> {
     }
     pub fn try_distance_enable_spring(&mut self, enable: bool) -> ApiResult<()> {
         DistanceJointRuntimeHandle::try_distance_enable_spring(self, enable)
+    }
+    pub fn distance_spring_force_range(&self) -> (f32, f32) {
+        DistanceJointRuntimeHandle::distance_spring_force_range(self)
+    }
+    pub fn try_distance_spring_force_range(&self) -> ApiResult<(f32, f32)> {
+        DistanceJointRuntimeHandle::try_distance_spring_force_range(self)
     }
     pub fn distance_lower_spring_force(&self) -> f32 {
         DistanceJointRuntimeHandle::distance_lower_spring_force(self)

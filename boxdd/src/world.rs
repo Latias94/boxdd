@@ -104,6 +104,18 @@ impl World {
         self.world_id_raw()
     }
 
+    /// Return whether Box2D still recognizes this world's native id.
+    pub fn is_valid(&self) -> bool {
+        crate::core::callback_state::assert_not_in_callback();
+        unsafe { ffi::b2World_IsValid(self.raw()) }
+    }
+
+    /// Return whether Box2D still recognizes this world's native id.
+    pub fn try_is_valid(&self) -> crate::error::ApiResult<bool> {
+        crate::core::callback_state::check_not_in_callback()?;
+        Ok(unsafe { ffi::b2World_IsValid(self.raw()) })
+    }
+
     pub(crate) fn core_arc(&self) -> Arc<WorldCore> {
         Arc::clone(&self.core)
     }
@@ -145,6 +157,18 @@ impl World {
         let p = self.core.set_world_user_data(value);
         unsafe { ffi::b2World_SetUserData(self.raw(), p) };
         Ok(())
+    }
+
+    /// Return whether the world currently has a native user-data pointer.
+    pub fn has_user_data(&self) -> bool {
+        crate::core::callback_state::assert_not_in_callback();
+        unsafe { !ffi::b2World_GetUserData(self.raw()).is_null() }
+    }
+
+    /// Return whether the world currently has a native user-data pointer.
+    pub fn try_has_user_data(&self) -> crate::error::ApiResult<bool> {
+        crate::core::callback_state::check_not_in_callback()?;
+        Ok(unsafe { !ffi::b2World_GetUserData(self.raw()).is_null() })
     }
 
     /// Clear typed user data on this world. Returns whether any data was present.

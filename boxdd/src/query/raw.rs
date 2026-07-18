@@ -43,8 +43,11 @@ pub(super) fn make_proxy_from_points(
     points: &ProxyPoints,
     radius: f32,
 ) -> Option<ffi::b2ShapeProxy> {
-    (!points.is_empty())
-        .then(|| unsafe { ffi::b2MakeProxy(points.as_ptr(), points.len() as i32, radius) })
+    if points.is_empty() {
+        None
+    } else {
+        Some(unsafe { ffi::b2MakeProxy(points.as_ptr(), points.len() as i32, radius) })
+    }
 }
 
 #[inline]
@@ -54,9 +57,11 @@ pub(super) fn make_offset_proxy_from_points(
     position: Vec2,
     angle_radians: f32,
 ) -> Option<ffi::b2ShapeProxy> {
-    (!points.is_empty()).then(|| {
+    if points.is_empty() {
+        None
+    } else {
         let (s, c) = angle_radians.sin_cos();
-        unsafe {
+        Some(unsafe {
             ffi::b2MakeOffsetProxy(
                 points.as_ptr(),
                 points.len() as i32,
@@ -64,8 +69,8 @@ pub(super) fn make_offset_proxy_from_points(
                 position.into_raw(),
                 ffi::b2Rot { c, s },
             )
-        }
-    })
+        })
+    }
 }
 
 struct CollectCtx<'a, T> {

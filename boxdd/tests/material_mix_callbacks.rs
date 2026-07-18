@@ -119,3 +119,29 @@ fn material_mix_callback_panic_is_caught_and_resumed_after_step() {
     }));
     assert!(r.is_err());
 }
+
+#[test]
+fn clearing_material_mix_callbacks_releases_slots_in_either_order() {
+    let mut worlds = Vec::new();
+
+    for index in 0..65 {
+        let mut world = World::new(WorldDef::default()).unwrap();
+        world
+            .try_set_friction_callback(|a, b| a.coefficient.min(b.coefficient))
+            .expect("friction callback slot should be reusable");
+        world
+            .try_set_restitution_callback(|a, b| a.coefficient.max(b.coefficient))
+            .expect("restitution callback should share the world slot");
+
+        if index % 2 == 0 {
+            world.try_clear_friction_callback().unwrap();
+            world.try_clear_restitution_callback().unwrap();
+        } else {
+            world.try_clear_restitution_callback().unwrap();
+            world.try_clear_friction_callback().unwrap();
+        }
+        worlds.push(world);
+    }
+
+    assert_eq!(worlds.len(), 65);
+}

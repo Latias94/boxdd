@@ -1,0 +1,4724 @@
+schema_version = 2
+upstream_sha = "56edae79f2949d86142b03450d5d60f63bcf5a6f"
+argument_tags = [
+    "AABB",
+    "BODYDEF",
+    "BODYID",
+    "BOOL",
+    "CAPSULE",
+    "CHAINDEF",
+    "CHAINID",
+    "CHAINSEG",
+    "CIRCLE",
+    "DISTANCEJOINTDEF",
+    "EXPLOSIONDEF",
+    "F32",
+    "FILTER",
+    "FILTERJOINTDEF",
+    "I32",
+    "JOINTID",
+    "LOCKS",
+    "MASSDATA",
+    "MATERIAL",
+    "MOTORJOINTDEF",
+    "POLYGON",
+    "POSITION",
+    "PRISMATICJOINTDEF",
+    "QUERYFILTER",
+    "REVOLUTEJOINTDEF",
+    "ROT",
+    "SEGMENT",
+    "SHAPEDEF",
+    "SHAPEID",
+    "SHAPEPROXY",
+    "STR",
+    "U64",
+    "VEC2",
+    "WELDJOINTDEF",
+    "WHEELJOINTDEF",
+    "WORLDID",
+    "WORLDXF",
+    "XF",
+]
+return_tags = [
+    "RET_NONE",
+    "RET_BODYID",
+    "RET_SHAPEID",
+    "RET_CHAINID",
+    "RET_JOINTID",
+]
+
+[framing]
+header_bytes = 32
+opcode_bytes = 1
+payload_size_bytes = 3
+max_payload_exclusive = 16777216
+byte_order = "little"
+stream_termination = "exact-eof"
+
+[header]
+magic_offset = 0
+magic = 1129460290
+version_major_offset = 4
+version_major = 3
+version_minor_offset = 6
+version_minor = 2
+reserved2_offset = 8
+length_scale_offset = 12
+reserved3_offset = 16
+pointer_width_offset = 17
+big_endian_offset = 18
+validation_enabled_offset = 19
+reserved1_offset = 20
+snapshot_size_offset = 24
+snapshot_size_bytes = 8
+
+[snapshot]
+minimum_bytes = 16
+header_bytes = 16
+magic_offset = 0
+magic = 844320322
+version_offset = 4
+version = 3
+layout_hash_offset = 8
+flags_offset = 12
+known_flags_mask = 3
+validation_flag = 1
+double_precision_flag = 2
+length_source = "recording-header-u64"
+slice_termination = "exact-declared-length"
+layout_metadata_source = "boxdd-sys-generated-abi"
+validation_requirement = "u8-structural-and-semantic-validator-required"
+native_dispatch_before_validation = "forbidden"
+
+[[tag_codecs]]
+tag = "AABB"
+
+[tag_codecs.codec]
+kind = "sequence"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "VEC2"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "VEC2"
+
+[[tag_codecs]]
+tag = "BODYDEF"
+
+[tag_codecs.codec]
+kind = "sequence"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "I32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "POSITION"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "ROT"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "VEC2"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "STR"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "U64"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "LOCKS"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs]]
+tag = "BODYID"
+
+[tag_codecs.codec]
+kind = "fixed"
+bytes = 8
+boolean = false
+
+[[tag_codecs]]
+tag = "BOOL"
+
+[tag_codecs.codec]
+kind = "fixed"
+bytes = 1
+boolean = true
+
+[[tag_codecs]]
+tag = "CAPSULE"
+
+[tag_codecs.codec]
+kind = "native-pod"
+abi_type = "b2Capsule"
+size_source = "boxdd-sys-generated-abi"
+
+[[tag_codecs]]
+tag = "CHAINDEF"
+
+[tag_codecs.codec]
+kind = "sequence"
+
+[[tag_codecs.codec.steps]]
+kind = "fixed"
+bytes = 8
+boolean = false
+
+[[tag_codecs.codec.steps]]
+kind = "counted"
+
+[tag_codecs.codec.steps.count]
+bytes = 4
+signed = true
+max_count = 1000000
+remaining_bytes_bound = true
+checked_multiply = true
+
+[tag_codecs.codec.steps.element]
+kind = "tag"
+tag = "VEC2"
+
+[[tag_codecs.codec.steps]]
+kind = "counted"
+
+[tag_codecs.codec.steps.count]
+bytes = 4
+signed = true
+max_count = 1000000
+remaining_bytes_bound = true
+checked_multiply = true
+
+[tag_codecs.codec.steps.element]
+kind = "tag"
+tag = "MATERIAL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "FILTER"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs]]
+tag = "CHAINID"
+
+[tag_codecs.codec]
+kind = "fixed"
+bytes = 8
+boolean = false
+
+[[tag_codecs]]
+tag = "CHAINSEG"
+
+[tag_codecs.codec]
+kind = "native-pod"
+abi_type = "b2ChainSegment"
+size_source = "boxdd-sys-generated-abi"
+
+[[tag_codecs]]
+tag = "CIRCLE"
+
+[tag_codecs.codec]
+kind = "native-pod"
+abi_type = "b2Circle"
+size_source = "boxdd-sys-generated-abi"
+
+[[tag_codecs]]
+tag = "DISTANCEJOINTDEF"
+
+[tag_codecs.codec]
+kind = "sequence"
+
+[[tag_codecs.codec.steps]]
+kind = "fixed"
+bytes = 8
+boolean = false
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BODYID"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BODYID"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "XF"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "XF"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs]]
+tag = "EXPLOSIONDEF"
+
+[tag_codecs.codec]
+kind = "sequence"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "U64"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "POSITION"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs]]
+tag = "F32"
+
+[tag_codecs.codec]
+kind = "fixed"
+bytes = 4
+boolean = false
+
+[[tag_codecs]]
+tag = "FILTER"
+
+[tag_codecs.codec]
+kind = "fixed"
+bytes = 20
+boolean = false
+
+[[tag_codecs]]
+tag = "FILTERJOINTDEF"
+
+[tag_codecs.codec]
+kind = "sequence"
+
+[[tag_codecs.codec.steps]]
+kind = "fixed"
+bytes = 8
+boolean = false
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BODYID"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BODYID"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "XF"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "XF"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs]]
+tag = "I32"
+
+[tag_codecs.codec]
+kind = "fixed"
+bytes = 4
+boolean = false
+
+[[tag_codecs]]
+tag = "JOINTID"
+
+[tag_codecs.codec]
+kind = "fixed"
+bytes = 8
+boolean = false
+
+[[tag_codecs]]
+tag = "LOCKS"
+
+[tag_codecs.codec]
+kind = "sequence"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs]]
+tag = "MASSDATA"
+
+[tag_codecs.codec]
+kind = "fixed"
+bytes = 16
+boolean = false
+
+[[tag_codecs]]
+tag = "MATERIAL"
+
+[tag_codecs.codec]
+kind = "fixed"
+bytes = 28
+boolean = false
+
+[[tag_codecs]]
+tag = "MOTORJOINTDEF"
+
+[tag_codecs.codec]
+kind = "sequence"
+
+[[tag_codecs.codec.steps]]
+kind = "fixed"
+bytes = 8
+boolean = false
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BODYID"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BODYID"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "XF"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "XF"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "VEC2"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs]]
+tag = "POLYGON"
+
+[tag_codecs.codec]
+kind = "native-pod"
+abi_type = "b2Polygon"
+size_source = "boxdd-sys-generated-abi"
+
+[[tag_codecs]]
+tag = "POSITION"
+
+[tag_codecs.codec]
+kind = "precision"
+single_bytes = 8
+double_bytes = 16
+
+[[tag_codecs]]
+tag = "PRISMATICJOINTDEF"
+
+[tag_codecs.codec]
+kind = "sequence"
+
+[[tag_codecs.codec.steps]]
+kind = "fixed"
+bytes = 8
+boolean = false
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BODYID"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BODYID"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "XF"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "XF"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs]]
+tag = "QUERYFILTER"
+
+[tag_codecs.codec]
+kind = "fixed"
+bytes = 16
+boolean = false
+
+[[tag_codecs]]
+tag = "REVOLUTEJOINTDEF"
+
+[tag_codecs.codec]
+kind = "sequence"
+
+[[tag_codecs.codec.steps]]
+kind = "fixed"
+bytes = 8
+boolean = false
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BODYID"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BODYID"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "XF"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "XF"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs]]
+tag = "ROT"
+
+[tag_codecs.codec]
+kind = "fixed"
+bytes = 8
+boolean = false
+
+[[tag_codecs]]
+tag = "SEGMENT"
+
+[tag_codecs.codec]
+kind = "native-pod"
+abi_type = "b2Segment"
+size_source = "boxdd-sys-generated-abi"
+
+[[tag_codecs]]
+tag = "SHAPEDEF"
+
+[tag_codecs.codec]
+kind = "sequence"
+
+[[tag_codecs.codec.steps]]
+kind = "fixed"
+bytes = 8
+boolean = false
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "MATERIAL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "FILTER"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs]]
+tag = "SHAPEID"
+
+[tag_codecs.codec]
+kind = "fixed"
+bytes = 8
+boolean = false
+
+[[tag_codecs]]
+tag = "SHAPEPROXY"
+
+[tag_codecs.codec]
+kind = "sequence"
+
+[[tag_codecs.codec.steps]]
+kind = "counted"
+
+[tag_codecs.codec.steps.count]
+bytes = 4
+signed = true
+max_count = 8
+remaining_bytes_bound = true
+checked_multiply = true
+
+[tag_codecs.codec.steps.element]
+kind = "tag"
+tag = "VEC2"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs]]
+tag = "STR"
+
+[tag_codecs.codec]
+kind = "string"
+length_bytes = 2
+null_sentinel = 65535
+max_bytes = 65534
+
+[[tag_codecs]]
+tag = "U64"
+
+[tag_codecs.codec]
+kind = "fixed"
+bytes = 8
+boolean = false
+
+[[tag_codecs]]
+tag = "VEC2"
+
+[tag_codecs.codec]
+kind = "fixed"
+bytes = 8
+boolean = false
+
+[[tag_codecs]]
+tag = "WELDJOINTDEF"
+
+[tag_codecs.codec]
+kind = "sequence"
+
+[[tag_codecs.codec.steps]]
+kind = "fixed"
+bytes = 8
+boolean = false
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BODYID"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BODYID"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "XF"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "XF"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs]]
+tag = "WHEELJOINTDEF"
+
+[tag_codecs.codec]
+kind = "sequence"
+
+[[tag_codecs.codec.steps]]
+kind = "fixed"
+bytes = 8
+boolean = false
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BODYID"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BODYID"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "XF"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "XF"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tag_codecs]]
+tag = "WORLDID"
+
+[tag_codecs.codec]
+kind = "fixed"
+bytes = 4
+boolean = false
+
+[[tag_codecs]]
+tag = "WORLDXF"
+
+[tag_codecs.codec]
+kind = "sequence"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "POSITION"
+
+[[tag_codecs.codec.steps]]
+kind = "tag"
+tag = "ROT"
+
+[[tag_codecs]]
+tag = "XF"
+
+[tag_codecs.codec]
+kind = "fixed"
+bytes = 16
+boolean = false
+
+[[tail_codecs]]
+name = "none"
+
+[tail_codecs.codec]
+kind = "sequence"
+steps = []
+
+[[tail_codecs]]
+name = "returned-id"
+
+[tail_codecs.codec]
+kind = "fixed"
+bytes = 8
+boolean = false
+
+[[tail_codecs]]
+name = "overlap-hits"
+
+[tail_codecs.codec]
+kind = "sequence"
+
+[[tail_codecs.codec.steps]]
+kind = "counted"
+
+[tail_codecs.codec.steps.count]
+bytes = 4
+signed = false
+max_count = 1000000
+remaining_bytes_bound = true
+checked_multiply = true
+
+[tail_codecs.codec.steps.element]
+kind = "sequence"
+
+[[tail_codecs.codec.steps.element.steps]]
+kind = "tag"
+tag = "SHAPEID"
+
+[[tail_codecs.codec.steps.element.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tail_codecs.codec.steps]]
+kind = "fixed"
+bytes = 8
+boolean = false
+
+[[tail_codecs]]
+name = "cast-hits"
+
+[tail_codecs.codec]
+kind = "sequence"
+
+[[tail_codecs.codec.steps]]
+kind = "counted"
+
+[tail_codecs.codec.steps.count]
+bytes = 4
+signed = false
+max_count = 1000000
+remaining_bytes_bound = true
+checked_multiply = true
+
+[tail_codecs.codec.steps.element]
+kind = "sequence"
+
+[[tail_codecs.codec.steps.element.steps]]
+kind = "tag"
+tag = "SHAPEID"
+
+[[tail_codecs.codec.steps.element.steps]]
+kind = "tag"
+tag = "POSITION"
+
+[[tail_codecs.codec.steps.element.steps]]
+kind = "tag"
+tag = "VEC2"
+
+[[tail_codecs.codec.steps.element.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tail_codecs.codec.steps.element.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tail_codecs.codec.steps]]
+kind = "fixed"
+bytes = 8
+boolean = false
+
+[[tail_codecs]]
+name = "plane-hits"
+
+[tail_codecs.codec]
+kind = "counted"
+
+[tail_codecs.codec.count]
+bytes = 4
+signed = false
+max_count = 1000000
+remaining_bytes_bound = true
+checked_multiply = true
+
+[tail_codecs.codec.element]
+kind = "sequence"
+
+[[tail_codecs.codec.element.steps]]
+kind = "tag"
+tag = "SHAPEID"
+
+[[tail_codecs.codec.element.steps]]
+kind = "sequence"
+
+[[tail_codecs.codec.element.steps.steps]]
+kind = "tag"
+tag = "VEC2"
+
+[[tail_codecs.codec.element.steps.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tail_codecs.codec.element.steps.steps]]
+kind = "tag"
+tag = "VEC2"
+
+[[tail_codecs.codec.element.steps.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tail_codecs.codec.element.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tail_codecs]]
+name = "closest-ray-result"
+
+[tail_codecs.codec]
+kind = "sequence"
+
+[[tail_codecs.codec.steps]]
+kind = "tag"
+tag = "SHAPEID"
+
+[[tail_codecs.codec.steps]]
+kind = "tag"
+tag = "POSITION"
+
+[[tail_codecs.codec.steps]]
+kind = "tag"
+tag = "VEC2"
+
+[[tail_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tail_codecs.codec.steps]]
+kind = "tag"
+tag = "I32"
+
+[[tail_codecs.codec.steps]]
+kind = "tag"
+tag = "I32"
+
+[[tail_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[tail_codecs]]
+name = "mover-result"
+
+[tail_codecs.codec]
+kind = "tag"
+tag = "F32"
+
+[[tail_codecs]]
+name = "bool-result"
+
+[tail_codecs.codec]
+kind = "tag"
+tag = "BOOL"
+
+[[tail_codecs]]
+name = "shape-cast-result"
+
+[tail_codecs.codec]
+kind = "sequence"
+
+[[tail_codecs.codec.steps]]
+kind = "tag"
+tag = "VEC2"
+
+[[tail_codecs.codec.steps]]
+kind = "tag"
+tag = "POSITION"
+
+[[tail_codecs.codec.steps]]
+kind = "tag"
+tag = "F32"
+
+[[tail_codecs.codec.steps]]
+kind = "tag"
+tag = "I32"
+
+[[tail_codecs.codec.steps]]
+kind = "tag"
+tag = "BOOL"
+
+[[opcodes]]
+opcode = 1
+name = "DestroyWorld"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "terminal"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.id_effects]]
+action = "destroy"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes]]
+opcode = 128
+name = "Step"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "step"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "dt"
+
+[[opcodes.arguments]]
+tag = "I32"
+name = "subStepCount"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes]]
+opcode = 2
+name = "WorldEnableSleeping"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "flag"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes]]
+opcode = 3
+name = "WorldEnableContinuous"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "flag"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes]]
+opcode = 4
+name = "WorldSetRestitutionThreshold"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "value"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes]]
+opcode = 5
+name = "WorldSetHitEventThreshold"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "value"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes]]
+opcode = 6
+name = "WorldSetGravity"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "VEC2"
+name = "gravity"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes]]
+opcode = 7
+name = "WorldExplode"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "EXPLOSIONDEF"
+name = "def"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes]]
+opcode = 8
+name = "WorldSetContactTuning"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "hertz"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "dampingRatio"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "pushSpeed"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes]]
+opcode = 9
+name = "WorldSetContactRecycleDistance"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "recycleDistance"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes]]
+opcode = 10
+name = "WorldSetMaximumLinearSpeed"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "maximumLinearSpeed"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes]]
+opcode = 11
+name = "WorldEnableWarmStarting"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "flag"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes]]
+opcode = 12
+name = "WorldRebuildStaticTree"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes]]
+opcode = 13
+name = "WorldEnableSpeculative"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "flag"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes]]
+opcode = 16
+name = "CreateBody"
+return_tag = "RET_BODYID"
+tail_program = "returned-id"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "BODYDEF"
+name = "def"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes.id_effects]]
+action = "create"
+id_kind = "body"
+source = "tail:returned-id"
+
+[[opcodes]]
+opcode = 17
+name = "DestroyBody"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.id_effects]]
+action = "destroy"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 32
+name = "BodySetTransform"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "POSITION"
+name = "position"
+
+[[opcodes.arguments]]
+tag = "ROT"
+name = "rotation"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 33
+name = "BodySetLinearVelocity"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "VEC2"
+name = "v"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 34
+name = "BodySetType"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "I32"
+name = "type"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 35
+name = "BodySetName"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "STR"
+name = "name"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 36
+name = "BodySetAngularVelocity"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "w"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 37
+name = "BodySetTargetTransform"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "WORLDXF"
+name = "target"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "timeStep"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "wake"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 38
+name = "BodyApplyForce"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "VEC2"
+name = "force"
+
+[[opcodes.arguments]]
+tag = "POSITION"
+name = "point"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "wake"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 39
+name = "BodyApplyForceToCenter"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "VEC2"
+name = "force"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "wake"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 40
+name = "BodyApplyTorque"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "torque"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "wake"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 41
+name = "BodyClearForces"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 42
+name = "BodyApplyLinearImpulse"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "VEC2"
+name = "impulse"
+
+[[opcodes.arguments]]
+tag = "POSITION"
+name = "point"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "wake"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 43
+name = "BodyApplyLinearImpulseToCenter"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "VEC2"
+name = "impulse"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "wake"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 44
+name = "BodyApplyAngularImpulse"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "impulse"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "wake"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 45
+name = "BodySetMassData"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "MASSDATA"
+name = "massData"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 46
+name = "BodyApplyMassFromShapes"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 47
+name = "BodySetLinearDamping"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "damping"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 48
+name = "BodySetAngularDamping"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "damping"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 49
+name = "BodySetGravityScale"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "scale"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 50
+name = "BodySetAwake"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "awake"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 51
+name = "BodyWakeTouching"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 52
+name = "BodyEnableSleep"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "flag"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 53
+name = "BodySetSleepThreshold"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "threshold"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 54
+name = "BodyDisable"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 55
+name = "BodyEnable"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 56
+name = "BodySetMotionLocks"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "LOCKS"
+name = "locks"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 57
+name = "BodySetBullet"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "flag"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 58
+name = "BodyEnableContactRecycling"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "flag"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 59
+name = "BodyEnableContactEvents"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "flag"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 60
+name = "BodyEnableHitEvents"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "flag"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes]]
+opcode = 64
+name = "CreateCircleShape"
+return_tag = "RET_SHAPEID"
+tail_program = "returned-id"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "SHAPEDEF"
+name = "def"
+
+[[opcodes.arguments]]
+tag = "CIRCLE"
+name = "circle"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes.id_effects]]
+action = "create"
+id_kind = "shape"
+source = "tail:returned-id"
+
+[[opcodes]]
+opcode = 65
+name = "CreateCapsuleShape"
+return_tag = "RET_SHAPEID"
+tail_program = "returned-id"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "SHAPEDEF"
+name = "def"
+
+[[opcodes.arguments]]
+tag = "CAPSULE"
+name = "capsule"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes.id_effects]]
+action = "create"
+id_kind = "shape"
+source = "tail:returned-id"
+
+[[opcodes]]
+opcode = 66
+name = "CreateSegmentShape"
+return_tag = "RET_SHAPEID"
+tail_program = "returned-id"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "SHAPEDEF"
+name = "def"
+
+[[opcodes.arguments]]
+tag = "SEGMENT"
+name = "segment"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes.id_effects]]
+action = "create"
+id_kind = "shape"
+source = "tail:returned-id"
+
+[[opcodes]]
+opcode = 67
+name = "CreatePolygonShape"
+return_tag = "RET_SHAPEID"
+tail_program = "returned-id"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "SHAPEDEF"
+name = "def"
+
+[[opcodes.arguments]]
+tag = "POLYGON"
+name = "polygon"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes.id_effects]]
+action = "create"
+id_kind = "shape"
+source = "tail:returned-id"
+
+[[opcodes]]
+opcode = 68
+name = "CreateChainSegmentShape"
+return_tag = "RET_SHAPEID"
+tail_program = "returned-id"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "SHAPEDEF"
+name = "def"
+
+[[opcodes.arguments]]
+tag = "CHAINSEG"
+name = "chainSegment"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes.id_effects]]
+action = "create"
+id_kind = "shape"
+source = "tail:returned-id"
+
+[[opcodes]]
+opcode = 69
+name = "DestroyShape"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "SHAPEID"
+name = "shape"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "updateBodyMass"
+
+[[opcodes.id_effects]]
+action = "destroy"
+id_kind = "shape"
+source = "argument:shape"
+
+[[opcodes]]
+opcode = 80
+name = "ShapeSetDensity"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "SHAPEID"
+name = "shape"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "density"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "updateBodyMass"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "argument:shape"
+
+[[opcodes]]
+opcode = 81
+name = "ShapeSetFriction"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "SHAPEID"
+name = "shape"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "friction"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "argument:shape"
+
+[[opcodes]]
+opcode = 82
+name = "ShapeSetRestitution"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "SHAPEID"
+name = "shape"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "restitution"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "argument:shape"
+
+[[opcodes]]
+opcode = 83
+name = "ShapeSetUserMaterial"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "SHAPEID"
+name = "shape"
+
+[[opcodes.arguments]]
+tag = "U64"
+name = "material"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "argument:shape"
+
+[[opcodes]]
+opcode = 84
+name = "ShapeSetSurfaceMaterial"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "SHAPEID"
+name = "shape"
+
+[[opcodes.arguments]]
+tag = "MATERIAL"
+name = "material"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "argument:shape"
+
+[[opcodes]]
+opcode = 85
+name = "ShapeSetFilter"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "SHAPEID"
+name = "shape"
+
+[[opcodes.arguments]]
+tag = "FILTER"
+name = "filter"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "argument:shape"
+
+[[opcodes]]
+opcode = 86
+name = "ShapeEnableSensorEvents"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "SHAPEID"
+name = "shape"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "flag"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "argument:shape"
+
+[[opcodes]]
+opcode = 87
+name = "ShapeEnableContactEvents"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "SHAPEID"
+name = "shape"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "flag"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "argument:shape"
+
+[[opcodes]]
+opcode = 88
+name = "ShapeEnablePreSolveEvents"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "SHAPEID"
+name = "shape"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "flag"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "argument:shape"
+
+[[opcodes]]
+opcode = 89
+name = "ShapeEnableHitEvents"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "SHAPEID"
+name = "shape"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "flag"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "argument:shape"
+
+[[opcodes]]
+opcode = 90
+name = "ShapeSetCircle"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "SHAPEID"
+name = "shape"
+
+[[opcodes.arguments]]
+tag = "CIRCLE"
+name = "circle"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "argument:shape"
+
+[[opcodes]]
+opcode = 91
+name = "ShapeSetCapsule"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "SHAPEID"
+name = "shape"
+
+[[opcodes.arguments]]
+tag = "CAPSULE"
+name = "capsule"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "argument:shape"
+
+[[opcodes]]
+opcode = 92
+name = "ShapeSetSegment"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "SHAPEID"
+name = "shape"
+
+[[opcodes.arguments]]
+tag = "SEGMENT"
+name = "segment"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "argument:shape"
+
+[[opcodes]]
+opcode = 93
+name = "ShapeSetPolygon"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "SHAPEID"
+name = "shape"
+
+[[opcodes.arguments]]
+tag = "POLYGON"
+name = "polygon"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "argument:shape"
+
+[[opcodes]]
+opcode = 94
+name = "ShapeSetChainSegment"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "SHAPEID"
+name = "shape"
+
+[[opcodes.arguments]]
+tag = "CHAINSEG"
+name = "chainSegment"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "argument:shape"
+
+[[opcodes]]
+opcode = 95
+name = "ShapeApplyWind"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "SHAPEID"
+name = "shape"
+
+[[opcodes.arguments]]
+tag = "VEC2"
+name = "wind"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "drag"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "lift"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "wake"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "argument:shape"
+
+[[opcodes]]
+opcode = 112
+name = "CreateChain"
+return_tag = "RET_CHAINID"
+tail_program = "returned-id"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "BODYID"
+name = "body"
+
+[[opcodes.arguments]]
+tag = "CHAINDEF"
+name = "def"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:body"
+
+[[opcodes.id_effects]]
+action = "create"
+id_kind = "chain"
+source = "tail:returned-id"
+
+[[opcodes]]
+opcode = 113
+name = "DestroyChain"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "CHAINID"
+name = "chain"
+
+[[opcodes.id_effects]]
+action = "destroy"
+id_kind = "chain"
+source = "argument:chain"
+
+[[opcodes]]
+opcode = 114
+name = "ChainSetSurfaceMaterial"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "CHAINID"
+name = "chain"
+
+[[opcodes.arguments]]
+tag = "MATERIAL"
+name = "material"
+
+[[opcodes.arguments]]
+tag = "I32"
+name = "materialIndex"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "chain"
+source = "argument:chain"
+
+[[opcodes]]
+opcode = 144
+name = "CreateDistanceJoint"
+return_tag = "RET_JOINTID"
+tail_program = "returned-id"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "DISTANCEJOINTDEF"
+name = "def"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:def.base.bodyIdA"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:def.base.bodyIdB"
+
+[[opcodes.id_effects]]
+action = "create"
+id_kind = "joint"
+source = "tail:returned-id"
+
+[[opcodes]]
+opcode = 145
+name = "CreateMotorJoint"
+return_tag = "RET_JOINTID"
+tail_program = "returned-id"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "MOTORJOINTDEF"
+name = "def"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:def.base.bodyIdA"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:def.base.bodyIdB"
+
+[[opcodes.id_effects]]
+action = "create"
+id_kind = "joint"
+source = "tail:returned-id"
+
+[[opcodes]]
+opcode = 146
+name = "CreateFilterJoint"
+return_tag = "RET_JOINTID"
+tail_program = "returned-id"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "FILTERJOINTDEF"
+name = "def"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:def.base.bodyIdA"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:def.base.bodyIdB"
+
+[[opcodes.id_effects]]
+action = "create"
+id_kind = "joint"
+source = "tail:returned-id"
+
+[[opcodes]]
+opcode = 147
+name = "CreatePrismaticJoint"
+return_tag = "RET_JOINTID"
+tail_program = "returned-id"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "PRISMATICJOINTDEF"
+name = "def"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:def.base.bodyIdA"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:def.base.bodyIdB"
+
+[[opcodes.id_effects]]
+action = "create"
+id_kind = "joint"
+source = "tail:returned-id"
+
+[[opcodes]]
+opcode = 148
+name = "CreateRevoluteJoint"
+return_tag = "RET_JOINTID"
+tail_program = "returned-id"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "REVOLUTEJOINTDEF"
+name = "def"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:def.base.bodyIdA"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:def.base.bodyIdB"
+
+[[opcodes.id_effects]]
+action = "create"
+id_kind = "joint"
+source = "tail:returned-id"
+
+[[opcodes]]
+opcode = 149
+name = "CreateWeldJoint"
+return_tag = "RET_JOINTID"
+tail_program = "returned-id"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "WELDJOINTDEF"
+name = "def"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:def.base.bodyIdA"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:def.base.bodyIdB"
+
+[[opcodes.id_effects]]
+action = "create"
+id_kind = "joint"
+source = "tail:returned-id"
+
+[[opcodes]]
+opcode = 150
+name = "CreateWheelJoint"
+return_tag = "RET_JOINTID"
+tail_program = "returned-id"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "WHEELJOINTDEF"
+name = "def"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:def.base.bodyIdA"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "body"
+source = "argument:def.base.bodyIdB"
+
+[[opcodes.id_effects]]
+action = "create"
+id_kind = "joint"
+source = "tail:returned-id"
+
+[[opcodes]]
+opcode = 151
+name = "DestroyJoint"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "wakeAttached"
+
+[[opcodes.id_effects]]
+action = "destroy"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 152
+name = "JointSetLocalFrameA"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "XF"
+name = "localFrame"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 153
+name = "JointSetLocalFrameB"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "XF"
+name = "localFrame"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 154
+name = "JointSetCollideConnected"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "shouldCollide"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 155
+name = "JointWakeBodies"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 156
+name = "JointSetConstraintTuning"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "hertz"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "dampingRatio"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 157
+name = "JointSetForceThreshold"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "threshold"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 158
+name = "JointSetTorqueThreshold"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "threshold"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 160
+name = "DistanceJointSetLength"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "length"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 161
+name = "DistanceJointEnableSpring"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "enableSpring"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 162
+name = "DistanceJointSetSpringForceRange"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "lowerForce"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "upperForce"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 163
+name = "DistanceJointSetSpringHertz"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "hertz"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 164
+name = "DistanceJointSetSpringDampingRatio"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "dampingRatio"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 165
+name = "DistanceJointEnableLimit"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "enableLimit"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 166
+name = "DistanceJointSetLengthRange"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "minLength"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "maxLength"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 167
+name = "DistanceJointEnableMotor"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "enableMotor"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 168
+name = "DistanceJointSetMotorSpeed"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "motorSpeed"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 169
+name = "DistanceJointSetMaxMotorForce"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "force"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 170
+name = "MotorJointSetLinearVelocity"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "VEC2"
+name = "velocity"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 171
+name = "MotorJointSetAngularVelocity"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "velocity"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 172
+name = "MotorJointSetMaxVelocityForce"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "maxForce"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 173
+name = "MotorJointSetMaxVelocityTorque"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "maxTorque"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 174
+name = "MotorJointSetLinearHertz"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "hertz"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 175
+name = "MotorJointSetLinearDampingRatio"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "damping"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 176
+name = "MotorJointSetAngularHertz"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "hertz"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 177
+name = "MotorJointSetAngularDampingRatio"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "damping"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 178
+name = "MotorJointSetMaxSpringForce"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "maxForce"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 179
+name = "MotorJointSetMaxSpringTorque"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "maxTorque"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 180
+name = "PrismaticJointEnableSpring"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "enableSpring"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 181
+name = "PrismaticJointSetSpringHertz"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "hertz"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 182
+name = "PrismaticJointSetSpringDampingRatio"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "dampingRatio"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 183
+name = "PrismaticJointSetTargetTranslation"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "translation"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 184
+name = "PrismaticJointEnableLimit"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "enableLimit"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 185
+name = "PrismaticJointSetLimits"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "lower"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "upper"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 186
+name = "PrismaticJointEnableMotor"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "enableMotor"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 187
+name = "PrismaticJointSetMotorSpeed"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "motorSpeed"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 188
+name = "PrismaticJointSetMaxMotorForce"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "force"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 189
+name = "RevoluteJointEnableSpring"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "enableSpring"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 190
+name = "RevoluteJointSetSpringHertz"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "hertz"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 191
+name = "RevoluteJointSetSpringDampingRatio"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "dampingRatio"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 192
+name = "RevoluteJointSetTargetAngle"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "angle"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 193
+name = "RevoluteJointEnableLimit"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "enableLimit"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 194
+name = "RevoluteJointSetLimits"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "lower"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "upper"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 195
+name = "RevoluteJointEnableMotor"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "enableMotor"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 196
+name = "RevoluteJointSetMotorSpeed"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "motorSpeed"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 197
+name = "RevoluteJointSetMaxMotorTorque"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "torque"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 198
+name = "WeldJointSetLinearHertz"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "hertz"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 199
+name = "WeldJointSetLinearDampingRatio"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "dampingRatio"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 200
+name = "WeldJointSetAngularHertz"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "hertz"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 201
+name = "WeldJointSetAngularDampingRatio"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "dampingRatio"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 202
+name = "WheelJointEnableSpring"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "enableSpring"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 203
+name = "WheelJointSetSpringHertz"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "hertz"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 204
+name = "WheelJointSetSpringDampingRatio"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "dampingRatio"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 205
+name = "WheelJointEnableLimit"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "enableLimit"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 206
+name = "WheelJointSetLimits"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "lower"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "upper"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 207
+name = "WheelJointEnableMotor"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "BOOL"
+name = "enableMotor"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 208
+name = "WheelJointSetMotorSpeed"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "motorSpeed"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 209
+name = "WheelJointSetMaxMotorTorque"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "mutation"
+
+[[opcodes.arguments]]
+tag = "JOINTID"
+name = "joint"
+
+[[opcodes.arguments]]
+tag = "F32"
+name = "torque"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "joint"
+source = "argument:joint"
+
+[[opcodes]]
+opcode = 224
+name = "QueryOverlapAABB"
+return_tag = "RET_NONE"
+tail_program = "overlap-hits"
+payload_termination = "exact-eof"
+semantic_validator = "query"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "POSITION"
+name = "origin"
+
+[[opcodes.arguments]]
+tag = "AABB"
+name = "aabb"
+
+[[opcodes.arguments]]
+tag = "QUERYFILTER"
+name = "filter"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "tail:overlap-hits[].shapeId"
+repeated_by = "tail.count"
+
+[[opcodes]]
+opcode = 225
+name = "QueryOverlapShape"
+return_tag = "RET_NONE"
+tail_program = "overlap-hits"
+payload_termination = "exact-eof"
+semantic_validator = "query"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "POSITION"
+name = "origin"
+
+[[opcodes.arguments]]
+tag = "SHAPEPROXY"
+name = "proxy"
+
+[[opcodes.arguments]]
+tag = "QUERYFILTER"
+name = "filter"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "tail:overlap-hits[].shapeId"
+repeated_by = "tail.count"
+
+[[opcodes]]
+opcode = 226
+name = "QueryCastRay"
+return_tag = "RET_NONE"
+tail_program = "cast-hits"
+payload_termination = "exact-eof"
+semantic_validator = "query"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "POSITION"
+name = "origin"
+
+[[opcodes.arguments]]
+tag = "VEC2"
+name = "translation"
+
+[[opcodes.arguments]]
+tag = "QUERYFILTER"
+name = "filter"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "tail:cast-hits[].shapeId"
+repeated_by = "tail.count"
+
+[[opcodes]]
+opcode = 227
+name = "QueryCastShape"
+return_tag = "RET_NONE"
+tail_program = "cast-hits"
+payload_termination = "exact-eof"
+semantic_validator = "query"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "POSITION"
+name = "origin"
+
+[[opcodes.arguments]]
+tag = "SHAPEPROXY"
+name = "proxy"
+
+[[opcodes.arguments]]
+tag = "VEC2"
+name = "translation"
+
+[[opcodes.arguments]]
+tag = "QUERYFILTER"
+name = "filter"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "tail:cast-hits[].shapeId"
+repeated_by = "tail.count"
+
+[[opcodes]]
+opcode = 228
+name = "QueryCollideMover"
+return_tag = "RET_NONE"
+tail_program = "plane-hits"
+payload_termination = "exact-eof"
+semantic_validator = "query"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "POSITION"
+name = "origin"
+
+[[opcodes.arguments]]
+tag = "CAPSULE"
+name = "mover"
+
+[[opcodes.arguments]]
+tag = "QUERYFILTER"
+name = "filter"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "tail:plane-hits[].shapeId"
+repeated_by = "tail.count"
+
+[[opcodes]]
+opcode = 229
+name = "QueryCastRayClosest"
+return_tag = "RET_NONE"
+tail_program = "closest-ray-result"
+payload_termination = "exact-eof"
+semantic_validator = "query"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "POSITION"
+name = "origin"
+
+[[opcodes.arguments]]
+tag = "VEC2"
+name = "translation"
+
+[[opcodes.arguments]]
+tag = "QUERYFILTER"
+name = "filter"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "tail:closest-ray-result.shapeId"
+condition = "tail.hit == 1"
+
+[[opcodes]]
+opcode = 230
+name = "QueryCastMover"
+return_tag = "RET_NONE"
+tail_program = "mover-result"
+payload_termination = "exact-eof"
+semantic_validator = "query"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "POSITION"
+name = "origin"
+
+[[opcodes.arguments]]
+tag = "CAPSULE"
+name = "mover"
+
+[[opcodes.arguments]]
+tag = "VEC2"
+name = "translation"
+
+[[opcodes.arguments]]
+tag = "QUERYFILTER"
+name = "filter"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes]]
+opcode = 231
+name = "ShapeTestPoint"
+return_tag = "RET_NONE"
+tail_program = "bool-result"
+payload_termination = "exact-eof"
+semantic_validator = "query"
+
+[[opcodes.arguments]]
+tag = "SHAPEID"
+name = "shape"
+
+[[opcodes.arguments]]
+tag = "POSITION"
+name = "point"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "argument:shape"
+
+[[opcodes]]
+opcode = 232
+name = "ShapeRayCast"
+return_tag = "RET_NONE"
+tail_program = "shape-cast-result"
+payload_termination = "exact-eof"
+semantic_validator = "query"
+
+[[opcodes.arguments]]
+tag = "SHAPEID"
+name = "shape"
+
+[[opcodes.arguments]]
+tag = "POSITION"
+name = "origin"
+
+[[opcodes.arguments]]
+tag = "VEC2"
+name = "translation"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "shape"
+source = "argument:shape"
+
+[[opcodes]]
+opcode = 241
+name = "StateHash"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "state-hash"
+
+[[opcodes.arguments]]
+tag = "WORLDID"
+name = "world"
+
+[[opcodes.arguments]]
+tag = "U64"
+name = "hash"
+
+[[opcodes.id_effects]]
+action = "use"
+id_kind = "world"
+source = "argument:world"
+
+[[opcodes]]
+opcode = 242
+name = "RecordingBounds"
+return_tag = "RET_NONE"
+tail_program = "none"
+payload_termination = "exact-eof"
+semantic_validator = "metadata"
+id_effects = []
+
+[[opcodes.arguments]]
+tag = "AABB"
+name = "bounds"

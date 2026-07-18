@@ -2,6 +2,8 @@
 
 This workspace uses CI to keep the Rust safe layer aligned with the vendored Box2D C API.
 
+See [Upstream Synchronization Contract](upstream-sync.md) for the revision transition and rollback model.
+
 ## Required local checks
 
 Run these before opening a release PR:
@@ -13,6 +15,7 @@ cargo check -p boxdd --no-default-features
 cargo check -p boxdd-sys --no-default-features
 cargo check -p bevy_boxdd --no-default-features
 cargo check -p bevy_boxdd --examples
+cargo run -p xtask -- upstream-sync --check
 cargo run -p xtask -- api-coverage --check
 cargo run -p xtask -- sample-parity --check
 cargo run -p xtask -- generate-pages
@@ -22,7 +25,7 @@ cargo install wasm-bindgen-cli --version 0.2.126 --locked
 cargo run -p xtask -- provider-smoke
 cargo run -p xtask -- build-pages-wasm
 # Optional for local builds: expose Binaryen's wasm-opt on PATH or through EMSDK/upstream/bin for smaller Pages assets.
-cargo nextest run -p boxdd --test api_coverage --test collision_validation --test joint_new_apis --test world_callbacks --test panic_across_ffi_is_caught --test world_and_queries --test dynamic_tree --test events_and_sensors --test world_destroy_and_recycle --test material_mix_callbacks --test user_data --test ffi_lifecycle --test buffer_reuse
+cargo nextest run -p boxdd --test collision_validation --test joint_new_apis --test world_callbacks --test panic_across_ffi_is_caught --test world_and_queries --test dynamic_tree --test events_and_sensors --test world_destroy_and_recycle --test material_mix_callbacks --test user_data --test ffi_lifecycle --test buffer_reuse
 cargo nextest run -p boxdd-sys --test layout
 cargo nextest run -p bevy_boxdd --test plugin
 cargo clippy -p boxdd --all-targets --all-features -- -D warnings
@@ -39,7 +42,8 @@ For a fresh version line, run packaging and publishing in dependency order. `box
 
 ## Gate rationale
 
-- `api-coverage --check` scans vendored `include/box2d` headers for `B2_API` symbols and ensures every public C API has an explicit Rust status.
+- `upstream-sync --check` validates the manifest as the sole revision authority, the exact gitlink and clean checkout, sorted target source paths, all seven reviewed recording-source Git identities, the operation registry parsed from the pinned Git object, and named artifact identities.
+- `api-coverage --check` validates the structured API and recording-wire contracts against vendored headers, canonical public Rust paths, real test evidence, supported provider modes, precision-specific link symbols, explicit recording capability classes, and ABI fingerprints.
 - `sample-parity --check` scans upstream sample registrations, preserves manual mappings, and rejects non-benchmark rows that fall back to bare upstream references without an explicit deferral.
 - `generate-pages` rebuilds the GitHub Pages Bevy Web example index from `bevy_boxdd/examples/testbed_2d/scenes.rs`.
 - `provider-smoke` builds a Rust `wasm32-unknown-unknown` app, builds an Emscripten Box2D provider module, and verifies the shared-memory runtime under Node.

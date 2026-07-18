@@ -103,6 +103,7 @@ jobs:
 
       - name: upstream accounting checks
         run: |
+          cargo run -p xtask -- upstream-sync --check
           cargo run -p xtask -- api-coverage --check
           cargo run -p xtask -- sample-parity --check
           cargo run -p xtask -- validate-pages

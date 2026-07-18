@@ -1,0 +1,166 @@
+schema_version = 3
+repository = "https://github.com/erincatto/box2d.git"
+active_revision = "c05c48738fbe5c27625e36c5f0cfbdaddfc8359a"
+next_revision = "56edae79f2949d86142b03450d5d60f63bcf5a6f"
+recording_revision = "56edae79f2949d86142b03450d5d60f63bcf5a6f"
+artifact_digests_initialized = false
+
+[[binding_routes]]
+mode = "single"
+provider = "source"
+artifact = "bindings-single"
+rust_target = "x86_64-unknown-linux-gnu"
+rust_features = []
+
+[[recording_inputs]]
+path = "src/recording.c"
+git_blob = "477f8606e70afb90b4ec36a954d158bc0f286911"
+blake3 = "0fa67e86ccd24c60eb04a89e321fd20da09195e2e88c687cef2dad994921833b"
+
+[[recording_inputs]]
+path = "src/recording.h"
+git_blob = "3a1594468d0b4865c4967e6af905db61356b74f9"
+blake3 = "e33cfb9999ea434c08b19c82112aaeb3345b7673bbbe207ab170cbbff921dcfa"
+
+[[recording_inputs]]
+path = "src/recording_ops.inl"
+git_blob = "24af2210d2eccb60668d18889ea65b197a768f89"
+blake3 = "95eb715f0478784531428893ee6de62057ec8ba1db0a850faec0878514878646"
+
+[[recording_inputs]]
+path = "src/recording_replay.c"
+git_blob = "8f3c99a50a70e4a3fbe1c2276d18575cf3d85117"
+blake3 = "639197a780d6433bf767e4f24569171ea334d0cec64939b07fb079681dd55dc9"
+
+[[recording_inputs]]
+path = "src/recording_replay.h"
+git_blob = "dee78c54c16848f4751ff2d3e81948c0a4d29686"
+blake3 = "240024837543432dd7a22e3a1d632aeefa2605970176753df55b872c36d7f7ab"
+
+[[recording_inputs]]
+path = "src/world_snapshot.c"
+git_blob = "e3932ba355f70c210219741849dcce754867c65c"
+blake3 = "164fbc0e53f9103f37d4f6ccd598ca3b25486cdf0bcbe5505dfabfb0f3e9a620"
+
+[[recording_inputs]]
+path = "src/world_snapshot.h"
+git_blob = "bbeddec26c1e0f19a5497a8ef6947158a6ea10b2"
+blake3 = "04d3abc85d3cff17f802e6a07f8d22c74987f98d1e6663c676011ec73d45fcf8"
+
+[[artifacts]]
+name = "bindings-single"
+kind = "bindings"
+path = "boxdd-sys/src/bindings_pregenerated.rs"
+precision = "single"
+target = "universal"
+provider = "universal"
+producer = "bindgen"
+content_blake3 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[[artifacts]]
+name = "api-contract"
+kind = "api-contract"
+path = "boxdd/tests/fixtures/api_contract.toml"
+target = "universal"
+provider = "universal"
+producer = "reviewed"
+content_blake3 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[[artifacts]]
+name = "recording-wire"
+kind = "recording-wire"
+path = "xtask/tests/fixtures/recording_wire_contract.toml"
+target = "universal"
+provider = "universal"
+producer = "api-coverage"
+content_blake3 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[[artifacts]]
+name = "api-coverage-report"
+kind = "api-coverage-report"
+path = "docs/api-coverage.md"
+target = "universal"
+provider = "universal"
+producer = "api-coverage"
+content_blake3 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[target_inventory]
+tree = "63a1ab02e3d2bf7c4d86b257b78976842b8c5ddb"
+c_sources = [
+    "src/aabb.c",
+    "src/arena_allocator.c",
+    "src/bitset.c",
+    "src/body.c",
+    "src/broad_phase.c",
+    "src/constraint_graph.c",
+    "src/contact.c",
+    "src/contact_solver.c",
+    "src/core.c",
+    "src/distance.c",
+    "src/distance_joint.c",
+    "src/dynamic_tree.c",
+    "src/geometry.c",
+    "src/hull.c",
+    "src/id_pool.c",
+    "src/island.c",
+    "src/joint.c",
+    "src/manifold.c",
+    "src/math_functions.c",
+    "src/motor_joint.c",
+    "src/mover.c",
+    "src/parallel_for.c",
+    "src/physics_world.c",
+    "src/prismatic_joint.c",
+    "src/recording.c",
+    "src/recording_replay.c",
+    "src/revolute_joint.c",
+    "src/scheduler.c",
+    "src/sensor.c",
+    "src/shape.c",
+    "src/solver.c",
+    "src/solver_set.c",
+    "src/table.c",
+    "src/timer.c",
+    "src/types.c",
+    "src/weld_joint.c",
+    "src/wheel_joint.c",
+    "src/world_snapshot.c",
+]
+private_headers = [
+    "src/aabb.h",
+    "src/arena_allocator.h",
+    "src/atomic.h",
+    "src/bitset.h",
+    "src/body.h",
+    "src/broad_phase.h",
+    "src/constraint_graph.h",
+    "src/contact.h",
+    "src/contact_solver.h",
+    "src/container.h",
+    "src/core.h",
+    "src/ctz.h",
+    "src/id_pool.h",
+    "src/island.h",
+    "src/joint.h",
+    "src/parallel_for.h",
+    "src/physics_world.h",
+    "src/recording.h",
+    "src/recording_replay.h",
+    "src/scheduler.h",
+    "src/sensor.h",
+    "src/shape.h",
+    "src/solver.h",
+    "src/solver_set.h",
+    "src/table.h",
+    "src/world_snapshot.h",
+]
+inline_files = ["src/recording_ops.inl"]
+public_headers = [
+    "include/box2d/base.h",
+    "include/box2d/box2d.h",
+    "include/box2d/collision.h",
+    "include/box2d/constants.h",
+    "include/box2d/id.h",
+    "include/box2d/math_functions.h",
+    "include/box2d/types.h",
+]
