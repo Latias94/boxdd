@@ -9119,12 +9119,12 @@ field = "generation"
 name = "b2BodyMoveEvent"
 fingerprint = "fnv1a64:e85efd31d375ecc3"
 header = "types.h"
-rationale = "The Rust AST index proves that public path boxdd::World::with_body_events_raw has an exact raw-type relation to boxdd_sys::ffi::b2BodyMoveEvent."
+rationale = "The safe body-event snapshot converts each native b2BodyMoveEvent into an owned BodyMoveEvent without exposing borrowed FFI storage."
 policy = "safe-abi-adapter"
-safe_paths = ["boxdd::World::with_body_events_raw"]
+safe_paths = ["boxdd::World::body_events"]
 
 [[abi.structs.safe_witnesses]]
-path = "boxdd::World::with_body_events_raw"
+path = "boxdd::World::body_events"
 kind = "struct-adapter"
 raw_type = "boxdd_sys::ffi::b2BodyMoveEvent"
 
@@ -9993,12 +9993,12 @@ field = "clipVelocity"
 name = "b2ContactBeginTouchEvent"
 fingerprint = "fnv1a64:a950fd31d991f9c5"
 header = "types.h"
-rationale = "The Rust AST index proves that public path boxdd::World::with_contact_events_raw has an exact raw-type relation to boxdd_sys::ffi::b2ContactBeginTouchEvent."
+rationale = "The safe contact-event snapshot converts native begin-touch records into owned Rust event values."
 policy = "safe-abi-adapter"
-safe_paths = ["boxdd::World::with_contact_events_raw"]
+safe_paths = ["boxdd::World::contact_events"]
 
 [[abi.structs.safe_witnesses]]
-path = "boxdd::World::with_contact_events_raw"
+path = "boxdd::World::contact_events"
 kind = "struct-adapter"
 raw_type = "boxdd_sys::ffi::b2ContactBeginTouchEvent"
 
@@ -10177,12 +10177,12 @@ field = "manifold"
 name = "b2ContactEndTouchEvent"
 fingerprint = "fnv1a64:a950fd31d991f9c5"
 header = "types.h"
-rationale = "The Rust AST index proves that public path boxdd::World::with_contact_events_raw has an exact raw-type relation to boxdd_sys::ffi::b2ContactEndTouchEvent."
+rationale = "The safe contact-event snapshot converts native end-touch records into owned Rust event values."
 policy = "safe-abi-adapter"
-safe_paths = ["boxdd::World::with_contact_events_raw"]
+safe_paths = ["boxdd::World::contact_events"]
 
 [[abi.structs.safe_witnesses]]
-path = "boxdd::World::with_contact_events_raw"
+path = "boxdd::World::contact_events"
 kind = "struct-adapter"
 raw_type = "boxdd_sys::ffi::b2ContactEndTouchEvent"
 
@@ -10373,12 +10373,12 @@ field = "hitCount"
 name = "b2ContactHitEvent"
 fingerprint = "fnv1a64:5cfce787308bf6d8"
 header = "types.h"
-rationale = "The Rust AST index proves that public path boxdd::World::with_contact_events_raw has an exact raw-type relation to boxdd_sys::ffi::b2ContactHitEvent."
+rationale = "The safe contact-event snapshot converts native hit records into owned Rust event values."
 policy = "safe-abi-adapter"
-safe_paths = ["boxdd::World::with_contact_events_raw"]
+safe_paths = ["boxdd::World::contact_events"]
 
 [[abi.structs.safe_witnesses]]
-path = "boxdd::World::with_contact_events_raw"
+path = "boxdd::World::contact_events"
 kind = "struct-adapter"
 raw_type = "boxdd_sys::ffi::b2ContactHitEvent"
 
@@ -12929,12 +12929,12 @@ field = "collideConnected"
 name = "b2JointEvent"
 fingerprint = "fnv1a64:881ba9c8d4d6d85d"
 header = "types.h"
-rationale = "The Rust AST index proves that public path boxdd::World::with_joint_events_raw has an exact raw-type relation to boxdd_sys::ffi::b2JointEvent."
+rationale = "The safe joint-event snapshot converts each native b2JointEvent into an owned JointEvent."
 policy = "safe-abi-adapter"
-safe_paths = ["boxdd::World::with_joint_events_raw"]
+safe_paths = ["boxdd::World::joint_events"]
 
 [[abi.structs.safe_witnesses]]
-path = "boxdd::World::with_joint_events_raw"
+path = "boxdd::World::joint_events"
 kind = "struct-adapter"
 raw_type = "boxdd_sys::ffi::b2JointEvent"
 
@@ -16003,12 +16003,12 @@ field = "distanceSquared"
 name = "b2SensorBeginTouchEvent"
 fingerprint = "fnv1a64:384632ebcf609379"
 header = "types.h"
-rationale = "The Rust AST index proves that public path boxdd::World::with_sensor_events_raw has an exact raw-type relation to boxdd_sys::ffi::b2SensorBeginTouchEvent."
+rationale = "The safe sensor-event snapshot converts native begin-touch records into owned Rust event values."
 policy = "safe-abi-adapter"
-safe_paths = ["boxdd::World::with_sensor_events_raw"]
+safe_paths = ["boxdd::World::sensor_events"]
 
 [[abi.structs.safe_witnesses]]
-path = "boxdd::World::with_sensor_events_raw"
+path = "boxdd::World::sensor_events"
 kind = "struct-adapter"
 raw_type = "boxdd_sys::ffi::b2SensorBeginTouchEvent"
 
@@ -16058,12 +16058,12 @@ field = "visitorShapeId"
 name = "b2SensorEndTouchEvent"
 fingerprint = "fnv1a64:384632ebcf609379"
 header = "types.h"
-rationale = "The Rust AST index proves that public path boxdd::World::with_sensor_events_raw has an exact raw-type relation to boxdd_sys::ffi::b2SensorEndTouchEvent."
+rationale = "The safe sensor-event snapshot converts native end-touch records into owned Rust event values."
 policy = "safe-abi-adapter"
-safe_paths = ["boxdd::World::with_sensor_events_raw"]
+safe_paths = ["boxdd::World::sensor_events"]
 
 [[abi.structs.safe_witnesses]]
-path = "boxdd::World::with_sensor_events_raw"
+path = "boxdd::World::sensor_events"
 kind = "struct-adapter"
 raw_type = "boxdd_sys::ffi::b2SensorEndTouchEvent"
 

@@ -42,11 +42,21 @@ pub struct TreeStats {
 }
 
 impl TreeStats {
+    /// Convert Box2D traversal counters into the safe value type.
     #[inline]
-    fn from_raw(raw: ffi::b2TreeStats) -> Self {
+    pub fn from_raw(raw: ffi::b2TreeStats) -> Self {
         Self {
             node_visits: raw.nodeVisits,
             leaf_visits: raw.leafVisits,
+        }
+    }
+
+    /// Convert these traversal counters into their raw Box2D representation.
+    #[inline]
+    pub fn into_raw(self) -> ffi::b2TreeStats {
+        ffi::b2TreeStats {
+            nodeVisits: self.node_visits,
+            leafVisits: self.leaf_visits,
         }
     }
 }
@@ -84,8 +94,9 @@ impl TreeRayCastInput {
         check_fraction(self.max_fraction)
     }
 
+    /// Convert a raw Box2D ray-cast input into the safe value type.
     #[inline]
-    fn from_raw(raw: ffi::b2RayCastInput) -> Self {
+    pub fn from_raw(raw: ffi::b2RayCastInput) -> Self {
         Self {
             origin: Vec2::from_raw(raw.origin),
             translation: Vec2::from_raw(raw.translation),
@@ -93,8 +104,9 @@ impl TreeRayCastInput {
         }
     }
 
+    /// Convert this ray-cast input into its raw Box2D representation.
     #[inline]
-    fn into_raw(self) -> ffi::b2RayCastInput {
+    pub fn into_raw(self) -> ffi::b2RayCastInput {
         ffi::b2RayCastInput {
             origin: self.origin.into_raw(),
             translation: self.translation.into_raw(),

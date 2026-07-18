@@ -1,9 +1,32 @@
 use boxdd::{
-    Aabb, DynamicTree, ShapeProxy, TreeProxyId, TreeRayCastInput, TreeShapeCastInput, Vec2,
+    Aabb, DynamicTree, ShapeProxy, TreeProxyId, TreeRayCastInput, TreeShapeCastInput, TreeStats,
+    Vec2,
 };
 
 fn aabb(min_x: f32, min_y: f32, max_x: f32, max_y: f32) -> Aabb {
     Aabb::new(Vec2::new(min_x, min_y), Vec2::new(max_x, max_y))
+}
+
+#[test]
+fn dynamic_tree_value_types_round_trip_raw_abi_fields() {
+    let stats = TreeStats::from_raw(boxdd_sys::ffi::b2TreeStats {
+        nodeVisits: 13,
+        leafVisits: 7,
+    });
+    assert_eq!(stats.node_visits, 13);
+    assert_eq!(stats.leaf_visits, 7);
+    let raw_stats = stats.into_raw();
+    assert_eq!(raw_stats.nodeVisits, 13);
+    assert_eq!(raw_stats.leafVisits, 7);
+
+    let input = TreeRayCastInput::new([1.0_f32, 2.0], [3.0_f32, 4.0]).with_max_fraction(0.75);
+    let raw_input = input.into_raw();
+    assert_eq!(raw_input.origin.x, 1.0);
+    assert_eq!(raw_input.origin.y, 2.0);
+    assert_eq!(raw_input.translation.x, 3.0);
+    assert_eq!(raw_input.translation.y, 4.0);
+    assert_eq!(raw_input.maxFraction, 0.75);
+    assert_eq!(TreeRayCastInput::from_raw(raw_input), input);
 }
 
 #[test]
