@@ -9,20 +9,22 @@ members = [
 resolver = "3"
 
 [workspace.package]
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
+rust-version = "1.95"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Latias94/boxdd"
 homepage = "https://frankorz.com/boxdd/"
 documentation = "https://docs.rs/boxdd"
 
 [workspace.dependencies]
-boxdd = { version = "0.5.0", path = "boxdd" }
-boxdd-sys = { version = "0.5.0", path = "boxdd-sys" }
+boxdd = { version = "0.6.0", path = "boxdd" }
+boxdd-sys = { version = "0.6.0", path = "boxdd-sys" }
 thiserror = "2"
 mint = "0.5"
 smallvec = "1"
 serde = { version = "1", features = ["derive"] }
+toml = "0.9"
 cgmath = "0.18"
 nalgebra = "0.35"
 glam = "0.33"
@@ -40,6 +42,12 @@ bevy_time = "0.19.0"
 bevy_transform = "0.19.0"
 log = "0.4"
 static_assertions = "1"
+
+[workspace.metadata.toolchains]
+msrv = "1.95.0"
+development = "1.97.0"
+verification-nightly = "nightly-2026-05-27"
+verification-components = ["miri", "rust-src"]
 
 [profile.wasm-release]
 inherits = "release"

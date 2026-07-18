@@ -2,6 +2,7 @@
 name = "boxdd"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Safe, ergonomic Rust bindings for Box2D v3"
 license.workspace = true
 repository.workspace = true

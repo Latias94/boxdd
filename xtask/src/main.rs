@@ -7,6 +7,8 @@ use std::{
     process::Command,
 };
 
+mod toolchains;
+
 type Result<T> = std::result::Result<T, Error>;
 
 const PROVIDER_MODULE: &str = "box2d-sys-v0";
@@ -230,6 +232,9 @@ fn run() -> Result<()> {
         }
         [cmd, rest @ ..] if cmd == "api-coverage" => api_coverage(&root, rest),
         [cmd, rest @ ..] if cmd == "sample-parity" => sample_parity(&root, rest),
+        [cmd] if cmd == "verify-toolchains" => toolchains::verify_configuration(&root)
+            .map(|verification| println!("{verification}"))
+            .map_err(|error| Error::Message(error.to_string())),
         [cmd] if cmd == "provider-smoke-app" => provider_smoke_app(&root),
         [cmd] if cmd == "provider-smoke" => provider_smoke(&root),
         [cmd] if cmd == "build-pages-wasm" => build_pages_wasm(&root),
@@ -259,6 +264,7 @@ Usage:
   cargo run -p xtask -- sample-parity --write
   cargo run -p xtask -- api-coverage --check
   cargo run -p xtask -- api-coverage --write
+  cargo run -p xtask -- verify-toolchains
   cargo run -p xtask -- provider-smoke-app
   cargo run -p xtask -- provider-smoke
   cargo run -p xtask -- build-pages-wasm
@@ -268,6 +274,7 @@ Usage:
 Commands:
   api-coverage  Validate or regenerate docs/api-coverage.md and its fixture
   sample-parity  Validate or regenerate docs/upstream-parity/box2d-sample-matrix.md
+  verify-toolchains  Validate workspace versions and pinned compiler configuration
   provider-smoke-app  Build the Rust wasm provider-smoke app and export list
   provider-smoke  Build the Rust app, build the Box2D provider with emcc, and run Node smoke
   build-pages-wasm  Build browser provider and Bevy testbed assets into docs/pages

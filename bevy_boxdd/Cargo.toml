@@ -2,6 +2,7 @@
 name = "bevy_boxdd"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Bevy integration for the boxdd Rust bindings to Box2D"
 license.workspace = true
 repository.workspace = true

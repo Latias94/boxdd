@@ -7,6 +7,64 @@ on:
     branches: [ main, master ]
 
 jobs:
+  compiler-baseline:
+    name: Compiler Baseline (Rust 1.95)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+
+      - name: Install Rust MSRV
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.95.0
+
+      - name: Install verification nightly
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: nightly-2026-05-27
+          components: miri, rust-src
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Verify compiler policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup component list --toolchain nightly-2026-05-27 | grep -Eq '^miri-.*\(installed\)$'
+          rustup component list --toolchain nightly-2026-05-27 | grep -Eq '^rust-src .?\(installed\)$|^rust-src-.*\(installed\)$'
+          cargo +1.95.0 run -p xtask -- verify-toolchains
+
+      - name: Check workspace at MSRV
+        run: |
+          cargo +1.95.0 check --workspace --all-targets
+          cargo +1.95.0 check -p boxdd --all-targets --all-features
+
+      - name: Test system-link provider at MSRV
+        shell: bash
+        run: |
+          set -euo pipefail
+          CARGO_TARGET_DIR=target/msrv-source cargo +1.95.0 build -p boxdd-sys --quiet
+          LIB="$(find target/msrv-source/debug/build -name libbox2d.a -type f -print -quit)"
+          test -n "$LIB"
+          SYS_DIR="$(mktemp -d)"
+          cp "$LIB" "$SYS_DIR/"
+          BOX2D_LIB_DIR="$SYS_DIR" BOXDD_SYS_LINK_KIND=static CARGO_TARGET_DIR=target/msrv-system cargo +1.95.0 test -p boxdd --quiet
+
+      - name: Build prebuilt package at MSRV
+        env:
+          CARGO_TARGET_DIR: target/msrv-package
+          BOXDD_SYS_PACKAGE_DIR: ${{ runner.temp }}/boxdd-msrv-packages
+        run: cargo +1.95.0 run -p boxdd-sys --features package-bin --bin package --release
+
   lint:
     name: Lint + Test (ubuntu-latest)
     runs-on: ubuntu-latest
@@ -24,6 +82,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: 1.97.0
           components: rustfmt, clippy
 
       - name: Install nextest
@@ -100,6 +159,8 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.0
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -120,11 +181,12 @@ jobs:
           cargo doc -p boxdd-sys --no-deps
 
   features:
-    name: Feature Matrix (ubuntu-latest)
+    name: Feature Matrix (Rust ${{ matrix.toolchain }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
+        toolchain: ["1.95.0", "1.97.0"]
         features: [
           "",
           "serde",
@@ -152,6 +214,8 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.toolchain }}
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -162,14 +226,18 @@ jobs:
           set -euxo pipefail
           FEATS='${{ matrix.features }}'
           if [ -z "$FEATS" ]; then
-            cargo check -p boxdd --quiet
+            cargo +${{ matrix.toolchain }} check -p boxdd --quiet
           else
-            cargo check -p boxdd --features "$FEATS" --quiet
+            cargo +${{ matrix.toolchain }} check -p boxdd --features "$FEATS" --quiet
           fi
 
   wasm:
-    name: WASM Checks (ubuntu-latest)
+    name: WASM Checks (Rust ${{ matrix.toolchain }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: ["1.95.0", "1.97.0"]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -178,26 +246,32 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.toolchain }}
 
       - name: Add wasm targets
         run: |
-          rustup target add wasm32-unknown-unknown
-          rustup target add wasm32-wasip1
+          rustup target add --toolchain ${{ matrix.toolchain }} wasm32-unknown-unknown
+          rustup target add --toolchain ${{ matrix.toolchain }} wasm32-wasip1
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
       - name: cargo check (boxdd-sys, wasm32-unknown-unknown)
         run: |
-          cargo check -p boxdd-sys --target wasm32-unknown-unknown --quiet
+          cargo +${{ matrix.toolchain }} check -p boxdd-sys --target wasm32-unknown-unknown --quiet
 
       - name: cargo check (boxdd-sys, wasm32-wasip1)
         run: |
-          cargo check -p boxdd-sys --target wasm32-wasip1 --quiet
+          cargo +${{ matrix.toolchain }} check -p boxdd-sys --target wasm32-wasip1 --quiet
 
   wasm-strict:
-    name: WASM Strict Bindings (conditional)
+    name: WASM Strict Bindings (Rust ${{ matrix.toolchain }}, conditional)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: ["1.95.0", "1.97.0"]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -206,11 +280,13 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.toolchain }}
 
       - name: Add wasm targets
         run: |
-          rustup target add wasm32-unknown-unknown
-          rustup target add wasm32-wasip1
+          rustup target add --toolchain ${{ matrix.toolchain }} wasm32-unknown-unknown
+          rustup target add --toolchain ${{ matrix.toolchain }} wasm32-wasip1
 
       - name: Strict check (only if pregenerated or sysroot present)
         env:
@@ -221,8 +297,8 @@ jobs:
           has_pregen="$(test -f boxdd-sys/src/wasm_bindings_pregenerated.rs && echo yes || echo no)"
           if [ "$has_pregen" = "yes" ] || [ -n "${WASI_SDK_PATH:-}" ] || [ -n "${EMSDK:-}" ]; then
             echo "Strict mode enabled with available wasm bindings/sysroot; running checks."
-            cargo check -p boxdd-sys --target wasm32-unknown-unknown --quiet || exit 1
-            cargo check -p boxdd-sys --target wasm32-wasip1 --quiet || exit 1
+            cargo +${{ matrix.toolchain }} check -p boxdd-sys --target wasm32-unknown-unknown --quiet || exit 1
+            cargo +${{ matrix.toolchain }} check -p boxdd-sys --target wasm32-wasip1 --quiet || exit 1
           else
             echo "Skipping strict wasm checks (no pregenerated bindings and no sysroot configured)."
           fi

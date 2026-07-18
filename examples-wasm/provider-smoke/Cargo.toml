@@ -2,6 +2,7 @@
 name = "boxdd-provider-smoke"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 publish = false
 description = "Browser-style provider smoke for boxdd"
 license.workspace = true

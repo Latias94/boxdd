@@ -2,6 +2,7 @@
 name = "boxdd-sys"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Low-level FFI bindings for Box2D built from upstream via submodule"
 license.workspace = true
 repository.workspace = true
