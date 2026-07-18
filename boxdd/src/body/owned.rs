@@ -681,7 +681,10 @@ impl OwnedBody {
 
     /// Destroy the body immediately and disarm drop.
     pub fn destroy(mut self) {
-        if self.destroy_on_drop && unsafe { ffi::b2Body_IsValid(raw_body_id(self.id)) } {
+        let should_destroy =
+            self.destroy_on_drop && unsafe { ffi::b2Body_IsValid(raw_body_id(self.id)) };
+        self.destroy_on_drop = false;
+        if should_destroy {
             if crate::core::callback_state::in_callback() || self.core.events_buffers_are_borrowed()
             {
                 self.core
@@ -693,7 +696,6 @@ impl OwnedBody {
                 let _ = self.core.clear_body_user_data(self.id);
             }
         }
-        self.destroy_on_drop = false;
     }
 }
 

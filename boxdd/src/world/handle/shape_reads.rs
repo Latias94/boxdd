@@ -155,11 +155,13 @@ impl WorldHandle {
     pub fn shape_sensor_overlaps(&self, shape: ShapeId) -> Vec<ShapeId> {
         crate::core::debug_checks::assert_shape_valid(shape);
         crate::shapes::shape_sensor_overlaps_impl(shape)
+            .expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT)
     }
 
     pub fn shape_sensor_overlaps_into(&self, shape: ShapeId, out: &mut Vec<ShapeId>) {
         crate::core::debug_checks::assert_shape_valid(shape);
-        crate::shapes::shape_sensor_overlaps_into_impl(shape, out);
+        crate::shapes::shape_sensor_overlaps_into_impl(shape, out)
+            .expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT);
     }
 
     pub fn try_shape_sensor_overlaps(
@@ -167,7 +169,7 @@ impl WorldHandle {
         shape: ShapeId,
     ) -> crate::error::ApiResult<Vec<ShapeId>> {
         crate::core::debug_checks::check_shape_valid(shape)?;
-        Ok(crate::shapes::shape_sensor_overlaps_impl(shape))
+        crate::shapes::shape_sensor_overlaps_impl(shape)
     }
 
     pub fn try_shape_sensor_overlaps_into(
@@ -176,13 +178,13 @@ impl WorldHandle {
         out: &mut Vec<ShapeId>,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_shape_valid(shape)?;
-        crate::shapes::shape_sensor_overlaps_into_impl(shape, out);
-        Ok(())
+        crate::shapes::shape_sensor_overlaps_into_impl(shape, out)
     }
 
     pub fn shape_sensor_overlaps_valid(&self, shape: ShapeId) -> Vec<ShapeId> {
         crate::core::debug_checks::assert_shape_valid(shape);
         crate::shapes::shape_sensor_overlaps_valid_impl(shape)
+            .expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT)
     }
 
     pub fn try_shape_sensor_overlaps_valid(
@@ -190,12 +192,13 @@ impl WorldHandle {
         shape: ShapeId,
     ) -> crate::error::ApiResult<Vec<ShapeId>> {
         crate::core::debug_checks::check_shape_valid(shape)?;
-        Ok(crate::shapes::shape_sensor_overlaps_valid_impl(shape))
+        crate::shapes::shape_sensor_overlaps_valid_impl(shape)
     }
 
     pub fn shape_sensor_overlaps_valid_into(&self, shape: ShapeId, out: &mut Vec<ShapeId>) {
         crate::core::debug_checks::assert_shape_valid(shape);
-        crate::shapes::shape_sensor_overlaps_valid_into_impl(shape, out);
+        crate::shapes::shape_sensor_overlaps_valid_into_impl(shape, out)
+            .expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT);
     }
 
     pub fn try_shape_sensor_overlaps_valid_into(
@@ -204,7 +207,6 @@ impl WorldHandle {
         out: &mut Vec<ShapeId>,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_shape_valid(shape)?;
-        crate::shapes::shape_sensor_overlaps_valid_into_impl(shape, out);
-        Ok(())
+        crate::shapes::shape_sensor_overlaps_valid_into_impl(shape, out)
     }
 }

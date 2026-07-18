@@ -97,7 +97,7 @@ impl ChainCreateMeta {
 pub(crate) struct Registries {
     bodies: Vec<BodyId>,
     chains: Vec<(ChainId, ChainCreateMeta)>,
-    shape_flags: Vec<(ShapeId, ShapeFlagsRecord)>,
+    shape_flags: Vec<(ShapeId, BodyId, ShapeFlagsRecord)>,
 }
 
 #[inline]
@@ -136,7 +136,7 @@ impl Registries {
         self.chains.retain(|(_, meta)| !eq_body(meta.body, body));
     }
 
-    pub(crate) fn record_shape_flags(&mut self, sid: ShapeId, def: &ffi::b2ShapeDef) {
+    pub(crate) fn record_shape_flags(&mut self, sid: ShapeId, body: BodyId, def: &ffi::b2ShapeDef) {
         let rec = ShapeFlagsRecord {
             enable_custom_filtering: def.enableCustomFiltering,
             enable_sensor_events: def.enableSensorEvents,
@@ -148,33 +148,21 @@ impl Registries {
         if let Some(slot) = self
             .shape_flags
             .iter_mut()
-            .find(|(id, _)| eq_shape(*id, sid))
+            .find(|(id, _, _)| eq_shape(*id, sid))
         {
-            *slot = (sid, rec);
+            *slot = (sid, body, rec);
         } else {
-            self.shape_flags.push((sid, rec));
+            self.shape_flags.push((sid, body, rec));
         }
     }
 
     pub(crate) fn remove_shape_flags(&mut self, sid: ShapeId) {
-        self.shape_flags.retain(|(x, _)| !eq_shape(*x, sid));
+        self.shape_flags.retain(|(id, _, _)| !eq_shape(*id, sid));
     }
 
     pub(crate) fn remove_shape_flags_for_body(&mut self, body: BodyId) {
-        // Enumerate shapes on this body while it is still valid.
-        let raw_body = body.into_raw();
-        let count = unsafe { ffi::b2Body_GetShapeCount(raw_body) }.max(0) as usize;
-        if count == 0 {
-            return;
-        }
-        let arr = unsafe {
-            crate::core::ffi_vec::read_from_ffi(count, |ptr: *mut ShapeId, count| {
-                ffi::b2Body_GetShapes(raw_body, ptr.cast(), count)
-            })
-        };
-        for sid in arr {
-            self.remove_shape_flags(sid);
-        }
+        self.shape_flags
+            .retain(|(_, owner, _)| !eq_body(*owner, body));
     }
 
     pub(crate) fn body_ids(&self) -> Vec<BodyId> {
@@ -213,6 +201,6 @@ impl Registries {
     pub(crate) fn shape_flags(&self, sid: ShapeId) -> Option<ShapeFlagsRecord> {
         self.shape_flags
             .iter()
-            .find_map(|(id, rec)| if eq_shape(*id, sid) { Some(*rec) } else { None })
+            .find_map(|(id, _, rec)| if eq_shape(*id, sid) { Some(*rec) } else { None })
     }
 }

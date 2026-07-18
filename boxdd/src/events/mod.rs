@@ -14,7 +14,7 @@
 fn map_snapshot_into<TRaw, T>(out: &mut Vec<T>, slice: &[TRaw], map: impl FnMut(&TRaw) -> T) {
     out.clear();
     if out.capacity() < slice.len() {
-        out.reserve(slice.len() - out.capacity());
+        out.reserve(slice.len());
     }
     out.extend(slice.iter().map(map));
 }
@@ -32,6 +32,17 @@ pub use sensor::{SensorBeginTouchEvent, SensorEndTouchEvent, SensorEvents};
 #[cfg(test)]
 mod tests {
     use crate::{ApiError, ContactEvents, SensorEvents, World, WorldDef};
+
+    #[test]
+    fn snapshot_map_grows_from_existing_capacity_to_the_full_input() {
+        let input = [5_u8; 10];
+        let mut out = Vec::with_capacity(8);
+
+        super::map_snapshot_into(&mut out, &input, |value| u16::from(*value));
+
+        assert!(out.capacity() >= 10);
+        assert_eq!(out, vec![5_u16; 10]);
+    }
 
     #[test]
     fn try_event_snapshot_apis_return_in_callback() {

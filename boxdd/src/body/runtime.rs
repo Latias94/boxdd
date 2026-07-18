@@ -1,5 +1,6 @@
 use std::ffi::CStr;
 
+use crate::error::ApiResult;
 use crate::query::Aabb;
 use crate::types::{BodyId, JointId, MassData, MotionLocks, ShapeId, Vec2};
 use boxdd_sys::ffi;
@@ -224,29 +225,29 @@ pub(crate) fn body_shape_count_impl(id: BodyId) -> i32 {
 }
 
 #[inline]
-fn body_shape_capacity(id: BodyId) -> usize {
-    body_shape_count_impl(id).max(0) as usize
-}
-
-#[inline]
-pub(crate) fn body_shapes_into_impl(id: BodyId, out: &mut Vec<ShapeId>) {
-    let cap = body_shape_capacity(id);
+pub(crate) fn body_shapes_into_impl(id: BodyId, out: &mut Vec<ShapeId>) -> ApiResult<()> {
+    let cap = body_shape_count_impl(id);
     let id = raw_body_id(id);
     unsafe {
-        crate::core::ffi_vec::fill_from_ffi(out, cap, |ptr, cap| {
-            ffi::b2Body_GetShapes(id, ptr.cast(), cap)
-        });
+        crate::core::ffi_vec::fill_mapped_from_ffi(
+            out,
+            cap,
+            |ptr, cap| ffi::b2Body_GetShapes(id, ptr, cap),
+            ShapeId::from_raw,
+        )
     }
 }
 
 #[inline]
-pub(crate) fn body_shapes_impl(id: BodyId) -> Vec<ShapeId> {
-    let cap = body_shape_capacity(id);
+pub(crate) fn body_shapes_impl(id: BodyId) -> ApiResult<Vec<ShapeId>> {
+    let cap = body_shape_count_impl(id);
     let id = raw_body_id(id);
     unsafe {
-        crate::core::ffi_vec::read_from_ffi(cap, |ptr: *mut ShapeId, cap| {
-            ffi::b2Body_GetShapes(id, ptr.cast(), cap)
-        })
+        crate::core::ffi_vec::read_mapped_from_ffi(
+            cap,
+            |ptr, cap| ffi::b2Body_GetShapes(id, ptr, cap),
+            ShapeId::from_raw,
+        )
     }
 }
 
@@ -256,29 +257,29 @@ pub(crate) fn body_joint_count_impl(id: BodyId) -> i32 {
 }
 
 #[inline]
-fn body_joint_capacity(id: BodyId) -> usize {
-    body_joint_count_impl(id).max(0) as usize
-}
-
-#[inline]
-pub(crate) fn body_joints_into_impl(id: BodyId, out: &mut Vec<JointId>) {
-    let cap = body_joint_capacity(id);
+pub(crate) fn body_joints_into_impl(id: BodyId, out: &mut Vec<JointId>) -> ApiResult<()> {
+    let cap = body_joint_count_impl(id);
     let id = raw_body_id(id);
     unsafe {
-        crate::core::ffi_vec::fill_from_ffi(out, cap, |ptr, cap| {
-            ffi::b2Body_GetJoints(id, ptr.cast(), cap)
-        });
+        crate::core::ffi_vec::fill_mapped_from_ffi(
+            out,
+            cap,
+            |ptr, cap| ffi::b2Body_GetJoints(id, ptr, cap),
+            JointId::from_raw,
+        )
     }
 }
 
 #[inline]
-pub(crate) fn body_joints_impl(id: BodyId) -> Vec<JointId> {
-    let cap = body_joint_capacity(id);
+pub(crate) fn body_joints_impl(id: BodyId) -> ApiResult<Vec<JointId>> {
+    let cap = body_joint_count_impl(id);
     let id = raw_body_id(id);
     unsafe {
-        crate::core::ffi_vec::read_from_ffi(cap, |ptr: *mut JointId, cap| {
-            ffi::b2Body_GetJoints(id, ptr.cast(), cap)
-        })
+        crate::core::ffi_vec::read_mapped_from_ffi(
+            cap,
+            |ptr, cap| ffi::b2Body_GetJoints(id, ptr, cap),
+            JointId::from_raw,
+        )
     }
 }
 

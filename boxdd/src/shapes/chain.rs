@@ -62,23 +62,28 @@ fn raw_chain_id(id: ChainId) -> ffi::b2ChainId {
     id.into_raw()
 }
 
-fn chain_segments_into_impl(id: ChainId, out: &mut Vec<ShapeId>) {
+fn chain_segments_into_impl(id: ChainId, out: &mut Vec<ShapeId>) -> ApiResult<()> {
     let id = raw_chain_id(id);
-    let count = unsafe { ffi::b2Chain_GetSegmentCount(id) }.max(0) as usize;
+    let count = unsafe { ffi::b2Chain_GetSegmentCount(id) };
     unsafe {
-        crate::core::ffi_vec::fill_from_ffi(out, count, |ptr, count| {
-            ffi::b2Chain_GetSegments(id, ptr.cast(), count)
-        });
+        crate::core::ffi_vec::fill_mapped_from_ffi(
+            out,
+            count,
+            |ptr, count| ffi::b2Chain_GetSegments(id, ptr, count),
+            ShapeId::from_raw,
+        )
     }
 }
 
-fn chain_segments_impl(id: ChainId) -> Vec<ShapeId> {
+fn chain_segments_impl(id: ChainId) -> ApiResult<Vec<ShapeId>> {
     let id = raw_chain_id(id);
-    let count = unsafe { ffi::b2Chain_GetSegmentCount(id) }.max(0) as usize;
+    let count = unsafe { ffi::b2Chain_GetSegmentCount(id) };
     unsafe {
-        crate::core::ffi_vec::read_from_ffi(count, |ptr: *mut ShapeId, count| {
-            ffi::b2Chain_GetSegments(id, ptr.cast(), count)
-        })
+        crate::core::ffi_vec::read_mapped_from_ffi(
+            count,
+            |ptr, count| ffi::b2Chain_GetSegments(id, ptr, count),
+            ShapeId::from_raw,
+        )
     }
 }
 
@@ -94,23 +99,22 @@ fn try_chain_segment_count_impl(id: ChainId) -> ApiResult<i32> {
 
 fn chain_segments_checked_impl(id: ChainId) -> Vec<ShapeId> {
     crate::core::debug_checks::assert_chain_valid(id);
-    chain_segments_impl(id)
+    chain_segments_impl(id).expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT)
 }
 
 fn chain_segments_into_checked_impl(id: ChainId, out: &mut Vec<ShapeId>) {
     crate::core::debug_checks::assert_chain_valid(id);
-    chain_segments_into_impl(id, out);
+    chain_segments_into_impl(id, out).expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT);
 }
 
 fn try_chain_segments_impl(id: ChainId) -> ApiResult<Vec<ShapeId>> {
     crate::core::debug_checks::check_chain_valid(id)?;
-    Ok(chain_segments_impl(id))
+    chain_segments_impl(id)
 }
 
 fn try_chain_segments_into_impl(id: ChainId, out: &mut Vec<ShapeId>) -> ApiResult<()> {
     crate::core::debug_checks::check_chain_valid(id)?;
-    chain_segments_into_impl(id, out);
-    Ok(())
+    chain_segments_into_impl(id, out)
 }
 
 #[inline]
@@ -175,30 +179,37 @@ fn chain_surface_material_count_impl(id: ChainId) -> i32 {
 }
 
 #[inline]
-fn chain_set_surface_material_impl(id: ChainId, index: i32, material: &SurfaceMaterial) {
+fn chain_set_surface_material_impl(
+    id: ChainId,
+    index: i32,
+    material: &SurfaceMaterial,
+) -> ApiResult<()> {
     let (raw_count, segment_count) = chain_runtime_surface_material_layout_impl(id);
     if raw_count == 1 {
         unsafe { ffi::b2Chain_SetSurfaceMaterial(raw_chain_id(id), &material.0, 0) }
     } else if raw_count == segment_count {
         unsafe { ffi::b2Chain_SetSurfaceMaterial(raw_chain_id(id), &material.0, index) }
     } else {
-        let segment = chain_segments_impl(id)[index as usize];
+        let segment = chain_segments_impl(id)?[index as usize];
         crate::shapes::shape_set_surface_material_impl(segment, material);
     }
+    Ok(())
 }
 
 #[inline]
-fn chain_surface_material_impl(id: ChainId, index: i32) -> SurfaceMaterial {
+fn chain_surface_material_impl(id: ChainId, index: i32) -> ApiResult<SurfaceMaterial> {
     let (raw_count, segment_count) = chain_runtime_surface_material_layout_impl(id);
     if raw_count == 1 {
-        SurfaceMaterial::from_raw(unsafe { ffi::b2Chain_GetSurfaceMaterial(raw_chain_id(id), 0) })
+        Ok(SurfaceMaterial::from_raw(unsafe {
+            ffi::b2Chain_GetSurfaceMaterial(raw_chain_id(id), 0)
+        }))
     } else if raw_count == segment_count {
-        SurfaceMaterial::from_raw(unsafe {
+        Ok(SurfaceMaterial::from_raw(unsafe {
             ffi::b2Chain_GetSurfaceMaterial(raw_chain_id(id), index)
-        })
+        }))
     } else {
-        let segment = chain_segments_impl(id)[index as usize];
-        crate::shapes::shape_surface_material_impl(segment)
+        let segment = chain_segments_impl(id)?[index as usize];
+        Ok(crate::shapes::shape_surface_material_impl(segment))
     }
 }
 
@@ -234,6 +245,7 @@ fn chain_set_surface_material_checked_impl(id: ChainId, index: i32, material: &S
     crate::core::debug_checks::assert_chain_valid(id);
     assert_chain_surface_material_index_in_range(id, index);
     chain_set_surface_material_impl(id, index, material)
+        .expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT)
 }
 
 fn try_chain_set_surface_material_impl(
@@ -243,20 +255,19 @@ fn try_chain_set_surface_material_impl(
 ) -> ApiResult<()> {
     crate::core::debug_checks::check_chain_valid(id)?;
     check_chain_surface_material_index_in_range(id, index)?;
-    chain_set_surface_material_impl(id, index, material);
-    Ok(())
+    chain_set_surface_material_impl(id, index, material)
 }
 
 fn chain_surface_material_checked_impl(id: ChainId, index: i32) -> SurfaceMaterial {
     crate::core::debug_checks::assert_chain_valid(id);
     assert_chain_surface_material_index_in_range(id, index);
-    chain_surface_material_impl(id, index)
+    chain_surface_material_impl(id, index).expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT)
 }
 
 fn try_chain_surface_material_impl(id: ChainId, index: i32) -> ApiResult<SurfaceMaterial> {
     crate::core::debug_checks::check_chain_valid(id)?;
     check_chain_surface_material_index_in_range(id, index)?;
-    Ok(chain_surface_material_impl(id, index))
+    chain_surface_material_impl(id, index)
 }
 
 #[inline]

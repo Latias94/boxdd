@@ -16,17 +16,17 @@ pub(crate) fn try_shape_sensor_capacity_impl(id: ShapeId) -> ApiResult<i32> {
 
 pub(crate) fn shape_sensor_overlaps_checked_impl(id: ShapeId) -> Vec<ShapeId> {
     crate::core::debug_checks::assert_shape_valid(id);
-    shape_sensor_overlaps_impl(id)
+    shape_sensor_overlaps_impl(id).expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT)
 }
 
 pub(crate) fn shape_sensor_overlaps_into_checked_impl(id: ShapeId, out: &mut Vec<ShapeId>) {
     crate::core::debug_checks::assert_shape_valid(id);
-    shape_sensor_overlaps_into_impl(id, out);
+    shape_sensor_overlaps_into_impl(id, out).expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT);
 }
 
 pub(crate) fn try_shape_sensor_overlaps_impl(id: ShapeId) -> ApiResult<Vec<ShapeId>> {
     crate::core::debug_checks::check_shape_valid(id)?;
-    Ok(shape_sensor_overlaps_impl(id))
+    shape_sensor_overlaps_impl(id)
 }
 
 pub(crate) fn try_shape_sensor_overlaps_into_impl(
@@ -34,23 +34,22 @@ pub(crate) fn try_shape_sensor_overlaps_into_impl(
     out: &mut Vec<ShapeId>,
 ) -> ApiResult<()> {
     crate::core::debug_checks::check_shape_valid(id)?;
-    shape_sensor_overlaps_into_impl(id, out);
-    Ok(())
+    shape_sensor_overlaps_into_impl(id, out)
 }
 
 pub(crate) fn shape_sensor_overlaps_valid_checked_impl(id: ShapeId) -> Vec<ShapeId> {
     crate::core::debug_checks::assert_shape_valid(id);
-    shape_sensor_overlaps_valid_impl(id)
+    shape_sensor_overlaps_valid_impl(id).expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT)
 }
 
 pub(crate) fn try_shape_sensor_overlaps_valid_impl(id: ShapeId) -> ApiResult<Vec<ShapeId>> {
     crate::core::debug_checks::check_shape_valid(id)?;
-    Ok(shape_sensor_overlaps_valid_impl(id))
+    shape_sensor_overlaps_valid_impl(id)
 }
 
 pub(crate) fn shape_sensor_overlaps_valid_into_checked_impl(id: ShapeId, out: &mut Vec<ShapeId>) {
     crate::core::debug_checks::assert_shape_valid(id);
-    shape_sensor_overlaps_valid_into_impl(id, out);
+    shape_sensor_overlaps_valid_into_impl(id, out).expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT);
 }
 
 pub(crate) fn try_shape_sensor_overlaps_valid_into_impl(
@@ -58,39 +57,50 @@ pub(crate) fn try_shape_sensor_overlaps_valid_into_impl(
     out: &mut Vec<ShapeId>,
 ) -> ApiResult<()> {
     crate::core::debug_checks::check_shape_valid(id)?;
-    shape_sensor_overlaps_valid_into_impl(id, out);
+    shape_sensor_overlaps_valid_into_impl(id, out)
+}
+
+pub(crate) fn shape_sensor_overlaps_into_impl(
+    id: ShapeId,
+    out: &mut Vec<ShapeId>,
+) -> ApiResult<()> {
+    let id = raw_shape_id(id);
+    let cap = unsafe { ffi::b2Shape_GetSensorCapacity(id) };
+    unsafe {
+        crate::core::ffi_vec::fill_mapped_from_ffi(
+            out,
+            cap,
+            |ptr, cap| ffi::b2Shape_GetSensorData(id, ptr, cap),
+            ShapeId::from_raw,
+        )
+    }
+}
+
+pub(crate) fn shape_sensor_overlaps_impl(id: ShapeId) -> ApiResult<Vec<ShapeId>> {
+    let id = raw_shape_id(id);
+    let cap = unsafe { ffi::b2Shape_GetSensorCapacity(id) };
+    unsafe {
+        crate::core::ffi_vec::read_mapped_from_ffi(
+            cap,
+            |ptr, cap| ffi::b2Shape_GetSensorData(id, ptr, cap),
+            ShapeId::from_raw,
+        )
+    }
+}
+
+pub(crate) fn shape_sensor_overlaps_valid_into_impl(
+    id: ShapeId,
+    out: &mut Vec<ShapeId>,
+) -> ApiResult<()> {
+    shape_sensor_overlaps_into_impl(id, out)?;
+    retain_valid_shape_ids(out);
     Ok(())
 }
 
-pub(crate) fn shape_sensor_overlaps_into_impl(id: ShapeId, out: &mut Vec<ShapeId>) {
-    let id = raw_shape_id(id);
-    let cap = unsafe { ffi::b2Shape_GetSensorCapacity(id) }.max(0) as usize;
-    unsafe {
-        crate::core::ffi_vec::fill_from_ffi(out, cap, |ptr, cap| {
-            ffi::b2Shape_GetSensorData(id, ptr.cast(), cap)
-        });
-    }
-}
-
-pub(crate) fn shape_sensor_overlaps_impl(id: ShapeId) -> Vec<ShapeId> {
-    let id = raw_shape_id(id);
-    let cap = unsafe { ffi::b2Shape_GetSensorCapacity(id) }.max(0) as usize;
-    unsafe {
-        crate::core::ffi_vec::read_from_ffi(cap, |ptr: *mut ShapeId, cap| {
-            ffi::b2Shape_GetSensorData(id, ptr.cast(), cap)
-        })
-    }
-}
-
-pub(crate) fn shape_sensor_overlaps_valid_into_impl(id: ShapeId, out: &mut Vec<ShapeId>) {
-    shape_sensor_overlaps_into_impl(id, out);
-    retain_valid_shape_ids(out);
-}
-
-pub(crate) fn shape_sensor_overlaps_valid_impl(id: ShapeId) -> Vec<ShapeId> {
-    let mut ids = shape_sensor_overlaps_impl(id);
+pub(crate) fn shape_sensor_overlaps_valid_impl(id: ShapeId) -> ApiResult<Vec<ShapeId>> {
+    let mut ids = shape_sensor_overlaps_impl(id)?;
     retain_valid_shape_ids(&mut ids);
-    ids
+    Ok(ids)
 }
 
 #[inline]

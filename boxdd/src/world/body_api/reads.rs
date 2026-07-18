@@ -217,17 +217,18 @@ impl World {
 
     pub fn body_shapes(&self, body: BodyId) -> Vec<ShapeId> {
         crate::core::debug_checks::assert_body_valid(body);
-        crate::body::body_shapes_impl(body)
+        crate::body::body_shapes_impl(body).expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT)
     }
 
     pub fn body_shapes_into(&self, body: BodyId, out: &mut Vec<ShapeId>) {
         crate::core::debug_checks::assert_body_valid(body);
-        crate::body::body_shapes_into_impl(body, out);
+        crate::body::body_shapes_into_impl(body, out)
+            .expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT);
     }
 
     pub fn try_body_shapes(&self, body: BodyId) -> crate::error::ApiResult<Vec<ShapeId>> {
         crate::core::debug_checks::check_body_valid(body)?;
-        Ok(crate::body::body_shapes_impl(body))
+        crate::body::body_shapes_impl(body)
     }
 
     pub fn try_body_shapes_into(
@@ -236,8 +237,7 @@ impl World {
         out: &mut Vec<ShapeId>,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
-        crate::body::body_shapes_into_impl(body, out);
-        Ok(())
+        crate::body::body_shapes_into_impl(body, out)
     }
 
     pub fn body_joint_count(&self, body: BodyId) -> i32 {
@@ -252,17 +252,18 @@ impl World {
 
     pub fn body_joints(&self, body: BodyId) -> Vec<JointId> {
         crate::core::debug_checks::assert_body_valid(body);
-        crate::body::body_joints_impl(body)
+        crate::body::body_joints_impl(body).expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT)
     }
 
     pub fn body_joints_into(&self, body: BodyId, out: &mut Vec<JointId>) {
         crate::core::debug_checks::assert_body_valid(body);
-        crate::body::body_joints_into_impl(body, out);
+        crate::body::body_joints_into_impl(body, out)
+            .expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT);
     }
 
     pub fn try_body_joints(&self, body: BodyId) -> crate::error::ApiResult<Vec<JointId>> {
         crate::core::debug_checks::check_body_valid(body)?;
-        Ok(crate::body::body_joints_impl(body))
+        crate::body::body_joints_impl(body)
     }
 
     pub fn try_body_joints_into(
@@ -271,7 +272,6 @@ impl World {
         out: &mut Vec<JointId>,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
-        crate::body::body_joints_into_impl(body, out);
-        Ok(())
+        crate::body::body_joints_into_impl(body, out)
     }
 }

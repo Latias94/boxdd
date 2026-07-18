@@ -3,13 +3,14 @@ use super::*;
 #[inline]
 pub(crate) fn record_shape_flags_on_create(
     core: &crate::core::world_core::WorldCore,
+    body: BodyId,
     id: ShapeId,
     def: &ShapeDef,
 ) {
     #[cfg(feature = "serialize")]
-    core.record_shape_flags(id, &def.0);
+    core.record_shape_flags(id, body, &def.0);
     #[cfg(not(feature = "serialize"))]
-    let _ = (core, id, def);
+    let _ = (core, body, id, def);
 }
 
 pub(crate) fn create_body_attached_shape_id_impl<G, R>(
@@ -26,7 +27,7 @@ pub(crate) fn create_body_attached_shape_id_impl<G, R>(
     assert_geometry_valid(geometry);
     let raw = into_raw(geometry);
     let id = ShapeId::from_raw(create_raw(body.into_raw(), &def.0, &raw));
-    record_shape_flags_on_create(core, id, def);
+    record_shape_flags_on_create(core, body, id, def);
     id
 }
 
@@ -44,7 +45,7 @@ pub(crate) fn try_create_body_attached_shape_id_impl<G, R>(
     check_geometry_valid(geometry)?;
     let raw = into_raw(geometry);
     let id = ShapeId::from_raw(create_raw(body.into_raw(), &def.0, &raw));
-    record_shape_flags_on_create(core, id, def);
+    record_shape_flags_on_create(core, body, id, def);
     Ok(id)
 }
 

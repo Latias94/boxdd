@@ -16,6 +16,19 @@ use crate::shapes::{OwnedShape, ShapeType, SurfaceMaterial};
 use crate::types::{BodyId, ChainId, JointId, ShapeId, Vec2};
 use crate::{Body, Joint, Shape, Transform, World};
 
+/// Set Box2D's process-wide length scale without synchronization.
+///
+/// # Safety
+///
+/// `length_units` must be finite and greater than zero. This function must be called exactly once,
+/// before any other Box2D call in the process, while no other thread can enter Box2D. Calling it
+/// after a world or another Box2D object exists, or racing it with any Box2D operation, can violate
+/// native global-state invariants and cause undefined behavior.
+#[inline]
+pub unsafe fn set_length_units_per_meter_unchecked(length_units: f32) {
+    unsafe { ffi::b2SetLengthUnitsPerMeter(length_units) }
+}
+
 #[inline]
 fn raw_body_id(id: BodyId) -> ffi::b2BodyId {
     id.into_raw()
@@ -150,12 +163,15 @@ unsafe fn chain_raw_surface_material_count_unchecked_impl(id: ChainId) -> i32 {
 
 #[inline]
 unsafe fn chain_segments_unchecked_impl(id: ChainId) -> Vec<ShapeId> {
-    let count = unsafe { chain_segment_count_unchecked_impl(id) }.max(0) as usize;
+    let count = unsafe { chain_segment_count_unchecked_impl(id) };
     let id = raw_chain_id(id);
     unsafe {
-        crate::core::ffi_vec::read_from_ffi(count, |ptr: *mut ShapeId, count| {
-            ffi::b2Chain_GetSegments(id, ptr.cast(), count)
-        })
+        crate::core::ffi_vec::read_mapped_from_ffi(
+            count,
+            |ptr, count| ffi::b2Chain_GetSegments(id, ptr, count),
+            ShapeId::from_raw,
+        )
+        .expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT)
     }
 }
 

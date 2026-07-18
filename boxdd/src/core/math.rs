@@ -113,14 +113,6 @@ pub fn length_units_per_meter() -> f32 {
     unsafe { ffi::b2GetLengthUnitsPerMeter() }
 }
 
-/// Set the global Box2D length-units scale.
-///
-/// Box2D requires this to be configured before any other Box2D usage.
-#[inline]
-pub fn set_length_units_per_meter(length_units: f32) {
-    unsafe { ffi::b2SetLengthUnitsPerMeter(length_units) }
-}
-
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct Rot {

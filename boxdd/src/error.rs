@@ -12,6 +12,7 @@
 //! - invalid definitions or strings crossing the FFI boundary
 //! - typed user-data mismatches
 //! - callback resource exhaustion for advanced callback registration
+//! - invalid native output capacities/counts or output-buffer allocation failure
 
 pub type ApiResult<T> = core::result::Result<T, ApiError>;
 
@@ -51,4 +52,16 @@ pub enum ApiError {
 
     #[error("no free callback slot is available for material mixing callbacks")]
     CallbackSlotsExhausted,
+
+    #[error("Box2D requested a negative FFI output capacity: {capacity}")]
+    NegativeFfiOutputCapacity { capacity: i32 },
+
+    #[error("Box2D returned a negative FFI output count: {count}")]
+    NegativeFfiOutputCount { count: i32 },
+
+    #[error("Box2D returned {count} FFI output values for capacity {capacity}")]
+    FfiOutputCountExceedsCapacity { count: i32, capacity: i32 },
+
+    #[error("failed to allocate an FFI output buffer")]
+    FfiOutputAllocationFailed,
 }

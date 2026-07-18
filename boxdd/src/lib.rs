@@ -294,7 +294,7 @@ pub use core::math::TransformFromMintError;
 pub use core::math::{
     HASH_INIT, Rot, Transform, Version, allocated_byte_count, atan2, compute_cos_sin, hash_bytes,
     is_valid_float, length_units_per_meter, milliseconds_and_reset, milliseconds_since,
-    rotation_between_unit_vectors, set_length_units_per_meter, ticks, version, yield_now,
+    rotation_between_unit_vectors, ticks, version, yield_now,
 };
 pub use debug_draw::{DebugDraw, DebugDrawCmd, DebugDrawOptions, HexColor};
 pub use dynamic_tree::{DynamicTree, TreeProxyId, TreeRayCastInput, TreeShapeCastInput, TreeStats};

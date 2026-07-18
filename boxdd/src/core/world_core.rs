@@ -546,11 +546,11 @@ impl WorldCore {
     }
 
     #[cfg(feature = "serialize")]
-    pub(crate) fn record_shape_flags(&self, sid: ShapeId, def: &ffi::b2ShapeDef) {
+    pub(crate) fn record_shape_flags(&self, sid: ShapeId, body: BodyId, def: &ffi::b2ShapeDef) {
         self.registries
             .lock()
             .expect("registries mutex poisoned")
-            .record_shape_flags(sid, def);
+            .record_shape_flags(sid, body, def);
     }
 
     #[cfg(feature = "serialize")]
@@ -572,7 +572,10 @@ impl WorldCore {
     #[cfg(feature = "serialize")]
     pub(crate) fn cleanup_before_destroy_body(&self, id: BodyId) {
         crate::core::callback_state::assert_not_in_callback();
-        let mut r = self.registries.lock().expect("registries mutex poisoned");
+        let mut r = self
+            .registries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         r.remove_shape_flags_for_body(id);
         r.remove_chains_for_body(id);
         r.remove_body(id);
