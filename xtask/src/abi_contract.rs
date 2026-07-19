@@ -514,13 +514,22 @@ fn map_inventory_impl(
 /// the generated conservative Raw policy, while removed declarations disappear from the active
 /// inventory contract.
 pub fn preserve_reviewed_exposure(previous: &AbiContract, generated: &mut AbiContract) {
+    let current_route_policy = generated
+        .policies
+        .iter()
+        .find(|policy| policy.id == ABI_POLICY_ID)
+        .cloned();
     let mut policies = generated
         .policies
         .drain(..)
         .map(|policy| (policy.id.clone(), policy))
         .collect::<BTreeMap<_, _>>();
     for policy in &previous.policies {
-        policies.insert(policy.id.clone(), policy.clone());
+        let policy = current_route_policy.as_ref().map_or_else(
+            || policy.clone(),
+            |current| inherit_policy_route_matrix(policy, current),
+        );
+        policies.insert(policy.id.clone(), policy);
     }
     generated.policies = policies.into_values().collect();
 
@@ -618,6 +627,17 @@ pub fn preserve_reviewed_exposure(previous: &AbiContract, generated: &mut AbiCon
     generated
         .policies
         .retain(|policy| used_policies.contains(policy.id.as_str()));
+}
+
+fn inherit_policy_route_matrix(
+    reviewed: &AbiCapabilityPolicy,
+    current: &AbiCapabilityPolicy,
+) -> AbiCapabilityPolicy {
+    let mut inherited = reviewed.clone();
+    inherited.modes.clone_from(&current.modes);
+    inherited.providers.clone_from(&current.providers);
+    inherited.availability.clone_from(&current.availability);
+    inherited
 }
 
 /// Drop inherited Safe exposure when its structural Rust proof no longer matches the refreshed
@@ -2652,12 +2672,13 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        AbiBindingIndex, AbiBindingIndexes, AbiBindingRoute, AbiPrecisionInventories,
-        AbiTypeMapping, declaration_mentions_identifier, map_precision_inventory,
-        mapping_proof_can_be_inherited,
+        AbiBindingIndex, AbiBindingIndexes, AbiBindingRoute, AbiCapabilityPolicy,
+        AbiPrecisionInventories, AbiTypeMapping, declaration_mentions_identifier,
+        inherit_policy_route_matrix, map_precision_inventory, mapping_proof_can_be_inherited,
     };
     use crate::{
         c_api::{CAbiPrecision, parse_headers, parse_headers_for_precision},
+        commands::api_coverage::Classification,
         commands::upstream_sync::{ArtifactProvider, ArtifactTarget, Precision, RustTarget},
         sys_abi_index::index_bindings,
     };
@@ -2673,6 +2694,32 @@ mod tests {
             "b2Foo callback",
             "b2FooExtended"
         ));
+    }
+
+    #[test]
+    fn reviewed_policy_inherits_current_route_matrix_without_changing_review() {
+        let reviewed = AbiCapabilityPolicy {
+            id: "safe-abi-adapter".to_owned(),
+            classification: Classification::Safe,
+            rationale: "The reviewed Safe adapter has an exact native ABI witness.".to_owned(),
+            modes: vec!["single".to_owned()],
+            providers: vec!["source".to_owned()],
+            availability: vec!["always".to_owned()],
+            evidence: vec!["abi-header-parser".to_owned()],
+        };
+        let current = AbiCapabilityPolicy {
+            modes: vec!["single".to_owned(), "double".to_owned()],
+            providers: vec!["source".to_owned()],
+            ..reviewed.clone()
+        };
+
+        let inherited = inherit_policy_route_matrix(&reviewed, &current);
+        assert_eq!(inherited.modes, current.modes);
+        assert_eq!(inherited.providers, current.providers);
+        assert_eq!(inherited.availability, current.availability);
+        assert_eq!(inherited.classification, reviewed.classification);
+        assert_eq!(inherited.rationale, reviewed.rationale);
+        assert_eq!(inherited.evidence, reviewed.evidence);
     }
 
     #[test]
