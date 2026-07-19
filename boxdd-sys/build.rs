@@ -334,7 +334,7 @@ fn reject_external_precision_overrides(target: &str) {
         };
         if value.to_string_lossy().contains("BOX2D_DOUBLE_PRECISION") {
             panic!(
-                "{key} must not define BOX2D_DOUBLE_PRECISION; use the `double-precision` Cargo feature so C and Rust select one ABI"
+                "{key} must not override BOX2D_DOUBLE_PRECISION; use the `double-precision` Cargo feature so C and Rust select one ABI"
             );
         }
     }

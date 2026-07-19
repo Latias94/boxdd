@@ -12,6 +12,7 @@ use tempfile::{NamedTempFile, TempDir};
 
 use crate::{
     Error, Result,
+    abi_probe::{AbiProbePrecision, GeneratedAbiProbe, generate_workspace_probe},
     commands::{UpdateMode, parse_update_mode},
     config::{
         UPSTREAM_MANIFEST_SCHEMA, read_toml, render_toml, write_atomic, write_atomic_bytes,
@@ -24,6 +25,7 @@ use crate::{
 const BOX2D_GITLINK: &str = "boxdd-sys/third-party/box2d";
 const UNINITIALIZED_BLAKE3: &str =
     "0000000000000000000000000000000000000000000000000000000000000000";
+const ABI_PROBE_METADATA_SCHEMA: u32 = 1;
 const GENERATOR_INPUT_PATHS: &[&str] = &[
     ".cargo",
     "Cargo.lock",
@@ -35,6 +37,7 @@ const GENERATOR_INPUT_PATHS: &[&str] = &[
     "boxdd-sys/Cargo.toml",
     "boxdd-sys/build.rs",
     "boxdd-sys/src",
+    "tools/abi-probe",
     "xtask/Cargo.toml",
     "xtask/src",
     "xtask/tests",
@@ -181,6 +184,35 @@ pub struct GeneratedArtifact {
     pub candidate_blake3: Option<String>,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+struct AbiProbeMetadata {
+    schema_version: u32,
+    upstream_sha: String,
+    repository: String,
+    source_tree: String,
+    source_inventory_blake3: String,
+    source_provenance: String,
+    provider_source_sha: String,
+    precision: Precision,
+    target: ArtifactTarget,
+    provider: ArtifactProvider,
+    producer: ArtifactProducer,
+    bindings_generation_target: RustTarget,
+    binding_artifact: String,
+    binding_blake3: String,
+    probe_content_blake3: String,
+    c_probe_blake3: String,
+    mixed_precision_c_probe_blake3: String,
+    rust_cases_blake3: String,
+    structure_count: usize,
+    field_count: usize,
+    layout_case_count: usize,
+    symbol_count: usize,
+    callback_count: usize,
+    callable_callback_count: usize,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BindingRoute {
@@ -222,7 +254,18 @@ pub struct UpstreamManifest {
 
 impl UpstreamManifest {
     pub fn load(paths: &WorkspacePaths) -> Result<Self> {
-        let manifest: Self = read_toml(&paths.upstream_manifest())?;
+        let path = paths.upstream_manifest();
+        let source = fs::read(&path).map_err(|error| Error::io(&path, error))?;
+        Self::from_bytes(paths, &source)
+    }
+
+    fn from_bytes(paths: &WorkspacePaths, source: &[u8]) -> Result<Self> {
+        let path = paths.upstream_manifest();
+        let source = std::str::from_utf8(source)
+            .map_err(|error| Error::message(format!("{} is not UTF-8: {error}", path.display())))?;
+        let manifest: Self = toml::from_str(source).map_err(|error| {
+            Error::message(format!("{}: invalid TOML: {error}", path.display()))
+        })?;
         validate_manifest(&manifest)?;
         validate_binding_route_feature_catalog(paths, &manifest.binding_routes)?;
         validate_binding_route_feature_catalog(paths, &manifest.next_binding_routes)?;
@@ -338,6 +381,12 @@ impl UpstreamManifest {
             .filter(|artifact| artifact.kind == ArtifactKind::Bindings)
     }
 
+    fn abi_metadata_artifacts(&self) -> impl Iterator<Item = &GeneratedArtifact> {
+        self.artifacts
+            .iter()
+            .filter(|artifact| artifact.kind == ArtifactKind::AbiMetadata)
+    }
+
     fn promoted_for_generation(&self, target: &str) -> Result<Self> {
         let mut promoted = self.clone();
         promoted.active_revision = target.to_owned();
@@ -369,6 +418,27 @@ pub struct UpstreamSnapshot {
     pub worktree_revision: String,
 }
 
+fn load_manifest_snapshot(
+    paths: &WorkspacePaths,
+    require_clean_generator_inputs: bool,
+) -> Result<(UpstreamManifest, ManagedSnapshot)> {
+    let loaded_generation = GenerationBaseline::capture_with_policy(paths.root(), false)?;
+    let manifest_path = paths.upstream_manifest();
+    let manifest_content =
+        fs::read(&manifest_path).map_err(|source| Error::io(&manifest_path, source))?;
+    let manifest = UpstreamManifest::from_bytes(paths, &manifest_content)?;
+    let require_clean_generator_inputs =
+        require_clean_generator_inputs || manifest.next_revision.is_some();
+    let baseline = if require_clean_generator_inputs {
+        ManagedSnapshot::capture(paths, &manifest)?
+    } else {
+        ManagedSnapshot::capture_observed(paths, &manifest)?
+    };
+    baseline.verify_loaded_state(paths, &manifest_content, &loaded_generation)?;
+    baseline.verify_all(paths)?;
+    Ok((manifest, baseline))
+}
+
 pub fn run(paths: &WorkspacePaths, args: &[String]) -> Result<()> {
     if matches!(args, [argument] if argument == "--prepare-next") {
         return prepare_next_candidate(paths);
@@ -379,9 +449,16 @@ pub fn run(paths: &WorkspacePaths, args: &[String]) -> Result<()> {
     let mode = parse_update_mode("upstream-sync", args)?;
     match mode {
         UpdateMode::Check => {
-            let manifest = UpstreamManifest::load(paths)?;
+            let _lock = UpdateLock::acquire(paths.root())?;
+            let (manifest, baseline) = load_manifest_snapshot(paths, false)?;
             let snapshot = validate_repository(paths, &manifest, false)?;
             super::api_coverage::check(paths)?;
+            if manifest.next_revision.is_some() {
+                let (summary, digest) =
+                    validate_registered_next_candidate(paths, &manifest, &baseline)?;
+                print_next_candidate_summary(&summary, &digest);
+            }
+            baseline.verify_all(paths)?;
             println!(
                 "upstream sync ok: active {}, next {}",
                 snapshot.active_revision,
@@ -416,12 +493,20 @@ struct NextCandidateRegistration<'a> {
 
 fn check_next_candidate(paths: &WorkspacePaths) -> Result<()> {
     let _lock = UpdateLock::acquire(paths.root())?;
-    let manifest = UpstreamManifest::load(paths)?;
-    let registration = next_candidate_registration(&manifest)?;
+    let (manifest, baseline) = load_manifest_snapshot(paths, true)?;
     validate_repository(paths, &manifest, true)?;
     super::api_coverage::check(paths)?;
+    let (summary, digest) = validate_registered_next_candidate(paths, &manifest, &baseline)?;
+    print_next_candidate_summary(&summary, &digest);
+    Ok(())
+}
 
-    let baseline = ManagedSnapshot::capture(paths, &manifest)?;
+fn validate_registered_next_candidate(
+    paths: &WorkspacePaths,
+    manifest: &UpstreamManifest,
+    baseline: &ManagedSnapshot,
+) -> Result<(NextCandidateSummary, String)> {
+    let registration = next_candidate_registration(manifest)?;
     let candidate_path = paths.root().join(registration.path);
     let registered =
         fs::read(&candidate_path).map_err(|source| Error::io(&candidate_path, source))?;
@@ -430,7 +515,7 @@ fn check_next_candidate(paths: &WorkspacePaths) -> Result<()> {
         &baseline.generation.repository_revision,
         registration.target,
     )?;
-    let rendered_result = generation.render_next_candidate(&manifest, registration.target);
+    let rendered_result = generation.render_next_candidate(manifest, registration.target);
     let cleanup_result = generation.finish();
     let rendered = match (rendered_result, cleanup_result) {
         (Ok(rendered), Ok(())) => rendered,
@@ -444,7 +529,11 @@ fn check_next_candidate(paths: &WorkspacePaths) -> Result<()> {
     };
 
     baseline.verify_all(paths)?;
-    let summary = validate_next_candidate_bytes(&manifest, &registered, &rendered)?;
+    let summary = validate_next_candidate_bytes(manifest, &registered, &rendered)?;
+    Ok((summary, registration.digest.to_owned()))
+}
+
+fn print_next_candidate_summary(summary: &NextCandidateSummary, digest: &str) {
     println!(
         "next API candidate ok: revision {}; functions {} (safe {}, raw {}, omitted {}, deferred {}); ABI {} structs/{} fields/{} callbacks; routes {}; blake3 {}",
         summary.upstream_sha,
@@ -457,9 +546,8 @@ fn check_next_candidate(paths: &WorkspacePaths) -> Result<()> {
         summary.abi_field_count,
         summary.abi_callback_count,
         summary.routes.join(", "),
-        registration.digest,
+        digest,
     );
-    Ok(())
 }
 
 fn next_candidate_registration(
@@ -518,6 +606,18 @@ fn validate_next_candidate_bytes(
         ));
     }
     Ok(rendered_summary)
+}
+
+fn validate_promotion_candidate(
+    root: &Path,
+    manifest: &UpstreamManifest,
+    rendered: &[u8],
+) -> Result<NextCandidateSummary> {
+    let registration = next_candidate_registration(manifest)?;
+    let registered_path = root.join(registration.path);
+    let registered =
+        fs::read(&registered_path).map_err(|source| Error::io(&registered_path, source))?;
+    validate_next_candidate_bytes(manifest, &registered, rendered)
 }
 
 fn summarize_next_candidate(
@@ -706,18 +806,16 @@ fn validate_candidate_mappings<'a>(
 
 fn prepare_next_candidate(paths: &WorkspacePaths) -> Result<()> {
     let _lock = UpdateLock::acquire(paths.root())?;
-    let manifest = UpstreamManifest::load(paths)?;
-    let manifest_baseline = fs::read(paths.upstream_manifest())
-        .map_err(|source| Error::io(paths.upstream_manifest(), source))?;
+    let (manifest, baseline) = load_manifest_snapshot(paths, true)?;
+    let manifest_baseline = baseline.manifest_content(paths)?.to_vec();
     validate_repository(paths, &manifest, true)?;
     super::api_coverage::check(paths)?;
-    let generation_baseline = GenerationBaseline::capture(paths.root())?;
     let target = manifest
         .next_revision
         .as_deref()
         .ok_or_else(|| Error::message("upstream manifest has no next_revision to prepare"))?;
     let generation =
-        IsolatedGeneration::create_at(paths, &generation_baseline.repository_revision, target)?;
+        IsolatedGeneration::create_at(paths, &baseline.generation.repository_revision, target)?;
     let candidate_result = generation.render_next_candidate(&manifest, target);
     let cleanup_result = generation.finish();
     let candidate = match (candidate_result, cleanup_result) {
@@ -730,7 +828,7 @@ fn prepare_next_candidate(paths: &WorkspacePaths) -> Result<()> {
             )));
         }
     };
-    generation_baseline.verify(paths.root())?;
+    baseline.verify_all(paths)?;
     let candidate_path = reviewed_candidate_path(manifest.artifact(ArtifactKind::ApiContract)?)?;
     let writes = [ManagedArtifactWrite::reviewed_candidate(
         "api-contract",
@@ -789,6 +887,7 @@ pub fn validate_repository(
     validate_candidate_identities(paths, manifest)?;
     validate_recording_input_identities(paths, manifest)?;
     validate_recording_operations(paths, manifest)?;
+    validate_abi_probe_artifacts(paths, manifest)?;
     if reject_managed_changes {
         reject_managed_changes_if_present(paths, manifest)?;
     }
@@ -916,6 +1015,12 @@ fn validate_manifest(manifest: &UpstreamManifest) -> Result<()> {
         (false, _) | (true, _) => {}
     }
     validate_binding_routes(&manifest.binding_routes, &manifest.artifacts, &mut errors);
+    validate_abi_metadata_topology(
+        &manifest.binding_routes,
+        &manifest.artifacts,
+        false,
+        &mut errors,
+    );
     validate_next_binding_topology(manifest, &mut errors);
     validate_recording_input_shape(&manifest.recording_inputs, &mut errors);
     validate_inventory_shape(&manifest.source_inventory, &mut errors);
@@ -944,10 +1049,13 @@ fn validate_next_binding_topology(manifest: &UpstreamManifest, errors: &mut Vec<
         return;
     }
     for artifact in &manifest.next_artifacts {
-        if artifact.kind != ArtifactKind::Bindings || artifact.producer != ArtifactProducer::Bindgen
-        {
+        if !matches!(
+            (artifact.kind, artifact.producer),
+            (ArtifactKind::Bindings, ArtifactProducer::Bindgen)
+                | (ArtifactKind::AbiMetadata, ArtifactProducer::AbiProbe)
+        ) {
             errors.push(format!(
-                "next artifact `{}` must be a bindgen-produced bindings artifact",
+                "next artifact `{}` must be produced by its deterministic bindings or ABI probe generator",
                 artifact.name
             ));
         }
@@ -968,6 +1076,77 @@ fn validate_next_binding_topology(manifest: &UpstreamManifest, errors: &mut Vec<
     projected_artifacts.extend(manifest.next_artifacts.iter().cloned());
     validate_artifacts(&projected_artifacts, errors);
     validate_binding_routes(&manifest.next_binding_routes, &projected_artifacts, errors);
+    validate_abi_metadata_topology(
+        &manifest.next_binding_routes,
+        &projected_artifacts,
+        projected_artifacts
+            .iter()
+            .any(|artifact| artifact.kind == ArtifactKind::AbiMetadata),
+        errors,
+    );
+}
+
+fn validate_abi_metadata_topology(
+    routes: &[BindingRoute],
+    artifacts: &[GeneratedArtifact],
+    required: bool,
+    errors: &mut Vec<String>,
+) {
+    let metadata = artifacts
+        .iter()
+        .filter(|artifact| artifact.kind == ArtifactKind::AbiMetadata)
+        .collect::<Vec<_>>();
+    if metadata.is_empty() && !required {
+        return;
+    }
+
+    let expected = routes
+        .iter()
+        .filter(|route| route.provider == ArtifactProvider::Source)
+        .map(|route| (route.mode, route.provider))
+        .collect::<BTreeSet<_>>();
+    let observed = metadata
+        .iter()
+        .filter_map(|artifact| {
+            artifact
+                .precision
+                .map(|precision| (precision, artifact.provider))
+        })
+        .collect::<BTreeSet<_>>();
+    if observed != expected {
+        errors.push(format!(
+            "source ABI metadata coordinates {observed:?} do not match source binding routes {expected:?}"
+        ));
+    }
+
+    for artifact in metadata {
+        if artifact.target != ArtifactTarget::Native {
+            errors.push(format!(
+                "ABI metadata artifact `{}` must target native C ABI qualification",
+                artifact.name
+            ));
+        }
+        if artifact.provider != ArtifactProvider::Source {
+            errors.push(format!(
+                "ABI metadata artifact `{}` must identify the vendored source provider; other providers require their own attestation contract",
+                artifact.name
+            ));
+        }
+        let Some(precision) = artifact.precision else {
+            continue;
+        };
+        if !routes
+            .iter()
+            .any(|route| route.mode == precision && route.provider == artifact.provider)
+        {
+            errors.push(format!(
+                "ABI metadata artifact `{}` has no matching {}/{} binding route",
+                artifact.name,
+                precision.as_str(),
+                artifact.provider.as_str()
+            ));
+        }
+    }
 }
 
 fn validate_binding_routes(
@@ -1463,13 +1642,12 @@ fn validate_inventory_group(
 
 fn apply_update(paths: &WorkspacePaths) -> Result<()> {
     let _lock = UpdateLock::acquire(paths.root())?;
-    let manifest = UpstreamManifest::load(paths)?;
+    let (manifest, baseline) = load_manifest_snapshot(paths, true)?;
     let target = manifest
         .next_revision
         .as_deref()
         .ok_or_else(|| Error::message("upstream manifest has no next_revision to apply"))?;
     validate_update_preconditions(paths, &manifest)?;
-    let baseline = ManagedSnapshot::capture(paths, &manifest)?;
 
     let staging =
         IsolatedGeneration::create_at(paths, &baseline.generation.repository_revision, target)?;
@@ -1581,6 +1759,18 @@ struct ManagedSnapshot {
 
 impl ManagedSnapshot {
     fn capture(paths: &WorkspacePaths, manifest: &UpstreamManifest) -> Result<Self> {
+        Self::capture_with(paths, manifest, true)
+    }
+
+    fn capture_observed(paths: &WorkspacePaths, manifest: &UpstreamManifest) -> Result<Self> {
+        Self::capture_with(paths, manifest, false)
+    }
+
+    fn capture_with(
+        paths: &WorkspacePaths,
+        manifest: &UpstreamManifest,
+        require_clean_generator_inputs: bool,
+    ) -> Result<Self> {
         let mut managed = BTreeSet::from([paths.upstream_manifest()]);
         for artifact in manifest.artifacts.iter().chain(&manifest.next_artifacts) {
             managed.insert(paths.root().join(&artifact.path));
@@ -1598,8 +1788,48 @@ impl ManagedSnapshot {
             gitlink_revision: indexed_gitlink_from_snapshot(paths.root(), &git_index)?,
             git_index,
             checkout: checkout_state(&paths.box2d())?,
-            generation: GenerationBaseline::capture(paths.root())?,
+            generation: GenerationBaseline::capture_with_policy(
+                paths.root(),
+                require_clean_generator_inputs,
+            )?,
         })
+    }
+
+    fn verify_loaded_state(
+        &self,
+        paths: &WorkspacePaths,
+        manifest_content: &[u8],
+        loaded_generation: &GenerationBaseline,
+    ) -> Result<()> {
+        let captured_manifest = self.manifest_content(paths)?;
+        if captured_manifest != manifest_content {
+            return Err(Error::message(
+                "upstream manifest changed between loading and preflight snapshot capture",
+            ));
+        }
+        if self.generation.repository_revision != loaded_generation.repository_revision {
+            return Err(Error::message(format!(
+                "repository HEAD changed between manifest loading and preflight snapshot capture: expected {}, observed {}",
+                loaded_generation.repository_revision, self.generation.repository_revision
+            )));
+        }
+        if self.generation.input_tree != loaded_generation.input_tree
+            || self.generation.worktree_blake3 != loaded_generation.worktree_blake3
+        {
+            return Err(Error::message(
+                "upstream generator inputs changed between manifest loading and preflight snapshot capture",
+            ));
+        }
+        Ok(())
+    }
+
+    fn manifest_content<'a>(&'a self, paths: &WorkspacePaths) -> Result<&'a [u8]> {
+        let manifest_path = paths.upstream_manifest();
+        self.files
+            .iter()
+            .find(|file| file.path == manifest_path)
+            .and_then(|file| file.content.as_deref())
+            .ok_or_else(|| Error::message("upstream manifest was absent from the snapshot"))
     }
 
     fn verify_all(&self, paths: &WorkspacePaths) -> Result<()> {
@@ -1665,10 +1895,16 @@ impl ManagedSnapshot {
 struct GenerationBaseline {
     repository_revision: String,
     input_tree: String,
+    worktree_blake3: String,
+    require_clean_inputs: bool,
 }
 
 impl GenerationBaseline {
     fn capture(root: &Path) -> Result<Self> {
+        Self::capture_with_policy(root, true)
+    }
+
+    fn capture_with_policy(root: &Path, require_clean_inputs: bool) -> Result<Self> {
         let repository_revision = git_output(root, ["rev-parse", "HEAD"])?.trim().to_owned();
         let dirty = git_output_with_paths(
             root,
@@ -1681,7 +1917,7 @@ impl GenerationBaseline {
             ],
             GENERATOR_INPUT_PATHS,
         )?;
-        if !dirty.trim().is_empty() {
+        if require_clean_inputs && !dirty.trim().is_empty() {
             return Err(Error::message(format!(
                 "upstream generator inputs are dirty; commit generator changes before producing revision-coupled artifacts:\n{dirty}"
             )));
@@ -1694,6 +1930,8 @@ impl GenerationBaseline {
         Ok(Self {
             repository_revision,
             input_tree,
+            worktree_blake3: generator_worktree_blake3(root)?,
+            require_clean_inputs,
         })
     }
 
@@ -1705,14 +1943,99 @@ impl GenerationBaseline {
                 self.repository_revision
             )));
         }
-        let actual = Self::capture(root)?;
+        let actual = Self::capture_with_policy(root, self.require_clean_inputs)?;
         if actual.input_tree != self.input_tree {
             return Err(Error::message(
                 "upstream generator input identities changed during generation",
             ));
         }
+        if actual.worktree_blake3 != self.worktree_blake3 {
+            return Err(Error::message(
+                "upstream generator input contents changed during generation",
+            ));
+        }
         Ok(())
     }
+}
+
+fn generator_worktree_blake3(root: &Path) -> Result<String> {
+    let mut entries = Vec::<(String, PathBuf, u8)>::new();
+    for relative in GENERATOR_INPUT_PATHS {
+        collect_generator_input_entries(root, &root.join(relative), &mut entries)?;
+    }
+    entries.sort_by(|left, right| left.0.cmp(&right.0));
+
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"boxdd-upstream-generator-worktree-v1\0");
+    for (relative, path, kind) in entries {
+        hasher.update(&[kind]);
+        hasher.update(&(relative.len() as u64).to_le_bytes());
+        hasher.update(relative.as_bytes());
+        match kind {
+            b'f' => {
+                let content = fs::read(&path).map_err(|source| Error::io(&path, source))?;
+                hasher.update(&(content.len() as u64).to_le_bytes());
+                hasher.update(&content);
+            }
+            b'l' => {
+                let target = fs::read_link(&path).map_err(|source| Error::io(&path, source))?;
+                let target = target.to_string_lossy();
+                hasher.update(&(target.len() as u64).to_le_bytes());
+                hasher.update(target.as_bytes());
+            }
+            b'd' | b'm' => {}
+            _ => unreachable!("generator input kind is controlled by the collector"),
+        }
+    }
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
+fn collect_generator_input_entries(
+    root: &Path,
+    path: &Path,
+    entries: &mut Vec<(String, PathBuf, u8)>,
+) -> Result<()> {
+    let relative = path.strip_prefix(root).map_err(|_| {
+        Error::message(format!(
+            "generator input {} is outside repository root {}",
+            path.display(),
+            root.display()
+        ))
+    })?;
+    let relative = canonical_manifest_path(relative).ok_or_else(|| {
+        Error::message(format!(
+            "generator input path {} is not canonical UTF-8",
+            path.display()
+        ))
+    })?;
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            entries.push((relative, path.to_owned(), b'm'));
+            return Ok(());
+        }
+        Err(error) => return Err(Error::io(path, error)),
+    };
+    let kind = if metadata.file_type().is_file() {
+        b'f'
+    } else if metadata.file_type().is_dir() {
+        b'd'
+    } else if metadata.file_type().is_symlink() {
+        b'l'
+    } else {
+        return Err(Error::message(format!(
+            "generator input {} has an unsupported file type",
+            path.display()
+        )));
+    };
+    entries.push((relative, path.to_owned(), kind));
+    if kind == b'd' {
+        for entry in fs::read_dir(path).map_err(|source| Error::io(path, source))? {
+            let entry = entry.map_err(|source| Error::io(path, source))?;
+            collect_generator_input_entries(root, &entry.path(), entries)?;
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug)]
@@ -2081,12 +2404,11 @@ fn validate_repository_without_artifact_digests(
 }
 
 fn validate_bootstrap_bindings(paths: &WorkspacePaths, manifest: &UpstreamManifest) -> Result<()> {
-    if let Some(artifact) = manifest.artifacts.iter().find(|artifact| {
-        matches!(
-            artifact.producer,
-            ArtifactProducer::AbiProbe | ArtifactProducer::ProviderAttestation
-        )
-    }) {
+    if let Some(artifact) = manifest
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.producer == ArtifactProducer::ProviderAttestation)
+    {
         return Err(Error::message(format!(
             "artifact digest bootstrap has no reproducible generator for target-native artifact `{}` produced by {}; bootstrap refuses to hash-and-bless it",
             artifact.name,
@@ -2101,7 +2423,9 @@ fn validate_bootstrap_bindings(paths: &WorkspacePaths, manifest: &UpstreamManife
     )?;
     let validation = (|| {
         generation.generate_bindings(manifest)?;
-        compare_binding_artifacts(paths.root(), &generation.worktree, manifest)
+        generation.generate_abi_metadata(manifest)?;
+        compare_binding_artifacts(paths.root(), &generation.worktree, manifest)?;
+        compare_abi_metadata_artifacts(paths.root(), &generation.worktree, manifest)
     })();
     let cleanup = generation.finish();
     match (validation, cleanup) {
@@ -2112,6 +2436,30 @@ fn validate_bootstrap_bindings(paths: &WorkspacePaths, manifest: &UpstreamManife
             "bootstrap bindings validation failed: {error}\nisolated worktree cleanup also failed: {cleanup}"
         ))),
     }
+}
+
+fn compare_abi_metadata_artifacts(
+    installed_root: &Path,
+    generated_root: &Path,
+    manifest: &UpstreamManifest,
+) -> Result<()> {
+    for artifact in manifest.abi_metadata_artifacts() {
+        let installed_path = installed_root.join(&artifact.path);
+        let generated_path = generated_root.join(&artifact.path);
+        let installed =
+            fs::read(&installed_path).map_err(|source| Error::io(&installed_path, source))?;
+        let generated =
+            fs::read(&generated_path).map_err(|source| Error::io(&generated_path, source))?;
+        if installed != generated {
+            return Err(Error::message(format!(
+                "bootstrap refuses to trust ABI metadata artifact `{}`: {} is not byte-for-byte reproducible from root revision {} and the native C probe",
+                artifact.name,
+                installed_path.display(),
+                manifest.active_revision
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn compare_binding_artifacts(
@@ -2134,6 +2482,235 @@ fn compare_binding_artifacts(
                 manifest.active_revision
             )));
         }
+    }
+    Ok(())
+}
+
+fn render_abi_probe_metadata(
+    root: &Path,
+    manifest: &UpstreamManifest,
+    artifact: &GeneratedArtifact,
+) -> Result<Vec<u8>> {
+    let precision = artifact.precision.ok_or_else(|| {
+        Error::message(format!(
+            "ABI metadata artifact `{}` has no precision",
+            artifact.name
+        ))
+    })?;
+    if artifact.target != ArtifactTarget::Native
+        || artifact.provider != ArtifactProvider::Source
+        || artifact.producer != ArtifactProducer::AbiProbe
+    {
+        return Err(Error::message(format!(
+            "ABI metadata artifact `{}` is not a native source ABI probe",
+            artifact.name
+        )));
+    }
+    let route = manifest
+        .binding_routes
+        .iter()
+        .find(|route| route.mode == precision && route.provider == artifact.provider)
+        .ok_or_else(|| {
+            Error::message(format!(
+                "ABI metadata artifact `{}` has no matching {}/{} binding route",
+                artifact.name,
+                precision.as_str(),
+                artifact.provider.as_str()
+            ))
+        })?;
+    let binding = manifest
+        .artifacts
+        .iter()
+        .find(|candidate| candidate.name == route.artifact)
+        .ok_or_else(|| {
+            Error::message(format!(
+                "ABI metadata artifact `{}` references missing bindings artifact `{}`",
+                artifact.name, route.artifact
+            ))
+        })?;
+    let generated = generate_workspace_probe(root, abi_probe_precision(precision))?;
+    let inventory = render_toml(&manifest.source_inventory)?;
+    let metadata = AbiProbeMetadata {
+        schema_version: ABI_PROBE_METADATA_SCHEMA,
+        upstream_sha: manifest.active_revision.clone(),
+        repository: manifest.repository.clone(),
+        source_tree: manifest.source_inventory.tree.clone(),
+        source_inventory_blake3: blake3_bytes(inventory.as_bytes()),
+        source_provenance: "official-gitlink".to_owned(),
+        provider_source_sha: manifest.active_revision.clone(),
+        precision,
+        target: artifact.target,
+        provider: artifact.provider,
+        producer: artifact.producer,
+        bindings_generation_target: route.rust_target,
+        binding_artifact: binding.name.clone(),
+        binding_blake3: file_blake3(&root.join(&binding.path))?,
+        probe_content_blake3: abi_probe_content_blake3(&generated),
+        c_probe_blake3: blake3_bytes(generated.c_source.as_bytes()),
+        mixed_precision_c_probe_blake3: blake3_bytes(generated.mixed_precision_c_source.as_bytes()),
+        rust_cases_blake3: blake3_bytes(generated.rust_source.as_bytes()),
+        structure_count: generated.struct_count,
+        field_count: generated.field_count,
+        layout_case_count: generated.layout_case_count,
+        symbol_count: generated.symbol_count,
+        callback_count: generated.callback_count,
+        callable_callback_count: generated.callable_callback_count,
+    };
+    Ok(render_toml(&metadata)?.into_bytes())
+}
+
+const fn abi_probe_precision(precision: Precision) -> AbiProbePrecision {
+    match precision {
+        Precision::Single => AbiProbePrecision::Single,
+        Precision::Double => AbiProbePrecision::Double,
+    }
+}
+
+fn blake3_bytes(content: &[u8]) -> String {
+    blake3::hash(content).to_hex().to_string()
+}
+
+fn abi_probe_content_blake3(generated: &GeneratedAbiProbe) -> String {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"boxdd-abi-probe-content-v1\0");
+    for (name, content) in [
+        ("c-probe", generated.c_source.as_bytes()),
+        (
+            "mixed-precision-c-probe",
+            generated.mixed_precision_c_source.as_bytes(),
+        ),
+        ("rust-cases", generated.rust_source.as_bytes()),
+    ] {
+        hasher.update(name.as_bytes());
+        hasher.update(&[0]);
+        hasher.update(&(content.len() as u64).to_le_bytes());
+        hasher.update(content);
+    }
+    hasher.finalize().to_hex().to_string()
+}
+
+fn run_abi_probe_test(
+    workspace_root: &Path,
+    target_dir: &Path,
+    precision: Precision,
+) -> Result<()> {
+    let mut command = Command::new("cargo");
+    command
+        .current_dir(workspace_root)
+        .args([
+            "test",
+            "--locked",
+            "-p",
+            "boxdd-abi-probe",
+            "--test",
+            "abi",
+            "--no-default-features",
+        ])
+        .env("CARGO_TARGET_DIR", target_dir.join(precision.as_str()));
+    for (name, _) in std::env::vars_os() {
+        if name.to_str().is_some_and(is_ambient_abi_probe_environment) {
+            command.env_remove(name);
+        }
+    }
+    if precision == Precision::Double {
+        command.args(["--features", "double-precision"]);
+    }
+    command_success_with_output(
+        &mut command,
+        &format!("run {}-precision C ABI probe", precision.as_str()),
+    )
+}
+
+fn is_ambient_abi_probe_environment(name: &str) -> bool {
+    let name = name.to_ascii_uppercase();
+    name == "BOX2D_LIB_DIR"
+        || name.starts_with("BOXDD_SYS_")
+        || name == "CFLAGS"
+        || name.starts_with("CFLAGS_")
+        || name.ends_with("_CFLAGS")
+        || name.starts_with("BINDGEN_EXTRA_CLANG_ARGS_")
+        || matches!(
+            name.as_str(),
+            "CPPFLAGS" | "CL" | "BINDGEN_EXTRA_CLANG_ARGS" | "DOCS_RS" | "CARGO_CFG_DOCSRS"
+        )
+}
+
+fn command_success_with_output(command: &mut Command, label: &str) -> Result<()> {
+    let output = command
+        .output()
+        .map_err(|source| Error::io(label, source))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(Error::message(format!(
+            "{label} failed with {}:\nstdout:\n{}\nstderr:\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout).trim(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        )))
+    }
+}
+
+fn validate_abi_probe_artifacts(paths: &WorkspacePaths, manifest: &UpstreamManifest) -> Result<()> {
+    let artifacts = manifest.abi_metadata_artifacts().collect::<Vec<_>>();
+    if artifacts.is_empty() {
+        #[cfg(test)]
+        return Ok(());
+        #[cfg(not(test))]
+        return Err(Error::message(
+            "upstream manifest has no C ABI metadata artifacts; single- and double-precision source routes must be qualified",
+        ));
+    }
+
+    let mut topology_errors = Vec::new();
+    validate_abi_metadata_topology(
+        &manifest.binding_routes,
+        &manifest.artifacts,
+        true,
+        &mut topology_errors,
+    );
+    if !topology_errors.is_empty() {
+        return Err(Error::message(topology_errors.join("\n")));
+    }
+
+    let mut precisions = BTreeSet::new();
+    for artifact in artifacts {
+        let path = paths.root().join(&artifact.path);
+        let observed = fs::read(&path).map_err(|source| Error::io(&path, source))?;
+        let expected = render_abi_probe_metadata(paths.root(), manifest, artifact)?;
+        if observed != expected {
+            return Err(Error::message(format!(
+                "ABI metadata artifact `{}` is not reproducible from revision {}: expected blake3 {}, observed blake3 {}; regenerate it through upstream-sync",
+                artifact.name,
+                manifest.active_revision,
+                blake3_bytes(&expected),
+                blake3_bytes(&observed)
+            )));
+        }
+        let source = std::str::from_utf8(&observed).map_err(|error| {
+            Error::message(format!(
+                "ABI metadata artifact `{}` is not UTF-8: {error}",
+                artifact.name
+            ))
+        })?;
+        let metadata: AbiProbeMetadata = toml::from_str(source).map_err(|error| {
+            Error::message(format!(
+                "ABI metadata artifact `{}` is invalid TOML: {error}",
+                artifact.name
+            ))
+        })?;
+        if metadata.schema_version != ABI_PROBE_METADATA_SCHEMA {
+            return Err(Error::message(format!(
+                "ABI metadata artifact `{}` schema {} does not match supported schema {ABI_PROBE_METADATA_SCHEMA}",
+                artifact.name, metadata.schema_version
+            )));
+        }
+        precisions.insert(metadata.precision);
+    }
+
+    let target_dir = paths.root().join("target/upstream-abi-probe");
+    for precision in precisions {
+        run_abi_probe_test(paths.root(), &target_dir, precision)?;
     }
     Ok(())
 }
@@ -2835,6 +3412,28 @@ impl IsolatedGeneration {
     fn prepare_update(&self, manifest: &UpstreamManifest, target: &str) -> Result<StagedUpdate> {
         let mut target_manifest = manifest.promoted_for_generation(target)?;
 
+        write_atomic(
+            &self.worktree.join("boxdd-sys/upstream.toml"),
+            &render_toml(&target_manifest)?,
+        )?;
+        set_indexed_gitlink(&self.worktree, target)?;
+        self.generate_bindings(&target_manifest)?;
+        self.generate_abi_metadata(&target_manifest)?;
+        if let Some(artifact) = target_manifest
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.kind == ArtifactKind::ProviderIdentity)
+        {
+            return Err(Error::message(format!(
+                "artifact `{}` requires its target-native {:?} generator before upstream-sync may stage an update",
+                artifact.name, artifact.producer
+            )));
+        }
+
+        let isolated_paths = WorkspacePaths::new(&self.worktree);
+        let rendered = super::api_coverage::render_refreshed_contract_candidate(&isolated_paths)?;
+        validate_promotion_candidate(&self.worktree, manifest, &rendered)?;
+
         for artifact in manifest.reviewed_artifacts() {
             let candidate = artifact.candidate_path.as_deref().ok_or_else(|| {
                 Error::message(format!(
@@ -2847,25 +3446,6 @@ impl IsolatedGeneration {
             write_atomic_bytes(&self.worktree.join(&artifact.path), &content)?;
         }
 
-        write_atomic(
-            &self.worktree.join("boxdd-sys/upstream.toml"),
-            &render_toml(&target_manifest)?,
-        )?;
-        set_indexed_gitlink(&self.worktree, target)?;
-        self.generate_bindings(&target_manifest)?;
-        if let Some(artifact) = target_manifest.artifacts.iter().find(|artifact| {
-            matches!(
-                artifact.kind,
-                ArtifactKind::AbiMetadata | ArtifactKind::ProviderIdentity
-            )
-        }) {
-            return Err(Error::message(format!(
-                "artifact `{}` requires its target-native {:?} generator before upstream-sync may stage an update",
-                artifact.name, artifact.producer
-            )));
-        }
-
-        let isolated_paths = WorkspacePaths::new(&self.worktree);
         let generated = super::api_coverage::render_generated_outputs(&isolated_paths)?;
         let recording_wire =
             target_manifest.artifact_path(&self.worktree, ArtifactKind::RecordingWire)?;
@@ -2920,6 +3500,7 @@ impl IsolatedGeneration {
         validate_recording_input_identities(&isolated_paths, &target_manifest)?;
         validate_recording_operations(&isolated_paths, &target_manifest)?;
         self.generate_bindings(&target_manifest)?;
+        self.generate_abi_metadata(&target_manifest)?;
         super::api_coverage::render_refreshed_contract_candidate(&isolated_paths)
     }
 
@@ -2975,6 +3556,39 @@ impl IsolatedGeneration {
                     "{}\n{content}",
                     binding_provenance(artifact, &manifest.active_revision, rust_target)
                 ),
+            )?;
+        }
+        Ok(())
+    }
+
+    fn generate_abi_metadata(&self, manifest: &UpstreamManifest) -> Result<()> {
+        let artifacts = manifest.abi_metadata_artifacts().collect::<Vec<_>>();
+        if artifacts.is_empty() {
+            #[cfg(test)]
+            return Ok(());
+            #[cfg(not(test))]
+            return Err(Error::message(
+                "upstream manifest has no C ABI metadata artifacts to generate",
+            ));
+        }
+
+        let mut precisions = BTreeSet::new();
+        for artifact in artifacts {
+            let precision = artifact.precision.ok_or_else(|| {
+                Error::message(format!(
+                    "ABI metadata artifact `{}` has no precision",
+                    artifact.name
+                ))
+            })?;
+            let content = render_abi_probe_metadata(&self.worktree, manifest, artifact)?;
+            write_atomic_bytes(&self.worktree.join(&artifact.path), &content)?;
+            precisions.insert(precision);
+        }
+        for precision in precisions {
+            run_abi_probe_test(
+                &self.worktree,
+                &self.target_dir.join("abi-probe"),
+                precision,
             )?;
         }
         Ok(())
@@ -4692,6 +5306,30 @@ mod tests {
     }
 
     #[test]
+    fn promotion_candidate_gate_rejects_legal_byte_drift_without_mutation() {
+        let root = TempDir::new().expect("candidate fixture root");
+        let mut pending = manifest();
+        let target = pending.next_revision.clone().expect("next revision");
+        let rendered = candidate_contract(&target, &["single"]);
+        let mut registered = rendered.clone();
+        registered.extend_from_slice(b"# reviewed formatting drift\n");
+        register_candidate_bytes(&mut pending, &registered);
+        let registration = next_candidate_registration(&pending).expect("candidate registration");
+        let path = root.path().join(registration.path);
+        fs::create_dir_all(path.parent().expect("candidate parent")).expect("candidate directory");
+        fs::write(&path, &registered).expect("registered candidate");
+
+        let error = validate_promotion_candidate(root.path(), &pending, &rendered)
+            .expect_err("promotion must reject structurally legal but non-reproducible bytes");
+
+        assert!(error.to_string().contains("candidate is stale"), "{error}");
+        assert_eq!(
+            fs::read(&path).expect("candidate after rejection"),
+            registered
+        );
+    }
+
+    #[test]
     fn manifest_rejects_lexical_path_aliases_before_transaction_keying() {
         for alias in [
             "boxdd-sys/src//bindings_pregenerated.rs",
@@ -4766,6 +5404,97 @@ mod tests {
             "bindings-single"
         );
         assert!(manifest.artifact(ArtifactKind::Bindings).is_err());
+    }
+
+    #[test]
+    fn abi_metadata_topology_exactly_covers_source_routes() {
+        let routes = dual_precision_routes();
+        let metadata = |precision: Precision, name: &str, path: &str| GeneratedArtifact {
+            name: name.to_owned(),
+            kind: ArtifactKind::AbiMetadata,
+            path: path.to_owned(),
+            precision: Some(precision),
+            target: ArtifactTarget::Native,
+            provider: ArtifactProvider::Source,
+            producer: ArtifactProducer::AbiProbe,
+            content_blake3: "1".repeat(64),
+            candidate_path: None,
+            candidate_blake3: None,
+        };
+        let artifacts = vec![
+            metadata(
+                Precision::Single,
+                "abi-source-single",
+                "boxdd-sys/abi/metadata/source-single.toml",
+            ),
+            metadata(
+                Precision::Double,
+                "abi-source-double",
+                "boxdd-sys/abi/metadata/source-double.toml",
+            ),
+        ];
+        let mut errors = Vec::new();
+        validate_abi_metadata_topology(&routes, &artifacts, true, &mut errors);
+        assert!(errors.is_empty(), "valid ABI metadata topology: {errors:?}");
+
+        let mut missing = Vec::new();
+        validate_abi_metadata_topology(&routes, &artifacts[..1], true, &mut missing);
+        assert!(
+            missing
+                .iter()
+                .any(|error| error.contains("do not match source binding routes"))
+        );
+
+        let mut wrong_provider = artifacts;
+        wrong_provider[0].provider = ArtifactProvider::SystemStatic;
+        let mut errors = Vec::new();
+        validate_abi_metadata_topology(&routes, &wrong_provider, true, &mut errors);
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("must identify the vendored source provider"))
+        );
+    }
+
+    #[test]
+    fn abi_probe_environment_cannot_select_an_ambient_provider_or_c_flags() {
+        for name in [
+            "BOX2D_LIB_DIR",
+            "BOXDD_SYS_LINK_KIND",
+            "BOXDD_SYS_SKIP_CC",
+            "CFLAGS",
+            "CFLAGS_x86_64_unknown_linux_gnu",
+            "x86_64_unknown_linux_gnu_CFLAGS",
+            "CPPFLAGS",
+            "CL",
+            "BINDGEN_EXTRA_CLANG_ARGS",
+            "BINDGEN_EXTRA_CLANG_ARGS_x86_64_unknown_linux_gnu",
+            "DOCS_RS",
+        ] {
+            assert!(is_ambient_abi_probe_environment(name), "{name}");
+        }
+        for name in ["CC", "AR", "PATH", "CARGO_HOME"] {
+            assert!(!is_ambient_abi_probe_environment(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn repository_abi_metadata_is_byte_reproducible() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("workspace root");
+        let paths = WorkspacePaths::new(root);
+        let manifest = UpstreamManifest::load(&paths).expect("repository manifest");
+        let artifacts = manifest.abi_metadata_artifacts().collect::<Vec<_>>();
+        assert_eq!(artifacts.len(), 2);
+        for artifact in artifacts {
+            let path = root.join(&artifact.path);
+            let observed = fs::read(&path).expect("checked-in ABI metadata");
+            let expected = render_abi_probe_metadata(root, &manifest, artifact)
+                .expect("regenerated ABI metadata");
+            assert_eq!(observed, expected, "{}", artifact.name);
+            assert_eq!(blake3_bytes(&observed), artifact.content_blake3);
+        }
     }
 
     #[test]
@@ -5014,7 +5743,7 @@ mod tests {
     }
 
     #[test]
-    fn target_manifest_matches_exact_target_commit_inventory() {
+    fn repository_manifest_matches_every_declared_revision_inventory() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .expect("workspace root");
@@ -5024,14 +5753,16 @@ mod tests {
             .expect("repository active inventory");
         validate_exact_inventory(&manifest.source_inventory, &observed_active)
             .expect("exact active inventory");
-        let next_revision = manifest.next_revision.as_deref().expect("next revision");
-        let observed_next =
-            source_inventory(&paths.box2d(), next_revision).expect("repository target inventory");
-        validate_exact_inventory(
-            manifest.next_inventory.as_ref().expect("next inventory"),
-            &observed_next,
-        )
-        .expect("exact target inventory");
+        match (&manifest.next_revision, &manifest.next_inventory) {
+            (Some(next_revision), Some(next_inventory)) => {
+                let observed_next = source_inventory(&paths.box2d(), next_revision)
+                    .expect("repository target inventory");
+                validate_exact_inventory(next_inventory, &observed_next)
+                    .expect("exact target inventory");
+            }
+            (None, None) => {}
+            _ => panic!("manifest validation must pair next_revision and next_inventory"),
+        }
     }
 
     #[test]
@@ -5135,14 +5866,14 @@ mod tests {
         assert!(error.to_string().contains("not byte-for-byte reproducible"));
 
         let mut unsupported = manifest.clone();
-        let mut abi_artifact = artifact.clone();
-        abi_artifact.name = "abi-single".to_owned();
-        abi_artifact.kind = ArtifactKind::AbiMetadata;
-        abi_artifact.path = "boxdd-sys/abi-single.toml".to_owned();
-        abi_artifact.target = ArtifactTarget::Native;
-        abi_artifact.provider = ArtifactProvider::Source;
-        abi_artifact.producer = ArtifactProducer::AbiProbe;
-        unsupported.artifacts.push(abi_artifact);
+        let mut provider_artifact = artifact.clone();
+        provider_artifact.name = "provider-single".to_owned();
+        provider_artifact.kind = ArtifactKind::ProviderIdentity;
+        provider_artifact.path = "boxdd-sys/provider-single.toml".to_owned();
+        provider_artifact.target = ArtifactTarget::Native;
+        provider_artifact.provider = ArtifactProvider::Source;
+        provider_artifact.producer = ArtifactProducer::ProviderAttestation;
+        unsupported.artifacts.push(provider_artifact);
         let error = validate_bootstrap_bindings(&fixture.paths(), &unsupported)
             .expect_err("unsupported native artifacts must not be hash-and-blessed");
         assert!(error.to_string().contains("no reproducible generator"));
@@ -5670,6 +6401,74 @@ mod tests {
         assert_eq!(
             indexed_gitlink(paths.root()).expect("unchanged gitlink"),
             fixture.active_revision
+        );
+    }
+
+    #[test]
+    fn loaded_state_rejects_manifest_and_head_changes_before_snapshot_capture() {
+        let manifest_drift = TemporaryWorkspace::create();
+        let paths = manifest_drift.paths();
+        let manifest = manifest_drift.manifest();
+        let loaded_manifest = fs::read(paths.upstream_manifest()).expect("loaded manifest");
+        let loaded_generation = GenerationBaseline::capture_with_policy(paths.root(), false)
+            .expect("loaded generation state");
+        let mut changed_manifest = loaded_manifest.clone();
+        changed_manifest.extend_from_slice(b"\n# concurrent committed review\n");
+        fs::write(paths.upstream_manifest(), changed_manifest).expect("concurrent manifest edit");
+        let baseline = ManagedSnapshot::capture_observed(&paths, &manifest)
+            .expect("snapshot after manifest drift");
+        let error = baseline
+            .verify_loaded_state(&paths, &loaded_manifest, &loaded_generation)
+            .expect_err("pre-snapshot manifest drift must fail closed");
+        assert!(
+            error
+                .to_string()
+                .contains("manifest changed between loading and preflight")
+        );
+
+        let head_drift = TemporaryWorkspace::create();
+        let paths = head_drift.paths();
+        let manifest = head_drift.manifest();
+        let loaded_manifest = fs::read(paths.upstream_manifest()).expect("loaded manifest");
+        let loaded_generation = GenerationBaseline::capture_with_policy(paths.root(), false)
+            .expect("loaded generation state");
+        fs::write(
+            paths.root().join("unrelated-tracked.txt"),
+            "concurrent committed state\n",
+        )
+        .expect("concurrent root edit");
+        run_git(paths.root(), &["add", "unrelated-tracked.txt"]);
+        run_git(paths.root(), &["commit", "-m", "concurrent root commit"]);
+        let baseline = ManagedSnapshot::capture_observed(&paths, &manifest)
+            .expect("snapshot after HEAD drift");
+        let error = baseline
+            .verify_loaded_state(&paths, &loaded_manifest, &loaded_generation)
+            .expect_err("pre-snapshot HEAD drift must fail closed");
+        assert!(
+            error
+                .to_string()
+                .contains("HEAD changed between manifest loading and preflight")
+        );
+    }
+
+    #[test]
+    fn observed_snapshot_detects_generator_edits_during_check() {
+        let fixture = TemporaryWorkspace::create();
+        let paths = fixture.paths();
+        let manifest = fixture.manifest();
+        let baseline =
+            ManagedSnapshot::capture_observed(&paths, &manifest).expect("observed snapshot");
+        let generator_input = paths.root().join("boxdd/Cargo.toml");
+        fs::write(&generator_input, "# concurrent generator edit\n")
+            .expect("concurrent generator edit");
+
+        let error = baseline
+            .verify_all(&paths)
+            .expect_err("check snapshot must reject generator input drift");
+        assert!(
+            error
+                .to_string()
+                .contains("generator input contents changed during generation")
         );
     }
 

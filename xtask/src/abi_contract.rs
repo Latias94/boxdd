@@ -1,6 +1,18 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    path::Path,
+};
 
 use serde::{Deserialize, Serialize};
+use syn::{
+    Attribute, Expr, Fields, FnArg, ForeignItem, Item, Lit, Meta, ReturnType, Type, TypeBareFn,
+    Visibility,
+    parse::Parser,
+    punctuated::Punctuated,
+    token::Comma,
+    visit::{self, Visit},
+};
 
 use crate::{
     Error, Result,
@@ -10,7 +22,7 @@ use crate::{
     commands::api_coverage::Classification,
     commands::upstream_sync::{ArtifactProvider, ArtifactTarget, Precision, RustTarget},
     rust_index::RustIndex,
-    sys_abi_index::{SysAbiAccessProjection, SysAbiAccessStep, SysAbiIndex},
+    sys_abi_index::{SysAbiAccessProjection, SysAbiAccessStep, SysAbiIndex, index_bindings},
 };
 
 const ABI_AVAILABILITY: &[&str] = &["always"];
@@ -92,24 +104,564 @@ pub struct AbiBindingIndex {
     pub target: ArtifactTarget,
     pub provider: ArtifactProvider,
     pub index: SysAbiIndex,
+    surface: AbiBindingSurface,
 }
 
 impl AbiBindingIndex {
-    pub fn new(
+    pub fn from_path(
         artifact: impl Into<String>,
         precision: Precision,
         target: ArtifactTarget,
         provider: ArtifactProvider,
-        index: SysAbiIndex,
-    ) -> Self {
-        Self {
+        path: &Path,
+    ) -> Result<Self> {
+        let surface = AbiBindingSurface::from_path(path)?;
+        surface.require_wasm_import_modules(precision, false)?;
+        Ok(Self {
             artifact: artifact.into(),
             precision,
             target,
             provider,
-            index,
+            index: index_bindings(path)?,
+            surface,
+        })
+    }
+
+    pub fn refresh_from_path(&mut self, path: &Path) -> Result<()> {
+        let index = index_bindings(path)?;
+        let surface = AbiBindingSurface::from_path(path)?;
+        surface.require_wasm_import_modules(self.precision, false)?;
+        self.index = index;
+        self.surface = surface;
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AbiAggregateKind {
+    Struct,
+    Union,
+}
+
+impl AbiAggregateKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Struct => "struct",
+            Self::Union => "union",
         }
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct AbiAggregateSurface {
+    kind: AbiAggregateKind,
+    fields: Vec<String>,
+    bindgen_opaque: bool,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct AbiExternBlockSurface {
+    functions: BTreeSet<String>,
+    wasm_import_module: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct AbiBindingSurface {
+    functions: BTreeSet<String>,
+    aggregates: BTreeMap<String, AbiAggregateSurface>,
+    type_aliases: BTreeSet<String>,
+    extern_blocks: Vec<AbiExternBlockSurface>,
+}
+
+impl AbiBindingSurface {
+    fn from_path(path: &Path) -> Result<Self> {
+        let source = fs::read_to_string(path).map_err(|source| Error::io(path, source))?;
+        let syntax = syn::parse_file(&source).map_err(|error| {
+            Error::message(format!(
+                "{}: invalid generated Rust bindings: {error}",
+                path.display()
+            ))
+        })?;
+        reject_abi_changing_attributes("binding file", &syntax.attrs)?;
+        let mut surface = Self::default();
+        for item in syntax.items {
+            match item {
+                Item::Struct(item) if is_public_visibility(&item.vis) => {
+                    let path = type_path(&item.ident.to_string());
+                    reject_abi_changing_attributes(&format!("aggregate `{path}`"), &item.attrs)?;
+                    for field in item.fields.iter() {
+                        let field_name = field
+                            .ident
+                            .as_ref()
+                            .map(ToString::to_string)
+                            .unwrap_or_else(|| "<unnamed>".to_owned());
+                        validate_abi_type(&format!("field `{path}::{field_name}`"), &field.ty)?;
+                    }
+                    let aggregate = AbiAggregateSurface {
+                        kind: AbiAggregateKind::Struct,
+                        fields: binding_field_names(&path, &item.fields)?,
+                        bindgen_opaque: is_bindgen_opaque_struct(&item),
+                    };
+                    if surface.aggregates.insert(path.clone(), aggregate).is_some() {
+                        return Err(Error::message(format!(
+                            "generated Rust ABI repeats public aggregate `{path}`"
+                        )));
+                    }
+                }
+                Item::Union(item) if is_public_visibility(&item.vis) => {
+                    let path = type_path(&item.ident.to_string());
+                    reject_abi_changing_attributes(&format!("aggregate `{path}`"), &item.attrs)?;
+                    let mut fields = Vec::new();
+                    for field in &item.fields.named {
+                        let field_name = field
+                            .ident
+                            .as_ref()
+                            .map(ToString::to_string)
+                            .unwrap_or_else(|| "<unnamed>".to_owned());
+                        reject_abi_changing_attributes(
+                            &format!("field `{path}::{field_name}`"),
+                            &field.attrs,
+                        )?;
+                        validate_abi_type(&format!("field `{path}::{field_name}`"), &field.ty)?;
+                        if field_name != "<unnamed>" {
+                            fields.push(field_name);
+                        }
+                    }
+                    let aggregate = AbiAggregateSurface {
+                        kind: AbiAggregateKind::Union,
+                        fields,
+                        bindgen_opaque: false,
+                    };
+                    if surface.aggregates.insert(path.clone(), aggregate).is_some() {
+                        return Err(Error::message(format!(
+                            "generated Rust ABI repeats public aggregate `{path}`"
+                        )));
+                    }
+                }
+                Item::Type(item) if is_public_visibility(&item.vis) => {
+                    let path = type_path(&item.ident.to_string());
+                    reject_abi_changing_attributes(&format!("type alias `{path}`"), &item.attrs)?;
+                    validate_abi_type(&format!("type alias `{path}`"), &item.ty)?;
+                    if !surface.type_aliases.insert(path.clone()) {
+                        return Err(Error::message(format!(
+                            "generated Rust ABI repeats public type alias `{path}`"
+                        )));
+                    }
+                }
+                Item::ForeignMod(item) => surface.index_foreign_block(item)?,
+                Item::Macro(item) => {
+                    let name = item
+                        .mac
+                        .path
+                        .segments
+                        .last()
+                        .map(|segment| segment.ident.to_string())
+                        .unwrap_or_else(|| "<macro>".to_owned());
+                    return Err(unindexable_public_abi_error(&format!(
+                        "macro invocation or definition `{name}`"
+                    )));
+                }
+                Item::Mod(item) => {
+                    return Err(unindexable_public_abi_error(&format!(
+                        "module `{}`",
+                        item.ident
+                    )));
+                }
+                Item::Use(item) if is_public_visibility(&item.vis) => {
+                    return Err(unindexable_public_abi_error("public re-export"));
+                }
+                Item::ExternCrate(item) if is_public_visibility(&item.vis) => {
+                    return Err(unindexable_public_abi_error(
+                        "public extern-crate re-export",
+                    ));
+                }
+                Item::Enum(item) if is_public_visibility(&item.vis) => {
+                    return Err(unindexable_public_abi_error(&format!(
+                        "public enum `{}`",
+                        item.ident
+                    )));
+                }
+                Item::Fn(item) if is_public_visibility(&item.vis) => {
+                    return Err(unindexable_public_abi_error(&format!(
+                        "public Rust function `{}`",
+                        item.sig.ident
+                    )));
+                }
+                Item::Static(item) if is_public_visibility(&item.vis) => {
+                    return Err(unindexable_public_abi_error(&format!(
+                        "public static `{}`",
+                        item.ident
+                    )));
+                }
+                Item::Trait(item) if is_public_visibility(&item.vis) => {
+                    return Err(unindexable_public_abi_error(&format!(
+                        "public trait `{}`",
+                        item.ident
+                    )));
+                }
+                Item::TraitAlias(item) if is_public_visibility(&item.vis) => {
+                    return Err(unindexable_public_abi_error(&format!(
+                        "public trait alias `{}`",
+                        item.ident
+                    )));
+                }
+                Item::Impl(_) => {
+                    return Err(unindexable_public_abi_error("implementation block"));
+                }
+                Item::Verbatim(_) => {
+                    return Err(unindexable_public_abi_error("unparsed Rust tokens"));
+                }
+                _ => {}
+            }
+        }
+        Ok(surface)
+    }
+
+    fn index_foreign_block(&mut self, item: syn::ItemForeignMod) -> Result<()> {
+        reject_abi_changing_attributes("extern block", &item.attrs)?;
+        let abi = item.abi.name.as_ref().map(syn::LitStr::value);
+        let wasm_import_module = parse_wasm_import_module(&item.attrs)?;
+        let mut block_functions = BTreeSet::new();
+        for item in item.items {
+            match item {
+                ForeignItem::Fn(function) => {
+                    let name = function.sig.ident.to_string();
+                    if !is_public_visibility(&function.vis) {
+                        continue;
+                    }
+                    reject_abi_changing_attributes(
+                        &format!("foreign function `{name}`"),
+                        &function.attrs,
+                    )?;
+                    if !name.starts_with("b2") {
+                        return Err(unindexable_public_abi_error(&format!(
+                            "public foreign function `{name}`"
+                        )));
+                    }
+                    if abi.as_deref() != Some("C") {
+                        return Err(Error::message(format!(
+                            "generated Rust ABI foreign function `{name}` must be declared in an explicit extern-C block"
+                        )));
+                    }
+                    for (index, argument) in function.sig.inputs.iter().enumerate() {
+                        match argument {
+                            FnArg::Receiver(receiver) => {
+                                reject_abi_changing_attributes(
+                                    &format!("foreign function `{name}` argument {index}"),
+                                    &receiver.attrs,
+                                )?;
+                                return Err(Error::message(format!(
+                                    "generated Rust ABI foreign function `{name}` contains a receiver parameter"
+                                )));
+                            }
+                            FnArg::Typed(argument) => {
+                                let subject = format!("foreign function `{name}` argument {index}");
+                                reject_abi_changing_attributes(&subject, &argument.attrs)?;
+                                validate_abi_type(&subject, &argument.ty)?;
+                            }
+                        }
+                    }
+                    if let Some(variadic) = &function.sig.variadic {
+                        reject_abi_changing_attributes(
+                            &format!("foreign function `{name}` variadic parameter"),
+                            &variadic.attrs,
+                        )?;
+                    }
+                    if let ReturnType::Type(_, result) = &function.sig.output {
+                        validate_abi_type(&format!("foreign function `{name}` result"), result)?;
+                    }
+                    if !self.functions.insert(name.clone()) {
+                        return Err(Error::message(format!(
+                            "generated Rust ABI repeats public foreign function `{name}`"
+                        )));
+                    }
+                    block_functions.insert(name);
+                }
+                ForeignItem::Macro(_) | ForeignItem::Verbatim(_) => {
+                    return Err(unindexable_public_abi_error(
+                        "macro or unparsed tokens inside an extern block",
+                    ));
+                }
+                ForeignItem::Static(item) if is_public_visibility(&item.vis) => {
+                    return Err(unindexable_public_abi_error(&format!(
+                        "public foreign static `{}`",
+                        item.ident
+                    )));
+                }
+                ForeignItem::Type(item) if is_public_visibility(&item.vis) => {
+                    return Err(unindexable_public_abi_error(&format!(
+                        "public foreign type `{}`",
+                        item.ident
+                    )));
+                }
+                _ => {}
+            }
+        }
+        if !block_functions.is_empty() {
+            self.extern_blocks.push(AbiExternBlockSurface {
+                functions: block_functions,
+                wasm_import_module,
+            });
+        }
+        Ok(())
+    }
+
+    fn require_wasm_import_modules(&self, precision: Precision, required: bool) -> Result<()> {
+        let expected = expected_wasm_import_module(precision);
+        let require_every_block = required
+            || self
+                .extern_blocks
+                .iter()
+                .any(|block| block.wasm_import_module.is_some());
+        for block in &self.extern_blocks {
+            match block.wasm_import_module.as_deref() {
+                Some(actual) if actual != expected => {
+                    return Err(Error::message(format!(
+                        "generated Rust ABI extern block for {:?} imports WASM module `{actual}`, expected `{expected}` for {} precision",
+                        block.functions,
+                        precision.as_str()
+                    )));
+                }
+                None if require_every_block => {
+                    return Err(Error::message(format!(
+                        "generated Rust ABI extern block for {:?} is missing `#[link(wasm_import_module = \"{expected}\")]`",
+                        block.functions
+                    )));
+                }
+                Some(_) | None => {}
+            }
+        }
+        Ok(())
+    }
+}
+
+fn binding_field_names(owner: &str, fields: &Fields) -> Result<Vec<String>> {
+    match fields {
+        Fields::Named(fields) => fields
+            .named
+            .iter()
+            .filter_map(|field| {
+                field
+                    .ident
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .map(|name| (name, &field.attrs))
+            })
+            .map(|(name, attrs)| {
+                reject_abi_changing_attributes(&format!("field `{owner}::{name}`"), attrs)?;
+                Ok(name)
+            })
+            .collect(),
+        Fields::Unnamed(fields) => fields
+            .unnamed
+            .iter()
+            .enumerate()
+            .map(|(index, field)| {
+                let name = format!("_{index}");
+                reject_abi_changing_attributes(&format!("field `{owner}::{name}`"), &field.attrs)?;
+                Ok(name)
+            })
+            .collect(),
+        Fields::Unit => Ok(Vec::new()),
+    }
+}
+
+fn reject_abi_changing_attributes(subject: &str, attrs: &[Attribute]) -> Result<()> {
+    for attribute in attrs {
+        let disallowed = ["cfg", "cfg_attr", "link_name", "link_ordinal"]
+            .into_iter()
+            .find(|name| attribute.path().is_ident(name));
+        if let Some(attribute_name) = disallowed {
+            return Err(Error::message(format!(
+                "generated Rust ABI {subject} uses unsupported `#[{attribute_name}]`; indexed ABI declarations must be unconditional and preserve their physical symbol names"
+            )));
+        }
+        if attribute.path().is_ident("derive") {
+            validate_abi_derives(subject, attribute)?;
+            continue;
+        }
+        if !["doc", "repr", "link"]
+            .into_iter()
+            .any(|name| attribute.path().is_ident(name))
+        {
+            return Err(Error::message(format!(
+                "generated Rust ABI {subject} uses an unsupported attribute macro; only bindgen's built-in doc, repr, derive, and link attributes can be indexed as a closed-world public ABI surface"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_abi_derives(subject: &str, attribute: &Attribute) -> Result<()> {
+    let Meta::List(list) = &attribute.meta else {
+        return Err(Error::message(format!(
+            "generated Rust ABI {subject} has malformed derive metadata"
+        )));
+    };
+    let derives = Punctuated::<syn::Path, Comma>::parse_terminated
+        .parse2(list.tokens.clone())
+        .map_err(|error| {
+            Error::message(format!(
+                "generated Rust ABI {subject} has malformed derive metadata: {error}"
+            ))
+        })?;
+    if derives.iter().all(|derive| {
+        ["Debug", "Copy", "Clone"]
+            .into_iter()
+            .any(|name| derive.is_ident(name))
+    }) {
+        return Ok(());
+    }
+    Err(Error::message(format!(
+        "generated Rust ABI {subject} uses a custom derive macro that cannot be indexed as a closed-world public ABI surface"
+    )))
+}
+
+struct AbiTypeValidator<'a> {
+    subject: &'a str,
+    error: Option<String>,
+}
+
+impl<'ast> Visit<'ast> for AbiTypeValidator<'_> {
+    fn visit_attribute(&mut self, attribute: &'ast Attribute) {
+        if self.error.is_none()
+            && let Err(error) =
+                reject_abi_changing_attributes(self.subject, std::slice::from_ref(attribute))
+        {
+            self.error = Some(error.to_string());
+        }
+        visit::visit_attribute(self, attribute);
+    }
+
+    fn visit_type_bare_fn(&mut self, bare_fn: &'ast TypeBareFn) {
+        let is_c = bare_fn
+            .abi
+            .as_ref()
+            .and_then(|abi| abi.name.as_ref())
+            .is_some_and(|name| name.value() == "C");
+        if self.error.is_none() && (bare_fn.unsafety.is_none() || !is_c) {
+            self.error = Some(format!(
+                "generated Rust ABI {} contains a bare function pointer that is not `unsafe extern \"C\" fn`",
+                self.subject
+            ));
+        }
+        visit::visit_type_bare_fn(self, bare_fn);
+    }
+
+    fn visit_macro(&mut self, _macro: &'ast syn::Macro) {
+        if self.error.is_none() {
+            self.error = Some(format!(
+                "generated Rust ABI {} contains macro-expanded type syntax that cannot be indexed as a closed-world public ABI surface",
+                self.subject
+            ));
+        }
+    }
+}
+
+fn validate_abi_type(subject: &str, rust_type: &Type) -> Result<()> {
+    let mut validator = AbiTypeValidator {
+        subject,
+        error: None,
+    };
+    validator.visit_type(rust_type);
+    validator
+        .error
+        .map_or(Ok(()), |error| Err(Error::message(error)))
+}
+
+fn parse_wasm_import_module(attrs: &[Attribute]) -> Result<Option<String>> {
+    let parser = Punctuated::<Meta, Comma>::parse_terminated;
+    let mut module = None;
+    for attribute in attrs
+        .iter()
+        .filter(|attribute| attribute.path().is_ident("link"))
+    {
+        let Meta::List(list) = &attribute.meta else {
+            return Err(Error::message(
+                "generated Rust ABI extern block has malformed `#[link]` metadata",
+            ));
+        };
+        let nested = parser.parse2(list.tokens.clone()).map_err(|error| {
+            Error::message(format!(
+                "generated Rust ABI extern block has malformed `#[link]` metadata: {error}"
+            ))
+        })?;
+        for meta in nested {
+            if !meta.path().is_ident("wasm_import_module") {
+                return Err(Error::message(
+                    "generated Rust ABI extern block contains unsupported `#[link]` metadata; only `wasm_import_module` is allowed",
+                ));
+            }
+            let Meta::NameValue(name_value) = meta else {
+                return Err(Error::message(
+                    "generated Rust ABI `wasm_import_module` must be one string literal",
+                ));
+            };
+            let Expr::Lit(value) = name_value.value else {
+                return Err(Error::message(
+                    "generated Rust ABI `wasm_import_module` must be one string literal",
+                ));
+            };
+            let Lit::Str(value) = value.lit else {
+                return Err(Error::message(
+                    "generated Rust ABI `wasm_import_module` must be one string literal",
+                ));
+            };
+            if module.replace(value.value()).is_some() {
+                return Err(Error::message(
+                    "generated Rust ABI extern block repeats `wasm_import_module`",
+                ));
+            }
+        }
+    }
+    Ok(module)
+}
+
+fn expected_wasm_import_module(precision: Precision) -> &'static str {
+    match precision {
+        Precision::Single => "box2d-sys-v0-single",
+        Precision::Double => "box2d-sys-v0-double",
+    }
+}
+
+fn is_bindgen_opaque_struct(item: &syn::ItemStruct) -> bool {
+    let Fields::Named(fields) = &item.fields else {
+        return false;
+    };
+    let Some(field) = fields.named.first().filter(|_| fields.named.len() == 1) else {
+        return false;
+    };
+    let is_private_unused = matches!(field.vis, Visibility::Inherited)
+        && field.ident.as_ref().is_some_and(|ident| ident == "_unused");
+    let Type::Array(array) = &field.ty else {
+        return false;
+    };
+    let is_u8 = matches!(array.elem.as_ref(), Type::Path(path) if path.qself.is_none() && path.path.is_ident("u8"));
+    let is_zero = matches!(&array.len, Expr::Lit(value) if matches!(&value.lit, Lit::Int(value) if value.base10_parse::<u64>().is_ok_and(|value| value == 0)));
+    is_private_unused && is_u8 && is_zero && has_repr_c(&item.attrs)
+}
+
+fn has_repr_c(attrs: &[Attribute]) -> bool {
+    let parser = Punctuated::<Meta, Comma>::parse_terminated;
+    attrs.iter().any(|attribute| {
+        let Meta::List(list) = &attribute.meta else {
+            return false;
+        };
+        attribute.path().is_ident("repr")
+            && parser
+                .parse2(list.tokens.clone())
+                .is_ok_and(|metas| metas.iter().any(|meta| meta.path().is_ident("C")))
+    })
+}
+
+fn unindexable_public_abi_error(subject: &str) -> Error {
+    Error::message(format!(
+        "generated Rust ABI contains {subject}, which cannot be indexed as a closed-world public ABI surface"
+    ))
+}
+
+fn is_public_visibility(visibility: &Visibility) -> bool {
+    matches!(visibility, Visibility::Public(_))
 }
 
 pub type AbiBindingIndexes = BTreeMap<String, AbiBindingIndex>;
@@ -367,6 +919,14 @@ fn map_inventory_impl(
     binding_routes: &AbiBindingRoutes,
     binding_indexes: &AbiBindingIndexes,
 ) -> Result<AbiContract> {
+    if precision_inventories.is_some() {
+        require_exact_routed_binding_type_surfaces(
+            inventory,
+            precision_inventories,
+            binding_routes,
+            binding_indexes,
+        )?;
+    }
     let policy = default_policy(binding_routes);
     let coordinates = coordinates(&policy);
     let mut structs = Vec::with_capacity(inventory.structs.len());
@@ -380,12 +940,15 @@ fn map_inventory_impl(
                 let resolved_path =
                     require_resolved_type(&binding.index, &path, &declaration.name)?;
                 let abi_fingerprint = precision_inventories.map_or_else(
-                    || Ok(String::new()),
+                    || {
+                        require_exact_struct_projection(declaration, binding, &path)?;
+                        Ok(String::new())
+                    },
                     |inventories| {
                         require_struct_abi_fingerprint(
                             declaration,
                             require_precision_inventory(mode, inventories)?,
-                            &binding.index,
+                            binding,
                             &path,
                         )
                     },
@@ -805,6 +1368,7 @@ fn copy_field_exposure(target: &mut AbiFieldContract, source: &AbiFieldContract)
 pub struct AbiValidationContext<'a> {
     inventory: &'a CApiInventory,
     precision_inventories: Option<&'a AbiPrecisionInventories>,
+    expected_function_count: Option<usize>,
     binding_routes: &'a AbiBindingRoutes,
     binding_indexes: &'a AbiBindingIndexes,
     function_symbols: &'a AbiFunctionSymbols,
@@ -824,6 +1388,7 @@ impl<'a> AbiValidationContext<'a> {
         Self {
             inventory,
             precision_inventories: None,
+            expected_function_count: None,
             binding_routes,
             binding_indexes,
             function_symbols,
@@ -845,12 +1410,18 @@ impl<'a> AbiValidationContext<'a> {
         Self {
             inventory,
             precision_inventories: Some(precision_inventories),
+            expected_function_count: None,
             binding_routes,
             binding_indexes,
             function_symbols,
             rust_indexes,
             evidence_ids,
         }
+    }
+
+    pub fn with_expected_function_count(mut self, expected: Option<usize>) -> Self {
+        self.expected_function_count = expected;
+        self
     }
 }
 
@@ -881,6 +1452,13 @@ pub fn validate(
         errors,
     );
     let mut used_policies = BTreeSet::new();
+    validate_referenced_binding_types(
+        context.inventory,
+        context.precision_inventories,
+        context.binding_routes,
+        context.binding_indexes,
+        errors,
+    );
     validate_structs(contract, context, &policies, &mut used_policies, errors);
     validate_callbacks(contract, context, &policies, &mut used_policies, errors);
     for policy in policies.keys() {
@@ -890,6 +1468,7 @@ pub fn validate(
     }
     validate_referenced_binding_functions(
         context.inventory,
+        context.expected_function_count,
         context.binding_routes,
         context.binding_indexes,
         context.function_symbols,
@@ -1211,7 +1790,7 @@ fn validate_struct_mappings(
     validate_mapping_coordinates(subject, mappings, policy, errors);
     let expected_path = type_path(&declaration.name);
     for mapping in mappings {
-        let Some(index) = mapping_binding_index(
+        let Some(binding) = mapping_binding(
             subject,
             &mapping.mode,
             &mapping.provider,
@@ -1221,6 +1800,7 @@ fn validate_struct_mappings(
         ) else {
             continue;
         };
+        let index = &binding.index;
         let expected_resolved = match index.resolved_type_path(&expected_path) {
             Ok(Some(path)) => Some(path),
             Ok(None) => {
@@ -1256,9 +1836,16 @@ fn validate_struct_mappings(
                 declaration,
                 mapping,
                 precision_inventories,
-                index,
+                binding,
                 errors,
             );
+        } else if let Err(error) =
+            require_exact_struct_projection(declaration, binding, &expected_path)
+        {
+            errors.push(format!(
+                "{subject} at `{}/{}`: {error}",
+                mapping.mode, mapping.provider
+            ));
         }
     }
 }
@@ -2219,12 +2806,176 @@ fn require_precision_inventory<'a>(
     Ok(inventory)
 }
 
+fn require_exact_routed_binding_type_surfaces(
+    inventory: &CApiInventory,
+    precision_inventories: Option<&AbiPrecisionInventories>,
+    binding_routes: &AbiBindingRoutes,
+    binding_indexes: &AbiBindingIndexes,
+) -> Result<()> {
+    let mut checked = BTreeSet::new();
+    for route in binding_routes.values() {
+        if !checked.insert((route.artifact.as_str(), route.mode.as_str())) {
+            continue;
+        }
+        let binding = binding_indexes.get(&route.artifact).ok_or_else(|| {
+            Error::message(format!(
+                "binding route `{}/{}` references missing artifact `{}`",
+                route.mode, route.provider, route.artifact
+            ))
+        })?;
+        let precision_inventory = precision_inventories
+            .map(|inventories| require_precision_inventory(&route.mode, inventories))
+            .transpose()?;
+        require_exact_binding_type_surface(inventory, precision_inventory, binding)?;
+    }
+    Ok(())
+}
+
+fn require_exact_binding_type_surface(
+    inventory: &CApiInventory,
+    precision_inventory: Option<&PrecisionCApiInventory>,
+    binding: &AbiBindingIndex,
+) -> Result<()> {
+    let mut expected_aggregates = BTreeSet::new();
+    for declaration in &inventory.structs {
+        let path = type_path(&declaration.name);
+        let resolved = binding.index.resolved_type_path(&path)?.ok_or_else(|| {
+            Error::message(format!(
+                "generated Rust binding has no type for C struct `{}`",
+                declaration.name
+            ))
+        })?;
+        expected_aggregates.insert(resolved);
+        let projections = require_exact_struct_projection(declaration, binding, &path)?;
+        expected_aggregates.extend(
+            projections
+                .iter()
+                .flat_map(|projection| projection.steps.iter())
+                .map(|step| step.owner_type.clone()),
+        );
+    }
+    if let Some(precision_inventory) = precision_inventory {
+        for opaque in &precision_inventory.opaques {
+            let path = type_path(&opaque.name);
+            expected_aggregates.insert(path.clone());
+            let Some(aggregate) = binding.surface.aggregates.get(&path) else {
+                continue;
+            };
+            if !aggregate.bindgen_opaque {
+                return Err(Error::message(format!(
+                    "generated Rust aggregate `{path}` for opaque C type `{}` is not the exact bindgen opaque repr-C struct",
+                    opaque.name
+                )));
+            }
+        }
+    }
+
+    let actual_aggregates = binding
+        .surface
+        .aggregates
+        .keys()
+        .filter(|path| is_public_b2_type_path(path))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    if actual_aggregates != expected_aggregates {
+        let missing = expected_aggregates
+            .difference(&actual_aggregates)
+            .cloned()
+            .collect::<Vec<_>>();
+        let extra = actual_aggregates
+            .difference(&expected_aggregates)
+            .cloned()
+            .collect::<Vec<_>>();
+        return Err(Error::message(format!(
+            "binding artifact `{}` public b2 aggregates do not exactly match the C aggregate inventory; missing {missing:?}, extra {extra:?}",
+            binding.artifact
+        )));
+    }
+
+    let expected_callbacks = inventory
+        .callbacks
+        .iter()
+        .map(|callback| type_path(&callback.name))
+        .collect::<BTreeSet<_>>();
+    let mut actual_callbacks = BTreeSet::new();
+    for path in binding
+        .surface
+        .type_aliases
+        .iter()
+        .filter(|path| is_public_b2_type_path(path))
+    {
+        if binding.index.callback_abi_shape(path)?.is_some() {
+            actual_callbacks.insert(path.clone());
+        }
+    }
+    if actual_callbacks != expected_callbacks {
+        let missing = expected_callbacks
+            .difference(&actual_callbacks)
+            .cloned()
+            .collect::<Vec<_>>();
+        let extra = actual_callbacks
+            .difference(&expected_callbacks)
+            .cloned()
+            .collect::<Vec<_>>();
+        return Err(Error::message(format!(
+            "binding artifact `{}` public b2 callback aliases do not exactly match the C callback inventory; missing {missing:?}, extra {extra:?}",
+            binding.artifact
+        )));
+    }
+    Ok(())
+}
+
+fn validate_referenced_binding_types(
+    inventory: &CApiInventory,
+    precision_inventories: Option<&AbiPrecisionInventories>,
+    binding_routes: &AbiBindingRoutes,
+    binding_indexes: &AbiBindingIndexes,
+    errors: &mut Vec<String>,
+) {
+    let Some(precision_inventories) = precision_inventories else {
+        return;
+    };
+    let mut checked = BTreeSet::new();
+    for route in binding_routes.values() {
+        if !checked.insert((route.artifact.as_str(), route.mode.as_str())) {
+            continue;
+        }
+        let Some(binding) = binding_indexes.get(&route.artifact) else {
+            continue;
+        };
+        let precision_inventory =
+            match require_precision_inventory(&route.mode, precision_inventories) {
+                Ok(inventory) => Some(inventory),
+                Err(error) => {
+                    errors.push(error.to_string());
+                    continue;
+                }
+            };
+        if let Err(error) =
+            require_exact_binding_type_surface(inventory, precision_inventory, binding)
+        {
+            errors.push(format!(
+                "binding artifact `{}` at `{}/{}`: {error}",
+                route.artifact, route.mode, route.provider
+            ));
+        }
+    }
+}
+
+fn is_public_b2_type_path(path: &str) -> bool {
+    path.rsplit("::")
+        .next()
+        .is_some_and(|name| name.starts_with("b2"))
+}
+
 fn require_struct_abi_fingerprint(
     declaration: &StructDecl,
     c_inventory: &PrecisionCApiInventory,
-    rust_index: &SysAbiIndex,
+    binding: &AbiBindingIndex,
     rust_path: &str,
 ) -> Result<String> {
+    let projections = require_exact_struct_projection(declaration, binding, rust_path)?;
+    let rust_index = &binding.index;
     let c_shape = c_inventory.type_shape(&declaration.name).ok_or_else(|| {
         Error::message(format!(
             "{}-precision C ABI inventory has no effective type `{}`",
@@ -2246,8 +2997,13 @@ fn require_struct_abi_fingerprint(
     // Bindgen materializes anonymous C unions/structs as named wrapper fields. Compare the same
     // public C leaf inventory through the exact generated access projections to normalize that
     // representational difference without accepting a primitive or callback type mismatch.
-    let (projected_c, projected_rust) =
-        projected_struct_shapes(declaration, c_inventory, rust_index, rust_path)?;
+    let (projected_c, projected_rust) = projected_struct_shapes(
+        declaration,
+        c_inventory,
+        rust_index,
+        rust_path,
+        &projections,
+    )?;
     let projected_c_fingerprint = projected_c.fingerprint();
     let projected_rust_fingerprint = projected_rust.fingerprint();
     if projected_c_fingerprint != projected_rust_fingerprint {
@@ -2260,11 +3016,190 @@ fn require_struct_abi_fingerprint(
     Ok(projected_c_fingerprint)
 }
 
+fn require_exact_struct_projection(
+    declaration: &StructDecl,
+    binding: &AbiBindingIndex,
+    rust_path: &str,
+) -> Result<Vec<SysAbiAccessProjection>> {
+    let resolved_root = binding
+        .index
+        .resolved_type_path(rust_path)?
+        .ok_or_else(|| {
+            Error::message(format!(
+                "generated Rust binding has no resolved ABI type for `{rust_path}`"
+            ))
+        })?;
+    let root = binding
+        .surface
+        .aggregates
+        .get(&resolved_root)
+        .ok_or_else(|| {
+            Error::message(format!(
+                "generated Rust binding resolves C struct `{}` to non-aggregate `{resolved_root}`",
+                declaration.name
+            ))
+        })?;
+    if root.kind != AbiAggregateKind::Struct {
+        return Err(Error::message(format!(
+            "generated Rust aggregate `{resolved_root}` for C struct `{}` is a {}, expected struct",
+            declaration.name,
+            root.kind.as_str()
+        )));
+    }
+
+    let projections = declaration
+        .fields
+        .iter()
+        .map(|field| require_field_projection(&binding.index, rust_path, &field.name))
+        .collect::<Result<Vec<_>>>()?;
+    let mut projected_fields = BTreeMap::<String, Vec<String>>::new();
+    projected_fields.entry(resolved_root).or_default();
+    let mut overlay_locations = BTreeMap::<String, (Vec<SysAbiAccessStep>, String)>::new();
+    let mut groups_by_location = BTreeMap::<(Vec<SysAbiAccessStep>, String), String>::new();
+    for (field, projection) in declaration.fields.iter().zip(&projections) {
+        for (step_index, step) in projection.steps.iter().enumerate() {
+            if !step.field.starts_with("__bindgen_anon_") {
+                continue;
+            }
+            let Some(next_step) = projection.steps.get(step_index + 1) else {
+                continue;
+            };
+            let target_is_struct = binding
+                .surface
+                .aggregates
+                .get(&next_step.owner_type)
+                .is_some_and(|aggregate| aggregate.kind == AbiAggregateKind::Struct);
+            let proven_union_alternative = binding
+                .surface
+                .aggregates
+                .get(&step.owner_type)
+                .is_some_and(|aggregate| aggregate.kind == AbiAggregateKind::Union)
+                && field
+                    .overlays
+                    .iter()
+                    .any(|overlay| overlay.alternative.starts_with("anonymous_struct@"));
+            if target_is_struct && !proven_union_alternative {
+                return Err(Error::message(format!(
+                    "generated Rust projection for `{}::{}` crosses anonymous struct wrapper `{}::{}` without an exact C anonymous-struct overlay proof",
+                    declaration.name, field.name, step.owner_type, step.field
+                )));
+            }
+        }
+        for step in &projection.steps {
+            let owner_fields = projected_fields.entry(step.owner_type.clone()).or_default();
+            if !owner_fields.contains(&step.field) {
+                owner_fields.push(step.field.clone());
+            }
+        }
+
+        let union_steps = projection
+            .steps
+            .iter()
+            .enumerate()
+            .filter_map(|(index, step)| {
+                binding
+                    .surface
+                    .aggregates
+                    .get(&step.owner_type)
+                    .is_some_and(|aggregate| aggregate.kind == AbiAggregateKind::Union)
+                    .then_some((index, step))
+            })
+            .collect::<Vec<_>>();
+        if union_steps.len() != field.overlays.len() {
+            return Err(Error::message(format!(
+                "generated Rust projection for `{}::{}` crosses {} union owner(s), but the C declaration records {} overlay group(s); struct/union kind drift is not allowed",
+                declaration.name,
+                field.name,
+                union_steps.len(),
+                field.overlays.len()
+            )));
+        }
+        for (overlay, (step_index, step)) in field.overlays.iter().zip(union_steps) {
+            if !overlay.alternative.starts_with("anonymous_")
+                && step.field != overlay.alternative
+                && step.field.strip_suffix('_') != Some(overlay.alternative.as_str())
+            {
+                return Err(Error::message(format!(
+                    "generated Rust union `{}` selects field `{}`, expected C overlay alternative `{}` for `{}::{}`",
+                    step.owner_type, step.field, overlay.alternative, declaration.name, field.name
+                )));
+            }
+            let location = (
+                projection.steps[..step_index].to_vec(),
+                step.owner_type.clone(),
+            );
+            if let Some(previous) =
+                overlay_locations.insert(overlay.group.clone(), location.clone())
+                && previous != location
+            {
+                return Err(Error::message(format!(
+                    "C overlay group `{}` maps to multiple generated Rust union locations: `{}` and `{}`",
+                    overlay.group,
+                    describe_union_location(&previous),
+                    describe_union_location(&location)
+                )));
+            }
+            if let Some(previous) =
+                groups_by_location.insert(location.clone(), overlay.group.clone())
+                && previous != overlay.group
+            {
+                return Err(Error::message(format!(
+                    "generated Rust union location `{}` merges distinct C overlay groups `{previous}` and `{}`",
+                    describe_union_location(&location),
+                    overlay.group
+                )));
+            }
+        }
+    }
+
+    for (owner, projected) in projected_fields {
+        let aggregate = binding.surface.aggregates.get(&owner).ok_or_else(|| {
+            Error::message(format!(
+                "generated Rust projection owner `{owner}` has no aggregate surface"
+            ))
+        })?;
+        let generated = aggregate.fields.iter().cloned().collect::<BTreeSet<_>>();
+        let expected = projected.iter().cloned().collect::<BTreeSet<_>>();
+        let order_mismatch = aggregate.kind == AbiAggregateKind::Struct
+            && aggregate.fields.as_slice() != projected.as_slice();
+        if generated != expected || order_mismatch {
+            let missing = expected.difference(&generated).cloned().collect::<Vec<_>>();
+            let extra = generated.difference(&expected).cloned().collect::<Vec<_>>();
+            if missing.is_empty() && extra.is_empty() {
+                return Err(Error::message(format!(
+                    "generated Rust struct `{owner}` field order does not match the exact C field projection for `{}`; expected {projected:?}, generated {:?}",
+                    declaration.name, aggregate.fields
+                )));
+            }
+            return Err(Error::message(format!(
+                "generated Rust aggregate `{owner}` is not covered by the exact C field projection for `{}`; missing generated fields {missing:?}, unmatched generated fields {extra:?}",
+                declaration.name
+            )));
+        }
+    }
+    Ok(projections)
+}
+
+fn describe_union_location(location: &(Vec<SysAbiAccessStep>, String)) -> String {
+    let (prefix, owner) = location;
+    let access = prefix
+        .iter()
+        .map(|step| step.field.as_str())
+        .collect::<Vec<_>>()
+        .join("::");
+    if access.is_empty() {
+        owner.clone()
+    } else {
+        format!("{access} ({owner})")
+    }
+}
+
 fn projected_struct_shapes(
     declaration: &StructDecl,
     c_inventory: &PrecisionCApiInventory,
     rust_index: &SysAbiIndex,
     rust_path: &str,
+    projections: &[SysAbiAccessProjection],
 ) -> Result<(AbiTypeShape, AbiTypeShape)> {
     let c_root = c_inventory.type_shape(&declaration.name).ok_or_else(|| {
         Error::message(format!(
@@ -2275,7 +3210,7 @@ fn projected_struct_shapes(
     })?;
     let mut c_fields = Vec::with_capacity(declaration.fields.len());
     let mut rust_fields = Vec::with_capacity(declaration.fields.len());
-    for field in &declaration.fields {
+    for (field, projection) in declaration.fields.iter().zip(projections) {
         let c_shape = effective_field_shape(c_root, &field.name).ok_or_else(|| {
             Error::message(format!(
                 "{}-precision C ABI type `{}` has no field `{}`",
@@ -2284,9 +3219,8 @@ fn projected_struct_shapes(
                 field.name
             ))
         })?;
-        let projection = require_field_projection(rust_index, rust_path, &field.name)?;
         let rust_shape = rust_index
-            .field_access_abi_shape(&projection)?
+            .field_access_abi_shape(projection)?
             .ok_or_else(|| {
                 Error::message(format!(
                     "generated Rust binding has no ABI shape for projected field `{rust_path}::{}`",
@@ -2410,14 +3344,14 @@ fn validate_struct_mapping_fingerprint(
     declaration: &StructDecl,
     mapping: &AbiTypeMapping,
     precision_inventories: &AbiPrecisionInventories,
-    rust_index: &SysAbiIndex,
+    binding: &AbiBindingIndex,
     errors: &mut Vec<String>,
 ) {
     match require_precision_inventory(&mapping.mode, precision_inventories).and_then(|inventory| {
         require_struct_abi_fingerprint(
             declaration,
             inventory,
-            rust_index,
+            binding,
             &type_path(&declaration.name),
         )
     }) {
@@ -2544,6 +3478,7 @@ fn field_mapping(
 
 fn validate_referenced_binding_functions(
     inventory: &CApiInventory,
+    expected_function_count: Option<usize>,
     binding_routes: &AbiBindingRoutes,
     binding_indexes: &AbiBindingIndexes,
     function_symbols: &AbiFunctionSymbols,
@@ -2558,6 +3493,15 @@ fn validate_referenced_binding_functions(
         let Some(binding) = binding_indexes.get(&route.artifact) else {
             continue;
         };
+        if let Err(error) = binding
+            .surface
+            .require_wasm_import_modules(binding.precision, expected_function_count.is_some())
+        {
+            errors.push(format!(
+                "binding artifact `{}` at `{}/{}`: {error}",
+                route.artifact, coordinate.0, coordinate.1
+            ));
+        }
         let Some(symbols) = function_symbols.get(coordinate) else {
             errors.push(format!(
                 "binding route `{}/{}` has no physical function symbol map",
@@ -2571,6 +3515,39 @@ fn validate_referenced_binding_functions(
                 "binding route `{}/{}` physical symbol map does not cover the exact active C function inventory",
                 coordinate.0, coordinate.1
             ));
+        }
+        let expected_symbols = symbols.values().cloned().collect::<BTreeSet<_>>();
+        let actual_symbols = &binding.surface.functions;
+        let missing_symbols = expected_symbols
+            .difference(actual_symbols)
+            .cloned()
+            .collect::<Vec<_>>();
+        let extra_symbols = actual_symbols
+            .difference(&expected_symbols)
+            .cloned()
+            .collect::<Vec<_>>();
+        if !missing_symbols.is_empty() || !extra_symbols.is_empty() {
+            errors.push(format!(
+                "binding artifact `{}` public extern-C b2* functions do not exactly match header-derived physical symbols at `{}/{}`; missing {missing_symbols:?}, extra {extra_symbols:?}",
+                route.artifact, coordinate.0, coordinate.1
+            ));
+        }
+        if let Some(expected_count) = expected_function_count {
+            if expected_symbols.len() != expected_count {
+                errors.push(format!(
+                    "binding route `{}/{}` header-derived physical symbol count is {}, expected exactly {expected_count}",
+                    coordinate.0,
+                    coordinate.1,
+                    expected_symbols.len()
+                ));
+            }
+            if actual_symbols.len() != expected_count {
+                errors.push(format!(
+                    "binding artifact `{}` public extern-C b2* function count is {}, expected exactly {expected_count}",
+                    route.artifact,
+                    actual_symbols.len()
+                ));
+            }
         }
         for (logical_name, physical_symbol) in symbols {
             let path = type_path(physical_symbol);
@@ -2680,7 +3657,6 @@ mod tests {
         c_api::{CAbiPrecision, parse_headers, parse_headers_for_precision},
         commands::api_coverage::Classification,
         commands::upstream_sync::{ArtifactProvider, ArtifactTarget, Precision, RustTarget},
-        sys_abi_index::index_bindings,
     };
 
     #[test]
@@ -2775,6 +3751,433 @@ mod tests {
     }
 
     #[test]
+    fn precision_mapping_rejects_unmatched_generated_struct_fields() {
+        let error = map_fixture(
+            "typedef struct b2Pos { float x; } b2Pos;",
+            "#[repr(C)] pub struct b2Pos { pub x: f32, pub extra: u64 }",
+            CAbiPrecision::Single,
+        )
+        .expect_err("generated fields absent from C must fail closed");
+        assert!(
+            error
+                .to_string()
+                .contains("unmatched generated fields [\"extra\"]"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn precision_mapping_rejects_root_struct_union_kind_drift() {
+        let error = map_fixture(
+            "typedef struct b2Pos { float x; } b2Pos;",
+            "#[repr(C)] pub union b2Pos { pub x: f32 }",
+            CAbiPrecision::Single,
+        )
+        .expect_err("a Rust union cannot represent a C struct");
+        assert!(
+            error.to_string().contains("is a union, expected struct"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn precision_mapping_rejects_anonymous_union_kind_drift() {
+        let error = map_fixture(
+            "typedef struct b2Example { union { float x; unsigned int y; }; } b2Example;",
+            r#"
+                #[repr(C)]
+                pub struct b2Example {
+                    pub __bindgen_anon_1: b2Example__bindgen_ty_1,
+                }
+                #[repr(C)]
+                pub struct b2Example__bindgen_ty_1 {
+                    pub x: f32,
+                    pub y: u32,
+                }
+            "#,
+            CAbiPrecision::Single,
+        )
+        .expect_err("an anonymous C union cannot become a Rust struct");
+        assert!(
+            error
+                .to_string()
+                .contains("without an exact C anonymous-struct overlay proof"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn precision_mapping_rejects_reordered_repr_c_struct_fields() {
+        let error = map_fixture(
+            "typedef struct b2Pair { unsigned char first; unsigned long long second; } b2Pair;",
+            "#[repr(C)] pub struct b2Pair { pub second: u64, pub first: u8 }",
+            CAbiPrecision::Single,
+        )
+        .expect_err("repr-C field order must match the C declaration exactly");
+        assert!(
+            error.to_string().contains("field order does not match"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn binding_surface_rejects_cfg_gated_abi_fields() {
+        let error = map_fixture(
+            "typedef struct b2Pos { float x; } b2Pos;",
+            "#[repr(C)] pub struct b2Pos { #[cfg(any())] pub x: f32 }",
+            CAbiPrecision::Single,
+        )
+        .expect_err("cfg-gated ABI fields must not count as generated surface");
+        assert!(
+            error.to_string().contains("uses unsupported `#[cfg]`"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn binding_surface_rejects_cfg_in_callback_bare_fn_parameters() {
+        let error = binding_fixture(
+            r#"
+                pub type b2Callback = Option<
+                    unsafe extern "C" fn(#[cfg(any())] value: u32)
+                >;
+            "#,
+            Precision::Single,
+        )
+        .expect_err("cfg-gated callback parameters must fail closed");
+        assert!(
+            error.to_string().contains("uses unsupported `#[cfg]`"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn binding_surface_rejects_cfg_on_callback_bare_fn_variadics() {
+        let error = binding_fixture(
+            r#"
+                pub type b2Callback = Option<
+                    unsafe extern "C" fn(value: u32, #[cfg(any())] ...)
+                >;
+            "#,
+            Precision::Single,
+        )
+        .expect_err("cfg-gated callback variadics must fail closed");
+        assert!(
+            error.to_string().contains("uses unsupported `#[cfg]`"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn binding_surface_rejects_cfg_inside_foreign_function_types_and_variadics() {
+        for binding in [
+            r#"
+                unsafe extern "C" {
+                    pub fn b2Run(
+                        callback: Option<unsafe extern "C" fn(#[cfg(any())] value: u32)>
+                    );
+                }
+            "#,
+            r#"
+                unsafe extern "C" {
+                    pub fn b2Run(value: u32, #[cfg(any())] ...);
+                }
+            "#,
+        ] {
+            let error = binding_fixture(binding, Precision::Single)
+                .expect_err("cfg-gated foreign ABI parameters must fail closed");
+            assert!(
+                error.to_string().contains("uses unsupported `#[cfg]`"),
+                "unexpected error: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn binding_surface_rejects_safe_or_non_c_callback_function_pointers() {
+        for binding in [
+            "pub type b2Callback = Option<extern \"C\" fn(value: u32)>;",
+            "pub type b2Callback = Option<unsafe fn(value: u32)>;",
+        ] {
+            let error = binding_fixture(binding, Precision::Single)
+                .expect_err("C callbacks must remain unsafe extern-C function pointers");
+            assert!(
+                error
+                    .to_string()
+                    .contains("is not `unsafe extern \"C\" fn`"),
+                "unexpected error: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn binding_surface_rejects_link_ordinal_symbol_remapping() {
+        let error = binding_fixture(
+            r#"
+                unsafe extern "C" {
+                    #[link_ordinal(7)]
+                    pub fn b2Run();
+                }
+            "#,
+            Precision::Single,
+        )
+        .expect_err("ordinal imports bypass physical symbol validation");
+        assert!(
+            error
+                .to_string()
+                .contains("uses unsupported `#[link_ordinal]`"),
+            "unexpected error: {error}"
+        );
+
+        let renamed = binding_fixture(
+            r#"unsafe extern "C" { #[link_name = "b2Forged"] pub fn forged(); }"#,
+            Precision::Single,
+        )
+        .expect_err("a non-b2 Rust name must not remap to a b2 physical symbol");
+        assert!(
+            renamed
+                .to_string()
+                .contains("uses unsupported `#[link_name]`"),
+            "unexpected error: {renamed}"
+        );
+    }
+
+    #[test]
+    fn binding_surface_rejects_wrong_or_partial_wasm_import_modules() {
+        let wrong = binding_fixture(
+            r#"
+                #[link(wasm_import_module = "wrong-module")]
+                unsafe extern "C" { pub fn b2Run(); }
+            "#,
+            Precision::Single,
+        )
+        .expect_err("wrong precision module must fail closed");
+        assert!(
+            wrong.to_string().contains("expected `box2d-sys-v0-single`"),
+            "unexpected error: {wrong}"
+        );
+
+        let partial = binding_fixture(
+            r#"
+                #[link(wasm_import_module = "box2d-sys-v0-single")]
+                unsafe extern "C" { pub fn b2First(); }
+                unsafe extern "C" { pub fn b2Second(); }
+            "#,
+            Precision::Single,
+        )
+        .expect_err("every b2 extern block must carry the same module");
+        assert!(
+            partial.to_string().contains("is missing `#[link"),
+            "unexpected error: {partial}"
+        );
+
+        let native_link_override = binding_fixture(
+            r#"
+                #[link(name = "forged", wasm_import_module = "box2d-sys-v0-single")]
+                unsafe extern "C" { pub fn b2Run(); }
+            "#,
+            Precision::Single,
+        )
+        .expect_err("additional link metadata can alter the physical linkage");
+        assert!(
+            native_link_override
+                .to_string()
+                .contains("unsupported `#[link]` metadata"),
+            "unexpected error: {native_link_override}"
+        );
+    }
+
+    #[test]
+    fn target_binding_surface_requires_wasm_module_on_every_extern_block() {
+        let binding = binding_fixture("unsafe extern \"C\" { pub fn b2Run(); }", Precision::Double)
+            .expect("minimal fixtures may defer mandatory module validation");
+        let error = binding
+            .surface
+            .require_wasm_import_modules(Precision::Double, true)
+            .expect_err("a formal target binding must declare its precision module");
+        assert!(
+            error.to_string().contains("box2d-sys-v0-double"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn binding_surface_rejects_unindexable_public_abi_extensions() {
+        for binding in [
+            "include!(\"other.rs\");",
+            "mod nested { pub struct b2Hidden; }",
+            "pub use nested::b2Hidden;",
+            "generate_bindings!();",
+            "unsafe extern \"C\" { generate_bindings!(); }",
+            "pub fn b2Forged() {}",
+            "#[unsafe(no_mangle)] pub extern \"C\" fn forged() {}",
+            "pub struct b2Value { pub raw: u32 } impl b2Value { pub fn forged(&self) {} }",
+            "#[repr(C)] pub struct b2Value { pub bytes: [u8; abi_len!()] }",
+            "#[derive(Forged)] #[repr(C)] pub struct b2Value { pub raw: u32 }",
+        ] {
+            let error = binding_fixture(binding, Precision::Single)
+                .expect_err("unindexable ABI extensions must fail closed");
+            assert!(
+                error
+                    .to_string()
+                    .contains("cannot be indexed as a closed-world public ABI surface"),
+                "unexpected error for `{binding}`: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn binding_surface_rejects_file_level_cfg() {
+        let error = binding_fixture(
+            "#![cfg(any())]\n#[repr(C)] pub struct b2Hidden { pub value: u32 }",
+            Precision::Single,
+        )
+        .expect_err("file-level cfg can erase the entire indexed ABI surface");
+        assert!(
+            error.to_string().contains("uses unsupported `#[cfg]`"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn precision_mapping_rejects_extra_public_b2_aggregates() {
+        let error = map_fixture(
+            "typedef struct b2Pos { float x; } b2Pos;",
+            r#"
+                #[repr(C)] pub struct b2Pos { pub x: f32 }
+                #[repr(C)] pub struct b2Forged { pub value: u32 }
+            "#,
+            CAbiPrecision::Single,
+        )
+        .expect_err("extra public aggregates must fail the reverse exact-set");
+        assert!(
+            error
+                .to_string()
+                .contains("public b2 aggregates do not exactly match"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn precision_mapping_rejects_extra_public_b2_callback_aliases() {
+        let error = map_fixture(
+            "typedef void b2Callback(float value);",
+            r#"
+                pub type b2Callback = Option<unsafe extern "C" fn(value: f32)>;
+                pub type b2Forged = Option<unsafe extern "C" fn(value: f32)>;
+            "#,
+            CAbiPrecision::Single,
+        )
+        .expect_err("extra callback aliases must fail the reverse exact-set");
+        assert!(
+            error
+                .to_string()
+                .contains("public b2 callback aliases do not exactly match"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn precision_mapping_rejects_forged_opaque_aggregate_layout() {
+        let error = map_fixture(
+            r#"
+                typedef struct b2Opaque b2Opaque;
+                B2_API void b2UseOpaque(b2Opaque* value);
+            "#,
+            r#"
+                #[repr(C)] pub struct b2Opaque { pub forged: u8 }
+                unsafe extern "C" { pub fn b2UseOpaque(value: *mut b2Opaque); }
+            "#,
+            CAbiPrecision::Single,
+        )
+        .expect_err("opaque C tags must use the exact bindgen opaque representation");
+        assert!(
+            error
+                .to_string()
+                .contains("exact bindgen opaque repr-C struct"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn precision_mapping_accepts_exact_reachable_bindgen_union_wrapper() {
+        map_fixture(
+            "typedef struct b2Example { union { float x; unsigned int y; }; } b2Example;",
+            r#"
+                #[repr(C)]
+                pub struct b2Example {
+                    pub __bindgen_anon_1: b2Example__bindgen_ty_1,
+                }
+                #[repr(C)]
+                pub union b2Example__bindgen_ty_1 {
+                    pub x: f32,
+                    pub y: u32,
+                }
+            "#,
+            CAbiPrecision::Single,
+        )
+        .expect("reachable bindgen anonymous union wrappers belong to the exact surface");
+    }
+
+    #[test]
+    fn precision_mapping_rejects_unproven_anonymous_struct_wrapper() {
+        let error = map_fixture(
+            "typedef struct b2Example { struct { float x; }; } b2Example;",
+            r#"
+                #[repr(C)]
+                pub struct b2Example {
+                    pub __bindgen_anon_1: b2Example__bindgen_ty_1,
+                }
+                #[repr(C)]
+                pub struct b2Example__bindgen_ty_1 {
+                    pub x: f32,
+                }
+            "#,
+            CAbiPrecision::Single,
+        )
+        .expect_err("flattened C fields do not prove anonymous struct grouping");
+        assert!(
+            error
+                .to_string()
+                .contains("without an exact C anonymous-struct overlay proof"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn precision_mapping_rejects_distinct_overlays_merged_into_one_union_location() {
+        let error = map_fixture(
+            r#"
+                typedef struct b2Example {
+                    union { float first; unsigned int second; };
+                    union { float third; unsigned int fourth; };
+                } b2Example;
+            "#,
+            r#"
+                #[repr(C)]
+                pub struct b2Example {
+                    pub __bindgen_anon_1: b2Example__bindgen_ty_1,
+                }
+                #[repr(C)]
+                pub union b2Example__bindgen_ty_1 {
+                    pub first: f32,
+                    pub second: u32,
+                    pub third: f32,
+                    pub fourth: u32,
+                }
+            "#,
+            CAbiPrecision::Single,
+        )
+        .expect_err("separate C storage overlays cannot share one Rust union location");
+        assert!(
+            error
+                .to_string()
+                .contains("merges distinct C overlay groups"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
     fn precision_mapping_rejects_callback_parameter_drift() {
         let error = map_fixture(
             "typedef void b2Callback(double value);",
@@ -2808,18 +4211,32 @@ mod tests {
         )]);
         let bindings = AbiBindingIndexes::from([(
             "bindings".to_owned(),
-            AbiBindingIndex::new(
+            AbiBindingIndex::from_path(
                 "bindings",
                 Precision::Single,
                 ArtifactTarget::Universal,
                 ArtifactProvider::Source,
-                index_bindings(&binding_path).expect("generated single binding index"),
-            ),
+                &binding_path,
+            )
+            .expect("generated single binding index"),
         )]);
         let inventories =
             AbiPrecisionInventories::from([("single".to_owned(), precision_inventory)]);
         map_precision_inventory(&inventory, &inventories, &routes, &bindings)
             .expect("vendored single precision ABI mapping");
+    }
+
+    fn binding_fixture(binding: &str, precision: Precision) -> crate::Result<AbiBindingIndex> {
+        let root = tempdir().expect("temporary binding fixture root");
+        let binding_path = root.path().join("bindings.rs");
+        fs::write(&binding_path, binding).expect("fixture binding");
+        AbiBindingIndex::from_path(
+            "fixture-bindings",
+            precision,
+            ArtifactTarget::Universal,
+            ArtifactProvider::Source,
+            &binding_path,
+        )
     }
 
     fn map_fixture(
@@ -2853,13 +4270,13 @@ mod tests {
         )]);
         let bindings = AbiBindingIndexes::from([(
             "fixture-bindings".to_owned(),
-            AbiBindingIndex::new(
+            AbiBindingIndex::from_path(
                 "fixture-bindings",
                 binding_precision,
                 ArtifactTarget::Universal,
                 ArtifactProvider::Source,
-                index_bindings(&binding_path)?,
-            ),
+                &binding_path,
+            )?,
         )]);
         let precision_inventories = AbiPrecisionInventories::from([(mode, precision_inventory)]);
         map_precision_inventory(&inventory, &precision_inventories, &routes, &bindings)

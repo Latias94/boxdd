@@ -1,6 +1,7 @@
 pub mod api_coverage;
 mod api_recording;
 pub mod pages;
+pub mod precision_contract;
 pub mod provider;
 pub mod sample_parity;
 pub mod upstream_sync;

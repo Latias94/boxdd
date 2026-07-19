@@ -170,6 +170,11 @@ jobs:
       - name: Build
         run: cargo build --workspace --all-targets --verbose
 
+      - name: C ABI probes (single and double precision)
+        run: |
+          cargo test --locked -p boxdd-abi-probe --test abi --no-default-features
+          cargo test --locked --target-dir target/abi-probe-double -p boxdd-abi-probe --test abi --no-default-features --features double-precision
+
       - name: Docs
         env:
           RUSTDOCFLAGS: -D warnings --cfg docsrs

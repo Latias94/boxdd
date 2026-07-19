@@ -4,6 +4,7 @@ members = [
     "boxdd",
     "boxdd-sys",
     "examples-wasm/provider-smoke",
+    "tools/abi-probe",
     "xtask",
 ]
 resolver = "3"

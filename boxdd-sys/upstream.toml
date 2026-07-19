@@ -70,7 +70,7 @@ path = "boxdd/tests/fixtures/api_contract.toml"
 target = "universal"
 provider = "universal"
 producer = "reviewed"
-content_blake3 = "0c32b1f01ee44ffdd5ec34f0dc63cee0142010dcc5fcbea02834ce28f6c1fb15"
+content_blake3 = "e1b3cda7595fcfe7892340db6063459b6ad4a0061b4170d2ecdeb222fa69b6c8"
 
 [[artifacts]]
 name = "recording-wire"
@@ -99,6 +99,26 @@ target = "universal"
 provider = "universal"
 producer = "bindgen"
 content_blake3 = "364c0a4b6fb9443a20fb2f8090e6dd47f440860e6e5e53231d1773fee2e5ec3e"
+
+[[artifacts]]
+name = "abi-source-single"
+kind = "abi-metadata"
+path = "boxdd-sys/abi/metadata/source-single.toml"
+precision = "single"
+target = "native"
+provider = "source"
+producer = "abi-probe"
+content_blake3 = "26296b676ec07b361c56c8d141e0c2b66959b5586720b4801386409d6320a411"
+
+[[artifacts]]
+name = "abi-source-double"
+kind = "abi-metadata"
+path = "boxdd-sys/abi/metadata/source-double.toml"
+precision = "double"
+target = "native"
+provider = "source"
+producer = "abi-probe"
+content_blake3 = "4f09c0c9b01b135650712c632a5e2ff2a3add529943d88bcff090ab950db0023"
 
 [source_inventory]
 tree = "63a1ab02e3d2bf7c4d86b257b78976842b8c5ddb"

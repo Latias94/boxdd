@@ -12,7 +12,7 @@ use tempfile::NamedTempFile;
 
 use crate::{Error, Result};
 
-pub const API_CONTRACT_SCHEMA: u32 = 5;
+pub const API_CONTRACT_SCHEMA: u32 = 6;
 pub const UPSTREAM_MANIFEST_SCHEMA: u32 = 4;
 pub const RECORDING_WIRE_SCHEMA: u32 = 4;
 

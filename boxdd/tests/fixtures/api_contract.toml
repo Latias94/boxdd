@@ -1,5 +1,10 @@
-schema_version = 5
+schema_version = 6
 upstream_sha = "56edae79f2949d86142b03450d5d60f63bcf5a6f"
+
+[function_inventory_digests]
+logical = "73314b5a229524dc25da96da268e950e57ebe7f3701da743057a10525c5a410d"
+single = "e10b037454ac768bcea839b175a842091b49ea119dc7b2c6d16c439af6722273"
+double = "bdc19edc4fd8c005d570c18e833d2c1e7c27fc034fb098e1c1287c9c97518cdf"
 
 [migration_baseline]
 total = 478
@@ -2984,7 +2989,7 @@ item = "abi_capability_mapping_rejects_deleted_forged_and_unknown_references"
 package = "xtask"
 gate = "nextest"
 role = "abi-contract-validator"
-fingerprint = "blake3-routes-v1:63829142054a51b4ee7e19c1a0379c874a16ee1f942988a0a91d29a3bf5fc236"
+fingerprint = "blake3-routes-v1:69a0813588116f329bf5f9bdf4670c80d88dc3ba6185dc42414e69ede62c4103"
 runtime_witnesses = []
 classification_witnesses = []
 
@@ -2995,7 +3000,7 @@ item = "typed_function_classification_evidence_rejects_unrelated_subjects"
 package = "xtask"
 gate = "nextest"
 role = "function-classification-validator"
-fingerprint = "blake3-routes-v1:c5c06387d965c4b819756e2767369fecffa2bca47a24d873ac347c914fc061e8"
+fingerprint = "blake3-routes-v1:10b29776a44e062486c8a4554dcdb09923e156b62a43440508578f222fef7ebf"
 runtime_witnesses = []
 
 [[evidence.classification_witnesses]]
@@ -20114,12 +20119,12 @@ field = "byteCount"
 [[abi.structs.fields]]
 name = "bodyCount"
 signature = "int bodyCount"
-rationale = "The Rust AST index proves that public path boxdd::prelude::Counters::body_count has an exact raw-field relation to boxdd_sys::ffi::b2Counters::bodyCount."
+rationale = "The Rust AST index proves that public path boxdd::Counters::body_count has an exact raw-field relation to boxdd_sys::ffi::b2Counters::bodyCount."
 policy = "safe-abi-adapter"
-safe_paths = ["boxdd::prelude::Counters::body_count"]
+safe_paths = ["boxdd::Counters::body_count"]
 
 [[abi.structs.fields.safe_witnesses]]
-path = "boxdd::prelude::Counters::body_count"
+path = "boxdd::Counters::body_count"
 kind = "public-field"
 raw_type = "boxdd_sys::ffi::b2Counters"
 raw_field = "bodyCount"
@@ -20149,12 +20154,12 @@ field = "bodyCount"
 [[abi.structs.fields]]
 name = "shapeCount"
 signature = "int shapeCount"
-rationale = "The Rust AST index proves that public path boxdd::prelude::Counters::shape_count has an exact raw-field relation to boxdd_sys::ffi::b2Counters::shapeCount."
+rationale = "The Rust AST index proves that public path boxdd::Counters::shape_count has an exact raw-field relation to boxdd_sys::ffi::b2Counters::shapeCount."
 policy = "safe-abi-adapter"
-safe_paths = ["boxdd::prelude::Counters::shape_count"]
+safe_paths = ["boxdd::Counters::shape_count"]
 
 [[abi.structs.fields.safe_witnesses]]
-path = "boxdd::prelude::Counters::shape_count"
+path = "boxdd::Counters::shape_count"
 kind = "public-field"
 raw_type = "boxdd_sys::ffi::b2Counters"
 raw_field = "shapeCount"
@@ -20184,12 +20189,12 @@ field = "shapeCount"
 [[abi.structs.fields]]
 name = "contactCount"
 signature = "int contactCount"
-rationale = "The Rust AST index proves that public path boxdd::prelude::Counters::contact_count has an exact raw-field relation to boxdd_sys::ffi::b2Counters::contactCount."
+rationale = "The Rust AST index proves that public path boxdd::Counters::contact_count has an exact raw-field relation to boxdd_sys::ffi::b2Counters::contactCount."
 policy = "safe-abi-adapter"
-safe_paths = ["boxdd::prelude::Counters::contact_count"]
+safe_paths = ["boxdd::Counters::contact_count"]
 
 [[abi.structs.fields.safe_witnesses]]
-path = "boxdd::prelude::Counters::contact_count"
+path = "boxdd::Counters::contact_count"
 kind = "public-field"
 raw_type = "boxdd_sys::ffi::b2Counters"
 raw_field = "contactCount"
@@ -20219,12 +20224,12 @@ field = "contactCount"
 [[abi.structs.fields]]
 name = "jointCount"
 signature = "int jointCount"
-rationale = "The Rust AST index proves that public path boxdd::prelude::Counters::joint_count has an exact raw-field relation to boxdd_sys::ffi::b2Counters::jointCount."
+rationale = "The Rust AST index proves that public path boxdd::Counters::joint_count has an exact raw-field relation to boxdd_sys::ffi::b2Counters::jointCount."
 policy = "safe-abi-adapter"
-safe_paths = ["boxdd::prelude::Counters::joint_count"]
+safe_paths = ["boxdd::Counters::joint_count"]
 
 [[abi.structs.fields.safe_witnesses]]
-path = "boxdd::prelude::Counters::joint_count"
+path = "boxdd::Counters::joint_count"
 kind = "public-field"
 raw_type = "boxdd_sys::ffi::b2Counters"
 raw_field = "jointCount"
@@ -20254,12 +20259,12 @@ field = "jointCount"
 [[abi.structs.fields]]
 name = "islandCount"
 signature = "int islandCount"
-rationale = "The Rust AST index proves that public path boxdd::prelude::Counters::island_count has an exact raw-field relation to boxdd_sys::ffi::b2Counters::islandCount."
+rationale = "The Rust AST index proves that public path boxdd::Counters::island_count has an exact raw-field relation to boxdd_sys::ffi::b2Counters::islandCount."
 policy = "safe-abi-adapter"
-safe_paths = ["boxdd::prelude::Counters::island_count"]
+safe_paths = ["boxdd::Counters::island_count"]
 
 [[abi.structs.fields.safe_witnesses]]
-path = "boxdd::prelude::Counters::island_count"
+path = "boxdd::Counters::island_count"
 kind = "public-field"
 raw_type = "boxdd_sys::ffi::b2Counters"
 raw_field = "islandCount"
@@ -20289,12 +20294,12 @@ field = "islandCount"
 [[abi.structs.fields]]
 name = "stackUsed"
 signature = "int stackUsed"
-rationale = "The Rust AST index proves that public path boxdd::prelude::Counters::stack_used has an exact raw-field relation to boxdd_sys::ffi::b2Counters::stackUsed."
+rationale = "The Rust AST index proves that public path boxdd::Counters::stack_used has an exact raw-field relation to boxdd_sys::ffi::b2Counters::stackUsed."
 policy = "safe-abi-adapter"
-safe_paths = ["boxdd::prelude::Counters::stack_used"]
+safe_paths = ["boxdd::Counters::stack_used"]
 
 [[abi.structs.fields.safe_witnesses]]
-path = "boxdd::prelude::Counters::stack_used"
+path = "boxdd::Counters::stack_used"
 kind = "public-field"
 raw_type = "boxdd_sys::ffi::b2Counters"
 raw_field = "stackUsed"
@@ -20324,12 +20329,12 @@ field = "stackUsed"
 [[abi.structs.fields]]
 name = "staticTreeHeight"
 signature = "int staticTreeHeight"
-rationale = "The Rust AST index proves that public path boxdd::prelude::Counters::static_tree_height has an exact raw-field relation to boxdd_sys::ffi::b2Counters::staticTreeHeight."
+rationale = "The Rust AST index proves that public path boxdd::Counters::static_tree_height has an exact raw-field relation to boxdd_sys::ffi::b2Counters::staticTreeHeight."
 policy = "safe-abi-adapter"
-safe_paths = ["boxdd::prelude::Counters::static_tree_height"]
+safe_paths = ["boxdd::Counters::static_tree_height"]
 
 [[abi.structs.fields.safe_witnesses]]
-path = "boxdd::prelude::Counters::static_tree_height"
+path = "boxdd::Counters::static_tree_height"
 kind = "public-field"
 raw_type = "boxdd_sys::ffi::b2Counters"
 raw_field = "staticTreeHeight"
@@ -20359,12 +20364,12 @@ field = "staticTreeHeight"
 [[abi.structs.fields]]
 name = "treeHeight"
 signature = "int treeHeight"
-rationale = "The Rust AST index proves that public path boxdd::prelude::Counters::tree_height has an exact raw-field relation to boxdd_sys::ffi::b2Counters::treeHeight."
+rationale = "The Rust AST index proves that public path boxdd::Counters::tree_height has an exact raw-field relation to boxdd_sys::ffi::b2Counters::treeHeight."
 policy = "safe-abi-adapter"
-safe_paths = ["boxdd::prelude::Counters::tree_height"]
+safe_paths = ["boxdd::Counters::tree_height"]
 
 [[abi.structs.fields.safe_witnesses]]
-path = "boxdd::prelude::Counters::tree_height"
+path = "boxdd::Counters::tree_height"
 kind = "public-field"
 raw_type = "boxdd_sys::ffi::b2Counters"
 raw_field = "treeHeight"
@@ -20394,12 +20399,12 @@ field = "treeHeight"
 [[abi.structs.fields]]
 name = "taskCount"
 signature = "int taskCount"
-rationale = "The Rust AST index proves that public path boxdd::prelude::Counters::task_count has an exact raw-field relation to boxdd_sys::ffi::b2Counters::taskCount."
+rationale = "The Rust AST index proves that public path boxdd::Counters::task_count has an exact raw-field relation to boxdd_sys::ffi::b2Counters::taskCount."
 policy = "safe-abi-adapter"
-safe_paths = ["boxdd::prelude::Counters::task_count"]
+safe_paths = ["boxdd::Counters::task_count"]
 
 [[abi.structs.fields.safe_witnesses]]
-path = "boxdd::prelude::Counters::task_count"
+path = "boxdd::Counters::task_count"
 kind = "public-field"
 raw_type = "boxdd_sys::ffi::b2Counters"
 raw_field = "taskCount"
@@ -20429,12 +20434,12 @@ field = "taskCount"
 [[abi.structs.fields]]
 name = "colorCounts"
 signature = "int colorCounts [ 24 ]"
-rationale = "The Rust AST index proves that public path boxdd::prelude::Counters::color_counts has an exact raw-field relation to boxdd_sys::ffi::b2Counters::colorCounts."
+rationale = "The Rust AST index proves that public path boxdd::Counters::color_counts has an exact raw-field relation to boxdd_sys::ffi::b2Counters::colorCounts."
 policy = "safe-abi-adapter"
-safe_paths = ["boxdd::prelude::Counters::color_counts"]
+safe_paths = ["boxdd::Counters::color_counts"]
 
 [[abi.structs.fields.safe_witnesses]]
-path = "boxdd::prelude::Counters::color_counts"
+path = "boxdd::Counters::color_counts"
 kind = "public-field"
 raw_type = "boxdd_sys::ffi::b2Counters"
 raw_field = "colorCounts"
@@ -29819,12 +29824,12 @@ field = "transform"
 [[abi.structs.fields]]
 name = "translationB"
 signature = "b2Vec2 translationB"
-rationale = "The Rust AST index proves that public path boxdd::ShapeCastPairInput::translation_b has an exact raw-field relation to boxdd_sys::ffi::b2ShapeCastPairInput::translationB."
+rationale = "The Rust AST index proves that public path boxdd::ShapeCastPairInput::translation_b_in_a has an exact raw-field relation to boxdd_sys::ffi::b2ShapeCastPairInput::translationB."
 policy = "safe-abi-adapter"
-safe_paths = ["boxdd::ShapeCastPairInput::translation_b"]
+safe_paths = ["boxdd::ShapeCastPairInput::translation_b_in_a"]
 
 [[abi.structs.fields.safe_witnesses]]
-path = "boxdd::ShapeCastPairInput::translation_b"
+path = "boxdd::ShapeCastPairInput::translation_b_in_a"
 kind = "public-field"
 raw_type = "boxdd_sys::ffi::b2ShapeCastPairInput"
 raw_field = "translationB"

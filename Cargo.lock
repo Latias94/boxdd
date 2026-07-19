@@ -2059,6 +2059,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "boxdd-abi-probe"
+version = "0.6.0"
+dependencies = [
+ "boxdd-sys",
+ "cc",
+ "xtask",
+]
+
+[[package]]
 name = "boxdd-provider-smoke"
 version = "0.6.0"
 dependencies = [

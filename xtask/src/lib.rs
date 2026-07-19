@@ -1,4 +1,5 @@
 pub mod abi_contract;
+pub mod abi_probe;
 pub mod c_api;
 pub mod config;
 pub mod error;
@@ -51,6 +52,9 @@ pub fn run_in(paths: &WorkspacePaths, args: impl IntoIterator<Item = String>) ->
         [command] if command == "provider-smoke" => {
             commands::provider::provider_smoke(paths.root())
         }
+        [command, rest @ ..] if command == "verify-precision-contract" => {
+            commands::precision_contract::run(paths.root(), rest)
+        }
         [command] if command == "build-pages-wasm" => {
             commands::pages::build_pages_wasm(paths.root())
         }
@@ -79,6 +83,7 @@ Usage:
   cargo run -p xtask -- upstream-sync --prepare-next
   cargo run -p xtask -- upstream-sync --write
   cargo run -p xtask -- verify-toolchains
+  cargo run -p xtask -- verify-precision-contract
   cargo run -p xtask -- provider-smoke-app
   cargo run -p xtask -- provider-smoke
   cargo run -p xtask -- build-pages-wasm
@@ -90,6 +95,7 @@ Commands:
   upstream-sync  Validate, prepare, or apply the exact-SHA Box2D migration transaction
   sample-parity  Validate or regenerate the upstream sample parity report
   verify-toolchains  Validate workspace versions and pinned compiler configuration
+  verify-precision-contract  Verify matching precision routes and deterministic mismatch failures
   provider-smoke-app  Build the Rust wasm provider-smoke app and export list
   provider-smoke  Build the Rust app, Box2D provider, and run Node smoke
   build-pages-wasm  Build browser provider and Bevy testbed assets into docs/pages

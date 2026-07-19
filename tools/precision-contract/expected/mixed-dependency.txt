@@ -1,0 +1,1 @@
+boxdd and boxdd-sys precision features must be enabled through the same dependency edge

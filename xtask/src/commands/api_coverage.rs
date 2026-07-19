@@ -33,7 +33,6 @@ use crate::{
         RustIndex, RustIndexCoordinate, TestEvidenceIndex, discover_test_evidence_items,
         index_boxdd_routes, index_test_evidence_for_gate_at_coordinate,
     },
-    sys_abi_index::index_bindings,
 };
 
 const AVAILABILITY: &[&str] = &[
@@ -43,6 +42,15 @@ const AVAILABILITY: &[&str] = &[
     "validation-enabled",
 ];
 const API_CLASSIFICATION_EVIDENCE_ID: &str = "api-classification-validator";
+const BOX2D_3_2_TARGET_REVISION: &str = "56edae79f2949d86142b03450d5d60f63bcf5a6f";
+const BOX2D_3_2_EXPORTED_FUNCTION_COUNT: usize = 478;
+const BOX2D_3_2_LOGICAL_FUNCTIONS_BLAKE3: &str =
+    "73314b5a229524dc25da96da268e950e57ebe7f3701da743057a10525c5a410d";
+const BOX2D_3_2_SINGLE_FUNCTIONS_BLAKE3: &str =
+    "e10b037454ac768bcea839b175a842091b49ea119dc7b2c6d16c439af6722273";
+const BOX2D_3_2_DOUBLE_FUNCTIONS_BLAKE3: &str =
+    "bdc19edc4fd8c005d570c18e833d2c1e7c27fc034fb098e1c1287c9c97518cdf";
+const FUNCTION_INVENTORY_DIGEST_DOMAIN: &[u8] = b"boxdd-api-function-inventory-v1\0";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -72,6 +80,14 @@ pub struct CoverageCounts {
     pub raw: usize,
     pub omitted: usize,
     pub deferred: usize,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct FunctionInventoryDigests {
+    pub logical: String,
+    pub single: String,
+    pub double: String,
 }
 
 impl CoverageCounts {
@@ -216,6 +232,8 @@ pub struct FunctionContract {
 pub struct ApiContract {
     pub schema_version: u32,
     pub upstream_sha: String,
+    #[serde(default)]
+    pub function_inventory_digests: FunctionInventoryDigests,
     pub migration_baseline: CoverageCounts,
     pub classification_changes: Vec<ClassificationChange>,
     pub evidence: Vec<TestEvidence>,
@@ -257,7 +275,14 @@ Usage:
 }
 
 pub fn check(paths: &WorkspacePaths) -> Result<()> {
-    let validated = load_validated_coverage(paths)?;
+    let manifest = UpstreamManifest::load(paths)?;
+    let snapshot = validate_repository(paths, &manifest, false)?;
+    validate_authenticated_revision(
+        &manifest.active_revision,
+        &snapshot.gitlink_revision,
+        &snapshot.worktree_revision,
+    )?;
+    let validated = load_validated_coverage_with_manifest(paths, manifest)?;
     let recording_wire_path = validated
         .manifest
         .artifact_path(paths.root(), ArtifactKind::RecordingWire)?;
@@ -294,8 +319,13 @@ fn write(paths: &WorkspacePaths) -> Result<()> {
     let manifest_baseline = fs::read(paths.upstream_manifest())
         .map_err(|source| Error::io(paths.upstream_manifest(), source))?;
     let manifest = UpstreamManifest::load(paths)?;
-    validate_repository(paths, &manifest, false)?;
-    let outputs = render_generated_outputs(paths)?;
+    let snapshot = validate_repository(paths, &manifest, false)?;
+    validate_authenticated_revision(
+        &manifest.active_revision,
+        &snapshot.gitlink_revision,
+        &snapshot.worktree_revision,
+    )?;
+    let outputs = render_generated_outputs_with_manifest(paths, manifest)?;
     let writes = [
         ManagedArtifactWrite::active("recording-wire", outputs.recording_wire),
         ManagedArtifactWrite::active("api-coverage-report", outputs.report),
@@ -315,7 +345,15 @@ pub(crate) struct GeneratedApiCoverageOutputs {
 pub(crate) fn render_generated_outputs(
     paths: &WorkspacePaths,
 ) -> Result<GeneratedApiCoverageOutputs> {
-    let validated = load_validated_coverage(paths)?;
+    let manifest = UpstreamManifest::load(paths)?;
+    render_generated_outputs_with_manifest(paths, manifest)
+}
+
+fn render_generated_outputs_with_manifest(
+    paths: &WorkspacePaths,
+    manifest: UpstreamManifest,
+) -> Result<GeneratedApiCoverageOutputs> {
+    let validated = load_validated_coverage_with_manifest(paths, manifest)?;
     let wire = generate_wire_contract(
         &validated.manifest.recording_revision,
         &validated.recording_operations,
@@ -337,8 +375,10 @@ struct ValidatedCoverage {
     report: String,
 }
 
-fn load_validated_coverage(paths: &WorkspacePaths) -> Result<ValidatedCoverage> {
-    let manifest = UpstreamManifest::load(paths)?;
+fn load_validated_coverage_with_manifest(
+    paths: &WorkspacePaths,
+    manifest: UpstreamManifest,
+) -> Result<ValidatedCoverage> {
     let api_contract_path = manifest.artifact_path(paths.root(), ArtifactKind::ApiContract)?;
     let inventory = parse_headers(&paths.box2d_headers())?;
     let binding_indexes = load_binding_indexes(paths, &manifest)?;
@@ -389,6 +429,105 @@ fn load_validated_coverage(paths: &WorkspacePaths) -> Result<ValidatedCoverage> 
     })
 }
 
+fn validate_authenticated_revision(
+    expected_active_revision: &str,
+    gitlink_revision: &str,
+    worktree_revision: &str,
+) -> Result<()> {
+    if gitlink_revision == expected_active_revision && worktree_revision == expected_active_revision
+    {
+        return Ok(());
+    }
+    Err(Error::message(format!(
+        "API coverage manifest revision `{expected_active_revision}` is not authenticated: authenticated gitlink `{gitlink_revision}`, authenticated worktree `{worktree_revision}`"
+    )))
+}
+
+fn compute_function_inventory_digests(
+    inventory: &CApiInventory,
+) -> Result<FunctionInventoryDigests> {
+    let mut logical = BTreeMap::new();
+    let mut single = BTreeMap::new();
+    let mut double = BTreeMap::new();
+    for function in &inventory.functions {
+        if logical
+            .insert(function.name.clone(), String::new())
+            .is_some()
+        {
+            return Err(Error::message(format!(
+                "duplicate logical function `{}` in C header inventory",
+                function.name
+            )));
+        }
+        for (mode, symbols) in [("single", &mut single), ("double", &mut double)] {
+            let symbol = function.physical_symbols.get(mode).ok_or_else(|| {
+                Error::message(format!(
+                    "logical function `{}` has no `{mode}` physical symbol",
+                    function.name
+                ))
+            })?;
+            symbols.insert(function.name.clone(), symbol.clone());
+        }
+    }
+    Ok(FunctionInventoryDigests {
+        logical: digest_function_inventory("logical", &logical),
+        single: digest_function_inventory("single", &single),
+        double: digest_function_inventory("double", &double),
+    })
+}
+
+fn digest_function_inventory(kind: &str, entries: &BTreeMap<String, String>) -> String {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(FUNCTION_INVENTORY_DIGEST_DOMAIN);
+    update_function_inventory_digest(&mut hasher, kind);
+    hasher.update(&(entries.len() as u64).to_le_bytes());
+    for (logical, physical) in entries {
+        update_function_inventory_digest(&mut hasher, logical);
+        update_function_inventory_digest(&mut hasher, physical);
+    }
+    hasher.finalize().to_hex().to_string()
+}
+
+fn update_function_inventory_digest(hasher: &mut blake3::Hasher, value: &str) {
+    hasher.update(&(value.len() as u64).to_le_bytes());
+    hasher.update(value.as_bytes());
+}
+
+fn validate_function_inventory_digests(
+    expected: &FunctionInventoryDigests,
+    inventory: &CApiInventory,
+    errors: &mut Vec<String>,
+) -> Option<FunctionInventoryDigests> {
+    let observed = match compute_function_inventory_digests(inventory) {
+        Ok(observed) => observed,
+        Err(error) => {
+            errors.push(format!("cannot authenticate function inventory: {error}"));
+            return None;
+        }
+    };
+    compare_function_inventory_digests("reviewed API contract", expected, &observed, errors);
+    Some(observed)
+}
+
+fn compare_function_inventory_digests(
+    expectation: &str,
+    expected: &FunctionInventoryDigests,
+    observed: &FunctionInventoryDigests,
+    errors: &mut Vec<String>,
+) {
+    for (kind, expected, observed) in [
+        ("logical", &expected.logical, &observed.logical),
+        ("single physical", &expected.single, &observed.single),
+        ("double physical", &expected.double, &observed.double),
+    ] {
+        if expected != observed {
+            errors.push(format!(
+                "{kind} function inventory digest does not match {expectation}: expected `{expected}`, observed `{observed}`"
+            ));
+        }
+    }
+}
+
 #[allow(
     clippy::too_many_arguments,
     reason = "the top-level validator composes independently indexed contract domains"
@@ -405,6 +544,36 @@ pub fn validate_contract(
     recording_operations: &[crate::recording_ops::RecordingOp],
 ) -> Result<()> {
     let mut errors = Vec::new();
+    let expected_function_count = (expected_active_revision == BOX2D_3_2_TARGET_REVISION)
+        .then_some(BOX2D_3_2_EXPORTED_FUNCTION_COUNT);
+    if let Some(expected) = expected_function_count
+        && inventory.functions.len() != expected
+    {
+        errors.push(format!(
+            "active Box2D target `{expected_active_revision}` exposes {} header functions, expected exactly {expected}",
+            inventory.functions.len()
+        ));
+    }
+    let observed_function_digests = validate_function_inventory_digests(
+        &contract.function_inventory_digests,
+        inventory,
+        &mut errors,
+    );
+    if expected_active_revision == BOX2D_3_2_TARGET_REVISION
+        && let Some(observed) = observed_function_digests
+    {
+        let pinned = FunctionInventoryDigests {
+            logical: BOX2D_3_2_LOGICAL_FUNCTIONS_BLAKE3.to_owned(),
+            single: BOX2D_3_2_SINGLE_FUNCTIONS_BLAKE3.to_owned(),
+            double: BOX2D_3_2_DOUBLE_FUNCTIONS_BLAKE3.to_owned(),
+        };
+        compare_function_inventory_digests(
+            "pinned Box2D 3.2 target",
+            &pinned,
+            &observed,
+            &mut errors,
+        );
+    }
     if contract.schema_version != API_CONTRACT_SCHEMA {
         errors.push(format!(
             "API contract schema {} does not match supported schema {API_CONTRACT_SCHEMA}",
@@ -433,14 +602,14 @@ pub fn validate_contract(
             errors.push(format!("duplicate evidence id `{}`", evidence.id));
         }
         match index_evidence_across_routes(paths, evidence, rust_indexes, binding_routes) {
-            Ok(actual) if aggregate_evidence_fingerprint(&actual) != evidence.fingerprint => {
-                let fingerprint = aggregate_evidence_fingerprint(&actual);
-                errors.push(format!(
-                    "evidence `{}` fingerprint drifted: reviewed `{}`, normalized AST `{fingerprint}`",
-                    evidence.id, evidence.fingerprint
-                ));
-            }
             Ok(actual) => {
+                let fingerprint = aggregate_evidence_fingerprint(&actual);
+                if fingerprint != evidence.fingerprint {
+                    errors.push(format!(
+                        "evidence `{}` fingerprint drifted: reviewed `{}`, normalized AST `{fingerprint}`",
+                        evidence.id, evidence.fingerprint
+                    ));
+                }
                 evidence_indexes.insert(evidence.id.as_str(), actual);
             }
             Err(error) => errors.push(format!("evidence `{}`: {error}", evidence.id)),
@@ -752,7 +921,8 @@ pub fn validate_contract(
             &function_symbols,
             rust_indexes,
             &evidence_ids,
-        );
+        )
+        .with_expected_function_count(expected_function_count);
         validate_abi(&contract.abi, &abi_context, &mut errors);
     } else {
         let abi_context = AbiValidationContext::new(
@@ -762,7 +932,8 @@ pub fn validate_contract(
             &function_symbols,
             rust_indexes,
             &evidence_ids,
-        );
+        )
+        .with_expected_function_count(expected_function_count);
         validate_abi(&contract.abi, &abi_context, &mut errors);
     }
     if errors.is_empty() {
@@ -1498,7 +1669,7 @@ fn build_refreshed_contract(
 
     let bootstrap_legacy_precision =
         contract.schema_version == 4 && contract.upstream_sha == manifest.active_revision;
-    if !matches!(contract.schema_version, 4 | API_CONTRACT_SCHEMA) {
+    if !matches!(contract.schema_version, 4 | 5 | API_CONTRACT_SCHEMA) {
         return Err(Error::message(format!(
             "cannot refresh API contract schema {} into schema {API_CONTRACT_SCHEMA}",
             contract.schema_version
@@ -1523,6 +1694,7 @@ fn build_refreshed_contract(
         &rust_indexes,
         recording_operations,
     );
+    contract.function_inventory_digests = compute_function_inventory_digests(&inventory)?;
     synchronize_classification_evidence(&mut contract);
     let _runtime_gaps =
         synchronize_runtime_evidence(paths, &mut contract, &rust_indexes, &binding_routes)?;
@@ -2118,14 +2290,13 @@ fn load_binding_indexes(
                 artifact.name
             ))
         })?;
-        let index = index_bindings(&paths.root().join(&artifact.path))?;
-        let binding = AbiBindingIndex::new(
+        let binding = AbiBindingIndex::from_path(
             artifact.name.clone(),
             precision,
             artifact.target,
             artifact.provider,
-            index,
-        );
+            &paths.root().join(&artifact.path),
+        )?;
         if indexes.insert(artifact.name.clone(), binding).is_some() {
             return Err(Error::message(format!(
                 "duplicate binding artifact `{}`",
@@ -2519,6 +2690,102 @@ mod tests {
     }
 
     #[test]
+    fn forged_active_revision_cannot_disable_the_target_inventory_gate() {
+        let forged_manifest_revision = "0123456789abcdef0123456789abcdef01234567";
+        let observed_revision = BOX2D_3_2_TARGET_REVISION;
+
+        let error = validate_authenticated_revision(
+            forged_manifest_revision,
+            observed_revision,
+            observed_revision,
+        )
+        .expect_err("a manifest revision cannot replace the authenticated repository identity");
+
+        assert!(error.to_string().contains("authenticated gitlink"));
+        assert!(error.to_string().contains(observed_revision));
+        assert!(error.to_string().contains(forged_manifest_revision));
+    }
+
+    #[test]
+    fn equal_count_function_substitution_changes_every_inventory_digest() {
+        let function = crate::c_api::FunctionDecl {
+            name: "b2Body_SetTransform".to_owned(),
+            signature: "void b2Body_SetTransform ( void )".to_owned(),
+            fingerprint: "fnv1a64:fixture".to_owned(),
+            parameters: Vec::new(),
+            physical_symbols: BTreeMap::from([
+                ("single".to_owned(), "b2Body_SetTransform".to_owned()),
+                ("double".to_owned(), "b2Body_SetTransform".to_owned()),
+            ]),
+            availability: vec!["always".to_owned()],
+            header: "box2d.h".to_owned(),
+            line: 1,
+        };
+        let mut second = function.clone();
+        second.name = "b2World_Step".to_owned();
+        second.physical_symbols = BTreeMap::from([
+            ("single".to_owned(), "b2World_Step".to_owned()),
+            ("double".to_owned(), "b2World_Step".to_owned()),
+        ]);
+        let reviewed_inventory = CApiInventory {
+            functions: vec![function, second],
+            structs: Vec::new(),
+            callbacks: Vec::new(),
+        };
+        let reviewed = compute_function_inventory_digests(&reviewed_inventory)
+            .expect("fixture function inventory digest");
+        let mut reordered = reviewed_inventory.clone();
+        reordered.functions.reverse();
+        assert_eq!(
+            compute_function_inventory_digests(&reordered)
+                .expect("reordered function inventory digest"),
+            reviewed
+        );
+
+        let mut substituted = reviewed_inventory.clone();
+        let function = substituted
+            .functions
+            .first_mut()
+            .expect("fixture function declaration");
+        function.name = "b2World_Explode".to_owned();
+        function.physical_symbols = BTreeMap::from([
+            ("single".to_owned(), "b2World_Explode".to_owned()),
+            ("double".to_owned(), "b2World_Explode_double".to_owned()),
+        ]);
+
+        assert_eq!(
+            substituted.functions.len(),
+            reviewed_inventory.functions.len()
+        );
+        let observed = compute_function_inventory_digests(&substituted)
+            .expect("substituted function inventory digest");
+        assert_ne!(observed.logical, reviewed.logical);
+        assert_ne!(observed.single, reviewed.single);
+        assert_ne!(observed.double, reviewed.double);
+
+        let mut errors = Vec::new();
+        validate_function_inventory_digests(&reviewed, &substituted, &mut errors);
+        assert!(errors.iter().any(|error| error.contains("logical")));
+        assert!(errors.iter().any(|error| error.contains("single")));
+        assert!(errors.iter().any(|error| error.contains("double")));
+    }
+
+    #[test]
+    fn pinned_box2d_target_function_inventory_digest_is_stable() {
+        let paths = WorkspacePaths::discover().expect("workspace paths");
+        let inventory = parse_headers(&paths.box2d_headers()).expect("vendored Box2D headers");
+        let observed =
+            compute_function_inventory_digests(&inventory).expect("function inventory digests");
+        let pinned = FunctionInventoryDigests {
+            logical: BOX2D_3_2_LOGICAL_FUNCTIONS_BLAKE3.to_owned(),
+            single: BOX2D_3_2_SINGLE_FUNCTIONS_BLAKE3.to_owned(),
+            double: BOX2D_3_2_DOUBLE_FUNCTIONS_BLAKE3.to_owned(),
+        };
+
+        assert_eq!(observed, pinned);
+    }
+
+    #[test]
     fn runtime_evidence_distinguishes_callable_and_raii_drop_witnesses() {
         let callable = "boxdd::World::step".to_owned();
         let owner = "boxdd::World".to_owned();
@@ -2644,7 +2911,7 @@ mod tests {
             fs::write(
                 root.join("boxdd-sys/src/bindings_pregenerated.rs"),
                 r#"
-                    pub struct b2Example { pub count: i32, pub other: i32 }
+                    pub struct b2Example { pub count: i32 }
                     pub type b2ExampleCallback = Option<unsafe extern "C" fn()>;
                     pub type b2Pos = b2Vec2;
                     pub struct b2Vec2 { pub x: f32 }
@@ -2701,16 +2968,14 @@ mod tests {
             )]));
             let rust_indexes =
                 AbiRustIndexes::from([(("single".to_owned(), "source".to_owned()), index)]);
-            let sys_abi_index =
-                index_bindings(&root.join("boxdd-sys/src/bindings_pregenerated.rs"))
-                    .expect("sys ABI index");
-            let binding = AbiBindingIndex::new(
+            let binding = AbiBindingIndex::from_path(
                 "bindings-single",
                 Precision::Single,
                 ArtifactTarget::Universal,
                 ArtifactProvider::Universal,
-                sys_abi_index,
-            );
+                &root.join("boxdd-sys/src/bindings_pregenerated.rs"),
+            )
+            .expect("sys ABI index");
             let binding_indexes = AbiBindingIndexes::from([(binding.artifact.clone(), binding)]);
             let route = AbiBindingRoute {
                 mode: "single".to_owned(),
@@ -2722,9 +2987,12 @@ mod tests {
             let binding_routes =
                 AbiBindingRoutes::from([((route.mode.clone(), route.provider.clone()), route)]);
             let active_revision = "0123456789abcdef0123456789abcdef01234567".to_owned();
+            let function_inventory_digests = compute_function_inventory_digests(&inventory)
+                .expect("fixture function inventory digest");
             let contract = ApiContract {
                 schema_version: API_CONTRACT_SCHEMA,
                 upstream_sha: active_revision.clone(),
+                function_inventory_digests,
                 migration_baseline: CoverageCounts {
                     total: 1,
                     safe: 1,
@@ -2989,6 +3257,7 @@ mod tests {
         let mut contract = ApiContract {
             schema_version: API_CONTRACT_SCHEMA,
             upstream_sha: "0123456789abcdef0123456789abcdef01234567".to_owned(),
+            function_inventory_digests: FunctionInventoryDigests::default(),
             migration_baseline: CoverageCounts {
                 total: 1,
                 safe: 1,
@@ -3258,7 +3527,8 @@ mod tests {
             .binding_indexes
             .get_mut("bindings-single")
             .expect("binding artifact")
-            .index = index_bindings(&bindings).expect("f32 binding index");
+            .refresh_from_path(&bindings)
+            .expect("f32 binding index");
 
         let (inventory, fingerprint) =
             precision_function_inventory("b2Body_SetTransform", AbiPrimitive::F64);
@@ -3529,7 +3799,8 @@ mod tests {
             .binding_indexes
             .get_mut("bindings-single")
             .expect("binding artifact")
-            .index = index_bindings(&bindings).expect("binding index");
+            .refresh_from_path(&bindings)
+            .expect("binding index");
         wrong_symbol.contract.functions[0]
             .link_symbols
             .insert("single".to_owned(), "b2Other".to_owned());
@@ -3548,6 +3819,82 @@ mod tests {
             .validate()
             .expect_err("a legal but header-inaccurate availability must fail");
         assert!(error.to_string().contains("availability drift"));
+    }
+
+    #[test]
+    fn contract_rejects_binding_function_absent_from_headers() {
+        let mut fixture = ContractFixture::create();
+        let bindings = fixture.root.join("boxdd-sys/src/bindings_pregenerated.rs");
+        let mut source = fs::read_to_string(&bindings).expect("binding fixture");
+        source.push_str("\nunsafe extern \"C\" { pub fn b2MissingFromParser(); }\n");
+        fs::write(&bindings, source).expect("binding fixture with extra public function");
+        fixture
+            .binding_indexes
+            .get_mut("bindings-single")
+            .expect("binding artifact")
+            .refresh_from_path(&bindings)
+            .expect("binding index");
+
+        let error = fixture
+            .validate()
+            .expect_err("a generated function absent from headers must fail closed");
+        assert!(
+            error
+                .to_string()
+                .contains("extra [\"b2MissingFromParser\"]"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn binding_surface_rejects_cfg_and_link_name_on_public_functions() {
+        for (replacement, expected) in [
+            (
+                "#[cfg(any())] pub fn b2Body_SetTransform();",
+                "uses unsupported `#[cfg]`",
+            ),
+            (
+                "#[link_name = \"b2WrongSymbol\"] pub fn b2Body_SetTransform();",
+                "uses unsupported `#[link_name]`",
+            ),
+        ] {
+            let mut fixture = ContractFixture::create();
+            let bindings = fixture.root.join("boxdd-sys/src/bindings_pregenerated.rs");
+            let source = fs::read_to_string(&bindings).expect("binding fixture");
+            fs::write(
+                &bindings,
+                source.replace("pub fn b2Body_SetTransform();", replacement),
+            )
+            .expect("binding fixture with unsupported function attribute");
+
+            let error = fixture
+                .binding_indexes
+                .get_mut("bindings-single")
+                .expect("binding artifact")
+                .refresh_from_path(&bindings)
+                .expect_err("conditional or renamed ABI functions must fail closed");
+            assert!(
+                error.to_string().contains(expected),
+                "unexpected error: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn pinned_box2d_target_requires_exact_export_count() {
+        let mut fixture = ContractFixture::create();
+        fixture.active_revision = BOX2D_3_2_TARGET_REVISION.to_owned();
+        fixture.contract.upstream_sha = BOX2D_3_2_TARGET_REVISION.to_owned();
+
+        let error = fixture
+            .validate()
+            .expect_err("the pinned target count cannot silently shrink");
+        assert!(
+            error
+                .to_string()
+                .contains("exposes 1 header functions, expected exactly 478"),
+            "unexpected error: {error}"
+        );
     }
 
     #[test]
@@ -3668,6 +4015,26 @@ mod tests {
             )));
             assert!(!error.to_string().contains("fingerprint drifted"));
         }
+    }
+
+    #[test]
+    fn fingerprint_drift_does_not_hide_required_production_entry() {
+        let mut fixture = ContractFixture::create();
+        fixture.enable_abi_capabilities();
+        let evidence = fixture
+            .contract
+            .evidence
+            .iter_mut()
+            .find(|evidence| evidence.id == ABI_VALIDATOR_EVIDENCE_ID)
+            .expect("ABI validator evidence row");
+        evidence.fingerprint = "blake3-routes-v1:stale".to_owned();
+
+        let error = fixture
+            .validate()
+            .expect_err("the stale fingerprint must fail closed");
+        let message = error.to_string();
+        assert!(message.contains("fingerprint drifted"));
+        assert!(!message.contains("does not invoke required production entry"));
     }
 
     #[test]
@@ -3950,7 +4317,8 @@ mod tests {
             .binding_indexes
             .get_mut("bindings-single")
             .expect("binding artifact")
-            .index = index_bindings(&bindings).expect("binding index");
+            .refresh_from_path(&bindings)
+            .expect("binding index");
 
         let signature = "void b2Body_SetTransform ( b2WorldDef const * def )".to_owned();
         fixture.inventory.functions[0]
@@ -4043,7 +4411,8 @@ mod tests {
             .binding_indexes
             .get_mut("bindings-single")
             .expect("binding artifact")
-            .index = index_bindings(&bindings).expect("binding index");
+            .refresh_from_path(&bindings)
+            .expect("binding index");
 
         let signature = "void b2Body_SetTransform ( b2ExampleCallback callback )".to_owned();
         fixture.inventory.functions[0]
@@ -4149,7 +4518,8 @@ mod tests {
             .binding_indexes
             .get_mut("bindings-single")
             .expect("binding artifact")
-            .index = index_bindings(&bindings).expect("binding index");
+            .refresh_from_path(&bindings)
+            .expect("binding index");
         fixture.inventory.functions[0].signature =
             "void b2Body_SetTransform ( b2ExampleCallback callback )".to_owned();
         fixture.inventory.functions[0].parameters = vec!["b2ExampleCallback callback".to_owned()];
@@ -4274,6 +4644,22 @@ mod tests {
             signature: "int other".to_owned(),
             overlays: Vec::new(),
         });
+        let bindings = fixture.root.join("boxdd-sys/src/bindings_pregenerated.rs");
+        let source = fs::read_to_string(&bindings).expect("binding fixture");
+        fs::write(
+            &bindings,
+            source.replace(
+                "pub struct b2Example { pub count: i32 }",
+                "pub struct b2Example { pub count: i32, pub other: i32 }",
+            ),
+        )
+        .expect("binding fixture with added field");
+        fixture
+            .binding_indexes
+            .get_mut("bindings-single")
+            .expect("binding artifact")
+            .refresh_from_path(&bindings)
+            .expect("binding index with added field");
         let mut added = map_inventory(
             &added_inventory,
             &fixture.binding_routes,
@@ -4302,6 +4688,24 @@ mod tests {
         removed_fixture.enable_abi_capabilities();
         let previous = removed_fixture.contract.abi.clone();
         removed_fixture.inventory.structs[0].fields.clear();
+        let bindings = removed_fixture
+            .root
+            .join("boxdd-sys/src/bindings_pregenerated.rs");
+        let source = fs::read_to_string(&bindings).expect("binding fixture");
+        fs::write(
+            &bindings,
+            source.replace(
+                "pub struct b2Example { pub count: i32 }",
+                "pub struct b2Example {}",
+            ),
+        )
+        .expect("binding fixture with removed field");
+        removed_fixture
+            .binding_indexes
+            .get_mut("bindings-single")
+            .expect("binding artifact")
+            .refresh_from_path(&bindings)
+            .expect("binding index with removed field");
         let mut removed = map_inventory(
             &removed_fixture.inventory,
             &removed_fixture.binding_routes,
@@ -4370,6 +4774,29 @@ mod tests {
             "bool b2ExampleCallback ( int changed )".to_owned();
         changed_inventory.callbacks[0].fingerprint = "fnv1a64:changed-callback".to_owned();
         changed_inventory.callbacks[0].header = "moved.h".to_owned();
+        let bindings = fixture.root.join("boxdd-sys/src/bindings_pregenerated.rs");
+        let source = fs::read_to_string(&bindings).expect("binding fixture");
+        fs::write(
+            &bindings,
+            source.replace(
+                "pub struct b2Example { pub count: i32 }",
+                r#"
+                    pub struct b2Example {
+                        pub __bindgen_anon_1: b2Example__bindgen_ty_1,
+                    }
+                    pub union b2Example__bindgen_ty_1 {
+                        pub count: *mut i32,
+                    }
+                "#,
+            ),
+        )
+        .expect("binding fixture with changed overlay layout");
+        fixture
+            .binding_indexes
+            .get_mut("bindings-single")
+            .expect("binding artifact")
+            .refresh_from_path(&bindings)
+            .expect("binding index with changed overlay layout");
         let mut refreshed = map_inventory(
             &changed_inventory,
             &fixture.binding_routes,
@@ -4525,18 +4952,19 @@ mod tests {
         fs::write(
             &double_path,
             r#"
-                pub struct b2Example { pub count: i32, pub other: i32 }
+                pub struct b2Example { pub count: i32 }
                 pub type b2ExampleCallback = Option<unsafe extern "C" fn()>;
             "#,
         )
         .expect("double binding fixture");
-        let double_binding = AbiBindingIndex::new(
+        let double_binding = AbiBindingIndex::from_path(
             "bindings-double",
             Precision::Double,
             ArtifactTarget::Universal,
             ArtifactProvider::Universal,
-            index_bindings(&double_path).expect("double binding index"),
-        );
+            &double_path,
+        )
+        .expect("double binding index");
         missing_function
             .binding_indexes
             .insert(double_binding.artifact.clone(), double_binding);
@@ -4597,13 +5025,14 @@ mod tests {
             "#,
         )
         .expect("missing-field binding fixture");
-        let double_binding = AbiBindingIndex::new(
+        let double_binding = AbiBindingIndex::from_path(
             "bindings-double-missing-field",
             Precision::Double,
             ArtifactTarget::Universal,
             ArtifactProvider::Universal,
-            index_bindings(&double_path).expect("missing-field binding index"),
-        );
+            &double_path,
+        )
+        .expect("missing-field binding index");
         missing_field
             .binding_indexes
             .insert(double_binding.artifact.clone(), double_binding);

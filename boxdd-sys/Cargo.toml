@@ -20,6 +20,7 @@ include = [
     "README.md",
     "build.rs",
     "upstream.toml",
+    "abi/**",
     "src/**",
     # Internal helper binary used by CI to package prebuilt artifacts.
     "bin/**",
