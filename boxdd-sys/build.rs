@@ -263,7 +263,7 @@ fn generate_bindings(manifest_dir: &Path, out_dir: &Path, target: &str) {
         .join("box2d")
         .join("include");
     let header = include_root.join("box2d").join("box2d.h");
-    let bindings = bindgen::Builder::default()
+    let builder = bindgen::Builder::default()
         .header(header.to_string_lossy())
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .clang_args(["-x", "c", "-std=c17"])
@@ -272,13 +272,39 @@ fn generate_bindings(manifest_dir: &Path, out_dir: &Path, target: &str) {
         .allowlist_function("b2.*")
         .allowlist_type("b2.*")
         .allowlist_var("B2_.*")
-        .layout_tests(false)
+        .layout_tests(false);
+    let bindings = configure_bindgen_host_headers(builder, target)
         .generate()
         .expect("failed to generate Box2D bindings");
 
     bindings
         .write_to_file(out_dir.join("bindings.rs"))
         .expect("failed to write Box2D bindings");
+}
+
+#[cfg(feature = "bindgen")]
+fn configure_bindgen_host_headers(builder: bindgen::Builder, target: &str) -> bindgen::Builder {
+    if !cfg!(target_os = "macos") || !target.contains("-linux-") {
+        return builder;
+    }
+
+    // Apple Clang has no Linux libc sysroot. The Box2D public API only needs ISO C headers here;
+    // Xcode supplies those headers while `--target` above remains the manifest's Linux ABI.
+    let output = std::process::Command::new("xcrun")
+        .args(["--sdk", "macosx", "--show-sdk-path"])
+        .output()
+        .expect("xcrun is required to locate ISO C headers for Linux-target bindgen on macOS");
+    assert!(
+        output.status.success(),
+        "xcrun could not locate the macOS SDK for Linux-target bindgen: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+    let sdk = String::from_utf8(output.stdout)
+        .expect("xcrun SDK path must be UTF-8")
+        .trim()
+        .to_owned();
+    assert!(!sdk.is_empty(), "xcrun returned an empty macOS SDK path");
+    builder.clang_arg(format!("--sysroot={sdk}"))
 }
 
 #[cfg(not(feature = "bindgen"))]
