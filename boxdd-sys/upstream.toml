@@ -1,7 +1,6 @@
 schema_version = 4
 repository = "https://github.com/erincatto/box2d.git"
-active_revision = "c05c48738fbe5c27625e36c5f0cfbdaddfc8359a"
-next_revision = "56edae79f2949d86142b03450d5d60f63bcf5a6f"
+active_revision = "56edae79f2949d86142b03450d5d60f63bcf5a6f"
 recording_revision = "56edae79f2949d86142b03450d5d60f63bcf5a6f"
 artifact_digests_initialized = true
 
@@ -12,14 +11,7 @@ artifact = "bindings-single"
 rust_target = "x86_64-unknown-linux-gnu"
 rust_features = []
 
-[[next_binding_routes]]
-mode = "single"
-provider = "source"
-artifact = "bindings-single"
-rust_target = "x86_64-unknown-linux-gnu"
-rust_features = []
-
-[[next_binding_routes]]
+[[binding_routes]]
 mode = "double"
 provider = "source"
 artifact = "bindings-double"
@@ -69,7 +61,7 @@ precision = "single"
 target = "universal"
 provider = "universal"
 producer = "bindgen"
-content_blake3 = "e57880cc67857ebcf02e5ca3d964a64e92a039325cdb08480ee71648679bcf27"
+content_blake3 = "281af83f29465ae22e60a607bf8bc093276ab1821a357962ef0693382582fbdc"
 
 [[artifacts]]
 name = "api-contract"
@@ -78,9 +70,7 @@ path = "boxdd/tests/fixtures/api_contract.toml"
 target = "universal"
 provider = "universal"
 producer = "reviewed"
-content_blake3 = "457037699200d52e65ca8cff9fcb53bd82c3cc0a741fcc255259df4e7367d207"
-candidate_path = "boxdd/tests/fixtures/api_contract.next.toml"
-candidate_blake3 = "0c32b1f01ee44ffdd5ec34f0dc63cee0142010dcc5fcbea02834ce28f6c1fb15"
+content_blake3 = "0c32b1f01ee44ffdd5ec34f0dc63cee0142010dcc5fcbea02834ce28f6c1fb15"
 
 [[artifacts]]
 name = "recording-wire"
@@ -98,9 +88,9 @@ path = "docs/api-coverage.md"
 target = "universal"
 provider = "universal"
 producer = "api-coverage"
-content_blake3 = "5087aa3a054a55ada30383f22c6ad4d480202fd3af1d46e573d4643cae3ff4ba"
+content_blake3 = "10b010f30c6748639f9acf5bbcc209d80d7ff3d506191197d7f175375aea6554"
 
-[[next_artifacts]]
+[[artifacts]]
 name = "bindings-double"
 kind = "bindings"
 path = "boxdd-sys/src/bindings_double.rs"
@@ -108,81 +98,9 @@ precision = "double"
 target = "universal"
 provider = "universal"
 producer = "bindgen"
-content_blake3 = "0000000000000000000000000000000000000000000000000000000000000000"
+content_blake3 = "364c0a4b6fb9443a20fb2f8090e6dd47f440860e6e5e53231d1773fee2e5ec3e"
 
 [source_inventory]
-tree = "37762204bcd6f7ecd24e07dc061caa0f516536da"
-c_sources = [
-    "src/aabb.c",
-    "src/arena_allocator.c",
-    "src/array.c",
-    "src/bitset.c",
-    "src/body.c",
-    "src/broad_phase.c",
-    "src/constraint_graph.c",
-    "src/contact.c",
-    "src/contact_solver.c",
-    "src/core.c",
-    "src/distance.c",
-    "src/distance_joint.c",
-    "src/dynamic_tree.c",
-    "src/geometry.c",
-    "src/hull.c",
-    "src/id_pool.c",
-    "src/island.c",
-    "src/joint.c",
-    "src/manifold.c",
-    "src/math_functions.c",
-    "src/motor_joint.c",
-    "src/mover.c",
-    "src/physics_world.c",
-    "src/prismatic_joint.c",
-    "src/revolute_joint.c",
-    "src/sensor.c",
-    "src/shape.c",
-    "src/solver.c",
-    "src/solver_set.c",
-    "src/table.c",
-    "src/timer.c",
-    "src/types.c",
-    "src/weld_joint.c",
-    "src/wheel_joint.c",
-]
-private_headers = [
-    "src/aabb.h",
-    "src/arena_allocator.h",
-    "src/array.h",
-    "src/atomic.h",
-    "src/bitset.h",
-    "src/body.h",
-    "src/broad_phase.h",
-    "src/constants.h",
-    "src/constraint_graph.h",
-    "src/contact.h",
-    "src/contact_solver.h",
-    "src/core.h",
-    "src/ctz.h",
-    "src/id_pool.h",
-    "src/island.h",
-    "src/joint.h",
-    "src/physics_world.h",
-    "src/sensor.h",
-    "src/shape.h",
-    "src/solver.h",
-    "src/solver_set.h",
-    "src/table.h",
-]
-inline_files = []
-public_headers = [
-    "include/box2d/base.h",
-    "include/box2d/box2d.h",
-    "include/box2d/collision.h",
-    "include/box2d/id.h",
-    "include/box2d/math_functions.h",
-    "include/box2d/types.h",
-]
-
-[next_inventory]
 tree = "63a1ab02e3d2bf7c4d86b257b78976842b8c5ddb"
 c_sources = [
     "src/aabb.c",
