@@ -51,7 +51,7 @@ item = "abi_capability_mapping_rejects_deleted_forged_and_unknown_references"
 package = "xtask"
 gate = "nextest"
 role = "abi-contract-validator"
-fingerprint = "blake3-routes-v1:e160434dc5926469e95f035668240d434a0caa6a05f028ef6b25436c2eb96bff"
+fingerprint = "blake3-routes-v1:14ddbcca901ee449eefb95c8871f168bdd2eb5b27509653640521b46fcdcac36"
 runtime_witnesses = []
 classification_witnesses = []
 
@@ -62,7 +62,7 @@ item = "typed_function_classification_evidence_rejects_unrelated_subjects"
 package = "xtask"
 gate = "nextest"
 role = "function-classification-validator"
-fingerprint = "blake3-routes-v1:fee6d439e2610c25db4ec75e4b2be1e361249803f0005ee4e3f0b3ca28656e76"
+fingerprint = "blake3-routes-v1:ba44ccfa29e4c1284f18b229779b394dc250ce8373713e568063e2843d7c74df"
 runtime_witnesses = []
 
 [[evidence.classification_witnesses]]

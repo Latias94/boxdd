@@ -64,7 +64,7 @@ path = "boxdd/tests/fixtures/api_contract.toml"
 target = "universal"
 provider = "universal"
 producer = "reviewed"
-content_blake3 = "4fff2df982ca404c7581e84a1c46f076627d8ae551ebc407d81ce774da925f3a"
+content_blake3 = "3e30bcc1ae214c92a172839b19416ea85811a5732c3add97e445d57bc1de5d5c"
 
 [[artifacts]]
 name = "recording-wire"

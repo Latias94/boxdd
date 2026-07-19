@@ -427,6 +427,154 @@ pub fn preserve_reviewed_exposure(previous: &AbiContract, generated: &mut AbiCon
         .retain(|policy| used_policies.contains(policy.id.as_str()));
 }
 
+/// Drop inherited Safe exposure when its structural Rust proof no longer matches the refreshed
+/// native inventory.
+///
+/// A callback or field declaration can remain byte-for-byte identical while the function that
+/// installs it changes its argument order or ownership shape. Declaration identity is therefore
+/// necessary, but not sufficient, for carrying a Safe review across an upstream refresh.
+pub fn discard_unproven_reviewed_exposure(
+    contract: &mut AbiContract,
+    inventory: &CApiInventory,
+    binding_routes: &AbiBindingRoutes,
+    rust_indexes: &AbiRustIndexes,
+) {
+    let policies = contract
+        .policies
+        .iter()
+        .cloned()
+        .map(|policy| (policy.id.clone(), policy))
+        .collect::<BTreeMap<_, _>>();
+    let empty_binding_indexes = AbiBindingIndexes::new();
+    let empty_function_symbols = AbiFunctionSymbols::new();
+    let empty_evidence_ids = BTreeSet::new();
+    let context = AbiValidationContext::new(
+        inventory,
+        binding_routes,
+        &empty_binding_indexes,
+        &empty_function_symbols,
+        rust_indexes,
+        &empty_evidence_ids,
+    );
+
+    for structure in &mut contract.structs {
+        if exposure_proof_has_drifted(
+            &format!("ABI struct `{}`", structure.name),
+            &structure.safe_paths,
+            &structure.safe_witnesses,
+            SafeAbiCapability::Struct(&structure.name),
+            policies.get(&structure.policy),
+            &context,
+        ) {
+            downgrade_to_raw(
+                &mut structure.policy,
+                &mut structure.rationale,
+                &mut structure.safe_paths,
+                &mut structure.safe_witnesses,
+            );
+        }
+        for field in &mut structure.fields {
+            if exposure_proof_has_drifted(
+                &format!("ABI field `{}::{}`", structure.name, field.name),
+                &field.safe_paths,
+                &field.safe_witnesses,
+                SafeAbiCapability::Field {
+                    struct_name: &structure.name,
+                    field_name: &field.name,
+                },
+                policies.get(&field.policy),
+                &context,
+            ) {
+                downgrade_to_raw(
+                    &mut field.policy,
+                    &mut field.rationale,
+                    &mut field.safe_paths,
+                    &mut field.safe_witnesses,
+                );
+            }
+        }
+    }
+    for callback in &mut contract.callbacks {
+        if exposure_proof_has_drifted(
+            &format!("ABI callback `{}`", callback.name),
+            &callback.safe_paths,
+            &callback.safe_witnesses,
+            SafeAbiCapability::Callback(&callback.name),
+            policies.get(&callback.policy),
+            &context,
+        ) {
+            downgrade_to_raw(
+                &mut callback.policy,
+                &mut callback.rationale,
+                &mut callback.safe_paths,
+                &mut callback.safe_witnesses,
+            );
+        }
+    }
+
+    if !contract
+        .policies
+        .iter()
+        .any(|policy| policy.id == ABI_POLICY_ID)
+    {
+        contract.policies.push(default_policy(binding_routes));
+    }
+    let used_policies = contract
+        .structs
+        .iter()
+        .flat_map(|structure| {
+            std::iter::once(structure.policy.as_str())
+                .chain(structure.fields.iter().map(|field| field.policy.as_str()))
+        })
+        .chain(
+            contract
+                .callbacks
+                .iter()
+                .map(|callback| callback.policy.as_str()),
+        )
+        .collect::<BTreeSet<_>>();
+    contract
+        .policies
+        .retain(|policy| used_policies.contains(policy.id.as_str()));
+}
+
+fn exposure_proof_has_drifted(
+    subject: &str,
+    safe_paths: &[String],
+    safe_witnesses: &[AbiSafeWitness],
+    capability: SafeAbiCapability<'_>,
+    policy: Option<&AbiCapabilityPolicy>,
+    context: &AbiValidationContext<'_>,
+) -> bool {
+    if safe_paths.is_empty() && safe_witnesses.is_empty() {
+        return false;
+    }
+    let mut errors = Vec::new();
+    validate_exposure(
+        subject,
+        safe_paths,
+        safe_witnesses,
+        capability,
+        policy,
+        context,
+        &mut errors,
+    );
+    !errors.is_empty()
+}
+
+fn downgrade_to_raw(
+    policy: &mut String,
+    rationale: &mut String,
+    safe_paths: &mut Vec<String>,
+    safe_witnesses: &mut Vec<AbiSafeWitness>,
+) {
+    *policy = ABI_POLICY_ID.to_owned();
+    *rationale = "The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw."
+        .to_owned();
+    safe_paths.clear();
+    safe_witnesses.clear();
+}
+
 fn copy_struct_exposure(target: &mut AbiStructContract, source: &AbiStructContract) {
     target.rationale.clone_from(&source.rationale);
     target.policy.clone_from(&source.policy);

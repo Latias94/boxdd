@@ -11,8 +11,9 @@ use crate::{
     abi_contract::{
         ABI_BINDING_EVIDENCE_ID, ABI_HEADER_EVIDENCE_ID, ABI_VALIDATOR_EVIDENCE_ID,
         AbiBindingIndex, AbiBindingIndexes, AbiBindingRoute, AbiBindingRoutes, AbiContract,
-        AbiFunctionSymbols, AbiRustIndexes, AbiValidationContext, map_inventory,
-        preserve_reviewed_exposure, validate as validate_abi,
+        AbiFunctionSymbols, AbiRustIndexes, AbiValidationContext,
+        discard_unproven_reviewed_exposure, map_inventory, preserve_reviewed_exposure,
+        validate as validate_abi,
     },
     c_api::{CApiInventory, parse_headers},
     commands::upstream_sync::{
@@ -1381,6 +1382,12 @@ fn build_refreshed_contract(
     let previous_abi = contract.abi.clone();
     let mut generated_abi = map_inventory(&inventory, &binding_routes, &binding_indexes)?;
     preserve_reviewed_exposure(&previous_abi, &mut generated_abi);
+    discard_unproven_reviewed_exposure(
+        &mut generated_abi,
+        &inventory,
+        &binding_routes,
+        &rust_indexes,
+    );
     contract.abi = generated_abi;
     refresh_evidence_metadata(paths, &mut contract, &rust_indexes, &binding_routes)?;
     validate_contract(
@@ -3711,6 +3718,118 @@ mod tests {
                 .to_string()
                 .contains("names unrelated native symbol `b2Body_SetTransform`")
         );
+    }
+
+    #[test]
+    fn abi_refresh_drops_unchanged_callback_review_when_installation_slot_drifts() {
+        let mut fixture = ContractFixture::create();
+        fs::write(
+            fixture.root.join("boxdd/src/lib.rs"),
+            r#"
+                unsafe extern "C" fn callback() {}
+                pub fn overlap() {
+                    unsafe { boxdd_sys::ffi::b2Body_SetTransform(Some(callback)); }
+                }
+            "#,
+        )
+        .expect("Safe Rust callback fixture");
+        let bindings = fixture.root.join("boxdd-sys/src/bindings_pregenerated.rs");
+        fs::write(
+            &bindings,
+            r#"
+                pub type b2ExampleCallback = Option<unsafe extern "C" fn()>;
+                unsafe extern "C" {
+                    pub fn b2Body_SetTransform(callback: b2ExampleCallback);
+                }
+            "#,
+        )
+        .expect("generated binding fixture");
+        fixture.rust_indexes.insert(
+            ("single".to_owned(), "source".to_owned()),
+            index_boxdd(&fixture.root).expect("callback Rust index"),
+        );
+        fixture
+            .binding_indexes
+            .get_mut("bindings-single")
+            .expect("binding artifact")
+            .index = index_bindings(&bindings).expect("binding index");
+        fixture.inventory.functions[0].signature =
+            "void b2Body_SetTransform ( b2ExampleCallback callback )".to_owned();
+        fixture.inventory.functions[0].parameters = vec!["b2ExampleCallback callback".to_owned()];
+        fixture.inventory.callbacks.push(CallbackDecl {
+            name: "b2ExampleCallback".to_owned(),
+            signature: "void b2ExampleCallback ( void )".to_owned(),
+            fingerprint: "fnv1a64:callback".to_owned(),
+            header: "types.h".to_owned(),
+            line: 1,
+        });
+
+        let mut previous = map_inventory(
+            &fixture.inventory,
+            &fixture.binding_routes,
+            &fixture.binding_indexes,
+        )
+        .expect("callback ABI should map");
+        let mut safe_policy = previous.policies[0].clone();
+        safe_policy.id = "safe-callback-adapter".to_owned();
+        safe_policy.classification = Classification::Safe;
+        safe_policy.rationale =
+            "The exact callback slot receives a panic-contained Rust adapter.".to_owned();
+        previous.policies.push(safe_policy);
+        let callback = &mut previous.callbacks[0];
+        callback.policy = "safe-callback-adapter".to_owned();
+        callback.safe_paths = vec!["boxdd::overlap".to_owned()];
+        callback.safe_witnesses = vec![crate::abi_contract::AbiSafeWitness {
+            path: "boxdd::overlap".to_owned(),
+            kind: crate::abi_contract::AbiSafeWitnessKind::CallbackAdapter,
+            raw_type: "boxdd_sys::ffi::b2ExampleCallback".to_owned(),
+            raw_field: None,
+            native_symbols: vec!["b2Body_SetTransform".to_owned()],
+        }];
+
+        let mut exact = map_inventory(
+            &fixture.inventory,
+            &fixture.binding_routes,
+            &fixture.binding_indexes,
+        )
+        .expect("exact callback ABI should map");
+        preserve_reviewed_exposure(&previous, &mut exact);
+        discard_unproven_reviewed_exposure(
+            &mut exact,
+            &fixture.inventory,
+            &fixture.binding_routes,
+            &fixture.rust_indexes,
+        );
+        assert_eq!(exact.callbacks[0].policy, "safe-callback-adapter");
+
+        let mut drifted_inventory = fixture.inventory.clone();
+        drifted_inventory.functions[0].signature =
+            "void b2Body_SetTransform ( int origin , b2ExampleCallback callback )".to_owned();
+        drifted_inventory.functions[0].parameters = vec![
+            "int origin".to_owned(),
+            "b2ExampleCallback callback".to_owned(),
+        ];
+        let mut drifted = map_inventory(
+            &drifted_inventory,
+            &fixture.binding_routes,
+            &fixture.binding_indexes,
+        )
+        .expect("drifted callback ABI should still map raw types");
+        preserve_reviewed_exposure(&previous, &mut drifted);
+        discard_unproven_reviewed_exposure(
+            &mut drifted,
+            &drifted_inventory,
+            &fixture.binding_routes,
+            &fixture.rust_indexes,
+        );
+
+        assert_eq!(
+            drifted.callbacks[0].policy,
+            crate::abi_contract::ABI_POLICY_ID
+        );
+        assert!(drifted.callbacks[0].safe_paths.is_empty());
+        assert!(drifted.callbacks[0].safe_witnesses.is_empty());
+        assert!(drifted.callbacks[0].rationale.contains("call graph"));
     }
 
     #[test]
