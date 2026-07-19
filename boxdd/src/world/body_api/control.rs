@@ -32,11 +32,18 @@ impl World {
     pub fn set_body_target_transform(
         &mut self,
         body: BodyId,
-        target: Transform,
+        target: WorldTransform,
         time_step: f32,
         wake: bool,
     ) {
         crate::core::debug_checks::assert_body_valid(body);
+        let (target, time_step) = crate::body::assert_valid_body_target_motion(
+            target,
+            time_step,
+            crate::body::body_world_center_of_mass_impl(body),
+            crate::body::body_rotation_impl(body),
+            crate::body::body_local_center_of_mass_impl(body),
+        );
         unsafe {
             ffi::b2Body_SetTargetTransform(raw_body_id(body), target.into_raw(), time_step, wake)
         };
@@ -45,11 +52,18 @@ impl World {
     pub fn try_set_body_target_transform(
         &mut self,
         body: BodyId,
-        target: Transform,
+        target: WorldTransform,
         time_step: f32,
         wake: bool,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
+        let (target, time_step) = crate::body::check_valid_body_target_motion(
+            target,
+            time_step,
+            crate::body::body_world_center_of_mass_impl(body),
+            crate::body::body_rotation_impl(body),
+            crate::body::body_local_center_of_mass_impl(body),
+        )?;
         unsafe {
             ffi::b2Body_SetTargetTransform(raw_body_id(body), target.into_raw(), time_step, wake)
         };
@@ -57,29 +71,33 @@ impl World {
     }
 
     /// Set a body's world position and rotation (angle in radians) by id.
-    pub fn set_body_position_and_rotation<V: Into<Vec2>>(
+    pub fn set_body_position_and_rotation<V: Into<Position>>(
         &mut self,
         body: BodyId,
         p: V,
         angle_radians: f32,
     ) {
         crate::core::debug_checks::assert_body_valid(body);
+        let p = crate::body::assert_valid_body_position("position", p.into());
+        let angle_radians = crate::body::assert_valid_body_float("angle_radians", angle_radians);
         let (s, c) = angle_radians.sin_cos();
         let rot = ffi::b2Rot { c, s };
-        let pos: ffi::b2Vec2 = p.into().into_raw();
+        let pos: ffi::b2Pos = p.into_raw();
         unsafe { ffi::b2Body_SetTransform(raw_body_id(body), pos, rot) };
     }
 
-    pub fn try_set_body_position_and_rotation<V: Into<Vec2>>(
+    pub fn try_set_body_position_and_rotation<V: Into<Position>>(
         &mut self,
         body: BodyId,
         p: V,
         angle_radians: f32,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
+        let p = crate::body::check_valid_body_position(p.into())?;
+        let angle_radians = crate::body::check_valid_body_float(angle_radians)?;
         let (s, c) = angle_radians.sin_cos();
         let rot = ffi::b2Rot { c, s };
-        let pos: ffi::b2Vec2 = p.into().into_raw();
+        let pos: ffi::b2Pos = p.into_raw();
         unsafe { ffi::b2Body_SetTransform(raw_body_id(body), pos, rot) };
         Ok(())
     }
@@ -87,7 +105,8 @@ impl World {
     /// Set a body's linear velocity by id.
     pub fn set_body_linear_velocity<V: Into<Vec2>>(&mut self, body: BodyId, v: V) {
         crate::core::debug_checks::assert_body_valid(body);
-        let vv: ffi::b2Vec2 = v.into().into_raw();
+        let v = crate::body::assert_valid_body_vec2("velocity", v.into());
+        let vv: ffi::b2Vec2 = v.into_raw();
         unsafe { ffi::b2Body_SetLinearVelocity(raw_body_id(body), vv) }
     }
 
@@ -97,7 +116,8 @@ impl World {
         v: V,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
-        let vv: ffi::b2Vec2 = v.into().into_raw();
+        let v = crate::body::check_valid_body_vec2(v.into())?;
+        let vv: ffi::b2Vec2 = v.into_raw();
         unsafe { ffi::b2Body_SetLinearVelocity(raw_body_id(body), vv) }
         Ok(())
     }
@@ -105,6 +125,7 @@ impl World {
     /// Set a body's angular velocity by id.
     pub fn set_body_angular_velocity(&mut self, body: BodyId, w: f32) {
         crate::core::debug_checks::assert_body_valid(body);
+        let w = crate::body::assert_valid_body_float("angular_velocity", w);
         unsafe { ffi::b2Body_SetAngularVelocity(raw_body_id(body), w) }
     }
 
@@ -114,6 +135,7 @@ impl World {
         w: f32,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
+        let w = crate::body::check_valid_body_float(w)?;
         unsafe { ffi::b2Body_SetAngularVelocity(raw_body_id(body), w) }
         Ok(())
     }
@@ -155,6 +177,7 @@ impl World {
 
     pub fn set_body_sleep_threshold(&mut self, body: BodyId, sleep_threshold: f32) {
         crate::core::debug_checks::assert_body_valid(body);
+        crate::body::assert_non_negative_finite_body_scalar("sleep_threshold", sleep_threshold);
         crate::body::body_set_sleep_threshold_impl(body, sleep_threshold)
     }
 
@@ -164,6 +187,7 @@ impl World {
         sleep_threshold: f32,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
+        crate::body::check_non_negative_finite_body_scalar(sleep_threshold)?;
         crate::body::body_set_sleep_threshold_impl(body, sleep_threshold);
         Ok(())
     }
@@ -264,7 +288,8 @@ impl World {
         wake: bool,
     ) {
         crate::core::debug_checks::assert_body_valid(body);
-        let i: ffi::b2Vec2 = impulse.into().into_raw();
+        let impulse = crate::body::assert_valid_body_vec2("impulse", impulse.into());
+        let i: ffi::b2Vec2 = impulse.into_raw();
         unsafe { ffi::b2Body_ApplyLinearImpulseToCenter(raw_body_id(body), i, wake) };
     }
 
@@ -275,7 +300,8 @@ impl World {
         wake: bool,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
-        let i: ffi::b2Vec2 = impulse.into().into_raw();
+        let impulse = crate::body::check_valid_body_vec2(impulse.into())?;
+        let i: ffi::b2Vec2 = impulse.into_raw();
         unsafe { ffi::b2Body_ApplyLinearImpulseToCenter(raw_body_id(body), i, wake) };
         Ok(())
     }
@@ -283,6 +309,7 @@ impl World {
     /// Apply an angular impulse to a body.
     pub fn body_apply_angular_impulse(&mut self, body: BodyId, impulse: f32, wake: bool) {
         crate::core::debug_checks::assert_body_valid(body);
+        let impulse = crate::body::assert_valid_body_float("impulse", impulse);
         unsafe { ffi::b2Body_ApplyAngularImpulse(raw_body_id(body), impulse, wake) };
     }
 
@@ -293,6 +320,7 @@ impl World {
         wake: bool,
     ) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
+        let impulse = crate::body::check_valid_body_float(impulse)?;
         unsafe { ffi::b2Body_ApplyAngularImpulse(raw_body_id(body), impulse, wake) };
         Ok(())
     }
@@ -385,13 +413,13 @@ impl World {
     /// Set a body's name by id.
     pub fn set_body_name(&mut self, body: BodyId, name: &str) {
         crate::core::debug_checks::assert_body_valid(body);
-        let cs = CString::new(name).expect("body name contains an interior NUL byte");
+        let cs = crate::body::assert_valid_body_name(name);
         crate::body::body_set_name_impl(body, cs.as_c_str())
     }
 
     pub fn try_set_body_name(&mut self, body: BodyId, name: &str) -> crate::error::ApiResult<()> {
         crate::core::debug_checks::check_body_valid(body)?;
-        let cs = CString::new(name).map_err(|_| crate::error::ApiError::NulByteInString)?;
+        let cs = crate::body::check_valid_body_name(name)?;
         crate::body::body_set_name_impl(body, cs.as_c_str());
         Ok(())
     }

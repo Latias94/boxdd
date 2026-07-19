@@ -84,16 +84,17 @@
 //!
 //! Queries (AABB + Ray Cast)
 //! ```no_run
-//! use boxdd::{World, WorldDef, BodyBuilder, ShapeDef, shapes, Vec2, Aabb, QueryFilter};
+//! use boxdd::{World, WorldDef, BodyBuilder, ShapeDef, shapes, Position, Vec2, Aabb, QueryFilter};
 //! let mut world = World::new(WorldDef::builder().gravity([0.0,-9.8]).build()).unwrap();
 //! let b = world.create_body_id(BodyBuilder::new().position([0.0, 2.0]).build());
 //! let sdef = ShapeDef::builder().density(1.0).build();
 //! world.create_polygon_shape_for(b, &sdef, &shapes::box_polygon(0.5, 0.5));
 //! // AABB overlap
-//! let hits = world.overlap_aabb(Aabb::from_center_half_extents([0.0, 1.0], [1.0, 1.5]), QueryFilter::default());
+//! let hits = world.overlap_aabb(Position::ZERO, Aabb::from_center_half_extents([0.0, 1.0], [1.0, 1.5]), QueryFilter::default());
 //! assert!(!hits.is_empty());
 //! let mut reused = Vec::new();
 //! world.overlap_aabb_into(
+//!     Position::ZERO,
 //!     Aabb::from_center_half_extents([0.0, 1.0], [1.0, 1.5]),
 //!     QueryFilter::default(),
 //!     &mut reused,
@@ -101,6 +102,7 @@
 //! assert_eq!(hits.len(), reused.len());
 //! let mut visited = 0;
 //! let complete = world.visit_overlap_aabb(
+//!     Position::ZERO,
 //!     Aabb::from_center_half_extents([0.0, 1.0], [1.0, 1.5]),
 //!     QueryFilter::default(),
 //!     |_| {
@@ -111,15 +113,15 @@
 //! assert!(complete);
 //! assert_eq!(hits.len(), visited);
 //! // Ray (closest)
-//! let r = world.cast_ray_closest(Vec2::new(0.0, 5.0), Vec2::new(0.0, -10.0), QueryFilter::default());
+//! let r = world.cast_ray_closest(Position::new(0.0, 5.0), Vec2::new(0.0, -10.0), QueryFilter::default());
 //! if r.hit { let _ = (r.point, r.normal, r.fraction); }
 //! ```
 //!
 //! Character Mover Helpers
 //! ```no_run
-//! use boxdd::{clip_vector, solve_planes, CollisionPlane, QueryFilter, Vec2, World, WorldDef};
+//! use boxdd::{clip_vector, solve_planes, CollisionPlane, Position, QueryFilter, Vec2, World, WorldDef};
 //! let world = World::new(WorldDef::default()).unwrap();
-//! let planes = world.collide_mover([0.0_f32, 0.75], [0.0, 1.75], 0.25, QueryFilter::default());
+//! let planes = world.collide_mover(Position::ZERO, [0.0_f32, 0.75], [0.0, 1.75], 0.25, QueryFilter::default());
 //! let mut rigid: Vec<CollisionPlane> = planes
 //!     .into_iter()
 //!     .filter_map(|p| p.into_rigid_collision_plane())
@@ -141,7 +143,7 @@
 //! let seg = segment_distance([-1.0_f32, 0.0], [1.0, 0.0], [0.0, -1.0], [0.0, 1.0]);
 //! assert!(seg.distance_squared >= 0.0);
 //! let distance = shape_distance(
-//!     DistanceInput::new(proxy_a, proxy_b, Transform::IDENTITY, Transform::IDENTITY),
+//!     DistanceInput::new(proxy_a, proxy_b, Transform::IDENTITY),
 //!     &mut cache,
 //! );
 //! assert!(distance.distance >= 0.0);
@@ -265,11 +267,12 @@ pub mod core {
 }
 
 pub use body::OwnedBody;
-pub use body::{Body, BodyBuilder, BodyDef, BodyType};
+pub use body::{Body, BodyBuilder, BodyDef, BodyType, MAX_BODY_NAME_BYTES};
 pub use collision::{
-    CastOutput, DistanceInput, DistanceOutput, MAX_SHAPE_PROXY_POINTS, SegmentDistanceResult,
-    ShapeCastInput, ShapeCastPairInput, ShapeProxy, SimplexCache, Sweep, ToiInput, ToiOutput,
-    ToiState, collide_capsule_and_circle, collide_capsules, collide_chain_segment_and_capsule,
+    CastOutput, DistanceInput, DistanceOutput, LocalManifold, LocalManifoldPoint,
+    MAX_LOCAL_MANIFOLD_POINTS, MAX_SHAPE_PROXY_POINTS, SegmentDistanceResult, ShapeCastInput,
+    ShapeCastPairInput, ShapeProxy, SimplexCache, Sweep, ToiInput, ToiOutput, ToiState,
+    collide_capsule_and_circle, collide_capsules, collide_chain_segment_and_capsule,
     collide_chain_segment_and_circle, collide_chain_segment_and_polygon, collide_circles,
     collide_polygon_and_capsule, collide_polygon_and_circle, collide_polygons,
     collide_segment_and_capsule, collide_segment_and_circle, collide_segment_and_polygon,
@@ -302,7 +305,7 @@ pub use core::math::{
     rotation_between_unit_vectors, ticks, version, yield_now,
 };
 pub use debug_draw::{DebugDraw, DebugDrawCmd, DebugDrawOptions, HexColor};
-pub use dynamic_tree::{DynamicTree, TreeProxyId, TreeRayCastInput, TreeShapeCastInput, TreeStats};
+pub use dynamic_tree::{DynamicTree, TreeBoxCastInput, TreeProxyId, TreeRayCastInput, TreeStats};
 pub use error::{ApiError, ApiResult};
 pub use events::{
     BodyMoveEvent, ContactBeginTouchEvent, ContactEndTouchEvent, ContactEvents, ContactHitEvent,
@@ -325,11 +328,12 @@ pub use shapes::{
     ShapeDef, ShapeDefBuilder, ShapeType, SurfaceMaterial,
 };
 pub use types::{
-    BodyId, ChainId, ContactData, ContactId, JointId, Manifold, ManifoldPoint, MassData,
-    MotionLocks, ShapeId, Vec2,
+    BodyId, ChainId, ContactData, ContactId, JointId, MAX_MANIFOLD_POINTS, Manifold, ManifoldPoint,
+    MassData, MotionLocks, Position, PositionToLocalError, ShapeId, Vec2, WorldCastOutput,
+    WorldScalar, WorldTransform,
 };
 pub use world::{
-    CallbackWorld, MaterialMixInput, OutstandingOwnedHandles, OwnedHandleCounts, Profile, World,
-    WorldBuilder, WorldDef, WorldHandle,
+    CallbackWorld, Counters, MaterialMixInput, OutstandingOwnedHandles, OwnedHandleCounts, Profile,
+    World, WorldBuilder, WorldDef, WorldHandle,
 };
 pub use world_extras::ExplosionDef;

@@ -1,4 +1,6 @@
-use boxdd::{Aabb, BodyBuilder, QueryFilter, RayResult, ShapeDef, Vec2, World, WorldDef, shapes};
+use boxdd::{
+    Aabb, BodyBuilder, Position, QueryFilter, RayResult, ShapeDef, Vec2, World, WorldDef, shapes,
+};
 
 fn approx(a: f32, b: f32, tol: f32) -> bool {
     (a - b).abs() <= tol
@@ -70,7 +72,7 @@ fn aabb_and_ray_result_use_explicit_raw_conversions() {
 
     let raw = boxdd_sys::ffi::b2RayResult {
         shapeId: shape.id().into_raw(),
-        point: boxdd_sys::ffi::b2Vec2 { x: 1.25, y: -2.5 },
+        point: Position::new(1.25, -2.5).into_raw(),
         normal: boxdd_sys::ffi::b2Vec2 { x: 0.0, y: 1.0 },
         fraction: 0.375,
         hit: true,
@@ -81,13 +83,13 @@ fn aabb_and_ray_result_use_explicit_raw_conversions() {
 
     assert_eq!(hit.shape_id.index1, shape.id().index1);
     assert_eq!(hit.shape_id.generation, shape.id().generation);
-    assert!(approx(hit.point.x, 1.25, f32::EPSILON));
-    assert!(approx(hit.point.y, -2.5, f32::EPSILON));
+    assert_eq!(hit.point, Position::new(1.25, -2.5));
     assert!(approx(hit.normal.x, 0.0, f32::EPSILON));
     assert!(approx(hit.normal.y, 1.0, f32::EPSILON));
     assert!(approx(hit.fraction, 0.375, f32::EPSILON));
     assert!(hit.hit);
 
-    let closest = world.cast_ray_closest([0.0_f32, 2.0], [0.0, -4.0], QueryFilter::default());
+    let closest =
+        world.cast_ray_closest(Position::new(0.0, 2.0), [0.0, -4.0], QueryFilter::default());
     assert!(closest.hit);
 }

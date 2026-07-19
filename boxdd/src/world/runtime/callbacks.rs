@@ -4,7 +4,7 @@ type ShapeFilterFn = fn(crate::types::ShapeId, crate::types::ShapeId) -> bool;
 type PreSolveFn = fn(
     crate::types::ShapeId,
     crate::types::ShapeId,
-    crate::types::Vec2,
+    crate::types::Position,
     crate::types::Vec2,
 ) -> bool;
 
@@ -70,7 +70,7 @@ unsafe extern "C" fn custom_filter_callback(
 unsafe extern "C" fn pre_solve_callback(
     a: ffi::b2ShapeId,
     b: ffi::b2ShapeId,
-    point: ffi::b2Vec2,
+    point: ffi::b2Pos,
     normal: ffi::b2Vec2,
     context: *mut core::ffi::c_void,
 ) -> bool {
@@ -94,7 +94,7 @@ unsafe extern "C" fn pre_solve_callback(
             &cw,
             ShapeId::from_raw(a),
             ShapeId::from_raw(b),
-            crate::types::Vec2::from_raw(point),
+            crate::types::Position::from_raw(point),
             crate::types::Vec2::from_raw(normal),
         )
     })) {
@@ -187,7 +187,7 @@ impl World {
                 &CallbackWorld,
                 crate::types::ShapeId,
                 crate::types::ShapeId,
-                crate::types::Vec2,
+                crate::types::Position,
                 crate::types::Vec2,
             ) -> bool
             + Send
@@ -291,7 +291,7 @@ impl World {
                 &CallbackWorld,
                 crate::types::ShapeId,
                 crate::types::ShapeId,
-                crate::types::Vec2,
+                crate::types::Position,
                 crate::types::Vec2,
             ) -> bool
             + Send
@@ -308,7 +308,7 @@ impl World {
                 &CallbackWorld,
                 crate::types::ShapeId,
                 crate::types::ShapeId,
-                crate::types::Vec2,
+                crate::types::Position,
                 crate::types::Vec2,
             ) -> bool
             + Send
@@ -326,7 +326,7 @@ impl World {
         F: Fn(
                 crate::types::ShapeId,
                 crate::types::ShapeId,
-                crate::types::Vec2,
+                crate::types::Position,
                 crate::types::Vec2,
             ) -> bool
             + Send
@@ -342,7 +342,7 @@ impl World {
         F: Fn(
                 crate::types::ShapeId,
                 crate::types::ShapeId,
-                crate::types::Vec2,
+                crate::types::Position,
                 crate::types::Vec2,
             ) -> bool
             + Send

@@ -4,19 +4,26 @@
 //! structs. It is intentionally more explicit than the high-level `World` query API and
 //! is useful when you want to run geometric tests or contact-manifold generation without
 //! a world instance.
+//!
+//! Pairwise distance, cast, and manifold APIs run in shape A's local frame: callers pass
+//! the transform and translation of B in A, and outputs are returned in A. World poses are
+//! deliberately outside this module's contract.
 
 use crate::{
     core::math::{Rot, Transform},
     error::{ApiError, ApiResult},
     query::Aabb,
     shapes::{Capsule, ChainSegment, Circle, Polygon, Segment},
-    types::{Manifold, Vec2},
+    types::Vec2,
 };
 use boxdd_sys::ffi;
 use core::fmt;
 
 /// Maximum number of points supported by a Box2D shape proxy.
 pub const MAX_SHAPE_PROXY_POINTS: usize = ffi::B2_MAX_POLYGON_VERTICES as usize;
+
+/// Maximum number of points in a standalone collision manifold.
+pub const MAX_LOCAL_MANIFOLD_POINTS: usize = 2;
 
 const _: () = {
     assert!(core::mem::size_of::<Vec2>() == core::mem::size_of::<ffi::b2Vec2>());
@@ -128,11 +135,6 @@ pub struct ShapeProxy {
 }
 
 impl ShapeProxy {
-    #[inline]
-    pub(crate) const fn from_raw(raw: ffi::b2ShapeProxy) -> Self {
-        Self { raw }
-    }
-
     /// Build a proxy from `1..=MAX_SHAPE_PROXY_POINTS` points and an external radius.
     pub fn new<I, P>(points: I, radius: f32) -> Option<Self>
     where
@@ -341,6 +343,94 @@ impl fmt::Debug for SimplexCache {
     }
 }
 
+/// A contact point expressed in shape A's local frame.
+///
+/// Unlike [`crate::types::ManifoldPoint`], this is purely geometric data from a
+/// standalone collision query. It does not contain solver impulses or persistence state.
+#[doc(alias = "local_manifold_point")]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+pub struct LocalManifoldPoint {
+    /// Contact point in shape A's local frame.
+    pub point: Vec2,
+    /// Signed separation; negative values indicate penetration.
+    pub separation: f32,
+    /// Stable feature-pair identifier supplied by Box2D.
+    pub id: u16,
+}
+
+impl LocalManifoldPoint {
+    #[inline]
+    pub const fn from_raw(raw: ffi::b2LocalManifoldPoint) -> Self {
+        Self {
+            point: Vec2::from_raw(raw.point),
+            separation: raw.separation,
+            id: raw.id,
+        }
+    }
+
+    #[inline]
+    pub const fn into_raw(self) -> ffi::b2LocalManifoldPoint {
+        ffi::b2LocalManifoldPoint {
+            point: self.point.into_raw(),
+            separation: self.separation,
+            id: self.id,
+        }
+    }
+}
+
+/// Pure geometric contact manifold expressed in shape A's local frame.
+///
+/// `normal` points from shape A to shape B. Every point returned by [`Self::points`]
+/// is also expressed in A's frame. Convert them with shape A's pose only at a
+/// presentation or world-query boundary; standalone collision never consumes world coordinates.
+#[doc(alias = "local_manifold")]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+pub struct LocalManifold {
+    pub normal: Vec2,
+    pub contact_points: [LocalManifoldPoint; MAX_LOCAL_MANIFOLD_POINTS],
+    pub point_count: i32,
+}
+
+impl LocalManifold {
+    /// The initialized contact points in this manifold.
+    #[inline]
+    pub fn points(&self) -> &[LocalManifoldPoint] {
+        &self.contact_points[..self.point_count()]
+    }
+
+    /// The number of initialized contact points.
+    #[inline]
+    pub fn point_count(&self) -> usize {
+        self.point_count.clamp(0, MAX_LOCAL_MANIFOLD_POINTS as i32) as usize
+    }
+
+    /// Whether this query found no contact points.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.point_count() == 0
+    }
+
+    #[inline]
+    pub fn from_raw(raw: ffi::b2LocalManifold) -> Self {
+        Self {
+            normal: Vec2::from_raw(raw.normal),
+            contact_points: raw.points.map(LocalManifoldPoint::from_raw),
+            point_count: raw.pointCount.clamp(0, MAX_LOCAL_MANIFOLD_POINTS as i32),
+        }
+    }
+
+    #[inline]
+    pub fn into_raw(self) -> ffi::b2LocalManifold {
+        ffi::b2LocalManifold {
+            normal: self.normal.into_raw(),
+            points: self.contact_points.map(LocalManifoldPoint::into_raw),
+            pointCount: self.point_count.clamp(0, MAX_LOCAL_MANIFOLD_POINTS as i32),
+        }
+    }
+}
+
 /// Result of [`segment_distance`].
 #[doc(alias = "segment_distance_result")]
 #[derive(Copy, Clone, Debug)]
@@ -397,31 +487,27 @@ impl CastOutput {
     }
 }
 
-/// Input for [`shape_distance`].
+/// Input for [`shape_distance`], evaluated entirely in shape A's local frame.
 #[doc(alias = "distance_input")]
 #[derive(Copy, Clone, Debug)]
 pub struct DistanceInput {
     pub proxy_a: ShapeProxy,
     pub proxy_b: ShapeProxy,
-    pub transform_a: Transform,
-    pub transform_b: Transform,
+    /// Transform of shape B in shape A's local frame.
+    pub transform_b_in_a: Transform,
     pub use_radii: bool,
 }
 
 impl DistanceInput {
     /// Build distance input with `use_radii = false`.
+    ///
+    /// `transform_b_in_a` maps shape B's local coordinates into shape A's local frame.
     #[inline]
-    pub fn new(
-        proxy_a: ShapeProxy,
-        proxy_b: ShapeProxy,
-        transform_a: Transform,
-        transform_b: Transform,
-    ) -> Self {
+    pub fn new(proxy_a: ShapeProxy, proxy_b: ShapeProxy, transform_b_in_a: Transform) -> Self {
         Self {
             proxy_a,
             proxy_b,
-            transform_a,
-            transform_b,
+            transform_b_in_a,
             use_radii: false,
         }
     }
@@ -437,8 +523,7 @@ impl DistanceInput {
     pub fn validate(&self) -> ApiResult<()> {
         self.proxy_a.validate()?;
         self.proxy_b.validate()?;
-        check_collision_transform_valid(self.transform_a)?;
-        check_collision_transform_valid(self.transform_b)?;
+        check_collision_transform_valid(self.transform_b_in_a)?;
         Ok(())
     }
 
@@ -447,14 +532,13 @@ impl DistanceInput {
         ffi::b2DistanceInput {
             proxyA: self.proxy_a.raw(),
             proxyB: self.proxy_b.raw(),
-            transformA: self.transform_a.into_raw(),
-            transformB: self.transform_b.into_raw(),
+            transform: self.transform_b_in_a.into_raw(),
             useRadii: self.use_radii,
         }
     }
 }
 
-/// Output from [`shape_distance`].
+/// Output from [`shape_distance`], expressed in shape A's local frame.
 #[doc(alias = "distance_output")]
 #[derive(Copy, Clone, Debug)]
 pub struct DistanceOutput {
@@ -480,41 +564,41 @@ impl DistanceOutput {
     }
 }
 
-/// Input for [`shape_cast`].
+/// Input for [`shape_cast`], evaluated entirely in shape A's local frame.
 #[doc(alias = "shape_cast_pair_input")]
 #[derive(Copy, Clone, Debug)]
 pub struct ShapeCastPairInput {
     pub proxy_a: ShapeProxy,
     pub proxy_b: ShapeProxy,
-    pub transform_a: Transform,
-    pub transform_b: Transform,
-    pub translation_b: Vec2,
+    /// Transform of shape B in shape A's local frame.
+    pub transform_b_in_a: Transform,
+    /// Translation of shape B expressed in shape A's local frame.
+    pub translation_b_in_a: Vec2,
     pub max_fraction: f32,
     pub can_encroach: bool,
 }
 
 impl ShapeCastPairInput {
-    /// Build a shape cast where shape B moves by `translation_b`.
+    /// Build a shape cast where B starts at `transform_b_in_a` and moves by
+    /// `translation_b_in_a`, both expressed in shape A's local frame.
     #[inline]
     pub fn new<V: Into<Vec2>>(
         proxy_a: ShapeProxy,
         proxy_b: ShapeProxy,
-        transform_a: Transform,
-        transform_b: Transform,
-        translation_b: V,
+        transform_b_in_a: Transform,
+        translation_b_in_a: V,
     ) -> Self {
         Self {
             proxy_a,
             proxy_b,
-            transform_a,
-            transform_b,
-            translation_b: translation_b.into(),
+            transform_b_in_a,
+            translation_b_in_a: translation_b_in_a.into(),
             max_fraction: 1.0,
             can_encroach: false,
         }
     }
 
-    /// Limit the portion of `translation_b` considered by the cast.
+    /// Limit the portion of `translation_b_in_a` considered by the cast.
     #[inline]
     pub fn with_max_fraction(mut self, max_fraction: f32) -> Self {
         self.max_fraction = max_fraction;
@@ -532,9 +616,8 @@ impl ShapeCastPairInput {
     pub fn validate(&self) -> ApiResult<()> {
         self.proxy_a.validate()?;
         self.proxy_b.validate()?;
-        check_collision_transform_valid(self.transform_a)?;
-        check_collision_transform_valid(self.transform_b)?;
-        check_collision_vec2_valid(self.translation_b)?;
+        check_collision_transform_valid(self.transform_b_in_a)?;
+        check_collision_vec2_valid(self.translation_b_in_a)?;
         check_collision_unit_interval_scalar(self.max_fraction)?;
         Ok(())
     }
@@ -544,9 +627,8 @@ impl ShapeCastPairInput {
         ffi::b2ShapeCastPairInput {
             proxyA: self.proxy_a.raw(),
             proxyB: self.proxy_b.raw(),
-            transformA: self.transform_a.into_raw(),
-            transformB: self.transform_b.into_raw(),
-            translationB: self.translation_b.into_raw(),
+            transform: self.transform_b_in_a.into_raw(),
+            translationB: self.translation_b_in_a.into_raw(),
             maxFraction: self.max_fraction,
             canEncroach: self.can_encroach,
         }
@@ -803,6 +885,8 @@ pub fn try_shape_distance(
 }
 
 /// Cast shape B against shape A.
+///
+/// The hit point and normal are returned in shape A's local frame.
 pub fn shape_cast(input: ShapeCastPairInput) -> CastOutput {
     assert_collision_input_valid("shape_cast input", input.validate().is_ok());
     let raw_input = input.into_raw();
@@ -810,6 +894,8 @@ pub fn shape_cast(input: ShapeCastPairInput) -> CastOutput {
 }
 
 /// Cast shape B against shape A with recoverable validation.
+///
+/// The hit point and normal are returned in shape A's local frame.
 pub fn try_shape_cast(input: ShapeCastPairInput) -> ApiResult<CastOutput> {
     input.validate()?;
     let raw_input = input.into_raw();
@@ -835,668 +921,488 @@ pub fn try_time_of_impact(input: ToiInput) -> ApiResult<ToiOutput> {
 }
 
 /// Compute the contact manifold between two circles.
+///
+/// `transform_b_in_a` maps shape B's local coordinates into shape A's local frame.
+/// The returned manifold is expressed in shape A's frame.
 #[doc(alias = "b2CollideCircles")]
 pub fn collide_circles(
     circle_a: Circle,
-    transform_a: Transform,
     circle_b: Circle,
-    transform_b: Transform,
-) -> Manifold {
+    transform_b_in_a: Transform,
+) -> LocalManifold {
     assert_collision_input_valid("circle_a", circle_a.validate().is_ok());
-    assert_collision_input_valid(
-        "transform_a",
-        check_collision_transform_valid(transform_a).is_ok(),
-    );
     assert_collision_input_valid("circle_b", circle_b.validate().is_ok());
     assert_collision_input_valid(
-        "transform_b",
-        check_collision_transform_valid(transform_b).is_ok(),
+        "transform_b_in_a",
+        check_collision_transform_valid(transform_b_in_a).is_ok(),
     );
     let raw_a = circle_a.into_raw();
     let raw_b = circle_b.into_raw();
-    Manifold::from_raw(unsafe {
-        ffi::b2CollideCircles(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-        )
+    LocalManifold::from_raw(unsafe {
+        ffi::b2CollideCircles(&raw_a, &raw_b, transform_b_in_a.into_raw())
     })
 }
 
 /// Compute the contact manifold between two circles with recoverable validation.
 pub fn try_collide_circles(
     circle_a: Circle,
-    transform_a: Transform,
     circle_b: Circle,
-    transform_b: Transform,
-) -> ApiResult<Manifold> {
+    transform_b_in_a: Transform,
+) -> ApiResult<LocalManifold> {
     circle_a.validate()?;
-    check_collision_transform_valid(transform_a)?;
     circle_b.validate()?;
-    check_collision_transform_valid(transform_b)?;
+    check_collision_transform_valid(transform_b_in_a)?;
     let raw_a = circle_a.into_raw();
     let raw_b = circle_b.into_raw();
-    Ok(Manifold::from_raw(unsafe {
-        ffi::b2CollideCircles(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-        )
+    Ok(LocalManifold::from_raw(unsafe {
+        ffi::b2CollideCircles(&raw_a, &raw_b, transform_b_in_a.into_raw())
     }))
 }
 
 /// Compute the contact manifold between a capsule and a circle.
+///
+/// `transform_b_in_a` maps the circle into the capsule's local frame. The returned
+/// manifold is expressed in the capsule's frame.
 #[doc(alias = "b2CollideCapsuleAndCircle")]
 pub fn collide_capsule_and_circle(
     capsule_a: Capsule,
-    transform_a: Transform,
     circle_b: Circle,
-    transform_b: Transform,
-) -> Manifold {
+    transform_b_in_a: Transform,
+) -> LocalManifold {
     assert_collision_input_valid("capsule_a", capsule_a.validate().is_ok());
-    assert_collision_input_valid(
-        "transform_a",
-        check_collision_transform_valid(transform_a).is_ok(),
-    );
     assert_collision_input_valid("circle_b", circle_b.validate().is_ok());
     assert_collision_input_valid(
-        "transform_b",
-        check_collision_transform_valid(transform_b).is_ok(),
+        "transform_b_in_a",
+        check_collision_transform_valid(transform_b_in_a).is_ok(),
     );
     let raw_a = capsule_a.into_raw();
     let raw_b = circle_b.into_raw();
-    Manifold::from_raw(unsafe {
-        ffi::b2CollideCapsuleAndCircle(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-        )
+    LocalManifold::from_raw(unsafe {
+        ffi::b2CollideCapsuleAndCircle(&raw_a, &raw_b, transform_b_in_a.into_raw())
     })
 }
 
 /// Compute the contact manifold between a capsule and a circle with recoverable validation.
 pub fn try_collide_capsule_and_circle(
     capsule_a: Capsule,
-    transform_a: Transform,
     circle_b: Circle,
-    transform_b: Transform,
-) -> ApiResult<Manifold> {
+    transform_b_in_a: Transform,
+) -> ApiResult<LocalManifold> {
     capsule_a.validate()?;
-    check_collision_transform_valid(transform_a)?;
     circle_b.validate()?;
-    check_collision_transform_valid(transform_b)?;
+    check_collision_transform_valid(transform_b_in_a)?;
     let raw_a = capsule_a.into_raw();
     let raw_b = circle_b.into_raw();
-    Ok(Manifold::from_raw(unsafe {
-        ffi::b2CollideCapsuleAndCircle(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-        )
+    Ok(LocalManifold::from_raw(unsafe {
+        ffi::b2CollideCapsuleAndCircle(&raw_a, &raw_b, transform_b_in_a.into_raw())
     }))
 }
 
 /// Compute the contact manifold between a segment and a circle.
+///
+/// `transform_b_in_a` maps the circle into the segment's local frame. The returned
+/// manifold is expressed in the segment's frame.
 #[doc(alias = "b2CollideSegmentAndCircle")]
 pub fn collide_segment_and_circle(
     segment_a: Segment,
-    transform_a: Transform,
     circle_b: Circle,
-    transform_b: Transform,
-) -> Manifold {
+    transform_b_in_a: Transform,
+) -> LocalManifold {
     assert_collision_input_valid("segment_a", segment_a.validate().is_ok());
-    assert_collision_input_valid(
-        "transform_a",
-        check_collision_transform_valid(transform_a).is_ok(),
-    );
     assert_collision_input_valid("circle_b", circle_b.validate().is_ok());
     assert_collision_input_valid(
-        "transform_b",
-        check_collision_transform_valid(transform_b).is_ok(),
+        "transform_b_in_a",
+        check_collision_transform_valid(transform_b_in_a).is_ok(),
     );
     let raw_a = segment_a.into_raw();
     let raw_b = circle_b.into_raw();
-    Manifold::from_raw(unsafe {
-        ffi::b2CollideSegmentAndCircle(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-        )
+    LocalManifold::from_raw(unsafe {
+        ffi::b2CollideSegmentAndCircle(&raw_a, &raw_b, transform_b_in_a.into_raw())
     })
 }
 
 /// Compute the contact manifold between a segment and a circle with recoverable validation.
 pub fn try_collide_segment_and_circle(
     segment_a: Segment,
-    transform_a: Transform,
     circle_b: Circle,
-    transform_b: Transform,
-) -> ApiResult<Manifold> {
+    transform_b_in_a: Transform,
+) -> ApiResult<LocalManifold> {
     segment_a.validate()?;
-    check_collision_transform_valid(transform_a)?;
     circle_b.validate()?;
-    check_collision_transform_valid(transform_b)?;
+    check_collision_transform_valid(transform_b_in_a)?;
     let raw_a = segment_a.into_raw();
     let raw_b = circle_b.into_raw();
-    Ok(Manifold::from_raw(unsafe {
-        ffi::b2CollideSegmentAndCircle(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-        )
+    Ok(LocalManifold::from_raw(unsafe {
+        ffi::b2CollideSegmentAndCircle(&raw_a, &raw_b, transform_b_in_a.into_raw())
     }))
 }
 
 /// Compute the contact manifold between a polygon and a circle.
+///
+/// `transform_b_in_a` maps the circle into the polygon's local frame. The returned
+/// manifold is expressed in the polygon's frame.
 #[doc(alias = "b2CollidePolygonAndCircle")]
 pub fn collide_polygon_and_circle(
     polygon_a: Polygon,
-    transform_a: Transform,
     circle_b: Circle,
-    transform_b: Transform,
-) -> Manifold {
+    transform_b_in_a: Transform,
+) -> LocalManifold {
     assert_collision_input_valid("polygon_a", polygon_a.validate().is_ok());
-    assert_collision_input_valid(
-        "transform_a",
-        check_collision_transform_valid(transform_a).is_ok(),
-    );
     assert_collision_input_valid("circle_b", circle_b.validate().is_ok());
     assert_collision_input_valid(
-        "transform_b",
-        check_collision_transform_valid(transform_b).is_ok(),
+        "transform_b_in_a",
+        check_collision_transform_valid(transform_b_in_a).is_ok(),
     );
     let raw_a = polygon_a.into_raw();
     let raw_b = circle_b.into_raw();
-    Manifold::from_raw(unsafe {
-        ffi::b2CollidePolygonAndCircle(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-        )
+    LocalManifold::from_raw(unsafe {
+        ffi::b2CollidePolygonAndCircle(&raw_a, &raw_b, transform_b_in_a.into_raw())
     })
 }
 
 /// Compute the contact manifold between a polygon and a circle with recoverable validation.
 pub fn try_collide_polygon_and_circle(
     polygon_a: Polygon,
-    transform_a: Transform,
     circle_b: Circle,
-    transform_b: Transform,
-) -> ApiResult<Manifold> {
+    transform_b_in_a: Transform,
+) -> ApiResult<LocalManifold> {
     polygon_a.validate()?;
-    check_collision_transform_valid(transform_a)?;
     circle_b.validate()?;
-    check_collision_transform_valid(transform_b)?;
+    check_collision_transform_valid(transform_b_in_a)?;
     let raw_a = polygon_a.into_raw();
     let raw_b = circle_b.into_raw();
-    Ok(Manifold::from_raw(unsafe {
-        ffi::b2CollidePolygonAndCircle(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-        )
+    Ok(LocalManifold::from_raw(unsafe {
+        ffi::b2CollidePolygonAndCircle(&raw_a, &raw_b, transform_b_in_a.into_raw())
     }))
 }
 
 /// Compute the contact manifold between two capsules.
+///
+/// `transform_b_in_a` maps capsule B into capsule A's local frame. The returned
+/// manifold is expressed in capsule A's frame.
 #[doc(alias = "b2CollideCapsules")]
 pub fn collide_capsules(
     capsule_a: Capsule,
-    transform_a: Transform,
     capsule_b: Capsule,
-    transform_b: Transform,
-) -> Manifold {
+    transform_b_in_a: Transform,
+) -> LocalManifold {
     assert_collision_input_valid("capsule_a", capsule_a.validate().is_ok());
-    assert_collision_input_valid(
-        "transform_a",
-        check_collision_transform_valid(transform_a).is_ok(),
-    );
     assert_collision_input_valid("capsule_b", capsule_b.validate().is_ok());
     assert_collision_input_valid(
-        "transform_b",
-        check_collision_transform_valid(transform_b).is_ok(),
+        "transform_b_in_a",
+        check_collision_transform_valid(transform_b_in_a).is_ok(),
     );
     let raw_a = capsule_a.into_raw();
     let raw_b = capsule_b.into_raw();
-    Manifold::from_raw(unsafe {
-        ffi::b2CollideCapsules(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-        )
+    LocalManifold::from_raw(unsafe {
+        ffi::b2CollideCapsules(&raw_a, &raw_b, transform_b_in_a.into_raw())
     })
 }
 
 /// Compute the contact manifold between two capsules with recoverable validation.
 pub fn try_collide_capsules(
     capsule_a: Capsule,
-    transform_a: Transform,
     capsule_b: Capsule,
-    transform_b: Transform,
-) -> ApiResult<Manifold> {
+    transform_b_in_a: Transform,
+) -> ApiResult<LocalManifold> {
     capsule_a.validate()?;
-    check_collision_transform_valid(transform_a)?;
     capsule_b.validate()?;
-    check_collision_transform_valid(transform_b)?;
+    check_collision_transform_valid(transform_b_in_a)?;
     let raw_a = capsule_a.into_raw();
     let raw_b = capsule_b.into_raw();
-    Ok(Manifold::from_raw(unsafe {
-        ffi::b2CollideCapsules(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-        )
+    Ok(LocalManifold::from_raw(unsafe {
+        ffi::b2CollideCapsules(&raw_a, &raw_b, transform_b_in_a.into_raw())
     }))
 }
 
 /// Compute the contact manifold between a segment and a capsule.
+///
+/// `transform_b_in_a` maps the capsule into the segment's local frame. The returned
+/// manifold is expressed in the segment's frame.
 #[doc(alias = "b2CollideSegmentAndCapsule")]
 pub fn collide_segment_and_capsule(
     segment_a: Segment,
-    transform_a: Transform,
     capsule_b: Capsule,
-    transform_b: Transform,
-) -> Manifold {
+    transform_b_in_a: Transform,
+) -> LocalManifold {
     assert_collision_input_valid("segment_a", segment_a.validate().is_ok());
-    assert_collision_input_valid(
-        "transform_a",
-        check_collision_transform_valid(transform_a).is_ok(),
-    );
     assert_collision_input_valid("capsule_b", capsule_b.validate().is_ok());
     assert_collision_input_valid(
-        "transform_b",
-        check_collision_transform_valid(transform_b).is_ok(),
+        "transform_b_in_a",
+        check_collision_transform_valid(transform_b_in_a).is_ok(),
     );
     let raw_a = segment_a.into_raw();
     let raw_b = capsule_b.into_raw();
-    Manifold::from_raw(unsafe {
-        ffi::b2CollideSegmentAndCapsule(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-        )
+    LocalManifold::from_raw(unsafe {
+        ffi::b2CollideSegmentAndCapsule(&raw_a, &raw_b, transform_b_in_a.into_raw())
     })
 }
 
 /// Compute the contact manifold between a segment and a capsule with recoverable validation.
 pub fn try_collide_segment_and_capsule(
     segment_a: Segment,
-    transform_a: Transform,
     capsule_b: Capsule,
-    transform_b: Transform,
-) -> ApiResult<Manifold> {
+    transform_b_in_a: Transform,
+) -> ApiResult<LocalManifold> {
     segment_a.validate()?;
-    check_collision_transform_valid(transform_a)?;
     capsule_b.validate()?;
-    check_collision_transform_valid(transform_b)?;
+    check_collision_transform_valid(transform_b_in_a)?;
     let raw_a = segment_a.into_raw();
     let raw_b = capsule_b.into_raw();
-    Ok(Manifold::from_raw(unsafe {
-        ffi::b2CollideSegmentAndCapsule(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-        )
+    Ok(LocalManifold::from_raw(unsafe {
+        ffi::b2CollideSegmentAndCapsule(&raw_a, &raw_b, transform_b_in_a.into_raw())
     }))
 }
 
 /// Compute the contact manifold between a polygon and a capsule.
+///
+/// `transform_b_in_a` maps the capsule into the polygon's local frame. The returned
+/// manifold is expressed in the polygon's frame.
 #[doc(alias = "b2CollidePolygonAndCapsule")]
 pub fn collide_polygon_and_capsule(
     polygon_a: Polygon,
-    transform_a: Transform,
     capsule_b: Capsule,
-    transform_b: Transform,
-) -> Manifold {
+    transform_b_in_a: Transform,
+) -> LocalManifold {
     assert_collision_input_valid("polygon_a", polygon_a.validate().is_ok());
-    assert_collision_input_valid(
-        "transform_a",
-        check_collision_transform_valid(transform_a).is_ok(),
-    );
     assert_collision_input_valid("capsule_b", capsule_b.validate().is_ok());
     assert_collision_input_valid(
-        "transform_b",
-        check_collision_transform_valid(transform_b).is_ok(),
+        "transform_b_in_a",
+        check_collision_transform_valid(transform_b_in_a).is_ok(),
     );
     let raw_a = polygon_a.into_raw();
     let raw_b = capsule_b.into_raw();
-    Manifold::from_raw(unsafe {
-        ffi::b2CollidePolygonAndCapsule(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-        )
+    LocalManifold::from_raw(unsafe {
+        ffi::b2CollidePolygonAndCapsule(&raw_a, &raw_b, transform_b_in_a.into_raw())
     })
 }
 
 /// Compute the contact manifold between a polygon and a capsule with recoverable validation.
 pub fn try_collide_polygon_and_capsule(
     polygon_a: Polygon,
-    transform_a: Transform,
     capsule_b: Capsule,
-    transform_b: Transform,
-) -> ApiResult<Manifold> {
+    transform_b_in_a: Transform,
+) -> ApiResult<LocalManifold> {
     polygon_a.validate()?;
-    check_collision_transform_valid(transform_a)?;
     capsule_b.validate()?;
-    check_collision_transform_valid(transform_b)?;
+    check_collision_transform_valid(transform_b_in_a)?;
     let raw_a = polygon_a.into_raw();
     let raw_b = capsule_b.into_raw();
-    Ok(Manifold::from_raw(unsafe {
-        ffi::b2CollidePolygonAndCapsule(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-        )
+    Ok(LocalManifold::from_raw(unsafe {
+        ffi::b2CollidePolygonAndCapsule(&raw_a, &raw_b, transform_b_in_a.into_raw())
     }))
 }
 
 /// Compute the contact manifold between two polygons.
+///
+/// `transform_b_in_a` maps polygon B into polygon A's local frame. The returned
+/// manifold is expressed in polygon A's frame.
 #[doc(alias = "b2CollidePolygons")]
 pub fn collide_polygons(
     polygon_a: Polygon,
-    transform_a: Transform,
     polygon_b: Polygon,
-    transform_b: Transform,
-) -> Manifold {
+    transform_b_in_a: Transform,
+) -> LocalManifold {
     assert_collision_input_valid("polygon_a", polygon_a.validate().is_ok());
-    assert_collision_input_valid(
-        "transform_a",
-        check_collision_transform_valid(transform_a).is_ok(),
-    );
     assert_collision_input_valid("polygon_b", polygon_b.validate().is_ok());
     assert_collision_input_valid(
-        "transform_b",
-        check_collision_transform_valid(transform_b).is_ok(),
+        "transform_b_in_a",
+        check_collision_transform_valid(transform_b_in_a).is_ok(),
     );
     let raw_a = polygon_a.into_raw();
     let raw_b = polygon_b.into_raw();
-    Manifold::from_raw(unsafe {
-        ffi::b2CollidePolygons(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-        )
+    LocalManifold::from_raw(unsafe {
+        ffi::b2CollidePolygons(&raw_a, &raw_b, transform_b_in_a.into_raw())
     })
 }
 
 /// Compute the contact manifold between two polygons with recoverable validation.
 pub fn try_collide_polygons(
     polygon_a: Polygon,
-    transform_a: Transform,
     polygon_b: Polygon,
-    transform_b: Transform,
-) -> ApiResult<Manifold> {
+    transform_b_in_a: Transform,
+) -> ApiResult<LocalManifold> {
     polygon_a.validate()?;
-    check_collision_transform_valid(transform_a)?;
     polygon_b.validate()?;
-    check_collision_transform_valid(transform_b)?;
+    check_collision_transform_valid(transform_b_in_a)?;
     let raw_a = polygon_a.into_raw();
     let raw_b = polygon_b.into_raw();
-    Ok(Manifold::from_raw(unsafe {
-        ffi::b2CollidePolygons(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-        )
+    Ok(LocalManifold::from_raw(unsafe {
+        ffi::b2CollidePolygons(&raw_a, &raw_b, transform_b_in_a.into_raw())
     }))
 }
 
 /// Compute the contact manifold between a segment and a polygon.
+///
+/// `transform_b_in_a` maps the polygon into the segment's local frame. The returned
+/// manifold is expressed in the segment's frame.
 #[doc(alias = "b2CollideSegmentAndPolygon")]
 pub fn collide_segment_and_polygon(
     segment_a: Segment,
-    transform_a: Transform,
     polygon_b: Polygon,
-    transform_b: Transform,
-) -> Manifold {
+    transform_b_in_a: Transform,
+) -> LocalManifold {
     assert_collision_input_valid("segment_a", segment_a.validate().is_ok());
-    assert_collision_input_valid(
-        "transform_a",
-        check_collision_transform_valid(transform_a).is_ok(),
-    );
     assert_collision_input_valid("polygon_b", polygon_b.validate().is_ok());
     assert_collision_input_valid(
-        "transform_b",
-        check_collision_transform_valid(transform_b).is_ok(),
+        "transform_b_in_a",
+        check_collision_transform_valid(transform_b_in_a).is_ok(),
     );
     let raw_a = segment_a.into_raw();
     let raw_b = polygon_b.into_raw();
-    Manifold::from_raw(unsafe {
-        ffi::b2CollideSegmentAndPolygon(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-        )
+    LocalManifold::from_raw(unsafe {
+        ffi::b2CollideSegmentAndPolygon(&raw_a, &raw_b, transform_b_in_a.into_raw())
     })
 }
 
 /// Compute the contact manifold between a segment and a polygon with recoverable validation.
 pub fn try_collide_segment_and_polygon(
     segment_a: Segment,
-    transform_a: Transform,
     polygon_b: Polygon,
-    transform_b: Transform,
-) -> ApiResult<Manifold> {
+    transform_b_in_a: Transform,
+) -> ApiResult<LocalManifold> {
     segment_a.validate()?;
-    check_collision_transform_valid(transform_a)?;
     polygon_b.validate()?;
-    check_collision_transform_valid(transform_b)?;
+    check_collision_transform_valid(transform_b_in_a)?;
     let raw_a = segment_a.into_raw();
     let raw_b = polygon_b.into_raw();
-    Ok(Manifold::from_raw(unsafe {
-        ffi::b2CollideSegmentAndPolygon(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-        )
+    Ok(LocalManifold::from_raw(unsafe {
+        ffi::b2CollideSegmentAndPolygon(&raw_a, &raw_b, transform_b_in_a.into_raw())
     }))
 }
 
 /// Compute the contact manifold between a chain segment and a circle.
+///
+/// `transform_b_in_a` maps the circle into the chain segment's local frame. The
+/// returned manifold is expressed in the chain segment's frame.
 #[doc(alias = "b2CollideChainSegmentAndCircle")]
 pub fn collide_chain_segment_and_circle(
     segment_a: ChainSegment,
-    transform_a: Transform,
     circle_b: Circle,
-    transform_b: Transform,
-) -> Manifold {
+    transform_b_in_a: Transform,
+) -> LocalManifold {
     assert_collision_input_valid("segment_a", segment_a.validate().is_ok());
-    assert_collision_input_valid(
-        "transform_a",
-        check_collision_transform_valid(transform_a).is_ok(),
-    );
     assert_collision_input_valid("circle_b", circle_b.validate().is_ok());
     assert_collision_input_valid(
-        "transform_b",
-        check_collision_transform_valid(transform_b).is_ok(),
+        "transform_b_in_a",
+        check_collision_transform_valid(transform_b_in_a).is_ok(),
     );
     let raw_a = segment_a.into_raw();
     let raw_b = circle_b.into_raw();
-    Manifold::from_raw(unsafe {
-        ffi::b2CollideChainSegmentAndCircle(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-        )
+    LocalManifold::from_raw(unsafe {
+        ffi::b2CollideChainSegmentAndCircle(&raw_a, &raw_b, transform_b_in_a.into_raw())
     })
 }
 
 /// Compute the contact manifold between a chain segment and a circle with recoverable validation.
 pub fn try_collide_chain_segment_and_circle(
     segment_a: ChainSegment,
-    transform_a: Transform,
     circle_b: Circle,
-    transform_b: Transform,
-) -> ApiResult<Manifold> {
+    transform_b_in_a: Transform,
+) -> ApiResult<LocalManifold> {
     segment_a.validate()?;
-    check_collision_transform_valid(transform_a)?;
     circle_b.validate()?;
-    check_collision_transform_valid(transform_b)?;
+    check_collision_transform_valid(transform_b_in_a)?;
     let raw_a = segment_a.into_raw();
     let raw_b = circle_b.into_raw();
-    Ok(Manifold::from_raw(unsafe {
-        ffi::b2CollideChainSegmentAndCircle(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-        )
+    Ok(LocalManifold::from_raw(unsafe {
+        ffi::b2CollideChainSegmentAndCircle(&raw_a, &raw_b, transform_b_in_a.into_raw())
     }))
 }
 
 /// Compute the contact manifold between a chain segment and a capsule.
+///
+/// `transform_b_in_a` maps the capsule into the chain segment's local frame. The
+/// returned manifold is expressed in the chain segment's frame.
 ///
 /// Provide `cache` when repeatedly colliding against nearby rounded shapes to
 /// warm-start the internal edge solver.
 #[doc(alias = "b2CollideChainSegmentAndCapsule")]
 pub fn collide_chain_segment_and_capsule(
     segment_a: ChainSegment,
-    transform_a: Transform,
     capsule_b: Capsule,
-    transform_b: Transform,
+    transform_b_in_a: Transform,
     cache: Option<&mut SimplexCache>,
-) -> Manifold {
+) -> LocalManifold {
     assert_collision_input_valid("segment_a", segment_a.validate().is_ok());
-    assert_collision_input_valid(
-        "transform_a",
-        check_collision_transform_valid(transform_a).is_ok(),
-    );
     assert_collision_input_valid("capsule_b", capsule_b.validate().is_ok());
     assert_collision_input_valid(
-        "transform_b",
-        check_collision_transform_valid(transform_b).is_ok(),
+        "transform_b_in_a",
+        check_collision_transform_valid(transform_b_in_a).is_ok(),
     );
     let raw_a = segment_a.into_raw();
     let raw_b = capsule_b.into_raw();
-    let cache_ptr = match cache {
-        Some(cache) => cache.raw_mut(),
-        None => core::ptr::null_mut(),
-    };
-    Manifold::from_raw(unsafe {
-        ffi::b2CollideChainSegmentAndCapsule(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-            cache_ptr,
-        )
+    let mut fallback_cache = SimplexCache::default();
+    let cache_ptr = cache.unwrap_or(&mut fallback_cache).raw_mut();
+    LocalManifold::from_raw(unsafe {
+        ffi::b2CollideChainSegmentAndCapsule(&raw_a, &raw_b, transform_b_in_a.into_raw(), cache_ptr)
     })
 }
 
 /// Compute the contact manifold between a chain segment and a capsule with recoverable validation.
 pub fn try_collide_chain_segment_and_capsule(
     segment_a: ChainSegment,
-    transform_a: Transform,
     capsule_b: Capsule,
-    transform_b: Transform,
+    transform_b_in_a: Transform,
     cache: Option<&mut SimplexCache>,
-) -> ApiResult<Manifold> {
+) -> ApiResult<LocalManifold> {
     segment_a.validate()?;
-    check_collision_transform_valid(transform_a)?;
     capsule_b.validate()?;
-    check_collision_transform_valid(transform_b)?;
+    check_collision_transform_valid(transform_b_in_a)?;
     let raw_a = segment_a.into_raw();
     let raw_b = capsule_b.into_raw();
-    let cache_ptr = match cache {
-        Some(cache) => cache.raw_mut(),
-        None => core::ptr::null_mut(),
-    };
-    Ok(Manifold::from_raw(unsafe {
-        ffi::b2CollideChainSegmentAndCapsule(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-            cache_ptr,
-        )
+    let mut fallback_cache = SimplexCache::default();
+    let cache_ptr = cache.unwrap_or(&mut fallback_cache).raw_mut();
+    Ok(LocalManifold::from_raw(unsafe {
+        ffi::b2CollideChainSegmentAndCapsule(&raw_a, &raw_b, transform_b_in_a.into_raw(), cache_ptr)
     }))
 }
 
 /// Compute the contact manifold between a chain segment and a polygon.
+///
+/// `transform_b_in_a` maps the polygon into the chain segment's local frame. The
+/// returned manifold is expressed in the chain segment's frame.
 ///
 /// Provide `cache` when repeatedly colliding against nearby rounded polygons to
 /// warm-start the internal edge solver.
 #[doc(alias = "b2CollideChainSegmentAndPolygon")]
 pub fn collide_chain_segment_and_polygon(
     segment_a: ChainSegment,
-    transform_a: Transform,
     polygon_b: Polygon,
-    transform_b: Transform,
+    transform_b_in_a: Transform,
     cache: Option<&mut SimplexCache>,
-) -> Manifold {
+) -> LocalManifold {
     assert_collision_input_valid("segment_a", segment_a.validate().is_ok());
-    assert_collision_input_valid(
-        "transform_a",
-        check_collision_transform_valid(transform_a).is_ok(),
-    );
     assert_collision_input_valid("polygon_b", polygon_b.validate().is_ok());
     assert_collision_input_valid(
-        "transform_b",
-        check_collision_transform_valid(transform_b).is_ok(),
+        "transform_b_in_a",
+        check_collision_transform_valid(transform_b_in_a).is_ok(),
     );
     let raw_a = segment_a.into_raw();
     let raw_b = polygon_b.into_raw();
-    let cache_ptr = match cache {
-        Some(cache) => cache.raw_mut(),
-        None => core::ptr::null_mut(),
-    };
-    Manifold::from_raw(unsafe {
-        ffi::b2CollideChainSegmentAndPolygon(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-            cache_ptr,
-        )
+    let mut fallback_cache = SimplexCache::default();
+    let cache_ptr = cache.unwrap_or(&mut fallback_cache).raw_mut();
+    LocalManifold::from_raw(unsafe {
+        ffi::b2CollideChainSegmentAndPolygon(&raw_a, &raw_b, transform_b_in_a.into_raw(), cache_ptr)
     })
 }
 
 /// Compute the contact manifold between a chain segment and a polygon with recoverable validation.
 pub fn try_collide_chain_segment_and_polygon(
     segment_a: ChainSegment,
-    transform_a: Transform,
     polygon_b: Polygon,
-    transform_b: Transform,
+    transform_b_in_a: Transform,
     cache: Option<&mut SimplexCache>,
-) -> ApiResult<Manifold> {
+) -> ApiResult<LocalManifold> {
     segment_a.validate()?;
-    check_collision_transform_valid(transform_a)?;
     polygon_b.validate()?;
-    check_collision_transform_valid(transform_b)?;
+    check_collision_transform_valid(transform_b_in_a)?;
     let raw_a = segment_a.into_raw();
     let raw_b = polygon_b.into_raw();
-    let cache_ptr = match cache {
-        Some(cache) => cache.raw_mut(),
-        None => core::ptr::null_mut(),
-    };
-    Ok(Manifold::from_raw(unsafe {
-        ffi::b2CollideChainSegmentAndPolygon(
-            &raw_a,
-            transform_a.into_raw(),
-            &raw_b,
-            transform_b.into_raw(),
-            cache_ptr,
-        )
+    let mut fallback_cache = SimplexCache::default();
+    let cache_ptr = cache.unwrap_or(&mut fallback_cache).raw_mut();
+    Ok(LocalManifold::from_raw(unsafe {
+        ffi::b2CollideChainSegmentAndPolygon(&raw_a, &raw_b, transform_b_in_a.into_raw(), cache_ptr)
     }))
 }
 

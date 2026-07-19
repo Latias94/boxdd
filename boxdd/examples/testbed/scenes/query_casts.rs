@@ -69,7 +69,10 @@ pub fn tick(app: &mut super::PhysicsApp) {
         0 => {
             state.ray_hit_buffer.clear();
             app.world.cast_ray_all_into(
-                [state.ray_origin_x, state.ray_origin_y],
+                bd::Position::new(
+                    bd::WorldScalar::from(state.ray_origin_x),
+                    bd::WorldScalar::from(state.ray_origin_y),
+                ),
                 [state.ray_dx, state.ray_dy],
                 bd::QueryFilter::default(),
                 &mut state.ray_hit_buffer,
@@ -80,6 +83,7 @@ pub fn tick(app: &mut super::PhysicsApp) {
             let rect = rect_points(0.5, 0.25);
             state.shape_hit_buffer.clear();
             app.world.cast_shape_points_with_offset_into(
+                bd::Position::ZERO,
                 rect,
                 state.shape_radius,
                 [0.0_f32, state.shape_pos_y],

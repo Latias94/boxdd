@@ -1,8 +1,8 @@
 use boxdd::{
     ApiError, DistanceInput, Polygon, Rot, ShapeCastPairInput, ShapeProxy, SimplexCache, Sweep,
     ToiInput, Transform, collide_segment_and_polygon, shapes, try_collide_capsules,
-    try_collide_segment_and_polygon, try_segment_distance, try_shape_cast, try_shape_distance,
-    try_time_of_impact,
+    try_collide_circles, try_collide_segment_and_polygon, try_segment_distance, try_shape_cast,
+    try_shape_distance, try_time_of_impact,
 };
 
 #[test]
@@ -29,7 +29,7 @@ fn standalone_collision_try_apis_reject_invalid_inputs() {
     let invalid_transform = Transform::from_pos_angle([f32::NAN, 0.0], 0.0);
     let mut cache = SimplexCache::default();
 
-    let invalid_distance = DistanceInput::new(proxy, proxy, invalid_transform, Transform::IDENTITY);
+    let invalid_distance = DistanceInput::new(proxy, proxy, invalid_transform);
     assert_eq!(
         invalid_distance.validate().unwrap_err(),
         ApiError::InvalidArgument
@@ -39,14 +39,8 @@ fn standalone_collision_try_apis_reject_invalid_inputs() {
         ApiError::InvalidArgument
     );
 
-    let invalid_cast = ShapeCastPairInput::new(
-        proxy,
-        proxy,
-        Transform::IDENTITY,
-        Transform::IDENTITY,
-        [1.0, 0.0],
-    )
-    .with_max_fraction(1.5);
+    let invalid_cast = ShapeCastPairInput::new(proxy, proxy, Transform::IDENTITY, [1.0, 0.0])
+        .with_max_fraction(1.5);
     assert_eq!(
         invalid_cast.validate().unwrap_err(),
         ApiError::InvalidArgument
@@ -100,25 +94,20 @@ fn standalone_collision_try_apis_reject_invalid_inputs() {
     let polygon = shapes::box_polygon(1.0, 1.0);
     let invalid_segment = shapes::segment([0.0_f32, 0.0], [0.0_f32, 0.0]);
     assert_eq!(
-        try_collide_segment_and_polygon(
-            invalid_segment,
-            Transform::IDENTITY,
-            polygon,
-            Transform::IDENTITY,
-        )
-        .unwrap_err(),
+        try_collide_segment_and_polygon(invalid_segment, polygon, Transform::IDENTITY,)
+            .unwrap_err(),
         ApiError::InvalidArgument
     );
 
     let invalid_capsule = shapes::capsule([0.0_f32, 0.0], [0.0_f32, 0.0], 0.25);
     assert_eq!(
-        try_collide_capsules(
-            invalid_capsule,
-            Transform::IDENTITY,
-            invalid_capsule,
-            Transform::IDENTITY,
-        )
-        .unwrap_err(),
+        try_collide_capsules(invalid_capsule, invalid_capsule, Transform::IDENTITY,).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+
+    let circle = shapes::circle([0.0_f32, 0.0], 0.5);
+    assert_eq!(
+        try_collide_circles(circle, circle, invalid_transform).unwrap_err(),
         ApiError::InvalidArgument
     );
 }
@@ -167,7 +156,6 @@ fn safe_manifold_collision_helpers_panic_on_invalid_geometry() {
     let result = std::panic::catch_unwind(|| {
         collide_segment_and_polygon(
             shapes::segment([0.0_f32, 0.0], [0.0_f32, 0.0]),
-            Transform::IDENTITY,
             shapes::box_polygon(1.0, 1.0),
             Transform::IDENTITY,
         );

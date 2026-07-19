@@ -10,6 +10,17 @@ fn approx_vec2(a: Vec2, b: Vec2, eps: f32) -> bool {
     approx_eq(a.x, b.x, eps) && approx_eq(a.y, b.y, eps)
 }
 
+fn approx_position(a: Position, b: Position, eps: f32) -> bool {
+    a.checked_relative_to(b)
+        .is_ok_and(|delta| approx_vec2(delta, Vec2::ZERO, eps))
+}
+
+fn approx_position_to_vec2(actual: Position, expected: Vec2, eps: f32) -> bool {
+    actual
+        .checked_relative_to(Position::ZERO)
+        .is_ok_and(|point| approx_vec2(point, expected, eps))
+}
+
 fn approx_mass_data(a: MassData, b: MassData, eps: f32) -> bool {
     approx_eq(a.mass, b.mass, eps)
         && approx_vec2(a.center, b.center, eps)
@@ -50,14 +61,14 @@ fn shape_closest_point_and_apply_wind_smoke() {
     let poly = shapes::box_polygon(0.5, 0.5);
     let mut shape = world.create_polygon_shape_for_owned(body, &sdef, &poly);
 
-    let target = Vec2::new(10.0, 0.0);
+    let target = Position::new(10.0, 0.0);
     let cp1 = shape.closest_point(target);
     let cp2 = world.shape_closest_point(shape.id(), target);
-    assert!(approx_eq(cp1.x, cp2.x, 1e-6) && approx_eq(cp1.y, cp2.y, 1e-6));
-    assert!(approx_eq(cp1.x, 0.5, 1e-3) && approx_eq(cp1.y, 0.0, 1e-3));
+    assert!(approx_position(cp1, cp2, 1e-6));
+    assert!(approx_position_to_vec2(cp1, Vec2::new(0.5, 0.0), 1e-3));
 
     let cp3 = shape.try_closest_point(target).unwrap();
-    assert!(approx_eq(cp1.x, cp3.x, 1e-6) && approx_eq(cp1.y, cp3.y, 1e-6));
+    assert!(approx_position(cp1, cp3, 1e-6));
 
     world
         .try_shape_closest_point(shape.id(), target)
@@ -71,6 +82,108 @@ fn shape_closest_point_and_apply_wind_smoke() {
     world
         .try_shape_apply_wind(shape.id(), Vec2::new(5.0, 0.0), 1.0, 0.5, true)
         .unwrap();
+}
+
+#[test]
+fn shape_spatial_queries_reject_invalid_world_inputs() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body = world.create_body_id(BodyBuilder::new().build());
+    let shape = world.create_circle_shape_for_owned(
+        body,
+        &ShapeDef::default(),
+        &shapes::circle(Vec2::ZERO, 0.5),
+    );
+    let shape_id = shape.id();
+    let invalid_position = Position::new(WorldScalar::NAN, 0.0);
+
+    assert_eq!(
+        shape.try_closest_point(invalid_position).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        shape.try_test_point(invalid_position).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        shape
+            .try_ray_cast(Position::ZERO, [f32::NAN, 0.0])
+            .unwrap_err(),
+        ApiError::InvalidArgument
+    );
+
+    assert_eq!(
+        world
+            .try_shape_closest_point(shape_id, invalid_position)
+            .unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        world
+            .handle()
+            .try_shape_test_point(shape_id, invalid_position)
+            .unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        world
+            .try_shape_ray_cast(shape_id, invalid_position, Vec2::ZERO)
+            .unwrap_err(),
+        ApiError::InvalidArgument
+    );
+
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        world.shape_test_point(shape_id, invalid_position)
+    }));
+    assert!(panic.is_err());
+}
+
+#[cfg(feature = "double-precision")]
+#[test]
+fn shape_spatial_queries_reject_world_points_outside_the_body_local_range() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body = world.create_body_id(BodyBuilder::new().build());
+    let shape = world.create_circle_shape_for_owned(
+        body,
+        &ShapeDef::default(),
+        &shapes::circle(Vec2::ZERO, 0.5),
+    );
+    let shape_id = shape.id();
+    let far = Position::new(f64::from(f32::MAX) * 2.0, 0.0);
+
+    assert_eq!(
+        shape.try_closest_point(far).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        world.try_shape_test_point(shape_id, far).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        world
+            .handle()
+            .try_shape_ray_cast(shape_id, far, Vec2::ZERO)
+            .unwrap_err(),
+        ApiError::InvalidArgument
+    );
+
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            shape.closest_point(far)
+        }))
+        .is_err()
+    );
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            world.shape_test_point(shape_id, far)
+        }))
+        .is_err()
+    );
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            world.shape_ray_cast(shape_id, far, Vec2::ZERO)
+        }))
+        .is_err()
+    );
 }
 
 #[test]
@@ -834,7 +947,7 @@ fn shape_runtime_queries_and_mass_data_match_safe_geometry_helpers() {
     let circle = shapes::circle([0.0_f32, 0.0], 1.0);
     let shape_id = world.create_circle_shape_for(body, &sdef, &circle);
 
-    let expected_aabb = circle.aabb(Transform::IDENTITY);
+    let expected_aabb = circle.aabb(WorldTransform::IDENTITY);
     let expected_mass_data = circle.mass_data(2.0);
     let expected_cast = circle.ray_cast([-2.0_f32, 0.0], [4.0, 0.0]);
 
@@ -848,19 +961,29 @@ fn shape_runtime_queries_and_mass_data_match_safe_geometry_helpers() {
         assert!(aabb.upper.y >= expected_aabb.upper.y);
         assert_eq!(shape.try_aabb().unwrap(), aabb);
 
-        assert!(shape.test_point([0.25_f32, 0.0]));
-        assert!(shape.try_test_point([0.25_f32, 0.0]).unwrap());
-        assert!(!shape.test_point([1.5_f32, 0.0]));
+        assert!(shape.test_point(Position::from([0.25_f32, 0.0])));
+        assert!(
+            shape
+                .try_test_point(Position::from([0.25_f32, 0.0]))
+                .unwrap()
+        );
+        assert!(!shape.test_point(Position::from([1.5_f32, 0.0])));
 
-        let cast = shape.ray_cast([-2.0_f32, 0.0], [4.0, 0.0]);
+        let cast = shape.ray_cast(Position::from([-2.0_f32, 0.0]), [4.0, 0.0]);
         assert_eq!(cast.hit, expected_cast.hit);
         assert!(approx_eq(cast.fraction, expected_cast.fraction, 1.0e-6));
-        assert!(approx_vec2(cast.point, expected_cast.point, 1.0e-6));
+        assert!(approx_position_to_vec2(
+            cast.point,
+            expected_cast.point,
+            1.0e-6
+        ));
         assert!(approx_vec2(cast.normal, expected_cast.normal, 1.0e-6));
-        let try_cast = shape.try_ray_cast([-2.0_f32, 0.0], [4.0, 0.0]).unwrap();
+        let try_cast = shape
+            .try_ray_cast(Position::from([-2.0_f32, 0.0]), [4.0, 0.0])
+            .unwrap();
         assert_eq!(try_cast.hit, cast.hit);
         assert!(approx_eq(try_cast.fraction, cast.fraction, 1.0e-6));
-        assert!(approx_vec2(try_cast.point, cast.point, 1.0e-6));
+        assert!(approx_position(try_cast.point, cast.point, 1.0e-6));
         assert!(approx_vec2(try_cast.normal, cast.normal, 1.0e-6));
 
         let mass_data = shape.mass_data();
@@ -878,17 +1001,21 @@ fn shape_runtime_queries_and_mass_data_match_safe_geometry_helpers() {
     assert!(world_aabb.lower.y <= expected_aabb.lower.y);
     assert!(world_aabb.upper.x >= expected_aabb.upper.x);
     assert!(world_aabb.upper.y >= expected_aabb.upper.y);
-    assert!(world.shape_test_point(shape_id, [0.25_f32, 0.0]));
-    assert!(!world.shape_test_point(shape_id, [1.5_f32, 0.0]));
+    assert!(world.shape_test_point(shape_id, Position::from([0.25_f32, 0.0])));
+    assert!(!world.shape_test_point(shape_id, Position::from([1.5_f32, 0.0])));
 
-    let world_cast = world.shape_ray_cast(shape_id, [-2.0_f32, 0.0], [4.0, 0.0]);
+    let world_cast = world.shape_ray_cast(shape_id, Position::from([-2.0_f32, 0.0]), [4.0, 0.0]);
     assert_eq!(world_cast.hit, expected_cast.hit);
     assert!(approx_eq(
         world_cast.fraction,
         expected_cast.fraction,
         1.0e-6
     ));
-    assert!(approx_vec2(world_cast.point, expected_cast.point, 1.0e-6));
+    assert!(approx_position_to_vec2(
+        world_cast.point,
+        expected_cast.point,
+        1.0e-6
+    ));
     assert!(approx_vec2(world_cast.normal, expected_cast.normal, 1.0e-6));
 
     let world_mass_data = world.shape_mass_data(shape_id);
@@ -966,24 +1093,36 @@ fn world_handle_shape_runtime_queries_match_world_queries() {
     assert_eq!(handle.try_shape_aabb(sensor_shape_id).unwrap(), world_aabb);
 
     assert_eq!(
-        handle.shape_test_point(sensor_shape_id, [0.0_f32, 1.5]),
-        world.shape_test_point(sensor_shape_id, [0.0_f32, 1.5])
+        handle.shape_test_point(sensor_shape_id, Position::from([0.0_f32, 1.5])),
+        world.shape_test_point(sensor_shape_id, Position::from([0.0_f32, 1.5]))
     );
     assert_eq!(
         handle
-            .try_shape_test_point(sensor_shape_id, [3.0_f32, 1.5])
+            .try_shape_test_point(sensor_shape_id, Position::from([3.0_f32, 1.5]))
             .unwrap(),
-        world.shape_test_point(sensor_shape_id, [3.0_f32, 1.5])
+        world.shape_test_point(sensor_shape_id, Position::from([3.0_f32, 1.5]))
     );
 
-    let world_cast = world.shape_ray_cast(sensor_shape_id, [-3.0_f32, 1.5], [6.0_f32, 0.0]);
-    let handle_cast = handle.shape_ray_cast(sensor_shape_id, [-3.0_f32, 1.5], [6.0_f32, 0.0]);
+    let world_cast = world.shape_ray_cast(
+        sensor_shape_id,
+        Position::from([-3.0_f32, 1.5]),
+        [6.0_f32, 0.0],
+    );
+    let handle_cast = handle.shape_ray_cast(
+        sensor_shape_id,
+        Position::from([-3.0_f32, 1.5]),
+        [6.0_f32, 0.0],
+    );
     assert_eq!(handle_cast.hit, world_cast.hit);
     assert!(approx_eq(handle_cast.fraction, world_cast.fraction, 1.0e-6));
-    assert!(approx_vec2(handle_cast.point, world_cast.point, 1.0e-6));
+    assert!(approx_position(handle_cast.point, world_cast.point, 1.0e-6));
     assert!(approx_vec2(handle_cast.normal, world_cast.normal, 1.0e-6));
     let handle_try_cast = handle
-        .try_shape_ray_cast(sensor_shape_id, [-3.0_f32, 1.5], [6.0_f32, 0.0])
+        .try_shape_ray_cast(
+            sensor_shape_id,
+            Position::from([-3.0_f32, 1.5]),
+            [6.0_f32, 0.0],
+        )
         .unwrap();
     assert_eq!(handle_try_cast.hit, world_cast.hit);
     assert!(approx_eq(
@@ -991,21 +1130,26 @@ fn world_handle_shape_runtime_queries_match_world_queries() {
         world_cast.fraction,
         1.0e-6
     ));
-    assert!(approx_vec2(handle_try_cast.point, world_cast.point, 1.0e-6));
+    assert!(approx_position(
+        handle_try_cast.point,
+        world_cast.point,
+        1.0e-6
+    ));
     assert!(approx_vec2(
         handle_try_cast.normal,
         world_cast.normal,
         1.0e-6
     ));
 
-    let world_closest_point = world.shape_closest_point(sensor_shape_id, [3.5_f32, 1.5]);
+    let world_closest_point =
+        world.shape_closest_point(sensor_shape_id, Position::from([3.5_f32, 1.5]));
     assert_eq!(
-        handle.shape_closest_point(sensor_shape_id, [3.5_f32, 1.5]),
+        handle.shape_closest_point(sensor_shape_id, Position::from([3.5_f32, 1.5])),
         world_closest_point
     );
     assert_eq!(
         handle
-            .try_shape_closest_point(sensor_shape_id, [3.5_f32, 1.5])
+            .try_shape_closest_point(sensor_shape_id, Position::from([3.5_f32, 1.5]))
             .unwrap(),
         world_closest_point
     );

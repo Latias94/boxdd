@@ -4,6 +4,10 @@ fn approx(a: f32, b: f32, tol: f32) -> bool {
     (a - b).abs() <= tol
 }
 
+fn approx_world(a: WorldScalar, b: WorldScalar, tol: WorldScalar) -> bool {
+    (a - b).abs() <= tol
+}
+
 #[test]
 fn hello_world_final_pose() {
     // Replicate upstream HelloWorld: final y ~ 1.0, small x and angle
@@ -36,7 +40,7 @@ fn hello_world_final_pose() {
 
     let pos = world.body_position(body);
     let angle = world.body_transform(body).rotation().angle();
-    assert!(approx(pos.x, 0.0, 0.01));
-    assert!(approx(pos.y, 1.00, 0.05));
+    assert!(approx_world(pos.x, 0.0, 0.01));
+    assert!(approx_world(pos.y, 1.00, 0.05));
     assert!(approx(angle, 0.0, 0.05));
 }

@@ -31,7 +31,7 @@ fn body_def_is_a_readable_value_type_and_can_seed_a_builder() {
         .build();
 
     assert_eq!(def.body_type(), BodyType::Dynamic);
-    assert_eq!(def.position(), Vec2::new(1.5, -2.25));
+    assert_eq!(def.position(), Position::new(1.5, -2.25));
     assert!(approx_eq(def.angle(), 0.75, 1.0e-6));
     assert!(approx_eq(def.rotation().angle(), 0.75, 1.0e-6));
     assert_eq!(def.linear_velocity(), Vec2::new(-3.0, 4.5));
@@ -50,7 +50,7 @@ fn body_def_is_a_readable_value_type_and_can_seed_a_builder() {
         .enabled(true)
         .build();
     assert_eq!(rebuilt.body_type(), BodyType::Dynamic);
-    assert_eq!(rebuilt.position(), Vec2::new(0.0, 2.0));
+    assert_eq!(rebuilt.position(), Position::new(0.0, 2.0));
     assert!(approx_eq(rebuilt.angle(), 0.75, 1.0e-6));
     assert_eq!(rebuilt.linear_velocity(), Vec2::new(-3.0, 4.5));
     assert!(rebuilt.is_enabled());
@@ -59,7 +59,7 @@ fn body_def_is_a_readable_value_type_and_can_seed_a_builder() {
 
     let roundtrip = unsafe { BodyDef::from_raw(def.into_raw()) };
     assert_eq!(roundtrip.body_type(), BodyType::Dynamic);
-    assert_eq!(roundtrip.position(), Vec2::new(1.5, -2.25));
+    assert_eq!(roundtrip.position(), Position::new(1.5, -2.25));
     assert!(approx_eq(roundtrip.angle(), 0.75, 1.0e-6));
     assert_eq!(roundtrip.linear_velocity(), Vec2::new(-3.0, 4.5));
 }
@@ -177,9 +177,9 @@ fn body_runtime_controls_and_enumeration_are_available_across_handle_and_world_a
         assert!(!body.is_bullet());
 
         assert_eq!(body.name().as_deref(), Some(""));
-        body.set_name("runtime-body");
-        assert_eq!(body.name().as_deref(), Some("runtime-body"));
-        assert_eq!(body.try_name().unwrap().as_deref(), Some("runtime-body"));
+        body.set_name("runtime");
+        assert_eq!(body.name().as_deref(), Some("runtime"));
+        assert_eq!(body.try_name().unwrap().as_deref(), Some("runtime"));
 
         body.enable_contact_events(true);
         body.try_enable_contact_events(true).unwrap();
@@ -271,10 +271,10 @@ fn body_runtime_controls_and_enumeration_are_available_across_handle_and_world_a
     world.try_set_body_bullet(body_id, false).unwrap();
     assert!(!world.body_is_bullet(body_id));
 
-    assert_eq!(world.body_name(body_id).as_deref(), Some("runtime-body"));
+    assert_eq!(world.body_name(body_id).as_deref(), Some("runtime"));
     assert_eq!(
         world.try_body_name(body_id).unwrap().as_deref(),
-        Some("runtime-body")
+        Some("runtime")
     );
 
     world.body_enable_contact_events(body_id, true);
@@ -400,7 +400,7 @@ fn world_handle_body_runtime_queries_match_world_queries() {
     let locks = MotionLocks::new(true, false, true);
     world.set_body_motion_locks(body_id, locks);
     world.set_body_bullet(body_id, true);
-    world.set_body_name(body_id, "handle-body");
+    world.set_body_name(body_id, "handle");
     {
         let mut body = world.body(body_id).expect("body should still be valid");
         body.set_gravity_scale(1.5);
@@ -595,9 +595,9 @@ fn world_handle_body_runtime_queries_match_world_queries() {
     assert_eq!(handle.try_body_motion_locks(body_id).unwrap(), locks);
     assert!(handle.body_is_bullet(body_id));
     assert!(handle.try_body_is_bullet(body_id).unwrap());
-    assert_eq!(handle.body_name(body_id).as_deref(), Some("handle-body"));
+    assert_eq!(handle.body_name(body_id).as_deref(), Some("handle"));
     assert_eq!(
         handle.try_body_name(body_id).unwrap().as_deref(),
-        Some("handle-body")
+        Some("handle")
     );
 }

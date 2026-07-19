@@ -61,14 +61,18 @@ fn highlight_pickups(
     mut pickups: Query<(Entity, &mut Sprite), With<Pickup>>,
 ) {
     let center = probe.translation.truncate();
+    let origin = boxdd::Position::from([center.x, center.y]);
     let aabb = boxdd::Aabb::from_center_half_extents(
-        center.to_boxdd_vec2(),
+        boxdd::Vec2::ZERO,
         PROBE_HALF_EXTENTS.to_boxdd_vec2(),
     );
 
-    if let Err(error) =
-        context.try_overlap_aabb_entities_into(aabb, boxdd::QueryFilter::default(), &mut hits)
-    {
+    if let Err(error) = context.try_overlap_aabb_entities_into(
+        origin,
+        aabb,
+        boxdd::QueryFilter::default(),
+        &mut hits,
+    ) {
         warn!(?error, "overlap query failed");
         return;
     }

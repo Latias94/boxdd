@@ -1,5 +1,4 @@
 use boxdd::prelude::*;
-use boxdd_sys::ffi;
 
 #[test]
 fn custom_filter_panic_is_caught_and_resumed_after_step() {
@@ -58,7 +57,7 @@ fn debug_draw_panic_is_caught_and_resumed() {
     impl DebugDraw for Panicker {
         fn draw_solid_polygon(
             &mut self,
-            _transform: boxdd::Transform,
+            _transform: boxdd::WorldTransform,
             _vertices: &[Vec2],
             _radius: f32,
             _color: HexColor,
@@ -80,33 +79,6 @@ fn debug_draw_panic_is_caught_and_resumed() {
 }
 
 #[test]
-fn debug_draw_raw_panic_is_caught_and_resumed() {
-    struct Panicker;
-    impl RawDebugDraw for Panicker {
-        fn draw_solid_polygon(
-            &mut self,
-            _transform: ffi::b2Transform,
-            _vertices: &[ffi::b2Vec2],
-            _radius: f32,
-            _color: HexColor,
-        ) {
-            panic!("boom in raw debug draw");
-        }
-    }
-
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let body = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
-    let sdef = ShapeDef::builder().density(1.0).build();
-    let poly = shapes::box_polygon(0.5, 0.5);
-    let _ = world.create_polygon_shape_for(body, &sdef, &poly);
-    let mut drawer = Panicker;
-    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        world.debug_draw_raw(&mut drawer, DebugDrawOptions::default());
-    }));
-    assert!(r.is_err());
-}
-
-#[test]
 fn debug_draw_reentrant_boxdd_call_panics() {
     struct Reenter {
         body: OwnedBody,
@@ -114,7 +86,7 @@ fn debug_draw_reentrant_boxdd_call_panics() {
     impl DebugDraw for Reenter {
         fn draw_solid_polygon(
             &mut self,
-            _transform: boxdd::Transform,
+            _transform: boxdd::WorldTransform,
             _vertices: &[Vec2],
             _radius: f32,
             _color: HexColor,
@@ -147,7 +119,7 @@ fn debug_draw_reentrant_try_boxdd_call_returns_in_callback() {
     impl DebugDraw for ReenterTry {
         fn draw_solid_polygon(
             &mut self,
-            _transform: boxdd::Transform,
+            _transform: boxdd::WorldTransform,
             _vertices: &[Vec2],
             _radius: f32,
             _color: HexColor,

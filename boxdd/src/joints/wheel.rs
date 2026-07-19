@@ -1,5 +1,5 @@
 #![allow(rustdoc::broken_intra_doc_links)]
-use crate::types::BodyId;
+use crate::types::{BodyId, Position, Vec2, WorldTransform};
 use crate::world::World;
 use boxdd_sys::ffi;
 
@@ -144,26 +144,22 @@ pub struct WheelJointBuilder<'w> {
     pub(crate) world: &'w mut World,
     pub(crate) body_a: BodyId,
     pub(crate) body_b: BodyId,
-    pub(crate) anchor_a_world: Option<ffi::b2Vec2>,
-    pub(crate) anchor_b_world: Option<ffi::b2Vec2>,
-    pub(crate) axis_world: Option<ffi::b2Vec2>,
+    pub(crate) anchor_a_world: Option<Position>,
+    pub(crate) anchor_b_world: Option<Position>,
+    pub(crate) axis_world: Option<Vec2>,
     pub(crate) def: WheelJointDef,
 }
 
 impl<'w> WheelJointBuilder<'w> {
     /// Set world-space anchors for A and B.
-    pub fn anchors_world<VA: Into<crate::types::Vec2>, VB: Into<crate::types::Vec2>>(
-        mut self,
-        a: VA,
-        b: VB,
-    ) -> Self {
-        self.anchor_a_world = Some(a.into().into_raw());
-        self.anchor_b_world = Some(b.into().into_raw());
+    pub fn anchors_world<VA: Into<Position>, VB: Into<Position>>(mut self, a: VA, b: VB) -> Self {
+        self.anchor_a_world = Some(a.into());
+        self.anchor_b_world = Some(b.into());
         self
     }
     /// Set wheel axis in world space.
-    pub fn axis_world<V: Into<crate::types::Vec2>>(mut self, axis: V) -> Self {
-        self.axis_world = Some(axis.into().into_raw());
+    pub fn axis_world<V: Into<Vec2>>(mut self, axis: V) -> Self {
+        self.axis_world = Some(axis.into());
         self
     }
     pub fn limit(mut self, lower: f32, upper: f32) -> Self {
@@ -306,43 +302,44 @@ impl<'w> WheelJointBuilder<'w> {
         self
     }
 
+    fn configure_local_frames(&mut self) -> ApiResult<()> {
+        let ta =
+            WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) });
+        let tb =
+            WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) });
+        let aw = self.anchor_a_world.unwrap_or_else(|| ta.position());
+        let bw = self.anchor_b_world.unwrap_or_else(|| tb.position());
+        let axis = self.axis_world.unwrap_or(Vec2::new(1.0, 0.0));
+        let la = super::base_def::checked_world_to_local_point(ta, aw)?;
+        let lb = super::base_def::checked_world_to_local_point(tb, bw)?;
+        let ra = super::base_def::checked_world_axis_to_local_rotation(ta, axis)?;
+        let rb = super::base_def::checked_world_axis_to_local_rotation(tb, axis)?;
+        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
+        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
+        self.def.0.base.localFrameA = ffi::b2Transform {
+            p: la.into_raw(),
+            q: ra.into_raw(),
+        };
+        self.def.0.base.localFrameB = ffi::b2Transform {
+            p: lb.into_raw(),
+            q: rb.into_raw(),
+        };
+        Ok(())
+    }
+
     #[must_use]
     pub fn build(mut self) -> Joint<'w> {
         crate::core::debug_checks::assert_body_valid(self.body_a);
         crate::core::debug_checks::assert_body_valid(self.body_b);
-        // Defaults: anchors = body positions, axis = x
-        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
-        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
-        let aw = self.anchor_a_world.unwrap_or(ta.p);
-        let bw = self.anchor_b_world.unwrap_or(tb.p);
-        let axis = self.axis_world.unwrap_or(ffi::b2Vec2 { x: 1.0, y: 0.0 });
-        let la = crate::core::math::world_to_local_point(ta, aw);
-        let lb = crate::core::math::world_to_local_point(tb, bw);
-        let ra = crate::core::math::world_axis_to_local_rot(ta, axis);
-        let rb = crate::core::math::world_axis_to_local_rot(tb, axis);
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.def.0.base.localFrameA = ffi::b2Transform { p: la, q: ra };
-        self.def.0.base.localFrameB = ffi::b2Transform { p: lb, q: rb };
+        self.configure_local_frames()
+            .expect("wheel-joint world anchors and axis must define local f32 frames");
         self.world.create_wheel_joint(&self.def)
     }
 
     pub fn try_build(mut self) -> ApiResult<Joint<'w>> {
         crate::core::debug_checks::check_body_valid(self.body_a)?;
         crate::core::debug_checks::check_body_valid(self.body_b)?;
-        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
-        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
-        let aw = self.anchor_a_world.unwrap_or(ta.p);
-        let bw = self.anchor_b_world.unwrap_or(tb.p);
-        let axis = self.axis_world.unwrap_or(ffi::b2Vec2 { x: 1.0, y: 0.0 });
-        let la = crate::core::math::world_to_local_point(ta, aw);
-        let lb = crate::core::math::world_to_local_point(tb, bw);
-        let ra = crate::core::math::world_axis_to_local_rot(ta, axis);
-        let rb = crate::core::math::world_axis_to_local_rot(tb, axis);
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.def.0.base.localFrameA = ffi::b2Transform { p: la, q: ra };
-        self.def.0.base.localFrameB = ffi::b2Transform { p: lb, q: rb };
+        self.configure_local_frames()?;
         self.world.try_create_wheel_joint(&self.def)
     }
 
@@ -350,39 +347,15 @@ impl<'w> WheelJointBuilder<'w> {
     pub fn build_owned(mut self) -> OwnedJoint {
         crate::core::debug_checks::assert_body_valid(self.body_a);
         crate::core::debug_checks::assert_body_valid(self.body_b);
-        // Defaults: anchors = body positions, axis = x
-        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
-        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
-        let aw = self.anchor_a_world.unwrap_or(ta.p);
-        let bw = self.anchor_b_world.unwrap_or(tb.p);
-        let axis = self.axis_world.unwrap_or(ffi::b2Vec2 { x: 1.0, y: 0.0 });
-        let la = crate::core::math::world_to_local_point(ta, aw);
-        let lb = crate::core::math::world_to_local_point(tb, bw);
-        let ra = crate::core::math::world_axis_to_local_rot(ta, axis);
-        let rb = crate::core::math::world_axis_to_local_rot(tb, axis);
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.def.0.base.localFrameA = ffi::b2Transform { p: la, q: ra };
-        self.def.0.base.localFrameB = ffi::b2Transform { p: lb, q: rb };
+        self.configure_local_frames()
+            .expect("wheel-joint world anchors and axis must define local f32 frames");
         self.world.create_wheel_joint_owned(&self.def)
     }
 
     pub fn try_build_owned(mut self) -> ApiResult<OwnedJoint> {
         crate::core::debug_checks::check_body_valid(self.body_a)?;
         crate::core::debug_checks::check_body_valid(self.body_b)?;
-        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
-        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
-        let aw = self.anchor_a_world.unwrap_or(ta.p);
-        let bw = self.anchor_b_world.unwrap_or(tb.p);
-        let axis = self.axis_world.unwrap_or(ffi::b2Vec2 { x: 1.0, y: 0.0 });
-        let la = crate::core::math::world_to_local_point(ta, aw);
-        let lb = crate::core::math::world_to_local_point(tb, bw);
-        let ra = crate::core::math::world_axis_to_local_rot(ta, axis);
-        let rb = crate::core::math::world_axis_to_local_rot(tb, axis);
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.def.0.base.localFrameA = ffi::b2Transform { p: la, q: ra };
-        self.def.0.base.localFrameB = ffi::b2Transform { p: lb, q: rb };
+        self.configure_local_frames()?;
         self.world.try_create_wheel_joint_owned(&self.def)
     }
 }

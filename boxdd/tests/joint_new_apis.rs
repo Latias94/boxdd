@@ -830,6 +830,49 @@ fn world_joint_builders_preserve_base_flags_when_populating_runtime_frames() {
     assert!(revolute.collide_connected());
 }
 
+#[cfg(feature = "double-precision")]
+#[test]
+fn world_joint_builders_preserve_local_offsets_at_large_double_origin() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let origin = Position::new(1.0e12, -1.0e12);
+    let body_a = world.create_body_id(
+        BodyBuilder::new()
+            .body_type(BodyType::Dynamic)
+            .position(origin)
+            .build(),
+    );
+    let body_b_position = origin.offset(Vec2::new(10.0, 0.0));
+    let body_b = world.create_body_id(
+        BodyBuilder::new()
+            .body_type(BodyType::Dynamic)
+            .position(body_b_position)
+            .build(),
+    );
+
+    let base = world.joint_base_from_world_points(
+        body_a,
+        body_b,
+        origin.offset(Vec2::new(2.0, 3.0)),
+        body_b_position.offset(Vec2::new(-2.0, -1.0)),
+    );
+    assert!(approx_vec2(
+        base.local_frame_a().position(),
+        Vec2::new(2.0, 3.0),
+        1.0e-5
+    ));
+    assert!(approx_vec2(
+        base.local_frame_b().position(),
+        Vec2::new(-2.0, -1.0),
+        1.0e-5
+    ));
+
+    let result = world
+        .distance(body_a, body_b)
+        .anchors_world(Position::new(f64::from(f32::MAX) * 2.0, 0.0), origin)
+        .try_build_owned();
+    assert!(matches!(result, Err(ApiError::InvalidArgument)));
+}
+
 #[test]
 fn distance_joint_runtime_specific_apis_are_available_across_handle_types() {
     let mut world = World::new(WorldDef::default()).unwrap();

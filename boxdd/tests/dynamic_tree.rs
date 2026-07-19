@@ -1,7 +1,4 @@
-use boxdd::{
-    Aabb, DynamicTree, ShapeProxy, TreeProxyId, TreeRayCastInput, TreeShapeCastInput, TreeStats,
-    Vec2,
-};
+use boxdd::{Aabb, DynamicTree, TreeBoxCastInput, TreeProxyId, TreeRayCastInput, TreeStats, Vec2};
 
 fn aabb(min_x: f32, min_y: f32, max_x: f32, max_y: f32) -> Aabb {
     Aabb::new(Vec2::new(min_x, min_y), Vec2::new(max_x, max_y))
@@ -27,6 +24,24 @@ fn dynamic_tree_value_types_round_trip_raw_abi_fields() {
     assert_eq!(raw_input.translation.y, 4.0);
     assert_eq!(raw_input.maxFraction, 0.75);
     assert_eq!(TreeRayCastInput::from_raw(raw_input), input);
+
+    let input =
+        TreeBoxCastInput::new(aabb(-2.0, -1.0, 2.0, 1.0), [3.0_f32, 4.0]).with_max_fraction(0.5);
+    let raw_input = input.into_raw();
+    assert_eq!(Aabb::from_raw(raw_input.box_), input.aabb);
+    assert_eq!(raw_input.translation.x, 3.0);
+    assert_eq!(raw_input.translation.y, 4.0);
+    assert_eq!(raw_input.maxFraction, 0.5);
+    assert_eq!(TreeBoxCastInput::from_raw(raw_input), input);
+}
+
+#[test]
+fn dynamic_tree_capacity_is_explicit_and_checked() {
+    let tree = DynamicTree::with_capacity(32);
+    assert_eq!(tree.proxy_count(), 0);
+    assert_eq!(DynamicTree::DEFAULT_PROXY_CAPACITY, 16);
+    assert!(DynamicTree::MAX_PROXY_CAPACITY >= DynamicTree::DEFAULT_PROXY_CAPACITY);
+    assert!(DynamicTree::try_with_capacity(DynamicTree::MAX_PROXY_CAPACITY + 1).is_err());
 }
 
 #[test]
@@ -82,7 +97,41 @@ fn moving_and_destroying_proxy_updates_tree_state() {
 }
 
 #[test]
-fn ray_cast_and_shape_cast_visit_tree_proxies() {
+fn move_and_enlarge_reject_native_precondition_violations() {
+    let mut tree = DynamicTree::new();
+    let initial = aabb(-1.0, -1.0, 1.0, 1.0);
+    let proxy = tree.create_proxy(initial, u64::MAX, 42);
+    let contained = aabb(-0.5, -0.5, 0.5, 0.5);
+    let huge_factor = if cfg!(feature = "double-precision") {
+        1.0e9_f32
+    } else {
+        1.0e5_f32
+    };
+    let huge = huge_factor * boxdd::length_units_per_meter();
+    let oversized = aabb(0.0, 0.0, huge, 1.0);
+
+    assert!(tree.try_move_proxy(proxy, oversized).is_err());
+    assert!(tree.try_enlarge_proxy(proxy, initial).is_err());
+    assert!(tree.try_enlarge_proxy(proxy, contained).is_err());
+    assert_eq!(tree.aabb(proxy), initial);
+
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            tree.move_proxy(proxy, oversized)
+        }))
+        .is_err()
+    );
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            tree.enlarge_proxy(proxy, initial)
+        }))
+        .is_err()
+    );
+    assert_eq!(tree.aabb(proxy), initial);
+}
+
+#[test]
+fn ray_cast_and_box_cast_visit_tree_proxies() {
     let mut tree = DynamicTree::new();
     let proxy = tree.create_proxy(aabb(0.0, 0.0, 2.0, 2.0), u64::MAX, 7);
 
@@ -99,17 +148,16 @@ fn ray_cast_and_shape_cast_visit_tree_proxies() {
     assert_eq!(ray_hits[0].0, proxy);
     assert_eq!(ray_hits[0].1, 7);
 
-    let shape = ShapeProxy::new([Vec2::ZERO], 0.25).expect("valid shape proxy");
-    let mut shape_hits = Vec::new();
-    tree.shape_cast(
-        TreeShapeCastInput::new(shape, Vec2::new(4.0, 0.0)),
+    let mut box_hits = Vec::new();
+    tree.box_cast(
+        TreeBoxCastInput::new(aabb(-4.0, 0.5, -3.0, 1.5), Vec2::new(8.0, 0.0)),
         u64::MAX,
         &mut |_, id, data| {
-            shape_hits.push((id, data));
+            box_hits.push((id, data));
             1.0
         },
     );
-    assert!(shape_hits.contains(&(proxy, 7)));
+    assert!(box_hits.contains(&(proxy, 7)));
 }
 
 #[test]
@@ -120,6 +168,32 @@ fn invalid_inputs_are_recoverable() {
     assert!(
         tree.try_query_all(invalid_aabb, &mut |_: TreeProxyId, _| true)
             .is_err()
+    );
+
+    let mut visit = |_: TreeBoxCastInput, _: TreeProxyId, _: u64| 1.0;
+    assert!(
+        tree.try_box_cast(
+            TreeBoxCastInput::new(invalid_aabb, Vec2::ZERO),
+            u64::MAX,
+            &mut visit,
+        )
+        .is_err()
+    );
+    assert!(
+        tree.try_box_cast(
+            TreeBoxCastInput::new(aabb(-1.0, -1.0, 1.0, 1.0), [f32::NAN, 0.0]),
+            u64::MAX,
+            &mut visit,
+        )
+        .is_err()
+    );
+    assert!(
+        tree.try_box_cast(
+            TreeBoxCastInput::new(aabb(-1.0, -1.0, 1.0, 1.0), Vec2::ZERO).with_max_fraction(1.5),
+            u64::MAX,
+            &mut visit,
+        )
+        .is_err()
     );
 }
 
@@ -148,17 +222,16 @@ fn dynamic_tree_callback_panics_are_caught_and_resumed() {
     assert!(ray_result.is_err());
     assert_tree_query_finds_proxy(&tree, proxy);
 
-    let shape = ShapeProxy::new([Vec2::ZERO], 0.25).expect("valid shape proxy");
-    let shape_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        tree.shape_cast(
-            TreeShapeCastInput::new(shape, Vec2::new(4.0, 0.0)),
+    let box_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        tree.box_cast(
+            TreeBoxCastInput::new(aabb(-4.0, 0.5, -3.0, 1.5), Vec2::new(8.0, 0.0)),
             u64::MAX,
             &mut |_, _, _| -> f32 {
-                panic!("boom in dynamic tree shape cast");
+                panic!("boom in dynamic tree box cast");
             },
         );
     }));
-    assert!(shape_result.is_err());
+    assert!(box_result.is_err());
     assert_tree_query_finds_proxy(&tree, proxy);
 }
 

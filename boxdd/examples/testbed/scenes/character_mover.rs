@@ -17,6 +17,7 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
 
 pub fn tick(app: &mut super::PhysicsApp) {
     let frac = app.world.cast_mover(
+        bd::Position::ZERO,
         [0.0_f32, app.cm_c1_y],
         [0.0, app.cm_c2_y],
         app.cm_radius,

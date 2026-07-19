@@ -1,6 +1,6 @@
 //! Additional world runtime helpers and value types that sit beside the core world API.
 
-use crate::{error::ApiResult, types::Vec2, world::World};
+use crate::{error::ApiResult, types::Position, world::World};
 use boxdd_sys::ffi;
 
 /// Explosion configuration (maps to `b2ExplosionDef`).
@@ -35,8 +35,8 @@ impl ExplosionDef {
     }
 
     /// World-space center position.
-    pub fn center(&self) -> Vec2 {
-        Vec2::from_raw(self.0.position)
+    pub fn center(&self) -> Position {
+        Position::from_raw(self.0.position)
     }
 
     /// Explosion radius in meters.
@@ -61,7 +61,7 @@ impl ExplosionDef {
     }
 
     /// World-space center position.
-    pub fn position<V: Into<Vec2>>(mut self, p: V) -> Self {
+    pub fn position<P: Into<Position>>(mut self, p: P) -> Self {
         self.0.position = p.into().into_raw();
         self
     }

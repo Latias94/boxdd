@@ -4,6 +4,10 @@ fn approx_eq(actual: f32, expected: f32) -> bool {
     (actual - expected).abs() <= 1.0e-5
 }
 
+fn approx_world_eq(actual: WorldScalar, expected: WorldScalar) -> bool {
+    (actual - expected).abs() <= 1.0e-5
+}
+
 fn average_coefficient(a: MaterialMixInput, b: MaterialMixInput) -> f32 {
     0.5 * (a.coefficient + b.coefficient)
 }
@@ -40,17 +44,17 @@ fn body_runtime_state_forces_mass_and_lifecycle_succeed() {
         assert!(world_id.is_ok());
 
         let position = body.position();
-        assert!(approx_eq(position.x, 0.5));
-        assert!(approx_eq(position.y, 1.0));
+        assert!(approx_world_eq(position.x, 0.5));
+        assert!(approx_world_eq(position.y, 1.0));
         let transform = body.transform();
-        assert!(approx_eq(transform.position().x, position.x));
-        assert!(approx_eq(transform.position().y, position.y));
+        assert!(approx_world_eq(transform.position().x, position.x));
+        assert!(approx_world_eq(transform.position().y, position.y));
 
         let local_point = body.local_point([1.0_f32, 1.5]);
         assert!(local_point.x.is_finite() && local_point.y.is_finite());
         let world_point = body.world_point(local_point);
-        assert!(approx_eq(world_point.x, 1.0));
-        assert!(approx_eq(world_point.y, 1.5));
+        assert!(approx_world_eq(world_point.x, 1.0));
+        assert!(approx_world_eq(world_point.y, 1.5));
         let local_vector = body.local_vector([1.0_f32, -0.5]);
         assert!(local_vector.x.is_finite() && local_vector.y.is_finite());
         let world_vector = body.world_vector(local_vector);
@@ -94,11 +98,13 @@ fn body_runtime_state_forces_mass_and_lifecycle_succeed() {
         body.disable();
         body.enable();
         body.set_target_transform(
-            Transform::from_pos_angle([0.75_f32, 1.25], 0.1),
+            WorldTransform::from_pos_angle([0.75_f32, 1.25], 0.1),
             1.0 / 60.0,
             true,
         );
         body.set_position_and_rotation([0.5_f32, 1.0], 0.0);
+        body.try_set_position_and_rotation([0.5_f32, 1.0], 0.0)
+            .expect("validated position update should succeed");
 
         body.apply_force([2.0_f32, -1.0], [0.5_f32, 1.0], true);
         body.apply_force_to_center([1.0_f32, 0.5], true);
@@ -123,6 +129,37 @@ fn body_runtime_state_forces_mass_and_lifecycle_succeed() {
     assert!(owned_valid);
     owned.destroy();
     std::mem::drop(world);
+}
+
+#[cfg(feature = "double-precision")]
+#[test]
+fn body_world_coordinate_apis_preserve_double_precision() {
+    let origin = Position::new(1_000_000_000_000.25, -1_000_000_000_000.5);
+    let mut world = World::new(WorldDef::default()).expect("world creation should succeed");
+    let body_id = world.create_body_id(
+        BodyBuilder::new()
+            .body_type(BodyType::Dynamic)
+            .position(origin)
+            .build(),
+    );
+
+    let mut body = world.body(body_id).expect("body should remain valid");
+    assert_eq!(body.position(), origin);
+    assert_eq!(body.transform().position(), origin);
+    assert_eq!(body.world_center_of_mass(), origin);
+
+    let local_point = Vec2::new(0.5, -0.25);
+    let world_point = body.world_point(local_point);
+    assert_eq!(world_point, Position::new(origin.x + 0.5, origin.y - 0.25));
+    assert_eq!(body.local_point(world_point), local_point);
+    assert!(body.world_point_velocity(world_point).is_valid());
+
+    let moved = Position::new(origin.x + 4.0, origin.y + 8.0);
+    body.set_position_and_rotation(moved, 0.0);
+    assert_eq!(body.position(), moved);
+    body.apply_force([1.0_f32, 0.0], moved, true);
+    body.apply_linear_impulse([0.25_f32, 0.0], moved, true);
+    body.set_target_transform(WorldTransform::new(moved, Rot::IDENTITY), 1.0 / 60.0, true);
 }
 
 #[test]
@@ -327,7 +364,11 @@ fn world_queries_events_user_data_and_callback_cleanup_succeed() {
 
     world.step(1.0 / 60.0, 4);
 
-    let ray_hits = world.cast_ray_all([0.0_f32, 5.0], [0.0_f32, -10.0], QueryFilter::default());
+    let ray_hits = world.cast_ray_all(
+        Position::new(0.0, 5.0),
+        [0.0_f32, -10.0],
+        QueryFilter::default(),
+    );
     assert!(!ray_hits.is_empty());
     let cast_points = [
         Vec2::new(-0.25, 2.0),
@@ -335,8 +376,13 @@ fn world_queries_events_user_data_and_callback_cleanup_succeed() {
         Vec2::new(0.25, 2.5),
         Vec2::new(-0.25, 2.5),
     ];
-    let shape_hits =
-        world.cast_shape_points(cast_points, 0.0, [0.0_f32, -4.0], QueryFilter::default());
+    let shape_hits = world.cast_shape_points(
+        Position::ZERO,
+        cast_points,
+        0.0,
+        [0.0_f32, -4.0],
+        QueryFilter::default(),
+    );
     assert!(!shape_hits.is_empty());
     let local_cast_points = [
         Vec2::new(-0.25, -0.25),
@@ -345,6 +391,7 @@ fn world_queries_events_user_data_and_callback_cleanup_succeed() {
         Vec2::new(-0.25, 0.25),
     ];
     let offset_shape_hits = world.cast_shape_points_with_offset(
+        Position::ZERO,
         local_cast_points,
         0.0,
         [0.0_f32, 2.0],
@@ -353,8 +400,13 @@ fn world_queries_events_user_data_and_callback_cleanup_succeed() {
         QueryFilter::default(),
     );
     assert!(!offset_shape_hits.is_empty());
-    let mover_planes =
-        world.collide_mover([5.0_f32, 0.7], [5.0_f32, 1.5], 0.25, QueryFilter::default());
+    let mover_planes = world.collide_mover(
+        Position::ZERO,
+        [5.0_f32, 0.7],
+        [5.0_f32, 1.5],
+        0.25,
+        QueryFilter::default(),
+    );
     assert!(!mover_planes.is_empty());
 
     let body_events = world.body_events();

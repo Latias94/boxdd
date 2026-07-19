@@ -5,8 +5,8 @@ use crate::math::to_boxdd_vec2;
 use bevy_ecs::prelude::{Entity, Resource};
 use bevy_math::Vec2 as BevyVec2;
 use boxdd::{
-    Aabb, ApiResult, BodyId, DebugDrawCmd, DebugDrawOptions, JointId, QueryFilter, RayResult,
-    ShapeId, World, WorldDef,
+    Aabb, ApiResult, BodyId, DebugDrawCmd, DebugDrawOptions, JointId, Position, QueryFilter,
+    RayResult, ShapeId, World, WorldDef,
 };
 use std::collections::HashMap;
 
@@ -174,28 +174,26 @@ impl BoxddPhysicsContext {
         self.joint_to_entity.get(&joint_id).copied()
     }
 
-    /// Casts a ray and returns the closest hit with the mapped Bevy shape entity.
+    /// Casts from an absolute world `origin` by a local `translation` and returns
+    /// the closest hit with the mapped Bevy shape entity.
     pub fn try_cast_ray_closest_entity(
         &self,
-        origin: BevyVec2,
+        origin: Position,
         translation: BevyVec2,
         filter: QueryFilter,
     ) -> ApiResult<Option<BoxddRayHit>> {
         let Some(world) = self.world() else {
             return Ok(None);
         };
-        let hit = world.try_cast_ray_closest(
-            to_boxdd_vec2(origin),
-            to_boxdd_vec2(translation),
-            filter,
-        )?;
+        let hit = world.try_cast_ray_closest(origin, to_boxdd_vec2(translation), filter)?;
         Ok(hit.hit.then(|| self.ray_hit_with_entity(hit)))
     }
 
-    /// Casts a ray and writes all hits with mapped Bevy shape entities into `out`.
+    /// Casts from an absolute world `origin` by a local `translation` and writes
+    /// all hits with mapped Bevy shape entities into `out`.
     pub fn try_cast_ray_all_entities_into(
         &mut self,
-        origin: BevyVec2,
+        origin: Position,
         translation: BevyVec2,
         filter: QueryFilter,
         out: &mut Vec<BoxddRayHit>,
@@ -206,7 +204,7 @@ impl BoxddPhysicsContext {
             return Ok(());
         };
         world.try_cast_ray_all_into(
-            to_boxdd_vec2(origin),
+            origin,
             to_boxdd_vec2(translation),
             filter,
             &mut self.ray_hits,
@@ -222,10 +220,11 @@ impl BoxddPhysicsContext {
         Ok(())
     }
 
-    /// Casts a ray and returns all hits with mapped Bevy shape entities.
+    /// Casts from an absolute world `origin` by a local `translation` and returns
+    /// all hits with mapped Bevy shape entities.
     pub fn try_cast_ray_all_entities(
         &mut self,
-        origin: BevyVec2,
+        origin: Position,
         translation: BevyVec2,
         filter: QueryFilter,
     ) -> ApiResult<Vec<BoxddRayHit>> {
@@ -234,9 +233,11 @@ impl BoxddPhysicsContext {
         Ok(out)
     }
 
-    /// Queries an AABB and writes all hits with mapped Bevy shape entities into `out`.
+    /// Queries AABB bounds local to the absolute world `origin` and writes all
+    /// hits with mapped Bevy shape entities into `out`.
     pub fn try_overlap_aabb_entities_into(
         &mut self,
+        origin: Position,
         aabb: Aabb,
         filter: QueryFilter,
         out: &mut Vec<BoxddShapeHit>,
@@ -246,7 +247,7 @@ impl BoxddPhysicsContext {
             out.clear();
             return Ok(());
         };
-        world.try_overlap_aabb_into(aabb, filter, &mut self.shape_hits)?;
+        world.try_overlap_aabb_into(origin, aabb, filter, &mut self.shape_hits)?;
         out.clear();
         out.reserve(self.shape_hits.len());
         out.extend(
@@ -258,14 +259,16 @@ impl BoxddPhysicsContext {
         Ok(())
     }
 
-    /// Queries an AABB and returns all hits with mapped Bevy shape entities.
+    /// Queries AABB bounds local to the absolute world `origin` and returns all
+    /// hits with mapped Bevy shape entities.
     pub fn try_overlap_aabb_entities(
         &mut self,
+        origin: Position,
         aabb: Aabb,
         filter: QueryFilter,
     ) -> ApiResult<Vec<BoxddShapeHit>> {
         let mut out = Vec::new();
-        self.try_overlap_aabb_entities_into(aabb, filter, &mut out)?;
+        self.try_overlap_aabb_entities_into(origin, aabb, filter, &mut out)?;
         Ok(out)
     }
 

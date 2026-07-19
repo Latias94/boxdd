@@ -1,4 +1,4 @@
-use boxdd::{BodyBuilder, QueryFilter, ShapeDef, Vec2, World, WorldDef, shapes};
+use boxdd::{BodyBuilder, Position, QueryFilter, ShapeDef, Vec2, World, WorldDef, shapes};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut world = World::new(WorldDef::builder().gravity([0.0_f32, -9.8]).build())?;
@@ -16,13 +16,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let filter = QueryFilter::default();
 
-    let closest = world.cast_ray_closest([0.0_f32, 5.0], [0.0, -8.0], filter);
+    let closest = world.cast_ray_closest(Position::new(0.0, 5.0), [0.0, -8.0], filter);
 
     let mut ray_hits = Vec::with_capacity(8);
-    world.cast_ray_all_into([0.0_f32, 5.0], [0.0, -8.0], filter, &mut ray_hits);
+    world.cast_ray_all_into(Position::new(0.0, 5.0), [0.0, -8.0], filter, &mut ray_hits);
 
     let mut sweep_hits = Vec::with_capacity(8);
     world.cast_shape_points_into(
+        Position::ZERO,
         [
             Vec2::new(-1.6, 1.0),
             Vec2::new(-0.8, 1.0),
@@ -37,6 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut offset_hits = Vec::with_capacity(8);
     world.cast_shape_points_with_offset_into(
+        Position::ZERO,
         [
             Vec2::new(-0.4, -0.3),
             Vec2::new(0.4, -0.3),

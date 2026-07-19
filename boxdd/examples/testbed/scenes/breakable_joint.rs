@@ -67,7 +67,7 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
         let world = &app.world;
         let scratch = &mut app.scratch;
         world.cast_ray_all_into(
-            [-3.0, 4.0],
+            bd::Position::new(-3.0, 4.0),
             [2.0, 0.0],
             bd::QueryFilter::default(),
             &mut scratch.ray_hits,

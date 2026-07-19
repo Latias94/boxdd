@@ -34,56 +34,51 @@ impl WorldHandle {
         Ok(crate::shapes::shape_aabb_impl(shape))
     }
 
-    pub fn shape_test_point<V: Into<Vec2>>(&self, shape: ShapeId, point: V) -> bool {
-        crate::core::debug_checks::assert_shape_valid(shape);
-        crate::shapes::shape_test_point_impl(shape, point)
+    /// Test an absolute world-space point against a shape.
+    pub fn shape_test_point(&self, shape: ShapeId, point: Position) -> bool {
+        crate::shapes::shape_test_point_checked_impl(shape, point)
     }
 
-    pub fn try_shape_test_point<V: Into<Vec2>>(
+    pub fn try_shape_test_point(
         &self,
         shape: ShapeId,
-        point: V,
+        point: Position,
     ) -> crate::error::ApiResult<bool> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
-        Ok(crate::shapes::shape_test_point_impl(shape, point))
+        crate::shapes::try_shape_test_point_checked_impl(shape, point)
     }
 
-    pub fn shape_ray_cast<VO: Into<Vec2>, VT: Into<Vec2>>(
+    /// Cast from an absolute world `origin` by a local `translation`.
+    ///
+    /// The returned hit point is an absolute world position.
+    pub fn shape_ray_cast<VT: Into<Vec2>>(
         &self,
         shape: ShapeId,
-        origin: VO,
+        origin: Position,
         translation: VT,
-    ) -> CastOutput {
-        crate::core::debug_checks::assert_shape_valid(shape);
-        crate::shapes::shape_ray_cast_impl(shape, origin, translation)
+    ) -> WorldCastOutput {
+        crate::shapes::shape_ray_cast_checked_impl(shape, origin, translation)
     }
 
-    pub fn try_shape_ray_cast<VO: Into<Vec2>, VT: Into<Vec2>>(
+    pub fn try_shape_ray_cast<VT: Into<Vec2>>(
         &self,
         shape: ShapeId,
-        origin: VO,
+        origin: Position,
         translation: VT,
-    ) -> crate::error::ApiResult<CastOutput> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
-        Ok(crate::shapes::shape_ray_cast_impl(
-            shape,
-            origin,
-            translation,
-        ))
+    ) -> crate::error::ApiResult<WorldCastOutput> {
+        crate::shapes::try_shape_ray_cast_checked_impl(shape, origin, translation)
     }
 
-    pub fn shape_closest_point<V: Into<Vec2>>(&self, shape: ShapeId, target: V) -> Vec2 {
-        crate::core::debug_checks::assert_shape_valid(shape);
-        crate::shapes::shape_closest_point_impl(shape, target)
+    /// Return the closest absolute world position on a shape to `target`.
+    pub fn shape_closest_point(&self, shape: ShapeId, target: Position) -> Position {
+        crate::shapes::shape_closest_point_checked_impl(shape, target)
     }
 
-    pub fn try_shape_closest_point<V: Into<Vec2>>(
+    pub fn try_shape_closest_point(
         &self,
         shape: ShapeId,
-        target: V,
-    ) -> crate::error::ApiResult<Vec2> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
-        Ok(crate::shapes::shape_closest_point_impl(shape, target))
+        target: Position,
+    ) -> crate::error::ApiResult<Position> {
+        crate::shapes::try_shape_closest_point_checked_impl(shape, target)
     }
 
     pub fn shape_mass_data(&self, shape: ShapeId) -> MassData {

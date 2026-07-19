@@ -1,4 +1,4 @@
-use boxdd::{Aabb, BodyBuilder, QueryFilter, ShapeDef, World, WorldDef, shapes};
+use boxdd::{Aabb, BodyBuilder, Position, QueryFilter, ShapeDef, World, WorldDef, shapes};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut world = World::new(WorldDef::builder().gravity([0.0, -9.8]).build())?;
@@ -36,8 +36,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let initial_ray_capacity = ray_hits.capacity();
 
     for frame in 0..3 {
-        world.overlap_aabb_into(query_aabb, filter, &mut overlap_hits);
-        world.cast_ray_all_into([0.0, 5.0], [0.0, -10.0], filter, &mut ray_hits);
+        world.overlap_aabb_into(Position::ZERO, query_aabb, filter, &mut overlap_hits);
+        world.cast_ray_all_into(Position::new(0.0, 5.0), [0.0, -10.0], filter, &mut ray_hits);
 
         println!(
             "frame {frame}: overlap_hits={}, ray_hits={}",
@@ -50,7 +50,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(ray_hits.capacity(), initial_ray_capacity);
 
     let mut visited = 0usize;
-    let visited_all = world.visit_overlap_aabb(query_aabb, filter, |_| {
+    let visited_all = world.visit_overlap_aabb(Position::ZERO, query_aabb, filter, |_| {
         visited += 1;
         true
     });

@@ -3,8 +3,7 @@ use super::user_data::*;
 use super::*;
 use crate::core::world_core::WorldCore;
 use crate::error::{ApiError, ApiResult};
-use crate::types::ContactData;
-use std::ffi::CString;
+use crate::types::{ContactData, Position, WorldTransform};
 use std::os::raw::c_void;
 
 use super::super::definition::{
@@ -13,6 +12,12 @@ use super::super::definition::{
 };
 use super::super::owned::OwnedBody;
 use super::super::scoped::Body;
+use super::super::validation::{
+    assert_body_world_point_in_local_range, assert_valid_body_float, assert_valid_body_name,
+    assert_valid_body_position, assert_valid_body_target_motion, assert_valid_body_vec2,
+    check_body_world_point_in_local_range, check_valid_body_float, check_valid_body_name,
+    check_valid_body_position, check_valid_body_target_motion, check_valid_body_vec2,
+};
 
 #[inline]
 fn body_world_id_checked_impl(id: BodyId) -> ffi::b2WorldId {
@@ -68,12 +73,12 @@ pub(crate) trait BodyRuntimeHandle {
         try_body_is_valid_impl(self.body_id())
     }
 
-    fn position(&self) -> Vec2 {
+    fn position(&self) -> Position {
         self.assert_valid();
         body_position_impl(self.body_id())
     }
 
-    fn try_position(&self) -> ApiResult<Vec2> {
+    fn try_position(&self) -> ApiResult<Position> {
         self.check_valid()?;
         Ok(body_position_impl(self.body_id()))
     }
@@ -118,24 +123,14 @@ pub(crate) trait BodyRuntimeHandle {
         Ok(body_rotation_raw_impl(self.body_id()))
     }
 
-    fn transform(&self) -> crate::Transform {
+    fn transform(&self) -> WorldTransform {
         self.assert_valid();
         body_transform_impl(self.body_id())
     }
 
-    fn try_transform(&self) -> ApiResult<crate::Transform> {
+    fn try_transform(&self) -> ApiResult<WorldTransform> {
         self.check_valid()?;
         Ok(body_transform_impl(self.body_id()))
-    }
-
-    fn transform_raw(&self) -> ffi::b2Transform {
-        self.assert_valid();
-        body_transform_raw_impl(self.body_id())
-    }
-
-    fn try_transform_raw(&self) -> ApiResult<ffi::b2Transform> {
-        self.check_valid()?;
-        Ok(body_transform_raw_impl(self.body_id()))
     }
 
     fn aabb(&self) -> Aabb {
@@ -148,116 +143,174 @@ pub(crate) trait BodyRuntimeHandle {
         Ok(body_aabb_impl(self.body_id()))
     }
 
-    fn local_point<V: Into<Vec2>>(&self, world_point: V) -> Vec2 {
+    fn local_point<V: Into<Position>>(&self, world_point: V) -> Vec2 {
         self.assert_valid();
-        body_local_point_impl(self.body_id(), world_point)
+        let id = self.body_id();
+        let world_point = assert_body_world_point_in_local_range(
+            "world_point",
+            world_point.into(),
+            body_position_impl(id),
+        );
+        let result = body_local_point_impl(id, world_point);
+        assert_valid_body_vec2("local point result", result)
     }
 
-    fn try_local_point<V: Into<Vec2>>(&self, world_point: V) -> ApiResult<Vec2> {
+    fn try_local_point<V: Into<Position>>(&self, world_point: V) -> ApiResult<Vec2> {
         self.check_valid()?;
-        Ok(body_local_point_impl(self.body_id(), world_point))
+        let id = self.body_id();
+        let world_point =
+            check_body_world_point_in_local_range(world_point.into(), body_position_impl(id))?;
+        check_valid_body_vec2(body_local_point_impl(id, world_point))
     }
 
-    fn world_point<V: Into<Vec2>>(&self, local_point: V) -> Vec2 {
+    fn world_point<V: Into<Vec2>>(&self, local_point: V) -> Position {
         self.assert_valid();
-        body_world_point_impl(self.body_id(), local_point)
+        let local_point = assert_valid_body_vec2("local_point", local_point.into());
+        let result = body_world_point_impl(self.body_id(), local_point);
+        assert_valid_body_position("world point result", result)
     }
 
-    fn try_world_point<V: Into<Vec2>>(&self, local_point: V) -> ApiResult<Vec2> {
+    fn try_world_point<V: Into<Vec2>>(&self, local_point: V) -> ApiResult<Position> {
         self.check_valid()?;
-        Ok(body_world_point_impl(self.body_id(), local_point))
+        let local_point = check_valid_body_vec2(local_point.into())?;
+        check_valid_body_position(body_world_point_impl(self.body_id(), local_point))
     }
 
     fn local_vector<V: Into<Vec2>>(&self, world_vector: V) -> Vec2 {
         self.assert_valid();
-        body_local_vector_impl(self.body_id(), world_vector)
+        let world_vector = assert_valid_body_vec2("world_vector", world_vector.into());
+        let result = body_local_vector_impl(self.body_id(), world_vector);
+        assert_valid_body_vec2("local vector result", result)
     }
 
     fn try_local_vector<V: Into<Vec2>>(&self, world_vector: V) -> ApiResult<Vec2> {
         self.check_valid()?;
-        Ok(body_local_vector_impl(self.body_id(), world_vector))
+        let world_vector = check_valid_body_vec2(world_vector.into())?;
+        check_valid_body_vec2(body_local_vector_impl(self.body_id(), world_vector))
     }
 
     fn world_vector<V: Into<Vec2>>(&self, local_vector: V) -> Vec2 {
         self.assert_valid();
-        body_world_vector_impl(self.body_id(), local_vector)
+        let local_vector = assert_valid_body_vec2("local_vector", local_vector.into());
+        let result = body_world_vector_impl(self.body_id(), local_vector);
+        assert_valid_body_vec2("world vector result", result)
     }
 
     fn try_world_vector<V: Into<Vec2>>(&self, local_vector: V) -> ApiResult<Vec2> {
         self.check_valid()?;
-        Ok(body_world_vector_impl(self.body_id(), local_vector))
+        let local_vector = check_valid_body_vec2(local_vector.into())?;
+        check_valid_body_vec2(body_world_vector_impl(self.body_id(), local_vector))
     }
 
     fn local_point_velocity<V: Into<Vec2>>(&self, local_point: V) -> Vec2 {
         self.assert_valid();
-        body_local_point_velocity_impl(self.body_id(), local_point)
+        let local_point = assert_valid_body_vec2("local_point", local_point.into());
+        let result = body_local_point_velocity_impl(self.body_id(), local_point);
+        assert_valid_body_vec2("local point velocity result", result)
     }
 
     fn try_local_point_velocity<V: Into<Vec2>>(&self, local_point: V) -> ApiResult<Vec2> {
         self.check_valid()?;
-        Ok(body_local_point_velocity_impl(self.body_id(), local_point))
+        let local_point = check_valid_body_vec2(local_point.into())?;
+        check_valid_body_vec2(body_local_point_velocity_impl(self.body_id(), local_point))
     }
 
-    fn world_point_velocity<V: Into<Vec2>>(&self, world_point: V) -> Vec2 {
+    fn world_point_velocity<V: Into<Position>>(&self, world_point: V) -> Vec2 {
         self.assert_valid();
-        body_world_point_velocity_impl(self.body_id(), world_point)
+        let id = self.body_id();
+        let world_point = assert_body_world_point_in_local_range(
+            "world_point",
+            world_point.into(),
+            body_world_center_of_mass_impl(id),
+        );
+        let result = body_world_point_velocity_impl(id, world_point);
+        assert_valid_body_vec2("world point velocity result", result)
     }
 
-    fn try_world_point_velocity<V: Into<Vec2>>(&self, world_point: V) -> ApiResult<Vec2> {
+    fn try_world_point_velocity<V: Into<Position>>(&self, world_point: V) -> ApiResult<Vec2> {
         self.check_valid()?;
-        Ok(body_world_point_velocity_impl(self.body_id(), world_point))
+        let id = self.body_id();
+        let world_point = check_body_world_point_in_local_range(
+            world_point.into(),
+            body_world_center_of_mass_impl(id),
+        )?;
+        check_valid_body_vec2(body_world_point_velocity_impl(id, world_point))
     }
 
-    fn set_position_and_rotation<V: Into<Vec2>>(&mut self, position: V, angle_radians: f32) {
+    fn set_position_and_rotation<V: Into<Position>>(&mut self, position: V, angle_radians: f32) {
         self.assert_valid();
+        let position = assert_valid_body_position("position", position.into());
+        let angle_radians = assert_valid_body_float("angle_radians", angle_radians);
         body_set_position_and_rotation_impl(self.body_id(), position, angle_radians);
     }
 
-    fn try_set_position_and_rotation<V: Into<Vec2>>(
+    fn try_set_position_and_rotation<V: Into<Position>>(
         &mut self,
         position: V,
         angle_radians: f32,
     ) -> ApiResult<()> {
         self.check_valid()?;
+        let position = check_valid_body_position(position.into())?;
+        let angle_radians = check_valid_body_float(angle_radians)?;
         body_set_position_and_rotation_impl(self.body_id(), position, angle_radians);
         Ok(())
     }
 
     fn set_linear_velocity<V: Into<Vec2>>(&mut self, velocity: V) {
         self.assert_valid();
+        let velocity = assert_valid_body_vec2("velocity", velocity.into());
         body_set_linear_velocity_impl(self.body_id(), velocity)
     }
 
     fn try_set_linear_velocity<V: Into<Vec2>>(&mut self, velocity: V) -> ApiResult<()> {
         self.check_valid()?;
+        let velocity = check_valid_body_vec2(velocity.into())?;
         body_set_linear_velocity_impl(self.body_id(), velocity);
         Ok(())
     }
 
     fn set_angular_velocity(&mut self, angular_velocity: f32) {
         self.assert_valid();
+        let angular_velocity = assert_valid_body_float("angular_velocity", angular_velocity);
         body_set_angular_velocity_impl(self.body_id(), angular_velocity)
     }
 
     fn try_set_angular_velocity(&mut self, angular_velocity: f32) -> ApiResult<()> {
         self.check_valid()?;
+        let angular_velocity = check_valid_body_float(angular_velocity)?;
         body_set_angular_velocity_impl(self.body_id(), angular_velocity);
         Ok(())
     }
 
-    fn set_target_transform(&mut self, target: crate::Transform, time_step: f32, wake: bool) {
+    fn set_target_transform(&mut self, target: WorldTransform, time_step: f32, wake: bool) {
         self.assert_valid();
-        body_set_target_transform_impl(self.body_id(), target, time_step, wake);
+        let id = self.body_id();
+        let (target, time_step) = assert_valid_body_target_motion(
+            target,
+            time_step,
+            body_world_center_of_mass_impl(id),
+            body_rotation_impl(id),
+            body_local_center_of_mass_impl(id),
+        );
+        body_set_target_transform_impl(id, target, time_step, wake);
     }
 
     fn try_set_target_transform(
         &mut self,
-        target: crate::Transform,
+        target: WorldTransform,
         time_step: f32,
         wake: bool,
     ) -> ApiResult<()> {
         self.check_valid()?;
-        body_set_target_transform_impl(self.body_id(), target, time_step, wake);
+        let id = self.body_id();
+        let (target, time_step) = check_valid_body_target_motion(
+            target,
+            time_step,
+            body_world_center_of_mass_impl(id),
+            body_rotation_impl(id),
+            body_local_center_of_mass_impl(id),
+        )?;
+        body_set_target_transform_impl(id, target, time_step, wake);
         Ok(())
     }
 
@@ -293,40 +346,57 @@ pub(crate) trait BodyRuntimeHandle {
         try_body_contact_data_raw_into_impl(self.body_id(), out)
     }
 
-    fn apply_force<F: Into<Vec2>, P: Into<Vec2>>(&mut self, force: F, point: P, wake: bool) {
+    fn apply_force<F: Into<Vec2>, P: Into<Position>>(&mut self, force: F, point: P, wake: bool) {
         self.assert_valid();
-        body_apply_force_impl(self.body_id(), force, point, wake);
+        let id = self.body_id();
+        let force = assert_valid_body_vec2("force", force.into());
+        let point = assert_body_world_point_in_local_range(
+            "point",
+            point.into(),
+            body_world_center_of_mass_impl(id),
+        );
+        body_apply_force_impl(id, force, point, wake);
     }
 
-    fn try_apply_force<F: Into<Vec2>, P: Into<Vec2>>(
+    fn try_apply_force<F: Into<Vec2>, P: Into<Position>>(
         &mut self,
         force: F,
         point: P,
         wake: bool,
     ) -> ApiResult<()> {
         self.check_valid()?;
-        body_apply_force_impl(self.body_id(), force, point, wake);
+        let id = self.body_id();
+        let force = check_valid_body_vec2(force.into())?;
+        let point = check_body_world_point_in_local_range(
+            point.into(),
+            body_world_center_of_mass_impl(id),
+        )?;
+        body_apply_force_impl(id, force, point, wake);
         Ok(())
     }
 
     fn apply_force_to_center<V: Into<Vec2>>(&mut self, force: V, wake: bool) {
         self.assert_valid();
+        let force = assert_valid_body_vec2("force", force.into());
         body_apply_force_to_center_impl(self.body_id(), force, wake);
     }
 
     fn try_apply_force_to_center<V: Into<Vec2>>(&mut self, force: V, wake: bool) -> ApiResult<()> {
         self.check_valid()?;
+        let force = check_valid_body_vec2(force.into())?;
         body_apply_force_to_center_impl(self.body_id(), force, wake);
         Ok(())
     }
 
     fn apply_torque(&mut self, torque: f32, wake: bool) {
         self.assert_valid();
+        let torque = assert_valid_body_float("torque", torque);
         body_apply_torque_impl(self.body_id(), torque, wake)
     }
 
     fn try_apply_torque(&mut self, torque: f32, wake: bool) -> ApiResult<()> {
         self.check_valid()?;
+        let torque = check_valid_body_float(torque)?;
         body_apply_torque_impl(self.body_id(), torque, wake);
         Ok(())
     }
@@ -342,29 +412,43 @@ pub(crate) trait BodyRuntimeHandle {
         Ok(())
     }
 
-    fn apply_linear_impulse<F: Into<Vec2>, P: Into<Vec2>>(
+    fn apply_linear_impulse<F: Into<Vec2>, P: Into<Position>>(
         &mut self,
         impulse: F,
         point: P,
         wake: bool,
     ) {
         self.assert_valid();
-        body_apply_linear_impulse_impl(self.body_id(), impulse, point, wake);
+        let id = self.body_id();
+        let impulse = assert_valid_body_vec2("impulse", impulse.into());
+        let point = assert_body_world_point_in_local_range(
+            "point",
+            point.into(),
+            body_world_center_of_mass_impl(id),
+        );
+        body_apply_linear_impulse_impl(id, impulse, point, wake);
     }
 
-    fn try_apply_linear_impulse<F: Into<Vec2>, P: Into<Vec2>>(
+    fn try_apply_linear_impulse<F: Into<Vec2>, P: Into<Position>>(
         &mut self,
         impulse: F,
         point: P,
         wake: bool,
     ) -> ApiResult<()> {
         self.check_valid()?;
-        body_apply_linear_impulse_impl(self.body_id(), impulse, point, wake);
+        let id = self.body_id();
+        let impulse = check_valid_body_vec2(impulse.into())?;
+        let point = check_body_world_point_in_local_range(
+            point.into(),
+            body_world_center_of_mass_impl(id),
+        )?;
+        body_apply_linear_impulse_impl(id, impulse, point, wake);
         Ok(())
     }
 
     fn apply_linear_impulse_to_center<V: Into<Vec2>>(&mut self, impulse: V, wake: bool) {
         self.assert_valid();
+        let impulse = assert_valid_body_vec2("impulse", impulse.into());
         body_apply_linear_impulse_to_center_impl(self.body_id(), impulse, wake);
     }
 
@@ -374,17 +458,20 @@ pub(crate) trait BodyRuntimeHandle {
         wake: bool,
     ) -> ApiResult<()> {
         self.check_valid()?;
+        let impulse = check_valid_body_vec2(impulse.into())?;
         body_apply_linear_impulse_to_center_impl(self.body_id(), impulse, wake);
         Ok(())
     }
 
     fn apply_angular_impulse(&mut self, impulse: f32, wake: bool) {
         self.assert_valid();
+        let impulse = assert_valid_body_float("impulse", impulse);
         body_apply_angular_impulse_impl(self.body_id(), impulse, wake)
     }
 
     fn try_apply_angular_impulse(&mut self, impulse: f32, wake: bool) -> ApiResult<()> {
         self.check_valid()?;
+        let impulse = check_valid_body_float(impulse)?;
         body_apply_angular_impulse_impl(self.body_id(), impulse, wake);
         Ok(())
     }
@@ -419,12 +506,12 @@ pub(crate) trait BodyRuntimeHandle {
         Ok(body_local_center_of_mass_impl(self.body_id()))
     }
 
-    fn world_center_of_mass(&self) -> Vec2 {
+    fn world_center_of_mass(&self) -> Position {
         self.assert_valid();
         body_world_center_of_mass_impl(self.body_id())
     }
 
-    fn try_world_center_of_mass(&self) -> ApiResult<Vec2> {
+    fn try_world_center_of_mass(&self) -> ApiResult<Position> {
         self.check_valid()?;
         Ok(body_world_center_of_mass_impl(self.body_id()))
     }
@@ -629,11 +716,13 @@ pub(crate) trait BodyRuntimeHandle {
 
     fn set_sleep_threshold(&mut self, sleep_threshold: f32) {
         self.assert_valid();
+        assert_non_negative_finite_body_scalar("sleep_threshold", sleep_threshold);
         body_set_sleep_threshold_impl(self.body_id(), sleep_threshold)
     }
 
     fn try_set_sleep_threshold(&mut self, sleep_threshold: f32) -> ApiResult<()> {
         self.check_valid()?;
+        check_non_negative_finite_body_scalar(sleep_threshold)?;
         body_set_sleep_threshold_impl(self.body_id(), sleep_threshold);
         Ok(())
     }
@@ -746,13 +835,13 @@ pub(crate) trait BodyRuntimeHandle {
 
     fn set_name(&mut self, name: &str) {
         self.assert_valid();
-        let cstr = CString::new(name).expect("body name contains an interior NUL byte");
+        let cstr = assert_valid_body_name(name);
         body_set_name_impl(self.body_id(), &cstr)
     }
 
     fn try_set_name(&mut self, name: &str) -> ApiResult<()> {
         self.check_valid()?;
-        let cstr = CString::new(name).map_err(|_| ApiError::NulByteInString)?;
+        let cstr = check_valid_body_name(name)?;
         body_set_name_impl(self.body_id(), &cstr);
         Ok(())
     }

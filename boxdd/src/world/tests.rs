@@ -80,14 +80,9 @@ fn try_world_callback_sensitive_entrypoints_return_in_callback() {
 
     impl crate::DebugDraw for NoopDrawer {}
 
-    impl crate::debug_draw::RawDebugDraw for NoopDrawer {
-        fn draw_polygon(&mut self, _vertices: &[boxdd_sys::ffi::b2Vec2], _color: crate::HexColor) {}
-    }
-
     let mut world = World::new(WorldDef::default()).unwrap();
     let mut cmds = Vec::new();
     let mut drawer = NoopDrawer;
-    let mut raw_drawer = NoopDrawer;
     let _g = crate::core::callback_state::CallbackGuard::enter();
 
     assert_eq!(
@@ -113,12 +108,6 @@ fn try_world_callback_sensitive_entrypoints_return_in_callback() {
     assert_eq!(
         world
             .try_debug_draw(&mut drawer, crate::DebugDrawOptions::default())
-            .unwrap_err(),
-        crate::ApiError::InCallback
-    );
-    assert_eq!(
-        world
-            .try_debug_draw_raw(&mut raw_drawer, crate::DebugDrawOptions::default())
             .unwrap_err(),
         crate::ApiError::InCallback
     );
@@ -226,7 +215,7 @@ fn try_world_callback_registration_returns_in_callback() {
     fn always_true_pre(
         _a: ShapeId,
         _b: ShapeId,
-        _p: crate::types::Vec2,
+        _p: crate::types::Position,
         _n: crate::types::Vec2,
     ) -> bool {
         true

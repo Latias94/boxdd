@@ -148,9 +148,10 @@ fn owned_shape_runtime_paths_succeed() {
     let cleared_user_data = boxdd::OwnedShape::clear_user_data(&mut sensor);
     assert!(cleared_user_data);
 
-    let contains_origin = boxdd::OwnedShape::test_point(&sensor, [0.0_f32, 0.0]);
+    let contains_origin = boxdd::OwnedShape::test_point(&sensor, boxdd::Position::ZERO);
     assert!(contains_origin);
-    let cast = boxdd::OwnedShape::ray_cast(&sensor, [-2.0_f32, 0.0], [4.0_f32, 0.0]);
+    let cast =
+        boxdd::OwnedShape::ray_cast(&sensor, boxdd::Position::new(-2.0, 0.0), [4.0_f32, 0.0]);
     assert!(cast.hit);
 
     let sensor_capacity = boxdd::OwnedShape::sensor_capacity(&sensor);
@@ -223,6 +224,13 @@ fn dynamic_tree_runtime_paths_succeed() {
     assert_eq!(default_proxy_count, 0);
     std::mem::drop(default_tree);
 
+    let capacity_tree = boxdd::DynamicTree::with_capacity(32);
+    assert_eq!(boxdd::DynamicTree::proxy_count(&capacity_tree), 0);
+    std::mem::drop(capacity_tree);
+    assert!(
+        boxdd::DynamicTree::try_with_capacity(boxdd::DynamicTree::MAX_PROXY_CAPACITY + 1).is_err()
+    );
+
     let mut tree = boxdd::DynamicTree::new();
     let original_proxy =
         boxdd::DynamicTree::create_proxy(&mut tree, aabb(-1.0, -1.0, 1.0, 1.0), 0b001, 42);
@@ -251,13 +259,10 @@ fn dynamic_tree_runtime_paths_succeed() {
     assert_eq!(proxy_count, 1);
     let byte_count = boxdd::DynamicTree::byte_count(&tree);
     assert!(byte_count > 0);
-    boxdd::DynamicTree::validate(&tree);
 
     boxdd::DynamicTree::enlarge_proxy(&mut tree, proxy, aabb(-2.0, -2.0, 2.0, 2.0));
     let rebuilt = boxdd::DynamicTree::rebuild(&mut tree, true);
     assert_eq!(rebuilt, 1);
-    boxdd::DynamicTree::validate(&tree);
-    boxdd::DynamicTree::validate_no_enlarged(&tree);
 
     boxdd::DynamicTree::destroy_proxy(&mut tree, proxy);
     std::mem::drop(tree);

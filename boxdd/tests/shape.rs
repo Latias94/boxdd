@@ -1,7 +1,85 @@
-use boxdd::{Transform, Vec2, shapes};
+use boxdd::{Vec2, WorldTransform, shapes};
+
+#[cfg(feature = "double-precision")]
+use boxdd::{Aabb, Position};
 
 fn approx(a: f32, b: f32, tol: f32) -> bool {
     (a - b).abs() <= tol
+}
+
+#[test]
+fn standalone_aabbs_use_absolute_world_transforms() {
+    let transform = WorldTransform::from_pos_angle([12.0_f32, -7.0], 0.5 * core::f32::consts::PI);
+    let circle_aabb = shapes::circle([1.0_f32, 0.0], 0.5).aabb(transform);
+
+    const AABB_TOLERANCE: f32 = 2.0e-6;
+    assert!(approx(circle_aabb.lower.x, 11.5, AABB_TOLERANCE));
+    assert!(approx(circle_aabb.lower.y, -6.5, AABB_TOLERANCE));
+    assert!(approx(circle_aabb.upper.x, 12.5, AABB_TOLERANCE));
+    assert!(approx(circle_aabb.upper.y, -5.5, AABB_TOLERANCE));
+
+    assert!(
+        shapes::capsule([-0.5_f32, 0.0], [0.5, 0.0], 0.25)
+            .aabb(transform)
+            .is_valid()
+    );
+    assert!(shapes::box_polygon(1.0, 0.5).aabb(transform).is_valid());
+    assert!(
+        shapes::segment([-1.0_f32, 0.0], [1.0, 0.0])
+            .aabb(transform)
+            .is_valid()
+    );
+}
+
+#[cfg(feature = "double-precision")]
+fn assert_aabb_contains_disk(aabb: Aabb, center: Position, radius: f32) {
+    let radius = f64::from(radius);
+    assert!(f64::from(aabb.lower.x) <= center.x - radius);
+    assert!(f64::from(aabb.lower.y) <= center.y - radius);
+    assert!(f64::from(aabb.upper.x) >= center.x + radius);
+    assert!(f64::from(aabb.upper.y) >= center.y + radius);
+}
+
+#[cfg(feature = "double-precision")]
+#[test]
+fn standalone_aabbs_round_outward_at_large_world_positions() {
+    let transform =
+        WorldTransform::from_pos_angle(Position::new(10_000_000.49, -10_000_000.49), 0.37);
+
+    let circle = shapes::circle([0.25_f32, -0.5], 0.4);
+    assert_aabb_contains_disk(
+        circle.aabb(transform),
+        transform.transform_point(circle.center),
+        circle.radius,
+    );
+
+    let capsule = shapes::capsule([-0.75_f32, -0.25], [0.8, 0.5], 0.3);
+    let capsule_aabb = capsule.aabb(transform);
+    assert_aabb_contains_disk(
+        capsule_aabb,
+        transform.transform_point(capsule.center1),
+        capsule.radius,
+    );
+    assert_aabb_contains_disk(
+        capsule_aabb,
+        transform.transform_point(capsule.center2),
+        capsule.radius,
+    );
+
+    let polygon = shapes::rounded_box_polygon(0.8, 0.45, 0.15);
+    let polygon_aabb = polygon.aabb(transform);
+    for vertex in polygon.vertices() {
+        assert_aabb_contains_disk(
+            polygon_aabb,
+            transform.transform_point(*vertex),
+            polygon.radius(),
+        );
+    }
+
+    let segment = shapes::segment([-1.2_f32, 0.35], [0.9, -0.6]);
+    let segment_aabb = segment.aabb(transform);
+    assert_aabb_contains_disk(segment_aabb, transform.transform_point(segment.point1), 0.0);
+    assert_aabb_contains_disk(segment_aabb, transform.transform_point(segment.point2), 0.0);
 }
 
 #[test]
@@ -60,19 +138,19 @@ fn shape_mass_aabb_point_raycast() {
     assert!(approx(m.rotational_inertia, 8.0 / 3.0, 2.0 * f32::EPSILON));
 
     // AABB
-    let a_circle = circle.aabb(Transform::IDENTITY);
+    let a_circle = circle.aabb(WorldTransform::IDENTITY);
     assert!(approx(a_circle.lower.x, 0.0, f32::EPSILON));
     assert!(approx(a_circle.lower.y, -1.0, f32::EPSILON));
     assert!(approx(a_circle.upper.x, 2.0, f32::EPSILON));
     assert!(approx(a_circle.upper.y, 1.0, f32::EPSILON));
 
-    let a_box = boxp.aabb(Transform::IDENTITY);
+    let a_box = boxp.aabb(WorldTransform::IDENTITY);
     assert!(approx(a_box.lower.x, -1.0, f32::EPSILON));
     assert!(approx(a_box.lower.y, -1.0, f32::EPSILON));
     assert!(approx(a_box.upper.x, 1.0, f32::EPSILON));
     assert!(approx(a_box.upper.y, 1.0, f32::EPSILON));
 
-    let a_seg = segment.aabb(Transform::IDENTITY);
+    let a_seg = segment.aabb(WorldTransform::IDENTITY);
     assert!(approx(a_seg.lower.x, 0.0, f32::EPSILON));
     assert!(approx(a_seg.lower.y, -1.0, f32::EPSILON));
     assert!(approx(a_seg.upper.x, 0.0, f32::EPSILON));

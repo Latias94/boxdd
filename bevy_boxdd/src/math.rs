@@ -13,10 +13,10 @@ pub fn to_boxdd_vec2(value: BevyVec2) -> boxdd::Vec2 {
     boxdd::Vec2::new(value.x, value.y)
 }
 
-/// Converts a Bevy `Vec3` translation to a Box2D vector by taking XY.
+/// Converts a Bevy `Vec3` translation to an absolute Box2D world position by taking XY.
 #[inline]
-pub fn to_boxdd_translation(value: BevyVec3) -> boxdd::Vec2 {
-    boxdd::Vec2::new(value.x, value.y)
+pub fn to_boxdd_translation(value: BevyVec3) -> boxdd::Position {
+    boxdd::Position::from([value.x, value.y])
 }
 
 /// Extracts the Z-axis rotation angle from a Bevy quaternion.
@@ -25,10 +25,10 @@ pub fn to_boxdd_angle(value: BevyQuat) -> f32 {
     value.to_euler(EulerRot::XYZ).2
 }
 
-/// Converts a Bevy transform to a Box2D transform, ignoring Z and scale.
+/// Converts a Bevy transform to a Box2D world transform, ignoring Z and scale.
 #[inline]
-pub fn to_boxdd_transform(value: BevyTransform) -> boxdd::Transform {
-    boxdd::Transform::from_pos_angle(
+pub fn to_boxdd_transform(value: BevyTransform) -> boxdd::WorldTransform {
+    boxdd::WorldTransform::from_pos_angle(
         to_boxdd_translation(value.translation),
         to_boxdd_angle(value.rotation),
     )
@@ -40,10 +40,23 @@ pub fn to_bevy_vec2(value: boxdd::Vec2) -> BevyVec2 {
     BevyVec2::new(value.x, value.y)
 }
 
-/// Converts a Box2D vector to a Bevy `Vec3` with the supplied Z coordinate.
+/// Converts an absolute Box2D world position to a Bevy `Vec2`.
+///
+/// Bevy vectors use `f32`, so double-precision Box2D coordinates are narrowed here.
 #[inline]
-pub fn to_bevy_translation(value: boxdd::Vec2, z: f32) -> BevyVec3 {
-    BevyVec3::new(value.x, value.y, z)
+pub fn to_bevy_position(value: boxdd::Position) -> BevyVec2 {
+    let local = value
+        .checked_relative_to(boxdd::Position::ZERO)
+        .expect("Box2D world position must fit in a Bevy f32 translation");
+    BevyVec2::new(local.x, local.y)
+}
+
+/// Converts an absolute Box2D world position to a Bevy `Vec3` with the supplied Z coordinate.
+///
+/// Bevy translations use `f32`, so double-precision Box2D coordinates are narrowed here.
+#[inline]
+pub fn to_bevy_translation(value: boxdd::Position, z: f32) -> BevyVec3 {
+    to_bevy_position(value).extend(z)
 }
 
 /// Converts a Box2D rotation to a Bevy Z-axis quaternion.
@@ -52,16 +65,16 @@ pub fn to_bevy_rotation(value: boxdd::Rot) -> BevyQuat {
     BevyQuat::from_rotation_z(value.angle())
 }
 
-/// Converts a Box2D transform to a Bevy transform with Z = 0 and unit scale.
+/// Converts a Box2D world transform to a Bevy transform with Z = 0 and unit scale.
 #[inline]
-pub fn to_bevy_transform(value: boxdd::Transform) -> BevyTransform {
+pub fn to_bevy_transform(value: boxdd::WorldTransform) -> BevyTransform {
     BevyTransform::from_translation(to_bevy_translation(value.position(), 0.0))
         .with_rotation(to_bevy_rotation(value.rotation()))
 }
 
-/// Applies a Box2D transform to an existing Bevy transform, preserving Z and scale.
+/// Applies a Box2D world transform to an existing Bevy transform, preserving Z and scale.
 #[inline]
-pub fn apply_boxdd_transform(target: &mut BevyTransform, value: boxdd::Transform) {
+pub fn apply_boxdd_transform(target: &mut BevyTransform, value: boxdd::WorldTransform) {
     let z = target.translation.z;
     target.translation = to_bevy_translation(value.position(), z);
     target.rotation = to_bevy_rotation(value.rotation());
@@ -93,15 +106,15 @@ impl BevyQuatBoxddExt for BevyQuat {
     }
 }
 
-/// Extension methods for converting Bevy transforms to Box2D transforms.
+/// Extension methods for converting Bevy transforms to Box2D world transforms.
 pub trait BevyTransformBoxddExt {
-    /// Converts translation XY and rotation Z to a Box2D transform.
-    fn to_boxdd_transform(self) -> boxdd::Transform;
+    /// Converts translation XY and rotation Z to a Box2D world transform.
+    fn to_boxdd_transform(self) -> boxdd::WorldTransform;
 }
 
 impl BevyTransformBoxddExt for BevyTransform {
     #[inline]
-    fn to_boxdd_transform(self) -> boxdd::Transform {
+    fn to_boxdd_transform(self) -> boxdd::WorldTransform {
         to_boxdd_transform(self)
     }
 }
@@ -119,6 +132,19 @@ impl BoxddVec2BevyExt for boxdd::Vec2 {
     }
 }
 
+/// Extension method for converting Box2D world positions to Bevy vectors.
+pub trait BoxddPositionBevyExt {
+    /// Converts this absolute world position to Bevy's `Vec2`.
+    fn to_bevy_vec2(self) -> BevyVec2;
+}
+
+impl BoxddPositionBevyExt for boxdd::Position {
+    #[inline]
+    fn to_bevy_vec2(self) -> BevyVec2 {
+        to_bevy_position(self)
+    }
+}
+
 /// Extension method for converting Box2D rotations to Bevy quaternions.
 pub trait BoxddQuatBevyExt {
     /// Converts this rotation to a Bevy Z-axis quaternion.
@@ -132,7 +158,7 @@ impl BoxddQuatBevyExt for boxdd::Rot {
     }
 }
 
-/// Extension methods for converting Box2D transforms to Bevy transforms.
+/// Extension methods for converting Box2D world transforms to Bevy transforms.
 pub trait BoxddTransformBevyExt {
     /// Converts this value to a Bevy transform with unit scale.
     fn to_bevy_transform(self) -> BevyTransform;
@@ -141,7 +167,7 @@ pub trait BoxddTransformBevyExt {
     fn apply_to_bevy_transform(self, target: &mut BevyTransform);
 }
 
-impl BoxddTransformBevyExt for boxdd::Transform {
+impl BoxddTransformBevyExt for boxdd::WorldTransform {
     #[inline]
     fn to_bevy_transform(self) -> BevyTransform {
         to_bevy_transform(self)

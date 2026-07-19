@@ -22,7 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn run_once(
     seed: u64,
     steps: usize,
-) -> Result<((f32, f32), std::time::Duration), Box<dyn std::error::Error>> {
+) -> Result<((WorldScalar, f32), std::time::Duration), Box<dyn std::error::Error>> {
     let mut rng = Lcg64::new(seed);
     let mut world = World::new(
         WorldDef::builder()
@@ -68,7 +68,7 @@ fn run_once(
     let dur = start.elapsed();
 
     // Aggregate sums
-    let mut pos_sum = 0.0f32;
+    let mut pos_sum = WorldScalar::from(0.0_f32);
     let mut vel_sum = 0.0f32;
     for &b in &bodies {
         let p = world.body_position(b);

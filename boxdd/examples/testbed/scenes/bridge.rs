@@ -37,11 +37,13 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
         let a = planks[i];
         let b = planks[i + 1];
         let anchor = app.world.body_position(a);
+        let right = anchor.offset(bd::Vec2::new(plank_half.x, 0.0));
+        let left = anchor.offset(bd::Vec2::new(-plank_half.x, 0.0));
         let base = app.world.joint_base_from_world_points(
             a,
             b,
-            [anchor.x + plank_half.x, anchor.y],
-            [anchor.x - plank_half.x, anchor.y],
+            right,
+            left,
         );
         let rdef = bd::RevoluteJointDef::new(base);
         let _ = app.world.create_revolute_joint_id(&rdef);

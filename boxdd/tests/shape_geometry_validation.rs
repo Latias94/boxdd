@@ -84,6 +84,7 @@ fn safe_shape_creation_panics_on_invalid_geometry() {
 #[test]
 fn standalone_geometry_try_helpers_reject_invalid_inputs() {
     let circle = shapes::circle([0.0_f32, 0.0], 0.5);
+    let invalid_world_transform = boxdd::WorldTransform::from_pos_angle([f32::NAN, 0.0], 0.0);
     let invalid_transform = boxdd::Transform::from_pos_angle([f32::NAN, 0.0], 0.0);
 
     assert_eq!(
@@ -91,7 +92,7 @@ fn standalone_geometry_try_helpers_reject_invalid_inputs() {
         ApiError::InvalidArgument
     );
     assert_eq!(
-        circle.try_aabb(invalid_transform).unwrap_err(),
+        circle.try_aabb(invalid_world_transform).unwrap_err(),
         ApiError::InvalidArgument
     );
     assert_eq!(
@@ -123,7 +124,7 @@ fn standalone_geometry_try_helpers_reject_invalid_inputs() {
     let invalid_polygon = Polygon::from_raw(raw_polygon);
     assert_eq!(
         invalid_polygon
-            .try_aabb(boxdd::Transform::IDENTITY)
+            .try_aabb(boxdd::WorldTransform::IDENTITY)
             .unwrap_err(),
         ApiError::InvalidArgument
     );
@@ -185,6 +186,7 @@ fn standalone_shape_specific_shape_casts_reject_invalid_inputs() {
 #[test]
 fn safe_standalone_geometry_helpers_panic_on_invalid_inputs() {
     let circle = shapes::circle([0.0_f32, 0.0], 0.5);
+    let invalid_world_transform = boxdd::WorldTransform::from_pos_angle([f32::NAN, 0.0], 0.0);
     let invalid_transform = boxdd::Transform::from_pos_angle([f32::NAN, 0.0], 0.0);
 
     let mass_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -193,7 +195,7 @@ fn safe_standalone_geometry_helpers_panic_on_invalid_inputs() {
     assert!(mass_result.is_err());
 
     let aabb_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        circle.aabb(invalid_transform);
+        circle.aabb(invalid_world_transform);
     }));
     assert!(aabb_result.is_err());
 
@@ -226,8 +228,8 @@ fn degenerate_segment_and_capsule_helpers_remain_usable() {
     let segment = shapes::segment([0.0_f32, 0.0], [0.0_f32, 0.0]);
     assert_eq!(segment.validate().unwrap_err(), ApiError::InvalidArgument);
     assert_eq!(
-        segment.try_aabb(boxdd::Transform::IDENTITY).unwrap(),
-        segment.aabb(boxdd::Transform::IDENTITY)
+        segment.try_aabb(boxdd::WorldTransform::IDENTITY).unwrap(),
+        segment.aabb(boxdd::WorldTransform::IDENTITY)
     );
     assert_cast_output_eq(
         segment
@@ -240,8 +242,8 @@ fn degenerate_segment_and_capsule_helpers_remain_usable() {
     assert_eq!(capsule.validate().unwrap_err(), ApiError::InvalidArgument);
     assert_eq!(capsule.try_mass_data(1.0).unwrap(), capsule.mass_data(1.0));
     assert_eq!(
-        capsule.try_aabb(boxdd::Transform::IDENTITY).unwrap(),
-        capsule.aabb(boxdd::Transform::IDENTITY)
+        capsule.try_aabb(boxdd::WorldTransform::IDENTITY).unwrap(),
+        capsule.aabb(boxdd::WorldTransform::IDENTITY)
     );
     assert_eq!(
         capsule.try_contains_point([0.0_f32, 0.0]).unwrap(),

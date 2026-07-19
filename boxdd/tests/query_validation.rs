@@ -24,6 +24,7 @@ fn try_query_invalid_values_return_err() {
     assert_eq!(
         world
             .try_overlap_aabb(
+                Position::ZERO,
                 Aabb::new([1.0_f32, 1.0], [-1.0, -1.0]),
                 QueryFilter::default()
             )
@@ -32,13 +33,18 @@ fn try_query_invalid_values_return_err() {
     );
     assert_eq!(
         world
-            .try_cast_ray_closest([f32::NAN, 0.0], [1.0, 0.0], QueryFilter::default())
+            .try_cast_ray_closest(
+                Position::new(WorldScalar::NAN, 0.0),
+                [1.0, 0.0],
+                QueryFilter::default(),
+            )
             .unwrap_err(),
         ApiError::InvalidArgument
     );
     assert_eq!(
         world
             .try_overlap_polygon_points(
+                Position::ZERO,
                 [[0.0_f32, 0.0], [f32::NAN, 1.0], [1.0, 0.0]],
                 0.0,
                 QueryFilter::default(),
@@ -48,13 +54,20 @@ fn try_query_invalid_values_return_err() {
     );
     assert_eq!(
         world
-            .try_cast_shape_points(triangle, -1.0, [0.0_f32, 1.0], QueryFilter::default())
+            .try_cast_shape_points(
+                Position::ZERO,
+                triangle,
+                -1.0,
+                [0.0_f32, 1.0],
+                QueryFilter::default(),
+            )
             .unwrap_err(),
         ApiError::InvalidArgument
     );
     assert_eq!(
         world
             .try_overlap_polygon_points_with_offset(
+                Position::ZERO,
                 triangle,
                 0.0,
                 [0.0_f32, 0.0],
@@ -67,6 +80,7 @@ fn try_query_invalid_values_return_err() {
     assert_eq!(
         world
             .try_cast_shape_points_with_offset_into(
+                Position::ZERO,
                 triangle,
                 0.0,
                 [0.0_f32, 0.0],
@@ -81,6 +95,7 @@ fn try_query_invalid_values_return_err() {
     assert_eq!(
         world
             .try_cast_mover(
+                Position::ZERO,
                 [0.0_f32, 0.0],
                 [0.0, 1.0],
                 0.0,
@@ -93,6 +108,7 @@ fn try_query_invalid_values_return_err() {
     assert_eq!(
         world
             .try_collide_mover_into(
+                Position::ZERO,
                 [f32::NAN, 0.0],
                 [0.0, 1.0],
                 0.25,

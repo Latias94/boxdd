@@ -320,14 +320,12 @@ pub(crate) trait ShapeRuntimeHandle {
         shape_polygon_impl(self.shape_id())
     }
 
-    fn closest_point<V: Into<Vec2>>(&self, target: V) -> Vec2 {
-        self.assert_valid();
-        shape_closest_point_impl(self.shape_id(), target)
+    fn closest_point(&self, target: Position) -> Position {
+        shape_closest_point_checked_impl(self.shape_id(), target)
     }
 
-    fn try_closest_point<V: Into<Vec2>>(&self, target: V) -> ApiResult<Vec2> {
-        self.check_valid()?;
-        Ok(shape_closest_point_impl(self.shape_id(), target))
+    fn try_closest_point(&self, target: Position) -> ApiResult<Position> {
+        try_shape_closest_point_checked_impl(self.shape_id(), target)
     }
 
     fn aabb(&self) -> Aabb {
@@ -340,28 +338,24 @@ pub(crate) trait ShapeRuntimeHandle {
         Ok(shape_aabb_impl(self.shape_id()))
     }
 
-    fn test_point<V: Into<Vec2>>(&self, point: V) -> bool {
-        self.assert_valid();
-        shape_test_point_impl(self.shape_id(), point)
+    fn test_point(&self, point: Position) -> bool {
+        shape_test_point_checked_impl(self.shape_id(), point)
     }
 
-    fn try_test_point<V: Into<Vec2>>(&self, point: V) -> ApiResult<bool> {
-        self.check_valid()?;
-        Ok(shape_test_point_impl(self.shape_id(), point))
+    fn try_test_point(&self, point: Position) -> ApiResult<bool> {
+        try_shape_test_point_checked_impl(self.shape_id(), point)
     }
 
-    fn ray_cast<VO: Into<Vec2>, VT: Into<Vec2>>(&self, origin: VO, translation: VT) -> CastOutput {
-        self.assert_valid();
-        shape_ray_cast_impl(self.shape_id(), origin, translation)
+    fn ray_cast<VT: Into<Vec2>>(&self, origin: Position, translation: VT) -> WorldCastOutput {
+        shape_ray_cast_checked_impl(self.shape_id(), origin, translation)
     }
 
-    fn try_ray_cast<VO: Into<Vec2>, VT: Into<Vec2>>(
+    fn try_ray_cast<VT: Into<Vec2>>(
         &self,
-        origin: VO,
+        origin: Position,
         translation: VT,
-    ) -> ApiResult<CastOutput> {
-        self.check_valid()?;
-        Ok(shape_ray_cast_impl(self.shape_id(), origin, translation))
+    ) -> ApiResult<WorldCastOutput> {
+        try_shape_ray_cast_checked_impl(self.shape_id(), origin, translation)
     }
 
     fn apply_wind<V: Into<Vec2>>(&mut self, wind: V, drag: f32, lift: f32, wake: bool) {

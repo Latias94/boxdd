@@ -59,8 +59,19 @@ fn draw_boxdd_gizmos(
 
     for command in commands.iter() {
         match command {
-            boxdd::DebugDrawCmd::Polygon { vertices, color } => {
-                draw_loop(&mut gizmos, vertices.iter().copied(), debug_color(*color));
+            boxdd::DebugDrawCmd::Polygon {
+                transform,
+                vertices,
+                color,
+            } => {
+                draw_world_loop(
+                    &mut gizmos,
+                    vertices
+                        .iter()
+                        .copied()
+                        .map(|point| transform.transform_point(point)),
+                    debug_color(*color),
+                );
             }
             boxdd::DebugDrawCmd::SolidPolygon {
                 transform,
@@ -68,7 +79,7 @@ fn draw_boxdd_gizmos(
                 color,
                 ..
             } => {
-                draw_loop(
+                draw_world_loop(
                     &mut gizmos,
                     vertices
                         .iter()
@@ -86,16 +97,19 @@ fn draw_boxdd_gizmos(
             }
             boxdd::DebugDrawCmd::SolidCircle {
                 transform,
+                center,
                 radius,
                 color,
             } => {
-                let center = transform.position().to_bevy_vec2();
+                let local_center = *center;
+                let world_center = transform.transform_point(local_center);
+                let bevy_center = world_center.to_bevy_vec2();
                 let axis = transform
-                    .transform_point(boxdd::Vec2::new(*radius, 0.0))
+                    .transform_point(boxdd::Vec2::new(local_center.x + *radius, local_center.y))
                     .to_bevy_vec2();
                 let color = debug_color(*color);
-                gizmos.circle_2d(center, *radius, color);
-                gizmos.line_2d(center, axis, color);
+                gizmos.circle_2d(bevy_center, *radius, color);
+                gizmos.line_2d(bevy_center, axis, color);
             }
             boxdd::DebugDrawCmd::SolidCapsule {
                 p1,
@@ -128,7 +142,41 @@ fn draw_boxdd_gizmos(
             boxdd::DebugDrawCmd::String { p, color, .. } => {
                 gizmos.circle_2d(p.to_bevy_vec2(), 0.03, debug_color(*color));
             }
+            boxdd::DebugDrawCmd::Bounds { bounds, color } => {
+                draw_loop(
+                    &mut gizmos,
+                    [
+                        bounds.lower,
+                        boxdd::Vec2::new(bounds.upper.x, bounds.lower.y),
+                        bounds.upper,
+                        boxdd::Vec2::new(bounds.lower.x, bounds.upper.y),
+                    ],
+                    debug_color(*color),
+                );
+            }
         }
+    }
+}
+
+fn draw_world_loop(
+    gizmos: &mut Gizmos,
+    points: impl IntoIterator<Item = boxdd::Position>,
+    color: Color,
+) {
+    let mut points = points.into_iter().map(boxdd::Position::to_bevy_vec2);
+    let Some(first) = points.next() else {
+        return;
+    };
+
+    let mut last = first;
+    let mut count = 1usize;
+    for point in points {
+        gizmos.line_2d(last, point, color);
+        last = point;
+        count += 1;
+    }
+    if count > 2 {
+        gizmos.line_2d(last, first, color);
     }
 }
 

@@ -32,7 +32,7 @@ fn report_first_ray_hit(context: NonSend<BoxddPhysicsContext>, mut reported: Loc
     }
 
     let Ok(Some(hit)) = context.try_cast_ray_closest_entity(
-        Vec2::new(0.0, 3.0),
+        boxdd::Position::from([0.0_f32, 3.0]),
         Vec2::new(0.0, -6.0),
         boxdd::QueryFilter::default(),
     ) else {

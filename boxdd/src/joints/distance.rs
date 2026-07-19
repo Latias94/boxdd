@@ -1,10 +1,22 @@
 #![allow(rustdoc::broken_intra_doc_links)]
-use crate::types::BodyId;
+use crate::types::{BodyId, Position, WorldTransform};
 use crate::world::World;
 use boxdd_sys::ffi;
 
 use super::{Joint, JointBase, OwnedJoint, raw_body_id};
-use crate::error::ApiResult;
+use crate::error::{ApiError, ApiResult};
+
+fn checked_world_distance(a: Position, b: Position) -> ApiResult<f32> {
+    let delta = b
+        .checked_relative_to(a)
+        .map_err(|_| ApiError::InvalidArgument)?;
+    let length = delta.x.hypot(delta.y);
+    if length.is_finite() {
+        Ok(length)
+    } else {
+        Err(ApiError::InvalidArgument)
+    }
+}
 
 // Distance joint
 #[derive(Clone, Debug)]
@@ -163,18 +175,29 @@ impl DistanceJointDef {
         self
     }
 
-    /// Convenience: compute length from two world points.
-    pub fn length_from_world_points<VA: Into<crate::types::Vec2>, VB: Into<crate::types::Vec2>>(
-        mut self,
+    /// Convenience: compute length from two absolute world points.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the world-space delta cannot be represented as a local `f32` length. Use
+    /// [`Self::try_length_from_world_points`] for a recoverable error.
+    pub fn length_from_world_points<VA: Into<Position>, VB: Into<Position>>(
+        self,
         a: VA,
         b: VB,
     ) -> Self {
-        let a: ffi::b2Vec2 = a.into().into_raw();
-        let b: ffi::b2Vec2 = b.into().into_raw();
-        let dx = b.x - a.x;
-        let dy = b.y - a.y;
-        self.0.length = (dx * dx + dy * dy).sqrt();
-        self
+        self.try_length_from_world_points(a, b)
+            .expect("distance-joint world-point delta must fit in local f32 coordinates")
+    }
+
+    /// Fallible variant of [`Self::length_from_world_points`].
+    pub fn try_length_from_world_points<VA: Into<Position>, VB: Into<Position>>(
+        mut self,
+        a: VA,
+        b: VB,
+    ) -> ApiResult<Self> {
+        self.0.length = checked_world_distance(a.into(), b.into())?;
+        Ok(self)
     }
 }
 
@@ -187,20 +210,16 @@ pub struct DistanceJointBuilder<'w> {
     pub(crate) world: &'w mut World,
     pub(crate) body_a: BodyId,
     pub(crate) body_b: BodyId,
-    pub(crate) anchor_a_world: Option<ffi::b2Vec2>,
-    pub(crate) anchor_b_world: Option<ffi::b2Vec2>,
+    pub(crate) anchor_a_world: Option<Position>,
+    pub(crate) anchor_b_world: Option<Position>,
     pub(crate) def: DistanceJointDef,
 }
 
 impl<'w> DistanceJointBuilder<'w> {
     /// Set world-space anchors for A and B.
-    pub fn anchors_world<VA: Into<crate::types::Vec2>, VB: Into<crate::types::Vec2>>(
-        mut self,
-        a: VA,
-        b: VB,
-    ) -> Self {
-        self.anchor_a_world = Some(a.into().into_raw());
-        self.anchor_b_world = Some(b.into().into_raw());
+    pub fn anchors_world<VA: Into<Position>, VB: Into<Position>>(mut self, a: VA, b: VB) -> Self {
+        self.anchor_a_world = Some(a.into());
+        self.anchor_b_world = Some(b.into());
         self
     }
     /// Set desired distance (meters).
@@ -209,15 +228,28 @@ impl<'w> DistanceJointBuilder<'w> {
         self
     }
     /// Compute desired distance from two world points.
-    pub fn length_from_world_points<VA: Into<crate::types::Vec2>, VB: Into<crate::types::Vec2>>(
-        mut self,
+    ///
+    /// # Panics
+    ///
+    /// Panics when the world-space delta cannot be represented as a local `f32` length. Use
+    /// [`Self::try_length_from_world_points`] for a recoverable error.
+    pub fn length_from_world_points<VA: Into<Position>, VB: Into<Position>>(
+        self,
         a: VA,
         b: VB,
     ) -> Self {
-        let a = a.into();
-        let b = b.into();
-        self.def = self.def.length_from_world_points(a, b);
-        self
+        self.try_length_from_world_points(a, b)
+            .expect("distance-joint world-point delta must fit in local f32 coordinates")
+    }
+
+    /// Fallible variant of [`Self::length_from_world_points`].
+    pub fn try_length_from_world_points<VA: Into<Position>, VB: Into<Position>>(
+        mut self,
+        a: VA,
+        b: VB,
+    ) -> ApiResult<Self> {
+        self.def = self.def.try_length_from_world_points(a, b)?;
+        Ok(self)
     }
     /// Enable limits with minimum/maximum length (meters).
     pub fn limit(mut self, min_len: f32, max_len: f32) -> Self {
@@ -250,6 +282,28 @@ impl<'w> DistanceJointBuilder<'w> {
     pub fn collide_connected(mut self, flag: bool) -> Self {
         self.def.0.base.collideConnected = flag;
         self
+    }
+
+    fn configure_local_frames(&mut self) -> ApiResult<()> {
+        let ta =
+            WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) });
+        let tb =
+            WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) });
+        let aw = self.anchor_a_world.unwrap_or_else(|| ta.position());
+        let bw = self.anchor_b_world.unwrap_or_else(|| tb.position());
+        let la = super::base_def::checked_world_to_local_point(ta, aw)?;
+        let lb = super::base_def::checked_world_to_local_point(tb, bw)?;
+        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
+        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
+        self.def.0.base.localFrameA = ffi::b2Transform {
+            p: la.into_raw(),
+            q: ffi::b2Rot { c: 1.0, s: 0.0 },
+        };
+        self.def.0.base.localFrameB = ffi::b2Transform {
+            p: lb.into_raw(),
+            q: ffi::b2Rot { c: 1.0, s: 0.0 },
+        };
+        Ok(())
     }
 
     /// Enable limits and motor together.
@@ -327,45 +381,15 @@ impl<'w> DistanceJointBuilder<'w> {
     pub fn build(mut self) -> Joint<'w> {
         crate::core::debug_checks::assert_body_valid(self.body_a);
         crate::core::debug_checks::assert_body_valid(self.body_b);
-        // Compute frames from anchors; default to body positions
-        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
-        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
-        let aw = self.anchor_a_world.unwrap_or(ta.p);
-        let bw = self.anchor_b_world.unwrap_or(tb.p);
-        let la = crate::core::math::world_to_local_point(ta, aw);
-        let lb = crate::core::math::world_to_local_point(tb, bw);
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.def.0.base.localFrameA = ffi::b2Transform {
-            p: la,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
-        self.def.0.base.localFrameB = ffi::b2Transform {
-            p: lb,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
+        self.configure_local_frames()
+            .expect("distance-joint world anchors must fit in local f32 frames");
         self.world.create_distance_joint(&self.def)
     }
 
     pub fn try_build(mut self) -> ApiResult<Joint<'w>> {
         crate::core::debug_checks::check_body_valid(self.body_a)?;
         crate::core::debug_checks::check_body_valid(self.body_b)?;
-        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
-        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
-        let aw = self.anchor_a_world.unwrap_or(ta.p);
-        let bw = self.anchor_b_world.unwrap_or(tb.p);
-        let la = crate::core::math::world_to_local_point(ta, aw);
-        let lb = crate::core::math::world_to_local_point(tb, bw);
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.def.0.base.localFrameA = ffi::b2Transform {
-            p: la,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
-        self.def.0.base.localFrameB = ffi::b2Transform {
-            p: lb,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
+        self.configure_local_frames()?;
         self.world.try_create_distance_joint(&self.def)
     }
 
@@ -373,45 +397,15 @@ impl<'w> DistanceJointBuilder<'w> {
     pub fn build_owned(mut self) -> OwnedJoint {
         crate::core::debug_checks::assert_body_valid(self.body_a);
         crate::core::debug_checks::assert_body_valid(self.body_b);
-        // Compute frames from anchors; default to body positions
-        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
-        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
-        let aw = self.anchor_a_world.unwrap_or(ta.p);
-        let bw = self.anchor_b_world.unwrap_or(tb.p);
-        let la = crate::core::math::world_to_local_point(ta, aw);
-        let lb = crate::core::math::world_to_local_point(tb, bw);
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.def.0.base.localFrameA = ffi::b2Transform {
-            p: la,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
-        self.def.0.base.localFrameB = ffi::b2Transform {
-            p: lb,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
+        self.configure_local_frames()
+            .expect("distance-joint world anchors must fit in local f32 frames");
         self.world.create_distance_joint_owned(&self.def)
     }
 
     pub fn try_build_owned(mut self) -> ApiResult<OwnedJoint> {
         crate::core::debug_checks::check_body_valid(self.body_a)?;
         crate::core::debug_checks::check_body_valid(self.body_b)?;
-        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
-        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
-        let aw = self.anchor_a_world.unwrap_or(ta.p);
-        let bw = self.anchor_b_world.unwrap_or(tb.p);
-        let la = crate::core::math::world_to_local_point(ta, aw);
-        let lb = crate::core::math::world_to_local_point(tb, bw);
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.def.0.base.localFrameA = ffi::b2Transform {
-            p: la,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
-        self.def.0.base.localFrameB = ffi::b2Transform {
-            p: lb,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
+        self.configure_local_frames()?;
         self.world.try_create_distance_joint_owned(&self.def)
     }
 }

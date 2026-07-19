@@ -57,18 +57,23 @@ impl Circle {
         }))
     }
 
+    /// Compute an absolute world-space AABB using `transform` as the circle's
+    /// local-to-world transform.
+    ///
+    /// The result uses `f32` coordinates in both precision modes. Double-precision world bounds
+    /// are narrowed outward by Box2D so the returned AABB remains conservative.
     #[inline]
-    pub fn aabb(self, transform: Transform) -> Aabb {
+    pub fn aabb(self, transform: WorldTransform) -> Aabb {
         assert_circle_helper_geometry_valid(self);
-        assert_transform_valid(transform);
+        assert_world_transform_valid(transform);
         let raw = self.into_raw();
         Aabb::from_raw(unsafe { ffi::b2ComputeCircleAABB(&raw, transform.into_raw()) })
     }
 
     #[inline]
-    pub fn try_aabb(self, transform: Transform) -> ApiResult<Aabb> {
+    pub fn try_aabb(self, transform: WorldTransform) -> ApiResult<Aabb> {
         check_circle_helper_geometry_valid(self)?;
-        check_transform_valid(transform)?;
+        check_world_transform_valid(transform)?;
         let raw = self.into_raw();
         Ok(Aabb::from_raw(unsafe {
             ffi::b2ComputeCircleAABB(&raw, transform.into_raw())

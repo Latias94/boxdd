@@ -1,4 +1,4 @@
-use crate::types::{ContactId, ShapeId, Vec2};
+use crate::types::{ContactId, Position, ShapeId, Vec2};
 use crate::world::{World, WorldHandle};
 use boxdd_sys::ffi;
 
@@ -40,8 +40,11 @@ impl<'a> ContactHit<'a> {
     pub fn shape_b(&self) -> ShapeId {
         ShapeId::from_raw(self.0.shapeIdB)
     }
-    pub fn point(&self) -> Vec2 {
-        Vec2::from_raw(self.0.point)
+    pub fn contact_id(&self) -> ContactId {
+        ContactId::from_raw(self.0.contactId)
+    }
+    pub fn point(&self) -> Position {
+        Position::from_raw(self.0.point)
     }
     pub fn normal(&self) -> Vec2 {
         Vec2::from_raw(self.0.normal)
@@ -122,7 +125,8 @@ impl ContactEndTouchEvent {
 pub struct ContactHitEvent {
     pub shape_a: ShapeId,
     pub shape_b: ShapeId,
-    pub point: Vec2,
+    pub contact_id: ContactId,
+    pub point: Position,
     pub normal: Vec2,
     pub approach_speed: f32,
 }
@@ -133,7 +137,8 @@ impl ContactHitEvent {
         Self {
             shape_a: ShapeId::from_raw(raw.shapeIdA),
             shape_b: ShapeId::from_raw(raw.shapeIdB),
-            point: Vec2::from_raw(raw.point),
+            contact_id: ContactId::from_raw(raw.contactId),
+            point: Position::from_raw(raw.point),
             normal: Vec2::from_raw(raw.normal),
             approach_speed: raw.approachSpeed,
         }

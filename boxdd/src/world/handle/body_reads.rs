@@ -1,22 +1,22 @@
 use super::*;
 
 impl WorldHandle {
-    pub fn body_transform(&self, body: BodyId) -> Transform {
+    pub fn body_transform(&self, body: BodyId) -> WorldTransform {
         crate::core::debug_checks::assert_body_valid(body);
         crate::body::body_transform_impl(body)
     }
 
-    pub fn try_body_transform(&self, body: BodyId) -> crate::error::ApiResult<Transform> {
+    pub fn try_body_transform(&self, body: BodyId) -> crate::error::ApiResult<WorldTransform> {
         crate::core::debug_checks::check_body_valid(body)?;
         Ok(crate::body::body_transform_impl(body))
     }
 
-    pub fn body_position(&self, body: BodyId) -> Vec2 {
+    pub fn body_position(&self, body: BodyId) -> Position {
         crate::core::debug_checks::assert_body_valid(body);
         crate::body::body_position_impl(body)
     }
 
-    pub fn try_body_position(&self, body: BodyId) -> crate::error::ApiResult<Vec2> {
+    pub fn try_body_position(&self, body: BodyId) -> crate::error::ApiResult<Position> {
         crate::core::debug_checks::check_body_valid(body)?;
         Ok(crate::body::body_position_impl(body))
     }
@@ -61,37 +61,55 @@ impl WorldHandle {
         Ok(crate::body::body_aabb_impl(body))
     }
 
-    pub fn body_local_point<V: Into<Vec2>>(&self, body: BodyId, world_point: V) -> Vec2 {
+    pub fn body_local_point<V: Into<Position>>(&self, body: BodyId, world_point: V) -> Vec2 {
         crate::core::debug_checks::assert_body_valid(body);
-        crate::body::body_local_point_impl(body, world_point)
+        let world_point = crate::body::assert_body_world_point_in_local_range(
+            "world_point",
+            world_point.into(),
+            crate::body::body_position_impl(body),
+        );
+        let result = crate::body::body_local_point_impl(body, world_point);
+        crate::body::assert_valid_body_vec2("local point result", result)
     }
 
-    pub fn try_body_local_point<V: Into<Vec2>>(
+    pub fn try_body_local_point<V: Into<Position>>(
         &self,
         body: BodyId,
         world_point: V,
     ) -> crate::error::ApiResult<Vec2> {
         crate::core::debug_checks::check_body_valid(body)?;
-        Ok(crate::body::body_local_point_impl(body, world_point))
+        let world_point = crate::body::check_body_world_point_in_local_range(
+            world_point.into(),
+            crate::body::body_position_impl(body),
+        )?;
+        crate::body::check_valid_body_vec2(crate::body::body_local_point_impl(body, world_point))
     }
 
-    pub fn body_world_point<V: Into<Vec2>>(&self, body: BodyId, local_point: V) -> Vec2 {
+    pub fn body_world_point<V: Into<Vec2>>(&self, body: BodyId, local_point: V) -> Position {
         crate::core::debug_checks::assert_body_valid(body);
-        crate::body::body_world_point_impl(body, local_point)
+        let local_point = crate::body::assert_valid_body_vec2("local_point", local_point.into());
+        let result = crate::body::body_world_point_impl(body, local_point);
+        crate::body::assert_valid_body_position("world point result", result)
     }
 
     pub fn try_body_world_point<V: Into<Vec2>>(
         &self,
         body: BodyId,
         local_point: V,
-    ) -> crate::error::ApiResult<Vec2> {
+    ) -> crate::error::ApiResult<Position> {
         crate::core::debug_checks::check_body_valid(body)?;
-        Ok(crate::body::body_world_point_impl(body, local_point))
+        let local_point = crate::body::check_valid_body_vec2(local_point.into())?;
+        crate::body::check_valid_body_position(crate::body::body_world_point_impl(
+            body,
+            local_point,
+        ))
     }
 
     pub fn body_local_vector<V: Into<Vec2>>(&self, body: BodyId, world_vector: V) -> Vec2 {
         crate::core::debug_checks::assert_body_valid(body);
-        crate::body::body_local_vector_impl(body, world_vector)
+        let world_vector = crate::body::assert_valid_body_vec2("world_vector", world_vector.into());
+        let result = crate::body::body_local_vector_impl(body, world_vector);
+        crate::body::assert_valid_body_vec2("local vector result", result)
     }
 
     pub fn try_body_local_vector<V: Into<Vec2>>(
@@ -100,12 +118,15 @@ impl WorldHandle {
         world_vector: V,
     ) -> crate::error::ApiResult<Vec2> {
         crate::core::debug_checks::check_body_valid(body)?;
-        Ok(crate::body::body_local_vector_impl(body, world_vector))
+        let world_vector = crate::body::check_valid_body_vec2(world_vector.into())?;
+        crate::body::check_valid_body_vec2(crate::body::body_local_vector_impl(body, world_vector))
     }
 
     pub fn body_world_vector<V: Into<Vec2>>(&self, body: BodyId, local_vector: V) -> Vec2 {
         crate::core::debug_checks::assert_body_valid(body);
-        crate::body::body_world_vector_impl(body, local_vector)
+        let local_vector = crate::body::assert_valid_body_vec2("local_vector", local_vector.into());
+        let result = crate::body::body_world_vector_impl(body, local_vector);
+        crate::body::assert_valid_body_vec2("world vector result", result)
     }
 
     pub fn try_body_world_vector<V: Into<Vec2>>(
@@ -114,12 +135,15 @@ impl WorldHandle {
         local_vector: V,
     ) -> crate::error::ApiResult<Vec2> {
         crate::core::debug_checks::check_body_valid(body)?;
-        Ok(crate::body::body_world_vector_impl(body, local_vector))
+        let local_vector = crate::body::check_valid_body_vec2(local_vector.into())?;
+        crate::body::check_valid_body_vec2(crate::body::body_world_vector_impl(body, local_vector))
     }
 
     pub fn body_local_point_velocity<V: Into<Vec2>>(&self, body: BodyId, local_point: V) -> Vec2 {
         crate::core::debug_checks::assert_body_valid(body);
-        crate::body::body_local_point_velocity_impl(body, local_point)
+        let local_point = crate::body::assert_valid_body_vec2("local_point", local_point.into());
+        let result = crate::body::body_local_point_velocity_impl(body, local_point);
+        crate::body::assert_valid_body_vec2("local point velocity result", result)
     }
 
     pub fn try_body_local_point_velocity<V: Into<Vec2>>(
@@ -128,24 +152,39 @@ impl WorldHandle {
         local_point: V,
     ) -> crate::error::ApiResult<Vec2> {
         crate::core::debug_checks::check_body_valid(body)?;
-        Ok(crate::body::body_local_point_velocity_impl(
+        let local_point = crate::body::check_valid_body_vec2(local_point.into())?;
+        crate::body::check_valid_body_vec2(crate::body::body_local_point_velocity_impl(
             body,
             local_point,
         ))
     }
 
-    pub fn body_world_point_velocity<V: Into<Vec2>>(&self, body: BodyId, world_point: V) -> Vec2 {
+    pub fn body_world_point_velocity<V: Into<Position>>(
+        &self,
+        body: BodyId,
+        world_point: V,
+    ) -> Vec2 {
         crate::core::debug_checks::assert_body_valid(body);
-        crate::body::body_world_point_velocity_impl(body, world_point)
+        let world_point = crate::body::assert_body_world_point_in_local_range(
+            "world_point",
+            world_point.into(),
+            crate::body::body_world_center_of_mass_impl(body),
+        );
+        let result = crate::body::body_world_point_velocity_impl(body, world_point);
+        crate::body::assert_valid_body_vec2("world point velocity result", result)
     }
 
-    pub fn try_body_world_point_velocity<V: Into<Vec2>>(
+    pub fn try_body_world_point_velocity<V: Into<Position>>(
         &self,
         body: BodyId,
         world_point: V,
     ) -> crate::error::ApiResult<Vec2> {
         crate::core::debug_checks::check_body_valid(body)?;
-        Ok(crate::body::body_world_point_velocity_impl(
+        let world_point = crate::body::check_body_world_point_in_local_range(
+            world_point.into(),
+            crate::body::body_world_center_of_mass_impl(body),
+        )?;
+        crate::body::check_valid_body_vec2(crate::body::body_world_point_velocity_impl(
             body,
             world_point,
         ))
@@ -181,12 +220,12 @@ impl WorldHandle {
         Ok(crate::body::body_local_center_of_mass_impl(body))
     }
 
-    pub fn body_world_center_of_mass(&self, body: BodyId) -> Vec2 {
+    pub fn body_world_center_of_mass(&self, body: BodyId) -> Position {
         crate::core::debug_checks::assert_body_valid(body);
         crate::body::body_world_center_of_mass_impl(body)
     }
 
-    pub fn try_body_world_center_of_mass(&self, body: BodyId) -> crate::error::ApiResult<Vec2> {
+    pub fn try_body_world_center_of_mass(&self, body: BodyId) -> crate::error::ApiResult<Position> {
         crate::core::debug_checks::check_body_valid(body)?;
         Ok(crate::body::body_world_center_of_mass_impl(body))
     }

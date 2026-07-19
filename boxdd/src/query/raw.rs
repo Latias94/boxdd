@@ -1,5 +1,10 @@
+#![allow(
+    clippy::too_many_arguments,
+    reason = "raw helpers preserve Box2D query arguments and the explicit world origin"
+)]
+
 use crate::error::ApiResult;
-use crate::types::{ShapeId, Vec2};
+use crate::types::{Position, ShapeId, Vec2};
 use boxdd_sys::ffi;
 use smallvec::SmallVec;
 use std::any::Any;
@@ -169,7 +174,7 @@ where
 #[allow(clippy::unnecessary_cast)]
 unsafe extern "C" fn collect_ray_result_cb(
     shape_id: ffi::b2ShapeId,
-    point: ffi::b2Vec2,
+    point: ffi::b2Pos,
     normal: ffi::b2Vec2,
     fraction: f32,
     ctx: *mut core::ffi::c_void,
@@ -177,7 +182,7 @@ unsafe extern "C" fn collect_ray_result_cb(
     let ctx = unsafe { &mut *(ctx as *mut CollectCtx<'_, RayResult>) };
     if ctx.push(RayResult {
         shape_id: ShapeId::from_raw(shape_id),
-        point: Vec2::from_raw(point),
+        point: Position::from_raw(point),
         normal: Vec2::from_raw(normal),
         fraction,
         hit: true,
@@ -213,6 +218,7 @@ pub(super) fn make_capsule<V1: Into<Vec2>, V2: Into<Vec2>>(
 
 pub(super) fn visit_overlap_aabb_impl<F>(
     world: ffi::b2WorldId,
+    origin: Position,
     aabb: Aabb,
     filter: QueryFilter,
     visit: &mut F,
@@ -224,6 +230,7 @@ where
     unsafe {
         let _ = ffi::b2World_OverlapAABB(
             world,
+            origin.into_raw(),
             aabb.into_raw(),
             filter.0,
             Some(visit_shape_id_cb::<F>),
@@ -235,6 +242,7 @@ where
 
 pub(super) fn overlap_aabb_into_impl(
     world: ffi::b2WorldId,
+    origin: Position,
     aabb: Aabb,
     filter: QueryFilter,
     out: &mut Vec<ShapeId>,
@@ -244,21 +252,23 @@ pub(super) fn overlap_aabb_into_impl(
         out.push(shape_id);
         true
     };
-    let _ = visit_overlap_aabb_impl(world, aabb, filter, &mut collect);
+    let _ = visit_overlap_aabb_impl(world, origin, aabb, filter, &mut collect);
 }
 
 pub(super) fn overlap_aabb_impl(
     world: ffi::b2WorldId,
+    origin: Position,
     aabb: Aabb,
     filter: QueryFilter,
 ) -> Vec<ShapeId> {
     let mut out = Vec::new();
-    overlap_aabb_into_impl(world, aabb, filter, &mut out);
+    overlap_aabb_into_impl(world, origin, aabb, filter, &mut out);
     out
 }
 
 pub(super) fn visit_overlap_shape_proxy_impl<F>(
     world: ffi::b2WorldId,
+    origin: Position,
     proxy: &ffi::b2ShapeProxy,
     filter: QueryFilter,
     visit: &mut F,
@@ -270,6 +280,7 @@ where
     unsafe {
         let _ = ffi::b2World_OverlapShape(
             world,
+            origin.into_raw(),
             proxy,
             filter.0,
             Some(visit_shape_id_cb::<F>),
@@ -279,19 +290,19 @@ where
     ctx.finish()
 }
 
-pub(super) fn cast_ray_closest_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
+pub(super) fn cast_ray_closest_impl<VO: Into<Position>, VT: Into<Vec2>>(
     world: ffi::b2WorldId,
     origin: VO,
     translation: VT,
     filter: QueryFilter,
 ) -> RayResult {
-    let o: ffi::b2Vec2 = origin.into().into_raw();
+    let o: ffi::b2Pos = origin.into().into_raw();
     let t: ffi::b2Vec2 = translation.into().into_raw();
     let raw = unsafe { ffi::b2World_CastRayClosest(world, o, t, filter.0) };
     RayResult::from_raw(raw)
 }
 
-pub(super) fn cast_ray_all_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
+pub(super) fn cast_ray_all_impl<VO: Into<Position>, VT: Into<Vec2>>(
     world: ffi::b2WorldId,
     origin: VO,
     translation: VT,
@@ -302,7 +313,7 @@ pub(super) fn cast_ray_all_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
     out
 }
 
-pub(super) fn cast_ray_all_into_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
+pub(super) fn cast_ray_all_into_impl<VO: Into<Position>, VT: Into<Vec2>>(
     world: ffi::b2WorldId,
     origin: VO,
     translation: VT,
@@ -311,7 +322,7 @@ pub(super) fn cast_ray_all_into_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
 ) {
     out.clear();
     let mut ctx = CollectCtx::from_cleared(out);
-    let o: ffi::b2Vec2 = origin.into().into_raw();
+    let o: ffi::b2Pos = origin.into().into_raw();
     let t: ffi::b2Vec2 = translation.into().into_raw();
     unsafe {
         let _ = ffi::b2World_CastRay(
@@ -328,6 +339,7 @@ pub(super) fn cast_ray_all_into_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
 
 pub(super) fn overlap_polygon_points_into_impl(
     world: ffi::b2WorldId,
+    origin: Position,
     points: &ProxyPoints,
     radius: f32,
     filter: QueryFilter,
@@ -338,11 +350,12 @@ pub(super) fn overlap_polygon_points_into_impl(
         out.push(shape_id);
         true
     };
-    let _ = visit_overlap_polygon_points_impl(world, points, radius, filter, &mut collect);
+    let _ = visit_overlap_polygon_points_impl(world, origin, points, radius, filter, &mut collect);
 }
 
 pub(super) fn visit_overlap_polygon_points_impl<F>(
     world: ffi::b2WorldId,
+    origin: Position,
     points: &ProxyPoints,
     radius: f32,
     filter: QueryFilter,
@@ -354,22 +367,24 @@ where
     let Some(proxy) = make_proxy_from_points(points, radius) else {
         return true;
     };
-    visit_overlap_shape_proxy_impl(world, &proxy, filter, visit)
+    visit_overlap_shape_proxy_impl(world, origin, &proxy, filter, visit)
 }
 
 pub(super) fn overlap_polygon_points_impl(
     world: ffi::b2WorldId,
+    origin: Position,
     points: &ProxyPoints,
     radius: f32,
     filter: QueryFilter,
 ) -> Vec<ShapeId> {
     let mut out = Vec::new();
-    overlap_polygon_points_into_impl(world, points, radius, filter, &mut out);
+    overlap_polygon_points_into_impl(world, origin, points, radius, filter, &mut out);
     out
 }
 
 pub(super) fn cast_shape_points_into_impl(
     world: ffi::b2WorldId,
+    origin: Position,
     points: &ProxyPoints,
     radius: f32,
     translation: Vec2,
@@ -385,6 +400,7 @@ pub(super) fn cast_shape_points_into_impl(
     unsafe {
         let _ = ffi::b2World_CastShape(
             world,
+            origin.into_raw(),
             &proxy,
             t,
             filter.0,
@@ -397,18 +413,20 @@ pub(super) fn cast_shape_points_into_impl(
 
 pub(super) fn cast_shape_points_impl(
     world: ffi::b2WorldId,
+    origin: Position,
     points: &ProxyPoints,
     radius: f32,
     translation: Vec2,
     filter: QueryFilter,
 ) -> Vec<RayResult> {
     let mut out = Vec::new();
-    cast_shape_points_into_impl(world, points, radius, translation, filter, &mut out);
+    cast_shape_points_into_impl(world, origin, points, radius, translation, filter, &mut out);
     out
 }
 
 pub(super) fn cast_mover_impl(
     world: ffi::b2WorldId,
+    origin: Position,
     c1: Vec2,
     c2: Vec2,
     radius: f32,
@@ -417,11 +435,12 @@ pub(super) fn cast_mover_impl(
 ) -> f32 {
     let cap = make_capsule(c1, c2, radius);
     let t = translation.into_raw();
-    unsafe { ffi::b2World_CastMover(world, &cap, t, filter.0) }
+    unsafe { ffi::b2World_CastMover(world, origin.into_raw(), &cap, t, filter.0) }
 }
 
 pub(super) fn collide_mover_into_impl(
     world: ffi::b2WorldId,
+    origin: Position,
     c1: Vec2,
     c2: Vec2,
     radius: f32,
@@ -434,6 +453,7 @@ pub(super) fn collide_mover_into_impl(
     unsafe {
         ffi::b2World_CollideMover(
             world,
+            origin.into_raw(),
             &cap,
             filter.0,
             Some(collect_mover_plane_result_cb),
@@ -445,18 +465,20 @@ pub(super) fn collide_mover_into_impl(
 
 pub(super) fn collide_mover_impl(
     world: ffi::b2WorldId,
+    origin: Position,
     c1: Vec2,
     c2: Vec2,
     radius: f32,
     filter: QueryFilter,
 ) -> Vec<MoverPlaneResult> {
     let mut out = Vec::new();
-    collide_mover_into_impl(world, c1, c2, radius, filter, &mut out);
+    collide_mover_into_impl(world, origin, c1, c2, radius, filter, &mut out);
     out
 }
 
 pub(super) fn overlap_polygon_points_with_offset_into_impl(
     world: ffi::b2WorldId,
+    origin: Position,
     points: &ProxyPoints,
     radius: f32,
     position: Vec2,
@@ -471,6 +493,7 @@ pub(super) fn overlap_polygon_points_with_offset_into_impl(
     };
     let _ = visit_overlap_polygon_points_with_offset_impl(
         world,
+        origin,
         points,
         radius,
         position,
@@ -482,6 +505,7 @@ pub(super) fn overlap_polygon_points_with_offset_into_impl(
 
 pub(super) fn visit_overlap_polygon_points_with_offset_impl<F>(
     world: ffi::b2WorldId,
+    origin: Position,
     points: &ProxyPoints,
     radius: f32,
     position: Vec2,
@@ -495,11 +519,12 @@ where
     let Some(proxy) = make_offset_proxy_from_points(points, radius, position, angle_radians) else {
         return true;
     };
-    visit_overlap_shape_proxy_impl(world, &proxy, filter, visit)
+    visit_overlap_shape_proxy_impl(world, origin, &proxy, filter, visit)
 }
 
 pub(super) fn overlap_polygon_points_with_offset_impl(
     world: ffi::b2WorldId,
+    origin: Position,
     points: &ProxyPoints,
     radius: f32,
     position: Vec2,
@@ -509,6 +534,7 @@ pub(super) fn overlap_polygon_points_with_offset_impl(
     let mut out = Vec::new();
     overlap_polygon_points_with_offset_into_impl(
         world,
+        origin,
         points,
         radius,
         position,
@@ -522,6 +548,7 @@ pub(super) fn overlap_polygon_points_with_offset_impl(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn cast_shape_points_with_offset_into_impl(
     world: ffi::b2WorldId,
+    origin: Position,
     points: &ProxyPoints,
     radius: f32,
     position: Vec2,
@@ -539,6 +566,7 @@ pub(super) fn cast_shape_points_with_offset_into_impl(
     unsafe {
         let _ = ffi::b2World_CastShape(
             world,
+            origin.into_raw(),
             &proxy,
             t,
             filter.0,
@@ -551,6 +579,7 @@ pub(super) fn cast_shape_points_with_offset_into_impl(
 
 pub(super) fn cast_shape_points_with_offset_impl(
     world: ffi::b2WorldId,
+    origin: Position,
     points: &ProxyPoints,
     radius: f32,
     position: Vec2,
@@ -561,6 +590,7 @@ pub(super) fn cast_shape_points_with_offset_impl(
     let mut out = Vec::new();
     cast_shape_points_with_offset_into_impl(
         world,
+        origin,
         points,
         radius,
         position,
@@ -570,4 +600,66 @@ pub(super) fn cast_shape_points_with_offset_impl(
         &mut out,
     );
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn callbacks_match_box2d_32_typedefs() {
+        let _: ffi::b2CastResultFcn = Some(collect_ray_result_cb);
+        let _: ffi::b2PlaneResultFcn = Some(collect_mover_plane_result_cb);
+        let _: ffi::b2OverlapResultFcn = Some(visit_shape_id_cb::<fn(ShapeId) -> bool>);
+    }
+
+    #[test]
+    fn world_queries_match_origin_aware_box2d_32_signatures() {
+        type OverlapAabb = unsafe extern "C" fn(
+            ffi::b2WorldId,
+            ffi::b2Pos,
+            ffi::b2AABB,
+            ffi::b2QueryFilter,
+            ffi::b2OverlapResultFcn,
+            *mut core::ffi::c_void,
+        ) -> ffi::b2TreeStats;
+        type OverlapShape = unsafe extern "C" fn(
+            ffi::b2WorldId,
+            ffi::b2Pos,
+            *const ffi::b2ShapeProxy,
+            ffi::b2QueryFilter,
+            ffi::b2OverlapResultFcn,
+            *mut core::ffi::c_void,
+        ) -> ffi::b2TreeStats;
+        type CastShape = unsafe extern "C" fn(
+            ffi::b2WorldId,
+            ffi::b2Pos,
+            *const ffi::b2ShapeProxy,
+            ffi::b2Vec2,
+            ffi::b2QueryFilter,
+            ffi::b2CastResultFcn,
+            *mut core::ffi::c_void,
+        ) -> ffi::b2TreeStats;
+        type CastMover = unsafe extern "C" fn(
+            ffi::b2WorldId,
+            ffi::b2Pos,
+            *const ffi::b2Capsule,
+            ffi::b2Vec2,
+            ffi::b2QueryFilter,
+        ) -> f32;
+        type CollideMover = unsafe extern "C" fn(
+            ffi::b2WorldId,
+            ffi::b2Pos,
+            *const ffi::b2Capsule,
+            ffi::b2QueryFilter,
+            ffi::b2PlaneResultFcn,
+            *mut core::ffi::c_void,
+        );
+
+        let _: OverlapAabb = ffi::b2World_OverlapAABB;
+        let _: OverlapShape = ffi::b2World_OverlapShape;
+        let _: CastShape = ffi::b2World_CastShape;
+        let _: CastMover = ffi::b2World_CastMover;
+        let _: CollideMover = ffi::b2World_CollideMover;
+    }
 }

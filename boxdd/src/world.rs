@@ -1,12 +1,12 @@
-use crate::Transform;
 use crate::body::{Body, BodyDef, BodyType};
-use crate::collision::CastOutput;
 use crate::core::world_core::{CustomFilterCtx, MaterialMixCtx, PreSolveCtx, WorldCore};
 use crate::query::Aabb;
 use crate::shapes::{ShapeDef, SurfaceMaterial};
-use crate::types::{BodyId, ChainId, JointId, MassData, MotionLocks, ShapeId, Vec2};
+use crate::types::{
+    BodyId, ChainId, JointId, MassData, MotionLocks, Position, ShapeId, Vec2, WorldCastOutput,
+    WorldTransform,
+};
 use boxdd_sys::ffi;
-use std::ffi::CString;
 use std::rc::Rc;
 use std::sync::Arc;
 

@@ -22,20 +22,35 @@ fn mover_queries_and_solver_are_safe_and_reusable() {
     let c2 = Vec2::new(0.0, 1.5);
     let radius = 0.25;
 
-    let fraction = world.cast_mover(c1, c2, radius, [2.0_f32, 0.0], QueryFilter::default());
+    let fraction = world.cast_mover(
+        Position::ZERO,
+        c1,
+        c2,
+        radius,
+        [2.0_f32, 0.0],
+        QueryFilter::default(),
+    );
     assert!((0.0..1.0).contains(&fraction));
 
     let mut plane_results = Vec::with_capacity(8);
     let plane_results_ptr = plane_results.as_ptr();
-    world.collide_mover_into(c1, c2, radius, QueryFilter::default(), &mut plane_results);
+    world.collide_mover_into(
+        Position::ZERO,
+        c1,
+        c2,
+        radius,
+        QueryFilter::default(),
+        &mut plane_results,
+    );
     assert_eq!(plane_results.as_ptr(), plane_results_ptr);
     assert!(!plane_results.is_empty());
     assert!(plane_results.iter().any(|plane| plane.hit));
     assert!(plane_results.iter().any(|plane| plane.plane.normal.y > 0.5));
 
-    let handle_results = world
-        .handle()
-        .collide_mover(c1, c2, radius, QueryFilter::default());
+    let handle_results =
+        world
+            .handle()
+            .collide_mover(Position::ZERO, c1, c2, radius, QueryFilter::default());
     assert_eq!(handle_results.len(), plane_results.len());
 
     let mut collision_planes: Vec<CollisionPlane> = plane_results

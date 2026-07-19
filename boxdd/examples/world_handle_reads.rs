@@ -1,4 +1,4 @@
-use boxdd::{Aabb, BodyBuilder, QueryFilter, ShapeDef, World, WorldDef, shapes};
+use boxdd::{Aabb, BodyBuilder, Position, QueryFilter, ShapeDef, World, WorldDef, shapes};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut world = World::new(WorldDef::builder().gravity([0.0, -9.8]).build())?;
@@ -29,6 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let handle = world.handle();
     let mut shape_ids = Vec::with_capacity(8);
     handle.overlap_aabb_into(
+        Position::ZERO,
         Aabb::new([-1.0, -1.0], [1.0, 3.0]),
         QueryFilter::default(),
         &mut shape_ids,

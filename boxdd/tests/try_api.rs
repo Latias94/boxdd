@@ -10,6 +10,10 @@ fn contact_id_fields(id: ContactId) -> (i32, u16, i16, u32) {
     (id.index1, id.world0, id.padding, id.generation)
 }
 
+fn assert_invalid_argument<T>(result: ApiResult<T>) {
+    assert_eq!(result.err(), Some(ApiError::InvalidArgument));
+}
+
 #[test]
 fn try_body_position_invalid_id_returns_err() {
     let mut world = World::new(WorldDef::default()).unwrap();
@@ -30,6 +34,17 @@ fn try_set_body_name_rejects_interior_nul() {
 
     let err = world.try_set_body_name(body, "a\0b").unwrap_err();
     assert_eq!(err, ApiError::NulByteInString);
+
+    world.try_set_body_name(body, "1234567890").unwrap();
+    assert_eq!(world.body_name(body).as_deref(), Some("1234567890"));
+
+    assert_invalid_argument(world.try_set_body_name(body, "12345678901"));
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            world.set_body_name(body, "12345678901");
+        }))
+        .is_err()
+    );
 }
 
 #[test]
@@ -41,7 +56,7 @@ fn try_calls_from_debug_draw_return_in_callback() {
     impl DebugDraw for Drawer {
         fn draw_solid_polygon(
             &mut self,
-            _transform: boxdd::Transform,
+            _transform: boxdd::WorldTransform,
             _vertices: &[Vec2],
             _radius: f32,
             _color: HexColor,
@@ -71,7 +86,7 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
     impl DebugDraw for Drawer {
         fn draw_solid_polygon(
             &mut self,
-            _transform: boxdd::Transform,
+            _transform: boxdd::WorldTransform,
             _vertices: &[Vec2],
             _radius: f32,
             _color: HexColor,
@@ -85,22 +100,28 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
             let mut mover_planes = Vec::new();
             self.errs.push(
                 self.world
-                    .try_overlap_aabb(aabb, QueryFilter::default())
+                    .try_overlap_aabb(Position::ZERO, aabb, QueryFilter::default())
                     .unwrap_err(),
             );
             self.errs.push(
                 self.world
-                    .try_overlap_aabb_into(aabb, QueryFilter::default(), &mut overlap_ids)
+                    .try_overlap_aabb_into(
+                        Position::ZERO,
+                        aabb,
+                        QueryFilter::default(),
+                        &mut overlap_ids,
+                    )
                     .unwrap_err(),
             );
             self.errs.push(
                 self.world
-                    .try_visit_overlap_aabb(aabb, QueryFilter::default(), |_| true)
+                    .try_visit_overlap_aabb(Position::ZERO, aabb, QueryFilter::default(), |_| true)
                     .unwrap_err(),
             );
             self.errs.push(
                 self.world
                     .try_visit_overlap_polygon_points(
+                        Position::ZERO,
                         [[-0.5_f32, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]],
                         0.0,
                         QueryFilter::default(),
@@ -111,6 +132,7 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
             self.errs.push(
                 self.world
                     .try_visit_overlap_polygon_points_with_offset(
+                        Position::ZERO,
                         [[-0.5_f32, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]],
                         0.0,
                         [0.0_f32, 1.0],
@@ -122,13 +144,17 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
             );
             self.errs.push(
                 self.world
-                    .try_cast_ray_closest([0.0, 5.0], [0.0, -10.0], QueryFilter::default())
+                    .try_cast_ray_closest(
+                        Position::new(0.0, 5.0),
+                        [0.0, -10.0],
+                        QueryFilter::default(),
+                    )
                     .unwrap_err(),
             );
             self.errs.push(
                 self.world
                     .try_cast_ray_all_into(
-                        [0.0, 5.0],
+                        Position::new(0.0, 5.0),
                         [0.0, -10.0],
                         QueryFilter::default(),
                         &mut ray_hits,
@@ -138,6 +164,7 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
             self.errs.push(
                 self.world
                     .try_cast_mover(
+                        Position::ZERO,
                         [0.0_f32, 0.75],
                         [0.0, 1.75],
                         0.25,
@@ -149,6 +176,7 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
             self.errs.push(
                 self.world
                     .try_collide_mover_into(
+                        Position::ZERO,
                         [0.0_f32, 0.75],
                         [0.0, 1.75],
                         0.25,
@@ -188,16 +216,16 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
 }
 
 #[test]
-fn try_calls_from_debug_draw_raw_return_in_callback() {
+fn owned_body_try_calls_from_debug_draw_return_in_callback() {
     struct Drawer {
         body: OwnedBody,
         err: Option<ApiError>,
     }
-    impl RawDebugDraw for Drawer {
+    impl DebugDraw for Drawer {
         fn draw_solid_polygon(
             &mut self,
-            _transform: ffi::b2Transform,
-            _vertices: &[ffi::b2Vec2],
+            _transform: WorldTransform,
+            _vertices: &[Vec2],
             _radius: f32,
             _color: HexColor,
         ) {
@@ -213,7 +241,7 @@ fn try_calls_from_debug_draw_raw_return_in_callback() {
     let _ = world.create_polygon_shape_for(body_id, &sdef, &poly);
 
     let mut drawer = Drawer { body, err: None };
-    world.debug_draw_raw(&mut drawer, DebugDrawOptions::default());
+    world.debug_draw(&mut drawer, DebugDrawOptions::default());
     assert_eq!(drawer.err, Some(ApiError::InCallback));
 }
 
@@ -223,11 +251,11 @@ fn owned_body_try_create_shape_helpers_return_in_callback() {
         body: OwnedBody,
         err: Option<ApiError>,
     }
-    impl RawDebugDraw for Drawer {
+    impl DebugDraw for Drawer {
         fn draw_solid_polygon(
             &mut self,
-            _transform: ffi::b2Transform,
-            _vertices: &[ffi::b2Vec2],
+            _transform: WorldTransform,
+            _vertices: &[Vec2],
             _radius: f32,
             _color: HexColor,
         ) {
@@ -248,7 +276,7 @@ fn owned_body_try_create_shape_helpers_return_in_callback() {
     let _ = world.create_polygon_shape_for(body_id, &sdef, &poly);
 
     let mut drawer = Drawer { body, err: None };
-    world.debug_draw_raw(&mut drawer, DebugDrawOptions::default());
+    world.debug_draw(&mut drawer, DebugDrawOptions::default());
     assert_eq!(drawer.err, Some(ApiError::InCallback));
 }
 
@@ -384,7 +412,7 @@ fn try_body_mutations_from_debug_draw_return_in_callback() {
     impl DebugDraw for Drawer {
         fn draw_solid_polygon(
             &mut self,
-            _transform: boxdd::Transform,
+            _transform: boxdd::WorldTransform,
             _vertices: &[Vec2],
             _radius: f32,
             _color: HexColor,
@@ -399,7 +427,7 @@ fn try_body_mutations_from_debug_draw_return_in_callback() {
             );
             self.errs.push(
                 self.body
-                    .try_set_target_transform(boxdd::Transform::IDENTITY, 1.0 / 60.0, true)
+                    .try_set_target_transform(boxdd::WorldTransform::IDENTITY, 1.0 / 60.0, true)
                     .unwrap_err(),
             );
         }
@@ -626,7 +654,7 @@ fn try_set_body_target_transform_invalid_id_returns_err() {
     world.destroy_body_id(body);
 
     let err = world
-        .try_set_body_target_transform(body, boxdd::Transform::IDENTITY, 1.0 / 60.0, true)
+        .try_set_body_target_transform(body, boxdd::WorldTransform::IDENTITY, 1.0 / 60.0, true)
         .unwrap_err();
     assert_eq!(err, ApiError::InvalidBodyId);
 }
@@ -669,11 +697,13 @@ fn try_shape_runtime_helpers_invalid_id_returns_err() {
 
     assert_eq!(shape.try_aabb().unwrap_err(), ApiError::InvalidShapeId);
     assert_eq!(
-        shape.try_test_point([0.0_f32, 0.0]).unwrap_err(),
+        shape.try_test_point(Position::ZERO).unwrap_err(),
         ApiError::InvalidShapeId
     );
     assert_eq!(
-        shape.try_ray_cast([-1.0_f32, 0.0], [2.0, 0.0]).unwrap_err(),
+        shape
+            .try_ray_cast(Position::new(-1.0, 0.0), [2.0, 0.0])
+            .unwrap_err(),
         ApiError::InvalidShapeId
     );
     assert_eq!(shape.try_mass_data().unwrap_err(), ApiError::InvalidShapeId);
@@ -696,13 +726,13 @@ fn try_shape_runtime_helpers_invalid_id_returns_err() {
     );
     assert_eq!(
         world
-            .try_shape_test_point(shape_id, [0.0_f32, 0.0])
+            .try_shape_test_point(shape_id, Position::ZERO)
             .unwrap_err(),
         ApiError::InvalidShapeId
     );
     assert_eq!(
         world
-            .try_shape_ray_cast(shape_id, [-1.0_f32, 0.0], [2.0, 0.0])
+            .try_shape_ray_cast(shape_id, Position::new(-1.0, 0.0), [2.0, 0.0])
             .unwrap_err(),
         ApiError::InvalidShapeId
     );
@@ -796,6 +826,167 @@ fn try_body_numeric_mutation_invalid_values_return_err() {
         body.try_set_angular_damping(f32::NAN).unwrap_err(),
         ApiError::InvalidArgument
     );
+}
+
+#[test]
+fn try_body_spatial_parameters_reject_invalid_values() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let mut body = world.create_body_owned(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+    let invalid_position = Position::new(WorldScalar::NAN, 0.0);
+    let invalid_vector = Vec2::new(f32::INFINITY, 0.0);
+    let invalid_rotation = Rot::from_raw(ffi::b2Rot { c: 2.0, s: 0.0 });
+    let invalid_transform = WorldTransform::new(Position::ZERO, invalid_rotation);
+
+    assert_invalid_argument(body.try_local_point(invalid_position));
+    assert_invalid_argument(body.try_world_point(invalid_vector));
+    assert_invalid_argument(body.try_local_vector(invalid_vector));
+    assert_invalid_argument(body.try_world_vector(invalid_vector));
+    assert_invalid_argument(body.try_local_point_velocity(invalid_vector));
+    assert_invalid_argument(body.try_world_point_velocity(invalid_position));
+
+    assert_invalid_argument(body.try_set_position_and_rotation(invalid_position, 0.0));
+    assert_invalid_argument(body.try_set_position_and_rotation(Position::ZERO, f32::NAN));
+    assert_invalid_argument(body.try_set_linear_velocity(invalid_vector));
+    assert_invalid_argument(body.try_set_angular_velocity(f32::INFINITY));
+    assert_invalid_argument(body.try_set_target_transform(invalid_transform, 1.0 / 60.0, true));
+    assert_invalid_argument(body.try_set_target_transform(WorldTransform::IDENTITY, 0.0, true));
+    assert_invalid_argument(body.try_set_target_transform(
+        WorldTransform::IDENTITY,
+        f32::from_bits(1),
+        true,
+    ));
+    assert_invalid_argument(body.try_set_target_transform(
+        WorldTransform::IDENTITY,
+        f32::INFINITY,
+        true,
+    ));
+    assert_invalid_argument(body.try_set_target_transform(
+        WorldTransform::new(
+            Position::new(WorldScalar::from(f32::MAX), 0.0),
+            Rot::IDENTITY,
+        ),
+        0.5,
+        true,
+    ));
+
+    assert_invalid_argument(body.try_apply_force(invalid_vector, Position::ZERO, true));
+    assert_invalid_argument(body.try_apply_force([1.0_f32, 0.0], invalid_position, true));
+    assert_invalid_argument(body.try_apply_force_to_center(invalid_vector, true));
+    assert_invalid_argument(body.try_apply_torque(f32::NAN, true));
+    assert_invalid_argument(body.try_apply_linear_impulse(invalid_vector, Position::ZERO, true));
+    assert_invalid_argument(body.try_apply_linear_impulse([1.0_f32, 0.0], invalid_position, true));
+    assert_invalid_argument(body.try_apply_linear_impulse_to_center(invalid_vector, true));
+    assert_invalid_argument(body.try_apply_angular_impulse(f32::INFINITY, true));
+    assert_invalid_argument(body.try_set_sleep_threshold(-1.0));
+}
+
+#[test]
+fn world_and_world_handle_body_spatial_parameters_reject_invalid_values() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+    let invalid_position = Position::new(WorldScalar::INFINITY, 0.0);
+    let invalid_vector = Vec2::new(f32::NAN, 0.0);
+    let invalid_rotation = Rot::from_raw(ffi::b2Rot { c: 0.0, s: 0.0 });
+    let invalid_transform = WorldTransform::new(Position::ZERO, invalid_rotation);
+
+    assert_invalid_argument(world.try_body_local_point(body, invalid_position));
+    assert_invalid_argument(world.try_body_world_point(body, invalid_vector));
+    assert_invalid_argument(world.try_body_local_vector(body, invalid_vector));
+    assert_invalid_argument(world.try_body_world_vector(body, invalid_vector));
+    assert_invalid_argument(world.try_body_local_point_velocity(body, invalid_vector));
+    assert_invalid_argument(world.try_body_world_point_velocity(body, invalid_position));
+
+    let handle = world.handle();
+    assert_invalid_argument(handle.try_body_local_point(body, invalid_position));
+    assert_invalid_argument(handle.try_body_world_point(body, invalid_vector));
+    assert_invalid_argument(handle.try_body_local_vector(body, invalid_vector));
+    assert_invalid_argument(handle.try_body_world_vector(body, invalid_vector));
+    assert_invalid_argument(handle.try_body_local_point_velocity(body, invalid_vector));
+    assert_invalid_argument(handle.try_body_world_point_velocity(body, invalid_position));
+
+    assert_invalid_argument(world.try_set_body_position_and_rotation(body, invalid_position, 0.0));
+    assert_invalid_argument(world.try_set_body_position_and_rotation(
+        body,
+        Position::ZERO,
+        f32::NAN,
+    ));
+    assert_invalid_argument(world.try_set_body_linear_velocity(body, invalid_vector));
+    assert_invalid_argument(world.try_set_body_angular_velocity(body, f32::NAN));
+    assert_invalid_argument(world.try_set_body_target_transform(
+        body,
+        invalid_transform,
+        1.0 / 60.0,
+        true,
+    ));
+    assert_invalid_argument(world.try_set_body_target_transform(
+        body,
+        WorldTransform::IDENTITY,
+        -1.0,
+        true,
+    ));
+    assert_invalid_argument(world.try_body_apply_linear_impulse_to_center(
+        body,
+        invalid_vector,
+        true,
+    ));
+    assert_invalid_argument(world.try_body_apply_angular_impulse(body, f32::NAN, true));
+    assert_invalid_argument(world.try_set_body_sleep_threshold(body, -1.0));
+}
+
+#[test]
+fn infallible_body_spatial_parameters_panic_before_native_state_is_modified() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let mut body = world.create_body_owned(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+    let invalid_position = Position::new(WorldScalar::NAN, 0.0);
+    let invalid_rotation = Rot::from_raw(ffi::b2Rot { c: 2.0, s: 0.0 });
+    let invalid_transform = WorldTransform::new(Position::ZERO, invalid_rotation);
+
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            body.set_position_and_rotation(invalid_position, 0.0);
+        }))
+        .is_err()
+    );
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            body.set_target_transform(invalid_transform, 1.0 / 60.0, true);
+        }))
+        .is_err()
+    );
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            body.apply_force([f32::NAN, 0.0], Position::ZERO, true);
+        }))
+        .is_err()
+    );
+
+    assert_eq!(body.position(), Position::ZERO);
+    assert!(body.linear_velocity().is_valid());
+    assert!(body.angular_velocity().is_finite());
+}
+
+#[cfg(feature = "double-precision")]
+#[test]
+fn double_precision_body_points_reject_unrepresentable_local_offsets() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let mut body = world.create_body_owned(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+    let far = Position::new(f64::from(f32::MAX) * 2.0, 0.0);
+    assert!(far.is_valid());
+
+    body.try_set_position_and_rotation(far, 0.0).unwrap();
+    assert_eq!(body.position(), far);
+    body.try_set_position_and_rotation(Position::ZERO, 0.0)
+        .unwrap();
+
+    assert_invalid_argument(body.try_local_point(far));
+    assert_invalid_argument(body.try_world_point_velocity(far));
+    assert_invalid_argument(body.try_apply_force([1.0_f32, 0.0], far, true));
+    assert_invalid_argument(body.try_apply_linear_impulse([1.0_f32, 0.0], far, true));
+    assert_invalid_argument(body.try_set_target_transform(
+        WorldTransform::new(far, Rot::IDENTITY),
+        1.0 / 60.0,
+        true,
+    ));
 }
 
 #[test]

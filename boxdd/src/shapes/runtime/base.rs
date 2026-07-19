@@ -1,4 +1,5 @@
 use super::*;
+use crate::types::{Position, WorldCastOutput};
 
 fn shape_type_from_ffi(raw: ffi::b2ShapeType) -> ShapeType {
     ShapeType::from_raw(raw).expect("Box2D returned an unknown shape type")
@@ -75,9 +76,9 @@ pub(crate) fn shape_polygon_impl(id: ShapeId) -> Polygon {
 }
 
 #[inline]
-pub(crate) fn shape_closest_point_impl<V: Into<Vec2>>(id: ShapeId, target: V) -> Vec2 {
-    let target: ffi::b2Vec2 = target.into().into_raw();
-    Vec2::from_raw(unsafe { ffi::b2Shape_GetClosestPoint(raw_shape_id(id), target) })
+pub(crate) fn shape_closest_point_impl<P: Into<Position>>(id: ShapeId, target: P) -> Position {
+    let target: ffi::b2Pos = target.into().into_raw();
+    Position::from_raw(unsafe { ffi::b2Shape_GetClosestPoint(raw_shape_id(id), target) })
 }
 
 #[inline]
@@ -86,31 +87,22 @@ pub(crate) fn shape_aabb_impl(id: ShapeId) -> Aabb {
 }
 
 #[inline]
-pub(crate) fn shape_test_point_impl<V: Into<Vec2>>(id: ShapeId, point: V) -> bool {
-    let point: ffi::b2Vec2 = point.into().into_raw();
+pub(crate) fn shape_test_point_impl<P: Into<Position>>(id: ShapeId, point: P) -> bool {
+    let point: ffi::b2Pos = point.into().into_raw();
     unsafe { ffi::b2Shape_TestPoint(raw_shape_id(id), point) }
 }
 
 #[inline]
-fn make_shape_ray_input<VO: Into<Vec2>, VT: Into<Vec2>>(
-    origin: VO,
-    translation: VT,
-) -> ffi::b2RayCastInput {
-    ffi::b2RayCastInput {
-        origin: origin.into().into_raw(),
-        translation: translation.into().into_raw(),
-        maxFraction: 1.0,
-    }
-}
-
-#[inline]
-pub(crate) fn shape_ray_cast_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
+pub(crate) fn shape_ray_cast_impl<PO: Into<Position>, VT: Into<Vec2>>(
     id: ShapeId,
-    origin: VO,
+    origin: PO,
     translation: VT,
-) -> CastOutput {
-    let input = make_shape_ray_input(origin, translation);
-    CastOutput::from_raw(unsafe { ffi::b2Shape_RayCast(raw_shape_id(id), &input) })
+) -> WorldCastOutput {
+    let origin = origin.into().into_raw();
+    let translation = translation.into().into_raw();
+    WorldCastOutput::from_raw(unsafe {
+        ffi::b2Shape_RayCast(raw_shape_id(id), origin, translation)
+    })
 }
 
 #[inline]
@@ -257,4 +249,21 @@ pub(crate) fn shape_set_surface_material_impl(id: ShapeId, material: &SurfaceMat
 #[inline]
 pub(crate) fn shape_surface_material_impl(id: ShapeId) -> SurfaceMaterial {
     SurfaceMaterial::from_raw(unsafe { ffi::b2Shape_GetSurfaceMaterial(raw_shape_id(id)) })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shape_world_queries_match_box2d_32_signatures() {
+        type PointQuery = unsafe extern "C" fn(ffi::b2ShapeId, ffi::b2Pos) -> bool;
+        type ClosestPoint = unsafe extern "C" fn(ffi::b2ShapeId, ffi::b2Pos) -> ffi::b2Pos;
+        type RayCast =
+            unsafe extern "C" fn(ffi::b2ShapeId, ffi::b2Pos, ffi::b2Vec2) -> ffi::b2WorldCastOutput;
+
+        let _: PointQuery = ffi::b2Shape_TestPoint;
+        let _: ClosestPoint = ffi::b2Shape_GetClosestPoint;
+        let _: RayCast = ffi::b2Shape_RayCast;
+    }
 }

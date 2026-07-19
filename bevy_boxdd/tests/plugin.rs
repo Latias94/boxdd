@@ -93,7 +93,7 @@ fn static_transform_syncs_from_bevy_to_boxdd() {
         .try_body_transform(body)
         .unwrap()
         .position();
-    assert_eq!(position, boxdd::Vec2::new(2.0, -1.0));
+    assert_eq!(position, boxdd::Position::from([2.0_f32, -1.0]));
 }
 
 #[test]
@@ -308,7 +308,7 @@ fn physics_context_ray_query_maps_hits_to_entities() {
     let context = app.world().non_send::<BoxddPhysicsContext>();
     let hit = context
         .try_cast_ray_closest_entity(
-            Vec2::new(0.0, 2.0),
+            boxdd::Position::from([0.0_f32, 2.0]),
             Vec2::new(0.0, -4.0),
             boxdd::QueryFilter::default(),
         )
@@ -340,7 +340,7 @@ fn physics_context_ray_query_all_reuses_entity_hit_buffer() {
     let mut hits = Vec::new();
     context
         .try_cast_ray_all_entities_into(
-            Vec2::new(0.0, 2.0),
+            boxdd::Position::from([0.0_f32, 2.0]),
             Vec2::new(0.0, -4.0),
             boxdd::QueryFilter::default(),
             &mut hits,
@@ -355,7 +355,7 @@ fn physics_context_ray_query_all_reuses_entity_hit_buffer() {
     let hit_count = hits.len();
     let error = context
         .try_cast_ray_all_entities_into(
-            Vec2::new(f32::NAN, 2.0),
+            boxdd::Position::new(boxdd::WorldScalar::NAN, 2.0),
             Vec2::new(0.0, -4.0),
             boxdd::QueryFilter::default(),
             &mut hits,
@@ -370,7 +370,7 @@ fn physics_context_ray_query_all_reuses_entity_hit_buffer() {
 
     context
         .try_cast_ray_all_entities_into(
-            Vec2::new(10.0, 2.0),
+            boxdd::Position::from([10.0_f32, 2.0]),
             Vec2::new(0.0, -4.0),
             boxdd::QueryFilter::default(),
             &mut hits,
@@ -399,6 +399,7 @@ fn physics_context_overlap_aabb_maps_hits_to_entities() {
     let mut context = app.world_mut().non_send_mut::<BoxddPhysicsContext>();
     let hits = context
         .try_overlap_aabb_entities(
+            boxdd::Position::ZERO,
             boxdd::Aabb::from_center_half_extents([0.0_f32, 0.0], [2.0, 1.0]),
             boxdd::QueryFilter::default(),
         )
@@ -431,6 +432,7 @@ fn physics_context_overlap_aabb_reuses_entity_hit_buffer() {
     let mut hits = Vec::new();
     context
         .try_overlap_aabb_entities_into(
+            boxdd::Position::ZERO,
             boxdd::Aabb::from_center_half_extents([0.0_f32, 0.0], [2.0, 1.0]),
             boxdd::QueryFilter::default(),
             &mut hits,
@@ -444,6 +446,7 @@ fn physics_context_overlap_aabb_reuses_entity_hit_buffer() {
     let hit_count = hits.len();
     let error = context
         .try_overlap_aabb_entities_into(
+            boxdd::Position::ZERO,
             boxdd::Aabb::new([1.0_f32, 1.0], [-1.0, -1.0]),
             boxdd::QueryFilter::default(),
             &mut hits,
@@ -458,6 +461,7 @@ fn physics_context_overlap_aabb_reuses_entity_hit_buffer() {
 
     context
         .try_overlap_aabb_entities_into(
+            boxdd::Position::ZERO,
             boxdd::Aabb::from_center_half_extents([10.0_f32, 10.0], [1.0, 1.0]),
             boxdd::QueryFilter::default(),
             &mut hits,
@@ -514,6 +518,7 @@ fn physics_context_overlap_aabb_honors_query_filter() {
     let mut context = app.world_mut().non_send_mut::<BoxddPhysicsContext>();
     let hits = context
         .try_overlap_aabb_entities(
+            boxdd::Position::ZERO,
             boxdd::Aabb::from_center_half_extents([0.0_f32, 0.0], [1.0, 1.0]),
             boxdd::QueryFilter::default().mask(PLAYER),
         )
@@ -561,7 +566,7 @@ fn disabled_physics_context_helpers_return_empty_results() {
 
     let closest = context
         .try_cast_ray_closest_entity(
-            Vec2::ZERO,
+            boxdd::Position::ZERO,
             Vec2::new(1.0, 0.0),
             boxdd::QueryFilter::default(),
         )
@@ -570,7 +575,7 @@ fn disabled_physics_context_helpers_return_empty_results() {
 
     let all_hits = context
         .try_cast_ray_all_entities(
-            Vec2::ZERO,
+            boxdd::Position::ZERO,
             Vec2::new(1.0, 0.0),
             boxdd::QueryFilter::default(),
         )
@@ -579,6 +584,7 @@ fn disabled_physics_context_helpers_return_empty_results() {
 
     let shape_hits = context
         .try_overlap_aabb_entities(
+            boxdd::Position::ZERO,
             boxdd::Aabb::from_center_half_extents([0.0_f32, 0.0], [1.0, 1.0]),
             boxdd::QueryFilter::default(),
         )
@@ -611,7 +617,7 @@ fn physics_context_ray_query_all_allocating_helper_maps_entities() {
     let mut context = app.world_mut().non_send_mut::<BoxddPhysicsContext>();
     let hits = context
         .try_cast_ray_all_entities(
-            Vec2::new(0.0, 2.0),
+            boxdd::Position::from([0.0_f32, 2.0]),
             Vec2::new(0.0, -4.0),
             boxdd::QueryFilter::default(),
         )
@@ -668,7 +674,7 @@ fn native_ray_query_still_available_for_advanced_users() {
     let context = app.world().non_send::<BoxddPhysicsContext>();
     let world = context.world().expect("physics world should be available");
     let hit = world.cast_ray_closest(
-        boxdd::Vec2::new(0.0, 2.0),
+        boxdd::Position::from([0.0_f32, 2.0]),
         boxdd::Vec2::new(0.0, -4.0),
         boxdd::QueryFilter::default(),
     );
@@ -716,7 +722,7 @@ fn kinematic_body_transform_drives_native_body_in_fixed_update() {
         .unwrap()
         .position();
 
-    assert_eq!(position, boxdd::Vec2::new(2.0, 1.5));
+    assert_eq!(position, boxdd::Position::from([2.0_f32, 1.5]));
 }
 
 #[test]

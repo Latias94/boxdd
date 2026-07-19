@@ -1,6 +1,6 @@
 use super::*;
 
-fn joint_base_from_world_points_impl<VA: Into<Vec2>, VB: Into<Vec2>>(
+fn joint_base_from_world_points_impl<VA: Into<Position>, VB: Into<Position>>(
     body_a: BodyId,
     body_b: BodyId,
     anchor_a_world: VA,
@@ -8,28 +8,30 @@ fn joint_base_from_world_points_impl<VA: Into<Vec2>, VB: Into<Vec2>>(
 ) -> crate::joints::JointBase {
     crate::core::debug_checks::assert_body_valid(body_a);
     crate::core::debug_checks::assert_body_valid(body_b);
-    let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(body_a)) };
-    let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(body_b)) };
-    let wa: ffi::b2Vec2 = anchor_a_world.into().into_raw();
-    let wb: ffi::b2Vec2 = anchor_b_world.into().into_raw();
-    let la = crate::core::math::world_to_local_point(ta, wa);
-    let lb = crate::core::math::world_to_local_point(tb, wb);
+    let ta = WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(body_a)) });
+    let tb = WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(body_b)) });
+    let la =
+        crate::joints::JointBaseBuilder::checked_world_to_local_point(ta, anchor_a_world.into())
+            .expect("joint world anchor A must fit in its local f32 frame");
+    let lb =
+        crate::joints::JointBaseBuilder::checked_world_to_local_point(tb, anchor_b_world.into())
+            .expect("joint world anchor B must fit in its local f32 frame");
     crate::joints::JointBaseBuilder::new()
         .bodies_by_id(body_a, body_b)
         .local_frames_raw(
             ffi::b2Transform {
-                p: la,
+                p: la.into_raw(),
                 q: ffi::b2Rot { c: 1.0, s: 0.0 },
             },
             ffi::b2Transform {
-                p: lb,
+                p: lb.into_raw(),
                 q: ffi::b2Rot { c: 1.0, s: 0.0 },
             },
         )
         .build()
 }
 
-fn joint_base_from_world_with_axis_impl<VA: Into<Vec2>, VB: Into<Vec2>, AX: Into<Vec2>>(
+fn joint_base_from_world_with_axis_impl<VA: Into<Position>, VB: Into<Position>, AX: Into<Vec2>>(
     body_a: BodyId,
     body_b: BodyId,
     anchor_a_world: VA,
@@ -38,27 +40,37 @@ fn joint_base_from_world_with_axis_impl<VA: Into<Vec2>, VB: Into<Vec2>, AX: Into
 ) -> crate::joints::JointBase {
     crate::core::debug_checks::assert_body_valid(body_a);
     crate::core::debug_checks::assert_body_valid(body_b);
-    let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(body_a)) };
-    let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(body_b)) };
-    let wa: ffi::b2Vec2 = anchor_a_world.into().into_raw();
-    let wb: ffi::b2Vec2 = anchor_b_world.into().into_raw();
-    let axis: ffi::b2Vec2 = axis_world.into().into_raw();
-    let la = crate::core::math::world_to_local_point(ta, wa);
-    let lb = crate::core::math::world_to_local_point(tb, wb);
-    let ra = crate::core::math::world_axis_to_local_rot(ta, axis);
-    let rb = crate::core::math::world_axis_to_local_rot(tb, axis);
+    let ta = WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(body_a)) });
+    let tb = WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(body_b)) });
+    let axis = axis_world.into();
+    let la =
+        crate::joints::JointBaseBuilder::checked_world_to_local_point(ta, anchor_a_world.into())
+            .expect("joint world anchor A must fit in its local f32 frame");
+    let lb =
+        crate::joints::JointBaseBuilder::checked_world_to_local_point(tb, anchor_b_world.into())
+            .expect("joint world anchor B must fit in its local f32 frame");
+    let ra = crate::joints::JointBaseBuilder::checked_world_axis_to_local_rotation(ta, axis)
+        .expect("joint world axis must define body A's local frame");
+    let rb = crate::joints::JointBaseBuilder::checked_world_axis_to_local_rotation(tb, axis)
+        .expect("joint world axis must define body B's local frame");
     crate::joints::JointBaseBuilder::new()
         .bodies_by_id(body_a, body_b)
         .local_frames_raw(
-            ffi::b2Transform { p: la, q: ra },
-            ffi::b2Transform { p: lb, q: rb },
+            ffi::b2Transform {
+                p: la.into_raw(),
+                q: ra.into_raw(),
+            },
+            ffi::b2Transform {
+                p: lb.into_raw(),
+                q: rb.into_raw(),
+            },
         )
         .build()
 }
 
 impl World {
     // Convenience joints built from world anchors and axis using body ids
-    pub fn create_revolute_joint_world<VA: Into<Vec2>>(
+    pub fn create_revolute_joint_world<VA: Into<Position>>(
         &mut self,
         body_a: BodyId,
         body_b: BodyId,
@@ -71,7 +83,7 @@ impl World {
         self.create_revolute_joint(&def)
     }
 
-    pub fn create_revolute_joint_world_id<VA: Into<Vec2>>(
+    pub fn create_revolute_joint_world_id<VA: Into<Position>>(
         &mut self,
         body_a: BodyId,
         body_b: BodyId,
@@ -84,7 +96,7 @@ impl World {
         self.create_revolute_joint_id(&def)
     }
 
-    pub fn create_prismatic_joint_world<VA: Into<Vec2>, VB: Into<Vec2>, AX: Into<Vec2>>(
+    pub fn create_prismatic_joint_world<VA: Into<Position>, VB: Into<Position>, AX: Into<Vec2>>(
         &mut self,
         body_a: BodyId,
         body_b: BodyId,
@@ -102,7 +114,11 @@ impl World {
         self.create_prismatic_joint(&def)
     }
 
-    pub fn create_prismatic_joint_world_id<VA: Into<Vec2>, VB: Into<Vec2>, AX: Into<Vec2>>(
+    pub fn create_prismatic_joint_world_id<
+        VA: Into<Position>,
+        VB: Into<Position>,
+        AX: Into<Vec2>,
+    >(
         &mut self,
         body_a: BodyId,
         body_b: BodyId,
@@ -120,7 +136,7 @@ impl World {
         self.create_prismatic_joint_id(&def)
     }
 
-    pub fn create_wheel_joint_world<VA: Into<Vec2>, VB: Into<Vec2>, AX: Into<Vec2>>(
+    pub fn create_wheel_joint_world<VA: Into<Position>, VB: Into<Position>, AX: Into<Vec2>>(
         &mut self,
         body_a: BodyId,
         body_b: BodyId,
@@ -138,7 +154,7 @@ impl World {
         self.create_wheel_joint(&def)
     }
 
-    pub fn create_wheel_joint_world_id<VA: Into<Vec2>, VB: Into<Vec2>, AX: Into<Vec2>>(
+    pub fn create_wheel_joint_world_id<VA: Into<Position>, VB: Into<Position>, AX: Into<Vec2>>(
         &mut self,
         body_a: BodyId,
         body_b: BodyId,
@@ -171,7 +187,7 @@ impl World {
     /// let base = world.joint_base_from_world_points(a, b, world.body_position(a), world.body_position(b));
     /// # let _ = base;
     /// ```
-    pub fn joint_base_from_world_points<VA: Into<Vec2>, VB: Into<Vec2>>(
+    pub fn joint_base_from_world_points<VA: Into<Position>, VB: Into<Position>>(
         &self,
         body_a: BodyId,
         body_b: BodyId,
@@ -197,7 +213,11 @@ impl World {
     /// let base = world.joint_base_from_world_with_axis(a, b, world.body_position(a), world.body_position(b), axis);
     /// # let _ = base;
     /// ```
-    pub fn joint_base_from_world_with_axis<VA: Into<Vec2>, VB: Into<Vec2>, AX: Into<Vec2>>(
+    pub fn joint_base_from_world_with_axis<
+        VA: Into<Position>,
+        VB: Into<Position>,
+        AX: Into<Vec2>,
+    >(
         &self,
         body_a: BodyId,
         body_b: BodyId,

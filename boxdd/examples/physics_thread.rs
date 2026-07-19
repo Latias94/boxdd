@@ -12,7 +12,7 @@ enum PhysicsCmd {
 enum PhysicsReply {
     Spawned,
     Stepped,
-    HighestBodyY(Option<f32>),
+    HighestBodyY(Option<WorldScalar>),
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -55,10 +55,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     reply_tx.send(PhysicsReply::Stepped).unwrap();
                 }
                 PhysicsCmd::HighestBodyY => {
-                    let highest_y = dynamic_bodies.iter().fold(None::<f32>, |current, body| {
-                        let y = world.body_position(*body).y;
-                        Some(current.map_or(y, |best| best.max(y)))
-                    });
+                    let highest_y =
+                        dynamic_bodies
+                            .iter()
+                            .fold(None::<WorldScalar>, |current, body| {
+                                let y = world.body_position(*body).y;
+                                Some(current.map_or(y, |best| best.max(y)))
+                            });
                     reply_tx
                         .send(PhysicsReply::HighestBodyY(highest_y))
                         .unwrap();

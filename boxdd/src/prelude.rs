@@ -1,9 +1,10 @@
 pub use crate::{
     ApiError, ApiResult, Body, BodyBuilder, BodyDef, BodyType, CallbackWorld, Filter,
-    MaterialMixInput, OutstandingOwnedHandles, OwnedBody, OwnedHandleCounts, ShapeCastInput, World,
-    WorldBuilder, WorldDef, WorldHandle,
-    debug_draw::{DebugDraw, DebugDrawCmd, DebugDrawOptions, HexColor, RawDebugDraw},
-    dynamic_tree::{DynamicTree, TreeProxyId, TreeRayCastInput, TreeShapeCastInput, TreeStats},
+    LocalManifold, LocalManifoldPoint, MAX_BODY_NAME_BYTES, MaterialMixInput,
+    OutstandingOwnedHandles, OwnedBody, OwnedHandleCounts, ShapeCastInput, World, WorldBuilder,
+    WorldDef, WorldHandle,
+    debug_draw::{DebugDraw, DebugDrawCmd, DebugDrawOptions, HexColor},
+    dynamic_tree::{DynamicTree, TreeBoxCastInput, TreeProxyId, TreeRayCastInput, TreeStats},
     events::{
         BodyMoveEvent, ContactBeginTouchEvent, ContactEndTouchEvent, ContactEvents,
         ContactHitEvent, JointEvent, SensorBeginTouchEvent, SensorEndTouchEvent, SensorEvents,
@@ -23,8 +24,9 @@ pub use crate::{
         chain::{Chain, ChainDef, ChainDefBuilder, ChainDefMaterialLayout, OwnedChain},
     },
     types::{
-        BodyId, ChainId, ContactData, ContactId, JointId, Manifold, ManifoldPoint, MassData,
-        MotionLocks, ShapeId, Vec2,
+        BodyId, ChainId, ContactData, ContactId, JointId, MAX_MANIFOLD_POINTS, Manifold,
+        ManifoldPoint, MassData, MotionLocks, Position, PositionToLocalError, ShapeId, Vec2,
+        WorldCastOutput, WorldScalar, WorldTransform,
     },
     world::{Counters, Profile},
     world_extras::ExplosionDef,

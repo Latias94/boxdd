@@ -23,7 +23,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         DistanceInput::new(
             proxy_a,
             proxy_b,
-            Transform::IDENTITY,
             Transform::from_pos_angle([2.2_f32, 0.0], 0.0),
         ),
         &mut cache,
@@ -32,7 +31,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cast = shape_cast(ShapeCastPairInput::new(
         proxy_a,
         proxy_b,
-        Transform::IDENTITY,
         Transform::from_pos_angle([2.8_f32, 0.0], 0.0),
         [-2.2_f32, 0.0],
     ));
@@ -58,7 +56,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let manifold = collide_polygon_and_circle(
         shapes::box_polygon(1.0, 0.5),
-        Transform::IDENTITY,
         shapes::circle([0.7_f32, 0.1], 0.35),
         Transform::IDENTITY,
     );

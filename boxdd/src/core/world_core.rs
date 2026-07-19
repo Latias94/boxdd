@@ -15,7 +15,7 @@ pub(crate) type PreSolveCb = dyn Fn(
         &crate::world::CallbackWorld,
         crate::types::ShapeId,
         crate::types::ShapeId,
-        crate::types::Vec2,
+        crate::types::Position,
         crate::types::Vec2,
     ) -> bool
     + Send

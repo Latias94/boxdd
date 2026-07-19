@@ -1,5 +1,5 @@
 use crate::error::{ApiError, ApiResult};
-use crate::types::{MassData, Vec2};
+use crate::types::{MassData, Position, Vec2};
 use boxdd_sys::ffi;
 
 /// Body types.
@@ -93,8 +93,8 @@ pub(crate) fn assert_body_def_valid(def: &BodyDef) {
         def.0.type_
     );
     assert!(
-        Vec2::from_raw(def.0.position).is_valid(),
-        "invalid BodyDef: position must be a valid Box2D vector"
+        Position::from_raw(def.0.position).is_valid(),
+        "invalid BodyDef: position must be a valid Box2D world position"
     );
     assert!(
         crate::Rot::from_raw(def.0.rotation).is_valid(),
@@ -120,7 +120,7 @@ pub(crate) fn assert_body_def_valid(def: &BodyDef) {
 pub(crate) fn check_body_def_valid(def: &BodyDef) -> ApiResult<()> {
     if !body_def_cookie_is_valid(def)
         || !body_type_is_known(def.0.type_)
-        || !Vec2::from_raw(def.0.position).is_valid()
+        || !Position::from_raw(def.0.position).is_valid()
         || !crate::Rot::from_raw(def.0.rotation).is_valid()
         || !Vec2::from_raw(def.0.linearVelocity).is_valid()
         || !crate::is_valid_float(def.0.angularVelocity)
@@ -171,8 +171,8 @@ impl BodyDef {
 
     /// Initial world-space position.
     #[inline]
-    pub fn position(&self) -> Vec2 {
-        Vec2::from_raw(self.0.position)
+    pub fn position(&self) -> Position {
+        Position::from_raw(self.0.position)
     }
 
     /// Initial rotation value.
@@ -283,7 +283,7 @@ impl BodyBuilder {
         self
     }
     /// Initial world-space position.
-    pub fn position<V: Into<Vec2>>(mut self, p: V) -> Self {
+    pub fn position<P: Into<Position>>(mut self, p: P) -> Self {
         self.def.0.position = p.into().into_raw();
         self
     }
@@ -367,7 +367,7 @@ impl serde::Serialize for BodyDef {
         #[derive(serde::Serialize)]
         struct Repr {
             body_type: BodyType,
-            position: crate::types::Vec2,
+            position: crate::types::Position,
             angle: f32,
             linear_velocity: crate::types::Vec2,
             angular_velocity: f32,
@@ -387,7 +387,7 @@ impl serde::Serialize for BodyDef {
                 x if x == ffi::b2BodyType_b2_kinematicBody => BodyType::Kinematic,
                 _ => BodyType::Dynamic,
             },
-            position: crate::types::Vec2::from_raw(self.0.position),
+            position: crate::types::Position::from_raw(self.0.position),
             angle,
             linear_velocity: crate::types::Vec2::from_raw(self.0.linearVelocity),
             angular_velocity: self.0.angularVelocity,
@@ -413,7 +413,7 @@ impl<'de> serde::Deserialize<'de> for BodyDef {
         #[derive(serde::Deserialize)]
         struct Repr {
             body_type: BodyType,
-            position: crate::types::Vec2,
+            position: crate::types::Position,
             angle: f32,
             linear_velocity: crate::types::Vec2,
             angular_velocity: f32,

@@ -6,7 +6,7 @@ use crate::{
     body::BodyType,
     joints::JointType,
     shapes::ShapeType,
-    types::{BodyId, JointId, Vec2},
+    types::{BodyId, JointId, Position, Vec2},
     world::World,
 };
 // no Hash/Eq on FFI ids; use simple field comparisons and linear scans
@@ -63,7 +63,7 @@ impl WorldConfigSnapshot {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct BodySnapshot {
     pub body_type: BodyType,
-    pub position: Vec2,
+    pub position: Position,
     pub angle: f32,
     pub linear_velocity: Vec2,
     pub angular_velocity: f32,

@@ -29,8 +29,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 2. collect current contact planes
     // 3. solve planes
     // 4. clip a velocity / movement vector
-    let frac = world.cast_mover(c1, c2, radius, desired_move, QueryFilter::default());
-    let plane_results = world.collide_mover(c1, c2, radius, QueryFilter::default());
+    let frac = world.cast_mover(
+        Position::ZERO,
+        c1,
+        c2,
+        radius,
+        desired_move,
+        QueryFilter::default(),
+    );
+    let plane_results = world.collide_mover(Position::ZERO, c1, c2, radius, QueryFilter::default());
     let mut planes: Vec<CollisionPlane> = plane_results
         .into_iter()
         .filter_map(|plane| plane.into_rigid_collision_plane())

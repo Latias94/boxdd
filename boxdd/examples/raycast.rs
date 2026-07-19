@@ -27,7 +27,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut total_hits = 0;
     for i in -3..=3 {
         let x = i as f32 * 0.7;
-        let hit = world.cast_ray_closest([x, 10.0_f32], [0.0, -20.0], QueryFilter::default());
+        let hit = world.cast_ray_closest(
+            Position::new(WorldScalar::from(x), WorldScalar::from(10.0_f32)),
+            [0.0, -20.0],
+            QueryFilter::default(),
+        );
         if hit.hit {
             total_hits += 1;
             println!(

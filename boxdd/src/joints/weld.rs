@@ -1,4 +1,4 @@
-use crate::types::BodyId;
+use crate::types::{BodyId, Position, WorldTransform};
 use crate::world::World;
 use boxdd_sys::ffi;
 
@@ -86,14 +86,14 @@ pub struct WeldJointBuilder<'w> {
     pub(crate) world: &'w mut World,
     pub(crate) body_a: BodyId,
     pub(crate) body_b: BodyId,
-    pub(crate) anchor_world: Option<ffi::b2Vec2>,
+    pub(crate) anchor_world: Option<Position>,
     pub(crate) def: WeldJointDef,
 }
 
 impl<'w> WeldJointBuilder<'w> {
     /// Set world-space anchor (defaults to body A position).
-    pub fn anchor_world<V: Into<crate::types::Vec2>>(mut self, a: V) -> Self {
-        self.anchor_world = Some(a.into().into_raw());
+    pub fn anchor_world<V: Into<Position>>(mut self, a: V) -> Self {
+        self.anchor_world = Some(a.into());
         self
     }
     pub fn linear_stiffness(mut self, hertz: f32, damping_ratio: f32) -> Self {
@@ -126,46 +126,40 @@ impl<'w> WeldJointBuilder<'w> {
         self
     }
 
+    fn configure_local_frames(&mut self) -> ApiResult<()> {
+        let ta =
+            WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) });
+        let tb =
+            WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) });
+        let anchor = self.anchor_world.unwrap_or_else(|| ta.position());
+        let la = super::base_def::checked_world_to_local_point(ta, anchor)?;
+        let lb = super::base_def::checked_world_to_local_point(tb, anchor)?;
+        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
+        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
+        self.def.0.base.localFrameA = ffi::b2Transform {
+            p: la.into_raw(),
+            q: ffi::b2Rot { c: 1.0, s: 0.0 },
+        };
+        self.def.0.base.localFrameB = ffi::b2Transform {
+            p: lb.into_raw(),
+            q: ffi::b2Rot { c: 1.0, s: 0.0 },
+        };
+        Ok(())
+    }
+
     #[must_use]
     pub fn build(mut self) -> Joint<'w> {
         crate::core::debug_checks::assert_body_valid(self.body_a);
         crate::core::debug_checks::assert_body_valid(self.body_b);
-        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
-        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
-        let aw = self.anchor_world.unwrap_or(ta.p);
-        let la = crate::core::math::world_to_local_point(ta, aw);
-        let lb = crate::core::math::world_to_local_point(tb, aw);
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.def.0.base.localFrameA = ffi::b2Transform {
-            p: la,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
-        self.def.0.base.localFrameB = ffi::b2Transform {
-            p: lb,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
+        self.configure_local_frames()
+            .expect("weld-joint world anchor must fit in both local f32 frames");
         self.world.create_weld_joint(&self.def)
     }
 
     pub fn try_build(mut self) -> ApiResult<Joint<'w>> {
         crate::core::debug_checks::check_body_valid(self.body_a)?;
         crate::core::debug_checks::check_body_valid(self.body_b)?;
-        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
-        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
-        let aw = self.anchor_world.unwrap_or(ta.p);
-        let la = crate::core::math::world_to_local_point(ta, aw);
-        let lb = crate::core::math::world_to_local_point(tb, aw);
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.def.0.base.localFrameA = ffi::b2Transform {
-            p: la,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
-        self.def.0.base.localFrameB = ffi::b2Transform {
-            p: lb,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
+        self.configure_local_frames()?;
         self.world.try_create_weld_joint(&self.def)
     }
 
@@ -173,42 +167,15 @@ impl<'w> WeldJointBuilder<'w> {
     pub fn build_owned(mut self) -> OwnedJoint {
         crate::core::debug_checks::assert_body_valid(self.body_a);
         crate::core::debug_checks::assert_body_valid(self.body_b);
-        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
-        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
-        let aw = self.anchor_world.unwrap_or(ta.p);
-        let la = crate::core::math::world_to_local_point(ta, aw);
-        let lb = crate::core::math::world_to_local_point(tb, aw);
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.def.0.base.localFrameA = ffi::b2Transform {
-            p: la,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
-        self.def.0.base.localFrameB = ffi::b2Transform {
-            p: lb,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
+        self.configure_local_frames()
+            .expect("weld-joint world anchor must fit in both local f32 frames");
         self.world.create_weld_joint_owned(&self.def)
     }
 
     pub fn try_build_owned(mut self) -> ApiResult<OwnedJoint> {
         crate::core::debug_checks::check_body_valid(self.body_a)?;
         crate::core::debug_checks::check_body_valid(self.body_b)?;
-        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
-        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
-        let aw = self.anchor_world.unwrap_or(ta.p);
-        let la = crate::core::math::world_to_local_point(ta, aw);
-        let lb = crate::core::math::world_to_local_point(tb, aw);
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.def.0.base.localFrameA = ffi::b2Transform {
-            p: la,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
-        self.def.0.base.localFrameB = ffi::b2Transform {
-            p: lb,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
+        self.configure_local_frames()?;
         self.world.try_create_weld_joint_owned(&self.def)
     }
 }

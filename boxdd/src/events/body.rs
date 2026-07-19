@@ -1,12 +1,11 @@
-use crate::Transform;
-use crate::types::BodyId;
+use crate::types::{BodyId, WorldTransform};
 use crate::world::{World, WorldHandle};
 use boxdd_sys::ffi;
 
 #[derive(Clone, Debug)]
 pub struct BodyMoveEvent {
     pub body_id: BodyId,
-    pub transform: Transform,
+    pub transform: WorldTransform,
     pub fell_asleep: bool,
 }
 
@@ -15,7 +14,7 @@ impl BodyMoveEvent {
     pub fn from_raw(raw: ffi::b2BodyMoveEvent) -> Self {
         Self {
             body_id: BodyId::from_raw(raw.bodyId),
-            transform: Transform::from_raw(raw.transform),
+            transform: WorldTransform::from_raw(raw.transform),
             fell_asleep: raw.fellAsleep,
         }
     }
@@ -30,8 +29,8 @@ impl<'a> BodyMove<'a> {
     pub fn body_id(&self) -> BodyId {
         BodyId::from_raw(self.0.bodyId)
     }
-    pub fn transform(&self) -> Transform {
-        Transform::from_raw(self.0.transform)
+    pub fn transform(&self) -> WorldTransform {
+        WorldTransform::from_raw(self.0.transform)
     }
     pub fn fell_asleep(&self) -> bool {
         self.0.fellAsleep

@@ -5,8 +5,8 @@ pub use crate::{
     BodySettings, BoxddBody, BoxddBodyMoveMessage, BoxddContactBeginMessage,
     BoxddContactEndMessage, BoxddContactHitMessage, BoxddErrorMessage, BoxddJoint, BoxddOperation,
     BoxddPhysicsContext, BoxddPhysicsPlugin, BoxddPhysicsSettings, BoxddPluginError,
-    BoxddQuatBevyExt, BoxddRayHit, BoxddSensorBeginMessage, BoxddSensorEndMessage, BoxddShape,
-    BoxddShapeHit, BoxddTransformBevyExt, BoxddVec2BevyExt, Collider, DistanceJointDescriptor,
-    JointDescriptor, JointKind, LinearImpulse, LinearVelocity, PhysicsMaterial,
-    RevoluteJointDescriptor, RigidBody, TransformSyncMode, boxdd,
+    BoxddPositionBevyExt, BoxddQuatBevyExt, BoxddRayHit, BoxddSensorBeginMessage,
+    BoxddSensorEndMessage, BoxddShape, BoxddShapeHit, BoxddTransformBevyExt, BoxddVec2BevyExt,
+    Collider, DistanceJointDescriptor, JointDescriptor, JointKind, LinearImpulse, LinearVelocity,
+    PhysicsMaterial, RevoluteJointDescriptor, RigidBody, TransformSyncMode, boxdd,
 };

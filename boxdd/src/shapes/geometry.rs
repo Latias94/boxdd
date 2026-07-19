@@ -3,7 +3,7 @@ use crate::{
     core::math::Transform,
     error::{ApiError, ApiResult},
     query::Aabb,
-    types::{MassData, Vec2},
+    types::{MassData, Vec2, WorldTransform},
 };
 use boxdd_sys::ffi;
 use core::fmt;
@@ -208,6 +208,20 @@ fn assert_transform_valid(transform: Transform) {
 
 #[inline]
 fn check_transform_valid(transform: Transform) -> ApiResult<()> {
+    geometry_is_valid_or_err(transform.is_valid())
+}
+
+#[track_caller]
+fn assert_world_transform_valid(transform: WorldTransform) {
+    assert!(
+        transform.is_valid(),
+        "transform must be a valid Box2D world transform, got {:?}",
+        transform
+    );
+}
+
+#[inline]
+fn check_world_transform_valid(transform: WorldTransform) -> ApiResult<()> {
     geometry_is_valid_or_err(transform.is_valid())
 }
 

@@ -166,11 +166,11 @@ impl<'w> Shape<'w> {
     }
 
     /// Return the closest point on this shape to `target` (in world coordinates).
-    pub fn closest_point<V: Into<Vec2>>(&self, target: V) -> Vec2 {
+    pub fn closest_point(&self, target: Position) -> Position {
         ShapeRuntimeHandle::closest_point(self, target)
     }
 
-    pub fn try_closest_point<V: Into<Vec2>>(&self, target: V) -> ApiResult<Vec2> {
+    pub fn try_closest_point(&self, target: Position) -> ApiResult<Position> {
         ShapeRuntimeHandle::try_closest_point(self, target)
     }
 
@@ -182,27 +182,23 @@ impl<'w> Shape<'w> {
         ShapeRuntimeHandle::try_aabb(self)
     }
 
-    pub fn test_point<V: Into<Vec2>>(&self, point: V) -> bool {
+    pub fn test_point(&self, point: Position) -> bool {
         ShapeRuntimeHandle::test_point(self, point)
     }
 
-    pub fn try_test_point<V: Into<Vec2>>(&self, point: V) -> ApiResult<bool> {
+    pub fn try_test_point(&self, point: Position) -> ApiResult<bool> {
         ShapeRuntimeHandle::try_test_point(self, point)
     }
 
-    pub fn ray_cast<VO: Into<Vec2>, VT: Into<Vec2>>(
-        &self,
-        origin: VO,
-        translation: VT,
-    ) -> CastOutput {
+    pub fn ray_cast<VT: Into<Vec2>>(&self, origin: Position, translation: VT) -> WorldCastOutput {
         ShapeRuntimeHandle::ray_cast(self, origin, translation)
     }
 
-    pub fn try_ray_cast<VO: Into<Vec2>, VT: Into<Vec2>>(
+    pub fn try_ray_cast<VT: Into<Vec2>>(
         &self,
-        origin: VO,
+        origin: Position,
         translation: VT,
-    ) -> ApiResult<CastOutput> {
+    ) -> ApiResult<WorldCastOutput> {
         ShapeRuntimeHandle::try_ray_cast(self, origin, translation)
     }
 

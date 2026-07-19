@@ -15,11 +15,12 @@ mod runtime;
 mod scoped;
 
 use crate::body::{Body, OwnedBody};
-use crate::collision::CastOutput;
 use crate::error::{ApiError, ApiResult};
 use crate::filter::Filter;
 use crate::query::Aabb;
-use crate::types::{BodyId, ChainId, ContactData, MassData, ShapeId, Vec2};
+use crate::types::{
+    BodyId, ChainId, ContactData, MassData, Position, ShapeId, Vec2, WorldCastOutput,
+};
 use crate::world::World;
 use boxdd_sys::ffi;
 use std::os::raw::c_void;

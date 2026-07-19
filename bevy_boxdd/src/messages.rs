@@ -1,7 +1,10 @@
 //! Bevy messages emitted by the physics plugin.
 
 use bevy_ecs::prelude::{Entity, Message};
-use boxdd::{ApiError, BodyId, ContactId, ShapeId, Transform as BoxddTransform, Vec2 as BoxddVec2};
+use boxdd::{
+    ApiError, BodyId, ContactId, Position as BoxddPosition, ShapeId, Vec2 as BoxddVec2,
+    WorldTransform as BoxddWorldTransform,
+};
 
 /// Recoverable plugin error type routed through [`BoxddErrorMessage`].
 #[derive(Copy, Clone, Debug, Eq, PartialEq, thiserror::Error)]
@@ -74,7 +77,7 @@ pub struct BoxddBodyMoveMessage {
     /// Bevy entity mapped to the body id, if owned by this plugin.
     pub entity: Option<Entity>,
     /// Current Box2D world transform.
-    pub transform: BoxddTransform,
+    pub transform: BoxddWorldTransform,
     /// Whether the body fell asleep during the step.
     pub fell_asleep: bool,
 }
@@ -119,7 +122,7 @@ pub struct BoxddContactHitMessage {
     /// Bevy entity mapped to `shape_b`, if owned by this plugin.
     pub entity_b: Option<Entity>,
     /// Contact point reported by Box2D.
-    pub point: BoxddVec2,
+    pub point: BoxddPosition,
     /// Contact normal reported by Box2D.
     pub normal: BoxddVec2,
     /// Relative approach speed for the hit.

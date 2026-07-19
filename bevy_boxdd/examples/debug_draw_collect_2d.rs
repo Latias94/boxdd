@@ -63,7 +63,8 @@ fn report_debug_draw_commands(
             boxdd::DebugDrawCmd::SolidCapsule { .. }
             | boxdd::DebugDrawCmd::Transform(_)
             | boxdd::DebugDrawCmd::Point { .. }
-            | boxdd::DebugDrawCmd::String { .. } => {}
+            | boxdd::DebugDrawCmd::String { .. }
+            | boxdd::DebugDrawCmd::Bounds { .. } => {}
         }
     }
 

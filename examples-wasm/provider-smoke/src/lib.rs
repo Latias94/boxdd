@@ -1,9 +1,9 @@
 use std::cell::RefCell;
 
 use boxdd::{
-    BodyBuilder, BodyId, BodyType, DistanceInput, DistanceJointDef, JointBaseBuilder, QueryFilter,
-    ShapeCastPairInput, ShapeDef, ShapeProxy, SimplexCache, Transform, Vec2, World, WorldDef,
-    shape_cast, shape_distance, shapes,
+    BodyBuilder, BodyId, BodyType, DistanceInput, DistanceJointDef, JointBaseBuilder, Position,
+    QueryFilter, ShapeCastPairInput, ShapeDef, ShapeProxy, SimplexCache, Transform, Vec2, World,
+    WorldDef, shape_cast, shape_distance, shapes,
 };
 
 const OK: i32 = 0;
@@ -211,7 +211,11 @@ fn run_ray_hit_millimeters() -> Result<i32, i32> {
         .try_create_circle_shape_for(body, &ShapeDef::builder().density(1.0).build(), &circle)
         .map_err(|_| ERR_SHAPE)?;
 
-    let hit = world.cast_ray_closest([-3.0_f32, 0.0], [6.0, 0.0], QueryFilter::default());
+    let hit = world.cast_ray_closest(
+        Position::from([-3.0_f32, 0.0]),
+        [6.0, 0.0],
+        QueryFilter::default(),
+    );
     if !hit.hit || !hit.fraction.is_finite() || !(0.0..=1.0).contains(&hit.fraction) {
         return Err(ERR_QUERY);
     }
@@ -228,7 +232,6 @@ fn run_shape_cast_permyriad() -> Result<i32, i32> {
         DistanceInput::new(
             square_a,
             square_b,
-            Transform::IDENTITY,
             Transform::from_pos_angle([1.4_f32, 0.0], 0.0),
         ),
         &mut cache,
@@ -240,7 +243,6 @@ fn run_shape_cast_permyriad() -> Result<i32, i32> {
     let cast = shape_cast(ShapeCastPairInput::new(
         square_a,
         square_b,
-        Transform::IDENTITY,
         Transform::from_pos_angle([3.0_f32, 0.0], 0.0),
         [-4.0_f32, 0.0],
     ));

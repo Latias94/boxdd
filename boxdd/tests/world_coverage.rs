@@ -80,15 +80,11 @@ fn world_def_validation_rejects_invalid_numeric_values() {
 
 unsafe extern "C" fn serial_enqueue_task(
     task: boxdd_sys::ffi::b2TaskCallback,
-    item_count: i32,
-    _min_range: i32,
     task_context: *mut core::ffi::c_void,
     _user_context: *mut core::ffi::c_void,
 ) -> *mut core::ffi::c_void {
-    if item_count > 0
-        && let Some(task) = task
-    {
-        unsafe { task(0, item_count, 0, task_context) };
+    if let Some(task) = task {
+        unsafe { task(task_context) };
     }
     core::ptr::null_mut()
 }
@@ -203,7 +199,7 @@ fn world_runtime_coverage_safe_api() {
     fn always_true_pre(
         _a: ShapeId,
         _b: ShapeId,
-        _p: boxdd::types::Vec2,
+        _p: boxdd::types::Position,
         _n: boxdd::types::Vec2,
     ) -> bool {
         true
@@ -386,6 +382,7 @@ fn body_type_counters_and_profile_use_explicit_raw_conversions() {
     );
 
     let raw = boxdd_sys::ffi::b2Counters {
+        byteCount: i64::from(i32::MAX) + 9,
         bodyCount: 1,
         shapeCount: 2,
         contactCount: 3,
@@ -394,9 +391,10 @@ fn body_type_counters_and_profile_use_explicit_raw_conversions() {
         stackUsed: 6,
         staticTreeHeight: 7,
         treeHeight: 8,
-        byteCount: 9,
         taskCount: 10,
         colorCounts: core::array::from_fn(|i| i as i32),
+        awakeContactCount: 11,
+        recycledContactCount: 12,
     };
     let counters = Counters::from_raw(raw);
 
@@ -408,18 +406,20 @@ fn body_type_counters_and_profile_use_explicit_raw_conversions() {
     assert_eq!(counters.stack_used, 6);
     assert_eq!(counters.static_tree_height, 7);
     assert_eq!(counters.tree_height, 8);
-    assert_eq!(counters.byte_count, 9);
+    assert_eq!(counters.byte_count, i64::from(i32::MAX) + 9);
     assert_eq!(counters.task_count, 10);
     assert_eq!(counters.color_counts[0], 0);
     assert_eq!(counters.color_counts[23], 23);
+    assert_eq!(counters.awake_contact_count, 11);
+    assert_eq!(counters.recycled_contact_count, 12);
 
     let raw_profile = boxdd_sys::ffi::b2Profile {
         step: 1.0,
         pairs: 2.0,
         collide: 3.0,
         solve: 4.0,
-        prepareStages: 5.0,
-        solveConstraints: 6.0,
+        solverSetup: 5.0,
+        constraints: 6.0,
         prepareConstraints: 7.0,
         integrateVelocities: 8.0,
         warmStart: 9.0,
@@ -441,7 +441,8 @@ fn body_type_counters_and_profile_use_explicit_raw_conversions() {
     let profile = Profile::from_raw(raw_profile);
 
     assert_eq!(profile.step, 1.0);
-    assert_eq!(profile.solve_constraints, 6.0);
+    assert_eq!(profile.solver_setup, 5.0);
+    assert_eq!(profile.constraints, 6.0);
     assert_eq!(profile.sleep_islands, 22.0);
     assert_eq!(profile.sensors, 23.0);
     assert_eq!(Profile::from_raw(profile.into_raw()), profile);
@@ -451,7 +452,7 @@ fn body_type_counters_and_profile_use_explicit_raw_conversions() {
 fn explosion_def_uses_explicit_raw_conversions() {
     let raw = boxdd_sys::ffi::b2ExplosionDef {
         maskBits: 0x0f0f,
-        position: boxdd_sys::ffi::b2Vec2 { x: 1.5, y: -2.5 },
+        position: Position::new(1.5, -2.5).into_raw(),
         radius: 3.0,
         falloff: 4.0,
         impulsePerLength: 5.0,
@@ -477,14 +478,14 @@ fn explosion_def_is_a_readable_value_type() {
         .impulse_per_length(6.0);
 
     assert_eq!(def.affected_mask_bits(), 0x00ff);
-    assert_eq!(def.center(), Vec2::new(2.0, -3.5));
+    assert_eq!(def.center(), Position::new(2.0, -3.5));
     assert_eq!(def.blast_radius(), 4.5);
     assert_eq!(def.falloff_distance(), 1.25);
     assert_eq!(def.impulse_per_unit_length(), 6.0);
 
     let roundtrip = ExplosionDef::from_raw(def.into_raw());
     assert_eq!(roundtrip.affected_mask_bits(), 0x00ff);
-    assert_eq!(roundtrip.center(), Vec2::new(2.0, -3.5));
+    assert_eq!(roundtrip.center(), Position::new(2.0, -3.5));
     assert_eq!(roundtrip.blast_radius(), 4.5);
     assert_eq!(roundtrip.falloff_distance(), 1.25);
     assert_eq!(roundtrip.impulse_per_unit_length(), 6.0);

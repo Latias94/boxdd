@@ -29,11 +29,12 @@ fn segment_and_shape_distance_and_toi() {
 
     let proxy_a =
         ShapeProxy::new([[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]], 0.0).unwrap();
-    let proxy_b = ShapeProxy::new([[2.0, -1.0], [2.0, 1.0]], 0.0).unwrap();
+    let proxy_b = ShapeProxy::new([[0.0, -1.0], [0.0, 1.0]], 0.0).unwrap();
+    let transform_b_in_a = Transform::from_pos_angle([2.0_f32, 0.0], 0.0);
 
     let mut cache = SimplexCache::default();
     let out = shape_distance(
-        DistanceInput::new(proxy_a, proxy_b, Transform::IDENTITY, Transform::IDENTITY),
+        DistanceInput::new(proxy_a, proxy_b, transform_b_in_a),
         &mut cache,
     );
     assert!(approx(out.distance, 1.0, f32::EPSILON));
@@ -42,8 +43,7 @@ fn segment_and_shape_distance_and_toi() {
     let outc = shape_cast(ShapeCastPairInput::new(
         proxy_a,
         proxy_b,
-        Transform::IDENTITY,
-        Transform::IDENTITY,
+        transform_b_in_a,
         [-2.0, 0.0],
     ));
     assert!(outc.hit);
@@ -61,8 +61,8 @@ fn segment_and_shape_distance_and_toi() {
         ),
         Sweep::new(
             [0.0, 0.0],
+            [2.0, 0.0],
             [0.0, 0.0],
-            [-2.0, 0.0],
             Rot::IDENTITY,
             Rot::IDENTITY,
         ),
@@ -144,10 +144,9 @@ fn collision_input_types_use_explicit_raw_conversions() {
     let proxy_a =
         ShapeProxy::new([[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]], 0.25).unwrap();
     let proxy_b = ShapeProxy::new([[2.0, -1.0], [2.0, 1.0]], 0.5).unwrap();
+    let transform_b_in_a = Transform::from_pos_angle([3.0_f32, -2.0], 0.25);
 
-    let distance_input =
-        DistanceInput::new(proxy_a, proxy_b, Transform::IDENTITY, Transform::IDENTITY)
-            .with_radii(true);
+    let distance_input = DistanceInput::new(proxy_a, proxy_b, transform_b_in_a).with_radii(true);
     let raw_distance = distance_input.into_raw();
     assert_eq!(raw_distance.proxyA.count, 4);
     assert_eq!(raw_distance.proxyB.count, 2);
@@ -156,19 +155,17 @@ fn collision_input_types_use_explicit_raw_conversions() {
     assert!(approx(raw_distance.proxyA.radius, 0.25, f32::EPSILON));
     assert!(approx(raw_distance.proxyB.points[0].x, 2.0, f32::EPSILON));
     assert!(approx(raw_distance.proxyB.radius, 0.5, f32::EPSILON));
+    assert!(approx(raw_distance.transform.p.x, 3.0, f32::EPSILON));
+    assert!(approx(raw_distance.transform.p.y, -2.0, f32::EPSILON));
 
-    let cast_input = ShapeCastPairInput::new(
-        proxy_a,
-        proxy_b,
-        Transform::IDENTITY,
-        Transform::IDENTITY,
-        [-2.0, 0.5],
-    )
-    .with_max_fraction(0.75)
-    .with_can_encroach(true);
+    let cast_input = ShapeCastPairInput::new(proxy_a, proxy_b, transform_b_in_a, [-2.0, 0.5])
+        .with_max_fraction(0.75)
+        .with_can_encroach(true);
     let raw_cast = cast_input.into_raw();
     assert_eq!(raw_cast.proxyA.count, 4);
     assert_eq!(raw_cast.proxyB.count, 2);
+    assert!(approx(raw_cast.transform.p.x, 3.0, f32::EPSILON));
+    assert!(approx(raw_cast.transform.p.y, -2.0, f32::EPSILON));
     assert!(approx(raw_cast.translationB.x, -2.0, f32::EPSILON));
     assert!(approx(raw_cast.translationB.y, 0.5, f32::EPSILON));
     assert!(approx(raw_cast.maxFraction, 0.75, f32::EPSILON));

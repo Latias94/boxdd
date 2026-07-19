@@ -31,23 +31,32 @@ pub fn tick(app: &mut super::PhysicsApp) {
         [state.half_x, state.half_y],
     );
 
-    let owned_hits = app.world.overlap_aabb(aabb, filter);
+    let owned_hits = app.world.overlap_aabb(bd::Position::ZERO, aabb, filter);
     state.owned_hits = owned_hits.len();
 
     state.reused_hit_buffer.clear();
     app.world
-        .overlap_aabb_into(aabb, filter, &mut state.reused_hit_buffer);
+        .overlap_aabb_into(
+            bd::Position::ZERO,
+            aabb,
+            filter,
+            &mut state.reused_hit_buffer,
+        );
     state.reused_hits = state.reused_hit_buffer.len();
 
     let mut visited_hits = 0usize;
-    let _ = app.world.visit_overlap_aabb(aabb, filter, |_| {
+    let _ = app
+        .world
+        .visit_overlap_aabb(bd::Position::ZERO, aabb, filter, |_| {
         visited_hits += 1;
         true
     });
     state.visit_hits = visited_hits;
 
     let mut stopped_early = false;
-    let completed = app.world.visit_overlap_aabb(aabb, filter, |_| {
+    let completed = app
+        .world
+        .visit_overlap_aabb(bd::Position::ZERO, aabb, filter, |_| {
         stopped_early = true;
         false
     });
@@ -56,6 +65,7 @@ pub fn tick(app: &mut super::PhysicsApp) {
     state.polygon_hits = app
         .world
         .overlap_polygon_points_with_offset(
+            bd::Position::ZERO,
             rect_points(state.half_x * 0.55, state.half_y * 0.55),
             0.01,
             [state.center_x, state.center_y],

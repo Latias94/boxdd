@@ -13,8 +13,8 @@ use crate::body::{BodyType, OwnedBody};
 use crate::joints::OwnedJoint;
 use crate::shapes::chain::{Chain, OwnedChain};
 use crate::shapes::{OwnedShape, ShapeType, SurfaceMaterial};
-use crate::types::{BodyId, ChainId, JointId, ShapeId, Vec2};
-use crate::{Body, Joint, Shape, Transform, World};
+use crate::types::{BodyId, ChainId, JointId, Position, ShapeId, Vec2, WorldTransform};
+use crate::{Body, Joint, Shape, World};
 
 /// Set Box2D's process-wide length scale without synchronization.
 ///
@@ -50,18 +50,18 @@ fn raw_chain_id(id: ChainId) -> ffi::b2ChainId {
 }
 
 #[inline]
-unsafe fn body_transform_raw_unchecked_impl(id: BodyId) -> ffi::b2Transform {
+unsafe fn body_transform_raw_unchecked_impl(id: BodyId) -> ffi::b2WorldTransform {
     unsafe { ffi::b2Body_GetTransform(raw_body_id(id)) }
 }
 
 #[inline]
-unsafe fn body_transform_unchecked_impl(id: BodyId) -> Transform {
-    Transform::from_raw(unsafe { body_transform_raw_unchecked_impl(id) })
+unsafe fn body_transform_unchecked_impl(id: BodyId) -> WorldTransform {
+    WorldTransform::from_raw(unsafe { body_transform_raw_unchecked_impl(id) })
 }
 
 #[inline]
-unsafe fn body_position_unchecked_impl(id: BodyId) -> Vec2 {
-    Vec2::from_raw(unsafe { ffi::b2Body_GetPosition(raw_body_id(id)) })
+unsafe fn body_position_unchecked_impl(id: BodyId) -> Position {
+    Position::from_raw(unsafe { ffi::b2Body_GetPosition(raw_body_id(id)) })
 }
 
 #[inline]
@@ -210,8 +210,8 @@ unsafe fn set_chain_surface_material_unchecked_impl(
 }
 
 pub trait WorldUncheckedExt {
-    unsafe fn body_transform_unchecked(&self, body: BodyId) -> Transform;
-    unsafe fn body_position_unchecked(&self, body: BodyId) -> Vec2;
+    unsafe fn body_transform_unchecked(&self, body: BodyId) -> WorldTransform;
+    unsafe fn body_position_unchecked(&self, body: BodyId) -> Position;
     unsafe fn set_body_linear_velocity_unchecked(&mut self, body: BodyId, v: Vec2);
     unsafe fn set_body_angular_velocity_unchecked(&mut self, body: BodyId, w: f32);
     unsafe fn set_body_type_unchecked(&mut self, body: BodyId, t: BodyType);
@@ -221,11 +221,11 @@ pub trait WorldUncheckedExt {
 }
 
 impl WorldUncheckedExt for World {
-    unsafe fn body_transform_unchecked(&self, body: BodyId) -> Transform {
+    unsafe fn body_transform_unchecked(&self, body: BodyId) -> WorldTransform {
         unsafe { body_transform_unchecked_impl(body) }
     }
 
-    unsafe fn body_position_unchecked(&self, body: BodyId) -> Vec2 {
+    unsafe fn body_position_unchecked(&self, body: BodyId) -> Position {
         unsafe { body_position_unchecked_impl(body) }
     }
 
@@ -251,10 +251,10 @@ impl WorldUncheckedExt for World {
 }
 
 pub trait BodyUncheckedExt {
-    unsafe fn position_unchecked(&self) -> Vec2;
+    unsafe fn position_unchecked(&self) -> Position;
     unsafe fn linear_velocity_unchecked(&self) -> Vec2;
     unsafe fn angular_velocity_unchecked(&self) -> f32;
-    unsafe fn transform_unchecked(&self) -> ffi::b2Transform;
+    unsafe fn transform_unchecked(&self) -> WorldTransform;
     unsafe fn set_linear_velocity_unchecked(&mut self, v: Vec2);
     unsafe fn set_angular_velocity_unchecked(&mut self, w: f32);
     unsafe fn body_type_unchecked(&self) -> BodyType;
@@ -264,7 +264,7 @@ pub trait BodyUncheckedExt {
 }
 
 impl BodyUncheckedExt for Body<'_> {
-    unsafe fn position_unchecked(&self) -> Vec2 {
+    unsafe fn position_unchecked(&self) -> Position {
         unsafe { body_position_unchecked_impl(self.id) }
     }
 
@@ -276,8 +276,8 @@ impl BodyUncheckedExt for Body<'_> {
         unsafe { body_angular_velocity_unchecked_impl(self.id) }
     }
 
-    unsafe fn transform_unchecked(&self) -> ffi::b2Transform {
-        unsafe { body_transform_raw_unchecked_impl(self.id) }
+    unsafe fn transform_unchecked(&self) -> WorldTransform {
+        unsafe { body_transform_unchecked_impl(self.id) }
     }
 
     unsafe fn set_linear_velocity_unchecked(&mut self, v: Vec2) {
@@ -306,7 +306,7 @@ impl BodyUncheckedExt for Body<'_> {
 }
 
 impl BodyUncheckedExt for OwnedBody {
-    unsafe fn position_unchecked(&self) -> Vec2 {
+    unsafe fn position_unchecked(&self) -> Position {
         unsafe { body_position_unchecked_impl(self.id()) }
     }
 
@@ -318,8 +318,8 @@ impl BodyUncheckedExt for OwnedBody {
         unsafe { body_angular_velocity_unchecked_impl(self.id()) }
     }
 
-    unsafe fn transform_unchecked(&self) -> ffi::b2Transform {
-        unsafe { body_transform_raw_unchecked_impl(self.id()) }
+    unsafe fn transform_unchecked(&self) -> WorldTransform {
+        unsafe { body_transform_unchecked_impl(self.id()) }
     }
 
     unsafe fn set_linear_velocity_unchecked(&mut self, v: Vec2) {

@@ -5,7 +5,9 @@ use std::sync::Arc;
 use crate::core::world_core::WorldCore;
 use crate::error::ApiResult;
 use crate::query::Aabb;
-use crate::types::{BodyId, ContactData, JointId, MassData, ShapeId, Vec2};
+use crate::types::{
+    BodyId, ContactData, JointId, MassData, Position, ShapeId, Vec2, WorldTransform,
+};
 use crate::world::World;
 use boxdd_sys::ffi;
 
@@ -49,11 +51,11 @@ impl<'w> Body<'w> {
     }
 
     // Queries
-    pub fn position(&self) -> Vec2 {
+    pub fn position(&self) -> Position {
         BodyRuntimeHandle::position(self)
     }
 
-    pub fn try_position(&self) -> ApiResult<Vec2> {
+    pub fn try_position(&self) -> ApiResult<Position> {
         BodyRuntimeHandle::try_position(self)
     }
 
@@ -89,20 +91,12 @@ impl<'w> Body<'w> {
         BodyRuntimeHandle::try_rotation_raw(self)
     }
 
-    pub fn transform(&self) -> crate::Transform {
+    pub fn transform(&self) -> WorldTransform {
         BodyRuntimeHandle::transform(self)
     }
 
-    pub fn try_transform(&self) -> ApiResult<crate::Transform> {
+    pub fn try_transform(&self) -> ApiResult<WorldTransform> {
         BodyRuntimeHandle::try_transform(self)
-    }
-
-    pub fn transform_raw(&self) -> ffi::b2Transform {
-        BodyRuntimeHandle::transform_raw(self)
-    }
-
-    pub fn try_transform_raw(&self) -> ApiResult<ffi::b2Transform> {
-        BodyRuntimeHandle::try_transform_raw(self)
     }
 
     pub fn aabb(&self) -> Aabb {
@@ -113,19 +107,19 @@ impl<'w> Body<'w> {
         BodyRuntimeHandle::try_aabb(self)
     }
 
-    pub fn local_point<V: Into<Vec2>>(&self, world_point: V) -> Vec2 {
+    pub fn local_point<V: Into<Position>>(&self, world_point: V) -> Vec2 {
         BodyRuntimeHandle::local_point(self, world_point)
     }
 
-    pub fn try_local_point<V: Into<Vec2>>(&self, world_point: V) -> ApiResult<Vec2> {
+    pub fn try_local_point<V: Into<Position>>(&self, world_point: V) -> ApiResult<Vec2> {
         BodyRuntimeHandle::try_local_point(self, world_point)
     }
 
-    pub fn world_point<V: Into<Vec2>>(&self, local_point: V) -> Vec2 {
+    pub fn world_point<V: Into<Vec2>>(&self, local_point: V) -> Position {
         BodyRuntimeHandle::world_point(self, local_point)
     }
 
-    pub fn try_world_point<V: Into<Vec2>>(&self, local_point: V) -> ApiResult<Vec2> {
+    pub fn try_world_point<V: Into<Vec2>>(&self, local_point: V) -> ApiResult<Position> {
         BodyRuntimeHandle::try_world_point(self, local_point)
     }
 
@@ -153,18 +147,27 @@ impl<'w> Body<'w> {
         BodyRuntimeHandle::try_local_point_velocity(self, local_point)
     }
 
-    pub fn world_point_velocity<V: Into<Vec2>>(&self, world_point: V) -> Vec2 {
+    pub fn world_point_velocity<V: Into<Position>>(&self, world_point: V) -> Vec2 {
         BodyRuntimeHandle::world_point_velocity(self, world_point)
     }
 
-    pub fn try_world_point_velocity<V: Into<Vec2>>(&self, world_point: V) -> ApiResult<Vec2> {
+    pub fn try_world_point_velocity<V: Into<Position>>(&self, world_point: V) -> ApiResult<Vec2> {
         BodyRuntimeHandle::try_world_point_velocity(self, world_point)
     }
 
     // Mutations
-    pub fn set_position_and_rotation<V: Into<Vec2>>(&mut self, p: V, angle_radians: f32) {
+    pub fn set_position_and_rotation<V: Into<Position>>(&mut self, p: V, angle_radians: f32) {
         BodyRuntimeHandle::set_position_and_rotation(self, p, angle_radians);
     }
+
+    pub fn try_set_position_and_rotation<V: Into<Position>>(
+        &mut self,
+        p: V,
+        angle_radians: f32,
+    ) -> ApiResult<()> {
+        BodyRuntimeHandle::try_set_position_and_rotation(self, p, angle_radians)
+    }
+
     pub fn set_linear_velocity<V: Into<Vec2>>(&mut self, v: V) {
         BodyRuntimeHandle::set_linear_velocity(self, v)
     }
@@ -181,13 +184,13 @@ impl<'w> Body<'w> {
         BodyRuntimeHandle::try_set_angular_velocity(self, w)
     }
 
-    pub fn set_target_transform(&mut self, target: crate::Transform, time_step: f32, wake: bool) {
+    pub fn set_target_transform(&mut self, target: WorldTransform, time_step: f32, wake: bool) {
         BodyRuntimeHandle::set_target_transform(self, target, time_step, wake);
     }
 
     pub fn try_set_target_transform(
         &mut self,
-        target: crate::Transform,
+        target: WorldTransform,
         time_step: f32,
         wake: bool,
     ) -> ApiResult<()> {
@@ -227,11 +230,16 @@ impl<'w> Body<'w> {
     }
 
     // Forces/impulses
-    pub fn apply_force<F: Into<Vec2>, P: Into<Vec2>>(&mut self, force: F, point: P, wake: bool) {
+    pub fn apply_force<F: Into<Vec2>, P: Into<Position>>(
+        &mut self,
+        force: F,
+        point: P,
+        wake: bool,
+    ) {
         BodyRuntimeHandle::apply_force(self, force, point, wake);
     }
 
-    pub fn try_apply_force<F: Into<Vec2>, P: Into<Vec2>>(
+    pub fn try_apply_force<F: Into<Vec2>, P: Into<Position>>(
         &mut self,
         force: F,
         point: P,
@@ -266,7 +274,7 @@ impl<'w> Body<'w> {
         BodyRuntimeHandle::try_clear_forces(self)
     }
 
-    pub fn apply_linear_impulse<F: Into<Vec2>, P: Into<Vec2>>(
+    pub fn apply_linear_impulse<F: Into<Vec2>, P: Into<Position>>(
         &mut self,
         impulse: F,
         point: P,
@@ -275,7 +283,7 @@ impl<'w> Body<'w> {
         BodyRuntimeHandle::apply_linear_impulse(self, impulse, point, wake);
     }
 
-    pub fn try_apply_linear_impulse<F: Into<Vec2>, P: Into<Vec2>>(
+    pub fn try_apply_linear_impulse<F: Into<Vec2>, P: Into<Position>>(
         &mut self,
         impulse: F,
         point: P,
@@ -326,11 +334,11 @@ impl<'w> Body<'w> {
         BodyRuntimeHandle::try_local_center_of_mass(self)
     }
 
-    pub fn world_center_of_mass(&self) -> Vec2 {
+    pub fn world_center_of_mass(&self) -> Position {
         BodyRuntimeHandle::world_center_of_mass(self)
     }
 
-    pub fn try_world_center_of_mass(&self) -> ApiResult<Vec2> {
+    pub fn try_world_center_of_mass(&self) -> ApiResult<Position> {
         BodyRuntimeHandle::try_world_center_of_mass(self)
     }
 

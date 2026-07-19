@@ -36,7 +36,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let avg_y = if ids.is_empty() {
         0.0
     } else {
-        ids.iter().map(|&id| world.body_position(id).y).sum::<f32>() / ids.len() as f32
+        ids.iter()
+            .map(|&id| world.body_position(id).y)
+            .sum::<WorldScalar>()
+            / ids.len() as WorldScalar
     };
     println!("chain walkway: {} bodies, avg y={:.2}", ids.len(), avg_y);
     Ok(())

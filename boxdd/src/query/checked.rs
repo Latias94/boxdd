@@ -1,5 +1,5 @@
 use crate::error::ApiResult;
-use crate::types::{ShapeId, Vec2};
+use crate::types::{Position, ShapeId, Vec2};
 use boxdd_sys::ffi;
 
 use super::raw::*;

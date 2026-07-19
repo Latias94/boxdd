@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Vec2::new(-0.4, 0.4),
     ];
     let trans = [3.0_f32, 0.0];
-    let hits = world.cast_shape_points(square, 0.02, trans, QueryFilter::default());
+    let hits = world.cast_shape_points(Position::ZERO, square, 0.02, trans, QueryFilter::default());
     println!("shape cast hits: {}", hits.len());
     if let Some(min) = hits
         .iter()

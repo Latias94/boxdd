@@ -935,30 +935,3 @@ impl<'a> From<&'a nalgebra::Isometry2<f32>> for Transform {
         Transform::from_pos_angle(Vec2 { x: v.x, y: v.y }, angle)
     }
 }
-
-/// Small helpers for common world→local conversions used across joints/builders.
-///
-/// These match Box2D's convention for transforming a world-space point `p` into the
-/// local frame given by `t`: `R^T * (p - t.p)`, where `R` is the rotation in `t.q`.
-#[inline]
-pub fn world_to_local_point(t: ffi::b2Transform, p_world: ffi::b2Vec2) -> ffi::b2Vec2 {
-    let dx = p_world.x - t.p.x;
-    let dy = p_world.y - t.p.y;
-    let c = t.q.c;
-    let s = t.q.s;
-    ffi::b2Vec2 {
-        x: c * dx + s * dy,
-        y: -s * dx + c * dy,
-    }
-}
-
-/// Compute a local rotation whose X-axis aligns with the given world axis.
-///
-/// This is used to construct joint frames that translate along or rotate about a world axis.
-#[inline]
-pub fn world_axis_to_local_rot(t: ffi::b2Transform, axis_world: ffi::b2Vec2) -> ffi::b2Rot {
-    let angle_w = axis_world.y.atan2(axis_world.x);
-    let angle_b = t.q.s.atan2(t.q.c);
-    let (s, c) = (angle_w - angle_b).sin_cos();
-    ffi::b2Rot { c, s }
-}

@@ -1,5 +1,5 @@
 use crate::error::ApiResult;
-use crate::types::{ShapeId, Vec2};
+use crate::types::{Position, ShapeId, Vec2};
 use boxdd_sys::ffi;
 
 pub(super) fn minimum_mover_radius() -> f32 {
@@ -14,6 +14,22 @@ pub(super) fn assert_query_vec2_valid(name: &str, value: Vec2) {
     );
 }
 pub(super) fn check_query_vec2_valid(value: Vec2) -> ApiResult<()> {
+    if value.is_valid() {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
+}
+
+pub(super) fn assert_query_position_valid(name: &str, value: Position) {
+    assert!(
+        value.is_valid(),
+        "{name} must be a valid Box2D position, got {:?}",
+        value
+    );
+}
+
+pub(super) fn check_query_position_valid(value: Position) -> ApiResult<()> {
     if value.is_valid() {
         Ok(())
     } else {
@@ -83,7 +99,10 @@ pub(super) fn check_query_mover_radius_valid(radius: f32) -> ApiResult<()> {
     }
 }
 
-/// Axis-aligned bounding box
+/// Axis-aligned bounding box with `f32` coordinates in both precision modes.
+///
+/// When Box2D computes one from a [`crate::WorldTransform`] in double-precision mode, it narrows
+/// the absolute bounds outward so this conservative box still contains the represented geometry.
 #[doc(alias = "aabb")]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)]
@@ -329,8 +348,11 @@ impl QueryFilter {
 #[derive(Copy, Clone, Debug)]
 pub struct RayResult {
     pub shape_id: ShapeId,
-    pub point: Vec2,
+    /// Absolute world-space hit position.
+    pub point: Position,
+    /// Unit surface normal in world orientation.
     pub normal: Vec2,
+    /// Fraction of the query translation at which the hit occurred.
     pub fraction: f32,
     pub hit: bool,
 }
@@ -340,7 +362,7 @@ impl RayResult {
     pub fn from_raw(raw: ffi::b2RayResult) -> Self {
         Self {
             shape_id: ShapeId::from_raw(raw.shapeId),
-            point: Vec2::from_raw(raw.point),
+            point: Position::from_raw(raw.point),
             normal: Vec2::from_raw(raw.normal),
             fraction: raw.fraction,
             hit: raw.hit,
@@ -405,6 +427,7 @@ const _: () = {
 pub struct MoverPlaneResult {
     pub shape_id: ShapeId,
     pub plane: Plane,
+    /// Contact point relative to the `origin` supplied to `collide_mover`.
     pub point: Vec2,
     pub hit: bool,
 }
