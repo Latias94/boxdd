@@ -2,6 +2,18 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[path = "src/build_support.rs"]
+mod build_support;
+
+#[allow(dead_code)]
+#[path = "src/precision.rs"]
+mod precision;
+
+use build_support::validate_c_source_paths;
+use precision::Precision;
+
+const LEGACY_WASM_IMPORT_MODULE: &str = "box2d-sys-v0";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum WasmMode {
     CompileOnly,
@@ -17,6 +29,7 @@ struct BuildConfig {
     target_arch: String,
     target_env: String,
     target_os: String,
+    target: String,
     profile: String,
     is_docsrs: bool,
     skip_cc: bool,
@@ -24,6 +37,13 @@ struct BuildConfig {
     #[cfg_attr(not(feature = "bindgen"), allow(dead_code))]
     bindgen_target: String,
     wasm_mode: Option<WasmMode>,
+    precision: Precision,
+}
+
+#[derive(Debug)]
+struct UpstreamBuildManifest {
+    active_revision: String,
+    c_sources: Vec<PathBuf>,
 }
 
 impl BuildConfig {
@@ -31,11 +51,12 @@ impl BuildConfig {
         let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
         let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
         let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+        let target = env::var("TARGET").expect("Cargo must provide TARGET");
         let is_docsrs = env::var("DOCS_RS").is_ok() || env::var("CARGO_CFG_DOCSRS").is_ok();
         let skip_cc = parse_bool_env("BOXDD_SYS_SKIP_CC");
         let force_bindgen = parse_bool_env("BOXDD_SYS_FORCE_BINDGEN");
-        let bindgen_target = env::var("BOXDD_SYS_BINDGEN_TARGET")
-            .unwrap_or_else(|_| env::var("TARGET").expect("Cargo must provide TARGET"));
+        let bindgen_target =
+            env::var("BOXDD_SYS_BINDGEN_TARGET").unwrap_or_else(|_| target.clone());
         let wasm_mode = (target_arch == "wasm32").then(|| {
             env::var("BOXDD_SYS_WASM_MODE")
                 .ok()
@@ -49,12 +70,14 @@ impl BuildConfig {
             target_arch,
             target_env,
             target_os,
+            target,
             profile: env::var("PROFILE").unwrap_or_else(|_| "release".into()),
             is_docsrs,
             skip_cc,
             force_bindgen,
             bindgen_target,
             wasm_mode,
+            precision: Precision::ACTIVE,
         }
     }
 
@@ -65,7 +88,7 @@ impl BuildConfig {
     fn pregenerated_bindings(&self) -> PathBuf {
         self.manifest_dir
             .join("src")
-            .join("bindings_pregenerated.rs")
+            .join(self.precision.pregenerated_bindings_file())
     }
 }
 
@@ -105,7 +128,12 @@ fn main() {
     println!("cargo:rustc-check-cfg=cfg(has_pregenerated)");
     println!("cargo:rustc-check-cfg=cfg(force_bindgen)");
     println!("cargo:rustc-check-cfg=cfg(boxdd_sys_wasm_provider)");
+    println!("cargo:rustc-check-cfg=cfg(boxdd_sys_legacy_wasm_provider_bindings)");
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=src/precision.rs");
+    println!("cargo:rerun-if-changed=src/bindings_pregenerated.rs");
+    println!("cargo:rerun-if-changed=src/bindings_double.rs");
+    println!("cargo:rerun-if-changed=upstream.toml");
     println!("cargo:rerun-if-changed=third-party/box2d/include/box2d/box2d.h");
     println!("cargo:rerun-if-changed=third-party/box2d");
     println!("cargo:rerun-if-env-changed=BOXDD_SYS_SKIP_CC");
@@ -123,10 +151,23 @@ fn main() {
     println!("cargo:rerun-if-env-changed=CARGO_CFG_DOCSRS");
 
     let config = BuildConfig::from_env();
+    reject_external_precision_overrides(&config.target);
+    let upstream = load_upstream_manifest(&config.manifest_dir);
     let pregenerated = config.pregenerated_bindings();
     let has_pregenerated = pregenerated.exists();
 
     validate_build_config(&config);
+
+    let legacy_wasm_provider = config.wasm_mode == Some(WasmMode::Provider)
+        && !config.force_bindgen
+        && has_pregenerated
+        && needs_legacy_wasm_provider_bindings(&pregenerated, config.precision);
+    let wasm_import_module = if legacy_wasm_provider {
+        LEGACY_WASM_IMPORT_MODULE
+    } else {
+        config.precision.wasm_import_module()
+    };
+    emit_build_identity(&config, &upstream.active_revision, wasm_import_module);
 
     if config.force_bindgen {
         println!("cargo:rustc-cfg=force_bindgen");
@@ -136,15 +177,13 @@ fn main() {
 
     if config.wasm_mode == Some(WasmMode::Provider) {
         println!("cargo:rustc-cfg=boxdd_sys_wasm_provider");
-        if config.force_bindgen {
-            panic!(
-                "BOXDD_SYS_WASM_MODE=provider cannot be combined with BOXDD_SYS_FORCE_BINDGEN=1 yet"
-            );
-        }
-        if !has_pregenerated {
+        if !has_pregenerated && !config.force_bindgen {
             panic!("BOXDD_SYS_WASM_MODE=provider requires checked-in pregenerated bindings");
         }
-        generate_wasm_provider_bindings(&pregenerated, &config.out_dir);
+        if legacy_wasm_provider {
+            println!("cargo:rustc-cfg=boxdd_sys_legacy_wasm_provider_bindings");
+            generate_legacy_wasm_provider_bindings(&pregenerated, &config.out_dir);
+        }
     }
 
     if config.force_bindgen || (!has_pregenerated && !config.is_docsrs) {
@@ -153,6 +192,7 @@ fn main() {
             &config.manifest_dir,
             &config.out_dir,
             &config.bindgen_target,
+            config.precision,
         );
         #[cfg(not(feature = "bindgen"))]
         {
@@ -180,7 +220,7 @@ fn main() {
         return;
     }
 
-    if handle_wasm_build(&config) {
+    if handle_wasm_build(&config, &upstream.c_sources) {
         return;
     }
 
@@ -195,7 +235,7 @@ fn main() {
         return;
     }
 
-    build_box2d_from_source(&config);
+    build_box2d_from_source(&config, &upstream.c_sources);
 }
 
 fn validate_build_config(config: &BuildConfig) {
@@ -204,7 +244,103 @@ fn validate_build_config(config: &BuildConfig) {
     }
 }
 
-fn handle_wasm_build(config: &BuildConfig) -> bool {
+fn load_upstream_manifest(manifest_dir: &Path) -> UpstreamBuildManifest {
+    let path = manifest_dir.join("upstream.toml");
+    let source = fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+    let manifest: toml::Value = toml::from_str(&source)
+        .unwrap_or_else(|error| panic!("failed to parse {}: {error}", path.display()));
+    let revision = manifest
+        .get("active_revision")
+        .and_then(toml::Value::as_str)
+        .unwrap_or_else(|| panic!("{} has no string active_revision", path.display()));
+    assert!(
+        revision.len() == 40
+            && revision
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)),
+        "{} active_revision must be a lowercase 40-character Git SHA",
+        path.display()
+    );
+
+    let raw_sources = manifest
+        .get("source_inventory")
+        .and_then(|inventory| inventory.get("c_sources"))
+        .and_then(toml::Value::as_array)
+        .unwrap_or_else(|| panic!("{} has no source_inventory.c_sources array", path.display()));
+    assert!(
+        !raw_sources.is_empty(),
+        "{} source_inventory.c_sources must not be empty",
+        path.display()
+    );
+
+    let raw_sources = raw_sources
+        .iter()
+        .map(|source| {
+            source.as_str().unwrap_or_else(|| {
+                panic!(
+                    "{} source_inventory.c_sources entries must be strings",
+                    path.display()
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let c_sources = validate_c_source_paths(raw_sources).unwrap_or_else(|error| {
+        panic!(
+            "{} has invalid source_inventory.c_sources: {error}",
+            path.display()
+        )
+    });
+
+    UpstreamBuildManifest {
+        active_revision: revision.to_owned(),
+        c_sources,
+    }
+}
+
+fn emit_build_identity(config: &BuildConfig, upstream_sha: &str, wasm_import_module: &str) {
+    println!("cargo:rustc-env=BOXDD_SYS_UPSTREAM_SHA={upstream_sha}");
+    println!("cargo:rustc-env=BOXDD_SYS_WASM_IMPORT_MODULE={wasm_import_module}");
+    println!("cargo:precision={}", config.precision.as_str());
+    println!("cargo:upstream_sha={upstream_sha}");
+    println!(
+        "cargo:include={}",
+        config
+            .manifest_dir
+            .join("third-party/box2d/include")
+            .display()
+    );
+    println!("cargo:wasm_import_module={wasm_import_module}");
+}
+
+fn reject_external_precision_overrides(target: &str) {
+    let normalized_target = target.replace('-', "_");
+    let target_keys = [
+        format!("CFLAGS_{target}"),
+        format!("CFLAGS_{normalized_target}"),
+        format!("{target}_CFLAGS"),
+        format!("{normalized_target}_CFLAGS"),
+        format!("BINDGEN_EXTRA_CLANG_ARGS_{target}"),
+        format!("BINDGEN_EXTRA_CLANG_ARGS_{normalized_target}"),
+    ];
+    for key in ["CFLAGS", "CPPFLAGS", "CL", "BINDGEN_EXTRA_CLANG_ARGS"]
+        .into_iter()
+        .map(str::to_owned)
+        .chain(target_keys)
+    {
+        println!("cargo:rerun-if-env-changed={key}");
+        let Some(value) = env::var_os(&key) else {
+            continue;
+        };
+        if value.to_string_lossy().contains("BOX2D_DOUBLE_PRECISION") {
+            panic!(
+                "{key} must not define BOX2D_DOUBLE_PRECISION; use the `double-precision` Cargo feature so C and Rust select one ABI"
+            );
+        }
+    }
+}
+
+fn handle_wasm_build(config: &BuildConfig, c_sources: &[PathBuf]) -> bool {
     let Some(mode) = config.wasm_mode else {
         return false;
     };
@@ -228,14 +364,42 @@ fn handle_wasm_build(config: &BuildConfig) -> bool {
                     "BOXDD_SYS_WASM_MODE=source requires the default `build-from-source` feature"
                 );
             }
-            build_box2d_from_source(config);
+            build_box2d_from_source(config, c_sources);
             true
         }
     }
 }
 
-fn generate_wasm_provider_bindings(pregenerated: &Path, out_dir: &Path) {
-    const IMPORT_MODULE: &str = "box2d-sys-v0";
+fn needs_legacy_wasm_provider_bindings(pregenerated: &Path, precision: Precision) -> bool {
+    let source = fs::read_to_string(pregenerated).unwrap_or_else(|error| {
+        panic!(
+            "failed to read pregenerated bindings at {}: {error}",
+            pregenerated.display()
+        )
+    });
+    let expected = format!(
+        "#[link(wasm_import_module = \"{}\")]",
+        precision.wasm_import_module()
+    );
+    if source.contains(&expected) {
+        return false;
+    }
+    if source.contains("wasm_import_module") {
+        panic!(
+            "pregenerated bindings at {} use a stale WASM import module; refresh them with xtask",
+            pregenerated.display()
+        );
+    }
+    if precision == Precision::Double {
+        panic!(
+            "double-precision pregenerated bindings at {} lack their precision-specific WASM import module; refresh them with xtask",
+            pregenerated.display()
+        );
+    }
+    true
+}
+
+fn generate_legacy_wasm_provider_bindings(pregenerated: &Path, out_dir: &Path) {
     let source = fs::read_to_string(pregenerated).unwrap_or_else(|err| {
         panic!(
             "failed to read pregenerated bindings at {}: {err}",
@@ -244,7 +408,9 @@ fn generate_wasm_provider_bindings(pregenerated: &Path, out_dir: &Path) {
     });
     let rewritten = source.replace(
         "unsafe extern \"C\" {",
-        &format!("#[link(wasm_import_module = \"{IMPORT_MODULE}\")]\nunsafe extern \"C\" {{"),
+        &format!(
+            "#[link(wasm_import_module = \"{LEGACY_WASM_IMPORT_MODULE}\")]\nunsafe extern \"C\" {{"
+        ),
     );
     if rewritten == source {
         panic!(
@@ -257,7 +423,7 @@ fn generate_wasm_provider_bindings(pregenerated: &Path, out_dir: &Path) {
 }
 
 #[cfg(feature = "bindgen")]
-fn generate_bindings(manifest_dir: &Path, out_dir: &Path, target: &str) {
+fn generate_bindings(manifest_dir: &Path, out_dir: &Path, target: &str, precision: Precision) {
     let include_root = manifest_dir
         .join("third-party")
         .join("box2d")
@@ -269,10 +435,15 @@ fn generate_bindings(manifest_dir: &Path, out_dir: &Path, target: &str) {
         .clang_args(["-x", "c", "-std=c17"])
         .clang_arg(format!("--target={target}"))
         .clang_arg(format!("-I{}", include_root.display()))
+        .wasm_import_module_name(precision.wasm_import_module())
         .allowlist_function("b2.*")
         .allowlist_type("b2.*")
         .allowlist_var("B2_.*")
         .layout_tests(false);
+    let builder = match precision {
+        Precision::Single => builder.clang_arg("-UBOX2D_DOUBLE_PRECISION"),
+        Precision::Double => builder.clang_arg("-DBOX2D_DOUBLE_PRECISION=1"),
+    };
     let bindings = configure_bindgen_host_headers(builder, target)
         .generate()
         .expect("failed to generate Box2D bindings");
@@ -309,7 +480,7 @@ fn configure_bindgen_host_headers(builder: bindgen::Builder, target: &str) -> bi
 
 #[cfg(not(feature = "bindgen"))]
 #[allow(dead_code)]
-fn generate_bindings(_manifest_dir: &Path, _out_dir: &Path, _target: &str) {
+fn generate_bindings(_manifest_dir: &Path, _out_dir: &Path, _target: &str, _precision: Precision) {
     unreachable!("generate_bindings is only available with the `bindgen` feature enabled");
 }
 
@@ -325,6 +496,11 @@ fn warn_or_error_system_ignores_features() {
     let simd = cfg!(feature = "simd-avx2");
     let nosimd = cfg!(feature = "disable-simd");
     let validate = cfg!(feature = "validate");
+    if Precision::ACTIVE == Precision::Double {
+        panic!(
+            "double-precision system libraries are not accepted without ABI attestation; use the vendored source provider"
+        );
+    }
     if simd || nosimd || validate {
         if parse_bool_env("BOXDD_SYS_STRICT_FEATURES") {
             panic!(
@@ -368,24 +544,30 @@ fn try_link_system(_target_arch: &str) -> bool {
     false
 }
 
-fn add_msvc_c_standard_flag(build: &mut cc::Build) {
+fn configure_msvc_language(build: &mut cc::Build) {
     match build.is_flag_supported("/std:c17") {
         Ok(true) => {
             build.flag("/std:c17");
         }
-        Ok(false) | Err(_) => {
-            build.flag_if_supported("/std:c11");
+        Ok(false) => {
+            panic!("the selected MSVC C compiler does not support the C17 mode required by Box2D");
         }
+        Err(error) => {
+            panic!("failed to verify MSVC C17 support required by Box2D: {error}");
+        }
+    }
+    if build.get_compiler().is_like_clang_cl() {
+        build.flag("/clang:-ffp-contract=off");
     }
 }
 
-fn build_box2d_from_source(config: &BuildConfig) {
+fn build_box2d_from_source(config: &BuildConfig, c_sources: &[PathBuf]) {
     let box2d_root = config.manifest_dir.join("third-party").join("box2d");
     let box2d_include = box2d_root.join("include");
     let box2d_src = box2d_root.join("src");
     if !box2d_include.exists() || !box2d_src.exists() {
-        println!(
-            "cargo:warning=Box2D submodule not found at {}; run: git submodule update --init --recursive",
+        panic!(
+            "Box2D submodule not found at {}; run: git submodule update --init --recursive",
             box2d_root.display()
         );
     }
@@ -394,10 +576,18 @@ fn build_box2d_from_source(config: &BuildConfig) {
     build.include(&box2d_include);
     build.include(&box2d_src);
 
-    let mut files = Vec::new();
-    collect_c_files(&box2d_src, &mut files);
-    for file in files {
-        build.file(file);
+    for relative_path in c_sources {
+        let source = box2d_root.join(relative_path);
+        assert!(
+            source.is_file(),
+            "Box2D source declared by upstream.toml is missing: {}",
+            source.display()
+        );
+        build.file(source);
+    }
+
+    if config.precision == Precision::Double {
+        build.define("BOX2D_DOUBLE_PRECISION", None);
     }
 
     if config.target_env == "msvc" {
@@ -408,7 +598,7 @@ fn build_box2d_from_source(config: &BuildConfig) {
         build.static_crt(use_static_crt);
         build.debug(config.is_debug());
         build.opt_level(if config.is_debug() { 0 } else { 2 });
-        add_msvc_c_standard_flag(&mut build);
+        configure_msvc_language(&mut build);
         if cfg!(feature = "disable-simd") {
             build.define("BOX2D_DISABLE_SIMD", None);
         } else if cfg!(feature = "simd-avx2") && config.target_arch == "x86_64" {
@@ -416,8 +606,8 @@ fn build_box2d_from_source(config: &BuildConfig) {
             build.flag_if_supported("/arch:AVX2");
         }
     } else {
-        build.flag_if_supported("-std=c17");
-        build.flag_if_supported("-ffp-contract=off");
+        build.flag("-std=c17");
+        build.flag("-ffp-contract=off");
         build.debug(config.is_debug());
         build.opt_level(if config.is_debug() { 0 } else { 2 });
 
@@ -429,6 +619,7 @@ fn build_box2d_from_source(config: &BuildConfig) {
         {
             if config.target_os == "linux" {
                 build.define("_POSIX_C_SOURCE", Some("199309L"));
+                println!("cargo:rustc-link-lib=m");
                 println!("cargo:rustc-link-lib=pthread");
             }
             build.flag_if_supported("-pthread");
@@ -451,6 +642,7 @@ fn build_box2d_from_source(config: &BuildConfig) {
 
 fn configure_wasm_source_build(config: &BuildConfig, build: &mut cc::Build) {
     if config.target_env == "emscripten" {
+        build.define("_POSIX_C_SOURCE", Some("199309L"));
         if let Ok(emsdk) = env::var("EMSDK") {
             let emscripten = PathBuf::from(&emsdk).join("upstream").join("emscripten");
             let clang = emscripten.join(if cfg!(windows) { "emcc.bat" } else { "emcc" });
@@ -494,17 +686,4 @@ fn configure_wasi_sysroot(build: &mut cc::Build) {
     }
 
     build.flag(format!("--sysroot={}", sysroot.display()));
-}
-
-fn collect_c_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    if let Ok(entries) = fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                collect_c_files(&path, out);
-            } else if path.extension().is_some_and(|ext| ext == "c") {
-                out.push(path);
-            }
-        }
-    }
 }

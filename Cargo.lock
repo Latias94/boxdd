@@ -2074,6 +2074,7 @@ dependencies = [
  "flate2",
  "pkg-config",
  "tar",
+ "toml",
 ]
 
 [[package]]

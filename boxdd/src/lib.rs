@@ -224,6 +224,11 @@
 //! world.with_joint_events_view(|j| { let _ = j.count(); });
 //! ```
 
+const _: () = assert!(
+    boxdd_sys::IS_DOUBLE_PRECISION == cfg!(feature = "double-precision"),
+    "boxdd and boxdd-sys precision features must be enabled through the same dependency edge"
+);
+
 pub mod body;
 pub mod collision;
 pub mod contact;

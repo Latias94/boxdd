@@ -209,9 +209,15 @@ pub struct UpstreamManifest {
     pub recording_revision: String,
     pub artifact_digests_initialized: bool,
     pub binding_routes: Vec<BindingRoute>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub next_binding_routes: Vec<BindingRoute>,
     pub recording_inputs: Vec<RecordingInputIdentity>,
     pub artifacts: Vec<GeneratedArtifact>,
-    pub target_inventory: SourceInventory,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub next_artifacts: Vec<GeneratedArtifact>,
+    pub source_inventory: SourceInventory,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_inventory: Option<SourceInventory>,
 }
 
 impl UpstreamManifest {
@@ -219,6 +225,7 @@ impl UpstreamManifest {
         let manifest: Self = read_toml(&paths.upstream_manifest())?;
         validate_manifest(&manifest)?;
         validate_binding_route_feature_catalog(paths, &manifest.binding_routes)?;
+        validate_binding_route_feature_catalog(paths, &manifest.next_binding_routes)?;
         Ok(manifest)
     }
 
@@ -325,16 +332,32 @@ impl UpstreamManifest {
             .filter(|artifact| artifact.producer == ArtifactProducer::Reviewed)
     }
 
-    fn inventory_revision(&self) -> &str {
-        self.next_revision
-            .as_deref()
-            .unwrap_or(&self.active_revision)
-    }
-
     fn binding_artifacts(&self) -> impl Iterator<Item = &GeneratedArtifact> {
         self.artifacts
             .iter()
             .filter(|artifact| artifact.kind == ArtifactKind::Bindings)
+    }
+
+    fn promoted_for_generation(&self, target: &str) -> Result<Self> {
+        let mut promoted = self.clone();
+        promoted.active_revision = target.to_owned();
+        promoted.next_revision = None;
+        promoted.recording_revision = target.to_owned();
+        if !promoted.next_binding_routes.is_empty() {
+            promoted.binding_routes = std::mem::take(&mut promoted.next_binding_routes);
+        }
+        promoted.artifacts.append(&mut promoted.next_artifacts);
+        if let Some(next_inventory) = promoted.next_inventory.take() {
+            promoted.source_inventory = next_inventory;
+        }
+        for artifact in &mut promoted.artifacts {
+            artifact.content_blake3 = UNINITIALIZED_BLAKE3.to_owned();
+            artifact.candidate_path = None;
+            artifact.candidate_blake3 = None;
+        }
+        promoted.artifact_digests_initialized = false;
+        validate_manifest(&promoted)?;
+        Ok(promoted)
     }
 }
 
@@ -501,8 +524,14 @@ fn validate_repository_core(
     {
         ensure_commit_object(&submodule, revision)?;
     }
-    let observed_inventory = source_inventory(&submodule, manifest.inventory_revision())?;
-    validate_exact_inventory(&manifest.target_inventory, &observed_inventory)?;
+    let observed_inventory = source_inventory(&submodule, &manifest.active_revision)?;
+    validate_exact_inventory(&manifest.source_inventory, &observed_inventory)?;
+    if let (Some(next_revision), Some(next_inventory)) =
+        (&manifest.next_revision, &manifest.next_inventory)
+    {
+        let observed_next = source_inventory(&submodule, next_revision)?;
+        validate_exact_inventory(next_inventory, &observed_next)?;
+    }
     Ok(UpstreamSnapshot {
         active_revision: manifest.active_revision.clone(),
         next_revision: manifest.next_revision.clone(),
@@ -573,13 +602,58 @@ fn validate_manifest(manifest: &UpstreamManifest) -> Result<()> {
         (false, _) | (true, _) => {}
     }
     validate_binding_routes(&manifest.binding_routes, &manifest.artifacts, &mut errors);
+    validate_next_binding_topology(manifest, &mut errors);
     validate_recording_input_shape(&manifest.recording_inputs, &mut errors);
-    validate_inventory_shape(&manifest.target_inventory, &mut errors);
+    validate_inventory_shape(&manifest.source_inventory, &mut errors);
+    match (&manifest.next_revision, &manifest.next_inventory) {
+        (Some(_), Some(inventory)) => validate_inventory_shape(inventory, &mut errors),
+        (Some(_), None) => errors.push("next_revision requires next_inventory".to_owned()),
+        (None, Some(_)) => errors.push("next_inventory requires next_revision".to_owned()),
+        (None, None) => {}
+    }
     if errors.is_empty() {
         Ok(())
     } else {
         Err(Error::message(errors.join("\n")))
     }
+}
+
+fn validate_next_binding_topology(manifest: &UpstreamManifest, errors: &mut Vec<String>) {
+    if manifest.next_binding_routes.is_empty() && manifest.next_artifacts.is_empty() {
+        return;
+    }
+    if manifest.next_revision.is_none() {
+        errors.push("next binding topology requires next_revision".to_owned());
+    }
+    if manifest.next_binding_routes.is_empty() {
+        errors.push("next binding topology has no binding routes".to_owned());
+        return;
+    }
+    for artifact in &manifest.next_artifacts {
+        if artifact.kind != ArtifactKind::Bindings || artifact.producer != ArtifactProducer::Bindgen
+        {
+            errors.push(format!(
+                "next artifact `{}` must be a bindgen-produced bindings artifact",
+                artifact.name
+            ));
+        }
+        if artifact.content_blake3 != UNINITIALIZED_BLAKE3 {
+            errors.push(format!(
+                "next artifact `{}` must keep an uninitialized digest until target generation",
+                artifact.name
+            ));
+        }
+        if artifact.candidate_path.is_some() || artifact.candidate_blake3.is_some() {
+            errors.push(format!(
+                "next artifact `{}` cannot declare a reviewed candidate",
+                artifact.name
+            ));
+        }
+    }
+    let mut projected_artifacts = manifest.artifacts.clone();
+    projected_artifacts.extend(manifest.next_artifacts.iter().cloned());
+    validate_artifacts(&projected_artifacts, errors);
+    validate_binding_routes(&manifest.next_binding_routes, &projected_artifacts, errors);
 }
 
 fn validate_binding_routes(
@@ -999,14 +1073,15 @@ fn validate_artifact_path_reservation(
 
 fn validate_inventory_shape(inventory: &SourceInventory, errors: &mut Vec<String>) {
     if !is_full_sha(&inventory.tree) {
-        errors.push("target inventory tree must be a lowercase 40-character Git SHA".to_owned());
+        errors.push("source inventory tree must be a lowercase 40-character Git SHA".to_owned());
     }
-    validate_inventory_group("c_sources", &inventory.c_sources, "src", "c", errors);
+    validate_inventory_group("c_sources", &inventory.c_sources, "src", "c", true, errors);
     validate_inventory_group(
         "private_headers",
         &inventory.private_headers,
         "src",
         "h",
+        true,
         errors,
     );
     validate_inventory_group(
@@ -1014,6 +1089,7 @@ fn validate_inventory_shape(inventory: &SourceInventory, errors: &mut Vec<String
         &inventory.inline_files,
         "src",
         "inl",
+        false,
         errors,
     );
     validate_inventory_group(
@@ -1021,6 +1097,7 @@ fn validate_inventory_shape(inventory: &SourceInventory, errors: &mut Vec<String
         &inventory.public_headers,
         "include/box2d",
         "h",
+        true,
         errors,
     );
     let mut globally_seen = BTreeMap::<&str, &str>::new();
@@ -1033,7 +1110,7 @@ fn validate_inventory_shape(inventory: &SourceInventory, errors: &mut Vec<String
         for path in paths {
             if let Some(previous_group) = globally_seen.insert(path, group) {
                 errors.push(format!(
-                    "target inventory path `{path}` appears in both {previous_group} and {group}"
+                    "source inventory path `{path}` appears in both {previous_group} and {group}"
                 ));
             }
         }
@@ -1045,14 +1122,15 @@ fn validate_inventory_group(
     paths: &[String],
     parent: &str,
     extension: &str,
+    required: bool,
     errors: &mut Vec<String>,
 ) {
-    if paths.is_empty() {
-        errors.push(format!("target inventory {label} is empty"));
+    if required && paths.is_empty() {
+        errors.push(format!("source inventory {label} is empty"));
     }
     if !paths.windows(2).all(|pair| pair[0] < pair[1]) {
         errors.push(format!(
-            "target inventory {label} must be sorted and unique"
+            "source inventory {label} must be sorted and unique"
         ));
     }
     for path in paths {
@@ -1063,7 +1141,7 @@ fn validate_inventory_group(
             || candidate.extension().and_then(|value| value.to_str()) != Some(extension)
         {
             errors.push(format!(
-                "target inventory {label} has invalid path `{path}`"
+                "source inventory {label} has invalid path `{path}`"
             ));
         }
     }
@@ -1190,7 +1268,7 @@ struct ManagedSnapshot {
 impl ManagedSnapshot {
     fn capture(paths: &WorkspacePaths, manifest: &UpstreamManifest) -> Result<Self> {
         let mut managed = BTreeSet::from([paths.upstream_manifest()]);
-        for artifact in &manifest.artifacts {
+        for artifact in manifest.artifacts.iter().chain(&manifest.next_artifacts) {
             managed.insert(paths.root().join(&artifact.path));
             if let Some(candidate) = &artifact.candidate_path {
                 managed.insert(paths.root().join(candidate));
@@ -2441,15 +2519,7 @@ impl IsolatedGeneration {
     }
 
     fn prepare_update(&self, manifest: &UpstreamManifest, target: &str) -> Result<StagedUpdate> {
-        let mut target_manifest = manifest.clone();
-        target_manifest.active_revision = target.to_owned();
-        target_manifest.next_revision = None;
-        target_manifest.recording_revision = target.to_owned();
-        for artifact in &mut target_manifest.artifacts {
-            artifact.candidate_path = None;
-            artifact.candidate_blake3 = None;
-        }
-        validate_manifest(&target_manifest)?;
+        let mut target_manifest = manifest.promoted_for_generation(target)?;
 
         for artifact in manifest.reviewed_artifacts() {
             let candidate = artifact.candidate_path.as_deref().ok_or_else(|| {
@@ -2492,6 +2562,7 @@ impl IsolatedGeneration {
         for artifact in &mut target_manifest.artifacts {
             artifact.content_blake3 = file_blake3(&self.worktree.join(&artifact.path))?;
         }
+        target_manifest.artifact_digests_initialized = true;
         write_atomic(
             &self.worktree.join("boxdd-sys/upstream.toml"),
             &render_toml(&target_manifest)?,
@@ -2524,15 +2595,7 @@ impl IsolatedGeneration {
     }
 
     fn render_next_candidate(&self, manifest: &UpstreamManifest, target: &str) -> Result<Vec<u8>> {
-        let mut target_manifest = manifest.clone();
-        target_manifest.active_revision = target.to_owned();
-        target_manifest.next_revision = None;
-        target_manifest.recording_revision = target.to_owned();
-        for artifact in &mut target_manifest.artifacts {
-            artifact.candidate_path = None;
-            artifact.candidate_blake3 = None;
-        }
-        validate_manifest(&target_manifest)?;
+        let target_manifest = manifest.promoted_for_generation(target)?;
         write_atomic(
             &self.worktree.join("boxdd-sys/upstream.toml"),
             &render_toml(&target_manifest)?,
@@ -3099,7 +3162,13 @@ fn managed_status(root: &Path, manifest: &UpstreamManifest) -> Result<String> {
         .env("GIT_OPTIONAL_LOCKS", "0")
         .args(["status", "--porcelain=v1", "--untracked-files=all", "--"]);
     command.arg("boxdd-sys/upstream.toml");
-    command.args(manifest.artifacts.iter().map(|artifact| &artifact.path));
+    command.args(
+        manifest
+            .artifacts
+            .iter()
+            .chain(&manifest.next_artifacts)
+            .map(|artifact| &artifact.path),
+    );
     command.args(
         manifest
             .artifacts
@@ -3840,10 +3909,15 @@ mod tests {
                 recording_revision: next_revision.clone(),
                 artifact_digests_initialized: true,
                 binding_routes: binding_routes(),
+                next_binding_routes: Vec::new(),
                 recording_inputs: reviewed_recording_inputs(&upstream, &next_revision),
                 artifacts: artifacts(),
-                target_inventory: source_inventory(&upstream, &next_revision)
-                    .expect("target inventory"),
+                next_artifacts: Vec::new(),
+                source_inventory: source_inventory(&upstream, &active_revision)
+                    .expect("active inventory"),
+                next_inventory: Some(
+                    source_inventory(&upstream, &next_revision).expect("target inventory"),
+                ),
             };
             for artifact in &manifest.artifacts {
                 let path = workspace.join(&artifact.path);
@@ -4028,6 +4102,40 @@ mod tests {
         }]
     }
 
+    fn pending_double_bindings() -> GeneratedArtifact {
+        GeneratedArtifact {
+            name: "bindings-double".to_owned(),
+            kind: ArtifactKind::Bindings,
+            path: "boxdd-sys/src/bindings_double.rs".to_owned(),
+            precision: Some(Precision::Double),
+            target: ArtifactTarget::Universal,
+            provider: ArtifactProvider::Universal,
+            producer: ArtifactProducer::Bindgen,
+            content_blake3: UNINITIALIZED_BLAKE3.to_owned(),
+            candidate_path: None,
+            candidate_blake3: None,
+        }
+    }
+
+    fn dual_precision_routes() -> Vec<BindingRoute> {
+        vec![
+            BindingRoute {
+                mode: Precision::Single,
+                provider: ArtifactProvider::Source,
+                artifact: "bindings-single".to_owned(),
+                rust_target: RustTarget::X86_64UnknownLinuxGnu,
+                rust_features: Vec::new(),
+            },
+            BindingRoute {
+                mode: Precision::Double,
+                provider: ArtifactProvider::Source,
+                artifact: "bindings-double".to_owned(),
+                rust_target: RustTarget::X86_64UnknownLinuxGnu,
+                rust_features: vec!["double-precision".to_owned()],
+            },
+        ]
+    }
+
     fn reviewed_recording_inputs(repository: &Path, revision: &str) -> Vec<RecordingInputIdentity> {
         crate::recording_wire::REVIEWED_RECORDING_INPUT_PATHS
             .iter()
@@ -4067,9 +4175,12 @@ mod tests {
             recording_revision: "89abcdef0123456789abcdef0123456789abcdef".to_owned(),
             artifact_digests_initialized: true,
             binding_routes: binding_routes(),
+            next_binding_routes: Vec::new(),
             recording_inputs: placeholder_recording_inputs(),
             artifacts,
-            target_inventory: inventory(),
+            next_artifacts: Vec::new(),
+            source_inventory: inventory(),
+            next_inventory: Some(inventory()),
         }
     }
 
@@ -4079,7 +4190,7 @@ mod tests {
         let mut invalid = manifest();
         invalid.next_revision = Some("main".to_owned());
         invalid.artifacts[0].path = "../bindings.rs".to_owned();
-        invalid.target_inventory.c_sources.reverse();
+        invalid.source_inventory.c_sources.reverse();
         let error = validate_manifest(&invalid).expect_err("invalid manifest must fail");
         assert!(error.to_string().contains("40-character"));
         assert!(error.to_string().contains("canonical relative path"));
@@ -4092,6 +4203,57 @@ mod tests {
             )
             .expect("derived candidate path"),
             "boxdd/tests/fixtures/api_contract.next.toml"
+        );
+    }
+
+    #[test]
+    fn next_binding_topology_is_promoted_as_one_uninitialized_generation_set() {
+        let mut pending = manifest();
+        pending.next_binding_routes = dual_precision_routes();
+        pending.next_artifacts = vec![pending_double_bindings()];
+        pending
+            .next_inventory
+            .as_mut()
+            .expect("next inventory")
+            .tree = "b".repeat(40);
+        validate_manifest(&pending).expect("valid pending topology");
+
+        let target = pending.next_revision.clone().expect("next revision");
+        let promoted = pending
+            .promoted_for_generation(&target)
+            .expect("promoted topology");
+        assert_eq!(promoted.active_revision, target);
+        assert_eq!(promoted.recording_revision, target);
+        assert_eq!(promoted.next_revision, None);
+        assert_eq!(promoted.binding_routes, dual_precision_routes());
+        assert!(promoted.next_binding_routes.is_empty());
+        assert!(promoted.next_artifacts.is_empty());
+        assert!(promoted.next_inventory.is_none());
+        assert_eq!(promoted.source_inventory.tree, "b".repeat(40));
+        assert_eq!(promoted.binding_artifacts().count(), 2);
+        assert!(!promoted.artifact_digests_initialized);
+        assert!(promoted.artifacts.iter().all(|artifact| {
+            artifact.content_blake3 == UNINITIALIZED_BLAKE3
+                && artifact.candidate_path.is_none()
+                && artifact.candidate_blake3.is_none()
+        }));
+
+        let mut without_revision = pending.clone();
+        without_revision.next_revision = None;
+        assert!(
+            validate_manifest(&without_revision)
+                .expect_err("pending topology without revision must fail")
+                .to_string()
+                .contains("requires next_revision")
+        );
+
+        let mut initialized = pending;
+        initialized.next_artifacts[0].content_blake3 = "1".repeat(64);
+        assert!(
+            validate_manifest(&initialized)
+                .expect_err("pending artifact with digest must fail")
+                .to_string()
+                .contains("uninitialized digest")
         );
     }
 
@@ -4424,10 +4586,18 @@ mod tests {
             .expect("workspace root");
         let paths = WorkspacePaths::new(root);
         let manifest = UpstreamManifest::load(&paths).expect("repository manifest");
-        let observed = source_inventory(&paths.box2d(), manifest.inventory_revision())
-            .expect("repository target inventory");
-        validate_exact_inventory(&manifest.target_inventory, &observed)
-            .expect("exact target inventory");
+        let observed_active = source_inventory(&paths.box2d(), &manifest.active_revision)
+            .expect("repository active inventory");
+        validate_exact_inventory(&manifest.source_inventory, &observed_active)
+            .expect("exact active inventory");
+        let next_revision = manifest.next_revision.as_deref().expect("next revision");
+        let observed_next =
+            source_inventory(&paths.box2d(), next_revision).expect("repository target inventory");
+        validate_exact_inventory(
+            manifest.next_inventory.as_ref().expect("next inventory"),
+            &observed_next,
+        )
+        .expect("exact target inventory");
     }
 
     #[test]
@@ -4635,6 +4805,7 @@ mod tests {
         let mut mismatched = manifest;
         mismatched.active_revision = fixture.next_revision.clone();
         mismatched.next_revision = None;
+        mismatched.next_inventory = None;
         let error = validate_repository(&paths, &mismatched, false)
             .expect_err("checkout mismatch must be rejected");
         assert!(error.to_string().contains("submodule checkout"));
@@ -5093,6 +5264,10 @@ mod tests {
         let mut target_manifest = manifest.clone();
         target_manifest.active_revision = fixture.next_revision.clone();
         target_manifest.next_revision = None;
+        target_manifest.source_inventory = target_manifest
+            .next_inventory
+            .take()
+            .expect("target inventory");
         for artifact in &mut target_manifest.artifacts {
             artifact.candidate_path = None;
             artifact.candidate_blake3 = None;
@@ -5160,6 +5335,10 @@ mod tests {
         let mut target_manifest = manifest.clone();
         target_manifest.active_revision = fixture.next_revision.clone();
         target_manifest.next_revision = None;
+        target_manifest.source_inventory = target_manifest
+            .next_inventory
+            .take()
+            .expect("target inventory");
         let staged = StagedUpdate {
             manifest: target_manifest,
             artifacts: Vec::new(),
@@ -5565,6 +5744,10 @@ mod tests {
         let mut target_manifest = manifest.clone();
         target_manifest.active_revision = fixture.next_revision.clone();
         target_manifest.next_revision = None;
+        target_manifest.source_inventory = target_manifest
+            .next_inventory
+            .take()
+            .expect("target inventory");
         for artifact in &mut target_manifest.artifacts {
             artifact.candidate_path = None;
             artifact.candidate_blake3 = None;
@@ -6082,6 +6265,10 @@ mod tests {
         let mut target_manifest = manifest.clone();
         target_manifest.active_revision = fixture.next_revision.clone();
         target_manifest.next_revision = None;
+        target_manifest.source_inventory = target_manifest
+            .next_inventory
+            .take()
+            .expect("target inventory");
         for artifact in &mut target_manifest.artifacts {
             artifact.candidate_path = None;
             artifact.candidate_blake3 = None;

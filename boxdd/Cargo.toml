@@ -48,6 +48,7 @@ glam = ["dep:glam"]
 bytemuck = ["dep:bytemuck"]
 
 # Performance / debug features (forwarded to sys)
+double-precision = ["boxdd-sys/double-precision"]
 simd-avx2 = ["boxdd-sys/simd-avx2"]
 disable-simd = ["boxdd-sys/disable-simd"]
 validate = ["boxdd-sys/validate"]

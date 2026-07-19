@@ -1,5 +1,6 @@
 boxdd-sys/upstream.toml text eol=lf
 boxdd-sys/src/bindings_pregenerated.rs text eol=lf
+boxdd-sys/src/bindings_double.rs text eol=lf
 boxdd/tests/fixtures/api_contract.toml text eol=lf
 xtask/tests/fixtures/recording_wire_contract.toml text eol=lf
 docs/api-coverage.md text eol=lf

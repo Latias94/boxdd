@@ -13,7 +13,7 @@ use tempfile::NamedTempFile;
 use crate::{Error, Result};
 
 pub const API_CONTRACT_SCHEMA: u32 = 4;
-pub const UPSTREAM_MANIFEST_SCHEMA: u32 = 3;
+pub const UPSTREAM_MANIFEST_SCHEMA: u32 = 4;
 pub const RECORDING_WIRE_SCHEMA: u32 = 4;
 
 pub fn read_toml<T: DeserializeOwned>(path: &Path) -> Result<T> {

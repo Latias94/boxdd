@@ -371,6 +371,7 @@ const READ_ONLY: &[&str] = &[
     "b2Body_GetJoints",
     "b2Body_GetLinearDamping",
     "b2Body_GetLinearVelocity",
+    "b2Body_GetLocalCenter",
     "b2Body_GetLocalCenterOfMass",
     "b2Body_GetLocalPoint",
     "b2Body_GetLocalPointVelocity",
@@ -389,6 +390,7 @@ const READ_ONLY: &[&str] = &[
     "b2Body_GetType",
     "b2Body_GetUserData",
     "b2Body_GetWorld",
+    "b2Body_GetWorldCenter",
     "b2Body_GetWorldCenterOfMass",
     "b2Body_GetWorldPoint",
     "b2Body_GetWorldPointVelocity",
@@ -429,6 +431,7 @@ const READ_ONLY: &[&str] = &[
     "b2DistanceJoint_IsLimitEnabled",
     "b2DistanceJoint_IsMotorEnabled",
     "b2DistanceJoint_IsSpringEnabled",
+    "b2DynamicTree_BoxCast",
     "b2DynamicTree_ShapeCast",
     "b2Joint_GetAngularSeparation",
     "b2Joint_GetBodyA",
@@ -571,6 +574,12 @@ const RECORDING_LIFECYCLE: &[&str] = &[];
 
 const SNAPSHOT_LIFECYCLE: &[&str] = &[];
 
+const VERSIONED_FUNCTION_ALIASES: &[&[&str]] = &[
+    &["b2Body_GetLocalCenterOfMass", "b2Body_GetLocalCenter"],
+    &["b2Body_GetWorldCenterOfMass", "b2Body_GetWorldCenter"],
+    &["b2DynamicTree_ShapeCast", "b2DynamicTree_BoxCast"],
+];
+
 const OPERATION_EXEMPTIONS: &[OperationExemption<'static>] = &[
     OperationExemption {
         operation: "WorldSetContactRecycleDistance",
@@ -649,13 +658,38 @@ pub(super) fn validate_registry(
     known_functions: &BTreeSet<&str>,
     operations: &[RecordingOp],
 ) -> Result<()> {
+    let entries = production_entries_for(known_functions)?;
     validate_registry_entries(
         safe_functions,
         known_functions,
         operations,
-        &production_entries(),
+        &entries,
         OPERATION_EXEMPTIONS,
     )
+}
+
+fn production_entries_for(known_functions: &BTreeSet<&str>) -> Result<Vec<RegistryEntry<'static>>> {
+    for aliases in VERSIONED_FUNCTION_ALIASES {
+        let present = aliases
+            .iter()
+            .filter(|function| known_functions.contains(**function))
+            .copied()
+            .collect::<Vec<_>>();
+        if present.len() != 1 {
+            return Err(Error::message(format!(
+                "recording registry expected exactly one versioned function from {aliases:?}, observed {present:?}"
+            )));
+        }
+    }
+    Ok(production_entries()
+        .into_iter()
+        .filter(|entry| {
+            !VERSIONED_FUNCTION_ALIASES
+                .iter()
+                .any(|aliases| aliases.contains(&entry.function))
+                || known_functions.contains(entry.function)
+        })
+        .collect())
 }
 
 fn validate_registry_entries(
@@ -853,6 +887,49 @@ mod tests {
             "b2Body_LooksReadOnly",
             Classification::Safe
         ));
+    }
+
+    #[test]
+    fn versioned_function_aliases_select_exactly_one_header_generation() {
+        let active = BTreeSet::from([
+            "b2Body_GetLocalCenterOfMass",
+            "b2Body_GetWorldCenterOfMass",
+            "b2DynamicTree_ShapeCast",
+        ]);
+        let active_entries = production_entries_for(&active).expect("active aliases");
+        assert!(
+            active_entries
+                .iter()
+                .any(|entry| entry.function == "b2Body_GetLocalCenterOfMass")
+        );
+        assert!(
+            !active_entries
+                .iter()
+                .any(|entry| entry.function == "b2Body_GetLocalCenter")
+        );
+
+        let target = BTreeSet::from([
+            "b2Body_GetLocalCenter",
+            "b2Body_GetWorldCenter",
+            "b2DynamicTree_BoxCast",
+        ]);
+        let target_entries = production_entries_for(&target).expect("target aliases");
+        assert!(
+            target_entries
+                .iter()
+                .any(|entry| entry.function == "b2Body_GetLocalCenter")
+        );
+        assert!(
+            !target_entries
+                .iter()
+                .any(|entry| entry.function == "b2Body_GetLocalCenterOfMass")
+        );
+
+        let mut ambiguous = target;
+        ambiguous.insert("b2Body_GetLocalCenterOfMass");
+        let error = production_entries_for(&ambiguous)
+            .expect_err("two aliases in one header must fail closed");
+        assert!(error.to_string().contains("exactly one versioned function"));
     }
 
     #[test]

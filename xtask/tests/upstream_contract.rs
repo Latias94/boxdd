@@ -180,6 +180,7 @@ impl TransactionFixture {
                 rust_target: RustTarget::X86_64UnknownLinuxGnu,
                 rust_features: Vec::new(),
             }],
+            next_binding_routes: Vec::new(),
             recording_inputs: REVIEWED_RECORDING_INPUT_PATHS
                 .iter()
                 .map(|path| RecordingInputIdentity {
@@ -222,13 +223,21 @@ impl TransactionFixture {
                     &report,
                 ),
             ],
-            target_inventory: SourceInventory {
+            next_artifacts: Vec::new(),
+            source_inventory: SourceInventory {
                 tree: "3".repeat(40),
                 c_sources: vec!["src/a.c".to_owned()],
                 private_headers: vec!["src/a.h".to_owned()],
                 inline_files: vec!["src/a.inl".to_owned()],
                 public_headers: vec!["include/box2d/a.h".to_owned()],
             },
+            next_inventory: Some(SourceInventory {
+                tree: "4".repeat(40),
+                c_sources: vec!["src/a.c".to_owned()],
+                private_headers: vec!["src/a.h".to_owned()],
+                inline_files: vec!["src/a.inl".to_owned()],
+                public_headers: vec!["include/box2d/a.h".to_owned()],
+            }),
         };
         write(
             root.path(),
