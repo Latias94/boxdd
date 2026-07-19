@@ -954,9 +954,9 @@ fn validate_evidence_role(
             (
                 ABI_HEADER_EVIDENCE_ID,
                 "xtask/src/c_api.rs",
-                "parser_indexes_struct_fields_and_callbacks",
+                "vendored_headers_build_precision_abi_inventories",
             ),
-            "parse_header",
+            "parse_headers_for_precision",
         ),
         TestEvidenceRole::AbiBindingAst => (
             (
@@ -2869,7 +2869,7 @@ mod tests {
                 (
                     ABI_HEADER_EVIDENCE_ID,
                     "xtask/src/c_api.rs",
-                    "parser_indexes_struct_fields_and_callbacks",
+                    "vendored_headers_build_precision_abi_inventories",
                     TestEvidenceRole::AbiHeaderInventory,
                 ),
                 (
@@ -2958,7 +2958,7 @@ mod tests {
             .expect("xtask commands module");
             fs::write(
                 self.root.join("xtask/src/c_api.rs"),
-                "fn parse_header() {}\n#[test]\nfn parser_indexes_struct_fields_and_callbacks() { parse_header(); }\n",
+                "fn parse_headers_for_precision() {}\n#[test]\nfn vendored_headers_build_precision_abi_inventories() { parse_headers_for_precision(); }\n",
             )
             .expect("header evidence source");
             fs::write(
@@ -3632,7 +3632,7 @@ mod tests {
     #[test]
     fn abi_evidence_roles_cannot_bless_empty_named_tests() {
         for (id, required_entry) in [
-            (ABI_HEADER_EVIDENCE_ID, "parse_header"),
+            (ABI_HEADER_EVIDENCE_ID, "parse_headers_for_precision"),
             (ABI_BINDING_EVIDENCE_ID, "index_bindings"),
             (ABI_VALIDATOR_EVIDENCE_ID, "validate_contract"),
         ] {

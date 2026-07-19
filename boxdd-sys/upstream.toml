@@ -78,7 +78,7 @@ path = "boxdd/tests/fixtures/api_contract.toml"
 target = "universal"
 provider = "universal"
 producer = "reviewed"
-content_blake3 = "8c7be3fdc64c92f4fcd4f68511e013898d17c7ec435e960597543a6016a08455"
+content_blake3 = "457037699200d52e65ca8cff9fcb53bd82c3cc0a741fcc255259df4e7367d207"
 candidate_path = "boxdd/tests/fixtures/api_contract.next.toml"
 candidate_blake3 = "4ec0ce7386f413b1ee99d1c9553149f7778b62b0e55f19ec3860248108dc149c"
 

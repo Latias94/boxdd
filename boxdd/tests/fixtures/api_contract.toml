@@ -25,11 +25,11 @@ rationale = "The pinned upstream assertion aliases leaf user data as the child-i
 [[evidence]]
 id = "abi-header-parser"
 file = "xtask/src/c_api.rs"
-item = "parser_indexes_struct_fields_and_callbacks"
+item = "vendored_headers_build_precision_abi_inventories"
 package = "xtask"
 gate = "nextest"
 role = "abi-header-inventory"
-fingerprint = "blake3-routes-v1:a500d95adf2d9db2f95aef5092aa98d669cb25f924b5cdc58a36f4593cb510d2"
+fingerprint = "blake3-routes-v1:ea6b7e5f70d2e4628aa2fbceed80fc6a0acb828730cd805f7ceac7e13c129470"
 runtime_witnesses = []
 classification_witnesses = []
 

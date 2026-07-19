@@ -469,8 +469,8 @@ fn parse_precision_header(
     precision: CAbiPrecision,
     raw: &mut RawPrecisionInventory,
 ) -> Result<()> {
-    record_integer_macros(source, header, raw)?;
     let metadata = parse_preprocessor(source, header)?;
+    record_integer_macros(source, header, &metadata, precision, raw)?;
     let tokens = effective_precision_tokens(source, &metadata, precision)?;
     parse_precision_structs(&tokens, header, raw)?;
     parse_precision_typedefs(&tokens, header, raw)?;
@@ -482,12 +482,29 @@ fn parse_precision_header(
 fn record_integer_macros(
     source: &str,
     header: &str,
+    metadata: &PreprocessorMetadata,
+    precision: CAbiPrecision,
     raw: &mut RawPrecisionInventory,
 ) -> Result<()> {
     for (line_index, line) in source.lines().enumerate() {
+        let line_number = line_index + 1;
         let Some(directive) = line.trim_start().strip_prefix("#define") else {
             continue;
         };
+        let conditions = metadata
+            .conditions_by_line
+            .get(&line_number)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        if conditions.iter().any(|condition| {
+            matches!(
+                condition,
+                PreprocessorCondition::DebugOrAssertions | PreprocessorCondition::Other(_)
+            )
+        }) || !precision_conditions_active(conditions, precision)
+        {
+            continue;
+        }
         let mut parts = directive.split_whitespace();
         let (Some(name), Some(value)) = (parts.next(), parts.next()) else {
             continue;
@@ -503,7 +520,7 @@ fn record_integer_macros(
         {
             return Err(Error::message(format!(
                 "{header}:{}: integer macro `{name}` conflicts with the earlier value `{previous}`",
-                line_index + 1
+                line_number
             )));
         }
     }
@@ -2330,11 +2347,11 @@ fn parse_preprocessor(source: &str, header: &str) -> Result<PreprocessorMetadata
     let mut conditions = Vec::new();
     for (offset, line) in source.lines().enumerate() {
         let line_number = offset + 1;
+        metadata
+            .conditions_by_line
+            .insert(line_number, conditions.clone());
         let trimmed = line.trim_start();
         let Some(directive) = trimmed.strip_prefix('#').map(str::trim_start) else {
-            metadata
-                .conditions_by_line
-                .insert(line_number, conditions.clone());
             continue;
         };
         let (name, argument) = directive
@@ -3391,6 +3408,51 @@ mod tests {
     }
 
     #[test]
+    fn precision_inventory_selects_precision_scoped_integer_macros() {
+        let source = r#"
+            #if defined(BOX2D_DOUBLE_PRECISION)
+            #define B2_POINT_COUNT 16
+            #else
+            #define B2_POINT_COUNT 8
+            #endif
+            typedef struct b2Points { float values[B2_POINT_COUNT]; } b2Points;
+        "#;
+
+        for (precision, expected) in [(CAbiPrecision::Single, "8"), (CAbiPrecision::Double, "16")] {
+            let inventory = parse_precision_header_fixture(source, precision)
+                .expect("precision-scoped macro fixture should parse");
+            let AbiTypeShape::Aggregate { fields } = inventory
+                .type_shape("b2Points")
+                .expect("fixture aggregate should exist")
+            else {
+                panic!("fixture type should resolve to an aggregate");
+            };
+            let AbiTypeShape::Array { length, .. } = &fields[0].shape else {
+                panic!("fixture field should resolve to an array");
+            };
+            assert_eq!(length, expected);
+        }
+    }
+
+    #[test]
+    fn precision_inventory_ignores_configuration_scoped_integer_macros() {
+        let inventory = parse_precision_header_fixture(
+            r#"
+                #if defined(B2_VALIDATE) && !defined(NDEBUG)
+                #define B2_ENABLE_VALIDATION 1
+                #else
+                #define B2_ENABLE_VALIDATION 0
+                #endif
+                typedef struct b2Points { float values[4]; } b2Points;
+            "#,
+            CAbiPrecision::Single,
+        )
+        .expect("unrelated configuration macros should not conflict");
+
+        assert!(inventory.type_shape("b2Points").is_some());
+    }
+
+    #[test]
     fn vendored_headers_build_precision_abi_inventories() {
         let include_dir = std::env::var_os("BOXDD_C_API_TEST_INCLUDE_DIR")
             .map(PathBuf::from)
@@ -3398,9 +3460,11 @@ mod tests {
                 Path::new(env!("CARGO_MANIFEST_DIR"))
                     .join("../boxdd-sys/third-party/box2d/include/box2d")
             });
-        for precision in [CAbiPrecision::Single, CAbiPrecision::Double] {
-            let inventory = parse_headers_for_precision(&include_dir, precision)
-                .unwrap_or_else(|error| panic!("{precision:?} inventory failed: {error}"));
+        let single = parse_headers_for_precision(&include_dir, CAbiPrecision::Single)
+            .expect("single inventory should parse");
+        let double = parse_headers_for_precision(&include_dir, CAbiPrecision::Double)
+            .expect("double inventory should parse");
+        for inventory in [single, double] {
             assert!(!inventory.structs.is_empty());
             assert!(!inventory.functions.is_empty());
             assert!(!inventory.callbacks.is_empty());
