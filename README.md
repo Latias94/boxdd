@@ -17,7 +17,7 @@
 - `bevy_boxdd`: Bevy ECS integration for `boxdd` with fixed-step systems, ECS-authored joints, entity-mapped ray/AABB queries, debug draw collection, and physics messages
 
 ## Engineering Status
-- API coverage contract: `boxdd/tests/fixtures/api_contract.toml` tracks every vendored Box2D `B2_API` symbol; the current safe layer accounts for 423 of 430 symbols, with 5 raw-only and 2 omitted by rationale. `docs/api-coverage.md` is generated from this contract.
+- API coverage contract: `boxdd/tests/fixtures/api_contract.toml` tracks every vendored Box2D `B2_API` symbol; the current safe layer accounts for 422 of 430 symbols, with 6 raw-only and 2 omitted by rationale. `docs/api-coverage.md` is generated from this contract.
 - Upstream identity contract: `boxdd-sys/upstream.toml` is the sole revision authority and names every generated/reviewed artifact. The xtask gate checks the exact gitlink and checkout, sorted source-path inventory, recording opcode source, and artifact revision identities.
 - Official sample parity: `docs/upstream-parity/box2d-sample-matrix.md` maps non-benchmark upstream samples to Rust examples, tests, or testbed scenes. Benchmark rows may remain indexed references when that is the useful artifact.
 - Live examples: <https://frankorz.com/boxdd/> is a generated Bevy Web example index; each `examples/<scene-id>/` route runs the shared Bevy + egui + `boxdd` WASM testbed backed by an Emscripten Box2D provider.

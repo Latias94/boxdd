@@ -73,6 +73,8 @@ Usage:
   cargo run -p xtask -- api-coverage --check
   cargo run -p xtask -- api-coverage --write
   cargo run -p xtask -- api-coverage --refresh-abi
+  cargo run -p xtask -- api-coverage --audit-evidence
+  cargo run -p xtask -- api-coverage --audit-canonical-paths
   cargo run -p xtask -- upstream-sync --check
   cargo run -p xtask -- upstream-sync --prepare-next
   cargo run -p xtask -- upstream-sync --write
@@ -84,7 +86,7 @@ Usage:
   cargo run -p xtask -- validate-pages
 
 Commands:
-  api-coverage  Validate or regenerate the structured API contract and report
+  api-coverage  Validate, regenerate, or audit the structured API contract and report
   upstream-sync  Validate, prepare, or apply the exact-SHA Box2D migration transaction
   sample-parity  Validate or regenerate the upstream sample parity report
   verify-toolchains  Validate workspace versions and pinned compiler configuration

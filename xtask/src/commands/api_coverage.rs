@@ -221,6 +221,10 @@ pub struct ApiContract {
 }
 
 pub fn run(paths: &WorkspacePaths, args: &[String]) -> Result<()> {
+    if matches!(args, [argument] if matches!(argument.as_str(), "help" | "--help" | "-h")) {
+        print_help();
+        return Ok(());
+    }
     if matches!(args, [argument] if argument == "--audit-evidence") {
         return audit_runtime_evidence(paths);
     }
@@ -234,6 +238,19 @@ pub fn run(paths: &WorkspacePaths, args: &[String]) -> Result<()> {
         UpdateMode::Check => check(paths),
         UpdateMode::Write => write(paths),
     }
+}
+
+fn print_help() {
+    println!(
+        "\
+Usage:
+  cargo run -p xtask -- api-coverage --check
+  cargo run -p xtask -- api-coverage --write
+  cargo run -p xtask -- api-coverage --refresh-abi
+  cargo run -p xtask -- api-coverage --audit-evidence
+  cargo run -p xtask -- api-coverage --audit-canonical-paths
+"
+    );
 }
 
 pub fn check(paths: &WorkspacePaths) -> Result<()> {

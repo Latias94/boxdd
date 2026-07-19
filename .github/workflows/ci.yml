@@ -110,6 +110,7 @@ jobs:
 
       - name: tests (core)
         run: |
+          cargo nextest run -p xtask
           cargo nextest run -p boxdd
           cargo nextest run -p boxdd-sys --test layout
           cargo nextest run -p bevy_boxdd --test plugin

@@ -21,9 +21,9 @@ const NATIVE_POD_TAGS: [(&str, &str); 5] = [
 const DESTROY_OPERATIONS: &[(u8, &str)] = &[
     (0x01, "DestroyWorld"),
     (0x11, "DestroyBody"),
-    (0x54, "DestroyShape"),
+    (0x45, "DestroyShape"),
     (0x71, "DestroyChain"),
-    (0x88, "DestroyJoint"),
+    (0x97, "DestroyJoint"),
 ];
 const QUERY_OPERATIONS: &[&str] = &[
     "QueryOverlapAABB",
@@ -284,7 +284,10 @@ pub fn generate_wire_contract(
         return_tags: RETURN_TAGS.iter().map(|tag| (*tag).to_owned()).collect(),
         tag_codecs: expected_tag_codecs(),
         tail_codecs: expected_tail_codecs(),
-        opcodes: operations.iter().map(wire_opcode).collect(),
+        opcodes: operations
+            .iter()
+            .map(wire_opcode)
+            .collect::<Result<Vec<_>>>()?,
     })
 }
 
@@ -998,21 +1001,22 @@ fn expected_tail_codecs() -> Vec<TailCodec> {
     ]
 }
 
-fn wire_opcode(operation: &RecordingOp) -> WireOpcode {
-    WireOpcode {
+fn wire_opcode(operation: &RecordingOp) -> Result<WireOpcode> {
+    let tail_program = tail_program(operation)?;
+    Ok(WireOpcode {
         opcode: operation.opcode,
         name: operation.name.clone(),
         return_tag: operation.return_tag.clone(),
         arguments: operation.arguments.clone(),
-        tail_program: tail_program(operation).to_owned(),
+        tail_program: tail_program.to_owned(),
         payload_termination: "exact-eof".to_owned(),
-        semantic_validator: semantic_class(operation),
-        id_effects: id_effects(operation),
-    }
+        semantic_validator: semantic_class(operation)?,
+        id_effects: id_effects(operation, tail_program),
+    })
 }
 
-fn tail_program(operation: &RecordingOp) -> &'static str {
-    match operation.opcode {
+fn tail_program(operation: &RecordingOp) -> Result<&'static str> {
+    let tail = match operation.opcode {
         0xE0 | 0xE1 => "overlap-hits",
         0xE2 | 0xE3 => "cast-hits",
         0xE4 => "plane-hits",
@@ -1020,23 +1024,38 @@ fn tail_program(operation: &RecordingOp) -> &'static str {
         0xE6 => "mover-result",
         0xE7 => "bool-result",
         0xE8 => "shape-cast-result",
+        0xE9..=0xEF => {
+            return Err(Error::message(format!(
+                "recording query opcode 0x{:02X} `{}` has no reviewed tail program",
+                operation.opcode, operation.name
+            )));
+        }
         _ if operation.return_tag != "RET_NONE" => "returned-id",
-        _ => "none",
-    }
+        0x00..=0xDF | 0xF0..=0xFF => "none",
+    };
+    Ok(tail)
 }
 
-fn semantic_class(operation: &RecordingOp) -> ReplaySemanticClass {
-    match operation.name.as_str() {
-        "DestroyWorld" => ReplaySemanticClass::Terminal,
-        "Step" => ReplaySemanticClass::Step,
-        "StateHash" => ReplaySemanticClass::StateHash,
-        "RecordingBounds" => ReplaySemanticClass::Metadata,
-        name if QUERY_OPERATIONS.contains(&name) => ReplaySemanticClass::Query,
-        _ => ReplaySemanticClass::Mutation,
+fn semantic_class(operation: &RecordingOp) -> Result<ReplaySemanticClass> {
+    let class = match operation.opcode {
+        0x01 => ReplaySemanticClass::Terminal,
+        0x80 => ReplaySemanticClass::Step,
+        0xE0..=0xEF => ReplaySemanticClass::Query,
+        0xF1 => ReplaySemanticClass::StateHash,
+        0xF2 => ReplaySemanticClass::Metadata,
+        0x00..=0xDF | 0xF0 | 0xF3..=0xFF => ReplaySemanticClass::Mutation,
+    };
+    let registered_query = QUERY_OPERATIONS.contains(&operation.name.as_str());
+    if (class == ReplaySemanticClass::Query) != registered_query {
+        return Err(Error::message(format!(
+            "recording opcode 0x{:02X} `{}` disagrees with the reviewed query registry",
+            operation.opcode, operation.name,
+        )));
     }
+    Ok(class)
 }
 
-fn id_effects(operation: &RecordingOp) -> Vec<IdEffect> {
+fn id_effects(operation: &RecordingOp, tail_program: &str) -> Vec<IdEffect> {
     let destroying = DESTROY_OPERATIONS.contains(&(operation.opcode, operation.name.as_str()));
     let mut effects = operation
         .arguments
@@ -1082,7 +1101,7 @@ fn id_effects(operation: &RecordingOp) -> Vec<IdEffect> {
         0xE0..=0xE4 => effects.push(IdEffect {
             action: IdAction::Use,
             id_kind: "shape".to_owned(),
-            source: format!("tail:{}[].shapeId", tail_program(operation)),
+            source: format!("tail:{tail_program}[].shapeId"),
             repeated_by: Some("tail.count".to_owned()),
             condition: None,
         }),
@@ -1215,11 +1234,13 @@ fn validate_contract_shape(contract: &RecordingWireContract) -> Result<()> {
         errors.push(error.to_string());
     } else {
         for (actual, operation) in contract.opcodes.iter().zip(&operations) {
-            if actual != &wire_opcode(operation) {
-                errors.push(format!(
+            match wire_opcode(operation) {
+                Ok(expected) if actual == &expected => {}
+                Ok(_) => errors.push(format!(
                     "recording opcode 0x{:02X} `{}` has inconsistent tail, semantics, or ID effects",
                     actual.opcode, actual.name
-                ));
+                )),
+                Err(error) => errors.push(error.to_string()),
             }
         }
     }
@@ -1948,6 +1969,49 @@ mod tests {
         assert!(closest.id_effects.iter().any(|effect| {
             effect.id_kind == "shape" && effect.condition.as_deref() == Some("tail.hit == 1")
         }));
+    }
+
+    #[test]
+    fn destroy_id_effects_follow_the_reviewed_upstream_opcodes() {
+        let operations = parse(
+            r#"
+                B2_REC_OP(0x45, DestroyShape, RET_NONE, ARG(SHAPEID, shape) ARG(BOOL, updateBodyMass))
+                B2_REC_OP(0x97, DestroyJoint, RET_NONE, ARG(JOINTID, joint) ARG(BOOL, wakeAttached))
+            "#,
+        )
+        .expect("destroy operations");
+        let contract = wire_contract(&operations);
+        for (name, id_kind) in [("DestroyShape", "shape"), ("DestroyJoint", "joint")] {
+            let opcode = contract
+                .opcodes
+                .iter()
+                .find(|opcode| opcode.name == name)
+                .expect("destroy opcode");
+            assert_eq!(
+                opcode
+                    .id_effects
+                    .iter()
+                    .filter(|effect| effect.action == IdAction::Destroy)
+                    .map(|effect| effect.id_kind.as_str())
+                    .collect::<Vec<_>>(),
+                vec![id_kind]
+            );
+        }
+    }
+
+    #[test]
+    fn unreviewed_query_opcodes_fail_closed_instead_of_inheriting_mutation_defaults() {
+        let operations = vec![RecordingOp {
+            opcode: 0xE9,
+            name: "QueryNewOperation".to_owned(),
+            return_tag: "RET_NONE".to_owned(),
+            arguments: vec![],
+        }];
+        let sources = source_git_blobs();
+        let aggregate = reviewed_sources_aggregate_blake3(&sources).expect("source aggregate");
+        let error = generate_wire_contract(SHA, &operations, &sources, &aggregate)
+            .expect_err("unreviewed query opcode must fail closed");
+        assert!(error.to_string().contains("no reviewed tail program"));
     }
 
     #[test]

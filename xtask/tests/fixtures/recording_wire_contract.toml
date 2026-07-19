@@ -2517,7 +2517,7 @@ tag = "BOOL"
 name = "updateBodyMass"
 
 [[opcodes.id_effects]]
-action = "use"
+action = "destroy"
 id_kind = "shape"
 source = "argument:shape"
 
@@ -3210,7 +3210,7 @@ tag = "BOOL"
 name = "wakeAttached"
 
 [[opcodes.id_effects]]
-action = "use"
+action = "destroy"
 id_kind = "joint"
 source = "argument:joint"
 

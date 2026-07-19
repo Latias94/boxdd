@@ -73,7 +73,7 @@ path = "xtask/tests/fixtures/recording_wire_contract.toml"
 target = "universal"
 provider = "universal"
 producer = "api-coverage"
-content_blake3 = "9737756cc5acbee11fc4306cb8b3247c71c316e779e422d6392bcffa6d0119ac"
+content_blake3 = "26e9ed79e7e4d7ac00d927be5e9c184f2058c585c7369c589ced11da14ddefe2"
 
 [[artifacts]]
 name = "api-coverage-report"

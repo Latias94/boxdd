@@ -428,10 +428,8 @@ fn reviewed_candidate_path(artifact: &GeneratedArtifact) -> Result<String> {
         .parent()
         .unwrap_or_else(|| Path::new(""))
         .join(file_name);
-    candidate
-        .to_str()
-        .map(str::to_owned)
-        .ok_or_else(|| Error::message("reviewed candidate path is not UTF-8"))
+    canonical_manifest_path(&candidate)
+        .ok_or_else(|| Error::message("reviewed candidate path is not canonical UTF-8"))
 }
 
 pub fn checked_snapshot(paths: &WorkspacePaths) -> Result<UpstreamSnapshot> {
@@ -816,9 +814,9 @@ fn validate_recording_input_shape(inputs: &[RecordingInputIdentity], errors: &mu
         ));
     }
     for input in inputs {
-        if !is_safe_relative_path(Path::new(&input.path)) {
+        if !is_canonical_manifest_path(&input.path) {
             errors.push(format!(
-                "recording input `{}` is not a safe relative path",
+                "recording input `{}` is not a canonical relative path",
                 input.path
             ));
         }
@@ -862,9 +860,9 @@ fn validate_artifacts(artifacts: &[GeneratedArtifact], errors: &mut Vec<String>)
             if !paths.insert(candidate) {
                 errors.push(format!("duplicate artifact/candidate path `{candidate}`"));
             }
-            if !is_safe_relative_path(Path::new(candidate)) {
+            if !is_canonical_manifest_path(candidate) {
                 errors.push(format!(
-                    "artifact candidate path `{candidate}` is not a safe relative path"
+                    "artifact candidate path `{candidate}` is not a canonical relative path"
                 ));
             }
             validate_artifact_path_reservation(candidate, &mut case_folded_paths, errors);
@@ -881,9 +879,9 @@ fn validate_artifacts(artifacts: &[GeneratedArtifact], errors: &mut Vec<String>)
                 artifact.kind, artifact.precision, artifact.target, artifact.provider
             ));
         }
-        if !is_safe_relative_path(Path::new(&artifact.path)) {
+        if !is_canonical_manifest_path(&artifact.path) {
             errors.push(format!(
-                "artifact path `{}` is not a safe relative path",
+                "artifact path `{}` is not a canonical relative path",
                 artifact.path
             ));
         }
@@ -1059,8 +1057,9 @@ fn validate_inventory_group(
     }
     for path in paths {
         let candidate = Path::new(path);
-        if !is_safe_relative_path(candidate)
-            || candidate.parent() != Some(Path::new(parent))
+        if !is_canonical_manifest_path(path)
+            || !candidate.starts_with(parent)
+            || candidate == Path::new(parent)
             || candidate.extension().and_then(|value| value.to_str()) != Some(extension)
         {
             errors.push(format!(
@@ -1460,6 +1459,7 @@ where
                 "artifact digest bootstrap must write exactly every reviewed active and api-coverage artifact with the matching destination",
             ));
         }
+        reject_bootstrap_artifact_changes_if_present(paths, &original_manifest)?;
         validate_repository_without_artifact_digests(paths, &original_manifest)?;
     } else {
         validate_artifact_identities(paths, &original_manifest)?;
@@ -1535,9 +1535,9 @@ where
                         artifact.name
                     )));
                 }
-                if !is_safe_relative_path(Path::new(path)) {
+                if !is_canonical_manifest_path(path) {
                     return Err(Error::message(format!(
-                        "reviewed artifact candidate path `{path}` is not a safe relative path"
+                        "reviewed artifact candidate path `{path}` is not a canonical relative path"
                     )));
                 }
                 let baseline_digest = match artifact.candidate_path.as_deref() {
@@ -2444,6 +2444,7 @@ impl IsolatedGeneration {
         let mut target_manifest = manifest.clone();
         target_manifest.active_revision = target.to_owned();
         target_manifest.next_revision = None;
+        target_manifest.recording_revision = target.to_owned();
         for artifact in &mut target_manifest.artifacts {
             artifact.candidate_path = None;
             artifact.candidate_blake3 = None;
@@ -2647,14 +2648,6 @@ impl IsolatedGeneration {
                 self.repository_worktree_added = false;
             }
         }
-        if let Err(error) = command_success(
-            Command::new("git")
-                .current_dir(&self.repository_root)
-                .args(["worktree", "prune"]),
-            "prune isolated repository worktrees",
-        ) {
-            errors.push(error.to_string());
-        }
         if errors.is_empty() {
             Ok(())
         } else {
@@ -2707,10 +2700,12 @@ fn binding_generation_cargo_args(target: RustTarget, features: &str) -> Vec<Stri
 
 fn worktree_is_registered(repository: &Path, worktree: &Path) -> Result<bool> {
     let output = git_output(repository, ["worktree", "list", "--porcelain"])?;
-    let requested = worktree.to_string_lossy();
+    let requested = fs::canonicalize(worktree).unwrap_or_else(|_| worktree.to_owned());
     Ok(output
         .lines()
         .filter_map(|line| line.strip_prefix("worktree "))
+        .map(PathBuf::from)
+        .map(|registered| fs::canonicalize(&registered).unwrap_or(registered))
         .any(|registered| registered == requested))
 }
 
@@ -3038,16 +3033,19 @@ fn source_inventory(repository: &Path, revision: &str) -> Result<SourceInventory
     };
     for path in files.lines() {
         let candidate = Path::new(path);
-        let parent = candidate.parent().and_then(Path::to_str);
         let extension = candidate.extension().and_then(|value| value.to_str());
-        match (parent, extension) {
-            (Some("src"), Some("c")) => inventory.c_sources.push(path.to_owned()),
-            (Some("src"), Some("h")) => inventory.private_headers.push(path.to_owned()),
-            (Some("src"), Some("inl")) => inventory.inline_files.push(path.to_owned()),
-            (Some("include/box2d"), Some("h")) => {
-                inventory.public_headers.push(path.to_owned());
+        if candidate.starts_with("src") && candidate != Path::new("src") {
+            match extension {
+                Some("c") => inventory.c_sources.push(path.to_owned()),
+                Some("h") => inventory.private_headers.push(path.to_owned()),
+                Some("inl") => inventory.inline_files.push(path.to_owned()),
+                _ => {}
             }
-            _ => {}
+        } else if candidate.starts_with("include/box2d")
+            && candidate != Path::new("include/box2d")
+            && extension == Some("h")
+        {
+            inventory.public_headers.push(path.to_owned());
         }
     }
     Ok(inventory)
@@ -3114,6 +3112,31 @@ fn managed_status(root: &Path, manifest: &UpstreamManifest) -> Result<String> {
             .map_err(|source| Error::io("git", source))?,
         "git status",
     )
+}
+
+fn reject_bootstrap_artifact_changes_if_present(
+    paths: &WorkspacePaths,
+    manifest: &UpstreamManifest,
+) -> Result<()> {
+    let mut command = Command::new("git");
+    command
+        .current_dir(paths.root())
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .args(["status", "--porcelain=v1", "--untracked-files=all", "--"]);
+    command.args(manifest.artifacts.iter().map(|artifact| &artifact.path));
+    let dirty = output_text(
+        command
+            .output()
+            .map_err(|source| Error::io("git", source))?,
+        "git status",
+    )?;
+    if dirty.trim().is_empty() {
+        Ok(())
+    } else {
+        Err(Error::message(format!(
+            "artifact digest bootstrap refuses dirty generated artifacts; preserve and review them before bootstrapping:\n{dirty}"
+        )))
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3608,6 +3631,25 @@ fn is_safe_relative_path(path: &Path) -> bool {
             .all(|component| matches!(component, Component::Normal(_)))
 }
 
+fn is_canonical_manifest_path(value: &str) -> bool {
+    !value.is_empty()
+        && !value.contains('\\')
+        && value.split('/').all(|component| !component.is_empty())
+        && is_safe_relative_path(Path::new(value))
+        && canonical_manifest_path(Path::new(value)).as_deref() == Some(value)
+}
+
+fn canonical_manifest_path(path: &Path) -> Option<String> {
+    let mut components = Vec::new();
+    for component in path.components() {
+        let Component::Normal(value) = component else {
+            return None;
+        };
+        components.push(value.to_str()?);
+    }
+    (!components.is_empty()).then(|| components.join("/"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4040,7 +4082,7 @@ mod tests {
         invalid.target_inventory.c_sources.reverse();
         let error = validate_manifest(&invalid).expect_err("invalid manifest must fail");
         assert!(error.to_string().contains("40-character"));
-        assert!(error.to_string().contains("safe relative path"));
+        assert!(error.to_string().contains("canonical relative path"));
         assert!(error.to_string().contains("sorted and unique"));
         assert_eq!(
             reviewed_candidate_path(
@@ -4051,6 +4093,24 @@ mod tests {
             .expect("derived candidate path"),
             "boxdd/tests/fixtures/api_contract.next.toml"
         );
+    }
+
+    #[test]
+    fn manifest_rejects_lexical_path_aliases_before_transaction_keying() {
+        for alias in [
+            "boxdd-sys/src//bindings_pregenerated.rs",
+            "boxdd-sys/src/./bindings_pregenerated.rs",
+            "boxdd-sys/src/bindings_pregenerated.rs/",
+            "boxdd-sys\\src\\bindings_pregenerated.rs",
+        ] {
+            let mut invalid = manifest();
+            invalid.artifacts[0].path = alias.to_owned();
+            let error = validate_manifest(&invalid).expect_err("path alias must fail closed");
+            assert!(
+                error.to_string().contains("canonical relative path"),
+                "{alias}: {error}"
+            );
+        }
     }
 
     #[test]
@@ -4371,6 +4431,35 @@ mod tests {
     }
 
     #[test]
+    fn source_inventory_tracks_nested_sources_compiled_by_box2d_sys() {
+        let fixture = TemporaryWorkspace::create();
+        let nested = fixture.root.join("upstream/src/generated/nested.c");
+        fs::create_dir_all(nested.parent().expect("nested source parent"))
+            .expect("nested source directory");
+        fs::write(&nested, "int nested(void) { return 3; }\n").expect("nested source");
+        run_git(
+            &fixture.root.join("upstream"),
+            &["add", "src/generated/nested.c"],
+        );
+        run_git(
+            &fixture.root.join("upstream"),
+            &["commit", "-m", "nested source"],
+        );
+        let revision = git_output(&fixture.root.join("upstream"), ["rev-parse", "HEAD"])
+            .expect("nested revision")
+            .trim()
+            .to_owned();
+
+        let inventory =
+            source_inventory(&fixture.root.join("upstream"), &revision).expect("nested inventory");
+        assert!(
+            inventory
+                .c_sources
+                .contains(&"src/generated/nested.c".to_owned())
+        );
+    }
+
+    #[test]
     fn bindings_artifact_requires_exact_manifest_provenance() {
         let forged = TemporaryWorkspace::create();
         let paths = forged.paths();
@@ -4650,7 +4739,10 @@ mod tests {
 
         let after = git_output(&fixture.workspace, ["worktree", "list", "--porcelain"])
             .expect("worktree list after cleanup");
-        assert!(!after.contains(&worktree.to_string_lossy().into_owned()));
+        assert!(
+            !after.contains(&worktree.to_string_lossy().into_owned()),
+            "unexpected registration after cleanup:\n{after}"
+        );
         assert!(!source_root.exists());
     }
 
@@ -4753,7 +4845,10 @@ mod tests {
 
         let registrations = git_output(&fixture.workspace, ["worktree", "list", "--porcelain"])
             .expect("worktree list after staging failure");
-        assert!(!registrations.contains(&worktree.to_string_lossy().into_owned()));
+        assert!(
+            !registrations.contains(&worktree.to_string_lossy().into_owned()),
+            "unexpected registration after drop:\n{registrations}"
+        );
         assert!(!source_root.exists());
     }
 
@@ -4775,6 +4870,30 @@ mod tests {
             !worktree_is_registered(&fixture.workspace, &worktree)
                 .expect("registration after best-effort cleanup")
         );
+    }
+
+    #[test]
+    fn isolated_cleanup_does_not_prune_unrelated_worktree_registrations() {
+        let fixture = TemporaryWorkspace::create();
+        let unrelated = fixture.root.join("unrelated-worktree");
+        command_success(
+            Command::new("git")
+                .current_dir(&fixture.workspace)
+                .args(["worktree", "add", "--detach"])
+                .arg(&unrelated)
+                .arg("HEAD"),
+            "create unrelated fixture worktree",
+        )
+        .expect("unrelated worktree");
+        fs::remove_dir_all(&unrelated).expect("make unrelated registration prunable");
+
+        let generation = IsolatedGeneration::create(&fixture.paths(), &fixture.next_revision)
+            .expect("isolated generation");
+        generation.finish().expect("generation cleanup");
+
+        let registrations = git_output(&fixture.workspace, ["worktree", "list", "--porcelain"])
+            .expect("worktree registrations");
+        assert!(registrations.contains(&unrelated.to_string_lossy().into_owned()));
     }
 
     #[test]
@@ -5680,6 +5799,36 @@ mod tests {
         for (path, content) in before {
             assert_eq!(fs::read(path).expect("unchanged bootstrap path"), content);
         }
+    }
+
+    #[test]
+    fn artifact_digest_bootstrap_refuses_dirty_generated_outputs() {
+        let fixture = TemporaryWorkspace::create();
+        let paths = fixture.paths();
+        let mut manifest = fixture.manifest();
+        manifest.artifact_digests_initialized = false;
+        for artifact in &mut manifest.artifacts {
+            artifact.content_blake3 = UNINITIALIZED_BLAKE3.to_owned();
+        }
+        fs::write(
+            paths.upstream_manifest(),
+            render_toml(&manifest).expect("uninitialized manifest"),
+        )
+        .expect("write uninitialized manifest");
+        let report = paths.root().join("docs/api-coverage.md");
+        let dirty = b"Pinned active upstream: dirty user edit\n".to_vec();
+        fs::write(&report, &dirty).expect("dirty generated report");
+        let writes = exact_bootstrap_writes(&paths);
+
+        let error = install_managed_artifact_writes(&paths, &writes, || Ok(()))
+            .expect_err("bootstrap must preserve dirty generated output");
+
+        assert!(
+            error
+                .to_string()
+                .contains("refuses dirty generated artifacts")
+        );
+        assert_eq!(fs::read(report).expect("preserved dirty report"), dirty);
     }
 
     #[test]
