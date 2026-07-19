@@ -1,5 +1,6 @@
-schema_version = 2
+schema_version = 4
 upstream_sha = "56edae79f2949d86142b03450d5d60f63bcf5a6f"
+reviewed_sources_aggregate_blake3 = "1c457b180dbafa91c3ad3448f38a7ac34d20c9f42c7c23f9de0efb6454be3d16"
 argument_tags = [
     "AABB",
     "BODYDEF",
@@ -48,6 +49,34 @@ return_tags = [
     "RET_JOINTID",
 ]
 
+[[reviewed_sources]]
+path = "src/recording.c"
+git_blob = "477f8606e70afb90b4ec36a954d158bc0f286911"
+
+[[reviewed_sources]]
+path = "src/recording.h"
+git_blob = "3a1594468d0b4865c4967e6af905db61356b74f9"
+
+[[reviewed_sources]]
+path = "src/recording_ops.inl"
+git_blob = "24af2210d2eccb60668d18889ea65b197a768f89"
+
+[[reviewed_sources]]
+path = "src/recording_replay.c"
+git_blob = "8f3c99a50a70e4a3fbe1c2276d18575cf3d85117"
+
+[[reviewed_sources]]
+path = "src/recording_replay.h"
+git_blob = "dee78c54c16848f4751ff2d3e81948c0a4d29686"
+
+[[reviewed_sources]]
+path = "src/world_snapshot.c"
+git_blob = "e3932ba355f70c210219741849dcce754867c65c"
+
+[[reviewed_sources]]
+path = "src/world_snapshot.h"
+git_blob = "bbeddec26c1e0f19a5497a8ef6947158a6ea10b2"
+
 [framing]
 header_bytes = 32
 opcode_bytes = 1
@@ -90,6 +119,12 @@ slice_termination = "exact-declared-length"
 layout_metadata_source = "boxdd-sys-generated-abi"
 validation_requirement = "u8-structural-and-semantic-validator-required"
 native_dispatch_before_validation = "forbidden"
+
+[stream_grammar]
+initial_operation = "StateHash"
+final_metadata_operation = "RecordingBounds"
+terminal_operation = "DestroyWorld"
+terminal_must_be_last = true
 
 [[tag_codecs]]
 tag = "AABB"
@@ -2482,7 +2517,7 @@ tag = "BOOL"
 name = "updateBodyMass"
 
 [[opcodes.id_effects]]
-action = "destroy"
+action = "use"
 id_kind = "shape"
 source = "argument:shape"
 
@@ -3175,7 +3210,7 @@ tag = "BOOL"
 name = "wakeAttached"
 
 [[opcodes.id_effects]]
-action = "destroy"
+action = "use"
 id_kind = "joint"
 source = "argument:joint"
 

@@ -1,4 +1,4 @@
-schema_version = 3
+schema_version = 4
 upstream_sha = "c05c48738fbe5c27625e36c5f0cfbdaddfc8359a"
 
 [migration_baseline]
@@ -23,134 +23,13 @@ unit = "U2"
 rationale = "The pinned upstream assertion aliases leaf user data as the child-index union arm and can trap for valid user data; Safe Rust instead replaces the proxy and returns its new identity."
 
 [[evidence]]
-id = "world-runtime"
-file = "boxdd/tests/world_coverage.rs"
-item = "world_runtime_coverage_safe_api"
-package = "boxdd"
-gate = "nextest"
-role = "runtime"
-fingerprint = ""
-runtime_witnesses = []
-classification_witnesses = []
-
-[[evidence]]
-id = "body-runtime"
-file = "boxdd/tests/body_new_apis.rs"
-item = "body_runtime_controls_and_enumeration_are_available_across_handle_and_world_apis"
-package = "boxdd"
-gate = "nextest"
-role = "runtime"
-fingerprint = ""
-runtime_witnesses = []
-classification_witnesses = []
-
-[[evidence]]
-id = "shape-runtime"
-file = "boxdd/tests/shape_new_apis.rs"
-item = "shape_runtime_queries_and_mass_data_match_safe_geometry_helpers"
-package = "boxdd"
-gate = "nextest"
-role = "runtime"
-fingerprint = ""
-runtime_witnesses = []
-classification_witnesses = []
-
-[[evidence]]
-id = "chain-runtime"
-file = "boxdd/tests/shape_new_apis.rs"
-item = "chain_runtime_queries_and_material_mutation_are_available_across_owned_and_scoped_handles"
-package = "boxdd"
-gate = "nextest"
-role = "runtime"
-fingerprint = ""
-runtime_witnesses = []
-classification_witnesses = []
-
-[[evidence]]
-id = "tree-runtime"
-file = "boxdd/tests/dynamic_tree.rs"
-item = "ray_cast_and_shape_cast_visit_tree_proxies"
-package = "boxdd"
-gate = "nextest"
-role = "runtime"
-fingerprint = ""
-runtime_witnesses = []
-classification_witnesses = []
-
-[[evidence]]
-id = "joint-runtime"
-file = "boxdd/tests/joint_new_apis.rs"
-item = "joint_runtime_metadata_and_tuning_are_available_across_owned_scoped_and_world_apis"
-package = "boxdd"
-gate = "nextest"
-role = "runtime"
-fingerprint = ""
-runtime_witnesses = []
-classification_witnesses = []
-
-[[evidence]]
-id = "collision-runtime"
-file = "boxdd/tests/manifold_collision.rs"
-item = "safe_manifold_collision_helpers_smoke"
-package = "boxdd"
-gate = "nextest"
-role = "runtime"
-fingerprint = ""
-runtime_witnesses = []
-classification_witnesses = []
-
-[[evidence]]
-id = "math-runtime"
-file = "boxdd/tests/math.rs"
-item = "math_core_functions"
-package = "boxdd"
-gate = "nextest"
-role = "runtime"
-fingerprint = ""
-runtime_witnesses = []
-classification_witnesses = []
-
-[[evidence]]
-id = "foundation-runtime"
-file = "boxdd/tests/math.rs"
-item = "foundation_helpers_cover_alloc_timing_and_hash"
-package = "boxdd"
-gate = "nextest"
-role = "runtime"
-fingerprint = ""
-runtime_witnesses = []
-classification_witnesses = []
-
-[[evidence]]
-id = "mover-runtime"
-file = "boxdd/tests/mover_api.rs"
-item = "mover_queries_and_solver_are_safe_and_reusable"
-package = "boxdd"
-gate = "nextest"
-role = "runtime"
-fingerprint = ""
-runtime_witnesses = []
-classification_witnesses = []
-
-[[evidence]]
-id = "math-public-runtime"
-file = "boxdd/tests/math.rs"
-item = "public_math_helpers_cover_validity_rotation_and_version"
-package = "boxdd"
-gate = "nextest"
-role = "runtime"
-fingerprint = ""
-runtime_witnesses = []
-classification_witnesses = []
-
-[[evidence]]
 id = "abi-header-parser"
 file = "xtask/src/c_api.rs"
 item = "parser_indexes_struct_fields_and_callbacks"
 package = "xtask"
 gate = "nextest"
 role = "abi-header-inventory"
-fingerprint = "blake3:c86087bbffc0f249091e3cd69e9d2fbaef272a86b6c399c17a3380962ce48684"
+fingerprint = "blake3-routes-v1:98a4bff6c406648f6e341a04feb5e1f0687cd6146c04e86cfb13d4a09485080f"
 runtime_witnesses = []
 classification_witnesses = []
 
@@ -161,7 +40,7 @@ item = "indexes_the_checked_in_pregenerated_bindings"
 package = "xtask"
 gate = "nextest"
 role = "abi-binding-ast"
-fingerprint = "blake3:6f7c57aed5e6fa43d1f0d6ce9520bce481ebd39ed6a9950e20cc3ad68f099224"
+fingerprint = "blake3-routes-v1:8e7470d38c866815477574e4734c01e5094eb0c17d12bd1ee62064f0b277db99"
 runtime_witnesses = []
 classification_witnesses = []
 
@@ -172,9 +51,2379 @@ item = "abi_capability_mapping_rejects_deleted_forged_and_unknown_references"
 package = "xtask"
 gate = "nextest"
 role = "abi-contract-validator"
-fingerprint = "blake3:51d6fb71777faecb96ccc2821bb477561ecf17347ecda2c69b98983ac8ebbdaf"
+fingerprint = "blake3-routes-v1:e160434dc5926469e95f035668240d434a0caa6a05f028ef6b25436c2eb96bff"
 runtime_witnesses = []
 classification_witnesses = []
+
+[[evidence]]
+id = "api-classification-validator"
+file = "xtask/src/commands/api_coverage.rs"
+item = "typed_function_classification_evidence_rejects_unrelated_subjects"
+package = "xtask"
+gate = "nextest"
+role = "function-classification-validator"
+fingerprint = "blake3-routes-v1:fee6d439e2610c25db4ec75e4b2be1e361249803f0005ee4e3f0b3ca28656e76"
+runtime_witnesses = []
+
+[[evidence.classification_witnesses]]
+function = "b2DynamicTree_SetCategoryBits"
+classification = "raw"
+
+[[evidence.classification_witnesses]]
+function = "b2InternalAssertFcn"
+classification = "raw"
+
+[[evidence.classification_witnesses]]
+function = "b2SetAllocator"
+classification = "raw"
+
+[[evidence.classification_witnesses]]
+function = "b2SetAssertFcn"
+classification = "raw"
+
+[[evidence.classification_witnesses]]
+function = "b2SetLengthUnitsPerMeter"
+classification = "raw"
+
+[[evidence.classification_witnesses]]
+function = "b2SetLogFcn"
+classification = "raw"
+
+[[evidence.classification_witnesses]]
+function = "b2World_DumpMemoryStats"
+classification = "omitted"
+
+[[evidence.classification_witnesses]]
+function = "b2World_RebuildStaticTree"
+classification = "omitted"
+
+[[evidence]]
+id = "body-runtime"
+file = "boxdd/tests/body_new_apis.rs"
+item = "body_runtime_controls_and_enumeration_are_available_across_handle_and_world_apis"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:c2327b7fec035b766e9335850e7fe2cbe132e26571c2f8e6ff3e9992f648d8c8"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_Disable"
+rust_path = "boxdd::Body::disable"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_EnableContactEvents"
+rust_path = "boxdd::Body::enable_contact_events"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_EnableHitEvents"
+rust_path = "boxdd::Body::enable_hit_events"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_EnableSleep"
+rust_path = "boxdd::Body::enable_sleep"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetAngularVelocity"
+rust_path = "boxdd::Body::angular_velocity"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetJointCount"
+rust_path = "boxdd::Body::joint_count"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetJoints"
+rust_path = "boxdd::Body::joints"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetLinearVelocity"
+rust_path = "boxdd::Body::linear_velocity"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetName"
+rust_path = "boxdd::Body::name"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetRotation"
+rust_path = "boxdd::Body::rotation"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetShapeCount"
+rust_path = "boxdd::Body::shape_count"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetShapes"
+rust_path = "boxdd::Body::shapes"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetSleepThreshold"
+rust_path = "boxdd::Body::sleep_threshold"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_IsAwake"
+rust_path = "boxdd::Body::is_awake"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_IsBullet"
+rust_path = "boxdd::Body::is_bullet"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_IsEnabled"
+rust_path = "boxdd::Body::is_enabled"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_IsSleepEnabled"
+rust_path = "boxdd::Body::is_sleep_enabled"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_SetAwake"
+rust_path = "boxdd::Body::set_awake"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_SetBullet"
+rust_path = "boxdd::Body::set_bullet"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_SetLinearVelocity"
+rust_path = "boxdd::Body::set_linear_velocity"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_SetName"
+rust_path = "boxdd::Body::set_name"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_SetSleepThreshold"
+rust_path = "boxdd::Body::set_sleep_threshold"
+
+[[evidence.runtime_witnesses]]
+function = "b2DefaultWorldDef"
+rust_path = "boxdd::WorldDef::default"
+
+[[evidence]]
+id = "chain-runtime"
+file = "boxdd/tests/shape_new_apis.rs"
+item = "chain_runtime_queries_and_material_mutation_are_available_across_owned_and_scoped_handles"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:ce4b1a6f5d3e6c525d4e2a441e57142ebc3e868ca562a40925f842b6e8ba85d1"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2Chain_GetSegmentCount"
+rust_path = "boxdd::Chain::segment_count"
+
+[[evidence.runtime_witnesses]]
+function = "b2Chain_GetSurfaceMaterial"
+rust_path = "boxdd::Chain::surface_material"
+
+[[evidence.runtime_witnesses]]
+function = "b2Chain_GetSurfaceMaterialCount"
+rust_path = "boxdd::Chain::surface_material_count"
+
+[[evidence.runtime_witnesses]]
+function = "b2Chain_GetWorld"
+rust_path = "boxdd::Chain::try_world_id_raw"
+
+[[evidence.runtime_witnesses]]
+function = "b2Chain_IsValid"
+rust_path = "boxdd::Chain::is_valid"
+
+[[evidence.runtime_witnesses]]
+function = "b2Chain_SetSurfaceMaterial"
+rust_path = "boxdd::Chain::set_surface_material"
+
+[[evidence.runtime_witnesses]]
+function = "b2DefaultSurfaceMaterial"
+rust_path = "boxdd::SurfaceMaterial::default"
+
+[[evidence]]
+id = "collision-runtime"
+file = "boxdd/tests/manifold_collision.rs"
+item = "safe_manifold_collision_helpers_smoke"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:2b35b1e7ae9d72ff11eb0c9fc5747cec0cc35b1edcf881cd88dc2e3baffa8323"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2CollideCapsuleAndCircle"
+rust_path = "boxdd::collide_capsule_and_circle"
+
+[[evidence.runtime_witnesses]]
+function = "b2CollideCapsules"
+rust_path = "boxdd::collide_capsules"
+
+[[evidence.runtime_witnesses]]
+function = "b2CollideChainSegmentAndCapsule"
+rust_path = "boxdd::collide_chain_segment_and_capsule"
+
+[[evidence.runtime_witnesses]]
+function = "b2CollideChainSegmentAndCircle"
+rust_path = "boxdd::collide_chain_segment_and_circle"
+
+[[evidence.runtime_witnesses]]
+function = "b2CollideChainSegmentAndPolygon"
+rust_path = "boxdd::collide_chain_segment_and_polygon"
+
+[[evidence.runtime_witnesses]]
+function = "b2CollideCircles"
+rust_path = "boxdd::collide_circles"
+
+[[evidence.runtime_witnesses]]
+function = "b2CollidePolygonAndCapsule"
+rust_path = "boxdd::collide_polygon_and_capsule"
+
+[[evidence.runtime_witnesses]]
+function = "b2CollidePolygonAndCircle"
+rust_path = "boxdd::collide_polygon_and_circle"
+
+[[evidence.runtime_witnesses]]
+function = "b2CollidePolygons"
+rust_path = "boxdd::collide_polygons"
+
+[[evidence.runtime_witnesses]]
+function = "b2CollideSegmentAndCapsule"
+rust_path = "boxdd::collide_segment_and_capsule"
+
+[[evidence.runtime_witnesses]]
+function = "b2CollideSegmentAndCircle"
+rust_path = "boxdd::collide_segment_and_circle"
+
+[[evidence.runtime_witnesses]]
+function = "b2CollideSegmentAndPolygon"
+rust_path = "boxdd::collide_segment_and_polygon"
+
+[[evidence]]
+id = "foundation-runtime"
+file = "boxdd/tests/math.rs"
+item = "foundation_helpers_cover_alloc_timing_and_hash"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:db7d8753d9c60093edcbb5872269ea2cf4ebf3a05f1c5484dba22a42952b8e8a"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2GetByteCount"
+rust_path = "boxdd::allocated_byte_count"
+
+[[evidence.runtime_witnesses]]
+function = "b2GetMilliseconds"
+rust_path = "boxdd::milliseconds_since"
+
+[[evidence.runtime_witnesses]]
+function = "b2GetMillisecondsAndReset"
+rust_path = "boxdd::milliseconds_and_reset"
+
+[[evidence.runtime_witnesses]]
+function = "b2GetTicks"
+rust_path = "boxdd::ticks"
+
+[[evidence.runtime_witnesses]]
+function = "b2Hash"
+rust_path = "boxdd::hash_bytes"
+
+[[evidence.runtime_witnesses]]
+function = "b2IsValidFloat"
+rust_path = "boxdd::is_valid_float"
+
+[[evidence.runtime_witnesses]]
+function = "b2Yield"
+rust_path = "boxdd::yield_now"
+
+[[evidence]]
+id = "joint-runtime"
+file = "boxdd/tests/joint_new_apis.rs"
+item = "joint_runtime_metadata_and_tuning_are_available_across_owned_scoped_and_world_apis"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:37355de468a103f0c79d0eef397269217b06556c7ba96ba5e9b52717955a6b97"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2DefaultDistanceJointDef"
+rust_path = "boxdd::DistanceJointDef::new"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_GetBodyA"
+rust_path = "boxdd::Joint::body_a_id"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_GetBodyB"
+rust_path = "boxdd::Joint::body_b_id"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_GetCollideConnected"
+rust_path = "boxdd::Joint::collide_connected"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_GetConstraintTuning"
+rust_path = "boxdd::Joint::constraint_tuning"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_GetLocalFrameA"
+rust_path = "boxdd::Joint::local_frame_a"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_GetLocalFrameB"
+rust_path = "boxdd::Joint::local_frame_b"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_GetType"
+rust_path = "boxdd::Joint::joint_type"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_GetWorld"
+rust_path = "boxdd::Joint::try_world_id_raw"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_SetCollideConnected"
+rust_path = "boxdd::Joint::set_collide_connected"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_SetLocalFrameA"
+rust_path = "boxdd::Joint::set_local_frame_a"
+
+[[evidence]]
+id = "math-public-runtime"
+file = "boxdd/tests/math.rs"
+item = "public_math_helpers_cover_validity_rotation_and_version"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:968666cf22bf8df89ac25e06a939f91249e20bccfcfb3585196747e90298ffb4"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2ComputeCosSin"
+rust_path = "boxdd::compute_cos_sin"
+
+[[evidence.runtime_witnesses]]
+function = "b2ComputeRotationBetweenUnitVectors"
+rust_path = "boxdd::Rot::from_unit_vectors"
+
+[[evidence.runtime_witnesses]]
+function = "b2GetVersion"
+rust_path = "boxdd::version"
+
+[[evidence.runtime_witnesses]]
+function = "b2IsValidPlane"
+rust_path = "boxdd::Plane::is_valid"
+
+[[evidence.runtime_witnesses]]
+function = "b2IsValidRotation"
+rust_path = "boxdd::Rot::is_valid"
+
+[[evidence.runtime_witnesses]]
+function = "b2IsValidTransform"
+rust_path = "boxdd::Transform::is_valid"
+
+[[evidence.runtime_witnesses]]
+function = "b2IsValidVec2"
+rust_path = "boxdd::Vec2::is_valid"
+
+[[evidence]]
+id = "mover-runtime"
+file = "boxdd/tests/mover_api.rs"
+item = "mover_queries_and_solver_are_safe_and_reusable"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:16a994092b014f0e70b8483f1a87221983a6c5fb5306685bcb1f40c9e51cee5b"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2ClipVector"
+rust_path = "boxdd::clip_vector"
+
+[[evidence.runtime_witnesses]]
+function = "b2DefaultQueryFilter"
+rust_path = "boxdd::QueryFilter::default"
+
+[[evidence.runtime_witnesses]]
+function = "b2SolvePlanes"
+rust_path = "boxdd::solve_planes"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_CastMover"
+rust_path = "boxdd::World::cast_mover"
+
+[[evidence]]
+id = "runtime-auto-00343cd8b2ddecdb"
+file = "boxdd/tests/shape.rs"
+item = "shape_mass_aabb_point_raycast"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:e83a12ad45de579257ae7a29f3c5ec054f55dce3c8e54107b2e9ce21359ee70a"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2ComputeCapsuleMass"
+rust_path = "boxdd::Capsule::mass_data"
+
+[[evidence.runtime_witnesses]]
+function = "b2ComputeCircleAABB"
+rust_path = "boxdd::Circle::aabb"
+
+[[evidence.runtime_witnesses]]
+function = "b2ComputeCircleMass"
+rust_path = "boxdd::Circle::mass_data"
+
+[[evidence.runtime_witnesses]]
+function = "b2ComputePolygonAABB"
+rust_path = "boxdd::Polygon::aabb"
+
+[[evidence.runtime_witnesses]]
+function = "b2ComputePolygonMass"
+rust_path = "boxdd::Polygon::mass_data"
+
+[[evidence.runtime_witnesses]]
+function = "b2ComputeSegmentAABB"
+rust_path = "boxdd::Segment::aabb"
+
+[[evidence.runtime_witnesses]]
+function = "b2PointInCircle"
+rust_path = "boxdd::Circle::contains_point"
+
+[[evidence.runtime_witnesses]]
+function = "b2PointInPolygon"
+rust_path = "boxdd::Polygon::contains_point"
+
+[[evidence.runtime_witnesses]]
+function = "b2RayCastCircle"
+rust_path = "boxdd::Circle::ray_cast"
+
+[[evidence.runtime_witnesses]]
+function = "b2RayCastPolygon"
+rust_path = "boxdd::Polygon::ray_cast"
+
+[[evidence]]
+id = "runtime-auto-01ecbdfe249b5034"
+file = "boxdd/tests/joint_new_apis.rs"
+item = "revolute_joint_runtime_specific_apis_are_available_across_handle_types"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:e88b76ab67ba5ad66b903214de9f81b8a6c4c88321ff2f183727641e5baa50cc"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2DefaultRevoluteJointDef"
+rust_path = "boxdd::RevoluteJointDef::new"
+
+[[evidence.runtime_witnesses]]
+function = "b2RevoluteJoint_EnableLimit"
+rust_path = "boxdd::Joint::revolute_enable_limit"
+
+[[evidence.runtime_witnesses]]
+function = "b2RevoluteJoint_EnableMotor"
+rust_path = "boxdd::Joint::revolute_enable_motor"
+
+[[evidence.runtime_witnesses]]
+function = "b2RevoluteJoint_EnableSpring"
+rust_path = "boxdd::Joint::revolute_enable_spring"
+
+[[evidence.runtime_witnesses]]
+function = "b2RevoluteJoint_GetLowerLimit"
+rust_path = "boxdd::Joint::revolute_lower_limit"
+
+[[evidence.runtime_witnesses]]
+function = "b2RevoluteJoint_GetMaxMotorTorque"
+rust_path = "boxdd::Joint::revolute_max_motor_torque"
+
+[[evidence.runtime_witnesses]]
+function = "b2RevoluteJoint_GetTargetAngle"
+rust_path = "boxdd::Joint::revolute_target_angle"
+
+[[evidence.runtime_witnesses]]
+function = "b2RevoluteJoint_GetUpperLimit"
+rust_path = "boxdd::Joint::revolute_upper_limit"
+
+[[evidence.runtime_witnesses]]
+function = "b2RevoluteJoint_SetMotorSpeed"
+rust_path = "boxdd::Joint::revolute_set_motor_speed"
+
+[[evidence.runtime_witnesses]]
+function = "b2RevoluteJoint_SetSpringDampingRatio"
+rust_path = "boxdd::Joint::revolute_set_spring_damping_ratio"
+
+[[evidence.runtime_witnesses]]
+function = "b2RevoluteJoint_SetSpringHertz"
+rust_path = "boxdd::Joint::revolute_set_spring_hertz"
+
+[[evidence]]
+id = "runtime-auto-04e34518302ef756"
+file = "boxdd/tests/ffi_lifecycle.rs"
+item = "explicit_destroy_paths_drop_typed_user_data"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:d435636d5e68880bbaa202936ec880af1f4b674c94a5b8a82c6371910d283bac"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_SetUserData"
+rust_path = "boxdd::Body::set_user_data"
+
+[[evidence.runtime_witnesses]]
+function = "b2DefaultShapeDef"
+rust_path = "boxdd::ShapeDef::default"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_SetUserData"
+rust_path = "boxdd::Joint::set_user_data"
+
+[[evidence]]
+id = "runtime-auto-057fbab687126c96"
+file = "boxdd/tests/distance.rs"
+item = "segment_and_shape_distance_and_toi"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:df8cd8d29e2ccee96fdd3d9df8c7bc957ec552c7db7c787e4978673e9e91e6fc"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2MakeProxy"
+rust_path = "boxdd::ShapeProxy::new"
+
+[[evidence.runtime_witnesses]]
+function = "b2SegmentDistance"
+rust_path = "boxdd::segment_distance"
+
+[[evidence.runtime_witnesses]]
+function = "b2ShapeCast"
+rust_path = "boxdd::shape_cast"
+
+[[evidence.runtime_witnesses]]
+function = "b2ShapeDistance"
+rust_path = "boxdd::shape_distance"
+
+[[evidence.runtime_witnesses]]
+function = "b2TimeOfImpact"
+rust_path = "boxdd::time_of_impact"
+
+[[evidence]]
+id = "runtime-auto-0727a7b1af3ddf1a"
+file = "boxdd/tests/try_api.rs"
+item = "try_calls_from_debug_draw_return_in_callback"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:fef4520eb355546bf360aa749cb3ffdbb3e3aa1eb7aefc12b586244eae82a164"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2DefaultDebugDraw"
+rust_path = "boxdd::World::debug_draw"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_Draw"
+rust_path = "boxdd::World::debug_draw"
+
+[[evidence]]
+id = "runtime-auto-0cad074918866e64"
+file = "boxdd/tests/buffer_reuse.rs"
+item = "body_and_shape_contact_data_into_reuses_buffer"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:e10adb14a7f1f441ac7f5c273148b33e051ecb585ec10a4c2100406dc18fdc73"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2CreatePolygonShape"
+rust_path = "boxdd::World::create_polygon_shape_for_owned"
+
+[[evidence]]
+id = "runtime-auto-0d0935facf4d8b4d"
+file = "boxdd/tests/api_contract_joint_runtime.rs"
+item = "filter_joint_creation_runtime_path_succeeds"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:d392f84912706c788164f8d0f9024262fa65f863094b9e0e95c361119109c54b"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2CreateFilterJoint"
+rust_path = "boxdd::World::create_filter_joint"
+
+[[evidence.runtime_witnesses]]
+function = "b2DefaultFilterJointDef"
+rust_path = "boxdd::FilterJointDef::new"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_IsValid"
+rust_path = "boxdd::Joint::is_valid"
+
+[[evidence]]
+id = "runtime-auto-0da5a231d915adf3"
+file = "boxdd/tests/shape_geometry_validation.rs"
+item = "standalone_shape_specific_shape_casts_match_try_variants"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:d1361afc86fecf3f8f40eef4d5d5a11681497c6246794c1f7f50c7117e519d1e"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2ShapeCastCapsule"
+rust_path = "boxdd::Capsule::shape_cast"
+
+[[evidence.runtime_witnesses]]
+function = "b2ShapeCastCircle"
+rust_path = "boxdd::Circle::shape_cast"
+
+[[evidence.runtime_witnesses]]
+function = "b2ShapeCastPolygon"
+rust_path = "boxdd::Polygon::shape_cast"
+
+[[evidence.runtime_witnesses]]
+function = "b2ShapeCastSegment"
+rust_path = "boxdd::Segment::shape_cast"
+
+[[evidence]]
+id = "runtime-auto-1a927626176bff85"
+file = "boxdd/tests/try_api.rs"
+item = "try_joint_range_mutation_invalid_arguments_return_err"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:66e4ba52561c9d92827fc228cf37f4b21d004766cdc365e9365d72f6e68c5ccc"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2DefaultPrismaticJointDef"
+rust_path = "boxdd::PrismaticJointDef::new"
+
+[[evidence.runtime_witnesses]]
+function = "b2DefaultWheelJointDef"
+rust_path = "boxdd::WheelJointDef::new"
+
+[[evidence]]
+id = "runtime-auto-204bde02e1e055ee"
+file = "boxdd/tests/user_data.rs"
+item = "raw_user_data_pointer_escape_hatches_are_explicit"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:c2aa80112f4738d20b451c77e234c32ca3d4850d18b45f7f21b8a168c4cb764c"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_GetUserData"
+rust_path = "boxdd::OwnedShape::try_user_data_ptr_raw"
+
+[[evidence]]
+id = "runtime-auto-231db90c2329e8ab"
+file = "boxdd/tests/api_contract_core_runtime.rs"
+item = "body_runtime_state_forces_mass_and_lifecycle_succeed"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:fb96141f6abbe56a67bebcaf969f9f273851d8ff246a4617629d0405d5a8a39b"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_ApplyAngularImpulse"
+rust_path = "boxdd::Body::apply_angular_impulse"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_ApplyForce"
+rust_path = "boxdd::Body::apply_force"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_ApplyForceToCenter"
+rust_path = "boxdd::Body::apply_force_to_center"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_ApplyLinearImpulse"
+rust_path = "boxdd::Body::apply_linear_impulse"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_ApplyLinearImpulseToCenter"
+rust_path = "boxdd::Body::apply_linear_impulse_to_center"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_ApplyMassFromShapes"
+rust_path = "boxdd::Body::apply_mass_from_shapes"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_ApplyTorque"
+rust_path = "boxdd::Body::apply_torque"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_ClearForces"
+rust_path = "boxdd::Body::clear_forces"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_Enable"
+rust_path = "boxdd::Body::enable"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetAngularDamping"
+rust_path = "boxdd::Body::angular_damping"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetGravityScale"
+rust_path = "boxdd::Body::gravity_scale"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetLinearDamping"
+rust_path = "boxdd::Body::linear_damping"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetLocalCenterOfMass"
+rust_path = "boxdd::Body::local_center_of_mass"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetLocalPoint"
+rust_path = "boxdd::Body::local_point"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetLocalPointVelocity"
+rust_path = "boxdd::Body::local_point_velocity"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetLocalVector"
+rust_path = "boxdd::Body::local_vector"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetMass"
+rust_path = "boxdd::Body::mass"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetMassData"
+rust_path = "boxdd::Body::mass_data"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetPosition"
+rust_path = "boxdd::Body::position"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetRotationalInertia"
+rust_path = "boxdd::Body::rotational_inertia"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetTransform"
+rust_path = "boxdd::Body::transform"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetType"
+rust_path = "boxdd::Body::body_type"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetUserData"
+rust_path = "boxdd::Body::try_user_data_ptr_raw"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetWorld"
+rust_path = "boxdd::Body::try_world_id_raw"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetWorldCenterOfMass"
+rust_path = "boxdd::Body::try_world_center_of_mass"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetWorldPoint"
+rust_path = "boxdd::Body::world_point"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetWorldPointVelocity"
+rust_path = "boxdd::Body::try_world_point_velocity"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetWorldVector"
+rust_path = "boxdd::Body::world_vector"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_IsValid"
+rust_path = "boxdd::Body::is_valid"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_SetAngularVelocity"
+rust_path = "boxdd::Body::set_angular_velocity"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_SetMassData"
+rust_path = "boxdd::Body::set_mass_data"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_SetTargetTransform"
+rust_path = "boxdd::Body::set_target_transform"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_SetTransform"
+rust_path = "boxdd::Body::set_position_and_rotation"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_SetType"
+rust_path = "boxdd::Body::set_body_type"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_WakeTouching"
+rust_path = "boxdd::World::body_wake_touching"
+
+[[evidence.runtime_witnesses]]
+function = "b2DestroyBody"
+rust_path = "boxdd::OwnedBody::destroy"
+
+[[evidence.runtime_witnesses]]
+function = "b2DestroyWorld"
+rust_path = "boxdd::World"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_IsValid"
+rust_path = "boxdd::World::is_valid"
+
+[[evidence]]
+id = "runtime-auto-279c0949707813f2"
+file = "boxdd/tests/shape_new_apis.rs"
+item = "shape_runtime_event_toggles_are_visible_across_owned_scoped_and_world_apis"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:bfbd05d301ef680c695058bf522f4d0b4682a85d704a991e9c28235ea3832fed"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_AreContactEventsEnabled"
+rust_path = "boxdd::OwnedShape::contact_events_enabled"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_AreHitEventsEnabled"
+rust_path = "boxdd::OwnedShape::hit_events_enabled"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_ArePreSolveEventsEnabled"
+rust_path = "boxdd::OwnedShape::pre_solve_events_enabled"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_EnableContactEvents"
+rust_path = "boxdd::OwnedShape::enable_contact_events"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_EnableHitEvents"
+rust_path = "boxdd::OwnedShape::enable_hit_events"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_EnablePreSolveEvents"
+rust_path = "boxdd::OwnedShape::enable_pre_solve_events"
+
+[[evidence]]
+id = "runtime-auto-2de21659a991317a"
+file = "boxdd/tests/world_destroy_and_recycle.rs"
+item = "create_then_destroy_all_bodies_and_recycle"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:a61e265b119dc28638123f1cc27c3e4d63bffa1166096c60da9326f733e569fb"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2World_GetCounters"
+rust_path = "boxdd::World::counters"
+
+[[evidence]]
+id = "runtime-auto-3364185584e6b2ca"
+file = "boxdd/tests/shape_new_apis.rs"
+item = "polygon_helpers_cover_square_offset_and_hull_workflows"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:6f914bdc6a2804a3e187bd7c515daa73a575f49515cf14856527df57a901cfbd"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2MakeSquare"
+rust_path = "boxdd::Polygon::square_polygon"
+
+[[evidence.runtime_witnesses]]
+function = "b2TransformPolygon"
+rust_path = "boxdd::Polygon::transformed"
+
+[[evidence]]
+id = "runtime-auto-3681933525eaadea"
+file = "boxdd/tests/api_contract_core_runtime.rs"
+item = "foundation_collision_and_math_runtime_paths_succeed"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:04b2e365e3c6799ce97ef240bf3a41c67e668e7b9cce970fe968ead2ea7694ab"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2Atan2"
+rust_path = "boxdd::atan2"
+
+[[evidence.runtime_witnesses]]
+function = "b2DefaultExplosionDef"
+rust_path = "boxdd::ExplosionDef::default"
+
+[[evidence.runtime_witnesses]]
+function = "b2GetLengthUnitsPerMeter"
+rust_path = "boxdd::length_units_per_meter"
+
+[[evidence.runtime_witnesses]]
+function = "b2GetSweepTransform"
+rust_path = "boxdd::Sweep::transform_at"
+
+[[evidence.runtime_witnesses]]
+function = "b2MakeBox"
+rust_path = "boxdd::Polygon::box_polygon"
+
+[[evidence.runtime_witnesses]]
+function = "b2MakeOffsetBox"
+rust_path = "boxdd::Polygon::offset_box_polygon"
+
+[[evidence.runtime_witnesses]]
+function = "b2MakeOffsetPolygon"
+rust_path = "boxdd::Polygon::offset_from_points"
+
+[[evidence.runtime_witnesses]]
+function = "b2MakeOffsetRoundedBox"
+rust_path = "boxdd::Polygon::offset_rounded_box_polygon"
+
+[[evidence.runtime_witnesses]]
+function = "b2MakeOffsetRoundedPolygon"
+rust_path = "boxdd::Polygon::offset_from_points"
+
+[[evidence.runtime_witnesses]]
+function = "b2MakeRoundedBox"
+rust_path = "boxdd::Polygon::rounded_box_polygon"
+
+[[evidence.runtime_witnesses]]
+function = "b2ValidateHull"
+rust_path = "boxdd::Polygon::hull_is_valid"
+
+[[evidence]]
+id = "runtime-auto-3750cf6138e8b359"
+file = "boxdd/tests/body_new_apis.rs"
+item = "world_handle_body_runtime_queries_match_world_queries"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:f8b5e160d4dc49ebae856127234e3fb4aef5fa8eeb046823ccad935987ac5dc3"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_SetAngularDamping"
+rust_path = "boxdd::Body::set_angular_damping"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_SetGravityScale"
+rust_path = "boxdd::Body::set_gravity_scale"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_SetLinearDamping"
+rust_path = "boxdd::Body::set_linear_damping"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_SetMotionLocks"
+rust_path = "boxdd::World::set_body_motion_locks"
+
+[[evidence]]
+id = "runtime-auto-3edae9c93c503619"
+file = "boxdd/tests/try_api.rs"
+item = "try_create_joint_invalid_def_returns_err"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:8e55fcf47c8b55e528d2398919713368f180b6bc5965be1751ad7a1c631b5260"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2DefaultMotorJointDef"
+rust_path = "boxdd::MotorJointDef::new"
+
+[[evidence]]
+id = "runtime-auto-4a5a0886e117924a"
+file = "boxdd/tests/collision_validation.rs"
+item = "geometry_values_expose_validation_for_invalid_inputs"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:22a2180e592d4350bd5dac4041e21fb8fc3db563bc3ffdd1f66cb3b0158e2000"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2ComputeHull"
+rust_path = "boxdd::Polygon::from_points"
+
+[[evidence.runtime_witnesses]]
+function = "b2MakePolygon"
+rust_path = "boxdd::Polygon::from_points"
+
+[[evidence]]
+id = "runtime-auto-5669f3814c6c81bc"
+file = "boxdd/tests/try_api.rs"
+item = "try_contact_id_helpers_cover_invalid_and_live_contacts"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:51403933ce1dfe9c5c88ae0caab47e7198aa876ff61b42141b1f8d03904290d5"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2Contact_IsValid"
+rust_path = "boxdd::ContactId::is_valid"
+
+[[evidence]]
+id = "runtime-auto-573e632c7b3559be"
+file = "boxdd/tests/api_contract_joint_runtime.rs"
+item = "revolute_joint_runtime_paths_succeed"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:3cf8268b7cfed5df0c6c08f00f17890e2988e625759421e542778911920c5fd2"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2CreateRevoluteJoint"
+rust_path = "boxdd::World::create_revolute_joint"
+
+[[evidence.runtime_witnesses]]
+function = "b2RevoluteJoint_GetAngle"
+rust_path = "boxdd::Joint::revolute_angle"
+
+[[evidence.runtime_witnesses]]
+function = "b2RevoluteJoint_GetMotorSpeed"
+rust_path = "boxdd::Joint::revolute_motor_speed"
+
+[[evidence.runtime_witnesses]]
+function = "b2RevoluteJoint_GetMotorTorque"
+rust_path = "boxdd::Joint::revolute_motor_torque"
+
+[[evidence.runtime_witnesses]]
+function = "b2RevoluteJoint_GetSpringDampingRatio"
+rust_path = "boxdd::Joint::revolute_spring_damping_ratio"
+
+[[evidence.runtime_witnesses]]
+function = "b2RevoluteJoint_GetSpringHertz"
+rust_path = "boxdd::Joint::revolute_spring_hertz"
+
+[[evidence.runtime_witnesses]]
+function = "b2RevoluteJoint_IsLimitEnabled"
+rust_path = "boxdd::Joint::revolute_limit_enabled"
+
+[[evidence.runtime_witnesses]]
+function = "b2RevoluteJoint_IsMotorEnabled"
+rust_path = "boxdd::Joint::revolute_motor_enabled"
+
+[[evidence.runtime_witnesses]]
+function = "b2RevoluteJoint_IsSpringEnabled"
+rust_path = "boxdd::Joint::revolute_spring_enabled"
+
+[[evidence.runtime_witnesses]]
+function = "b2RevoluteJoint_SetLimits"
+rust_path = "boxdd::Joint::revolute_set_limits"
+
+[[evidence.runtime_witnesses]]
+function = "b2RevoluteJoint_SetMaxMotorTorque"
+rust_path = "boxdd::Joint::revolute_set_max_motor_torque"
+
+[[evidence.runtime_witnesses]]
+function = "b2RevoluteJoint_SetTargetAngle"
+rust_path = "boxdd::Joint::revolute_set_target_angle"
+
+[[evidence]]
+id = "runtime-auto-6096bf6cfb8c20c3"
+file = "boxdd/tests/world_and_queries.rs"
+item = "world_handle_queries_match_world_queries"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:ca3408dda714abb7c119a3a0d92b83d388f4fae8d018e3088a0425267fa6001e"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2World_OverlapShape"
+rust_path = "boxdd::World::overlap_polygon_points"
+
+[[evidence]]
+id = "runtime-auto-6451024337593aa0"
+file = "boxdd/tests/api_contract_joint_runtime.rs"
+item = "wheel_joint_runtime_paths_succeed"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:623314a437e6883c203b80e92d53d9b6969ba6ceec0298bd39e084c4a037e05e"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2CreateWheelJoint"
+rust_path = "boxdd::World::create_wheel_joint"
+
+[[evidence.runtime_witnesses]]
+function = "b2WheelJoint_EnableLimit"
+rust_path = "boxdd::Joint::try_wheel_enable_limit"
+
+[[evidence.runtime_witnesses]]
+function = "b2WheelJoint_EnableMotor"
+rust_path = "boxdd::Joint::try_wheel_enable_motor"
+
+[[evidence.runtime_witnesses]]
+function = "b2WheelJoint_EnableSpring"
+rust_path = "boxdd::Joint::try_wheel_enable_spring"
+
+[[evidence.runtime_witnesses]]
+function = "b2WheelJoint_GetLowerLimit"
+rust_path = "boxdd::Joint::try_wheel_lower_limit"
+
+[[evidence.runtime_witnesses]]
+function = "b2WheelJoint_GetMaxMotorTorque"
+rust_path = "boxdd::Joint::try_wheel_max_motor_torque"
+
+[[evidence.runtime_witnesses]]
+function = "b2WheelJoint_GetMotorSpeed"
+rust_path = "boxdd::Joint::try_wheel_motor_speed"
+
+[[evidence.runtime_witnesses]]
+function = "b2WheelJoint_GetMotorTorque"
+rust_path = "boxdd::Joint::try_wheel_motor_torque"
+
+[[evidence.runtime_witnesses]]
+function = "b2WheelJoint_GetSpringDampingRatio"
+rust_path = "boxdd::Joint::try_wheel_spring_damping_ratio"
+
+[[evidence.runtime_witnesses]]
+function = "b2WheelJoint_GetSpringHertz"
+rust_path = "boxdd::Joint::try_wheel_spring_hertz"
+
+[[evidence.runtime_witnesses]]
+function = "b2WheelJoint_GetUpperLimit"
+rust_path = "boxdd::Joint::try_wheel_upper_limit"
+
+[[evidence.runtime_witnesses]]
+function = "b2WheelJoint_IsLimitEnabled"
+rust_path = "boxdd::Joint::try_wheel_limit_enabled"
+
+[[evidence.runtime_witnesses]]
+function = "b2WheelJoint_IsMotorEnabled"
+rust_path = "boxdd::Joint::try_wheel_motor_enabled"
+
+[[evidence.runtime_witnesses]]
+function = "b2WheelJoint_IsSpringEnabled"
+rust_path = "boxdd::Joint::try_wheel_spring_enabled"
+
+[[evidence.runtime_witnesses]]
+function = "b2WheelJoint_SetLimits"
+rust_path = "boxdd::Joint::try_wheel_set_limits"
+
+[[evidence.runtime_witnesses]]
+function = "b2WheelJoint_SetMaxMotorTorque"
+rust_path = "boxdd::Joint::try_wheel_set_max_motor_torque"
+
+[[evidence.runtime_witnesses]]
+function = "b2WheelJoint_SetMotorSpeed"
+rust_path = "boxdd::Joint::try_wheel_set_motor_speed"
+
+[[evidence.runtime_witnesses]]
+function = "b2WheelJoint_SetSpringDampingRatio"
+rust_path = "boxdd::Joint::try_wheel_set_spring_damping_ratio"
+
+[[evidence.runtime_witnesses]]
+function = "b2WheelJoint_SetSpringHertz"
+rust_path = "boxdd::Joint::try_wheel_set_spring_hertz"
+
+[[evidence]]
+id = "runtime-auto-67c733cc783a2b45"
+file = "boxdd/tests/panic_across_ffi_is_caught.rs"
+item = "custom_filter_panic_is_caught_and_resumed_after_step"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:61e5f906efdf2b39306e448c5f42cbf00a9397243a8b49443a7a564cc951639f"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2World_SetCustomFilterCallback"
+rust_path = "boxdd::World::set_custom_filter"
+
+[[evidence]]
+id = "runtime-auto-743c402d44ad2d69"
+file = "boxdd/tests/material_mix_callbacks.rs"
+item = "material_mix_callback_panic_is_caught_and_resumed_after_step"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:09d9f9cd7bdfff7b3bd811b18bc7e0cc2e6efe527451e9a562fe5bfba211e6f9"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2World_SetFrictionCallback"
+rust_path = "boxdd::World::set_friction_callback"
+
+[[evidence]]
+id = "runtime-auto-79012a21e8cefb01"
+file = "boxdd/tests/api_contract_core_runtime.rs"
+item = "chain_runtime_creation_queries_and_destroy_succeed"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:37b00a9303dfbbd103dcb4c419d6ab1eb06a19245d09ac81846912360ec8a7e2"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2Chain_GetSegments"
+rust_path = "boxdd::Chain::segments"
+
+[[evidence.runtime_witnesses]]
+function = "b2CreateChain"
+rust_path = "boxdd::Body::create_chain"
+
+[[evidence.runtime_witnesses]]
+function = "b2DefaultChainDef"
+rust_path = "boxdd::ChainDef::default"
+
+[[evidence.runtime_witnesses]]
+function = "b2DestroyChain"
+rust_path = "boxdd::Chain::destroy"
+
+[[evidence]]
+id = "runtime-auto-7a81f320c1e0288f"
+file = "boxdd/tests/try_api.rs"
+item = "try_create_shape_invalid_inputs_return_err"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:2200eadff2601658de902925b6104d539483564db13b326637aa841d314ac7aa"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_GetType"
+rust_path = "boxdd::OwnedShape::shape_type"
+
+[[evidence]]
+id = "runtime-auto-85839793d2c3fe5b"
+file = "boxdd/tests/user_data.rs"
+item = "callback_world_can_read_shape_user_data"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:173713fe059d6f71a0d3aea29bfa695ccf1439568e24d6767a07504f9dc5f57d"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_SetUserData"
+rust_path = "boxdd::OwnedShape::set_user_data"
+
+[[evidence]]
+id = "runtime-auto-8a633eb45beab230"
+file = "boxdd/tests/api_contract_shape_tree_runtime.rs"
+item = "chain_segment_shape_runtime_paths_succeed"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:519fec47a04bd822043693c6e25551ab5ade84f1a11350ed30c96e90c7f3bcb0"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_GetChainSegment"
+rust_path = "boxdd::Shape::chain_segment"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_GetParentChain"
+rust_path = "boxdd::Shape::parent_chain_id"
+
+[[evidence]]
+id = "runtime-auto-8c413c1ddc7e4561"
+file = "boxdd/tests/dynamic_tree.rs"
+item = "dynamic_tree_callback_panics_are_caught_and_resumed"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:977381e89f86d554ef9a6e892372f2f4b3a28c33862f1ebe7c5af2579b5eda9c"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2DynamicTree_QueryAll"
+rust_path = "boxdd::DynamicTree::query_all"
+
+[[evidence]]
+id = "runtime-auto-8fd5a12fa1585219"
+file = "boxdd/tests/joint_new_apis.rs"
+item = "distance_joint_runtime_specific_apis_are_available_across_handle_types"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:7d9e14cde4a9e9e48eaddc9c2bafc7e3fe2a79c74aa03bbe1ba9fe128e79b532"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2DistanceJoint_EnableLimit"
+rust_path = "boxdd::Joint::distance_enable_limit"
+
+[[evidence.runtime_witnesses]]
+function = "b2DistanceJoint_EnableMotor"
+rust_path = "boxdd::Joint::distance_enable_motor"
+
+[[evidence.runtime_witnesses]]
+function = "b2DistanceJoint_EnableSpring"
+rust_path = "boxdd::Joint::distance_enable_spring"
+
+[[evidence.runtime_witnesses]]
+function = "b2DistanceJoint_GetLength"
+rust_path = "boxdd::Joint::distance_length"
+
+[[evidence.runtime_witnesses]]
+function = "b2DistanceJoint_GetMaxLength"
+rust_path = "boxdd::Joint::distance_max_length"
+
+[[evidence.runtime_witnesses]]
+function = "b2DistanceJoint_GetMaxMotorForce"
+rust_path = "boxdd::Joint::distance_max_motor_force"
+
+[[evidence.runtime_witnesses]]
+function = "b2DistanceJoint_GetMinLength"
+rust_path = "boxdd::Joint::distance_min_length"
+
+[[evidence.runtime_witnesses]]
+function = "b2DistanceJoint_GetMotorSpeed"
+rust_path = "boxdd::Joint::distance_motor_speed"
+
+[[evidence.runtime_witnesses]]
+function = "b2DistanceJoint_SetSpringDampingRatio"
+rust_path = "boxdd::Joint::distance_set_spring_damping_ratio"
+
+[[evidence.runtime_witnesses]]
+function = "b2DistanceJoint_SetSpringHertz"
+rust_path = "boxdd::Joint::distance_set_spring_hertz"
+
+[[evidence]]
+id = "runtime-auto-92511ac011ccde4b"
+file = "boxdd/tests/api_contract_core_runtime.rs"
+item = "world_queries_events_user_data_and_callback_cleanup_succeed"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:d635f5b0e4a7bcb1e22907f0cfc3b29a5181b998e928e92779a0a7d85083f417"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2MakeOffsetProxy"
+rust_path = "boxdd::World::cast_shape_points_with_offset"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_CastRay"
+rust_path = "boxdd::World::cast_ray_all"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_CastShape"
+rust_path = "boxdd::World::cast_shape_points"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_CollideMover"
+rust_path = "boxdd::World::collide_mover"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_GetBodyEvents"
+rust_path = "boxdd::World::body_events"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_GetContactEvents"
+rust_path = "boxdd::World::contact_events"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_GetJointEvents"
+rust_path = "boxdd::World::joint_events"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_GetSensorEvents"
+rust_path = "boxdd::World::sensor_events"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_GetUserData"
+rust_path = "boxdd::World::has_user_data"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_SetRestitutionCallback"
+rust_path = "boxdd::World::set_restitution_callback"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_SetUserData"
+rust_path = "boxdd::World::set_user_data"
+
+[[evidence]]
+id = "runtime-auto-94017241e2086818"
+file = "boxdd/tests/collision_aabb.rs"
+item = "aabb_and_ray_result_use_explicit_raw_conversions"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:1d65b5787c94ebe51fd5b9957467e8ad54d2796c0805cede1ce434ffc69d9325"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2World_CastRayClosest"
+rust_path = "boxdd::World::cast_ray_closest"
+
+[[evidence]]
+id = "runtime-auto-98bb1fcafc8cca90"
+file = "boxdd/tests/joint_new_apis.rs"
+item = "prismatic_joint_runtime_specific_apis_are_available_across_handle_types"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:5b660051393623acc204c7fd3c01ab8a99d40ac57cfb748902a718eeb6d57db4"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2PrismaticJoint_EnableMotor"
+rust_path = "boxdd::Joint::prismatic_enable_motor"
+
+[[evidence.runtime_witnesses]]
+function = "b2PrismaticJoint_GetLowerLimit"
+rust_path = "boxdd::Joint::prismatic_lower_limit"
+
+[[evidence.runtime_witnesses]]
+function = "b2PrismaticJoint_GetMaxMotorForce"
+rust_path = "boxdd::Joint::prismatic_max_motor_force"
+
+[[evidence.runtime_witnesses]]
+function = "b2PrismaticJoint_GetTargetTranslation"
+rust_path = "boxdd::Joint::prismatic_target_translation"
+
+[[evidence.runtime_witnesses]]
+function = "b2PrismaticJoint_GetUpperLimit"
+rust_path = "boxdd::Joint::prismatic_upper_limit"
+
+[[evidence.runtime_witnesses]]
+function = "b2PrismaticJoint_SetMotorSpeed"
+rust_path = "boxdd::Joint::prismatic_set_motor_speed"
+
+[[evidence.runtime_witnesses]]
+function = "b2PrismaticJoint_SetSpringDampingRatio"
+rust_path = "boxdd::Joint::prismatic_set_spring_damping_ratio"
+
+[[evidence.runtime_witnesses]]
+function = "b2PrismaticJoint_SetSpringHertz"
+rust_path = "boxdd::Joint::prismatic_set_spring_hertz"
+
+[[evidence.runtime_witnesses]]
+function = "b2PrismaticJoint_SetTargetTranslation"
+rust_path = "boxdd::Joint::prismatic_set_target_translation"
+
+[[evidence]]
+id = "runtime-auto-997e00e3d8f05165"
+file = "boxdd/tests/api_contract_joint_runtime.rs"
+item = "motor_joint_runtime_paths_succeed"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:c2f58b0062a8fa42152c38e44cb124c8ddf09a9ef17eddee339b30d126a3976f"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2CreateMotorJoint"
+rust_path = "boxdd::World::create_motor_joint"
+
+[[evidence.runtime_witnesses]]
+function = "b2MotorJoint_GetAngularDampingRatio"
+rust_path = "boxdd::Joint::motor_angular_damping_ratio"
+
+[[evidence.runtime_witnesses]]
+function = "b2MotorJoint_GetAngularHertz"
+rust_path = "boxdd::Joint::motor_angular_hertz"
+
+[[evidence.runtime_witnesses]]
+function = "b2MotorJoint_GetAngularVelocity"
+rust_path = "boxdd::Joint::motor_angular_velocity"
+
+[[evidence.runtime_witnesses]]
+function = "b2MotorJoint_GetLinearDampingRatio"
+rust_path = "boxdd::Joint::motor_linear_damping_ratio"
+
+[[evidence.runtime_witnesses]]
+function = "b2MotorJoint_GetLinearHertz"
+rust_path = "boxdd::Joint::motor_linear_hertz"
+
+[[evidence.runtime_witnesses]]
+function = "b2MotorJoint_GetMaxSpringForce"
+rust_path = "boxdd::Joint::motor_max_spring_force"
+
+[[evidence.runtime_witnesses]]
+function = "b2MotorJoint_GetMaxVelocityForce"
+rust_path = "boxdd::Joint::motor_max_velocity_force"
+
+[[evidence.runtime_witnesses]]
+function = "b2MotorJoint_SetAngularVelocity"
+rust_path = "boxdd::Joint::motor_set_angular_velocity"
+
+[[evidence.runtime_witnesses]]
+function = "b2MotorJoint_SetLinearHertz"
+rust_path = "boxdd::Joint::motor_set_linear_hertz"
+
+[[evidence.runtime_witnesses]]
+function = "b2MotorJoint_SetMaxSpringForce"
+rust_path = "boxdd::Joint::motor_set_max_spring_force"
+
+[[evidence.runtime_witnesses]]
+function = "b2MotorJoint_SetMaxVelocityForce"
+rust_path = "boxdd::Joint::motor_set_max_velocity_force"
+
+[[evidence]]
+id = "runtime-auto-9c6a36de9be66ef5"
+file = "boxdd/tests/dynamic_tree.rs"
+item = "moving_and_destroying_proxy_updates_tree_state"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:ba09138971e23d86ed0998ce1fc9bfdc82fb5d433df7c5016fd2782fdbf40b2b"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2DynamicTree_DestroyProxy"
+rust_path = "boxdd::DynamicTree::destroy_proxy"
+
+[[evidence.runtime_witnesses]]
+function = "b2DynamicTree_GetUserData"
+rust_path = "boxdd::DynamicTree::user_data"
+
+[[evidence.runtime_witnesses]]
+function = "b2DynamicTree_MoveProxy"
+rust_path = "boxdd::DynamicTree::move_proxy"
+
+[[evidence]]
+id = "runtime-auto-9d3b7b23629bf067"
+file = "boxdd/tests/api_contract_shape_tree_runtime.rs"
+item = "body_shape_creation_runtime_paths_succeed"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:1607512e0f38972e1ce7d54fa3d9b7fdd5b506d26d388a7b0f368a3b6f2ca217"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2CreateBody"
+rust_path = "boxdd::World::create_body"
+
+[[evidence.runtime_witnesses]]
+function = "b2CreateCapsuleShape"
+rust_path = "boxdd::Body::create_capsule_shape"
+
+[[evidence.runtime_witnesses]]
+function = "b2CreateCircleShape"
+rust_path = "boxdd::Body::create_circle_shape"
+
+[[evidence.runtime_witnesses]]
+function = "b2CreateSegmentShape"
+rust_path = "boxdd::Body::create_segment_shape"
+
+[[evidence]]
+id = "runtime-auto-9da1a2adb13434af"
+file = "boxdd/tests/joint_new_apis.rs"
+item = "joint_defs_are_readable_value_types"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:151058cc32233d30371dc6d78f9fc21d5ff98bcd27a95ba13dbade20440c87a4"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2DefaultWeldJointDef"
+rust_path = "boxdd::WeldJointDef::new"
+
+[[evidence]]
+id = "runtime-auto-9eb45e048ce4cd51"
+file = "boxdd/tests/shape_new_apis.rs"
+item = "shape_geometry_roundtrip_uses_safe_value_types"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:1733214da61ad82ebb19687b322ef680bd96c687c500de703901f9a1ccad3e1e"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2DefaultFilter"
+rust_path = "boxdd::Filter::default"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_GetCircle"
+rust_path = "boxdd::OwnedShape::circle"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_GetPolygon"
+rust_path = "boxdd::OwnedShape::polygon"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_SetCircle"
+rust_path = "boxdd::OwnedShape::set_circle"
+
+[[evidence]]
+id = "runtime-auto-a15dc4eb59e79777"
+file = "boxdd/tests/shape_geometry_validation.rs"
+item = "degenerate_segment_and_capsule_helpers_remain_usable"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:924e4bf80a2206165e01a9faf8fc64d6c96cc67256782f91af79670a50d4295e"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2ComputeCapsuleAABB"
+rust_path = "boxdd::Capsule::aabb"
+
+[[evidence.runtime_witnesses]]
+function = "b2IsValidRay"
+rust_path = "boxdd::Capsule::try_ray_cast"
+
+[[evidence.runtime_witnesses]]
+function = "b2PointInCapsule"
+rust_path = "boxdd::Capsule::contains_point"
+
+[[evidence.runtime_witnesses]]
+function = "b2RayCastCapsule"
+rust_path = "boxdd::Capsule::ray_cast"
+
+[[evidence.runtime_witnesses]]
+function = "b2RayCastSegment"
+rust_path = "boxdd::Segment::ray_cast"
+
+[[evidence]]
+id = "runtime-auto-a7ea5174038fac78"
+file = "boxdd/tests/api_contract_shape_tree_runtime.rs"
+item = "dynamic_tree_runtime_paths_succeed"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:36b26118d2b6d2f21772cd6960c985a6cf8fa3c45f332a9469c59cbf3c8077af"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2DynamicTree_Destroy"
+rust_path = "boxdd::DynamicTree"
+
+[[evidence.runtime_witnesses]]
+function = "b2DynamicTree_EnlargeProxy"
+rust_path = "boxdd::DynamicTree::enlarge_proxy"
+
+[[evidence.runtime_witnesses]]
+function = "b2DynamicTree_GetAABB"
+rust_path = "boxdd::DynamicTree::aabb"
+
+[[evidence.runtime_witnesses]]
+function = "b2DynamicTree_GetAreaRatio"
+rust_path = "boxdd::DynamicTree::area_ratio"
+
+[[evidence.runtime_witnesses]]
+function = "b2DynamicTree_GetByteCount"
+rust_path = "boxdd::DynamicTree::byte_count"
+
+[[evidence.runtime_witnesses]]
+function = "b2DynamicTree_GetCategoryBits"
+rust_path = "boxdd::DynamicTree::category_bits"
+
+[[evidence.runtime_witnesses]]
+function = "b2DynamicTree_GetHeight"
+rust_path = "boxdd::DynamicTree::height"
+
+[[evidence.runtime_witnesses]]
+function = "b2DynamicTree_GetProxyCount"
+rust_path = "boxdd::DynamicTree::proxy_count"
+
+[[evidence.runtime_witnesses]]
+function = "b2DynamicTree_GetRootBounds"
+rust_path = "boxdd::DynamicTree::root_bounds"
+
+[[evidence.runtime_witnesses]]
+function = "b2DynamicTree_Rebuild"
+rust_path = "boxdd::DynamicTree::rebuild"
+
+[[evidence.runtime_witnesses]]
+function = "b2DynamicTree_Validate"
+rust_path = "boxdd::DynamicTree::validate"
+
+[[evidence.runtime_witnesses]]
+function = "b2DynamicTree_ValidateNoEnlarged"
+rust_path = "boxdd::DynamicTree::validate_no_enlarged"
+
+[[evidence.runtime_witnesses]]
+function = "b2IsValidAABB"
+rust_path = "boxdd::Aabb::is_valid"
+
+[[evidence]]
+id = "runtime-auto-ac311a0b295722da"
+file = "boxdd/tests/world_coverage.rs"
+item = "raw_world_id_escape_hatches_are_explicit"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:109d94241e59812f2c4340bff3cbdf508ecbc806eb24bfabdad5b75633ce3cf3"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_GetWorld"
+rust_path = "boxdd::OwnedShape::try_world_id_raw"
+
+[[evidence]]
+id = "runtime-auto-ad666f6d78850f82"
+file = "boxdd/tests/api_contract_core_runtime.rs"
+item = "live_body_contact_and_contact_snapshot_succeed"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:9a97f17ccf924f05dd4cb3458c1bd6f646348f64d187d569c3181848826c7f6c"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetContactCapacity"
+rust_path = "boxdd::Body::contact_data"
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetContactData"
+rust_path = "boxdd::Body::contact_data"
+
+[[evidence.runtime_witnesses]]
+function = "b2Contact_GetData"
+rust_path = "boxdd::ContactId::data"
+
+[[evidence]]
+id = "runtime-auto-ad9895079ede3a91"
+file = "boxdd/tests/api_contract_joint_runtime.rs"
+item = "weld_joint_runtime_paths_succeed"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:6643942c07d10801291e9c755b935406dd6fe9a6f7a00883317e8841b911af0d"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2CreateWeldJoint"
+rust_path = "boxdd::World::create_weld_joint"
+
+[[evidence.runtime_witnesses]]
+function = "b2WeldJoint_GetAngularDampingRatio"
+rust_path = "boxdd::Joint::try_weld_angular_damping_ratio"
+
+[[evidence.runtime_witnesses]]
+function = "b2WeldJoint_GetAngularHertz"
+rust_path = "boxdd::Joint::try_weld_angular_hertz"
+
+[[evidence.runtime_witnesses]]
+function = "b2WeldJoint_GetLinearDampingRatio"
+rust_path = "boxdd::Joint::try_weld_linear_damping_ratio"
+
+[[evidence.runtime_witnesses]]
+function = "b2WeldJoint_GetLinearHertz"
+rust_path = "boxdd::Joint::try_weld_linear_hertz"
+
+[[evidence.runtime_witnesses]]
+function = "b2WeldJoint_SetAngularDampingRatio"
+rust_path = "boxdd::Joint::try_weld_set_angular_damping_ratio"
+
+[[evidence.runtime_witnesses]]
+function = "b2WeldJoint_SetAngularHertz"
+rust_path = "boxdd::Joint::try_weld_set_angular_hertz"
+
+[[evidence.runtime_witnesses]]
+function = "b2WeldJoint_SetLinearDampingRatio"
+rust_path = "boxdd::Joint::try_weld_set_linear_damping_ratio"
+
+[[evidence.runtime_witnesses]]
+function = "b2WeldJoint_SetLinearHertz"
+rust_path = "boxdd::Joint::try_weld_set_linear_hertz"
+
+[[evidence]]
+id = "runtime-auto-aeba55c8b40f5bcd"
+file = "boxdd/tests/shape_new_apis.rs"
+item = "shape_closest_point_and_apply_wind_smoke"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:f74438f230454ae1aa3763615f7021efef4947b04899e8362c5fac1c44aa8636"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_ApplyWind"
+rust_path = "boxdd::OwnedShape::apply_wind"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_GetClosestPoint"
+rust_path = "boxdd::OwnedShape::closest_point"
+
+[[evidence]]
+id = "runtime-auto-b4bfd105636d9490"
+file = "boxdd/tests/joint_new_apis.rs"
+item = "motor_joint_runtime_specific_apis_are_available_across_handle_types"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:19ccccfe57aa9a4673729d0b54d96bfe05c6cd899cf9117ae185280e5b455049"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2MotorJoint_GetLinearVelocity"
+rust_path = "boxdd::Joint::motor_linear_velocity"
+
+[[evidence.runtime_witnesses]]
+function = "b2MotorJoint_GetMaxSpringTorque"
+rust_path = "boxdd::Joint::motor_max_spring_torque"
+
+[[evidence.runtime_witnesses]]
+function = "b2MotorJoint_GetMaxVelocityTorque"
+rust_path = "boxdd::Joint::motor_max_velocity_torque"
+
+[[evidence.runtime_witnesses]]
+function = "b2MotorJoint_SetAngularDampingRatio"
+rust_path = "boxdd::Joint::motor_set_angular_damping_ratio"
+
+[[evidence.runtime_witnesses]]
+function = "b2MotorJoint_SetAngularHertz"
+rust_path = "boxdd::Joint::motor_set_angular_hertz"
+
+[[evidence.runtime_witnesses]]
+function = "b2MotorJoint_SetLinearDampingRatio"
+rust_path = "boxdd::Joint::motor_set_linear_damping_ratio"
+
+[[evidence.runtime_witnesses]]
+function = "b2MotorJoint_SetLinearVelocity"
+rust_path = "boxdd::Joint::motor_set_linear_velocity"
+
+[[evidence.runtime_witnesses]]
+function = "b2MotorJoint_SetMaxSpringTorque"
+rust_path = "boxdd::Joint::motor_set_max_spring_torque"
+
+[[evidence.runtime_witnesses]]
+function = "b2MotorJoint_SetMaxVelocityTorque"
+rust_path = "boxdd::Joint::motor_set_max_velocity_torque"
+
+[[evidence]]
+id = "runtime-auto-b85bc364e1bc3512"
+file = "boxdd/tests/shape_new_apis.rs"
+item = "defs_expose_validation_for_invalid_numeric_inputs"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:54d5c5276e52c3ae1c75a90fd2914c3782ebf533f2684d6bda59c76879e22db9"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2DefaultBodyDef"
+rust_path = "boxdd::BodyDef::default"
+
+[[evidence]]
+id = "runtime-auto-b934ec1466c6b201"
+file = "boxdd/tests/api_contract_joint_runtime.rs"
+item = "distance_and_base_joint_runtime_paths_succeed"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:d186c9a3b0f18741d06743fb77c5466dfa7492ac0d14984583922c2ce00bda37"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2CreateDistanceJoint"
+rust_path = "boxdd::World::create_distance_joint"
+
+[[evidence.runtime_witnesses]]
+function = "b2DestroyJoint"
+rust_path = "boxdd::Joint::destroy"
+
+[[evidence.runtime_witnesses]]
+function = "b2DistanceJoint_GetCurrentLength"
+rust_path = "boxdd::Joint::distance_current_length"
+
+[[evidence.runtime_witnesses]]
+function = "b2DistanceJoint_GetMotorForce"
+rust_path = "boxdd::Joint::distance_motor_force"
+
+[[evidence.runtime_witnesses]]
+function = "b2DistanceJoint_GetSpringDampingRatio"
+rust_path = "boxdd::Joint::distance_spring_damping_ratio"
+
+[[evidence.runtime_witnesses]]
+function = "b2DistanceJoint_GetSpringForceRange"
+rust_path = "boxdd::Joint::distance_spring_force_range"
+
+[[evidence.runtime_witnesses]]
+function = "b2DistanceJoint_GetSpringHertz"
+rust_path = "boxdd::Joint::distance_spring_hertz"
+
+[[evidence.runtime_witnesses]]
+function = "b2DistanceJoint_IsLimitEnabled"
+rust_path = "boxdd::Joint::distance_limit_enabled"
+
+[[evidence.runtime_witnesses]]
+function = "b2DistanceJoint_IsMotorEnabled"
+rust_path = "boxdd::Joint::distance_motor_enabled"
+
+[[evidence.runtime_witnesses]]
+function = "b2DistanceJoint_IsSpringEnabled"
+rust_path = "boxdd::Joint::distance_spring_enabled"
+
+[[evidence.runtime_witnesses]]
+function = "b2DistanceJoint_SetLength"
+rust_path = "boxdd::Joint::distance_set_length"
+
+[[evidence.runtime_witnesses]]
+function = "b2DistanceJoint_SetLengthRange"
+rust_path = "boxdd::Joint::distance_set_length_range"
+
+[[evidence.runtime_witnesses]]
+function = "b2DistanceJoint_SetMaxMotorForce"
+rust_path = "boxdd::Joint::distance_set_max_motor_force"
+
+[[evidence.runtime_witnesses]]
+function = "b2DistanceJoint_SetMotorSpeed"
+rust_path = "boxdd::Joint::distance_set_motor_speed"
+
+[[evidence.runtime_witnesses]]
+function = "b2DistanceJoint_SetSpringForceRange"
+rust_path = "boxdd::Joint::distance_set_spring_force_range"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_GetAngularSeparation"
+rust_path = "boxdd::Joint::angular_separation"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_GetConstraintForce"
+rust_path = "boxdd::Joint::constraint_force"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_GetConstraintTorque"
+rust_path = "boxdd::Joint::constraint_torque"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_GetForceThreshold"
+rust_path = "boxdd::Joint::force_threshold"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_GetLinearSeparation"
+rust_path = "boxdd::Joint::linear_separation"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_GetTorqueThreshold"
+rust_path = "boxdd::Joint::torque_threshold"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_GetUserData"
+rust_path = "boxdd::Joint::try_user_data_ptr_raw"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_SetConstraintTuning"
+rust_path = "boxdd::Joint::set_constraint_tuning"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_SetForceThreshold"
+rust_path = "boxdd::Joint::set_force_threshold"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_SetLocalFrameB"
+rust_path = "boxdd::Joint::set_local_frame_b"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_SetTorqueThreshold"
+rust_path = "boxdd::Joint::set_torque_threshold"
+
+[[evidence.runtime_witnesses]]
+function = "b2Joint_WakeBodies"
+rust_path = "boxdd::Joint::wake_bodies"
+
+[[evidence]]
+id = "runtime-auto-c26668c3f69d3ec9"
+file = "boxdd/tests/world_callbacks.rs"
+item = "pre_solve_closure_blocks_contact_this_step"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:6e79b0ae9faa16f308b54839c1f095ceb272c4487e4bc2d95c730999e90a0cbd"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2World_SetPreSolveCallback"
+rust_path = "boxdd::World::set_pre_solve"
+
+[[evidence]]
+id = "runtime-auto-c90820a2d0847c08"
+file = "boxdd/tests/buffer_reuse.rs"
+item = "body_and_shape_contact_buffers_grow_past_eight_with_real_contacts"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:68af84694f3fa11521ddff41b082f20631ad34218cf5b1ef59cc64aafb97b717"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_GetContactCapacity"
+rust_path = "boxdd::OwnedShape::contact_data"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_GetContactData"
+rust_path = "boxdd::OwnedShape::contact_data"
+
+[[evidence]]
+id = "runtime-auto-cba47ca98dbc44be"
+file = "boxdd/tests/api_contract_joint_runtime.rs"
+item = "prismatic_joint_runtime_paths_succeed"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:4b7df8217b03502cb0090e0765071b99dc54be43956c067d39e595d7687afc9b"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2CreatePrismaticJoint"
+rust_path = "boxdd::World::create_prismatic_joint"
+
+[[evidence.runtime_witnesses]]
+function = "b2PrismaticJoint_EnableLimit"
+rust_path = "boxdd::Joint::prismatic_enable_limit"
+
+[[evidence.runtime_witnesses]]
+function = "b2PrismaticJoint_EnableSpring"
+rust_path = "boxdd::Joint::prismatic_enable_spring"
+
+[[evidence.runtime_witnesses]]
+function = "b2PrismaticJoint_GetMotorForce"
+rust_path = "boxdd::Joint::prismatic_motor_force"
+
+[[evidence.runtime_witnesses]]
+function = "b2PrismaticJoint_GetMotorSpeed"
+rust_path = "boxdd::Joint::prismatic_motor_speed"
+
+[[evidence.runtime_witnesses]]
+function = "b2PrismaticJoint_GetSpeed"
+rust_path = "boxdd::Joint::prismatic_speed"
+
+[[evidence.runtime_witnesses]]
+function = "b2PrismaticJoint_GetSpringDampingRatio"
+rust_path = "boxdd::Joint::prismatic_spring_damping_ratio"
+
+[[evidence.runtime_witnesses]]
+function = "b2PrismaticJoint_GetSpringHertz"
+rust_path = "boxdd::Joint::prismatic_spring_hertz"
+
+[[evidence.runtime_witnesses]]
+function = "b2PrismaticJoint_GetTranslation"
+rust_path = "boxdd::Joint::prismatic_translation"
+
+[[evidence.runtime_witnesses]]
+function = "b2PrismaticJoint_IsLimitEnabled"
+rust_path = "boxdd::Joint::prismatic_limit_enabled"
+
+[[evidence.runtime_witnesses]]
+function = "b2PrismaticJoint_IsMotorEnabled"
+rust_path = "boxdd::Joint::prismatic_motor_enabled"
+
+[[evidence.runtime_witnesses]]
+function = "b2PrismaticJoint_IsSpringEnabled"
+rust_path = "boxdd::Joint::prismatic_spring_enabled"
+
+[[evidence.runtime_witnesses]]
+function = "b2PrismaticJoint_SetLimits"
+rust_path = "boxdd::Joint::prismatic_set_limits"
+
+[[evidence.runtime_witnesses]]
+function = "b2PrismaticJoint_SetMaxMotorForce"
+rust_path = "boxdd::Joint::prismatic_set_max_motor_force"
+
+[[evidence]]
+id = "runtime-auto-d2d25bc5f6f25236"
+file = "boxdd/tests/body_new_apis.rs"
+item = "body_aabb_helpers_match_owned_scoped_and_world_views"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:4a3871ffb325ee3e76e1e78774fdfee3913fd4a677f3c8f03fad2a95720f8632"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_ComputeAABB"
+rust_path = "boxdd::Body::aabb"
+
+[[evidence]]
+id = "runtime-auto-da1554569b2356d3"
+file = "boxdd/tests/api_contract_shape_tree_runtime.rs"
+item = "owned_shape_runtime_paths_succeed"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:7bb347ac6d911eff6626cd07f10d622ee12f5bdc445e62c6eff730aa026fc004"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2DestroyShape"
+rust_path = "boxdd::OwnedShape::destroy"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_AreSensorEventsEnabled"
+rust_path = "boxdd::OwnedShape::sensor_events_enabled"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_ComputeMassData"
+rust_path = "boxdd::OwnedShape::mass_data"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_EnableSensorEvents"
+rust_path = "boxdd::OwnedShape::enable_sensor_events"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_GetAABB"
+rust_path = "boxdd::OwnedShape::aabb"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_GetBody"
+rust_path = "boxdd::OwnedShape::body_id"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_GetCapsule"
+rust_path = "boxdd::OwnedShape::capsule"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_GetDensity"
+rust_path = "boxdd::OwnedShape::density"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_GetFriction"
+rust_path = "boxdd::OwnedShape::friction"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_GetRestitution"
+rust_path = "boxdd::OwnedShape::restitution"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_GetSegment"
+rust_path = "boxdd::OwnedShape::segment"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_GetSensorCapacity"
+rust_path = "boxdd::OwnedShape::sensor_capacity"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_GetSensorData"
+rust_path = "boxdd::OwnedShape::sensor_overlaps"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_GetSurfaceMaterial"
+rust_path = "boxdd::OwnedShape::surface_material"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_GetUserMaterial"
+rust_path = "boxdd::OwnedShape::try_user_material"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_IsSensor"
+rust_path = "boxdd::OwnedShape::is_sensor"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_IsValid"
+rust_path = "boxdd::OwnedShape::is_valid"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_RayCast"
+rust_path = "boxdd::OwnedShape::ray_cast"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_SetCapsule"
+rust_path = "boxdd::OwnedShape::set_capsule"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_SetDensity"
+rust_path = "boxdd::OwnedShape::set_density"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_SetFriction"
+rust_path = "boxdd::OwnedShape::set_friction"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_SetPolygon"
+rust_path = "boxdd::OwnedShape::set_polygon"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_SetRestitution"
+rust_path = "boxdd::OwnedShape::set_restitution"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_SetSegment"
+rust_path = "boxdd::OwnedShape::set_segment"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_SetSurfaceMaterial"
+rust_path = "boxdd::OwnedShape::set_surface_material"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_SetUserMaterial"
+rust_path = "boxdd::OwnedShape::set_user_material"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_TestPoint"
+rust_path = "boxdd::OwnedShape::test_point"
+
+[[evidence]]
+id = "runtime-auto-e5763ca439838591"
+file = "boxdd/tests/shape_new_apis.rs"
+item = "shape_filters_use_safe_values_with_explicit_raw_escape_hatch"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:9a0d61ce17cc39594e48a1cede6b667f2ae6b519d2de1efa5a3ae4bb6f8b6d02"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_GetFilter"
+rust_path = "boxdd::OwnedShape::filter"
+
+[[evidence.runtime_witnesses]]
+function = "b2Shape_SetFilter"
+rust_path = "boxdd::OwnedShape::set_filter"
+
+[[evidence]]
+id = "runtime-auto-ed70d4b2fe22ccf7"
+file = "boxdd/tests/world_and_queries.rs"
+item = "world_basics_and_queries"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:cb6ea60d52053e693d63263fbef8b38c40be30f997baf37d8fa2487c85fdc238"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2World_OverlapAABB"
+rust_path = "boxdd::World::overlap_aabb"
+
+[[evidence]]
+id = "runtime-auto-f8646325a460d0b1"
+file = "boxdd/tests/dynamic_tree.rs"
+item = "query_and_mask_return_matching_proxies"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:233032520e67e54ac7316f0e2955c839d2b312d6aa8670fd96dfdd192a6e1502"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2DynamicTree_Query"
+rust_path = "boxdd::DynamicTree::query"
+
+[[evidence]]
+id = "tree-runtime"
+file = "boxdd/tests/dynamic_tree.rs"
+item = "ray_cast_and_shape_cast_visit_tree_proxies"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:be0c318e5b1e21f193514dff520c6db06986dc9444b3c01057379aea8310d9d5"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2DynamicTree_Create"
+rust_path = "boxdd::DynamicTree::new"
+
+[[evidence.runtime_witnesses]]
+function = "b2DynamicTree_CreateProxy"
+rust_path = "boxdd::DynamicTree::create_proxy"
+
+[[evidence.runtime_witnesses]]
+function = "b2DynamicTree_RayCast"
+rust_path = "boxdd::DynamicTree::ray_cast"
+
+[[evidence.runtime_witnesses]]
+function = "b2DynamicTree_ShapeCast"
+rust_path = "boxdd::DynamicTree::shape_cast"
+
+[[evidence]]
+id = "world-runtime"
+file = "boxdd/tests/world_coverage.rs"
+item = "world_runtime_coverage_safe_api"
+package = "boxdd"
+gate = "nextest"
+role = "runtime"
+fingerprint = "blake3-routes-v1:1a01d2cb3128c39574bac110926c9557178314dca4fd9350f68672397dae785a"
+classification_witnesses = []
+
+[[evidence.runtime_witnesses]]
+function = "b2Body_GetMotionLocks"
+rust_path = "boxdd::World::body_motion_locks"
+
+[[evidence.runtime_witnesses]]
+function = "b2CreateWorld"
+rust_path = "boxdd::World::new"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_EnableContinuous"
+rust_path = "boxdd::World::enable_continuous"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_EnableSleeping"
+rust_path = "boxdd::World::enable_sleeping"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_EnableSpeculative"
+rust_path = "boxdd::World::enable_speculative"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_EnableWarmStarting"
+rust_path = "boxdd::World::enable_warm_starting"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_Explode"
+rust_path = "boxdd::World::explode"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_GetAwakeBodyCount"
+rust_path = "boxdd::World::awake_body_count"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_GetGravity"
+rust_path = "boxdd::World::gravity"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_GetHitEventThreshold"
+rust_path = "boxdd::World::hit_event_threshold"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_GetMaximumLinearSpeed"
+rust_path = "boxdd::World::maximum_linear_speed"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_GetProfile"
+rust_path = "boxdd::World::profile"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_GetRestitutionThreshold"
+rust_path = "boxdd::World::restitution_threshold"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_IsContinuousEnabled"
+rust_path = "boxdd::World::is_continuous_enabled"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_IsSleepingEnabled"
+rust_path = "boxdd::World::is_sleeping_enabled"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_IsWarmStartingEnabled"
+rust_path = "boxdd::World::is_warm_starting_enabled"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_SetContactTuning"
+rust_path = "boxdd::World::set_contact_tuning"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_SetGravity"
+rust_path = "boxdd::World::set_gravity"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_SetHitEventThreshold"
+rust_path = "boxdd::World::set_hit_event_threshold"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_SetMaximumLinearSpeed"
+rust_path = "boxdd::World::set_maximum_linear_speed"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_SetRestitutionThreshold"
+rust_path = "boxdd::World::set_restitution_threshold"
+
+[[evidence.runtime_witnesses]]
+function = "b2World_Step"
+rust_path = "boxdd::World::step"
 
 [[functions]]
 logical_name = "b2Atan2"
@@ -187,7 +2436,7 @@ rationale = "Covered by the canonical public `boxdd::atan2` capability; AST reac
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["math-runtime"]
+evidence = ["runtime-auto-3681933525eaadea"]
 
 [functions.link_symbols]
 single = "b2Atan2"
@@ -206,7 +2455,7 @@ rationale = "Covered by the canonical public `boxdd::Body::apply_angular_impulse
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_ApplyAngularImpulse"
@@ -226,7 +2475,7 @@ rationale = "Covered by the canonical public `boxdd::Body::apply_force` capabili
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_ApplyForce"
@@ -246,7 +2495,7 @@ rationale = "Covered by the canonical public `boxdd::Body::apply_force_to_center
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_ApplyForceToCenter"
@@ -266,7 +2515,7 @@ rationale = "Covered by the canonical public `boxdd::Body::apply_linear_impulse`
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_ApplyLinearImpulse"
@@ -286,7 +2535,7 @@ rationale = "Covered by the canonical public `boxdd::Body::apply_linear_impulse_
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_ApplyLinearImpulseToCenter"
@@ -306,7 +2555,7 @@ rationale = "Covered by the canonical public `boxdd::Body::apply_mass_from_shape
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_ApplyMassFromShapes"
@@ -326,7 +2575,7 @@ rationale = "Covered by the canonical public `boxdd::Body::apply_torque` capabil
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_ApplyTorque"
@@ -346,7 +2595,7 @@ rationale = "Covered by the canonical public `boxdd::Body::clear_forces` capabil
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_ClearForces"
@@ -366,7 +2615,7 @@ rationale = "Covered by the canonical public `boxdd::Body::aabb` capability; AST
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-d2d25bc5f6f25236"]
 
 [functions.link_symbols]
 single = "b2Body_ComputeAABB"
@@ -405,7 +2654,7 @@ rationale = "Covered by the canonical public `boxdd::Body::enable` capability; A
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_Enable"
@@ -485,7 +2734,7 @@ rationale = "Covered by the canonical public `boxdd::Body::angular_damping` capa
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_GetAngularDamping"
@@ -523,7 +2772,7 @@ rationale = "The safe contact-data query owns buffer allocation and uses the nat
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-ad666f6d78850f82"]
 
 [functions.link_symbols]
 single = "b2Body_GetContactCapacity"
@@ -542,7 +2791,7 @@ rationale = "Covered by the canonical public `boxdd::Body::contact_data` capabil
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-ad666f6d78850f82"]
 
 [functions.link_symbols]
 single = "b2Body_GetContactData"
@@ -561,7 +2810,7 @@ rationale = "Covered by the canonical public `boxdd::Body::gravity_scale` capabi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_GetGravityScale"
@@ -618,7 +2867,7 @@ rationale = "Covered by the canonical public `boxdd::Body::linear_damping` capab
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_GetLinearDamping"
@@ -656,7 +2905,7 @@ rationale = "Covered by the canonical public `boxdd::Body::local_center_of_mass`
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_GetLocalCenterOfMass"
@@ -675,7 +2924,7 @@ rationale = "Covered by the canonical public `boxdd::Body::local_point` capabili
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_GetLocalPoint"
@@ -694,7 +2943,7 @@ rationale = "Covered by the canonical public `boxdd::Body::local_point_velocity`
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_GetLocalPointVelocity"
@@ -713,7 +2962,7 @@ rationale = "Covered by the canonical public `boxdd::Body::local_vector` capabil
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_GetLocalVector"
@@ -732,7 +2981,7 @@ rationale = "Covered by the canonical public `boxdd::Body::mass` capability; AST
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_GetMass"
@@ -751,7 +3000,7 @@ rationale = "Covered by the canonical public `boxdd::Body::mass_data` capability
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_GetMassData"
@@ -770,7 +3019,7 @@ rationale = "Covered by the canonical public `boxdd::World::body_motion_locks` c
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["world-runtime"]
 
 [functions.link_symbols]
 single = "b2Body_GetMotionLocks"
@@ -808,7 +3057,7 @@ rationale = "Covered by the canonical public `boxdd::Body::position` capability;
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_GetPosition"
@@ -846,7 +3095,7 @@ rationale = "Covered by the canonical public `boxdd::Body::rotational_inertia` c
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_GetRotationalInertia"
@@ -922,7 +3171,7 @@ rationale = "Covered by the canonical public `boxdd::Body::transform` capability
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_GetTransform"
@@ -941,7 +3190,7 @@ rationale = "Covered by the canonical public `boxdd::Body::body_type` capability
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_GetType"
@@ -960,7 +3209,7 @@ rationale = "Covered by the canonical public `boxdd::Body::try_user_data_ptr_raw
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_GetUserData"
@@ -979,7 +3228,7 @@ rationale = "Covered by the canonical public `boxdd::Body::try_world_id_raw` cap
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_GetWorld"
@@ -998,7 +3247,7 @@ rationale = "Covered by the canonical public `boxdd::Body::try_world_center_of_m
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_GetWorldCenterOfMass"
@@ -1017,7 +3266,7 @@ rationale = "Covered by the canonical public `boxdd::Body::world_point` capabili
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_GetWorldPoint"
@@ -1036,7 +3285,7 @@ rationale = "Covered by the canonical public `boxdd::Body::try_world_point_veloc
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_GetWorldPointVelocity"
@@ -1055,7 +3304,7 @@ rationale = "Covered by the canonical public `boxdd::Body::world_vector` capabil
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_GetWorldVector"
@@ -1150,7 +3399,7 @@ rationale = "Covered by the canonical public `boxdd::Body::is_valid` capability;
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_IsValid"
@@ -1169,7 +3418,7 @@ rationale = "Covered by the canonical public `boxdd::Body::set_angular_damping` 
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-3750cf6138e8b359"]
 
 [functions.link_symbols]
 single = "b2Body_SetAngularDamping"
@@ -1189,7 +3438,7 @@ rationale = "Covered by the canonical public `boxdd::Body::set_angular_velocity`
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_SetAngularVelocity"
@@ -1249,7 +3498,7 @@ rationale = "Covered by the canonical public `boxdd::Body::set_gravity_scale` ca
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-3750cf6138e8b359"]
 
 [functions.link_symbols]
 single = "b2Body_SetGravityScale"
@@ -1269,7 +3518,7 @@ rationale = "Covered by the canonical public `boxdd::Body::set_linear_damping` c
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-3750cf6138e8b359"]
 
 [functions.link_symbols]
 single = "b2Body_SetLinearDamping"
@@ -1309,7 +3558,7 @@ rationale = "Covered by the canonical public `boxdd::Body::set_mass_data` capabi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_SetMassData"
@@ -1329,7 +3578,7 @@ rationale = "Covered by the canonical public `boxdd::World::set_body_motion_lock
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-3750cf6138e8b359"]
 
 [functions.link_symbols]
 single = "b2Body_SetMotionLocks"
@@ -1389,7 +3638,7 @@ rationale = "Covered by the canonical public `boxdd::Body::set_target_transform`
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_SetTargetTransform"
@@ -1409,7 +3658,7 @@ rationale = "Covered by the canonical public `boxdd::Body::set_position_and_rota
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_SetTransform"
@@ -1429,7 +3678,7 @@ rationale = "Covered by the canonical public `boxdd::Body::set_body_type` capabi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_SetType"
@@ -1449,7 +3698,7 @@ rationale = "Covered by the canonical public `boxdd::Body::set_user_data` capabi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-04e34518302ef756"]
 
 [functions.link_symbols]
 single = "b2Body_SetUserData"
@@ -1468,7 +3717,7 @@ rationale = "Covered by the canonical public `boxdd::World::body_wake_touching` 
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2Body_WakeTouching"
@@ -1507,7 +3756,7 @@ rationale = "Covered by the canonical public `boxdd::Chain::segments` capability
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["chain-runtime"]
+evidence = ["runtime-auto-79012a21e8cefb01"]
 
 [functions.link_symbols]
 single = "b2Chain_GetSegments"
@@ -1679,7 +3928,7 @@ rationale = "Covered by the canonical public `boxdd::collide_chain_segment_and_c
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["chain-runtime"]
+evidence = ["collision-runtime"]
 
 [functions.link_symbols]
 single = "b2CollideChainSegmentAndCapsule"
@@ -1698,7 +3947,7 @@ rationale = "Covered by the canonical public `boxdd::collide_chain_segment_and_c
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["chain-runtime"]
+evidence = ["collision-runtime"]
 
 [functions.link_symbols]
 single = "b2CollideChainSegmentAndCircle"
@@ -1717,7 +3966,7 @@ rationale = "Covered by the canonical public `boxdd::collide_chain_segment_and_p
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["chain-runtime"]
+evidence = ["collision-runtime"]
 
 [functions.link_symbols]
 single = "b2CollideChainSegmentAndPolygon"
@@ -1869,7 +4118,7 @@ rationale = "Covered by the canonical public `boxdd::Capsule::aabb` capability; 
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["collision-runtime"]
+evidence = ["runtime-auto-a15dc4eb59e79777"]
 
 [functions.link_symbols]
 single = "b2ComputeCapsuleAABB"
@@ -1888,7 +4137,7 @@ rationale = "Covered by the canonical public `boxdd::Capsule::mass_data` capabil
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-00343cd8b2ddecdb"]
 
 [functions.link_symbols]
 single = "b2ComputeCapsuleMass"
@@ -1907,7 +4156,7 @@ rationale = "Covered by the canonical public `boxdd::Circle::aabb` capability; A
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["collision-runtime"]
+evidence = ["runtime-auto-00343cd8b2ddecdb"]
 
 [functions.link_symbols]
 single = "b2ComputeCircleAABB"
@@ -1926,7 +4175,7 @@ rationale = "Covered by the canonical public `boxdd::Circle::mass_data` capabili
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-00343cd8b2ddecdb"]
 
 [functions.link_symbols]
 single = "b2ComputeCircleMass"
@@ -1945,7 +4194,7 @@ rationale = "Covered by the canonical public `boxdd::compute_cos_sin` capability
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["math-public-runtime"]
 
 [functions.link_symbols]
 single = "b2ComputeCosSin"
@@ -1964,7 +4213,7 @@ rationale = "The safe polygon constructor accepts points directly and keeps the 
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["collision-runtime"]
+evidence = ["runtime-auto-4a5a0886e117924a"]
 
 [functions.link_symbols]
 single = "b2ComputeHull"
@@ -1983,7 +4232,7 @@ rationale = "Covered by the canonical public `boxdd::Polygon::aabb` capability; 
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["collision-runtime"]
+evidence = ["runtime-auto-00343cd8b2ddecdb"]
 
 [functions.link_symbols]
 single = "b2ComputePolygonAABB"
@@ -2002,7 +4251,7 @@ rationale = "Covered by the canonical public `boxdd::Polygon::mass_data` capabil
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-00343cd8b2ddecdb"]
 
 [functions.link_symbols]
 single = "b2ComputePolygonMass"
@@ -2021,7 +4270,7 @@ rationale = "Covered by the canonical public `boxdd::Rot::from_unit_vectors` cap
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["math-runtime"]
+evidence = ["math-public-runtime"]
 
 [functions.link_symbols]
 single = "b2ComputeRotationBetweenUnitVectors"
@@ -2040,7 +4289,7 @@ rationale = "Covered by the canonical public `boxdd::Segment::aabb` capability; 
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["collision-runtime"]
+evidence = ["runtime-auto-00343cd8b2ddecdb"]
 
 [functions.link_symbols]
 single = "b2ComputeSegmentAABB"
@@ -2059,7 +4308,7 @@ rationale = "Covered by the canonical public `boxdd::ContactId::data` capability
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-ad666f6d78850f82"]
 
 [functions.link_symbols]
 single = "b2Contact_GetData"
@@ -2078,7 +4327,7 @@ rationale = "Covered by the canonical public `boxdd::ContactId::is_valid` capabi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-5669f3814c6c81bc"]
 
 [functions.link_symbols]
 single = "b2Contact_IsValid"
@@ -2097,7 +4346,7 @@ rationale = "Covered by the canonical public `boxdd::World::create_body` capabil
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-9d3b7b23629bf067"]
 
 [functions.link_symbols]
 single = "b2CreateBody"
@@ -2117,7 +4366,7 @@ rationale = "Covered by the canonical public `boxdd::Body::create_capsule_shape`
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-9d3b7b23629bf067"]
 
 [functions.link_symbols]
 single = "b2CreateCapsuleShape"
@@ -2137,7 +4386,7 @@ rationale = "Covered by the canonical public `boxdd::Body::create_chain` capabil
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["chain-runtime"]
+evidence = ["runtime-auto-79012a21e8cefb01"]
 
 [functions.link_symbols]
 single = "b2CreateChain"
@@ -2157,7 +4406,7 @@ rationale = "Covered by the canonical public `boxdd::Body::create_circle_shape` 
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-9d3b7b23629bf067"]
 
 [functions.link_symbols]
 single = "b2CreateCircleShape"
@@ -2177,7 +4426,7 @@ rationale = "Covered by the canonical public `boxdd::World::create_distance_join
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2CreateDistanceJoint"
@@ -2197,7 +4446,7 @@ rationale = "Covered by the canonical public `boxdd::World::create_filter_joint`
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-0d0935facf4d8b4d"]
 
 [functions.link_symbols]
 single = "b2CreateFilterJoint"
@@ -2217,7 +4466,7 @@ rationale = "Covered by the canonical public `boxdd::World::create_motor_joint` 
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-997e00e3d8f05165"]
 
 [functions.link_symbols]
 single = "b2CreateMotorJoint"
@@ -2237,7 +4486,7 @@ rationale = "Covered by the canonical public generic polygon-shape creation path
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-0cad074918866e64"]
 
 [functions.link_symbols]
 single = "b2CreatePolygonShape"
@@ -2257,7 +4506,7 @@ rationale = "Covered by the canonical public `boxdd::World::create_prismatic_joi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-cba47ca98dbc44be"]
 
 [functions.link_symbols]
 single = "b2CreatePrismaticJoint"
@@ -2277,7 +4526,7 @@ rationale = "Covered by the canonical public `boxdd::World::create_revolute_join
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-573e632c7b3559be"]
 
 [functions.link_symbols]
 single = "b2CreateRevoluteJoint"
@@ -2297,7 +4546,7 @@ rationale = "Covered by the canonical public `boxdd::Body::create_segment_shape`
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-9d3b7b23629bf067"]
 
 [functions.link_symbols]
 single = "b2CreateSegmentShape"
@@ -2317,7 +4566,7 @@ rationale = "Covered by the canonical public `boxdd::World::create_weld_joint` c
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-ad9895079ede3a91"]
 
 [functions.link_symbols]
 single = "b2CreateWeldJoint"
@@ -2337,7 +4586,7 @@ rationale = "Covered by the canonical public `boxdd::World::create_wheel_joint` 
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-6451024337593aa0"]
 
 [functions.link_symbols]
 single = "b2CreateWheelJoint"
@@ -2376,7 +4625,7 @@ rationale = "Covered by the canonical public `boxdd::BodyDef::default` capabilit
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-b85bc364e1bc3512"]
 
 [functions.link_symbols]
 single = "b2DefaultBodyDef"
@@ -2395,7 +4644,7 @@ rationale = "Covered by the canonical public `boxdd::ChainDef::default` capabili
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["chain-runtime"]
+evidence = ["runtime-auto-79012a21e8cefb01"]
 
 [functions.link_symbols]
 single = "b2DefaultChainDef"
@@ -2414,7 +4663,7 @@ rationale = "The safe debug-draw entrypoint constructs and owns the native callb
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-0727a7b1af3ddf1a"]
 
 [functions.link_symbols]
 single = "b2DefaultDebugDraw"
@@ -2452,7 +4701,7 @@ rationale = "Covered by the canonical public `boxdd::ExplosionDef::default` capa
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-3681933525eaadea"]
 
 [functions.link_symbols]
 single = "b2DefaultExplosionDef"
@@ -2471,7 +4720,7 @@ rationale = "Covered by the canonical public `boxdd::Filter::default` capability
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-9eb45e048ce4cd51"]
 
 [functions.link_symbols]
 single = "b2DefaultFilter"
@@ -2490,7 +4739,7 @@ rationale = "Covered by the canonical public `boxdd::FilterJointDef::new` capabi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-0d0935facf4d8b4d"]
 
 [functions.link_symbols]
 single = "b2DefaultFilterJointDef"
@@ -2509,7 +4758,7 @@ rationale = "Covered by the canonical public `boxdd::MotorJointDef::new` capabil
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-3edae9c93c503619"]
 
 [functions.link_symbols]
 single = "b2DefaultMotorJointDef"
@@ -2528,7 +4777,7 @@ rationale = "Covered by the canonical public `boxdd::PrismaticJointDef::new` cap
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-1a927626176bff85"]
 
 [functions.link_symbols]
 single = "b2DefaultPrismaticJointDef"
@@ -2547,7 +4796,7 @@ rationale = "Covered by the canonical public `boxdd::QueryFilter::default` capab
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["mover-runtime"]
 
 [functions.link_symbols]
 single = "b2DefaultQueryFilter"
@@ -2566,7 +4815,7 @@ rationale = "Covered by the canonical public `boxdd::RevoluteJointDef::new` capa
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-01ecbdfe249b5034"]
 
 [functions.link_symbols]
 single = "b2DefaultRevoluteJointDef"
@@ -2585,7 +4834,7 @@ rationale = "Covered by the canonical public `boxdd::ShapeDef::default` capabili
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-04e34518302ef756"]
 
 [functions.link_symbols]
 single = "b2DefaultShapeDef"
@@ -2604,7 +4853,7 @@ rationale = "Covered by the canonical public `boxdd::SurfaceMaterial::default` c
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["chain-runtime"]
 
 [functions.link_symbols]
 single = "b2DefaultSurfaceMaterial"
@@ -2623,7 +4872,7 @@ rationale = "Covered by the canonical public `boxdd::WeldJointDef::new` capabili
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-9da1a2adb13434af"]
 
 [functions.link_symbols]
 single = "b2DefaultWeldJointDef"
@@ -2642,7 +4891,7 @@ rationale = "Covered by the canonical public `boxdd::WheelJointDef::new` capabil
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-1a927626176bff85"]
 
 [functions.link_symbols]
 single = "b2DefaultWheelJointDef"
@@ -2661,7 +4910,7 @@ rationale = "Covered by the canonical public `boxdd::WorldDef::default` capabili
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["body-runtime"]
 
 [functions.link_symbols]
 single = "b2DefaultWorldDef"
@@ -2680,7 +4929,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedBody::destroy` capabil
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["body-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2DestroyBody"
@@ -2700,7 +4949,7 @@ rationale = "Covered by the canonical public `boxdd::Chain::destroy` capability;
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["chain-runtime"]
+evidence = ["runtime-auto-79012a21e8cefb01"]
 
 [functions.link_symbols]
 single = "b2DestroyChain"
@@ -2720,7 +4969,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::destroy` capability;
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2DestroyJoint"
@@ -2740,7 +4989,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::destroy` capabi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2DestroyShape"
@@ -2761,7 +5010,7 @@ rationale = "Covered by the canonical public `boxdd::World` capability; AST reac
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["world-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2DestroyWorld"
@@ -2781,7 +5030,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::distance_enable_limi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-8fd5a12fa1585219"]
 
 [functions.link_symbols]
 single = "b2DistanceJoint_EnableLimit"
@@ -2801,7 +5050,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::distance_enable_moto
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-8fd5a12fa1585219"]
 
 [functions.link_symbols]
 single = "b2DistanceJoint_EnableMotor"
@@ -2821,7 +5070,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::distance_enable_spri
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-8fd5a12fa1585219"]
 
 [functions.link_symbols]
 single = "b2DistanceJoint_EnableSpring"
@@ -2841,7 +5090,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::distance_current_len
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2DistanceJoint_GetCurrentLength"
@@ -2860,7 +5109,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::distance_length` cap
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-8fd5a12fa1585219"]
 
 [functions.link_symbols]
 single = "b2DistanceJoint_GetLength"
@@ -2879,7 +5128,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::distance_max_length`
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-8fd5a12fa1585219"]
 
 [functions.link_symbols]
 single = "b2DistanceJoint_GetMaxLength"
@@ -2898,7 +5147,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::distance_max_motor_f
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-8fd5a12fa1585219"]
 
 [functions.link_symbols]
 single = "b2DistanceJoint_GetMaxMotorForce"
@@ -2917,7 +5166,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::distance_min_length`
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-8fd5a12fa1585219"]
 
 [functions.link_symbols]
 single = "b2DistanceJoint_GetMinLength"
@@ -2936,7 +5185,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::distance_motor_force
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2DistanceJoint_GetMotorForce"
@@ -2955,7 +5204,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::distance_motor_speed
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-8fd5a12fa1585219"]
 
 [functions.link_symbols]
 single = "b2DistanceJoint_GetMotorSpeed"
@@ -2974,7 +5223,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::distance_spring_damp
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2DistanceJoint_GetSpringDampingRatio"
@@ -2993,7 +5242,7 @@ rationale = "Covered by the canonical public paired spring-force range query, wh
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2DistanceJoint_GetSpringForceRange"
@@ -3012,7 +5261,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::distance_spring_hert
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2DistanceJoint_GetSpringHertz"
@@ -3031,7 +5280,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::distance_limit_enabl
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2DistanceJoint_IsLimitEnabled"
@@ -3050,7 +5299,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::distance_motor_enabl
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2DistanceJoint_IsMotorEnabled"
@@ -3069,7 +5318,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::distance_spring_enab
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2DistanceJoint_IsSpringEnabled"
@@ -3088,7 +5337,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::distance_set_length`
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2DistanceJoint_SetLength"
@@ -3108,7 +5357,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::distance_set_length_
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2DistanceJoint_SetLengthRange"
@@ -3128,7 +5377,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::distance_set_max_mot
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2DistanceJoint_SetMaxMotorForce"
@@ -3148,7 +5397,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::distance_set_motor_s
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2DistanceJoint_SetMotorSpeed"
@@ -3168,7 +5417,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::distance_set_spring_
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-8fd5a12fa1585219"]
 
 [functions.link_symbols]
 single = "b2DistanceJoint_SetSpringDampingRatio"
@@ -3188,7 +5437,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::distance_set_spring_
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2DistanceJoint_SetSpringForceRange"
@@ -3208,7 +5457,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::distance_set_spring_
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-8fd5a12fa1585219"]
 
 [functions.link_symbols]
 single = "b2DistanceJoint_SetSpringHertz"
@@ -3267,7 +5516,7 @@ rationale = "Covered by the canonical public `boxdd::DynamicTree` capability; AS
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["tree-runtime"]
+evidence = ["runtime-auto-a7ea5174038fac78"]
 
 [functions.link_symbols]
 single = "b2DynamicTree_Destroy"
@@ -3286,7 +5535,7 @@ rationale = "Covered by the canonical public `boxdd::DynamicTree::destroy_proxy`
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["tree-runtime"]
+evidence = ["runtime-auto-9c6a36de9be66ef5"]
 
 [functions.link_symbols]
 single = "b2DynamicTree_DestroyProxy"
@@ -3305,7 +5554,7 @@ rationale = "Covered by the canonical public `boxdd::DynamicTree::enlarge_proxy`
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["tree-runtime"]
+evidence = ["runtime-auto-a7ea5174038fac78"]
 
 [functions.link_symbols]
 single = "b2DynamicTree_EnlargeProxy"
@@ -3324,7 +5573,7 @@ rationale = "Covered by the canonical public `boxdd::DynamicTree::aabb` capabili
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["tree-runtime"]
+evidence = ["runtime-auto-a7ea5174038fac78"]
 
 [functions.link_symbols]
 single = "b2DynamicTree_GetAABB"
@@ -3343,7 +5592,7 @@ rationale = "Covered by the canonical public `boxdd::DynamicTree::area_ratio` ca
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["tree-runtime"]
+evidence = ["runtime-auto-a7ea5174038fac78"]
 
 [functions.link_symbols]
 single = "b2DynamicTree_GetAreaRatio"
@@ -3362,7 +5611,7 @@ rationale = "Covered by the canonical public `boxdd::DynamicTree::byte_count` ca
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["tree-runtime"]
+evidence = ["runtime-auto-a7ea5174038fac78"]
 
 [functions.link_symbols]
 single = "b2DynamicTree_GetByteCount"
@@ -3381,7 +5630,7 @@ rationale = "Covered by the canonical public `boxdd::DynamicTree::category_bits`
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["tree-runtime"]
+evidence = ["runtime-auto-a7ea5174038fac78"]
 
 [functions.link_symbols]
 single = "b2DynamicTree_GetCategoryBits"
@@ -3400,7 +5649,7 @@ rationale = "Covered by the canonical public `boxdd::DynamicTree::height` capabi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["tree-runtime"]
+evidence = ["runtime-auto-a7ea5174038fac78"]
 
 [functions.link_symbols]
 single = "b2DynamicTree_GetHeight"
@@ -3419,7 +5668,7 @@ rationale = "Covered by the canonical public `boxdd::DynamicTree::proxy_count` c
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["tree-runtime"]
+evidence = ["runtime-auto-a7ea5174038fac78"]
 
 [functions.link_symbols]
 single = "b2DynamicTree_GetProxyCount"
@@ -3438,7 +5687,7 @@ rationale = "Covered by the canonical public `boxdd::DynamicTree::root_bounds` c
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["tree-runtime"]
+evidence = ["runtime-auto-a7ea5174038fac78"]
 
 [functions.link_symbols]
 single = "b2DynamicTree_GetRootBounds"
@@ -3457,7 +5706,7 @@ rationale = "Covered by the canonical public `boxdd::DynamicTree::user_data` cap
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["tree-runtime"]
+evidence = ["runtime-auto-9c6a36de9be66ef5"]
 
 [functions.link_symbols]
 single = "b2DynamicTree_GetUserData"
@@ -3476,7 +5725,7 @@ rationale = "Covered by the canonical public `boxdd::DynamicTree::move_proxy` ca
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["tree-runtime"]
+evidence = ["runtime-auto-9c6a36de9be66ef5"]
 
 [functions.link_symbols]
 single = "b2DynamicTree_MoveProxy"
@@ -3495,7 +5744,7 @@ rationale = "Covered by the canonical public `boxdd::DynamicTree::query` capabil
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["tree-runtime"]
+evidence = ["runtime-auto-f8646325a460d0b1"]
 
 [functions.link_symbols]
 single = "b2DynamicTree_Query"
@@ -3514,7 +5763,7 @@ rationale = "Covered by the canonical public `boxdd::DynamicTree::query_all` cap
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["tree-runtime"]
+evidence = ["runtime-auto-8c413c1ddc7e4561"]
 
 [functions.link_symbols]
 single = "b2DynamicTree_QueryAll"
@@ -3552,7 +5801,7 @@ rationale = "Covered by the canonical public `boxdd::DynamicTree::rebuild` capab
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["tree-runtime"]
+evidence = ["runtime-auto-a7ea5174038fac78"]
 
 [functions.link_symbols]
 single = "b2DynamicTree_Rebuild"
@@ -3587,7 +5836,7 @@ rationale = "Covered by the canonical public `boxdd::DynamicTree::shape_cast` ca
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["tree-runtime"]
 
 [functions.link_symbols]
 single = "b2DynamicTree_ShapeCast"
@@ -3606,7 +5855,7 @@ rationale = "Covered by the canonical public `boxdd::DynamicTree::validate` capa
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["tree-runtime"]
+evidence = ["runtime-auto-a7ea5174038fac78"]
 
 [functions.link_symbols]
 single = "b2DynamicTree_Validate"
@@ -3625,7 +5874,7 @@ rationale = "Covered by the canonical public `boxdd::DynamicTree::validate_no_en
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["tree-runtime"]
+evidence = ["runtime-auto-a7ea5174038fac78"]
 
 [functions.link_symbols]
 single = "b2DynamicTree_ValidateNoEnlarged"
@@ -3663,7 +5912,7 @@ rationale = "Covered by the canonical public `boxdd::length_units_per_meter` cap
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["math-runtime"]
+evidence = ["runtime-auto-3681933525eaadea"]
 
 [functions.link_symbols]
 single = "b2GetLengthUnitsPerMeter"
@@ -3720,7 +5969,7 @@ rationale = "Covered by the canonical public `boxdd::Sweep::transform_at` capabi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["math-runtime"]
+evidence = ["runtime-auto-3681933525eaadea"]
 
 [functions.link_symbols]
 single = "b2GetSweepTransform"
@@ -3799,7 +6048,7 @@ availability = [
     "debug-profile",
     "assertions-enabled",
 ]
-evidence = ["foundation-runtime"]
+evidence = ["api-classification-validator"]
 
 [functions.link_symbols]
 single = "b2InternalAssertFcn"
@@ -3815,7 +6064,7 @@ rationale = "Covered by the canonical public `boxdd::Aabb::is_valid` capability;
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["collision-runtime"]
+evidence = ["runtime-auto-a7ea5174038fac78"]
 
 [functions.link_symbols]
 single = "b2IsValidAABB"
@@ -3853,7 +6102,7 @@ rationale = "Covered by the canonical public `boxdd::Plane::is_valid` capability
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["math-public-runtime"]
 
 [functions.link_symbols]
 single = "b2IsValidPlane"
@@ -3872,7 +6121,7 @@ rationale = "Safe ray-cast entrypoints validate origin, translation, and fractio
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-a15dc4eb59e79777"]
 
 [functions.link_symbols]
 single = "b2IsValidRay"
@@ -3891,7 +6140,7 @@ rationale = "Covered by the canonical public `boxdd::Rot::is_valid` capability; 
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["math-runtime"]
+evidence = ["math-public-runtime"]
 
 [functions.link_symbols]
 single = "b2IsValidRotation"
@@ -3910,7 +6159,7 @@ rationale = "Covered by the canonical public `boxdd::Transform::is_valid` capabi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["math-runtime"]
+evidence = ["math-public-runtime"]
 
 [functions.link_symbols]
 single = "b2IsValidTransform"
@@ -3929,7 +6178,7 @@ rationale = "Covered by the canonical public `boxdd::Vec2::is_valid` capability;
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["math-runtime"]
+evidence = ["math-public-runtime"]
 
 [functions.link_symbols]
 single = "b2IsValidVec2"
@@ -3948,7 +6197,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::angular_separation` 
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2Joint_GetAngularSeparation"
@@ -4024,7 +6273,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::constraint_force` ca
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2Joint_GetConstraintForce"
@@ -4043,7 +6292,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::constraint_torque` c
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2Joint_GetConstraintTorque"
@@ -4081,7 +6330,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::force_threshold` cap
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2Joint_GetForceThreshold"
@@ -4100,7 +6349,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::linear_separation` c
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2Joint_GetLinearSeparation"
@@ -4157,7 +6406,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::torque_threshold` ca
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2Joint_GetTorqueThreshold"
@@ -4195,7 +6444,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_user_data_ptr_ra
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2Joint_GetUserData"
@@ -4233,7 +6482,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::is_valid` capability
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-0d0935facf4d8b4d"]
 
 [functions.link_symbols]
 single = "b2Joint_IsValid"
@@ -4272,7 +6521,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::set_constraint_tunin
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2Joint_SetConstraintTuning"
@@ -4292,7 +6541,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::set_force_threshold`
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2Joint_SetForceThreshold"
@@ -4332,7 +6581,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::set_local_frame_b` c
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2Joint_SetLocalFrameB"
@@ -4352,7 +6601,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::set_torque_threshold
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2Joint_SetTorqueThreshold"
@@ -4372,7 +6621,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::set_user_data` capab
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-04e34518302ef756"]
 
 [functions.link_symbols]
 single = "b2Joint_SetUserData"
@@ -4391,7 +6640,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::wake_bodies` capabil
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b934ec1466c6b201"]
 
 [functions.link_symbols]
 single = "b2Joint_WakeBodies"
@@ -4411,7 +6660,7 @@ rationale = "Covered by the canonical public `boxdd::Polygon::box_polygon` capab
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-3681933525eaadea"]
 
 [functions.link_symbols]
 single = "b2MakeBox"
@@ -4430,7 +6679,7 @@ rationale = "Covered by the canonical public `boxdd::Polygon::offset_box_polygon
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-3681933525eaadea"]
 
 [functions.link_symbols]
 single = "b2MakeOffsetBox"
@@ -4449,7 +6698,7 @@ rationale = "Covered by the canonical public `boxdd::Polygon::offset_from_points
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-3681933525eaadea"]
 
 [functions.link_symbols]
 single = "b2MakeOffsetPolygon"
@@ -4468,7 +6717,7 @@ rationale = "The safe offset shape-cast path constructs the native proxy interna
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-92511ac011ccde4b"]
 
 [functions.link_symbols]
 single = "b2MakeOffsetProxy"
@@ -4487,7 +6736,7 @@ rationale = "Covered by the canonical public `boxdd::Polygon::offset_rounded_box
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-3681933525eaadea"]
 
 [functions.link_symbols]
 single = "b2MakeOffsetRoundedBox"
@@ -4506,7 +6755,7 @@ rationale = "Covered by the canonical public `boxdd::Polygon::offset_from_points
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-3681933525eaadea"]
 
 [functions.link_symbols]
 single = "b2MakeOffsetRoundedPolygon"
@@ -4525,7 +6774,7 @@ rationale = "The safe polygon constructor accepts points directly and keeps the 
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-4a5a0886e117924a"]
 
 [functions.link_symbols]
 single = "b2MakePolygon"
@@ -4544,7 +6793,7 @@ rationale = "Covered by the canonical public `boxdd::ShapeProxy::new` capability
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-057fbab687126c96"]
 
 [functions.link_symbols]
 single = "b2MakeProxy"
@@ -4563,7 +6812,7 @@ rationale = "Covered by the canonical public `boxdd::Polygon::rounded_box_polygo
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-3681933525eaadea"]
 
 [functions.link_symbols]
 single = "b2MakeRoundedBox"
@@ -4582,7 +6831,7 @@ rationale = "Covered by the canonical public `boxdd::Polygon::square_polygon` ca
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-3364185584e6b2ca"]
 
 [functions.link_symbols]
 single = "b2MakeSquare"
@@ -4601,7 +6850,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::motor_angular_dampin
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-997e00e3d8f05165"]
 
 [functions.link_symbols]
 single = "b2MotorJoint_GetAngularDampingRatio"
@@ -4620,7 +6869,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::motor_angular_hertz`
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-997e00e3d8f05165"]
 
 [functions.link_symbols]
 single = "b2MotorJoint_GetAngularHertz"
@@ -4639,7 +6888,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::motor_angular_veloci
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-997e00e3d8f05165"]
 
 [functions.link_symbols]
 single = "b2MotorJoint_GetAngularVelocity"
@@ -4658,7 +6907,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::motor_linear_damping
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-997e00e3d8f05165"]
 
 [functions.link_symbols]
 single = "b2MotorJoint_GetLinearDampingRatio"
@@ -4677,7 +6926,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::motor_linear_hertz` 
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-997e00e3d8f05165"]
 
 [functions.link_symbols]
 single = "b2MotorJoint_GetLinearHertz"
@@ -4696,7 +6945,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::motor_linear_velocit
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b4bfd105636d9490"]
 
 [functions.link_symbols]
 single = "b2MotorJoint_GetLinearVelocity"
@@ -4715,7 +6964,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::motor_max_spring_for
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-997e00e3d8f05165"]
 
 [functions.link_symbols]
 single = "b2MotorJoint_GetMaxSpringForce"
@@ -4734,7 +6983,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::motor_max_spring_tor
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b4bfd105636d9490"]
 
 [functions.link_symbols]
 single = "b2MotorJoint_GetMaxSpringTorque"
@@ -4753,7 +7002,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::motor_max_velocity_f
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-997e00e3d8f05165"]
 
 [functions.link_symbols]
 single = "b2MotorJoint_GetMaxVelocityForce"
@@ -4772,7 +7021,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::motor_max_velocity_t
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b4bfd105636d9490"]
 
 [functions.link_symbols]
 single = "b2MotorJoint_GetMaxVelocityTorque"
@@ -4791,7 +7040,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::motor_set_angular_da
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b4bfd105636d9490"]
 
 [functions.link_symbols]
 single = "b2MotorJoint_SetAngularDampingRatio"
@@ -4811,7 +7060,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::motor_set_angular_he
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b4bfd105636d9490"]
 
 [functions.link_symbols]
 single = "b2MotorJoint_SetAngularHertz"
@@ -4831,7 +7080,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::motor_set_angular_ve
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-997e00e3d8f05165"]
 
 [functions.link_symbols]
 single = "b2MotorJoint_SetAngularVelocity"
@@ -4851,7 +7100,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::motor_set_linear_dam
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b4bfd105636d9490"]
 
 [functions.link_symbols]
 single = "b2MotorJoint_SetLinearDampingRatio"
@@ -4871,7 +7120,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::motor_set_linear_her
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-997e00e3d8f05165"]
 
 [functions.link_symbols]
 single = "b2MotorJoint_SetLinearHertz"
@@ -4891,7 +7140,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::motor_set_linear_vel
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b4bfd105636d9490"]
 
 [functions.link_symbols]
 single = "b2MotorJoint_SetLinearVelocity"
@@ -4911,7 +7160,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::motor_set_max_spring
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-997e00e3d8f05165"]
 
 [functions.link_symbols]
 single = "b2MotorJoint_SetMaxSpringForce"
@@ -4931,7 +7180,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::motor_set_max_spring
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b4bfd105636d9490"]
 
 [functions.link_symbols]
 single = "b2MotorJoint_SetMaxSpringTorque"
@@ -4951,7 +7200,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::motor_set_max_veloci
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-997e00e3d8f05165"]
 
 [functions.link_symbols]
 single = "b2MotorJoint_SetMaxVelocityForce"
@@ -4971,7 +7220,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::motor_set_max_veloci
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-b4bfd105636d9490"]
 
 [functions.link_symbols]
 single = "b2MotorJoint_SetMaxVelocityTorque"
@@ -4991,7 +7240,7 @@ rationale = "Covered by the canonical public `boxdd::Capsule::contains_point` ca
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-a15dc4eb59e79777"]
 
 [functions.link_symbols]
 single = "b2PointInCapsule"
@@ -5010,7 +7259,7 @@ rationale = "Covered by the canonical public `boxdd::Circle::contains_point` cap
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-00343cd8b2ddecdb"]
 
 [functions.link_symbols]
 single = "b2PointInCircle"
@@ -5029,7 +7278,7 @@ rationale = "Covered by the canonical public `boxdd::Polygon::contains_point` ca
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-00343cd8b2ddecdb"]
 
 [functions.link_symbols]
 single = "b2PointInPolygon"
@@ -5048,7 +7297,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::prismatic_enable_lim
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-cba47ca98dbc44be"]
 
 [functions.link_symbols]
 single = "b2PrismaticJoint_EnableLimit"
@@ -5068,7 +7317,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::prismatic_enable_mot
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-98bb1fcafc8cca90"]
 
 [functions.link_symbols]
 single = "b2PrismaticJoint_EnableMotor"
@@ -5088,7 +7337,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::prismatic_enable_spr
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-cba47ca98dbc44be"]
 
 [functions.link_symbols]
 single = "b2PrismaticJoint_EnableSpring"
@@ -5108,7 +7357,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::prismatic_lower_limi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-98bb1fcafc8cca90"]
 
 [functions.link_symbols]
 single = "b2PrismaticJoint_GetLowerLimit"
@@ -5127,7 +7376,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::prismatic_max_motor_
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-98bb1fcafc8cca90"]
 
 [functions.link_symbols]
 single = "b2PrismaticJoint_GetMaxMotorForce"
@@ -5146,7 +7395,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::prismatic_motor_forc
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-cba47ca98dbc44be"]
 
 [functions.link_symbols]
 single = "b2PrismaticJoint_GetMotorForce"
@@ -5165,7 +7414,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::prismatic_motor_spee
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-cba47ca98dbc44be"]
 
 [functions.link_symbols]
 single = "b2PrismaticJoint_GetMotorSpeed"
@@ -5184,7 +7433,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::prismatic_speed` cap
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-cba47ca98dbc44be"]
 
 [functions.link_symbols]
 single = "b2PrismaticJoint_GetSpeed"
@@ -5203,7 +7452,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::prismatic_spring_dam
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-cba47ca98dbc44be"]
 
 [functions.link_symbols]
 single = "b2PrismaticJoint_GetSpringDampingRatio"
@@ -5222,7 +7471,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::prismatic_spring_her
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-cba47ca98dbc44be"]
 
 [functions.link_symbols]
 single = "b2PrismaticJoint_GetSpringHertz"
@@ -5241,7 +7490,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::prismatic_target_tra
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-98bb1fcafc8cca90"]
 
 [functions.link_symbols]
 single = "b2PrismaticJoint_GetTargetTranslation"
@@ -5260,7 +7509,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::prismatic_translatio
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-cba47ca98dbc44be"]
 
 [functions.link_symbols]
 single = "b2PrismaticJoint_GetTranslation"
@@ -5279,7 +7528,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::prismatic_upper_limi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-98bb1fcafc8cca90"]
 
 [functions.link_symbols]
 single = "b2PrismaticJoint_GetUpperLimit"
@@ -5298,7 +7547,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::prismatic_limit_enab
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-cba47ca98dbc44be"]
 
 [functions.link_symbols]
 single = "b2PrismaticJoint_IsLimitEnabled"
@@ -5317,7 +7566,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::prismatic_motor_enab
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-cba47ca98dbc44be"]
 
 [functions.link_symbols]
 single = "b2PrismaticJoint_IsMotorEnabled"
@@ -5336,7 +7585,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::prismatic_spring_ena
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-cba47ca98dbc44be"]
 
 [functions.link_symbols]
 single = "b2PrismaticJoint_IsSpringEnabled"
@@ -5355,7 +7604,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::prismatic_set_limits
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-cba47ca98dbc44be"]
 
 [functions.link_symbols]
 single = "b2PrismaticJoint_SetLimits"
@@ -5375,7 +7624,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::prismatic_set_max_mo
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-cba47ca98dbc44be"]
 
 [functions.link_symbols]
 single = "b2PrismaticJoint_SetMaxMotorForce"
@@ -5395,7 +7644,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::prismatic_set_motor_
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-98bb1fcafc8cca90"]
 
 [functions.link_symbols]
 single = "b2PrismaticJoint_SetMotorSpeed"
@@ -5415,7 +7664,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::prismatic_set_spring
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-98bb1fcafc8cca90"]
 
 [functions.link_symbols]
 single = "b2PrismaticJoint_SetSpringDampingRatio"
@@ -5435,7 +7684,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::prismatic_set_spring
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-98bb1fcafc8cca90"]
 
 [functions.link_symbols]
 single = "b2PrismaticJoint_SetSpringHertz"
@@ -5455,7 +7704,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::prismatic_set_target
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-98bb1fcafc8cca90"]
 
 [functions.link_symbols]
 single = "b2PrismaticJoint_SetTargetTranslation"
@@ -5475,7 +7724,7 @@ rationale = "Covered by the canonical public `boxdd::Capsule::ray_cast` capabili
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["collision-runtime"]
+evidence = ["runtime-auto-a15dc4eb59e79777"]
 
 [functions.link_symbols]
 single = "b2RayCastCapsule"
@@ -5494,7 +7743,7 @@ rationale = "Covered by the canonical public `boxdd::Circle::ray_cast` capabilit
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["collision-runtime"]
+evidence = ["runtime-auto-00343cd8b2ddecdb"]
 
 [functions.link_symbols]
 single = "b2RayCastCircle"
@@ -5513,7 +7762,7 @@ rationale = "Covered by the canonical public `boxdd::Polygon::ray_cast` capabili
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["collision-runtime"]
+evidence = ["runtime-auto-00343cd8b2ddecdb"]
 
 [functions.link_symbols]
 single = "b2RayCastPolygon"
@@ -5532,7 +7781,7 @@ rationale = "Covered by the canonical public `boxdd::Segment::ray_cast` capabili
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["collision-runtime"]
+evidence = ["runtime-auto-a15dc4eb59e79777"]
 
 [functions.link_symbols]
 single = "b2RayCastSegment"
@@ -5551,7 +7800,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::revolute_enable_limi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-01ecbdfe249b5034"]
 
 [functions.link_symbols]
 single = "b2RevoluteJoint_EnableLimit"
@@ -5571,7 +7820,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::revolute_enable_moto
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-01ecbdfe249b5034"]
 
 [functions.link_symbols]
 single = "b2RevoluteJoint_EnableMotor"
@@ -5591,7 +7840,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::revolute_enable_spri
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-01ecbdfe249b5034"]
 
 [functions.link_symbols]
 single = "b2RevoluteJoint_EnableSpring"
@@ -5611,7 +7860,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::revolute_angle` capa
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-573e632c7b3559be"]
 
 [functions.link_symbols]
 single = "b2RevoluteJoint_GetAngle"
@@ -5630,7 +7879,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::revolute_lower_limit
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-01ecbdfe249b5034"]
 
 [functions.link_symbols]
 single = "b2RevoluteJoint_GetLowerLimit"
@@ -5649,7 +7898,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::revolute_max_motor_t
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-01ecbdfe249b5034"]
 
 [functions.link_symbols]
 single = "b2RevoluteJoint_GetMaxMotorTorque"
@@ -5668,7 +7917,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::revolute_motor_speed
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-573e632c7b3559be"]
 
 [functions.link_symbols]
 single = "b2RevoluteJoint_GetMotorSpeed"
@@ -5687,7 +7936,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::revolute_motor_torqu
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-573e632c7b3559be"]
 
 [functions.link_symbols]
 single = "b2RevoluteJoint_GetMotorTorque"
@@ -5706,7 +7955,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::revolute_spring_damp
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-573e632c7b3559be"]
 
 [functions.link_symbols]
 single = "b2RevoluteJoint_GetSpringDampingRatio"
@@ -5725,7 +7974,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::revolute_spring_hert
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-573e632c7b3559be"]
 
 [functions.link_symbols]
 single = "b2RevoluteJoint_GetSpringHertz"
@@ -5744,7 +7993,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::revolute_target_angl
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-01ecbdfe249b5034"]
 
 [functions.link_symbols]
 single = "b2RevoluteJoint_GetTargetAngle"
@@ -5763,7 +8012,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::revolute_upper_limit
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-01ecbdfe249b5034"]
 
 [functions.link_symbols]
 single = "b2RevoluteJoint_GetUpperLimit"
@@ -5782,7 +8031,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::revolute_limit_enabl
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-573e632c7b3559be"]
 
 [functions.link_symbols]
 single = "b2RevoluteJoint_IsLimitEnabled"
@@ -5801,7 +8050,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::revolute_motor_enabl
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-573e632c7b3559be"]
 
 [functions.link_symbols]
 single = "b2RevoluteJoint_IsMotorEnabled"
@@ -5820,7 +8069,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::revolute_spring_enab
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-573e632c7b3559be"]
 
 [functions.link_symbols]
 single = "b2RevoluteJoint_IsSpringEnabled"
@@ -5839,7 +8088,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::revolute_set_limits`
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-573e632c7b3559be"]
 
 [functions.link_symbols]
 single = "b2RevoluteJoint_SetLimits"
@@ -5859,7 +8108,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::revolute_set_max_mot
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-573e632c7b3559be"]
 
 [functions.link_symbols]
 single = "b2RevoluteJoint_SetMaxMotorTorque"
@@ -5879,7 +8128,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::revolute_set_motor_s
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-01ecbdfe249b5034"]
 
 [functions.link_symbols]
 single = "b2RevoluteJoint_SetMotorSpeed"
@@ -5899,7 +8148,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::revolute_set_spring_
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-01ecbdfe249b5034"]
 
 [functions.link_symbols]
 single = "b2RevoluteJoint_SetSpringDampingRatio"
@@ -5919,7 +8168,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::revolute_set_spring_
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-01ecbdfe249b5034"]
 
 [functions.link_symbols]
 single = "b2RevoluteJoint_SetSpringHertz"
@@ -5939,7 +8188,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::revolute_set_target_
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-573e632c7b3559be"]
 
 [functions.link_symbols]
 single = "b2RevoluteJoint_SetTargetAngle"
@@ -5959,7 +8208,7 @@ rationale = "Covered by the canonical public `boxdd::segment_distance` capabilit
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["collision-runtime"]
+evidence = ["runtime-auto-057fbab687126c96"]
 
 [functions.link_symbols]
 single = "b2SegmentDistance"
@@ -5978,7 +8227,7 @@ rationale = "Raw only: process-global allocator hook needs a scoped startup guar
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["api-classification-validator"]
 
 [functions.link_symbols]
 single = "b2SetAllocator"
@@ -5994,7 +8243,7 @@ rationale = "Raw only: process-global assert callback has panic/callback unwindi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["api-classification-validator"]
 
 [functions.link_symbols]
 single = "b2SetAssertFcn"
@@ -6010,7 +8259,7 @@ rationale = "Raw during U1: process-global length scale mutation is not synchron
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["math-runtime"]
+evidence = ["api-classification-validator"]
 
 [functions.link_symbols]
 single = "b2SetLengthUnitsPerMeter"
@@ -6026,7 +8275,7 @@ rationale = "Raw only: process-global log callback needs a scoped callback guard
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["api-classification-validator"]
 
 [functions.link_symbols]
 single = "b2SetLogFcn"
@@ -6042,7 +8291,7 @@ rationale = "Covered by the canonical public `boxdd::shape_cast` capability; AST
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-057fbab687126c96"]
 
 [functions.link_symbols]
 single = "b2ShapeCast"
@@ -6061,7 +8310,7 @@ rationale = "Covered by the canonical public `boxdd::Capsule::shape_cast` capabi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-0da5a231d915adf3"]
 
 [functions.link_symbols]
 single = "b2ShapeCastCapsule"
@@ -6080,7 +8329,7 @@ rationale = "Covered by the canonical public `boxdd::Circle::shape_cast` capabil
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-0da5a231d915adf3"]
 
 [functions.link_symbols]
 single = "b2ShapeCastCircle"
@@ -6099,7 +8348,7 @@ rationale = "Covered by the canonical public `boxdd::Polygon::shape_cast` capabi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-0da5a231d915adf3"]
 
 [functions.link_symbols]
 single = "b2ShapeCastPolygon"
@@ -6118,7 +8367,7 @@ rationale = "Covered by the canonical public `boxdd::Segment::shape_cast` capabi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-0da5a231d915adf3"]
 
 [functions.link_symbols]
 single = "b2ShapeCastSegment"
@@ -6137,7 +8386,7 @@ rationale = "Covered by the canonical public `boxdd::shape_distance` capability;
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-057fbab687126c96"]
 
 [functions.link_symbols]
 single = "b2ShapeDistance"
@@ -6156,7 +8405,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::apply_wind` cap
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-aeba55c8b40f5bcd"]
 
 [functions.link_symbols]
 single = "b2Shape_ApplyWind"
@@ -6176,7 +8425,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::contact_events_
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-279c0949707813f2"]
 
 [functions.link_symbols]
 single = "b2Shape_AreContactEventsEnabled"
@@ -6195,7 +8444,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::hit_events_enab
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-279c0949707813f2"]
 
 [functions.link_symbols]
 single = "b2Shape_AreHitEventsEnabled"
@@ -6214,7 +8463,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::pre_solve_event
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-279c0949707813f2"]
 
 [functions.link_symbols]
 single = "b2Shape_ArePreSolveEventsEnabled"
@@ -6233,7 +8482,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::sensor_events_e
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_AreSensorEventsEnabled"
@@ -6252,7 +8501,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::mass_data` capa
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_ComputeMassData"
@@ -6271,7 +8520,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::enable_contact_
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-279c0949707813f2"]
 
 [functions.link_symbols]
 single = "b2Shape_EnableContactEvents"
@@ -6291,7 +8540,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::enable_hit_even
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-279c0949707813f2"]
 
 [functions.link_symbols]
 single = "b2Shape_EnableHitEvents"
@@ -6311,7 +8560,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::enable_pre_solv
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-279c0949707813f2"]
 
 [functions.link_symbols]
 single = "b2Shape_EnablePreSolveEvents"
@@ -6331,7 +8580,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::enable_sensor_e
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_EnableSensorEvents"
@@ -6351,7 +8600,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::aabb` capabilit
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_GetAABB"
@@ -6370,7 +8619,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::body_id` capabi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_GetBody"
@@ -6389,7 +8638,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::capsule` capabi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_GetCapsule"
@@ -6408,7 +8657,7 @@ rationale = "Covered by the canonical public `boxdd::Shape::chain_segment` capab
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-8a633eb45beab230"]
 
 [functions.link_symbols]
 single = "b2Shape_GetChainSegment"
@@ -6427,7 +8676,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::circle` capabil
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-9eb45e048ce4cd51"]
 
 [functions.link_symbols]
 single = "b2Shape_GetCircle"
@@ -6446,7 +8695,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::closest_point` 
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-aeba55c8b40f5bcd"]
 
 [functions.link_symbols]
 single = "b2Shape_GetClosestPoint"
@@ -6465,7 +8714,7 @@ rationale = "The safe contact-data query owns buffer allocation and uses the nat
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-c90820a2d0847c08"]
 
 [functions.link_symbols]
 single = "b2Shape_GetContactCapacity"
@@ -6484,7 +8733,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::contact_data` c
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-c90820a2d0847c08"]
 
 [functions.link_symbols]
 single = "b2Shape_GetContactData"
@@ -6503,7 +8752,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::density` capabi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_GetDensity"
@@ -6522,7 +8771,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::filter` capabil
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-e5763ca439838591"]
 
 [functions.link_symbols]
 single = "b2Shape_GetFilter"
@@ -6541,7 +8790,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::friction` capab
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_GetFriction"
@@ -6560,7 +8809,7 @@ rationale = "Covered by the canonical public `boxdd::Shape::parent_chain_id` cap
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-8a633eb45beab230"]
 
 [functions.link_symbols]
 single = "b2Shape_GetParentChain"
@@ -6579,7 +8828,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::polygon` capabi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-9eb45e048ce4cd51"]
 
 [functions.link_symbols]
 single = "b2Shape_GetPolygon"
@@ -6598,7 +8847,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::restitution` ca
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_GetRestitution"
@@ -6617,7 +8866,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::segment` capabi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_GetSegment"
@@ -6636,7 +8885,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::sensor_capacity
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_GetSensorCapacity"
@@ -6655,7 +8904,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::sensor_overlaps
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_GetSensorData"
@@ -6674,7 +8923,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::surface_materia
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_GetSurfaceMaterial"
@@ -6693,7 +8942,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::shape_type` cap
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-7a81f320c1e0288f"]
 
 [functions.link_symbols]
 single = "b2Shape_GetType"
@@ -6712,7 +8961,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::try_user_data_p
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-204bde02e1e055ee"]
 
 [functions.link_symbols]
 single = "b2Shape_GetUserData"
@@ -6731,7 +8980,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::try_user_materi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_GetUserMaterial"
@@ -6750,7 +8999,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::try_world_id_ra
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-ac311a0b295722da"]
 
 [functions.link_symbols]
 single = "b2Shape_GetWorld"
@@ -6769,7 +9018,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::is_sensor` capa
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_IsSensor"
@@ -6788,7 +9037,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::is_valid` capab
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_IsValid"
@@ -6807,7 +9056,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::ray_cast` capab
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_RayCast"
@@ -6827,7 +9076,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::set_capsule` ca
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_SetCapsule"
@@ -6847,7 +9096,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::set_circle` cap
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-9eb45e048ce4cd51"]
 
 [functions.link_symbols]
 single = "b2Shape_SetCircle"
@@ -6867,7 +9116,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::set_density` ca
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_SetDensity"
@@ -6887,7 +9136,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::set_filter` cap
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-e5763ca439838591"]
 
 [functions.link_symbols]
 single = "b2Shape_SetFilter"
@@ -6907,7 +9156,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::set_friction` c
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_SetFriction"
@@ -6927,7 +9176,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::set_polygon` ca
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_SetPolygon"
@@ -6947,7 +9196,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::set_restitution
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_SetRestitution"
@@ -6967,7 +9216,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::set_segment` ca
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_SetSegment"
@@ -6987,7 +9236,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::set_surface_mat
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_SetSurfaceMaterial"
@@ -7007,7 +9256,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::set_user_data` 
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-85839793d2c3fe5b"]
 
 [functions.link_symbols]
 single = "b2Shape_SetUserData"
@@ -7026,7 +9275,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::set_user_materi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_SetUserMaterial"
@@ -7046,7 +9295,7 @@ rationale = "Covered by the canonical public `boxdd::OwnedShape::test_point` cap
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["shape-runtime"]
+evidence = ["runtime-auto-da1554569b2356d3"]
 
 [functions.link_symbols]
 single = "b2Shape_TestPoint"
@@ -7066,7 +9315,7 @@ rationale = "Covered by the canonical public `boxdd::solve_planes` capability; A
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["mover-runtime"]
 
 [functions.link_symbols]
 single = "b2SolvePlanes"
@@ -7085,7 +9334,7 @@ rationale = "Covered by the canonical public `boxdd::time_of_impact` capability;
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["foundation-runtime"]
+evidence = ["runtime-auto-057fbab687126c96"]
 
 [functions.link_symbols]
 single = "b2TimeOfImpact"
@@ -7104,7 +9353,7 @@ rationale = "Covered by the canonical public `boxdd::Polygon::transformed` capab
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["math-runtime"]
+evidence = ["runtime-auto-3364185584e6b2ca"]
 
 [functions.link_symbols]
 single = "b2TransformPolygon"
@@ -7123,7 +9372,7 @@ rationale = "Covered by the canonical public `boxdd::Polygon::hull_is_valid` cap
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["collision-runtime"]
+evidence = ["runtime-auto-3681933525eaadea"]
 
 [functions.link_symbols]
 single = "b2ValidateHull"
@@ -7142,7 +9391,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_weld_angular_dam
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-ad9895079ede3a91"]
 
 [functions.link_symbols]
 single = "b2WeldJoint_GetAngularDampingRatio"
@@ -7161,7 +9410,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_weld_angular_her
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-ad9895079ede3a91"]
 
 [functions.link_symbols]
 single = "b2WeldJoint_GetAngularHertz"
@@ -7180,7 +9429,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_weld_linear_damp
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-ad9895079ede3a91"]
 
 [functions.link_symbols]
 single = "b2WeldJoint_GetLinearDampingRatio"
@@ -7199,7 +9448,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_weld_linear_hert
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-ad9895079ede3a91"]
 
 [functions.link_symbols]
 single = "b2WeldJoint_GetLinearHertz"
@@ -7218,7 +9467,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_weld_set_angular
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-ad9895079ede3a91"]
 
 [functions.link_symbols]
 single = "b2WeldJoint_SetAngularDampingRatio"
@@ -7238,7 +9487,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_weld_set_angular
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-ad9895079ede3a91"]
 
 [functions.link_symbols]
 single = "b2WeldJoint_SetAngularHertz"
@@ -7258,7 +9507,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_weld_set_linear_
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-ad9895079ede3a91"]
 
 [functions.link_symbols]
 single = "b2WeldJoint_SetLinearDampingRatio"
@@ -7278,7 +9527,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_weld_set_linear_
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-ad9895079ede3a91"]
 
 [functions.link_symbols]
 single = "b2WeldJoint_SetLinearHertz"
@@ -7298,7 +9547,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_wheel_enable_lim
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-6451024337593aa0"]
 
 [functions.link_symbols]
 single = "b2WheelJoint_EnableLimit"
@@ -7318,7 +9567,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_wheel_enable_mot
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-6451024337593aa0"]
 
 [functions.link_symbols]
 single = "b2WheelJoint_EnableMotor"
@@ -7338,7 +9587,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_wheel_enable_spr
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-6451024337593aa0"]
 
 [functions.link_symbols]
 single = "b2WheelJoint_EnableSpring"
@@ -7358,7 +9607,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_wheel_lower_limi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-6451024337593aa0"]
 
 [functions.link_symbols]
 single = "b2WheelJoint_GetLowerLimit"
@@ -7377,7 +9626,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_wheel_max_motor_
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-6451024337593aa0"]
 
 [functions.link_symbols]
 single = "b2WheelJoint_GetMaxMotorTorque"
@@ -7396,7 +9645,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_wheel_motor_spee
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-6451024337593aa0"]
 
 [functions.link_symbols]
 single = "b2WheelJoint_GetMotorSpeed"
@@ -7415,7 +9664,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_wheel_motor_torq
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-6451024337593aa0"]
 
 [functions.link_symbols]
 single = "b2WheelJoint_GetMotorTorque"
@@ -7434,7 +9683,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_wheel_spring_dam
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-6451024337593aa0"]
 
 [functions.link_symbols]
 single = "b2WheelJoint_GetSpringDampingRatio"
@@ -7453,7 +9702,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_wheel_spring_her
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-6451024337593aa0"]
 
 [functions.link_symbols]
 single = "b2WheelJoint_GetSpringHertz"
@@ -7472,7 +9721,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_wheel_upper_limi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-6451024337593aa0"]
 
 [functions.link_symbols]
 single = "b2WheelJoint_GetUpperLimit"
@@ -7491,7 +9740,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_wheel_limit_enab
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-6451024337593aa0"]
 
 [functions.link_symbols]
 single = "b2WheelJoint_IsLimitEnabled"
@@ -7510,7 +9759,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_wheel_motor_enab
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-6451024337593aa0"]
 
 [functions.link_symbols]
 single = "b2WheelJoint_IsMotorEnabled"
@@ -7529,7 +9778,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_wheel_spring_ena
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-6451024337593aa0"]
 
 [functions.link_symbols]
 single = "b2WheelJoint_IsSpringEnabled"
@@ -7548,7 +9797,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_wheel_set_limits
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-6451024337593aa0"]
 
 [functions.link_symbols]
 single = "b2WheelJoint_SetLimits"
@@ -7568,7 +9817,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_wheel_set_max_mo
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-6451024337593aa0"]
 
 [functions.link_symbols]
 single = "b2WheelJoint_SetMaxMotorTorque"
@@ -7588,7 +9837,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_wheel_set_motor_
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-6451024337593aa0"]
 
 [functions.link_symbols]
 single = "b2WheelJoint_SetMotorSpeed"
@@ -7608,7 +9857,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_wheel_set_spring
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-6451024337593aa0"]
 
 [functions.link_symbols]
 single = "b2WheelJoint_SetSpringDampingRatio"
@@ -7628,7 +9877,7 @@ rationale = "Covered by the canonical public `boxdd::Joint::try_wheel_set_spring
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["joint-runtime"]
+evidence = ["runtime-auto-6451024337593aa0"]
 
 [functions.link_symbols]
 single = "b2WheelJoint_SetSpringHertz"
@@ -7648,7 +9897,7 @@ rationale = "Covered by the canonical public `boxdd::World::cast_mover` capabili
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["world-runtime"]
+evidence = ["mover-runtime"]
 
 [functions.link_symbols]
 single = "b2World_CastMover"
@@ -7668,7 +9917,7 @@ rationale = "Covered by the canonical public `boxdd::World::cast_ray_all` capabi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["world-runtime"]
+evidence = ["runtime-auto-92511ac011ccde4b"]
 
 [functions.link_symbols]
 single = "b2World_CastRay"
@@ -7688,7 +9937,7 @@ rationale = "Covered by the canonical public `boxdd::World::cast_ray_closest` ca
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["world-runtime"]
+evidence = ["runtime-auto-94017241e2086818"]
 
 [functions.link_symbols]
 single = "b2World_CastRayClosest"
@@ -7708,7 +9957,7 @@ rationale = "Covered by the canonical public `boxdd::World::cast_shape_points` c
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["world-runtime"]
+evidence = ["runtime-auto-92511ac011ccde4b"]
 
 [functions.link_symbols]
 single = "b2World_CastShape"
@@ -7728,7 +9977,7 @@ rationale = "Covered by the canonical public `boxdd::World::collide_mover` capab
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["world-runtime"]
+evidence = ["runtime-auto-92511ac011ccde4b"]
 
 [functions.link_symbols]
 single = "b2World_CollideMover"
@@ -7748,7 +9997,7 @@ rationale = "Covered by the canonical public `boxdd::World::debug_draw` capabili
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["world-runtime"]
+evidence = ["runtime-auto-0727a7b1af3ddf1a"]
 
 [functions.link_symbols]
 single = "b2World_Draw"
@@ -7767,7 +10016,7 @@ rationale = "Intentionally omitted: upstream writes fixed diagnostic output, so 
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["world-runtime"]
+evidence = ["api-classification-validator"]
 
 [functions.link_symbols]
 single = "b2World_DumpMemoryStats"
@@ -7902,7 +10151,7 @@ rationale = "Covered by the canonical public `boxdd::World::body_events` capabil
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["world-runtime"]
+evidence = ["runtime-auto-92511ac011ccde4b"]
 
 [functions.link_symbols]
 single = "b2World_GetBodyEvents"
@@ -7921,7 +10170,7 @@ rationale = "Covered by the canonical public `boxdd::World::contact_events` capa
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["world-runtime"]
+evidence = ["runtime-auto-92511ac011ccde4b"]
 
 [functions.link_symbols]
 single = "b2World_GetContactEvents"
@@ -7940,7 +10189,7 @@ rationale = "Covered by the canonical public `boxdd::World::counters` capability
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["world-runtime"]
+evidence = ["runtime-auto-2de21659a991317a"]
 
 [functions.link_symbols]
 single = "b2World_GetCounters"
@@ -7997,7 +10246,7 @@ rationale = "Covered by the canonical public `boxdd::World::joint_events` capabi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["world-runtime"]
+evidence = ["runtime-auto-92511ac011ccde4b"]
 
 [functions.link_symbols]
 single = "b2World_GetJointEvents"
@@ -8073,7 +10322,7 @@ rationale = "Covered by the canonical public `boxdd::World::sensor_events` capab
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["world-runtime"]
+evidence = ["runtime-auto-92511ac011ccde4b"]
 
 [functions.link_symbols]
 single = "b2World_GetSensorEvents"
@@ -8092,7 +10341,7 @@ rationale = "Covered by the canonical public `boxdd::World::has_user_data` capab
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["world-runtime"]
+evidence = ["runtime-auto-92511ac011ccde4b"]
 
 [functions.link_symbols]
 single = "b2World_GetUserData"
@@ -8149,7 +10398,7 @@ rationale = "Covered by the canonical public `boxdd::World::is_valid` capability
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["world-runtime"]
+evidence = ["runtime-auto-231db90c2329e8ab"]
 
 [functions.link_symbols]
 single = "b2World_IsValid"
@@ -8187,7 +10436,7 @@ rationale = "Covered by the canonical public `boxdd::World::overlap_aabb` capabi
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["world-runtime"]
+evidence = ["runtime-auto-ed70d4b2fe22ccf7"]
 
 [functions.link_symbols]
 single = "b2World_OverlapAABB"
@@ -8207,7 +10456,7 @@ rationale = "Covered by the canonical public `boxdd::World::overlap_polygon_poin
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["world-runtime"]
+evidence = ["runtime-auto-6096bf6cfb8c20c3"]
 
 [functions.link_symbols]
 single = "b2World_OverlapShape"
@@ -8227,7 +10476,7 @@ rationale = "Intentionally omitted: upstream labels this as internal testing sup
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["world-runtime"]
+evidence = ["api-classification-validator"]
 
 [functions.link_symbols]
 single = "b2World_RebuildStaticTree"
@@ -8263,7 +10512,7 @@ rationale = "Covered by the canonical public `boxdd::World::set_custom_filter` c
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["world-runtime"]
+evidence = ["runtime-auto-67c733cc783a2b45"]
 
 [functions.link_symbols]
 single = "b2World_SetCustomFilterCallback"
@@ -8282,7 +10531,7 @@ rationale = "Covered by the canonical public `boxdd::World::set_friction_callbac
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["world-runtime"]
+evidence = ["runtime-auto-743c402d44ad2d69"]
 
 [functions.link_symbols]
 single = "b2World_SetFrictionCallback"
@@ -8361,7 +10610,7 @@ rationale = "Covered by the canonical public `boxdd::World::set_pre_solve` capab
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["world-runtime"]
+evidence = ["runtime-auto-c26668c3f69d3ec9"]
 
 [functions.link_symbols]
 single = "b2World_SetPreSolveCallback"
@@ -8380,7 +10629,7 @@ rationale = "Covered by the canonical public `boxdd::World::set_restitution_call
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["world-runtime"]
+evidence = ["runtime-auto-92511ac011ccde4b"]
 
 [functions.link_symbols]
 single = "b2World_SetRestitutionCallback"
@@ -8419,7 +10668,7 @@ rationale = "Covered by the canonical public `boxdd::World::set_user_data` capab
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
-evidence = ["world-runtime"]
+evidence = ["runtime-auto-92511ac011ccde4b"]
 
 [functions.link_symbols]
 single = "b2World_SetUserData"
@@ -8467,22 +10716,9 @@ single = "b2Yield"
 class = "pure-worldless"
 
 [[abi.policies]]
-id = "safe-abi-adapter"
-classification = "safe"
-rationale = "Exact Rust AST witnesses prove the crate-owned Safe Rust adapter for every capability assigned to this policy."
-modes = ["single"]
-providers = ["source"]
-availability = ["always"]
-evidence = [
-    "abi-header-parser",
-    "abi-binding-index",
-    "abi-contract-validator",
-]
-
-[[abi.policies]]
-id = "raw-ffi-abi"
-classification = "raw"
-rationale = "The exact native ABI remains available through boxdd_sys::ffi and requires callers to uphold its unsafe contract."
+id = "deferred-safe-abi-gap"
+classification = "deferred"
+rationale = "The capability remains deferred until a crate-owned public path has an exact raw type or field relation in the Rust AST."
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
@@ -8506,9 +10742,22 @@ evidence = [
 ]
 
 [[abi.policies]]
-id = "deferred-safe-abi-gap"
-classification = "deferred"
-rationale = "The capability remains deferred until a crate-owned public path has an exact raw type or field relation in the Rust AST."
+id = "raw-ffi-abi"
+classification = "raw"
+rationale = "The exact native ABI remains available through boxdd_sys::ffi and requires callers to uphold its unsafe contract."
+modes = ["single"]
+providers = ["source"]
+availability = ["always"]
+evidence = [
+    "abi-header-parser",
+    "abi-binding-index",
+    "abi-contract-validator",
+]
+
+[[abi.policies]]
+id = "safe-abi-adapter"
+classification = "safe"
+rationale = "Exact Rust AST witnesses prove the crate-owned Safe Rust adapter for every capability assigned to this policy."
 modes = ["single"]
 providers = ["source"]
 availability = ["always"]
@@ -19200,17 +21449,13 @@ safe_paths = [
 path = "boxdd::DynamicTree::query"
 kind = "callback-adapter"
 raw_type = "boxdd_sys::ffi::b2TreeQueryCallbackFcn"
-native_symbols = [
-    "b2DynamicTree_Query",
-]
+native_symbols = ["b2DynamicTree_Query"]
 
 [[abi.callbacks.safe_witnesses]]
 path = "boxdd::DynamicTree::query_all"
 kind = "callback-adapter"
 raw_type = "boxdd_sys::ffi::b2TreeQueryCallbackFcn"
-native_symbols = [
-    "b2DynamicTree_QueryAll",
-]
+native_symbols = ["b2DynamicTree_QueryAll"]
 
 [[abi.callbacks.raw_mappings]]
 mode = "single"

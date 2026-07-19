@@ -3,7 +3,7 @@ repository = "https://github.com/erincatto/box2d.git"
 active_revision = "c05c48738fbe5c27625e36c5f0cfbdaddfc8359a"
 next_revision = "56edae79f2949d86142b03450d5d60f63bcf5a6f"
 recording_revision = "56edae79f2949d86142b03450d5d60f63bcf5a6f"
-artifact_digests_initialized = false
+artifact_digests_initialized = true
 
 [[binding_routes]]
 mode = "single"
@@ -55,7 +55,7 @@ precision = "single"
 target = "universal"
 provider = "universal"
 producer = "bindgen"
-content_blake3 = "0000000000000000000000000000000000000000000000000000000000000000"
+content_blake3 = "e57880cc67857ebcf02e5ca3d964a64e92a039325cdb08480ee71648679bcf27"
 
 [[artifacts]]
 name = "api-contract"
@@ -64,7 +64,7 @@ path = "boxdd/tests/fixtures/api_contract.toml"
 target = "universal"
 provider = "universal"
 producer = "reviewed"
-content_blake3 = "0000000000000000000000000000000000000000000000000000000000000000"
+content_blake3 = "4fff2df982ca404c7581e84a1c46f076627d8ae551ebc407d81ce774da925f3a"
 
 [[artifacts]]
 name = "recording-wire"
@@ -73,7 +73,7 @@ path = "xtask/tests/fixtures/recording_wire_contract.toml"
 target = "universal"
 provider = "universal"
 producer = "api-coverage"
-content_blake3 = "0000000000000000000000000000000000000000000000000000000000000000"
+content_blake3 = "9737756cc5acbee11fc4306cb8b3247c71c316e779e422d6392bcffa6d0119ac"
 
 [[artifacts]]
 name = "api-coverage-report"
@@ -82,7 +82,7 @@ path = "docs/api-coverage.md"
 target = "universal"
 provider = "universal"
 producer = "api-coverage"
-content_blake3 = "0000000000000000000000000000000000000000000000000000000000000000"
+content_blake3 = "5087aa3a054a55ada30383f22c6ad4d480202fd3af1d46e573d4643cae3ff4ba"
 
 [target_inventory]
 tree = "63a1ab02e3d2bf7c4d86b257b78976842b8c5ddb"
