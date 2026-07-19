@@ -63,6 +63,293 @@ pub struct CApiInventory {
     pub callbacks: Vec<CallbackDecl>,
 }
 
+/// Precision mode used while evaluating the public C header conditions.
+///
+/// This is intentionally local to the C API inventory. The manifest has its own precision
+/// enum because the two domains have different serialization and validation responsibilities.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CAbiPrecision {
+    #[default]
+    Single,
+    Double,
+}
+
+impl CAbiPrecision {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Single => "single",
+            Self::Double => "double",
+        }
+    }
+}
+
+/// Primitive ABI atoms shared by the C-header and generated-Rust inventories.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AbiPrimitive {
+    Void,
+    Bool,
+    I8,
+    U8,
+    I16,
+    U16,
+    I32,
+    U32,
+    I64,
+    U64,
+    Usize,
+    Isize,
+    F32,
+    F64,
+}
+
+/// A normalized, recursive C ABI type shape.
+///
+/// Named aggregates remain references when reached through a pointer. By-value references are
+/// expanded by the precision inventory resolver, which makes a change such as `b2Pos` from
+/// `b2Vec2` to a two-double aggregate visible in every enclosing fingerprint.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum AbiTypeShape {
+    Primitive {
+        primitive: AbiPrimitive,
+    },
+    Named {
+        name: String,
+    },
+    Pointer {
+        mutable: bool,
+        pointee: Box<Self>,
+    },
+    Array {
+        element: Box<Self>,
+        length: String,
+    },
+    Function {
+        result: Box<Self>,
+        parameters: Vec<Self>,
+        variadic: bool,
+    },
+    Qualified {
+        is_const: bool,
+        is_volatile: bool,
+        inner: Box<Self>,
+    },
+    Aggregate {
+        fields: Vec<AbiFieldShape>,
+    },
+    RecursiveRef {
+        name: String,
+    },
+}
+
+impl AbiTypeShape {
+    /// Return the stable recursive fingerprint used by C/Rust ABI comparisons.
+    pub fn fingerprint(&self) -> String {
+        let mut canonical = String::new();
+        self.write_canonical(&mut canonical);
+        fingerprint(&canonical)
+    }
+
+    fn write_canonical(&self, output: &mut String) {
+        match self {
+            Self::Primitive { primitive } => {
+                push_fingerprint_component(output, "primitive");
+                push_fingerprint_component(output, &format!("{primitive:?}"));
+            }
+            Self::Named { name } => {
+                push_fingerprint_component(output, "named");
+                push_fingerprint_component(output, name);
+            }
+            Self::Pointer { mutable, pointee } => {
+                if matches!(pointee.as_ref(), Self::Function { .. }) {
+                    pointee.write_canonical(output);
+                    return;
+                }
+                push_fingerprint_component(output, "pointer");
+                // C spells a const pointee as `const T *`, while bindgen spells the same
+                // boundary as `*const T`. Normalize the two representations before hashing;
+                // retain volatile qualifiers because Rust has no equivalent ABI contract.
+                let (pointee_const, normalized_pointee) = match pointee.as_ref() {
+                    Self::Qualified {
+                        is_const: true,
+                        is_volatile: false,
+                        inner,
+                    } => (true, inner.as_ref()),
+                    _ => (false, pointee.as_ref()),
+                };
+                push_fingerprint_component(
+                    output,
+                    if !*mutable || pointee_const {
+                        "const"
+                    } else {
+                        "mut"
+                    },
+                );
+                normalized_pointee.write_canonical(output);
+            }
+            Self::Array { element, length } => {
+                push_fingerprint_component(output, "array");
+                push_fingerprint_component(output, length);
+                element.write_canonical(output);
+            }
+            Self::Function {
+                result,
+                parameters,
+                variadic,
+            } => {
+                push_fingerprint_component(output, "function");
+                push_fingerprint_component(output, if *variadic { "variadic" } else { "fixed" });
+                result.write_canonical(output);
+                write!(output, "{}:", parameters.len()).expect("write to string");
+                for parameter in parameters {
+                    parameter.write_canonical(output);
+                }
+            }
+            Self::Qualified {
+                is_const,
+                is_volatile,
+                inner,
+            } => {
+                push_fingerprint_component(output, "qualified");
+                push_fingerprint_component(output, if *is_const { "const" } else { "plain" });
+                push_fingerprint_component(
+                    output,
+                    if *is_volatile {
+                        "volatile"
+                    } else {
+                        "nonvolatile"
+                    },
+                );
+                inner.write_canonical(output);
+            }
+            Self::Aggregate { fields } => {
+                push_fingerprint_component(output, "aggregate");
+                write!(output, "{}:", fields.len()).expect("write to string");
+                for field in fields {
+                    push_fingerprint_component(output, &field.name);
+                    field.shape.write_canonical(output);
+                    write!(output, "{}:", field.overlays.len()).expect("write to string");
+                    for overlay in &field.overlays {
+                        push_fingerprint_component(output, &overlay.group);
+                        push_fingerprint_component(output, &overlay.alternative);
+                        write!(output, "{}:", overlay.relative_path.len())
+                            .expect("write to string");
+                        for segment in &overlay.relative_path {
+                            push_fingerprint_component(output, segment);
+                        }
+                    }
+                }
+            }
+            Self::RecursiveRef { name } => {
+                push_fingerprint_component(output, "recursive-ref");
+                push_fingerprint_component(output, name);
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AbiFieldShape {
+    pub name: String,
+    pub shape: AbiTypeShape,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub overlays: Vec<OverlayDecl>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AbiAliasDecl {
+    pub name: String,
+    pub target: AbiTypeShape,
+    pub fingerprint: String,
+    pub header: String,
+    pub line: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AbiStructShape {
+    pub name: String,
+    pub fields: Vec<AbiFieldShape>,
+    pub fingerprint: String,
+    pub header: String,
+    pub line: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AbiEnumShape {
+    pub name: String,
+    pub underlying: AbiPrimitive,
+    pub fingerprint: String,
+    pub header: String,
+    pub line: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AbiOpaqueShape {
+    pub name: String,
+    pub fingerprint: String,
+    pub header: String,
+    pub line: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AbiCallableShape {
+    pub name: String,
+    pub shape: AbiTypeShape,
+    pub fingerprint: String,
+    pub signature: String,
+    pub header: String,
+    pub line: usize,
+}
+
+/// Effective declarations selected for one precision mode.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PrecisionCApiInventory {
+    pub precision: CAbiPrecision,
+    pub aliases: Vec<AbiAliasDecl>,
+    pub structs: Vec<AbiStructShape>,
+    pub enums: Vec<AbiEnumShape>,
+    pub opaques: Vec<AbiOpaqueShape>,
+    pub functions: Vec<AbiCallableShape>,
+    pub callbacks: Vec<AbiCallableShape>,
+    pub effective_types: BTreeMap<String, AbiTypeShape>,
+}
+
+impl PrecisionCApiInventory {
+    pub fn alias(&self, name: &str) -> Option<&AbiAliasDecl> {
+        self.aliases
+            .iter()
+            .find(|declaration| declaration.name == name)
+    }
+
+    pub fn structure(&self, name: &str) -> Option<&AbiStructShape> {
+        self.structs
+            .iter()
+            .find(|declaration| declaration.name == name)
+    }
+
+    pub fn function(&self, name: &str) -> Option<&AbiCallableShape> {
+        self.functions
+            .iter()
+            .find(|declaration| declaration.name == name)
+    }
+
+    pub fn callback(&self, name: &str) -> Option<&AbiCallableShape> {
+        self.callbacks
+            .iter()
+            .find(|declaration| declaration.name == name)
+    }
+
+    pub fn type_shape(&self, name: &str) -> Option<&AbiTypeShape> {
+        self.effective_types.get(name)
+    }
+
+    pub fn type_fingerprint(&self, name: &str) -> Option<String> {
+        self.type_shape(name).map(AbiTypeShape::fingerprint)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Token {
     text: String,
@@ -97,6 +384,1114 @@ struct PrecisionAlias {
 struct PreprocessorMetadata {
     conditions_by_line: BTreeMap<usize, Vec<PreprocessorCondition>>,
     precision_aliases: Vec<PrecisionAlias>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct RawPrecisionInventory {
+    aliases: BTreeMap<String, RawAliasDecl>,
+    structs: BTreeMap<String, RawStructDecl>,
+    enums: BTreeMap<String, RawEnumDecl>,
+    opaques: BTreeMap<String, RawOpaqueDecl>,
+    functions: BTreeMap<String, RawCallableDecl>,
+    callbacks: BTreeMap<String, RawCallableDecl>,
+    integer_constants: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RawAliasDecl {
+    name: String,
+    target: AbiTypeShape,
+    header: String,
+    line: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RawStructDecl {
+    name: String,
+    fields: Vec<AbiFieldShape>,
+    header: String,
+    line: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RawEnumDecl {
+    name: String,
+    underlying: AbiPrimitive,
+    header: String,
+    line: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RawOpaqueDecl {
+    name: String,
+    header: String,
+    line: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RawCallableDecl {
+    name: String,
+    shape: AbiTypeShape,
+    signature: String,
+    header: String,
+    line: usize,
+}
+
+/// Parse all public C headers in one effective precision mode.
+pub fn parse_headers_for_precision(
+    include_dir: &Path,
+    precision: CAbiPrecision,
+) -> Result<PrecisionCApiInventory> {
+    let headers = header_paths(include_dir)?;
+    if headers.is_empty() {
+        return Err(Error::message(format!(
+            "no C headers found under {}",
+            include_dir.display()
+        )));
+    }
+
+    let mut raw = RawPrecisionInventory::default();
+    for header in headers {
+        let source = fs::read_to_string(&header).map_err(|error| Error::io(&header, error))?;
+        let relative = header
+            .strip_prefix(include_dir)
+            .unwrap_or(&header)
+            .to_string_lossy()
+            .replace('\\', "/");
+        parse_precision_header(&source, &relative, precision, &mut raw)?;
+    }
+    resolve_precision_inventory(precision, raw)
+}
+
+fn parse_precision_header(
+    source: &str,
+    header: &str,
+    precision: CAbiPrecision,
+    raw: &mut RawPrecisionInventory,
+) -> Result<()> {
+    record_integer_macros(source, header, raw)?;
+    let metadata = parse_preprocessor(source, header)?;
+    let tokens = effective_precision_tokens(source, &metadata, precision)?;
+    parse_precision_structs(&tokens, header, raw)?;
+    parse_precision_typedefs(&tokens, header, raw)?;
+    record_tag_references(&tokens, header, raw);
+    parse_precision_functions(&tokens, header, raw)?;
+    Ok(())
+}
+
+fn record_integer_macros(
+    source: &str,
+    header: &str,
+    raw: &mut RawPrecisionInventory,
+) -> Result<()> {
+    for (line_index, line) in source.lines().enumerate() {
+        let Some(directive) = line.trim_start().strip_prefix("#define") else {
+            continue;
+        };
+        let mut parts = directive.split_whitespace();
+        let (Some(name), Some(value)) = (parts.next(), parts.next()) else {
+            continue;
+        };
+        if !is_identifier(name) || name.contains('(') {
+            continue;
+        }
+        let Some(value) = normalize_c_integer_literal(value) else {
+            continue;
+        };
+        if let Some(previous) = raw.integer_constants.insert(name.to_owned(), value.clone())
+            && previous != value
+        {
+            return Err(Error::message(format!(
+                "{header}:{}: integer macro `{name}` conflicts with the earlier value `{previous}`",
+                line_index + 1
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn normalize_c_integer_literal(value: &str) -> Option<String> {
+    let mut value = value.trim();
+    while value.starts_with('(') && value.ends_with(')') && value.len() > 2 {
+        value = value[1..value.len() - 1].trim();
+    }
+    value = value.trim_end_matches(['u', 'U', 'l', 'L']);
+    let (radix, digits) = if let Some(digits) = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    {
+        (16, digits)
+    } else if let Some(digits) = value
+        .strip_prefix("0b")
+        .or_else(|| value.strip_prefix("0B"))
+    {
+        (2, digits)
+    } else {
+        (10, value)
+    };
+    (!digits.is_empty())
+        .then(|| {
+            u128::from_str_radix(digits, radix)
+                .ok()
+                .map(|value| value.to_string())
+        })
+        .flatten()
+}
+
+fn record_tag_references(tokens: &[Token], header: &str, raw: &mut RawPrecisionInventory) {
+    for pair in tokens.windows(2) {
+        if !matches!(pair[0].text.as_str(), "struct" | "union")
+            || !pair[1].text.starts_with("b2")
+            || !is_identifier(&pair[1].text)
+        {
+            continue;
+        }
+        raw.opaques
+            .entry(pair[1].text.clone())
+            .or_insert_with(|| RawOpaqueDecl {
+                name: pair[1].text.clone(),
+                header: header.to_owned(),
+                line: pair[1].line,
+            });
+    }
+}
+
+fn effective_precision_tokens(
+    source: &str,
+    metadata: &PreprocessorMetadata,
+    precision: CAbiPrecision,
+) -> Result<Vec<Token>> {
+    let tokens = tokenize(source)?
+        .into_iter()
+        .filter(|token| {
+            metadata
+                .conditions_by_line
+                .get(&token.line)
+                .is_none_or(|conditions| precision_conditions_active(conditions, precision))
+        })
+        .collect::<Vec<_>>();
+    Ok(tokens)
+}
+
+fn precision_conditions_active(
+    conditions: &[PreprocessorCondition],
+    precision: CAbiPrecision,
+) -> bool {
+    conditions.iter().all(|condition| match condition {
+        PreprocessorCondition::DoublePrecision => precision == CAbiPrecision::Double,
+        PreprocessorCondition::SinglePrecision => precision == CAbiPrecision::Single,
+        PreprocessorCondition::DebugOrAssertions | PreprocessorCondition::Other(_) => true,
+    })
+}
+
+fn parse_precision_structs(
+    tokens: &[Token],
+    header: &str,
+    raw: &mut RawPrecisionInventory,
+) -> Result<()> {
+    let mut structs = BTreeMap::new();
+    parse_structs(tokens, header, &mut structs)?;
+    for declaration in structs.into_values() {
+        let fields = declaration
+            .fields
+            .iter()
+            .map(|field| {
+                let shape =
+                    parse_abi_field_signature(&field.signature, &field.name).map_err(|error| {
+                        Error::message(format!(
+                            "{header}:{}: failed to parse effective field `{}`: {error}",
+                            declaration.line, field.name
+                        ))
+                    })?;
+                Ok(AbiFieldShape {
+                    name: field.name.clone(),
+                    shape,
+                    overlays: field.overlays.clone(),
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        insert_unique(
+            &mut raw.structs,
+            declaration.name.clone(),
+            RawStructDecl {
+                name: declaration.name,
+                fields,
+                header: declaration.header,
+                line: declaration.line,
+            },
+            header,
+            declaration.line,
+        )?;
+    }
+    Ok(())
+}
+
+fn parse_precision_typedefs(
+    tokens: &[Token],
+    header: &str,
+    raw: &mut RawPrecisionInventory,
+) -> Result<()> {
+    for (start, marker) in tokens
+        .iter()
+        .enumerate()
+        .filter(|(_, token)| token.text == "typedef")
+    {
+        let Some(end) = declaration_end(tokens, start) else {
+            return Err(Error::message(format!(
+                "{header}:{}: unterminated typedef declaration",
+                marker.line
+            )));
+        };
+        let declaration = &tokens[start + 1..end];
+        if declaration.is_empty() {
+            continue;
+        }
+
+        if declaration[0].text == "struct" && declaration.iter().any(|token| token.text == "{") {
+            continue;
+        }
+        if declaration[0].text == "enum" && declaration.iter().any(|token| token.text == "{") {
+            let (name, underlying) = parse_enum_typedef(declaration, header, marker.line)?;
+            insert_unique(
+                &mut raw.enums,
+                name.clone(),
+                RawEnumDecl {
+                    name,
+                    underlying,
+                    header: header.to_owned(),
+                    line: marker.line,
+                },
+                header,
+                marker.line,
+            )?;
+            continue;
+        }
+
+        let Some((name, shape)) = parse_abi_declaration(declaration, header, marker.line)? else {
+            continue;
+        };
+        if !name.starts_with("b2") {
+            continue;
+        }
+        if matches!(
+            declaration.first().map(|token| token.text.as_str()),
+            Some("struct" | "union")
+        ) {
+            insert_unique(
+                &mut raw.opaques,
+                name.clone(),
+                RawOpaqueDecl {
+                    name,
+                    header: header.to_owned(),
+                    line: marker.line,
+                },
+                header,
+                marker.line,
+            )?;
+            continue;
+        }
+        if matches!(shape, AbiTypeShape::Function { .. }) {
+            insert_unique(
+                &mut raw.callbacks,
+                name.clone(),
+                RawCallableDecl {
+                    name,
+                    shape,
+                    signature: canonical(declaration),
+                    header: header.to_owned(),
+                    line: marker.line,
+                },
+                header,
+                marker.line,
+            )?;
+        } else {
+            insert_unique(
+                &mut raw.aliases,
+                name.clone(),
+                RawAliasDecl {
+                    name,
+                    target: shape,
+                    header: header.to_owned(),
+                    line: marker.line,
+                },
+                header,
+                marker.line,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn parse_precision_functions(
+    tokens: &[Token],
+    header: &str,
+    raw: &mut RawPrecisionInventory,
+) -> Result<()> {
+    for (start, marker) in tokens
+        .iter()
+        .enumerate()
+        .filter(|(_, token)| token.text == "B2_API")
+    {
+        let Some(end) = declaration_end(tokens, start) else {
+            return Err(Error::message(format!(
+                "{header}:{}: unterminated B2_API declaration",
+                marker.line
+            )));
+        };
+        let declaration = &tokens[start + 1..end];
+        let Some((name, shape)) = parse_abi_declaration(declaration, header, marker.line)? else {
+            return Err(Error::message(format!(
+                "{header}:{}: B2_API declaration has no ABI type",
+                marker.line
+            )));
+        };
+        if !matches!(shape, AbiTypeShape::Function { .. }) {
+            return Err(Error::message(format!(
+                "{header}:{}: B2_API `{name}` is not a function",
+                marker.line
+            )));
+        }
+        insert_unique(
+            &mut raw.functions,
+            name.clone(),
+            RawCallableDecl {
+                name,
+                shape,
+                signature: canonical(declaration),
+                header: header.to_owned(),
+                line: marker.line,
+            },
+            header,
+            marker.line,
+        )?;
+    }
+    Ok(())
+}
+
+fn parse_enum_typedef(
+    declaration: &[Token],
+    header: &str,
+    line: usize,
+) -> Result<(String, AbiPrimitive)> {
+    let open = declaration
+        .iter()
+        .position(|token| token.text == "{")
+        .ok_or_else(|| Error::message(format!("{header}:{line}: enum body is missing")))?;
+    let close = matching(declaration, open, "{", "}")
+        .ok_or_else(|| Error::message(format!("{header}:{line}: enum body is unterminated")))?;
+    let name = declaration[close + 1..]
+        .iter()
+        .rev()
+        .find(|token| is_identifier(&token.text) && token.text.starts_with("b2"))
+        .map(|token| token.text.clone())
+        .ok_or_else(|| Error::message(format!("{header}:{line}: enum typedef name is missing")))?;
+    let underlying = if declaration[open + 1..close]
+        .iter()
+        .any(|token| token.text == "-")
+    {
+        AbiPrimitive::I32
+    } else {
+        AbiPrimitive::U32
+    };
+    Ok((name, underlying))
+}
+
+fn parse_abi_field_signature(signature: &str, field_name: &str) -> Result<AbiTypeShape> {
+    let tokens = tokenize(signature)?;
+    let name = field_name
+        .rsplit('.')
+        .next()
+        .filter(|name| is_identifier(name))
+        .unwrap_or(field_name);
+    parse_abi_declaration_with_name(&tokens, Some(name), "field", 0)
+        .map(|result| result.map(|(_, shape)| shape))
+        .and_then(|shape| shape.ok_or_else(|| Error::message("field declaration has no type")))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum AbiDerivedDeclarator {
+    Name(String),
+    Pointer {
+        mutable: bool,
+        inner: Box<Self>,
+    },
+    Array {
+        inner: Box<Self>,
+        length: String,
+    },
+    Function {
+        inner: Box<Self>,
+        parameters: Vec<Vec<Token>>,
+        variadic: bool,
+    },
+}
+
+fn parse_abi_declaration(
+    tokens: &[Token],
+    header: &str,
+    line: usize,
+) -> Result<Option<(String, AbiTypeShape)>> {
+    parse_abi_declaration_with_name(tokens, None, header, line)
+}
+
+fn parse_abi_declaration_with_name(
+    tokens: &[Token],
+    expected_name: Option<&str>,
+    header: &str,
+    line: usize,
+) -> Result<Option<(String, AbiTypeShape)>> {
+    if tokens.is_empty() {
+        return Ok(None);
+    }
+
+    for split in 1..=tokens.len() {
+        let base_tokens = &tokens[..split];
+        if !valid_declaration_specifiers(base_tokens) {
+            continue;
+        }
+        let mut declarator_tokens = tokens[split..].to_vec();
+        if declarator_tokens.is_empty() {
+            let base = abi_base_shape(base_tokens, header, line)?;
+            return Ok(expected_name.map(|name| (name.to_owned(), base)));
+        }
+        if expected_name.is_none()
+            && !declarator_tokens
+                .iter()
+                .any(|token| is_identifier(&token.text) && !is_c_keyword(&token.text))
+        {
+            declarator_tokens.push(Token {
+                text: "__boxdd_unnamed".to_owned(),
+                line,
+            });
+        }
+        let Ok((declarator, consumed)) = parse_abi_derived(&declarator_tokens, 0) else {
+            continue;
+        };
+        if consumed != declarator_tokens.len() {
+            continue;
+        }
+        let Some(name) = abi_declarator_name(&declarator) else {
+            continue;
+        };
+        if expected_name.is_some_and(|expected| expected != name) {
+            continue;
+        }
+        let base = abi_base_shape(base_tokens, header, line)?;
+        let shape = apply_abi_declarator(&declarator, base, header, line)?;
+        return Ok(Some((name.to_owned(), shape)));
+    }
+
+    // An abstract declaration such as `void *` has no identifier at all. Add a synthetic
+    // declarator so the same grammar can normalize it without guessing from the spelling.
+    if expected_name.is_none() {
+        let mut abstract_tokens = tokens.to_vec();
+        abstract_tokens.push(Token {
+            text: "__boxdd_unnamed".to_owned(),
+            line,
+        });
+        if let Some((_, shape)) = parse_abi_declaration_with_name(
+            &abstract_tokens,
+            Some("__boxdd_unnamed"),
+            header,
+            line,
+        )? {
+            return Ok(Some(("__boxdd_unnamed".to_owned(), shape)));
+        }
+        if let Ok(base) = abi_base_shape(tokens, header, line) {
+            return Ok(Some(("__boxdd_unnamed".to_owned(), base)));
+        }
+    }
+    Ok(None)
+}
+
+fn parse_abi_derived(tokens: &[Token], mut index: usize) -> Result<(AbiDerivedDeclarator, usize)> {
+    let mut pointers = Vec::new();
+    while tokens.get(index).is_some_and(|token| token.text == "*") {
+        index += 1;
+        let mut is_const = false;
+        let mut is_volatile = false;
+        while let Some(token) = tokens.get(index) {
+            match token.text.as_str() {
+                "const" => is_const = true,
+                "volatile" => is_volatile = true,
+                "restrict" | "__restrict" | "__restrict__" => {}
+                _ => break,
+            }
+            index += 1;
+        }
+        pointers.push((is_const, is_volatile));
+    }
+
+    let (mut declarator, mut index) = match tokens.get(index).map(|token| token.text.as_str()) {
+        Some(name) if is_identifier(name) => {
+            (AbiDerivedDeclarator::Name(name.to_owned()), index + 1)
+        }
+        Some("(") => {
+            let close = matching(tokens, index, "(", ")")
+                .ok_or_else(|| Error::message("unterminated C declarator group"))?;
+            let (inner, consumed) = parse_abi_derived(&tokens[index + 1..close], 0)?;
+            if consumed != close - index - 1 {
+                return Err(Error::message("C declarator group has trailing tokens"));
+            }
+            (inner, close + 1)
+        }
+        _ => return Err(Error::message("C declarator name is missing")),
+    };
+
+    loop {
+        match tokens.get(index).map(|token| token.text.as_str()) {
+            Some("[") => {
+                let close = matching(tokens, index, "[", "]")
+                    .ok_or_else(|| Error::message("unterminated C array declarator"))?;
+                declarator = AbiDerivedDeclarator::Array {
+                    inner: Box::new(declarator),
+                    length: canonical(&tokens[index + 1..close]),
+                };
+                index = close + 1;
+            }
+            Some("(") => {
+                let close = matching(tokens, index, "(", ")")
+                    .ok_or_else(|| Error::message("unterminated C function declarator"))?;
+                let parts = split_top_level(&tokens[index + 1..close], ",");
+                let variadic = parts
+                    .iter()
+                    .any(|part| part.iter().any(|token| token.text == "..."));
+                let parameters = parts
+                    .into_iter()
+                    .filter(|part| !part.is_empty() && canonical(part) != "void")
+                    .map(|part| part.to_vec())
+                    .collect();
+                declarator = AbiDerivedDeclarator::Function {
+                    inner: Box::new(declarator),
+                    parameters,
+                    variadic,
+                };
+                index = close + 1;
+            }
+            _ => break,
+        }
+    }
+
+    for (is_const, is_volatile) in pointers.into_iter().rev() {
+        declarator = AbiDerivedDeclarator::Pointer {
+            mutable: !is_const,
+            inner: Box::new(declarator),
+        };
+        // Volatile pointer qualification does not change the C ABI, but retaining it in the
+        // normalized shape would make equivalent bindgen declarations compare differently.
+        let _ = is_volatile;
+    }
+    Ok((declarator, index))
+}
+
+fn abi_declarator_name(declarator: &AbiDerivedDeclarator) -> Option<&str> {
+    match declarator {
+        AbiDerivedDeclarator::Name(name) => Some(name),
+        AbiDerivedDeclarator::Pointer { inner, .. }
+        | AbiDerivedDeclarator::Array { inner, .. }
+        | AbiDerivedDeclarator::Function { inner, .. } => abi_declarator_name(inner),
+    }
+}
+
+fn apply_abi_declarator(
+    declarator: &AbiDerivedDeclarator,
+    base: AbiTypeShape,
+    header: &str,
+    line: usize,
+) -> Result<AbiTypeShape> {
+    match declarator {
+        AbiDerivedDeclarator::Name(_) => Ok(base),
+        AbiDerivedDeclarator::Pointer { mutable, inner } => apply_abi_declarator(
+            inner,
+            AbiTypeShape::Pointer {
+                mutable: *mutable,
+                pointee: Box::new(base),
+            },
+            header,
+            line,
+        ),
+        AbiDerivedDeclarator::Array { inner, length } => apply_abi_declarator(
+            inner,
+            AbiTypeShape::Array {
+                element: Box::new(base),
+                length: length.clone(),
+            },
+            header,
+            line,
+        ),
+        AbiDerivedDeclarator::Function {
+            inner,
+            parameters,
+            variadic,
+        } => {
+            let parameters = parameters
+                .iter()
+                .map(|parameter| parse_abi_parameter(parameter, header, line))
+                .collect::<Result<Vec<_>>>()?;
+            apply_abi_declarator(
+                inner,
+                AbiTypeShape::Function {
+                    result: Box::new(base),
+                    parameters,
+                    variadic: *variadic,
+                },
+                header,
+                line,
+            )
+        }
+    }
+}
+
+fn parse_abi_parameter(tokens: &[Token], header: &str, line: usize) -> Result<AbiTypeShape> {
+    if tokens.is_empty() || canonical(tokens) == "void" {
+        return Ok(AbiTypeShape::Primitive {
+            primitive: AbiPrimitive::Void,
+        });
+    }
+    let (_, shape) = parse_abi_declaration_with_name(tokens, None, header, line)?
+        .ok_or_else(|| Error::message(format!("{header}:{line}: unsupported ABI parameter")))?;
+    // C array/function parameters decay to pointers at the call boundary.
+    Ok(decay_parameter_shape(shape))
+}
+
+fn decay_parameter_shape(shape: AbiTypeShape) -> AbiTypeShape {
+    match shape {
+        AbiTypeShape::Array { element, .. } => AbiTypeShape::Pointer {
+            mutable: true,
+            pointee: element,
+        },
+        AbiTypeShape::Function { .. } => AbiTypeShape::Pointer {
+            mutable: true,
+            pointee: Box::new(shape),
+        },
+        shape => shape,
+    }
+}
+
+fn abi_base_shape(tokens: &[Token], header: &str, line: usize) -> Result<AbiTypeShape> {
+    let mut specifiers = Vec::new();
+    let mut is_const = false;
+    let mut is_volatile = false;
+    let mut index = 0;
+    while index < tokens.len() {
+        let token = &tokens[index].text;
+        match token.as_str() {
+            "const" => is_const = true,
+            "volatile" => is_volatile = true,
+            "restrict" | "__restrict" | "__restrict__" => {}
+            "struct" | "union" | "enum" => specifiers.push(token.clone()),
+            name if is_identifier(name)
+                && tokens.get(index + 1).is_some_and(|next| next.text == "(") =>
+            {
+                let close = matching(tokens, index + 1, "(", ")").ok_or_else(|| {
+                    Error::message(format!("{header}:{line}: unterminated C type attribute"))
+                })?;
+                index = close;
+            }
+            _ => specifiers.push(token.clone()),
+        }
+        index += 1;
+    }
+    if specifiers.is_empty() {
+        return Err(Error::message(format!(
+            "{header}:{line}: C ABI base type is missing"
+        )));
+    }
+    let canonical_specifiers = specifiers.join(" ");
+    let primitive = match canonical_specifiers.as_str() {
+        "void" => Some(AbiPrimitive::Void),
+        "bool" | "_Bool" => Some(AbiPrimitive::Bool),
+        "char" | "signed char" | "int8_t" | "int8" => Some(AbiPrimitive::I8),
+        "unsigned char" | "uint8_t" | "uint8" => Some(AbiPrimitive::U8),
+        "short" | "short int" | "signed short" | "signed short int" | "int16_t" => {
+            Some(AbiPrimitive::I16)
+        }
+        "unsigned short" | "unsigned short int" | "uint16_t" => Some(AbiPrimitive::U16),
+        "int" | "signed" | "signed int" | "int32_t" => Some(AbiPrimitive::I32),
+        "unsigned" | "unsigned int" | "uint32_t" => Some(AbiPrimitive::U32),
+        "long long" | "long long int" | "signed long long" | "int64_t" => Some(AbiPrimitive::I64),
+        "unsigned long long" | "unsigned long long int" | "uint64_t" => Some(AbiPrimitive::U64),
+        "size_t" => Some(AbiPrimitive::Usize),
+        "ptrdiff_t" => Some(AbiPrimitive::Isize),
+        "float" => Some(AbiPrimitive::F32),
+        "double" => Some(AbiPrimitive::F64),
+        _ => None,
+    };
+    let mut shape = if let Some(primitive) = primitive {
+        AbiTypeShape::Primitive { primitive }
+    } else if specifiers
+        .first()
+        .is_some_and(|specifier| matches!(specifier.as_str(), "struct" | "union" | "enum"))
+    {
+        let name = specifiers
+            .iter()
+            .skip(1)
+            .find(|specifier| is_identifier(specifier) && specifier.starts_with("b2"))
+            .cloned()
+            .ok_or_else(|| {
+                Error::message(format!("{header}:{line}: tagged C type name is missing"))
+            })?;
+        AbiTypeShape::Named { name }
+    } else if specifiers.len() == 1 && is_identifier(&specifiers[0]) {
+        AbiTypeShape::Named {
+            name: specifiers[0].clone(),
+        }
+    } else {
+        return Err(Error::message(format!(
+            "{header}:{line}: unsupported C ABI base type `{canonical_specifiers}`"
+        )));
+    };
+    if is_const || is_volatile {
+        shape = AbiTypeShape::Qualified {
+            is_const,
+            is_volatile,
+            inner: Box::new(shape),
+        };
+    }
+    Ok(shape)
+}
+
+fn is_c_keyword(value: &str) -> bool {
+    matches!(
+        value,
+        "const"
+            | "volatile"
+            | "restrict"
+            | "static"
+            | "inline"
+            | "extern"
+            | "struct"
+            | "union"
+            | "enum"
+            | "void"
+            | "bool"
+            | "char"
+            | "short"
+            | "int"
+            | "long"
+            | "float"
+            | "double"
+            | "signed"
+            | "unsigned"
+            | "size_t"
+    )
+}
+
+fn resolve_precision_inventory(
+    precision: CAbiPrecision,
+    raw: RawPrecisionInventory,
+) -> Result<PrecisionCApiInventory> {
+    let mut resolver = AbiShapeResolver::new(&raw);
+    let mut effective_types = BTreeMap::new();
+    for name in raw
+        .aliases
+        .keys()
+        .chain(raw.structs.keys())
+        .chain(raw.enums.keys())
+        .chain(raw.opaques.keys())
+        .chain(raw.callbacks.keys())
+    {
+        effective_types.insert(name.clone(), resolver.resolve_named(name, true)?);
+    }
+
+    let aliases = raw
+        .aliases
+        .values()
+        .map(|declaration| {
+            let target = effective_types
+                .get(&declaration.name)
+                .cloned()
+                .ok_or_else(|| Error::message("resolved alias is missing"))?;
+            Ok(AbiAliasDecl {
+                name: declaration.name.clone(),
+                fingerprint: target.fingerprint(),
+                target,
+                header: declaration.header.clone(),
+                line: declaration.line,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let structs = raw
+        .structs
+        .values()
+        .map(|declaration| {
+            let shape = effective_types
+                .get(&declaration.name)
+                .cloned()
+                .ok_or_else(|| Error::message("resolved struct is missing"))?;
+            let AbiTypeShape::Aggregate { fields } = shape else {
+                return Err(Error::message(format!(
+                    "resolved struct `{}` is not an aggregate",
+                    declaration.name
+                )));
+            };
+            let fingerprint = AbiTypeShape::Aggregate {
+                fields: fields.clone(),
+            }
+            .fingerprint();
+            Ok(AbiStructShape {
+                name: declaration.name.clone(),
+                fields,
+                fingerprint,
+                header: declaration.header.clone(),
+                line: declaration.line,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let enums = raw
+        .enums
+        .values()
+        .map(|declaration| {
+            let shape = AbiTypeShape::Primitive {
+                primitive: declaration.underlying,
+            };
+            AbiEnumShape {
+                name: declaration.name.clone(),
+                underlying: declaration.underlying,
+                fingerprint: shape.fingerprint(),
+                header: declaration.header.clone(),
+                line: declaration.line,
+            }
+        })
+        .collect();
+    let opaques = raw
+        .opaques
+        .values()
+        .filter(|declaration| {
+            !raw.aliases.contains_key(&declaration.name)
+                && !raw.structs.contains_key(&declaration.name)
+                && !raw.enums.contains_key(&declaration.name)
+                && !raw.callbacks.contains_key(&declaration.name)
+        })
+        .map(|declaration| {
+            let shape = AbiTypeShape::Named {
+                name: declaration.name.clone(),
+            };
+            AbiOpaqueShape {
+                name: declaration.name.clone(),
+                fingerprint: shape.fingerprint(),
+                header: declaration.header.clone(),
+                line: declaration.line,
+            }
+        })
+        .collect();
+    let functions = resolve_callable_declarations(&raw.functions, &mut resolver)?;
+    let callbacks = resolve_callable_declarations(&raw.callbacks, &mut resolver)?;
+
+    Ok(PrecisionCApiInventory {
+        precision,
+        aliases,
+        structs,
+        enums,
+        opaques,
+        functions,
+        callbacks,
+        effective_types,
+    })
+}
+
+fn resolve_callable_declarations(
+    declarations: &BTreeMap<String, RawCallableDecl>,
+    resolver: &mut AbiShapeResolver<'_>,
+) -> Result<Vec<AbiCallableShape>> {
+    declarations
+        .values()
+        .map(|declaration| {
+            let shape = resolver.resolve_shape(&declaration.shape, true)?;
+            Ok(AbiCallableShape {
+                name: declaration.name.clone(),
+                fingerprint: shape.fingerprint(),
+                shape,
+                signature: declaration.signature.clone(),
+                header: declaration.header.clone(),
+                line: declaration.line,
+            })
+        })
+        .collect()
+}
+
+struct AbiShapeResolver<'a> {
+    raw: &'a RawPrecisionInventory,
+    alias_stack: Vec<String>,
+    aggregate_stack: Vec<String>,
+}
+
+impl<'a> AbiShapeResolver<'a> {
+    fn new(raw: &'a RawPrecisionInventory) -> Self {
+        Self {
+            raw,
+            alias_stack: Vec::new(),
+            aggregate_stack: Vec::new(),
+        }
+    }
+
+    fn resolve_shape(&mut self, shape: &AbiTypeShape, by_value: bool) -> Result<AbiTypeShape> {
+        match shape {
+            AbiTypeShape::Primitive { primitive } => Ok(AbiTypeShape::Primitive {
+                primitive: *primitive,
+            }),
+            AbiTypeShape::Named { name } => self.resolve_named(name, by_value),
+            AbiTypeShape::Pointer { mutable, pointee } => Ok(AbiTypeShape::Pointer {
+                mutable: *mutable,
+                pointee: Box::new(self.resolve_pointee(pointee)?),
+            }),
+            AbiTypeShape::Array { element, length } => Ok(AbiTypeShape::Array {
+                element: Box::new(self.resolve_shape(element, true)?),
+                length: self
+                    .raw
+                    .integer_constants
+                    .get(length)
+                    .cloned()
+                    .unwrap_or_else(|| length.clone()),
+            }),
+            AbiTypeShape::Function {
+                result,
+                parameters,
+                variadic,
+            } => Ok(AbiTypeShape::Function {
+                result: Box::new(self.resolve_shape(result, true)?),
+                parameters: parameters
+                    .iter()
+                    .map(|parameter| self.resolve_shape(parameter, true))
+                    .collect::<Result<Vec<_>>>()?,
+                variadic: *variadic,
+            }),
+            AbiTypeShape::Qualified {
+                is_const,
+                is_volatile,
+                inner,
+            } => Ok(AbiTypeShape::Qualified {
+                is_const: *is_const,
+                is_volatile: *is_volatile,
+                inner: Box::new(self.resolve_shape(inner, by_value)?),
+            }),
+            AbiTypeShape::Aggregate { fields } => Ok(AbiTypeShape::Aggregate {
+                fields: fields
+                    .iter()
+                    .map(|field| {
+                        Ok(AbiFieldShape {
+                            name: field.name.clone(),
+                            shape: self.resolve_shape(&field.shape, true)?,
+                            overlays: field.overlays.clone(),
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()?,
+            }),
+            AbiTypeShape::RecursiveRef { name } => {
+                Ok(AbiTypeShape::RecursiveRef { name: name.clone() })
+            }
+        }
+    }
+
+    fn resolve_pointee(&mut self, pointee: &AbiTypeShape) -> Result<AbiTypeShape> {
+        match pointee {
+            AbiTypeShape::Named { name } if self.raw.callbacks.contains_key(name) => {
+                let shape = self.raw.callbacks[name].shape.clone();
+                self.resolve_shape(&shape, true)
+            }
+            AbiTypeShape::Qualified {
+                is_const,
+                is_volatile,
+                inner,
+            } => Ok(AbiTypeShape::Qualified {
+                is_const: *is_const,
+                is_volatile: *is_volatile,
+                inner: Box::new(self.resolve_pointee(inner)?),
+            }),
+            AbiTypeShape::Primitive { .. }
+            | AbiTypeShape::Function { .. }
+            | AbiTypeShape::Pointer { .. }
+            | AbiTypeShape::Array { .. }
+            | AbiTypeShape::Aggregate { .. }
+            | AbiTypeShape::RecursiveRef { .. } => self.resolve_shape(pointee, false),
+            AbiTypeShape::Named { name } => {
+                self.ensure_known_named_type(name)?;
+                Ok(AbiTypeShape::Named { name: name.clone() })
+            }
+        }
+    }
+
+    fn resolve_named(&mut self, name: &str, by_value: bool) -> Result<AbiTypeShape> {
+        if let Some(alias) = self.raw.aliases.get(name) {
+            if self.alias_stack.iter().any(|active| active == name) {
+                let mut cycle = self.alias_stack.clone();
+                cycle.push(name.to_owned());
+                return Err(Error::message(format!(
+                    "C ABI type alias cycle: {}",
+                    cycle.join(" -> ")
+                )));
+            }
+            if !by_value {
+                return Ok(AbiTypeShape::Named {
+                    name: name.to_owned(),
+                });
+            }
+            let target = alias.target.clone();
+            self.alias_stack.push(name.to_owned());
+            let resolved = self.resolve_shape(&target, true);
+            self.alias_stack.pop();
+            return resolved;
+        }
+        if let Some(structure) = self.raw.structs.get(name) {
+            if !by_value {
+                return Ok(AbiTypeShape::Named {
+                    name: name.to_owned(),
+                });
+            }
+            if self.aggregate_stack.iter().any(|active| active == name) {
+                return Ok(AbiTypeShape::RecursiveRef {
+                    name: name.to_owned(),
+                });
+            }
+            let fields = structure.fields.clone();
+            self.aggregate_stack.push(name.to_owned());
+            let resolved = fields
+                .iter()
+                .map(|field| {
+                    Ok(AbiFieldShape {
+                        name: field.name.clone(),
+                        shape: self.resolve_shape(&field.shape, true)?,
+                        overlays: field.overlays.clone(),
+                    })
+                })
+                .collect::<Result<Vec<_>>>();
+            self.aggregate_stack.pop();
+            return resolved.map(|fields| AbiTypeShape::Aggregate { fields });
+        }
+        if let Some(enumeration) = self.raw.enums.get(name) {
+            return Ok(AbiTypeShape::Primitive {
+                primitive: enumeration.underlying,
+            });
+        }
+        if self.raw.opaques.contains_key(name) {
+            return Ok(AbiTypeShape::Named {
+                name: name.to_owned(),
+            });
+        }
+        if let Some(callback) = self.raw.callbacks.get(name) {
+            let shape = callback.shape.clone();
+            return self.resolve_shape(&shape, true);
+        }
+        self.ensure_known_named_type(name)?;
+        Ok(AbiTypeShape::Named {
+            name: name.to_owned(),
+        })
+    }
+
+    fn ensure_known_named_type(&self, name: &str) -> Result<()> {
+        if !name.starts_with("b2")
+            || self.raw.aliases.contains_key(name)
+            || self.raw.structs.contains_key(name)
+            || self.raw.enums.contains_key(name)
+            || self.raw.opaques.contains_key(name)
+            || self.raw.callbacks.contains_key(name)
+        {
+            return Ok(());
+        }
+        Err(Error::message(format!(
+            "unknown Box2D ABI type `{name}` in effective header inventory"
+        )))
+    }
 }
 
 pub fn parse_headers(include_dir: &Path) -> Result<CApiInventory> {
@@ -946,7 +2341,11 @@ fn parse_preprocessor(source: &str, header: &str) -> Result<PreprocessorMetadata
             .split_once(char::is_whitespace)
             .map_or((directive, ""), |(name, argument)| (name, argument.trim()));
         match name {
-            "if" => conditions.push(classify_preprocessor_condition(argument)),
+            "if" => conditions.push(validated_preprocessor_condition(
+                argument,
+                header,
+                line_number,
+            )?),
             "ifdef" => conditions.push(classify_ifdef_condition(argument, false)),
             "ifndef" => conditions.push(classify_ifdef_condition(argument, true)),
             "elif" => {
@@ -955,7 +2354,11 @@ fn parse_preprocessor(source: &str, header: &str) -> Result<PreprocessorMetadata
                         "{header}:{line_number}: unmatched #elif"
                     )));
                 }
-                conditions.push(classify_preprocessor_condition(argument));
+                conditions.push(validated_preprocessor_condition(
+                    argument,
+                    header,
+                    line_number,
+                )?);
             }
             "else" => {
                 let Some(condition) = conditions.last_mut() else {
@@ -1005,6 +2408,21 @@ fn classify_preprocessor_condition(expression: &str) -> PreprocessorCondition {
         | "defined(B2_ENABLE_ASSERT)||!defined(NDEBUG)" => PreprocessorCondition::DebugOrAssertions,
         _ => PreprocessorCondition::Other(normalized),
     }
+}
+
+fn validated_preprocessor_condition(
+    expression: &str,
+    header: &str,
+    line: usize,
+) -> Result<PreprocessorCondition> {
+    let condition = classify_preprocessor_condition(expression);
+    if matches!(&condition, PreprocessorCondition::Other(value) if value.contains("BOX2D_DOUBLE_PRECISION"))
+    {
+        return Err(Error::message(format!(
+            "{header}:{line}: unsupported precision condition `{expression}`"
+        )));
+    }
+    Ok(condition)
 }
 
 fn classify_ifdef_condition(name: &str, negated: bool) -> PreprocessorCondition {
@@ -1318,6 +2736,15 @@ pub fn header_paths(include_dir: &Path) -> Result<Vec<PathBuf>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn parse_precision_header_fixture(
+        source: &str,
+        precision: CAbiPrecision,
+    ) -> Result<PrecisionCApiInventory> {
+        let mut raw = RawPrecisionInventory::default();
+        parse_precision_header(source, "fixture.h", precision, &mut raw)?;
+        resolve_precision_inventory(precision, raw)
+    }
 
     fn parse_struct_fixture(source: &str, name: &str) -> StructDecl {
         let mut structs = BTreeMap::new();
@@ -1759,5 +3186,253 @@ mod tests {
 
         assert_eq!(compact.fields, formatted.fields);
         assert_eq!(compact.fingerprint, formatted.fingerprint);
+    }
+
+    #[test]
+    fn precision_inventory_selects_b2_pos_alias_or_struct() {
+        let source = r#"
+            typedef struct b2Vec2 { float x, y; } b2Vec2;
+
+            #if defined(BOX2D_DOUBLE_PRECISION)
+            typedef struct b2Pos { double x, y; } b2Pos;
+            #else
+            typedef b2Vec2 b2Pos;
+            #endif
+        "#;
+
+        let single = parse_precision_header_fixture(source, CAbiPrecision::Single)
+            .expect("single-precision fixture should parse");
+        let double = parse_precision_header_fixture(source, CAbiPrecision::Double)
+            .expect("double-precision fixture should parse");
+
+        assert!(single.alias("b2Pos").is_some());
+        assert!(single.structure("b2Pos").is_none());
+        assert!(double.alias("b2Pos").is_none());
+        assert!(double.structure("b2Pos").is_some());
+        assert_eq!(
+            single.type_shape("b2Pos"),
+            single.type_shape("b2Vec2"),
+            "the single-precision alias must resolve to the effective b2Vec2 layout"
+        );
+        assert_ne!(
+            single.type_fingerprint("b2Pos"),
+            double.type_fingerprint("b2Pos"),
+            "float and double world positions must have different ABI fingerprints"
+        );
+    }
+
+    #[test]
+    fn precision_inventory_selects_world_cast_output_alias_or_struct() {
+        let source = r#"
+            typedef struct b2Vec2 { float x, y; } b2Vec2;
+            typedef struct b2CastOutput {
+                b2Vec2 normal;
+                b2Vec2 point;
+                float fraction;
+                int iterations;
+                bool hit;
+            } b2CastOutput;
+
+            #if defined(BOX2D_DOUBLE_PRECISION)
+            typedef struct b2Pos { double x, y; } b2Pos;
+            typedef struct b2WorldCastOutput {
+                b2Vec2 normal;
+                b2Pos point;
+                float fraction;
+                int iterations;
+                bool hit;
+            } b2WorldCastOutput;
+            #else
+            typedef b2Vec2 b2Pos;
+            typedef b2CastOutput b2WorldCastOutput;
+            #endif
+        "#;
+
+        let single = parse_precision_header_fixture(source, CAbiPrecision::Single)
+            .expect("single-precision fixture should parse");
+        let double = parse_precision_header_fixture(source, CAbiPrecision::Double)
+            .expect("double-precision fixture should parse");
+
+        assert!(single.alias("b2WorldCastOutput").is_some());
+        assert!(double.structure("b2WorldCastOutput").is_some());
+        assert_eq!(
+            single.type_shape("b2WorldCastOutput"),
+            single.type_shape("b2CastOutput")
+        );
+        assert_ne!(
+            single.type_fingerprint("b2WorldCastOutput"),
+            double.type_fingerprint("b2WorldCastOutput")
+        );
+    }
+
+    #[test]
+    fn precision_inventory_recursively_fingerprints_structs_callbacks_and_functions() {
+        let source = r#"
+            typedef struct b2Vec2 { float x, y; } b2Vec2;
+            #if defined(BOX2D_DOUBLE_PRECISION)
+            typedef struct b2Pos { double x, y; } b2Pos;
+            #else
+            typedef b2Vec2 b2Pos;
+            #endif
+
+            typedef struct b2QueryResult { b2Pos point; } b2QueryResult;
+            typedef bool b2QueryFcn(const b2QueryResult* result, b2Pos origin, void* context);
+            B2_API b2QueryResult b2QueryWorld(b2Pos origin, b2QueryFcn* callback, void* context);
+        "#;
+
+        let single = parse_precision_header_fixture(source, CAbiPrecision::Single)
+            .expect("single-precision fixture should parse");
+        let double = parse_precision_header_fixture(source, CAbiPrecision::Double)
+            .expect("double-precision fixture should parse");
+
+        assert_ne!(
+            single.type_fingerprint("b2QueryResult"),
+            double.type_fingerprint("b2QueryResult")
+        );
+        assert_ne!(
+            single.callback("b2QueryFcn").map(|decl| &decl.fingerprint),
+            double.callback("b2QueryFcn").map(|decl| &decl.fingerprint)
+        );
+        assert_ne!(
+            single
+                .function("b2QueryWorld")
+                .map(|decl| &decl.fingerprint),
+            double
+                .function("b2QueryWorld")
+                .map(|decl| &decl.fingerprint)
+        );
+    }
+
+    #[test]
+    fn precision_inventory_fails_closed_for_unknown_conditions_and_alias_cycles() {
+        let unknown = r#"
+            #if defined(BOX2D_DOUBLE_PRECISION) && defined(B2_EXPERIMENTAL)
+            typedef struct b2Pos { double x, y; } b2Pos;
+            #else
+            typedef struct b2Pos { float x, y; } b2Pos;
+            #endif
+        "#;
+        let error = parse_precision_header_fixture(unknown, CAbiPrecision::Double)
+            .expect_err("compound precision conditions must fail closed");
+        assert!(
+            error
+                .to_string()
+                .contains("unsupported precision condition")
+        );
+
+        let cycle = r#"
+            typedef b2Second b2First;
+            typedef b2First b2Second;
+        "#;
+        let error = parse_precision_header_fixture(cycle, CAbiPrecision::Single)
+            .expect_err("alias cycles must fail closed");
+        assert!(error.to_string().contains("type alias cycle"));
+    }
+
+    #[test]
+    fn pointer_fingerprint_normalizes_c_const_pointee_and_rust_const_pointer() {
+        let c_shape = AbiTypeShape::Pointer {
+            mutable: true,
+            pointee: Box::new(AbiTypeShape::Qualified {
+                is_const: true,
+                is_volatile: false,
+                inner: Box::new(AbiTypeShape::Named {
+                    name: "b2Thing".to_owned(),
+                }),
+            }),
+        };
+        let rust_shape = AbiTypeShape::Pointer {
+            mutable: false,
+            pointee: Box::new(AbiTypeShape::Named {
+                name: "b2Thing".to_owned(),
+            }),
+        };
+        assert_eq!(c_shape.fingerprint(), rust_shape.fingerprint());
+    }
+
+    #[test]
+    fn function_pointer_fingerprint_normalizes_bindgen_option_representation() {
+        let function = AbiTypeShape::Function {
+            result: Box::new(AbiTypeShape::Primitive {
+                primitive: AbiPrimitive::Void,
+            }),
+            parameters: vec![AbiTypeShape::Primitive {
+                primitive: AbiPrimitive::I32,
+            }],
+            variadic: false,
+        };
+        let c_pointer = AbiTypeShape::Pointer {
+            mutable: true,
+            pointee: Box::new(function.clone()),
+        };
+        assert_eq!(c_pointer.fingerprint(), function.fingerprint());
+    }
+
+    #[test]
+    fn precision_inventory_resolves_integer_macro_array_lengths() {
+        let inventory = parse_precision_header_fixture(
+            r#"
+                #define B2_POINT_COUNT 8
+                typedef struct b2Points { float values[B2_POINT_COUNT]; } b2Points;
+            "#,
+            CAbiPrecision::Single,
+        )
+        .expect("integer macro fixture should parse");
+        let AbiTypeShape::Aggregate { fields } = inventory
+            .type_shape("b2Points")
+            .expect("fixture aggregate should exist")
+        else {
+            panic!("fixture type should resolve to an aggregate");
+        };
+        let AbiTypeShape::Array { length, .. } = &fields[0].shape else {
+            panic!("fixture field should resolve to an array");
+        };
+        assert_eq!(length, "8");
+    }
+
+    #[test]
+    fn vendored_headers_build_precision_abi_inventories() {
+        let include_dir = std::env::var_os("BOXDD_C_API_TEST_INCLUDE_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../boxdd-sys/third-party/box2d/include/box2d")
+            });
+        for precision in [CAbiPrecision::Single, CAbiPrecision::Double] {
+            let inventory = parse_headers_for_precision(&include_dir, precision)
+                .unwrap_or_else(|error| panic!("{precision:?} inventory failed: {error}"));
+            assert!(!inventory.structs.is_empty());
+            assert!(!inventory.functions.is_empty());
+            assert!(!inventory.callbacks.is_empty());
+        }
+    }
+
+    #[test]
+    fn vendored_single_function_abi_matches_generated_bindings() {
+        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let inventory = parse_headers_for_precision(
+            &workspace.join("boxdd-sys/third-party/box2d/include/box2d"),
+            CAbiPrecision::Single,
+        )
+        .expect("single C ABI inventory should parse");
+        let rust = crate::sys_abi_index::index_bindings(
+            &workspace.join("boxdd-sys/src/bindings_pregenerated.rs"),
+        )
+        .expect("pregenerated bindings should index");
+        for function in &inventory.functions {
+            let path = format!("boxdd_sys::ffi::{}", function.name);
+            let rust_shape = rust
+                .function_abi_shape(&path)
+                .unwrap_or_else(|error| panic!("{} failed to index: {error}", function.name))
+                .unwrap_or_else(|| panic!("{} is absent from bindings", function.name));
+            assert_eq!(
+                function.fingerprint,
+                rust_shape.fingerprint(),
+                "{} differs:\nC: {:#?}\nRust: {:#?}",
+                function.name,
+                function.shape,
+                rust_shape
+            );
+        }
     }
 }

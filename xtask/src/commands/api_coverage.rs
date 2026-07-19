@@ -11,11 +11,11 @@ use crate::{
     abi_contract::{
         ABI_BINDING_EVIDENCE_ID, ABI_HEADER_EVIDENCE_ID, ABI_VALIDATOR_EVIDENCE_ID,
         AbiBindingIndex, AbiBindingIndexes, AbiBindingRoute, AbiBindingRoutes, AbiContract,
-        AbiFunctionSymbols, AbiRustIndexes, AbiValidationContext,
-        discard_unproven_reviewed_exposure, map_inventory, preserve_reviewed_exposure,
-        validate as validate_abi,
+        AbiFunctionSymbols, AbiPrecisionInventories, AbiRustIndexes, AbiValidationContext,
+        bootstrap_legacy_precision_proofs, discard_unproven_reviewed_exposure,
+        map_precision_inventory, preserve_reviewed_exposure, validate as validate_abi,
     },
-    c_api::{CApiInventory, parse_headers},
+    c_api::{CAbiPrecision, CApiInventory, parse_headers, parse_headers_for_precision},
     commands::upstream_sync::{
         ArtifactKind, ArtifactTarget, ManagedArtifactWrite, RustTarget, UpdateLock,
         UpstreamManifest, expanded_binding_route_features, install_managed_artifact_writes_locked,
@@ -195,6 +195,8 @@ pub struct FunctionContract {
     pub logical_name: String,
     pub signature: String,
     pub fingerprint: String,
+    #[serde(default)]
+    pub abi_fingerprints: BTreeMap<String, String>,
     pub link_symbols: BTreeMap<String, String>,
     pub classification: Classification,
     #[serde(default, skip_serializing_if = "FunctionExposureKind::is_callable")]
@@ -341,6 +343,7 @@ fn load_validated_coverage(paths: &WorkspacePaths) -> Result<ValidatedCoverage> 
     let inventory = parse_headers(&paths.box2d_headers())?;
     let binding_indexes = load_binding_indexes(paths, &manifest)?;
     let binding_routes = load_binding_routes(&manifest)?;
+    let precision_inventories = load_precision_inventories(paths, &binding_routes)?;
     let rust_indexes = load_rust_indexes(paths, &binding_routes, &binding_indexes)?;
     let contract: ApiContract = read_toml(&api_contract_path)?;
     let recording_operations =
@@ -368,6 +371,7 @@ fn load_validated_coverage(paths: &WorkspacePaths) -> Result<ValidatedCoverage> 
         paths,
         &contract,
         &inventory,
+        Some(&precision_inventories),
         &rust_indexes,
         &binding_routes,
         &binding_indexes,
@@ -393,6 +397,7 @@ pub fn validate_contract(
     paths: &WorkspacePaths,
     contract: &ApiContract,
     inventory: &CApiInventory,
+    precision_inventories: Option<&AbiPrecisionInventories>,
     rust_indexes: &AbiRustIndexes,
     binding_routes: &AbiBindingRoutes,
     binding_indexes: &AbiBindingIndexes,
@@ -583,6 +588,17 @@ pub fn validate_contract(
                 )),
             }
         }
+        if let Some(precision_inventories) = precision_inventories {
+            validate_function_abi_fingerprints(
+                function,
+                declaration,
+                precision_inventories,
+                binding_routes,
+                binding_indexes,
+                &route_modes,
+                &mut errors,
+            );
+        }
         if function.area.trim().is_empty() {
             errors.push(format!("`{}` has no explicit area", function.logical_name));
         }
@@ -727,19 +743,129 @@ pub fn validate_contract(
         .map(|id| (*id).to_owned())
         .collect::<BTreeSet<_>>();
     let function_symbols = abi_function_symbols(inventory, binding_routes);
-    let abi_context = AbiValidationContext::new(
-        inventory,
-        binding_routes,
-        binding_indexes,
-        &function_symbols,
-        rust_indexes,
-        &evidence_ids,
-    );
-    validate_abi(&contract.abi, &abi_context, &mut errors);
+    if let Some(precision_inventories) = precision_inventories {
+        let abi_context = AbiValidationContext::new_precision(
+            inventory,
+            precision_inventories,
+            binding_routes,
+            binding_indexes,
+            &function_symbols,
+            rust_indexes,
+            &evidence_ids,
+        );
+        validate_abi(&contract.abi, &abi_context, &mut errors);
+    } else {
+        let abi_context = AbiValidationContext::new(
+            inventory,
+            binding_routes,
+            binding_indexes,
+            &function_symbols,
+            rust_indexes,
+            &evidence_ids,
+        );
+        validate_abi(&contract.abi, &abi_context, &mut errors);
+    }
     if errors.is_empty() {
         Ok(())
     } else {
         Err(Error::message(errors.join("\n")))
+    }
+}
+
+fn validate_function_abi_fingerprints(
+    function: &FunctionContract,
+    declaration: &crate::c_api::FunctionDecl,
+    precision_inventories: &AbiPrecisionInventories,
+    binding_routes: &AbiBindingRoutes,
+    binding_indexes: &AbiBindingIndexes,
+    route_modes: &BTreeSet<&str>,
+    errors: &mut Vec<String>,
+) {
+    let reviewed_modes = function
+        .abi_fingerprints
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    if reviewed_modes != *route_modes {
+        errors.push(format!(
+            "`{}` must declare recursive ABI fingerprints for the exact manifest mode set {:?}",
+            function.logical_name, route_modes
+        ));
+    }
+
+    for mode in route_modes {
+        let Some(precision_inventory) = precision_inventories.get(*mode) else {
+            errors.push(format!(
+                "`{}` has no effective C ABI inventory for mode `{mode}`",
+                function.logical_name
+            ));
+            continue;
+        };
+        if precision_inventory.precision.as_str() != *mode {
+            errors.push(format!(
+                "effective C ABI inventory registered as `{mode}` reports precision `{}`",
+                precision_inventory.precision.as_str()
+            ));
+            continue;
+        }
+        let Some(c_function) = precision_inventory.function(&function.logical_name) else {
+            errors.push(format!(
+                "function `{}` is absent from the effective `{mode}` C ABI inventory",
+                function.logical_name
+            ));
+            continue;
+        };
+        let Some(reviewed_fingerprint) = function.abi_fingerprints.get(*mode) else {
+            continue;
+        };
+        if reviewed_fingerprint != &c_function.fingerprint {
+            errors.push(format!(
+                "function `{}` `{mode}` recursive ABI fingerprint drifted: contract `{reviewed_fingerprint}`, C header `{}`",
+                function.logical_name, c_function.fingerprint
+            ));
+        }
+
+        let Some(symbol) = function.link_symbols.get(*mode) else {
+            continue;
+        };
+        if declaration.physical_symbols.get(*mode) != Some(symbol) {
+            continue;
+        }
+        let physical_path = format!("boxdd_sys::ffi::{symbol}");
+        for ((route_mode, provider), route) in binding_routes {
+            if route_mode != *mode {
+                continue;
+            }
+            let Some(binding) = binding_indexes.get(&route.artifact) else {
+                errors.push(format!(
+                    "function `{}` route `{route_mode}/{provider}` references missing binding artifact `{}`",
+                    function.logical_name, route.artifact
+                ));
+                continue;
+            };
+            match binding.index.function_abi_fingerprint(&physical_path) {
+                Ok(Some(rust_fingerprint)) if rust_fingerprint == c_function.fingerprint => {
+                    if &rust_fingerprint != reviewed_fingerprint {
+                        errors.push(format!(
+                            "function `{}` route `{route_mode}/{provider}` Rust ABI fingerprint `{rust_fingerprint}` does not match contract `{reviewed_fingerprint}`",
+                            function.logical_name
+                        ));
+                    }
+                }
+                Ok(Some(rust_fingerprint)) => errors.push(format!(
+                    "function `{}` route `{route_mode}/{provider}` physical symbol `{physical_path}` has Rust ABI fingerprint `{rust_fingerprint}`, but the effective C header has `{}`",
+                    function.logical_name, c_function.fingerprint
+                )),
+                Ok(None) => errors.push(format!(
+                    "function `{}` route `{route_mode}/{provider}` physical symbol `{physical_path}` is absent from the generated Rust binding ABI index",
+                    function.logical_name
+                )),
+                Err(error) => errors.push(format!(
+                    "function `{}` route `{route_mode}/{provider}` physical symbol `{physical_path}` cannot be ABI-indexed: {error}",
+                    function.logical_name
+                )),
+            }
+        }
     }
 }
 
@@ -1181,6 +1307,7 @@ fn audit_runtime_evidence(paths: &WorkspacePaths) -> Result<()> {
     let inventory = parse_headers(&paths.box2d_headers())?;
     let binding_indexes = load_binding_indexes(paths, &manifest)?;
     let binding_routes = load_binding_routes(&manifest)?;
+    let precision_inventories = load_precision_inventories(paths, &binding_routes)?;
     let rust_indexes = load_rust_indexes(paths, &binding_routes, &binding_indexes)?;
     let recording_operations =
         parse_recording_ops(&reviewed_recording_operations_source(paths, &manifest)?)?;
@@ -1188,6 +1315,7 @@ fn audit_runtime_evidence(paths: &WorkspacePaths) -> Result<()> {
     reconcile_functions(
         &mut contract,
         &inventory,
+        Some(&precision_inventories),
         &binding_routes,
         &rust_indexes,
         &recording_operations,
@@ -1364,14 +1492,33 @@ fn build_refreshed_contract(
     let inventory = parse_headers(&paths.box2d_headers())?;
     let binding_indexes = load_binding_indexes(paths, manifest)?;
     let binding_routes = load_binding_routes(manifest)?;
+    let precision_inventories = load_precision_inventories(paths, &binding_routes)?;
     let rust_indexes = load_rust_indexes(paths, &binding_routes, &binding_indexes)?;
     let mut contract: ApiContract = read_toml(&contract_path)?;
+
+    let bootstrap_legacy_precision =
+        contract.schema_version == 4 && contract.upstream_sha == manifest.active_revision;
+    if !matches!(contract.schema_version, 4 | API_CONTRACT_SCHEMA) {
+        return Err(Error::message(format!(
+            "cannot refresh API contract schema {} into schema {API_CONTRACT_SCHEMA}",
+            contract.schema_version
+        )));
+    }
+    if bootstrap_legacy_precision {
+        bootstrap_legacy_function_precision_proofs(
+            &mut contract,
+            &inventory,
+            &precision_inventories,
+            &binding_routes,
+        );
+    }
 
     contract.schema_version = API_CONTRACT_SCHEMA;
     set_active_refresh_identity(&mut contract, &manifest.active_revision);
     reconcile_functions(
         &mut contract,
         &inventory,
+        Some(&precision_inventories),
         &binding_routes,
         &rust_indexes,
         recording_operations,
@@ -1379,8 +1526,16 @@ fn build_refreshed_contract(
     synchronize_classification_evidence(&mut contract);
     let _runtime_gaps =
         synchronize_runtime_evidence(paths, &mut contract, &rust_indexes, &binding_routes)?;
-    let previous_abi = contract.abi.clone();
-    let mut generated_abi = map_inventory(&inventory, &binding_routes, &binding_indexes)?;
+    let mut previous_abi = contract.abi.clone();
+    let mut generated_abi = map_precision_inventory(
+        &inventory,
+        &precision_inventories,
+        &binding_routes,
+        &binding_indexes,
+    )?;
+    if bootstrap_legacy_precision {
+        bootstrap_legacy_precision_proofs(&mut previous_abi, &generated_abi);
+    }
     preserve_reviewed_exposure(&previous_abi, &mut generated_abi);
     discard_unproven_reviewed_exposure(
         &mut generated_abi,
@@ -1394,6 +1549,7 @@ fn build_refreshed_contract(
         paths,
         &contract,
         &inventory,
+        Some(&precision_inventories),
         &rust_indexes,
         &binding_routes,
         &binding_indexes,
@@ -1403,9 +1559,71 @@ fn build_refreshed_contract(
     Ok(contract)
 }
 
+fn bootstrap_legacy_function_precision_proofs(
+    contract: &mut ApiContract,
+    inventory: &CApiInventory,
+    precision_inventories: &AbiPrecisionInventories,
+    binding_routes: &AbiBindingRoutes,
+) {
+    let declarations = inventory
+        .functions
+        .iter()
+        .map(|declaration| (declaration.name.as_str(), declaration))
+        .collect::<BTreeMap<_, _>>();
+    let modes = binding_routes
+        .keys()
+        .map(|(mode, _)| mode.clone())
+        .collect::<BTreeSet<_>>();
+    let providers = binding_routes
+        .keys()
+        .map(|(_, provider)| provider.clone())
+        .collect::<BTreeSet<_>>();
+
+    for function in &mut contract.functions {
+        if !function.abi_fingerprints.is_empty()
+            || function.modes.iter().cloned().collect::<BTreeSet<_>>() != modes
+            || function.providers.iter().cloned().collect::<BTreeSet<_>>() != providers
+        {
+            continue;
+        }
+        let Some(declaration) = declarations.get(function.logical_name.as_str()) else {
+            continue;
+        };
+        let link_symbols = modes
+            .iter()
+            .filter_map(|mode| {
+                declaration
+                    .physical_symbols
+                    .get(mode)
+                    .map(|symbol| (mode.clone(), symbol.clone()))
+            })
+            .collect::<BTreeMap<_, _>>();
+        if function.signature != declaration.signature
+            || function.fingerprint != declaration.fingerprint
+            || function.availability != declaration.availability
+            || function.link_symbols != link_symbols
+        {
+            continue;
+        }
+        let fingerprints = modes
+            .iter()
+            .filter_map(|mode| {
+                precision_inventories
+                    .get(mode)
+                    .and_then(|inventory| inventory.function(&function.logical_name))
+                    .map(|declaration| (mode.clone(), declaration.fingerprint.clone()))
+            })
+            .collect::<BTreeMap<_, _>>();
+        if fingerprints.len() == modes.len() {
+            function.abi_fingerprints = fingerprints;
+        }
+    }
+}
+
 fn reconcile_functions(
     contract: &mut ApiContract,
     inventory: &CApiInventory,
+    precision_inventories: Option<&AbiPrecisionInventories>,
     binding_routes: &AbiBindingRoutes,
     rust_indexes: &AbiRustIndexes,
     recording_operations: &[crate::recording_ops::RecordingOp],
@@ -1428,6 +1646,19 @@ fn reconcile_functions(
 
     for declaration in &inventory.functions {
         let existing = previous.remove(&declaration.name);
+        let current_abi_fingerprints = precision_inventories
+            .map(|inventories| {
+                modes
+                    .iter()
+                    .filter_map(|mode| {
+                        inventories
+                            .get(mode)
+                            .and_then(|inventory| inventory.function(&declaration.name))
+                            .map(|function| (mode.clone(), function.fingerprint.clone()))
+                    })
+                    .collect::<BTreeMap<_, _>>()
+            })
+            .unwrap_or_default();
         let current_link_symbols = modes
             .iter()
             .filter_map(|mode| {
@@ -1442,6 +1673,10 @@ fn reconcile_functions(
                 && function.fingerprint == declaration.fingerprint
                 && function.availability == declaration.availability
                 && function.link_symbols == current_link_symbols
+                && (function.classification != Classification::Safe
+                    || precision_inventories.is_none()
+                    || (current_abi_fingerprints.len() == modes.len()
+                        && function.abi_fingerprints == current_abi_fingerprints))
                 && safe_function_review_matches_routes(
                     function,
                     declaration,
@@ -1471,6 +1706,7 @@ fn reconcile_functions(
                 logical_name: declaration.name.clone(),
                 signature: declaration.signature.clone(),
                 fingerprint: declaration.fingerprint.clone(),
+                abi_fingerprints: BTreeMap::new(),
                 link_symbols: BTreeMap::new(),
                 classification: Classification::Raw,
                 exposure: FunctionExposureKind::Callable,
@@ -1490,6 +1726,9 @@ fn reconcile_functions(
 
         function.signature.clone_from(&declaration.signature);
         function.fingerprint.clone_from(&declaration.fingerprint);
+        if precision_inventories.is_some() {
+            function.abi_fingerprints = current_abi_fingerprints;
+        }
         function.modes = modes.iter().cloned().collect();
         function.providers = providers.iter().cloned().collect();
         function.availability.clone_from(&declaration.availability);
@@ -1925,6 +2164,36 @@ fn load_binding_routes(manifest: &UpstreamManifest) -> Result<AbiBindingRoutes> 
     Ok(routes)
 }
 
+fn load_precision_inventories(
+    paths: &WorkspacePaths,
+    binding_routes: &AbiBindingRoutes,
+) -> Result<AbiPrecisionInventories> {
+    let modes = binding_routes
+        .keys()
+        .map(|(mode, _)| mode.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut inventories = AbiPrecisionInventories::new();
+    for mode in modes {
+        let precision = match mode {
+            "single" => CAbiPrecision::Single,
+            "double" => CAbiPrecision::Double,
+            other => {
+                return Err(Error::message(format!(
+                    "binding route has unsupported C ABI precision mode `{other}`"
+                )));
+            }
+        };
+        let inventory = parse_headers_for_precision(&paths.box2d_headers(), precision)?;
+        inventories.insert(mode.to_owned(), inventory);
+    }
+    if inventories.is_empty() {
+        return Err(Error::message(
+            "cannot build precision-aware C ABI inventory without binding routes",
+        ));
+    }
+    Ok(inventories)
+}
+
 fn load_rust_indexes(
     paths: &WorkspacePaths,
     routes: &AbiBindingRoutes,
@@ -2229,7 +2498,11 @@ fn escape_table(value: &str) -> String {
 mod tests {
     use super::*;
     use crate::{
-        c_api::{CallbackDecl, FieldDecl, OverlayDecl, StructDecl},
+        abi_contract::map_inventory,
+        c_api::{
+            AbiCallableShape, AbiPrimitive, AbiTypeShape, CallbackDecl, FieldDecl, OverlayDecl,
+            PrecisionCApiInventory, StructDecl,
+        },
         commands::upstream_sync::{ArtifactProvider, Precision},
         rust_index::index_boxdd,
     };
@@ -2476,6 +2749,7 @@ mod tests {
                     logical_name: "b2Body_SetTransform".to_owned(),
                     signature,
                     fingerprint,
+                    abi_fingerprints: BTreeMap::new(),
                     link_symbols: BTreeMap::from([(
                         "single".to_owned(),
                         "b2Body_SetTransform".to_owned(),
@@ -2526,6 +2800,7 @@ mod tests {
                 &self.paths(),
                 &self.contract,
                 &self.inventory,
+                None,
                 &self.rust_indexes,
                 &self.binding_routes,
                 &self.binding_indexes,
@@ -2733,6 +3008,7 @@ mod tests {
                 logical_name: "b2SetLengthUnitsPerMeter".to_owned(),
                 signature: String::new(),
                 fingerprint: String::new(),
+                abi_fingerprints: BTreeMap::new(),
                 link_symbols: BTreeMap::new(),
                 classification: Classification::Raw,
                 exposure: FunctionExposureKind::Callable,
@@ -2775,6 +3051,7 @@ mod tests {
         reconcile_functions(
             &mut exact_contract,
             &exact.inventory,
+            None,
             &exact.binding_routes,
             &exact.rust_indexes,
             &exact.operations,
@@ -2806,6 +3083,7 @@ mod tests {
         reconcile_functions(
             &mut added_contract,
             &added_inventory,
+            None,
             &exact.binding_routes,
             &exact.rust_indexes,
             &exact.operations,
@@ -2832,6 +3110,7 @@ mod tests {
         reconcile_functions(
             &mut changed_contract,
             &changed_inventory,
+            None,
             &exact.binding_routes,
             &exact.rust_indexes,
             &exact.operations,
@@ -2859,6 +3138,7 @@ mod tests {
         reconcile_functions(
             &mut relinked_contract,
             &relinked_inventory,
+            None,
             &exact.binding_routes,
             &exact.rust_indexes,
             &exact.operations,
@@ -2877,6 +3157,7 @@ mod tests {
         reconcile_functions(
             &mut deleted_contract,
             &CApiInventory::default(),
+            None,
             &exact.binding_routes,
             &exact.rust_indexes,
             &exact.operations,
@@ -2886,6 +3167,120 @@ mod tests {
             deleted_contract.migration_baseline,
             CoverageCounts::default()
         );
+    }
+
+    fn precision_function_inventory(
+        name: &str,
+        parameter: AbiPrimitive,
+    ) -> (PrecisionCApiInventory, String) {
+        let shape = AbiTypeShape::Function {
+            result: Box::new(AbiTypeShape::Primitive {
+                primitive: AbiPrimitive::Void,
+            }),
+            parameters: vec![AbiTypeShape::Primitive {
+                primitive: parameter,
+            }],
+            variadic: false,
+        };
+        let fingerprint = shape.fingerprint();
+        (
+            PrecisionCApiInventory {
+                precision: CAbiPrecision::Single,
+                functions: vec![AbiCallableShape {
+                    name: name.to_owned(),
+                    shape,
+                    fingerprint: fingerprint.clone(),
+                    signature: format!("void {name} ( float value )"),
+                    header: "box2d.h".to_owned(),
+                    line: 1,
+                }],
+                ..PrecisionCApiInventory::default()
+            },
+            fingerprint,
+        )
+    }
+
+    #[test]
+    fn function_reconcile_requires_recursive_abi_fingerprints_for_safe_review() {
+        let fixture = ContractFixture::create();
+        let (inventory, fingerprint) =
+            precision_function_inventory("b2Body_SetTransform", AbiPrimitive::F32);
+        let precision_inventories =
+            AbiPrecisionInventories::from([("single".to_owned(), inventory)]);
+
+        let mut preserved = fixture.contract.clone();
+        preserved.functions[0].abi_fingerprints =
+            BTreeMap::from([("single".to_owned(), fingerprint)]);
+        reconcile_functions(
+            &mut preserved,
+            &fixture.inventory,
+            Some(&precision_inventories),
+            &fixture.binding_routes,
+            &fixture.rust_indexes,
+            &fixture.operations,
+        );
+        assert_eq!(preserved.functions[0].classification, Classification::Safe);
+
+        let (changed_inventory, _) =
+            precision_function_inventory("b2Body_SetTransform", AbiPrimitive::F64);
+        let changed_precision =
+            AbiPrecisionInventories::from([("single".to_owned(), changed_inventory)]);
+        let mut changed = preserved;
+        reconcile_functions(
+            &mut changed,
+            &fixture.inventory,
+            Some(&changed_precision),
+            &fixture.binding_routes,
+            &fixture.rust_indexes,
+            &fixture.operations,
+        );
+        assert_eq!(
+            changed.functions[0].classification,
+            Classification::Raw,
+            "a f32/f64 recursive ABI drift must invalidate a Safe review"
+        );
+    }
+
+    #[test]
+    fn precision_validator_rejects_f64_c_function_against_f32_binding() {
+        let mut fixture = ContractFixture::create();
+        let bindings = fixture.root.join("boxdd-sys/src/bindings_pregenerated.rs");
+        let source = fs::read_to_string(&bindings).expect("binding fixture");
+        fs::write(
+            &bindings,
+            source.replace(
+                "pub fn b2Body_SetTransform();",
+                "pub fn b2Body_SetTransform(value: f32);",
+            ),
+        )
+        .expect("f32 binding fixture");
+        fixture
+            .binding_indexes
+            .get_mut("bindings-single")
+            .expect("binding artifact")
+            .index = index_bindings(&bindings).expect("f32 binding index");
+
+        let (inventory, fingerprint) =
+            precision_function_inventory("b2Body_SetTransform", AbiPrimitive::F64);
+        let precision_inventories =
+            AbiPrecisionInventories::from([("single".to_owned(), inventory)]);
+        fixture.contract.functions[0].abi_fingerprints =
+            BTreeMap::from([("single".to_owned(), fingerprint)]);
+
+        let error = validate_contract(
+            &fixture.paths(),
+            &fixture.contract,
+            &fixture.inventory,
+            Some(&precision_inventories),
+            &fixture.rust_indexes,
+            &fixture.binding_routes,
+            &fixture.binding_indexes,
+            &fixture.active_revision,
+            &fixture.operations,
+        )
+        .expect_err("a f64 C function must not validate against a f32 binding");
+        assert!(error.to_string().contains("Rust ABI fingerprint"));
+        assert!(error.to_string().contains("b2Body_SetTransform"));
     }
 
     #[test]
@@ -3044,6 +3439,7 @@ mod tests {
             &fixture.paths(),
             &fixture.contract,
             &fixture.inventory,
+            None,
             &fixture.rust_indexes,
             &fixture.binding_routes,
             &fixture.binding_indexes,
@@ -3162,6 +3558,7 @@ mod tests {
             &fixture.paths(),
             &fixture.contract,
             &fixture.inventory,
+            None,
             &fixture.rust_indexes,
             &fixture.binding_routes,
             &fixture.binding_indexes,
@@ -3190,7 +3587,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("expected canonical generated path")
+                .contains("expected canonical generated callback path")
         );
 
         let mut unknown = ContractFixture::create();
@@ -3282,7 +3679,7 @@ mod tests {
                 fingerprint: "fnv1a64:alias".to_owned(),
                 fields: vec![FieldDecl {
                     name: "x".to_owned(),
-                    signature: "double x".to_owned(),
+                    signature: "float x".to_owned(),
                     overlays: Vec::new(),
                 }],
                 header: "math_functions.h".to_owned(),
@@ -3853,8 +4250,6 @@ mod tests {
             raw_field: Some("count".to_owned()),
             native_symbols: Vec::new(),
         }];
-        previous.structs[0].fields[0].raw_mappings[0].steps[0].field = "other".to_owned();
-
         let previous = fixture.contract.abi.clone();
         let mut refreshed = map_inventory(
             &fixture.inventory,
@@ -3988,7 +4383,7 @@ mod tests {
         assert!(
             refreshed.structs[0]
                 .rationale
-                .contains("fingerprint or header")
+                .contains("declaration identity or precision-specific raw ABI proof")
         );
         assert_eq!(refreshed.structs[0].fields[0].policy, "raw-ffi-abi");
         assert!(refreshed.structs[0].fields[0].safe_witnesses.is_empty());
@@ -4002,7 +4397,7 @@ mod tests {
         assert!(
             refreshed.callbacks[0]
                 .rationale
-                .contains("signature, or header")
+                .contains("declaration identity or precision-specific raw ABI proof")
         );
     }
 

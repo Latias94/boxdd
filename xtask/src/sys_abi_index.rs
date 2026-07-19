@@ -4,9 +4,16 @@ use std::{
     path::Path,
 };
 
-use syn::{Fields, ForeignItem, Item, PathArguments, Type, Visibility};
+use quote::ToTokens;
+use syn::{
+    Expr, Fields, FnArg, ForeignItem, GenericArgument, Item, Lit, PathArguments, ReturnType, Type,
+    Visibility,
+};
 
-use crate::{Error, Result};
+use crate::{
+    Error, Result,
+    c_api::{AbiFieldShape, AbiPrimitive, AbiTypeShape},
+};
 
 const FFI_PATH_PREFIX: &str = "boxdd_sys::ffi";
 
@@ -17,13 +24,86 @@ pub struct SysAbiIndex {
     field_paths: BTreeSet<String>,
     function_paths: BTreeSet<String>,
     aggregate_fields: BTreeMap<String, BTreeMap<String, FieldType>>,
+    aggregate_shapes: BTreeMap<String, AggregateShape>,
     aliases: BTreeMap<String, String>,
+    alias_shapes: BTreeMap<String, AliasShape>,
+    function_shapes: BTreeMap<String, FunctionShape>,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct FieldType {
     target_type: Option<String>,
     anonymous_wrapper: bool,
+    abi_type: StoredType,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct StoredType {
+    syntax: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AggregateKind {
+    Struct,
+    Union,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct AggregateFieldShape {
+    name: String,
+    abi_type: StoredType,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct AggregateShape {
+    kind: AggregateKind,
+    reprs: Vec<String>,
+    fields: Vec<AggregateFieldShape>,
+    has_generics: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct AliasShape {
+    target: StoredType,
+    has_generics: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct FunctionShape {
+    parameters: Vec<StoredType>,
+    result: Option<StoredType>,
+    variadic: bool,
+    unsupported_parameter: bool,
+    has_generics: bool,
+}
+
+/// The generated Rust representation form for one logical C type.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SysAbiTypeDefinition {
+    Alias { target: AbiTypeShape },
+    Aggregate { shape: AbiTypeShape },
+}
+
+#[derive(Default)]
+struct ShapeResolution {
+    aliases: BTreeSet<String>,
+    aggregates: BTreeSet<String>,
+}
+
+impl StoredType {
+    fn from_syn(rust_type: &Type) -> Self {
+        Self {
+            syntax: rust_type.to_token_stream().to_string(),
+        }
+    }
+
+    fn parse(&self, subject: &str) -> Result<Type> {
+        syn::parse_str(&self.syntax).map_err(|error| {
+            Error::message(format!(
+                "stored generated Rust ABI type for `{subject}` is invalid: {error}"
+            ))
+        })
+    }
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -66,6 +146,201 @@ impl SysAbiIndex {
     /// Return whether the complete qualified path names a public function in an unsafe C foreign block.
     pub fn contains_function_path(&self, path: &str) -> bool {
         self.function_paths.contains(path)
+    }
+
+    /// Return the direct generated-Rust form of one logical type.
+    ///
+    /// Alias targets and aggregate fields retain named references. The returned shape is useful
+    /// for comparing a C declaration with the exact Rust declaration before recursive resolution.
+    pub fn type_abi_definition(&self, type_path: &str) -> Result<Option<SysAbiTypeDefinition>> {
+        if !self.type_paths.contains(type_path) {
+            return Ok(None);
+        }
+        if let Some(alias) = self.alias_shapes.get(type_path) {
+            if alias.has_generics {
+                return Err(Error::message(format!(
+                    "generated Rust type alias `{type_path}` has unsupported generic parameters"
+                )));
+            }
+            return Ok(Some(SysAbiTypeDefinition::Alias {
+                target: self.direct_type_shape(&alias.target.parse(type_path)?, type_path)?,
+            }));
+        }
+        let aggregate = self.aggregate_shapes.get(type_path).ok_or_else(|| {
+            Error::message(format!(
+                "generated Rust type `{type_path}` has no indexed ABI definition"
+            ))
+        })?;
+        if aggregate.has_generics {
+            return Err(Error::message(format!(
+                "generated Rust aggregate `{type_path}` has unsupported generic parameters"
+            )));
+        }
+        self.require_repr_c(type_path, aggregate)?;
+        let fields = aggregate
+            .fields
+            .iter()
+            .map(|field| {
+                Ok(AbiFieldShape {
+                    name: field.name.clone(),
+                    shape: self.direct_type_shape(
+                        &field
+                            .abi_type
+                            .parse(&format!("{type_path}::{}", field.name))?,
+                        &format!("{type_path}::{}", field.name),
+                    )?,
+                    overlays: Vec::new(),
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Some(SysAbiTypeDefinition::Aggregate {
+            shape: AbiTypeShape::Aggregate { fields },
+        }))
+    }
+
+    /// Return the recursively resolved ABI shape of one generated public type.
+    pub fn type_abi_shape(&self, type_path: &str) -> Result<Option<AbiTypeShape>> {
+        if !self.type_paths.contains(type_path) {
+            return Ok(None);
+        }
+        Ok(Some(self.resolve_named_type(
+            type_path,
+            &mut ShapeResolution::default(),
+        )?))
+    }
+
+    /// Return the recursively resolved ABI shape of a direct public field.
+    pub fn field_abi_shape(&self, field_path: &str) -> Result<Option<AbiTypeShape>> {
+        let Some((owner_path, field_name)) = field_path.rsplit_once("::") else {
+            return Ok(None);
+        };
+        let Some(field) = self
+            .aggregate_fields
+            .get(owner_path)
+            .and_then(|fields| fields.get(field_name))
+        else {
+            return Ok(None);
+        };
+        Ok(Some(self.resolve_stored_type(
+            &field.abi_type,
+            field_path,
+            &mut ShapeResolution::default(),
+        )?))
+    }
+
+    /// Return the ABI shape of a projected leaf field.
+    pub fn field_access_abi_shape(
+        &self,
+        projection: &SysAbiAccessProjection,
+    ) -> Result<Option<AbiTypeShape>> {
+        if !self.contains_field_access(projection)? {
+            return Ok(None);
+        }
+        let Some(step) = projection.steps.last() else {
+            return Ok(None);
+        };
+        self.field_abi_shape(&format!("{}::{}", step.owner_type, step.field))
+    }
+
+    /// Return a stable recursive fingerprint for a generated public type.
+    pub fn type_abi_fingerprint(&self, type_path: &str) -> Result<Option<String>> {
+        Ok(self
+            .type_abi_shape(type_path)?
+            .map(|shape| shape.fingerprint()))
+    }
+
+    /// Return a stable recursive fingerprint for a direct public field.
+    pub fn field_abi_fingerprint(&self, field_path: &str) -> Result<Option<String>> {
+        Ok(self
+            .field_abi_shape(field_path)?
+            .map(|shape| shape.fingerprint()))
+    }
+
+    /// Return a stable recursive fingerprint for a projected leaf field.
+    pub fn field_access_abi_fingerprint(
+        &self,
+        projection: &SysAbiAccessProjection,
+    ) -> Result<Option<String>> {
+        Ok(self
+            .field_access_abi_shape(projection)?
+            .map(|shape| shape.fingerprint()))
+    }
+
+    /// Return the ABI shape/fingerprint of a generated C callback typedef.
+    pub fn callback_abi_shape(&self, callback_path: &str) -> Result<Option<AbiTypeShape>> {
+        let Some(alias) = self.alias_shapes.get(callback_path) else {
+            return Ok(None);
+        };
+        if alias.has_generics {
+            return Err(Error::message(format!(
+                "callback `{callback_path}` has unsupported generic parameters"
+            )));
+        }
+        let shape = self.resolve_stored_type(
+            &alias.target,
+            callback_path,
+            &mut ShapeResolution::default(),
+        )?;
+        if matches!(shape, AbiTypeShape::Function { .. }) {
+            Ok(Some(shape))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn callback_abi_fingerprint(&self, callback_path: &str) -> Result<Option<String>> {
+        Ok(self
+            .callback_abi_shape(callback_path)?
+            .map(|shape| shape.fingerprint()))
+    }
+
+    /// Return the ABI shape of one generated C foreign function declaration.
+    pub fn function_abi_shape(&self, function_path: &str) -> Result<Option<AbiTypeShape>> {
+        let Some(function) = self.function_shapes.get(function_path) else {
+            return Ok(None);
+        };
+        if function.has_generics || function.unsupported_parameter {
+            return Err(Error::message(format!(
+                "foreign function `{function_path}` has unsupported generic or receiver parameters"
+            )));
+        }
+        let parameters = function
+            .parameters
+            .iter()
+            .enumerate()
+            .map(|(index, parameter)| {
+                self.resolve_stored_type(
+                    parameter,
+                    &format!("{function_path} parameter {index}"),
+                    &mut ShapeResolution::default(),
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let result = function
+            .result
+            .as_ref()
+            .map(|result| {
+                self.resolve_stored_type(
+                    result,
+                    &format!("{function_path} result"),
+                    &mut ShapeResolution::default(),
+                )
+            })
+            .transpose()?
+            .unwrap_or(AbiTypeShape::Primitive {
+                primitive: AbiPrimitive::Void,
+            });
+        Ok(Some(AbiTypeShape::Function {
+            result: Box::new(result),
+            parameters,
+            variadic: function.variadic,
+        }))
+    }
+
+    pub fn function_abi_fingerprint(&self, function_path: &str) -> Result<Option<String>> {
+        Ok(self
+            .function_abi_shape(function_path)?
+            .map(|shape| shape.fingerprint()))
     }
 
     /// Resolve a generated public type alias chain, retaining non-aggregate terminal aliases.
@@ -288,6 +563,208 @@ impl SysAbiIndex {
             current.clone_from(target);
         }
     }
+
+    fn resolve_stored_type(
+        &self,
+        stored: &StoredType,
+        subject: &str,
+        resolution: &mut ShapeResolution,
+    ) -> Result<AbiTypeShape> {
+        self.type_shape_from_syn(&stored.parse(subject)?, subject, resolution, true)
+    }
+
+    fn direct_type_shape(&self, rust_type: &Type, subject: &str) -> Result<AbiTypeShape> {
+        self.type_shape_from_syn(rust_type, subject, &mut ShapeResolution::default(), false)
+    }
+
+    fn type_shape_from_syn(
+        &self,
+        rust_type: &Type,
+        subject: &str,
+        resolution: &mut ShapeResolution,
+        resolve_named: bool,
+    ) -> Result<AbiTypeShape> {
+        if let Some(primitive) = primitive_type(rust_type) {
+            return Ok(AbiTypeShape::Primitive { primitive });
+        }
+        match rust_type {
+            Type::Array(array) => Ok(AbiTypeShape::Array {
+                element: Box::new(self.type_shape_from_syn(
+                    &array.elem,
+                    subject,
+                    resolution,
+                    resolve_named,
+                )?),
+                length: array_length(&array.len, subject)?,
+            }),
+            Type::BareFn(function) => {
+                let abi_is_c = function.abi.as_ref().is_some_and(|abi| {
+                    abi.name
+                        .as_ref()
+                        .is_none_or(|name| name.value().as_str() == "C")
+                });
+                if !abi_is_c {
+                    return Err(Error::message(format!(
+                        "generated Rust ABI type `{subject}` uses a non-C function pointer"
+                    )));
+                }
+                let parameters = function
+                    .inputs
+                    .iter()
+                    .map(|argument| {
+                        self.type_shape_from_syn(&argument.ty, subject, resolution, resolve_named)
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                let result = match &function.output {
+                    ReturnType::Default => AbiTypeShape::Primitive {
+                        primitive: AbiPrimitive::Void,
+                    },
+                    ReturnType::Type(_, result) => {
+                        self.type_shape_from_syn(result, subject, resolution, resolve_named)?
+                    }
+                };
+                Ok(AbiTypeShape::Function {
+                    result: Box::new(result),
+                    parameters,
+                    variadic: function.variadic.is_some(),
+                })
+            }
+            Type::Group(group) => {
+                self.type_shape_from_syn(&group.elem, subject, resolution, resolve_named)
+            }
+            Type::Paren(paren) => {
+                self.type_shape_from_syn(&paren.elem, subject, resolution, resolve_named)
+            }
+            Type::Path(path) => {
+                if let Some(inner) = option_inner_type(path)? {
+                    let shape =
+                        self.type_shape_from_syn(inner, subject, resolution, resolve_named)?;
+                    if matches!(shape, AbiTypeShape::Function { .. }) {
+                        return Ok(shape);
+                    }
+                    return Err(Error::message(format!(
+                        "generated Rust ABI type `{subject}` uses Option around a non-function type"
+                    )));
+                }
+                let local_path = local_type_path(rust_type).ok_or_else(|| {
+                    Error::message(format!(
+                        "generated Rust ABI type `{subject}` has unsupported path `{}`",
+                        rust_type.to_token_stream()
+                    ))
+                })?;
+                if !self.type_paths.contains(&local_path) {
+                    return Err(Error::message(format!(
+                        "generated Rust ABI type `{subject}` references unknown local type `{local_path}`"
+                    )));
+                }
+                if resolve_named {
+                    self.resolve_named_type(&local_path, resolution)
+                } else {
+                    Ok(AbiTypeShape::Named {
+                        name: logical_type_name(&local_path)?.to_owned(),
+                    })
+                }
+            }
+            Type::Ptr(pointer) => Ok(AbiTypeShape::Pointer {
+                mutable: pointer.mutability.is_some(),
+                // A pointee definition does not affect the pointer calling ABI. Preserve named
+                // references here and let validators prove the referenced type independently.
+                pointee: Box::new(self.type_shape_from_syn(
+                    &pointer.elem,
+                    subject,
+                    resolution,
+                    false,
+                )?),
+            }),
+            Type::Tuple(tuple) if tuple.elems.is_empty() => Ok(AbiTypeShape::Primitive {
+                primitive: AbiPrimitive::Void,
+            }),
+            _ => Err(Error::message(format!(
+                "generated Rust ABI type `{subject}` has unsupported shape `{}`",
+                rust_type.to_token_stream()
+            ))),
+        }
+    }
+
+    fn resolve_named_type(
+        &self,
+        type_path: &str,
+        resolution: &mut ShapeResolution,
+    ) -> Result<AbiTypeShape> {
+        if let Some(alias) = self.alias_shapes.get(type_path) {
+            if alias.has_generics {
+                return Err(Error::message(format!(
+                    "generated Rust type alias `{type_path}` has unsupported generic parameters"
+                )));
+            }
+            if !resolution.aliases.insert(type_path.to_owned()) {
+                return Err(Error::message(format!(
+                    "generated Rust type alias cycle includes `{type_path}`"
+                )));
+            }
+            let result = self.resolve_stored_type(&alias.target, type_path, resolution);
+            resolution.aliases.remove(type_path);
+            return result;
+        }
+
+        let aggregate = self.aggregate_shapes.get(type_path).ok_or_else(|| {
+            Error::message(format!(
+                "generated Rust type `{type_path}` has no indexed ABI definition"
+            ))
+        })?;
+        if aggregate.has_generics {
+            return Err(Error::message(format!(
+                "generated Rust aggregate `{type_path}` has unsupported generic parameters"
+            )));
+        }
+        self.require_repr_c(type_path, aggregate)?;
+        let logical_name = logical_type_name(type_path)?;
+        if !resolution.aggregates.insert(type_path.to_owned()) {
+            return Ok(AbiTypeShape::RecursiveRef {
+                name: logical_name.to_owned(),
+            });
+        }
+        let result = aggregate
+            .fields
+            .iter()
+            .map(|field| {
+                Ok(AbiFieldShape {
+                    name: field.name.clone(),
+                    shape: self.resolve_stored_type(
+                        &field.abi_type,
+                        &format!("{type_path}::{}", field.name),
+                        resolution,
+                    )?,
+                    overlays: Vec::new(),
+                })
+            })
+            .collect::<Result<Vec<_>>>()
+            .map(|fields| AbiTypeShape::Aggregate { fields });
+        resolution.aggregates.remove(type_path);
+        result
+    }
+
+    fn require_repr_c(&self, type_path: &str, aggregate: &AggregateShape) -> Result<()> {
+        let kind = match aggregate.kind {
+            AggregateKind::Struct => "struct",
+            AggregateKind::Union => "union",
+        };
+        let reprs = aggregate
+            .reprs
+            .iter()
+            .map(|repr| {
+                repr.chars()
+                    .filter(|character| !character.is_whitespace())
+                    .collect()
+            })
+            .collect::<Vec<String>>();
+        if reprs.as_slice() == ["repr(C)"] {
+            return Ok(());
+        }
+        Err(Error::message(format!(
+            "generated Rust {kind} `{type_path}` must have exactly `#[repr(C)]` for ABI comparison"
+        )))
+    }
 }
 
 fn index_syntax(syntax: &syn::File) -> SysAbiIndex {
@@ -298,19 +775,43 @@ fn index_syntax(syntax: &syn::File) -> SysAbiIndex {
             Item::Struct(item) if is_public(&item.vis) => {
                 let type_path = qualified_path(&item.ident.to_string());
                 index.type_paths.insert(type_path.clone());
-                index_named_fields(&mut index, &type_path, &item.fields);
+                index_aggregate(
+                    &mut index,
+                    &type_path,
+                    AggregateKind::Struct,
+                    &item.attrs,
+                    item.generics.params.is_empty(),
+                    &item.fields,
+                );
             }
             Item::Union(item) if is_public(&item.vis) => {
                 let type_path = qualified_path(&item.ident.to_string());
                 index.type_paths.insert(type_path.clone());
-                index_fields(&mut index, &type_path, &item.fields.named);
+                index_aggregate(
+                    &mut index,
+                    &type_path,
+                    AggregateKind::Union,
+                    &item.attrs,
+                    item.generics.params.is_empty(),
+                    &Fields::Named(syn::FieldsNamed {
+                        brace_token: item.fields.brace_token,
+                        named: item.fields.named.clone(),
+                    }),
+                );
             }
             Item::Type(item) if is_public(&item.vis) => {
                 let type_path = qualified_path(&item.ident.to_string());
                 index.type_paths.insert(type_path.clone());
                 if let Some(target) = local_type_path(&item.ty) {
-                    index.aliases.insert(type_path, target);
+                    index.aliases.insert(type_path.clone(), target);
                 }
+                index.alias_shapes.insert(
+                    type_path,
+                    AliasShape {
+                        target: StoredType::from_syn(&item.ty),
+                        has_generics: !item.generics.params.is_empty(),
+                    },
+                );
             }
             Item::ForeignMod(item) if is_unsafe_c_foreign_module(item) => {
                 for foreign_item in &item.items {
@@ -318,9 +819,33 @@ fn index_syntax(syntax: &syn::File) -> SysAbiIndex {
                         continue;
                     };
                     if is_public(&function.vis) {
-                        index
-                            .function_paths
-                            .insert(qualified_path(&function.sig.ident.to_string()));
+                        let function_path = qualified_path(&function.sig.ident.to_string());
+                        index.function_paths.insert(function_path.clone());
+                        let mut parameters = Vec::new();
+                        let mut unsupported_parameter = false;
+                        for argument in &function.sig.inputs {
+                            match argument {
+                                FnArg::Typed(argument) => {
+                                    parameters.push(StoredType::from_syn(&argument.ty));
+                                }
+                                FnArg::Receiver(_) => unsupported_parameter = true,
+                            }
+                        }
+                        index.function_shapes.insert(
+                            function_path,
+                            FunctionShape {
+                                parameters,
+                                result: match &function.sig.output {
+                                    ReturnType::Default => None,
+                                    ReturnType::Type(_, return_type) => {
+                                        Some(StoredType::from_syn(return_type))
+                                    }
+                                },
+                                variadic: function.sig.variadic.is_some(),
+                                unsupported_parameter,
+                                has_generics: !function.sig.generics.params.is_empty(),
+                            },
+                        );
                     }
                 }
             }
@@ -331,26 +856,44 @@ fn index_syntax(syntax: &syn::File) -> SysAbiIndex {
     index
 }
 
-fn index_named_fields(index: &mut SysAbiIndex, type_path: &str, fields: &Fields) {
-    if let Fields::Named(fields) = fields {
-        index_fields(index, type_path, &fields.named);
-    }
-}
-
-fn index_fields(
+fn index_aggregate(
     index: &mut SysAbiIndex,
     type_path: &str,
-    fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>,
+    kind: AggregateKind,
+    attrs: &[syn::Attribute],
+    no_generics: bool,
+    fields: &Fields,
 ) {
     let mut field_types = BTreeMap::new();
-    for field in fields {
+    let mut shape_fields = Vec::new();
+    let fields = match fields {
+        Fields::Named(fields) => fields
+            .named
+            .iter()
+            .map(|field| (field.ident.as_ref().map(ToString::to_string), field))
+            .collect::<Vec<_>>(),
+        Fields::Unnamed(fields) => fields
+            .unnamed
+            .iter()
+            .enumerate()
+            .map(|(index, field)| (Some(format!("_{index}")), field))
+            .collect::<Vec<_>>(),
+        Fields::Unit => Vec::new(),
+    };
+    for (field_index, (field_name, field)) in fields.into_iter().enumerate() {
+        let shape_name = field_name
+            .clone()
+            .unwrap_or_else(|| format!("_{field_index}"));
+        shape_fields.push(AggregateFieldShape {
+            name: canonical_abi_field_name(&shape_name),
+            abi_type: StoredType::from_syn(&field.ty),
+        });
         if !is_public(&field.vis) {
             continue;
         }
-        let Some(ident) = &field.ident else {
+        let Some(field_name) = field_name else {
             continue;
         };
-        let field_name = ident.to_string();
         index
             .field_paths
             .insert(format!("{type_path}::{field_name}"));
@@ -359,19 +902,212 @@ fn index_fields(
             FieldType {
                 target_type: local_type_path(&field.ty),
                 anonymous_wrapper: is_bindgen_anonymous_field(&field_name),
+                abi_type: StoredType::from_syn(&field.ty),
             },
         );
     }
     index
         .aggregate_fields
         .insert(type_path.to_owned(), field_types);
+    let mut reprs = attrs
+        .iter()
+        .filter(|attribute| attribute.path().is_ident("repr"))
+        .map(|attribute| attribute.meta.to_token_stream().to_string())
+        .collect::<Vec<_>>();
+    reprs.sort();
+    index.aggregate_shapes.insert(
+        type_path.to_owned(),
+        AggregateShape {
+            kind,
+            reprs,
+            fields: shape_fields,
+            has_generics: !no_generics,
+        },
+    );
+}
+
+fn canonical_abi_field_name(name: &str) -> String {
+    let Some(base) = name.strip_suffix('_') else {
+        return name.to_owned();
+    };
+    if matches!(
+        base,
+        "as" | "break"
+            | "const"
+            | "continue"
+            | "crate"
+            | "else"
+            | "enum"
+            | "extern"
+            | "false"
+            | "fn"
+            | "for"
+            | "if"
+            | "impl"
+            | "in"
+            | "let"
+            | "loop"
+            | "match"
+            | "mod"
+            | "move"
+            | "mut"
+            | "pub"
+            | "ref"
+            | "return"
+            | "self"
+            | "Self"
+            | "static"
+            | "struct"
+            | "super"
+            | "trait"
+            | "true"
+            | "type"
+            | "unsafe"
+            | "use"
+            | "where"
+            | "while"
+            | "async"
+            | "await"
+            | "dyn"
+            | "abstract"
+            | "become"
+            | "box"
+            | "do"
+            | "final"
+            | "macro"
+            | "override"
+            | "priv"
+            | "typeof"
+            | "unsized"
+            | "virtual"
+            | "yield"
+    ) {
+        base.to_owned()
+    } else {
+        name.to_owned()
+    }
+}
+
+fn primitive_type(rust_type: &Type) -> Option<AbiPrimitive> {
+    let Type::Path(path) = rust_type else {
+        return None;
+    };
+    if path.qself.is_some()
+        || path
+            .path
+            .segments
+            .iter()
+            .any(|segment| !matches!(segment.arguments, PathArguments::None))
+    {
+        return None;
+    }
+    let names = path
+        .path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect::<Vec<_>>();
+    let name = names.last()?.as_str();
+    let primitive = match name {
+        "bool" => AbiPrimitive::Bool,
+        "i8" => AbiPrimitive::I8,
+        "u8" => AbiPrimitive::U8,
+        "i16" => AbiPrimitive::I16,
+        "u16" => AbiPrimitive::U16,
+        "i32" => AbiPrimitive::I32,
+        "u32" => AbiPrimitive::U32,
+        "i64" => AbiPrimitive::I64,
+        "u64" => AbiPrimitive::U64,
+        "isize" => AbiPrimitive::Isize,
+        "usize" => AbiPrimitive::Usize,
+        "f32" => AbiPrimitive::F32,
+        "f64" => AbiPrimitive::F64,
+        "c_void" => AbiPrimitive::Void,
+        "c_schar" => AbiPrimitive::I8,
+        "c_uchar" => AbiPrimitive::U8,
+        "c_short" => AbiPrimitive::I16,
+        "c_ushort" => AbiPrimitive::U16,
+        "c_int" => AbiPrimitive::I32,
+        "c_uint" => AbiPrimitive::U32,
+        "c_long" => AbiPrimitive::I64,
+        "c_ulong" => AbiPrimitive::U64,
+        "c_longlong" => AbiPrimitive::I64,
+        "c_ulonglong" => AbiPrimitive::U64,
+        "c_float" => AbiPrimitive::F32,
+        "c_double" => AbiPrimitive::F64,
+        "c_char" => AbiPrimitive::I8,
+        _ => return None,
+    };
+    Some(primitive)
+}
+
+fn array_length(expression: &Expr, subject: &str) -> Result<String> {
+    match expression {
+        Expr::Lit(literal) => match &literal.lit {
+            Lit::Int(integer) => Ok(integer.base10_digits().to_owned()),
+            _ => Err(Error::message(format!(
+                "generated Rust ABI array `{subject}` has a non-integer length"
+            ))),
+        },
+        Expr::Paren(parenthesized) => array_length(&parenthesized.expr, subject),
+        _ => Err(Error::message(format!(
+            "generated Rust ABI array `{subject}` has an unsupported length expression `{}`",
+            expression.to_token_stream()
+        ))),
+    }
+}
+
+fn option_inner_type(path: &syn::TypePath) -> Result<Option<&Type>> {
+    let segments = &path.path.segments;
+    if segments.is_empty()
+        || segments.iter().enumerate().any(|(index, segment)| {
+            index + 1 != segments.len() && !matches!(segment.arguments, PathArguments::None)
+        })
+    {
+        return Ok(None);
+    }
+    let last = segments.last().expect("checked non-empty segments");
+    if last.ident != "Option"
+        || !segments
+            .iter()
+            .take(segments.len().saturating_sub(1))
+            .map(|segment| segment.ident.to_string())
+            .all(|segment| matches!(segment.as_str(), "std" | "core" | "option"))
+    {
+        return Ok(None);
+    }
+    let PathArguments::AngleBracketed(arguments) = &last.arguments else {
+        return Ok(None);
+    };
+    if arguments.args.len() != 1 {
+        return Err(Error::message(
+            "generated Rust Option ABI type must have exactly one argument",
+        ));
+    }
+    let Some(GenericArgument::Type(inner)) = arguments.args.first() else {
+        return Err(Error::message(
+            "generated Rust Option ABI type argument is not a type",
+        ));
+    };
+    Ok(Some(inner))
+}
+
+fn logical_type_name(type_path: &str) -> Result<&str> {
+    type_path
+        .strip_prefix(FFI_PATH_PREFIX)
+        .and_then(|suffix| suffix.strip_prefix("::").filter(|name| !name.is_empty()))
+        .ok_or_else(|| {
+            Error::message(format!(
+                "generated Rust ABI path `{type_path}` is not under `{FFI_PATH_PREFIX}`"
+            ))
+        })
 }
 
 fn local_type_path(rust_type: &Type) -> Option<String> {
     let Type::Path(rust_type) = rust_type else {
         return None;
     };
-    if rust_type.qself.is_some() || rust_type.path.leading_colon.is_some() {
+    if rust_type.qself.is_some() {
         return None;
     }
     if rust_type
@@ -392,6 +1128,9 @@ fn local_type_path(rust_type: &Type) -> Option<String> {
         [ident] => Some(qualified_path(ident)),
         [prefix, ident] if prefix == "self" => Some(qualified_path(ident)),
         [crate_name, module, ident] if crate_name == "boxdd_sys" && module == "ffi" => {
+            Some(qualified_path(ident))
+        }
+        [crate_name, module, ident] if crate_name == "crate" && module == "ffi" => {
             Some(qualified_path(ident))
         }
         _ => None,
@@ -444,6 +1183,24 @@ mod tests {
         assert!(!index.contains_field_path("boxdd_sys::ffi::b2Vec2::missing"));
         assert!(!index.contains_type_path("boxdd_sys::ffi::MissingCallback"));
         assert!(!index.contains_function_path("boxdd_sys::ffi::b2MissingFunction"));
+        assert!(
+            index
+                .type_abi_fingerprint("boxdd_sys::ffi::b2Vec2")
+                .expect("pregenerated aggregate shape should resolve")
+                .is_some()
+        );
+        assert!(
+            index
+                .callback_abi_fingerprint("boxdd_sys::ffi::b2TaskCallback")
+                .expect("pregenerated callback shape should resolve")
+                .is_some()
+        );
+        assert!(
+            index
+                .function_abi_fingerprint("boxdd_sys::ffi::b2World_Step")
+                .expect("pregenerated function shape should resolve")
+                .is_some()
+        );
     }
 
     #[test]
@@ -799,5 +1556,123 @@ mod tests {
             .project_field_path("boxdd_sys::ffi::First", &["field"])
             .expect_err("alias cycle must not be treated as a missing field");
         assert!(error.to_string().contains("type alias cycle"));
+    }
+
+    #[test]
+    fn abi_fingerprint_distinguishes_same_named_f32_and_f64_fields() {
+        let single = index(
+            r#"
+                #[repr(C)]
+                pub struct Sample { pub value: f32 }
+            "#,
+        );
+        let double = index(
+            r#"
+                #[repr(C)]
+                pub struct Sample { pub value: f64 }
+            "#,
+        );
+        assert_ne!(
+            single
+                .field_abi_fingerprint("boxdd_sys::ffi::Sample::value")
+                .expect("single field shape should resolve"),
+            double
+                .field_abi_fingerprint("boxdd_sys::ffi::Sample::value")
+                .expect("double field shape should resolve"),
+        );
+    }
+
+    #[test]
+    fn abi_fingerprint_detects_callback_parameter_drift() {
+        let one_argument = index(
+            r#"
+                pub type Callback = Option<unsafe extern "C" fn(value: f32)>;
+            "#,
+        );
+        let two_arguments = index(
+            r#"
+                pub type Callback = Option<unsafe extern "C" fn(value: f32, count: u32)>;
+            "#,
+        );
+        assert_ne!(
+            one_argument
+                .callback_abi_fingerprint("boxdd_sys::ffi::Callback")
+                .expect("one-argument callback should resolve"),
+            two_arguments
+                .callback_abi_fingerprint("boxdd_sys::ffi::Callback")
+                .expect("two-argument callback should resolve"),
+        );
+    }
+
+    #[test]
+    fn abi_fingerprint_propagates_through_recursive_aliases() {
+        let aliased = index(
+            r#"
+                pub type Scalar = f32;
+                pub type NestedScalar = Scalar;
+                #[repr(C)]
+                pub struct Sample { pub value: NestedScalar }
+            "#,
+        );
+        let direct = index(
+            r#"
+                #[repr(C)]
+                pub struct Sample { pub value: f32 }
+            "#,
+        );
+        assert_eq!(
+            aliased
+                .field_abi_fingerprint("boxdd_sys::ffi::Sample::value")
+                .expect("aliased field should resolve"),
+            direct
+                .field_abi_fingerprint("boxdd_sys::ffi::Sample::value")
+                .expect("direct field should resolve"),
+        );
+    }
+
+    #[test]
+    fn abi_shape_rejects_alias_cycles_and_unknown_local_types() {
+        let cycle = index(
+            r#"
+                pub type First = Second;
+                pub type Second = First;
+            "#,
+        );
+        let cycle_error = cycle
+            .type_abi_fingerprint("boxdd_sys::ffi::First")
+            .expect_err("alias cycle must fail closed");
+        assert!(cycle_error.to_string().contains("type alias cycle"));
+
+        let unknown = index(
+            r#"
+                pub type Missing = Unknown;
+            "#,
+        );
+        let unknown_error = unknown
+            .type_abi_fingerprint("boxdd_sys::ffi::Missing")
+            .expect_err("unknown local type must fail closed");
+        assert!(unknown_error.to_string().contains("unknown local type"));
+    }
+
+    #[test]
+    fn abi_fingerprint_detects_foreign_function_signature_drift() {
+        let one_argument = index(
+            r#"
+                unsafe extern "C" { pub fn call(value: f32); }
+            "#,
+        );
+        let two_arguments = index(
+            r#"
+                unsafe extern "C" { pub fn call(value: f32, count: u32); }
+            "#,
+        );
+        assert_ne!(
+            one_argument
+                .function_abi_fingerprint("boxdd_sys::ffi::call")
+                .expect("one-argument function should resolve"),
+            two_arguments
+                .function_abi_fingerprint("boxdd_sys::ffi::call")
+                .expect("two-argument function should resolve"),
+        );
     }
 }

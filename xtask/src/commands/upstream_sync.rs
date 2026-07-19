@@ -373,6 +373,9 @@ pub fn run(paths: &WorkspacePaths, args: &[String]) -> Result<()> {
     if matches!(args, [argument] if argument == "--prepare-next") {
         return prepare_next_candidate(paths);
     }
+    if matches!(args, [argument] if argument == "--check-next") {
+        return check_next_candidate(paths);
+    }
     let mode = parse_update_mode("upstream-sync", args)?;
     match mode {
         UpdateMode::Check => {
@@ -387,6 +390,317 @@ pub fn run(paths: &WorkspacePaths, args: &[String]) -> Result<()> {
             Ok(())
         }
         UpdateMode::Write => apply_update(paths),
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct NextCandidateSummary {
+    upstream_sha: String,
+    function_count: usize,
+    safe_count: usize,
+    raw_count: usize,
+    omitted_count: usize,
+    deferred_count: usize,
+    abi_struct_count: usize,
+    abi_field_count: usize,
+    abi_callback_count: usize,
+    routes: Vec<String>,
+}
+
+#[derive(Debug)]
+struct NextCandidateRegistration<'a> {
+    target: &'a str,
+    path: &'a str,
+    digest: &'a str,
+}
+
+fn check_next_candidate(paths: &WorkspacePaths) -> Result<()> {
+    let _lock = UpdateLock::acquire(paths.root())?;
+    let manifest = UpstreamManifest::load(paths)?;
+    let registration = next_candidate_registration(&manifest)?;
+    validate_repository(paths, &manifest, true)?;
+    super::api_coverage::check(paths)?;
+
+    let baseline = ManagedSnapshot::capture(paths, &manifest)?;
+    let candidate_path = paths.root().join(registration.path);
+    let registered =
+        fs::read(&candidate_path).map_err(|source| Error::io(&candidate_path, source))?;
+    let generation = IsolatedGeneration::create_at(
+        paths,
+        &baseline.generation.repository_revision,
+        registration.target,
+    )?;
+    let rendered_result = generation.render_next_candidate(&manifest, registration.target);
+    let cleanup_result = generation.finish();
+    let rendered = match (rendered_result, cleanup_result) {
+        (Ok(rendered), Ok(())) => rendered,
+        (Err(error), Ok(())) => return Err(error),
+        (Ok(_), Err(cleanup)) => return Err(cleanup),
+        (Err(error), Err(cleanup)) => {
+            return Err(Error::message(format!(
+                "target API candidate verification failed: {error}\nisolated worktree cleanup also failed: {cleanup}"
+            )));
+        }
+    };
+
+    baseline.verify_all(paths)?;
+    let summary = validate_next_candidate_bytes(&manifest, &registered, &rendered)?;
+    println!(
+        "next API candidate ok: revision {}; functions {} (safe {}, raw {}, omitted {}, deferred {}); ABI {} structs/{} fields/{} callbacks; routes {}; blake3 {}",
+        summary.upstream_sha,
+        summary.function_count,
+        summary.safe_count,
+        summary.raw_count,
+        summary.omitted_count,
+        summary.deferred_count,
+        summary.abi_struct_count,
+        summary.abi_field_count,
+        summary.abi_callback_count,
+        summary.routes.join(", "),
+        registration.digest,
+    );
+    Ok(())
+}
+
+fn next_candidate_registration(
+    manifest: &UpstreamManifest,
+) -> Result<NextCandidateRegistration<'_>> {
+    let target = manifest
+        .next_revision
+        .as_deref()
+        .ok_or_else(|| Error::message("upstream manifest has no next_revision to check"))?;
+    let artifact = manifest.artifact(ArtifactKind::ApiContract)?;
+    let path = artifact.candidate_path.as_deref().ok_or_else(|| {
+        Error::message(format!(
+            "reviewed artifact `{}` has no target candidate_path to check",
+            artifact.name
+        ))
+    })?;
+    let digest = artifact.candidate_blake3.as_deref().ok_or_else(|| {
+        Error::message(format!(
+            "reviewed artifact `{}` has no target candidate_blake3 to check",
+            artifact.name
+        ))
+    })?;
+    Ok(NextCandidateRegistration {
+        target,
+        path,
+        digest,
+    })
+}
+
+fn validate_next_candidate_bytes(
+    manifest: &UpstreamManifest,
+    registered: &[u8],
+    rendered: &[u8],
+) -> Result<NextCandidateSummary> {
+    let registration = next_candidate_registration(manifest)?;
+    let registered_digest = blake3::hash(registered).to_hex().to_string();
+    if registered_digest != registration.digest {
+        return Err(Error::message(format!(
+            "registered next API candidate digest drifted: expected {}, observed {registered_digest}",
+            registration.digest
+        )));
+    }
+
+    let promoted = manifest.promoted_for_generation(registration.target)?;
+    let registered_summary = summarize_next_candidate(&promoted, registered, "registered")?;
+    let rendered_summary = summarize_next_candidate(&promoted, rendered, "rendered")?;
+    if registered != rendered {
+        let rendered_digest = blake3::hash(rendered).to_hex().to_string();
+        return Err(Error::message(format!(
+            "registered next API candidate is stale: registered blake3 {registered_digest}, freshly rendered blake3 {rendered_digest}; run `cargo run -p xtask -- upstream-sync --prepare-next`, review, and commit the replacement"
+        )));
+    }
+    if registered_summary != rendered_summary {
+        return Err(Error::message(
+            "registered and freshly rendered next API candidate summaries differ despite identical bytes",
+        ));
+    }
+    Ok(rendered_summary)
+}
+
+fn summarize_next_candidate(
+    promoted: &UpstreamManifest,
+    candidate: &[u8],
+    label: &str,
+) -> Result<NextCandidateSummary> {
+    use super::api_coverage::{ApiContract, Classification};
+
+    let source = std::str::from_utf8(candidate).map_err(|error| {
+        Error::message(format!("{label} next API candidate is not UTF-8: {error}"))
+    })?;
+    let contract: ApiContract = toml::from_str(source).map_err(|error| {
+        Error::message(format!(
+            "could not parse {label} next API candidate as the reviewed contract: {error}"
+        ))
+    })?;
+    if contract.upstream_sha != promoted.active_revision {
+        return Err(Error::message(format!(
+            "{label} next API candidate revision {} does not match promoted revision {}",
+            contract.upstream_sha, promoted.active_revision
+        )));
+    }
+
+    let route_coordinates = promoted
+        .binding_routes
+        .iter()
+        .map(|route| {
+            (
+                route.mode.as_str().to_owned(),
+                route.provider.as_str().to_owned(),
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    let modes = route_coordinates
+        .iter()
+        .map(|(mode, _)| mode.clone())
+        .collect::<BTreeSet<_>>();
+    for function in &contract.functions {
+        let function_modes = function.modes.iter().cloned().collect::<BTreeSet<_>>();
+        let function_providers = function.providers.iter().cloned().collect::<BTreeSet<_>>();
+        let function_coordinates = function_modes
+            .iter()
+            .flat_map(|mode| {
+                function_providers
+                    .iter()
+                    .map(move |provider| (mode.clone(), provider.clone()))
+            })
+            .collect::<BTreeSet<_>>();
+        if function_coordinates != route_coordinates {
+            return Err(Error::message(format!(
+                "{label} next API candidate function `{}` covers routes {:?}, expected {:?}",
+                function.logical_name, function_coordinates, route_coordinates
+            )));
+        }
+        let link_modes = function
+            .link_symbols
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        if link_modes != modes {
+            return Err(Error::message(format!(
+                "{label} next API candidate function `{}` declares link modes {:?}, expected {:?}",
+                function.logical_name, link_modes, modes
+            )));
+        }
+    }
+    for policy in &contract.abi.policies {
+        validate_candidate_mode_provider_matrix(
+            label,
+            &format!("ABI policy `{}`", policy.id),
+            &policy.modes,
+            &policy.providers,
+            &route_coordinates,
+        )?;
+    }
+    for structure in &contract.abi.structs {
+        validate_candidate_mappings(
+            label,
+            &format!("ABI struct `{}`", structure.name),
+            structure
+                .raw_mappings
+                .iter()
+                .map(|mapping| (&mapping.mode, &mapping.provider)),
+            &route_coordinates,
+        )?;
+        for field in &structure.fields {
+            validate_candidate_mappings(
+                label,
+                &format!("ABI field `{}::{}`", structure.name, field.name),
+                field
+                    .raw_mappings
+                    .iter()
+                    .map(|mapping| (&mapping.mode, &mapping.provider)),
+                &route_coordinates,
+            )?;
+        }
+    }
+    for callback in &contract.abi.callbacks {
+        validate_candidate_mappings(
+            label,
+            &format!("ABI callback `{}`", callback.name),
+            callback
+                .raw_mappings
+                .iter()
+                .map(|mapping| (&mapping.mode, &mapping.provider)),
+            &route_coordinates,
+        )?;
+    }
+
+    let mut safe_count = 0;
+    let mut raw_count = 0;
+    let mut omitted_count = 0;
+    let mut deferred_count = 0;
+    for function in &contract.functions {
+        match function.classification {
+            Classification::Safe => safe_count += 1,
+            Classification::Raw => raw_count += 1,
+            Classification::Omitted => omitted_count += 1,
+            Classification::Deferred => deferred_count += 1,
+        }
+    }
+    Ok(NextCandidateSummary {
+        upstream_sha: contract.upstream_sha,
+        function_count: contract.functions.len(),
+        safe_count,
+        raw_count,
+        omitted_count,
+        deferred_count,
+        abi_struct_count: contract.abi.structs.len(),
+        abi_field_count: contract
+            .abi
+            .structs
+            .iter()
+            .map(|structure| structure.fields.len())
+            .sum(),
+        abi_callback_count: contract.abi.callbacks.len(),
+        routes: route_coordinates
+            .into_iter()
+            .map(|(mode, provider)| format!("{mode}/{provider}"))
+            .collect(),
+    })
+}
+
+fn validate_candidate_mode_provider_matrix(
+    label: &str,
+    subject: &str,
+    modes: &[String],
+    providers: &[String],
+    expected: &BTreeSet<(String, String)>,
+) -> Result<()> {
+    let observed = modes
+        .iter()
+        .flat_map(|mode| {
+            providers
+                .iter()
+                .map(move |provider| (mode.clone(), provider.clone()))
+        })
+        .collect::<BTreeSet<_>>();
+    if observed == *expected {
+        Ok(())
+    } else {
+        Err(Error::message(format!(
+            "{label} next API candidate {subject} covers routes {observed:?}, expected {expected:?}"
+        )))
+    }
+}
+
+fn validate_candidate_mappings<'a>(
+    label: &str,
+    subject: &str,
+    mappings: impl Iterator<Item = (&'a String, &'a String)>,
+    expected: &BTreeSet<(String, String)>,
+) -> Result<()> {
+    let observed = mappings
+        .map(|(mode, provider)| (mode.clone(), provider.clone()))
+        .collect::<BTreeSet<_>>();
+    if observed == *expected {
+        Ok(())
+    } else {
+        Err(Error::message(format!(
+            "{label} next API candidate {subject} maps routes {observed:?}, expected {expected:?}"
+        )))
     }
 }
 
@@ -4184,6 +4498,64 @@ mod tests {
         }
     }
 
+    fn candidate_contract(revision: &str, modes: &[&str]) -> Vec<u8> {
+        let modes_toml = modes
+            .iter()
+            .map(|mode| format!("\"{mode}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let link_symbols = modes
+            .iter()
+            .map(|mode| format!("{mode} = \"b2Fixture\""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!(
+            "schema_version = 4\n\
+             upstream_sha = \"{revision}\"\n\
+             classification_changes = []\n\
+             evidence = []\n\
+             \n\
+             [migration_baseline]\n\
+             total = 1\n\
+             safe = 0\n\
+             raw = 1\n\
+             omitted = 0\n\
+             deferred = 0\n\
+             \n\
+             [[functions]]\n\
+             logical_name = \"b2Fixture\"\n\
+             signature = \"void b2Fixture ( void )\"\n\
+             fingerprint = \"fnv1a64:0000000000000000\"\n\
+             classification = \"raw\"\n\
+             area = \"Fixture\"\n\
+             rust_paths = [\"boxdd_sys::ffi::b2Fixture\"]\n\
+             rationale = \"Fixture raw route.\"\n\
+             modes = [{modes_toml}]\n\
+             providers = [\"source\"]\n\
+             availability = [\"always\"]\n\
+             evidence = []\n\
+             \n\
+             [functions.link_symbols]\n\
+             {link_symbols}\n\
+             \n\
+             [abi]\n\
+             policies = []\n\
+             structs = []\n\
+             callbacks = []\n"
+        )
+        .into_bytes()
+    }
+
+    fn register_candidate_bytes(manifest: &mut UpstreamManifest, bytes: &[u8]) {
+        let artifact = manifest
+            .artifacts
+            .iter_mut()
+            .find(|artifact| artifact.kind == ArtifactKind::ApiContract)
+            .expect("API artifact");
+        artifact.candidate_path = Some("boxdd/tests/fixtures/api_contract.next.toml".to_owned());
+        artifact.candidate_blake3 = Some(blake3::hash(bytes).to_hex().to_string());
+    }
+
     #[test]
     fn manifest_requires_exact_shas_safe_named_artifacts_and_inventory() {
         validate_manifest(&manifest()).expect("valid manifest");
@@ -4255,6 +4627,68 @@ mod tests {
                 .to_string()
                 .contains("uninitialized digest")
         );
+    }
+
+    #[test]
+    fn next_candidate_gate_invalidates_a_candidate_when_target_topology_changes() {
+        let mut pending = manifest();
+        let target = pending.next_revision.clone().expect("next revision");
+        let single_candidate = candidate_contract(&target, &["single"]);
+        register_candidate_bytes(&mut pending, &single_candidate);
+        let summary = validate_next_candidate_bytes(&pending, &single_candidate, &single_candidate)
+            .expect("single candidate matches the original topology");
+        assert_eq!(summary.routes, ["single/source"]);
+
+        pending.next_binding_routes = dual_precision_routes();
+        pending.next_artifacts = vec![pending_double_bindings()];
+        let dual_candidate = candidate_contract(&target, &["double", "single"]);
+        let error = validate_next_candidate_bytes(&pending, &single_candidate, &dual_candidate)
+            .expect_err("single-only candidate must not survive a dual-route topology change");
+        assert!(error.to_string().contains("covers routes"), "{error}");
+        assert!(error.to_string().contains("double"), "{error}");
+    }
+
+    #[test]
+    fn next_candidate_gate_requires_a_target_and_registered_candidate() {
+        let missing_candidate = manifest();
+        let error = next_candidate_registration(&missing_candidate)
+            .expect_err("missing candidate must fail closed");
+        assert!(error.to_string().contains("no target candidate_path"));
+
+        let mut missing_target = manifest();
+        let target = missing_target.next_revision.clone().expect("next revision");
+        let candidate = candidate_contract(&target, &["single"]);
+        register_candidate_bytes(&mut missing_target, &candidate);
+        missing_target.next_revision = None;
+        missing_target.recording_revision = missing_target.active_revision.clone();
+        missing_target.next_inventory = None;
+        let error = next_candidate_registration(&missing_target)
+            .expect_err("missing target must fail closed");
+        assert!(error.to_string().contains("no next_revision to check"));
+    }
+
+    #[test]
+    fn next_candidate_gate_requires_exact_bytes_and_registered_digest() {
+        let mut pending = manifest();
+        let target = pending.next_revision.clone().expect("next revision");
+        let candidate = candidate_contract(&target, &["single"]);
+        register_candidate_bytes(&mut pending, &candidate);
+
+        let mut regenerated = candidate.clone();
+        regenerated.extend_from_slice(b"# generator drift\n");
+        let error = validate_next_candidate_bytes(&pending, &candidate, &regenerated)
+            .expect_err("byte drift must fail closed");
+        assert!(error.to_string().contains("candidate is stale"), "{error}");
+
+        let api = pending
+            .artifacts
+            .iter_mut()
+            .find(|artifact| artifact.kind == ArtifactKind::ApiContract)
+            .expect("API artifact");
+        api.candidate_blake3 = Some("f".repeat(64));
+        let error = validate_next_candidate_bytes(&pending, &candidate, &candidate)
+            .expect_err("registered digest drift must fail closed");
+        assert!(error.to_string().contains("digest drifted"), "{error}");
     }
 
     #[test]

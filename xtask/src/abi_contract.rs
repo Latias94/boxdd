@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Error, Result,
-    c_api::{CApiInventory, OverlayDecl},
+    c_api::{
+        AbiFieldShape, AbiTypeShape, CApiInventory, OverlayDecl, PrecisionCApiInventory, StructDecl,
+    },
     commands::api_coverage::Classification,
     commands::upstream_sync::{ArtifactProvider, ArtifactTarget, Precision, RustTarget},
     rust_index::RustIndex,
@@ -37,6 +39,8 @@ pub struct AbiTypeMapping {
     pub provider: String,
     pub path: String,
     pub resolved_path: String,
+    #[serde(default)]
+    pub abi_fingerprint: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -77,6 +81,8 @@ pub struct AbiFieldMapping {
     pub root_path: String,
     pub resolved_root_path: String,
     pub steps: Vec<AbiAccessStep>,
+    #[serde(default)]
+    pub abi_fingerprint: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -120,6 +126,7 @@ pub struct AbiBindingRoute {
 pub type AbiBindingRoutes = BTreeMap<(String, String), AbiBindingRoute>;
 pub type AbiFunctionSymbols = BTreeMap<(String, String), BTreeMap<String, String>>;
 pub type AbiRustIndexes = BTreeMap<(String, String), RustIndex>;
+pub type AbiPrecisionInventories = BTreeMap<String, PrecisionCApiInventory>;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -222,6 +229,144 @@ pub fn map_inventory(
     binding_routes: &AbiBindingRoutes,
     binding_indexes: &AbiBindingIndexes,
 ) -> Result<AbiContract> {
+    map_inventory_impl(inventory, None, binding_routes, binding_indexes)
+}
+
+/// Build a precision-aware executable ABI mapping.
+///
+/// Unlike [`map_inventory`], this entry point proves every mapped C type, field, and callback
+/// against the generated Rust declaration selected by the same executable precision route.
+pub fn map_precision_inventory(
+    inventory: &CApiInventory,
+    precision_inventories: &AbiPrecisionInventories,
+    binding_routes: &AbiBindingRoutes,
+    binding_indexes: &AbiBindingIndexes,
+) -> Result<AbiContract> {
+    require_precision_inventory_modes(precision_inventories, binding_routes)?;
+    map_inventory_impl(
+        inventory,
+        Some(precision_inventories),
+        binding_routes,
+        binding_indexes,
+    )
+}
+
+/// Seed a schema-v4 review with newly verified precision fingerprints.
+///
+/// This is intentionally stricter than normal review inheritance: every pre-existing mapping
+/// coordinate and path must match the regenerated proof exactly, with only the formerly absent
+/// fingerprint allowed to differ. Callers additionally gate this migration on an unchanged
+/// upstream revision and schema transition.
+pub fn bootstrap_legacy_precision_proofs(previous: &mut AbiContract, generated: &AbiContract) {
+    let generated_structs = generated
+        .structs
+        .iter()
+        .map(|structure| (structure.name.as_str(), structure))
+        .collect::<BTreeMap<_, _>>();
+    for structure in &mut previous.structs {
+        let Some(generated_structure) = generated_structs.get(structure.name.as_str()) else {
+            continue;
+        };
+        seed_type_mapping_fingerprints(
+            &mut structure.raw_mappings,
+            &generated_structure.raw_mappings,
+        );
+        let generated_fields = generated_structure
+            .fields
+            .iter()
+            .map(|field| (field.name.as_str(), field))
+            .collect::<BTreeMap<_, _>>();
+        for field in &mut structure.fields {
+            if let Some(generated_field) = generated_fields.get(field.name.as_str()) {
+                seed_field_mapping_fingerprints(
+                    &mut field.raw_mappings,
+                    &generated_field.raw_mappings,
+                );
+            }
+        }
+    }
+
+    let generated_callbacks = generated
+        .callbacks
+        .iter()
+        .map(|callback| (callback.name.as_str(), callback))
+        .collect::<BTreeMap<_, _>>();
+    for callback in &mut previous.callbacks {
+        if let Some(generated_callback) = generated_callbacks.get(callback.name.as_str()) {
+            seed_type_mapping_fingerprints(
+                &mut callback.raw_mappings,
+                &generated_callback.raw_mappings,
+            );
+        }
+    }
+}
+
+fn seed_type_mapping_fingerprints(
+    previous: &mut Vec<AbiTypeMapping>,
+    generated: &[AbiTypeMapping],
+) {
+    if previous.len() != generated.len() {
+        return;
+    }
+    let generated = generated
+        .iter()
+        .map(|mapping| ((mapping.mode.as_str(), mapping.provider.as_str()), mapping))
+        .collect::<BTreeMap<_, _>>();
+    let mut seeded = previous.clone();
+    for mapping in &mut seeded {
+        let Some(expected) = generated.get(&(mapping.mode.as_str(), mapping.provider.as_str()))
+        else {
+            return;
+        };
+        if !mapping.abi_fingerprint.is_empty() {
+            return;
+        }
+        mapping
+            .abi_fingerprint
+            .clone_from(&expected.abi_fingerprint);
+        if mapping != *expected {
+            return;
+        }
+    }
+    *previous = seeded;
+}
+
+fn seed_field_mapping_fingerprints(
+    previous: &mut Vec<AbiFieldMapping>,
+    generated: &[AbiFieldMapping],
+) {
+    if previous.len() != generated.len() {
+        return;
+    }
+    let generated = generated
+        .iter()
+        .map(|mapping| ((mapping.mode.as_str(), mapping.provider.as_str()), mapping))
+        .collect::<BTreeMap<_, _>>();
+    let mut seeded = previous.clone();
+    for mapping in &mut seeded {
+        let Some(expected) = generated.get(&(mapping.mode.as_str(), mapping.provider.as_str()))
+        else {
+            return;
+        };
+        if !mapping.abi_fingerprint.is_empty() {
+            return;
+        }
+        mapping
+            .abi_fingerprint
+            .clone_from(&expected.abi_fingerprint);
+        if mapping != *expected {
+            return;
+        }
+    }
+    *previous = seeded;
+}
+
+fn map_inventory_impl(
+    inventory: &CApiInventory,
+    precision_inventories: Option<&AbiPrecisionInventories>,
+    binding_routes: &AbiBindingRoutes,
+    binding_indexes: &AbiBindingIndexes,
+) -> Result<AbiContract> {
     let policy = default_policy(binding_routes);
     let coordinates = coordinates(&policy);
     let mut structs = Vec::with_capacity(inventory.structs.len());
@@ -232,11 +377,25 @@ pub fn map_inventory(
             .map(|(mode, provider)| {
                 let binding =
                     require_route_binding(mode, provider, binding_routes, binding_indexes)?;
+                let resolved_path =
+                    require_resolved_type(&binding.index, &path, &declaration.name)?;
+                let abi_fingerprint = precision_inventories.map_or_else(
+                    || Ok(String::new()),
+                    |inventories| {
+                        require_struct_abi_fingerprint(
+                            declaration,
+                            require_precision_inventory(mode, inventories)?,
+                            &binding.index,
+                            &path,
+                        )
+                    },
+                )?;
                 Ok(AbiTypeMapping {
                     mode: mode.clone(),
                     provider: provider.clone(),
                     path: path.clone(),
-                    resolved_path: require_resolved_type(&binding.index, &path, &declaration.name)?,
+                    resolved_path,
+                    abi_fingerprint,
                 })
             })
             .collect::<Result<Vec<_>>>()?;
@@ -248,7 +407,19 @@ pub fn map_inventory(
                     let binding =
                         require_route_binding(mode, provider, binding_routes, binding_indexes)?;
                     let projection = require_field_projection(&binding.index, &path, &field.name)?;
-                    Ok(field_mapping(mode, provider, &projection))
+                    let abi_fingerprint = precision_inventories.map_or_else(
+                        || Ok(String::new()),
+                        |inventories| {
+                            require_field_abi_fingerprint(
+                                &declaration.name,
+                                &field.name,
+                                require_precision_inventory(mode, inventories)?,
+                                &binding.index,
+                                &projection,
+                            )
+                        },
+                    )?;
+                    Ok(field_mapping(mode, provider, &projection, abi_fingerprint))
                 })
                 .collect::<Result<Vec<_>>>()?;
             fields.push(AbiFieldContract {
@@ -305,15 +476,25 @@ pub fn map_inventory(
                         binding_routes,
                         binding_indexes,
                     )?;
+                    let resolved_path =
+                        require_resolved_type(&binding.index, &path, &declaration.name)?;
+                    let abi_fingerprint = precision_inventories.map_or_else(
+                        || Ok(String::new()),
+                        |inventories| {
+                            require_callback_abi_fingerprint(
+                                &declaration.name,
+                                require_precision_inventory(mode, inventories)?,
+                                &binding.index,
+                                &path,
+                            )
+                        },
+                    )?;
                     Ok(AbiTypeMapping {
                         mode: mode.clone(),
                         provider: provider.clone(),
                         path: path.clone(),
-                        resolved_path: require_resolved_type(
-                            &binding.index,
-                            &path,
-                            &declaration.name,
-                        )?,
+                        resolved_path,
+                        abi_fingerprint,
                     })
                 })
                 .collect::<Result<Vec<_>>>()?,
@@ -355,11 +536,15 @@ pub fn preserve_reviewed_exposure(previous: &AbiContract, generated: &mut AbiCon
         };
         if structure.fingerprint == previous_structure.fingerprint
             && structure.header == previous_structure.header
+            && mapping_proof_can_be_inherited(
+                &previous_structure.raw_mappings,
+                &structure.raw_mappings,
+            )
         {
             copy_struct_exposure(structure, &previous_structure);
         } else {
             structure.rationale = format!(
-                "The declaration fingerprint or header for `{}` changed, so the previous Safe review was not inherited and this refreshed capability is conservatively raw.",
+                "The declaration identity or precision-specific raw ABI proof for `{}` changed, so the previous Safe review was not inherited and this refreshed capability is conservatively raw.",
                 structure.name
             );
         }
@@ -372,11 +557,15 @@ pub fn preserve_reviewed_exposure(previous: &AbiContract, generated: &mut AbiCon
             if let Some(previous_field) = previous_fields.remove(&field.name) {
                 if field.signature == previous_field.signature
                     && field.overlays == previous_field.overlays
+                    && mapping_proof_can_be_inherited(
+                        &previous_field.raw_mappings,
+                        &field.raw_mappings,
+                    )
                 {
                     copy_field_exposure(field, &previous_field);
                 } else {
                     field.rationale = format!(
-                        "The declaration or overlay contract for `{}::{}` changed, so the previous Safe review was not inherited and this refreshed field is conservatively raw.",
+                        "The declaration, overlay contract, or precision-specific raw ABI proof for `{}::{}` changed, so the previous Safe review was not inherited and this refreshed field is conservatively raw.",
                         structure.name, field.name
                     );
                 }
@@ -395,6 +584,10 @@ pub fn preserve_reviewed_exposure(previous: &AbiContract, generated: &mut AbiCon
             if callback.signature == previous_callback.signature
                 && callback.fingerprint == previous_callback.fingerprint
                 && callback.header == previous_callback.header
+                && mapping_proof_can_be_inherited(
+                    &previous_callback.raw_mappings,
+                    &callback.raw_mappings,
+                )
             {
                 callback.rationale = previous_callback.rationale;
                 callback.policy = previous_callback.policy;
@@ -402,7 +595,7 @@ pub fn preserve_reviewed_exposure(previous: &AbiContract, generated: &mut AbiCon
                 callback.safe_witnesses = previous_callback.safe_witnesses;
             } else {
                 callback.rationale = format!(
-                    "The declaration fingerprint, signature, or header for `{}` changed, so the previous Safe review was not inherited and this refreshed callback is conservatively raw.",
+                    "The declaration identity or precision-specific raw ABI proof for `{}` changed, so the previous Safe review was not inherited and this refreshed callback is conservatively raw.",
                     callback.name
                 );
             }
@@ -591,6 +784,7 @@ fn copy_field_exposure(target: &mut AbiFieldContract, source: &AbiFieldContract)
 
 pub struct AbiValidationContext<'a> {
     inventory: &'a CApiInventory,
+    precision_inventories: Option<&'a AbiPrecisionInventories>,
     binding_routes: &'a AbiBindingRoutes,
     binding_indexes: &'a AbiBindingIndexes,
     function_symbols: &'a AbiFunctionSymbols,
@@ -609,6 +803,28 @@ impl<'a> AbiValidationContext<'a> {
     ) -> Self {
         Self {
             inventory,
+            precision_inventories: None,
+            binding_routes,
+            binding_indexes,
+            function_symbols,
+            rust_indexes,
+            evidence_ids,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_precision(
+        inventory: &'a CApiInventory,
+        precision_inventories: &'a AbiPrecisionInventories,
+        binding_routes: &'a AbiBindingRoutes,
+        binding_indexes: &'a AbiBindingIndexes,
+        function_symbols: &'a AbiFunctionSymbols,
+        rust_indexes: &'a AbiRustIndexes,
+        evidence_ids: &'a BTreeSet<String>,
+    ) -> Self {
+        Self {
+            inventory,
+            precision_inventories: Some(precision_inventories),
             binding_routes,
             binding_indexes,
             function_symbols,
@@ -624,6 +840,12 @@ pub fn validate(
     errors: &mut Vec<String>,
 ) {
     validate_binding_routes(context.binding_routes, context.binding_indexes, errors);
+    if let Some(precision_inventories) = context.precision_inventories
+        && let Err(error) =
+            require_precision_inventory_modes(precision_inventories, context.binding_routes)
+    {
+        errors.push(error.to_string());
+    }
     if context.rust_indexes.keys().collect::<BTreeSet<_>>()
         != context.binding_routes.keys().collect::<BTreeSet<_>>()
     {
@@ -793,13 +1015,12 @@ fn validate_structs(
             context,
             errors,
         );
-        validate_type_mappings(
+        validate_struct_mappings(
             &format!("ABI struct `{}`", structure.name),
-            &structure.name,
+            declaration,
             &structure.raw_mappings,
             policy,
-            context.binding_routes,
-            context.binding_indexes,
+            context,
             errors,
         );
         validate_fields(
@@ -940,13 +1161,12 @@ fn validate_callbacks(
             context,
             errors,
         );
-        validate_type_mappings(
+        validate_callback_mappings(
             &subject,
             &callback.name,
             &callback.raw_mappings,
             policy,
-            context.binding_routes,
-            context.binding_indexes,
+            context,
             errors,
         );
     }
@@ -960,24 +1180,23 @@ fn validate_callbacks(
     }
 }
 
-fn validate_type_mappings(
+fn validate_struct_mappings(
     subject: &str,
-    c_name: &str,
+    declaration: &StructDecl,
     mappings: &[AbiTypeMapping],
     policy: Option<&AbiCapabilityPolicy>,
-    binding_routes: &AbiBindingRoutes,
-    binding_indexes: &AbiBindingIndexes,
+    context: &AbiValidationContext<'_>,
     errors: &mut Vec<String>,
 ) {
     validate_mapping_coordinates(subject, mappings, policy, errors);
-    let expected_path = type_path(c_name);
+    let expected_path = type_path(&declaration.name);
     for mapping in mappings {
         let Some(index) = mapping_binding_index(
             subject,
             &mapping.mode,
             &mapping.provider,
-            binding_routes,
-            binding_indexes,
+            context.binding_routes,
+            context.binding_indexes,
             errors,
         ) else {
             continue;
@@ -987,14 +1206,14 @@ fn validate_type_mappings(
             Ok(None) => {
                 errors.push(format!(
                     "{subject} expected generated type path `{expected_path}` is absent from binding artifact `{}`",
-                    route_artifact(&mapping.mode, &mapping.provider, binding_routes)
+                    route_artifact(&mapping.mode, &mapping.provider, context.binding_routes)
                 ));
                 None
             }
             Err(error) => {
                 errors.push(format!(
                     "{subject} in binding artifact `{}`: {error}",
-                    route_artifact(&mapping.mode, &mapping.provider, binding_routes)
+                    route_artifact(&mapping.mode, &mapping.provider, context.binding_routes)
                 ));
                 None
             }
@@ -1010,6 +1229,79 @@ fn validate_type_mappings(
                 "{subject} resolves `{}` to `{}`, expected `{:?}`",
                 mapping.path, mapping.resolved_path, expected_resolved
             ));
+        }
+        if let Some(precision_inventories) = context.precision_inventories {
+            validate_struct_mapping_fingerprint(
+                subject,
+                declaration,
+                mapping,
+                precision_inventories,
+                index,
+                errors,
+            );
+        }
+    }
+}
+
+fn validate_callback_mappings(
+    subject: &str,
+    callback_name: &str,
+    mappings: &[AbiTypeMapping],
+    policy: Option<&AbiCapabilityPolicy>,
+    context: &AbiValidationContext<'_>,
+    errors: &mut Vec<String>,
+) {
+    validate_mapping_coordinates(subject, mappings, policy, errors);
+    let expected_path = type_path(callback_name);
+    for mapping in mappings {
+        let Some(index) = mapping_binding_index(
+            subject,
+            &mapping.mode,
+            &mapping.provider,
+            context.binding_routes,
+            context.binding_indexes,
+            errors,
+        ) else {
+            continue;
+        };
+        let expected_resolved = match index.resolved_type_path(&expected_path) {
+            Ok(Some(path)) => Some(path),
+            Ok(None) => {
+                errors.push(format!(
+                    "{subject} expected generated callback path `{expected_path}` is absent from binding artifact `{}`",
+                    route_artifact(&mapping.mode, &mapping.provider, context.binding_routes)
+                ));
+                None
+            }
+            Err(error) => {
+                errors.push(format!(
+                    "{subject} in binding artifact `{}`: {error}",
+                    route_artifact(&mapping.mode, &mapping.provider, context.binding_routes)
+                ));
+                None
+            }
+        };
+        if mapping.path != expected_path {
+            errors.push(format!(
+                "{subject} maps to `{}`, expected canonical generated callback path `{expected_path}`",
+                mapping.path
+            ));
+        }
+        if expected_resolved.as_ref() != Some(&mapping.resolved_path) {
+            errors.push(format!(
+                "{subject} resolves `{}` to `{}`, expected `{:?}`",
+                mapping.path, mapping.resolved_path, expected_resolved
+            ));
+        }
+        if let Some(precision_inventories) = context.precision_inventories {
+            validate_callback_mapping_fingerprint(
+                subject,
+                callback_name,
+                mapping,
+                precision_inventories,
+                index,
+                errors,
+            );
         }
     }
 }
@@ -1038,7 +1330,7 @@ fn validate_field_mappings(
         };
         let index = &binding.index;
         let expected = match require_field_projection(index, &root_path, c_field) {
-            Ok(projection) => Some(field_mapping("", "", &projection)),
+            Ok(projection) => Some(field_mapping("", "", &projection, String::new())),
             Err(error) => {
                 errors.push(format!(
                     "{subject} in binding artifact `{}`: {error}",
@@ -1063,6 +1355,18 @@ fn validate_field_mappings(
                 "{subject} access chain is absent from the Rust binding AST"
             )),
             Err(error) => errors.push(format!("{subject}: {error}")),
+        }
+        if let Some(precision_inventories) = context.precision_inventories {
+            validate_field_mapping_fingerprint(
+                subject,
+                struct_name,
+                c_field,
+                mapping,
+                precision_inventories,
+                index,
+                &projection,
+                errors,
+            );
         }
     }
 }
@@ -1568,6 +1872,7 @@ fn declaration_mentions_identifier(declaration: &str, expected: &str) -> bool {
 trait MappingCoordinate {
     fn mode(&self) -> &str;
     fn provider(&self) -> &str;
+    fn abi_fingerprint(&self) -> &str;
 }
 
 impl MappingCoordinate for AbiTypeMapping {
@@ -1577,6 +1882,10 @@ impl MappingCoordinate for AbiTypeMapping {
 
     fn provider(&self) -> &str {
         &self.provider
+    }
+
+    fn abi_fingerprint(&self) -> &str {
+        &self.abi_fingerprint
     }
 }
 
@@ -1588,6 +1897,60 @@ impl MappingCoordinate for AbiFieldMapping {
     fn provider(&self) -> &str {
         &self.provider
     }
+
+    fn abi_fingerprint(&self) -> &str {
+        &self.abi_fingerprint
+    }
+}
+
+fn mapping_proof_can_be_inherited<T>(previous: &[T], generated: &[T]) -> bool
+where
+    T: MappingCoordinate + Eq,
+{
+    if previous.is_empty() || generated.len() < previous.len() {
+        return false;
+    }
+    let Some(previous_by_coordinate) = unique_mapping_coordinates(previous) else {
+        return false;
+    };
+    let Some(generated_by_coordinate) = unique_mapping_coordinates(generated) else {
+        return false;
+    };
+
+    if !previous_by_coordinate.iter().all(|(coordinate, mapping)| {
+        generated_by_coordinate.get(coordinate).copied() == Some(*mapping)
+    }) {
+        return false;
+    }
+    if generated_by_coordinate.len() == previous_by_coordinate.len() {
+        return true;
+    }
+
+    let reviewed_fingerprints = previous
+        .iter()
+        .map(MappingCoordinate::abi_fingerprint)
+        .collect::<BTreeSet<_>>();
+    if reviewed_fingerprints.is_empty() || reviewed_fingerprints.contains("") {
+        return false;
+    }
+    generated_by_coordinate.iter().all(|(coordinate, mapping)| {
+        previous_by_coordinate.contains_key(coordinate)
+            || reviewed_fingerprints.contains(mapping.abi_fingerprint())
+    })
+}
+
+fn unique_mapping_coordinates<T>(mappings: &[T]) -> Option<BTreeMap<(String, String), &T>>
+where
+    T: MappingCoordinate,
+{
+    let mut by_coordinate = BTreeMap::new();
+    for mapping in mappings {
+        let coordinate = (mapping.mode().to_owned(), mapping.provider().to_owned());
+        if by_coordinate.insert(coordinate, mapping).is_some() {
+            return None;
+        }
+    }
+    Some(by_coordinate)
 }
 
 fn mapping_binding_index<'a>(
@@ -1793,6 +2156,317 @@ fn policy_reference<'a>(
     Some(policy_value)
 }
 
+fn require_precision_inventory_modes(
+    inventories: &AbiPrecisionInventories,
+    binding_routes: &AbiBindingRoutes,
+) -> Result<()> {
+    let expected = binding_routes
+        .keys()
+        .map(|(mode, _)| mode.clone())
+        .collect::<BTreeSet<_>>();
+    let actual = inventories.keys().cloned().collect::<BTreeSet<_>>();
+    if actual != expected {
+        return Err(Error::message(format!(
+            "precision C ABI inventories must cover exactly the executable modes; expected {expected:?}, found {actual:?}"
+        )));
+    }
+    for (mode, inventory) in inventories {
+        if inventory.precision.as_str() != mode {
+            return Err(Error::message(format!(
+                "precision C ABI inventory key `{mode}` contains `{}` declarations",
+                inventory.precision.as_str()
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn require_precision_inventory<'a>(
+    mode: &str,
+    inventories: &'a AbiPrecisionInventories,
+) -> Result<&'a PrecisionCApiInventory> {
+    let inventory = inventories.get(mode).ok_or_else(|| {
+        Error::message(format!(
+            "executable precision mode `{mode}` has no C ABI inventory"
+        ))
+    })?;
+    if inventory.precision.as_str() != mode {
+        return Err(Error::message(format!(
+            "precision C ABI inventory key `{mode}` contains `{}` declarations",
+            inventory.precision.as_str()
+        )));
+    }
+    Ok(inventory)
+}
+
+fn require_struct_abi_fingerprint(
+    declaration: &StructDecl,
+    c_inventory: &PrecisionCApiInventory,
+    rust_index: &SysAbiIndex,
+    rust_path: &str,
+) -> Result<String> {
+    let c_shape = c_inventory.type_shape(&declaration.name).ok_or_else(|| {
+        Error::message(format!(
+            "{}-precision C ABI inventory has no effective type `{}`",
+            c_inventory.precision.as_str(),
+            declaration.name
+        ))
+    })?;
+    let rust_shape = rust_index.type_abi_shape(rust_path)?.ok_or_else(|| {
+        Error::message(format!(
+            "generated Rust binding has no ABI shape for `{rust_path}`"
+        ))
+    })?;
+    let c_fingerprint = c_shape.fingerprint();
+    let rust_fingerprint = rust_shape.fingerprint();
+    if c_fingerprint == rust_fingerprint {
+        return Ok(c_fingerprint);
+    }
+
+    // Bindgen materializes anonymous C unions/structs as named wrapper fields. Compare the same
+    // public C leaf inventory through the exact generated access projections to normalize that
+    // representational difference without accepting a primitive or callback type mismatch.
+    let (projected_c, projected_rust) =
+        projected_struct_shapes(declaration, c_inventory, rust_index, rust_path)?;
+    let projected_c_fingerprint = projected_c.fingerprint();
+    let projected_rust_fingerprint = projected_rust.fingerprint();
+    if projected_c_fingerprint != projected_rust_fingerprint {
+        return Err(Error::message(format!(
+            "{}-precision ABI shape mismatch for `{}`: C `{projected_c_fingerprint}`, generated Rust `{projected_rust_fingerprint}`",
+            c_inventory.precision.as_str(),
+            declaration.name
+        )));
+    }
+    Ok(projected_c_fingerprint)
+}
+
+fn projected_struct_shapes(
+    declaration: &StructDecl,
+    c_inventory: &PrecisionCApiInventory,
+    rust_index: &SysAbiIndex,
+    rust_path: &str,
+) -> Result<(AbiTypeShape, AbiTypeShape)> {
+    let c_root = c_inventory.type_shape(&declaration.name).ok_or_else(|| {
+        Error::message(format!(
+            "{}-precision C ABI inventory has no effective type `{}`",
+            c_inventory.precision.as_str(),
+            declaration.name
+        ))
+    })?;
+    let mut c_fields = Vec::with_capacity(declaration.fields.len());
+    let mut rust_fields = Vec::with_capacity(declaration.fields.len());
+    for field in &declaration.fields {
+        let c_shape = effective_field_shape(c_root, &field.name).ok_or_else(|| {
+            Error::message(format!(
+                "{}-precision C ABI type `{}` has no field `{}`",
+                c_inventory.precision.as_str(),
+                declaration.name,
+                field.name
+            ))
+        })?;
+        let projection = require_field_projection(rust_index, rust_path, &field.name)?;
+        let rust_shape = rust_index
+            .field_access_abi_shape(&projection)?
+            .ok_or_else(|| {
+                Error::message(format!(
+                    "generated Rust binding has no ABI shape for projected field `{rust_path}::{}`",
+                    field.name
+                ))
+            })?;
+        c_fields.push(AbiFieldShape {
+            name: field.name.clone(),
+            shape: c_shape.clone(),
+            overlays: field.overlays.clone(),
+        });
+        rust_fields.push(AbiFieldShape {
+            name: field.name.clone(),
+            shape: rust_shape,
+            overlays: field.overlays.clone(),
+        });
+    }
+    Ok((
+        AbiTypeShape::Aggregate { fields: c_fields },
+        AbiTypeShape::Aggregate {
+            fields: rust_fields,
+        },
+    ))
+}
+
+fn require_field_abi_fingerprint(
+    struct_name: &str,
+    field_name: &str,
+    c_inventory: &PrecisionCApiInventory,
+    rust_index: &SysAbiIndex,
+    projection: &SysAbiAccessProjection,
+) -> Result<String> {
+    let c_root = c_inventory.type_shape(struct_name).ok_or_else(|| {
+        Error::message(format!(
+            "{}-precision C ABI inventory has no effective type `{struct_name}`",
+            c_inventory.precision.as_str()
+        ))
+    })?;
+    let c_shape = effective_field_shape(c_root, field_name).ok_or_else(|| {
+        Error::message(format!(
+            "{}-precision C ABI type `{struct_name}` has no field `{field_name}`",
+            c_inventory.precision.as_str()
+        ))
+    })?;
+    let rust_shape = rust_index
+        .field_access_abi_shape(projection)?
+        .ok_or_else(|| {
+            Error::message(format!(
+                "generated Rust binding has no ABI shape for projected field `{struct_name}::{field_name}`"
+            ))
+        })?;
+    let c_fingerprint = c_shape.fingerprint();
+    let rust_fingerprint = rust_shape.fingerprint();
+    if c_fingerprint != rust_fingerprint {
+        return Err(Error::message(format!(
+            "{}-precision ABI field shape mismatch for `{struct_name}::{field_name}`: C `{c_fingerprint}`, generated Rust `{rust_fingerprint}`",
+            c_inventory.precision.as_str()
+        )));
+    }
+    Ok(c_fingerprint)
+}
+
+fn effective_field_shape<'a>(root: &'a AbiTypeShape, field_path: &str) -> Option<&'a AbiTypeShape> {
+    let segments = field_path.split('.').collect::<Vec<_>>();
+    effective_field_shape_segments(root, &segments)
+}
+
+fn effective_field_shape_segments<'a>(
+    shape: &'a AbiTypeShape,
+    segments: &[&str],
+) -> Option<&'a AbiTypeShape> {
+    let AbiTypeShape::Aggregate { fields } = shape else {
+        return None;
+    };
+    let complete_path = segments.join(".");
+    if let Some(field) = fields.iter().find(|field| field.name == complete_path) {
+        return Some(&field.shape);
+    }
+    let (first, remaining) = segments.split_first()?;
+    let field = fields.iter().find(|field| field.name == *first)?;
+    if remaining.is_empty() {
+        Some(&field.shape)
+    } else {
+        effective_field_shape_segments(&field.shape, remaining)
+    }
+}
+
+fn require_callback_abi_fingerprint(
+    callback_name: &str,
+    c_inventory: &PrecisionCApiInventory,
+    rust_index: &SysAbiIndex,
+    rust_path: &str,
+) -> Result<String> {
+    let c_fingerprint = c_inventory
+        .callback(callback_name)
+        .map(|callback| callback.fingerprint.clone())
+        .ok_or_else(|| {
+            Error::message(format!(
+                "{}-precision C ABI inventory has no callback `{callback_name}`",
+                c_inventory.precision.as_str()
+            ))
+        })?;
+    let rust_fingerprint = rust_index
+        .callback_abi_fingerprint(rust_path)?
+        .ok_or_else(|| {
+            Error::message(format!(
+                "generated Rust binding has no callback ABI shape for `{rust_path}`"
+            ))
+        })?;
+    if c_fingerprint != rust_fingerprint {
+        return Err(Error::message(format!(
+            "{}-precision callback ABI mismatch for `{callback_name}`: C `{c_fingerprint}`, generated Rust `{rust_fingerprint}`",
+            c_inventory.precision.as_str()
+        )));
+    }
+    Ok(c_fingerprint)
+}
+
+fn validate_struct_mapping_fingerprint(
+    subject: &str,
+    declaration: &StructDecl,
+    mapping: &AbiTypeMapping,
+    precision_inventories: &AbiPrecisionInventories,
+    rust_index: &SysAbiIndex,
+    errors: &mut Vec<String>,
+) {
+    match require_precision_inventory(&mapping.mode, precision_inventories).and_then(|inventory| {
+        require_struct_abi_fingerprint(
+            declaration,
+            inventory,
+            rust_index,
+            &type_path(&declaration.name),
+        )
+    }) {
+        Ok(expected) if mapping.abi_fingerprint != expected => errors.push(format!(
+            "{subject} at `{}/{}` records ABI fingerprint `{}`, expected `{expected}`",
+            mapping.mode, mapping.provider, mapping.abi_fingerprint
+        )),
+        Ok(_) => {}
+        Err(error) => errors.push(format!(
+            "{subject} at `{}/{}`: {error}",
+            mapping.mode, mapping.provider
+        )),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_field_mapping_fingerprint(
+    subject: &str,
+    struct_name: &str,
+    field_name: &str,
+    mapping: &AbiFieldMapping,
+    precision_inventories: &AbiPrecisionInventories,
+    rust_index: &SysAbiIndex,
+    projection: &SysAbiAccessProjection,
+    errors: &mut Vec<String>,
+) {
+    match require_precision_inventory(&mapping.mode, precision_inventories).and_then(|inventory| {
+        require_field_abi_fingerprint(struct_name, field_name, inventory, rust_index, projection)
+    }) {
+        Ok(expected) if mapping.abi_fingerprint != expected => errors.push(format!(
+            "{subject} at `{}/{}` records ABI fingerprint `{}`, expected `{expected}`",
+            mapping.mode, mapping.provider, mapping.abi_fingerprint
+        )),
+        Ok(_) => {}
+        Err(error) => errors.push(format!(
+            "{subject} at `{}/{}`: {error}",
+            mapping.mode, mapping.provider
+        )),
+    }
+}
+
+fn validate_callback_mapping_fingerprint(
+    subject: &str,
+    callback_name: &str,
+    mapping: &AbiTypeMapping,
+    precision_inventories: &AbiPrecisionInventories,
+    rust_index: &SysAbiIndex,
+    errors: &mut Vec<String>,
+) {
+    match require_precision_inventory(&mapping.mode, precision_inventories).and_then(|inventory| {
+        require_callback_abi_fingerprint(
+            callback_name,
+            inventory,
+            rust_index,
+            &type_path(callback_name),
+        )
+    }) {
+        Ok(expected) if mapping.abi_fingerprint != expected => errors.push(format!(
+            "{subject} at `{}/{}` records ABI fingerprint `{}`, expected `{expected}`",
+            mapping.mode, mapping.provider, mapping.abi_fingerprint
+        )),
+        Ok(_) => {}
+        Err(error) => errors.push(format!(
+            "{subject} at `{}/{}`: {error}",
+            mapping.mode, mapping.provider
+        )),
+    }
+}
+
 fn require_resolved_type(index: &SysAbiIndex, path: &str, c_name: &str) -> Result<String> {
     index.resolved_type_path(path)?.ok_or_else(|| {
         Error::message(format!(
@@ -1829,6 +2503,7 @@ fn field_mapping(
     mode: &str,
     provider: &str,
     projection: &SysAbiAccessProjection,
+    abi_fingerprint: String,
 ) -> AbiFieldMapping {
     AbiFieldMapping {
         mode: mode.to_owned(),
@@ -1843,6 +2518,7 @@ fn field_mapping(
                 field: step.field.clone(),
             })
             .collect(),
+        abi_fingerprint,
     }
 }
 
@@ -1971,7 +2647,20 @@ fn is_policy_id(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::declaration_mentions_identifier;
+    use std::{collections::BTreeMap, fs};
+
+    use tempfile::tempdir;
+
+    use super::{
+        AbiBindingIndex, AbiBindingIndexes, AbiBindingRoute, AbiPrecisionInventories,
+        AbiTypeMapping, declaration_mentions_identifier, map_precision_inventory,
+        mapping_proof_can_be_inherited,
+    };
+    use crate::{
+        c_api::{CAbiPrecision, parse_headers, parse_headers_for_precision},
+        commands::upstream_sync::{ArtifactProvider, ArtifactTarget, Precision, RustTarget},
+        sys_abi_index::index_bindings,
+    };
 
     #[test]
     fn callback_owner_signatures_require_exact_typedef_identifiers() {
@@ -1984,5 +2673,148 @@ mod tests {
             "b2Foo callback",
             "b2FooExtended"
         ));
+    }
+
+    #[test]
+    fn reviewed_mapping_requires_exact_existing_proof_and_equivalent_added_modes() {
+        let single = AbiTypeMapping {
+            mode: "single".to_owned(),
+            provider: "source".to_owned(),
+            path: "boxdd_sys::ffi::b2Pos".to_owned(),
+            resolved_path: "boxdd_sys::ffi::b2Vec2".to_owned(),
+            abi_fingerprint: "blake3-v1:same".to_owned(),
+        };
+        assert!(mapping_proof_can_be_inherited(
+            std::slice::from_ref(&single),
+            std::slice::from_ref(&single),
+        ));
+
+        let mut double = single.clone();
+        double.mode = "double".to_owned();
+        double.resolved_path = "boxdd_sys::ffi::b2Pos".to_owned();
+        assert!(mapping_proof_can_be_inherited(
+            std::slice::from_ref(&single),
+            &[single.clone(), double.clone()],
+        ));
+
+        double.abi_fingerprint = "blake3-v1:double".to_owned();
+        assert!(!mapping_proof_can_be_inherited(
+            std::slice::from_ref(&single),
+            &[single.clone(), double],
+        ));
+
+        let mut legacy = single.clone();
+        legacy.abi_fingerprint.clear();
+        let mut legacy_double = legacy.clone();
+        legacy_double.mode = "double".to_owned();
+        assert!(!mapping_proof_can_be_inherited(
+            std::slice::from_ref(&legacy),
+            &[legacy.clone(), legacy_double],
+        ));
+    }
+
+    #[test]
+    fn precision_mapping_rejects_f64_field_bound_as_f32() {
+        let error = map_fixture(
+            "typedef struct b2Pos { double x; } b2Pos;",
+            "#[repr(C)] pub struct b2Pos { pub x: f32 }",
+            CAbiPrecision::Double,
+        )
+        .expect_err("different primitive field widths must fail closed");
+        assert!(
+            error.to_string().contains("ABI shape mismatch"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn precision_mapping_rejects_callback_parameter_drift() {
+        let error = map_fixture(
+            "typedef void b2Callback(double value);",
+            "pub type b2Callback = Option<unsafe extern \"C\" fn(value: f32)>;",
+            CAbiPrecision::Double,
+        )
+        .expect_err("callback parameter drift must fail closed");
+        assert!(error.to_string().contains("callback ABI mismatch"));
+    }
+
+    #[test]
+    fn vendored_single_precision_mapping_matches_generated_binding_shapes() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let include = root.join("boxdd-sys/box2d/include/box2d");
+        let binding_path = root.join("boxdd-sys/src/bindings.rs");
+        if !binding_path.exists() {
+            return;
+        }
+        let inventory = parse_headers(&include).expect("vendored C inventory");
+        let precision_inventory = parse_headers_for_precision(&include, CAbiPrecision::Single)
+            .expect("single precision C inventory");
+        let routes = BTreeMap::from([(
+            ("single".to_owned(), "source".to_owned()),
+            AbiBindingRoute {
+                mode: "single".to_owned(),
+                provider: "source".to_owned(),
+                artifact: "bindings".to_owned(),
+                rust_target: RustTarget::X86_64UnknownLinuxGnu,
+                rust_features: Vec::new(),
+            },
+        )]);
+        let bindings = AbiBindingIndexes::from([(
+            "bindings".to_owned(),
+            AbiBindingIndex::new(
+                "bindings",
+                Precision::Single,
+                ArtifactTarget::Universal,
+                ArtifactProvider::Source,
+                index_bindings(&binding_path).expect("generated single binding index"),
+            ),
+        )]);
+        let inventories =
+            AbiPrecisionInventories::from([("single".to_owned(), precision_inventory)]);
+        map_precision_inventory(&inventory, &inventories, &routes, &bindings)
+            .expect("vendored single precision ABI mapping");
+    }
+
+    fn map_fixture(
+        header: &str,
+        binding: &str,
+        precision: CAbiPrecision,
+    ) -> crate::Result<super::AbiContract> {
+        let root = tempdir().expect("temporary fixture root");
+        let include = root.path().join("include");
+        fs::create_dir(&include).expect("fixture include directory");
+        fs::write(include.join("fixture.h"), header).expect("fixture header");
+        let binding_path = root.path().join("bindings.rs");
+        fs::write(&binding_path, binding).expect("fixture binding");
+
+        let mode = precision.as_str().to_owned();
+        let inventory = parse_headers(&include)?;
+        let precision_inventory = parse_headers_for_precision(&include, precision)?;
+        let binding_precision = match precision {
+            CAbiPrecision::Single => Precision::Single,
+            CAbiPrecision::Double => Precision::Double,
+        };
+        let routes = BTreeMap::from([(
+            (mode.clone(), "source".to_owned()),
+            AbiBindingRoute {
+                mode: mode.clone(),
+                provider: "source".to_owned(),
+                artifact: "fixture-bindings".to_owned(),
+                rust_target: RustTarget::X86_64UnknownLinuxGnu,
+                rust_features: Vec::new(),
+            },
+        )]);
+        let bindings = AbiBindingIndexes::from([(
+            "fixture-bindings".to_owned(),
+            AbiBindingIndex::new(
+                "fixture-bindings",
+                binding_precision,
+                ArtifactTarget::Universal,
+                ArtifactProvider::Source,
+                index_bindings(&binding_path)?,
+            ),
+        )]);
+        let precision_inventories = AbiPrecisionInventories::from([(mode, precision_inventory)]);
+        map_precision_inventory(&inventory, &precision_inventories, &routes, &bindings)
     }
 }
