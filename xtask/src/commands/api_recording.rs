@@ -646,10 +646,12 @@ fn production_entries() -> Vec<RegistryEntry<'static>> {
 
 pub(super) fn validate_registry(
     safe_functions: &BTreeSet<&str>,
+    known_functions: &BTreeSet<&str>,
     operations: &[RecordingOp],
 ) -> Result<()> {
     validate_registry_entries(
         safe_functions,
+        known_functions,
         operations,
         &production_entries(),
         OPERATION_EXEMPTIONS,
@@ -658,6 +660,7 @@ pub(super) fn validate_registry(
 
 fn validate_registry_entries(
     safe_functions: &BTreeSet<&str>,
+    known_functions: &BTreeSet<&str>,
     operations: &[RecordingOp],
     entries: &[RegistryEntry<'_>],
     exemptions: &[OperationExemption<'_>],
@@ -674,7 +677,7 @@ fn validate_registry_entries(
     for entry in entries {
         if !registry_functions.insert(entry.function) {
             errors.push(format!(
-                "recording registry classifies safe function `{}` more than once",
+                "recording registry classifies function `{}` more than once",
                 entry.function
             ));
         }
@@ -693,7 +696,7 @@ fn validate_registry_entries(
         if let Some(operation) = entry.operation {
             if !mapped_operations.insert(operation) {
                 errors.push(format!(
-                    "recording operation `{operation}` is mapped by more than one safe function"
+                    "recording operation `{operation}` is mapped by more than one function"
                 ));
             }
             if !operations_by_name.contains_key(operation) {
@@ -710,9 +713,9 @@ fn validate_registry_entries(
             "safe function `{function}` has no explicit recording registry entry"
         ));
     }
-    for function in registry_functions.difference(safe_functions) {
+    for function in registry_functions.difference(known_functions) {
         errors.push(format!(
-            "recording registry contains stale or non-safe function `{function}`"
+            "recording registry contains unknown or stale function `{function}`"
         ));
     }
 
@@ -771,9 +774,10 @@ fn validate_registry_entries(
         errors.push("logged query function registry contains duplicates".to_owned());
     }
     for function in query_functions {
-        if !entries
-            .iter()
-            .any(|entry| entry.function == function && entry.class == RecordingClass::LoggedQuery)
+        if registry_functions.contains(function)
+            && !entries.iter().any(|entry| {
+                entry.function == function && entry.class == RecordingClass::LoggedQuery
+            })
         {
             errors.push(format!(
                 "logged query function `{function}` is absent from the operation registry"
@@ -868,6 +872,7 @@ mod tests {
             },
         ];
         let safe = BTreeSet::from(["b2Body_SetTransform", "b2Body_GetTransform"]);
+        let known = safe.clone();
         let entries = [
             RegistryEntry {
                 function: "b2Body_SetTransform",
@@ -890,14 +895,14 @@ mod tests {
             rationale: "This deliberately stale operation has a test-only rationale.",
         }];
 
-        let error = validate_registry_entries(&safe, &operations, &entries, &exemptions)
+        let error = validate_registry_entries(&safe, &known, &operations, &entries, &exemptions)
             .expect_err("invalid registry must fail closed")
             .to_string();
 
         assert!(error.contains("more than once"));
         assert!(error.contains("unknown operation `BodySetTranform`"));
         assert!(error.contains("safe function `b2Body_GetTransform`"));
-        assert!(error.contains("stale or non-safe function `b2Stale`"));
+        assert!(error.contains("unknown or stale function `b2Stale`"));
         assert!(error.contains("stale operation exemption `MissingMetadata`"));
         assert!(error.contains("operation `StateHash` is neither mapped nor explicitly exempt"));
     }
@@ -918,8 +923,14 @@ mod tests {
                 arguments: Vec::new(),
             },
         ];
-        let error = validate_registry_entries(&BTreeSet::new(), &duplicate_operations, &[], &[])
-            .expect_err("duplicate opcode must fail");
+        let error = validate_registry_entries(
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &duplicate_operations,
+            &[],
+            &[],
+        )
+        .expect_err("duplicate opcode must fail");
         assert!(error.to_string().contains("duplicate recording opcode"));
 
         let operations = operations();
@@ -934,11 +945,31 @@ mod tests {
         }];
         let error = validate_registry_entries(
             &BTreeSet::from(["b2Body_SetTransform"]),
+            &BTreeSet::from(["b2Body_SetTransform"]),
             &operations,
             &entries,
             &exemptions,
         )
         .expect_err("mapped operation exemption must fail");
         assert!(error.to_string().contains("both mapped and exempt"));
+    }
+
+    #[test]
+    fn registry_accepts_a_known_non_safe_function() {
+        let entries = [RegistryEntry {
+            function: "b2RawOnly",
+            class: RecordingClass::LoggedMutation,
+            operation: Some("BodySetTransform"),
+        }];
+        let operations = operations();
+
+        validate_registry_entries(
+            &BTreeSet::new(),
+            &BTreeSet::from(["b2RawOnly"]),
+            &operations,
+            &entries,
+            &[],
+        )
+        .expect("a known Raw function may still require a recording classification");
     }
 }

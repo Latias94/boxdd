@@ -336,7 +336,16 @@ fn load_validated_coverage(paths: &WorkspacePaths) -> Result<ValidatedCoverage> 
         .filter(|function| function.classification == Classification::Safe)
         .map(|function| function.logical_name.as_str())
         .collect::<BTreeSet<_>>();
-    super::api_recording::validate_registry(&safe_functions, &recording_operations)?;
+    let known_functions = contract
+        .functions
+        .iter()
+        .map(|function| function.logical_name.as_str())
+        .collect::<BTreeSet<_>>();
+    super::api_recording::validate_registry(
+        &safe_functions,
+        &known_functions,
+        &recording_operations,
+    )?;
     validate_contract(
         paths,
         &contract,
