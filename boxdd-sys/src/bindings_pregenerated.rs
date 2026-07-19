@@ -2957,8 +2957,6 @@ unsafe extern "C" {
     ) -> b2SurfaceMaterial;
 }
 unsafe extern "C" {
-}
-unsafe extern "C" {
     #[doc = " Chain identifier validation. Provides validation for up to 64K allocations."]
     pub fn b2Chain_IsValid(id: b2ChainId) -> bool;
 }
