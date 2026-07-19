@@ -80,7 +80,7 @@ provider = "universal"
 producer = "reviewed"
 content_blake3 = "457037699200d52e65ca8cff9fcb53bd82c3cc0a741fcc255259df4e7367d207"
 candidate_path = "boxdd/tests/fixtures/api_contract.next.toml"
-candidate_blake3 = "4ec0ce7386f413b1ee99d1c9553149f7778b62b0e55f19ec3860248108dc149c"
+candidate_blake3 = "0c32b1f01ee44ffdd5ec34f0dc63cee0142010dcc5fcbea02834ce28f6c1fb15"
 
 [[artifacts]]
 name = "recording-wire"
