@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         axis_world,
     );
 
-    let pdef = PrismaticJointDef::new(base.clone())
+    let pdef = PrismaticJointDef::new(base)
         .enable_limit(true)
         .lower_translation(-0.5)
         .upper_translation(0.5);

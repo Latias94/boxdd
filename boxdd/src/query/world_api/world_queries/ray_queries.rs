@@ -11,15 +11,15 @@ impl World {
     /// use boxdd::{Position, QueryFilter, Vec2, World, WorldDef};
     /// let mut world = World::new(WorldDef::builder().gravity([0.0,-9.8]).build()).unwrap();
     /// let hit = world.cast_ray_closest(Position::new(0.0, 5.0), Vec2::new(0.0, -10.0), QueryFilter::default());
-    /// if hit.hit { /* use hit.point / hit.normal */ }
+    /// if let Some(hit) = hit { /* use hit.point / hit.normal */ }
     /// ```
     pub fn cast_ray_closest<VT: Into<Vec2>>(
         &self,
         origin: Position,
         translation: VT,
         filter: QueryFilter,
-    ) -> RayResult {
-        cast_ray_closest_checked_impl(self.raw(), origin, translation, filter)
+    ) -> Option<RayResult> {
+        cast_ray_closest_checked_impl(self.query_target(), origin, translation, filter)
     }
 
     pub fn try_cast_ray_closest<VT: Into<Vec2>>(
@@ -27,8 +27,8 @@ impl World {
         origin: Position,
         translation: VT,
         filter: QueryFilter,
-    ) -> ApiResult<RayResult> {
-        try_cast_ray_closest_impl(self.raw(), origin, translation, filter)
+    ) -> ApiResult<Option<RayResult>> {
+        try_cast_ray_closest_impl(self.query_target(), origin, translation, filter)
     }
 
     /// Cast a ray and collect all hits along the path.
@@ -49,7 +49,7 @@ impl World {
         translation: VT,
         filter: QueryFilter,
     ) -> Vec<RayResult> {
-        cast_ray_all_checked_impl(self.raw(), origin, translation, filter)
+        cast_ray_all_checked_impl(self.query_target(), origin, translation, filter)
     }
 
     /// Cast a ray and append all hits into `out`, reusing the caller-owned allocation.
@@ -60,7 +60,7 @@ impl World {
         filter: QueryFilter,
         out: &mut Vec<RayResult>,
     ) {
-        cast_ray_all_into_checked_impl(self.raw(), origin, translation, filter, out);
+        cast_ray_all_into_checked_impl(self.query_target(), origin, translation, filter, out);
     }
 
     pub fn try_cast_ray_all<VT: Into<Vec2>>(
@@ -69,7 +69,7 @@ impl World {
         translation: VT,
         filter: QueryFilter,
     ) -> ApiResult<Vec<RayResult>> {
-        try_cast_ray_all_impl(self.raw(), origin, translation, filter)
+        try_cast_ray_all_impl(self.query_target(), origin, translation, filter)
     }
 
     pub fn try_cast_ray_all_into<VT: Into<Vec2>>(
@@ -79,6 +79,6 @@ impl World {
         filter: QueryFilter,
         out: &mut Vec<RayResult>,
     ) -> ApiResult<()> {
-        try_cast_ray_all_into_impl(self.raw(), origin, translation, filter, out)
+        try_cast_ray_all_into_impl(self.query_target(), origin, translation, filter, out)
     }
 }

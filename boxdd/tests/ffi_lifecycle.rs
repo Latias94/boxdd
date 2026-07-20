@@ -11,6 +11,10 @@ assert_not_impl_any!(OwnedBody: Send, Sync);
 assert_not_impl_any!(OwnedShape: Send, Sync);
 assert_not_impl_any!(OwnedJoint: Send, Sync);
 assert_not_impl_any!(OwnedChain: Send, Sync);
+assert_not_impl_any!(Body<'static>: Send, Sync);
+assert_not_impl_any!(Shape<'static>: Send, Sync);
+assert_not_impl_any!(Joint<'static>: Send, Sync);
+assert_not_impl_any!(Chain<'static>: Send, Sync);
 
 #[derive(Clone)]
 struct DropCounter(Arc<AtomicUsize>);

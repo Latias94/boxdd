@@ -2,7 +2,8 @@ use boxdd::{prelude::*, shapes};
 use boxdd_sys::ffi;
 
 fn shape_key(id: ShapeId) -> (i32, u16, u16) {
-    (id.index1, id.world0, id.generation)
+    let raw = id.unbind();
+    (raw.index1, raw.world0, raw.generation)
 }
 
 #[test]
@@ -62,6 +63,7 @@ fn contact_and_sensor_events_smoke() {
 #[test]
 fn contact_event_view_matches_owned_snapshot() {
     let mut world = World::new(WorldDef::builder().gravity([0.0_f32, -10.0]).build()).unwrap();
+    world.set_hit_event_threshold(0.0);
 
     let b1 = world.create_body_id(
         BodyBuilder::new()
@@ -85,29 +87,103 @@ fn contact_event_view_matches_owned_snapshot() {
     world.set_body_linear_velocity(b1, [0.0_f32, 2.0]);
     world.set_body_linear_velocity(b2, [0.0_f32, -2.0]);
 
-    let owned = step_until_contact_begin(&mut world);
-    let view = world.with_contact_events_view(|begin, end, hit| {
+    let begin_owned = step_until_contact_begin(&mut world);
+    assert!(
+        !begin_owned.hit.is_empty(),
+        "expected the head-on collision to emit a hit event"
+    );
+    let begin_view = world.with_contact_events_view(|begin, end, hit| {
         (
             begin
-                .map(|event| (shape_key(event.shape_a()), shape_key(event.shape_b())))
+                .map(|event| {
+                    (
+                        shape_key(event.shape_a()),
+                        shape_key(event.shape_b()),
+                        event.contact_id(),
+                    )
+                })
                 .collect::<Vec<_>>(),
             end.count(),
-            hit.count(),
+            hit.map(|event| {
+                (
+                    shape_key(event.shape_a()),
+                    shape_key(event.shape_b()),
+                    event.contact_id(),
+                    event.point(),
+                    event.normal(),
+                    event.approach_speed(),
+                )
+            })
+            .collect::<Vec<_>>(),
         )
     });
-    let owned_begin = owned
+    let owned_begin = begin_owned
         .begin
         .iter()
-        .map(|event| (shape_key(event.shape_a), shape_key(event.shape_b)))
+        .map(|event| {
+            (
+                shape_key(event.shape_a),
+                shape_key(event.shape_b),
+                event.contact_id,
+            )
+        })
+        .collect::<Vec<_>>();
+    let owned_hit = begin_owned
+        .hit
+        .iter()
+        .map(|event| {
+            (
+                shape_key(event.shape_a),
+                shape_key(event.shape_b),
+                event.contact_id,
+                event.point,
+                event.normal,
+                event.approach_speed,
+            )
+        })
         .collect::<Vec<_>>();
 
-    assert_eq!(view.0, owned_begin);
-    assert_eq!(view.1, owned.end.len());
-    assert_eq!(view.2, owned.hit.len());
+    assert_eq!(begin_view.0, owned_begin);
+    assert_eq!(begin_view.1, begin_owned.end.len());
+    assert_eq!(begin_view.2, owned_hit);
+    assert!(begin_owned.hit.iter().all(|event| {
+        event.point.x.is_finite()
+            && event.point.y.is_finite()
+            && event.normal.x.is_finite()
+            && event.normal.y.is_finite()
+            && event.approach_speed.is_finite()
+            && event.approach_speed >= 0.0
+    }));
 
-    let stored = owned.clone();
-    world.step(1.0 / 60.0, 4);
+    let stored = begin_owned.clone();
+    world.set_body_position_and_rotation(b2, [0.0_f32, 20.0], 0.0);
+    let end_owned = step_until_contact_end(&mut world);
+    let end_view = world.with_contact_events_view(|_, end, _| {
+        end.map(|event| {
+            (
+                shape_key(event.shape_a()),
+                shape_key(event.shape_b()),
+                event.contact_id(),
+            )
+        })
+        .collect::<Vec<_>>()
+    });
+    let owned_end = end_owned
+        .end
+        .iter()
+        .map(|event| {
+            (
+                shape_key(event.shape_a),
+                shape_key(event.shape_b),
+                event.contact_id,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert!(!owned_end.is_empty());
+    assert_eq!(end_view, owned_end);
     assert_eq!(stored.begin.len(), owned_begin.len());
+    assert_eq!(stored.hit.len(), owned_hit.len());
 }
 
 #[test]
@@ -193,7 +269,7 @@ fn dropping_owned_body_inside_event_view_defers_destroy_until_view_exits() {
     let _move_event_count = world.with_body_events_view(|moves| {
         let count = moves.count();
         drop(body.take());
-        assert!(unsafe { ffi::b2Body_IsValid(body_id.into_raw()) });
+        assert!(unsafe { ffi::b2Body_IsValid(body_id.unbind().into_ffi()) });
         count
     });
 
@@ -268,4 +344,15 @@ fn step_until_contact_begin(world: &mut World) -> ContactEvents {
         }
     }
     panic!("expected at least one contact begin event");
+}
+
+fn step_until_contact_end(world: &mut World) -> ContactEvents {
+    for _ in 0..10 {
+        world.step(1.0 / 60.0, 4);
+        let events = world.contact_events();
+        if !events.end.is_empty() {
+            return events;
+        }
+    }
+    panic!("expected at least one contact end event");
 }

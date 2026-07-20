@@ -90,28 +90,29 @@ fn wheel_set_max_motor_torque_impl(id: JointId, value: f32) {
     joint_scalar_write_impl(id, value, ffi::b2WheelJoint_SetMaxMotorTorque)
 }
 
-trait WheelJointRuntimeHandle {
-    fn wheel_joint_id(&self) -> JointId;
-
+trait WheelJointRuntimeHandle: TypedJointRuntimeHandle {
     fn wheel_spring_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(
-            self.wheel_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             wheel_spring_enabled_impl,
         )
     }
 
     fn try_wheel_spring_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(
-            self.wheel_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             wheel_spring_enabled_impl,
         )
     }
 
     fn wheel_enable_spring(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(
-            self.wheel_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             enable,
             wheel_enable_spring_impl,
@@ -119,8 +120,9 @@ trait WheelJointRuntimeHandle {
     }
 
     fn try_wheel_enable_spring(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.wheel_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             enable,
             wheel_enable_spring_impl,
@@ -128,24 +130,27 @@ trait WheelJointRuntimeHandle {
     }
 
     fn wheel_spring_hertz(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.wheel_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             wheel_spring_hertz_impl,
         )
     }
 
     fn try_wheel_spring_hertz(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.wheel_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             wheel_spring_hertz_impl,
         )
     }
 
     fn wheel_set_spring_hertz(&mut self, hertz: f32) {
-        joint_kind_set_checked_impl(
-            self.wheel_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             hertz,
             wheel_set_spring_hertz_impl,
@@ -153,8 +158,9 @@ trait WheelJointRuntimeHandle {
     }
 
     fn try_wheel_set_spring_hertz(&mut self, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.wheel_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             hertz,
             wheel_set_spring_hertz_impl,
@@ -162,24 +168,27 @@ trait WheelJointRuntimeHandle {
     }
 
     fn wheel_spring_damping_ratio(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.wheel_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             wheel_spring_damping_ratio_impl,
         )
     }
 
     fn try_wheel_spring_damping_ratio(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.wheel_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             wheel_spring_damping_ratio_impl,
         )
     }
 
     fn wheel_set_spring_damping_ratio(&mut self, damping_ratio: f32) {
-        joint_kind_set_checked_impl(
-            self.wheel_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             damping_ratio,
             wheel_set_spring_damping_ratio_impl,
@@ -187,8 +196,9 @@ trait WheelJointRuntimeHandle {
     }
 
     fn try_wheel_set_spring_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.wheel_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             damping_ratio,
             wheel_set_spring_damping_ratio_impl,
@@ -196,24 +206,27 @@ trait WheelJointRuntimeHandle {
     }
 
     fn wheel_limit_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(
-            self.wheel_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             wheel_limit_enabled_impl,
         )
     }
 
     fn try_wheel_limit_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(
-            self.wheel_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             wheel_limit_enabled_impl,
         )
     }
 
     fn wheel_enable_limit(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(
-            self.wheel_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             enable,
             wheel_enable_limit_impl,
@@ -221,8 +234,9 @@ trait WheelJointRuntimeHandle {
     }
 
     fn try_wheel_enable_limit(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.wheel_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             enable,
             wheel_enable_limit_impl,
@@ -230,40 +244,45 @@ trait WheelJointRuntimeHandle {
     }
 
     fn wheel_lower_limit(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.wheel_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             wheel_lower_limit_impl,
         )
     }
 
     fn try_wheel_lower_limit(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.wheel_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             wheel_lower_limit_impl,
         )
     }
 
     fn wheel_upper_limit(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.wheel_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             wheel_upper_limit_impl,
         )
     }
 
     fn try_wheel_upper_limit(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.wheel_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             wheel_upper_limit_impl,
         )
     }
 
     fn wheel_set_limits(&mut self, lower: f32, upper: f32) {
-        joint_kind_set2_checked_validated_impl(
-            self.wheel_joint_id(),
+        joint_kind_set2_checked_validated_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             lower,
             upper,
@@ -273,8 +292,9 @@ trait WheelJointRuntimeHandle {
     }
 
     fn try_wheel_set_limits(&mut self, lower: f32, upper: f32) -> ApiResult<()> {
-        try_joint_kind_set2_checked_validated_impl(
-            self.wheel_joint_id(),
+        try_joint_kind_set2_checked_validated_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             lower,
             upper,
@@ -284,24 +304,27 @@ trait WheelJointRuntimeHandle {
     }
 
     fn wheel_motor_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(
-            self.wheel_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             wheel_motor_enabled_impl,
         )
     }
 
     fn try_wheel_motor_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(
-            self.wheel_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             wheel_motor_enabled_impl,
         )
     }
 
     fn wheel_enable_motor(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(
-            self.wheel_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             enable,
             wheel_enable_motor_impl,
@@ -309,8 +332,9 @@ trait WheelJointRuntimeHandle {
     }
 
     fn try_wheel_enable_motor(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.wheel_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             enable,
             wheel_enable_motor_impl,
@@ -318,24 +342,27 @@ trait WheelJointRuntimeHandle {
     }
 
     fn wheel_motor_speed(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.wheel_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             wheel_motor_speed_impl,
         )
     }
 
     fn try_wheel_motor_speed(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.wheel_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             wheel_motor_speed_impl,
         )
     }
 
     fn wheel_set_motor_speed(&mut self, speed: f32) {
-        joint_kind_set_checked_impl(
-            self.wheel_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             speed,
             wheel_set_motor_speed_impl,
@@ -343,8 +370,9 @@ trait WheelJointRuntimeHandle {
     }
 
     fn try_wheel_set_motor_speed(&mut self, speed: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.wheel_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             speed,
             wheel_set_motor_speed_impl,
@@ -352,40 +380,45 @@ trait WheelJointRuntimeHandle {
     }
 
     fn wheel_motor_torque(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.wheel_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             wheel_motor_torque_impl,
         )
     }
 
     fn try_wheel_motor_torque(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.wheel_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             wheel_motor_torque_impl,
         )
     }
 
     fn wheel_max_motor_torque(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.wheel_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             wheel_max_motor_torque_impl,
         )
     }
 
     fn try_wheel_max_motor_torque(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.wheel_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             wheel_max_motor_torque_impl,
         )
     }
 
     fn wheel_set_max_motor_torque(&mut self, torque: f32) {
-        joint_kind_set_checked_impl(
-            self.wheel_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             torque,
             wheel_set_max_motor_torque_impl,
@@ -393,8 +426,9 @@ trait WheelJointRuntimeHandle {
     }
 
     fn try_wheel_set_max_motor_torque(&mut self, torque: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.wheel_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Wheel,
             torque,
             wheel_set_max_motor_torque_impl,
@@ -402,61 +436,98 @@ trait WheelJointRuntimeHandle {
     }
 }
 
-impl WheelJointRuntimeHandle for OwnedJoint {
-    fn wheel_joint_id(&self) -> JointId {
-        self.id()
-    }
-}
+impl WheelJointRuntimeHandle for OwnedJoint {}
 
-impl<'w> WheelJointRuntimeHandle for Joint<'w> {
-    fn wheel_joint_id(&self) -> JointId {
-        self.id()
-    }
-}
+impl WheelJointRuntimeHandle for Joint<'_> {}
 
 impl World {
     pub fn wheel_spring_enabled(&self, id: JointId) -> bool {
-        joint_kind_get_checked_impl(id, JointType::Wheel, wheel_spring_enabled_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Wheel, wheel_spring_enabled_impl)
     }
 
     pub fn try_wheel_spring_enabled(&self, id: JointId) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(id, JointType::Wheel, wheel_spring_enabled_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_spring_enabled_impl,
+        )
     }
 
     pub fn wheel_enable_spring(&mut self, id: JointId, enable: bool) {
-        joint_kind_set_checked_impl(id, JointType::Wheel, enable, wheel_enable_spring_impl)
+        joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            enable,
+            wheel_enable_spring_impl,
+        )
     }
 
     pub fn try_wheel_enable_spring(&mut self, id: JointId, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(id, JointType::Wheel, enable, wheel_enable_spring_impl)
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            enable,
+            wheel_enable_spring_impl,
+        )
     }
 
     pub fn wheel_spring_hertz(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Wheel, wheel_spring_hertz_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Wheel, wheel_spring_hertz_impl)
     }
 
     pub fn try_wheel_spring_hertz(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Wheel, wheel_spring_hertz_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_spring_hertz_impl,
+        )
     }
 
     pub fn wheel_set_spring_hertz(&mut self, id: JointId, hertz: f32) {
-        joint_kind_set_checked_impl(id, JointType::Wheel, hertz, wheel_set_spring_hertz_impl)
+        joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            hertz,
+            wheel_set_spring_hertz_impl,
+        )
     }
 
     pub fn try_wheel_set_spring_hertz(&mut self, id: JointId, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(id, JointType::Wheel, hertz, wheel_set_spring_hertz_impl)
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            hertz,
+            wheel_set_spring_hertz_impl,
+        )
     }
 
     pub fn wheel_spring_damping_ratio(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Wheel, wheel_spring_damping_ratio_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_spring_damping_ratio_impl,
+        )
     }
 
     pub fn try_wheel_spring_damping_ratio(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Wheel, wheel_spring_damping_ratio_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_spring_damping_ratio_impl,
+        )
     }
 
     pub fn wheel_set_spring_damping_ratio(&mut self, id: JointId, damping_ratio: f32) {
-        joint_kind_set_checked_impl(
+        joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Wheel,
             damping_ratio,
@@ -469,7 +540,8 @@ impl World {
         id: JointId,
         damping_ratio: f32,
     ) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Wheel,
             damping_ratio,
@@ -478,39 +550,67 @@ impl World {
     }
 
     pub fn wheel_limit_enabled(&self, id: JointId) -> bool {
-        joint_kind_get_checked_impl(id, JointType::Wheel, wheel_limit_enabled_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Wheel, wheel_limit_enabled_impl)
     }
 
     pub fn try_wheel_limit_enabled(&self, id: JointId) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(id, JointType::Wheel, wheel_limit_enabled_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_limit_enabled_impl,
+        )
     }
 
     pub fn wheel_enable_limit(&mut self, id: JointId, enable: bool) {
-        joint_kind_set_checked_impl(id, JointType::Wheel, enable, wheel_enable_limit_impl)
+        joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            enable,
+            wheel_enable_limit_impl,
+        )
     }
 
     pub fn try_wheel_enable_limit(&mut self, id: JointId, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(id, JointType::Wheel, enable, wheel_enable_limit_impl)
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            enable,
+            wheel_enable_limit_impl,
+        )
     }
 
     pub fn wheel_lower_limit(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Wheel, wheel_lower_limit_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Wheel, wheel_lower_limit_impl)
     }
 
     pub fn try_wheel_lower_limit(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Wheel, wheel_lower_limit_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_lower_limit_impl,
+        )
     }
 
     pub fn wheel_upper_limit(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Wheel, wheel_upper_limit_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Wheel, wheel_upper_limit_impl)
     }
 
     pub fn try_wheel_upper_limit(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Wheel, wheel_upper_limit_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_upper_limit_impl,
+        )
     }
 
     pub fn wheel_set_limits(&mut self, id: JointId, lower: f32, upper: f32) {
-        joint_kind_set2_checked_validated_impl(
+        joint_kind_set2_checked_validated_in_impl(
+            self.core(),
             id,
             JointType::Wheel,
             lower,
@@ -521,7 +621,8 @@ impl World {
     }
 
     pub fn try_wheel_set_limits(&mut self, id: JointId, lower: f32, upper: f32) -> ApiResult<()> {
-        try_joint_kind_set2_checked_validated_impl(
+        try_joint_kind_set2_checked_validated_in_impl(
+            self.core(),
             id,
             JointType::Wheel,
             lower,
@@ -532,55 +633,105 @@ impl World {
     }
 
     pub fn wheel_motor_enabled(&self, id: JointId) -> bool {
-        joint_kind_get_checked_impl(id, JointType::Wheel, wheel_motor_enabled_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Wheel, wheel_motor_enabled_impl)
     }
 
     pub fn try_wheel_motor_enabled(&self, id: JointId) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(id, JointType::Wheel, wheel_motor_enabled_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_motor_enabled_impl,
+        )
     }
 
     pub fn wheel_enable_motor(&mut self, id: JointId, enable: bool) {
-        joint_kind_set_checked_impl(id, JointType::Wheel, enable, wheel_enable_motor_impl)
+        joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            enable,
+            wheel_enable_motor_impl,
+        )
     }
 
     pub fn try_wheel_enable_motor(&mut self, id: JointId, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(id, JointType::Wheel, enable, wheel_enable_motor_impl)
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            enable,
+            wheel_enable_motor_impl,
+        )
     }
 
     pub fn wheel_motor_speed(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Wheel, wheel_motor_speed_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Wheel, wheel_motor_speed_impl)
     }
 
     pub fn try_wheel_motor_speed(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Wheel, wheel_motor_speed_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_motor_speed_impl,
+        )
     }
 
     pub fn wheel_set_motor_speed(&mut self, id: JointId, speed: f32) {
-        joint_kind_set_checked_impl(id, JointType::Wheel, speed, wheel_set_motor_speed_impl)
+        joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            speed,
+            wheel_set_motor_speed_impl,
+        )
     }
 
     pub fn try_wheel_set_motor_speed(&mut self, id: JointId, speed: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(id, JointType::Wheel, speed, wheel_set_motor_speed_impl)
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            speed,
+            wheel_set_motor_speed_impl,
+        )
     }
 
     pub fn wheel_motor_torque(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Wheel, wheel_motor_torque_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Wheel, wheel_motor_torque_impl)
     }
 
     pub fn try_wheel_motor_torque(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Wheel, wheel_motor_torque_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_motor_torque_impl,
+        )
     }
 
     pub fn wheel_max_motor_torque(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Wheel, wheel_max_motor_torque_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_max_motor_torque_impl,
+        )
     }
 
     pub fn try_wheel_max_motor_torque(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Wheel, wheel_max_motor_torque_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_max_motor_torque_impl,
+        )
     }
 
     pub fn wheel_set_max_motor_torque(&mut self, id: JointId, torque: f32) {
-        joint_kind_set_checked_impl(
+        joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Wheel,
             torque,
@@ -589,7 +740,8 @@ impl World {
     }
 
     pub fn try_wheel_set_max_motor_torque(&mut self, id: JointId, torque: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Wheel,
             torque,
@@ -600,83 +752,143 @@ impl World {
 
 impl WorldHandle {
     pub fn wheel_spring_enabled(&self, id: JointId) -> bool {
-        joint_kind_get_checked_impl(id, JointType::Wheel, wheel_spring_enabled_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Wheel, wheel_spring_enabled_impl)
     }
 
     pub fn try_wheel_spring_enabled(&self, id: JointId) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(id, JointType::Wheel, wheel_spring_enabled_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_spring_enabled_impl,
+        )
     }
 
     pub fn wheel_spring_hertz(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Wheel, wheel_spring_hertz_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Wheel, wheel_spring_hertz_impl)
     }
 
     pub fn try_wheel_spring_hertz(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Wheel, wheel_spring_hertz_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_spring_hertz_impl,
+        )
     }
 
     pub fn wheel_spring_damping_ratio(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Wheel, wheel_spring_damping_ratio_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_spring_damping_ratio_impl,
+        )
     }
 
     pub fn try_wheel_spring_damping_ratio(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Wheel, wheel_spring_damping_ratio_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_spring_damping_ratio_impl,
+        )
     }
 
     pub fn wheel_limit_enabled(&self, id: JointId) -> bool {
-        joint_kind_get_checked_impl(id, JointType::Wheel, wheel_limit_enabled_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Wheel, wheel_limit_enabled_impl)
     }
 
     pub fn try_wheel_limit_enabled(&self, id: JointId) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(id, JointType::Wheel, wheel_limit_enabled_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_limit_enabled_impl,
+        )
     }
 
     pub fn wheel_lower_limit(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Wheel, wheel_lower_limit_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Wheel, wheel_lower_limit_impl)
     }
 
     pub fn try_wheel_lower_limit(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Wheel, wheel_lower_limit_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_lower_limit_impl,
+        )
     }
 
     pub fn wheel_upper_limit(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Wheel, wheel_upper_limit_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Wheel, wheel_upper_limit_impl)
     }
 
     pub fn try_wheel_upper_limit(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Wheel, wheel_upper_limit_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_upper_limit_impl,
+        )
     }
 
     pub fn wheel_motor_enabled(&self, id: JointId) -> bool {
-        joint_kind_get_checked_impl(id, JointType::Wheel, wheel_motor_enabled_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Wheel, wheel_motor_enabled_impl)
     }
 
     pub fn try_wheel_motor_enabled(&self, id: JointId) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(id, JointType::Wheel, wheel_motor_enabled_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_motor_enabled_impl,
+        )
     }
 
     pub fn wheel_motor_speed(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Wheel, wheel_motor_speed_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Wheel, wheel_motor_speed_impl)
     }
 
     pub fn try_wheel_motor_speed(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Wheel, wheel_motor_speed_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_motor_speed_impl,
+        )
     }
 
     pub fn wheel_motor_torque(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Wheel, wheel_motor_torque_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Wheel, wheel_motor_torque_impl)
     }
 
     pub fn try_wheel_motor_torque(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Wheel, wheel_motor_torque_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_motor_torque_impl,
+        )
     }
 
     pub fn wheel_max_motor_torque(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Wheel, wheel_max_motor_torque_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_max_motor_torque_impl,
+        )
     }
 
     pub fn try_wheel_max_motor_torque(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Wheel, wheel_max_motor_torque_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Wheel,
+            wheel_max_motor_torque_impl,
+        )
     }
 }
 

@@ -5,7 +5,7 @@ use crate::types::{BodyId, JointId, Vec2};
 use std::fmt;
 use std::marker::PhantomData;
 use std::os::raw::c_void;
-use std::sync::Arc;
+use std::rc::Rc;
 
 impl fmt::Debug for Joint<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -14,7 +14,7 @@ impl fmt::Debug for Joint<'_> {
 }
 
 impl<'w> Joint<'w> {
-    pub(crate) fn new(core: Arc<WorldCore>, id: JointId) -> Self {
+    pub(crate) fn new(core: Rc<WorldCore>, id: JointId) -> Self {
         Self {
             id,
             core,
@@ -292,18 +292,13 @@ impl<'w> Joint<'w> {
     /// Destroy this joint immediately.
     pub fn destroy(self, wake_bodies: bool) {
         crate::core::callback_state::assert_not_in_callback();
-        if unsafe { ffi::b2Joint_IsValid(raw_joint_id(self.id)) } {
-            unsafe { ffi::b2DestroyJoint(raw_joint_id(self.id), wake_bodies) };
-            let _ = self.core.clear_joint_user_data(self.id);
-        }
+        self.core
+            .destroy_joint_now(self.id, wake_bodies)
+            .expect("invalid or foreign JointId");
     }
 
     pub fn try_destroy(self, wake_bodies: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        if unsafe { ffi::b2Joint_IsValid(raw_joint_id(self.id)) } {
-            unsafe { ffi::b2DestroyJoint(raw_joint_id(self.id), wake_bodies) };
-            let _ = self.core.clear_joint_user_data(self.id);
-        }
-        Ok(())
+        crate::core::callback_state::check_not_in_callback()?;
+        self.core.destroy_joint_now(self.id, wake_bodies)
     }
 }

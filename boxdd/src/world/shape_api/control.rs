@@ -1,71 +1,87 @@
 use super::*;
 
-fn world_shape_set_circle_impl(shape: ShapeId, circle: &crate::shapes::Circle) {
-    crate::core::debug_checks::assert_shape_valid(shape);
+fn world_shape_set_circle_impl(core: &WorldCore, shape: ShapeId, circle: &crate::shapes::Circle) {
+    assert_shape_target(core, shape);
     crate::shapes::assert_circle_geometry_valid(circle);
     let raw = circle.into_raw();
     unsafe { ffi::b2Shape_SetCircle(raw_shape_id(shape), &raw) }
 }
 
 fn try_world_shape_set_circle_impl(
+    core: &WorldCore,
     shape: ShapeId,
     circle: &crate::shapes::Circle,
 ) -> crate::error::ApiResult<()> {
-    crate::core::debug_checks::check_shape_valid(shape)?;
+    check_shape_target(core, shape)?;
     crate::shapes::check_circle_geometry_valid(circle)?;
     let raw = circle.into_raw();
     unsafe { ffi::b2Shape_SetCircle(raw_shape_id(shape), &raw) }
     Ok(())
 }
 
-fn world_shape_set_segment_impl(shape: ShapeId, segment: &crate::shapes::Segment) {
-    crate::core::debug_checks::assert_shape_valid(shape);
+fn world_shape_set_segment_impl(
+    core: &WorldCore,
+    shape: ShapeId,
+    segment: &crate::shapes::Segment,
+) {
+    assert_shape_target(core, shape);
     crate::shapes::assert_segment_geometry_valid(segment);
     let raw = segment.into_raw();
     unsafe { ffi::b2Shape_SetSegment(raw_shape_id(shape), &raw) }
 }
 
 fn try_world_shape_set_segment_impl(
+    core: &WorldCore,
     shape: ShapeId,
     segment: &crate::shapes::Segment,
 ) -> crate::error::ApiResult<()> {
-    crate::core::debug_checks::check_shape_valid(shape)?;
+    check_shape_target(core, shape)?;
     crate::shapes::check_segment_geometry_valid(segment)?;
     let raw = segment.into_raw();
     unsafe { ffi::b2Shape_SetSegment(raw_shape_id(shape), &raw) }
     Ok(())
 }
 
-fn world_shape_set_capsule_impl(shape: ShapeId, capsule: &crate::shapes::Capsule) {
-    crate::core::debug_checks::assert_shape_valid(shape);
+fn world_shape_set_capsule_impl(
+    core: &WorldCore,
+    shape: ShapeId,
+    capsule: &crate::shapes::Capsule,
+) {
+    assert_shape_target(core, shape);
     crate::shapes::assert_capsule_geometry_valid(capsule);
     let raw = capsule.into_raw();
     unsafe { ffi::b2Shape_SetCapsule(raw_shape_id(shape), &raw) }
 }
 
 fn try_world_shape_set_capsule_impl(
+    core: &WorldCore,
     shape: ShapeId,
     capsule: &crate::shapes::Capsule,
 ) -> crate::error::ApiResult<()> {
-    crate::core::debug_checks::check_shape_valid(shape)?;
+    check_shape_target(core, shape)?;
     crate::shapes::check_capsule_geometry_valid(capsule)?;
     let raw = capsule.into_raw();
     unsafe { ffi::b2Shape_SetCapsule(raw_shape_id(shape), &raw) }
     Ok(())
 }
 
-fn world_shape_set_polygon_impl(shape: ShapeId, polygon: &crate::shapes::Polygon) {
-    crate::core::debug_checks::assert_shape_valid(shape);
+fn world_shape_set_polygon_impl(
+    core: &WorldCore,
+    shape: ShapeId,
+    polygon: &crate::shapes::Polygon,
+) {
+    assert_shape_target(core, shape);
     crate::shapes::assert_polygon_geometry_valid(polygon);
     let raw = polygon.into_raw();
     unsafe { ffi::b2Shape_SetPolygon(raw_shape_id(shape), &raw) }
 }
 
 fn try_world_shape_set_polygon_impl(
+    core: &WorldCore,
     shape: ShapeId,
     polygon: &crate::shapes::Polygon,
 ) -> crate::error::ApiResult<()> {
-    crate::core::debug_checks::check_shape_valid(shape)?;
+    check_shape_target(core, shape)?;
     crate::shapes::check_polygon_geometry_valid(polygon)?;
     let raw = polygon.into_raw();
     unsafe { ffi::b2Shape_SetPolygon(raw_shape_id(shape), &raw) }
@@ -74,7 +90,7 @@ fn try_world_shape_set_polygon_impl(
 
 impl World {
     pub fn shape_set_circle(&mut self, shape: ShapeId, circle: &crate::shapes::Circle) {
-        world_shape_set_circle_impl(shape, circle)
+        world_shape_set_circle_impl(&self.core, shape, circle)
     }
 
     pub fn try_shape_set_circle(
@@ -82,11 +98,11 @@ impl World {
         shape: ShapeId,
         circle: &crate::shapes::Circle,
     ) -> crate::error::ApiResult<()> {
-        try_world_shape_set_circle_impl(shape, circle)
+        try_world_shape_set_circle_impl(&self.core, shape, circle)
     }
 
     pub fn shape_set_segment(&mut self, shape: ShapeId, segment: &crate::shapes::Segment) {
-        world_shape_set_segment_impl(shape, segment)
+        world_shape_set_segment_impl(&self.core, shape, segment)
     }
 
     pub fn try_shape_set_segment(
@@ -94,11 +110,11 @@ impl World {
         shape: ShapeId,
         segment: &crate::shapes::Segment,
     ) -> crate::error::ApiResult<()> {
-        try_world_shape_set_segment_impl(shape, segment)
+        try_world_shape_set_segment_impl(&self.core, shape, segment)
     }
 
     pub fn shape_set_capsule(&mut self, shape: ShapeId, capsule: &crate::shapes::Capsule) {
-        world_shape_set_capsule_impl(shape, capsule)
+        world_shape_set_capsule_impl(&self.core, shape, capsule)
     }
 
     pub fn try_shape_set_capsule(
@@ -106,11 +122,11 @@ impl World {
         shape: ShapeId,
         capsule: &crate::shapes::Capsule,
     ) -> crate::error::ApiResult<()> {
-        try_world_shape_set_capsule_impl(shape, capsule)
+        try_world_shape_set_capsule_impl(&self.core, shape, capsule)
     }
 
     pub fn shape_set_polygon(&mut self, shape: ShapeId, polygon: &crate::shapes::Polygon) {
-        world_shape_set_polygon_impl(shape, polygon)
+        world_shape_set_polygon_impl(&self.core, shape, polygon)
     }
 
     pub fn try_shape_set_polygon(
@@ -118,11 +134,11 @@ impl World {
         shape: ShapeId,
         polygon: &crate::shapes::Polygon,
     ) -> crate::error::ApiResult<()> {
-        try_world_shape_set_polygon_impl(shape, polygon)
+        try_world_shape_set_polygon_impl(&self.core, shape, polygon)
     }
 
     pub fn shape_set_surface_material(&mut self, shape: ShapeId, material: &SurfaceMaterial) {
-        crate::core::debug_checks::assert_shape_valid(shape);
+        assert_shape_target(&self.core, shape);
         crate::shapes::shape_set_surface_material_impl(shape, material)
     }
 
@@ -131,7 +147,7 @@ impl World {
         shape: ShapeId,
         material: &SurfaceMaterial,
     ) -> crate::error::ApiResult<()> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
+        check_shape_target(&self.core, shape)?;
         crate::shapes::shape_set_surface_material_impl(shape, material);
         Ok(())
     }
@@ -145,7 +161,10 @@ impl World {
         lift: f32,
         wake: bool,
     ) {
-        crate::core::debug_checks::assert_shape_valid(shape);
+        assert_shape_target(&self.core, shape);
+        let wind = wind.into();
+        crate::shapes::assert_shape_vec2_valid("wind", wind);
+        assert_shape_target(&self.core, shape);
         crate::shapes::shape_apply_wind_impl(shape, wind, drag, lift, wake)
     }
 
@@ -157,13 +176,16 @@ impl World {
         lift: f32,
         wake: bool,
     ) -> crate::error::ApiResult<()> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
+        check_shape_target(&self.core, shape)?;
+        let wind = wind.into();
+        crate::shapes::check_shape_vec2_valid(wind)?;
+        check_shape_target(&self.core, shape)?;
         crate::shapes::shape_apply_wind_impl(shape, wind, drag, lift, wake);
         Ok(())
     }
 
     pub fn shape_enable_sensor_events(&mut self, shape: ShapeId, flag: bool) {
-        crate::core::debug_checks::assert_shape_valid(shape);
+        assert_shape_target(&self.core, shape);
         unsafe { ffi::b2Shape_EnableSensorEvents(raw_shape_id(shape), flag) }
     }
 
@@ -172,13 +194,13 @@ impl World {
         shape: ShapeId,
         flag: bool,
     ) -> crate::error::ApiResult<()> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
+        check_shape_target(&self.core, shape)?;
         unsafe { ffi::b2Shape_EnableSensorEvents(raw_shape_id(shape), flag) }
         Ok(())
     }
 
     pub fn shape_enable_contact_events(&mut self, shape: ShapeId, flag: bool) {
-        crate::core::debug_checks::assert_shape_valid(shape);
+        assert_shape_target(&self.core, shape);
         unsafe { ffi::b2Shape_EnableContactEvents(raw_shape_id(shape), flag) }
     }
 
@@ -187,13 +209,13 @@ impl World {
         shape: ShapeId,
         flag: bool,
     ) -> crate::error::ApiResult<()> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
+        check_shape_target(&self.core, shape)?;
         unsafe { ffi::b2Shape_EnableContactEvents(raw_shape_id(shape), flag) }
         Ok(())
     }
 
     pub fn shape_enable_pre_solve_events(&mut self, shape: ShapeId, flag: bool) {
-        crate::core::debug_checks::assert_shape_valid(shape);
+        assert_shape_target(&self.core, shape);
         unsafe { ffi::b2Shape_EnablePreSolveEvents(raw_shape_id(shape), flag) }
     }
 
@@ -202,13 +224,13 @@ impl World {
         shape: ShapeId,
         flag: bool,
     ) -> crate::error::ApiResult<()> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
+        check_shape_target(&self.core, shape)?;
         unsafe { ffi::b2Shape_EnablePreSolveEvents(raw_shape_id(shape), flag) }
         Ok(())
     }
 
     pub fn shape_enable_hit_events(&mut self, shape: ShapeId, flag: bool) {
-        crate::core::debug_checks::assert_shape_valid(shape);
+        assert_shape_target(&self.core, shape);
         unsafe { ffi::b2Shape_EnableHitEvents(raw_shape_id(shape), flag) }
     }
 
@@ -217,7 +239,7 @@ impl World {
         shape: ShapeId,
         flag: bool,
     ) -> crate::error::ApiResult<()> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
+        check_shape_target(&self.core, shape)?;
         unsafe { ffi::b2Shape_EnableHitEvents(raw_shape_id(shape), flag) }
         Ok(())
     }

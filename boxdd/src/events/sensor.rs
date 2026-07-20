@@ -1,51 +1,60 @@
+use crate::id::IdBrand;
 use crate::types::ShapeId;
 use crate::world::{World, WorldHandle};
 use boxdd_sys::ffi;
 
-/// Zero-copy view wrappers for sensor events.
+/// Zero-copy view wrappers for the Rust-owned completed-step sensor events.
 /// Data is borrowed and valid only for the duration of the closure passed
 /// to `with_sensor_events_view`.
 #[derive(Copy, Clone)]
-pub struct SensorBeginTouch<'a>(&'a ffi::b2SensorBeginTouchEvent);
+pub struct SensorBeginTouch<'a> {
+    event: &'a SensorBeginTouchEvent,
+}
 impl<'a> SensorBeginTouch<'a> {
     pub fn sensor_shape(&self) -> ShapeId {
-        ShapeId::from_raw(self.0.sensorShapeId)
+        self.event.sensor_shape
     }
     pub fn visitor_shape(&self) -> ShapeId {
-        ShapeId::from_raw(self.0.visitorShapeId)
+        self.event.visitor_shape
     }
 }
 
 #[derive(Copy, Clone)]
-pub struct SensorEndTouch<'a>(&'a ffi::b2SensorEndTouchEvent);
+pub struct SensorEndTouch<'a> {
+    event: &'a SensorEndTouchEvent,
+}
 impl<'a> SensorEndTouch<'a> {
     pub fn sensor_shape(&self) -> ShapeId {
-        ShapeId::from_raw(self.0.sensorShapeId)
+        self.event.sensor_shape
     }
     pub fn visitor_shape(&self) -> ShapeId {
-        ShapeId::from_raw(self.0.visitorShapeId)
+        self.event.visitor_shape
     }
 }
 
-pub struct SensorBeginIter<'a>(core::slice::Iter<'a, ffi::b2SensorBeginTouchEvent>);
+pub struct SensorBeginIter<'a> {
+    iter: core::slice::Iter<'a, SensorBeginTouchEvent>,
+}
 impl<'a> Iterator for SensorBeginIter<'a> {
     type Item = SensorBeginTouch<'a>;
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(SensorBeginTouch)
+        self.iter.next().map(|event| SensorBeginTouch { event })
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
+        self.iter.size_hint()
     }
 }
 
-pub struct SensorEndIter<'a>(core::slice::Iter<'a, ffi::b2SensorEndTouchEvent>);
+pub struct SensorEndIter<'a> {
+    iter: core::slice::Iter<'a, SensorEndTouchEvent>,
+}
 impl<'a> Iterator for SensorEndIter<'a> {
     type Item = SensorEndTouch<'a>;
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(SensorEndTouch)
+        self.iter.next().map(|event| SensorEndTouch { event })
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
+        self.iter.size_hint()
     }
 }
 
@@ -57,10 +66,14 @@ pub struct SensorBeginTouchEvent {
 
 impl SensorBeginTouchEvent {
     /// Copy a native sensor-begin event into an owned Rust value.
-    pub fn from_raw(raw: ffi::b2SensorBeginTouchEvent) -> Self {
+    pub(crate) fn from_raw_in(brand: IdBrand, raw: ffi::b2SensorBeginTouchEvent) -> Self {
         Self {
-            sensor_shape: ShapeId::from_raw(raw.sensorShapeId),
-            visitor_shape: ShapeId::from_raw(raw.visitorShapeId),
+            sensor_shape: brand
+                .try_shape(raw.sensorShapeId)
+                .expect("Box2D sensor begin event contained an invalid sensor shape id"),
+            visitor_shape: brand
+                .try_shape(raw.visitorShapeId)
+                .expect("Box2D sensor begin event contained an invalid visitor shape id"),
         }
     }
 }
@@ -73,10 +86,16 @@ pub struct SensorEndTouchEvent {
 
 impl SensorEndTouchEvent {
     /// Copy a native sensor-end event into an owned Rust value.
-    pub fn from_raw(raw: ffi::b2SensorEndTouchEvent) -> Self {
+    pub(crate) fn from_raw_in(brand: IdBrand, raw: ffi::b2SensorEndTouchEvent) -> Self {
         Self {
-            sensor_shape: ShapeId::from_raw(raw.sensorShapeId),
-            visitor_shape: ShapeId::from_raw(raw.visitorShapeId),
+            // End-event ids may be stale. Structural validation prevents foreign/null ids from
+            // becoming target-bound values without requiring the native objects to remain live.
+            sensor_shape: brand
+                .try_shape(raw.sensorShapeId)
+                .expect("Box2D sensor end event contained an invalid sensor shape id"),
+            visitor_shape: brand
+                .try_shape(raw.visitorShapeId)
+                .expect("Box2D sensor end event contained an invalid visitor shape id"),
         }
     }
 }
@@ -87,7 +106,11 @@ pub struct SensorEvents {
     pub end: Vec<SensorEndTouchEvent>,
 }
 
-fn sensor_events_into_impl(world: ffi::b2WorldId, out: &mut SensorEvents) {
+pub(super) fn capture_native_events_into(
+    world: ffi::b2WorldId,
+    brand: IdBrand,
+    out: &mut SensorEvents,
+) {
     let raw = unsafe { ffi::b2World_GetSensorEvents(world) };
     let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
         unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
@@ -101,76 +124,82 @@ fn sensor_events_into_impl(world: ffi::b2WorldId, out: &mut SensorEvents) {
     };
 
     super::map_snapshot_into(&mut out.begin, begin, |event| {
-        SensorBeginTouchEvent::from_raw(*event)
+        SensorBeginTouchEvent::from_raw_in(brand, *event)
     });
     super::map_snapshot_into(&mut out.end, end, |event| {
-        SensorEndTouchEvent::from_raw(*event)
+        SensorEndTouchEvent::from_raw_in(brand, *event)
     });
 }
 
-fn sensor_events_snapshot_impl(world: ffi::b2WorldId) -> SensorEvents {
-    let mut out = SensorEvents::default();
-    sensor_events_into_impl(world, &mut out);
-    out
+fn sensor_events_snapshot_impl(cache: &super::EventCache) -> SensorEvents {
+    cache.snapshot().sensor.clone()
 }
 
-fn sensor_events_checked_impl(world: ffi::b2WorldId) -> SensorEvents {
-    crate::core::callback_state::assert_not_in_callback();
-    sensor_events_snapshot_impl(world)
-}
-
-fn sensor_events_into_checked_impl(world: ffi::b2WorldId, out: &mut SensorEvents) {
-    crate::core::callback_state::assert_not_in_callback();
-    sensor_events_into_impl(world, out);
-}
-
-fn try_sensor_events_impl(world: ffi::b2WorldId) -> crate::error::ApiResult<SensorEvents> {
-    crate::core::callback_state::check_not_in_callback()?;
-    Ok(sensor_events_snapshot_impl(world))
-}
-
-fn try_sensor_events_into_impl(
-    world: ffi::b2WorldId,
-    out: &mut SensorEvents,
-) -> crate::error::ApiResult<()> {
-    crate::core::callback_state::check_not_in_callback()?;
-    sensor_events_into_impl(world, out);
-    Ok(())
+fn sensor_events_into_impl(cache: &super::EventCache, out: &mut SensorEvents) {
+    let snapshot = cache.snapshot();
+    super::map_snapshot_into(&mut out.begin, &snapshot.sensor.begin, Clone::clone);
+    super::map_snapshot_into(&mut out.end, &snapshot.sensor.end, Clone::clone);
 }
 
 impl World {
     pub fn sensor_events(&self) -> SensorEvents {
-        sensor_events_checked_impl(self.raw())
+        crate::core::callback_state::assert_not_in_callback();
+        self.core()
+            .check_available()
+            .expect("world is not available for event access");
+        sensor_events_snapshot_impl(self.event_cache())
     }
 
     pub fn sensor_events_into(&self, out: &mut SensorEvents) {
-        sensor_events_into_checked_impl(self.raw(), out);
+        crate::core::callback_state::assert_not_in_callback();
+        self.core()
+            .check_available()
+            .expect("world is not available for event access");
+        sensor_events_into_impl(self.event_cache(), out);
     }
 
     pub fn try_sensor_events(&self) -> crate::error::ApiResult<SensorEvents> {
-        try_sensor_events_impl(self.raw())
+        crate::core::callback_state::check_not_in_callback()?;
+        self.core().check_available()?;
+        Ok(sensor_events_snapshot_impl(self.event_cache()))
     }
 
     pub fn try_sensor_events_into(&self, out: &mut SensorEvents) -> crate::error::ApiResult<()> {
-        try_sensor_events_into_impl(self.raw(), out)
+        crate::core::callback_state::check_not_in_callback()?;
+        self.core().check_available()?;
+        sensor_events_into_impl(self.event_cache(), out);
+        Ok(())
     }
 }
 
 impl WorldHandle {
     pub fn sensor_events(&self) -> SensorEvents {
-        sensor_events_checked_impl(self.raw())
+        crate::core::callback_state::assert_not_in_callback();
+        self.core()
+            .check_available()
+            .expect("world is not available for event access");
+        sensor_events_snapshot_impl(self.event_cache())
     }
 
     pub fn sensor_events_into(&self, out: &mut SensorEvents) {
-        sensor_events_into_checked_impl(self.raw(), out);
+        crate::core::callback_state::assert_not_in_callback();
+        self.core()
+            .check_available()
+            .expect("world is not available for event access");
+        sensor_events_into_impl(self.event_cache(), out);
     }
 
     pub fn try_sensor_events(&self) -> crate::error::ApiResult<SensorEvents> {
-        try_sensor_events_impl(self.raw())
+        crate::core::callback_state::check_not_in_callback()?;
+        self.core().check_available()?;
+        Ok(sensor_events_snapshot_impl(self.event_cache()))
     }
 
     pub fn try_sensor_events_into(&self, out: &mut SensorEvents) -> crate::error::ApiResult<()> {
-        try_sensor_events_into_impl(self.raw(), out)
+        crate::core::callback_state::check_not_in_callback()?;
+        self.core().check_available()?;
+        sensor_events_into_impl(self.event_cache(), out);
+        Ok(())
     }
 }
 
@@ -178,8 +207,9 @@ impl World {
     /// Low-level raw view over sensor events (borrows Box2D's internal buffers).
     ///
     /// # Safety
-    /// The returned slices borrow internal Box2D buffers. While `f` runs, you must not perform
-    /// any operation that can mutate those buffers (e.g. stepping the world or destroying bodies).
+    /// Call this immediately after the latest world step and before any operation that may mutate
+    /// the world. The returned slices borrow transient Box2D storage. While `f` runs, you must not
+    /// perform any operation that can mutate that storage.
     ///
     /// Dropping `Owned*` handles inside `f` is OK; destruction is deferred until after this call.
     pub unsafe fn with_sensor_events_raw<T>(
@@ -228,10 +258,11 @@ impl World {
         })
     }
 
-    /// Zero-copy view over sensor events without exposing raw FFI types.
+    /// Zero-copy view over the Rust-owned completed-step sensor events.
     ///
     /// While `f` runs, dropping `Owned*` handles does not destroy bodies/shapes/joints immediately;
-    /// the destruction is deferred until after the view ends to keep the borrowed buffers valid.
+    /// the destruction is deferred until after the view ends to preserve existing event-view
+    /// ordering semantics.
     ///
     /// Example
     /// ```rust
@@ -246,18 +277,15 @@ impl World {
         f: impl FnOnce(SensorBeginIter<'_>, SensorEndIter<'_>) -> T,
     ) -> T {
         self.with_borrowed_event_buffers(|| {
-            let raw = unsafe { ffi::b2World_GetSensorEvents(self.raw()) };
-            let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
-            } else {
-                &[][..]
-            };
-            let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
-            } else {
-                &[][..]
-            };
-            f(SensorBeginIter(begin.iter()), SensorEndIter(end.iter()))
+            let snapshot = self.event_cache().snapshot();
+            f(
+                SensorBeginIter {
+                    iter: snapshot.sensor.begin.iter(),
+                },
+                SensorEndIter {
+                    iter: snapshot.sensor.end.iter(),
+                },
+            )
         })
     }
 
@@ -267,18 +295,15 @@ impl World {
         f: impl FnOnce(SensorBeginIter<'_>, SensorEndIter<'_>) -> T,
     ) -> crate::error::ApiResult<T> {
         self.try_with_borrowed_event_buffers(|| {
-            let raw = unsafe { ffi::b2World_GetSensorEvents(self.raw()) };
-            let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
-            } else {
-                &[][..]
-            };
-            let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
-            } else {
-                &[][..]
-            };
-            f(SensorBeginIter(begin.iter()), SensorEndIter(end.iter()))
+            let snapshot = self.event_cache().snapshot();
+            f(
+                SensorBeginIter {
+                    iter: snapshot.sensor.begin.iter(),
+                },
+                SensorEndIter {
+                    iter: snapshot.sensor.end.iter(),
+                },
+            )
         })
     }
 }

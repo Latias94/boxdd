@@ -44,7 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         [-wheel_offset_x, 2.0 + wheel_offset_y],
         axis,
     );
-    let wdef1 = WheelJointDef::new(base.clone())
+    let wdef1 = WheelJointDef::new(base)
         .enable_spring(true)
         .hertz(4.0)
         .damping_ratio(0.7)

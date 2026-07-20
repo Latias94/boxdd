@@ -178,12 +178,7 @@ fn try_world_scoped_handle_borrows_return_in_callback() {
     );
     let other_body = world.create_body_id(crate::BodyBuilder::new().build());
     let joint_id = world.create_distance_joint_id(
-        &crate::DistanceJointDef::new(
-            crate::JointBaseBuilder::new()
-                .bodies_by_id(body_id, other_body)
-                .build(),
-        )
-        .length(1.0),
+        &crate::DistanceJointDef::new(crate::JointBase::new(body_id, other_body)).length(1.0),
     );
 
     let _g = crate::core::callback_state::CallbackGuard::enter();
@@ -225,12 +220,6 @@ fn try_world_callback_registration_returns_in_callback() {
     let _g = crate::core::callback_state::CallbackGuard::enter();
 
     assert_eq!(
-        world
-            .try_set_custom_filter_with_ctx(|_, _, _| true)
-            .unwrap_err(),
-        crate::ApiError::InCallback
-    );
-    assert_eq!(
         world.try_set_custom_filter(always_true_filter).unwrap_err(),
         crate::ApiError::InCallback
     );
@@ -249,12 +238,6 @@ fn try_world_callback_registration_returns_in_callback() {
         crate::ApiError::InCallback
     );
 
-    assert_eq!(
-        world
-            .try_set_pre_solve_with_ctx(|_, _, _, _, _| true)
-            .unwrap_err(),
-        crate::ApiError::InCallback
-    );
     assert_eq!(
         world.try_set_pre_solve(always_true_pre).unwrap_err(),
         crate::ApiError::InCallback

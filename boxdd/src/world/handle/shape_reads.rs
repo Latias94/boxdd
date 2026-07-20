@@ -1,8 +1,21 @@
 use super::*;
 
+#[inline]
+fn assert_shape_target(core: &WorldCore, shape: ShapeId) {
+    crate::core::callback_state::assert_not_in_callback();
+    core.check_shape(shape)
+        .expect("shape must be live and belong to this world");
+}
+
+#[inline]
+fn check_shape_target(core: &WorldCore, shape: ShapeId) -> crate::error::ApiResult<()> {
+    crate::core::callback_state::check_not_in_callback()?;
+    core.check_shape(shape)
+}
+
 impl WorldHandle {
     pub fn shape_surface_material(&self, shape: ShapeId) -> SurfaceMaterial {
-        crate::core::debug_checks::assert_shape_valid(shape);
+        assert_shape_target(&self.core, shape);
         crate::shapes::shape_surface_material_impl(shape)
     }
 
@@ -10,32 +23,34 @@ impl WorldHandle {
         &self,
         shape: ShapeId,
     ) -> crate::error::ApiResult<SurfaceMaterial> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
+        check_shape_target(&self.core, shape)?;
         Ok(crate::shapes::shape_surface_material_impl(shape))
     }
 
     pub fn shape_body_id(&self, shape: ShapeId) -> BodyId {
-        crate::core::debug_checks::assert_shape_valid(shape);
-        crate::shapes::shape_body_id_impl(shape)
+        assert_shape_target(&self.core, shape);
+        crate::shapes::shape_body_id_in_impl(&self.core, shape)
+            .expect("Box2D returned an invalid body id for a validated shape")
     }
 
     pub fn try_shape_body_id(&self, shape: ShapeId) -> crate::error::ApiResult<BodyId> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
-        Ok(crate::shapes::shape_body_id_impl(shape))
+        check_shape_target(&self.core, shape)?;
+        crate::shapes::shape_body_id_in_impl(&self.core, shape)
     }
 
     pub fn shape_aabb(&self, shape: ShapeId) -> Aabb {
-        crate::core::debug_checks::assert_shape_valid(shape);
+        assert_shape_target(&self.core, shape);
         crate::shapes::shape_aabb_impl(shape)
     }
 
     pub fn try_shape_aabb(&self, shape: ShapeId) -> crate::error::ApiResult<Aabb> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
+        check_shape_target(&self.core, shape)?;
         Ok(crate::shapes::shape_aabb_impl(shape))
     }
 
     /// Test an absolute world-space point against a shape.
     pub fn shape_test_point(&self, shape: ShapeId, point: Position) -> bool {
+        assert_shape_target(&self.core, shape);
         crate::shapes::shape_test_point_checked_impl(shape, point)
     }
 
@@ -44,6 +59,7 @@ impl WorldHandle {
         shape: ShapeId,
         point: Position,
     ) -> crate::error::ApiResult<bool> {
+        check_shape_target(&self.core, shape)?;
         crate::shapes::try_shape_test_point_checked_impl(shape, point)
     }
 
@@ -56,6 +72,11 @@ impl WorldHandle {
         origin: Position,
         translation: VT,
     ) -> WorldCastOutput {
+        assert_shape_target(&self.core, shape);
+        let translation = translation.into();
+        let origin = crate::body::assert_valid_body_position("origin", origin);
+        crate::shapes::assert_shape_vec2_valid("translation", translation);
+        assert_shape_target(&self.core, shape);
         crate::shapes::shape_ray_cast_checked_impl(shape, origin, translation)
     }
 
@@ -65,11 +86,17 @@ impl WorldHandle {
         origin: Position,
         translation: VT,
     ) -> crate::error::ApiResult<WorldCastOutput> {
+        check_shape_target(&self.core, shape)?;
+        let translation = translation.into();
+        let origin = crate::body::check_valid_body_position(origin)?;
+        crate::shapes::check_shape_vec2_valid(translation)?;
+        check_shape_target(&self.core, shape)?;
         crate::shapes::try_shape_ray_cast_checked_impl(shape, origin, translation)
     }
 
     /// Return the closest absolute world position on a shape to `target`.
     pub fn shape_closest_point(&self, shape: ShapeId, target: Position) -> Position {
+        assert_shape_target(&self.core, shape);
         crate::shapes::shape_closest_point_checked_impl(shape, target)
     }
 
@@ -78,31 +105,32 @@ impl WorldHandle {
         shape: ShapeId,
         target: Position,
     ) -> crate::error::ApiResult<Position> {
+        check_shape_target(&self.core, shape)?;
         crate::shapes::try_shape_closest_point_checked_impl(shape, target)
     }
 
     pub fn shape_mass_data(&self, shape: ShapeId) -> MassData {
-        crate::core::debug_checks::assert_shape_valid(shape);
+        assert_shape_target(&self.core, shape);
         crate::shapes::shape_mass_data_impl(shape)
     }
 
     pub fn try_shape_mass_data(&self, shape: ShapeId) -> crate::error::ApiResult<MassData> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
+        check_shape_target(&self.core, shape)?;
         Ok(crate::shapes::shape_mass_data_impl(shape))
     }
 
     pub fn shape_sensor_events_enabled(&self, shape: ShapeId) -> bool {
-        crate::core::debug_checks::assert_shape_valid(shape);
+        assert_shape_target(&self.core, shape);
         crate::shapes::shape_sensor_events_enabled_impl(shape)
     }
 
     pub fn try_shape_sensor_events_enabled(&self, shape: ShapeId) -> crate::error::ApiResult<bool> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
+        check_shape_target(&self.core, shape)?;
         Ok(crate::shapes::shape_sensor_events_enabled_impl(shape))
     }
 
     pub fn shape_contact_events_enabled(&self, shape: ShapeId) -> bool {
-        crate::core::debug_checks::assert_shape_valid(shape);
+        assert_shape_target(&self.core, shape);
         crate::shapes::shape_contact_events_enabled_impl(shape)
     }
 
@@ -110,12 +138,12 @@ impl WorldHandle {
         &self,
         shape: ShapeId,
     ) -> crate::error::ApiResult<bool> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
+        check_shape_target(&self.core, shape)?;
         Ok(crate::shapes::shape_contact_events_enabled_impl(shape))
     }
 
     pub fn shape_pre_solve_events_enabled(&self, shape: ShapeId) -> bool {
-        crate::core::debug_checks::assert_shape_valid(shape);
+        assert_shape_target(&self.core, shape);
         crate::shapes::shape_pre_solve_events_enabled_impl(shape)
     }
 
@@ -123,39 +151,39 @@ impl WorldHandle {
         &self,
         shape: ShapeId,
     ) -> crate::error::ApiResult<bool> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
+        check_shape_target(&self.core, shape)?;
         Ok(crate::shapes::shape_pre_solve_events_enabled_impl(shape))
     }
 
     pub fn shape_hit_events_enabled(&self, shape: ShapeId) -> bool {
-        crate::core::debug_checks::assert_shape_valid(shape);
+        assert_shape_target(&self.core, shape);
         crate::shapes::shape_hit_events_enabled_impl(shape)
     }
 
     pub fn try_shape_hit_events_enabled(&self, shape: ShapeId) -> crate::error::ApiResult<bool> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
+        check_shape_target(&self.core, shape)?;
         Ok(crate::shapes::shape_hit_events_enabled_impl(shape))
     }
 
     pub fn shape_sensor_capacity(&self, shape: ShapeId) -> i32 {
-        crate::core::debug_checks::assert_shape_valid(shape);
+        assert_shape_target(&self.core, shape);
         crate::shapes::shape_sensor_capacity_impl(shape)
     }
 
     pub fn try_shape_sensor_capacity(&self, shape: ShapeId) -> crate::error::ApiResult<i32> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
+        check_shape_target(&self.core, shape)?;
         Ok(crate::shapes::shape_sensor_capacity_impl(shape))
     }
 
     pub fn shape_sensor_overlaps(&self, shape: ShapeId) -> Vec<ShapeId> {
-        crate::core::debug_checks::assert_shape_valid(shape);
-        crate::shapes::shape_sensor_overlaps_impl(shape)
+        assert_shape_target(&self.core, shape);
+        crate::shapes::shape_sensor_overlaps_in_impl(self.core.brand(), shape)
             .expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT)
     }
 
     pub fn shape_sensor_overlaps_into(&self, shape: ShapeId, out: &mut Vec<ShapeId>) {
-        crate::core::debug_checks::assert_shape_valid(shape);
-        crate::shapes::shape_sensor_overlaps_into_impl(shape, out)
+        assert_shape_target(&self.core, shape);
+        crate::shapes::shape_sensor_overlaps_into_in_impl(self.core.brand(), shape, out)
             .expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT);
     }
 
@@ -163,8 +191,8 @@ impl WorldHandle {
         &self,
         shape: ShapeId,
     ) -> crate::error::ApiResult<Vec<ShapeId>> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
-        crate::shapes::shape_sensor_overlaps_impl(shape)
+        check_shape_target(&self.core, shape)?;
+        crate::shapes::shape_sensor_overlaps_in_impl(self.core.brand(), shape)
     }
 
     pub fn try_shape_sensor_overlaps_into(
@@ -172,13 +200,13 @@ impl WorldHandle {
         shape: ShapeId,
         out: &mut Vec<ShapeId>,
     ) -> crate::error::ApiResult<()> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
-        crate::shapes::shape_sensor_overlaps_into_impl(shape, out)
+        check_shape_target(&self.core, shape)?;
+        crate::shapes::shape_sensor_overlaps_into_in_impl(self.core.brand(), shape, out)
     }
 
     pub fn shape_sensor_overlaps_valid(&self, shape: ShapeId) -> Vec<ShapeId> {
-        crate::core::debug_checks::assert_shape_valid(shape);
-        crate::shapes::shape_sensor_overlaps_valid_impl(shape)
+        assert_shape_target(&self.core, shape);
+        crate::shapes::shape_sensor_overlaps_valid_in_impl(self.core.brand(), shape)
             .expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT)
     }
 
@@ -186,13 +214,13 @@ impl WorldHandle {
         &self,
         shape: ShapeId,
     ) -> crate::error::ApiResult<Vec<ShapeId>> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
-        crate::shapes::shape_sensor_overlaps_valid_impl(shape)
+        check_shape_target(&self.core, shape)?;
+        crate::shapes::shape_sensor_overlaps_valid_in_impl(self.core.brand(), shape)
     }
 
     pub fn shape_sensor_overlaps_valid_into(&self, shape: ShapeId, out: &mut Vec<ShapeId>) {
-        crate::core::debug_checks::assert_shape_valid(shape);
-        crate::shapes::shape_sensor_overlaps_valid_into_impl(shape, out)
+        assert_shape_target(&self.core, shape);
+        crate::shapes::shape_sensor_overlaps_valid_into_in_impl(self.core.brand(), shape, out)
             .expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT);
     }
 
@@ -201,7 +229,7 @@ impl WorldHandle {
         shape: ShapeId,
         out: &mut Vec<ShapeId>,
     ) -> crate::error::ApiResult<()> {
-        crate::core::debug_checks::check_shape_valid(shape)?;
-        crate::shapes::shape_sensor_overlaps_valid_into_impl(shape, out)
+        check_shape_target(&self.core, shape)?;
+        crate::shapes::shape_sensor_overlaps_valid_into_in_impl(self.core.brand(), shape, out)
     }
 }

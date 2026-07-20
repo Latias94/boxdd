@@ -42,11 +42,11 @@ fn approx_polygon(a: &Polygon, b: &Polygon, eps: f32) -> bool {
 }
 
 fn same_chain_id(a: ChainId, b: ChainId) -> bool {
-    a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
+    a == b
 }
 
 fn same_shape_id(a: ShapeId, b: ShapeId) -> bool {
-    a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
+    a == b
 }
 
 fn same_world_id(a: boxdd_sys::ffi::b2WorldId, b: boxdd_sys::ffi::b2WorldId) -> bool {
@@ -803,10 +803,8 @@ fn chain_runtime_queries_and_material_mutation_are_available_across_owned_and_sc
     assert_eq!(baseline_segments.len(), 4);
 
     let mut segments = Vec::with_capacity(8);
-    let segments_ptr = segments.as_ptr();
     chain.segments_into(&mut segments);
     assert_eq!(segments, baseline_segments);
-    assert_eq!(segments.as_ptr(), segments_ptr);
     chain.try_segments_into(&mut segments).unwrap();
     assert_eq!(segments, baseline_segments);
 
@@ -853,10 +851,8 @@ fn chain_runtime_queries_and_material_mutation_are_available_across_owned_and_sc
         );
 
         let mut scoped_segments = Vec::with_capacity(8);
-        let scoped_segments_ptr = scoped_segments.as_ptr();
         scoped.segments_into(&mut scoped_segments);
         assert_eq!(scoped_segments, baseline_segments);
-        assert_eq!(scoped_segments.as_ptr(), scoped_segments_ptr);
         scoped.try_segments_into(&mut scoped_segments).unwrap();
         assert_eq!(scoped_segments, baseline_segments);
 
@@ -1217,15 +1213,14 @@ fn world_handle_shape_runtime_queries_match_world_queries() {
             .any(|id| same_shape_id(id, visitor_shape_id))
     );
     let mut overlap_buf = Vec::with_capacity(8);
-    let overlap_buf_ptr = overlap_buf.as_ptr();
     handle.shape_sensor_overlaps_into(sensor_shape_id, &mut overlap_buf);
-    assert_eq!(overlap_buf.as_ptr(), overlap_buf_ptr);
     assert_eq!(overlap_buf.len(), world_overlaps.len());
+    assert!(overlap_buf.contains(&visitor_shape_id));
     handle
         .try_shape_sensor_overlaps_into(sensor_shape_id, &mut overlap_buf)
         .unwrap();
-    assert_eq!(overlap_buf.as_ptr(), overlap_buf_ptr);
     assert_eq!(overlap_buf.len(), world_overlaps.len());
+    assert!(overlap_buf.contains(&visitor_shape_id));
 
     let world_overlaps_valid = world.shape_sensor_overlaps_valid(sensor_shape_id);
     assert!(!world_overlaps_valid.is_empty());
@@ -1244,15 +1239,14 @@ fn world_handle_shape_runtime_queries_match_world_queries() {
             .any(|id| same_shape_id(id, visitor_shape_id))
     );
     let mut overlap_valid_buf = Vec::with_capacity(8);
-    let overlap_valid_buf_ptr = overlap_valid_buf.as_ptr();
     handle.shape_sensor_overlaps_valid_into(sensor_shape_id, &mut overlap_valid_buf);
-    assert_eq!(overlap_valid_buf.as_ptr(), overlap_valid_buf_ptr);
     assert_eq!(overlap_valid_buf.len(), world_overlaps_valid.len());
+    assert!(overlap_valid_buf.contains(&visitor_shape_id));
     handle
         .try_shape_sensor_overlaps_valid_into(sensor_shape_id, &mut overlap_valid_buf)
         .unwrap();
-    assert_eq!(overlap_valid_buf.as_ptr(), overlap_valid_buf_ptr);
     assert_eq!(overlap_valid_buf.len(), world_overlaps_valid.len());
+    assert!(overlap_valid_buf.contains(&visitor_shape_id));
 }
 
 #[test]

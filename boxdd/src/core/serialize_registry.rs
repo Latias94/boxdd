@@ -102,17 +102,17 @@ pub(crate) struct Registries {
 
 #[inline]
 fn eq_body(a: BodyId, b: BodyId) -> bool {
-    a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
+    a == b
 }
 
 #[inline]
 fn eq_shape(a: ShapeId, b: ShapeId) -> bool {
-    a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
+    a == b
 }
 
 #[inline]
 fn eq_chain(a: ChainId, b: ChainId) -> bool {
-    a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
+    a == b
 }
 
 impl Registries {
@@ -202,5 +202,54 @@ impl Registries {
         self.shape_flags
             .iter()
             .find_map(|(id, _, rec)| if eq_shape(*id, sid) { Some(*rec) } else { None })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{ApiError, BodyBuilder, ShapeDef, World, WorldDef, shapes};
+
+    fn shape_flags_len(world: &World) -> usize {
+        world
+            .core()
+            .registries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .shape_flags
+            .len()
+    }
+
+    #[test]
+    fn explicit_shape_destroy_removes_shape_metadata() {
+        let mut world = World::new(WorldDef::default()).unwrap();
+        let body = world.create_body_id(BodyBuilder::new().build());
+        let shape = world.create_circle_shape_for(
+            body,
+            &ShapeDef::builder().enable_contact_events(true).build(),
+            &shapes::circle([0.0_f32, 0.0], 0.25),
+        );
+        assert_eq!(shape_flags_len(&world), 1);
+
+        world.destroy_shape_id(shape, true);
+
+        assert_eq!(shape_flags_len(&world), 0);
+        assert_eq!(world.try_shape(shape).err(), Some(ApiError::InvalidShapeId));
+    }
+
+    #[test]
+    fn body_destroy_removes_attached_shape_metadata() {
+        let mut world = World::new(WorldDef::default()).unwrap();
+        let body = world.create_body_id(BodyBuilder::new().build());
+        let shape = world.create_circle_shape_for(
+            body,
+            &ShapeDef::builder().enable_contact_events(true).build(),
+            &shapes::circle([0.0_f32, 0.0], 0.25),
+        );
+        assert_eq!(shape_flags_len(&world), 1);
+
+        world.destroy_body_id(body);
+
+        assert_eq!(shape_flags_len(&world), 0);
+        assert_eq!(world.try_shape(shape).err(), Some(ApiError::InvalidShapeId));
     }
 }

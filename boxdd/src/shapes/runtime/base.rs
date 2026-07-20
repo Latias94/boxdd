@@ -11,23 +11,30 @@ pub(crate) fn raw_shape_id(id: ShapeId) -> ffi::b2ShapeId {
 }
 
 #[inline]
-pub(crate) fn raw_chain_id(id: ChainId) -> ffi::b2ChainId {
-    id.into_raw()
-}
-
-#[inline]
 pub(crate) fn shape_world_id_impl(id: ShapeId) -> ffi::b2WorldId {
     unsafe { ffi::b2Shape_GetWorld(raw_shape_id(id)) }
 }
 
 #[inline]
-pub(crate) fn shape_parent_chain_id_impl(id: ShapeId) -> Option<ChainId> {
-    let chain_id = ChainId::from_raw(unsafe { ffi::b2Shape_GetParentChain(raw_shape_id(id)) });
-    if unsafe { ffi::b2Chain_IsValid(raw_chain_id(chain_id)) } {
-        Some(chain_id)
-    } else {
-        None
+fn try_bind_shape_parent_chain_output(
+    core: &crate::core::world_core::WorldCore,
+    raw: ffi::b2ChainId,
+) -> ApiResult<Option<ChainId>> {
+    if raw.index1 == 0 {
+        return Ok(None);
     }
+    let id = core.brand().try_chain(raw)?;
+    core.check_chain(id)?;
+    Ok(Some(id))
+}
+
+#[inline]
+pub(crate) fn shape_parent_chain_id_in_impl(
+    core: &crate::core::world_core::WorldCore,
+    id: ShapeId,
+) -> ApiResult<Option<ChainId>> {
+    let raw = unsafe { ffi::b2Shape_GetParentChain(raw_shape_id(id)) };
+    try_bind_shape_parent_chain_output(core, raw)
 }
 
 #[inline]
@@ -46,8 +53,35 @@ pub(crate) fn shape_type_impl(id: ShapeId) -> ShapeType {
 }
 
 #[inline]
+fn try_bind_shape_body_output(
+    core: &crate::core::world_core::WorldCore,
+    raw: ffi::b2BodyId,
+) -> ApiResult<BodyId> {
+    let id = core.brand().try_body(raw)?;
+    core.check_body(id)?;
+    Ok(id)
+}
+
+#[inline]
+pub(crate) fn shape_body_id_in_impl(
+    core: &crate::core::world_core::WorldCore,
+    id: ShapeId,
+) -> ApiResult<BodyId> {
+    try_bind_shape_body_output(core, unsafe { ffi::b2Shape_GetBody(raw_shape_id(id)) })
+}
+
+#[inline]
 pub(crate) fn shape_body_id_impl(id: ShapeId) -> BodyId {
-    BodyId::from_raw(unsafe { ffi::b2Shape_GetBody(raw_shape_id(id)) })
+    let raw = unsafe { ffi::b2Shape_GetBody(raw_shape_id(id)) };
+    let body = id
+        .brand()
+        .try_body(raw)
+        .expect("Box2D returned an invalid body id for a validated shape");
+    assert!(
+        unsafe { ffi::b2Body_IsValid(raw) },
+        "Box2D returned a non-live body id for a validated shape"
+    );
+    body
 }
 
 #[inline]
@@ -93,27 +127,21 @@ pub(crate) fn shape_test_point_impl<P: Into<Position>>(id: ShapeId, point: P) ->
 }
 
 #[inline]
-pub(crate) fn shape_ray_cast_impl<PO: Into<Position>, VT: Into<Vec2>>(
+pub(crate) fn shape_ray_cast_impl(
     id: ShapeId,
-    origin: PO,
-    translation: VT,
+    origin: Position,
+    translation: Vec2,
 ) -> WorldCastOutput {
-    let origin = origin.into().into_raw();
-    let translation = translation.into().into_raw();
+    let origin = origin.into_raw();
+    let translation = translation.into_raw();
     WorldCastOutput::from_raw(unsafe {
         ffi::b2Shape_RayCast(raw_shape_id(id), origin, translation)
     })
 }
 
 #[inline]
-pub(crate) fn shape_apply_wind_impl<V: Into<Vec2>>(
-    id: ShapeId,
-    wind: V,
-    drag: f32,
-    lift: f32,
-    wake: bool,
-) {
-    let wind: ffi::b2Vec2 = wind.into().into_raw();
+pub(crate) fn shape_apply_wind_impl(id: ShapeId, wind: Vec2, drag: f32, lift: f32, wake: bool) {
+    let wind: ffi::b2Vec2 = wind.into_raw();
     unsafe { ffi::b2Shape_ApplyWind(raw_shape_id(id), wind, drag, lift, wake) }
 }
 
@@ -265,5 +293,67 @@ mod tests {
         let _: PointQuery = ffi::b2Shape_TestPoint;
         let _: ClosestPoint = ffi::b2Shape_GetClosestPoint;
         let _: RayCast = ffi::b2Shape_RayCast;
+    }
+
+    #[test]
+    fn shape_body_output_rejects_null_and_foreign_native_ids() {
+        let world = crate::World::new(crate::WorldDef::default()).unwrap();
+        let world0 = world.core().brand().world0();
+
+        assert_eq!(
+            try_bind_shape_body_output(
+                world.core(),
+                ffi::b2BodyId {
+                    index1: 0,
+                    world0,
+                    generation: 0,
+                },
+            )
+            .unwrap_err(),
+            ApiError::InvalidBodyId
+        );
+        assert_eq!(
+            try_bind_shape_body_output(
+                world.core(),
+                ffi::b2BodyId {
+                    index1: 1,
+                    world0: world0.wrapping_add(1),
+                    generation: 0,
+                },
+            )
+            .unwrap_err(),
+            ApiError::WrongWorld
+        );
+    }
+
+    #[test]
+    fn shape_parent_chain_output_distinguishes_absent_and_foreign_ids() {
+        let world = crate::World::new(crate::WorldDef::default()).unwrap();
+        let world0 = world.core().brand().world0();
+
+        assert_eq!(
+            try_bind_shape_parent_chain_output(
+                world.core(),
+                ffi::b2ChainId {
+                    index1: 0,
+                    world0: 0,
+                    generation: 0,
+                },
+            )
+            .unwrap(),
+            None
+        );
+        assert_eq!(
+            try_bind_shape_parent_chain_output(
+                world.core(),
+                ffi::b2ChainId {
+                    index1: 1,
+                    world0: world0.wrapping_add(1),
+                    generation: 0,
+                },
+            )
+            .unwrap_err(),
+            ApiError::WrongWorld
+        );
     }
 }

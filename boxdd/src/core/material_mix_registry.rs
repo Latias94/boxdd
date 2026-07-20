@@ -94,11 +94,7 @@ unsafe fn invoke_mix_callback(
     }
 
     let ctx = unsafe { &*ctx_ptr };
-    let Some(core) = ctx.core.upgrade() else {
-        return default_mix(value_a, value_b);
-    };
-
-    if core.callback_panicked.load(Ordering::Relaxed) {
+    if ctx.worker.has_panicked() {
         return default_mix(value_a, value_b);
     }
 
@@ -111,12 +107,7 @@ unsafe fn invoke_mix_callback(
     })) {
         Ok(v) => v,
         Err(payload) => {
-            if !core.callback_panicked.swap(true, Ordering::SeqCst) {
-                *core
-                    .callback_panic
-                    .lock()
-                    .expect("callback_panic mutex poisoned") = Some(payload);
-            }
+            ctx.worker.record_panic(payload);
             default_mix(value_a, value_b)
         }
     }

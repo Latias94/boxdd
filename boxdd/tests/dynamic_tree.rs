@@ -40,7 +40,9 @@ fn dynamic_tree_capacity_is_explicit_and_checked() {
     let tree = DynamicTree::with_capacity(32);
     assert_eq!(tree.proxy_count(), 0);
     assert_eq!(DynamicTree::DEFAULT_PROXY_CAPACITY, 16);
-    assert!(DynamicTree::MAX_PROXY_CAPACITY >= DynamicTree::DEFAULT_PROXY_CAPACITY);
+    const {
+        assert!(DynamicTree::MAX_PROXY_CAPACITY >= DynamicTree::DEFAULT_PROXY_CAPACITY);
+    }
     assert!(DynamicTree::try_with_capacity(DynamicTree::MAX_PROXY_CAPACITY + 1).is_err());
 }
 

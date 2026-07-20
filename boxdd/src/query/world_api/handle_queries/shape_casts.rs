@@ -21,7 +21,14 @@ impl WorldHandle {
         P: Into<Vec2>,
         VT: Into<Vec2>,
     {
-        cast_shape_points_checked_impl(self.raw(), origin, points, radius, translation, filter)
+        cast_shape_points_checked_impl(
+            self.query_target(),
+            origin,
+            points,
+            radius,
+            translation,
+            filter,
+        )
     }
 
     pub fn cast_shape_points_into<I, P, VT>(
@@ -38,7 +45,7 @@ impl WorldHandle {
         VT: Into<Vec2>,
     {
         cast_shape_points_into_checked_impl(
-            self.raw(),
+            self.query_target(),
             origin,
             points,
             radius,
@@ -61,7 +68,14 @@ impl WorldHandle {
         P: Into<Vec2>,
         VT: Into<Vec2>,
     {
-        try_cast_shape_points_impl(self.raw(), origin, points, radius, translation, filter)
+        try_cast_shape_points_impl(
+            self.query_target(),
+            origin,
+            points,
+            radius,
+            translation,
+            filter,
+        )
     }
 
     pub fn try_cast_shape_points_into<I, P, VT>(
@@ -79,7 +93,7 @@ impl WorldHandle {
         VT: Into<Vec2>,
     {
         try_cast_shape_points_into_impl(
-            self.raw(),
+            self.query_target(),
             origin,
             points,
             radius,
@@ -109,7 +123,7 @@ impl WorldHandle {
         VT: Into<Vec2>,
     {
         cast_shape_points_with_offset_checked_impl(
-            self.raw(),
+            self.query_target(),
             origin,
             points,
             radius,
@@ -139,7 +153,7 @@ impl WorldHandle {
         VT: Into<Vec2>,
     {
         cast_shape_points_with_offset_into_checked_impl(
-            self.raw(),
+            self.query_target(),
             origin,
             points,
             radius,
@@ -169,7 +183,7 @@ impl WorldHandle {
         VT: Into<Vec2>,
     {
         try_cast_shape_points_with_offset_impl(
-            self.raw(),
+            self.query_target(),
             origin,
             points,
             radius,
@@ -200,7 +214,7 @@ impl WorldHandle {
         VT: Into<Vec2>,
     {
         try_cast_shape_points_with_offset_into_impl(
-            self.raw(),
+            self.query_target(),
             origin,
             points,
             radius,

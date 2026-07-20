@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 use std::os::raw::c_void;
-use std::sync::Arc;
+use std::rc::Rc;
 
 use crate::core::world_core::WorldCore;
 use crate::error::ApiResult;
@@ -17,12 +17,12 @@ use super::runtime::BodyRuntimeHandle;
 /// A body handle with lifetime tied to the owning world.
 pub struct Body<'w> {
     pub(crate) id: BodyId,
-    pub(crate) core: Arc<WorldCore>,
+    pub(crate) core: Rc<WorldCore>,
     _world: PhantomData<&'w World>,
 }
 
 impl<'w> Body<'w> {
-    pub(crate) fn new(core: Arc<WorldCore>, id: BodyId) -> Self {
+    pub(crate) fn new(core: Rc<WorldCore>, id: BodyId) -> Self {
         Self {
             id,
             core,

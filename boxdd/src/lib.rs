@@ -239,6 +239,7 @@ pub mod dynamic_tree;
 pub mod error;
 pub mod events;
 pub mod filter;
+pub mod id;
 pub mod joints;
 pub mod prelude;
 pub mod query;
@@ -256,7 +257,6 @@ pub mod world_extras;
 pub mod core {
     pub(crate) mod box2d_lock;
     pub(crate) mod callback_state;
-    pub(crate) mod debug_checks;
     pub(crate) mod ffi_vec;
     pub(crate) mod material_mix_registry;
     pub mod math;
@@ -312,11 +312,12 @@ pub use events::{
     JointEvent, SensorBeginTouchEvent, SensorEndTouchEvent, SensorEvents,
 };
 pub use filter::Filter;
+pub use id::{RawBodyId, RawChainId, RawContactId, RawIdKind, RawJointId, RawShapeId};
 pub use joints::{
     ConstraintTuning, DistanceJointBuilder, DistanceJointDef, FilterJointBuilder, FilterJointDef,
-    Joint, JointBase, JointBaseBuilder, JointType, MotorJointBuilder, MotorJointDef,
-    PrismaticJointBuilder, PrismaticJointDef, RevoluteJointBuilder, RevoluteJointDef,
-    WeldJointBuilder, WeldJointDef, WheelJointBuilder, WheelJointDef,
+    Joint, JointBase, JointType, MotorJointBuilder, MotorJointDef, PrismaticJointBuilder,
+    PrismaticJointDef, RevoluteJointBuilder, RevoluteJointDef, WeldJointBuilder, WeldJointDef,
+    WheelJointBuilder, WheelJointDef,
 };
 pub use query::{
     Aabb, CollisionPlane, MoverPlaneResult, Plane, PlaneSolverResult, QueryFilter, RayResult,
@@ -333,7 +334,7 @@ pub use types::{
     WorldScalar, WorldTransform,
 };
 pub use world::{
-    CallbackWorld, Counters, MaterialMixInput, OutstandingOwnedHandles, OwnedHandleCounts, Profile,
-    World, WorldBuilder, WorldDef, WorldHandle,
+    Counters, MaterialMixInput, OwnedHandleCounts, Profile, World, WorldBuilder, WorldDef,
+    WorldHandle,
 };
 pub use world_extras::ExplosionDef;

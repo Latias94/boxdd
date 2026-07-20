@@ -30,7 +30,8 @@ mod weld;
 mod wheel;
 
 pub use base::{ConstraintTuning, Joint, JointType, OwnedJoint};
-pub use base_def::{JointBase, JointBaseBuilder};
+pub use base_def::JointBase;
+pub(crate) use base_def::{checked_world_axis_to_local_rotation, checked_world_to_local_point};
 pub use distance::{DistanceJointBuilder, DistanceJointDef};
 pub use filter::{FilterJointBuilder, FilterJointDef};
 pub use motor::{MotorJointBuilder, MotorJointDef};
@@ -39,6 +40,7 @@ pub use revolute::{RevoluteJointBuilder, RevoluteJointDef};
 pub use weld::{WeldJointBuilder, WeldJointDef};
 pub use wheel::{WheelJointBuilder, WheelJointDef};
 
+use crate::core::world_core::WorldCore;
 use crate::error::ApiResult;
 use crate::types::{BodyId, JointId, Vec2};
 use crate::world::{World, WorldHandle};
@@ -62,31 +64,31 @@ fn raw_joint_id(id: JointId) -> ffi::b2JointId {
 }
 
 #[inline]
-fn assert_joint_valid(id: JointId) {
-    crate::core::debug_checks::assert_joint_valid(id);
+fn assert_joint_valid(core: &WorldCore, id: JointId) {
+    crate::core::callback_state::assert_not_in_callback();
+    core.check_joint(id).expect("invalid or foreign JointId");
 }
 
 #[inline]
-fn check_joint_valid(id: JointId) -> ApiResult<()> {
-    crate::core::debug_checks::check_joint_valid(id)
+fn check_joint_valid(core: &WorldCore, id: JointId) -> ApiResult<()> {
+    crate::core::callback_state::check_not_in_callback()?;
+    core.check_joint(id)
 }
 
 #[inline]
-fn joint_read_checked_impl<R>(id: JointId, f: impl FnOnce(JointId) -> R) -> R {
-    assert_joint_valid(id);
+fn joint_read_checked_impl<R>(core: &WorldCore, id: JointId, f: impl FnOnce(JointId) -> R) -> R {
+    assert_joint_valid(core, id);
     f(id)
 }
 
 #[inline]
-fn try_joint_read_checked_impl<R>(id: JointId, f: impl FnOnce(JointId) -> R) -> ApiResult<R> {
-    check_joint_valid(id)?;
+fn try_joint_read_checked_impl<R>(
+    core: &WorldCore,
+    id: JointId,
+    f: impl FnOnce(JointId) -> R,
+) -> ApiResult<R> {
+    check_joint_valid(core, id)?;
     Ok(f(id))
-}
-
-#[inline]
-#[cfg_attr(not(feature = "serialize"), allow(dead_code))]
-pub(crate) fn joint_is_valid_impl(id: JointId) -> bool {
-    base::joint_is_valid_impl(id)
 }
 
 #[cfg(test)]
@@ -97,12 +99,8 @@ mod tests {
         let a = world.create_body_id(crate::BodyBuilder::new().build());
         let b = world.create_body_id(crate::BodyBuilder::new().build());
 
-        let def = crate::DistanceJointDef::new(
-            crate::JointBaseBuilder::new()
-                .bodies_by_id(a, b)
-                .collide_connected(false)
-                .build(),
-        );
+        let def =
+            crate::DistanceJointDef::new(crate::JointBase::new(a, b).with_collide_connected(false));
 
         let _g = crate::core::callback_state::CallbackGuard::enter();
         assert_eq!(

@@ -1,9 +1,8 @@
-use crate::error::ApiResult;
-use crate::types::{Position, ShapeId, Vec2};
-use boxdd_sys::ffi;
-
+use super::QueryTarget;
 use super::raw::*;
 use super::types::*;
+use crate::error::ApiResult;
+use crate::types::{Position, ShapeId, Vec2};
 
 mod common;
 mod mover_queries;

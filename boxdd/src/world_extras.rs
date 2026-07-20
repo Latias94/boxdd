@@ -1,6 +1,10 @@
 //! Additional world runtime helpers and value types that sit beside the core world API.
 
-use crate::{error::ApiResult, types::Position, world::World};
+use crate::{
+    error::ApiResult,
+    types::Position,
+    world::{World, assert_world_available, check_world_available},
+};
 use boxdd_sys::ffi;
 
 /// Explosion configuration (maps to `b2ExplosionDef`).
@@ -88,12 +92,12 @@ impl ExplosionDef {
 impl World {
     /// Trigger an explosion in the world using the provided definition.
     pub fn explode(&mut self, def: &ExplosionDef) {
-        crate::core::callback_state::assert_not_in_callback();
+        assert_world_available(self.core());
         unsafe { ffi::b2World_Explode(self.raw(), &def.0) }
     }
 
     pub fn try_explode(&mut self, def: &ExplosionDef) -> ApiResult<()> {
-        crate::core::callback_state::check_not_in_callback()?;
+        check_world_available(self.core())?;
         unsafe { ffi::b2World_Explode(self.raw(), &def.0) }
         Ok(())
     }

@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `boxdd::CallbackWorld`
+ --> tests/ui/callback_world_removed.rs:1:5
+  |
+1 | use boxdd::CallbackWorld;
+  |     ^^^^^^^^^^^^^^^^^^^^ no `CallbackWorld` in the root

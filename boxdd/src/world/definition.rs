@@ -9,6 +9,9 @@ pub enum Error {
 
     #[error("failed to create Box2D world")]
     CreateFailed,
+
+    #[error("the process exhausted its Rust world identity space")]
+    IdentityExhausted,
 }
 
 #[inline]

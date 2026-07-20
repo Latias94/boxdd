@@ -2,12 +2,11 @@ use super::runtime_handle::JointRuntimeHandle;
 use super::*;
 use crate::error::ApiResult;
 use crate::types::{BodyId, JointId, Vec2};
-use std::marker::PhantomData;
 use std::os::raw::c_void;
-use std::sync::Arc;
+use std::rc::Rc;
 
 impl OwnedJoint {
-    pub(crate) fn new(core: Arc<WorldCore>, id: JointId) -> Self {
+    pub(crate) fn new(core: Rc<WorldCore>, id: JointId) -> Self {
         core.owned_joints
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Self {
@@ -15,7 +14,6 @@ impl OwnedJoint {
             core,
             destroy_on_drop: true,
             wake_bodies_on_drop: true,
-            _not_send: PhantomData,
         }
     }
 
@@ -292,53 +290,47 @@ impl OwnedJoint {
     }
 
     pub fn wake_bodies_on_drop(mut self, flag: bool) -> Self {
+        self.core
+            .check_owned_policy_change()
+            .expect("owned joint drop policy cannot change while its world is unavailable");
         self.wake_bodies_on_drop = flag;
         self
     }
 
     pub fn into_id(mut self) -> JointId {
+        self.core
+            .check_owned_policy_change()
+            .expect("owned joint cannot be disarmed while its world is unavailable");
         self.destroy_on_drop = false;
         self.id
     }
 
     pub fn destroy(mut self, wake_bodies: bool) {
-        if self.destroy_on_drop && unsafe { ffi::b2Joint_IsValid(raw_joint_id(self.id)) } {
-            if crate::core::callback_state::in_callback() || self.core.events_buffers_are_borrowed()
-            {
-                self.core
-                    .defer_destroy(crate::core::world_core::DeferredDestroy::Joint {
-                        id: self.id,
-                        wake_bodies,
-                    });
-            } else {
-                unsafe { ffi::b2DestroyJoint(raw_joint_id(self.id), wake_bodies) };
-                let _ = self.core.clear_joint_user_data(self.id);
-            }
+        if self.destroy_on_drop {
+            self.core
+                .destroy_owned_or_defer(crate::core::world_core::DeferredDestroy::Joint {
+                    id: self.id,
+                    wake_bodies,
+                });
+            self.destroy_on_drop = false;
         }
-        self.destroy_on_drop = false;
     }
 }
 
 impl Drop for OwnedJoint {
     fn drop(&mut self) {
         let _ = self.core.id;
-        let prev = self
-            .core
-            .owned_joints
-            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-        debug_assert!(prev > 0, "owned joint counter underflow");
-        if self.destroy_on_drop && unsafe { ffi::b2Joint_IsValid(raw_joint_id(self.id)) } {
-            if crate::core::callback_state::in_callback() || self.core.events_buffers_are_borrowed()
-            {
-                self.core
-                    .defer_destroy(crate::core::world_core::DeferredDestroy::Joint {
-                        id: self.id,
-                        wake_bodies: self.wake_bodies_on_drop,
-                    });
-            } else {
-                unsafe { ffi::b2DestroyJoint(raw_joint_id(self.id), self.wake_bodies_on_drop) };
-                let _ = self.core.clear_joint_user_data(self.id);
-            }
+        let _ = self.core.owned_joints.fetch_update(
+            std::sync::atomic::Ordering::Relaxed,
+            std::sync::atomic::Ordering::Relaxed,
+            |count| Some(count.saturating_sub(1)),
+        );
+        if self.destroy_on_drop {
+            self.core
+                .destroy_owned_or_defer(crate::core::world_core::DeferredDestroy::Joint {
+                    id: self.id,
+                    wake_bodies: self.wake_bodies_on_drop,
+                });
         }
     }
 }

@@ -40,28 +40,29 @@ fn weld_set_angular_damping_ratio_impl(id: JointId, value: f32) {
     joint_scalar_write_impl(id, value, ffi::b2WeldJoint_SetAngularDampingRatio)
 }
 
-trait WeldJointRuntimeHandle {
-    fn weld_joint_id(&self) -> JointId;
-
+trait WeldJointRuntimeHandle: TypedJointRuntimeHandle {
     fn weld_linear_hertz(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.weld_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Weld,
             weld_linear_hertz_impl,
         )
     }
 
     fn try_weld_linear_hertz(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.weld_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Weld,
             weld_linear_hertz_impl,
         )
     }
 
     fn weld_set_linear_hertz(&mut self, hertz: f32) {
-        joint_kind_set_checked_impl(
-            self.weld_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Weld,
             hertz,
             weld_set_linear_hertz_impl,
@@ -69,8 +70,9 @@ trait WeldJointRuntimeHandle {
     }
 
     fn try_weld_set_linear_hertz(&mut self, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.weld_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Weld,
             hertz,
             weld_set_linear_hertz_impl,
@@ -78,24 +80,27 @@ trait WeldJointRuntimeHandle {
     }
 
     fn weld_linear_damping_ratio(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.weld_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Weld,
             weld_linear_damping_ratio_impl,
         )
     }
 
     fn try_weld_linear_damping_ratio(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.weld_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Weld,
             weld_linear_damping_ratio_impl,
         )
     }
 
     fn weld_set_linear_damping_ratio(&mut self, damping_ratio: f32) {
-        joint_kind_set_checked_impl(
-            self.weld_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Weld,
             damping_ratio,
             weld_set_linear_damping_ratio_impl,
@@ -103,8 +108,9 @@ trait WeldJointRuntimeHandle {
     }
 
     fn try_weld_set_linear_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.weld_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Weld,
             damping_ratio,
             weld_set_linear_damping_ratio_impl,
@@ -112,24 +118,27 @@ trait WeldJointRuntimeHandle {
     }
 
     fn weld_angular_hertz(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.weld_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Weld,
             weld_angular_hertz_impl,
         )
     }
 
     fn try_weld_angular_hertz(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.weld_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Weld,
             weld_angular_hertz_impl,
         )
     }
 
     fn weld_set_angular_hertz(&mut self, hertz: f32) {
-        joint_kind_set_checked_impl(
-            self.weld_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Weld,
             hertz,
             weld_set_angular_hertz_impl,
@@ -137,8 +146,9 @@ trait WeldJointRuntimeHandle {
     }
 
     fn try_weld_set_angular_hertz(&mut self, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.weld_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Weld,
             hertz,
             weld_set_angular_hertz_impl,
@@ -146,24 +156,27 @@ trait WeldJointRuntimeHandle {
     }
 
     fn weld_angular_damping_ratio(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.weld_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Weld,
             weld_angular_damping_ratio_impl,
         )
     }
 
     fn try_weld_angular_damping_ratio(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.weld_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Weld,
             weld_angular_damping_ratio_impl,
         )
     }
 
     fn weld_set_angular_damping_ratio(&mut self, damping_ratio: f32) {
-        joint_kind_set_checked_impl(
-            self.weld_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Weld,
             damping_ratio,
             weld_set_angular_damping_ratio_impl,
@@ -171,8 +184,9 @@ trait WeldJointRuntimeHandle {
     }
 
     fn try_weld_set_angular_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.weld_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Weld,
             damping_ratio,
             weld_set_angular_damping_ratio_impl,
@@ -180,45 +194,60 @@ trait WeldJointRuntimeHandle {
     }
 }
 
-impl WeldJointRuntimeHandle for OwnedJoint {
-    fn weld_joint_id(&self) -> JointId {
-        self.id()
-    }
-}
+impl WeldJointRuntimeHandle for OwnedJoint {}
 
-impl<'w> WeldJointRuntimeHandle for Joint<'w> {
-    fn weld_joint_id(&self) -> JointId {
-        self.id()
-    }
-}
+impl WeldJointRuntimeHandle for Joint<'_> {}
 
 impl World {
     pub fn weld_linear_hertz(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Weld, weld_linear_hertz_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Weld, weld_linear_hertz_impl)
     }
 
     pub fn try_weld_linear_hertz(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Weld, weld_linear_hertz_impl)
+        try_joint_kind_get_checked_in_impl(self.core(), id, JointType::Weld, weld_linear_hertz_impl)
     }
 
     pub fn weld_set_linear_hertz(&mut self, id: JointId, hertz: f32) {
-        joint_kind_set_checked_impl(id, JointType::Weld, hertz, weld_set_linear_hertz_impl)
+        joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Weld,
+            hertz,
+            weld_set_linear_hertz_impl,
+        )
     }
 
     pub fn try_weld_set_linear_hertz(&mut self, id: JointId, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(id, JointType::Weld, hertz, weld_set_linear_hertz_impl)
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Weld,
+            hertz,
+            weld_set_linear_hertz_impl,
+        )
     }
 
     pub fn weld_linear_damping_ratio(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Weld, weld_linear_damping_ratio_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Weld,
+            weld_linear_damping_ratio_impl,
+        )
     }
 
     pub fn try_weld_linear_damping_ratio(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Weld, weld_linear_damping_ratio_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Weld,
+            weld_linear_damping_ratio_impl,
+        )
     }
 
     pub fn weld_set_linear_damping_ratio(&mut self, id: JointId, damping_ratio: f32) {
-        joint_kind_set_checked_impl(
+        joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Weld,
             damping_ratio,
@@ -231,7 +260,8 @@ impl World {
         id: JointId,
         damping_ratio: f32,
     ) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Weld,
             damping_ratio,
@@ -240,31 +270,59 @@ impl World {
     }
 
     pub fn weld_angular_hertz(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Weld, weld_angular_hertz_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Weld, weld_angular_hertz_impl)
     }
 
     pub fn try_weld_angular_hertz(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Weld, weld_angular_hertz_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Weld,
+            weld_angular_hertz_impl,
+        )
     }
 
     pub fn weld_set_angular_hertz(&mut self, id: JointId, hertz: f32) {
-        joint_kind_set_checked_impl(id, JointType::Weld, hertz, weld_set_angular_hertz_impl)
+        joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Weld,
+            hertz,
+            weld_set_angular_hertz_impl,
+        )
     }
 
     pub fn try_weld_set_angular_hertz(&mut self, id: JointId, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(id, JointType::Weld, hertz, weld_set_angular_hertz_impl)
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Weld,
+            hertz,
+            weld_set_angular_hertz_impl,
+        )
     }
 
     pub fn weld_angular_damping_ratio(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Weld, weld_angular_damping_ratio_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Weld,
+            weld_angular_damping_ratio_impl,
+        )
     }
 
     pub fn try_weld_angular_damping_ratio(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Weld, weld_angular_damping_ratio_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Weld,
+            weld_angular_damping_ratio_impl,
+        )
     }
 
     pub fn weld_set_angular_damping_ratio(&mut self, id: JointId, damping_ratio: f32) {
-        joint_kind_set_checked_impl(
+        joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Weld,
             damping_ratio,
@@ -277,7 +335,8 @@ impl World {
         id: JointId,
         damping_ratio: f32,
     ) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Weld,
             damping_ratio,
@@ -288,35 +347,60 @@ impl World {
 
 impl WorldHandle {
     pub fn weld_linear_hertz(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Weld, weld_linear_hertz_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Weld, weld_linear_hertz_impl)
     }
 
     pub fn try_weld_linear_hertz(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Weld, weld_linear_hertz_impl)
+        try_joint_kind_get_checked_in_impl(self.core(), id, JointType::Weld, weld_linear_hertz_impl)
     }
 
     pub fn weld_linear_damping_ratio(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Weld, weld_linear_damping_ratio_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Weld,
+            weld_linear_damping_ratio_impl,
+        )
     }
 
     pub fn try_weld_linear_damping_ratio(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Weld, weld_linear_damping_ratio_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Weld,
+            weld_linear_damping_ratio_impl,
+        )
     }
 
     pub fn weld_angular_hertz(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Weld, weld_angular_hertz_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Weld, weld_angular_hertz_impl)
     }
 
     pub fn try_weld_angular_hertz(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Weld, weld_angular_hertz_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Weld,
+            weld_angular_hertz_impl,
+        )
     }
 
     pub fn weld_angular_damping_ratio(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Weld, weld_angular_damping_ratio_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Weld,
+            weld_angular_damping_ratio_impl,
+        )
     }
 
     pub fn try_weld_angular_damping_ratio(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Weld, weld_angular_damping_ratio_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Weld,
+            weld_angular_damping_ratio_impl,
+        )
     }
 }
 

@@ -1,5 +1,5 @@
 #![allow(rustdoc::broken_intra_doc_links)]
-use crate::types::{BodyId, Position, WorldTransform};
+use crate::types::{Position, WorldTransform};
 use crate::world::World;
 use boxdd_sys::ffi;
 
@@ -25,88 +25,128 @@ fn checked_world_distance(a: Position, b: Position) -> ApiResult<f32> {
 /// Controls distance limits, optional spring (stiffness/damping), and optional motor.
 /// Use with `World::create_distance_joint(_id)` or the world convenience
 /// builder `World::distance(...).build()`.
-pub struct DistanceJointDef(pub(crate) ffi::b2DistanceJointDef);
+pub struct DistanceJointDef {
+    base: JointBase,
+    length: f32,
+    enable_spring: bool,
+    lower_spring_force: f32,
+    upper_spring_force: f32,
+    hertz: f32,
+    damping_ratio: f32,
+    enable_limit: bool,
+    min_length: f32,
+    max_length: f32,
+    enable_motor: bool,
+    max_motor_force: f32,
+    motor_speed: f32,
+}
 
 impl DistanceJointDef {
     pub fn new(base: JointBase) -> Self {
-        let mut def: ffi::b2DistanceJointDef = unsafe { ffi::b2DefaultDistanceJointDef() };
-        def.base = base.0;
-        Self(def)
+        let default = unsafe { ffi::b2DefaultDistanceJointDef() };
+        Self {
+            base,
+            length: default.length,
+            enable_spring: default.enableSpring,
+            lower_spring_force: default.lowerSpringForce,
+            upper_spring_force: default.upperSpringForce,
+            hertz: default.hertz,
+            damping_ratio: default.dampingRatio,
+            enable_limit: default.enableLimit,
+            min_length: default.minLength,
+            max_length: default.maxLength,
+            enable_motor: default.enableMotor,
+            max_motor_force: default.maxMotorForce,
+            motor_speed: default.motorSpeed,
+        }
     }
 
     #[inline]
-    pub fn from_raw(raw: ffi::b2DistanceJointDef) -> Self {
-        Self(raw)
+    pub fn base(&self) -> &JointBase {
+        &self.base
     }
 
     #[inline]
-    pub fn base(&self) -> JointBase {
-        JointBase(self.0.base)
+    pub(crate) fn base_mut(&mut self) -> &mut JointBase {
+        &mut self.base
     }
 
     #[inline]
     pub fn target_length(&self) -> f32 {
-        self.0.length
+        self.length
     }
 
     #[inline]
     pub fn spring_enabled(&self) -> bool {
-        self.0.enableSpring
+        self.enable_spring
     }
 
     #[inline]
     pub fn minimum_spring_force(&self) -> f32 {
-        self.0.lowerSpringForce
+        self.lower_spring_force
     }
 
     #[inline]
     pub fn maximum_spring_force(&self) -> f32 {
-        self.0.upperSpringForce
+        self.upper_spring_force
     }
 
     #[inline]
     pub fn spring_hertz(&self) -> f32 {
-        self.0.hertz
+        self.hertz
     }
 
     #[inline]
     pub fn spring_damping_ratio(&self) -> f32 {
-        self.0.dampingRatio
+        self.damping_ratio
     }
 
     #[inline]
     pub fn limit_enabled(&self) -> bool {
-        self.0.enableLimit
+        self.enable_limit
     }
 
     #[inline]
     pub fn minimum_length(&self) -> f32 {
-        self.0.minLength
+        self.min_length
     }
 
     #[inline]
     pub fn maximum_length(&self) -> f32 {
-        self.0.maxLength
+        self.max_length
     }
 
     #[inline]
     pub fn motor_enabled(&self) -> bool {
-        self.0.enableMotor
+        self.enable_motor
     }
 
     #[inline]
     pub fn maximum_motor_force(&self) -> f32 {
-        self.0.maxMotorForce
+        self.max_motor_force
     }
 
     #[inline]
     pub fn target_motor_speed(&self) -> f32 {
-        self.0.motorSpeed
+        self.motor_speed
     }
 
-    #[inline]
-    pub fn into_raw(self) -> ffi::b2DistanceJointDef {
-        self.0
+    pub(crate) fn to_raw(&self) -> ffi::b2DistanceJointDef {
+        let mut raw = unsafe { ffi::b2DefaultDistanceJointDef() };
+        raw.base = self.base.to_raw();
+        raw.length = self.length;
+        raw.enableSpring = self.enable_spring;
+        raw.lowerSpringForce = self.lower_spring_force;
+        raw.upperSpringForce = self.upper_spring_force;
+        raw.hertz = self.hertz;
+        raw.dampingRatio = self.damping_ratio;
+        raw.enableLimit = self.enable_limit;
+        raw.minLength = self.min_length;
+        raw.maxLength = self.max_length;
+        raw.enableMotor = self.enable_motor;
+        raw.maxMotorForce = self.max_motor_force;
+        raw.motorSpeed = self.motor_speed;
+        raw
     }
 
     #[inline]
@@ -116,62 +156,62 @@ impl DistanceJointDef {
 
     /// Target distance between anchors (meters).
     pub fn length(mut self, v: f32) -> Self {
-        self.0.length = v;
+        self.length = v;
         self
     }
     /// Enable/disable spring behavior.
     pub fn enable_spring(mut self, flag: bool) -> Self {
-        self.0.enableSpring = flag;
+        self.enable_spring = flag;
         self
     }
     /// Lower bound on spring force.
     pub fn lower_spring_force(mut self, v: f32) -> Self {
-        self.0.lowerSpringForce = v;
+        self.lower_spring_force = v;
         self
     }
     /// Upper bound on spring force.
     pub fn upper_spring_force(mut self, v: f32) -> Self {
-        self.0.upperSpringForce = v;
+        self.upper_spring_force = v;
         self
     }
     /// Spring stiffness in Hertz.
     pub fn hertz(mut self, v: f32) -> Self {
-        self.0.hertz = v;
+        self.hertz = v;
         self
     }
     /// Spring damping ratio \[0,1].
     pub fn damping_ratio(mut self, v: f32) -> Self {
-        self.0.dampingRatio = v;
+        self.damping_ratio = v;
         self
     }
     /// Enable/disable distance limits.
     pub fn enable_limit(mut self, flag: bool) -> Self {
-        self.0.enableLimit = flag;
+        self.enable_limit = flag;
         self
     }
     /// Minimum distance when limits are enabled.
     pub fn min_length(mut self, v: f32) -> Self {
-        self.0.minLength = v;
+        self.min_length = v;
         self
     }
     /// Maximum distance when limits are enabled.
     pub fn max_length(mut self, v: f32) -> Self {
-        self.0.maxLength = v;
+        self.max_length = v;
         self
     }
     /// Enable/disable motor along the line.
     pub fn enable_motor(mut self, flag: bool) -> Self {
-        self.0.enableMotor = flag;
+        self.enable_motor = flag;
         self
     }
     /// Motor maximum force (N).
     pub fn max_motor_force(mut self, v: f32) -> Self {
-        self.0.maxMotorForce = v;
+        self.max_motor_force = v;
         self
     }
     /// Motor speed (m/s) along the line.
     pub fn motor_speed(mut self, v: f32) -> Self {
-        self.0.motorSpeed = v;
+        self.motor_speed = v;
         self
     }
 
@@ -196,7 +236,7 @@ impl DistanceJointDef {
         a: VA,
         b: VB,
     ) -> ApiResult<Self> {
-        self.0.length = checked_world_distance(a.into(), b.into())?;
+        self.length = checked_world_distance(a.into(), b.into())?;
         Ok(self)
     }
 }
@@ -208,8 +248,6 @@ impl DistanceJointDef {
 /// target length without manually computing local frames.
 pub struct DistanceJointBuilder<'w> {
     pub(crate) world: &'w mut World,
-    pub(crate) body_a: BodyId,
-    pub(crate) body_b: BodyId,
     pub(crate) anchor_a_world: Option<Position>,
     pub(crate) anchor_b_world: Option<Position>,
     pub(crate) def: DistanceJointDef,
@@ -280,29 +318,28 @@ impl<'w> DistanceJointBuilder<'w> {
     }
     /// Allow bodies to collide while connected.
     pub fn collide_connected(mut self, flag: bool) -> Self {
-        self.def.0.base.collideConnected = flag;
+        let base = *self.def.base();
+        *self.def.base_mut() = base.with_collide_connected(flag);
         self
     }
 
     fn configure_local_frames(&mut self) -> ApiResult<()> {
-        let ta =
-            WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) });
-        let tb =
-            WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) });
+        crate::core::callback_state::check_not_in_callback()?;
+        let body_a = self.def.base().body_a_id();
+        let body_b = self.def.base().body_b_id();
+        self.world.core().check_body(body_a)?;
+        self.world.core().check_body(body_b)?;
+
+        let ta = WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(body_a)) });
+        let tb = WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(body_b)) });
         let aw = self.anchor_a_world.unwrap_or_else(|| ta.position());
         let bw = self.anchor_b_world.unwrap_or_else(|| tb.position());
         let la = super::base_def::checked_world_to_local_point(ta, aw)?;
         let lb = super::base_def::checked_world_to_local_point(tb, bw)?;
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.def.0.base.localFrameA = ffi::b2Transform {
-            p: la.into_raw(),
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
-        self.def.0.base.localFrameB = ffi::b2Transform {
-            p: lb.into_raw(),
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
+        self.def.base_mut().set_local_frames(
+            crate::Transform::from_pos_angle(la, 0.0),
+            crate::Transform::from_pos_angle(lb, 0.0),
+        );
         Ok(())
     }
 
@@ -379,32 +416,24 @@ impl<'w> DistanceJointBuilder<'w> {
 
     #[must_use]
     pub fn build(mut self) -> Joint<'w> {
-        crate::core::debug_checks::assert_body_valid(self.body_a);
-        crate::core::debug_checks::assert_body_valid(self.body_b);
         self.configure_local_frames()
             .expect("distance-joint world anchors must fit in local f32 frames");
         self.world.create_distance_joint(&self.def)
     }
 
     pub fn try_build(mut self) -> ApiResult<Joint<'w>> {
-        crate::core::debug_checks::check_body_valid(self.body_a)?;
-        crate::core::debug_checks::check_body_valid(self.body_b)?;
         self.configure_local_frames()?;
         self.world.try_create_distance_joint(&self.def)
     }
 
     #[must_use]
     pub fn build_owned(mut self) -> OwnedJoint {
-        crate::core::debug_checks::assert_body_valid(self.body_a);
-        crate::core::debug_checks::assert_body_valid(self.body_b);
         self.configure_local_frames()
             .expect("distance-joint world anchors must fit in local f32 frames");
         self.world.create_distance_joint_owned(&self.def)
     }
 
     pub fn try_build_owned(mut self) -> ApiResult<OwnedJoint> {
-        crate::core::debug_checks::check_body_valid(self.body_a)?;
-        crate::core::debug_checks::check_body_valid(self.body_b)?;
         self.configure_local_frames()?;
         self.world.try_create_distance_joint_owned(&self.def)
     }

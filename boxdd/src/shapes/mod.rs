@@ -24,7 +24,7 @@ use crate::types::{
 use crate::world::World;
 use boxdd_sys::ffi;
 use std::os::raw::c_void;
-use std::sync::Arc;
+use std::rc::Rc;
 
 pub(crate) use runtime::*;
 

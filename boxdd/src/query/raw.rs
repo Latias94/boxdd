@@ -9,6 +9,7 @@ use boxdd_sys::ffi;
 use smallvec::SmallVec;
 use std::any::Any;
 
+use super::QueryTarget;
 use super::types::*;
 
 const MAX_PROXY_POINTS: usize = ffi::B2_MAX_POLYGON_VERTICES as usize;
@@ -80,16 +81,30 @@ pub(super) fn make_offset_proxy_from_points(
 
 struct CollectCtx<'a, T> {
     out: &'a mut Vec<T>,
+    brand: crate::id::IdBrand,
     panicked: bool,
     panic: Option<PanicPayload>,
+    invalid_output: Option<crate::error::ApiError>,
 }
 
 impl<'a, T> CollectCtx<'a, T> {
-    fn from_cleared(out: &'a mut Vec<T>) -> Self {
+    fn from_cleared(out: &'a mut Vec<T>, brand: crate::id::IdBrand) -> Self {
         Self {
             out,
+            brand,
             panicked: false,
             panic: None,
+            invalid_output: None,
+        }
+    }
+
+    fn shape(&mut self, raw: ffi::b2ShapeId) -> Option<ShapeId> {
+        match self.brand.try_shape(raw) {
+            Ok(id) => Some(id),
+            Err(error) => {
+                self.invalid_output = Some(error);
+                None
+            }
         }
     }
 
@@ -114,24 +129,41 @@ impl<'a, T> CollectCtx<'a, T> {
         if let Some(p) = self.panic {
             std::panic::resume_unwind(p);
         }
+        if let Some(error) = self.invalid_output {
+            panic!("Box2D returned an invalid query shape id: {error}");
+        }
     }
 }
 
 struct VisitShapeIdCtx<'a, F> {
     visit: &'a mut F,
+    brand: crate::id::IdBrand,
     stopped_early: bool,
     panic: Option<PanicPayload>,
+    invalid_output: Option<crate::error::ApiError>,
 }
 
 impl<'a, F> VisitShapeIdCtx<'a, F>
 where
     F: FnMut(ShapeId) -> bool,
 {
-    fn new(visit: &'a mut F) -> Self {
+    fn new(visit: &'a mut F, brand: crate::id::IdBrand) -> Self {
         Self {
             visit,
+            brand,
             stopped_early: false,
             panic: None,
+            invalid_output: None,
+        }
+    }
+
+    fn shape(&mut self, raw: ffi::b2ShapeId) -> Option<ShapeId> {
+        match self.brand.try_shape(raw) {
+            Ok(id) => Some(id),
+            Err(error) => {
+                self.invalid_output = Some(error);
+                None
+            }
         }
     }
 
@@ -139,6 +171,7 @@ where
         if self.stopped_early || self.panic.is_some() {
             return false;
         }
+        let _callback_guard = crate::core::callback_state::CallbackGuard::enter();
         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (self.visit)(shape_id))) {
             Ok(true) => true,
             Ok(false) => {
@@ -156,6 +189,9 @@ where
         if let Some(p) = self.panic {
             std::panic::resume_unwind(p);
         }
+        if let Some(error) = self.invalid_output {
+            panic!("Box2D returned an invalid query shape id: {error}");
+        }
         !self.stopped_early
     }
 }
@@ -168,7 +204,10 @@ where
     F: FnMut(ShapeId) -> bool,
 {
     let ctx = unsafe { &mut *(ctx as *mut VisitShapeIdCtx<'_, F>) };
-    ctx.visit(ShapeId::from_raw(shape_id))
+    let Some(shape_id) = ctx.shape(shape_id) else {
+        return false;
+    };
+    ctx.visit(shape_id)
 }
 
 #[allow(clippy::unnecessary_cast)]
@@ -180,8 +219,11 @@ unsafe extern "C" fn collect_ray_result_cb(
     ctx: *mut core::ffi::c_void,
 ) -> f32 {
     let ctx = unsafe { &mut *(ctx as *mut CollectCtx<'_, RayResult>) };
+    let Some(shape_id) = ctx.shape(shape_id) else {
+        return 0.0;
+    };
     if ctx.push(RayResult {
-        shape_id: ShapeId::from_raw(shape_id),
+        shape_id,
         point: Position::from_raw(point),
         normal: Vec2::from_raw(normal),
         fraction,
@@ -200,24 +242,23 @@ unsafe extern "C" fn collect_mover_plane_result_cb(
 ) -> bool {
     let ctx = unsafe { &mut *(ctx as *mut CollectCtx<'_, MoverPlaneResult>) };
     let plane = unsafe { *plane };
+    let Some(shape_id) = ctx.shape(shape_id) else {
+        return false;
+    };
     ctx.push(MoverPlaneResult {
-        shape_id: ShapeId::from_raw(shape_id),
+        shape_id,
         plane: Plane::from_raw(plane.plane),
         point: Vec2::from_raw(plane.point),
         hit: plane.hit,
     })
 }
 
-pub(super) fn make_capsule<V1: Into<Vec2>, V2: Into<Vec2>>(
-    c1: V1,
-    c2: V2,
-    radius: f32,
-) -> ffi::b2Capsule {
+pub(super) fn make_capsule(c1: Vec2, c2: Vec2, radius: f32) -> ffi::b2Capsule {
     crate::shapes::Capsule::new(c1, c2, radius).into_raw()
 }
 
 pub(super) fn visit_overlap_aabb_impl<F>(
-    world: ffi::b2WorldId,
+    target: &QueryTarget,
     origin: Position,
     aabb: Aabb,
     filter: QueryFilter,
@@ -226,10 +267,10 @@ pub(super) fn visit_overlap_aabb_impl<F>(
 where
     F: FnMut(ShapeId) -> bool,
 {
-    let mut ctx = VisitShapeIdCtx::new(visit);
+    let mut ctx = VisitShapeIdCtx::new(visit, target.brand());
     unsafe {
         let _ = ffi::b2World_OverlapAABB(
-            world,
+            target.raw(),
             origin.into_raw(),
             aabb.into_raw(),
             filter.0,
@@ -241,7 +282,7 @@ where
 }
 
 pub(super) fn overlap_aabb_into_impl(
-    world: ffi::b2WorldId,
+    target: &QueryTarget,
     origin: Position,
     aabb: Aabb,
     filter: QueryFilter,
@@ -252,22 +293,22 @@ pub(super) fn overlap_aabb_into_impl(
         out.push(shape_id);
         true
     };
-    let _ = visit_overlap_aabb_impl(world, origin, aabb, filter, &mut collect);
+    let _ = visit_overlap_aabb_impl(target, origin, aabb, filter, &mut collect);
 }
 
 pub(super) fn overlap_aabb_impl(
-    world: ffi::b2WorldId,
+    target: &QueryTarget,
     origin: Position,
     aabb: Aabb,
     filter: QueryFilter,
 ) -> Vec<ShapeId> {
     let mut out = Vec::new();
-    overlap_aabb_into_impl(world, origin, aabb, filter, &mut out);
+    overlap_aabb_into_impl(target, origin, aabb, filter, &mut out);
     out
 }
 
 pub(super) fn visit_overlap_shape_proxy_impl<F>(
-    world: ffi::b2WorldId,
+    target: &QueryTarget,
     origin: Position,
     proxy: &ffi::b2ShapeProxy,
     filter: QueryFilter,
@@ -276,10 +317,10 @@ pub(super) fn visit_overlap_shape_proxy_impl<F>(
 where
     F: FnMut(ShapeId) -> bool,
 {
-    let mut ctx = VisitShapeIdCtx::new(visit);
+    let mut ctx = VisitShapeIdCtx::new(visit, target.brand());
     unsafe {
         let _ = ffi::b2World_OverlapShape(
-            world,
+            target.raw(),
             origin.into_raw(),
             proxy,
             filter.0,
@@ -290,43 +331,44 @@ where
     ctx.finish()
 }
 
-pub(super) fn cast_ray_closest_impl<VO: Into<Position>, VT: Into<Vec2>>(
-    world: ffi::b2WorldId,
-    origin: VO,
-    translation: VT,
+pub(super) fn cast_ray_closest_impl(
+    target: &QueryTarget,
+    origin: Position,
+    translation: Vec2,
     filter: QueryFilter,
-) -> RayResult {
-    let o: ffi::b2Pos = origin.into().into_raw();
-    let t: ffi::b2Vec2 = translation.into().into_raw();
-    let raw = unsafe { ffi::b2World_CastRayClosest(world, o, t, filter.0) };
-    RayResult::from_raw(raw)
+) -> Option<RayResult> {
+    let o = origin.into_raw();
+    let t = translation.into_raw();
+    let raw = unsafe { ffi::b2World_CastRayClosest(target.raw(), o, t, filter.0) };
+    RayResult::from_raw_in(target.brand(), raw)
+        .expect("Box2D returned an invalid closest-ray shape id")
 }
 
-pub(super) fn cast_ray_all_impl<VO: Into<Position>, VT: Into<Vec2>>(
-    world: ffi::b2WorldId,
-    origin: VO,
-    translation: VT,
+pub(super) fn cast_ray_all_impl(
+    target: &QueryTarget,
+    origin: Position,
+    translation: Vec2,
     filter: QueryFilter,
 ) -> Vec<RayResult> {
     let mut out = Vec::new();
-    cast_ray_all_into_impl(world, origin, translation, filter, &mut out);
+    cast_ray_all_into_impl(target, origin, translation, filter, &mut out);
     out
 }
 
-pub(super) fn cast_ray_all_into_impl<VO: Into<Position>, VT: Into<Vec2>>(
-    world: ffi::b2WorldId,
-    origin: VO,
-    translation: VT,
+pub(super) fn cast_ray_all_into_impl(
+    target: &QueryTarget,
+    origin: Position,
+    translation: Vec2,
     filter: QueryFilter,
     out: &mut Vec<RayResult>,
 ) {
     out.clear();
-    let mut ctx = CollectCtx::from_cleared(out);
-    let o: ffi::b2Pos = origin.into().into_raw();
-    let t: ffi::b2Vec2 = translation.into().into_raw();
+    let mut ctx = CollectCtx::from_cleared(out, target.brand());
+    let o = origin.into_raw();
+    let t = translation.into_raw();
     unsafe {
         let _ = ffi::b2World_CastRay(
-            world,
+            target.raw(),
             o,
             t,
             filter.0,
@@ -338,7 +380,7 @@ pub(super) fn cast_ray_all_into_impl<VO: Into<Position>, VT: Into<Vec2>>(
 }
 
 pub(super) fn overlap_polygon_points_into_impl(
-    world: ffi::b2WorldId,
+    target: &QueryTarget,
     origin: Position,
     points: &ProxyPoints,
     radius: f32,
@@ -350,11 +392,11 @@ pub(super) fn overlap_polygon_points_into_impl(
         out.push(shape_id);
         true
     };
-    let _ = visit_overlap_polygon_points_impl(world, origin, points, radius, filter, &mut collect);
+    let _ = visit_overlap_polygon_points_impl(target, origin, points, radius, filter, &mut collect);
 }
 
 pub(super) fn visit_overlap_polygon_points_impl<F>(
-    world: ffi::b2WorldId,
+    target: &QueryTarget,
     origin: Position,
     points: &ProxyPoints,
     radius: f32,
@@ -367,23 +409,23 @@ where
     let Some(proxy) = make_proxy_from_points(points, radius) else {
         return true;
     };
-    visit_overlap_shape_proxy_impl(world, origin, &proxy, filter, visit)
+    visit_overlap_shape_proxy_impl(target, origin, &proxy, filter, visit)
 }
 
 pub(super) fn overlap_polygon_points_impl(
-    world: ffi::b2WorldId,
+    target: &QueryTarget,
     origin: Position,
     points: &ProxyPoints,
     radius: f32,
     filter: QueryFilter,
 ) -> Vec<ShapeId> {
     let mut out = Vec::new();
-    overlap_polygon_points_into_impl(world, origin, points, radius, filter, &mut out);
+    overlap_polygon_points_into_impl(target, origin, points, radius, filter, &mut out);
     out
 }
 
 pub(super) fn cast_shape_points_into_impl(
-    world: ffi::b2WorldId,
+    target: &QueryTarget,
     origin: Position,
     points: &ProxyPoints,
     radius: f32,
@@ -395,11 +437,11 @@ pub(super) fn cast_shape_points_into_impl(
     let Some(proxy) = make_proxy_from_points(points, radius) else {
         return;
     };
-    let mut ctx = CollectCtx::from_cleared(out);
+    let mut ctx = CollectCtx::from_cleared(out, target.brand());
     let t = translation.into_raw();
     unsafe {
         let _ = ffi::b2World_CastShape(
-            world,
+            target.raw(),
             origin.into_raw(),
             &proxy,
             t,
@@ -412,7 +454,7 @@ pub(super) fn cast_shape_points_into_impl(
 }
 
 pub(super) fn cast_shape_points_impl(
-    world: ffi::b2WorldId,
+    target: &QueryTarget,
     origin: Position,
     points: &ProxyPoints,
     radius: f32,
@@ -420,12 +462,20 @@ pub(super) fn cast_shape_points_impl(
     filter: QueryFilter,
 ) -> Vec<RayResult> {
     let mut out = Vec::new();
-    cast_shape_points_into_impl(world, origin, points, radius, translation, filter, &mut out);
+    cast_shape_points_into_impl(
+        target,
+        origin,
+        points,
+        radius,
+        translation,
+        filter,
+        &mut out,
+    );
     out
 }
 
 pub(super) fn cast_mover_impl(
-    world: ffi::b2WorldId,
+    target: &QueryTarget,
     origin: Position,
     c1: Vec2,
     c2: Vec2,
@@ -435,11 +485,11 @@ pub(super) fn cast_mover_impl(
 ) -> f32 {
     let cap = make_capsule(c1, c2, radius);
     let t = translation.into_raw();
-    unsafe { ffi::b2World_CastMover(world, origin.into_raw(), &cap, t, filter.0) }
+    unsafe { ffi::b2World_CastMover(target.raw(), origin.into_raw(), &cap, t, filter.0) }
 }
 
 pub(super) fn collide_mover_into_impl(
-    world: ffi::b2WorldId,
+    target: &QueryTarget,
     origin: Position,
     c1: Vec2,
     c2: Vec2,
@@ -449,10 +499,10 @@ pub(super) fn collide_mover_into_impl(
 ) {
     out.clear();
     let cap = make_capsule(c1, c2, radius);
-    let mut ctx = CollectCtx::from_cleared(out);
+    let mut ctx = CollectCtx::from_cleared(out, target.brand());
     unsafe {
         ffi::b2World_CollideMover(
-            world,
+            target.raw(),
             origin.into_raw(),
             &cap,
             filter.0,
@@ -464,7 +514,7 @@ pub(super) fn collide_mover_into_impl(
 }
 
 pub(super) fn collide_mover_impl(
-    world: ffi::b2WorldId,
+    target: &QueryTarget,
     origin: Position,
     c1: Vec2,
     c2: Vec2,
@@ -472,12 +522,12 @@ pub(super) fn collide_mover_impl(
     filter: QueryFilter,
 ) -> Vec<MoverPlaneResult> {
     let mut out = Vec::new();
-    collide_mover_into_impl(world, origin, c1, c2, radius, filter, &mut out);
+    collide_mover_into_impl(target, origin, c1, c2, radius, filter, &mut out);
     out
 }
 
 pub(super) fn overlap_polygon_points_with_offset_into_impl(
-    world: ffi::b2WorldId,
+    target: &QueryTarget,
     origin: Position,
     points: &ProxyPoints,
     radius: f32,
@@ -492,7 +542,7 @@ pub(super) fn overlap_polygon_points_with_offset_into_impl(
         true
     };
     let _ = visit_overlap_polygon_points_with_offset_impl(
-        world,
+        target,
         origin,
         points,
         radius,
@@ -504,7 +554,7 @@ pub(super) fn overlap_polygon_points_with_offset_into_impl(
 }
 
 pub(super) fn visit_overlap_polygon_points_with_offset_impl<F>(
-    world: ffi::b2WorldId,
+    target: &QueryTarget,
     origin: Position,
     points: &ProxyPoints,
     radius: f32,
@@ -519,11 +569,11 @@ where
     let Some(proxy) = make_offset_proxy_from_points(points, radius, position, angle_radians) else {
         return true;
     };
-    visit_overlap_shape_proxy_impl(world, origin, &proxy, filter, visit)
+    visit_overlap_shape_proxy_impl(target, origin, &proxy, filter, visit)
 }
 
 pub(super) fn overlap_polygon_points_with_offset_impl(
-    world: ffi::b2WorldId,
+    target: &QueryTarget,
     origin: Position,
     points: &ProxyPoints,
     radius: f32,
@@ -533,7 +583,7 @@ pub(super) fn overlap_polygon_points_with_offset_impl(
 ) -> Vec<ShapeId> {
     let mut out = Vec::new();
     overlap_polygon_points_with_offset_into_impl(
-        world,
+        target,
         origin,
         points,
         radius,
@@ -547,7 +597,7 @@ pub(super) fn overlap_polygon_points_with_offset_impl(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn cast_shape_points_with_offset_into_impl(
-    world: ffi::b2WorldId,
+    target: &QueryTarget,
     origin: Position,
     points: &ProxyPoints,
     radius: f32,
@@ -561,11 +611,11 @@ pub(super) fn cast_shape_points_with_offset_into_impl(
     let Some(proxy) = make_offset_proxy_from_points(points, radius, position, angle_radians) else {
         return;
     };
-    let mut ctx = CollectCtx::from_cleared(out);
+    let mut ctx = CollectCtx::from_cleared(out, target.brand());
     let t = translation.into_raw();
     unsafe {
         let _ = ffi::b2World_CastShape(
-            world,
+            target.raw(),
             origin.into_raw(),
             &proxy,
             t,
@@ -578,7 +628,7 @@ pub(super) fn cast_shape_points_with_offset_into_impl(
 }
 
 pub(super) fn cast_shape_points_with_offset_impl(
-    world: ffi::b2WorldId,
+    target: &QueryTarget,
     origin: Position,
     points: &ProxyPoints,
     radius: f32,
@@ -589,7 +639,7 @@ pub(super) fn cast_shape_points_with_offset_impl(
 ) -> Vec<RayResult> {
     let mut out = Vec::new();
     cast_shape_points_with_offset_into_impl(
-        world,
+        target,
         origin,
         points,
         radius,

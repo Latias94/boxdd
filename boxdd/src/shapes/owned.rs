@@ -1,13 +1,10 @@
 use super::*;
-use std::rc::Rc;
-
 /// A RAII-owned shape that is destroyed on drop.
 pub struct OwnedShape {
     id: ShapeId,
-    core: Arc<crate::core::world_core::WorldCore>,
+    core: Rc<crate::core::world_core::WorldCore>,
     destroy_on_drop: bool,
     update_body_mass_on_drop: bool,
-    _not_send: PhantomData<Rc<()>>,
 }
 
 impl ShapeRuntimeHandle for OwnedShape {
@@ -21,7 +18,7 @@ impl ShapeRuntimeHandle for OwnedShape {
 }
 
 impl OwnedShape {
-    pub(crate) fn new(core: Arc<crate::core::world_core::WorldCore>, id: ShapeId) -> Self {
+    pub(crate) fn new(core: Rc<crate::core::world_core::WorldCore>, id: ShapeId) -> Self {
         core.owned_shapes
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Self {
@@ -29,7 +26,6 @@ impl OwnedShape {
             core,
             destroy_on_drop: true,
             update_body_mass_on_drop: true,
-            _not_send: PhantomData,
         }
     }
 
@@ -498,61 +494,49 @@ impl OwnedShape {
     }
 
     pub fn update_body_mass_on_drop(mut self, flag: bool) -> Self {
+        self.core
+            .check_owned_policy_change()
+            .expect("owned shape drop policy cannot change while its world is unavailable");
         self.update_body_mass_on_drop = flag;
         self
     }
 
     /// Disarm RAII and return the raw id for manual lifetime management.
     pub fn into_id(mut self) -> ShapeId {
+        self.core
+            .check_owned_policy_change()
+            .expect("owned shape cannot be disarmed while its world is unavailable");
         self.destroy_on_drop = false;
         self.id
     }
 
     /// Destroy the shape immediately and disarm drop.
     pub fn destroy(mut self, update_body_mass: bool) {
-        if self.destroy_on_drop && unsafe { ffi::b2Shape_IsValid(raw_shape_id(self.id)) } {
-            if crate::core::callback_state::in_callback() || self.core.events_buffers_are_borrowed()
-            {
-                self.core
-                    .defer_destroy(crate::core::world_core::DeferredDestroy::Shape {
-                        id: self.id,
-                        update_body_mass,
-                    });
-            } else {
-                unsafe { ffi::b2DestroyShape(raw_shape_id(self.id), update_body_mass) };
-                let _ = self.core.clear_shape_user_data(self.id);
-                #[cfg(feature = "serialize")]
-                self.core.remove_shape_flags(self.id);
-            }
+        if self.destroy_on_drop {
+            self.core
+                .destroy_owned_or_defer(crate::core::world_core::DeferredDestroy::Shape {
+                    id: self.id,
+                    update_body_mass,
+                });
+            self.destroy_on_drop = false;
         }
-        self.destroy_on_drop = false;
     }
 }
 
 impl Drop for OwnedShape {
     fn drop(&mut self) {
         let _ = self.core.id;
-        let prev = self
-            .core
-            .owned_shapes
-            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-        debug_assert!(prev > 0, "owned shape counter underflow");
-        if self.destroy_on_drop && unsafe { ffi::b2Shape_IsValid(raw_shape_id(self.id)) } {
-            if crate::core::callback_state::in_callback() || self.core.events_buffers_are_borrowed()
-            {
-                self.core
-                    .defer_destroy(crate::core::world_core::DeferredDestroy::Shape {
-                        id: self.id,
-                        update_body_mass: self.update_body_mass_on_drop,
-                    });
-            } else {
-                unsafe {
-                    ffi::b2DestroyShape(raw_shape_id(self.id), self.update_body_mass_on_drop)
-                };
-                let _ = self.core.clear_shape_user_data(self.id);
-                #[cfg(feature = "serialize")]
-                self.core.remove_shape_flags(self.id);
-            }
+        let _ = self.core.owned_shapes.fetch_update(
+            std::sync::atomic::Ordering::Relaxed,
+            std::sync::atomic::Ordering::Relaxed,
+            |count| Some(count.saturating_sub(1)),
+        );
+        if self.destroy_on_drop {
+            self.core
+                .destroy_owned_or_defer(crate::core::world_core::DeferredDestroy::Shape {
+                    id: self.id,
+                    update_body_mass: self.update_body_mass_on_drop,
+                });
         }
     }
 }

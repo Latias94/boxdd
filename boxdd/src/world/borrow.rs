@@ -3,30 +3,29 @@ use super::*;
 fn borrow_world_scoped_handle<T, Id: Copy>(
     world: &mut World,
     id: Id,
-    is_valid: impl FnOnce(Id) -> bool,
-    wrap: impl FnOnce(Arc<WorldCore>, Id) -> T,
+    invalid: crate::error::ApiError,
+    check: impl FnOnce(&WorldCore, Id) -> crate::error::ApiResult<()>,
+    wrap: impl FnOnce(Rc<WorldCore>, Id) -> T,
 ) -> Option<T> {
     crate::core::callback_state::assert_not_in_callback();
-    if is_valid(id) {
-        Some(wrap(world.core_arc(), id))
-    } else {
-        None
+    let core = world.core_rc();
+    match check(&core, id) {
+        Ok(()) => Some(wrap(core, id)),
+        Err(error) if error == invalid => None,
+        Err(error) => panic!("cannot borrow handle from this world: {error}"),
     }
 }
 
 fn try_borrow_world_scoped_handle<T, Id: Copy>(
     world: &mut World,
     id: Id,
-    invalid: crate::error::ApiError,
-    is_valid: impl FnOnce(Id) -> bool,
-    wrap: impl FnOnce(Arc<WorldCore>, Id) -> T,
+    check: impl FnOnce(&WorldCore, Id) -> crate::error::ApiResult<()>,
+    wrap: impl FnOnce(Rc<WorldCore>, Id) -> T,
 ) -> crate::error::ApiResult<T> {
     crate::core::callback_state::check_not_in_callback()?;
-    if is_valid(id) {
-        Ok(wrap(world.core_arc(), id))
-    } else {
-        Err(invalid)
-    }
+    let core = world.core_rc();
+    check(&core, id)?;
+    Ok(wrap(core, id))
 }
 
 impl World {
@@ -35,19 +34,14 @@ impl World {
         borrow_world_scoped_handle(
             self,
             id,
-            |id| unsafe { ffi::b2Body_IsValid(raw_body_id(id)) },
+            crate::error::ApiError::InvalidBodyId,
+            WorldCore::check_body,
             Body::new,
         )
     }
 
     pub fn try_body<'w>(&'w mut self, id: BodyId) -> crate::error::ApiResult<Body<'w>> {
-        try_borrow_world_scoped_handle(
-            self,
-            id,
-            crate::error::ApiError::InvalidBodyId,
-            |id| unsafe { ffi::b2Body_IsValid(raw_body_id(id)) },
-            Body::new,
-        )
+        try_borrow_world_scoped_handle(self, id, WorldCore::check_body, Body::new)
     }
 
     /// Borrow a scoped joint handle by id (returns `None` if the id is invalid).
@@ -55,7 +49,8 @@ impl World {
         borrow_world_scoped_handle(
             self,
             id,
-            |id| unsafe { ffi::b2Joint_IsValid(raw_joint_id(id)) },
+            crate::error::ApiError::InvalidJointId,
+            WorldCore::check_joint,
             crate::joints::Joint::new,
         )
     }
@@ -64,13 +59,7 @@ impl World {
         &'w mut self,
         id: JointId,
     ) -> crate::error::ApiResult<crate::joints::Joint<'w>> {
-        try_borrow_world_scoped_handle(
-            self,
-            id,
-            crate::error::ApiError::InvalidJointId,
-            |id| unsafe { ffi::b2Joint_IsValid(raw_joint_id(id)) },
-            crate::joints::Joint::new,
-        )
+        try_borrow_world_scoped_handle(self, id, WorldCore::check_joint, crate::joints::Joint::new)
     }
 
     /// Borrow a scoped shape handle by id (returns `None` if the id is invalid).
@@ -78,7 +67,8 @@ impl World {
         borrow_world_scoped_handle(
             self,
             id,
-            |id| unsafe { ffi::b2Shape_IsValid(raw_shape_id(id)) },
+            crate::error::ApiError::InvalidShapeId,
+            WorldCore::check_shape,
             crate::shapes::Shape::new,
         )
     }
@@ -87,13 +77,7 @@ impl World {
         &'w mut self,
         id: ShapeId,
     ) -> crate::error::ApiResult<crate::shapes::Shape<'w>> {
-        try_borrow_world_scoped_handle(
-            self,
-            id,
-            crate::error::ApiError::InvalidShapeId,
-            |id| unsafe { ffi::b2Shape_IsValid(raw_shape_id(id)) },
-            crate::shapes::Shape::new,
-        )
+        try_borrow_world_scoped_handle(self, id, WorldCore::check_shape, crate::shapes::Shape::new)
     }
 
     /// Borrow a scoped chain handle by id (returns `None` if the id is invalid).
@@ -101,7 +85,8 @@ impl World {
         borrow_world_scoped_handle(
             self,
             id,
-            |id| unsafe { ffi::b2Chain_IsValid(raw_chain_id(id)) },
+            crate::error::ApiError::InvalidChainId,
+            WorldCore::check_chain,
             crate::shapes::chain::Chain::new,
         )
     }
@@ -113,8 +98,7 @@ impl World {
         try_borrow_world_scoped_handle(
             self,
             id,
-            crate::error::ApiError::InvalidChainId,
-            |id| unsafe { ffi::b2Chain_IsValid(raw_chain_id(id)) },
+            WorldCore::check_chain,
             crate::shapes::chain::Chain::new,
         )
     }

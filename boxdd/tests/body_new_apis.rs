@@ -5,11 +5,11 @@ fn approx_eq(a: f32, b: f32, eps: f32) -> bool {
 }
 
 fn same_shape_id(a: ShapeId, b: ShapeId) -> bool {
-    a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
+    a == b
 }
 
 fn same_joint_id(a: JointId, b: JointId) -> bool {
-    a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
+    a == b
 }
 
 #[test]
@@ -204,13 +204,14 @@ fn body_runtime_controls_and_enumeration_are_available_across_handle_and_world_a
         );
 
         let mut shape_buf = Vec::with_capacity(4);
-        let shape_buf_ptr = shape_buf.as_ptr();
         body.shapes_into(&mut shape_buf);
-        assert_eq!(shape_buf.as_ptr(), shape_buf_ptr);
         assert_eq!(shape_buf.len(), 2);
+        assert!(shape_buf.contains(&shape_a));
+        assert!(shape_buf.contains(&shape_b));
         body.try_shapes_into(&mut shape_buf).unwrap();
-        assert_eq!(shape_buf.as_ptr(), shape_buf_ptr);
         assert_eq!(shape_buf.len(), 2);
+        assert!(shape_buf.contains(&shape_a));
+        assert!(shape_buf.contains(&shape_b));
 
         assert_eq!(body.joint_count(), 1);
         assert_eq!(body.try_joint_count().unwrap(), 1);
@@ -219,13 +220,10 @@ fn body_runtime_controls_and_enumeration_are_available_across_handle_and_world_a
         assert!(same_joint_id(body_joints[0], joint_id));
 
         let mut joint_buf = Vec::with_capacity(4);
-        let joint_buf_ptr = joint_buf.as_ptr();
         body.joints_into(&mut joint_buf);
-        assert_eq!(joint_buf.as_ptr(), joint_buf_ptr);
-        assert_eq!(joint_buf.len(), 1);
+        assert_eq!(joint_buf.as_slice(), &[joint_id]);
         body.try_joints_into(&mut joint_buf).unwrap();
-        assert_eq!(joint_buf.as_ptr(), joint_buf_ptr);
-        assert_eq!(joint_buf.len(), 1);
+        assert_eq!(joint_buf.as_slice(), &[joint_id]);
     }
 
     assert!(approx_eq(world.body_rotation(body_id).angle(), 0.5, 1.0e-6));
@@ -300,15 +298,16 @@ fn body_runtime_controls_and_enumeration_are_available_across_handle_and_world_a
     );
 
     let mut world_shape_buf = Vec::with_capacity(4);
-    let world_shape_buf_ptr = world_shape_buf.as_ptr();
     world.body_shapes_into(body_id, &mut world_shape_buf);
-    assert_eq!(world_shape_buf.as_ptr(), world_shape_buf_ptr);
     assert_eq!(world_shape_buf.len(), 2);
+    assert!(world_shape_buf.contains(&shape_a));
+    assert!(world_shape_buf.contains(&shape_b));
     world
         .try_body_shapes_into(body_id, &mut world_shape_buf)
         .unwrap();
-    assert_eq!(world_shape_buf.as_ptr(), world_shape_buf_ptr);
     assert_eq!(world_shape_buf.len(), 2);
+    assert!(world_shape_buf.contains(&shape_a));
+    assert!(world_shape_buf.contains(&shape_b));
 
     assert_eq!(world.body_joint_count(body_id), 1);
     assert_eq!(world.try_body_joint_count(body_id).unwrap(), 1);
@@ -317,15 +316,12 @@ fn body_runtime_controls_and_enumeration_are_available_across_handle_and_world_a
     assert!(same_joint_id(world_joints[0], joint_id));
 
     let mut world_joint_buf = Vec::with_capacity(4);
-    let world_joint_buf_ptr = world_joint_buf.as_ptr();
     world.body_joints_into(body_id, &mut world_joint_buf);
-    assert_eq!(world_joint_buf.as_ptr(), world_joint_buf_ptr);
-    assert_eq!(world_joint_buf.len(), 1);
+    assert_eq!(world_joint_buf.as_slice(), &[joint_id]);
     world
         .try_body_joints_into(body_id, &mut world_joint_buf)
         .unwrap();
-    assert_eq!(world_joint_buf.as_ptr(), world_joint_buf_ptr);
-    assert_eq!(world_joint_buf.len(), 1);
+    assert_eq!(world_joint_buf.as_slice(), &[joint_id]);
 }
 
 #[test]
@@ -533,15 +529,16 @@ fn world_handle_body_runtime_queries_match_world_queries() {
             .any(|id| same_shape_id(id, shape_b))
     );
     let mut handle_shape_buf = Vec::with_capacity(4);
-    let handle_shape_buf_ptr = handle_shape_buf.as_ptr();
     handle.body_shapes_into(body_id, &mut handle_shape_buf);
-    assert_eq!(handle_shape_buf.as_ptr(), handle_shape_buf_ptr);
     assert_eq!(handle_shape_buf.len(), 2);
+    assert!(handle_shape_buf.contains(&shape_a));
+    assert!(handle_shape_buf.contains(&shape_b));
     handle
         .try_body_shapes_into(body_id, &mut handle_shape_buf)
         .unwrap();
-    assert_eq!(handle_shape_buf.as_ptr(), handle_shape_buf_ptr);
     assert_eq!(handle_shape_buf.len(), 2);
+    assert!(handle_shape_buf.contains(&shape_a));
+    assert!(handle_shape_buf.contains(&shape_b));
 
     assert_eq!(handle.body_joint_count(body_id), 1);
     assert_eq!(handle.try_body_joint_count(body_id).unwrap(), 1);
@@ -549,15 +546,12 @@ fn world_handle_body_runtime_queries_match_world_queries() {
     assert_eq!(handle_joints.len(), 1);
     assert!(same_joint_id(handle_joints[0], joint_id));
     let mut handle_joint_buf = Vec::with_capacity(4);
-    let handle_joint_buf_ptr = handle_joint_buf.as_ptr();
     handle.body_joints_into(body_id, &mut handle_joint_buf);
-    assert_eq!(handle_joint_buf.as_ptr(), handle_joint_buf_ptr);
-    assert_eq!(handle_joint_buf.len(), 1);
+    assert_eq!(handle_joint_buf.as_slice(), &[joint_id]);
     handle
         .try_body_joints_into(body_id, &mut handle_joint_buf)
         .unwrap();
-    assert_eq!(handle_joint_buf.as_ptr(), handle_joint_buf_ptr);
-    assert_eq!(handle_joint_buf.len(), 1);
+    assert_eq!(handle_joint_buf.as_slice(), &[joint_id]);
 
     assert_eq!(handle.body_type(body_id), BodyType::Dynamic);
     assert_eq!(handle.try_body_type(body_id).unwrap(), BodyType::Dynamic);

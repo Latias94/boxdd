@@ -112,15 +112,26 @@ fn prismatic_speed_impl(id: JointId) -> f32 {
 
 impl World {
     pub fn prismatic_spring_enabled(&self, id: JointId) -> bool {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_spring_enabled_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_spring_enabled_impl,
+        )
     }
 
     pub fn try_prismatic_spring_enabled(&self, id: JointId) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_spring_enabled_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_spring_enabled_impl,
+        )
     }
 
     pub fn prismatic_enable_spring(&mut self, id: JointId, enable: bool) {
-        joint_kind_set_checked_impl(
+        joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Prismatic,
             enable,
@@ -129,7 +140,8 @@ impl World {
     }
 
     pub fn try_prismatic_enable_spring(&mut self, id: JointId, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Prismatic,
             enable,
@@ -138,15 +150,26 @@ impl World {
     }
 
     pub fn prismatic_spring_hertz(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_spring_hertz_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_spring_hertz_impl,
+        )
     }
 
     pub fn try_prismatic_spring_hertz(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_spring_hertz_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_spring_hertz_impl,
+        )
     }
 
     pub fn prismatic_set_spring_hertz(&mut self, id: JointId, hertz: f32) {
-        joint_kind_set_checked_impl(
+        joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Prismatic,
             hertz,
@@ -155,7 +178,8 @@ impl World {
     }
 
     pub fn try_prismatic_set_spring_hertz(&mut self, id: JointId, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Prismatic,
             hertz,
@@ -164,7 +188,8 @@ impl World {
     }
 
     pub fn prismatic_spring_damping_ratio(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(
+        joint_kind_get_checked_in_impl(
+            self.core(),
             id,
             JointType::Prismatic,
             prismatic_spring_damping_ratio_impl,
@@ -172,7 +197,8 @@ impl World {
     }
 
     pub fn try_prismatic_spring_damping_ratio(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
             id,
             JointType::Prismatic,
             prismatic_spring_damping_ratio_impl,
@@ -180,7 +206,8 @@ impl World {
     }
 
     pub fn prismatic_set_spring_damping_ratio(&mut self, id: JointId, damping_ratio: f32) {
-        joint_kind_set_checked_impl(
+        joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Prismatic,
             damping_ratio,
@@ -193,7 +220,8 @@ impl World {
         id: JointId,
         damping_ratio: f32,
     ) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Prismatic,
             damping_ratio,
@@ -202,15 +230,26 @@ impl World {
     }
 
     pub fn prismatic_target_translation(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_target_translation_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_target_translation_impl,
+        )
     }
 
     pub fn try_prismatic_target_translation(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_target_translation_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_target_translation_impl,
+        )
     }
 
     pub fn prismatic_set_target_translation(&mut self, id: JointId, translation: f32) {
-        joint_kind_set_checked_impl(
+        joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Prismatic,
             translation,
@@ -223,7 +262,8 @@ impl World {
         id: JointId,
         translation: f32,
     ) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Prismatic,
             translation,
@@ -232,15 +272,26 @@ impl World {
     }
 
     pub fn prismatic_limit_enabled(&self, id: JointId) -> bool {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_limit_enabled_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_limit_enabled_impl,
+        )
     }
 
     pub fn try_prismatic_limit_enabled(&self, id: JointId) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_limit_enabled_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_limit_enabled_impl,
+        )
     }
 
     pub fn prismatic_enable_limit(&mut self, id: JointId, enable: bool) {
-        joint_kind_set_checked_impl(
+        joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Prismatic,
             enable,
@@ -249,7 +300,8 @@ impl World {
     }
 
     pub fn try_prismatic_enable_limit(&mut self, id: JointId, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Prismatic,
             enable,
@@ -258,23 +310,44 @@ impl World {
     }
 
     pub fn prismatic_lower_limit(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_lower_limit_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_lower_limit_impl,
+        )
     }
 
     pub fn try_prismatic_lower_limit(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_lower_limit_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_lower_limit_impl,
+        )
     }
 
     pub fn prismatic_upper_limit(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_upper_limit_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_upper_limit_impl,
+        )
     }
 
     pub fn try_prismatic_upper_limit(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_upper_limit_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_upper_limit_impl,
+        )
     }
 
     pub fn prismatic_set_limits(&mut self, id: JointId, lower: f32, upper: f32) {
-        joint_kind_set2_checked_validated_impl(
+        joint_kind_set2_checked_validated_in_impl(
+            self.core(),
             id,
             JointType::Prismatic,
             lower,
@@ -290,7 +363,8 @@ impl World {
         lower: f32,
         upper: f32,
     ) -> ApiResult<()> {
-        try_joint_kind_set2_checked_validated_impl(
+        try_joint_kind_set2_checked_validated_in_impl(
+            self.core(),
             id,
             JointType::Prismatic,
             lower,
@@ -301,15 +375,26 @@ impl World {
     }
 
     pub fn prismatic_motor_enabled(&self, id: JointId) -> bool {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_motor_enabled_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_motor_enabled_impl,
+        )
     }
 
     pub fn try_prismatic_motor_enabled(&self, id: JointId) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_motor_enabled_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_motor_enabled_impl,
+        )
     }
 
     pub fn prismatic_enable_motor(&mut self, id: JointId, enable: bool) {
-        joint_kind_set_checked_impl(
+        joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Prismatic,
             enable,
@@ -318,7 +403,8 @@ impl World {
     }
 
     pub fn try_prismatic_enable_motor(&mut self, id: JointId, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Prismatic,
             enable,
@@ -327,15 +413,26 @@ impl World {
     }
 
     pub fn prismatic_motor_speed(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_motor_speed_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_motor_speed_impl,
+        )
     }
 
     pub fn try_prismatic_motor_speed(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_motor_speed_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_motor_speed_impl,
+        )
     }
 
     pub fn prismatic_set_motor_speed(&mut self, id: JointId, speed: f32) {
-        joint_kind_set_checked_impl(
+        joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Prismatic,
             speed,
@@ -344,7 +441,8 @@ impl World {
     }
 
     pub fn try_prismatic_set_motor_speed(&mut self, id: JointId, speed: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Prismatic,
             speed,
@@ -353,15 +451,26 @@ impl World {
     }
 
     pub fn prismatic_max_motor_force(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_max_motor_force_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_max_motor_force_impl,
+        )
     }
 
     pub fn try_prismatic_max_motor_force(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_max_motor_force_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_max_motor_force_impl,
+        )
     }
 
     pub fn prismatic_set_max_motor_force(&mut self, id: JointId, force: f32) {
-        joint_kind_set_checked_impl(
+        joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Prismatic,
             force,
@@ -370,7 +479,8 @@ impl World {
     }
 
     pub fn try_prismatic_set_max_motor_force(&mut self, id: JointId, force: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Prismatic,
             force,
@@ -379,49 +489,95 @@ impl World {
     }
 
     pub fn prismatic_motor_force(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_motor_force_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_motor_force_impl,
+        )
     }
 
     pub fn try_prismatic_motor_force(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_motor_force_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_motor_force_impl,
+        )
     }
 
     pub fn prismatic_translation(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_translation_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_translation_impl,
+        )
     }
 
     pub fn try_prismatic_translation(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_translation_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_translation_impl,
+        )
     }
 
     pub fn prismatic_speed(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_speed_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Prismatic, prismatic_speed_impl)
     }
 
     pub fn try_prismatic_speed(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_speed_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_speed_impl,
+        )
     }
 }
 
 impl WorldHandle {
     pub fn prismatic_spring_enabled(&self, id: JointId) -> bool {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_spring_enabled_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_spring_enabled_impl,
+        )
     }
 
     pub fn try_prismatic_spring_enabled(&self, id: JointId) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_spring_enabled_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_spring_enabled_impl,
+        )
     }
 
     pub fn prismatic_spring_hertz(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_spring_hertz_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_spring_hertz_impl,
+        )
     }
 
     pub fn try_prismatic_spring_hertz(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_spring_hertz_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_spring_hertz_impl,
+        )
     }
 
     pub fn prismatic_spring_damping_ratio(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(
+        joint_kind_get_checked_in_impl(
+            self.core(),
             id,
             JointType::Prismatic,
             prismatic_spring_damping_ratio_impl,
@@ -429,7 +585,8 @@ impl WorldHandle {
     }
 
     pub fn try_prismatic_spring_damping_ratio(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
             id,
             JointType::Prismatic,
             prismatic_spring_damping_ratio_impl,
@@ -437,108 +594,204 @@ impl WorldHandle {
     }
 
     pub fn prismatic_target_translation(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_target_translation_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_target_translation_impl,
+        )
     }
 
     pub fn try_prismatic_target_translation(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_target_translation_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_target_translation_impl,
+        )
     }
 
     pub fn prismatic_limit_enabled(&self, id: JointId) -> bool {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_limit_enabled_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_limit_enabled_impl,
+        )
     }
 
     pub fn try_prismatic_limit_enabled(&self, id: JointId) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_limit_enabled_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_limit_enabled_impl,
+        )
     }
 
     pub fn prismatic_lower_limit(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_lower_limit_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_lower_limit_impl,
+        )
     }
 
     pub fn try_prismatic_lower_limit(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_lower_limit_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_lower_limit_impl,
+        )
     }
 
     pub fn prismatic_upper_limit(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_upper_limit_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_upper_limit_impl,
+        )
     }
 
     pub fn try_prismatic_upper_limit(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_upper_limit_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_upper_limit_impl,
+        )
     }
 
     pub fn prismatic_motor_enabled(&self, id: JointId) -> bool {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_motor_enabled_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_motor_enabled_impl,
+        )
     }
 
     pub fn try_prismatic_motor_enabled(&self, id: JointId) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_motor_enabled_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_motor_enabled_impl,
+        )
     }
 
     pub fn prismatic_motor_speed(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_motor_speed_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_motor_speed_impl,
+        )
     }
 
     pub fn try_prismatic_motor_speed(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_motor_speed_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_motor_speed_impl,
+        )
     }
 
     pub fn prismatic_max_motor_force(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_max_motor_force_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_max_motor_force_impl,
+        )
     }
 
     pub fn try_prismatic_max_motor_force(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_max_motor_force_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_max_motor_force_impl,
+        )
     }
 
     pub fn prismatic_motor_force(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_motor_force_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_motor_force_impl,
+        )
     }
 
     pub fn try_prismatic_motor_force(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_motor_force_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_motor_force_impl,
+        )
     }
 
     pub fn prismatic_translation(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_translation_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_translation_impl,
+        )
     }
 
     pub fn try_prismatic_translation(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_translation_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_translation_impl,
+        )
     }
 
     pub fn prismatic_speed(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_speed_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Prismatic, prismatic_speed_impl)
     }
 
     pub fn try_prismatic_speed(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Prismatic, prismatic_speed_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Prismatic,
+            prismatic_speed_impl,
+        )
     }
 }
 
-trait PrismaticJointRuntimeHandle {
-    fn prismatic_joint_id(&self) -> JointId;
-
+trait PrismaticJointRuntimeHandle: TypedJointRuntimeHandle {
     fn prismatic_spring_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_spring_enabled_impl,
         )
     }
 
     fn try_prismatic_spring_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_spring_enabled_impl,
         )
     }
 
     fn prismatic_enable_spring(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(
-            self.prismatic_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             enable,
             prismatic_enable_spring_impl,
@@ -546,8 +799,9 @@ trait PrismaticJointRuntimeHandle {
     }
 
     fn try_prismatic_enable_spring(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.prismatic_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             enable,
             prismatic_enable_spring_impl,
@@ -555,24 +809,27 @@ trait PrismaticJointRuntimeHandle {
     }
 
     fn prismatic_spring_hertz(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_spring_hertz_impl,
         )
     }
 
     fn try_prismatic_spring_hertz(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_spring_hertz_impl,
         )
     }
 
     fn prismatic_set_spring_hertz(&mut self, hertz: f32) {
-        joint_kind_set_checked_impl(
-            self.prismatic_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             hertz,
             prismatic_set_spring_hertz_impl,
@@ -580,8 +837,9 @@ trait PrismaticJointRuntimeHandle {
     }
 
     fn try_prismatic_set_spring_hertz(&mut self, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.prismatic_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             hertz,
             prismatic_set_spring_hertz_impl,
@@ -589,24 +847,27 @@ trait PrismaticJointRuntimeHandle {
     }
 
     fn prismatic_spring_damping_ratio(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_spring_damping_ratio_impl,
         )
     }
 
     fn try_prismatic_spring_damping_ratio(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_spring_damping_ratio_impl,
         )
     }
 
     fn prismatic_set_spring_damping_ratio(&mut self, damping_ratio: f32) {
-        joint_kind_set_checked_impl(
-            self.prismatic_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             damping_ratio,
             prismatic_set_spring_damping_ratio_impl,
@@ -614,8 +875,9 @@ trait PrismaticJointRuntimeHandle {
     }
 
     fn try_prismatic_set_spring_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.prismatic_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             damping_ratio,
             prismatic_set_spring_damping_ratio_impl,
@@ -623,24 +885,27 @@ trait PrismaticJointRuntimeHandle {
     }
 
     fn prismatic_target_translation(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_target_translation_impl,
         )
     }
 
     fn try_prismatic_target_translation(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_target_translation_impl,
         )
     }
 
     fn prismatic_set_target_translation(&mut self, translation: f32) {
-        joint_kind_set_checked_impl(
-            self.prismatic_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             translation,
             prismatic_set_target_translation_impl,
@@ -648,8 +913,9 @@ trait PrismaticJointRuntimeHandle {
     }
 
     fn try_prismatic_set_target_translation(&mut self, translation: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.prismatic_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             translation,
             prismatic_set_target_translation_impl,
@@ -657,24 +923,27 @@ trait PrismaticJointRuntimeHandle {
     }
 
     fn prismatic_limit_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_limit_enabled_impl,
         )
     }
 
     fn try_prismatic_limit_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_limit_enabled_impl,
         )
     }
 
     fn prismatic_enable_limit(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(
-            self.prismatic_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             enable,
             prismatic_enable_limit_impl,
@@ -682,8 +951,9 @@ trait PrismaticJointRuntimeHandle {
     }
 
     fn try_prismatic_enable_limit(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.prismatic_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             enable,
             prismatic_enable_limit_impl,
@@ -691,40 +961,45 @@ trait PrismaticJointRuntimeHandle {
     }
 
     fn prismatic_lower_limit(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_lower_limit_impl,
         )
     }
 
     fn try_prismatic_lower_limit(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_lower_limit_impl,
         )
     }
 
     fn prismatic_upper_limit(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_upper_limit_impl,
         )
     }
 
     fn try_prismatic_upper_limit(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_upper_limit_impl,
         )
     }
 
     fn prismatic_set_limits(&mut self, lower: f32, upper: f32) {
-        joint_kind_set2_checked_validated_impl(
-            self.prismatic_joint_id(),
+        joint_kind_set2_checked_validated_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             lower,
             upper,
@@ -734,8 +1009,9 @@ trait PrismaticJointRuntimeHandle {
     }
 
     fn try_prismatic_set_limits(&mut self, lower: f32, upper: f32) -> ApiResult<()> {
-        try_joint_kind_set2_checked_validated_impl(
-            self.prismatic_joint_id(),
+        try_joint_kind_set2_checked_validated_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             lower,
             upper,
@@ -745,24 +1021,27 @@ trait PrismaticJointRuntimeHandle {
     }
 
     fn prismatic_motor_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_motor_enabled_impl,
         )
     }
 
     fn try_prismatic_motor_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_motor_enabled_impl,
         )
     }
 
     fn prismatic_enable_motor(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(
-            self.prismatic_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             enable,
             prismatic_enable_motor_impl,
@@ -770,8 +1049,9 @@ trait PrismaticJointRuntimeHandle {
     }
 
     fn try_prismatic_enable_motor(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.prismatic_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             enable,
             prismatic_enable_motor_impl,
@@ -779,24 +1059,27 @@ trait PrismaticJointRuntimeHandle {
     }
 
     fn prismatic_motor_speed(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_motor_speed_impl,
         )
     }
 
     fn try_prismatic_motor_speed(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_motor_speed_impl,
         )
     }
 
     fn prismatic_set_motor_speed(&mut self, speed: f32) {
-        joint_kind_set_checked_impl(
-            self.prismatic_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             speed,
             prismatic_set_motor_speed_impl,
@@ -804,8 +1087,9 @@ trait PrismaticJointRuntimeHandle {
     }
 
     fn try_prismatic_set_motor_speed(&mut self, speed: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.prismatic_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             speed,
             prismatic_set_motor_speed_impl,
@@ -813,24 +1097,27 @@ trait PrismaticJointRuntimeHandle {
     }
 
     fn prismatic_max_motor_force(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_max_motor_force_impl,
         )
     }
 
     fn try_prismatic_max_motor_force(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_max_motor_force_impl,
         )
     }
 
     fn prismatic_set_max_motor_force(&mut self, force: f32) {
-        joint_kind_set_checked_impl(
-            self.prismatic_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             force,
             prismatic_set_max_motor_force_impl,
@@ -838,8 +1125,9 @@ trait PrismaticJointRuntimeHandle {
     }
 
     fn try_prismatic_set_max_motor_force(&mut self, force: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.prismatic_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             force,
             prismatic_set_max_motor_force_impl,
@@ -847,59 +1135,61 @@ trait PrismaticJointRuntimeHandle {
     }
 
     fn prismatic_motor_force(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_motor_force_impl,
         )
     }
 
     fn try_prismatic_motor_force(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_motor_force_impl,
         )
     }
 
     fn prismatic_translation(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_translation_impl,
         )
     }
 
     fn try_prismatic_translation(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_translation_impl,
         )
     }
 
     fn prismatic_speed(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_speed_impl,
         )
     }
 
     fn try_prismatic_speed(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.prismatic_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Prismatic,
             prismatic_speed_impl,
         )
     }
 }
 
-impl PrismaticJointRuntimeHandle for OwnedJoint {
-    fn prismatic_joint_id(&self) -> JointId {
-        self.id()
-    }
-}
+impl PrismaticJointRuntimeHandle for OwnedJoint {}
 
 impl OwnedJoint {
     pub fn prismatic_spring_enabled(&self) -> bool {
@@ -1036,11 +1326,7 @@ impl OwnedJoint {
     }
 }
 
-impl<'w> PrismaticJointRuntimeHandle for Joint<'w> {
-    fn prismatic_joint_id(&self) -> JointId {
-        self.id()
-    }
-}
+impl PrismaticJointRuntimeHandle for Joint<'_> {}
 
 impl<'w> Joint<'w> {
     pub fn prismatic_spring_enabled(&self) -> bool {

@@ -107,19 +107,36 @@ fn revolute_set_max_motor_torque_impl(id: JointId, value: f32) {
 
 impl World {
     pub fn revolute_spring_enabled(&self, id: JointId) -> bool {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_spring_enabled_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_spring_enabled_impl,
+        )
     }
 
     pub fn try_revolute_spring_enabled(&self, id: JointId) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_spring_enabled_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_spring_enabled_impl,
+        )
     }
 
     pub fn revolute_enable_spring(&mut self, id: JointId, enable: bool) {
-        joint_kind_set_checked_impl(id, JointType::Revolute, enable, revolute_enable_spring_impl)
+        joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            enable,
+            revolute_enable_spring_impl,
+        )
     }
 
     pub fn try_revolute_enable_spring(&mut self, id: JointId, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Revolute,
             enable,
@@ -128,15 +145,26 @@ impl World {
     }
 
     pub fn revolute_spring_hertz(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_spring_hertz_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_spring_hertz_impl,
+        )
     }
 
     pub fn try_revolute_spring_hertz(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_spring_hertz_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_spring_hertz_impl,
+        )
     }
 
     pub fn revolute_set_spring_hertz(&mut self, id: JointId, hertz: f32) {
-        joint_kind_set_checked_impl(
+        joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Revolute,
             hertz,
@@ -145,7 +173,8 @@ impl World {
     }
 
     pub fn try_revolute_set_spring_hertz(&mut self, id: JointId, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Revolute,
             hertz,
@@ -154,15 +183,26 @@ impl World {
     }
 
     pub fn revolute_spring_damping_ratio(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_spring_damping_ratio_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_spring_damping_ratio_impl,
+        )
     }
 
     pub fn try_revolute_spring_damping_ratio(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_spring_damping_ratio_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_spring_damping_ratio_impl,
+        )
     }
 
     pub fn revolute_set_spring_damping_ratio(&mut self, id: JointId, damping_ratio: f32) {
-        joint_kind_set_checked_impl(
+        joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Revolute,
             damping_ratio,
@@ -175,7 +215,8 @@ impl World {
         id: JointId,
         damping_ratio: f32,
     ) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Revolute,
             damping_ratio,
@@ -184,15 +225,26 @@ impl World {
     }
 
     pub fn revolute_target_angle(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_target_angle_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_target_angle_impl,
+        )
     }
 
     pub fn try_revolute_target_angle(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_target_angle_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_target_angle_impl,
+        )
     }
 
     pub fn revolute_set_target_angle(&mut self, id: JointId, angle: f32) {
-        joint_kind_set_checked_impl(
+        joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Revolute,
             angle,
@@ -201,7 +253,8 @@ impl World {
     }
 
     pub fn try_revolute_set_target_angle(&mut self, id: JointId, angle: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Revolute,
             angle,
@@ -210,47 +263,95 @@ impl World {
     }
 
     pub fn revolute_angle(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_angle_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Revolute, revolute_angle_impl)
     }
 
     pub fn try_revolute_angle(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_angle_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_angle_impl,
+        )
     }
 
     pub fn revolute_limit_enabled(&self, id: JointId) -> bool {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_limit_enabled_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_limit_enabled_impl,
+        )
     }
 
     pub fn try_revolute_limit_enabled(&self, id: JointId) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_limit_enabled_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_limit_enabled_impl,
+        )
     }
 
     pub fn revolute_enable_limit(&mut self, id: JointId, enable: bool) {
-        joint_kind_set_checked_impl(id, JointType::Revolute, enable, revolute_enable_limit_impl)
+        joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            enable,
+            revolute_enable_limit_impl,
+        )
     }
 
     pub fn try_revolute_enable_limit(&mut self, id: JointId, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(id, JointType::Revolute, enable, revolute_enable_limit_impl)
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            enable,
+            revolute_enable_limit_impl,
+        )
     }
 
     pub fn revolute_lower_limit(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_lower_limit_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_lower_limit_impl,
+        )
     }
 
     pub fn try_revolute_lower_limit(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_lower_limit_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_lower_limit_impl,
+        )
     }
 
     pub fn revolute_upper_limit(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_upper_limit_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_upper_limit_impl,
+        )
     }
 
     pub fn try_revolute_upper_limit(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_upper_limit_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_upper_limit_impl,
+        )
     }
 
     pub fn revolute_set_limits(&mut self, id: JointId, lower: f32, upper: f32) {
-        joint_kind_set2_checked_validated_impl(
+        joint_kind_set2_checked_validated_in_impl(
+            self.core(),
             id,
             JointType::Revolute,
             lower,
@@ -266,7 +367,8 @@ impl World {
         lower: f32,
         upper: f32,
     ) -> ApiResult<()> {
-        try_joint_kind_set2_checked_validated_impl(
+        try_joint_kind_set2_checked_validated_in_impl(
+            self.core(),
             id,
             JointType::Revolute,
             lower,
@@ -277,31 +379,64 @@ impl World {
     }
 
     pub fn revolute_motor_enabled(&self, id: JointId) -> bool {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_motor_enabled_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_motor_enabled_impl,
+        )
     }
 
     pub fn try_revolute_motor_enabled(&self, id: JointId) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_motor_enabled_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_motor_enabled_impl,
+        )
     }
 
     pub fn revolute_enable_motor(&mut self, id: JointId, enable: bool) {
-        joint_kind_set_checked_impl(id, JointType::Revolute, enable, revolute_enable_motor_impl)
+        joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            enable,
+            revolute_enable_motor_impl,
+        )
     }
 
     pub fn try_revolute_enable_motor(&mut self, id: JointId, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(id, JointType::Revolute, enable, revolute_enable_motor_impl)
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            enable,
+            revolute_enable_motor_impl,
+        )
     }
 
     pub fn revolute_motor_speed(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_motor_speed_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_motor_speed_impl,
+        )
     }
 
     pub fn try_revolute_motor_speed(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_motor_speed_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_motor_speed_impl,
+        )
     }
 
     pub fn revolute_set_motor_speed(&mut self, id: JointId, speed: f32) {
-        joint_kind_set_checked_impl(
+        joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Revolute,
             speed,
@@ -310,7 +445,8 @@ impl World {
     }
 
     pub fn try_revolute_set_motor_speed(&mut self, id: JointId, speed: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Revolute,
             speed,
@@ -319,23 +455,44 @@ impl World {
     }
 
     pub fn revolute_motor_torque(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_motor_torque_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_motor_torque_impl,
+        )
     }
 
     pub fn try_revolute_motor_torque(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_motor_torque_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_motor_torque_impl,
+        )
     }
 
     pub fn revolute_max_motor_torque(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_max_motor_torque_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_max_motor_torque_impl,
+        )
     }
 
     pub fn try_revolute_max_motor_torque(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_max_motor_torque_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_max_motor_torque_impl,
+        )
     }
 
     pub fn revolute_set_max_motor_torque(&mut self, id: JointId, torque: f32) {
-        joint_kind_set_checked_impl(
+        joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Revolute,
             torque,
@@ -344,7 +501,8 @@ impl World {
     }
 
     pub fn try_revolute_set_max_motor_torque(&mut self, id: JointId, torque: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Revolute,
             torque,
@@ -355,99 +513,214 @@ impl World {
 
 impl WorldHandle {
     pub fn revolute_spring_enabled(&self, id: JointId) -> bool {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_spring_enabled_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_spring_enabled_impl,
+        )
     }
 
     pub fn try_revolute_spring_enabled(&self, id: JointId) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_spring_enabled_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_spring_enabled_impl,
+        )
     }
 
     pub fn revolute_spring_hertz(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_spring_hertz_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_spring_hertz_impl,
+        )
     }
 
     pub fn try_revolute_spring_hertz(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_spring_hertz_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_spring_hertz_impl,
+        )
     }
 
     pub fn revolute_spring_damping_ratio(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_spring_damping_ratio_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_spring_damping_ratio_impl,
+        )
     }
 
     pub fn try_revolute_spring_damping_ratio(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_spring_damping_ratio_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_spring_damping_ratio_impl,
+        )
     }
 
     pub fn revolute_target_angle(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_target_angle_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_target_angle_impl,
+        )
     }
 
     pub fn try_revolute_target_angle(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_target_angle_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_target_angle_impl,
+        )
     }
 
     pub fn revolute_angle(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_angle_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Revolute, revolute_angle_impl)
     }
 
     pub fn try_revolute_angle(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_angle_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_angle_impl,
+        )
     }
 
     pub fn revolute_limit_enabled(&self, id: JointId) -> bool {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_limit_enabled_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_limit_enabled_impl,
+        )
     }
 
     pub fn try_revolute_limit_enabled(&self, id: JointId) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_limit_enabled_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_limit_enabled_impl,
+        )
     }
 
     pub fn revolute_lower_limit(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_lower_limit_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_lower_limit_impl,
+        )
     }
 
     pub fn try_revolute_lower_limit(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_lower_limit_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_lower_limit_impl,
+        )
     }
 
     pub fn revolute_upper_limit(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_upper_limit_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_upper_limit_impl,
+        )
     }
 
     pub fn try_revolute_upper_limit(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_upper_limit_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_upper_limit_impl,
+        )
     }
 
     pub fn revolute_motor_enabled(&self, id: JointId) -> bool {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_motor_enabled_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_motor_enabled_impl,
+        )
     }
 
     pub fn try_revolute_motor_enabled(&self, id: JointId) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_motor_enabled_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_motor_enabled_impl,
+        )
     }
 
     pub fn revolute_motor_speed(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_motor_speed_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_motor_speed_impl,
+        )
     }
 
     pub fn try_revolute_motor_speed(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_motor_speed_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_motor_speed_impl,
+        )
     }
 
     pub fn revolute_motor_torque(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_motor_torque_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_motor_torque_impl,
+        )
     }
 
     pub fn try_revolute_motor_torque(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_motor_torque_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_motor_torque_impl,
+        )
     }
 
     pub fn revolute_max_motor_torque(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Revolute, revolute_max_motor_torque_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_max_motor_torque_impl,
+        )
     }
 
     pub fn try_revolute_max_motor_torque(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Revolute, revolute_max_motor_torque_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Revolute,
+            revolute_max_motor_torque_impl,
+        )
     }
 }
 
@@ -709,28 +982,29 @@ impl<'w> Joint<'w> {
     }
 }
 
-trait RevoluteJointRuntimeHandle {
-    fn revolute_joint_id(&self) -> JointId;
-
+trait RevoluteJointRuntimeHandle: TypedJointRuntimeHandle {
     fn revolute_spring_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_spring_enabled_impl,
         )
     }
 
     fn try_revolute_spring_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_spring_enabled_impl,
         )
     }
 
     fn revolute_enable_spring(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(
-            self.revolute_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             enable,
             revolute_enable_spring_impl,
@@ -738,8 +1012,9 @@ trait RevoluteJointRuntimeHandle {
     }
 
     fn try_revolute_enable_spring(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.revolute_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             enable,
             revolute_enable_spring_impl,
@@ -747,24 +1022,27 @@ trait RevoluteJointRuntimeHandle {
     }
 
     fn revolute_spring_hertz(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_spring_hertz_impl,
         )
     }
 
     fn try_revolute_spring_hertz(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_spring_hertz_impl,
         )
     }
 
     fn revolute_set_spring_hertz(&mut self, hertz: f32) {
-        joint_kind_set_checked_impl(
-            self.revolute_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             hertz,
             revolute_set_spring_hertz_impl,
@@ -772,8 +1050,9 @@ trait RevoluteJointRuntimeHandle {
     }
 
     fn try_revolute_set_spring_hertz(&mut self, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.revolute_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             hertz,
             revolute_set_spring_hertz_impl,
@@ -781,24 +1060,27 @@ trait RevoluteJointRuntimeHandle {
     }
 
     fn revolute_spring_damping_ratio(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_spring_damping_ratio_impl,
         )
     }
 
     fn try_revolute_spring_damping_ratio(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_spring_damping_ratio_impl,
         )
     }
 
     fn revolute_set_spring_damping_ratio(&mut self, damping_ratio: f32) {
-        joint_kind_set_checked_impl(
-            self.revolute_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             damping_ratio,
             revolute_set_spring_damping_ratio_impl,
@@ -806,8 +1088,9 @@ trait RevoluteJointRuntimeHandle {
     }
 
     fn try_revolute_set_spring_damping_ratio(&mut self, damping_ratio: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.revolute_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             damping_ratio,
             revolute_set_spring_damping_ratio_impl,
@@ -815,24 +1098,27 @@ trait RevoluteJointRuntimeHandle {
     }
 
     fn revolute_target_angle(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_target_angle_impl,
         )
     }
 
     fn try_revolute_target_angle(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_target_angle_impl,
         )
     }
 
     fn revolute_set_target_angle(&mut self, angle: f32) {
-        joint_kind_set_checked_impl(
-            self.revolute_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             angle,
             revolute_set_target_angle_impl,
@@ -840,8 +1126,9 @@ trait RevoluteJointRuntimeHandle {
     }
 
     fn try_revolute_set_target_angle(&mut self, angle: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.revolute_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             angle,
             revolute_set_target_angle_impl,
@@ -849,40 +1136,45 @@ trait RevoluteJointRuntimeHandle {
     }
 
     fn revolute_angle(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_angle_impl,
         )
     }
 
     fn try_revolute_angle(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_angle_impl,
         )
     }
 
     fn revolute_limit_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_limit_enabled_impl,
         )
     }
 
     fn try_revolute_limit_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_limit_enabled_impl,
         )
     }
 
     fn revolute_enable_limit(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(
-            self.revolute_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             enable,
             revolute_enable_limit_impl,
@@ -890,8 +1182,9 @@ trait RevoluteJointRuntimeHandle {
     }
 
     fn try_revolute_enable_limit(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.revolute_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             enable,
             revolute_enable_limit_impl,
@@ -899,40 +1192,45 @@ trait RevoluteJointRuntimeHandle {
     }
 
     fn revolute_lower_limit(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_lower_limit_impl,
         )
     }
 
     fn try_revolute_lower_limit(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_lower_limit_impl,
         )
     }
 
     fn revolute_upper_limit(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_upper_limit_impl,
         )
     }
 
     fn try_revolute_upper_limit(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_upper_limit_impl,
         )
     }
 
     fn revolute_set_limits(&mut self, lower: f32, upper: f32) {
-        joint_kind_set2_checked_validated_impl(
-            self.revolute_joint_id(),
+        joint_kind_set2_checked_validated_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             lower,
             upper,
@@ -942,8 +1240,9 @@ trait RevoluteJointRuntimeHandle {
     }
 
     fn try_revolute_set_limits(&mut self, lower: f32, upper: f32) -> ApiResult<()> {
-        try_joint_kind_set2_checked_validated_impl(
-            self.revolute_joint_id(),
+        try_joint_kind_set2_checked_validated_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             lower,
             upper,
@@ -953,24 +1252,27 @@ trait RevoluteJointRuntimeHandle {
     }
 
     fn revolute_motor_enabled(&self) -> bool {
-        joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_motor_enabled_impl,
         )
     }
 
     fn try_revolute_motor_enabled(&self) -> ApiResult<bool> {
-        try_joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_motor_enabled_impl,
         )
     }
 
     fn revolute_enable_motor(&mut self, enable: bool) {
-        joint_kind_set_checked_impl(
-            self.revolute_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             enable,
             revolute_enable_motor_impl,
@@ -978,8 +1280,9 @@ trait RevoluteJointRuntimeHandle {
     }
 
     fn try_revolute_enable_motor(&mut self, enable: bool) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.revolute_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             enable,
             revolute_enable_motor_impl,
@@ -987,24 +1290,27 @@ trait RevoluteJointRuntimeHandle {
     }
 
     fn revolute_motor_speed(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_motor_speed_impl,
         )
     }
 
     fn try_revolute_motor_speed(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_motor_speed_impl,
         )
     }
 
     fn revolute_set_motor_speed(&mut self, speed: f32) {
-        joint_kind_set_checked_impl(
-            self.revolute_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             speed,
             revolute_set_motor_speed_impl,
@@ -1012,8 +1318,9 @@ trait RevoluteJointRuntimeHandle {
     }
 
     fn try_revolute_set_motor_speed(&mut self, speed: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.revolute_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             speed,
             revolute_set_motor_speed_impl,
@@ -1021,40 +1328,45 @@ trait RevoluteJointRuntimeHandle {
     }
 
     fn revolute_motor_torque(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_motor_torque_impl,
         )
     }
 
     fn try_revolute_motor_torque(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_motor_torque_impl,
         )
     }
 
     fn revolute_max_motor_torque(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_max_motor_torque_impl,
         )
     }
 
     fn try_revolute_max_motor_torque(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.revolute_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             revolute_max_motor_torque_impl,
         )
     }
 
     fn revolute_set_max_motor_torque(&mut self, torque: f32) {
-        joint_kind_set_checked_impl(
-            self.revolute_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             torque,
             revolute_set_max_motor_torque_impl,
@@ -1062,8 +1374,9 @@ trait RevoluteJointRuntimeHandle {
     }
 
     fn try_revolute_set_max_motor_torque(&mut self, torque: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.revolute_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Revolute,
             torque,
             revolute_set_max_motor_torque_impl,
@@ -1071,14 +1384,6 @@ trait RevoluteJointRuntimeHandle {
     }
 }
 
-impl RevoluteJointRuntimeHandle for OwnedJoint {
-    fn revolute_joint_id(&self) -> JointId {
-        self.id()
-    }
-}
+impl RevoluteJointRuntimeHandle for OwnedJoint {}
 
-impl<'w> RevoluteJointRuntimeHandle for Joint<'w> {
-    fn revolute_joint_id(&self) -> JointId {
-        self.id()
-    }
-}
+impl RevoluteJointRuntimeHandle for Joint<'_> {}

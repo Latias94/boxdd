@@ -1,71 +1,71 @@
 use super::*;
 
 fn joint_base_from_world_points_impl<VA: Into<Position>, VB: Into<Position>>(
+    world: &World,
     body_a: BodyId,
     body_b: BodyId,
     anchor_a_world: VA,
     anchor_b_world: VB,
 ) -> crate::joints::JointBase {
-    crate::core::debug_checks::assert_body_valid(body_a);
-    crate::core::debug_checks::assert_body_valid(body_b);
+    crate::core::callback_state::assert_not_in_callback();
+    world
+        .core()
+        .check_body(body_a)
+        .expect("body A must be live and belong to the target world");
+    world
+        .core()
+        .check_body(body_b)
+        .expect("body B must be live and belong to the target world");
     let ta = WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(body_a)) });
     let tb = WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(body_b)) });
-    let la =
-        crate::joints::JointBaseBuilder::checked_world_to_local_point(ta, anchor_a_world.into())
-            .expect("joint world anchor A must fit in its local f32 frame");
-    let lb =
-        crate::joints::JointBaseBuilder::checked_world_to_local_point(tb, anchor_b_world.into())
-            .expect("joint world anchor B must fit in its local f32 frame");
-    crate::joints::JointBaseBuilder::new()
-        .bodies_by_id(body_a, body_b)
-        .local_frames_raw(
-            ffi::b2Transform {
-                p: la.into_raw(),
-                q: ffi::b2Rot { c: 1.0, s: 0.0 },
-            },
-            ffi::b2Transform {
-                p: lb.into_raw(),
-                q: ffi::b2Rot { c: 1.0, s: 0.0 },
-            },
-        )
-        .build()
+    let la = crate::joints::checked_world_to_local_point(ta, anchor_a_world.into())
+        .expect("joint world anchor A must fit in its local f32 frame");
+    let lb = crate::joints::checked_world_to_local_point(tb, anchor_b_world.into())
+        .expect("joint world anchor B must fit in its local f32 frame");
+    crate::joints::JointBase::new(body_a, body_b).with_local_frames(
+        crate::Transform::from_pos_angle(la, 0.0),
+        crate::Transform::from_pos_angle(lb, 0.0),
+    )
 }
 
 fn joint_base_from_world_with_axis_impl<VA: Into<Position>, VB: Into<Position>, AX: Into<Vec2>>(
+    world: &World,
     body_a: BodyId,
     body_b: BodyId,
     anchor_a_world: VA,
     anchor_b_world: VB,
     axis_world: AX,
 ) -> crate::joints::JointBase {
-    crate::core::debug_checks::assert_body_valid(body_a);
-    crate::core::debug_checks::assert_body_valid(body_b);
+    crate::core::callback_state::assert_not_in_callback();
+    world
+        .core()
+        .check_body(body_a)
+        .expect("body A must be live and belong to the target world");
+    world
+        .core()
+        .check_body(body_b)
+        .expect("body B must be live and belong to the target world");
     let ta = WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(body_a)) });
     let tb = WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(body_b)) });
     let axis = axis_world.into();
-    let la =
-        crate::joints::JointBaseBuilder::checked_world_to_local_point(ta, anchor_a_world.into())
-            .expect("joint world anchor A must fit in its local f32 frame");
-    let lb =
-        crate::joints::JointBaseBuilder::checked_world_to_local_point(tb, anchor_b_world.into())
-            .expect("joint world anchor B must fit in its local f32 frame");
-    let ra = crate::joints::JointBaseBuilder::checked_world_axis_to_local_rotation(ta, axis)
+    let la = crate::joints::checked_world_to_local_point(ta, anchor_a_world.into())
+        .expect("joint world anchor A must fit in its local f32 frame");
+    let lb = crate::joints::checked_world_to_local_point(tb, anchor_b_world.into())
+        .expect("joint world anchor B must fit in its local f32 frame");
+    let ra = crate::joints::checked_world_axis_to_local_rotation(ta, axis)
         .expect("joint world axis must define body A's local frame");
-    let rb = crate::joints::JointBaseBuilder::checked_world_axis_to_local_rotation(tb, axis)
+    let rb = crate::joints::checked_world_axis_to_local_rotation(tb, axis)
         .expect("joint world axis must define body B's local frame");
-    crate::joints::JointBaseBuilder::new()
-        .bodies_by_id(body_a, body_b)
-        .local_frames_raw(
-            ffi::b2Transform {
-                p: la.into_raw(),
-                q: ra.into_raw(),
-            },
-            ffi::b2Transform {
-                p: lb.into_raw(),
-                q: rb.into_raw(),
-            },
-        )
-        .build()
+    crate::joints::JointBase::new(body_a, body_b).with_local_frames(
+        crate::Transform::from_raw(ffi::b2Transform {
+            p: la.into_raw(),
+            q: ra.into_raw(),
+        }),
+        crate::Transform::from_raw(ffi::b2Transform {
+            p: lb.into_raw(),
+            q: rb.into_raw(),
+        }),
+    )
 }
 
 impl World {
@@ -78,7 +78,7 @@ impl World {
     ) -> crate::joints::Joint<'_> {
         let aw = anchor_world.into();
         let def = crate::joints::RevoluteJointDef::new(joint_base_from_world_points_impl(
-            body_a, body_b, aw, aw,
+            self, body_a, body_b, aw, aw,
         ));
         self.create_revolute_joint(&def)
     }
@@ -91,7 +91,7 @@ impl World {
     ) -> JointId {
         let aw = anchor_world.into();
         let def = crate::joints::RevoluteJointDef::new(joint_base_from_world_points_impl(
-            body_a, body_b, aw, aw,
+            self, body_a, body_b, aw, aw,
         ));
         self.create_revolute_joint_id(&def)
     }
@@ -105,6 +105,7 @@ impl World {
         axis_world: AX,
     ) -> crate::joints::Joint<'_> {
         let def = crate::joints::PrismaticJointDef::new(joint_base_from_world_with_axis_impl(
+            self,
             body_a,
             body_b,
             anchor_a_world,
@@ -127,6 +128,7 @@ impl World {
         axis_world: AX,
     ) -> JointId {
         let def = crate::joints::PrismaticJointDef::new(joint_base_from_world_with_axis_impl(
+            self,
             body_a,
             body_b,
             anchor_a_world,
@@ -145,6 +147,7 @@ impl World {
         axis_world: AX,
     ) -> crate::joints::Joint<'_> {
         let def = crate::joints::WheelJointDef::new(joint_base_from_world_with_axis_impl(
+            self,
             body_a,
             body_b,
             anchor_a_world,
@@ -163,6 +166,7 @@ impl World {
         axis_world: AX,
     ) -> JointId {
         let def = crate::joints::WheelJointDef::new(joint_base_from_world_with_axis_impl(
+            self,
             body_a,
             body_b,
             anchor_a_world,
@@ -194,7 +198,7 @@ impl World {
         anchor_a_world: VA,
         anchor_b_world: VB,
     ) -> crate::joints::JointBase {
-        joint_base_from_world_points_impl(body_a, body_b, anchor_a_world, anchor_b_world)
+        joint_base_from_world_points_impl(self, body_a, body_b, anchor_a_world, anchor_b_world)
     }
 
     /// Helper: build a joint base from two world anchors and a shared world axis (X-axis of joint frames).
@@ -226,6 +230,7 @@ impl World {
         axis_world: AX,
     ) -> crate::joints::JointBase {
         joint_base_from_world_with_axis_impl(
+            self,
             body_a,
             body_b,
             anchor_a_world,

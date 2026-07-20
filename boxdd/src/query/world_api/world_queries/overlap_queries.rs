@@ -22,7 +22,7 @@ impl World {
     /// assert!(!hits.is_empty());
     /// ```
     pub fn overlap_aabb(&self, origin: Position, aabb: Aabb, filter: QueryFilter) -> Vec<ShapeId> {
-        overlap_aabb_checked_impl(self.raw(), origin, aabb, filter)
+        overlap_aabb_checked_impl(self.query_target(), origin, aabb, filter)
     }
 
     /// Overlap test for all shapes in an AABB and write matching shape ids into `out`.
@@ -35,7 +35,7 @@ impl World {
         filter: QueryFilter,
         out: &mut Vec<ShapeId>,
     ) {
-        overlap_aabb_into_checked_impl(self.raw(), origin, aabb, filter, out);
+        overlap_aabb_into_checked_impl(self.query_target(), origin, aabb, filter, out);
     }
 
     /// Visit matching shape ids in an AABB without allocating a result container.
@@ -52,7 +52,7 @@ impl World {
     where
         F: FnMut(ShapeId) -> bool,
     {
-        visit_overlap_aabb_checked_impl(self.raw(), origin, aabb, filter, &mut visit)
+        visit_overlap_aabb_checked_impl(self.query_target(), origin, aabb, filter, &mut visit)
     }
 
     pub fn try_overlap_aabb(
@@ -61,7 +61,7 @@ impl World {
         aabb: Aabb,
         filter: QueryFilter,
     ) -> ApiResult<Vec<ShapeId>> {
-        try_overlap_aabb_impl(self.raw(), origin, aabb, filter)
+        try_overlap_aabb_impl(self.query_target(), origin, aabb, filter)
     }
 
     pub fn try_overlap_aabb_into(
@@ -71,7 +71,7 @@ impl World {
         filter: QueryFilter,
         out: &mut Vec<ShapeId>,
     ) -> ApiResult<()> {
-        try_overlap_aabb_into_impl(self.raw(), origin, aabb, filter, out)
+        try_overlap_aabb_into_impl(self.query_target(), origin, aabb, filter, out)
     }
 
     pub fn try_visit_overlap_aabb<F>(
@@ -84,7 +84,7 @@ impl World {
     where
         F: FnMut(ShapeId) -> bool,
     {
-        try_visit_overlap_aabb_impl(self.raw(), origin, aabb, filter, &mut visit)
+        try_visit_overlap_aabb_impl(self.query_target(), origin, aabb, filter, &mut visit)
     }
 
     /// Overlap polygon points (creates a temporary shape proxy from given points + radius) and collect all shape ids.
@@ -111,7 +111,7 @@ impl World {
         I: IntoIterator<Item = P>,
         P: Into<Vec2>,
     {
-        overlap_polygon_points_checked_impl(self.raw(), origin, points, radius, filter)
+        overlap_polygon_points_checked_impl(self.query_target(), origin, points, radius, filter)
     }
 
     /// Overlap a temporary polygon proxy and write matching shape ids into `out`.
@@ -126,7 +126,14 @@ impl World {
         I: IntoIterator<Item = P>,
         P: Into<Vec2>,
     {
-        overlap_polygon_points_into_checked_impl(self.raw(), origin, points, radius, filter, out);
+        overlap_polygon_points_into_checked_impl(
+            self.query_target(),
+            origin,
+            points,
+            radius,
+            filter,
+            out,
+        );
     }
 
     /// Visit matching shape ids for a temporary polygon proxy without allocating a result container.
@@ -147,7 +154,7 @@ impl World {
         F: FnMut(ShapeId) -> bool,
     {
         visit_overlap_polygon_points_checked_impl(
-            self.raw(),
+            self.query_target(),
             origin,
             points,
             radius,
@@ -167,7 +174,7 @@ impl World {
         I: IntoIterator<Item = P>,
         P: Into<Vec2>,
     {
-        try_overlap_polygon_points_impl(self.raw(), origin, points, radius, filter)
+        try_overlap_polygon_points_impl(self.query_target(), origin, points, radius, filter)
     }
 
     pub fn try_overlap_polygon_points_into<I, P>(
@@ -182,7 +189,14 @@ impl World {
         I: IntoIterator<Item = P>,
         P: Into<Vec2>,
     {
-        try_overlap_polygon_points_into_impl(self.raw(), origin, points, radius, filter, out)
+        try_overlap_polygon_points_into_impl(
+            self.query_target(),
+            origin,
+            points,
+            radius,
+            filter,
+            out,
+        )
     }
 
     pub fn try_visit_overlap_polygon_points<I, P, F>(
@@ -199,7 +213,7 @@ impl World {
         F: FnMut(ShapeId) -> bool,
     {
         try_visit_overlap_polygon_points_impl(
-            self.raw(),
+            self.query_target(),
             origin,
             points,
             radius,
@@ -237,7 +251,7 @@ impl World {
         A: Into<f32>,
     {
         overlap_polygon_points_with_offset_checked_impl(
-            self.raw(),
+            self.query_target(),
             origin,
             points,
             radius,
@@ -264,7 +278,7 @@ impl World {
         A: Into<f32>,
     {
         overlap_polygon_points_with_offset_into_checked_impl(
-            self.raw(),
+            self.query_target(),
             origin,
             points,
             radius,
@@ -297,7 +311,7 @@ impl World {
         F: FnMut(ShapeId) -> bool,
     {
         visit_overlap_polygon_points_with_offset_checked_impl(
-            self.raw(),
+            self.query_target(),
             origin,
             points,
             radius,
@@ -324,7 +338,7 @@ impl World {
         A: Into<f32>,
     {
         try_overlap_polygon_points_with_offset_impl(
-            self.raw(),
+            self.query_target(),
             origin,
             points,
             radius,
@@ -351,7 +365,7 @@ impl World {
         A: Into<f32>,
     {
         try_overlap_polygon_points_with_offset_into_impl(
-            self.raw(),
+            self.query_target(),
             origin,
             points,
             radius,
@@ -380,7 +394,7 @@ impl World {
         F: FnMut(ShapeId) -> bool,
     {
         try_visit_overlap_polygon_points_with_offset_impl(
-            self.raw(),
+            self.query_target(),
             origin,
             points,
             radius,

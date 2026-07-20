@@ -1,8 +1,12 @@
 use boxdd::{
-    Aabb, BodyBuilder, Position, QueryFilter, RayResult, ShapeDef, Vec2, World, WorldDef, shapes,
+    Aabb, BodyBuilder, Position, QueryFilter, ShapeDef, Vec2, World, WorldDef, WorldScalar, shapes,
 };
 
 fn approx(a: f32, b: f32, tol: f32) -> bool {
+    (a - b).abs() <= tol
+}
+
+fn approx_world(a: WorldScalar, b: WorldScalar, tol: WorldScalar) -> bool {
     (a - b).abs() <= tol
 }
 
@@ -52,7 +56,7 @@ fn aabb_valid_and_raycast() {
 }
 
 #[test]
-fn aabb_and_ray_result_use_explicit_raw_conversions() {
+fn aabb_raw_conversion_and_world_bound_ray_result() {
     let aabb = Aabb::new([-2.0, -1.5], [3.0, 4.5]);
     let raw = aabb.into_raw();
 
@@ -70,26 +74,15 @@ fn aabb_and_ray_result_use_explicit_raw_conversions() {
         &shapes::circle([0.0_f32, 0.0], 0.5),
     );
 
-    let raw = boxdd_sys::ffi::b2RayResult {
-        shapeId: shape.id().into_raw(),
-        point: Position::new(1.25, -2.5).into_raw(),
-        normal: boxdd_sys::ffi::b2Vec2 { x: 0.0, y: 1.0 },
-        fraction: 0.375,
-        hit: true,
-        leafVisits: 0,
-        nodeVisits: 0,
-    };
-    let hit = RayResult::from_raw(raw);
+    let hit = world
+        .cast_ray_closest(Position::new(0.0, 2.0), [0.0, -4.0], QueryFilter::default())
+        .expect("ray should hit the circle");
 
-    assert_eq!(hit.shape_id.index1, shape.id().index1);
-    assert_eq!(hit.shape_id.generation, shape.id().generation);
-    assert_eq!(hit.point, Position::new(1.25, -2.5));
+    assert_eq!(hit.shape_id, shape.id());
+    assert!(approx_world(hit.point.x, 0.0, 1.0e-5));
+    assert!(approx_world(hit.point.y, 0.5, 1.0e-5));
     assert!(approx(hit.normal.x, 0.0, f32::EPSILON));
     assert!(approx(hit.normal.y, 1.0, f32::EPSILON));
     assert!(approx(hit.fraction, 0.375, f32::EPSILON));
     assert!(hit.hit);
-
-    let closest =
-        world.cast_ray_closest(Position::new(0.0, 2.0), [0.0, -4.0], QueryFilter::default());
-    assert!(closest.hit);
 }

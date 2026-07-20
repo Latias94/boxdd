@@ -1,7 +1,5 @@
-use std::marker::PhantomData;
 use std::os::raw::c_void;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use crate::core::world_core::WorldCore;
 use crate::error::ApiResult;
@@ -12,28 +10,27 @@ use crate::types::{
 use boxdd_sys::ffi;
 
 use super::definition::BodyType;
-use super::runtime::{BodyRuntimeHandle, raw_body_id};
+use super::runtime::BodyRuntimeHandle;
 
 /// A RAII-owned body that is destroyed on drop.
 ///
-/// This handle is not `Send` so it cannot be dropped on another thread. It keeps the underlying
-/// world alive via an internal reference-counted core.
+/// This handle is not `Send` so it cannot be dropped on another thread. If its owning
+/// [`World`](crate::World) has already been dropped, this handle retains only an inert Rust shell
+/// and performs no body FFI.
 pub struct OwnedBody {
     pub(crate) id: BodyId,
-    pub(crate) core: Arc<WorldCore>,
+    pub(crate) core: Rc<WorldCore>,
     destroy_on_drop: bool,
-    _not_send: PhantomData<Rc<()>>,
 }
 
 impl OwnedBody {
-    pub(crate) fn new(core: Arc<WorldCore>, id: BodyId) -> Self {
+    pub(crate) fn new(core: Rc<WorldCore>, id: BodyId) -> Self {
         core.owned_bodies
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Self {
             id,
             core,
             destroy_on_drop: true,
-            _not_send: PhantomData,
         }
     }
 
@@ -41,8 +38,8 @@ impl OwnedBody {
         self.id
     }
 
-    pub(crate) fn core_arc(&self) -> Arc<WorldCore> {
-        Arc::clone(&self.core)
+    pub(crate) fn core_rc(&self) -> Rc<WorldCore> {
+        Rc::clone(&self.core)
     }
 
     pub fn world_id_raw(&self) -> ffi::b2WorldId {
@@ -674,26 +671,19 @@ impl OwnedBody {
 
     /// Disarm RAII and return the raw id for manual lifetime management.
     pub fn into_id(mut self) -> BodyId {
+        self.core
+            .check_owned_policy_change()
+            .expect("owned body cannot be disarmed while its world is unavailable");
         self.destroy_on_drop = false;
         self.id
     }
 
     /// Destroy the body immediately and disarm drop.
     pub fn destroy(mut self) {
-        let should_destroy =
-            self.destroy_on_drop && unsafe { ffi::b2Body_IsValid(raw_body_id(self.id)) };
-        self.destroy_on_drop = false;
-        if should_destroy {
-            if crate::core::callback_state::in_callback() || self.core.events_buffers_are_borrowed()
-            {
-                self.core
-                    .defer_destroy(crate::core::world_core::DeferredDestroy::Body(self.id));
-            } else {
-                #[cfg(feature = "serialize")]
-                self.core.cleanup_before_destroy_body(self.id);
-                unsafe { ffi::b2DestroyBody(raw_body_id(self.id)) };
-                let _ = self.core.clear_body_user_data(self.id);
-            }
+        if self.destroy_on_drop {
+            self.core
+                .destroy_owned_or_defer(crate::core::world_core::DeferredDestroy::Body(self.id));
+            self.destroy_on_drop = false;
         }
     }
 }
@@ -701,22 +691,14 @@ impl OwnedBody {
 impl Drop for OwnedBody {
     fn drop(&mut self) {
         let _ = self.core.id;
-        let prev = self
-            .core
-            .owned_bodies
-            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-        debug_assert!(prev > 0, "owned body counter underflow");
-        if self.destroy_on_drop && unsafe { ffi::b2Body_IsValid(raw_body_id(self.id)) } {
-            if crate::core::callback_state::in_callback() || self.core.events_buffers_are_borrowed()
-            {
-                self.core
-                    .defer_destroy(crate::core::world_core::DeferredDestroy::Body(self.id));
-            } else {
-                #[cfg(feature = "serialize")]
-                self.core.cleanup_before_destroy_body(self.id);
-                unsafe { ffi::b2DestroyBody(raw_body_id(self.id)) };
-                let _ = self.core.clear_body_user_data(self.id);
-            }
+        let _ = self.core.owned_bodies.fetch_update(
+            std::sync::atomic::Ordering::Relaxed,
+            std::sync::atomic::Ordering::Relaxed,
+            |count| Some(count.saturating_sub(1)),
+        );
+        if self.destroy_on_drop {
+            self.core
+                .destroy_owned_or_defer(crate::core::world_core::DeferredDestroy::Body(self.id));
         }
     }
 }

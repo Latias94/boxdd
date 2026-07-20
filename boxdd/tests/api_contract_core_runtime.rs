@@ -204,11 +204,10 @@ fn live_body_contact_and_contact_snapshot_succeed() {
         .first()
         .expect("resting body should have a live contact")
         .contact_id;
-    let contact_valid = contact_id.is_valid();
+    let contact_valid = world.contact_is_valid(contact_id);
     assert!(contact_valid);
-    let snapshot = boxdd::ContactId::data(contact_id);
-    assert_eq!(snapshot.contact_id.index1, contact_id.index1);
-    assert_eq!(snapshot.contact_id.generation, contact_id.generation);
+    let snapshot = world.contact_data(contact_id);
+    assert_eq!(snapshot.contact_id, contact_id);
 }
 
 #[test]

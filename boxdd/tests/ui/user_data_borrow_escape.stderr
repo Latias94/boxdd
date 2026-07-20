@@ -1,0 +1,8 @@
+error: lifetime may not live long enough
+ --> tests/ui/user_data_borrow_escape.rs:5:78
+  |
+5 |     let escaped: Option<&String> = world.with_user_data::<String, _>(|value| value);
+  |                                                                       ------ ^^^^^ returning this value requires that `'1` must outlive `'2`
+  |                                                                       |    |
+  |                                                                       |    return type of closure is &'2 std::string::String
+  |                                                                       has type `&'1 std::string::String`

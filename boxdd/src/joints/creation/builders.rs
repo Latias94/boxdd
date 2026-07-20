@@ -4,10 +4,8 @@ impl World {
     pub fn revolute<'w>(&'w mut self, body_a: BodyId, body_b: BodyId) -> RevoluteJointBuilder<'w> {
         RevoluteJointBuilder {
             world: self,
-            body_a,
-            body_b,
             anchor_world: None,
-            def: RevoluteJointDef::new(JointBase::default()),
+            def: RevoluteJointDef::new(JointBase::new(body_a, body_b)),
         }
     }
 
@@ -18,54 +16,44 @@ impl World {
     ) -> PrismaticJointBuilder<'w> {
         PrismaticJointBuilder {
             world: self,
-            body_a,
-            body_b,
             anchor_a_world: None,
             anchor_b_world: None,
             axis_world: None,
-            def: PrismaticJointDef::new(JointBase::default()),
+            def: PrismaticJointDef::new(JointBase::new(body_a, body_b)),
         }
     }
 
     pub fn wheel<'w>(&'w mut self, body_a: BodyId, body_b: BodyId) -> WheelJointBuilder<'w> {
         WheelJointBuilder {
             world: self,
-            body_a,
-            body_b,
             anchor_a_world: None,
             anchor_b_world: None,
             axis_world: None,
-            def: WheelJointDef::new(JointBase::default()),
+            def: WheelJointDef::new(JointBase::new(body_a, body_b)),
         }
     }
 
     pub fn distance<'w>(&'w mut self, body_a: BodyId, body_b: BodyId) -> DistanceJointBuilder<'w> {
         DistanceJointBuilder {
             world: self,
-            body_a,
-            body_b,
             anchor_a_world: None,
             anchor_b_world: None,
-            def: DistanceJointDef::new(JointBase::default()),
+            def: DistanceJointDef::new(JointBase::new(body_a, body_b)),
         }
     }
 
     pub fn weld<'w>(&'w mut self, body_a: BodyId, body_b: BodyId) -> WeldJointBuilder<'w> {
         WeldJointBuilder {
             world: self,
-            body_a,
-            body_b,
             anchor_world: None,
-            def: WeldJointDef::new(JointBase::default()),
+            def: WeldJointDef::new(JointBase::new(body_a, body_b)),
         }
     }
 
     pub fn motor_joint<'w>(&'w mut self, body_a: BodyId, body_b: BodyId) -> MotorJointBuilder<'w> {
         MotorJointBuilder {
             world: self,
-            body_a,
-            body_b,
-            def: MotorJointDef::new(JointBase::default()),
+            def: MotorJointDef::new(JointBase::new(body_a, body_b)),
         }
     }
 
@@ -76,9 +64,7 @@ impl World {
     ) -> FilterJointBuilder<'w> {
         FilterJointBuilder {
             world: self,
-            body_a,
-            body_b,
-            def: FilterJointDef::new(JointBase::default()),
+            def: FilterJointDef::new(JointBase::new(body_a, body_b)),
         }
     }
 }

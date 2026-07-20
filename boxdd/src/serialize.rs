@@ -27,6 +27,10 @@ pub struct WorldConfigSnapshot {
 
 impl WorldConfigSnapshot {
     pub fn take(world: &World) -> Self {
+        world
+            .core()
+            .check_available()
+            .expect("world is not available for snapshotting");
         Self {
             gravity: world.gravity(),
             enable_sleep: world.is_sleeping_enabled(),
@@ -45,6 +49,10 @@ impl WorldConfigSnapshot {
     }
 
     pub fn apply(&self, world: &mut World) {
+        world
+            .core()
+            .check_available()
+            .expect("world is not available for snapshot restoration");
         world.set_gravity(self.gravity);
         world.enable_sleeping(self.enable_sleep);
         world.enable_continuous(self.enable_continuous);
@@ -74,7 +82,10 @@ pub struct BodySnapshot {
 
 impl BodySnapshot {
     pub fn take(world: &World, id: BodyId) -> Self {
-        crate::core::debug_checks::assert_body_valid(id);
+        world
+            .core()
+            .check_body(id)
+            .expect("body id is invalid or belongs to a different world");
         Self {
             body_type: crate::body::body_type_impl(id),
             position: world.body_position(id),
@@ -88,7 +99,10 @@ impl BodySnapshot {
     }
 
     pub fn apply(&self, world: &mut World, id: BodyId) {
-        crate::core::debug_checks::assert_body_valid(id);
+        world
+            .core()
+            .check_body(id)
+            .expect("body id is invalid or belongs to a different world");
         world.set_body_type(id, self.body_type);
         world.set_body_position_and_rotation(id, self.position, self.angle);
         world.set_body_linear_velocity(id, self.linear_velocity);
@@ -235,7 +249,10 @@ impl SceneSnapshot {
         let mut bodies = Vec::new();
 
         for &bid in &body_ids {
-            crate::core::debug_checks::assert_body_valid(bid);
+            world
+                .core()
+                .check_body(bid)
+                .expect("body registry contains an invalid or foreign body id");
             // BodyDef from runtime
             let def = body_def_from_runtime(world, bid);
             // Optional name
@@ -257,7 +274,7 @@ impl SceneSnapshot {
 
         let mut joints = Vec::new();
         for j in joint_list {
-            if !crate::joints::joint_is_valid_impl(j) {
+            if world.core().check_joint(j).is_err() {
                 continue;
             }
             let a = world.joint_body_a_id(j);
@@ -388,10 +405,8 @@ impl SceneSnapshot {
             let (Some(aid), Some(bid)) = (a, b) else {
                 continue;
             };
-            let base = crate::joints::JointBaseBuilder::new()
-                .bodies_by_id(aid, bid)
-                .local_frames_raw(jr.local_a.into_raw(), jr.local_b.into_raw())
-                .build();
+            let base =
+                crate::joints::JointBase::new(aid, bid).with_local_frames(jr.local_a, jr.local_b);
             match jr.kind {
                 JointKind::Distance => {
                     let def = crate::joints::DistanceJointDef::new(base);
@@ -555,7 +570,10 @@ impl SceneSnapshot {
 }
 
 fn body_def_from_runtime(world: &World, id: BodyId) -> crate::body::BodyDef {
-    crate::core::debug_checks::assert_body_valid(id);
+    world
+        .core()
+        .check_body(id)
+        .expect("body id is invalid or belongs to a different world");
     // Defaults for flags not queryable via getters
     crate::body::BodyBuilder::new()
         .body_type(crate::body::body_type_impl(id))
@@ -570,9 +588,16 @@ fn body_def_from_runtime(world: &World, id: BodyId) -> crate::body::BodyDef {
 }
 
 fn shapes_from_body(world: &World, body: BodyId) -> Vec<ShapeInstance> {
-    crate::core::debug_checks::assert_body_valid(body);
+    world
+        .core()
+        .check_body(body)
+        .expect("body id is invalid or belongs to a different world");
     let mut out = Vec::new();
     for sid in world.body_shapes(body) {
+        world
+            .core()
+            .check_shape(sid)
+            .expect("body contains an invalid or foreign shape id");
         // Build ShapeDef from runtime properties
         let mut builder = crate::shapes::ShapeDef::builder()
             .material(world.shape_surface_material(sid))
@@ -652,12 +677,12 @@ fn shapes_from_body(world: &World, body: BodyId) -> Vec<ShapeInstance> {
 
 #[inline]
 fn eq_joint(a: JointId, b: JointId) -> bool {
-    a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
+    a == b
 }
 
 #[inline]
 fn eq_body(a: BodyId, b: BodyId) -> bool {
-    a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
+    a == b
 }
 
 fn find_body_index(list: &[BodyId], target: BodyId) -> Option<u32> {
@@ -686,6 +711,10 @@ fn joint_params_from_runtime(
     joint: JointId,
     kind: JointKind,
 ) -> Option<JointParams> {
+    world
+        .core()
+        .check_joint(joint)
+        .expect("joint id is invalid or belongs to a different world");
     match kind {
         JointKind::Distance => Some(JointParams::Distance {
             length: world.distance_length(joint),

@@ -26,11 +26,9 @@ fn world_with_two_bodies() -> (World, BodyId, BodyId) {
 }
 
 fn joint_base(body_a: BodyId, body_b: BodyId) -> JointBase {
-    JointBase::builder()
-        .bodies_by_id(body_a, body_b)
-        .force_threshold(20.0)
-        .torque_threshold(30.0)
-        .build()
+    JointBase::new(body_a, body_b)
+        .with_force_threshold(20.0)
+        .with_torque_threshold(30.0)
 }
 
 #[test]

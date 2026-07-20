@@ -1,8 +1,7 @@
 pub use crate::{
-    ApiError, ApiResult, Body, BodyBuilder, BodyDef, BodyType, CallbackWorld, Filter,
-    LocalManifold, LocalManifoldPoint, MAX_BODY_NAME_BYTES, MaterialMixInput,
-    OutstandingOwnedHandles, OwnedBody, OwnedHandleCounts, ShapeCastInput, World, WorldBuilder,
-    WorldDef, WorldHandle,
+    ApiError, ApiResult, Body, BodyBuilder, BodyDef, BodyType, Filter, LocalManifold,
+    LocalManifoldPoint, MAX_BODY_NAME_BYTES, MaterialMixInput, OwnedBody, OwnedHandleCounts,
+    ShapeCastInput, World, WorldBuilder, WorldDef, WorldHandle,
     debug_draw::{DebugDraw, DebugDrawCmd, DebugDrawOptions, HexColor},
     dynamic_tree::{DynamicTree, TreeBoxCastInput, TreeProxyId, TreeRayCastInput, TreeStats},
     events::{
@@ -10,8 +9,8 @@ pub use crate::{
         ContactHitEvent, JointEvent, SensorBeginTouchEvent, SensorEndTouchEvent, SensorEvents,
     },
     joints::{
-        ConstraintTuning, DistanceJointDef, FilterJointDef, Joint, JointBase, JointBaseBuilder,
-        JointType, MotorJointDef, OwnedJoint, PrismaticJointDef, RevoluteJointDef, WeldJointDef,
+        ConstraintTuning, DistanceJointDef, FilterJointDef, Joint, JointBase, JointType,
+        MotorJointDef, OwnedJoint, PrismaticJointDef, RevoluteJointDef, WeldJointDef,
         WheelJointDef,
     },
     query::{

@@ -47,6 +47,7 @@ log = "0.4"
 static_assertions = "1"
 tempfile = "3"
 blake3 = "1"
+trybuild = "1.0.118"
 
 [workspace.metadata.toolchains]
 msrv = "1.95.0"

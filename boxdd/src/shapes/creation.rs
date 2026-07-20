@@ -258,7 +258,7 @@ impl<'w> Body<'w> {
 impl OwnedBody {
     pub fn create_circle_shape(&mut self, def: &ShapeDef, c: &Circle) -> OwnedShape {
         create_body_attached_shape_handle(
-            &self.core_arc(),
+            &self.core_rc(),
             self.id(),
             def,
             c,
@@ -269,7 +269,7 @@ impl OwnedBody {
 
     pub fn try_create_circle_shape(&mut self, def: &ShapeDef, c: &Circle) -> ApiResult<OwnedShape> {
         try_create_body_attached_shape_handle(
-            &self.core_arc(),
+            &self.core_rc(),
             self.id(),
             def,
             c,
@@ -280,7 +280,7 @@ impl OwnedBody {
 
     pub fn create_segment_shape(&mut self, def: &ShapeDef, s: &Segment) -> OwnedShape {
         create_body_attached_shape_handle(
-            &self.core_arc(),
+            &self.core_rc(),
             self.id(),
             def,
             s,
@@ -295,7 +295,7 @@ impl OwnedBody {
         s: &Segment,
     ) -> ApiResult<OwnedShape> {
         try_create_body_attached_shape_handle(
-            &self.core_arc(),
+            &self.core_rc(),
             self.id(),
             def,
             s,
@@ -306,7 +306,7 @@ impl OwnedBody {
 
     pub fn create_capsule_shape(&mut self, def: &ShapeDef, c: &Capsule) -> OwnedShape {
         create_body_attached_shape_handle(
-            &self.core_arc(),
+            &self.core_rc(),
             self.id(),
             def,
             c,
@@ -321,7 +321,7 @@ impl OwnedBody {
         c: &Capsule,
     ) -> ApiResult<OwnedShape> {
         try_create_body_attached_shape_handle(
-            &self.core_arc(),
+            &self.core_rc(),
             self.id(),
             def,
             c,
@@ -332,7 +332,7 @@ impl OwnedBody {
 
     pub fn create_polygon_shape(&mut self, def: &ShapeDef, p: &Polygon) -> OwnedShape {
         create_body_attached_shape_handle(
-            &self.core_arc(),
+            &self.core_rc(),
             self.id(),
             def,
             p,
@@ -347,7 +347,7 @@ impl OwnedBody {
         p: &Polygon,
     ) -> ApiResult<OwnedShape> {
         try_create_body_attached_shape_handle(
-            &self.core_arc(),
+            &self.core_rc(),
             self.id(),
             def,
             p,
@@ -359,7 +359,7 @@ impl OwnedBody {
     // Convenience creators
     pub fn create_box(&mut self, def: &ShapeDef, half_w: f32, half_h: f32) -> OwnedShape {
         create_body_attached_box_shape_handle(
-            &self.core_arc(),
+            &self.core_rc(),
             self.id(),
             def,
             half_w,
@@ -375,7 +375,7 @@ impl OwnedBody {
         half_h: f32,
     ) -> ApiResult<OwnedShape> {
         try_create_body_attached_box_shape_handle(
-            &self.core_arc(),
+            &self.core_rc(),
             self.id(),
             def,
             half_w,
@@ -386,7 +386,7 @@ impl OwnedBody {
 
     pub fn create_circle_simple(&mut self, def: &ShapeDef, radius: f32) -> OwnedShape {
         create_body_attached_circle_simple_shape_handle(
-            &self.core_arc(),
+            &self.core_rc(),
             self.id(),
             def,
             radius,
@@ -400,7 +400,7 @@ impl OwnedBody {
         radius: f32,
     ) -> ApiResult<OwnedShape> {
         try_create_body_attached_circle_simple_shape_handle(
-            &self.core_arc(),
+            &self.core_rc(),
             self.id(),
             def,
             radius,
@@ -415,7 +415,7 @@ impl OwnedBody {
         p2: V,
     ) -> OwnedShape {
         create_body_attached_segment_simple_shape_handle(
-            &self.core_arc(),
+            &self.core_rc(),
             self.id(),
             def,
             p1,
@@ -431,7 +431,7 @@ impl OwnedBody {
         p2: V,
     ) -> ApiResult<OwnedShape> {
         try_create_body_attached_segment_simple_shape_handle(
-            &self.core_arc(),
+            &self.core_rc(),
             self.id(),
             def,
             p1,
@@ -448,7 +448,7 @@ impl OwnedBody {
         radius: f32,
     ) -> OwnedShape {
         create_body_attached_capsule_simple_shape_handle(
-            &self.core_arc(),
+            &self.core_rc(),
             self.id(),
             def,
             c1,
@@ -466,7 +466,7 @@ impl OwnedBody {
         radius: f32,
     ) -> ApiResult<OwnedShape> {
         try_create_body_attached_capsule_simple_shape_handle(
-            &self.core_arc(),
+            &self.core_rc(),
             self.id(),
             def,
             c1,
@@ -487,7 +487,7 @@ impl OwnedBody {
         P: Into<crate::types::Vec2>,
     {
         create_body_attached_polygon_from_points_shape_handle(
-            &self.core_arc(),
+            &self.core_rc(),
             self.id(),
             def,
             points,
@@ -507,7 +507,7 @@ impl OwnedBody {
         P: Into<crate::types::Vec2>,
     {
         try_create_body_attached_polygon_from_points_shape_handle(
-            &self.core_arc(),
+            &self.core_rc(),
             self.id(),
             def,
             points,

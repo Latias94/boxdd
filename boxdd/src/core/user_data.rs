@@ -1,46 +1,33 @@
 use std::any::TypeId;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::ptr::NonNull;
+use std::rc::Rc;
 
-use boxdd_sys::ffi;
+use crate::error::{ApiError, ApiResult};
+use crate::id::WorldToken;
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub(crate) struct IdKey {
     pub(crate) index1: i32,
     pub(crate) world0: u16,
     pub(crate) generation: u16,
-}
-
-impl From<ffi::b2BodyId> for IdKey {
-    #[inline]
-    fn from(id: ffi::b2BodyId) -> Self {
-        Self {
-            index1: id.index1,
-            world0: id.world0,
-            generation: id.generation,
-        }
-    }
+    pub(crate) world_generation: u16,
+    pub(crate) token: WorldToken,
 }
 
 impl From<crate::types::BodyId> for IdKey {
     #[inline]
     fn from(id: crate::types::BodyId) -> Self {
+        let raw = id.into_raw();
+        let brand = id.brand();
         Self {
-            index1: id.index1,
-            world0: id.world0,
-            generation: id.generation,
-        }
-    }
-}
-
-impl From<ffi::b2ShapeId> for IdKey {
-    #[inline]
-    fn from(id: ffi::b2ShapeId) -> Self {
-        Self {
-            index1: id.index1,
-            world0: id.world0,
-            generation: id.generation,
+            index1: raw.index1,
+            world0: raw.world0,
+            generation: raw.generation,
+            world_generation: brand.world_generation(),
+            token: brand.token(),
         }
     }
 }
@@ -48,21 +35,14 @@ impl From<ffi::b2ShapeId> for IdKey {
 impl From<crate::types::ShapeId> for IdKey {
     #[inline]
     fn from(id: crate::types::ShapeId) -> Self {
+        let raw = id.into_raw();
+        let brand = id.brand();
         Self {
-            index1: id.index1,
-            world0: id.world0,
-            generation: id.generation,
-        }
-    }
-}
-
-impl From<ffi::b2JointId> for IdKey {
-    #[inline]
-    fn from(id: ffi::b2JointId) -> Self {
-        Self {
-            index1: id.index1,
-            world0: id.world0,
-            generation: id.generation,
+            index1: raw.index1,
+            world0: raw.world0,
+            generation: raw.generation,
+            world_generation: brand.world_generation(),
+            token: brand.token(),
         }
     }
 }
@@ -70,10 +50,14 @@ impl From<ffi::b2JointId> for IdKey {
 impl From<crate::types::JointId> for IdKey {
     #[inline]
     fn from(id: crate::types::JointId) -> Self {
+        let raw = id.into_raw();
+        let brand = id.brand();
         Self {
-            index1: id.index1,
-            world0: id.world0,
-            generation: id.generation,
+            index1: raw.index1,
+            world0: raw.world0,
+            generation: raw.generation,
+            world_generation: brand.world_generation(),
+            token: brand.token(),
         }
     }
 }
@@ -148,10 +132,131 @@ impl Drop for ErasedUserData {
     }
 }
 
+pub(crate) struct UserDataUpdate {
+    pointer: *mut c_void,
+    _retired: Option<ErasedUserData>,
+}
+
+impl UserDataUpdate {
+    #[inline]
+    pub(crate) fn inserted(pointer: *mut c_void) -> Self {
+        Self {
+            pointer,
+            _retired: None,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn pointer(&self) -> *mut c_void {
+        self.pointer
+    }
+}
+
+pub(crate) struct UserDataEntry {
+    value: RefCell<Option<ErasedUserData>>,
+}
+
+pub(crate) type UserDataEntryRef = Rc<UserDataEntry>;
+
+impl UserDataEntry {
+    pub(crate) fn new<T: 'static>(value: T) -> (UserDataEntryRef, *mut c_void) {
+        let value = ErasedUserData::new(value);
+        let pointer = value.as_ptr();
+        (
+            Rc::new(Self {
+                value: RefCell::new(Some(value)),
+            }),
+            pointer,
+        )
+    }
+
+    pub(crate) fn replace<T: 'static>(&self, value: T) -> ApiResult<UserDataUpdate> {
+        let value = ErasedUserData::new(value);
+        let pointer = value.as_ptr();
+        let mut slot = self
+            .value
+            .try_borrow_mut()
+            .map_err(|_| ApiError::ReentrantAccess)?;
+        let retired = slot.replace(value);
+        drop(slot);
+        Ok(UserDataUpdate {
+            pointer,
+            _retired: retired,
+        })
+    }
+
+    pub(crate) fn check_mutable(&self) -> ApiResult<()> {
+        let borrow = self
+            .value
+            .try_borrow_mut()
+            .map_err(|_| ApiError::ReentrantAccess)?;
+        drop(borrow);
+        Ok(())
+    }
+
+    pub(crate) fn take_erased(&self) -> ApiResult<Option<ErasedUserData>> {
+        let mut slot = self
+            .value
+            .try_borrow_mut()
+            .map_err(|_| ApiError::ReentrantAccess)?;
+        Ok(slot.take())
+    }
+
+    pub(crate) fn try_with<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> ApiResult<Option<R>> {
+        let slot = self
+            .value
+            .try_borrow()
+            .map_err(|_| ApiError::ReentrantAccess)?;
+        let Some(value) = slot.as_ref() else {
+            return Ok(None);
+        };
+        if !value.matches::<T>() {
+            return Err(ApiError::UserDataTypeMismatch);
+        }
+        Ok(Some(value.with_ref(f).expect("type checked")))
+    }
+
+    pub(crate) fn try_with_mut<T: 'static, R>(
+        &self,
+        f: impl FnOnce(&mut T) -> R,
+    ) -> ApiResult<Option<R>> {
+        let mut slot = self
+            .value
+            .try_borrow_mut()
+            .map_err(|_| ApiError::ReentrantAccess)?;
+        let Some(value) = slot.as_mut() else {
+            return Ok(None);
+        };
+        if !value.matches::<T>() {
+            return Err(ApiError::UserDataTypeMismatch);
+        }
+        Ok(Some(value.with_mut(f).expect("type checked")))
+    }
+
+    pub(crate) fn take<T: 'static>(&self) -> ApiResult<Option<T>> {
+        let mut slot = self
+            .value
+            .try_borrow_mut()
+            .map_err(|_| ApiError::ReentrantAccess)?;
+        let Some(value) = slot.as_ref() else {
+            return Ok(None);
+        };
+        if !value.matches::<T>() {
+            return Err(ApiError::UserDataTypeMismatch);
+        }
+        let value = slot.take().expect("value checked");
+        drop(slot);
+        match value.try_into_value::<T>() {
+            Ok(value) => Ok(Some(value)),
+            Err(_) => unreachable!("type checked"),
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct UserDataStore {
-    pub(crate) world: Option<ErasedUserData>,
-    pub(crate) bodies: HashMap<IdKey, ErasedUserData>,
-    pub(crate) shapes: HashMap<IdKey, ErasedUserData>,
-    pub(crate) joints: HashMap<IdKey, ErasedUserData>,
+    pub(crate) world: Option<UserDataEntryRef>,
+    pub(crate) bodies: HashMap<IdKey, UserDataEntryRef>,
+    pub(crate) shapes: HashMap<IdKey, UserDataEntryRef>,
+    pub(crate) joints: HashMap<IdKey, UserDataEntryRef>,
 }

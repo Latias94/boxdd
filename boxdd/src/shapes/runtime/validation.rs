@@ -110,7 +110,7 @@ pub(crate) fn check_polygon_geometry_valid(polygon: &Polygon) -> ApiResult<()> {
 }
 
 #[track_caller]
-fn assert_shape_world_point_in_local_range(name: &str, id: ShapeId, value: Position) {
+pub(crate) fn assert_shape_world_point_in_local_range(name: &str, id: ShapeId, value: Position) {
     crate::body::assert_body_world_point_in_local_range(
         name,
         value,
@@ -119,7 +119,10 @@ fn assert_shape_world_point_in_local_range(name: &str, id: ShapeId, value: Posit
 }
 
 #[inline]
-fn check_shape_world_point_in_local_range(id: ShapeId, value: Position) -> ApiResult<()> {
+pub(crate) fn check_shape_world_point_in_local_range(
+    id: ShapeId,
+    value: Position,
+) -> ApiResult<()> {
     crate::body::check_body_world_point_in_local_range(
         value,
         crate::body::body_position_impl(shape_body_id_impl(id)),
@@ -128,12 +131,12 @@ fn check_shape_world_point_in_local_range(id: ShapeId, value: Position) -> ApiRe
 }
 
 #[track_caller]
-fn assert_shape_vec2_valid(name: &str, value: Vec2) {
+pub(crate) fn assert_shape_vec2_valid(name: &str, value: Vec2) {
     assert!(value.is_valid(), "{name} must be a valid local vector");
 }
 
 #[inline]
-fn check_shape_vec2_valid(value: Vec2) -> ApiResult<()> {
+pub(crate) fn check_shape_vec2_valid(value: Vec2) -> ApiResult<()> {
     if value.is_valid() {
         Ok(())
     } else {
@@ -142,7 +145,6 @@ fn check_shape_vec2_valid(value: Vec2) -> ApiResult<()> {
 }
 
 pub(crate) fn shape_closest_point_checked_impl(id: ShapeId, target: Position) -> Position {
-    crate::core::debug_checks::assert_shape_valid(id);
     assert_shape_world_point_in_local_range("target", id, target);
     shape_closest_point_impl(id, target)
 }
@@ -151,89 +153,34 @@ pub(crate) fn try_shape_closest_point_checked_impl(
     id: ShapeId,
     target: Position,
 ) -> ApiResult<Position> {
-    crate::core::debug_checks::check_shape_valid(id)?;
     check_shape_world_point_in_local_range(id, target)?;
     Ok(shape_closest_point_impl(id, target))
 }
 
 pub(crate) fn shape_test_point_checked_impl(id: ShapeId, point: Position) -> bool {
-    crate::core::debug_checks::assert_shape_valid(id);
     assert_shape_world_point_in_local_range("point", id, point);
     shape_test_point_impl(id, point)
 }
 
 pub(crate) fn try_shape_test_point_checked_impl(id: ShapeId, point: Position) -> ApiResult<bool> {
-    crate::core::debug_checks::check_shape_valid(id)?;
     check_shape_world_point_in_local_range(id, point)?;
     Ok(shape_test_point_impl(id, point))
 }
 
-pub(crate) fn shape_ray_cast_checked_impl<VT: Into<Vec2>>(
+pub(crate) fn shape_ray_cast_checked_impl(
     id: ShapeId,
     origin: Position,
-    translation: VT,
+    translation: Vec2,
 ) -> WorldCastOutput {
-    crate::core::debug_checks::assert_shape_valid(id);
     assert_shape_world_point_in_local_range("origin", id, origin);
-    let translation = translation.into();
-    assert_shape_vec2_valid("translation", translation);
     shape_ray_cast_impl(id, origin, translation)
 }
 
-pub(crate) fn try_shape_ray_cast_checked_impl<VT: Into<Vec2>>(
+pub(crate) fn try_shape_ray_cast_checked_impl(
     id: ShapeId,
     origin: Position,
-    translation: VT,
+    translation: Vec2,
 ) -> ApiResult<WorldCastOutput> {
-    crate::core::debug_checks::check_shape_valid(id)?;
     check_shape_world_point_in_local_range(id, origin)?;
-    let translation = translation.into();
-    check_shape_vec2_valid(translation)?;
     Ok(shape_ray_cast_impl(id, origin, translation))
-}
-
-pub(crate) fn shape_set_density_checked_impl(id: ShapeId, density: f32, update_body_mass: bool) {
-    crate::core::debug_checks::assert_shape_valid(id);
-    assert_non_negative_finite_shape_scalar("density", density);
-    shape_set_density_impl(id, density, update_body_mass);
-}
-
-pub(crate) fn try_shape_set_density_checked_impl(
-    id: ShapeId,
-    density: f32,
-    update_body_mass: bool,
-) -> ApiResult<()> {
-    crate::core::debug_checks::check_shape_valid(id)?;
-    check_non_negative_finite_shape_scalar(density)?;
-    shape_set_density_impl(id, density, update_body_mass);
-    Ok(())
-}
-
-pub(crate) fn shape_set_friction_checked_impl(id: ShapeId, friction: f32) {
-    crate::core::debug_checks::assert_shape_valid(id);
-    assert_non_negative_finite_shape_scalar("friction", friction);
-    shape_set_friction_impl(id, friction);
-}
-
-pub(crate) fn try_shape_set_friction_checked_impl(id: ShapeId, friction: f32) -> ApiResult<()> {
-    crate::core::debug_checks::check_shape_valid(id)?;
-    check_non_negative_finite_shape_scalar(friction)?;
-    shape_set_friction_impl(id, friction);
-    Ok(())
-}
-
-pub(crate) fn shape_set_restitution_checked_impl(id: ShapeId, restitution: f32) {
-    crate::core::debug_checks::assert_shape_valid(id);
-    assert_non_negative_finite_shape_scalar("restitution", restitution);
-    shape_set_restitution_impl(id, restitution);
-}
-
-pub(crate) fn try_shape_set_restitution_checked_impl(
-    id: ShapeId,
-    restitution: f32,
-) -> ApiResult<()> {
-    crate::core::debug_checks::check_shape_valid(id)?;
-    check_non_negative_finite_shape_scalar(restitution)?;
-    shape_set_restitution_impl(id, restitution);
-    Ok(())
 }

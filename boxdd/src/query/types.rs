@@ -359,14 +359,21 @@ pub struct RayResult {
 
 impl RayResult {
     #[inline]
-    pub fn from_raw(raw: ffi::b2RayResult) -> Self {
-        Self {
-            shape_id: ShapeId::from_raw(raw.shapeId),
+    pub(crate) fn from_raw_in(
+        brand: crate::id::IdBrand,
+        raw: ffi::b2RayResult,
+    ) -> crate::error::ApiResult<Option<Self>> {
+        if !raw.hit {
+            return Ok(None);
+        }
+
+        Ok(Some(Self {
+            shape_id: brand.try_shape(raw.shapeId)?,
             point: Position::from_raw(raw.point),
             normal: Vec2::from_raw(raw.normal),
             fraction: raw.fraction,
-            hit: raw.hit,
-        }
+            hit: true,
+        }))
     }
 }
 

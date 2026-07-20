@@ -8,40 +8,41 @@ use super::user_data::{
     try_joint_with_user_data_checked_impl, try_joint_with_user_data_mut_checked_impl,
 };
 use super::*;
-use crate::error::ApiResult;
+use crate::error::{ApiError, ApiResult};
 use crate::types::{BodyId, JointId, Vec2};
 use std::os::raw::c_void;
-
-fn joint_is_valid_checked_impl(id: JointId) -> ApiResult<bool> {
-    crate::core::callback_state::check_not_in_callback()?;
-    Ok(joint_is_valid_impl(id))
-}
-
-fn joint_is_valid_panicking_impl(id: JointId) -> bool {
-    crate::core::callback_state::assert_not_in_callback();
-    joint_is_valid_impl(id)
-}
 
 pub(crate) trait JointRuntimeHandle {
     fn joint_id(&self) -> JointId;
     fn joint_world_core(&self) -> &WorldCore;
 
     #[inline]
+    #[track_caller]
     fn assert_valid(&self) {
-        crate::core::debug_checks::assert_joint_valid(self.joint_id());
+        self.check_valid()
+            .expect("joint handle is unavailable, foreign, or invalid");
     }
 
     #[inline]
     fn check_valid(&self) -> ApiResult<()> {
-        crate::core::debug_checks::check_joint_valid(self.joint_id())
+        crate::core::callback_state::check_not_in_callback()?;
+        self.joint_world_core().check_joint(self.joint_id())
     }
 
     fn is_valid(&self) -> bool {
-        joint_is_valid_panicking_impl(self.joint_id())
+        self.try_is_valid()
+            .expect("joint handle is unavailable or foreign")
     }
 
     fn try_is_valid(&self) -> ApiResult<bool> {
-        joint_is_valid_checked_impl(self.joint_id())
+        crate::core::callback_state::check_not_in_callback()?;
+        let core = self.joint_world_core();
+        core.check_available()?;
+        let id = self.joint_id();
+        if id.brand() != core.brand() {
+            return Err(ApiError::WrongWorld);
+        }
+        Ok(joint_is_valid_impl(id))
     }
 
     fn joint_type(&self) -> JointType {
@@ -66,22 +67,28 @@ pub(crate) trait JointRuntimeHandle {
 
     fn body_a_id(&self) -> BodyId {
         self.assert_valid();
-        joint_body_a_id_impl(self.joint_id())
+        joint_body_a_id_in_impl(self.joint_world_core().brand(), self.joint_id())
     }
 
     fn try_body_a_id(&self) -> ApiResult<BodyId> {
         self.check_valid()?;
-        Ok(joint_body_a_id_impl(self.joint_id()))
+        Ok(joint_body_a_id_in_impl(
+            self.joint_world_core().brand(),
+            self.joint_id(),
+        ))
     }
 
     fn body_b_id(&self) -> BodyId {
         self.assert_valid();
-        joint_body_b_id_impl(self.joint_id())
+        joint_body_b_id_in_impl(self.joint_world_core().brand(), self.joint_id())
     }
 
     fn try_body_b_id(&self) -> ApiResult<BodyId> {
         self.check_valid()?;
-        Ok(joint_body_b_id_impl(self.joint_id()))
+        Ok(joint_body_b_id_in_impl(
+            self.joint_world_core().brand(),
+            self.joint_id(),
+        ))
     }
 
     fn world_id_raw(&self) -> ffi::b2WorldId {
@@ -286,11 +293,11 @@ pub(crate) trait JointRuntimeHandle {
     }
 
     fn user_data_ptr_raw(&self) -> *mut c_void {
-        joint_user_data_ptr_raw_checked_impl(self.joint_id())
+        joint_user_data_ptr_raw_checked_impl(self.joint_world_core(), self.joint_id())
     }
 
     fn try_user_data_ptr_raw(&self) -> ApiResult<*mut c_void> {
-        try_joint_user_data_ptr_raw_impl(self.joint_id())
+        try_joint_user_data_ptr_raw_impl(self.joint_world_core(), self.joint_id())
     }
 
     fn set_user_data<T: 'static>(&mut self, value: T) {
@@ -354,5 +361,19 @@ impl<'w> JointRuntimeHandle for Joint<'w> {
 
     fn joint_world_core(&self) -> &WorldCore {
         self.core.as_ref()
+    }
+}
+
+impl OwnedJoint {
+    #[inline]
+    pub(in crate::joints) fn runtime_world_core(&self) -> &WorldCore {
+        JointRuntimeHandle::joint_world_core(self)
+    }
+}
+
+impl Joint<'_> {
+    #[inline]
+    pub(in crate::joints) fn runtime_world_core(&self) -> &WorldCore {
+        JointRuntimeHandle::joint_world_core(self)
     }
 }

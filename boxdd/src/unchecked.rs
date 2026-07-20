@@ -107,7 +107,8 @@ unsafe fn body_gravity_scale_unchecked_impl(id: BodyId) -> f32 {
 
 #[inline]
 unsafe fn shape_body_unchecked_impl(id: ShapeId) -> BodyId {
-    BodyId::from_raw(unsafe { ffi::b2Shape_GetBody(raw_shape_id(id)) })
+    id.brand()
+        .body(unsafe { ffi::b2Shape_GetBody(raw_shape_id(id)) })
 }
 
 #[inline]
@@ -164,12 +165,13 @@ unsafe fn chain_raw_surface_material_count_unchecked_impl(id: ChainId) -> i32 {
 #[inline]
 unsafe fn chain_segments_unchecked_impl(id: ChainId) -> Vec<ShapeId> {
     let count = unsafe { chain_segment_count_unchecked_impl(id) };
+    let brand = id.brand();
     let id = raw_chain_id(id);
     unsafe {
         crate::core::ffi_vec::read_mapped_from_ffi(
             count,
             |ptr, count| ffi::b2Chain_GetSegments(id, ptr, count),
-            ShapeId::from_raw,
+            |raw| brand.shape(raw),
         )
         .expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT)
     }

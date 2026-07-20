@@ -22,6 +22,36 @@ pub enum ApiError {
     #[error("boxdd API called from a Box2D callback; Box2D world is locked")]
     InCallback,
 
+    #[error("identifier belongs to a different Rust world")]
+    WrongWorld,
+
+    #[error("raw identifier has the wrong object kind")]
+    WrongIdKind,
+
+    #[error("raw identifier uses an unsupported representation")]
+    InvalidRawId,
+
+    #[error("the process exhausted its Rust world identity space")]
+    WorldIdentityExhausted,
+
+    #[error("the world exhausted a native object identity slot")]
+    ObjectIdentityExhausted,
+
+    #[error("failed to allocate native object identity tracking storage")]
+    IdentityTrackingAllocationFailed,
+
+    #[error("user data is already borrowed incompatibly by this call stack")]
+    ReentrantAccess,
+
+    #[error("world is poisoned")]
+    WorldPoisoned,
+
+    #[error("world has been destroyed")]
+    WorldDestroyed,
+
+    #[error("world is busy recording or restoring state")]
+    WorldBusy,
+
     #[error("invalid BodyId")]
     InvalidBodyId,
     #[error("invalid ShapeId")]

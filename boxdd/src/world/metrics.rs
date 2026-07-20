@@ -8,19 +8,6 @@ pub struct OwnedHandleCounts {
     pub chains: usize,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub struct OutstandingOwnedHandles {
-    /// `Arc` strong count of the internal world core, including the `World` itself.
-    pub strong_count: usize,
-    pub counts: OwnedHandleCounts,
-}
-
-impl OutstandingOwnedHandles {
-    pub fn total(&self) -> usize {
-        self.counts.bodies + self.counts.shapes + self.counts.joints + self.counts.chains
-    }
-}
-
 /// Simulation counters providing size and internal stats.
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct Counters {

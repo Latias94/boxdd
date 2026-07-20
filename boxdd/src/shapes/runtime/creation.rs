@@ -13,6 +13,17 @@ pub(crate) fn record_shape_flags_on_create(
     let _ = (core, body, id, def);
 }
 
+fn finish_shape_creation(
+    core: &crate::core::world_core::WorldCore,
+    body: BodyId,
+    def: &ShapeDef,
+    raw: ffi::b2ShapeId,
+) -> ApiResult<ShapeId> {
+    let id = core.finish_created_shape(raw)?;
+    record_shape_flags_on_create(core, body, id, def);
+    Ok(id)
+}
+
 pub(crate) fn create_body_attached_shape_id_impl<G, R>(
     core: &crate::core::world_core::WorldCore,
     body: BodyId,
@@ -22,13 +33,13 @@ pub(crate) fn create_body_attached_shape_id_impl<G, R>(
     into_raw: impl FnOnce(&G) -> R,
     create_raw: impl FnOnce(ffi::b2BodyId, &ffi::b2ShapeDef, &R) -> ffi::b2ShapeId,
 ) -> ShapeId {
-    crate::core::debug_checks::assert_body_valid(body);
+    crate::core::callback_state::assert_not_in_callback();
+    core.check_body(body).expect("invalid or foreign BodyId");
     assert_shape_def_valid(def);
     assert_geometry_valid(geometry);
     let raw = into_raw(geometry);
-    let id = ShapeId::from_raw(create_raw(body.into_raw(), &def.0, &raw));
-    record_shape_flags_on_create(core, body, id, def);
-    id
+    let raw_id = create_raw(body.into_raw(), &def.0, &raw);
+    finish_shape_creation(core, body, def, raw_id).expect("Box2D returned an invalid ShapeId")
 }
 
 pub(crate) fn try_create_body_attached_shape_id_impl<G, R>(
@@ -40,29 +51,29 @@ pub(crate) fn try_create_body_attached_shape_id_impl<G, R>(
     into_raw: impl FnOnce(&G) -> R,
     create_raw: impl FnOnce(ffi::b2BodyId, &ffi::b2ShapeDef, &R) -> ffi::b2ShapeId,
 ) -> ApiResult<ShapeId> {
-    crate::core::debug_checks::check_body_valid(body)?;
+    crate::core::callback_state::check_not_in_callback()?;
+    core.check_body(body)?;
     check_shape_def_valid(def)?;
     check_geometry_valid(geometry)?;
     let raw = into_raw(geometry);
-    let id = ShapeId::from_raw(create_raw(body.into_raw(), &def.0, &raw));
-    record_shape_flags_on_create(core, body, id, def);
-    Ok(id)
+    let raw_id = create_raw(body.into_raw(), &def.0, &raw);
+    finish_shape_creation(core, body, def, raw_id)
 }
 
 pub(crate) fn create_body_attached_shape_handle<T, G>(
-    core: &Arc<crate::core::world_core::WorldCore>,
+    core: &Rc<crate::core::world_core::WorldCore>,
     body: BodyId,
     def: &ShapeDef,
     geometry: &G,
     create: impl FnOnce(&crate::core::world_core::WorldCore, BodyId, &ShapeDef, &G) -> ShapeId,
-    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+    wrap: impl FnOnce(Rc<crate::core::world_core::WorldCore>, ShapeId) -> T,
 ) -> T {
     let id = create(core.as_ref(), body, def, geometry);
-    wrap(Arc::clone(core), id)
+    wrap(Rc::clone(core), id)
 }
 
 pub(crate) fn try_create_body_attached_shape_handle<T, G>(
-    core: &Arc<crate::core::world_core::WorldCore>,
+    core: &Rc<crate::core::world_core::WorldCore>,
     body: BodyId,
     def: &ShapeDef,
     geometry: &G,
@@ -72,19 +83,19 @@ pub(crate) fn try_create_body_attached_shape_handle<T, G>(
         &ShapeDef,
         &G,
     ) -> ApiResult<ShapeId>,
-    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+    wrap: impl FnOnce(Rc<crate::core::world_core::WorldCore>, ShapeId) -> T,
 ) -> ApiResult<T> {
     let id = create(core.as_ref(), body, def, geometry)?;
-    Ok(wrap(Arc::clone(core), id))
+    Ok(wrap(Rc::clone(core), id))
 }
 
 pub(crate) fn create_body_attached_box_shape_handle<T>(
-    core: &Arc<crate::core::world_core::WorldCore>,
+    core: &Rc<crate::core::world_core::WorldCore>,
     body: BodyId,
     def: &ShapeDef,
     half_w: f32,
     half_h: f32,
-    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+    wrap: impl FnOnce(Rc<crate::core::world_core::WorldCore>, ShapeId) -> T,
 ) -> T {
     let polygon = box_polygon(half_w, half_h);
     create_body_attached_shape_handle(
@@ -98,12 +109,12 @@ pub(crate) fn create_body_attached_box_shape_handle<T>(
 }
 
 pub(crate) fn try_create_body_attached_box_shape_handle<T>(
-    core: &Arc<crate::core::world_core::WorldCore>,
+    core: &Rc<crate::core::world_core::WorldCore>,
     body: BodyId,
     def: &ShapeDef,
     half_w: f32,
     half_h: f32,
-    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+    wrap: impl FnOnce(Rc<crate::core::world_core::WorldCore>, ShapeId) -> T,
 ) -> ApiResult<T> {
     let polygon = crate::shapes::try_box_polygon(half_w, half_h)?;
     try_create_body_attached_shape_handle(
@@ -117,11 +128,11 @@ pub(crate) fn try_create_body_attached_box_shape_handle<T>(
 }
 
 pub(crate) fn create_body_attached_circle_simple_shape_handle<T>(
-    core: &Arc<crate::core::world_core::WorldCore>,
+    core: &Rc<crate::core::world_core::WorldCore>,
     body: BodyId,
     def: &ShapeDef,
     radius: f32,
-    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+    wrap: impl FnOnce(Rc<crate::core::world_core::WorldCore>, ShapeId) -> T,
 ) -> T {
     let circle = circle([0.0_f32, 0.0], radius);
     create_body_attached_shape_handle(
@@ -135,11 +146,11 @@ pub(crate) fn create_body_attached_circle_simple_shape_handle<T>(
 }
 
 pub(crate) fn try_create_body_attached_circle_simple_shape_handle<T>(
-    core: &Arc<crate::core::world_core::WorldCore>,
+    core: &Rc<crate::core::world_core::WorldCore>,
     body: BodyId,
     def: &ShapeDef,
     radius: f32,
-    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+    wrap: impl FnOnce(Rc<crate::core::world_core::WorldCore>, ShapeId) -> T,
 ) -> ApiResult<T> {
     let circle = circle([0.0_f32, 0.0], radius);
     try_create_body_attached_shape_handle(
@@ -153,12 +164,12 @@ pub(crate) fn try_create_body_attached_circle_simple_shape_handle<T>(
 }
 
 pub(crate) fn create_body_attached_segment_simple_shape_handle<T, V: Into<crate::types::Vec2>>(
-    core: &Arc<crate::core::world_core::WorldCore>,
+    core: &Rc<crate::core::world_core::WorldCore>,
     body: BodyId,
     def: &ShapeDef,
     p1: V,
     p2: V,
-    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+    wrap: impl FnOnce(Rc<crate::core::world_core::WorldCore>, ShapeId) -> T,
 ) -> T {
     let segment = segment(p1, p2);
     create_body_attached_shape_handle(
@@ -175,12 +186,12 @@ pub(crate) fn try_create_body_attached_segment_simple_shape_handle<
     T,
     V: Into<crate::types::Vec2>,
 >(
-    core: &Arc<crate::core::world_core::WorldCore>,
+    core: &Rc<crate::core::world_core::WorldCore>,
     body: BodyId,
     def: &ShapeDef,
     p1: V,
     p2: V,
-    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+    wrap: impl FnOnce(Rc<crate::core::world_core::WorldCore>, ShapeId) -> T,
 ) -> ApiResult<T> {
     let segment = segment(p1, p2);
     try_create_body_attached_shape_handle(
@@ -194,13 +205,13 @@ pub(crate) fn try_create_body_attached_segment_simple_shape_handle<
 }
 
 pub(crate) fn create_body_attached_capsule_simple_shape_handle<T, V: Into<crate::types::Vec2>>(
-    core: &Arc<crate::core::world_core::WorldCore>,
+    core: &Rc<crate::core::world_core::WorldCore>,
     body: BodyId,
     def: &ShapeDef,
     c1: V,
     c2: V,
     radius: f32,
-    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+    wrap: impl FnOnce(Rc<crate::core::world_core::WorldCore>, ShapeId) -> T,
 ) -> T {
     let capsule = capsule(c1, c2, radius);
     create_body_attached_shape_handle(
@@ -217,13 +228,13 @@ pub(crate) fn try_create_body_attached_capsule_simple_shape_handle<
     T,
     V: Into<crate::types::Vec2>,
 >(
-    core: &Arc<crate::core::world_core::WorldCore>,
+    core: &Rc<crate::core::world_core::WorldCore>,
     body: BodyId,
     def: &ShapeDef,
     c1: V,
     c2: V,
     radius: f32,
-    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+    wrap: impl FnOnce(Rc<crate::core::world_core::WorldCore>, ShapeId) -> T,
 ) -> ApiResult<T> {
     let capsule = capsule(c1, c2, radius);
     try_create_body_attached_shape_handle(
@@ -237,12 +248,12 @@ pub(crate) fn try_create_body_attached_capsule_simple_shape_handle<
 }
 
 pub(crate) fn create_body_attached_polygon_from_points_shape_handle<T, I, P>(
-    core: &Arc<crate::core::world_core::WorldCore>,
+    core: &Rc<crate::core::world_core::WorldCore>,
     body: BodyId,
     def: &ShapeDef,
     points: I,
     radius: f32,
-    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+    wrap: impl FnOnce(Rc<crate::core::world_core::WorldCore>, ShapeId) -> T,
 ) -> Option<T>
 where
     I: IntoIterator<Item = P>,
@@ -260,12 +271,12 @@ where
 }
 
 pub(crate) fn try_create_body_attached_polygon_from_points_shape_handle<T, I, P>(
-    core: &Arc<crate::core::world_core::WorldCore>,
+    core: &Rc<crate::core::world_core::WorldCore>,
     body: BodyId,
     def: &ShapeDef,
     points: I,
     radius: f32,
-    wrap: impl FnOnce(Arc<crate::core::world_core::WorldCore>, ShapeId) -> T,
+    wrap: impl FnOnce(Rc<crate::core::world_core::WorldCore>, ShapeId) -> T,
 ) -> ApiResult<T>
 where
     I: IntoIterator<Item = P>,
@@ -416,4 +427,56 @@ pub(crate) fn try_create_circle_shape_for_body_impl(
         |circle| circle.into_raw(),
         |body, def, raw| unsafe { ffi::b2CreateCircleShape(body, def, raw) },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn shape_creation_registers_identity_before_returning() {
+        let mut world = World::new(crate::WorldDef::default()).unwrap();
+        let body = world.create_body_id(crate::BodyBuilder::new().build());
+        let core = world.core();
+        let def = ShapeDef::default();
+        let shape =
+            try_create_circle_shape_for_body_impl(core, body, &def, &circle([0.0_f32, 0.0], 0.5))
+                .unwrap();
+
+        assert_eq!(core.check_shape(shape), Ok(()));
+        assert_eq!(
+            core.finish_created_shape(shape.into_raw()),
+            Err(ApiError::ObjectIdentityExhausted)
+        );
+        assert_eq!(core.check_available(), Err(ApiError::WorldPoisoned));
+    }
+
+    #[test]
+    fn shape_creation_checks_the_target_body_before_ffi() {
+        let mut source = World::new(crate::WorldDef::default()).unwrap();
+        let foreign_body = source.create_body_id(crate::BodyBuilder::new().build());
+        let target = World::new(crate::WorldDef::default()).unwrap();
+        let called = Cell::new(false);
+
+        let result = try_create_body_attached_shape_id_impl(
+            target.core(),
+            foreign_body,
+            &ShapeDef::default(),
+            &circle([0.0_f32, 0.0], 0.5),
+            check_circle_geometry_valid,
+            |circle| circle.into_raw(),
+            |_, _, _| {
+                called.set(true);
+                ffi::b2ShapeId {
+                    index1: 0,
+                    world0: 0,
+                    generation: 0,
+                }
+            },
+        );
+
+        assert_eq!(result, Err(ApiError::WrongWorld));
+        assert!(!called.get());
+    }
 }

@@ -101,28 +101,29 @@ fn motor_set_max_spring_torque_impl(id: JointId, value: f32) {
     joint_scalar_write_impl(id, value, ffi::b2MotorJoint_SetMaxSpringTorque)
 }
 
-trait MotorJointRuntimeHandle {
-    fn motor_joint_id(&self) -> JointId;
-
+trait MotorJointRuntimeHandle: TypedJointRuntimeHandle {
     fn motor_linear_velocity(&self) -> Vec2 {
-        joint_kind_get_checked_impl(
-            self.motor_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             motor_linear_velocity_impl,
         )
     }
 
     fn try_motor_linear_velocity(&self) -> ApiResult<Vec2> {
-        try_joint_kind_get_checked_impl(
-            self.motor_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             motor_linear_velocity_impl,
         )
     }
 
     fn motor_set_linear_velocity<V: Into<Vec2>>(&mut self, v: V) {
-        joint_kind_set_checked_impl(
-            self.motor_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             v.into(),
             motor_set_linear_velocity_impl,
@@ -130,8 +131,9 @@ trait MotorJointRuntimeHandle {
     }
 
     fn try_motor_set_linear_velocity<V: Into<Vec2>>(&mut self, v: V) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.motor_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             v.into(),
             motor_set_linear_velocity_impl,
@@ -139,24 +141,27 @@ trait MotorJointRuntimeHandle {
     }
 
     fn motor_angular_velocity(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.motor_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             motor_angular_velocity_impl,
         )
     }
 
     fn try_motor_angular_velocity(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.motor_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             motor_angular_velocity_impl,
         )
     }
 
     fn motor_set_angular_velocity(&mut self, w: f32) {
-        joint_kind_set_checked_impl(
-            self.motor_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             w,
             motor_set_angular_velocity_impl,
@@ -164,8 +169,9 @@ trait MotorJointRuntimeHandle {
     }
 
     fn try_motor_set_angular_velocity(&mut self, w: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.motor_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             w,
             motor_set_angular_velocity_impl,
@@ -173,24 +179,27 @@ trait MotorJointRuntimeHandle {
     }
 
     fn motor_max_velocity_force(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.motor_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             motor_max_velocity_force_impl,
         )
     }
 
     fn try_motor_max_velocity_force(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.motor_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             motor_max_velocity_force_impl,
         )
     }
 
     fn motor_set_max_velocity_force(&mut self, f: f32) {
-        joint_kind_set_checked_impl(
-            self.motor_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             f,
             motor_set_max_velocity_force_impl,
@@ -198,8 +207,9 @@ trait MotorJointRuntimeHandle {
     }
 
     fn try_motor_set_max_velocity_force(&mut self, f: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.motor_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             f,
             motor_set_max_velocity_force_impl,
@@ -207,24 +217,27 @@ trait MotorJointRuntimeHandle {
     }
 
     fn motor_max_velocity_torque(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.motor_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             motor_max_velocity_torque_impl,
         )
     }
 
     fn try_motor_max_velocity_torque(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.motor_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             motor_max_velocity_torque_impl,
         )
     }
 
     fn motor_set_max_velocity_torque(&mut self, t: f32) {
-        joint_kind_set_checked_impl(
-            self.motor_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             t,
             motor_set_max_velocity_torque_impl,
@@ -232,8 +245,9 @@ trait MotorJointRuntimeHandle {
     }
 
     fn try_motor_set_max_velocity_torque(&mut self, t: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.motor_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             t,
             motor_set_max_velocity_torque_impl,
@@ -241,24 +255,27 @@ trait MotorJointRuntimeHandle {
     }
 
     fn motor_linear_hertz(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.motor_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             motor_linear_hertz_impl,
         )
     }
 
     fn try_motor_linear_hertz(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.motor_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             motor_linear_hertz_impl,
         )
     }
 
     fn motor_set_linear_hertz(&mut self, hertz: f32) {
-        joint_kind_set_checked_impl(
-            self.motor_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             hertz,
             motor_set_linear_hertz_impl,
@@ -266,8 +283,9 @@ trait MotorJointRuntimeHandle {
     }
 
     fn try_motor_set_linear_hertz(&mut self, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.motor_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             hertz,
             motor_set_linear_hertz_impl,
@@ -275,24 +293,27 @@ trait MotorJointRuntimeHandle {
     }
 
     fn motor_linear_damping_ratio(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.motor_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             motor_linear_damping_ratio_impl,
         )
     }
 
     fn try_motor_linear_damping_ratio(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.motor_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             motor_linear_damping_ratio_impl,
         )
     }
 
     fn motor_set_linear_damping_ratio(&mut self, damping: f32) {
-        joint_kind_set_checked_impl(
-            self.motor_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             damping,
             motor_set_linear_damping_ratio_impl,
@@ -300,8 +321,9 @@ trait MotorJointRuntimeHandle {
     }
 
     fn try_motor_set_linear_damping_ratio(&mut self, damping: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.motor_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             damping,
             motor_set_linear_damping_ratio_impl,
@@ -309,24 +331,27 @@ trait MotorJointRuntimeHandle {
     }
 
     fn motor_angular_hertz(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.motor_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             motor_angular_hertz_impl,
         )
     }
 
     fn try_motor_angular_hertz(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.motor_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             motor_angular_hertz_impl,
         )
     }
 
     fn motor_set_angular_hertz(&mut self, hertz: f32) {
-        joint_kind_set_checked_impl(
-            self.motor_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             hertz,
             motor_set_angular_hertz_impl,
@@ -334,8 +359,9 @@ trait MotorJointRuntimeHandle {
     }
 
     fn try_motor_set_angular_hertz(&mut self, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.motor_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             hertz,
             motor_set_angular_hertz_impl,
@@ -343,24 +369,27 @@ trait MotorJointRuntimeHandle {
     }
 
     fn motor_angular_damping_ratio(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.motor_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             motor_angular_damping_ratio_impl,
         )
     }
 
     fn try_motor_angular_damping_ratio(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.motor_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             motor_angular_damping_ratio_impl,
         )
     }
 
     fn motor_set_angular_damping_ratio(&mut self, damping: f32) {
-        joint_kind_set_checked_impl(
-            self.motor_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             damping,
             motor_set_angular_damping_ratio_impl,
@@ -368,8 +397,9 @@ trait MotorJointRuntimeHandle {
     }
 
     fn try_motor_set_angular_damping_ratio(&mut self, damping: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.motor_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             damping,
             motor_set_angular_damping_ratio_impl,
@@ -377,24 +407,27 @@ trait MotorJointRuntimeHandle {
     }
 
     fn motor_max_spring_force(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.motor_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             motor_max_spring_force_impl,
         )
     }
 
     fn try_motor_max_spring_force(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.motor_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             motor_max_spring_force_impl,
         )
     }
 
     fn motor_set_max_spring_force(&mut self, f: f32) {
-        joint_kind_set_checked_impl(
-            self.motor_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             f,
             motor_set_max_spring_force_impl,
@@ -402,8 +435,9 @@ trait MotorJointRuntimeHandle {
     }
 
     fn try_motor_set_max_spring_force(&mut self, f: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.motor_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             f,
             motor_set_max_spring_force_impl,
@@ -411,24 +445,27 @@ trait MotorJointRuntimeHandle {
     }
 
     fn motor_max_spring_torque(&self) -> f32 {
-        joint_kind_get_checked_impl(
-            self.motor_joint_id(),
+        joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             motor_max_spring_torque_impl,
         )
     }
 
     fn try_motor_max_spring_torque(&self) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(
-            self.motor_joint_id(),
+        try_joint_kind_get_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             motor_max_spring_torque_impl,
         )
     }
 
     fn motor_set_max_spring_torque(&mut self, t: f32) {
-        joint_kind_set_checked_impl(
-            self.motor_joint_id(),
+        joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             t,
             motor_set_max_spring_torque_impl,
@@ -436,8 +473,9 @@ trait MotorJointRuntimeHandle {
     }
 
     fn try_motor_set_max_spring_torque(&mut self, t: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
-            self.motor_joint_id(),
+        try_joint_kind_set_checked_in_impl(
+            self.typed_joint_world_core(),
+            self.typed_joint_id(),
             JointType::Motor,
             t,
             motor_set_max_spring_torque_impl,
@@ -445,29 +483,32 @@ trait MotorJointRuntimeHandle {
     }
 }
 
-impl MotorJointRuntimeHandle for OwnedJoint {
-    fn motor_joint_id(&self) -> JointId {
-        self.id()
-    }
-}
+impl MotorJointRuntimeHandle for OwnedJoint {}
 
-impl<'w> MotorJointRuntimeHandle for Joint<'w> {
-    fn motor_joint_id(&self) -> JointId {
-        self.id()
-    }
-}
+impl MotorJointRuntimeHandle for Joint<'_> {}
 
 impl World {
     pub fn motor_linear_velocity(&self, id: JointId) -> Vec2 {
-        joint_kind_get_checked_impl(id, JointType::Motor, motor_linear_velocity_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_linear_velocity_impl,
+        )
     }
 
     pub fn try_motor_linear_velocity(&self, id: JointId) -> ApiResult<Vec2> {
-        try_joint_kind_get_checked_impl(id, JointType::Motor, motor_linear_velocity_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_linear_velocity_impl,
+        )
     }
 
     pub fn motor_set_linear_velocity<V: Into<Vec2>>(&mut self, id: JointId, v: V) {
-        joint_kind_set_checked_impl(
+        joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Motor,
             v.into(),
@@ -480,7 +521,8 @@ impl World {
         id: JointId,
         v: V,
     ) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Motor,
             v.into(),
@@ -489,79 +531,173 @@ impl World {
     }
 
     pub fn motor_angular_velocity(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Motor, motor_angular_velocity_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_angular_velocity_impl,
+        )
     }
 
     pub fn try_motor_angular_velocity(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Motor, motor_angular_velocity_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_angular_velocity_impl,
+        )
     }
 
     pub fn motor_set_angular_velocity(&mut self, id: JointId, w: f32) {
-        joint_kind_set_checked_impl(id, JointType::Motor, w, motor_set_angular_velocity_impl)
+        joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            w,
+            motor_set_angular_velocity_impl,
+        )
     }
 
     pub fn try_motor_set_angular_velocity(&mut self, id: JointId, w: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(id, JointType::Motor, w, motor_set_angular_velocity_impl)
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            w,
+            motor_set_angular_velocity_impl,
+        )
     }
 
     pub fn motor_max_velocity_force(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Motor, motor_max_velocity_force_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_max_velocity_force_impl,
+        )
     }
 
     pub fn try_motor_max_velocity_force(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Motor, motor_max_velocity_force_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_max_velocity_force_impl,
+        )
     }
 
     pub fn motor_set_max_velocity_force(&mut self, id: JointId, f: f32) {
-        joint_kind_set_checked_impl(id, JointType::Motor, f, motor_set_max_velocity_force_impl)
+        joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            f,
+            motor_set_max_velocity_force_impl,
+        )
     }
 
     pub fn try_motor_set_max_velocity_force(&mut self, id: JointId, f: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(id, JointType::Motor, f, motor_set_max_velocity_force_impl)
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            f,
+            motor_set_max_velocity_force_impl,
+        )
     }
 
     pub fn motor_max_velocity_torque(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Motor, motor_max_velocity_torque_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_max_velocity_torque_impl,
+        )
     }
 
     pub fn try_motor_max_velocity_torque(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Motor, motor_max_velocity_torque_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_max_velocity_torque_impl,
+        )
     }
 
     pub fn motor_set_max_velocity_torque(&mut self, id: JointId, t: f32) {
-        joint_kind_set_checked_impl(id, JointType::Motor, t, motor_set_max_velocity_torque_impl)
+        joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            t,
+            motor_set_max_velocity_torque_impl,
+        )
     }
 
     pub fn try_motor_set_max_velocity_torque(&mut self, id: JointId, t: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(id, JointType::Motor, t, motor_set_max_velocity_torque_impl)
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            t,
+            motor_set_max_velocity_torque_impl,
+        )
     }
 
     pub fn motor_linear_hertz(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Motor, motor_linear_hertz_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Motor, motor_linear_hertz_impl)
     }
 
     pub fn try_motor_linear_hertz(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Motor, motor_linear_hertz_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_linear_hertz_impl,
+        )
     }
 
     pub fn motor_set_linear_hertz(&mut self, id: JointId, hertz: f32) {
-        joint_kind_set_checked_impl(id, JointType::Motor, hertz, motor_set_linear_hertz_impl)
+        joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            hertz,
+            motor_set_linear_hertz_impl,
+        )
     }
 
     pub fn try_motor_set_linear_hertz(&mut self, id: JointId, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(id, JointType::Motor, hertz, motor_set_linear_hertz_impl)
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            hertz,
+            motor_set_linear_hertz_impl,
+        )
     }
 
     pub fn motor_linear_damping_ratio(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Motor, motor_linear_damping_ratio_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_linear_damping_ratio_impl,
+        )
     }
 
     pub fn try_motor_linear_damping_ratio(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Motor, motor_linear_damping_ratio_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_linear_damping_ratio_impl,
+        )
     }
 
     pub fn motor_set_linear_damping_ratio(&mut self, id: JointId, damping: f32) {
-        joint_kind_set_checked_impl(
+        joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Motor,
             damping,
@@ -574,7 +710,8 @@ impl World {
         id: JointId,
         damping: f32,
     ) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Motor,
             damping,
@@ -583,31 +720,59 @@ impl World {
     }
 
     pub fn motor_angular_hertz(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Motor, motor_angular_hertz_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Motor, motor_angular_hertz_impl)
     }
 
     pub fn try_motor_angular_hertz(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Motor, motor_angular_hertz_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_angular_hertz_impl,
+        )
     }
 
     pub fn motor_set_angular_hertz(&mut self, id: JointId, hertz: f32) {
-        joint_kind_set_checked_impl(id, JointType::Motor, hertz, motor_set_angular_hertz_impl)
+        joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            hertz,
+            motor_set_angular_hertz_impl,
+        )
     }
 
     pub fn try_motor_set_angular_hertz(&mut self, id: JointId, hertz: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(id, JointType::Motor, hertz, motor_set_angular_hertz_impl)
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            hertz,
+            motor_set_angular_hertz_impl,
+        )
     }
 
     pub fn motor_angular_damping_ratio(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Motor, motor_angular_damping_ratio_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_angular_damping_ratio_impl,
+        )
     }
 
     pub fn try_motor_angular_damping_ratio(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Motor, motor_angular_damping_ratio_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_angular_damping_ratio_impl,
+        )
     }
 
     pub fn motor_set_angular_damping_ratio(&mut self, id: JointId, damping: f32) {
-        joint_kind_set_checked_impl(
+        joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Motor,
             damping,
@@ -620,7 +785,8 @@ impl World {
         id: JointId,
         damping: f32,
     ) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
             id,
             JointType::Motor,
             damping,
@@ -629,117 +795,251 @@ impl World {
     }
 
     pub fn motor_max_spring_force(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Motor, motor_max_spring_force_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_max_spring_force_impl,
+        )
     }
 
     pub fn try_motor_max_spring_force(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Motor, motor_max_spring_force_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_max_spring_force_impl,
+        )
     }
 
     pub fn motor_set_max_spring_force(&mut self, id: JointId, f: f32) {
-        joint_kind_set_checked_impl(id, JointType::Motor, f, motor_set_max_spring_force_impl)
+        joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            f,
+            motor_set_max_spring_force_impl,
+        )
     }
 
     pub fn try_motor_set_max_spring_force(&mut self, id: JointId, f: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(id, JointType::Motor, f, motor_set_max_spring_force_impl)
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            f,
+            motor_set_max_spring_force_impl,
+        )
     }
 
     pub fn motor_max_spring_torque(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Motor, motor_max_spring_torque_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_max_spring_torque_impl,
+        )
     }
 
     pub fn try_motor_max_spring_torque(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Motor, motor_max_spring_torque_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_max_spring_torque_impl,
+        )
     }
 
     pub fn motor_set_max_spring_torque(&mut self, id: JointId, t: f32) {
-        joint_kind_set_checked_impl(id, JointType::Motor, t, motor_set_max_spring_torque_impl)
+        joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            t,
+            motor_set_max_spring_torque_impl,
+        )
     }
 
     pub fn try_motor_set_max_spring_torque(&mut self, id: JointId, t: f32) -> ApiResult<()> {
-        try_joint_kind_set_checked_impl(id, JointType::Motor, t, motor_set_max_spring_torque_impl)
+        try_joint_kind_set_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            t,
+            motor_set_max_spring_torque_impl,
+        )
     }
 }
 
 impl WorldHandle {
     pub fn motor_linear_velocity(&self, id: JointId) -> Vec2 {
-        joint_kind_get_checked_impl(id, JointType::Motor, motor_linear_velocity_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_linear_velocity_impl,
+        )
     }
 
     pub fn try_motor_linear_velocity(&self, id: JointId) -> ApiResult<Vec2> {
-        try_joint_kind_get_checked_impl(id, JointType::Motor, motor_linear_velocity_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_linear_velocity_impl,
+        )
     }
 
     pub fn motor_angular_velocity(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Motor, motor_angular_velocity_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_angular_velocity_impl,
+        )
     }
 
     pub fn try_motor_angular_velocity(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Motor, motor_angular_velocity_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_angular_velocity_impl,
+        )
     }
 
     pub fn motor_max_velocity_force(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Motor, motor_max_velocity_force_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_max_velocity_force_impl,
+        )
     }
 
     pub fn try_motor_max_velocity_force(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Motor, motor_max_velocity_force_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_max_velocity_force_impl,
+        )
     }
 
     pub fn motor_max_velocity_torque(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Motor, motor_max_velocity_torque_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_max_velocity_torque_impl,
+        )
     }
 
     pub fn try_motor_max_velocity_torque(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Motor, motor_max_velocity_torque_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_max_velocity_torque_impl,
+        )
     }
 
     pub fn motor_linear_hertz(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Motor, motor_linear_hertz_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Motor, motor_linear_hertz_impl)
     }
 
     pub fn try_motor_linear_hertz(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Motor, motor_linear_hertz_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_linear_hertz_impl,
+        )
     }
 
     pub fn motor_linear_damping_ratio(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Motor, motor_linear_damping_ratio_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_linear_damping_ratio_impl,
+        )
     }
 
     pub fn try_motor_linear_damping_ratio(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Motor, motor_linear_damping_ratio_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_linear_damping_ratio_impl,
+        )
     }
 
     pub fn motor_angular_hertz(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Motor, motor_angular_hertz_impl)
+        joint_kind_get_checked_in_impl(self.core(), id, JointType::Motor, motor_angular_hertz_impl)
     }
 
     pub fn try_motor_angular_hertz(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Motor, motor_angular_hertz_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_angular_hertz_impl,
+        )
     }
 
     pub fn motor_angular_damping_ratio(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Motor, motor_angular_damping_ratio_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_angular_damping_ratio_impl,
+        )
     }
 
     pub fn try_motor_angular_damping_ratio(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Motor, motor_angular_damping_ratio_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_angular_damping_ratio_impl,
+        )
     }
 
     pub fn motor_max_spring_force(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Motor, motor_max_spring_force_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_max_spring_force_impl,
+        )
     }
 
     pub fn try_motor_max_spring_force(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Motor, motor_max_spring_force_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_max_spring_force_impl,
+        )
     }
 
     pub fn motor_max_spring_torque(&self, id: JointId) -> f32 {
-        joint_kind_get_checked_impl(id, JointType::Motor, motor_max_spring_torque_impl)
+        joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_max_spring_torque_impl,
+        )
     }
 
     pub fn try_motor_max_spring_torque(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_kind_get_checked_impl(id, JointType::Motor, motor_max_spring_torque_impl)
+        try_joint_kind_get_checked_in_impl(
+            self.core(),
+            id,
+            JointType::Motor,
+            motor_max_spring_torque_impl,
+        )
     }
 }
 

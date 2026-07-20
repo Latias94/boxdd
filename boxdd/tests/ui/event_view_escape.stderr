@@ -1,0 +1,8 @@
+error: lifetime may not live long enough
+ --> tests/ui/event_view_escape.rs:5:60
+  |
+5 |     let escaped = world.with_body_events_view(|mut events| events.next());
+  |                                                ----------- ^^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`
+  |                                                |         |
+  |                                                |         return type of closure is Option<events::body::BodyMove<'2>>
+  |                                                has type `events::body::BodyMoveIter<'1>`

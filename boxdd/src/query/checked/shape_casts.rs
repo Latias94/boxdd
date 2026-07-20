@@ -6,7 +6,7 @@
 use super::*;
 
 pub(crate) fn cast_shape_points_checked_impl<I, P, VT>(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     points: I,
     radius: f32,
@@ -18,18 +18,19 @@ where
     P: Into<Vec2>,
     VT: Into<Vec2>,
 {
-    checked_query_impl(|| {
-        let translation = translation.into();
-        assert_query_position_valid("origin", origin);
-        assert_query_non_negative_finite_scalar("radius", radius);
-        assert_query_vec2_valid("translation", translation);
-        let points = collect_asserted_proxy_points(points);
-        cast_shape_points_impl(raw_world_id, origin, &points, radius, translation, filter)
+    checked_query_preflight(&target);
+    let translation = translation.into();
+    assert_query_position_valid("origin", origin);
+    assert_query_non_negative_finite_scalar("radius", radius);
+    assert_query_vec2_valid("translation", translation);
+    let points = collect_asserted_proxy_points(points);
+    checked_query_impl(&target, || {
+        cast_shape_points_impl(&target, origin, &points, radius, translation, filter)
     })
 }
 
 pub(crate) fn cast_shape_points_into_checked_impl<I, P, VT>(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     points: I,
     radius: f32,
@@ -41,26 +42,19 @@ pub(crate) fn cast_shape_points_into_checked_impl<I, P, VT>(
     P: Into<Vec2>,
     VT: Into<Vec2>,
 {
-    checked_query_impl(|| {
-        let translation = translation.into();
-        assert_query_position_valid("origin", origin);
-        assert_query_non_negative_finite_scalar("radius", radius);
-        assert_query_vec2_valid("translation", translation);
-        let points = collect_asserted_proxy_points(points);
-        cast_shape_points_into_impl(
-            raw_world_id,
-            origin,
-            &points,
-            radius,
-            translation,
-            filter,
-            out,
-        )
+    checked_query_preflight(&target);
+    let translation = translation.into();
+    assert_query_position_valid("origin", origin);
+    assert_query_non_negative_finite_scalar("radius", radius);
+    assert_query_vec2_valid("translation", translation);
+    let points = collect_asserted_proxy_points(points);
+    checked_query_impl(&target, || {
+        cast_shape_points_into_impl(&target, origin, &points, radius, translation, filter, out)
     });
 }
 
 pub(crate) fn try_cast_shape_points_impl<I, P, VT>(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     points: I,
     radius: f32,
@@ -72,14 +66,15 @@ where
     P: Into<Vec2>,
     VT: Into<Vec2>,
 {
-    try_checked_query_result_impl(|| {
-        let translation = translation.into();
-        check_query_position_valid(origin)?;
-        check_query_non_negative_finite_scalar(radius)?;
-        check_query_vec2_valid(translation)?;
-        let points = try_collect_proxy_points(points)?;
+    try_checked_query_preflight(&target)?;
+    let translation = translation.into();
+    check_query_position_valid(origin)?;
+    check_query_non_negative_finite_scalar(radius)?;
+    check_query_vec2_valid(translation)?;
+    let points = try_collect_proxy_points(points)?;
+    try_checked_query_result_impl(&target, || {
         Ok(cast_shape_points_impl(
-            raw_world_id,
+            &target,
             origin,
             &points,
             radius,
@@ -90,7 +85,7 @@ where
 }
 
 pub(crate) fn try_cast_shape_points_into_impl<I, P, VT>(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     points: I,
     radius: f32,
@@ -103,27 +98,20 @@ where
     P: Into<Vec2>,
     VT: Into<Vec2>,
 {
-    try_checked_query_result_impl(|| {
-        let translation = translation.into();
-        check_query_position_valid(origin)?;
-        check_query_non_negative_finite_scalar(radius)?;
-        check_query_vec2_valid(translation)?;
-        let points = try_collect_proxy_points(points)?;
-        cast_shape_points_into_impl(
-            raw_world_id,
-            origin,
-            &points,
-            radius,
-            translation,
-            filter,
-            out,
-        );
+    try_checked_query_preflight(&target)?;
+    let translation = translation.into();
+    check_query_position_valid(origin)?;
+    check_query_non_negative_finite_scalar(radius)?;
+    check_query_vec2_valid(translation)?;
+    let points = try_collect_proxy_points(points)?;
+    try_checked_query_result_impl(&target, || {
+        cast_shape_points_into_impl(&target, origin, &points, radius, translation, filter, out);
         Ok(())
     })
 }
 
 pub(crate) fn cast_shape_points_with_offset_checked_impl<I, P, V, A, VT>(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     points: I,
     radius: f32,
@@ -139,18 +127,19 @@ where
     A: Into<f32>,
     VT: Into<Vec2>,
 {
-    checked_query_impl(|| {
-        let position = position.into();
-        let angle_radians = angle_radians.into();
-        let translation = translation.into();
-        assert_query_position_valid("origin", origin);
-        assert_query_non_negative_finite_scalar("radius", radius);
-        assert_query_vec2_valid("position", position);
-        assert_query_angle_valid(angle_radians);
-        assert_query_vec2_valid("translation", translation);
-        let points = collect_asserted_proxy_points(points);
+    checked_query_preflight(&target);
+    let position = position.into();
+    let angle_radians = angle_radians.into();
+    let translation = translation.into();
+    assert_query_position_valid("origin", origin);
+    assert_query_non_negative_finite_scalar("radius", radius);
+    assert_query_vec2_valid("position", position);
+    assert_query_angle_valid(angle_radians);
+    assert_query_vec2_valid("translation", translation);
+    let points = collect_asserted_proxy_points(points);
+    checked_query_impl(&target, || {
         cast_shape_points_with_offset_impl(
-            raw_world_id,
+            &target,
             origin,
             &points,
             radius,
@@ -164,7 +153,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn cast_shape_points_with_offset_into_checked_impl<I, P, V, A, VT>(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     points: I,
     radius: f32,
@@ -180,18 +169,19 @@ pub(crate) fn cast_shape_points_with_offset_into_checked_impl<I, P, V, A, VT>(
     A: Into<f32>,
     VT: Into<Vec2>,
 {
-    checked_query_impl(|| {
-        let position = position.into();
-        let angle_radians = angle_radians.into();
-        let translation = translation.into();
-        assert_query_position_valid("origin", origin);
-        assert_query_non_negative_finite_scalar("radius", radius);
-        assert_query_vec2_valid("position", position);
-        assert_query_angle_valid(angle_radians);
-        assert_query_vec2_valid("translation", translation);
-        let points = collect_asserted_proxy_points(points);
+    checked_query_preflight(&target);
+    let position = position.into();
+    let angle_radians = angle_radians.into();
+    let translation = translation.into();
+    assert_query_position_valid("origin", origin);
+    assert_query_non_negative_finite_scalar("radius", radius);
+    assert_query_vec2_valid("position", position);
+    assert_query_angle_valid(angle_radians);
+    assert_query_vec2_valid("translation", translation);
+    let points = collect_asserted_proxy_points(points);
+    checked_query_impl(&target, || {
         cast_shape_points_with_offset_into_impl(
-            raw_world_id,
+            &target,
             origin,
             &points,
             radius,
@@ -205,7 +195,7 @@ pub(crate) fn cast_shape_points_with_offset_into_checked_impl<I, P, V, A, VT>(
 }
 
 pub(crate) fn try_cast_shape_points_with_offset_impl<I, P, V, A, VT>(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     points: I,
     radius: f32,
@@ -221,18 +211,19 @@ where
     A: Into<f32>,
     VT: Into<Vec2>,
 {
-    try_checked_query_result_impl(|| {
-        let position = position.into();
-        let angle_radians = angle_radians.into();
-        let translation = translation.into();
-        check_query_position_valid(origin)?;
-        check_query_non_negative_finite_scalar(radius)?;
-        check_query_vec2_valid(position)?;
-        check_query_angle_valid(angle_radians)?;
-        check_query_vec2_valid(translation)?;
-        let points = try_collect_proxy_points(points)?;
+    try_checked_query_preflight(&target)?;
+    let position = position.into();
+    let angle_radians = angle_radians.into();
+    let translation = translation.into();
+    check_query_position_valid(origin)?;
+    check_query_non_negative_finite_scalar(radius)?;
+    check_query_vec2_valid(position)?;
+    check_query_angle_valid(angle_radians)?;
+    check_query_vec2_valid(translation)?;
+    let points = try_collect_proxy_points(points)?;
+    try_checked_query_result_impl(&target, || {
         Ok(cast_shape_points_with_offset_impl(
-            raw_world_id,
+            &target,
             origin,
             &points,
             radius,
@@ -246,7 +237,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn try_cast_shape_points_with_offset_into_impl<I, P, V, A, VT>(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     points: I,
     radius: f32,
@@ -263,18 +254,19 @@ where
     A: Into<f32>,
     VT: Into<Vec2>,
 {
-    try_checked_query_result_impl(|| {
-        let position = position.into();
-        let angle_radians = angle_radians.into();
-        let translation = translation.into();
-        check_query_position_valid(origin)?;
-        check_query_non_negative_finite_scalar(radius)?;
-        check_query_vec2_valid(position)?;
-        check_query_angle_valid(angle_radians)?;
-        check_query_vec2_valid(translation)?;
-        let points = try_collect_proxy_points(points)?;
+    try_checked_query_preflight(&target)?;
+    let position = position.into();
+    let angle_radians = angle_radians.into();
+    let translation = translation.into();
+    check_query_position_valid(origin)?;
+    check_query_non_negative_finite_scalar(radius)?;
+    check_query_vec2_valid(position)?;
+    check_query_angle_valid(angle_radians)?;
+    check_query_vec2_valid(translation)?;
+    let points = try_collect_proxy_points(points)?;
+    try_checked_query_result_impl(&target, || {
         cast_shape_points_with_offset_into_impl(
-            raw_world_id,
+            &target,
             origin,
             &points,
             radius,

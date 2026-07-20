@@ -3,10 +3,18 @@ use boxdd::shapes;
 use boxdd_sys::ffi;
 
 fn shape_id_fields(id: ShapeId) -> (i32, u16, u16) {
+    shape_id_raw_fields(id.unbind().into_ffi())
+}
+
+fn shape_id_raw_fields(id: ffi::b2ShapeId) -> (i32, u16, u16) {
     (id.index1, id.world0, id.generation)
 }
 
 fn contact_id_fields(id: ContactId) -> (i32, u16, i16, u32) {
+    contact_id_raw_fields(id.unbind().into_ffi())
+}
+
+fn contact_id_raw_fields(id: ffi::b2ContactId) -> (i32, u16, i16, u32) {
     (id.index1, id.world0, id.padding, id.generation)
 }
 
@@ -370,12 +378,7 @@ fn try_scoped_handle_borrows_return_err_for_invalid_ids() {
     let body_id = world.create_body_id(BodyBuilder::new().build());
     let other_body = world.create_body_id(BodyBuilder::new().build());
     let joint_id = world.create_distance_joint_id(
-        &DistanceJointDef::new(
-            JointBaseBuilder::new()
-                .bodies_by_id(body_id, other_body)
-                .build(),
-        )
-        .length(1.0),
+        &DistanceJointDef::new(JointBase::new(body_id, other_body)).length(1.0),
     );
     let chain_id = world.create_chain_for_id(
         body_id,
@@ -1103,8 +1106,7 @@ fn try_joint_range_mutation_invalid_arguments_return_err() {
     );
 
     let mut distance = world.create_distance_joint_owned(
-        &DistanceJointDef::new(JointBaseBuilder::new().bodies_by_id(body_a, body_b).build())
-            .length(1.0),
+        &DistanceJointDef::new(JointBase::new(body_a, body_b)).length(1.0),
     );
     let distance_id = distance.id();
     let invalid_frame = Transform::from_pos_angle([f32::NAN, 0.0], 0.0);
@@ -1156,7 +1158,7 @@ fn try_joint_range_mutation_invalid_arguments_return_err() {
         [1.0_f32, 0.0],
     );
 
-    let prismatic = world.create_prismatic_joint_owned(&PrismaticJointDef::new(base.clone()));
+    let prismatic = world.create_prismatic_joint_owned(&PrismaticJointDef::new(base));
     let prismatic_id = prismatic.id();
     assert_eq!(
         world
@@ -1165,7 +1167,7 @@ fn try_joint_range_mutation_invalid_arguments_return_err() {
         ApiError::InvalidArgument
     );
 
-    let revolute = world.create_revolute_joint_owned(&RevoluteJointDef::new(base.clone()));
+    let revolute = world.create_revolute_joint_owned(&RevoluteJointDef::new(base));
     let revolute_id = revolute.id();
     assert_eq!(
         world
@@ -1190,11 +1192,7 @@ fn try_joint_runtime_helpers_invalid_id_returns_err() {
     let handle = world.handle();
     let mut joint = world.create_distance_joint_owned(
         &DistanceJointDef::new(
-            JointBaseBuilder::new()
-                .bodies_by_id(a, b)
-                .constraint_hertz(2.0)
-                .constraint_damping_ratio(0.3)
-                .build(),
+            JointBase::new(a, b).with_constraint_tuning(ConstraintTuning::new(2.0, 0.3)),
         )
         .length(1.0),
     );
@@ -1448,20 +1446,6 @@ fn try_joint_runtime_controls_wrong_family_returns_err() {
 
 #[test]
 fn try_contact_id_helpers_cover_invalid_and_live_contacts() {
-    let invalid = ContactId::from_raw(ffi::b2ContactId {
-        index1: 0,
-        world0: 0,
-        padding: 0,
-        generation: 0,
-    });
-    assert!(!invalid.is_valid());
-    assert!(!invalid.try_is_valid().unwrap());
-    assert_eq!(invalid.try_data().unwrap_err(), ApiError::InvalidContactId);
-    assert_eq!(
-        invalid.try_data_raw().unwrap_err(),
-        ApiError::InvalidContactId
-    );
-
     let mut world = World::new(WorldDef::builder().gravity([0.0_f32, 0.0]).build()).unwrap();
     let body_a = world.create_body_id(
         BodyBuilder::new()
@@ -1496,13 +1480,14 @@ fn try_contact_id_helpers_cover_invalid_and_live_contacts() {
 
     let (contact, event_shape_a, event_shape_b) =
         live_contact.expect("expected a live contact id from contact begin events");
-    assert!(contact.is_valid());
-    assert!(contact.try_is_valid().unwrap());
+    let handle = world.handle();
+    assert!(world.contact_is_valid(contact));
+    assert!(handle.try_contact_is_valid(contact).unwrap());
 
-    let data = contact.data();
-    let data_try = contact.try_data().unwrap();
-    let raw = contact.data_raw();
-    let raw_try = contact.try_data_raw().unwrap();
+    let data = world.contact_data(contact);
+    let data_try = handle.try_contact_data(contact).unwrap();
+    let raw = world.contact_data_raw(contact);
+    let raw_try = handle.try_contact_data_raw(contact).unwrap();
     let mut expected_shapes = [shape_id_fields(shape_a), shape_id_fields(shape_b)];
     let mut event_shapes = [
         shape_id_fields(event_shape_a),
@@ -1520,11 +1505,11 @@ fn try_contact_id_helpers_cover_invalid_and_live_contacts() {
         contact_id_fields(contact)
     );
     assert_eq!(
-        contact_id_fields(ContactId::from_raw(raw.contactId)),
+        contact_id_raw_fields(raw.contactId),
         contact_id_fields(contact)
     );
     assert_eq!(
-        contact_id_fields(ContactId::from_raw(raw_try.contactId)),
+        contact_id_raw_fields(raw_try.contactId),
         contact_id_fields(contact)
     );
 
@@ -1546,20 +1531,32 @@ fn try_contact_id_helpers_cover_invalid_and_live_contacts() {
         shape_id_fields(event_shape_b)
     );
     assert_eq!(
-        shape_id_fields(ShapeId::from_raw(raw.shapeIdA)),
+        shape_id_raw_fields(raw.shapeIdA),
         shape_id_fields(event_shape_a)
     );
     assert_eq!(
-        shape_id_fields(ShapeId::from_raw(raw.shapeIdB)),
+        shape_id_raw_fields(raw.shapeIdB),
         shape_id_fields(event_shape_b)
     );
     assert_eq!(
-        shape_id_fields(ShapeId::from_raw(raw_try.shapeIdA)),
+        shape_id_raw_fields(raw_try.shapeIdA),
         shape_id_fields(event_shape_a)
     );
     assert_eq!(
-        shape_id_fields(ShapeId::from_raw(raw_try.shapeIdB)),
+        shape_id_raw_fields(raw_try.shapeIdB),
         shape_id_fields(event_shape_b)
+    );
+
+    world.destroy_shape_id(shape_a, true);
+    assert!(!world.contact_is_valid(contact));
+    assert!(!handle.try_contact_is_valid(contact).unwrap());
+    assert_eq!(
+        world.try_contact_data(contact).unwrap_err(),
+        ApiError::InvalidContactId
+    );
+    assert_eq!(
+        handle.try_contact_data_raw(contact).unwrap_err(),
+        ApiError::InvalidContactId
     );
 }
 
@@ -1570,10 +1567,7 @@ fn try_create_joint_invalid_body_returns_err() {
     let b = world.create_body_id(BodyBuilder::new().build());
     world.destroy_body_id(a);
 
-    let base = JointBaseBuilder::new()
-        .bodies_by_id(a, b)
-        .collide_connected(false)
-        .build();
+    let base = JointBase::new(a, b).with_collide_connected(false);
     let def = DistanceJointDef::new(base);
 
     let err = world.try_create_distance_joint_id(&def).unwrap_err();
@@ -1595,7 +1589,7 @@ fn try_create_joint_invalid_def_returns_err() {
     let a = world.create_body_id(BodyBuilder::new().build());
     let b = world.create_body_id(BodyBuilder::new().build());
 
-    let same_body_base = JointBaseBuilder::new().bodies_by_id(a, a).build();
+    let same_body_base = JointBase::new(a, a);
     let same_body_def = DistanceJointDef::new(same_body_base).length(1.0);
     assert_eq!(
         world
@@ -1604,10 +1598,7 @@ fn try_create_joint_invalid_def_returns_err() {
         ApiError::InvalidArgument
     );
 
-    let invalid_threshold_base = JointBaseBuilder::new()
-        .bodies_by_id(a, b)
-        .force_threshold(-1.0)
-        .build();
+    let invalid_threshold_base = JointBase::new(a, b).with_force_threshold(-1.0);
     let invalid_threshold_def = MotorJointDef::new(invalid_threshold_base);
     assert_eq!(
         world

@@ -5,37 +5,53 @@ pub(crate) trait ShapeRuntimeHandle {
     fn shape_world_core(&self) -> &crate::core::world_core::WorldCore;
 
     #[inline]
+    #[track_caller]
     fn assert_valid(&self) {
-        crate::core::debug_checks::assert_shape_valid(self.shape_id());
+        self.check_valid()
+            .expect("shape handle is unavailable, foreign, or invalid");
     }
 
     #[inline]
     fn check_valid(&self) -> ApiResult<()> {
-        crate::core::debug_checks::check_shape_valid(self.shape_id())
+        crate::core::callback_state::check_not_in_callback()?;
+        self.shape_world_core().check_shape(self.shape_id())
     }
 
     fn world_id_raw(&self) -> ffi::b2WorldId {
-        shape_world_id_checked_impl(self.shape_id())
+        self.assert_valid();
+        shape_world_id_impl(self.shape_id())
     }
 
     fn try_world_id_raw(&self) -> ApiResult<ffi::b2WorldId> {
-        try_shape_world_id_raw_impl(self.shape_id())
+        self.check_valid()?;
+        Ok(shape_world_id_impl(self.shape_id()))
     }
 
     fn parent_chain_id(&self) -> Option<ChainId> {
-        shape_parent_chain_id_checked_impl(self.shape_id())
+        self.assert_valid();
+        shape_parent_chain_id_in_impl(self.shape_world_core(), self.shape_id())
+            .expect("Box2D returned an invalid parent chain id for a validated shape")
     }
 
     fn try_parent_chain_id(&self) -> ApiResult<Option<ChainId>> {
-        try_shape_parent_chain_id_impl(self.shape_id())
+        self.check_valid()?;
+        shape_parent_chain_id_in_impl(self.shape_world_core(), self.shape_id())
     }
 
     fn is_valid(&self) -> bool {
-        shape_is_valid_checked_impl(self.shape_id())
+        self.try_is_valid()
+            .expect("shape handle is unavailable or foreign")
     }
 
     fn try_is_valid(&self) -> ApiResult<bool> {
-        try_shape_is_valid_impl(self.shape_id())
+        crate::core::callback_state::check_not_in_callback()?;
+        let core = self.shape_world_core();
+        core.check_available()?;
+        let id = self.shape_id();
+        if id.brand() != core.brand() {
+            return Err(ApiError::WrongWorld);
+        }
+        Ok(shape_is_valid_impl(id))
     }
 
     unsafe fn set_user_data_ptr_raw(&mut self, p: *mut c_void) {
@@ -49,11 +65,11 @@ pub(crate) trait ShapeRuntimeHandle {
     }
 
     fn user_data_ptr_raw(&self) -> *mut c_void {
-        shape_user_data_ptr_raw_checked_impl(self.shape_id())
+        shape_user_data_ptr_raw_checked_impl(self.shape_world_core(), self.shape_id())
     }
 
     fn try_user_data_ptr_raw(&self) -> ApiResult<*mut c_void> {
-        try_shape_user_data_ptr_raw_impl(self.shape_id())
+        try_shape_user_data_ptr_raw_impl(self.shape_world_core(), self.shape_id())
     }
 
     fn set_user_data<T: 'static>(&mut self, value: T) {
@@ -100,75 +116,108 @@ pub(crate) trait ShapeRuntimeHandle {
     }
 
     fn contact_data(&self) -> Vec<ContactData> {
-        shape_contact_data_checked_impl(self.shape_id())
+        self.assert_valid();
+        shape_contact_data_in_impl(self.shape_world_core(), self.shape_id())
+            .expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT)
     }
 
     fn contact_data_into(&self, out: &mut Vec<ContactData>) {
-        shape_contact_data_into_checked_impl(self.shape_id(), out);
+        self.assert_valid();
+        shape_contact_data_into_in_impl(self.shape_world_core(), self.shape_id(), out)
+            .expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT);
     }
 
     fn try_contact_data(&self) -> ApiResult<Vec<ContactData>> {
-        try_shape_contact_data_impl(self.shape_id())
+        self.check_valid()?;
+        shape_contact_data_in_impl(self.shape_world_core(), self.shape_id())
     }
 
     fn try_contact_data_into(&self, out: &mut Vec<ContactData>) -> ApiResult<()> {
-        try_shape_contact_data_into_impl(self.shape_id(), out)
+        self.check_valid()?;
+        shape_contact_data_into_in_impl(self.shape_world_core(), self.shape_id(), out)
     }
 
     fn contact_data_raw(&self) -> Vec<ffi::b2ContactData> {
-        shape_contact_data_raw_checked_impl(self.shape_id())
+        self.assert_valid();
+        shape_contact_data_raw_impl(self.shape_id()).expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT)
     }
 
     fn contact_data_raw_into(&self, out: &mut Vec<ffi::b2ContactData>) {
-        shape_contact_data_raw_into_checked_impl(self.shape_id(), out);
+        self.assert_valid();
+        shape_contact_data_raw_into_impl(self.shape_id(), out)
+            .expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT);
     }
 
     fn try_contact_data_raw(&self) -> ApiResult<Vec<ffi::b2ContactData>> {
-        try_shape_contact_data_raw_impl(self.shape_id())
+        self.check_valid()?;
+        shape_contact_data_raw_impl(self.shape_id())
     }
 
     fn try_contact_data_raw_into(&self, out: &mut Vec<ffi::b2ContactData>) -> ApiResult<()> {
-        try_shape_contact_data_raw_into_impl(self.shape_id(), out)
+        self.check_valid()?;
+        shape_contact_data_raw_into_impl(self.shape_id(), out)
     }
 
     fn sensor_capacity(&self) -> i32 {
-        shape_sensor_capacity_checked_impl(self.shape_id())
+        self.assert_valid();
+        shape_sensor_capacity_impl(self.shape_id())
     }
 
     fn try_sensor_capacity(&self) -> ApiResult<i32> {
-        try_shape_sensor_capacity_impl(self.shape_id())
+        self.check_valid()?;
+        Ok(shape_sensor_capacity_impl(self.shape_id()))
     }
 
     fn sensor_overlaps(&self) -> Vec<ShapeId> {
-        shape_sensor_overlaps_checked_impl(self.shape_id())
+        self.assert_valid();
+        shape_sensor_overlaps_in_impl(self.shape_world_core().brand(), self.shape_id())
+            .expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT)
     }
 
     fn sensor_overlaps_into(&self, out: &mut Vec<ShapeId>) {
-        shape_sensor_overlaps_into_checked_impl(self.shape_id(), out);
+        self.assert_valid();
+        shape_sensor_overlaps_into_in_impl(self.shape_world_core().brand(), self.shape_id(), out)
+            .expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT);
     }
 
     fn try_sensor_overlaps(&self) -> ApiResult<Vec<ShapeId>> {
-        try_shape_sensor_overlaps_impl(self.shape_id())
+        self.check_valid()?;
+        shape_sensor_overlaps_in_impl(self.shape_world_core().brand(), self.shape_id())
     }
 
     fn try_sensor_overlaps_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
-        try_shape_sensor_overlaps_into_impl(self.shape_id(), out)
+        self.check_valid()?;
+        shape_sensor_overlaps_into_in_impl(self.shape_world_core().brand(), self.shape_id(), out)
     }
 
     fn sensor_overlaps_valid(&self) -> Vec<ShapeId> {
-        shape_sensor_overlaps_valid_checked_impl(self.shape_id())
+        self.assert_valid();
+        shape_sensor_overlaps_valid_in_impl(self.shape_world_core().brand(), self.shape_id())
+            .expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT)
     }
 
     fn try_sensor_overlaps_valid(&self) -> ApiResult<Vec<ShapeId>> {
-        try_shape_sensor_overlaps_valid_impl(self.shape_id())
+        self.check_valid()?;
+        shape_sensor_overlaps_valid_in_impl(self.shape_world_core().brand(), self.shape_id())
     }
 
     fn sensor_overlaps_valid_into(&self, out: &mut Vec<ShapeId>) {
-        shape_sensor_overlaps_valid_into_checked_impl(self.shape_id(), out);
+        self.assert_valid();
+        shape_sensor_overlaps_valid_into_in_impl(
+            self.shape_world_core().brand(),
+            self.shape_id(),
+            out,
+        )
+        .expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT);
     }
 
     fn try_sensor_overlaps_valid_into(&self, out: &mut Vec<ShapeId>) -> ApiResult<()> {
-        try_shape_sensor_overlaps_valid_into_impl(self.shape_id(), out)
+        self.check_valid()?;
+        shape_sensor_overlaps_valid_into_in_impl(
+            self.shape_world_core().brand(),
+            self.shape_id(),
+            out,
+        )
     }
 
     fn is_sensor(&self) -> bool {
@@ -287,12 +336,13 @@ pub(crate) trait ShapeRuntimeHandle {
 
     fn body_id(&self) -> BodyId {
         self.assert_valid();
-        shape_body_id_impl(self.shape_id())
+        shape_body_id_in_impl(self.shape_world_core(), self.shape_id())
+            .expect("Box2D returned an invalid body id for a validated shape")
     }
 
     fn try_body_id(&self) -> ApiResult<BodyId> {
         self.check_valid()?;
-        Ok(shape_body_id_impl(self.shape_id()))
+        shape_body_id_in_impl(self.shape_world_core(), self.shape_id())
     }
 
     fn circle(&self) -> Circle {
@@ -321,11 +371,15 @@ pub(crate) trait ShapeRuntimeHandle {
     }
 
     fn closest_point(&self, target: Position) -> Position {
-        shape_closest_point_checked_impl(self.shape_id(), target)
+        self.assert_valid();
+        assert_shape_world_point_in_local_range("target", self.shape_id(), target);
+        shape_closest_point_impl(self.shape_id(), target)
     }
 
     fn try_closest_point(&self, target: Position) -> ApiResult<Position> {
-        try_shape_closest_point_checked_impl(self.shape_id(), target)
+        self.check_valid()?;
+        check_shape_world_point_in_local_range(self.shape_id(), target)?;
+        Ok(shape_closest_point_impl(self.shape_id(), target))
     }
 
     fn aabb(&self) -> Aabb {
@@ -339,15 +393,25 @@ pub(crate) trait ShapeRuntimeHandle {
     }
 
     fn test_point(&self, point: Position) -> bool {
-        shape_test_point_checked_impl(self.shape_id(), point)
+        self.assert_valid();
+        assert_shape_world_point_in_local_range("point", self.shape_id(), point);
+        shape_test_point_impl(self.shape_id(), point)
     }
 
     fn try_test_point(&self, point: Position) -> ApiResult<bool> {
-        try_shape_test_point_checked_impl(self.shape_id(), point)
+        self.check_valid()?;
+        check_shape_world_point_in_local_range(self.shape_id(), point)?;
+        Ok(shape_test_point_impl(self.shape_id(), point))
     }
 
     fn ray_cast<VT: Into<Vec2>>(&self, origin: Position, translation: VT) -> WorldCastOutput {
-        shape_ray_cast_checked_impl(self.shape_id(), origin, translation)
+        self.assert_valid();
+        let origin = crate::body::assert_valid_body_position("origin", origin);
+        let translation = translation.into();
+        assert_shape_vec2_valid("translation", translation);
+        self.assert_valid();
+        assert_shape_world_point_in_local_range("origin", self.shape_id(), origin);
+        shape_ray_cast_impl(self.shape_id(), origin, translation)
     }
 
     fn try_ray_cast<VT: Into<Vec2>>(
@@ -355,10 +419,19 @@ pub(crate) trait ShapeRuntimeHandle {
         origin: Position,
         translation: VT,
     ) -> ApiResult<WorldCastOutput> {
-        try_shape_ray_cast_checked_impl(self.shape_id(), origin, translation)
+        self.check_valid()?;
+        let origin = crate::body::check_valid_body_position(origin)?;
+        let translation = translation.into();
+        check_shape_vec2_valid(translation)?;
+        self.check_valid()?;
+        check_shape_world_point_in_local_range(self.shape_id(), origin)?;
+        Ok(shape_ray_cast_impl(self.shape_id(), origin, translation))
     }
 
     fn apply_wind<V: Into<Vec2>>(&mut self, wind: V, drag: f32, lift: f32, wake: bool) {
+        self.assert_valid();
+        let wind = wind.into();
+        assert_shape_vec2_valid("wind", wind);
         self.assert_valid();
         shape_apply_wind_impl(self.shape_id(), wind, drag, lift, wake)
     }
@@ -370,6 +443,9 @@ pub(crate) trait ShapeRuntimeHandle {
         lift: f32,
         wake: bool,
     ) -> ApiResult<()> {
+        self.check_valid()?;
+        let wind = wind.into();
+        check_shape_vec2_valid(wind)?;
         self.check_valid()?;
         shape_apply_wind_impl(self.shape_id(), wind, drag, lift, wake);
         Ok(())
@@ -449,11 +525,16 @@ pub(crate) trait ShapeRuntimeHandle {
     }
 
     fn set_density(&mut self, density: f32, update_body_mass: bool) {
-        shape_set_density_checked_impl(self.shape_id(), density, update_body_mass)
+        self.assert_valid();
+        assert_non_negative_finite_shape_scalar("density", density);
+        shape_set_density_impl(self.shape_id(), density, update_body_mass)
     }
 
     fn try_set_density(&mut self, density: f32, update_body_mass: bool) -> ApiResult<()> {
-        try_shape_set_density_checked_impl(self.shape_id(), density, update_body_mass)
+        self.check_valid()?;
+        check_non_negative_finite_shape_scalar(density)?;
+        shape_set_density_impl(self.shape_id(), density, update_body_mass);
+        Ok(())
     }
 
     fn density(&self) -> f32 {
@@ -477,11 +558,16 @@ pub(crate) trait ShapeRuntimeHandle {
     }
 
     fn set_friction(&mut self, friction: f32) {
-        shape_set_friction_checked_impl(self.shape_id(), friction)
+        self.assert_valid();
+        assert_non_negative_finite_shape_scalar("friction", friction);
+        shape_set_friction_impl(self.shape_id(), friction)
     }
 
     fn try_set_friction(&mut self, friction: f32) -> ApiResult<()> {
-        try_shape_set_friction_checked_impl(self.shape_id(), friction)
+        self.check_valid()?;
+        check_non_negative_finite_shape_scalar(friction)?;
+        shape_set_friction_impl(self.shape_id(), friction);
+        Ok(())
     }
 
     fn friction(&self) -> f32 {
@@ -495,11 +581,16 @@ pub(crate) trait ShapeRuntimeHandle {
     }
 
     fn set_restitution(&mut self, restitution: f32) {
-        shape_set_restitution_checked_impl(self.shape_id(), restitution)
+        self.assert_valid();
+        assert_non_negative_finite_shape_scalar("restitution", restitution);
+        shape_set_restitution_impl(self.shape_id(), restitution)
     }
 
     fn try_set_restitution(&mut self, restitution: f32) -> ApiResult<()> {
-        try_shape_set_restitution_checked_impl(self.shape_id(), restitution)
+        self.check_valid()?;
+        check_non_negative_finite_shape_scalar(restitution)?;
+        shape_set_restitution_impl(self.shape_id(), restitution);
+        Ok(())
     }
 
     fn restitution(&self) -> f32 {

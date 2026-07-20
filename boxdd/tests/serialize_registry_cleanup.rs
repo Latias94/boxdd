@@ -3,7 +3,7 @@
 use boxdd::prelude::*;
 
 fn same_body_id(a: BodyId, b: BodyId) -> bool {
-    a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
+    a == b
 }
 
 #[test]
@@ -17,7 +17,7 @@ fn shape_flags_removed_when_shape_destroyed() {
     assert!(world.shape_flags(sid).is_some());
 
     world.destroy_shape_id(sid, true);
-    assert!(world.shape_flags(sid).is_none());
+    assert_eq!(world.try_shape(sid).err(), Some(ApiError::InvalidShapeId));
 }
 
 #[test]
@@ -54,7 +54,7 @@ fn registries_cleaned_when_body_destroyed() {
     assert_eq!(world.body_ids().len(), 1);
 
     world.destroy_body_id(body);
-    assert!(world.shape_flags(sid).is_none());
+    assert_eq!(world.try_shape(sid).err(), Some(ApiError::InvalidShapeId));
     assert_eq!(world.chain_records().len(), 0);
     assert_eq!(world.body_ids().len(), 0);
 }
@@ -87,7 +87,7 @@ fn serialize_registry_snapshots_reuse_caller_buffers() {
     world.chain_records_into(&mut chain_records);
     assert_eq!(chain_records.as_ptr(), chain_records_ptr);
     assert_eq!(chain_records.len(), 1);
-    assert_eq!(chain_records[0].body.index1, body.index1);
+    assert_eq!(chain_records[0].body, body);
 
     world.try_chain_records_into(&mut chain_records).unwrap();
     assert_eq!(chain_records.as_ptr(), chain_records_ptr);
@@ -140,9 +140,7 @@ fn chain_records_use_crate_owned_values_and_material_variants() {
     assert_eq!(records.len(), 3);
 
     let default_record = &records[0];
-    assert_eq!(default_record.body.index1, body.index1);
-    assert_eq!(default_record.body.world0, body.world0);
-    assert_eq!(default_record.body.generation, body.generation);
+    assert_eq!(default_record.body, body);
     assert_eq!(default_record.filter, filter);
     assert_eq!(default_record.points, base_points.to_vec());
     assert!(default_record.enable_sensor_events);

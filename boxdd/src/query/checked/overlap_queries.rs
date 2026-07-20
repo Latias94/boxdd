@@ -6,20 +6,19 @@
 use super::*;
 
 pub(crate) fn overlap_aabb_checked_impl(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     aabb: Aabb,
     filter: QueryFilter,
 ) -> Vec<ShapeId> {
-    checked_query_impl(|| {
-        assert_query_position_valid("origin", origin);
-        assert_query_aabb_valid(aabb);
-        overlap_aabb_impl(raw_world_id, origin, aabb, filter)
-    })
+    checked_query_preflight(&target);
+    assert_query_position_valid("origin", origin);
+    assert_query_aabb_valid(aabb);
+    checked_query_impl(&target, || overlap_aabb_impl(&target, origin, aabb, filter))
 }
 
 pub(crate) fn visit_overlap_aabb_checked_impl<F>(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     aabb: Aabb,
     filter: QueryFilter,
@@ -28,42 +27,45 @@ pub(crate) fn visit_overlap_aabb_checked_impl<F>(
 where
     F: FnMut(ShapeId) -> bool,
 {
-    checked_query_impl(|| {
-        assert_query_position_valid("origin", origin);
-        assert_query_aabb_valid(aabb);
-        visit_overlap_aabb_impl(raw_world_id, origin, aabb, filter, visit)
+    checked_query_preflight(&target);
+    assert_query_position_valid("origin", origin);
+    assert_query_aabb_valid(aabb);
+    checked_query_impl(&target, || {
+        visit_overlap_aabb_impl(&target, origin, aabb, filter, visit)
     })
 }
 
 pub(crate) fn overlap_aabb_into_checked_impl(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     aabb: Aabb,
     filter: QueryFilter,
     out: &mut Vec<ShapeId>,
 ) {
-    checked_query_impl(|| {
-        assert_query_position_valid("origin", origin);
-        assert_query_aabb_valid(aabb);
-        overlap_aabb_into_impl(raw_world_id, origin, aabb, filter, out);
+    checked_query_preflight(&target);
+    assert_query_position_valid("origin", origin);
+    assert_query_aabb_valid(aabb);
+    checked_query_impl(&target, || {
+        overlap_aabb_into_impl(&target, origin, aabb, filter, out);
     });
 }
 
 pub(crate) fn try_overlap_aabb_impl(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     aabb: Aabb,
     filter: QueryFilter,
 ) -> ApiResult<Vec<ShapeId>> {
-    try_checked_query_result_impl(|| {
-        check_query_position_valid(origin)?;
-        check_query_aabb_valid(aabb)?;
-        Ok(overlap_aabb_impl(raw_world_id, origin, aabb, filter))
+    try_checked_query_preflight(&target)?;
+    check_query_position_valid(origin)?;
+    check_query_aabb_valid(aabb)?;
+    try_checked_query_result_impl(&target, || {
+        Ok(overlap_aabb_impl(&target, origin, aabb, filter))
     })
 }
 
 pub(crate) fn try_visit_overlap_aabb_impl<F>(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     aabb: Aabb,
     filter: QueryFilter,
@@ -72,36 +74,34 @@ pub(crate) fn try_visit_overlap_aabb_impl<F>(
 where
     F: FnMut(ShapeId) -> bool,
 {
-    try_checked_query_result_impl(|| {
-        check_query_position_valid(origin)?;
-        check_query_aabb_valid(aabb)?;
+    try_checked_query_preflight(&target)?;
+    check_query_position_valid(origin)?;
+    check_query_aabb_valid(aabb)?;
+    try_checked_query_result_impl(&target, || {
         Ok(visit_overlap_aabb_impl(
-            raw_world_id,
-            origin,
-            aabb,
-            filter,
-            visit,
+            &target, origin, aabb, filter, visit,
         ))
     })
 }
 
 pub(crate) fn try_overlap_aabb_into_impl(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     aabb: Aabb,
     filter: QueryFilter,
     out: &mut Vec<ShapeId>,
 ) -> ApiResult<()> {
-    try_checked_query_result_impl(|| {
-        check_query_position_valid(origin)?;
-        check_query_aabb_valid(aabb)?;
-        overlap_aabb_into_impl(raw_world_id, origin, aabb, filter, out);
+    try_checked_query_preflight(&target)?;
+    check_query_position_valid(origin)?;
+    check_query_aabb_valid(aabb)?;
+    try_checked_query_result_impl(&target, || {
+        overlap_aabb_into_impl(&target, origin, aabb, filter, out);
         Ok(())
     })
 }
 
 pub(crate) fn overlap_polygon_points_checked_impl<I, P>(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     points: I,
     radius: f32,
@@ -111,16 +111,17 @@ where
     I: IntoIterator<Item = P>,
     P: Into<Vec2>,
 {
-    checked_query_impl(|| {
-        assert_query_position_valid("origin", origin);
-        assert_query_non_negative_finite_scalar("radius", radius);
-        let points = collect_asserted_proxy_points(points);
-        overlap_polygon_points_impl(raw_world_id, origin, &points, radius, filter)
+    checked_query_preflight(&target);
+    assert_query_position_valid("origin", origin);
+    assert_query_non_negative_finite_scalar("radius", radius);
+    let points = collect_asserted_proxy_points(points);
+    checked_query_impl(&target, || {
+        overlap_polygon_points_impl(&target, origin, &points, radius, filter)
     })
 }
 
 pub(crate) fn visit_overlap_polygon_points_checked_impl<I, P, F>(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     points: I,
     radius: f32,
@@ -132,16 +133,17 @@ where
     P: Into<Vec2>,
     F: FnMut(ShapeId) -> bool,
 {
-    checked_query_impl(|| {
-        assert_query_position_valid("origin", origin);
-        assert_query_non_negative_finite_scalar("radius", radius);
-        let points = collect_asserted_proxy_points(points);
-        visit_overlap_polygon_points_impl(raw_world_id, origin, &points, radius, filter, visit)
+    checked_query_preflight(&target);
+    assert_query_position_valid("origin", origin);
+    assert_query_non_negative_finite_scalar("radius", radius);
+    let points = collect_asserted_proxy_points(points);
+    checked_query_impl(&target, || {
+        visit_overlap_polygon_points_impl(&target, origin, &points, radius, filter, visit)
     })
 }
 
 pub(crate) fn overlap_polygon_points_into_checked_impl<I, P>(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     points: I,
     radius: f32,
@@ -151,16 +153,17 @@ pub(crate) fn overlap_polygon_points_into_checked_impl<I, P>(
     I: IntoIterator<Item = P>,
     P: Into<Vec2>,
 {
-    checked_query_impl(|| {
-        assert_query_position_valid("origin", origin);
-        assert_query_non_negative_finite_scalar("radius", radius);
-        let points = collect_asserted_proxy_points(points);
-        overlap_polygon_points_into_impl(raw_world_id, origin, &points, radius, filter, out)
+    checked_query_preflight(&target);
+    assert_query_position_valid("origin", origin);
+    assert_query_non_negative_finite_scalar("radius", radius);
+    let points = collect_asserted_proxy_points(points);
+    checked_query_impl(&target, || {
+        overlap_polygon_points_into_impl(&target, origin, &points, radius, filter, out)
     });
 }
 
 pub(crate) fn try_overlap_polygon_points_impl<I, P>(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     points: I,
     radius: f32,
@@ -170,22 +173,19 @@ where
     I: IntoIterator<Item = P>,
     P: Into<Vec2>,
 {
-    try_checked_query_result_impl(|| {
-        check_query_position_valid(origin)?;
-        check_query_non_negative_finite_scalar(radius)?;
-        let points = try_collect_proxy_points(points)?;
+    try_checked_query_preflight(&target)?;
+    check_query_position_valid(origin)?;
+    check_query_non_negative_finite_scalar(radius)?;
+    let points = try_collect_proxy_points(points)?;
+    try_checked_query_result_impl(&target, || {
         Ok(overlap_polygon_points_impl(
-            raw_world_id,
-            origin,
-            &points,
-            radius,
-            filter,
+            &target, origin, &points, radius, filter,
         ))
     })
 }
 
 pub(crate) fn try_visit_overlap_polygon_points_impl<I, P, F>(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     points: I,
     radius: f32,
@@ -197,23 +197,19 @@ where
     P: Into<Vec2>,
     F: FnMut(ShapeId) -> bool,
 {
-    try_checked_query_result_impl(|| {
-        check_query_position_valid(origin)?;
-        check_query_non_negative_finite_scalar(radius)?;
-        let points = try_collect_proxy_points(points)?;
+    try_checked_query_preflight(&target)?;
+    check_query_position_valid(origin)?;
+    check_query_non_negative_finite_scalar(radius)?;
+    let points = try_collect_proxy_points(points)?;
+    try_checked_query_result_impl(&target, || {
         Ok(visit_overlap_polygon_points_impl(
-            raw_world_id,
-            origin,
-            &points,
-            radius,
-            filter,
-            visit,
+            &target, origin, &points, radius, filter, visit,
         ))
     })
 }
 
 pub(crate) fn try_overlap_polygon_points_into_impl<I, P>(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     points: I,
     radius: f32,
@@ -224,17 +220,18 @@ where
     I: IntoIterator<Item = P>,
     P: Into<Vec2>,
 {
-    try_checked_query_result_impl(|| {
-        check_query_position_valid(origin)?;
-        check_query_non_negative_finite_scalar(radius)?;
-        let points = try_collect_proxy_points(points)?;
-        overlap_polygon_points_into_impl(raw_world_id, origin, &points, radius, filter, out);
+    try_checked_query_preflight(&target)?;
+    check_query_position_valid(origin)?;
+    check_query_non_negative_finite_scalar(radius)?;
+    let points = try_collect_proxy_points(points)?;
+    try_checked_query_result_impl(&target, || {
+        overlap_polygon_points_into_impl(&target, origin, &points, radius, filter, out);
         Ok(())
     })
 }
 
 pub(crate) fn overlap_polygon_points_with_offset_checked_impl<I, P, V, A>(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     points: I,
     radius: f32,
@@ -248,16 +245,17 @@ where
     V: Into<Vec2>,
     A: Into<f32>,
 {
-    checked_query_impl(|| {
-        let position = position.into();
-        let angle_radians = angle_radians.into();
-        assert_query_position_valid("origin", origin);
-        assert_query_non_negative_finite_scalar("radius", radius);
-        assert_query_vec2_valid("position", position);
-        assert_query_angle_valid(angle_radians);
-        let points = collect_asserted_proxy_points(points);
+    checked_query_preflight(&target);
+    let position = position.into();
+    let angle_radians = angle_radians.into();
+    assert_query_position_valid("origin", origin);
+    assert_query_non_negative_finite_scalar("radius", radius);
+    assert_query_vec2_valid("position", position);
+    assert_query_angle_valid(angle_radians);
+    let points = collect_asserted_proxy_points(points);
+    checked_query_impl(&target, || {
         overlap_polygon_points_with_offset_impl(
-            raw_world_id,
+            &target,
             origin,
             &points,
             radius,
@@ -269,7 +267,7 @@ where
 }
 
 pub(crate) fn visit_overlap_polygon_points_with_offset_checked_impl<I, P, V, A, F>(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     points: I,
     radius: f32,
@@ -285,16 +283,17 @@ where
     A: Into<f32>,
     F: FnMut(ShapeId) -> bool,
 {
-    checked_query_impl(|| {
-        let position = position.into();
-        let angle_radians = angle_radians.into();
-        assert_query_position_valid("origin", origin);
-        assert_query_non_negative_finite_scalar("radius", radius);
-        assert_query_vec2_valid("position", position);
-        assert_query_angle_valid(angle_radians);
-        let points = collect_asserted_proxy_points(points);
+    checked_query_preflight(&target);
+    let position = position.into();
+    let angle_radians = angle_radians.into();
+    assert_query_position_valid("origin", origin);
+    assert_query_non_negative_finite_scalar("radius", radius);
+    assert_query_vec2_valid("position", position);
+    assert_query_angle_valid(angle_radians);
+    let points = collect_asserted_proxy_points(points);
+    checked_query_impl(&target, || {
         visit_overlap_polygon_points_with_offset_impl(
-            raw_world_id,
+            &target,
             origin,
             &points,
             radius,
@@ -307,7 +306,7 @@ where
 }
 
 pub(crate) fn overlap_polygon_points_with_offset_into_checked_impl<I, P, V, A>(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     points: I,
     radius: f32,
@@ -321,16 +320,17 @@ pub(crate) fn overlap_polygon_points_with_offset_into_checked_impl<I, P, V, A>(
     V: Into<Vec2>,
     A: Into<f32>,
 {
-    checked_query_impl(|| {
-        let position = position.into();
-        let angle_radians = angle_radians.into();
-        assert_query_position_valid("origin", origin);
-        assert_query_non_negative_finite_scalar("radius", radius);
-        assert_query_vec2_valid("position", position);
-        assert_query_angle_valid(angle_radians);
-        let points = collect_asserted_proxy_points(points);
+    checked_query_preflight(&target);
+    let position = position.into();
+    let angle_radians = angle_radians.into();
+    assert_query_position_valid("origin", origin);
+    assert_query_non_negative_finite_scalar("radius", radius);
+    assert_query_vec2_valid("position", position);
+    assert_query_angle_valid(angle_radians);
+    let points = collect_asserted_proxy_points(points);
+    checked_query_impl(&target, || {
         overlap_polygon_points_with_offset_into_impl(
-            raw_world_id,
+            &target,
             origin,
             &points,
             radius,
@@ -343,7 +343,7 @@ pub(crate) fn overlap_polygon_points_with_offset_into_checked_impl<I, P, V, A>(
 }
 
 pub(crate) fn try_overlap_polygon_points_with_offset_impl<I, P, V, A>(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     points: I,
     radius: f32,
@@ -357,16 +357,17 @@ where
     V: Into<Vec2>,
     A: Into<f32>,
 {
-    try_checked_query_result_impl(|| {
-        let position = position.into();
-        let angle_radians = angle_radians.into();
-        check_query_position_valid(origin)?;
-        check_query_non_negative_finite_scalar(radius)?;
-        check_query_vec2_valid(position)?;
-        check_query_angle_valid(angle_radians)?;
-        let points = try_collect_proxy_points(points)?;
+    try_checked_query_preflight(&target)?;
+    let position = position.into();
+    let angle_radians = angle_radians.into();
+    check_query_position_valid(origin)?;
+    check_query_non_negative_finite_scalar(radius)?;
+    check_query_vec2_valid(position)?;
+    check_query_angle_valid(angle_radians)?;
+    let points = try_collect_proxy_points(points)?;
+    try_checked_query_result_impl(&target, || {
         Ok(overlap_polygon_points_with_offset_impl(
-            raw_world_id,
+            &target,
             origin,
             &points,
             radius,
@@ -378,7 +379,7 @@ where
 }
 
 pub(crate) fn try_visit_overlap_polygon_points_with_offset_impl<I, P, V, A, F>(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     points: I,
     radius: f32,
@@ -394,16 +395,17 @@ where
     A: Into<f32>,
     F: FnMut(ShapeId) -> bool,
 {
-    try_checked_query_result_impl(|| {
-        let position = position.into();
-        let angle_radians = angle_radians.into();
-        check_query_position_valid(origin)?;
-        check_query_non_negative_finite_scalar(radius)?;
-        check_query_vec2_valid(position)?;
-        check_query_angle_valid(angle_radians)?;
-        let points = try_collect_proxy_points(points)?;
+    try_checked_query_preflight(&target)?;
+    let position = position.into();
+    let angle_radians = angle_radians.into();
+    check_query_position_valid(origin)?;
+    check_query_non_negative_finite_scalar(radius)?;
+    check_query_vec2_valid(position)?;
+    check_query_angle_valid(angle_radians)?;
+    let points = try_collect_proxy_points(points)?;
+    try_checked_query_result_impl(&target, || {
         Ok(visit_overlap_polygon_points_with_offset_impl(
-            raw_world_id,
+            &target,
             origin,
             &points,
             radius,
@@ -416,7 +418,7 @@ where
 }
 
 pub(crate) fn try_overlap_polygon_points_with_offset_into_impl<I, P, V, A>(
-    raw_world_id: ffi::b2WorldId,
+    target: QueryTarget,
     origin: Position,
     points: I,
     radius: f32,
@@ -431,16 +433,17 @@ where
     V: Into<Vec2>,
     A: Into<f32>,
 {
-    try_checked_query_result_impl(|| {
-        let position = position.into();
-        let angle_radians = angle_radians.into();
-        check_query_position_valid(origin)?;
-        check_query_non_negative_finite_scalar(radius)?;
-        check_query_vec2_valid(position)?;
-        check_query_angle_valid(angle_radians)?;
-        let points = try_collect_proxy_points(points)?;
+    try_checked_query_preflight(&target)?;
+    let position = position.into();
+    let angle_radians = angle_radians.into();
+    check_query_position_valid(origin)?;
+    check_query_non_negative_finite_scalar(radius)?;
+    check_query_vec2_valid(position)?;
+    check_query_angle_valid(angle_radians)?;
+    let points = try_collect_proxy_points(points)?;
+    try_checked_query_result_impl(&target, || {
         overlap_polygon_points_with_offset_into_impl(
-            raw_world_id,
+            &target,
             origin,
             &points,
             radius,

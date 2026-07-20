@@ -29,7 +29,7 @@
 //! ```
 use crate::Aabb;
 use crate::types::{Position, Vec2, WorldTransform};
-use crate::world::World;
+use crate::world::{World, assert_world_available, check_world_available};
 use boxdd_sys::ffi;
 use smallvec::SmallVec;
 use std::any::Any;
@@ -609,7 +609,7 @@ fn apply_debug_draw_options(
 }
 
 fn finish_debug_draw(world: &World, panic: &mut Option<DebugDrawPanic>) {
-    world.core_arc().process_deferred_destroys();
+    world.core_rc().process_deferred_destroys();
     if let Some(p) = panic.take() {
         std::panic::resume_unwind(p);
     }
@@ -766,7 +766,7 @@ impl World {
     ///
     /// This calls into Box2D debug draw but does not invoke user code during the draw.
     pub fn debug_draw_collect(&mut self, opts: DebugDrawOptions) -> Vec<DebugDrawCmd> {
-        crate::core::callback_state::assert_not_in_callback();
+        assert_world_available(self.core());
         let opts = opts.assert_valid();
         let mut cmds = Vec::new();
         self.debug_draw_collect_into_validated(&mut cmds, opts);
@@ -780,7 +780,7 @@ impl World {
         &mut self,
         opts: DebugDrawOptions,
     ) -> crate::error::ApiResult<Vec<DebugDrawCmd>> {
-        crate::core::callback_state::check_not_in_callback()?;
+        check_world_available(self.core())?;
         let opts = opts.checked()?;
         let mut cmds = Vec::new();
         self.debug_draw_collect_into_validated(&mut cmds, opts);
@@ -792,7 +792,7 @@ impl World {
     /// This reuses the outer command buffer and, when the command sequence stays
     /// stable, also reuses nested polygon vertex and string storage.
     pub fn debug_draw_collect_into(&mut self, out: &mut Vec<DebugDrawCmd>, opts: DebugDrawOptions) {
-        crate::core::callback_state::assert_not_in_callback();
+        assert_world_available(self.core());
         self.debug_draw_collect_into_validated(out, opts.assert_valid());
     }
 
@@ -814,7 +814,7 @@ impl World {
         out: &mut Vec<DebugDrawCmd>,
         opts: DebugDrawOptions,
     ) -> crate::error::ApiResult<()> {
-        crate::core::callback_state::check_not_in_callback()?;
+        check_world_available(self.core())?;
         self.debug_draw_collect_into_validated(out, opts.checked()?);
         Ok(())
     }
@@ -824,7 +824,7 @@ impl World {
         adapter: &mut dyn NativeDebugDraw,
         opts: ValidatedDebugDrawOptions,
     ) {
-        crate::core::callback_state::assert_not_in_callback();
+        assert_world_available(self.core());
         let mut panicked = false;
         let mut panic: Option<DebugDrawPanic> = None;
         {
@@ -849,7 +849,7 @@ impl World {
     /// any attempt to call into the Box2D world through `boxdd` will panic, since the world is
     /// considered locked by Box2D.
     pub fn debug_draw(&mut self, drawer: &mut impl DebugDraw, opts: DebugDrawOptions) {
-        crate::core::callback_state::assert_not_in_callback();
+        assert_world_available(self.core());
         self.debug_draw_validated(drawer, opts.assert_valid());
     }
 
@@ -871,7 +871,7 @@ impl World {
         drawer: &mut impl DebugDraw,
         opts: DebugDrawOptions,
     ) -> crate::error::ApiResult<()> {
-        crate::core::callback_state::check_not_in_callback()?;
+        check_world_available(self.core())?;
         self.debug_draw_validated(drawer, opts.checked()?);
         Ok(())
     }

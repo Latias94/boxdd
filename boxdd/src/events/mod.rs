@@ -1,14 +1,19 @@
 //! Event snapshots and zero-copy visitors.
 //!
 //! - Snapshot getters like `body_events`, `sensor_events`, `contact_events`, `joint_events`
-//!   copy event data into owned Rust collections and are safe to keep after stepping.
+//!   clone the Rust-owned snapshot captured when the latest world step completed.
 //! - Reusable-buffer snapshot getters like `*_events_into` reuse caller-owned storage for the same
 //!   owned event data.
-//! - Zero-copy visitors like `with_*` variants pass FFI slices valid only for the
-//!   duration of the closure and current step.
+//! - Safe zero-copy visitors borrow the Rust-owned completed-step snapshot for the duration of the
+//!   closure. They never dereference Box2D's transient event buffers after world mutation.
 //! - Owned snapshot getters are available on both [`crate::World`] and `WorldHandle`.
 //! - Borrowed zero-copy views and raw event-buffer access intentionally stay on [`crate::World`]:
-//!   they are tied to completed-step world buffers and the world's deferred-destroy flush semantics.
+//!   the safe views preserve the world's deferred-destroy flush semantics, while unsafe raw access
+//!   remains tied directly to Box2D's transient buffers.
+
+use crate::id::{ContactEpoch, IdBrand};
+use boxdd_sys::ffi;
+use std::cell::{Ref, RefCell};
 
 #[inline]
 fn map_snapshot_into<TRaw, T>(out: &mut Vec<T>, slice: &[TRaw], map: impl FnMut(&TRaw) -> T) {
@@ -23,6 +28,61 @@ mod body;
 mod contact;
 mod joint;
 mod sensor;
+
+#[derive(Default)]
+struct EventSnapshot {
+    body: Vec<body::BodyMoveEvent>,
+    contact: contact::ContactEvents,
+    joint: Vec<joint::JointEvent>,
+    sensor: sensor::SensorEvents,
+}
+
+/// Shared cache of the event data from the latest completed world step.
+///
+/// Box2D owns its event arrays and may invalidate them as soon as the world is mutated. Keeping the
+/// copy at the `World` boundary lets both `World` and `WorldHandle` expose safe event APIs without
+/// extending the native buffers' lifetime.
+#[derive(Default)]
+pub(crate) struct EventCache {
+    state: RefCell<EventCacheState>,
+}
+
+#[derive(Default)]
+struct EventCacheState {
+    current: EventSnapshot,
+    staging: EventSnapshot,
+}
+
+impl EventCache {
+    pub(crate) fn capture_completed_step(
+        &self,
+        world: ffi::b2WorldId,
+        brand: IdBrand,
+        contact_epoch: ContactEpoch,
+    ) {
+        // Detach the staging buffers so a panic while validating or allocating cannot leave the
+        // published snapshot containing event classes from different steps.
+        let mut next = {
+            let mut state = self.state.borrow_mut();
+            core::mem::take(&mut state.staging)
+        };
+
+        // No Box2D mutation may occur between these reads. `World::step` calls this immediately
+        // after b2World_Step returns and before deferred destruction is flushed.
+        body::capture_native_events_into(world, brand, &mut next.body);
+        contact::capture_native_events_into(world, brand, contact_epoch, &mut next.contact);
+        joint::capture_native_events_into(world, brand, &mut next.joint);
+        sensor::capture_native_events_into(world, brand, &mut next.sensor);
+
+        let mut state = self.state.borrow_mut();
+        core::mem::swap(&mut state.current, &mut next);
+        state.staging = next;
+    }
+
+    fn snapshot(&self) -> Ref<'_, EventSnapshot> {
+        Ref::map(self.state.borrow(), |state| &state.current)
+    }
+}
 
 pub use body::BodyMoveEvent;
 pub use contact::{ContactBeginTouchEvent, ContactEndTouchEvent, ContactEvents, ContactHitEvent};

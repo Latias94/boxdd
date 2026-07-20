@@ -611,186 +611,7 @@ impl WorldCastOutput {
     }
 }
 
-/// Opaque Box2D body identifier.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct BodyId {
-    pub index1: i32,
-    pub world0: u16,
-    pub generation: u16,
-}
-
-impl BodyId {
-    #[inline]
-    pub const fn from_raw(raw: ffi::b2BodyId) -> Self {
-        Self {
-            index1: raw.index1,
-            world0: raw.world0,
-            generation: raw.generation,
-        }
-    }
-
-    #[inline]
-    pub const fn into_raw(self) -> ffi::b2BodyId {
-        ffi::b2BodyId {
-            index1: self.index1,
-            world0: self.world0,
-            generation: self.generation,
-        }
-    }
-}
-
-const _: () = {
-    assert!(core::mem::size_of::<BodyId>() == core::mem::size_of::<ffi::b2BodyId>());
-    assert!(core::mem::align_of::<BodyId>() == core::mem::align_of::<ffi::b2BodyId>());
-};
-
-/// Opaque Box2D shape identifier.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ShapeId {
-    pub index1: i32,
-    pub world0: u16,
-    pub generation: u16,
-}
-
-impl ShapeId {
-    #[inline]
-    pub const fn from_raw(raw: ffi::b2ShapeId) -> Self {
-        Self {
-            index1: raw.index1,
-            world0: raw.world0,
-            generation: raw.generation,
-        }
-    }
-
-    #[inline]
-    pub const fn into_raw(self) -> ffi::b2ShapeId {
-        ffi::b2ShapeId {
-            index1: self.index1,
-            world0: self.world0,
-            generation: self.generation,
-        }
-    }
-}
-
-const _: () = {
-    assert!(core::mem::size_of::<ShapeId>() == core::mem::size_of::<ffi::b2ShapeId>());
-    assert!(core::mem::align_of::<ShapeId>() == core::mem::align_of::<ffi::b2ShapeId>());
-};
-
-/// Opaque Box2D joint identifier.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct JointId {
-    pub index1: i32,
-    pub world0: u16,
-    pub generation: u16,
-}
-
-impl JointId {
-    #[inline]
-    pub const fn from_raw(raw: ffi::b2JointId) -> Self {
-        Self {
-            index1: raw.index1,
-            world0: raw.world0,
-            generation: raw.generation,
-        }
-    }
-
-    #[inline]
-    pub const fn into_raw(self) -> ffi::b2JointId {
-        ffi::b2JointId {
-            index1: self.index1,
-            world0: self.world0,
-            generation: self.generation,
-        }
-    }
-}
-
-const _: () = {
-    assert!(core::mem::size_of::<JointId>() == core::mem::size_of::<ffi::b2JointId>());
-    assert!(core::mem::align_of::<JointId>() == core::mem::align_of::<ffi::b2JointId>());
-};
-
-/// Opaque Box2D chain identifier.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ChainId {
-    pub index1: i32,
-    pub world0: u16,
-    pub generation: u16,
-}
-
-impl ChainId {
-    #[inline]
-    pub const fn from_raw(raw: ffi::b2ChainId) -> Self {
-        Self {
-            index1: raw.index1,
-            world0: raw.world0,
-            generation: raw.generation,
-        }
-    }
-
-    #[inline]
-    pub const fn into_raw(self) -> ffi::b2ChainId {
-        ffi::b2ChainId {
-            index1: self.index1,
-            world0: self.world0,
-            generation: self.generation,
-        }
-    }
-}
-
-const _: () = {
-    assert!(core::mem::size_of::<ChainId>() == core::mem::size_of::<ffi::b2ChainId>());
-    assert!(core::mem::align_of::<ChainId>() == core::mem::align_of::<ffi::b2ChainId>());
-};
-
-/// Opaque Box2D contact identifier.
-///
-/// `ContactId` values commonly come from contact events or contact-data snapshots and expose
-/// direct validity checks plus crate-owned/raw contact-data reads as inherent methods.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ContactId {
-    pub index1: i32,
-    pub world0: u16,
-    pub padding: i16,
-    pub generation: u32,
-}
-
-impl ContactId {
-    #[inline]
-    pub const fn from_raw(raw: ffi::b2ContactId) -> Self {
-        Self {
-            index1: raw.index1,
-            world0: raw.world0,
-            padding: raw.padding,
-            generation: raw.generation,
-        }
-    }
-
-    #[inline]
-    pub const fn into_raw(self) -> ffi::b2ContactId {
-        ffi::b2ContactId {
-            index1: self.index1,
-            world0: self.world0,
-            padding: self.padding,
-            generation: self.generation,
-        }
-    }
-}
-
-const _: () = {
-    assert!(core::mem::size_of::<ContactId>() == core::mem::size_of::<ffi::b2ContactId>());
-    assert!(core::mem::align_of::<ContactId>() == core::mem::align_of::<ffi::b2ContactId>());
-};
+pub use crate::id::{BodyId, ChainId, ContactId, JointId, ShapeId};
 
 /// Mass properties (mass, center, inertia) used by Box2D.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -1006,7 +827,9 @@ impl Manifold {
     }
 }
 
-/// Contact data for a single contact touching two shapes.
+/// Contact data for a single contact touching two shapes in one completed-step epoch.
+///
+/// Its [`ContactId`] expires before the next valid world step enters Box2D.
 #[derive(Copy, Clone, Debug)]
 pub struct ContactData {
     pub contact_id: ContactId,
@@ -1017,13 +840,20 @@ pub struct ContactData {
 
 impl ContactData {
     #[inline]
-    pub fn from_raw(raw: ffi::b2ContactData) -> Self {
-        Self {
-            contact_id: ContactId::from_raw(raw.contactId),
-            shape_id_a: ShapeId::from_raw(raw.shapeIdA),
-            shape_id_b: ShapeId::from_raw(raw.shapeIdB),
+    pub(crate) fn try_from_raw_in(
+        brand: crate::id::IdBrand,
+        contact_epoch: crate::id::ContactEpoch,
+        raw: ffi::b2ContactData,
+    ) -> crate::error::ApiResult<Self> {
+        let contact_id = brand.try_contact(raw.contactId, contact_epoch)?;
+        let shape_id_a = brand.try_shape(raw.shapeIdA)?;
+        let shape_id_b = brand.try_shape(raw.shapeIdB)?;
+        Ok(Self {
+            contact_id,
+            shape_id_a,
+            shape_id_b,
             manifold: Manifold::from_raw(raw.manifold),
-        }
+        })
     }
 
     #[inline]
@@ -1047,6 +877,61 @@ const _: () = {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn contact_data_raw(brand: crate::id::IdBrand) -> ffi::b2ContactData {
+        // All-zero manifold fields represent an empty contact manifold.
+        let mut raw: ffi::b2ContactData = unsafe { core::mem::zeroed() };
+        raw.contactId = ffi::b2ContactId {
+            index1: 1,
+            world0: brand.world0(),
+            padding: 0,
+            generation: 1,
+        };
+        raw.shapeIdA = ffi::b2ShapeId {
+            index1: 1,
+            world0: brand.world0(),
+            generation: 1,
+        };
+        raw.shapeIdB = ffi::b2ShapeId {
+            index1: 2,
+            world0: brand.world0(),
+            generation: 1,
+        };
+        raw
+    }
+
+    #[test]
+    fn contact_data_binding_rejects_null_and_foreign_native_ids() {
+        let brand = crate::id::IdBrand::new(
+            ffi::b2WorldId {
+                index1: 4,
+                generation: 7,
+            },
+            crate::id::WorldToken::allocate().unwrap(),
+        )
+        .unwrap();
+
+        let mut raw = contact_data_raw(brand);
+        raw.contactId.index1 = 0;
+        assert_eq!(
+            ContactData::try_from_raw_in(brand, crate::id::ContactEpoch::INITIAL, raw).unwrap_err(),
+            crate::ApiError::InvalidContactId
+        );
+
+        let mut raw = contact_data_raw(brand);
+        raw.shapeIdA.index1 = 0;
+        assert_eq!(
+            ContactData::try_from_raw_in(brand, crate::id::ContactEpoch::INITIAL, raw).unwrap_err(),
+            crate::ApiError::InvalidShapeId
+        );
+
+        let mut raw = contact_data_raw(brand);
+        raw.shapeIdB.world0 = brand.world0().wrapping_add(1);
+        assert_eq!(
+            ContactData::try_from_raw_in(brand, crate::id::ContactEpoch::INITIAL, raw).unwrap_err(),
+            crate::ApiError::WrongWorld
+        );
+    }
 
     #[cfg(not(feature = "double-precision"))]
     const TEST_WORLD_X: WorldScalar = 16_384.25;

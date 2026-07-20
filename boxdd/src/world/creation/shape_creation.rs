@@ -1,19 +1,19 @@
 use super::*;
 
 fn wrap_world_owned_handle<T, Id>(
-    core: &Arc<WorldCore>,
+    core: &Rc<WorldCore>,
     id: Id,
-    wrap: impl FnOnce(Arc<WorldCore>, Id) -> T,
+    wrap: impl FnOnce(Rc<WorldCore>, Id) -> T,
 ) -> T {
-    wrap(Arc::clone(core), id)
+    wrap(Rc::clone(core), id)
 }
 
 fn try_wrap_world_owned_handle<T, Id, E>(
-    core: &Arc<WorldCore>,
+    core: &Rc<WorldCore>,
     id: Result<Id, E>,
-    wrap: impl FnOnce(Arc<WorldCore>, Id) -> T,
+    wrap: impl FnOnce(Rc<WorldCore>, Id) -> T,
 ) -> Result<T, E> {
-    id.map(|id| wrap(Arc::clone(core), id))
+    id.map(|id| wrap(Rc::clone(core), id))
 }
 
 impl World {
@@ -246,14 +246,18 @@ impl World {
 
     pub fn destroy_shape_id(&mut self, shape: ShapeId, update_body_mass: bool) {
         crate::core::callback_state::assert_not_in_callback();
-        if unsafe { ffi::b2Shape_IsValid(raw_shape_id(shape)) } {
-            unsafe { ffi::b2DestroyShape(raw_shape_id(shape), update_body_mass) };
-            let _ = self.core.clear_shape_user_data(shape);
-        }
-        #[cfg(feature = "serialize")]
-        {
-            self.core.remove_shape_flags(shape);
-        }
+        self.core
+            .destroy_shape_now(shape, update_body_mass)
+            .expect("invalid or foreign ShapeId");
+    }
+
+    pub fn try_destroy_shape_id(
+        &mut self,
+        shape: ShapeId,
+        update_body_mass: bool,
+    ) -> crate::error::ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        self.core.destroy_shape_now(shape, update_body_mass)
     }
 
     // Chain API (ID-style)
@@ -278,7 +282,7 @@ impl World {
         body: BodyId,
         def: &crate::shapes::chain::ChainDef,
     ) -> crate::shapes::chain::OwnedChain {
-        let core = Arc::clone(&self.core);
+        let core = Rc::clone(&self.core);
         let id = self.create_chain_for_id(body, def);
         wrap_world_owned_handle(&core, id, crate::shapes::chain::OwnedChain::new)
     }
@@ -288,29 +292,20 @@ impl World {
         body: BodyId,
         def: &crate::shapes::chain::ChainDef,
     ) -> crate::error::ApiResult<crate::shapes::chain::OwnedChain> {
-        let core = Arc::clone(&self.core);
+        let core = Rc::clone(&self.core);
         let id = self.try_create_chain_for_id(body, def);
         try_wrap_world_owned_handle(&core, id, crate::shapes::chain::OwnedChain::new)
     }
 
     pub fn destroy_chain_id(&mut self, chain: ChainId) {
-        crate::core::debug_checks::assert_chain_valid(chain);
-        if unsafe { ffi::b2Chain_IsValid(raw_chain_id(chain)) } {
-            unsafe { ffi::b2DestroyChain(raw_chain_id(chain)) };
-        }
-        #[cfg(feature = "serialize")]
-        {
-            self.core.remove_chain(chain);
-        }
+        crate::core::callback_state::assert_not_in_callback();
+        self.core
+            .destroy_chain_now(chain)
+            .expect("invalid or foreign ChainId");
     }
 
     pub fn try_destroy_chain_id(&mut self, chain: ChainId) -> crate::error::ApiResult<()> {
-        crate::core::debug_checks::check_chain_valid(chain)?;
-        unsafe { ffi::b2DestroyChain(raw_chain_id(chain)) };
-        #[cfg(feature = "serialize")]
-        {
-            self.core.remove_chain(chain);
-        }
-        Ok(())
+        crate::core::callback_state::check_not_in_callback()?;
+        self.core.destroy_chain_now(chain)
     }
 }

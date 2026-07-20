@@ -1,0 +1,11 @@
+error[E0599]: no associated function or constant named `from_raw` found for struct `BodyId` in the current scope
+  --> tests/ui/live_id_from_raw.rs:10:21
+   |
+10 |     let _ = BodyId::from_raw(raw);
+   |                     ^^^^^^^^ associated function or constant not found in `BodyId`
+   |
+help: there is an associated function `from` with a similar name
+   |
+10 -     let _ = BodyId::from_raw(raw);
+10 +     let _ = BodyId::from(raw);
+   |

@@ -1,6 +1,46 @@
 use boxdd::{prelude::*, shapes};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+struct PanicOnDrop {
+    panicked: Arc<AtomicBool>,
+}
+
+impl PanicOnDrop {
+    fn touch(&self) {}
+}
+
+impl Drop for PanicOnDrop {
+    fn drop(&mut self) {
+        if !self.panicked.swap(true, Ordering::SeqCst) {
+            panic!("intentional callback drop panic");
+        }
+    }
+}
+
+fn overlapping_material_world() -> World {
+    let mut world = World::new(WorldDef::builder().gravity([0.0_f32, 0.0]).build()).unwrap();
+    let shape_def = ShapeDef::builder()
+        .density(1.0)
+        .material(
+            SurfaceMaterial::default()
+                .with_friction(0.5)
+                .with_restitution(0.5)
+                .with_user_material_id(1),
+        )
+        .build();
+    let polygon = shapes::box_polygon(0.5, 0.5);
+    for x in [0.0_f32, 0.4] {
+        let body = world.create_body_id(
+            BodyBuilder::new()
+                .body_type(BodyType::Dynamic)
+                .position([x, 0.0])
+                .build(),
+        );
+        let _ = world.create_polygon_shape_for(body, &shape_def, &polygon);
+    }
+    world
+}
 
 #[test]
 fn material_mix_callbacks_receive_material_ids_and_can_override_restitution() {
@@ -144,4 +184,72 @@ fn clearing_material_mix_callbacks_releases_slots_in_either_order() {
     }
 
     assert_eq!(worlds.len(), 65);
+}
+
+#[test]
+fn friction_replacement_survives_old_callback_drop_panic() {
+    let mut world = overlapping_material_world();
+    let old_dropped = Arc::new(AtomicBool::new(false));
+    world.set_friction_callback({
+        let marker = PanicOnDrop {
+            panicked: Arc::clone(&old_dropped),
+        };
+        move |_, _| {
+            marker.touch();
+            0.5
+        }
+    });
+
+    let replacement_calls = Arc::new(AtomicUsize::new(0));
+    let replacement = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        world.set_friction_callback({
+            let replacement_calls = Arc::clone(&replacement_calls);
+            move |_, _| {
+                replacement_calls.fetch_add(1, Ordering::SeqCst);
+                0.5
+            }
+        });
+    }));
+
+    assert!(replacement.is_err());
+    assert!(old_dropped.load(Ordering::SeqCst));
+    for _ in 0..5 {
+        world.step(1.0 / 60.0, 2);
+    }
+    assert!(replacement_calls.load(Ordering::SeqCst) > 0);
+    world.clear_friction_callback();
+}
+
+#[test]
+fn restitution_replacement_survives_old_callback_drop_panic() {
+    let mut world = overlapping_material_world();
+    let old_dropped = Arc::new(AtomicBool::new(false));
+    world.set_restitution_callback({
+        let marker = PanicOnDrop {
+            panicked: Arc::clone(&old_dropped),
+        };
+        move |_, _| {
+            marker.touch();
+            0.5
+        }
+    });
+
+    let replacement_calls = Arc::new(AtomicUsize::new(0));
+    let replacement = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        world.set_restitution_callback({
+            let replacement_calls = Arc::clone(&replacement_calls);
+            move |_, _| {
+                replacement_calls.fetch_add(1, Ordering::SeqCst);
+                0.5
+            }
+        });
+    }));
+
+    assert!(replacement.is_err());
+    assert!(old_dropped.load(Ordering::SeqCst));
+    for _ in 0..5 {
+        world.step(1.0 / 60.0, 2);
+    }
+    assert!(replacement_calls.load(Ordering::SeqCst) > 0);
+    world.clear_restitution_callback();
 }

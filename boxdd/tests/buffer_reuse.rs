@@ -33,7 +33,7 @@ fn body_attachment_buffers_grow_from_eight_to_ten_and_then_reuse() {
                 .position([2.0 + index as f32, 0.0])
                 .build(),
         );
-        let base = JointBase::builder().bodies_by_id(body.id(), other).build();
+        let base = JointBase::new(body.id(), other);
         world.create_distance_joint_id(&DistanceJointDef::new(base).length(1.0));
     }
 
@@ -182,9 +182,7 @@ fn body_and_shape_contact_data_into_reuses_buffer() {
         .unwrap();
     assert!(!body_contacts_raw.is_empty());
 
-    let converted_body_contact = ContactData::from_raw(body_contacts_raw[0]);
-    assert_eq!(converted_body_contact.manifold, body_contacts[0].manifold);
-    let converted_body_contact_raw = converted_body_contact.into_raw();
+    let converted_body_contact_raw = body_contacts[0].into_raw();
     assert_eq!(
         converted_body_contact_raw.contactId.index1,
         body_contacts_raw[0].contactId.index1
@@ -221,8 +219,27 @@ fn body_and_shape_contact_data_into_reuses_buffer() {
         .unwrap();
     assert!(!shape_contacts_raw.is_empty());
 
-    let converted_shape_contact = ContactData::from_raw(shape_contacts_raw[0]);
-    assert_eq!(converted_shape_contact.manifold, shape_contacts[0].manifold);
+    let converted_shape_contact_raw = shape_contacts[0].into_raw();
+    assert_eq!(
+        converted_shape_contact_raw.contactId.index1,
+        shape_contacts_raw[0].contactId.index1
+    );
+    assert_eq!(
+        converted_shape_contact_raw.contactId.generation,
+        shape_contacts_raw[0].contactId.generation
+    );
+    assert_eq!(
+        converted_shape_contact_raw.shapeIdA.index1,
+        shape_contacts_raw[0].shapeIdA.index1
+    );
+    assert_eq!(
+        converted_shape_contact_raw.shapeIdB.index1,
+        shape_contacts_raw[0].shapeIdB.index1
+    );
+    assert_eq!(
+        converted_shape_contact_raw.manifold.pointCount,
+        shape_contacts_raw[0].manifold.pointCount
+    );
 }
 
 #[test]

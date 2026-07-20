@@ -3,8 +3,7 @@ use super::*;
 /// A scoped shape handle tied to a mutable borrow of the world.
 pub struct Shape<'w> {
     pub(crate) id: ShapeId,
-    #[allow(dead_code)]
-    pub(crate) core: Arc<crate::core::world_core::WorldCore>,
+    pub(crate) core: Rc<crate::core::world_core::WorldCore>,
     _world: PhantomData<&'w World>,
 }
 
@@ -19,17 +18,12 @@ impl<'w> ShapeRuntimeHandle for Shape<'w> {
 }
 
 impl<'w> Shape<'w> {
-    pub(crate) fn new(core: Arc<crate::core::world_core::WorldCore>, id: ShapeId) -> Self {
+    pub(crate) fn new(core: Rc<crate::core::world_core::WorldCore>, id: ShapeId) -> Self {
         Self {
             id,
             core,
             _world: PhantomData,
         }
-    }
-
-    #[inline]
-    fn check_valid(&self) -> ApiResult<()> {
-        ShapeRuntimeHandle::check_valid(self)
     }
 
     pub fn id(&self) -> ShapeId {
@@ -493,22 +487,13 @@ impl<'w> Shape<'w> {
     /// After destruction, any previously stored `ShapeId` referring to this shape becomes invalid.
     pub fn destroy(self, update_body_mass: bool) {
         crate::core::callback_state::assert_not_in_callback();
-        if unsafe { ffi::b2Shape_IsValid(raw_shape_id(self.id)) } {
-            unsafe { ffi::b2DestroyShape(raw_shape_id(self.id), update_body_mass) };
-            let _ = self.core.clear_shape_user_data(self.id);
-            #[cfg(feature = "serialize")]
-            self.core.remove_shape_flags(self.id);
-        }
+        self.core
+            .destroy_shape_now(self.id, update_body_mass)
+            .expect("invalid or foreign ShapeId");
     }
 
     pub fn try_destroy(self, update_body_mass: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        if unsafe { ffi::b2Shape_IsValid(raw_shape_id(self.id)) } {
-            unsafe { ffi::b2DestroyShape(raw_shape_id(self.id), update_body_mass) };
-            let _ = self.core.clear_shape_user_data(self.id);
-            #[cfg(feature = "serialize")]
-            self.core.remove_shape_flags(self.id);
-        }
-        Ok(())
+        crate::core::callback_state::check_not_in_callback()?;
+        self.core.destroy_shape_now(self.id, update_body_mass)
     }
 }

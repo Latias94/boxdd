@@ -1,6 +1,5 @@
 use std::marker::PhantomData;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use crate::core::world_core::WorldCore;
 use crate::error::{ApiError, ApiResult};
@@ -16,17 +15,16 @@ mod user_data;
 /// A scoped joint handle tied to a mutable borrow of the world.
 pub struct Joint<'w> {
     pub(crate) id: JointId,
-    pub(crate) core: Arc<crate::core::world_core::WorldCore>,
+    pub(crate) core: Rc<crate::core::world_core::WorldCore>,
     pub(crate) _world: PhantomData<&'w World>,
 }
 
 /// A RAII-owned joint that is destroyed on drop.
 pub struct OwnedJoint {
     id: JointId,
-    core: Arc<WorldCore>,
+    core: Rc<WorldCore>,
     destroy_on_drop: bool,
     wake_bodies_on_drop: bool,
-    _not_send: PhantomData<Rc<()>>,
 }
 
 /// Joint kinds reported by Box2D.
@@ -124,13 +122,27 @@ pub(crate) fn joint_type_impl(id: JointId) -> JointType {
 }
 
 #[inline]
+pub(crate) fn joint_body_a_id_in_impl(brand: crate::id::IdBrand, id: JointId) -> BodyId {
+    brand
+        .try_body(unsafe { ffi::b2Joint_GetBodyA(raw_joint_id(id)) })
+        .expect("Box2D returned an invalid body id for a validated joint")
+}
+
+#[inline]
 pub(crate) fn joint_body_a_id_impl(id: JointId) -> BodyId {
-    BodyId::from_raw(unsafe { ffi::b2Joint_GetBodyA(raw_joint_id(id)) })
+    joint_body_a_id_in_impl(id.brand(), id)
+}
+
+#[inline]
+pub(crate) fn joint_body_b_id_in_impl(brand: crate::id::IdBrand, id: JointId) -> BodyId {
+    brand
+        .try_body(unsafe { ffi::b2Joint_GetBodyB(raw_joint_id(id)) })
+        .expect("Box2D returned an invalid body id for a validated joint")
 }
 
 #[inline]
 pub(crate) fn joint_body_b_id_impl(id: JointId) -> BodyId {
-    BodyId::from_raw(unsafe { ffi::b2Joint_GetBodyB(raw_joint_id(id)) })
+    joint_body_b_id_in_impl(id.brand(), id)
 }
 
 #[inline]

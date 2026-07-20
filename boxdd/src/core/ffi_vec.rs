@@ -92,87 +92,52 @@ pub(crate) unsafe fn read_from_ffi<T: FfiOutput>(
     Ok(out)
 }
 
-struct ClearOnDrop<'a, T> {
-    out: &'a mut Vec<T>,
-    armed: bool,
-}
-
-impl<T> Drop for ClearOnDrop<'_, T> {
-    fn drop(&mut self) {
-        if self.armed {
-            self.out.clear();
-        }
-    }
-}
-
 /// Fill a raw FFI buffer, then explicitly convert its validated prefix into safe values.
 ///
 /// # Safety
 ///
 /// `fill` must uphold the same initialization contract as [`fill_from_ffi`].
+#[cfg(any(feature = "unchecked", test))]
 pub(crate) unsafe fn fill_mapped_from_ffi<Raw: FfiOutput, Safe>(
     out: &mut Vec<Safe>,
     requested: i32,
     fill: impl FnOnce(*mut Raw, i32) -> i32,
     mut map: impl FnMut(Raw) -> Safe,
 ) -> ApiResult<()> {
+    // SAFETY: the caller supplies the initialization contract for `fill`.
+    unsafe { try_fill_mapped_from_ffi(out, requested, fill, |raw| Ok(map(raw))) }
+}
+
+/// Fill a raw FFI buffer, then fallibly convert its validated prefix into safe values.
+///
+/// Conversion is transactional: `out` remains empty unless every raw value maps successfully.
+///
+/// # Safety
+///
+/// `fill` must uphold the same initialization contract as [`fill_from_ffi`].
+pub(crate) unsafe fn try_fill_mapped_from_ffi<Raw: FfiOutput, Safe>(
+    out: &mut Vec<Safe>,
+    requested: i32,
+    fill: impl FnOnce(*mut Raw, i32) -> i32,
+    mut map: impl FnMut(Raw) -> ApiResult<Safe>,
+) -> ApiResult<()> {
     out.clear();
 
-    assert_eq!(
-        core::mem::size_of::<Raw>(),
-        core::mem::size_of::<Safe>(),
-        "mapped FFI output types must have identical sizes",
-    );
-    assert_eq!(
-        core::mem::align_of::<Raw>(),
-        core::mem::align_of::<Safe>(),
-        "mapped FFI output types must have identical alignments",
-    );
-    assert_ne!(
-        core::mem::size_of::<Raw>(),
-        0,
-        "mapped FFI output types must not be zero-sized",
-    );
-
-    let requested_usize =
-        usize::try_from(requested).map_err(|_| ApiError::NegativeFfiOutputCapacity {
-            capacity: requested,
-        })?;
-    if requested_usize == 0 {
-        return Ok(());
-    }
-
-    out.try_reserve(requested_usize)
+    // Raw FFI records and safe values deliberately may have different layouts. In particular,
+    // world-branded IDs carry a Rust-only identity token. Native code therefore writes into a
+    // dedicated raw buffer before values are bound at the known owner boundary.
+    let raw = unsafe { read_from_ffi(requested, fill)? };
+    let mut mapped = Vec::new();
+    mapped
+        .try_reserve(raw.len())
         .map_err(|_| ApiError::FfiOutputAllocationFailed)?;
-    let output = out.spare_capacity_mut();
-    debug_assert!(output.len() >= requested_usize);
-
-    let initialized = fill(output.as_mut_ptr().cast::<Raw>(), requested);
-    let initialized_usize = usize::try_from(initialized)
-        .map_err(|_| ApiError::NegativeFfiOutputCount { count: initialized })?;
-    if initialized_usize > requested_usize {
-        return Err(ApiError::FfiOutputCountExceedsCapacity {
-            count: initialized,
-            capacity: requested,
-        });
+    for raw in raw {
+        mapped.push(map(raw)?);
     }
-
-    let mut guard = ClearOnDrop { out, armed: true };
-    for index in 0..initialized_usize {
-        // SAFETY: the native callback initialized this raw element, the layout checks above make
-        // each raw slot coincide exactly with one safe slot, and the visible vector length excludes
-        // the slot until `map` has returned and the safe value has been written.
-        let raw = unsafe { guard.out.as_mut_ptr().cast::<Raw>().add(index).read() };
-        let safe = map(raw);
-        // SAFETY: capacity covers the full requested range. Every preceding slot already contains
-        // a valid `Safe`, and this write initializes the next slot before extending the visible
-        // prefix. `ClearOnDrop` drops that prefix if a later conversion unwinds.
-        unsafe {
-            guard.out.as_mut_ptr().add(index).write(safe);
-            guard.out.set_len(index + 1);
-        }
-    }
-    guard.armed = false;
+    out.try_reserve(mapped.len())
+        .map_err(|_| ApiError::FfiOutputAllocationFailed)?;
+    out.clear();
+    out.extend(mapped);
     Ok(())
 }
 
@@ -181,6 +146,7 @@ pub(crate) unsafe fn fill_mapped_from_ffi<Raw: FfiOutput, Safe>(
 /// # Safety
 ///
 /// `fill` must uphold the same initialization contract as [`fill_from_ffi`].
+#[cfg(feature = "unchecked")]
 pub(crate) unsafe fn read_mapped_from_ffi<Raw: FfiOutput, Safe>(
     requested: i32,
     fill: impl FnOnce(*mut Raw, i32) -> i32,
@@ -192,10 +158,26 @@ pub(crate) unsafe fn read_mapped_from_ffi<Raw: FfiOutput, Safe>(
     Ok(out)
 }
 
+/// Allocate, fill, and fallibly convert an FFI output buffer into safe values.
+///
+/// # Safety
+///
+/// `fill` must uphold the same initialization contract as [`fill_from_ffi`].
+pub(crate) unsafe fn try_read_mapped_from_ffi<Raw: FfiOutput, Safe>(
+    requested: i32,
+    fill: impl FnOnce(*mut Raw, i32) -> i32,
+    map: impl FnMut(Raw) -> ApiResult<Safe>,
+) -> ApiResult<Vec<Safe>> {
+    let mut out = Vec::new();
+    // SAFETY: the caller supplies the initialization contract for `fill`.
+    unsafe { try_fill_mapped_from_ffi(&mut out, requested, fill, map)? };
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{fill_from_ffi, fill_mapped_from_ffi};
-    use crate::{ApiError, ShapeId};
+    use super::{fill_from_ffi, fill_mapped_from_ffi, try_fill_mapped_from_ffi};
+    use crate::ApiError;
     use boxdd_sys::ffi;
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -341,7 +323,7 @@ mod tests {
 
     #[test]
     fn mapped_fill_panic_clears_partially_converted_safe_values() {
-        let mut out = vec![ShapeId::from_raw(raw_shape(99))];
+        let mut out = vec![99_i64];
 
         let panic = catch_unwind(AssertUnwindSafe(|| unsafe {
             let _ = fill_mapped_from_ffi(
@@ -356,7 +338,7 @@ mod tests {
                     if raw.index1 == 2 {
                         panic!("synthetic conversion panic");
                     }
-                    ShapeId::from_raw(raw)
+                    i64::from(raw.index1)
                 },
             );
         }));
@@ -366,27 +348,79 @@ mod tests {
     }
 
     #[test]
-    fn mapped_fill_reuses_the_safe_output_allocation_as_raw_storage() {
-        let mut out = Vec::<ShapeId>::with_capacity(2);
-        let expected_raw_ptr = out.as_mut_ptr().cast::<ffi::b2ShapeId>();
+    fn fallible_mapped_fill_error_clears_partially_converted_safe_values() {
+        let mut out = vec![99_i64];
+
+        let error = unsafe {
+            try_fill_mapped_from_ffi(
+                &mut out,
+                2,
+                |ptr: *mut ffi::b2ShapeId, _capacity| {
+                    ptr.write(raw_shape(1));
+                    ptr.add(1).write(raw_shape(2));
+                    2
+                },
+                |raw| {
+                    if raw.index1 == 2 {
+                        Err(ApiError::WrongWorld)
+                    } else {
+                        Ok(i64::from(raw.index1))
+                    }
+                },
+            )
+        }
+        .unwrap_err();
+
+        assert_eq!(error, ApiError::WrongWorld);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn mapped_fill_supports_a_different_safe_layout() {
+        let mut out = Vec::<[i64; 3]>::with_capacity(2);
 
         unsafe {
             fill_mapped_from_ffi(
                 &mut out,
                 2,
                 |ptr: *mut ffi::b2ShapeId, capacity| {
-                    assert_eq!(ptr, expected_raw_ptr);
                     for index in 0..capacity {
                         ptr.add(index as usize).write(raw_shape(index));
                     }
                     capacity
                 },
-                ShapeId::from_raw,
+                |raw| [i64::from(raw.index1), i64::from(raw.world0), 17],
             )
             .unwrap();
         }
 
-        assert_eq!(out.as_mut_ptr().cast::<ffi::b2ShapeId>(), expected_raw_ptr);
-        assert_eq!(out.iter().map(|id| id.index1).collect::<Vec<_>>(), [0, 1]);
+        assert_eq!(out, [[0, 2, 17], [1, 2, 17]]);
+    }
+
+    #[test]
+    fn mapped_fill_reuses_the_safe_output_allocation() {
+        let mut out = Vec::<[i64; 3]>::with_capacity(4);
+        out.push([99, 99, 99]);
+        let expected_ptr = out.as_ptr();
+        let expected_capacity = out.capacity();
+
+        unsafe {
+            fill_mapped_from_ffi(
+                &mut out,
+                2,
+                |ptr: *mut ffi::b2ShapeId, capacity| {
+                    for index in 0..capacity {
+                        ptr.add(index as usize).write(raw_shape(index));
+                    }
+                    capacity
+                },
+                |raw| [i64::from(raw.index1), i64::from(raw.world0), 17],
+            )
+            .unwrap();
+        }
+
+        assert_eq!(out.as_ptr(), expected_ptr);
+        assert_eq!(out.capacity(), expected_capacity);
+        assert_eq!(out, [[0, 2, 17], [1, 2, 17]]);
     }
 }
