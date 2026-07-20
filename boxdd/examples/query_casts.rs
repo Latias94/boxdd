@@ -58,7 +58,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!(
         "cast_ray_closest: hit={} fraction={:.3}",
-        closest.hit, closest.fraction
+        closest.is_some(),
+        closest.map_or(1.0, |hit| hit.fraction)
     );
     println!("cast_ray_all_into hits: {}", ray_hits.len());
     println!(

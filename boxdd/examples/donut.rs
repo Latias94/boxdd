@@ -45,15 +45,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let a = bodies[prev];
         let b = bodies[i];
         let relative_angle = world.body_rotation(b).angle() - world.body_rotation(a).angle();
-        let base = JointBaseBuilder::new()
-            .bodies_by_id(a, b)
-            .local_frames(
-                [0.0_f32, 0.5 * length],
-                relative_angle,
-                [0.0_f32, -0.5 * length],
-                0.0,
-            )
-            .build();
+        let base = JointBase::new(a, b).with_local_frame_components(
+            [0.0_f32, 0.5 * length],
+            relative_angle,
+            [0.0_f32, -0.5 * length],
+            0.0,
+        );
         let wdef = WeldJointDef::new(base)
             .angular_hertz(5.0)
             .angular_damping_ratio(0.0);

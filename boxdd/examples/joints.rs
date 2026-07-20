@@ -1,6 +1,4 @@
-use boxdd::{
-    BodyBuilder, DistanceJointDef, JointBaseBuilder, ShapeDef, Vec2, World, WorldDef, shapes,
-};
+use boxdd::{BodyBuilder, DistanceJointDef, JointBase, ShapeDef, Vec2, World, WorldDef, shapes};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // World
@@ -25,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _s2 = world.create_polygon_shape_for(id2, &sdef_dyn, &bshape);
 
     // Simple distance joint between body origins
-    let base = JointBaseBuilder::new().bodies_by_id(id1, id2).build();
+    let base = JointBase::new(id1, id2);
     let ddef = DistanceJointDef::new(base)
         .length(1.0)
         .enable_spring(true)

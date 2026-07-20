@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             [0.0, -20.0],
             QueryFilter::default(),
         );
-        if hit.hit {
+        if let Some(hit) = hit {
             total_hits += 1;
             println!(
                 "x={:+.2} -> hit at y={:.2}, frac={:.2}",
