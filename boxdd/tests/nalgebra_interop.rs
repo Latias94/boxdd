@@ -1,6 +1,14 @@
 #![cfg(feature = "nalgebra")]
 
-use boxdd::{Aabb, Rot, Transform, Vec2};
+use boxdd::{
+    Aabb, Position, Rot, Transform, Vec2, WorldScalar, WorldTransform,
+    WorldTransformFromInteropError,
+};
+
+#[cfg(not(feature = "double-precision"))]
+const TEST_WORLD_X: WorldScalar = 10_000.125;
+#[cfg(feature = "double-precision")]
+const TEST_WORLD_X: WorldScalar = 10_000_000.001;
 
 #[test]
 fn vec2_converts_to_and_from_nalgebra() {
@@ -51,4 +59,30 @@ fn transform_converts_to_nalgebra_isometry_translation_matches() {
     let p = i.translation.vector;
     assert_eq!(p.x, 3.0);
     assert_eq!(p.y, 4.0);
+}
+
+#[test]
+fn world_types_round_trip_through_scalar_correct_nalgebra_representations() {
+    let position = Position::new(TEST_WORLD_X, -TEST_WORLD_X);
+    let point: nalgebra::Point2<WorldScalar> = position.into();
+    assert_eq!(Position::from(point), position);
+
+    let transform = WorldTransform::new(position, Rot::from_radians(0.375));
+    let isometry: nalgebra::Isometry2<WorldScalar> = transform.into();
+    let round_trip = WorldTransform::try_from(&isometry).unwrap();
+    assert_eq!(round_trip.position(), position);
+    assert!((round_trip.rotation().angle() - transform.rotation().angle()).abs() < 1.0e-6);
+
+    #[cfg(feature = "double-precision")]
+    assert_ne!(f64::from(TEST_WORLD_X as f32), TEST_WORLD_X);
+}
+
+#[test]
+fn world_transform_try_from_nalgebra_rejects_non_finite_translation() {
+    let isometry = nalgebra::Isometry2::<WorldScalar>::from_parts(
+        nalgebra::Translation2::new(WorldScalar::NAN, WorldScalar::from(0.0_f32)),
+        nalgebra::UnitComplex::identity(),
+    );
+    let error = WorldTransform::try_from(isometry).unwrap_err();
+    assert_eq!(error, WorldTransformFromInteropError::NonFinite);
 }

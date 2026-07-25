@@ -126,6 +126,72 @@ impl World {
         )
     }
 
+    /// Create a chain segment that is owned directly by the body rather than by a `Chain`.
+    pub fn create_chain_segment_shape_for(
+        &mut self,
+        body: BodyId,
+        def: &ShapeDef,
+        chain_segment: &crate::shapes::ChainSegment,
+    ) -> ShapeId {
+        crate::shapes::create_chain_segment_shape_for_body_impl(
+            self.core.as_ref(),
+            body,
+            def,
+            chain_segment,
+        )
+    }
+
+    /// Create an RAII-owned chain segment that has no parent `Chain`.
+    pub fn create_chain_segment_shape_for_owned(
+        &mut self,
+        body: BodyId,
+        def: &ShapeDef,
+        chain_segment: &crate::shapes::ChainSegment,
+    ) -> crate::shapes::OwnedShape {
+        wrap_world_owned_handle(
+            &self.core,
+            crate::shapes::create_chain_segment_shape_for_body_impl(
+                self.core.as_ref(),
+                body,
+                def,
+                chain_segment,
+            ),
+            crate::shapes::OwnedShape::new,
+        )
+    }
+
+    pub fn try_create_chain_segment_shape_for(
+        &mut self,
+        body: BodyId,
+        def: &ShapeDef,
+        chain_segment: &crate::shapes::ChainSegment,
+    ) -> crate::error::ApiResult<ShapeId> {
+        crate::shapes::try_create_chain_segment_shape_for_body_impl(
+            self.core.as_ref(),
+            body,
+            def,
+            chain_segment,
+        )
+    }
+
+    pub fn try_create_chain_segment_shape_for_owned(
+        &mut self,
+        body: BodyId,
+        def: &ShapeDef,
+        chain_segment: &crate::shapes::ChainSegment,
+    ) -> crate::error::ApiResult<crate::shapes::OwnedShape> {
+        try_wrap_world_owned_handle(
+            &self.core,
+            crate::shapes::try_create_chain_segment_shape_for_body_impl(
+                self.core.as_ref(),
+                body,
+                def,
+                chain_segment,
+            ),
+            crate::shapes::OwnedShape::new,
+        )
+    }
+
     pub fn create_capsule_shape_for(
         &mut self,
         body: BodyId,

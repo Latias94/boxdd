@@ -10,12 +10,16 @@ use crate::error::ApiResult;
 /// used primarily for contact filtering scenarios.
 pub struct FilterJointDef {
     base: JointBase,
+    raw: ffi::b2FilterJointDef,
 }
 
 impl FilterJointDef {
     pub fn new(base: JointBase) -> Self {
-        let _default = unsafe { ffi::b2DefaultFilterJointDef() };
-        Self { base }
+        let _lease = crate::core::foundation::assert_transient_native_lease();
+        Self {
+            base,
+            raw: unsafe { ffi::b2DefaultFilterJointDef() },
+        }
     }
 
     #[inline]
@@ -29,7 +33,7 @@ impl FilterJointDef {
     }
 
     pub(crate) fn to_raw(&self) -> ffi::b2FilterJointDef {
-        let mut raw = unsafe { ffi::b2DefaultFilterJointDef() };
+        let mut raw = self.raw;
         raw.base = self.base.to_raw();
         raw
     }

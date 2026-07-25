@@ -1,17 +1,6 @@
 use super::*;
 
 impl World {
-    /// Return recorded shape flags for shapes created via this wrapper.
-    #[cfg(feature = "serialize")]
-    pub fn shape_flags(&self, sid: ShapeId) -> Option<ShapeFlagsRecord> {
-        assert_shape_target(&self.core, sid);
-        self.core
-            .registries
-            .lock()
-            .expect("registries mutex poisoned")
-            .shape_flags(sid)
-    }
-
     pub fn shape_surface_material(&self, shape: ShapeId) -> SurfaceMaterial {
         assert_shape_target(&self.core, shape);
         crate::shapes::shape_surface_material_impl(shape)

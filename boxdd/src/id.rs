@@ -15,8 +15,8 @@ use boxdd_sys::ffi;
 
 use crate::error::{ApiError, ApiResult};
 
-const RAW_ID_VERSION: u8 = 2;
-const RAW_ID_AUTH_DOMAIN: &str = "boxdd.raw-id.process-local.v2";
+const RAW_ID_VERSION: u8 = 3;
+const RAW_ID_AUTH_DOMAIN: &str = "boxdd.raw-id.process-local.registration-nonce.v3";
 static NEXT_WORLD_TOKEN: AtomicU64 = AtomicU64::new(1);
 static RAW_ID_AUTH_STATE: OnceLock<RandomState> = OnceLock::new();
 
@@ -72,6 +72,29 @@ impl ContactEpoch {
     }
 }
 
+/// Identifies one Rust-side registration of a native object identity.
+///
+/// Box2D may restore or eventually reuse the same native `(kind, index, generation)` tuple. This
+/// nonce prevents a safe identifier from silently changing which Rust registration it denotes.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(crate) struct RegistrationNonce(NonZeroU64);
+
+impl RegistrationNonce {
+    #[inline]
+    pub(crate) fn new(value: u64) -> ApiResult<Self> {
+        NonZeroU64::new(value)
+            .map(Self)
+            .ok_or(ApiError::ObjectIdentityExhausted)
+    }
+}
+
+impl fmt::Debug for RegistrationNonce {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("RegistrationNonce(..)")
+    }
+}
+
 #[derive(Hash)]
 struct RawIdAuthPayload<G> {
     domain: &'static str,
@@ -82,33 +105,14 @@ struct RawIdAuthPayload<G> {
     object_generation: G,
     world_generation: u16,
     token: WorldToken,
+    registration_nonce: Option<RegistrationNonce>,
     contact_epoch: Option<ContactEpoch>,
 }
 
-#[allow(clippy::too_many_arguments)]
-fn raw_id_auth<G: Hash>(
-    version: u8,
-    kind: RawIdKind,
-    index1: i32,
-    world0: u16,
-    object_generation: G,
-    world_generation: u16,
-    token: WorldToken,
-    contact_epoch: Option<ContactEpoch>,
-) -> u64 {
+fn raw_id_auth<G: Hash>(payload: RawIdAuthPayload<G>) -> u64 {
     RAW_ID_AUTH_STATE
         .get_or_init(RandomState::new)
-        .hash_one(RawIdAuthPayload {
-            domain: RAW_ID_AUTH_DOMAIN,
-            version,
-            kind,
-            index1,
-            world0,
-            object_generation,
-            world_generation,
-            token,
-            contact_epoch,
-        })
+        .hash_one(payload)
 }
 
 /// The object family encoded in an unbound identifier.
@@ -159,66 +163,126 @@ impl IdBrand {
     }
 
     #[inline]
-    pub(crate) const fn body(self, raw: ffi::b2BodyId) -> BodyId {
-        BodyId::bind(raw, self)
+    pub(crate) const fn body(
+        self,
+        raw: ffi::b2BodyId,
+        registration_nonce: RegistrationNonce,
+    ) -> BodyId {
+        BodyId {
+            index1: raw.index1,
+            generation: raw.generation,
+            brand: self,
+            registration_nonce,
+        }
     }
 
     #[inline]
     pub(crate) fn try_body(self, raw: ffi::b2BodyId) -> ApiResult<BodyId> {
+        self.check_body_raw(raw)?;
+        crate::core::identity_registry::resolve_body_for_brand(self, raw)
+    }
+
+    #[inline]
+    pub(crate) fn check_body_raw(self, raw: ffi::b2BodyId) -> ApiResult<()> {
         if raw.index1 <= 0 {
             Err(ApiError::InvalidBodyId)
         } else if raw.world0 != self.world0 {
             Err(ApiError::WrongWorld)
         } else {
-            Ok(self.body(raw))
+            Ok(())
         }
     }
 
     #[inline]
-    pub(crate) const fn shape(self, raw: ffi::b2ShapeId) -> ShapeId {
-        ShapeId::bind(raw, self)
+    pub(crate) const fn shape(
+        self,
+        raw: ffi::b2ShapeId,
+        registration_nonce: RegistrationNonce,
+    ) -> ShapeId {
+        ShapeId {
+            index1: raw.index1,
+            generation: raw.generation,
+            brand: self,
+            registration_nonce,
+        }
     }
 
     #[inline]
     pub(crate) fn try_shape(self, raw: ffi::b2ShapeId) -> ApiResult<ShapeId> {
+        self.check_shape_raw(raw)?;
+        crate::core::identity_registry::resolve_shape_for_brand(self, raw)
+    }
+
+    #[inline]
+    pub(crate) fn check_shape_raw(self, raw: ffi::b2ShapeId) -> ApiResult<()> {
         if raw.index1 <= 0 {
             Err(ApiError::InvalidShapeId)
         } else if raw.world0 != self.world0 {
             Err(ApiError::WrongWorld)
         } else {
-            Ok(self.shape(raw))
+            Ok(())
         }
     }
 
     #[inline]
-    pub(crate) const fn joint(self, raw: ffi::b2JointId) -> JointId {
-        JointId::bind(raw, self)
+    pub(crate) const fn joint(
+        self,
+        raw: ffi::b2JointId,
+        registration_nonce: RegistrationNonce,
+    ) -> JointId {
+        JointId {
+            index1: raw.index1,
+            generation: raw.generation,
+            brand: self,
+            registration_nonce,
+        }
     }
 
     #[inline]
     pub(crate) fn try_joint(self, raw: ffi::b2JointId) -> ApiResult<JointId> {
+        self.check_joint_raw(raw)?;
+        crate::core::identity_registry::resolve_joint_for_brand(self, raw)
+    }
+
+    #[inline]
+    pub(crate) fn check_joint_raw(self, raw: ffi::b2JointId) -> ApiResult<()> {
         if raw.index1 <= 0 {
             Err(ApiError::InvalidJointId)
         } else if raw.world0 != self.world0 {
             Err(ApiError::WrongWorld)
         } else {
-            Ok(self.joint(raw))
+            Ok(())
         }
     }
 
     #[inline]
-    pub(crate) const fn chain(self, raw: ffi::b2ChainId) -> ChainId {
-        ChainId::bind(raw, self)
+    pub(crate) const fn chain(
+        self,
+        raw: ffi::b2ChainId,
+        registration_nonce: RegistrationNonce,
+    ) -> ChainId {
+        ChainId {
+            index1: raw.index1,
+            generation: raw.generation,
+            brand: self,
+            registration_nonce,
+        }
     }
 
     #[inline]
     pub(crate) fn try_chain(self, raw: ffi::b2ChainId) -> ApiResult<ChainId> {
+        self.check_chain_raw(raw)?;
+        crate::core::identity_registry::resolve_chain_for_brand(self, raw)
+    }
+
+    #[inline]
+    pub(crate) fn check_chain_raw(self, raw: ffi::b2ChainId) -> ApiResult<()> {
         if raw.index1 <= 0 {
             Err(ApiError::InvalidChainId)
         } else if raw.world0 != self.world0 {
             Err(ApiError::WrongWorld)
         } else {
-            Ok(self.chain(raw))
+            Ok(())
         }
     }
 
@@ -249,7 +313,9 @@ macro_rules! raw_object_id {
         #[doc = ""]
         #[doc = "Only a live identifier's `unbind` method issues trusted values. Serde input is"]
         #[doc = "untrusted and is authenticated when bound to its original live `World`. The"]
-        #[doc = "representation is deliberately not portable across process boundaries."]
+        #[doc = "original registration must still be active, so reuse of a native tuple cannot"]
+        #[doc = "revive an older value. The representation is deliberately not portable across"]
+        #[doc = "process boundaries."]
         #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
         pub struct $name {
@@ -260,22 +326,25 @@ macro_rules! raw_object_id {
             pub generation: u16,
             pub world_generation: u16,
             token: WorldToken,
+            registration_nonce: RegistrationNonce,
             auth: u64,
         }
 
         impl $name {
             #[inline]
-            fn issue(raw: $native, brand: IdBrand) -> Self {
-                let auth = raw_id_auth(
-                    RAW_ID_VERSION,
-                    RawIdKind::$kind,
-                    raw.index1,
-                    raw.world0,
-                    raw.generation,
-                    brand.world_generation,
-                    brand.token,
-                    None,
-                );
+            fn issue(raw: $native, brand: IdBrand, registration_nonce: RegistrationNonce) -> Self {
+                let auth = raw_id_auth(RawIdAuthPayload {
+                    domain: RAW_ID_AUTH_DOMAIN,
+                    version: RAW_ID_VERSION,
+                    kind: RawIdKind::$kind,
+                    index1: raw.index1,
+                    world0: raw.world0,
+                    object_generation: raw.generation,
+                    world_generation: brand.world_generation,
+                    token: brand.token,
+                    registration_nonce: Some(registration_nonce),
+                    contact_epoch: None,
+                });
                 Self {
                     version: RAW_ID_VERSION,
                     kind: RawIdKind::$kind,
@@ -284,6 +353,7 @@ macro_rules! raw_object_id {
                     generation: raw.generation,
                     world_generation: brand.world_generation,
                     token: brand.token,
+                    registration_nonce,
                     auth,
                 }
             }
@@ -298,17 +368,24 @@ macro_rules! raw_object_id {
             }
 
             #[inline]
+            pub(crate) const fn registration_nonce(self) -> RegistrationNonce {
+                self.registration_nonce
+            }
+
+            #[inline]
             pub(crate) fn validate_for(self, brand: IdBrand) -> ApiResult<()> {
-                let expected_auth = raw_id_auth(
-                    self.version,
-                    self.kind,
-                    self.index1,
-                    self.world0,
-                    self.generation,
-                    self.world_generation,
-                    self.token,
-                    None,
-                );
+                let expected_auth = raw_id_auth(RawIdAuthPayload {
+                    domain: RAW_ID_AUTH_DOMAIN,
+                    version: self.version,
+                    kind: self.kind,
+                    index1: self.index1,
+                    world0: self.world0,
+                    object_generation: self.generation,
+                    world_generation: self.world_generation,
+                    token: self.token,
+                    registration_nonce: Some(self.registration_nonce),
+                    contact_epoch: None,
+                });
                 if self.auth != expected_auth || self.version != RAW_ID_VERSION {
                     Err(ApiError::InvalidRawId)
                 } else if !matches!(self.kind, RawIdKind::$kind) {
@@ -353,16 +430,18 @@ pub struct RawContactId {
 impl RawContactId {
     #[inline]
     fn issue(raw: ffi::b2ContactId, brand: IdBrand, contact_epoch: ContactEpoch) -> Self {
-        let auth = raw_id_auth(
-            RAW_ID_VERSION,
-            RawIdKind::Contact,
-            raw.index1,
-            raw.world0,
-            raw.generation,
-            brand.world_generation,
-            brand.token,
-            Some(contact_epoch),
-        );
+        let auth = raw_id_auth(RawIdAuthPayload {
+            domain: RAW_ID_AUTH_DOMAIN,
+            version: RAW_ID_VERSION,
+            kind: RawIdKind::Contact,
+            index1: raw.index1,
+            world0: raw.world0,
+            object_generation: raw.generation,
+            world_generation: brand.world_generation,
+            token: brand.token,
+            registration_nonce: None,
+            contact_epoch: Some(contact_epoch),
+        });
         Self {
             version: RAW_ID_VERSION,
             kind: RawIdKind::Contact,
@@ -388,16 +467,18 @@ impl RawContactId {
 
     #[inline]
     pub(crate) fn validate_for(self, brand: IdBrand, contact_epoch: ContactEpoch) -> ApiResult<()> {
-        let expected_auth = raw_id_auth(
-            self.version,
-            self.kind,
-            self.index1,
-            self.world0,
-            self.generation,
-            self.world_generation,
-            self.token,
-            Some(self.contact_epoch),
-        );
+        let expected_auth = raw_id_auth(RawIdAuthPayload {
+            domain: RAW_ID_AUTH_DOMAIN,
+            version: self.version,
+            kind: self.kind,
+            index1: self.index1,
+            world0: self.world0,
+            object_generation: self.generation,
+            world_generation: self.world_generation,
+            token: self.token,
+            registration_nonce: None,
+            contact_epoch: Some(self.contact_epoch),
+        });
         if self.auth != expected_auth || self.version != RAW_ID_VERSION {
             Err(ApiError::InvalidRawId)
         } else if !matches!(self.kind, RawIdKind::Contact) {
@@ -417,27 +498,22 @@ impl RawContactId {
 
 macro_rules! branded_object_id {
     ($name:ident, $raw_name:ident, $native:path) => {
-        #[doc = "A live Box2D object identifier bound to one Rust world instance."]
+        #[doc = "A live Box2D object identifier bound to one Rust world registration."]
+        #[doc = ""]
+        #[doc = "Its registration nonce keeps the identifier distinct even if Box2D later reuses"]
+        #[doc = "the same native index and generation tuple."]
         #[derive(Copy, Clone, PartialEq, Eq, Hash)]
         pub struct $name {
             index1: i32,
             generation: u16,
             brand: IdBrand,
+            registration_nonce: RegistrationNonce,
         }
 
         impl $name {
             #[inline]
-            const fn bind(raw: $native, brand: IdBrand) -> Self {
-                Self {
-                    index1: raw.index1,
-                    generation: raw.generation,
-                    brand,
-                }
-            }
-
-            #[inline]
             pub fn unbind(self) -> $raw_name {
-                $raw_name::issue(self.into_raw(), self.brand)
+                $raw_name::issue(self.into_raw(), self.brand, self.registration_nonce)
             }
 
             #[inline]
@@ -453,6 +529,11 @@ macro_rules! branded_object_id {
             pub(crate) const fn brand(self) -> IdBrand {
                 self.brand
             }
+
+            #[inline]
+            pub(crate) const fn registration_nonce(self) -> RegistrationNonce {
+                self.registration_nonce
+            }
         }
 
         impl fmt::Debug for $name {
@@ -462,6 +543,7 @@ macro_rules! branded_object_id {
                     .field("world0", &self.brand.world0)
                     .field("generation", &self.generation)
                     .field("world_generation", &self.brand.world_generation)
+                    .field("registration_nonce", &self.registration_nonce)
                     .finish()
             }
         }
@@ -538,6 +620,10 @@ impl fmt::Debug for ContactId {
 mod tests {
     use super::*;
 
+    fn test_nonce() -> RegistrationNonce {
+        RegistrationNonce::new(1).unwrap()
+    }
+
     #[test]
     fn world_tokens_are_monotonic_and_nonzero() {
         let first = WorldToken::allocate().unwrap();
@@ -567,11 +653,14 @@ mod tests {
             token,
         )
         .unwrap();
-        let id = brand.body(ffi::b2BodyId {
-            index1: 7,
-            world0: 3,
-            generation: 11,
-        });
+        let id = brand.body(
+            ffi::b2BodyId {
+                index1: 7,
+                world0: 3,
+                generation: 11,
+            },
+            test_nonce(),
+        );
 
         let raw = id.unbind();
         assert_eq!(raw.index1, 7);
@@ -830,14 +919,17 @@ mod tests {
         )
         .unwrap();
         let raw = brand
-            .body(ffi::b2BodyId {
-                index1: 7,
-                world0: 3,
-                generation: 11,
-            })
+            .body(
+                ffi::b2BodyId {
+                    index1: 7,
+                    world0: 3,
+                    generation: 11,
+                },
+                test_nonce(),
+            )
             .unbind();
 
-        let mut candidates = [raw; 8];
+        let mut candidates = [raw; 9];
         candidates[0].version = raw.version.wrapping_add(1);
         candidates[1].kind = RawIdKind::Shape;
         candidates[2].index1 = raw.index1.wrapping_add(1);
@@ -845,7 +937,8 @@ mod tests {
         candidates[4].generation = raw.generation.wrapping_add(1);
         candidates[5].world_generation = raw.world_generation.wrapping_add(1);
         candidates[6].token = WorldToken::allocate().unwrap();
-        candidates[7].auth ^= 1;
+        candidates[7].registration_nonce = RegistrationNonce::new(2).unwrap();
+        candidates[8].auth ^= 1;
 
         for candidate in candidates {
             assert_eq!(candidate.validate_for(brand), Err(ApiError::InvalidRawId));
@@ -861,11 +954,14 @@ mod tests {
         let source = IdBrand::new(world, WorldToken::allocate().unwrap()).unwrap();
         let target = IdBrand::new(world, WorldToken::allocate().unwrap()).unwrap();
         let raw = source
-            .body(ffi::b2BodyId {
-                index1: 7,
-                world0: 3,
-                generation: 11,
-            })
+            .body(
+                ffi::b2BodyId {
+                    index1: 7,
+                    world0: 3,
+                    generation: 11,
+                },
+                test_nonce(),
+            )
             .unbind();
 
         assert_eq!(raw.validate_for(source), Ok(()));
@@ -918,11 +1014,14 @@ mod tests {
         )
         .unwrap();
         let raw = brand
-            .body(ffi::b2BodyId {
-                index1: 7,
-                world0: 3,
-                generation: 11,
-            })
+            .body(
+                ffi::b2BodyId {
+                    index1: 7,
+                    world0: 3,
+                    generation: 11,
+                },
+                test_nonce(),
+            )
             .unbind();
         let encoded = serde_json::to_value(raw).unwrap();
 
@@ -943,6 +1042,10 @@ mod tests {
                 "token",
                 serde_json::json!(raw.token.0.get().wrapping_add(1)),
             ),
+            (
+                "registration_nonce",
+                serde_json::json!(raw.registration_nonce.0.get().wrapping_add(1)),
+            ),
             ("auth", serde_json::json!(raw.auth ^ 1)),
         ] {
             let mut tampered = encoded.clone();
@@ -952,11 +1055,14 @@ mod tests {
         }
 
         let authentic_shape = brand
-            .shape(ffi::b2ShapeId {
-                index1: 9,
-                world0: 3,
-                generation: 12,
-            })
+            .shape(
+                ffi::b2ShapeId {
+                    index1: 9,
+                    world0: 3,
+                    generation: 12,
+                },
+                test_nonce(),
+            )
             .unbind();
         let authentic_wrong_kind: RawBodyId =
             serde_json::from_value(serde_json::to_value(authentic_shape).unwrap()).unwrap();

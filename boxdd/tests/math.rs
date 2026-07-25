@@ -1,7 +1,7 @@
 use boxdd::{
     HASH_INIT, Plane, Rot, Transform, Vec2, allocated_byte_count, atan2, compute_cos_sin,
     hash_bytes, is_valid_float, milliseconds_and_reset, milliseconds_since,
-    rotation_between_unit_vectors, ticks, version, yield_now,
+    rotation_between_unit_vectors, ticks, try_rotation_between_unit_vectors, version, yield_now,
 };
 use boxdd_sys::ffi;
 
@@ -105,6 +105,30 @@ fn public_math_helpers_cover_validity_rotation_and_version() {
 }
 
 #[test]
+fn rotation_between_vectors_rejects_native_assert_inputs_in_rust() {
+    for invalid in [
+        Vec2::new(2.0, 0.0),
+        Vec2::ZERO,
+        Vec2::new(f32::NAN, 0.0),
+        Vec2::new(f32::INFINITY, 0.0),
+    ] {
+        assert!(matches!(
+            try_rotation_between_unit_vectors(invalid, Vec2::new(1.0, 0.0)),
+            Err(boxdd::ApiError::InvalidArgument)
+        ));
+        assert!(matches!(
+            Rot::try_from_unit_vectors(Vec2::new(1.0, 0.0), invalid),
+            Err(boxdd::ApiError::InvalidArgument)
+        ));
+    }
+
+    let panic = std::panic::catch_unwind(|| {
+        rotation_between_unit_vectors(Vec2::new(2.0, 0.0), Vec2::new(1.0, 0.0));
+    });
+    assert!(panic.is_err());
+}
+
+#[test]
 fn core_math_types_use_explicit_raw_conversions() {
     let vec = Vec2::from_raw(ffi::b2Vec2 { x: 1.25, y: -2.5 });
     assert_eq!(vec, Vec2::new(1.25, -2.5));
@@ -138,7 +162,8 @@ fn foundation_helpers_cover_alloc_timing_and_hash() {
     assert!(is_valid_float(1.0));
     assert!(!is_valid_float(f32::NAN));
 
-    let _bytes = allocated_byte_count();
+    let bytes: i64 = allocated_byte_count();
+    assert!(bytes >= 0);
 
     let mut start = ticks();
     yield_now();

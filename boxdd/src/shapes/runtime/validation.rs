@@ -41,27 +41,25 @@ pub(crate) fn check_surface_material_valid(material: &SurfaceMaterial) -> ApiRes
 }
 
 #[inline]
-pub(crate) fn shape_def_cookie_is_valid(def: &ShapeDef) -> bool {
-    def.0.internalValue == unsafe { ffi::b2DefaultShapeDef() }.internalValue
-}
-
-#[inline]
 pub(crate) fn assert_shape_def_valid(def: &ShapeDef) {
-    assert!(
-        shape_def_cookie_is_valid(def),
-        "invalid ShapeDef: not initialized from b2DefaultShapeDef"
-    );
     assert_non_negative_finite_shape_scalar("density", def.density());
     assert_surface_material_valid(&def.material());
+    let _lease = crate::core::foundation::assert_transient_native_lease();
+    assert!(
+        def.0.internalValue == unsafe { ffi::b2DefaultShapeDef() }.internalValue,
+        "invalid ShapeDef: not initialized from b2DefaultShapeDef"
+    );
 }
 
 #[inline]
 pub(crate) fn check_shape_def_valid(def: &ShapeDef) -> ApiResult<()> {
-    if !shape_def_cookie_is_valid(def) {
+    check_non_negative_finite_shape_scalar(def.density())?;
+    check_surface_material_valid(&def.material())?;
+    let _lease = crate::core::foundation::transient_native_lease()?;
+    if def.0.internalValue != unsafe { ffi::b2DefaultShapeDef() }.internalValue {
         return Err(ApiError::InvalidArgument);
     }
-    check_non_negative_finite_shape_scalar(def.density())?;
-    check_surface_material_valid(&def.material())
+    Ok(())
 }
 
 #[track_caller]
@@ -77,6 +75,11 @@ pub(crate) fn assert_circle_geometry_valid(circle: &Circle) {
 #[inline]
 pub(crate) fn assert_segment_geometry_valid(segment: &Segment) {
     assert_shape_geometry_valid("segment", segment.is_valid());
+}
+
+#[inline]
+pub(crate) fn assert_chain_segment_geometry_valid(segment: &ChainSegment) {
+    assert_shape_geometry_valid("chain segment", segment.is_valid());
 }
 
 #[inline]
@@ -96,6 +99,11 @@ pub(crate) fn check_circle_geometry_valid(circle: &Circle) -> ApiResult<()> {
 
 #[inline]
 pub(crate) fn check_segment_geometry_valid(segment: &Segment) -> ApiResult<()> {
+    segment.validate()
+}
+
+#[inline]
+pub(crate) fn check_chain_segment_geometry_valid(segment: &ChainSegment) -> ApiResult<()> {
     segment.validate()
 }
 
@@ -138,6 +146,17 @@ pub(crate) fn assert_shape_vec2_valid(name: &str, value: Vec2) {
 #[inline]
 pub(crate) fn check_shape_vec2_valid(value: Vec2) -> ApiResult<()> {
     if value.is_valid() {
+        Ok(())
+    } else {
+        Err(ApiError::InvalidArgument)
+    }
+}
+
+#[inline]
+pub(crate) fn check_shape_wind_parameters_valid(wind: Vec2, drag: f32, lift: f32) -> ApiResult<()> {
+    check_shape_vec2_valid(wind)?;
+    check_non_negative_finite_shape_scalar(drag)?;
+    if lift.is_finite() {
         Ok(())
     } else {
         Err(ApiError::InvalidArgument)

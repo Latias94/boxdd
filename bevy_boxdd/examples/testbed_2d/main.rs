@@ -179,11 +179,19 @@ fn spawn_initial_scene(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     state: Res<TestbedState>,
+    origin: Res<BoxddWorldOrigin>,
 ) {
     log_scene_selection(state.scene());
-    spawn_scene(&mut commands, &mut meshes, &mut materials, state.scene());
+    spawn_scene(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        &origin,
+        state.scene(),
+    );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_input(
     keys: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<TestbedState>,
@@ -192,6 +200,7 @@ fn handle_input(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut stats: ResMut<EventStats>,
+    origin: Res<BoxddWorldOrigin>,
 ) {
     let mut requested_scene = None;
 
@@ -248,9 +257,11 @@ fn handle_input(
         &mut meshes,
         &mut materials,
         &mut stats,
+        &origin,
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn switch_scene(
     scene_index: usize,
     state: &mut TestbedState,
@@ -259,6 +270,7 @@ pub(crate) fn switch_scene(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
     stats: &mut EventStats,
+    origin: &BoxddWorldOrigin,
 ) {
     for entity in entities {
         commands.entity(entity).despawn();
@@ -266,7 +278,7 @@ pub(crate) fn switch_scene(
     state.scene_index = scene_index.min(ALL_SCENES.len() - 1);
     *stats = EventStats::default();
     log_scene_selection(state.scene());
-    spawn_scene(commands, meshes, materials, state.scene());
+    spawn_scene(commands, meshes, materials, origin, state.scene());
 }
 
 fn log_scene_selection(scene: TestbedScene) {

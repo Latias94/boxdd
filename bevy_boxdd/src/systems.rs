@@ -6,25 +6,28 @@ use crate::components::{
     PhysicsMaterial, RevoluteJointDescriptor, RigidBody, TransformSyncMode,
 };
 use crate::errors::report_error;
-use crate::math::{apply_boxdd_transform, to_boxdd_angle, to_boxdd_translation, to_boxdd_vec2};
+use crate::math::to_boxdd_vec2;
 use crate::messages::{
     BoxddBodyMoveMessage, BoxddContactBeginMessage, BoxddContactEndMessage, BoxddContactHitMessage,
     BoxddErrorMessage, BoxddOperation, BoxddPluginError, BoxddSensorBeginMessage,
-    BoxddSensorEndMessage,
+    BoxddSensorEndMessage, WorldOriginRebased,
 };
+use crate::origin::{BoxddWorldOrigin, BoxddWorldOriginError};
 use crate::resources::{
     BoxddPhysicsContext, BoxddPhysicsSettings, ShapeDescriptor, ShapeLocalTransform,
 };
 use bevy_ecs::hierarchy::ChildOf;
 use bevy_ecs::message::MessageWriter;
-use bevy_ecs::prelude::{Commands, Entity, NonSendMut, Query, Res, Without};
+use bevy_ecs::prelude::{
+    Commands, Entity, Local, NonSendMut, ParamSet, Query, Res, ResMut, With, Without,
+};
 use bevy_math::Vec2 as BevyVec2;
 use bevy_time::{Fixed, Time};
 use bevy_transform::components::Transform;
 use boxdd::{
     ApiError, ApiResult, BodyDef, BodyId, Capsule as BoxddCapsule, Circle as BoxddCircle,
-    DistanceJointDef, JointBaseBuilder, JointId, Polygon as BoxddPolygon, RevoluteJointDef,
-    Segment as BoxddSegment, ShapeDef, ShapeId,
+    DistanceJointDef, JointId, Polygon as BoxddPolygon, RevoluteJointDef, Segment as BoxddSegment,
+    ShapeDef, ShapeId, WorldTransform,
 };
 
 type MissingBodyItem<'a> = (
@@ -84,11 +87,96 @@ type BodyTransformMutItem<'a> = (
     Option<&'a RigidBody>,
 );
 
+type RebaseFailure = (boxdd::Position, Option<Entity>, BoxddWorldOriginError);
+
+/// Stages and atomically commits a requested world-origin rebase.
+///
+/// A failed request remains pending and prevents the physics pipeline from
+/// advancing until the caller fixes, replaces, or cancels it.
+#[allow(clippy::type_complexity)]
+pub fn apply_pending_world_origin_rebase(
+    mut origin: ResMut<BoxddWorldOrigin>,
+    settings: Res<BoxddPhysicsSettings>,
+    mut errors: MessageWriter<BoxddErrorMessage>,
+    mut rebased: MessageWriter<WorldOriginRebased>,
+    mut last_failure: Local<Option<RebaseFailure>>,
+    mut bodies: ParamSet<(
+        Query<(Entity, &Transform), With<RigidBody>>,
+        Query<&mut Transform, With<RigidBody>>,
+    )>,
+) {
+    let Some(target) = origin.pending() else {
+        *last_failure = None;
+        return;
+    };
+
+    let previous = origin.active();
+    let staged = (|| {
+        let revision = origin.next_revision().map_err(|error| (None, error))?;
+        let target_frame = BoxddWorldOrigin::try_new(target).map_err(|error| (None, error))?;
+        let mut translations = Vec::new();
+
+        for (entity, transform) in &bodies.p0() {
+            let absolute = origin
+                .checked_local_transform_to_world(*transform)
+                .map(WorldTransform::position)
+                .map_err(|error| (Some(entity), error))?;
+            let local = target_frame
+                .checked_absolute_to_local(absolute)
+                .map_err(|error| (Some(entity), error))?;
+            translations.push((entity, local));
+        }
+
+        Ok::<_, (Option<Entity>, BoxddWorldOriginError)>((revision, translations))
+    })();
+
+    match staged {
+        Ok((revision, translations)) => {
+            let mut mutable_transforms = bodies.p1();
+            for (entity, translation) in translations {
+                let Ok(mut transform) = mutable_transforms.get_mut(entity) else {
+                    unreachable!("a staged rigid body cannot leave the query during one system");
+                };
+                transform.translation.x = translation.x;
+                transform.translation.y = translation.y;
+            }
+            origin.commit_rebase(target, revision);
+            *last_failure = None;
+            rebased.write(WorldOriginRebased {
+                previous,
+                current: target,
+                revision,
+            });
+        }
+        Err((entity, error)) => {
+            let failure = (target, entity, error);
+            if last_failure.as_ref() == Some(&failure) {
+                return;
+            }
+            *last_failure = Some(failure);
+            report_error(
+                &settings,
+                &mut errors,
+                BoxddErrorMessage {
+                    operation: BoxddOperation::RebaseWorldOrigin,
+                    entity,
+                    error: error.into(),
+                },
+            );
+        }
+    }
+}
+
+pub(crate) fn world_origin_is_settled(origin: Res<BoxddWorldOrigin>) -> bool {
+    origin.pending().is_none()
+}
+
 /// Creates native Box2D bodies for entities with [`RigidBody`] but no [`BoxddBody`].
 pub fn create_missing_bodies(
     mut commands: Commands,
     mut context: NonSendMut<BoxddPhysicsContext>,
     settings: Res<BoxddPhysicsSettings>,
+    origin: Res<BoxddWorldOrigin>,
     mut errors: MessageWriter<BoxddErrorMessage>,
     bodies: Query<MissingBodyItem<'_>, Without<BoxddBody>>,
 ) {
@@ -112,19 +200,36 @@ pub fn create_missing_bodies(
             continue;
         }
 
+        let world_transform = match transform {
+            Some(transform) => origin.checked_local_transform_to_world(*transform),
+            None => Ok(WorldTransform::new(origin.active(), boxdd::Rot::IDENTITY)),
+        };
+        let world_transform = match world_transform {
+            Ok(transform) => transform,
+            Err(error) => {
+                report_error(
+                    &settings,
+                    &mut errors,
+                    BoxddErrorMessage {
+                        operation: BoxddOperation::CreateBody,
+                        entity: Some(entity),
+                        error: error.into(),
+                    },
+                );
+                continue;
+            }
+        };
+
         let mut def = BodyDef::builder()
             .body_type((*rigid_body).into())
             .gravity_scale(body_settings.gravity_scale)
             .linear_damping(body_settings.linear_damping)
             .angular_damping(body_settings.angular_damping)
             .enable_sleep(body_settings.sleep_enabled)
-            .bullet(body_settings.bullet);
-
-        if let Some(transform) = transform {
-            def = def
-                .position(to_boxdd_translation(transform.translation))
-                .angle(to_boxdd_angle(transform.rotation));
-        }
+            .bullet(body_settings.bullet)
+            .motion_locks(body_settings.motion_locks)
+            .position(world_transform.position())
+            .angle(world_transform.rotation().angle());
 
         if let Some(linear_velocity) = linear_velocity {
             def = def.linear_velocity(to_boxdd_vec2(linear_velocity.0));
@@ -136,10 +241,7 @@ pub fn create_missing_bodies(
 
         let result = {
             let world = context.world_mut().expect("checked above");
-            world.try_create_body_id(def.build()).and_then(|body_id| {
-                apply_body_settings_to_world(world, body_id, *rigid_body, body_settings)?;
-                Ok(body_id)
-            })
+            world.try_create_body_id(def.build())
         };
 
         match result {
@@ -644,6 +746,7 @@ pub fn apply_body_controls(
 pub fn sync_bevy_transforms_to_boxdd(
     mut context: NonSendMut<BoxddPhysicsContext>,
     settings: Res<BoxddPhysicsSettings>,
+    origin: Res<BoxddWorldOrigin>,
     mut errors: MessageWriter<BoxddErrorMessage>,
     bodies: Query<BodyTransformItem<'_>>,
 ) {
@@ -656,13 +759,28 @@ pub fn sync_bevy_transforms_to_boxdd(
             continue;
         }
 
+        let world_transform = match origin.checked_local_transform_to_world(*transform) {
+            Ok(transform) => transform,
+            Err(error) => {
+                report_error(
+                    &settings,
+                    &mut errors,
+                    BoxddErrorMessage {
+                        operation: BoxddOperation::SyncTransform,
+                        entity: Some(entity),
+                        error: error.into(),
+                    },
+                );
+                continue;
+            }
+        };
         let result = context
             .world_mut()
             .expect("checked above")
             .try_set_body_position_and_rotation(
                 body.0,
-                to_boxdd_translation(transform.translation),
-                to_boxdd_angle(transform.rotation),
+                world_transform.position(),
+                world_transform.rotation().angle(),
             );
 
         if let Err(error) = result {
@@ -740,18 +858,19 @@ pub fn publish_physics_messages(
         return;
     };
 
-    match world.try_body_events() {
-        Ok(events) => {
-            for event in events {
-                body_moves.write(BoxddBodyMoveMessage {
-                    body_id: event.body_id,
-                    entity: context.body_entity(event.body_id),
-                    transform: event.transform,
-                    fell_asleep: event.fell_asleep,
-                });
-            }
+    let body_result = world.try_with_body_events_view(|events| {
+        for event in events {
+            let body_id = event.body_id();
+            body_moves.write(BoxddBodyMoveMessage {
+                body_id,
+                entity: context.body_entity(body_id),
+                transform: event.transform(),
+                fell_asleep: event.fell_asleep(),
+            });
         }
-        Err(error) => report_error(
+    });
+    if let Err(error) = body_result {
+        report_error(
             &settings,
             &mut errors,
             BoxddErrorMessage {
@@ -759,43 +878,49 @@ pub fn publish_physics_messages(
                 entity: None,
                 error: error.into(),
             },
-        ),
+        );
     }
 
-    match world.try_contact_events() {
-        Ok(events) => {
-            for event in events.begin {
-                contact_begin.write(BoxddContactBeginMessage {
-                    shape_a: event.shape_a,
-                    shape_b: event.shape_b,
-                    entity_a: context.shape_entity(event.shape_a),
-                    entity_b: context.shape_entity(event.shape_b),
-                    contact_id: event.contact_id,
-                });
-            }
-
-            for event in events.end {
-                contact_end.write(BoxddContactEndMessage {
-                    shape_a: event.shape_a,
-                    shape_b: event.shape_b,
-                    entity_a: context.shape_entity(event.shape_a),
-                    entity_b: context.shape_entity(event.shape_b),
-                });
-            }
-
-            for event in events.hit {
-                contact_hit.write(BoxddContactHitMessage {
-                    shape_a: event.shape_a,
-                    shape_b: event.shape_b,
-                    entity_a: context.shape_entity(event.shape_a),
-                    entity_b: context.shape_entity(event.shape_b),
-                    point: event.point,
-                    normal: event.normal,
-                    approach_speed: event.approach_speed,
-                });
-            }
+    let contact_result = world.try_with_contact_events_view(|begin, end, hit| {
+        for event in begin {
+            let shape_a = event.shape_a();
+            let shape_b = event.shape_b();
+            contact_begin.write(BoxddContactBeginMessage {
+                shape_a,
+                shape_b,
+                entity_a: context.shape_entity(shape_a),
+                entity_b: context.shape_entity(shape_b),
+                contact_id: event.contact_id(),
+            });
         }
-        Err(error) => report_error(
+
+        for event in end {
+            let shape_a = event.shape_a();
+            let shape_b = event.shape_b();
+            contact_end.write(BoxddContactEndMessage {
+                shape_a,
+                shape_b,
+                entity_a: context.shape_entity(shape_a),
+                entity_b: context.shape_entity(shape_b),
+            });
+        }
+
+        for event in hit {
+            let shape_a = event.shape_a();
+            let shape_b = event.shape_b();
+            contact_hit.write(BoxddContactHitMessage {
+                shape_a,
+                shape_b,
+                entity_a: context.shape_entity(shape_a),
+                entity_b: context.shape_entity(shape_b),
+                point: event.point(),
+                normal: event.normal(),
+                approach_speed: event.approach_speed(),
+            });
+        }
+    });
+    if let Err(error) = contact_result {
+        report_error(
             &settings,
             &mut errors,
             BoxddErrorMessage {
@@ -803,30 +928,34 @@ pub fn publish_physics_messages(
                 entity: None,
                 error: error.into(),
             },
-        ),
+        );
     }
 
-    match world.try_sensor_events() {
-        Ok(events) => {
-            for event in events.begin {
-                sensor_begin.write(BoxddSensorBeginMessage {
-                    sensor_shape: event.sensor_shape,
-                    visitor_shape: event.visitor_shape,
-                    sensor_entity: context.shape_entity(event.sensor_shape),
-                    visitor_entity: context.shape_entity(event.visitor_shape),
-                });
-            }
-
-            for event in events.end {
-                sensor_end.write(BoxddSensorEndMessage {
-                    sensor_shape: event.sensor_shape,
-                    visitor_shape: event.visitor_shape,
-                    sensor_entity: context.shape_entity(event.sensor_shape),
-                    visitor_entity: context.shape_entity(event.visitor_shape),
-                });
-            }
+    let sensor_result = world.try_with_sensor_events_view(|begin, end| {
+        for event in begin {
+            let sensor_shape = event.sensor_shape();
+            let visitor_shape = event.visitor_shape();
+            sensor_begin.write(BoxddSensorBeginMessage {
+                sensor_shape,
+                visitor_shape,
+                sensor_entity: context.shape_entity(sensor_shape),
+                visitor_entity: context.shape_entity(visitor_shape),
+            });
         }
-        Err(error) => report_error(
+
+        for event in end {
+            let sensor_shape = event.sensor_shape();
+            let visitor_shape = event.visitor_shape();
+            sensor_end.write(BoxddSensorEndMessage {
+                sensor_shape,
+                visitor_shape,
+                sensor_entity: context.shape_entity(sensor_shape),
+                visitor_entity: context.shape_entity(visitor_shape),
+            });
+        }
+    });
+    if let Err(error) = sensor_result {
+        report_error(
             &settings,
             &mut errors,
             BoxddErrorMessage {
@@ -834,7 +963,7 @@ pub fn publish_physics_messages(
                 entity: None,
                 error: error.into(),
             },
-        ),
+        );
     }
 }
 
@@ -842,6 +971,7 @@ pub fn publish_physics_messages(
 pub fn sync_boxdd_transforms_to_bevy(
     context: NonSendMut<BoxddPhysicsContext>,
     settings: Res<BoxddPhysicsSettings>,
+    origin: Res<BoxddWorldOrigin>,
     mut errors: MessageWriter<BoxddErrorMessage>,
     mut bodies: Query<BodyTransformMutItem<'_>>,
 ) {
@@ -860,7 +990,21 @@ pub fn sync_boxdd_transforms_to_bevy(
             .try_body_transform(body.0);
 
         match result {
-            Ok(boxdd_transform) => apply_boxdd_transform(&mut transform, boxdd_transform),
+            Ok(boxdd_transform) => {
+                if let Err(error) =
+                    origin.checked_apply_world_transform(&mut transform, boxdd_transform)
+                {
+                    report_error(
+                        &settings,
+                        &mut errors,
+                        BoxddErrorMessage {
+                            operation: BoxddOperation::SyncTransform,
+                            entity: Some(entity),
+                            error: error.into(),
+                        },
+                    );
+                }
+            }
             Err(error) => report_error(
                 &settings,
                 &mut errors,
@@ -992,13 +1136,6 @@ fn create_distance_joint(
     body_b: BodyId,
     distance: DistanceJointDescriptor,
 ) -> ApiResult<JointId> {
-    let length = distance
-        .length
-        .unwrap_or_else(|| distance.anchor_a.distance(distance.anchor_b));
-    if !length.is_finite() || length <= 0.0 {
-        return Err(ApiError::InvalidArgument);
-    }
-
     let base = joint_base_from_world_points(
         world,
         descriptor,
@@ -1006,8 +1143,12 @@ fn create_distance_joint(
         body_b,
         distance.anchor_a,
         distance.anchor_b,
-    );
-    let def = DistanceJointDef::new(base).length(length);
+    )?;
+    let def = match distance.length {
+        Some(length) => DistanceJointDef::new(base).length(length),
+        None => DistanceJointDef::new(base)
+            .try_length_from_world_points(distance.anchor_a, distance.anchor_b)?,
+    };
     world.try_create_distance_joint_id(&def)
 }
 
@@ -1025,7 +1166,7 @@ fn create_revolute_joint(
         body_b,
         revolute.anchor,
         revolute.anchor,
-    );
+    )?;
     let def = RevoluteJointDef::new(base);
     world.try_create_revolute_joint_id(&def)
 }
@@ -1035,23 +1176,47 @@ fn joint_base_from_world_points(
     descriptor: JointDescriptor,
     body_a: BodyId,
     body_b: BodyId,
-    anchor_a: BevyVec2,
-    anchor_b: BevyVec2,
-) -> boxdd::JointBase {
-    let base = world.joint_base_from_world_points(
-        body_a,
-        body_b,
-        to_boxdd_vec2(anchor_a),
-        to_boxdd_vec2(anchor_b),
+    anchor_a: boxdd::Position,
+    anchor_b: boxdd::Position,
+) -> ApiResult<boxdd::JointBase> {
+    let local_a = checked_world_to_body_local(world, body_a, anchor_a)?;
+    let local_b = checked_world_to_body_local(world, body_b, anchor_b)?;
+    let base = boxdd::JointBase::new(body_a, body_b).with_local_frames(
+        boxdd::Transform::from_pos_angle(local_a, 0.0),
+        boxdd::Transform::from_pos_angle(local_b, 0.0),
     );
-    JointBaseBuilder::from(base)
-        .collide_connected(descriptor.collide_connected)
-        .force_threshold(descriptor.force_threshold)
-        .torque_threshold(descriptor.torque_threshold)
-        .constraint_hertz(descriptor.constraint_hertz)
-        .constraint_damping_ratio(descriptor.constraint_damping_ratio)
-        .draw_scale(descriptor.draw_scale)
-        .build()
+    Ok(base
+        .with_collide_connected(descriptor.collide_connected)
+        .with_force_threshold(descriptor.force_threshold)
+        .with_torque_threshold(descriptor.torque_threshold)
+        .with_constraint_tuning(boxdd::ConstraintTuning::new(
+            descriptor.constraint_hertz,
+            descriptor.constraint_damping_ratio,
+        ))
+        .with_draw_scale(descriptor.draw_scale))
+}
+
+fn checked_world_to_body_local(
+    world: &boxdd::World,
+    body: BodyId,
+    anchor: boxdd::Position,
+) -> ApiResult<boxdd::Vec2> {
+    if !anchor.is_valid() {
+        return Err(ApiError::InvalidArgument);
+    }
+    let transform = world.try_body_transform(body)?;
+    let rotation = transform.rotation();
+    if !transform.position().is_valid() || !rotation.is_valid() {
+        return Err(ApiError::InvalidArgument);
+    }
+    let relative = anchor
+        .checked_relative_to(transform.position())
+        .map_err(|_| ApiError::InvalidArgument)?;
+    let local = rotation.inv_rotate_vec(relative);
+    if !local.x.is_finite() || !local.y.is_finite() {
+        return Err(ApiError::InvalidArgument);
+    }
+    Ok(local)
 }
 
 fn apply_control_result(

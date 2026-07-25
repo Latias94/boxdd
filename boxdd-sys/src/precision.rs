@@ -39,8 +39,8 @@ impl Precision {
     /// Return the stable WASM provider import module for this ABI.
     pub const fn wasm_import_module(self) -> &'static str {
         match self {
-            Self::Single => "box2d-sys-v0-single",
-            Self::Double => "box2d-sys-v0-double",
+            Self::Single => "box2d-sys-v1-single",
+            Self::Double => "box2d-sys-v1-double",
         }
     }
 }

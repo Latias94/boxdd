@@ -29,23 +29,36 @@ impl OwnedJoint {
         JointRuntimeHandle::try_is_valid(self)
     }
 
-    /// Borrow the raw id for ID-style APIs.
+    /// Borrow the world-bound branded ID for ID-style APIs.
     pub fn as_id(&self) -> JointId {
         self.id
     }
 
+    /// Return the joint's constraint type.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this handle is unavailable or Box2D returns an unknown native discriminant. An
+    /// unknown discriminant poisons the world before this method panics.
     pub fn joint_type(&self) -> JointType {
         JointRuntimeHandle::joint_type(self)
     }
 
+    /// Try to return the joint's constraint type.
+    ///
+    /// An unknown native discriminant returns
+    /// [`ApiError::InvalidNativeJointType`](crate::ApiError::InvalidNativeJointType) and poisons
+    /// the world.
     pub fn try_joint_type(&self) -> ApiResult<JointType> {
         JointRuntimeHandle::try_joint_type(self)
     }
 
+    /// Return Box2D's raw joint-type discriminant without closed-enum decoding.
     pub fn joint_type_raw(&self) -> ffi::b2JointType {
         JointRuntimeHandle::joint_type_raw(self)
     }
 
+    /// Fallible variant of [`Self::joint_type_raw`].
     pub fn try_joint_type_raw(&self) -> ApiResult<ffi::b2JointType> {
         JointRuntimeHandle::try_joint_type_raw(self)
     }
@@ -307,11 +320,13 @@ impl OwnedJoint {
 
     pub fn destroy(mut self, wake_bodies: bool) {
         if self.destroy_on_drop {
-            self.core
-                .destroy_owned_or_defer(crate::core::world_core::DeferredDestroy::Joint {
+            crate::core::world_core::WorldCore::destroy_owned_or_defer(
+                &self.core,
+                crate::core::world_core::DeferredDestroy::Joint {
                     id: self.id,
                     wake_bodies,
-                });
+                },
+            );
             self.destroy_on_drop = false;
         }
     }
@@ -326,11 +341,13 @@ impl Drop for OwnedJoint {
             |count| Some(count.saturating_sub(1)),
         );
         if self.destroy_on_drop {
-            self.core
-                .destroy_owned_or_defer(crate::core::world_core::DeferredDestroy::Joint {
+            crate::core::world_core::WorldCore::destroy_owned_or_defer(
+                &self.core,
+                crate::core::world_core::DeferredDestroy::Joint {
                     id: self.id,
                     wake_bodies: self.wake_bodies_on_drop,
-                });
+                },
+            );
         }
     }
 }

@@ -3,8 +3,8 @@
 use bevy_ecs::prelude::{Component, Entity};
 use bevy_math::Vec2 as BevyVec2;
 use boxdd::{
-    ApiError, ApiResult, BodyId, BodyType, Filter, JointId, MotionLocks, ShapeDef, ShapeId,
-    SurfaceMaterial,
+    ApiError, ApiResult, BodyId, BodyType, Filter, JointId, MotionLocks, Position, ShapeDef,
+    ShapeId, SurfaceMaterial,
 };
 
 /// Maximum number of vertices accepted by [`Collider::ConvexPolygon`].
@@ -385,12 +385,15 @@ pub struct JointDescriptor {
 }
 
 impl JointDescriptor {
-    /// Creates a distance joint descriptor using world-space anchors.
+    /// Creates a distance joint descriptor using absolute world-space anchors.
+    ///
+    /// Convert Bevy-local authoring points with
+    /// [`crate::BoxddWorldOrigin::checked_local_to_absolute`].
     pub const fn distance(
         entity_a: Entity,
         entity_b: Entity,
-        anchor_a: BevyVec2,
-        anchor_b: BevyVec2,
+        anchor_a: Position,
+        anchor_b: Position,
     ) -> Self {
         Self::new(
             entity_a,
@@ -403,8 +406,11 @@ impl JointDescriptor {
         )
     }
 
-    /// Creates a revolute joint descriptor using a world-space anchor.
-    pub const fn revolute(entity_a: Entity, entity_b: Entity, anchor: BevyVec2) -> Self {
+    /// Creates a revolute joint descriptor using an absolute world-space anchor.
+    ///
+    /// Convert a Bevy-local authoring point with
+    /// [`crate::BoxddWorldOrigin::checked_local_to_absolute`].
+    pub const fn revolute(entity_a: Entity, entity_b: Entity, anchor: Position) -> Self {
         Self::new(
             entity_a,
             entity_b,
@@ -489,9 +495,9 @@ impl JointKind {
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct DistanceJointDescriptor {
     /// World-space anchor on body A.
-    pub anchor_a: BevyVec2,
+    pub anchor_a: Position,
     /// World-space anchor on body B.
-    pub anchor_b: BevyVec2,
+    pub anchor_b: Position,
     /// Optional target length. When omitted, the distance between anchors is used.
     pub length: Option<f32>,
 }
@@ -504,8 +510,8 @@ impl DistanceJointDescriptor {
     }
 
     fn validate(self) -> ApiResult<()> {
-        validate_vec2(self.anchor_a)?;
-        validate_vec2(self.anchor_b)?;
+        validate_position(self.anchor_a)?;
+        validate_position(self.anchor_b)?;
         if let Some(length) = self.length {
             validate_positive_scalar(length)?;
         }
@@ -517,12 +523,12 @@ impl DistanceJointDescriptor {
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct RevoluteJointDescriptor {
     /// World-space hinge anchor.
-    pub anchor: BevyVec2,
+    pub anchor: Position,
 }
 
 impl RevoluteJointDescriptor {
     fn validate(self) -> ApiResult<()> {
-        validate_vec2(self.anchor)
+        validate_position(self.anchor)
     }
 }
 
@@ -597,6 +603,14 @@ impl AngularImpulse {
 
 fn validate_vec2(value: BevyVec2) -> ApiResult<()> {
     if value.is_finite() {
+        Ok(())
+    } else {
+        Err(ApiError::InvalidArgument)
+    }
+}
+
+fn validate_position(value: Position) -> ApiResult<()> {
+    if value.is_valid() {
         Ok(())
     } else {
         Err(ApiError::InvalidArgument)

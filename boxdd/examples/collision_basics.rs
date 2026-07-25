@@ -1,7 +1,7 @@
 use boxdd::{
-    Aabb, DistanceInput, Rot, ShapeCastPairInput, ShapeProxy, SimplexCache, Sweep, ToiInput,
-    Transform, collide_polygon_and_circle, segment_distance, shape_cast, shape_distance, shapes,
-    time_of_impact,
+    Aabb, DistanceInput, Position, Rot, ShapeCastPairInput, ShapeProxy, SimplexCache, Sweep,
+    ToiInput, Transform, WorldTransform, collide_polygon_and_circle, segment_distance, shape_cast,
+    shape_distance, shapes, time_of_impact,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -59,6 +59,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         shapes::circle([0.7_f32, 0.1], 0.35),
         Transform::IDENTITY,
     );
+    // Standalone collision results are in shape A's local frame. Choose an absolute pose only at
+    // the world/presentation boundary.
+    let shape_a_world =
+        WorldTransform::from_pos_angle(Position::new(1_000_000.0, -2_000_000.0), 0.25);
+    let first_world_point = manifold
+        .points()
+        .first()
+        .map(|point| shape_a_world.transform_point(point.point));
 
     let aabb_hit = Aabb::from_center_half_extents([0.0_f32, 0.0], [1.0, 1.0])
         .ray_cast([-2.0_f32, 0.2], [4.0, 0.0]);
@@ -75,10 +83,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         toi.state, toi.fraction
     );
     println!(
-        "collide_polygon_and_circle: contacts={} normal=({:.3}, {:.3})",
+        "collide_polygon_and_circle: local_contacts={} local_normal=({:.3}, {:.3}) world_point={:?}",
         manifold.points().len(),
         manifold.normal.x,
-        manifold.normal.y
+        manifold.normal.y,
+        first_world_point
     );
     println!(
         "aabb.ray_cast: hit={} fraction={:.3}",

@@ -28,6 +28,8 @@ use crate::{
 const ABI_AVAILABILITY: &[&str] = &["always"];
 
 pub const ABI_POLICY_ID: &str = "raw-ffi-abi";
+pub const SAFE_ABI_POLICY_ID: &str = "safe-abi-adapter";
+pub const DEFERRED_ABI_POLICY_ID: &str = "deferred-safe-abi-gap";
 pub const ABI_HEADER_EVIDENCE_ID: &str = "abi-header-parser";
 pub const ABI_BINDING_EVIDENCE_ID: &str = "abi-binding-index";
 pub const ABI_VALIDATOR_EVIDENCE_ID: &str = "abi-contract-validator";
@@ -77,12 +79,460 @@ pub enum AbiSafeWitnessKind {
 #[serde(deny_unknown_fields)]
 pub struct AbiSafeWitness {
     pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub producer_path: Option<String>,
     pub kind: AbiSafeWitnessKind,
     pub raw_type: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_field: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub native_symbols: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum DeferredAbiCapability {
+    Struct(&'static str),
+    Field(&'static str, &'static str),
+    Callback(&'static str),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct DeferredAbiMigration {
+    capability: DeferredAbiCapability,
+    path: &'static str,
+    producer_path: Option<&'static str>,
+    kind: AbiSafeWitnessKind,
+    native_symbols: &'static [&'static str],
+}
+
+const NO_NATIVE_SYMBOLS: &[&str] = &[];
+
+const DEFERRED_ABI_MIGRATIONS: &[DeferredAbiMigration] = &[
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2BodyDef", "sleepThreshold"),
+        path: "boxdd::BodyDef::sleep_threshold",
+        producer_path: None,
+        kind: AbiSafeWitnessKind::Accessor,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2BodyDef", "name"),
+        path: "boxdd::BodyBuilder::name",
+        producer_path: None,
+        kind: AbiSafeWitnessKind::Builder,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2BodyDef", "motionLocks"),
+        path: "boxdd::BodyDef::motion_locks",
+        producer_path: None,
+        kind: AbiSafeWitnessKind::Accessor,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Struct("b2BodyEvents"),
+        path: "boxdd::World::body_events",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::StructAdapter,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2BodyEvents", "moveEvents"),
+        path: "boxdd::World::body_events",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::Accessor,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2BodyEvents", "moveCount"),
+        path: "boxdd::World::body_events",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::Accessor,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2BodyMoveEvent", "bodyId"),
+        path: "boxdd::BodyMoveEvent::body_id",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2BodyMoveEvent", "fellAsleep"),
+        path: "boxdd::BodyMoveEvent::fell_asleep",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2ChainDef", "points"),
+        path: "boxdd::ChainDefBuilder::points",
+        producer_path: None,
+        kind: AbiSafeWitnessKind::Builder,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2ChainDef", "count"),
+        path: "boxdd::ChainDefBuilder::points",
+        producer_path: None,
+        kind: AbiSafeWitnessKind::Builder,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2ChainDef", "materialCount"),
+        path: "boxdd::ChainDefBuilder::materials",
+        producer_path: None,
+        kind: AbiSafeWitnessKind::Builder,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2ContactBeginTouchEvent", "shapeIdA"),
+        path: "boxdd::ContactBeginTouchEvent::shape_a",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2ContactBeginTouchEvent", "shapeIdB"),
+        path: "boxdd::ContactBeginTouchEvent::shape_b",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2ContactBeginTouchEvent", "contactId"),
+        path: "boxdd::ContactBeginTouchEvent::contact_id",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2ContactEndTouchEvent", "shapeIdA"),
+        path: "boxdd::ContactEndTouchEvent::shape_a",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2ContactEndTouchEvent", "shapeIdB"),
+        path: "boxdd::ContactEndTouchEvent::shape_b",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2ContactEndTouchEvent", "contactId"),
+        path: "boxdd::ContactEndTouchEvent::contact_id",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Struct("b2ContactEvents"),
+        path: "boxdd::ContactEvents",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicType,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2ContactEvents", "beginEvents"),
+        path: "boxdd::ContactEvents::begin",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2ContactEvents", "endEvents"),
+        path: "boxdd::ContactEvents::end",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2ContactEvents", "hitEvents"),
+        path: "boxdd::ContactEvents::hit",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2ContactEvents", "beginCount"),
+        path: "boxdd::ContactEvents::begin",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2ContactEvents", "endCount"),
+        path: "boxdd::ContactEvents::end",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2ContactEvents", "hitCount"),
+        path: "boxdd::ContactEvents::hit",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2ContactHitEvent", "shapeIdA"),
+        path: "boxdd::ContactHitEvent::shape_a",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2ContactHitEvent", "shapeIdB"),
+        path: "boxdd::ContactHitEvent::shape_b",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2ContactHitEvent", "contactId"),
+        path: "boxdd::ContactHitEvent::contact_id",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2ContactHitEvent", "normal"),
+        path: "boxdd::ContactHitEvent::normal",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2ContactHitEvent", "approachSpeed"),
+        path: "boxdd::ContactHitEvent::approach_speed",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Struct("b2CosSin"),
+        path: "boxdd::Rot",
+        producer_path: Some("boxdd::compute_cos_sin"),
+        kind: AbiSafeWitnessKind::PublicType,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2CosSin", "cosine"),
+        path: "boxdd::Rot::cosine",
+        producer_path: Some("boxdd::compute_cos_sin"),
+        kind: AbiSafeWitnessKind::Accessor,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2CosSin", "sine"),
+        path: "boxdd::Rot::sine",
+        producer_path: Some("boxdd::compute_cos_sin"),
+        kind: AbiSafeWitnessKind::Accessor,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2JointEvent", "jointId"),
+        path: "boxdd::JointEvent::joint_id",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Struct("b2JointEvents"),
+        path: "boxdd::World::joint_events",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::StructAdapter,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2JointEvents", "jointEvents"),
+        path: "boxdd::World::joint_events",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::Accessor,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2JointEvents", "count"),
+        path: "boxdd::World::joint_events",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::Accessor,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Struct("b2PlaneResult"),
+        path: "boxdd::MoverPlaneResult",
+        producer_path: Some("boxdd::World::collide_mover"),
+        kind: AbiSafeWitnessKind::PublicType,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2PlaneResult", "plane"),
+        path: "boxdd::MoverPlaneResult::plane",
+        producer_path: Some("boxdd::World::collide_mover"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2PlaneResult", "point"),
+        path: "boxdd::MoverPlaneResult::point",
+        producer_path: Some("boxdd::World::collide_mover"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2PlaneResult", "hit"),
+        path: "boxdd::MoverPlaneResult::hit",
+        producer_path: Some("boxdd::World::collide_mover"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2Polygon", "vertices"),
+        path: "boxdd::Polygon::vertices",
+        producer_path: None,
+        kind: AbiSafeWitnessKind::Accessor,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2Polygon", "normals"),
+        path: "boxdd::Polygon::normals",
+        producer_path: None,
+        kind: AbiSafeWitnessKind::Accessor,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2Polygon", "centroid"),
+        path: "boxdd::Polygon::centroid",
+        producer_path: None,
+        kind: AbiSafeWitnessKind::Accessor,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2Polygon", "radius"),
+        path: "boxdd::Polygon::radius",
+        producer_path: None,
+        kind: AbiSafeWitnessKind::Accessor,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2Polygon", "count"),
+        path: "boxdd::Polygon::count",
+        producer_path: None,
+        kind: AbiSafeWitnessKind::Accessor,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2PrismaticJointDef", "targetTranslation"),
+        path: "boxdd::PrismaticJointDef::target_translation",
+        producer_path: Some("boxdd::PrismaticJointDef::new"),
+        kind: AbiSafeWitnessKind::Accessor,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2RayResult", "nodeVisits"),
+        path: "boxdd::ClosestRayCastResult::node_visits",
+        producer_path: None,
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2RayResult", "leafVisits"),
+        path: "boxdd::ClosestRayCastResult::leaf_visits",
+        producer_path: None,
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2SensorBeginTouchEvent", "sensorShapeId"),
+        path: "boxdd::SensorBeginTouchEvent::sensor_shape",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2SensorBeginTouchEvent", "visitorShapeId"),
+        path: "boxdd::SensorBeginTouchEvent::visitor_shape",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2SensorEndTouchEvent", "sensorShapeId"),
+        path: "boxdd::SensorEndTouchEvent::sensor_shape",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2SensorEndTouchEvent", "visitorShapeId"),
+        path: "boxdd::SensorEndTouchEvent::visitor_shape",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Struct("b2SensorEvents"),
+        path: "boxdd::SensorEvents",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicType,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2SensorEvents", "beginEvents"),
+        path: "boxdd::SensorEvents::begin",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2SensorEvents", "endEvents"),
+        path: "boxdd::SensorEvents::end",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2SensorEvents", "beginCount"),
+        path: "boxdd::SensorEvents::begin",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Field("b2SensorEvents", "endCount"),
+        path: "boxdd::SensorEvents::end",
+        producer_path: Some("boxdd::World::step"),
+        kind: AbiSafeWitnessKind::PublicField,
+        native_symbols: NO_NATIVE_SYMBOLS,
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Callback("b2FrictionCallback"),
+        path: "boxdd::World::set_friction_callback",
+        producer_path: None,
+        kind: AbiSafeWitnessKind::CallbackAdapter,
+        native_symbols: &["b2World_SetFrictionCallback"],
+    },
+    DeferredAbiMigration {
+        capability: DeferredAbiCapability::Callback("b2RestitutionCallback"),
+        path: "boxdd::World::set_restitution_callback",
+        producer_path: None,
+        kind: AbiSafeWitnessKind::CallbackAdapter,
+        native_symbols: &["b2World_SetRestitutionCallback"],
+    },
+];
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AbiProviderOverride {
+    pub providers: Vec<String>,
+    pub rationale: String,
+    pub policy: String,
+    #[serde(default)]
+    pub safe_paths: Vec<String>,
+    #[serde(default)]
+    pub safe_witnesses: Vec<AbiSafeWitness>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -619,8 +1069,8 @@ fn parse_wasm_import_module(attrs: &[Attribute]) -> Result<Option<String>> {
 
 fn expected_wasm_import_module(precision: Precision) -> &'static str {
     match precision {
-        Precision::Single => "box2d-sys-v0-single",
-        Precision::Double => "box2d-sys-v0-double",
+        Precision::Single => "box2d-sys-v1-single",
+        Precision::Double => "box2d-sys-v1-double",
     }
 }
 
@@ -695,6 +1145,8 @@ pub struct AbiFieldContract {
     pub safe_paths: Vec<String>,
     #[serde(default)]
     pub safe_witnesses: Vec<AbiSafeWitness>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub provider_overrides: Vec<AbiProviderOverride>,
     #[serde(default, alias = "rust_mappings")]
     pub raw_mappings: Vec<AbiFieldMapping>,
 }
@@ -713,6 +1165,8 @@ pub struct AbiStructContract {
     pub safe_paths: Vec<String>,
     #[serde(default)]
     pub safe_witnesses: Vec<AbiSafeWitness>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub provider_overrides: Vec<AbiProviderOverride>,
     #[serde(default, alias = "rust_mappings")]
     pub raw_mappings: Vec<AbiTypeMapping>,
     pub fields: Vec<AbiFieldContract>,
@@ -733,6 +1187,8 @@ pub struct AbiCallbackContract {
     pub safe_paths: Vec<String>,
     #[serde(default)]
     pub safe_witnesses: Vec<AbiSafeWitness>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub provider_overrides: Vec<AbiProviderOverride>,
     #[serde(default, alias = "rust_mappings")]
     pub raw_mappings: Vec<AbiTypeMapping>,
 }
@@ -996,6 +1452,7 @@ fn map_inventory_impl(
                 policy: ABI_POLICY_ID.to_owned(),
                 safe_paths: Vec::new(),
                 safe_witnesses: Vec::new(),
+                provider_overrides: Vec::new(),
                 raw_mappings,
             });
         }
@@ -1010,6 +1467,7 @@ fn map_inventory_impl(
             policy: ABI_POLICY_ID.to_owned(),
             safe_paths: Vec::new(),
             safe_witnesses: Vec::new(),
+            provider_overrides: Vec::new(),
             raw_mappings,
             fields,
         });
@@ -1030,6 +1488,7 @@ fn map_inventory_impl(
             policy: ABI_POLICY_ID.to_owned(),
             safe_paths: Vec::new(),
             safe_witnesses: Vec::new(),
+            provider_overrides: Vec::new(),
             raw_mappings: coordinates
                 .iter()
                 .map(|(mode, provider)| {
@@ -1165,6 +1624,7 @@ pub fn preserve_reviewed_exposure(previous: &AbiContract, generated: &mut AbiCon
                 callback.policy = previous_callback.policy;
                 callback.safe_paths = previous_callback.safe_paths;
                 callback.safe_witnesses = previous_callback.safe_witnesses;
+                callback.provider_overrides = previous_callback.provider_overrides;
             } else {
                 callback.rationale = format!(
                     "The declaration identity or precision-specific raw ABI proof for `{}` changed, so the previous Safe review was not inherited and this refreshed callback is conservatively raw.",
@@ -1173,20 +1633,7 @@ pub fn preserve_reviewed_exposure(previous: &AbiContract, generated: &mut AbiCon
             }
         }
     }
-    let used_policies = generated
-        .structs
-        .iter()
-        .flat_map(|structure| {
-            std::iter::once(structure.policy.as_str())
-                .chain(structure.fields.iter().map(|field| field.policy.as_str()))
-        })
-        .chain(
-            generated
-                .callbacks
-                .iter()
-                .map(|callback| callback.policy.as_str()),
-        )
-        .collect::<BTreeSet<_>>();
+    let used_policies = referenced_policy_ids(generated);
     generated
         .policies
         .retain(|policy| used_policies.contains(policy.id.as_str()));
@@ -1201,6 +1648,508 @@ fn inherit_policy_route_matrix(
     inherited.providers.clone_from(&current.providers);
     inherited.availability.clone_from(&current.availability);
     inherited
+}
+
+/// Migrate the reviewed 3.2 ABI backlog only after every native route proves the exact
+/// crate-owned Safe Rust relation named by the migration catalog.
+///
+/// The catalog supplies review intent, not proof. Each row is validated through the same AST
+/// witness machinery used by normal contract validation before its policy is changed.
+pub fn promote_proven_deferred_exposure(
+    contract: &mut AbiContract,
+    inventory: &CApiInventory,
+    binding_routes: &AbiBindingRoutes,
+    rust_indexes: &AbiRustIndexes,
+) -> Result<()> {
+    if DEFERRED_ABI_MIGRATIONS.len() != 59 {
+        return Err(Error::message(format!(
+            "the reviewed ABI migration catalog must contain exactly 59 rows, found {}",
+            DEFERRED_ABI_MIGRATIONS.len()
+        )));
+    }
+    let mut catalog_capabilities = BTreeSet::new();
+    for migration in DEFERRED_ABI_MIGRATIONS {
+        if !catalog_capabilities.insert(migration.capability) {
+            return Err(Error::message(format!(
+                "the reviewed ABI migration catalog repeats {:?}",
+                migration.capability
+            )));
+        }
+    }
+
+    let policies = contract
+        .policies
+        .iter()
+        .cloned()
+        .map(|policy| (policy.id.clone(), policy))
+        .collect::<BTreeMap<_, _>>();
+    let safe_policy = policies.get(SAFE_ABI_POLICY_ID).ok_or_else(|| {
+        Error::message(format!(
+            "the reviewed ABI migration requires policy `{SAFE_ABI_POLICY_ID}`"
+        ))
+    })?;
+    if safe_policy.classification != Classification::Safe {
+        return Err(Error::message(format!(
+            "ABI policy `{SAFE_ABI_POLICY_ID}` must be classified safe"
+        )));
+    }
+    let deferred_policy = policies.get(DEFERRED_ABI_POLICY_ID);
+    if deferred_policy.is_some_and(|policy| policy.classification != Classification::Deferred) {
+        return Err(Error::message(format!(
+            "ABI policy `{DEFERRED_ABI_POLICY_ID}` must be classified deferred"
+        )));
+    }
+    if referenced_policy_ids(contract).contains(DEFERRED_ABI_POLICY_ID) && deferred_policy.is_none()
+    {
+        return Err(Error::message(format!(
+            "the reviewed ABI migration has rows referencing missing policy `{DEFERRED_ABI_POLICY_ID}`"
+        )));
+    }
+    let native_coordinates = coordinates(safe_policy)
+        .into_iter()
+        .filter(|(_, provider)| !is_wasm_provider(provider))
+        .collect::<Vec<_>>();
+    if native_coordinates.is_empty() {
+        return Err(Error::message(
+            "the reviewed ABI migration has no native provider route",
+        ));
+    }
+    let empty_binding_indexes = AbiBindingIndexes::new();
+    let empty_function_symbols = AbiFunctionSymbols::new();
+    let empty_evidence_ids = BTreeSet::new();
+    let context = AbiValidationContext::new(
+        inventory,
+        binding_routes,
+        &empty_binding_indexes,
+        &empty_function_symbols,
+        rust_indexes,
+        &empty_evidence_ids,
+    );
+
+    for migration in DEFERRED_ABI_MIGRATIONS {
+        match migration.capability {
+            DeferredAbiCapability::Struct(name) => {
+                let structure = contract
+                    .structs
+                    .iter_mut()
+                    .find(|structure| structure.name == name)
+                    .ok_or_else(|| {
+                        Error::message(format!(
+                            "reviewed ABI migration references missing struct `{name}`"
+                        ))
+                    })?;
+                promote_deferred_row(
+                    &format!("ABI struct `{name}`"),
+                    &mut structure.policy,
+                    &mut structure.rationale,
+                    &mut structure.safe_paths,
+                    &mut structure.safe_witnesses,
+                    &mut structure.provider_overrides,
+                    *migration,
+                    SafeAbiCapability::Struct(name),
+                    &native_coordinates,
+                    &context,
+                )?;
+            }
+            DeferredAbiCapability::Field(struct_name, field_name) => {
+                let structure = contract
+                    .structs
+                    .iter_mut()
+                    .find(|structure| structure.name == struct_name)
+                    .ok_or_else(|| {
+                        Error::message(format!(
+                            "reviewed ABI migration references missing struct `{struct_name}`"
+                        ))
+                    })?;
+                let field = structure
+                    .fields
+                    .iter_mut()
+                    .find(|field| field.name == field_name)
+                    .ok_or_else(|| {
+                        Error::message(format!(
+                            "reviewed ABI migration references missing field `{struct_name}::{field_name}`"
+                        ))
+                    })?;
+                promote_deferred_row(
+                    &format!("ABI field `{struct_name}::{field_name}`"),
+                    &mut field.policy,
+                    &mut field.rationale,
+                    &mut field.safe_paths,
+                    &mut field.safe_witnesses,
+                    &mut field.provider_overrides,
+                    *migration,
+                    SafeAbiCapability::Field {
+                        struct_name,
+                        field_name,
+                    },
+                    &native_coordinates,
+                    &context,
+                )?;
+            }
+            DeferredAbiCapability::Callback(name) => {
+                let callback = contract
+                    .callbacks
+                    .iter_mut()
+                    .find(|callback| callback.name == name)
+                    .ok_or_else(|| {
+                        Error::message(format!(
+                            "reviewed ABI migration references missing callback `{name}`"
+                        ))
+                    })?;
+                promote_deferred_row(
+                    &format!("ABI callback `{name}`"),
+                    &mut callback.policy,
+                    &mut callback.rationale,
+                    &mut callback.safe_paths,
+                    &mut callback.safe_witnesses,
+                    &mut callback.provider_overrides,
+                    *migration,
+                    SafeAbiCapability::Callback(name),
+                    &native_coordinates,
+                    &context,
+                )?;
+            }
+        }
+    }
+
+    let mut remaining = Vec::new();
+    for structure in &contract.structs {
+        if structure.policy == DEFERRED_ABI_POLICY_ID
+            || policies
+                .get(&structure.policy)
+                .is_some_and(|policy| policy.classification == Classification::Deferred)
+        {
+            remaining.push(format!("struct `{}`", structure.name));
+        }
+        for field in &structure.fields {
+            if field.policy == DEFERRED_ABI_POLICY_ID
+                || policies
+                    .get(&field.policy)
+                    .is_some_and(|policy| policy.classification == Classification::Deferred)
+            {
+                remaining.push(format!("field `{}::{}`", structure.name, field.name));
+            }
+        }
+    }
+    for callback in &contract.callbacks {
+        if callback.policy == DEFERRED_ABI_POLICY_ID
+            || policies
+                .get(&callback.policy)
+                .is_some_and(|policy| policy.classification == Classification::Deferred)
+        {
+            remaining.push(format!("callback `{}`", callback.name));
+        }
+    }
+    if !remaining.is_empty() {
+        return Err(Error::message(format!(
+            "ABI contract retains deferred capabilities outside the proven migration result: {}",
+            remaining.join(", ")
+        )));
+    }
+    Ok(())
+}
+
+/// Keep the reviewed Box2D 3.2 ABI migration closed after it has been installed.
+///
+/// Refresh validates the same rows structurally before promotion. This invariant prevents an
+/// installed schema-8 contract from reintroducing Deferred rows or drifting one of the exact
+/// catalog witnesses while still passing the ordinary check path.
+pub fn validate_reviewed_deferred_migration_invariant(
+    contract: &AbiContract,
+    errors: &mut Vec<String>,
+) {
+    if DEFERRED_ABI_MIGRATIONS.len() != 59 {
+        errors.push(format!(
+            "the reviewed ABI migration catalog must contain exactly 59 rows, found {}",
+            DEFERRED_ABI_MIGRATIONS.len()
+        ));
+    }
+    let mut catalog_capabilities = BTreeSet::new();
+    for migration in DEFERRED_ABI_MIGRATIONS {
+        if !catalog_capabilities.insert(migration.capability) {
+            errors.push(format!(
+                "the reviewed ABI migration catalog repeats {:?}",
+                migration.capability
+            ));
+        }
+        let (subject, policy, safe_paths, safe_witnesses) = match migration.capability {
+            DeferredAbiCapability::Struct(name) => {
+                let Some(structure) = contract
+                    .structs
+                    .iter()
+                    .find(|structure| structure.name == name)
+                else {
+                    errors.push(format!(
+                        "reviewed ABI migration invariant is missing struct `{name}`"
+                    ));
+                    continue;
+                };
+                (
+                    format!("ABI struct `{name}`"),
+                    &structure.policy,
+                    &structure.safe_paths,
+                    &structure.safe_witnesses,
+                )
+            }
+            DeferredAbiCapability::Field(struct_name, field_name) => {
+                let Some(structure) = contract
+                    .structs
+                    .iter()
+                    .find(|structure| structure.name == struct_name)
+                else {
+                    errors.push(format!(
+                        "reviewed ABI migration invariant is missing struct `{struct_name}`"
+                    ));
+                    continue;
+                };
+                let Some(field) = structure
+                    .fields
+                    .iter()
+                    .find(|field| field.name == field_name)
+                else {
+                    errors.push(format!(
+                        "reviewed ABI migration invariant is missing field `{struct_name}::{field_name}`"
+                    ));
+                    continue;
+                };
+                (
+                    format!("ABI field `{struct_name}::{field_name}`"),
+                    &field.policy,
+                    &field.safe_paths,
+                    &field.safe_witnesses,
+                )
+            }
+            DeferredAbiCapability::Callback(name) => {
+                let Some(callback) = contract
+                    .callbacks
+                    .iter()
+                    .find(|callback| callback.name == name)
+                else {
+                    errors.push(format!(
+                        "reviewed ABI migration invariant is missing callback `{name}`"
+                    ));
+                    continue;
+                };
+                (
+                    format!("ABI callback `{name}`"),
+                    &callback.policy,
+                    &callback.safe_paths,
+                    &callback.safe_witnesses,
+                )
+            }
+        };
+        let (expected_paths, expected_witnesses) = deferred_migration_review(*migration);
+        if policy != SAFE_ABI_POLICY_ID {
+            errors.push(format!(
+                "{subject} must remain on exact migration policy `{SAFE_ABI_POLICY_ID}`, found `{policy}`"
+            ));
+        }
+        if safe_paths != &expected_paths || safe_witnesses != &expected_witnesses {
+            errors.push(format!(
+                "{subject} Safe paths or witnesses diverge from the exact reviewed migration catalog"
+            ));
+        }
+    }
+
+    let policies = contract
+        .policies
+        .iter()
+        .map(|policy| (policy.id.as_str(), policy.classification))
+        .collect::<BTreeMap<_, _>>();
+    for policy in &contract.policies {
+        if policy.classification == Classification::Deferred {
+            errors.push(format!(
+                "ABI policy `{}` reintroduces Deferred after the reviewed migration",
+                policy.id
+            ));
+        }
+    }
+    for structure in &contract.structs {
+        validate_no_deferred_policy_reference(
+            &format!("ABI struct `{}`", structure.name),
+            &structure.policy,
+            &policies,
+            errors,
+        );
+        for provider_override in &structure.provider_overrides {
+            validate_no_deferred_policy_reference(
+                &format!(
+                    "ABI struct `{}` provider override {:?}",
+                    structure.name, provider_override.providers
+                ),
+                &provider_override.policy,
+                &policies,
+                errors,
+            );
+        }
+        for field in &structure.fields {
+            validate_no_deferred_policy_reference(
+                &format!("ABI field `{}::{}`", structure.name, field.name),
+                &field.policy,
+                &policies,
+                errors,
+            );
+            for provider_override in &field.provider_overrides {
+                validate_no_deferred_policy_reference(
+                    &format!(
+                        "ABI field `{}::{}` provider override {:?}",
+                        structure.name, field.name, provider_override.providers
+                    ),
+                    &provider_override.policy,
+                    &policies,
+                    errors,
+                );
+            }
+        }
+    }
+    for callback in &contract.callbacks {
+        validate_no_deferred_policy_reference(
+            &format!("ABI callback `{}`", callback.name),
+            &callback.policy,
+            &policies,
+            errors,
+        );
+        for provider_override in &callback.provider_overrides {
+            validate_no_deferred_policy_reference(
+                &format!(
+                    "ABI callback `{}` provider override {:?}",
+                    callback.name, provider_override.providers
+                ),
+                &provider_override.policy,
+                &policies,
+                errors,
+            );
+        }
+    }
+}
+
+fn validate_no_deferred_policy_reference(
+    subject: &str,
+    policy_id: &str,
+    policies: &BTreeMap<&str, Classification>,
+    errors: &mut Vec<String>,
+) {
+    if policy_id == DEFERRED_ABI_POLICY_ID
+        || policies
+            .get(policy_id)
+            .is_some_and(|classification| *classification == Classification::Deferred)
+    {
+        errors.push(format!(
+            "{subject} reintroduces Deferred after the reviewed migration"
+        ));
+    }
+}
+
+fn deferred_migration_review(
+    migration: DeferredAbiMigration,
+) -> (Vec<String>, Vec<AbiSafeWitness>) {
+    let raw_type = match migration.capability {
+        DeferredAbiCapability::Struct(name)
+        | DeferredAbiCapability::Field(name, _)
+        | DeferredAbiCapability::Callback(name) => type_path(name),
+    };
+    let raw_field = match migration.capability {
+        DeferredAbiCapability::Field(_, field_name) => Some(
+            field_name
+                .split('.')
+                .map(rust_binding_field_identifier)
+                .collect::<Vec<_>>()
+                .join("::"),
+        ),
+        DeferredAbiCapability::Struct(_) | DeferredAbiCapability::Callback(_) => None,
+    };
+    (
+        vec![migration.path.to_owned()],
+        vec![AbiSafeWitness {
+            path: migration.path.to_owned(),
+            producer_path: migration.producer_path.map(str::to_owned),
+            kind: migration.kind,
+            raw_type,
+            raw_field,
+            native_symbols: migration
+                .native_symbols
+                .iter()
+                .map(|symbol| (*symbol).to_owned())
+                .collect(),
+        }],
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn promote_deferred_row(
+    subject: &str,
+    policy: &mut String,
+    rationale: &mut String,
+    safe_paths: &mut Vec<String>,
+    safe_witnesses: &mut Vec<AbiSafeWitness>,
+    provider_overrides: &mut Vec<AbiProviderOverride>,
+    migration: DeferredAbiMigration,
+    capability: SafeAbiCapability<'_>,
+    native_coordinates: &[(String, String)],
+    context: &AbiValidationContext<'_>,
+) -> Result<()> {
+    let already_migrated = policy == SAFE_ABI_POLICY_ID;
+    if !already_migrated && policy != DEFERRED_ABI_POLICY_ID {
+        return Err(Error::message(format!(
+            "{subject} is `{policy}`, but the reviewed migration expects `{DEFERRED_ABI_POLICY_ID}` or an already migrated `{SAFE_ABI_POLICY_ID}` row"
+        )));
+    }
+    if !already_migrated
+        && (!safe_paths.is_empty() || !safe_witnesses.is_empty() || !provider_overrides.is_empty())
+    {
+        return Err(Error::message(format!(
+            "{subject} claims exposure data before its deferred migration is proven"
+        )));
+    }
+    let (candidate_paths, candidate_witnesses) = deferred_migration_review(migration);
+    if already_migrated
+        && (safe_paths.as_slice() != candidate_paths.as_slice()
+            || safe_witnesses.as_slice() != candidate_witnesses.as_slice())
+    {
+        return Err(Error::message(format!(
+            "{subject} already uses `{SAFE_ABI_POLICY_ID}`, but its Safe paths or witnesses diverge from the reviewed migration catalog"
+        )));
+    }
+    let mut errors = Vec::new();
+    validate_exposure_review(
+        subject,
+        &candidate_paths,
+        &candidate_witnesses,
+        capability,
+        Some(Classification::Safe),
+        native_coordinates.iter().cloned(),
+        context,
+        &mut errors,
+    );
+    if !errors.is_empty() {
+        return Err(Error::message(format!(
+            "{subject} cannot establish the reviewed Safe ABI migration:\n{}",
+            errors.join("\n")
+        )));
+    }
+    if already_migrated {
+        return Ok(());
+    }
+
+    *policy = SAFE_ABI_POLICY_ID.to_owned();
+    *rationale = migration.producer_path.map_or_else(
+        || {
+            format!(
+                "Exact route-conditioned Rust AST evidence proves `{}` exposes this ABI capability through a crate-owned Safe Rust adapter.",
+                migration.path
+            )
+        },
+        |producer| {
+            format!(
+                "Exact route-conditioned Rust AST provenance proves `{producer}` produces this ABI capability for the crate-owned Safe Rust exposure `{}`.",
+                migration.path
+            )
+        },
+    );
+    safe_paths.clone_from(&candidate_paths);
+    safe_witnesses.clone_from(&candidate_witnesses);
+    provider_overrides.clear();
+    Ok(())
 }
 
 /// Drop inherited Safe exposure when its structural Rust proof no longer matches the refreshed
@@ -1234,12 +2183,15 @@ pub fn discard_unproven_reviewed_exposure(
     );
 
     for structure in &mut contract.structs {
-        if exposure_proof_has_drifted(
+        if synchronize_provider_overrides(
             &format!("ABI struct `{}`", structure.name),
+            &structure.policy,
+            &structure.rationale,
             &structure.safe_paths,
             &structure.safe_witnesses,
+            &mut structure.provider_overrides,
             SafeAbiCapability::Struct(&structure.name),
-            policies.get(&structure.policy),
+            &policies,
             &context,
         ) {
             downgrade_to_raw(
@@ -1247,18 +2199,22 @@ pub fn discard_unproven_reviewed_exposure(
                 &mut structure.rationale,
                 &mut structure.safe_paths,
                 &mut structure.safe_witnesses,
+                &mut structure.provider_overrides,
             );
         }
         for field in &mut structure.fields {
-            if exposure_proof_has_drifted(
+            if synchronize_provider_overrides(
                 &format!("ABI field `{}::{}`", structure.name, field.name),
+                &field.policy,
+                &field.rationale,
                 &field.safe_paths,
                 &field.safe_witnesses,
+                &mut field.provider_overrides,
                 SafeAbiCapability::Field {
                     struct_name: &structure.name,
                     field_name: &field.name,
                 },
-                policies.get(&field.policy),
+                &policies,
                 &context,
             ) {
                 downgrade_to_raw(
@@ -1266,17 +2222,21 @@ pub fn discard_unproven_reviewed_exposure(
                     &mut field.rationale,
                     &mut field.safe_paths,
                     &mut field.safe_witnesses,
+                    &mut field.provider_overrides,
                 );
             }
         }
     }
     for callback in &mut contract.callbacks {
-        if exposure_proof_has_drifted(
+        if synchronize_provider_overrides(
             &format!("ABI callback `{}`", callback.name),
+            &callback.policy,
+            &callback.rationale,
             &callback.safe_paths,
             &callback.safe_witnesses,
+            &mut callback.provider_overrides,
             SafeAbiCapability::Callback(&callback.name),
-            policies.get(&callback.policy),
+            &policies,
             &context,
         ) {
             downgrade_to_raw(
@@ -1284,6 +2244,7 @@ pub fn discard_unproven_reviewed_exposure(
                 &mut callback.rationale,
                 &mut callback.safe_paths,
                 &mut callback.safe_witnesses,
+                &mut callback.provider_overrides,
             );
         }
     }
@@ -1295,43 +2256,108 @@ pub fn discard_unproven_reviewed_exposure(
     {
         contract.policies.push(default_policy(binding_routes));
     }
-    let used_policies = contract
-        .structs
-        .iter()
-        .flat_map(|structure| {
-            std::iter::once(structure.policy.as_str())
-                .chain(structure.fields.iter().map(|field| field.policy.as_str()))
-        })
-        .chain(
-            contract
-                .callbacks
-                .iter()
-                .map(|callback| callback.policy.as_str()),
-        )
-        .collect::<BTreeSet<_>>();
+    let used_policies = referenced_policy_ids(contract);
     contract
         .policies
         .retain(|policy| used_policies.contains(policy.id.as_str()));
 }
 
-fn exposure_proof_has_drifted(
+#[allow(clippy::too_many_arguments)]
+fn synchronize_provider_overrides(
     subject: &str,
+    policy_id: &str,
+    rationale: &str,
     safe_paths: &[String],
     safe_witnesses: &[AbiSafeWitness],
+    provider_overrides: &mut Vec<AbiProviderOverride>,
     capability: SafeAbiCapability<'_>,
-    policy: Option<&AbiCapabilityPolicy>,
+    policies: &BTreeMap<String, AbiCapabilityPolicy>,
     context: &AbiValidationContext<'_>,
 ) -> bool {
+    provider_overrides.clear();
     if safe_paths.is_empty() && safe_witnesses.is_empty() {
         return false;
     }
-    let mut errors = Vec::new();
-    validate_exposure(
+    let Some(policy) = policies.get(policy_id) else {
+        return true;
+    };
+    if policy.classification != Classification::Safe {
+        return true;
+    }
+
+    let native_coordinates = coordinates(policy)
+        .into_iter()
+        .filter(|(_, provider)| !is_wasm_provider(provider));
+    if exposure_proof_has_drifted_at_coordinates(
         subject,
         safe_paths,
         safe_witnesses,
         capability,
-        policy,
+        native_coordinates,
+        context,
+    ) {
+        return true;
+    }
+
+    let wasm_providers = policy
+        .providers
+        .iter()
+        .filter(|provider| is_wasm_provider(provider))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    for provider in wasm_providers {
+        let coordinates = policy
+            .modes
+            .iter()
+            .filter(|mode| {
+                context
+                    .binding_routes
+                    .contains_key(&(String::from(*mode), provider.clone()))
+            })
+            .map(|mode| (mode.clone(), provider.clone()))
+            .collect::<Vec<_>>();
+        if !coordinates.is_empty()
+            && coordinates.iter().all(|coordinate| {
+                exposure_proof_has_drifted_at_coordinates(
+                    subject,
+                    safe_paths,
+                    safe_witnesses,
+                    capability,
+                    std::iter::once(coordinate.clone()),
+                    context,
+                )
+            })
+        {
+            provider_overrides.push(AbiProviderOverride {
+                providers: vec![provider],
+                rationale: format!(
+                    "{rationale} The route-conditioned Rust ABI index does not expose this Safe adapter on the overridden WASM provider, where the exact generated raw FFI capability remains available."
+                ),
+                policy: ABI_POLICY_ID.to_owned(),
+                safe_paths: Vec::new(),
+                safe_witnesses: Vec::new(),
+            });
+        }
+    }
+    provider_overrides.sort_by(|left, right| left.providers.cmp(&right.providers));
+    false
+}
+
+fn exposure_proof_has_drifted_at_coordinates(
+    subject: &str,
+    safe_paths: &[String],
+    safe_witnesses: &[AbiSafeWitness],
+    capability: SafeAbiCapability<'_>,
+    coordinates: impl IntoIterator<Item = (String, String)>,
+    context: &AbiValidationContext<'_>,
+) -> bool {
+    let mut errors = Vec::new();
+    validate_exposure_for_coordinates(
+        subject,
+        safe_paths,
+        safe_witnesses,
+        capability,
+        coordinates,
         context,
         &mut errors,
     );
@@ -1343,12 +2369,14 @@ fn downgrade_to_raw(
     rationale: &mut String,
     safe_paths: &mut Vec<String>,
     safe_witnesses: &mut Vec<AbiSafeWitness>,
+    provider_overrides: &mut Vec<AbiProviderOverride>,
 ) {
     *policy = ABI_POLICY_ID.to_owned();
     *rationale = "The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw."
         .to_owned();
     safe_paths.clear();
     safe_witnesses.clear();
+    provider_overrides.clear();
 }
 
 fn copy_struct_exposure(target: &mut AbiStructContract, source: &AbiStructContract) {
@@ -1356,6 +2384,9 @@ fn copy_struct_exposure(target: &mut AbiStructContract, source: &AbiStructContra
     target.policy.clone_from(&source.policy);
     target.safe_paths.clone_from(&source.safe_paths);
     target.safe_witnesses.clone_from(&source.safe_witnesses);
+    target
+        .provider_overrides
+        .clone_from(&source.provider_overrides);
 }
 
 fn copy_field_exposure(target: &mut AbiFieldContract, source: &AbiFieldContract) {
@@ -1363,6 +2394,41 @@ fn copy_field_exposure(target: &mut AbiFieldContract, source: &AbiFieldContract)
     target.policy.clone_from(&source.policy);
     target.safe_paths.clone_from(&source.safe_paths);
     target.safe_witnesses.clone_from(&source.safe_witnesses);
+    target
+        .provider_overrides
+        .clone_from(&source.provider_overrides);
+}
+
+fn referenced_policy_ids(contract: &AbiContract) -> BTreeSet<String> {
+    contract
+        .structs
+        .iter()
+        .flat_map(|structure| {
+            std::iter::once(structure.policy.clone())
+                .chain(
+                    structure
+                        .provider_overrides
+                        .iter()
+                        .map(|provider_override| provider_override.policy.clone()),
+                )
+                .chain(structure.fields.iter().flat_map(|field| {
+                    std::iter::once(field.policy.clone()).chain(
+                        field
+                            .provider_overrides
+                            .iter()
+                            .map(|provider_override| provider_override.policy.clone()),
+                    )
+                }))
+        })
+        .chain(contract.callbacks.iter().flat_map(|callback| {
+            std::iter::once(callback.policy.clone()).chain(
+                callback
+                    .provider_overrides
+                    .iter()
+                    .map(|provider_override| provider_override.policy.clone()),
+            )
+        }))
+        .collect()
 }
 
 pub struct AbiValidationContext<'a> {
@@ -1605,12 +2671,15 @@ fn validate_structs(
             used_policies,
             errors,
         );
-        validate_exposure(
+        validate_effective_exposure(
             &format!("ABI struct `{}`", structure.name),
             &structure.safe_paths,
             &structure.safe_witnesses,
+            &structure.provider_overrides,
             SafeAbiCapability::Struct(&structure.name),
             policy,
+            policies,
+            used_policies,
             context,
             errors,
         );
@@ -1678,15 +2747,18 @@ fn validate_fields(
         let subject = format!("ABI field `{}::{}`", structure.name, field.name);
         validate_capability_rationale(&subject, &field.rationale, errors);
         let policy = policy_reference(&subject, &field.policy, policies, used_policies, errors);
-        validate_exposure(
+        validate_effective_exposure(
             &subject,
             &field.safe_paths,
             &field.safe_witnesses,
+            &field.provider_overrides,
             SafeAbiCapability::Field {
                 struct_name: &structure.name,
                 field_name: &field.name,
             },
             policy,
+            policies,
+            used_policies,
             context,
             errors,
         );
@@ -1751,12 +2823,15 @@ fn validate_callbacks(
         );
         let subject = format!("ABI callback `{}`", callback.name);
         let policy = policy_reference(&subject, &callback.policy, policies, used_policies, errors);
-        validate_exposure(
+        validate_effective_exposure(
             &subject,
             &callback.safe_paths,
             &callback.safe_witnesses,
+            &callback.provider_overrides,
             SafeAbiCapability::Callback(&callback.name),
             policy,
+            policies,
+            used_policies,
             context,
             errors,
         );
@@ -1988,12 +3063,190 @@ enum SafeAbiCapability<'a> {
     Callback(&'a str),
 }
 
-fn validate_exposure(
+#[allow(clippy::too_many_arguments)]
+fn validate_effective_exposure(
+    subject: &str,
+    safe_paths: &[String],
+    safe_witnesses: &[AbiSafeWitness],
+    provider_overrides: &[AbiProviderOverride],
+    capability: SafeAbiCapability<'_>,
+    policy: Option<&AbiCapabilityPolicy>,
+    policies: &BTreeMap<&str, &AbiCapabilityPolicy>,
+    used_policies: &mut BTreeSet<String>,
+    context: &AbiValidationContext<'_>,
+    errors: &mut Vec<String>,
+) {
+    let default_coordinates = policy.map_or_else(
+        || context.rust_indexes.keys().cloned().collect::<Vec<_>>(),
+        coordinates,
+    );
+    let overridden_providers = validate_provider_overrides(
+        subject,
+        provider_overrides,
+        safe_paths,
+        safe_witnesses,
+        capability,
+        policy,
+        policies,
+        used_policies,
+        context,
+        errors,
+    );
+    validate_exposure_review(
+        subject,
+        safe_paths,
+        safe_witnesses,
+        capability,
+        policy.map(|policy| policy.classification),
+        default_coordinates
+            .into_iter()
+            .filter(|(_, provider)| !overridden_providers.contains(provider)),
+        context,
+        errors,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_provider_overrides(
+    subject: &str,
+    provider_overrides: &[AbiProviderOverride],
+    default_safe_paths: &[String],
+    default_safe_witnesses: &[AbiSafeWitness],
+    capability: SafeAbiCapability<'_>,
+    default_policy: Option<&AbiCapabilityPolicy>,
+    policies: &BTreeMap<&str, &AbiCapabilityPolicy>,
+    used_policies: &mut BTreeSet<String>,
+    context: &AbiValidationContext<'_>,
+    errors: &mut Vec<String>,
+) -> BTreeSet<String> {
+    let mut overridden = BTreeSet::new();
+    if !provider_overrides
+        .windows(2)
+        .all(|pair| pair[0].providers < pair[1].providers)
+    {
+        errors.push(format!(
+            "{subject} provider overrides must be strictly sorted by provider scope"
+        ));
+    }
+    for provider_override in provider_overrides {
+        let override_subject = format!(
+            "{subject} provider override {:?}",
+            provider_override.providers
+        );
+        validate_capability_rationale(&override_subject, &provider_override.rationale, errors);
+        if provider_override.providers.is_empty() {
+            errors.push(format!("{override_subject} has an empty provider scope"));
+        }
+        if !provider_override
+            .providers
+            .windows(2)
+            .all(|pair| pair[0] < pair[1])
+        {
+            errors.push(format!(
+                "{override_subject} providers must be strictly sorted and unique"
+            ));
+        }
+        for provider in &provider_override.providers {
+            if !context
+                .binding_routes
+                .keys()
+                .any(|(_, registered)| registered == provider)
+                || default_policy.is_some_and(|policy| !policy.providers.contains(provider))
+            {
+                errors.push(format!(
+                    "{override_subject} references unregistered provider `{provider}`"
+                ));
+            }
+            if !is_wasm_provider(provider) {
+                errors.push(format!(
+                    "{override_subject} may only conservatively narrow WASM providers"
+                ));
+            }
+            if !overridden.insert(provider.clone()) {
+                errors.push(format!(
+                    "{subject} provider `{provider}` is covered by multiple overrides"
+                ));
+            }
+        }
+
+        let override_policy = policy_reference(
+            &override_subject,
+            &provider_override.policy,
+            policies,
+            used_policies,
+            errors,
+        );
+        if default_policy.is_some_and(|policy| policy.classification != Classification::Safe)
+            || override_policy.is_some_and(|policy| policy.classification != Classification::Raw)
+        {
+            errors.push(format!(
+                "{override_subject} may only narrow a default Safe exposure to Raw"
+            ));
+        }
+        if provider_override.policy != ABI_POLICY_ID {
+            errors.push(format!(
+                "{override_subject} must use the canonical raw policy `{ABI_POLICY_ID}`"
+            ));
+        }
+
+        let override_coordinates = context
+            .binding_routes
+            .keys()
+            .filter(|(mode, provider)| {
+                provider_override.providers.contains(provider)
+                    && default_policy.is_none_or(|policy| policy.modes.contains(mode))
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        validate_exposure_review(
+            &override_subject,
+            &provider_override.safe_paths,
+            &provider_override.safe_witnesses,
+            capability,
+            override_policy.map(|policy| policy.classification),
+            override_coordinates.iter().cloned(),
+            context,
+            errors,
+        );
+        for coordinate in override_coordinates {
+            if !exposure_proof_has_drifted_at_coordinates(
+                subject,
+                default_safe_paths,
+                default_safe_witnesses,
+                capability,
+                std::iter::once(coordinate.clone()),
+                context,
+            ) {
+                errors.push(format!(
+                    "{override_subject} unnecessarily hides a proven Safe capability at route `{}/{}`",
+                    coordinate.0, coordinate.1
+                ));
+            }
+        }
+    }
+
+    if let Some(default_policy) = default_policy
+        && !provider_overrides.is_empty()
+        && default_policy
+            .providers
+            .iter()
+            .all(|provider| overridden.contains(provider))
+    {
+        errors.push(format!(
+            "{subject} provider overrides consume the entire default exposure"
+        ));
+    }
+    overridden
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_exposure_review(
     subject: &str,
     safe_paths: &[String],
     safe_witnesses: &[AbiSafeWitness],
     capability: SafeAbiCapability<'_>,
-    policy: Option<&AbiCapabilityPolicy>,
+    classification: Option<Classification>,
+    coordinates: impl IntoIterator<Item = (String, String)>,
     context: &AbiValidationContext<'_>,
     errors: &mut Vec<String>,
 ) {
@@ -2017,43 +3270,33 @@ fn validate_exposure(
             "{subject} must provide exactly one capability-specific witness for every Safe Rust path"
         ));
     }
-    let Some(policy) = policy else {
-        validate_exposure_for_coordinates(
-            subject,
-            safe_paths,
-            safe_witnesses,
-            capability,
-            context.rust_indexes.keys().cloned(),
-            context,
-            errors,
-        );
-        return;
-    };
     validate_exposure_for_coordinates(
         subject,
         safe_paths,
         safe_witnesses,
         capability,
-        coordinates(policy),
+        coordinates,
         context,
         errors,
     );
-    match policy.classification {
-        Classification::Safe if safe_paths.is_empty() || safe_witnesses.is_empty() => {
+    match classification {
+        Some(Classification::Safe) if safe_paths.is_empty() || safe_witnesses.is_empty() => {
             errors.push(format!(
                 "{subject} is classified safe but has no witnessed canonical Safe Rust path"
             ));
         }
-        Classification::Safe => {}
-        Classification::Raw | Classification::Omitted | Classification::Deferred
+        Some(Classification::Safe) | None => {}
+        Some(Classification::Raw | Classification::Omitted | Classification::Deferred)
             if !safe_paths.is_empty() || !safe_witnesses.is_empty() =>
         {
             errors.push(format!(
                 "{subject} is classified {} and cannot claim Safe Rust paths",
-                policy.classification.as_str()
+                classification
+                    .expect("matched a non-Safe classification")
+                    .as_str()
             ));
         }
-        Classification::Raw | Classification::Omitted | Classification::Deferred => {}
+        Some(Classification::Raw | Classification::Omitted | Classification::Deferred) => {}
     }
 }
 
@@ -2109,6 +3352,27 @@ fn validate_safe_witness(
     inventory: &CApiInventory,
     errors: &mut Vec<String>,
 ) {
+    let proof_path = witness.producer_path.as_deref().unwrap_or(&witness.path);
+    if let Some(producer_path) = &witness.producer_path {
+        if producer_path == &witness.path {
+            errors.push(format!(
+                "{subject} witness `{}` repeats its public path as producer_path instead of omitting it",
+                witness.path
+            ));
+        }
+        if !index.contains_public_safe_callable_path(producer_path) {
+            errors.push(format!(
+                "{subject} witness `{}` producer `{producer_path}` is not an exact public Safe callable path",
+                witness.path
+            ));
+        }
+        if witness.kind == AbiSafeWitnessKind::CallbackAdapter {
+            errors.push(format!(
+                "{subject} callback-adapter witness `{}` cannot use a separate producer path",
+                witness.path
+            ));
+        }
+    }
     let (expected_raw_type, expected_raw_field) = match capability {
         SafeAbiCapability::Struct(name) | SafeAbiCapability::Callback(name) => {
             (type_path(name), None)
@@ -2164,10 +3428,20 @@ fn validate_safe_witness(
                     witness.path, witness.kind
                 ));
             }
-            if !index.path_has_safe_ffi_type_witness(&witness.path, &witness.raw_type) {
+            let has_exact_witness = witness.producer_path.as_ref().map_or_else(
+                || index.path_has_safe_ffi_type_witness(&witness.path, &witness.raw_type),
+                |producer_path| {
+                    index.path_has_safe_ffi_type_witness_from(
+                        producer_path,
+                        &witness.path,
+                        &witness.raw_type,
+                    )
+                },
+            );
+            if !has_exact_witness {
                 errors.push(format!(
-                    "{subject} Safe Rust path `{}` has no exact witness for raw type `{}`",
-                    witness.path, witness.raw_type
+                    "{subject} Safe Rust producer `{proof_path}` has no exact witness for raw type `{}` exposed by `{}`",
+                    witness.raw_type, witness.path
                 ));
             }
         }
@@ -2202,10 +3476,27 @@ fn validate_safe_witness(
                 ));
             }
             let raw_field = witness.raw_field.as_deref().unwrap_or_default();
-            if !index.path_has_safe_ffi_field_witness(&witness.path, &witness.raw_type, raw_field) {
+            let has_exact_witness = witness.producer_path.as_ref().map_or_else(
+                || {
+                    index.path_has_safe_ffi_field_witness(
+                        &witness.path,
+                        &witness.raw_type,
+                        raw_field,
+                    )
+                },
+                |producer_path| {
+                    index.path_has_safe_ffi_field_witness_from(
+                        producer_path,
+                        &witness.path,
+                        &witness.raw_type,
+                        raw_field,
+                    )
+                },
+            );
+            if !has_exact_witness {
                 errors.push(format!(
-                    "{subject} Safe Rust path `{}` has no exact witness for raw field `{}::{raw_field}`",
-                    witness.path, witness.raw_type
+                    "{subject} Safe Rust producer `{proof_path}` has no exact witness for raw field `{}::{raw_field}` exposed by `{}`",
+                    witness.raw_type, witness.path
                 ));
             }
         }
@@ -2635,12 +3926,13 @@ fn route_matches_binding(route: &AbiBindingRoute, binding: &AbiBindingIndex) -> 
         "wasm-runtime" | "wasm-compile-only"
     );
     let target_matches = match binding.target {
-        ArtifactTarget::Universal | ArtifactTarget::Native => native_route,
+        ArtifactTarget::Universal => true,
+        ArtifactTarget::Native => native_route,
         ArtifactTarget::Wasm32UnknownUnknown | ArtifactTarget::Wasm32Wasip1 => wasm_route,
     };
     let flavor_matches = match binding.provider {
-        ArtifactProvider::Universal
-        | ArtifactProvider::Source
+        ArtifactProvider::Universal => true,
+        ArtifactProvider::Source
         | ArtifactProvider::SystemStatic
         | ArtifactProvider::PrebuiltStatic => native_route,
         ArtifactProvider::WasmRuntime | ArtifactProvider::WasmCompileOnly => wasm_route,
@@ -3589,6 +4881,10 @@ fn coordinates(policy: &AbiCapabilityPolicy) -> Vec<(String, String)> {
         .collect()
 }
 
+fn is_wasm_provider(provider: &str) -> bool {
+    matches!(provider, "wasm-runtime" | "wasm-compile-only")
+}
+
 fn type_path(name: &str) -> String {
     format!("boxdd_sys::ffi::{name}")
 }
@@ -3644,20 +4940,33 @@ fn is_policy_id(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeMap, fs};
+    use std::{
+        collections::{BTreeMap, BTreeSet},
+        fs,
+    };
 
     use tempfile::tempdir;
 
     use super::{
-        AbiBindingIndex, AbiBindingIndexes, AbiBindingRoute, AbiCapabilityPolicy,
-        AbiPrecisionInventories, AbiTypeMapping, declaration_mentions_identifier,
-        inherit_policy_route_matrix, map_precision_inventory, mapping_proof_can_be_inherited,
+        ABI_POLICY_ID, AbiBindingIndex, AbiBindingIndexes, AbiBindingRoute, AbiCallbackContract,
+        AbiCapabilityPolicy, AbiContract, AbiFieldContract, AbiFunctionSymbols,
+        AbiPrecisionInventories, AbiProviderOverride, AbiRustIndexes, AbiSafeWitness,
+        AbiSafeWitnessKind, AbiStructContract, AbiTypeMapping, AbiValidationContext,
+        DEFERRED_ABI_MIGRATIONS, DEFERRED_ABI_POLICY_ID, DeferredAbiCapability,
+        DeferredAbiMigration, SAFE_ABI_POLICY_ID, SafeAbiCapability,
+        declaration_mentions_identifier, deferred_migration_review, inherit_policy_route_matrix,
+        map_precision_inventory, mapping_proof_can_be_inherited, promote_deferred_row,
+        route_matches_binding, synchronize_provider_overrides, validate_effective_exposure,
+        validate_reviewed_deferred_migration_invariant, validate_safe_witness,
     };
     use crate::{
-        c_api::{CAbiPrecision, parse_headers, parse_headers_for_precision},
+        c_api::{CAbiPrecision, CApiInventory, parse_headers, parse_headers_for_precision},
         commands::api_coverage::Classification,
         commands::upstream_sync::{ArtifactProvider, ArtifactTarget, Precision, RustTarget},
+        rust_index::{RustIndex, RustIndexCoordinate, index_crate_for_coordinate},
     };
+
+    const SAFE_POLICY_ID: &str = "safe-abi-adapter";
 
     #[test]
     fn callback_owner_signatures_require_exact_typedef_identifiers() {
@@ -3696,6 +5005,507 @@ mod tests {
         assert_eq!(inherited.classification, reviewed.classification);
         assert_eq!(inherited.rationale, reviewed.rationale);
         assert_eq!(inherited.evidence, reviewed.evidence);
+    }
+
+    #[test]
+    fn universal_binding_flavor_can_serve_an_exact_target_route() {
+        let mut binding = binding_fixture("", Precision::Single).expect("empty binding fixture");
+        binding.target = ArtifactTarget::Universal;
+        binding.provider = ArtifactProvider::Universal;
+        let route = AbiBindingRoute {
+            mode: "single".to_owned(),
+            provider: "wasm-runtime".to_owned(),
+            artifact: binding.artifact.clone(),
+            rust_target: RustTarget::Wasm32UnknownUnknown,
+            rust_features: Vec::new(),
+        };
+
+        assert!(!route_matches_binding(&route, &binding));
+        binding.target = ArtifactTarget::Wasm32UnknownUnknown;
+        assert!(route_matches_binding(&route, &binding));
+    }
+
+    #[test]
+    fn missing_safe_wasm_surface_creates_a_provider_scoped_raw_override() {
+        let inventory = abi_inventory_fixture();
+        let routes = abi_override_routes();
+        let native =
+            abi_safe_index_fixture("abi-safe-native", &RustIndexCoordinate::source_single());
+        let wasm = abi_missing_index_fixture(
+            "abi-safe-wasm",
+            &RustIndexCoordinate::wasm32_unknown_unknown(),
+        );
+        let rust_indexes = AbiRustIndexes::from([
+            (("single".to_owned(), "source".to_owned()), native.clone()),
+            (("double".to_owned(), "source".to_owned()), native),
+            (
+                ("single".to_owned(), "wasm-runtime".to_owned()),
+                wasm.clone(),
+            ),
+            (("double".to_owned(), "wasm-runtime".to_owned()), wasm),
+        ]);
+        let policies = BTreeMap::from([(SAFE_POLICY_ID.to_owned(), safe_abi_policy())]);
+        let binding_indexes = AbiBindingIndexes::new();
+        let function_symbols = AbiFunctionSymbols::new();
+        let evidence_ids = BTreeSet::new();
+        let context = AbiValidationContext::new(
+            &inventory,
+            &routes,
+            &binding_indexes,
+            &function_symbols,
+            &rust_indexes,
+            &evidence_ids,
+        );
+        let (safe_paths, safe_witnesses) = abi_safe_review();
+        let mut overrides = Vec::new();
+
+        assert!(!synchronize_provider_overrides(
+            "ABI struct `b2Vec2`",
+            SAFE_POLICY_ID,
+            "The reviewed native adapter converts every vector component without aliasing raw storage.",
+            &safe_paths,
+            &safe_witnesses,
+            &mut overrides,
+            SafeAbiCapability::Struct("b2Vec2"),
+            &policies,
+            &context,
+        ));
+        assert_eq!(
+            overrides,
+            vec![AbiProviderOverride {
+                providers: vec!["wasm-runtime".to_owned()],
+                rationale: "The reviewed native adapter converts every vector component without aliasing raw storage. The route-conditioned Rust ABI index does not expose this Safe adapter on the overridden WASM provider, where the exact generated raw FFI capability remains available.".to_owned(),
+                policy: ABI_POLICY_ID.to_owned(),
+                safe_paths: Vec::new(),
+                safe_witnesses: Vec::new(),
+            }]
+        );
+    }
+
+    #[test]
+    fn asymmetric_wasm_safe_proof_is_not_hidden_by_an_override() {
+        let inventory = abi_inventory_fixture();
+        let routes = abi_override_routes();
+        let native = abi_safe_index_fixture(
+            "abi-asymmetric-native",
+            &RustIndexCoordinate::source_single(),
+        );
+        let missing = abi_missing_index_fixture(
+            "abi-asymmetric-missing",
+            &RustIndexCoordinate::wasm32_unknown_unknown(),
+        );
+        let rust_indexes = AbiRustIndexes::from([
+            (("single".to_owned(), "source".to_owned()), native.clone()),
+            (("double".to_owned(), "source".to_owned()), native.clone()),
+            (("single".to_owned(), "wasm-runtime".to_owned()), missing),
+            (("double".to_owned(), "wasm-runtime".to_owned()), native),
+        ]);
+        let safe_policy = safe_abi_policy();
+        let raw_policy = raw_abi_policy();
+        let owned_policies = BTreeMap::from([
+            (safe_policy.id.clone(), safe_policy.clone()),
+            (raw_policy.id.clone(), raw_policy.clone()),
+        ]);
+        let policies = BTreeMap::from([
+            (safe_policy.id.as_str(), &safe_policy),
+            (raw_policy.id.as_str(), &raw_policy),
+        ]);
+        let binding_indexes = AbiBindingIndexes::new();
+        let function_symbols = AbiFunctionSymbols::new();
+        let evidence_ids = BTreeSet::new();
+        let context = AbiValidationContext::new(
+            &inventory,
+            &routes,
+            &binding_indexes,
+            &function_symbols,
+            &rust_indexes,
+            &evidence_ids,
+        );
+        let (safe_paths, safe_witnesses) = abi_safe_review();
+        let mut overrides = Vec::new();
+
+        assert!(!synchronize_provider_overrides(
+            "ABI struct `b2Vec2`",
+            SAFE_POLICY_ID,
+            "The reviewed native adapter converts every vector component without aliasing raw storage.",
+            &safe_paths,
+            &safe_witnesses,
+            &mut overrides,
+            SafeAbiCapability::Struct("b2Vec2"),
+            &owned_policies,
+            &context,
+        ));
+        assert!(overrides.is_empty());
+
+        let mut used = BTreeSet::from([SAFE_POLICY_ID.to_owned()]);
+        let mut errors = Vec::new();
+        validate_effective_exposure(
+            "ABI struct `b2Vec2`",
+            &safe_paths,
+            &safe_witnesses,
+            &overrides,
+            SafeAbiCapability::Struct("b2Vec2"),
+            Some(&safe_policy),
+            &policies,
+            &mut used,
+            &context,
+            &mut errors,
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("single/wasm-runtime")),
+            "asymmetric proof must fail closed: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn separate_producer_witness_requires_an_exact_producer_to_public_relation() {
+        let coordinate = RustIndexCoordinate::source_single();
+        let index = abi_index_fixture(
+            "abi-producer-relation",
+            r#"
+                use boxdd_sys::ffi as raw;
+
+                pub struct Vec2 {
+                    pub x: f32,
+                    pub y: f32,
+                }
+
+                fn decode(value: raw::b2Vec2) -> Vec2 {
+                    Vec2 { x: value.x, y: value.y }
+                }
+
+                pub fn producer(value: raw::b2Vec2) -> Vec2 {
+                    decode(value)
+                }
+
+                pub fn unrelated(value: raw::b2Vec2) {
+                    let _ = value.x;
+                }
+            "#,
+            &coordinate,
+        );
+        let inventory = abi_inventory_fixture();
+        let mut witness = AbiSafeWitness {
+            path: "fixture::Vec2::x".to_owned(),
+            producer_path: Some("fixture::producer".to_owned()),
+            kind: AbiSafeWitnessKind::PublicField,
+            raw_type: "boxdd_sys::ffi::b2Vec2".to_owned(),
+            raw_field: Some("x".to_owned()),
+            native_symbols: Vec::new(),
+        };
+        let mut errors = Vec::new();
+        validate_safe_witness(
+            "ABI field `b2Vec2::x`",
+            &witness,
+            SafeAbiCapability::Field {
+                struct_name: "b2Vec2",
+                field_name: "x",
+            },
+            &index,
+            &inventory,
+            &mut errors,
+        );
+        assert!(errors.is_empty(), "exact producer relation: {errors:?}");
+
+        witness.producer_path = Some("fixture::unrelated".to_owned());
+        errors.clear();
+        validate_safe_witness(
+            "ABI field `b2Vec2::x`",
+            &witness,
+            SafeAbiCapability::Field {
+                struct_name: "b2Vec2",
+                field_name: "x",
+            },
+            &index,
+            &inventory,
+            &mut errors,
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("has no exact witness")),
+            "unrelated producer must fail closed: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn already_migrated_row_revalidates_the_exact_catalog_witness() {
+        let inventory = abi_inventory_fixture();
+        let routes = abi_override_routes();
+        let binding_indexes = AbiBindingIndexes::new();
+        let function_symbols = AbiFunctionSymbols::new();
+        let evidence_ids = BTreeSet::new();
+        let coordinate = ("single".to_owned(), "source".to_owned());
+        let rust_coordinate = RustIndexCoordinate::source_single();
+        let safe_indexes = AbiRustIndexes::from([(
+            coordinate.clone(),
+            abi_safe_index_fixture("abi-idempotent-safe", &rust_coordinate),
+        )]);
+        let safe_context = AbiValidationContext::new(
+            &inventory,
+            &routes,
+            &binding_indexes,
+            &function_symbols,
+            &safe_indexes,
+            &evidence_ids,
+        );
+        let migration = DeferredAbiMigration {
+            capability: DeferredAbiCapability::Struct("b2Vec2"),
+            path: "fixture::Vec2",
+            producer_path: None,
+            kind: AbiSafeWitnessKind::PublicType,
+            native_symbols: &[],
+        };
+        let mut policy = SAFE_POLICY_ID.to_owned();
+        let mut rationale = "The previously migrated row remains structurally proven.".to_owned();
+        let (mut safe_paths, mut safe_witnesses) = abi_safe_review();
+        let mut provider_overrides = Vec::new();
+
+        promote_deferred_row(
+            "ABI struct `b2Vec2`",
+            &mut policy,
+            &mut rationale,
+            &mut safe_paths,
+            &mut safe_witnesses,
+            &mut provider_overrides,
+            migration,
+            SafeAbiCapability::Struct("b2Vec2"),
+            std::slice::from_ref(&coordinate),
+            &safe_context,
+        )
+        .expect("an unchanged migrated row should be revalidated");
+
+        safe_witnesses[0].path = "fixture::Forged".to_owned();
+        let error = promote_deferred_row(
+            "ABI struct `b2Vec2`",
+            &mut policy,
+            &mut rationale,
+            &mut safe_paths,
+            &mut safe_witnesses,
+            &mut provider_overrides,
+            migration,
+            SafeAbiCapability::Struct("b2Vec2"),
+            std::slice::from_ref(&coordinate),
+            &safe_context,
+        )
+        .expect_err("catalog witness drift must fail closed");
+        assert!(error.to_string().contains("diverge"));
+
+        let (_, mut canonical_witnesses) = abi_safe_review();
+        let missing_indexes = AbiRustIndexes::from([(
+            coordinate.clone(),
+            abi_missing_index_fixture("abi-idempotent-missing", &rust_coordinate),
+        )]);
+        let missing_context = AbiValidationContext::new(
+            &inventory,
+            &routes,
+            &binding_indexes,
+            &function_symbols,
+            &missing_indexes,
+            &evidence_ids,
+        );
+        let error = promote_deferred_row(
+            "ABI struct `b2Vec2`",
+            &mut policy,
+            &mut rationale,
+            &mut safe_paths,
+            &mut canonical_witnesses,
+            &mut provider_overrides,
+            migration,
+            SafeAbiCapability::Struct("b2Vec2"),
+            std::slice::from_ref(&coordinate),
+            &missing_context,
+        )
+        .expect_err("a previously migrated row must not silently downgrade when proof disappears");
+        assert!(
+            error
+                .to_string()
+                .contains("cannot establish the reviewed Safe ABI migration")
+        );
+    }
+
+    #[test]
+    fn reviewed_migration_invariant_accepts_the_exact_59_row_catalog() {
+        let contract = reviewed_migration_contract_fixture();
+        let mut errors = Vec::new();
+
+        validate_reviewed_deferred_migration_invariant(&contract, &mut errors);
+
+        assert!(errors.is_empty(), "exact migration catalog: {errors:?}");
+    }
+
+    #[test]
+    fn reviewed_migration_invariant_rejects_missing_or_drifted_rows() {
+        let mut drifted = reviewed_migration_contract_fixture();
+        let field = drifted
+            .structs
+            .iter_mut()
+            .find(|structure| structure.name == "b2BodyDef")
+            .and_then(|structure| {
+                structure
+                    .fields
+                    .iter_mut()
+                    .find(|field| field.name == "sleepThreshold")
+            })
+            .expect("reviewed b2BodyDef::sleepThreshold row");
+        field.safe_witnesses[0].path = "boxdd::BodyDef::forged".to_owned();
+        let mut errors = Vec::new();
+        validate_reviewed_deferred_migration_invariant(&drifted, &mut errors);
+        assert!(
+            errors.iter().any(|error| error.contains("diverge")),
+            "witness drift must fail closed: {errors:?}"
+        );
+
+        let mut missing = reviewed_migration_contract_fixture();
+        let structure = missing
+            .structs
+            .iter_mut()
+            .find(|structure| structure.name == "b2BodyDef")
+            .expect("reviewed b2BodyDef row");
+        structure
+            .fields
+            .retain(|field| field.name != "sleepThreshold");
+        errors.clear();
+        validate_reviewed_deferred_migration_invariant(&missing, &mut errors);
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("missing field `b2BodyDef::sleepThreshold`")),
+            "missing catalog rows must fail closed: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn reviewed_migration_invariant_rejects_deferred_reentry_everywhere() {
+        let mut contract = reviewed_migration_contract_fixture();
+        contract.policies.push(AbiCapabilityPolicy {
+            id: DEFERRED_ABI_POLICY_ID.to_owned(),
+            classification: Classification::Deferred,
+            rationale: "Forged Deferred policy.".to_owned(),
+            modes: vec!["single".to_owned()],
+            providers: vec!["source".to_owned()],
+            availability: vec!["always".to_owned()],
+            evidence: Vec::new(),
+        });
+        contract.structs[0]
+            .provider_overrides
+            .push(AbiProviderOverride {
+                providers: vec!["wasm-runtime".to_owned()],
+                rationale: "Forged Deferred provider override.".to_owned(),
+                policy: DEFERRED_ABI_POLICY_ID.to_owned(),
+                safe_paths: Vec::new(),
+                safe_witnesses: Vec::new(),
+            });
+        let mut errors = Vec::new();
+
+        validate_reviewed_deferred_migration_invariant(&contract, &mut errors);
+
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("reintroduces Deferred")),
+            "Deferred policies and overrides must fail closed: {errors:?}"
+        );
+    }
+
+    fn reviewed_migration_contract_fixture() -> AbiContract {
+        let mut structures = BTreeMap::<String, AbiStructContract>::new();
+        let mut callbacks = BTreeMap::<String, AbiCallbackContract>::new();
+
+        for migration in DEFERRED_ABI_MIGRATIONS {
+            let (safe_paths, safe_witnesses) = deferred_migration_review(*migration);
+            match migration.capability {
+                DeferredAbiCapability::Struct(name) => {
+                    let structure = structures
+                        .entry(name.to_owned())
+                        .or_insert_with(|| empty_struct_contract(name));
+                    structure.policy = SAFE_ABI_POLICY_ID.to_owned();
+                    structure.safe_paths = safe_paths;
+                    structure.safe_witnesses = safe_witnesses;
+                }
+                DeferredAbiCapability::Field(struct_name, field_name) => {
+                    structures
+                        .entry(struct_name.to_owned())
+                        .or_insert_with(|| empty_struct_contract(struct_name))
+                        .fields
+                        .push(AbiFieldContract {
+                            name: field_name.to_owned(),
+                            signature: String::new(),
+                            overlays: Vec::new(),
+                            rationale: "Reviewed migration fixture.".to_owned(),
+                            policy: SAFE_ABI_POLICY_ID.to_owned(),
+                            safe_paths,
+                            safe_witnesses,
+                            provider_overrides: Vec::new(),
+                            raw_mappings: Vec::new(),
+                        });
+                }
+                DeferredAbiCapability::Callback(name) => {
+                    callbacks.insert(
+                        name.to_owned(),
+                        AbiCallbackContract {
+                            name: name.to_owned(),
+                            signature: String::new(),
+                            fingerprint: String::new(),
+                            header: String::new(),
+                            rationale: "Reviewed migration fixture.".to_owned(),
+                            policy: SAFE_ABI_POLICY_ID.to_owned(),
+                            safe_paths,
+                            safe_witnesses,
+                            provider_overrides: Vec::new(),
+                            raw_mappings: Vec::new(),
+                        },
+                    );
+                }
+            }
+        }
+        for structure in structures.values_mut() {
+            structure
+                .fields
+                .sort_by(|left, right| left.name.cmp(&right.name));
+        }
+
+        AbiContract {
+            policies: vec![
+                AbiCapabilityPolicy {
+                    id: ABI_POLICY_ID.to_owned(),
+                    classification: Classification::Raw,
+                    rationale: "Raw fixture policy.".to_owned(),
+                    modes: vec!["single".to_owned()],
+                    providers: vec!["source".to_owned()],
+                    availability: vec!["always".to_owned()],
+                    evidence: Vec::new(),
+                },
+                AbiCapabilityPolicy {
+                    id: SAFE_ABI_POLICY_ID.to_owned(),
+                    classification: Classification::Safe,
+                    rationale: "Safe fixture policy.".to_owned(),
+                    modes: vec!["single".to_owned()],
+                    providers: vec!["source".to_owned()],
+                    availability: vec!["always".to_owned()],
+                    evidence: Vec::new(),
+                },
+            ],
+            structs: structures.into_values().collect(),
+            callbacks: callbacks.into_values().collect(),
+        }
+    }
+
+    fn empty_struct_contract(name: &str) -> AbiStructContract {
+        AbiStructContract {
+            name: name.to_owned(),
+            fingerprint: String::new(),
+            header: String::new(),
+            rationale: "Raw fixture parent.".to_owned(),
+            policy: ABI_POLICY_ID.to_owned(),
+            safe_paths: Vec::new(),
+            safe_witnesses: Vec::new(),
+            provider_overrides: Vec::new(),
+            raw_mappings: Vec::new(),
+            fields: Vec::new(),
+        }
     }
 
     #[test]
@@ -3953,13 +5763,13 @@ mod tests {
         )
         .expect_err("wrong precision module must fail closed");
         assert!(
-            wrong.to_string().contains("expected `box2d-sys-v0-single`"),
+            wrong.to_string().contains("expected `box2d-sys-v1-single`"),
             "unexpected error: {wrong}"
         );
 
         let partial = binding_fixture(
             r#"
-                #[link(wasm_import_module = "box2d-sys-v0-single")]
+                #[link(wasm_import_module = "box2d-sys-v1-single")]
                 unsafe extern "C" { pub fn b2First(); }
                 unsafe extern "C" { pub fn b2Second(); }
             "#,
@@ -3973,7 +5783,7 @@ mod tests {
 
         let native_link_override = binding_fixture(
             r#"
-                #[link(name = "forged", wasm_import_module = "box2d-sys-v0-single")]
+                #[link(name = "forged", wasm_import_module = "box2d-sys-v1-single")]
                 unsafe extern "C" { pub fn b2Run(); }
             "#,
             Precision::Single,
@@ -3996,7 +5806,7 @@ mod tests {
             .require_wasm_import_modules(Precision::Double, true)
             .expect_err("a formal target binding must declare its precision module");
         assert!(
-            error.to_string().contains("box2d-sys-v0-double"),
+            error.to_string().contains("box2d-sys-v1-double"),
             "unexpected error: {error}"
         );
     }
@@ -4224,6 +6034,126 @@ mod tests {
             AbiPrecisionInventories::from([("single".to_owned(), precision_inventory)]);
         map_precision_inventory(&inventory, &inventories, &routes, &bindings)
             .expect("vendored single precision ABI mapping");
+    }
+
+    fn abi_override_routes() -> BTreeMap<(String, String), AbiBindingRoute> {
+        ["double", "single"]
+            .into_iter()
+            .flat_map(|mode| {
+                ["source", "wasm-runtime"].into_iter().map(move |provider| {
+                    let rust_target = if provider == "wasm-runtime" {
+                        RustTarget::Wasm32UnknownUnknown
+                    } else {
+                        RustTarget::X86_64UnknownLinuxGnu
+                    };
+                    (
+                        (mode.to_owned(), provider.to_owned()),
+                        AbiBindingRoute {
+                            mode: mode.to_owned(),
+                            provider: provider.to_owned(),
+                            artifact: format!("{mode}-{provider}"),
+                            rust_target,
+                            rust_features: Vec::new(),
+                        },
+                    )
+                })
+            })
+            .collect()
+    }
+
+    fn safe_abi_policy() -> AbiCapabilityPolicy {
+        AbiCapabilityPolicy {
+            id: SAFE_POLICY_ID.to_owned(),
+            classification: Classification::Safe,
+            rationale:
+                "The reviewed adapter proves an exact Safe Rust representation on supported routes."
+                    .to_owned(),
+            modes: vec!["double".to_owned(), "single".to_owned()],
+            providers: vec!["source".to_owned(), "wasm-runtime".to_owned()],
+            availability: vec!["always".to_owned()],
+            evidence: vec!["abi-contract-validator".to_owned()],
+        }
+    }
+
+    fn raw_abi_policy() -> AbiCapabilityPolicy {
+        AbiCapabilityPolicy {
+            id: ABI_POLICY_ID.to_owned(),
+            classification: Classification::Raw,
+            rationale: "The generated binding preserves an exact raw ABI mapping for every route."
+                .to_owned(),
+            modes: vec!["double".to_owned(), "single".to_owned()],
+            providers: vec!["source".to_owned(), "wasm-runtime".to_owned()],
+            availability: vec!["always".to_owned()],
+            evidence: vec!["abi-contract-validator".to_owned()],
+        }
+    }
+
+    fn abi_safe_review() -> (Vec<String>, Vec<AbiSafeWitness>) {
+        let path = "fixture::Vec2".to_owned();
+        (
+            vec![path.clone()],
+            vec![AbiSafeWitness {
+                path,
+                producer_path: None,
+                kind: AbiSafeWitnessKind::PublicType,
+                raw_type: "boxdd_sys::ffi::b2Vec2".to_owned(),
+                raw_field: None,
+                native_symbols: Vec::new(),
+            }],
+        )
+    }
+
+    fn abi_inventory_fixture() -> CApiInventory {
+        let root = tempdir().expect("temporary ABI inventory root");
+        fs::write(
+            root.path().join("fixture.h"),
+            "typedef struct b2Vec2 { float x; float y; } b2Vec2;",
+        )
+        .expect("fixture ABI header");
+        parse_headers(root.path()).expect("fixture ABI inventory")
+    }
+
+    fn abi_safe_index_fixture(name: &str, coordinate: &RustIndexCoordinate) -> RustIndex {
+        abi_index_fixture(
+            name,
+            r#"
+                mod implementation {
+                    use boxdd_sys::ffi as raw;
+
+                    pub struct Vec2 {
+                        pub x: f32,
+                        pub y: f32,
+                    }
+
+                    impl Vec2 {
+                        pub fn from_raw(value: raw::b2Vec2) -> Self {
+                            Self { x: value.x, y: value.y }
+                        }
+                    }
+                }
+
+                pub use implementation::Vec2;
+            "#,
+            coordinate,
+        )
+    }
+
+    fn abi_missing_index_fixture(name: &str, coordinate: &RustIndexCoordinate) -> RustIndex {
+        abi_index_fixture(name, "pub struct Unrelated;", coordinate)
+    }
+
+    fn abi_index_fixture(name: &str, source: &str, coordinate: &RustIndexCoordinate) -> RustIndex {
+        let root = tempdir().expect("temporary Rust ABI index root");
+        fs::write(
+            root.path().join("Cargo.toml"),
+            format!(
+                "[package]\nname = \"{name}\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[lib]\npath = \"lib.rs\"\n\n[dependencies]\nboxdd-sys = \"0\"\n"
+            ),
+        )
+        .expect("fixture manifest");
+        let lib = root.path().join("lib.rs");
+        fs::write(&lib, source).expect("fixture Rust source");
+        index_crate_for_coordinate(&lib, "fixture", coordinate).expect("fixture Rust ABI index")
     }
 
     fn binding_fixture(binding: &str, precision: Precision) -> crate::Result<AbiBindingIndex> {

@@ -1,7 +1,11 @@
+#[cfg(not(target_arch = "wasm32"))]
 use super::*;
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
 
+#[cfg(not(target_arch = "wasm32"))]
 type ShapeFilterFn = fn(crate::types::ShapeId, crate::types::ShapeId) -> bool;
+#[cfg(not(target_arch = "wasm32"))]
 type PreSolveFn = fn(
     crate::types::ShapeId,
     crate::types::ShapeId,
@@ -29,6 +33,7 @@ impl MaterialMixInput {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 unsafe extern "C" fn custom_filter_callback(
     a: ffi::b2ShapeId,
     b: ffi::b2ShapeId,
@@ -37,21 +42,12 @@ unsafe extern "C" fn custom_filter_callback(
     // SAFETY: context is provided by the custom-filter registration helpers and points to
     // `CustomFilterCtx` for the lifetime of the registered callback.
     let ctx = unsafe { &*(context as *const CustomFilterCtx) };
-    if ctx.worker.has_panicked() {
-        return true;
-    }
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _g = crate::core::callback_state::CallbackGuard::enter();
+    crate::core::callback_state::invoke_worker_callback(&ctx.worker, true, || {
         (ctx.cb)(ctx.worker.shape(a), ctx.worker.shape(b))
-    })) {
-        Ok(v) => v,
-        Err(payload) => {
-            ctx.worker.record_panic(payload);
-            true
-        }
-    }
+    })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 unsafe extern "C" fn pre_solve_callback(
     a: ffi::b2ShapeId,
     b: ffi::b2ShapeId,
@@ -62,26 +58,17 @@ unsafe extern "C" fn pre_solve_callback(
     // SAFETY: context is provided by the pre-solve registration helpers and points to
     // `PreSolveCtx` for the lifetime of the registered callback.
     let ctx = unsafe { &*(context as *const PreSolveCtx) };
-    if ctx.worker.has_panicked() {
-        return true;
-    }
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _g = crate::core::callback_state::CallbackGuard::enter();
+    crate::core::callback_state::invoke_worker_callback(&ctx.worker, true, || {
         (ctx.cb)(
             ctx.worker.shape(a),
             ctx.worker.shape(b),
             crate::types::Position::from_raw(point),
             crate::types::Vec2::from_raw(normal),
         )
-    })) {
-        Ok(v) => v,
-        Err(payload) => {
-            ctx.worker.record_panic(payload);
-            true
-        }
-    }
+    })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl World {
     fn ensure_material_mix_slot(&self) -> crate::error::ApiResult<usize> {
         let mut slot = self
@@ -323,6 +310,9 @@ impl World {
     /// This callback may run on Box2D worker threads and intentionally receives no world context.
     /// Use `user_material_id` to implement table-driven material behavior.
     ///
+    /// The callback must return a finite, non-negative coefficient. An invalid result or panic is
+    /// contained at the C boundary and resumed from the owning [`World::step`] call.
+    ///
     /// The callback must not attempt to modify Box2D state or unsafely mutate shared application
     /// state.
     pub fn set_friction_callback<F>(&mut self, f: F)
@@ -358,6 +348,7 @@ impl World {
                 crate::core::material_mix_registry::friction_callback(slot),
             );
         }
+        self.core.set_friction_mixer_present(true);
         drop(old);
         Ok(())
     }
@@ -370,10 +361,11 @@ impl World {
             .material_mix_slot
             .lock()
             .expect("material_mix_slot mutex poisoned");
+        unsafe { ffi::b2World_SetFrictionCallback(self.raw(), None) };
         if let Some(slot) = slot {
-            unsafe { ffi::b2World_SetFrictionCallback(self.raw(), None) };
             crate::core::material_mix_registry::set_friction_ptr(slot, core::ptr::null_mut());
         }
+        self.core.set_friction_mixer_present(false);
         let old = self
             .core
             .friction_mix
@@ -394,6 +386,9 @@ impl World {
     ///
     /// This callback may run on Box2D worker threads and intentionally receives no world context.
     /// Use `user_material_id` to implement table-driven material behavior.
+    ///
+    /// The callback must return a finite, non-negative coefficient. An invalid result or panic is
+    /// contained at the C boundary and resumed from the owning [`World::step`] call.
     ///
     /// The callback must not attempt to modify Box2D state or unsafely mutate shared application
     /// state.
@@ -430,6 +425,7 @@ impl World {
                 crate::core::material_mix_registry::restitution_callback(slot),
             );
         }
+        self.core.set_restitution_mixer_present(true);
         drop(old);
         Ok(())
     }
@@ -442,10 +438,11 @@ impl World {
             .material_mix_slot
             .lock()
             .expect("material_mix_slot mutex poisoned");
+        unsafe { ffi::b2World_SetRestitutionCallback(self.raw(), None) };
         if let Some(slot) = slot {
-            unsafe { ffi::b2World_SetRestitutionCallback(self.raw(), None) };
             crate::core::material_mix_registry::set_restitution_ptr(slot, core::ptr::null_mut());
         }
+        self.core.set_restitution_mixer_present(false);
         let old = self
             .core
             .restitution_mix
@@ -460,5 +457,84 @@ impl World {
         check_world_available(&self.core)?;
         self.clear_restitution_callback();
         Ok(())
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::*;
+    use crate::{BodyBuilder, BodyType};
+
+    fn callback_shapes(world: &mut World) -> (ffi::b2ShapeId, ffi::b2ShapeId) {
+        let body_a = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+        let body_b = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+        let shape_def = ShapeDef::builder().density(1.0).build();
+        let polygon = crate::shapes::box_polygon(0.5, 0.5);
+        let shape_a = world.create_polygon_shape_for(body_a, &shape_def, &polygon);
+        let shape_b = world.create_polygon_shape_for(body_b, &shape_def, &polygon);
+        (shape_a.unbind().into_ffi(), shape_b.unbind().into_ffi())
+    }
+
+    #[test]
+    fn custom_filter_panic_uses_true_fallback_and_reuses_worker_state() {
+        let mut world = World::new(WorldDef::default()).unwrap();
+        let (shape_a, shape_b) = callback_shapes(&mut world);
+        let worker = Arc::clone(&world.core().worker_callbacks);
+        let context = Box::new(CustomFilterCtx {
+            worker: Arc::clone(&worker),
+            cb: Box::new(|_, _| -> bool { panic!("custom filter test panic") }),
+        });
+        let context = Box::into_raw(context);
+        let context_ptr = context.cast::<core::ffi::c_void>();
+
+        // SAFETY: the callback context remains allocated and the raw shape IDs belong to `world`.
+        let first = unsafe { custom_filter_callback(shape_a, shape_b, context_ptr) };
+        // A worker callback is disabled after its first panic; the fallback must remain stable.
+        let second = unsafe { custom_filter_callback(shape_a, shape_b, context_ptr) };
+        assert!(first);
+        assert!(second);
+
+        worker.clear_panic();
+        // SAFETY: `context` was allocated above and is no longer used by the callback.
+        drop(unsafe { Box::from_raw(context) });
+    }
+
+    #[test]
+    fn pre_solve_panic_uses_true_fallback_and_reuses_worker_state() {
+        let mut world = World::new(WorldDef::default()).unwrap();
+        let (shape_a, shape_b) = callback_shapes(&mut world);
+        let worker = Arc::clone(&world.core().worker_callbacks);
+        let context = Box::new(PreSolveCtx {
+            worker: Arc::clone(&worker),
+            cb: Box::new(|_, _, _, _| -> bool { panic!("pre-solve test panic") }),
+        });
+        let context = Box::into_raw(context);
+        let context_ptr = context.cast::<core::ffi::c_void>();
+
+        // SAFETY: the callback context remains allocated and the raw shape IDs belong to `world`.
+        let first = unsafe {
+            pre_solve_callback(
+                shape_a,
+                shape_b,
+                Position::ZERO.into_raw(),
+                Vec2::new(0.0, 1.0).into_raw(),
+                context_ptr,
+            )
+        };
+        let second = unsafe {
+            pre_solve_callback(
+                shape_a,
+                shape_b,
+                Position::ZERO.into_raw(),
+                Vec2::new(0.0, 1.0).into_raw(),
+                context_ptr,
+            )
+        };
+        assert!(first);
+        assert!(second);
+
+        worker.clear_panic();
+        // SAFETY: `context` was allocated above and is no longer used by the callback.
+        drop(unsafe { Box::from_raw(context) });
     }
 }

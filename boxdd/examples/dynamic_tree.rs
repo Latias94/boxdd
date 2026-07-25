@@ -1,4 +1,4 @@
-use boxdd::{Aabb, DynamicTree, TreeRayCastInput, Vec2};
+use boxdd::{Aabb, DynamicTree, TreeCastControl, TreeRayCastInput, Vec2};
 
 fn main() {
     let mut tree = DynamicTree::new();
@@ -32,7 +32,7 @@ fn main() {
         u64::MAX,
         &mut |_, id, user_data| {
             first_hit = Some((id, user_data));
-            0.0
+            TreeCastControl::Terminate
         },
     );
     println!("first broad-phase ray hit: {first_hit:?}");

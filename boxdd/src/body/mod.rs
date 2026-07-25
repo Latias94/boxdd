@@ -4,7 +4,7 @@ mod runtime;
 mod scoped;
 mod validation;
 
-pub use definition::{BodyBuilder, BodyDef, BodyType};
+pub use definition::{BodyBuilder, BodyDef, BodyType, RawBodyDef};
 pub use owned::OwnedBody;
 pub use scoped::Body;
 

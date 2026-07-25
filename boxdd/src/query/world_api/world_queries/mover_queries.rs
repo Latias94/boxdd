@@ -49,6 +49,7 @@ impl World {
     ///
     /// `origin` is absolute and capsule centers are local to it. Returned
     /// [`MoverPlaneResult::point`] values remain local to the same origin.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn collide_mover<V1: Into<Vec2>, V2: Into<Vec2>>(
         &self,
         origin: Position,
@@ -61,6 +62,7 @@ impl World {
     }
 
     /// Collect collision planes for a capsule mover and reuse `out`.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn collide_mover_into<V1: Into<Vec2>, V2: Into<Vec2>>(
         &self,
         origin: Position,
@@ -73,6 +75,7 @@ impl World {
         collide_mover_into_checked_impl(self.query_target(), origin, c1, c2, radius, filter, out);
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn try_collide_mover<V1: Into<Vec2>, V2: Into<Vec2>>(
         &self,
         origin: Position,
@@ -84,6 +87,7 @@ impl World {
         try_collide_mover_impl(self.query_target(), origin, c1, c2, radius, filter)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn try_collide_mover_into<V1: Into<Vec2>, V2: Into<Vec2>>(
         &self,
         origin: Position,

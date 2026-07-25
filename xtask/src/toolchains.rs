@@ -9,7 +9,7 @@ use std::{
 const RELEASE_VERSION: &str = "0.6.0";
 const RUST_VERSION: &str = "1.95";
 const MSRV: &str = "1.95.0";
-const DEVELOPMENT: &str = "1.97.0";
+const DEVELOPMENT: &str = "1.97.1";
 const VERIFICATION_NIGHTLY: &str = "nightly-2026-05-27";
 
 #[derive(Debug)]
@@ -373,7 +373,7 @@ boxdd-sys = { version = "0.6.0", path = "boxdd-sys" }
 
 [workspace.metadata.toolchains]
 msrv = "1.95.0"
-development = "1.97.0"
+development = "1.97.1"
 verification-nightly = "nightly-2026-05-27"
 verification-components = ["miri", "rust-src"]
 "#,
@@ -382,7 +382,7 @@ verification-components = ["miri", "rust-src"]
             fs::write(
                 root.join("rust-toolchain.toml"),
                 r#"[toolchain]
-channel = "1.97.0"
+channel = "1.97.1"
 components = ["clippy", "rustfmt"]
 profile = "minimal"
 "#,
@@ -498,7 +498,7 @@ profile = "minimal"
         let fixture = Fixture::new("development-channel");
         fixture.rewrite(
             "rust-toolchain.toml",
-            "channel = \"1.97.0\"",
+            "channel = \"1.97.1\"",
             "channel = \"1.96.0\"",
         );
 

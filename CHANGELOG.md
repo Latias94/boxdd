@@ -9,8 +9,125 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+This section is the draft for the coordinated `boxdd`, `boxdd-sys`, and `bevy_boxdd` 0.6.0
+release. The release targets the pinned Box2D 3.2.0 development snapshot at
+`56edae79f2949d86142b03450d5d60f63bcf5a6f`.
+
+### Breaking Changes
+
+- Live body, shape, joint, chain, and contact IDs are now bound to one Rust world registration.
+  Direct `from_raw`/`into_raw` construction was replaced by authenticated `Raw*Id` values,
+  `unbind`, and `World::bind_*_id`.
+- Absolute world coordinates now use precision-aware `Position` and `WorldTransform`; `Vec2` and
+  `Transform` remain local `f32` values. Enabling `double-precision` changes the complete native
+  ABI and must be selected consistently across crates and providers.
+- World overlap, ray, shape-cast, and mover queries now take an explicit absolute query origin.
+  Query hits and debug draw points use `Position`.
+- Standalone collision helpers now accept shape B relative to shape A and return `LocalManifold`.
+  Runtime `ManifoldPoint` values expose local anchors instead of an implicitly narrowed absolute
+  point.
+- The process-global `set_length_units_per_meter` setter was removed. Call
+  `initialize_foundation(FoundationConfig)` before the first safe native use.
+- `CallbackWorld` and the `_with_ctx` callback APIs were removed. Worker callbacks receive only
+  thread-safe IDs and values and cannot access owner-thread world state or typed user data.
+- `WorldDef::worker_count` and its builder now use validated `WorkerCount`. Native builds use
+  Box2D's built-in scheduler by default; current WASM adapters support one worker.
+- The `serialize` feature, `serialize` module, registry-backed scene format, and
+  `scene_serialize` example were removed. They have no compatibility shim.
+- Joint definitions no longer wrap raw native definition structs. `JointBase::new` and checked
+  world-anchor builders establish same-world and local-frame invariants before native creation.
+- `BodyDef::into_raw() -> boxdd_sys::ffi::b2BodyDef` was removed. Use `into_raw_guard`, borrow the
+  definition with `RawBodyDef::as_raw`, and keep the guard alive for the complete raw call.
+- The permissive `pkg-config`, dynamic/name-only, and implicit system-library routes were removed.
+  Non-vendored providers are explicit, static, exact-manifest adapters.
+- Bevy transforms are local to a required `BoxddWorldOrigin` resource. Absolute queries, events,
+  debug draw data, and joint anchors use `boxdd::Position`.
+- The optional `cgmath` feature and its conversion/error APIs were removed because `cgmath 0.18`
+  is unmaintained and affected by RustSec advisories RUSTSEC-2026-0196 and RUSTSEC-2026-0197.
+  Migrate interop code to `glam`, `nalgebra`, or `mint`.
+- `boxdd_sys::adapter::validate_snapshot` now returns `SnapshotValidationError`, separating a
+  rejected adapter identity from a native snapshot status. Match `SnapshotValidationError::Status`
+  when migrating code that previously compared the returned error directly with `SNAPSHOT_*`.
+- Native body, shape, and joint type getters no longer assume that every provider output is a
+  known closed-enum discriminant. Their `try_*` variants return
+  `ApiError::InvalidNativeBodyType`, `InvalidNativeShapeType`, or `InvalidNativeJointType` and
+  poison the world; the convenience getters retain their panic-on-error contract.
+
+### Added
+
+- Single- and double-precision generated bindings, ABI probes, world-space value types, and
+  scalar-correct `mint`, `nalgebra`, `glam`, and `bytemuck` interop.
+- `FoundationConfig`, panic-contained process hooks, frozen initialization, activity diagnostics,
+  and coordinated ordinary/transient/exclusive-replay leases.
+- Validated `WorkerCount`, `WorldCapacity`, world bounds/capacity inspection, runtime worker-count
+  changes, contact recycling controls, orphan chain-segment handles, and zero-time-step behavior.
+- Transactional `Snapshot` restore, integrity-checked `SnapshotImage` fresh-world loading,
+  RAII `RecordingSession`, owned `Recording`, full-stream replay preflight, and epoch-bound
+  `ReplayPlayer` views.
+- `ReplayBodyView::try_body_type`, which reports an unknown native body type precisely and
+  terminalizes the replay before any later native operation.
+- Safe shape ray casts and standalone dynamic-tree AABB box casts through `TreeBoxCastInput`.
+- Owned `BodyDef` names and creation-time sleep-threshold access through `BodyBuilder` and
+  `BodyDef` getters.
+- `cast_ray_closest_with_stats` and `try_cast_ray_closest_with_stats`, which retain broad-phase
+  node/leaf visits on misses while the existing closest-ray APIs continue to return
+  `Option<RayResult>`. Bevy exposes the corresponding entity-mapped result through
+  `try_cast_ray_closest_entity_with_stats`.
+- `BoxddWorldOrigin`, checked local/absolute conversions, atomic origin rebasing, and origin-aware
+  Bevy transform, query, event, debug draw, and joint flows.
+- A structured conformance contract for all 478 pinned exported functions plus ABI-bearing fields
+  and callback capabilities.
+
+### Changed
+
+- `World`, `WorldHandle`, owned handles, callback owner state, snapshots, recording sessions, and
+  replay players are explicitly owner-thread-only. Worker callback state is a separate
+  `Send + Sync` capability with no world ownership.
+- All C-to-Rust callbacks share panic containment, callback-depth tracking, conservative fallback,
+  deferred destruction, and owner-boundary panic resumption.
+- Snapshot images and recording streams are documented as compatibility-bound ABI artifacts, not
+  long-term or cross-build persistence formats.
+- Vendored source is the default provider; attested system, authenticated prebuilt, WASM provider,
+  and compile-only WASM are distinct fail-closed adapters with no silent fallback.
+- The workspace, package metadata, examples, interop features, and Bevy adapter target version
+  `0.6.0` together with Rust 1.95 MSRV.
+
 ### Fixed
+
+- Safe native output buffers reserve and validate actual capacity before C writes and publish only
+  initialized elements.
+- Wrong-world, recycled-slot, stale-generation, wrong-kind, and forged IDs are rejected before
+  native access or registry mutation.
+- Typed user-data closures no longer run under the global registry lock; conflicting reentry is
+  reported and closure panics do not poison later access.
+- Callback panics cannot unwind through C, and cleanup/drop panics are aggregated only after native
+  teardown and lease release.
+- Snapshot restore reconciles Safe IDs and typed user data transactionally; any failure after the
+  native restore begins leaves a terminal world instead of a partially live one.
+- Joint construction and runtime mutation validate finiteness, normalized axes, ordered limits,
+  same-world bodies, and joint-family invariants before Box2D assertions can fire.
 - Windows prebuilt release artifacts now use explicit `md` / `mt` CRT suffixes, and CI fails if a release build produces an ambiguous package name.
+
+### Security
+
+- Runtime-capable adapters verify exact upstream SHA, precision, target, CRT/SIMD/validation
+  identity, source/archive digests, private ABI, snapshot layout, and recording contract before
+  Safe Rust creates native state.
+- Official prebuilt and WASM artifacts additionally require repository/workflow/commit/tag-bound
+  publisher provenance. Caller-generated system manifests are explicitly local trust statements,
+  not project authentication.
+- External snapshot and recording bytes are checksummed and structurally/semantically preflighted
+  before native restore or replay allocation.
+- The public snapshot validator authorizes the linked runtime adapter before passing Rust-owned
+  `SnapshotFacts` or `SnapshotEntry` output storage across the FFI boundary.
+- The unmaintained, unsound optional `cgmath` integration was removed, and the yanked transitive
+  `spin 0.10.0` package was advanced exactly to `0.10.1`; no general lockfile update was performed.
+
+### Migration Notes
+
+- This release intentionally provides no compatibility shims for obsolete 0.5 semantics.
+- Follow [`docs/migration-0.5-to-0.6.md`](docs/migration-0.5-to-0.6.md) for API-by-API replacements,
+  unsupported boundaries, provider selection, persistence, and Bevy world-origin migration.
 
 ## [0.5.0] - 2026-07-06
 

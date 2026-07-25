@@ -4,7 +4,7 @@
 //! Highlights
 //! - Thin safe layer on top of the official Box2D v3 C API.
 //! - Modular API: world, bodies, shapes, joints, queries, collision geometry, events, debug draw.
-//! - Ergonomics: builder patterns, world-space helpers, and optional math interop (`mint`/`cgmath`/`nalgebra`/`glam`).
+//! - Ergonomics: builder patterns, world-space helpers, and optional math interop (`mint`/`nalgebra`/`glam`).
 //! - Hot-path friendly APIs: keep the convenience `Vec`-returning methods, reuse caller-owned buffers with `*_into`, or use `visit_*` overlap queries to avoid result-container allocation entirely.
 //! - Character mover helpers: cast movers, collect collision planes, solve planes, and clip velocity without raw FFI.
 //! - Standalone collision geometry helpers: shape proxies, segment/GJK distance, manifolds, shape cast, TOI, recoverable `try_*` validation paths, AABB validation/ray cast, and deterministic global math helpers.
@@ -25,7 +25,7 @@
 //! - Three usage styles:
 //!   - Owned handles: `OwnedBody`/`OwnedShape`/`OwnedJoint`/`OwnedChain` (Drop destroys; easy to store).
 //!   - Scoped handles: `Body<'_>`/`Shape<'_>`/`Joint<'_>`/`Chain<'_>` (dropping only releases the world borrow).
-//!   - ID-style: raw ids (`BodyId`/`ShapeId`/`JointId`/`ChainId`) for maximum flexibility.
+//!   - ID-style: world-bound branded IDs (`BodyId`/`ShapeId`/`JointId`/`ChainId`) for maximum flexibility.
 //! - Safe handle methods validate ids and panic on invalid ids (prevents UB if an id becomes stale).
 //!   For recoverable failures (invalid ids / wrong typed-joint family / calling during Box2D callbacks), use `try_*` APIs returning `ApiResult<T>`.
 //! - Threading: `World` and owned handles are `!Send`/`!Sync`. Run physics on one thread; in async runtimes prefer
@@ -72,7 +72,7 @@
 //!
 //! Math interop (optional features)
 //! - `Vec2` always accepts `[f32; 2]` and `(f32, f32)` anywhere `Into<Vec2>` is used.
-//! - With `mint`, `cgmath`, `nalgebra`, or `glam` enabled, `Vec2` also accepts those crates'
+//! - With `mint`, `nalgebra`, or `glam` enabled, `Vec2` also accepts those crates'
 //!   2D vector/point types via `From`/`Into`.
 //! - Returned vectors can be converted back using `From` to the corresponding math types.
 //! - `mint` also covers `Rot <-> mint::RowMatrix2` / `mint::ColumnMatrix2`, plus row- and
@@ -114,7 +114,7 @@
 //! assert_eq!(hits.len(), visited);
 //! // Ray (closest)
 //! let r = world.cast_ray_closest(Position::new(0.0, 5.0), Vec2::new(0.0, -10.0), QueryFilter::default());
-//! if r.hit { let _ = (r.point, r.normal, r.fraction); }
+//! if let Some(r) = r { let _ = (r.point, r.normal, r.fraction); }
 //! ```
 //!
 //! Character Mover Helpers
@@ -170,18 +170,21 @@
 //! ```
 //!
 //! Feature Flags
-//! - `serialize`: scene snapshot helpers (save/apply world config; build/restore minimal full-scene snapshot).
-//! - `pkg-config`: allow linking against a system `box2d` via pkg-config.
+//! - `serde`: serialization for safe value and configuration types. World persistence uses the
+//!   validated snapshot owner API.
+//! - System-provider builds use explicit static library/include paths and must supply matching
+//!   0.6 ABI proof metadata. There is no pkg-config discovery or automatic provider fallback.
 //! - `mint`: lightweight math interop types (`mint::Vector2`, `mint::Point2`, `mint::RowMatrix2` /
 //!   `mint::ColumnMatrix2` for `Rot`, and row/column-major 2D affine matrices for `Transform`).
-//! - `cgmath` / `nalgebra` / `glam`: conversions with their 2D math types.
+//! - `nalgebra` / `glam`: conversions with their 2D math types.
 //! - `bytemuck`: `Pod`/`Zeroable` for core math types (`Vec2`, `Rot`, `Transform`, `Aabb`) for zero-copy interop.
 //!
 //! Threading and async
-//! - `WorldDef::builder().worker_count(n)` preserves Box2D's worker-count setting, but actual
-//!   multithreaded stepping still requires explicit raw task callbacks through
-//!   `unsafe WorldBuilder::task_system_raw(...)` / `WorldDef::set_task_system_raw(...)`. It does
-//!   not make `World`, `WorldHandle`, or owned handles `Send`/`Sync`.
+//! - `WorldDef::builder().worker_count(WorkerCount::new(n)?)` selects Box2D's built-in scheduler
+//!   when `n > 1` and no raw task callbacks are supplied. Advanced integrations can replace that
+//!   scheduler through `unsafe WorldBuilder::task_system_raw(...)` /
+//!   `WorldDef::set_task_system_raw(...)`. Neither mode makes `World`, `WorldHandle`, or owned
+//!   handles `Send`/`Sync`.
 //! - Keep the world on one thread/task. In async runtimes prefer `spawn_local` / `LocalSet`; in
 //!   multi-threaded engines prefer a dedicated physics thread plus channels.
 //! - `set_custom_filter*`, `set_pre_solve*`, `set_friction_callback`, and `set_restitution_callback`
@@ -243,10 +246,10 @@ pub mod id;
 pub mod joints;
 pub mod prelude;
 pub mod query;
-#[cfg(feature = "serialize")]
-#[cfg_attr(docsrs, doc(cfg(feature = "serialize")))]
-pub mod serialize;
+pub mod recording;
+pub mod replay;
 pub mod shapes;
+pub mod snapshot;
 pub mod tuning;
 pub mod types;
 #[cfg(feature = "unchecked")]
@@ -255,19 +258,19 @@ pub mod unchecked;
 pub mod world;
 pub mod world_extras;
 pub mod core {
-    pub(crate) mod box2d_lock;
     pub(crate) mod callback_state;
     pub(crate) mod ffi_vec;
+    pub mod foundation;
+    pub(crate) mod identity_registry;
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) mod material_mix_registry;
     pub mod math;
-    #[cfg(feature = "serialize")]
-    pub(crate) mod serialize_registry;
     pub(crate) mod user_data;
     pub(crate) mod world_core;
 }
 
 pub use body::OwnedBody;
-pub use body::{Body, BodyBuilder, BodyDef, BodyType, MAX_BODY_NAME_BYTES};
+pub use body::{Body, BodyBuilder, BodyDef, BodyType, MAX_BODY_NAME_BYTES, RawBodyDef};
 pub use collision::{
     CastOutput, DistanceInput, DistanceOutput, LocalManifold, LocalManifoldPoint,
     MAX_LOCAL_MANIFOLD_POINTS, MAX_SHAPE_PROXY_POINTS, SegmentDistanceResult, ShapeCastInput,
@@ -284,15 +287,19 @@ pub use collision::{
     try_collide_segment_and_polygon, try_segment_distance, try_shape_cast, try_shape_distance,
     try_time_of_impact,
 };
+pub use core::foundation::{
+    Foundation, FoundationActivity, FoundationActivityError, FoundationAdapterIdentityField,
+    FoundationConfig, FoundationDiagnostics, FoundationInitError, foundation,
+    initialize_foundation,
+};
+#[cfg(not(target_arch = "wasm32"))]
+pub use core::foundation::{FoundationAssertHook, FoundationLogHook};
 #[cfg(feature = "glam")]
 #[cfg_attr(docsrs, doc(cfg(feature = "glam")))]
 pub use core::math::RotFromGlamError;
 #[cfg(feature = "mint")]
 #[cfg_attr(docsrs, doc(cfg(feature = "mint")))]
 pub use core::math::RotFromMintError;
-#[cfg(feature = "cgmath")]
-#[cfg_attr(docsrs, doc(cfg(feature = "cgmath")))]
-pub use core::math::TransformFromCgmathError;
 #[cfg(feature = "glam")]
 #[cfg_attr(docsrs, doc(cfg(feature = "glam")))]
 pub use core::math::TransformFromGlamError;
@@ -302,10 +309,14 @@ pub use core::math::TransformFromMintError;
 pub use core::math::{
     HASH_INIT, Rot, Transform, Version, allocated_byte_count, atan2, compute_cos_sin, hash_bytes,
     is_valid_float, length_units_per_meter, milliseconds_and_reset, milliseconds_since,
-    rotation_between_unit_vectors, ticks, version, yield_now,
+    rotation_between_unit_vectors, ticks, try_rotation_between_unit_vectors, version, yield_now,
 };
-pub use debug_draw::{DebugDraw, DebugDrawCmd, DebugDrawOptions, HexColor};
-pub use dynamic_tree::{DynamicTree, TreeBoxCastInput, TreeProxyId, TreeRayCastInput, TreeStats};
+#[cfg(not(target_arch = "wasm32"))]
+pub use debug_draw::DebugDraw;
+pub use debug_draw::{DebugDrawCmd, DebugDrawOptions, HexColor};
+pub use dynamic_tree::{
+    DynamicTree, TreeBoxCastInput, TreeCastControl, TreeProxyId, TreeRayCastInput, TreeStats,
+};
 pub use error::{ApiError, ApiResult};
 pub use events::{
     BodyMoveEvent, ContactBeginTouchEvent, ContactEndTouchEvent, ContactEvents, ContactHitEvent,
@@ -320,21 +331,28 @@ pub use joints::{
     WheelJointBuilder, WheelJointDef,
 };
 pub use query::{
-    Aabb, CollisionPlane, MoverPlaneResult, Plane, PlaneSolverResult, QueryFilter, RayResult,
-    clip_vector, solve_planes, try_clip_vector, try_solve_planes,
+    Aabb, ClosestRayCastResult, CollisionPlane, MoverPlaneResult, Plane, PlaneSolverResult,
+    QueryFilter, RayResult, clip_vector, solve_planes, try_clip_vector, try_solve_planes,
+};
+pub use recording::{MixerRequirements, Recording, RecordingCapacity, RecordingSession};
+pub use replay::{
+    ReplayBodyView, ReplayConfig, ReplayEpoch, ReplayError, ReplayInfo, ReplayKeyframePolicy,
+    ReplayKeyframeState, ReplayMalformedError, ReplayPlayer, ReplayQueryHitView, ReplayQueryKind,
+    ReplayQueryView, ReplayStatus, ReplayView,
 };
 pub use shapes::chain::{Chain, ChainDef, ChainDefBuilder, ChainDefMaterialLayout, OwnedChain};
 pub use shapes::{
     Capsule, ChainSegment, Circle, MAX_POLYGON_VERTICES, OwnedShape, Polygon, Segment, Shape,
     ShapeDef, ShapeDefBuilder, ShapeType, SurfaceMaterial,
 };
+pub use snapshot::{Snapshot, SnapshotImage, SnapshotLoad, SnapshotRestore};
 pub use types::{
     BodyId, ChainId, ContactData, ContactId, JointId, MAX_MANIFOLD_POINTS, Manifold, ManifoldPoint,
     MassData, MotionLocks, Position, PositionToLocalError, ShapeId, Vec2, WorldCastOutput,
-    WorldScalar, WorldTransform,
+    WorldScalar, WorldTransform, WorldTransformFromInteropError,
 };
 pub use world::{
-    Counters, MaterialMixInput, OwnedHandleCounts, Profile, World, WorldBuilder, WorldDef,
-    WorldHandle,
+    B2_MAX_WORKERS, Counters, MaterialMixInput, OwnedHandleCounts, Profile, WorkerCount, World,
+    WorldBuilder, WorldCapacity, WorldDef, WorldHandle,
 };
 pub use world_extras::ExplosionDef;

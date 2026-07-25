@@ -43,6 +43,7 @@ pub struct DistanceJointDef {
 
 impl DistanceJointDef {
     pub fn new(base: JointBase) -> Self {
+        let _lease = crate::core::foundation::assert_transient_native_lease();
         let default = unsafe { ffi::b2DefaultDistanceJointDef() };
         Self {
             base,
@@ -325,10 +326,18 @@ impl<'w> DistanceJointBuilder<'w> {
 
     fn configure_local_frames(&mut self) -> ApiResult<()> {
         crate::core::callback_state::check_not_in_callback()?;
+        super::creation::check_joint_target_identity(self.world, self.def.base())?;
+        self.def.validate()?;
+        if let Some(anchor) = self.anchor_a_world {
+            super::validation::check_joint_position(anchor)?;
+        }
+        if let Some(anchor) = self.anchor_b_world {
+            super::validation::check_joint_position(anchor)?;
+        }
+        super::creation::check_joint_target_native(self.world, self.def.base())?;
+
         let body_a = self.def.base().body_a_id();
         let body_b = self.def.base().body_b_id();
-        self.world.core().check_body(body_a)?;
-        self.world.core().check_body(body_b)?;
 
         let ta = WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(body_a)) });
         let tb = WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(body_b)) });

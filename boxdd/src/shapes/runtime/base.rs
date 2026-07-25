@@ -1,10 +1,6 @@
 use super::*;
 use crate::types::{Position, WorldCastOutput};
 
-fn shape_type_from_ffi(raw: ffi::b2ShapeType) -> ShapeType {
-    ShapeType::from_raw(raw).expect("Box2D returned an unknown shape type")
-}
-
 #[inline]
 pub(crate) fn raw_shape_id(id: ShapeId) -> ffi::b2ShapeId {
     id.into_raw()
@@ -23,7 +19,7 @@ fn try_bind_shape_parent_chain_output(
     if raw.index1 == 0 {
         return Ok(None);
     }
-    let id = core.brand().try_chain(raw)?;
+    let id = crate::core::world_core::WorldCore::brand(core).try_chain(raw)?;
     core.check_chain(id)?;
     Ok(Some(id))
 }
@@ -38,18 +34,39 @@ pub(crate) fn shape_parent_chain_id_in_impl(
 }
 
 #[inline]
-pub(crate) fn shape_is_valid_impl(id: ShapeId) -> bool {
-    unsafe { ffi::b2Shape_IsValid(raw_shape_id(id)) }
-}
-
-#[inline]
 pub(crate) fn shape_type_raw_impl(id: ShapeId) -> ffi::b2ShapeType {
+    #[cfg(test)]
+    {
+        SHAPE_GET_TYPE_CALLS.with(|calls| calls.set(calls.get().saturating_add(1)));
+        if let Some(raw) = SHAPE_GET_TYPE_OVERRIDE.with(core::cell::Cell::get) {
+            return raw;
+        }
+    }
     unsafe { ffi::b2Shape_GetType(raw_shape_id(id)) }
 }
 
+#[cfg(test)]
+thread_local! {
+    static SHAPE_GET_TYPE_OVERRIDE: core::cell::Cell<Option<ffi::b2ShapeType>> = const {
+        core::cell::Cell::new(None)
+    };
+    static SHAPE_GET_TYPE_CALLS: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
+}
+
 #[inline]
-pub(crate) fn shape_type_impl(id: ShapeId) -> ShapeType {
-    shape_type_from_ffi(shape_type_raw_impl(id))
+pub(crate) fn resolve_shape_type_output(
+    core: &crate::core::world_core::WorldCore,
+    raw: ffi::b2ShapeType,
+) -> ApiResult<ShapeType> {
+    ShapeType::decode_native(raw).inspect_err(|_| core.poison())
+}
+
+#[inline]
+pub(crate) fn try_shape_type_impl(
+    core: &crate::core::world_core::WorldCore,
+    id: ShapeId,
+) -> ApiResult<ShapeType> {
+    resolve_shape_type_output(core, shape_type_raw_impl(id))
 }
 
 #[inline]
@@ -78,7 +95,7 @@ pub(crate) fn shape_body_id_impl(id: ShapeId) -> BodyId {
         .try_body(raw)
         .expect("Box2D returned an invalid body id for a validated shape");
     assert!(
-        unsafe { ffi::b2Body_IsValid(raw) },
+        crate::core::identity_registry::body_is_active(body) && unsafe { ffi::b2Body_IsValid(raw) },
         "Box2D returned a non-live body id for a validated shape"
     );
     body
@@ -106,7 +123,9 @@ pub(crate) fn shape_capsule_impl(id: ShapeId) -> Capsule {
 
 #[inline]
 pub(crate) fn shape_polygon_impl(id: ShapeId) -> Polygon {
-    Polygon::from_raw(unsafe { ffi::b2Shape_GetPolygon(raw_shape_id(id)) })
+    // SAFETY: the checked runtime handle refers to a live native polygon shape, and Box2D returns
+    // its complete canonical polygon value.
+    unsafe { Polygon::from_raw(ffi::b2Shape_GetPolygon(raw_shape_id(id))) }
 }
 
 #[inline]
@@ -282,6 +301,113 @@ pub(crate) fn shape_surface_material_impl(id: ShapeId) -> SurfaceMaterial {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    struct ShapeGetTypeOverride;
+
+    impl ShapeGetTypeOverride {
+        fn install(raw: ffi::b2ShapeType) -> Self {
+            SHAPE_GET_TYPE_OVERRIDE.with(|current| {
+                assert_eq!(current.replace(Some(raw)), None);
+            });
+            SHAPE_GET_TYPE_CALLS.with(|calls| calls.set(0));
+            Self
+        }
+
+        fn calls(&self) -> usize {
+            SHAPE_GET_TYPE_CALLS.with(core::cell::Cell::get)
+        }
+    }
+
+    impl Drop for ShapeGetTypeOverride {
+        fn drop(&mut self) {
+            SHAPE_GET_TYPE_OVERRIDE.with(|current| current.set(None));
+            SHAPE_GET_TYPE_CALLS.with(|calls| calls.set(0));
+        }
+    }
+
+    #[test]
+    fn shape_type_native_decoder_preserves_known_values_and_reports_the_raw_unknown() {
+        for expected in [
+            ShapeType::Circle,
+            ShapeType::Capsule,
+            ShapeType::Segment,
+            ShapeType::Polygon,
+            ShapeType::ChainSegment,
+        ] {
+            assert_eq!(ShapeType::decode_native(expected.into_raw()), Ok(expected));
+        }
+
+        let raw = ffi::b2ShapeType_b2_shapeTypeCount;
+        assert_eq!(
+            ShapeType::decode_native(raw),
+            Err(ApiError::InvalidNativeShapeType { raw })
+        );
+    }
+
+    #[test]
+    fn all_public_shape_type_getters_report_unknown_once_then_stop_before_get_type() {
+        let raw = ffi::b2ShapeType_b2_shapeTypeCount;
+
+        {
+            let mut world = crate::World::new(crate::WorldDef::default()).unwrap();
+            let body = world.create_body_id(crate::BodyBuilder::new().build());
+            let shape = world.create_circle_shape_for_owned(
+                body,
+                &ShapeDef::default(),
+                &crate::shapes::circle(crate::Vec2::ZERO, 0.5),
+            );
+            let get_type = ShapeGetTypeOverride::install(raw);
+
+            assert_eq!(
+                shape.try_shape_type(),
+                Err(ApiError::InvalidNativeShapeType { raw })
+            );
+            assert_eq!(get_type.calls(), 1);
+            assert_eq!(shape.try_shape_type(), Err(ApiError::WorldPoisoned));
+            assert_eq!(shape.try_shape_type_raw(), Err(ApiError::WorldPoisoned));
+            assert_eq!(get_type.calls(), 1);
+        }
+
+        {
+            let mut world = crate::World::new(crate::WorldDef::default()).unwrap();
+            let body = world.create_body_id(crate::BodyBuilder::new().build());
+            let shape = world.create_circle_shape_for(
+                body,
+                &ShapeDef::default(),
+                &crate::shapes::circle(crate::Vec2::ZERO, 0.5),
+            );
+            let shape = world.shape(shape).unwrap();
+            let get_type = ShapeGetTypeOverride::install(raw);
+
+            assert_eq!(
+                shape.try_shape_type(),
+                Err(ApiError::InvalidNativeShapeType { raw })
+            );
+            assert_eq!(get_type.calls(), 1);
+            assert_eq!(shape.try_shape_type(), Err(ApiError::WorldPoisoned));
+            assert_eq!(shape.try_shape_type_raw(), Err(ApiError::WorldPoisoned));
+            assert_eq!(get_type.calls(), 1);
+        }
+    }
+
+    #[test]
+    fn infallible_shape_type_poisoning_precedes_its_unknown_native_panic() {
+        let mut world = crate::World::new(crate::WorldDef::default()).unwrap();
+        let body = world.create_body_id(crate::BodyBuilder::new().build());
+        let shape = world.create_circle_shape_for_owned(
+            body,
+            &ShapeDef::default(),
+            &crate::shapes::circle(crate::Vec2::ZERO, 0.5),
+        );
+        let raw = ffi::b2ShapeType_b2_shapeTypeCount;
+        let get_type = ShapeGetTypeOverride::install(raw);
+
+        assert!(catch_unwind(AssertUnwindSafe(|| shape.shape_type())).is_err());
+        assert_eq!(get_type.calls(), 1);
+        assert_eq!(shape.try_shape_type(), Err(ApiError::WorldPoisoned));
+        assert_eq!(get_type.calls(), 1);
+    }
 
     #[test]
     fn shape_world_queries_match_box2d_32_signatures() {

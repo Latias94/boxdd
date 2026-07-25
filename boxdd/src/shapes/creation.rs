@@ -49,6 +49,37 @@ impl<'w> Body<'w> {
         )
     }
 
+    /// Create a scoped chain segment that has no parent `Chain`.
+    pub fn create_chain_segment_shape(
+        &mut self,
+        def: &ShapeDef,
+        chain_segment: &ChainSegment,
+    ) -> Shape<'w> {
+        create_body_attached_shape_handle(
+            &self.core,
+            self.id,
+            def,
+            chain_segment,
+            create_chain_segment_shape_for_body_impl,
+            Shape::new,
+        )
+    }
+
+    pub fn try_create_chain_segment_shape(
+        &mut self,
+        def: &ShapeDef,
+        chain_segment: &ChainSegment,
+    ) -> ApiResult<Shape<'w>> {
+        try_create_body_attached_shape_handle(
+            &self.core,
+            self.id,
+            def,
+            chain_segment,
+            try_create_chain_segment_shape_for_body_impl,
+            Shape::new,
+        )
+    }
+
     pub fn create_capsule_shape(&mut self, def: &ShapeDef, c: &Capsule) -> Shape<'w> {
         create_body_attached_shape_handle(
             &self.core,
@@ -300,6 +331,37 @@ impl OwnedBody {
             def,
             s,
             try_create_segment_shape_for_body_impl,
+            OwnedShape::new,
+        )
+    }
+
+    /// Create an RAII-owned chain segment that has no parent `Chain`.
+    pub fn create_chain_segment_shape(
+        &mut self,
+        def: &ShapeDef,
+        chain_segment: &ChainSegment,
+    ) -> OwnedShape {
+        create_body_attached_shape_handle(
+            &self.core_rc(),
+            self.id(),
+            def,
+            chain_segment,
+            create_chain_segment_shape_for_body_impl,
+            OwnedShape::new,
+        )
+    }
+
+    pub fn try_create_chain_segment_shape(
+        &mut self,
+        def: &ShapeDef,
+        chain_segment: &ChainSegment,
+    ) -> ApiResult<OwnedShape> {
+        try_create_body_attached_shape_handle(
+            &self.core_rc(),
+            self.id(),
+            def,
+            chain_segment,
+            try_create_chain_segment_shape_for_body_impl,
             OwnedShape::new,
         )
     }

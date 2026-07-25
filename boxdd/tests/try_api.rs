@@ -89,6 +89,7 @@ fn try_calls_from_debug_draw_return_in_callback() {
 fn try_query_calls_from_debug_draw_return_in_callback() {
     struct Drawer {
         world: WorldHandle,
+        filter: QueryFilter,
         errs: Vec<ApiError>,
     }
     impl DebugDraw for Drawer {
@@ -108,22 +109,17 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
             let mut mover_planes = Vec::new();
             self.errs.push(
                 self.world
-                    .try_overlap_aabb(Position::ZERO, aabb, QueryFilter::default())
+                    .try_overlap_aabb(Position::ZERO, aabb, self.filter)
                     .unwrap_err(),
             );
             self.errs.push(
                 self.world
-                    .try_overlap_aabb_into(
-                        Position::ZERO,
-                        aabb,
-                        QueryFilter::default(),
-                        &mut overlap_ids,
-                    )
+                    .try_overlap_aabb_into(Position::ZERO, aabb, self.filter, &mut overlap_ids)
                     .unwrap_err(),
             );
             self.errs.push(
                 self.world
-                    .try_visit_overlap_aabb(Position::ZERO, aabb, QueryFilter::default(), |_| true)
+                    .try_visit_overlap_aabb(Position::ZERO, aabb, self.filter, |_| true)
                     .unwrap_err(),
             );
             self.errs.push(
@@ -132,7 +128,7 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
                         Position::ZERO,
                         [[-0.5_f32, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]],
                         0.0,
-                        QueryFilter::default(),
+                        self.filter,
                         |_| true,
                     )
                     .unwrap_err(),
@@ -145,18 +141,14 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
                         0.0,
                         [0.0_f32, 1.0],
                         0.0_f32,
-                        QueryFilter::default(),
+                        self.filter,
                         |_| true,
                     )
                     .unwrap_err(),
             );
             self.errs.push(
                 self.world
-                    .try_cast_ray_closest(
-                        Position::new(0.0, 5.0),
-                        [0.0, -10.0],
-                        QueryFilter::default(),
-                    )
+                    .try_cast_ray_closest(Position::new(0.0, 5.0), [0.0, -10.0], self.filter)
                     .unwrap_err(),
             );
             self.errs.push(
@@ -164,7 +156,7 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
                     .try_cast_ray_all_into(
                         Position::new(0.0, 5.0),
                         [0.0, -10.0],
-                        QueryFilter::default(),
+                        self.filter,
                         &mut ray_hits,
                     )
                     .unwrap_err(),
@@ -177,7 +169,7 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
                         [0.0, 1.75],
                         0.25,
                         [1.0_f32, 0.0],
-                        QueryFilter::default(),
+                        self.filter,
                     )
                     .unwrap_err(),
             );
@@ -188,7 +180,7 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
                         [0.0_f32, 0.75],
                         [0.0, 1.75],
                         0.25,
-                        QueryFilter::default(),
+                        self.filter,
                         &mut mover_planes,
                     )
                     .unwrap_err(),
@@ -204,6 +196,7 @@ fn try_query_calls_from_debug_draw_return_in_callback() {
 
     let mut drawer = Drawer {
         world: world.handle(),
+        filter: QueryFilter::default(),
         errs: Vec::new(),
     };
     world.debug_draw(&mut drawer, DebugDrawOptions::default());
@@ -257,6 +250,7 @@ fn owned_body_try_calls_from_debug_draw_return_in_callback() {
 fn owned_body_try_create_shape_helpers_return_in_callback() {
     struct Drawer {
         body: OwnedBody,
+        def: ShapeDef,
         err: Option<ApiError>,
     }
     impl DebugDraw for Drawer {
@@ -269,7 +263,7 @@ fn owned_body_try_create_shape_helpers_return_in_callback() {
         ) {
             self.err = Some(
                 self.body
-                    .try_create_circle_simple(&ShapeDef::default(), 0.5)
+                    .try_create_circle_simple(&self.def, 0.5)
                     .err()
                     .unwrap(),
             );
@@ -283,7 +277,11 @@ fn owned_body_try_create_shape_helpers_return_in_callback() {
     let poly = shapes::box_polygon(0.5, 0.5);
     let _ = world.create_polygon_shape_for(body_id, &sdef, &poly);
 
-    let mut drawer = Drawer { body, err: None };
+    let mut drawer = Drawer {
+        body,
+        def: ShapeDef::default(),
+        err: None,
+    };
     world.debug_draw(&mut drawer, DebugDrawOptions::default());
     assert_eq!(drawer.err, Some(ApiError::InCallback));
 }
@@ -349,11 +347,14 @@ fn try_create_shape_invalid_inputs_return_err() {
         .try_create_polygon_shape_for(
             body,
             &shape_def,
-            &Polygon::from_raw({
-                let mut raw = shapes::box_polygon(0.5, 0.5).into_raw();
-                raw.radius = -1.0;
-                raw
-            }),
+            // SAFETY: this intentionally violates the radius invariant to exercise the try path.
+            &unsafe {
+                Polygon::from_raw({
+                    let mut raw = shapes::box_polygon(0.5, 0.5).into_raw();
+                    raw.radius = -1.0;
+                    raw
+                })
+            },
         )
         .unwrap_err();
     assert_eq!(err, ApiError::InvalidArgument);
@@ -449,6 +450,60 @@ fn try_body_mutations_from_debug_draw_return_in_callback() {
         drawer.errs,
         vec![ApiError::InCallback, ApiError::InCallback]
     );
+}
+
+#[test]
+fn invalid_shape_mutation_arguments_win_over_callback_state() {
+    struct Drawer {
+        shape: OwnedShape,
+        errs: Vec<ApiError>,
+    }
+
+    impl DebugDraw for Drawer {
+        fn draw_solid_polygon(
+            &mut self,
+            _transform: boxdd::WorldTransform,
+            _vertices: &[Vec2],
+            _radius: f32,
+            _color: HexColor,
+        ) {
+            if !self.errs.is_empty() {
+                return;
+            }
+            self.errs
+                .push(self.shape.try_set_density(-1.0, true).unwrap_err());
+            self.errs
+                .push(self.shape.try_set_friction(f32::NAN).unwrap_err());
+            self.errs
+                .push(self.shape.try_set_restitution(-0.25).unwrap_err());
+            self.errs.push(
+                self.shape
+                    .try_apply_wind([f32::INFINITY, 0.0], 1.0, 0.0, true)
+                    .unwrap_err(),
+            );
+            self.errs.push(
+                self.shape
+                    .try_set_circle(&shapes::circle([f32::NAN, 0.0], 0.5))
+                    .unwrap_err(),
+            );
+        }
+    }
+
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+    let shape = world.create_polygon_shape_for_owned(
+        body,
+        &ShapeDef::builder().density(1.0).build(),
+        &shapes::box_polygon(0.5, 0.5),
+    );
+    let mut drawer = Drawer {
+        shape,
+        errs: Vec::new(),
+    };
+
+    world.debug_draw(&mut drawer, DebugDrawOptions::default());
+
+    assert_eq!(drawer.errs, vec![ApiError::InvalidArgument; 5]);
 }
 
 #[test]
@@ -684,6 +739,16 @@ fn try_owned_shape_mutation_invalid_id_returns_err() {
 
     let err = shape.try_set_friction(0.5).unwrap_err();
     assert_eq!(err, ApiError::InvalidShapeId);
+    assert_eq!(
+        shape.try_set_friction(f32::NAN).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        shape
+            .try_set_circle(&shapes::circle([f32::NAN, 0.0], 0.5))
+            .unwrap_err(),
+        ApiError::InvalidArgument
+    );
 }
 
 #[test]

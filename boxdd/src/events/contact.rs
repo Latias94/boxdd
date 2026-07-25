@@ -202,42 +202,38 @@ pub struct ContactEvents {
     pub hit: Vec<ContactHitEvent>,
 }
 
-pub(super) fn capture_native_events_into(
-    world: ffi::b2WorldId,
-    brand: IdBrand,
-    contact_epoch: ContactEpoch,
-    out: &mut ContactEvents,
-) {
-    let raw = unsafe { ffi::b2World_GetContactEvents(world) };
-    let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
-        unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
-    } else {
-        &[][..]
-    };
-    let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
-        unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
-    } else {
-        &[][..]
-    };
-    let hit = if raw.hitCount > 0 && !raw.hitEvents.is_null() {
-        unsafe { core::slice::from_raw_parts(raw.hitEvents, raw.hitCount as usize) }
-    } else {
-        &[][..]
-    };
-
-    super::map_snapshot_into(&mut out.begin, begin, |event| {
-        ContactBeginTouchEvent::from_raw_in(brand, contact_epoch, *event)
-    });
-    super::map_snapshot_into(&mut out.end, end, |event| {
-        ContactEndTouchEvent::from_raw_in(brand, contact_epoch, *event)
-    });
-    super::map_snapshot_into(&mut out.hit, hit, |event| {
-        ContactHitEvent::from_raw_in(brand, contact_epoch, *event)
-    });
+impl ContactEvents {
+    pub(super) fn capture_into(
+        mut self,
+        raw: ffi::b2ContactEvents,
+        brand: IdBrand,
+        contact_epoch: ContactEpoch,
+    ) -> Self {
+        // SAFETY: Each pointer/count pair belongs to the completed step and is fully consumed
+        // before the next world mutation.
+        self.begin = unsafe {
+            super::capture_ffi_vec(self.begin, raw.beginEvents, raw.beginCount, |event| {
+                ContactBeginTouchEvent::from_raw_in(brand, contact_epoch, *event)
+            })
+        };
+        // SAFETY: Same completed-step ownership contract as `begin` above.
+        self.end = unsafe {
+            super::capture_ffi_vec(self.end, raw.endEvents, raw.endCount, |event| {
+                ContactEndTouchEvent::from_raw_in(brand, contact_epoch, *event)
+            })
+        };
+        // SAFETY: Same completed-step ownership contract as `begin` above.
+        self.hit = unsafe {
+            super::capture_ffi_vec(self.hit, raw.hitEvents, raw.hitCount, |event| {
+                ContactHitEvent::from_raw_in(brand, contact_epoch, *event)
+            })
+        };
+        self
+    }
 }
 
 fn contact_events_snapshot_impl(cache: &super::EventCache) -> ContactEvents {
-    cache.snapshot().contact.clone()
+    std::clone::Clone::clone(&cache.snapshot().contact)
 }
 
 fn contact_events_into_impl(cache: &super::EventCache, out: &mut ContactEvents) {
@@ -331,22 +327,14 @@ impl World {
             // Exposes FFI slices directly; they are only valid within this call.
             // Prefer `with_contact_events_view` for a safe, FFI-opaque interface.
             let raw = unsafe { ffi::b2World_GetContactEvents(self.raw()) };
-            let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
-            } else {
-                &[][..]
-            };
-            let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
-            } else {
-                &[][..]
-            };
-            let hit = if raw.hitCount > 0 && !raw.hitEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.hitEvents, raw.hitCount as usize) }
-            } else {
-                &[][..]
-            };
-            f(begin, end, hit)
+            // SAFETY: The enclosing raw-view contract keeps all native buffers valid for `f`.
+            unsafe {
+                super::with_ffi_slice(raw.beginEvents, raw.beginCount, |begin| {
+                    super::with_ffi_slice(raw.endEvents, raw.endCount, |end| {
+                        super::with_ffi_slice(raw.hitEvents, raw.hitCount, |hit| f(begin, end, hit))
+                    })
+                })
+            }
         })
     }
 
@@ -364,22 +352,14 @@ impl World {
     ) -> crate::error::ApiResult<T> {
         self.try_with_borrowed_event_buffers(|| {
             let raw = unsafe { ffi::b2World_GetContactEvents(self.raw()) };
-            let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
-            } else {
-                &[][..]
-            };
-            let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
-            } else {
-                &[][..]
-            };
-            let hit = if raw.hitCount > 0 && !raw.hitEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.hitEvents, raw.hitCount as usize) }
-            } else {
-                &[][..]
-            };
-            f(begin, end, hit)
+            // SAFETY: The enclosing raw-view contract keeps all native buffers valid for `f`.
+            unsafe {
+                super::with_ffi_slice(raw.beginEvents, raw.beginCount, |begin| {
+                    super::with_ffi_slice(raw.endEvents, raw.endCount, |end| {
+                        super::with_ffi_slice(raw.hitEvents, raw.hitCount, |hit| f(begin, end, hit))
+                    })
+                })
+            }
         })
     }
 

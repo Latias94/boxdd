@@ -29,13 +29,13 @@
 //! ```
 use crate::Aabb;
 use crate::types::{Position, Vec2, WorldTransform};
+#[cfg(not(target_arch = "wasm32"))]
 use crate::world::{World, assert_world_available, check_world_available};
 use boxdd_sys::ffi;
+#[cfg(not(target_arch = "wasm32"))]
 use smallvec::SmallVec;
-use std::any::Any;
+#[cfg(not(target_arch = "wasm32"))]
 use std::ffi::CStr;
-
-type DebugDrawPanic = Box<dyn Any + Send + 'static>;
 
 /// Packed Box2D debug-draw RGB color (`0xRRGGBB`).
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -143,6 +143,7 @@ pub enum DebugDrawCmd {
 }
 
 /// Safe, precision-aware debug draw callbacks.
+#[cfg(not(target_arch = "wasm32"))]
 pub trait DebugDraw {
     fn draw_polygon(&mut self, _transform: WorldTransform, _vertices: &[Vec2], _color: HexColor) {}
     fn draw_solid_polygon(
@@ -232,6 +233,7 @@ impl DebugDrawOptions {
     }
 
     #[track_caller]
+    #[cfg(not(target_arch = "wasm32"))]
     fn assert_valid(self) -> ValidatedDebugDrawOptions {
         assert!(
             self.validate().is_ok(),
@@ -240,6 +242,7 @@ impl DebugDrawOptions {
         ValidatedDebugDrawOptions(self)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn checked(self) -> crate::error::ApiResult<ValidatedDebugDrawOptions> {
         self.validate()?;
         Ok(ValidatedDebugDrawOptions(self))
@@ -247,15 +250,17 @@ impl DebugDrawOptions {
 }
 
 #[derive(Copy, Clone)]
+#[cfg(not(target_arch = "wasm32"))]
 struct ValidatedDebugDrawOptions(DebugDrawOptions);
 
+#[cfg(not(target_arch = "wasm32"))]
 struct DebugDrawCtx<'a> {
     drawer: &'a mut (dyn NativeDebugDraw + 'a),
-    panicked: &'a mut bool,
-    panic: &'a mut Option<DebugDrawPanic>,
+    panic: &'a mut crate::core::callback_state::PanicSlot,
 }
 
 #[inline]
+#[cfg(not(target_arch = "wasm32"))]
 unsafe fn with_ffi_debug_draw_vertices(
     vertices: *const ffi::b2Vec2,
     count: i32,
@@ -277,6 +282,7 @@ unsafe fn with_ffi_debug_draw_vertices(
     visit(unsafe { core::slice::from_raw_parts(vertices, len) });
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 trait NativeDebugDraw {
     fn draw_polygon(
         &mut self,
@@ -307,10 +313,12 @@ trait NativeDebugDraw {
     fn draw_bounds(&mut self, bounds: ffi::b2AABB, color: HexColor);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 struct SafeDebugDrawAdapter<'a> {
     drawer: &'a mut dyn DebugDraw,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl NativeDebugDraw for SafeDebugDrawAdapter<'_> {
     fn draw_polygon(
         &mut self,
@@ -406,12 +414,14 @@ impl NativeDebugDraw for SafeDebugDrawAdapter<'_> {
 ///
 /// `context` must be the non-null pointer installed by `draw_with_adapter`. Box2D must invoke
 /// callbacks synchronously and serially, and must not retain the pointer after `b2World_Draw`.
+#[cfg(not(target_arch = "wasm32"))]
 unsafe fn native_debug_draw_context<'a>(
     context: *mut core::ffi::c_void,
 ) -> Option<&'a mut DebugDrawCtx<'a>> {
     unsafe { (context as *mut DebugDrawCtx<'a>).as_mut() }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 unsafe fn run_native_debug_draw_callback<'a>(
     context: *mut core::ffi::c_void,
     callback: impl FnOnce(&mut (dyn NativeDebugDraw + 'a)),
@@ -419,19 +429,12 @@ unsafe fn run_native_debug_draw_callback<'a>(
     let Some(ctx) = (unsafe { native_debug_draw_context::<'a>(context) }) else {
         return;
     };
-    if *ctx.panicked {
-        return;
-    }
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _guard = crate::core::callback_state::CallbackGuard::enter();
+    crate::core::callback_state::invoke_owner_callback(ctx.panic, (), || {
         callback(ctx.drawer);
-    }));
-    if let Err(panic) = result {
-        *ctx.panicked = true;
-        *ctx.panic = Some(panic);
-    }
+    });
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 unsafe extern "C" fn draw_polygon_cb(
     transform: ffi::b2WorldTransform,
     vertices: *const ffi::b2Vec2,
@@ -448,6 +451,7 @@ unsafe extern "C" fn draw_polygon_cb(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 unsafe extern "C" fn draw_solid_polygon_cb(
     transform: ffi::b2WorldTransform,
     vertices: *const ffi::b2Vec2,
@@ -465,6 +469,7 @@ unsafe extern "C" fn draw_solid_polygon_cb(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 unsafe extern "C" fn draw_circle_cb(
     center: ffi::b2Pos,
     radius: f32,
@@ -478,6 +483,7 @@ unsafe extern "C" fn draw_circle_cb(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 unsafe extern "C" fn draw_solid_circle_cb(
     transform: ffi::b2WorldTransform,
     center: ffi::b2Vec2,
@@ -492,6 +498,7 @@ unsafe extern "C" fn draw_solid_circle_cb(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 unsafe extern "C" fn draw_solid_capsule_cb(
     p1: ffi::b2Pos,
     p2: ffi::b2Pos,
@@ -506,6 +513,7 @@ unsafe extern "C" fn draw_solid_capsule_cb(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 unsafe extern "C" fn draw_line_cb(
     p1: ffi::b2Pos,
     p2: ffi::b2Pos,
@@ -519,6 +527,7 @@ unsafe extern "C" fn draw_line_cb(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 unsafe extern "C" fn draw_transform_cb(
     transform: ffi::b2WorldTransform,
     context: *mut core::ffi::c_void,
@@ -528,6 +537,7 @@ unsafe extern "C" fn draw_transform_cb(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 unsafe extern "C" fn draw_point_cb(
     p: ffi::b2Pos,
     size: f32,
@@ -541,6 +551,7 @@ unsafe extern "C" fn draw_point_cb(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 unsafe extern "C" fn draw_string_cb(
     p: ffi::b2Pos,
     s: *const core::ffi::c_char,
@@ -557,6 +568,7 @@ unsafe extern "C" fn draw_string_cb(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 unsafe extern "C" fn draw_bounds_cb(
     bounds: ffi::b2AABB,
     color: ffi::b2HexColor,
@@ -569,6 +581,7 @@ unsafe extern "C" fn draw_bounds_cb(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn install_debug_draw_callbacks(dd: &mut ffi::b2DebugDraw) {
     dd.DrawPolygonFcn = Some(draw_polygon_cb);
     dd.DrawSolidPolygonFcn = Some(draw_solid_polygon_cb);
@@ -582,6 +595,7 @@ fn install_debug_draw_callbacks(dd: &mut ffi::b2DebugDraw) {
     dd.DrawBoundsFcn = Some(draw_bounds_cb);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn apply_debug_draw_options(
     dd: &mut ffi::b2DebugDraw,
     opts: DebugDrawOptions,
@@ -608,18 +622,46 @@ fn apply_debug_draw_options(
     dd.context = context;
 }
 
-fn finish_debug_draw(world: &World, panic: &mut Option<DebugDrawPanic>) {
-    world.core_rc().process_deferred_destroys();
-    if let Some(p) = panic.take() {
-        std::panic::resume_unwind(p);
+/// Run both replay-world and recorded-query drawing under one replay-owned panic boundary.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn draw_replay_player(
+    player: *mut ffi::b2RecPlayer,
+    world: ffi::b2WorldId,
+    drawer: &mut impl DebugDraw,
+    options: DebugDrawOptions,
+    query_index: i32,
+) -> crate::error::ApiResult<crate::core::callback_state::PanicSlot> {
+    crate::core::callback_state::check_not_in_callback()?;
+    let options = options.checked()?;
+    let drawer: &mut dyn DebugDraw = drawer;
+    let mut adapter = SafeDebugDrawAdapter { drawer };
+    let mut panic = crate::core::callback_state::PanicSlot::default();
+    {
+        let adapter: &mut dyn NativeDebugDraw = &mut adapter;
+        let mut context = DebugDrawCtx {
+            drawer: adapter,
+            panic: &mut panic,
+        };
+        let context_pointer = core::ptr::from_mut(&mut context).cast::<core::ffi::c_void>();
+        let mut draw = unsafe { ffi::b2DefaultDebugDraw() };
+        install_debug_draw_callbacks(&mut draw);
+        apply_debug_draw_options(&mut draw, options.0, context_pointer);
+
+        unsafe { ffi::b2World_Draw(world, &mut draw) };
+        if !panic.has_panicked() {
+            unsafe { ffi::b2RecPlayer_DrawFrameQueries(player, &mut draw, query_index) };
+        }
     }
+    Ok(panic)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 struct CollectDebugDraw<'a> {
     cmds: &'a mut Vec<DebugDrawCmd>,
     len: usize,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<'a> CollectDebugDraw<'a> {
     fn new(cmds: &'a mut Vec<DebugDrawCmd>) -> Self {
         Self { cmds, len: 0 }
@@ -639,6 +681,7 @@ impl<'a> CollectDebugDraw<'a> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl DebugDraw for CollectDebugDraw<'_> {
     fn draw_polygon(&mut self, transform: WorldTransform, vertices: &[Vec2], color: HexColor) {
         match self.cmds.get_mut(self.len) {
@@ -761,6 +804,7 @@ impl DebugDraw for CollectDebugDraw<'_> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl World {
     /// Collect debug draw commands into a vector (fully safe).
     ///
@@ -825,12 +869,11 @@ impl World {
         opts: ValidatedDebugDrawOptions,
     ) {
         assert_world_available(self.core());
-        let mut panicked = false;
-        let mut panic: Option<DebugDrawPanic> = None;
+        let owner_scope = crate::core::callback_state::OwnerCallScope::enter();
+        let mut panic = crate::core::callback_state::PanicSlot::default();
         {
             let mut ctx = DebugDrawCtx {
                 drawer: adapter,
-                panicked: &mut panicked,
                 panic: &mut panic,
             };
             let context = core::ptr::from_mut(&mut ctx).cast::<core::ffi::c_void>();
@@ -840,7 +883,7 @@ impl World {
 
             unsafe { ffi::b2World_Draw(self.raw(), &mut dd) };
         }
-        finish_debug_draw(self, &mut panic);
+        owner_scope.finish_captured(Some(()), panic, [self.core_rc()]);
     }
 
     /// Draw the world through the safe, precision-aware callback interface.
@@ -877,7 +920,7 @@ impl World {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
 
@@ -900,14 +943,9 @@ mod tests {
 
     fn test_context<'a>(
         drawer: &'a mut dyn NativeDebugDraw,
-        panicked: &'a mut bool,
-        panic: &'a mut Option<DebugDrawPanic>,
+        panic: &'a mut crate::core::callback_state::PanicSlot,
     ) -> DebugDrawCtx<'a> {
-        DebugDrawCtx {
-            drawer,
-            panicked,
-            panic,
-        }
+        DebugDrawCtx { drawer, panic }
     }
 
     #[test]
@@ -976,8 +1014,7 @@ mod tests {
         let bounds = Aabb::new([-5.0, -6.0], [7.0, 8.0]);
         let color = HexColor::from_rgb(0x12, 0x34, 0x56);
         let mut commands = Vec::new();
-        let mut panicked = false;
-        let mut panic = None;
+        let mut panic = crate::core::callback_state::PanicSlot::default();
 
         {
             let mut collector = CollectDebugDraw::new(&mut commands);
@@ -985,7 +1022,7 @@ mod tests {
                 let drawer: &mut dyn DebugDraw = &mut collector;
                 let mut adapter = SafeDebugDrawAdapter { drawer };
                 let adapter: &mut dyn NativeDebugDraw = &mut adapter;
-                let mut ctx = test_context(adapter, &mut panicked, &mut panic);
+                let mut ctx = test_context(adapter, &mut panic);
                 let context = core::ptr::from_mut(&mut ctx).cast::<core::ffi::c_void>();
                 let mut dd = unsafe { ffi::b2DefaultDebugDraw() };
                 install_debug_draw_callbacks(&mut dd);
@@ -1046,8 +1083,7 @@ mod tests {
             collector.finish();
         }
 
-        assert!(!panicked);
-        assert!(panic.is_none());
+        assert!(!panic.has_panicked());
         assert_eq!(commands.len(), 10);
 
         let DebugDrawCmd::Polygon {
@@ -1244,13 +1280,12 @@ mod tests {
     #[test]
     fn polygon_callback_rejects_invalid_buffers_without_forging_a_slice() {
         let mut lengths = PolygonLengths::default();
-        let mut panicked = false;
-        let mut panic = None;
+        let mut panic = crate::core::callback_state::PanicSlot::default();
         {
             let drawer: &mut dyn DebugDraw = &mut lengths;
             let mut adapter = SafeDebugDrawAdapter { drawer };
             let adapter: &mut dyn NativeDebugDraw = &mut adapter;
-            let mut ctx = test_context(adapter, &mut panicked, &mut panic);
+            let mut ctx = test_context(adapter, &mut panic);
             let context = core::ptr::from_mut(&mut ctx).cast::<core::ffi::c_void>();
             let mut dd = unsafe { ffi::b2DefaultDebugDraw() };
             install_debug_draw_callbacks(&mut dd);
@@ -1288,8 +1323,7 @@ mod tests {
             }
         }
 
-        assert!(!panicked);
-        assert!(panic.is_none());
+        assert!(!panic.has_panicked());
         assert_eq!(lengths.0, [0, 1]);
     }
 
@@ -1311,15 +1345,14 @@ mod tests {
     #[test]
     fn callback_panic_is_captured_before_returning_to_box2d() {
         let mut drawer = PanicDraw::default();
-        let mut panicked = false;
-        let mut panic = None;
+        let mut panic = crate::core::callback_state::PanicSlot::default();
         {
             let safe_drawer: &mut dyn DebugDraw = &mut drawer;
             let mut adapter = SafeDebugDrawAdapter {
                 drawer: safe_drawer,
             };
             let adapter: &mut dyn NativeDebugDraw = &mut adapter;
-            let mut ctx = test_context(adapter, &mut panicked, &mut panic);
+            let mut ctx = test_context(adapter, &mut panic);
             let context = core::ptr::from_mut(&mut ctx).cast::<core::ffi::c_void>();
             let mut dd = unsafe { ffi::b2DefaultDebugDraw() };
             install_debug_draw_callbacks(&mut dd);
@@ -1340,8 +1373,7 @@ mod tests {
             }
         }
 
-        assert!(panicked);
-        assert!(panic.is_some());
+        assert!(panic.has_panicked());
         assert_eq!(drawer.point_calls, 0);
     }
 }

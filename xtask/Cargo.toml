@@ -14,3 +14,12 @@ syn = { workspace = true }
 quote = { workspace = true }
 tempfile = { workspace = true }
 blake3 = { workspace = true }
+sha2 = { workspace = true }
+serde_json = { workspace = true }
+yaml_serde = { workspace = true }
+flate2 = { workspace = true }
+tar = { workspace = true }
+object = { workspace = true }
+
+[dev-dependencies]
+object = { workspace = true, features = ["write"] }

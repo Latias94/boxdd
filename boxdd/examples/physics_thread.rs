@@ -3,7 +3,7 @@ use std::sync::mpsc;
 use std::thread;
 
 enum PhysicsCmd {
-    SpawnBox { position: Vec2 },
+    SpawnBox { position: Position },
     Step { dt: f32, sub_steps: i32 },
     HighestBodyY,
     Shutdown,
@@ -20,11 +20,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (reply_tx, reply_rx) = mpsc::channel::<PhysicsReply>();
 
     let physics_thread = thread::spawn(move || {
-        // Keep the world on one dedicated thread. This example focuses on the ownership model;
-        // Box2D worker threads require explicit raw task-system callbacks and are intentionally
-        // not part of this safe-threading example.
-        let mut world = World::new(WorldDef::builder().gravity([0.0_f32, -10.0]).build())
-            .expect("failed to create world");
+        // The owner world remains on this dedicated thread. Box2D's validated built-in scheduler
+        // may use native workers internally without making World sendable.
+        let mut world = World::new(
+            WorldDef::builder()
+                .gravity([0.0_f32, -10.0])
+                .worker_count(WorkerCount::new(2).expect("native worker count"))
+                .build(),
+        )
+        .expect("failed to create world");
 
         let ground = world.create_body_id(BodyBuilder::new().build());
         let _ground_shape = world.create_segment_shape_for(
@@ -71,9 +75,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    for height in [4.0_f32, 6.0] {
+    let spawn_heights: [WorldScalar; 2] = [4.0, 6.0];
+    for height in spawn_heights {
         cmd_tx.send(PhysicsCmd::SpawnBox {
-            position: Vec2::new(0.0, height),
+            position: Position::new(0.0, height),
         })?;
         match reply_rx.recv()? {
             PhysicsReply::Spawned => {}

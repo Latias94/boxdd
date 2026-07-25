@@ -1,6 +1,14 @@
 #![cfg(feature = "glam")]
 
-use boxdd::{Aabb, Rot, RotFromGlamError, Transform, TransformFromGlamError, Vec2};
+use boxdd::{
+    Aabb, Position, Rot, RotFromGlamError, Transform, TransformFromGlamError, Vec2, WorldScalar,
+    WorldTransform, WorldTransformFromInteropError,
+};
+
+#[cfg(not(feature = "double-precision"))]
+const TEST_WORLD_X: WorldScalar = 10_000.125;
+#[cfg(feature = "double-precision")]
+const TEST_WORLD_X: WorldScalar = 10_000_000.001;
 
 #[test]
 fn rot_converts_to_glam_mat2() {
@@ -58,4 +66,44 @@ fn rot_try_from_glam_mat2_rejects_non_finite() {
     let bad = glam::Mat2::from_cols(glam::Vec2::new(f32::NAN, 0.0), glam::Vec2::Y);
     let err = Rot::try_from(&bad).unwrap_err();
     assert_eq!(err, RotFromGlamError::NonFinite);
+}
+
+#[test]
+fn world_types_round_trip_through_scalar_correct_glam_representations() {
+    let position = Position::new(TEST_WORLD_X, -TEST_WORLD_X);
+    let transform = WorldTransform::new(position, Rot::from_radians(0.375));
+
+    #[cfg(not(feature = "double-precision"))]
+    {
+        let point: glam::Vec2 = position.into();
+        assert_eq!(Position::from(point), position);
+
+        let affine: glam::Affine2 = transform.into();
+        let round_trip = WorldTransform::try_from(&affine).unwrap();
+        assert_eq!(round_trip.position(), position);
+        assert!((round_trip.rotation().angle() - transform.rotation().angle()).abs() < 1.0e-6);
+    }
+
+    #[cfg(feature = "double-precision")]
+    {
+        let point: glam::DVec2 = position.into();
+        assert_eq!(Position::from(point), position);
+
+        let affine: glam::DAffine2 = transform.into();
+        let round_trip = WorldTransform::try_from(&affine).unwrap();
+        assert_eq!(round_trip.position(), position);
+        assert!((round_trip.rotation().angle() - transform.rotation().angle()).abs() < 1.0e-6);
+        assert_ne!(f64::from(TEST_WORLD_X as f32), TEST_WORLD_X);
+    }
+}
+
+#[test]
+fn world_transform_try_from_glam_rejects_scaled_affines() {
+    #[cfg(not(feature = "double-precision"))]
+    let scaled = glam::Affine2::from_scale(glam::Vec2::splat(2.0));
+    #[cfg(feature = "double-precision")]
+    let scaled = glam::DAffine2::from_scale(glam::DVec2::splat(2.0));
+
+    let error = WorldTransform::try_from(scaled).unwrap_err();
+    assert_eq!(error, WorldTransformFromInteropError::NotPureRotation);
 }

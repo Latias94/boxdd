@@ -1,111 +1,20 @@
 use boxdd_sys::ffi;
-use std::any::Any;
 use std::cell::{Cell, RefCell};
-use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::collections::VecDeque;
+use std::rc::{Rc, Weak};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::core::callback_state::{
+    CustomFilterCtx, MaterialMixCtx, PreSolveCtx, WorkerCallbackState,
+};
 use crate::error::{ApiError, ApiResult};
 use crate::id::{
     ContactEpoch, IdBrand, RawBodyId, RawChainId, RawContactId, RawJointId, RawShapeId,
 };
+use crate::joints::JointType;
 use crate::types::{BodyId, ChainId, JointId, ShapeId};
-
-pub(crate) type CustomFilterCb =
-    dyn Fn(crate::types::ShapeId, crate::types::ShapeId) -> bool + Send + Sync + 'static;
-
-pub(crate) type PreSolveCb = dyn Fn(
-        crate::types::ShapeId,
-        crate::types::ShapeId,
-        crate::types::Position,
-        crate::types::Vec2,
-    ) -> bool
-    + Send
-    + Sync
-    + 'static;
-
-pub(crate) type MaterialMixCb = dyn Fn(crate::world::MaterialMixInput, crate::world::MaterialMixInput) -> f32
-    + Send
-    + Sync
-    + 'static;
-
-pub(crate) struct WorkerCallbackState {
-    brand: IdBrand,
-    panicked: AtomicBool,
-    panic: Mutex<Option<Box<dyn Any + Send + 'static>>>,
-}
-
-impl WorkerCallbackState {
-    fn new(brand: IdBrand) -> Arc<Self> {
-        Arc::new(Self {
-            brand,
-            panicked: AtomicBool::new(false),
-            panic: Mutex::new(None),
-        })
-    }
-
-    #[inline]
-    pub(crate) fn shape(&self, raw: ffi::b2ShapeId) -> ShapeId {
-        self.brand
-            .try_shape(raw)
-            .unwrap_or_else(|error| panic!("Box2D callback returned an invalid shape id: {error}"))
-    }
-
-    #[inline]
-    pub(crate) fn has_panicked(&self) -> bool {
-        self.panicked.load(Ordering::Acquire)
-    }
-
-    pub(crate) fn record_panic(&self, payload: Box<dyn Any + Send + 'static>) {
-        if self.panicked.swap(true, Ordering::AcqRel) {
-            // A competing callback panic has no unique owner boundary. Forgetting this exceptional
-            // payload prevents its destructor from panicking across the C callback boundary.
-            std::mem::forget(payload);
-            return;
-        }
-
-        let mut first = self
-            .panic
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if first.is_none() {
-            *first = Some(payload);
-        } else {
-            // Preserve the original payload even if the owner violates the step/clear protocol.
-            std::mem::forget(payload);
-        }
-    }
-
-    pub(crate) fn clear_panic(&self) {
-        *self
-            .panic
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
-        self.panicked.store(false, Ordering::Release);
-    }
-
-    pub(crate) fn take_panic(&self) -> Option<Box<dyn Any + Send + 'static>> {
-        self.panic
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .take()
-    }
-}
-
-pub(crate) struct CustomFilterCtx {
-    pub(crate) worker: Arc<WorkerCallbackState>,
-    pub(crate) cb: Box<CustomFilterCb>,
-}
-
-pub(crate) struct PreSolveCtx {
-    pub(crate) worker: Arc<WorkerCallbackState>,
-    pub(crate) cb: Box<PreSolveCb>,
-}
-
-pub(crate) struct MaterialMixCtx {
-    pub(crate) worker: Arc<WorkerCallbackState>,
-    pub(crate) cb: Box<MaterialMixCb>,
-}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum LifecycleState {
@@ -115,85 +24,74 @@ pub(crate) enum LifecycleState {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "recording and restore owners are introduced in U8"
-    )
-)]
 pub(crate) enum ActivityState {
     Idle,
     Recording,
     Restoring,
 }
 
-#[derive(Default)]
-struct GenerationLedger {
-    last_by_slot: Vec<Option<u16>>,
+/// The activity state an internal semantic operation is authorized to use.
+///
+/// Public world and handle APIs always select `Idle`. The recording owner is
+/// the only caller allowed to select `Recording`, so existing aliases remain
+/// gated for the complete session lifetime.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum WorldAccess {
+    Idle,
+    Recording,
 }
 
-impl GenerationLedger {
-    fn register(&mut self, index1: i32, generation: u16) -> ApiResult<()> {
-        let slot = index1
-            .checked_sub(1)
-            .and_then(|slot| usize::try_from(slot).ok())
-            .ok_or(ApiError::InvalidArgument)?;
-
-        if slot >= self.last_by_slot.len() {
-            let additional = slot
-                .checked_add(1)
-                .and_then(|required| required.checked_sub(self.last_by_slot.len()))
-                .ok_or(ApiError::IdentityTrackingAllocationFailed)?;
-            self.last_by_slot
-                .try_reserve_exact(additional)
-                .map_err(|_| ApiError::IdentityTrackingAllocationFailed)?;
-            self.last_by_slot.resize(slot + 1, None);
-        }
-
-        match self.last_by_slot[slot] {
-            Some(previous) if generation <= previous => Err(ApiError::ObjectIdentityExhausted),
-            _ => {
-                self.last_by_slot[slot] = Some(generation);
-                Ok(())
-            }
+impl WorldAccess {
+    #[inline]
+    const fn activity(self) -> ActivityState {
+        match self {
+            Self::Idle => ActivityState::Idle,
+            Self::Recording => ActivityState::Recording,
         }
     }
 }
 
-#[derive(Default)]
-struct ObjectGenerationLedgers {
-    bodies: GenerationLedger,
-    shapes: GenerationLedger,
-    joints: GenerationLedger,
-    chains: GenerationLedger,
-}
-
 pub(crate) struct WorldCore {
+    self_weak: Weak<WorldCore>,
     pub(crate) id: ffi::b2WorldId,
     pub(crate) brand: IdBrand,
     lifecycle: Cell<LifecycleState>,
     activity: Cell<ActivityState>,
     native_calls: Cell<usize>,
+    #[cfg(test)]
+    native_object_checks: Cell<usize>,
+    user_data_accesses: Cell<usize>,
     shutdown_requested: Cell<bool>,
     native_destroyed: Cell<bool>,
     contact_epoch: Cell<ContactEpoch>,
-    object_generations: RefCell<ObjectGenerationLedgers>,
+    identities: Arc<crate::core::identity_registry::ActiveIdentityRegistry>,
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) custom_filter: Mutex<Option<Box<CustomFilterCtx>>>,
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) pre_solve: Mutex<Option<Box<PreSolveCtx>>>,
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) material_mix_slot: Mutex<Option<usize>>,
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) friction_mix: Mutex<Option<Box<MaterialMixCtx>>>,
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) restitution_mix: Mutex<Option<Box<MaterialMixCtx>>>,
+    #[cfg(not(target_arch = "wasm32"))]
+    friction_mixer_present: Cell<bool>,
+    #[cfg(not(target_arch = "wasm32"))]
+    restitution_mixer_present: Cell<bool>,
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) worker_callbacks: Arc<WorkerCallbackState>,
-    pub(crate) deferred_destroys: Mutex<Vec<DeferredDestroy>>,
+    pub(crate) deferred_destroys: Mutex<VecDeque<DeferredDestroy>>,
     pub(crate) user_data: RefCell<crate::core::user_data::UserDataStore>,
     pub(crate) borrowed_event_buffers: AtomicUsize,
-    #[cfg(feature = "serialize")]
-    pub(crate) registries: Mutex<crate::core::serialize_registry::Registries>,
     pub(crate) owned_bodies: AtomicUsize,
     pub(crate) owned_shapes: AtomicUsize,
     pub(crate) owned_joints: AtomicUsize,
     pub(crate) owned_chains: AtomicUsize,
+    // Keep this last as a fallback: Rust drops struct fields in declaration order. Normal teardown
+    // takes the lease into a local, but an unexpectedly borrowed field must still be destroyed
+    // before process-global replay can begin.
+    foundation_lease: Cell<Option<crate::core::foundation::OrdinaryWorldLease>>,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -224,32 +122,92 @@ enum OwnedDestroyGate {
 }
 
 impl WorldCore {
-    pub(crate) fn new(id: ffi::b2WorldId, brand: IdBrand) -> Rc<Self> {
-        Rc::new(Self {
+    pub(crate) fn new(
+        id: ffi::b2WorldId,
+        brand: IdBrand,
+        foundation_lease: crate::core::foundation::OrdinaryWorldLease,
+        friction_mixer_present: bool,
+        restitution_mixer_present: bool,
+    ) -> Rc<Self> {
+        let identities = crate::core::identity_registry::ActiveIdentityRegistry::new(brand);
+        Self::new_with_identities(
+            id,
+            brand,
+            foundation_lease,
+            friction_mixer_present,
+            restitution_mixer_present,
+            identities,
+        )
+    }
+
+    pub(crate) fn new_from_snapshot(
+        id: ffi::b2WorldId,
+        brand: IdBrand,
+        foundation_lease: crate::core::foundation::OrdinaryWorldLease,
+        entries: &[boxdd_sys::adapter::SnapshotEntry],
+    ) -> ApiResult<Rc<Self>> {
+        let identities =
+            crate::core::identity_registry::ActiveIdentityRegistry::from_snapshot_entries(
+                brand, entries,
+            )?;
+        Ok(Self::new_with_identities(
+            id,
+            brand,
+            foundation_lease,
+            false,
+            false,
+            identities,
+        ))
+    }
+
+    fn new_with_identities(
+        id: ffi::b2WorldId,
+        brand: IdBrand,
+        foundation_lease: crate::core::foundation::OrdinaryWorldLease,
+        friction_mixer_present: bool,
+        restitution_mixer_present: bool,
+        identities: Arc<crate::core::identity_registry::ActiveIdentityRegistry>,
+    ) -> Rc<Self> {
+        #[cfg(target_arch = "wasm32")]
+        let _ = (friction_mixer_present, restitution_mixer_present);
+        Rc::new_cyclic(|self_weak| Self {
+            self_weak: self_weak.clone(),
             id,
             brand,
             lifecycle: Cell::new(LifecycleState::Live),
             activity: Cell::new(ActivityState::Idle),
             native_calls: Cell::new(0),
+            #[cfg(test)]
+            native_object_checks: Cell::new(0),
+            user_data_accesses: Cell::new(0),
             shutdown_requested: Cell::new(false),
             native_destroyed: Cell::new(false),
             contact_epoch: Cell::new(ContactEpoch::INITIAL),
-            object_generations: RefCell::new(ObjectGenerationLedgers::default()),
+            identities: Arc::clone(&identities),
+            #[cfg(not(target_arch = "wasm32"))]
             custom_filter: Mutex::new(None),
+            #[cfg(not(target_arch = "wasm32"))]
             pre_solve: Mutex::new(None),
+            #[cfg(not(target_arch = "wasm32"))]
             material_mix_slot: Mutex::new(None),
+            #[cfg(not(target_arch = "wasm32"))]
             friction_mix: Mutex::new(None),
+            #[cfg(not(target_arch = "wasm32"))]
             restitution_mix: Mutex::new(None),
-            worker_callbacks: WorkerCallbackState::new(brand),
-            deferred_destroys: Mutex::new(Vec::new()),
+            #[cfg(not(target_arch = "wasm32"))]
+            friction_mixer_present: Cell::new(friction_mixer_present),
+            #[cfg(not(target_arch = "wasm32"))]
+            restitution_mixer_present: Cell::new(restitution_mixer_present),
+            #[cfg(not(target_arch = "wasm32"))]
+            worker_callbacks: WorkerCallbackState::new(brand, Arc::clone(&identities)),
+            deferred_destroys: Mutex::new(VecDeque::new()),
             user_data: RefCell::new(crate::core::user_data::UserDataStore::default()),
             borrowed_event_buffers: AtomicUsize::new(0),
-            #[cfg(feature = "serialize")]
-            registries: Mutex::new(crate::core::serialize_registry::Registries::default()),
             owned_bodies: AtomicUsize::new(0),
             owned_shapes: AtomicUsize::new(0),
             owned_joints: AtomicUsize::new(0),
             owned_chains: AtomicUsize::new(0),
+            foundation_lease: Cell::new(Some(foundation_lease)),
         })
     }
 
@@ -267,7 +225,7 @@ impl WorldCore {
         let next = match self.contact_epoch.get().checked_next() {
             Ok(next) => next,
             Err(error) => {
-                self.poison();
+                WorldCore::poison(self);
                 return Err(error);
             }
         };
@@ -275,21 +233,178 @@ impl WorldCore {
         Ok(next)
     }
 
+    pub(crate) fn prepare_contact_epoch(&self) -> ApiResult<ContactEpoch> {
+        self.contact_epoch.get().checked_next()
+    }
+
+    pub(crate) fn commit_contact_epoch(&self, next: ContactEpoch) -> ApiResult<()> {
+        if self.contact_epoch.get().checked_next()? != next {
+            return Err(ApiError::WorldBusy);
+        }
+        self.contact_epoch.set(next);
+        Ok(())
+    }
+
     #[inline]
     pub(crate) fn check_available(&self) -> ApiResult<()> {
+        self.check_access(WorldAccess::Idle)
+    }
+
+    #[inline]
+    pub(crate) fn check_access(&self, access: WorldAccess) -> ApiResult<()> {
         match self.lifecycle.get() {
             LifecycleState::Live => {}
             LifecycleState::Poisoned => return Err(ApiError::WorldPoisoned),
             LifecycleState::Destroyed => return Err(ApiError::WorldDestroyed),
         }
-        match self.activity.get() {
-            ActivityState::Idle => Ok(()),
-            ActivityState::Recording | ActivityState::Restoring => Err(ApiError::WorldBusy),
+        if self.activity.get() == access.activity() {
+            Ok(())
+        } else {
+            Err(ApiError::WorldBusy)
         }
     }
 
-    pub(crate) fn begin_native_call(self: &Rc<Self>) -> ApiResult<NativeCallGuard> {
+    #[cfg(test)]
+    pub(crate) fn native_object_check_count_for_test(&self) -> usize {
+        self.native_object_checks.get()
+    }
+
+    #[inline]
+    fn record_native_object_check(&self) {
+        #[cfg(test)]
+        self.native_object_checks.set(
+            self.native_object_checks
+                .get()
+                .checked_add(1)
+                .expect("native object check counter overflow"),
+        );
+    }
+
+    /// Authorize an operation owned by the active recording session.
+    ///
+    /// Ordinary world and handle entries continue to use `check_available`, so
+    /// this does not make the recording activity visible through existing
+    /// aliases. Public callers must perform the callback gate before entering
+    /// this activity check.
+    pub(crate) fn check_recording_available(&self) -> ApiResult<()> {
+        self.check_access(WorldAccess::Recording)
+    }
+
+    /// Release the recording activity after the native world has been stopped.
+    ///
+    /// This deliberately remains available for a poisoned world: recording
+    /// teardown must not leave the orthogonal activity state stuck when a
+    /// callback panic or another terminal error occurred during the session.
+    pub(crate) fn finish_recording_activity(&self) -> ApiResult<()> {
+        if self.activity.get() != ActivityState::Recording {
+            return Err(ApiError::WorldBusy);
+        }
+        self.activity.set(ActivityState::Idle);
+        Ok(())
+    }
+
+    pub(crate) fn finish_restore_activity(&self) -> ApiResult<()> {
+        if self.activity.get() != ActivityState::Restoring {
+            return Err(ApiError::WorldBusy);
+        }
+        self.activity.set(ActivityState::Idle);
+        Ok(())
+    }
+
+    pub(crate) fn check_snapshot_preconditions(&self) -> ApiResult<()> {
         self.check_available()?;
+        if self.native_calls.get() != 0
+            || self.user_data_accesses.get() != 0
+            || self.borrowed_event_buffers.load(Ordering::Acquire) != 0
+            || !self
+                .deferred_destroys
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .is_empty()
+        {
+            return Err(ApiError::WorldBusy);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn snapshot_callbacks_satisfy(
+        &self,
+        requires_custom_filter: bool,
+        requires_pre_solve: bool,
+    ) -> bool {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            (!requires_custom_filter
+                || self
+                    .custom_filter
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .is_some())
+                && (!requires_pre_solve
+                    || self
+                        .pre_solve
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .is_some())
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            !requires_custom_filter && !requires_pre_solve
+        }
+    }
+
+    pub(crate) fn snapshot_callback_presence(&self) -> (bool, bool) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            (
+                self.custom_filter
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .is_some(),
+                self.pre_solve
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .is_some(),
+            )
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            (false, false)
+        }
+    }
+
+    #[inline]
+    pub(crate) fn mixer_presence(&self) -> (bool, bool) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            (
+                self.friction_mixer_present.get(),
+                self.restitution_mixer_present.get(),
+            )
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            (false, false)
+        }
+    }
+
+    #[inline]
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn set_friction_mixer_present(&self, present: bool) {
+        self.friction_mixer_present.set(present);
+    }
+
+    #[inline]
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn set_restitution_mixer_present(&self, present: bool) {
+        self.restitution_mixer_present.set(present);
+    }
+
+    pub(crate) fn begin_native_call_with_access(
+        self: &Rc<Self>,
+        access: WorldAccess,
+    ) -> ApiResult<NativeCallGuard> {
+        self.check_access(access)?;
         let depth = self
             .native_calls
             .get()
@@ -301,31 +416,34 @@ impl WorldCore {
         })
     }
 
+    fn begin_user_data_access(&self) -> ApiResult<UserDataAccessGuard<'_>> {
+        self.begin_user_data_access_with(WorldAccess::Idle)
+    }
+
+    fn begin_user_data_access_with(
+        &self,
+        access: WorldAccess,
+    ) -> ApiResult<UserDataAccessGuard<'_>> {
+        self.check_access(access)?;
+        let depth = self
+            .user_data_accesses
+            .get()
+            .checked_add(1)
+            .expect("user-data access depth overflow");
+        self.user_data_accesses.set(depth);
+        Ok(UserDataAccessGuard { core: self })
+    }
+
     #[inline]
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "lifecycle proofs are consumed by U8 owners")
-    )]
     pub(crate) fn lifecycle(&self) -> LifecycleState {
         self.lifecycle.get()
     }
 
     #[inline]
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "activity proofs are consumed by U8 owners")
-    )]
     pub(crate) fn activity(&self) -> ActivityState {
         self.activity.get()
     }
 
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            reason = "recording and restore owners are introduced in U8"
-        )
-    )]
     pub(crate) fn set_activity(
         &self,
         expected: ActivityState,
@@ -340,19 +458,12 @@ impl WorldCore {
     }
 
     pub(crate) fn poison(&self) {
-        if self.lifecycle.get() == LifecycleState::Live {
-            self.lifecycle.set(LifecycleState::Poisoned);
+        if std::cell::Cell::get(&self.lifecycle) == LifecycleState::Live {
+            std::cell::Cell::set(&self.lifecycle, LifecycleState::Poisoned);
         }
     }
 
     #[inline]
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            reason = "recording and restore owners are introduced in U8"
-        )
-    )]
     fn check_live(&self) -> ApiResult<()> {
         match self.lifecycle.get() {
             LifecycleState::Live => Ok(()),
@@ -372,12 +483,36 @@ impl WorldCore {
 
     #[inline]
     fn check_brand(&self, brand: IdBrand) -> ApiResult<()> {
-        self.check_available()?;
+        self.check_brand_with_access(brand, WorldAccess::Idle)
+    }
+
+    #[inline]
+    fn check_brand_with_access(&self, brand: IdBrand, access: WorldAccess) -> ApiResult<()> {
+        self.check_access(access)?;
         self.check_brand_identity(brand)
     }
 
     #[inline]
-    fn check_body_native(&self, id: BodyId) -> ApiResult<()> {
+    pub(crate) fn check_body_identity(&self, id: BodyId) -> ApiResult<()> {
+        self.check_body_identity_with_access(id, WorldAccess::Idle)
+    }
+
+    #[inline]
+    pub(crate) fn check_body_identity_with_access(
+        &self,
+        id: BodyId,
+        access: WorldAccess,
+    ) -> ApiResult<()> {
+        self.check_brand_with_access(id.brand(), access)?;
+        if !self.identities.contains_body(id) {
+            return Err(ApiError::InvalidBodyId);
+        }
+        Ok(())
+    }
+
+    #[inline]
+    pub(crate) fn check_body_native_after_identity(&self, id: BodyId) -> ApiResult<()> {
+        self.record_native_object_check();
         if unsafe { ffi::b2Body_IsValid(id.into_raw()) } {
             Ok(())
         } else {
@@ -387,12 +522,21 @@ impl WorldCore {
 
     #[inline]
     pub(crate) fn check_body(&self, id: BodyId) -> ApiResult<()> {
-        self.check_brand(id.brand())?;
-        self.check_body_native(id)
+        self.check_body_with_access(id, WorldAccess::Idle)
+    }
+
+    #[inline]
+    pub(crate) fn check_body_with_access(&self, id: BodyId, access: WorldAccess) -> ApiResult<()> {
+        self.check_body_identity_with_access(id, access)?;
+        self.check_body_native_after_identity(id)
     }
 
     #[inline]
     fn check_shape_native(&self, id: ShapeId) -> ApiResult<()> {
+        if !self.identities.contains_shape(id) {
+            return Err(ApiError::InvalidShapeId);
+        }
+        self.record_native_object_check();
         if unsafe { ffi::b2Shape_IsValid(id.into_raw()) } {
             Ok(())
         } else {
@@ -402,12 +546,37 @@ impl WorldCore {
 
     #[inline]
     pub(crate) fn check_shape(&self, id: ShapeId) -> ApiResult<()> {
-        self.check_brand(id.brand())?;
+        self.check_shape_with_access(id, WorldAccess::Idle)
+    }
+
+    #[inline]
+    pub(crate) fn check_shape_with_access(
+        &self,
+        id: ShapeId,
+        access: WorldAccess,
+    ) -> ApiResult<()> {
+        self.check_brand_with_access(id.brand(), access)?;
         self.check_shape_native(id)
     }
 
     #[inline]
-    fn check_joint_native(&self, id: JointId) -> ApiResult<()> {
+    pub(crate) fn check_joint_identity(&self, id: JointId) -> ApiResult<JointType> {
+        self.check_joint_identity_with_access(id, WorldAccess::Idle)
+    }
+
+    #[inline]
+    pub(crate) fn check_joint_identity_with_access(
+        &self,
+        id: JointId,
+        access: WorldAccess,
+    ) -> ApiResult<JointType> {
+        self.check_brand_with_access(id.brand(), access)?;
+        self.identities.joint_type(id)
+    }
+
+    #[inline]
+    pub(crate) fn check_joint_native_after_identity(&self, id: JointId) -> ApiResult<()> {
+        self.record_native_object_check();
         if unsafe { ffi::b2Joint_IsValid(id.into_raw()) } {
             Ok(())
         } else {
@@ -417,12 +586,25 @@ impl WorldCore {
 
     #[inline]
     pub(crate) fn check_joint(&self, id: JointId) -> ApiResult<()> {
-        self.check_brand(id.brand())?;
-        self.check_joint_native(id)
+        self.check_joint_with_access(id, WorldAccess::Idle)
+    }
+
+    #[inline]
+    pub(crate) fn check_joint_with_access(
+        &self,
+        id: JointId,
+        access: WorldAccess,
+    ) -> ApiResult<()> {
+        self.check_joint_identity_with_access(id, access)?;
+        self.check_joint_native_after_identity(id)
     }
 
     #[inline]
     fn check_chain_native(&self, id: ChainId) -> ApiResult<()> {
+        if !self.identities.contains_chain(id) {
+            return Err(ApiError::InvalidChainId);
+        }
+        self.record_native_object_check();
         if unsafe { ffi::b2Chain_IsValid(id.into_raw()) } {
             Ok(())
         } else {
@@ -432,8 +614,142 @@ impl WorldCore {
 
     #[inline]
     pub(crate) fn check_chain(&self, id: ChainId) -> ApiResult<()> {
-        self.check_brand(id.brand())?;
+        self.check_chain_with_access(id, WorldAccess::Idle)
+    }
+
+    #[inline]
+    pub(crate) fn check_chain_with_access(
+        &self,
+        id: ChainId,
+        access: WorldAccess,
+    ) -> ApiResult<()> {
+        self.check_brand_with_access(id.brand(), access)?;
         self.check_chain_native(id)
+    }
+
+    pub(crate) fn body_is_valid(&self, id: BodyId) -> ApiResult<bool> {
+        self.check_brand(id.brand())?;
+        if !self.identities.contains_body(id) {
+            return Ok(false);
+        }
+        self.record_native_object_check();
+        Ok(unsafe { ffi::b2Body_IsValid(id.into_raw()) })
+    }
+
+    pub(crate) fn shape_is_valid(&self, id: ShapeId) -> ApiResult<bool> {
+        self.check_brand(id.brand())?;
+        if !self.identities.contains_shape(id) {
+            return Ok(false);
+        }
+        self.record_native_object_check();
+        Ok(unsafe { ffi::b2Shape_IsValid(id.into_raw()) })
+    }
+
+    pub(crate) fn joint_is_valid(&self, id: JointId) -> ApiResult<bool> {
+        self.check_brand(id.brand())?;
+        if !self.identities.contains_joint(id) {
+            return Ok(false);
+        }
+        self.record_native_object_check();
+        Ok(unsafe { ffi::b2Joint_IsValid(id.into_raw()) })
+    }
+
+    pub(crate) fn chain_is_valid(&self, id: ChainId) -> ApiResult<bool> {
+        self.check_brand(id.brand())?;
+        if !self.identities.contains_chain(id) {
+            return Ok(false);
+        }
+        self.record_native_object_check();
+        Ok(unsafe { ffi::b2Chain_IsValid(id.into_raw()) })
+    }
+
+    pub(crate) fn identity_manifest(
+        &self,
+    ) -> ApiResult<crate::core::identity_registry::IdentityManifest> {
+        self.check_available()?;
+        self.identities.snapshot_manifest()
+    }
+
+    pub(crate) fn identity_manifest_while_restoring(
+        &self,
+    ) -> ApiResult<crate::core::identity_registry::IdentityManifest> {
+        self.check_live()?;
+        if self.activity.get() != ActivityState::Restoring {
+            return Err(ApiError::WorldBusy);
+        }
+        self.identities.snapshot_manifest()
+    }
+
+    pub(crate) fn prepare_identity_restore(
+        &self,
+        manifest: &crate::core::identity_registry::IdentityManifest,
+    ) -> ApiResult<crate::core::identity_registry::PreparedIdentityRestore> {
+        self.check_live()?;
+        if self.activity.get() != ActivityState::Restoring {
+            return Err(ApiError::WorldBusy);
+        }
+        self.identities.prepare_restore(manifest)
+    }
+
+    pub(crate) fn commit_identity_restore(
+        &self,
+        prepared: crate::core::identity_registry::PreparedIdentityRestore,
+    ) -> ApiResult<()> {
+        self.check_live()?;
+        if self.activity.get() != ActivityState::Restoring {
+            return Err(ApiError::WorldBusy);
+        }
+        self.identities.commit_restore(prepared)
+    }
+
+    pub(crate) fn user_data_manifest_while_restoring(
+        &self,
+    ) -> ApiResult<crate::core::user_data::UserDataManifest> {
+        self.check_live()?;
+        if self.activity.get() != ActivityState::Restoring {
+            return Err(ApiError::WorldBusy);
+        }
+        self.user_data
+            .try_borrow()
+            .map_err(|_| ApiError::ReentrantAccess)?
+            .snapshot_manifest()
+    }
+
+    pub(crate) fn prepare_user_data_restore(
+        &self,
+        manifest: &crate::core::user_data::UserDataManifest,
+        identity_manifest: &crate::core::identity_registry::IdentityManifest,
+        identities: &crate::core::identity_registry::PreparedIdentityRestore,
+    ) -> ApiResult<crate::core::user_data::PreparedUserDataRestore> {
+        self.check_live()?;
+        if self.activity.get() != ActivityState::Restoring {
+            return Err(ApiError::WorldBusy);
+        }
+        self.user_data
+            .try_borrow()
+            .map_err(|_| ApiError::ReentrantAccess)?
+            .prepare_restore(manifest, identity_manifest, identities)
+    }
+
+    pub(crate) fn commit_user_data_restore(
+        &self,
+        prepared: crate::core::user_data::PreparedUserDataRestore,
+    ) -> ApiResult<crate::core::user_data::CommittedUserDataRestore> {
+        self.check_live()?;
+        if self.activity.get() != ActivityState::Restoring {
+            return Err(ApiError::WorldBusy);
+        }
+        let mut store = self
+            .user_data
+            .try_borrow_mut()
+            .map_err(|_| ApiError::ReentrantAccess)?;
+        prepared.commit(&mut store)
+    }
+
+    pub(crate) fn clear_retired_identity_outputs(&self) {
+        crate::core::identity_registry::ActiveIdentityRegistry::clear_retired_outputs(
+            &self.identities,
+        );
     }
 
     #[inline]
@@ -473,15 +789,16 @@ impl WorldCore {
     pub(crate) fn bind_body(&self, raw: RawBodyId) -> ApiResult<BodyId> {
         self.check_available()?;
         raw.validate_for(self.brand)?;
-        let id = self.brand.try_body(raw.into_ffi())?;
-        self.check_body_native(id)?;
+        let id = self.brand.body(raw.into_ffi(), raw.registration_nonce());
+        self.check_body_identity(id)?;
+        self.check_body_native_after_identity(id)?;
         Ok(id)
     }
 
     pub(crate) fn bind_shape(&self, raw: RawShapeId) -> ApiResult<ShapeId> {
         self.check_available()?;
         raw.validate_for(self.brand)?;
-        let id = self.brand.try_shape(raw.into_ffi())?;
+        let id = self.brand.shape(raw.into_ffi(), raw.registration_nonce());
         self.check_shape_native(id)?;
         Ok(id)
     }
@@ -489,15 +806,16 @@ impl WorldCore {
     pub(crate) fn bind_joint(&self, raw: RawJointId) -> ApiResult<JointId> {
         self.check_available()?;
         raw.validate_for(self.brand)?;
-        let id = self.brand.try_joint(raw.into_ffi())?;
-        self.check_joint_native(id)?;
+        let id = self.brand.joint(raw.into_ffi(), raw.registration_nonce());
+        self.check_joint_identity(id)?;
+        self.check_joint_native_after_identity(id)?;
         Ok(id)
     }
 
     pub(crate) fn bind_chain(&self, raw: RawChainId) -> ApiResult<ChainId> {
         self.check_available()?;
         raw.validate_for(self.brand)?;
-        let id = self.brand.try_chain(raw.into_ffi())?;
+        let id = self.brand.chain(raw.into_ffi(), raw.registration_nonce());
         self.check_chain_native(id)?;
         Ok(id)
     }
@@ -518,97 +836,110 @@ impl WorldCore {
         result
     }
 
-    fn register_body_generation(&self, id: BodyId) -> ApiResult<()> {
-        let raw = id.into_raw();
-        self.object_generations
-            .try_borrow_mut()
-            .map_err(|_| ApiError::ReentrantAccess)?
-            .bodies
-            .register(raw.index1, raw.generation)
-    }
-
-    fn register_shape_generation(&self, id: ShapeId) -> ApiResult<()> {
-        let raw = id.into_raw();
-        self.object_generations
-            .try_borrow_mut()
-            .map_err(|_| ApiError::ReentrantAccess)?
-            .shapes
-            .register(raw.index1, raw.generation)
-    }
-
-    fn register_joint_generation(&self, id: JointId) -> ApiResult<()> {
-        let raw = id.into_raw();
-        self.object_generations
-            .try_borrow_mut()
-            .map_err(|_| ApiError::ReentrantAccess)?
-            .joints
-            .register(raw.index1, raw.generation)
-    }
-
-    fn register_chain_generation(&self, id: ChainId) -> ApiResult<()> {
-        let raw = id.into_raw();
-        self.object_generations
-            .try_borrow_mut()
-            .map_err(|_| ApiError::ReentrantAccess)?
-            .chains
-            .register(raw.index1, raw.generation)
-    }
-
-    pub(crate) fn finish_created_body(&self, raw: ffi::b2BodyId) -> ApiResult<BodyId> {
+    pub(crate) fn finish_created_body_with_access(
+        &self,
+        raw: ffi::b2BodyId,
+        access: WorldAccess,
+    ) -> ApiResult<BodyId> {
         let result = (|| {
-            self.check_available()?;
-            let id = self.brand.try_body(raw)?;
-            self.check_body_native(id)?;
-            self.register_body_generation(id)?;
-            Ok(id)
+            self.check_access(access)?;
+            self.brand.check_body_raw(raw)?;
+            self.record_native_object_check();
+            if !unsafe { ffi::b2Body_IsValid(raw) } {
+                return Err(ApiError::InvalidBodyId);
+            }
+            self.identities.register_body(raw)
         })();
         self.poison_created_output_error(result)
     }
 
-    pub(crate) fn finish_created_shape(&self, raw: ffi::b2ShapeId) -> ApiResult<ShapeId> {
+    pub(crate) fn finish_created_shape_with_access(
+        &self,
+        raw: ffi::b2ShapeId,
+        access: WorldAccess,
+    ) -> ApiResult<ShapeId> {
         let result = (|| {
-            self.check_available()?;
-            let id = self.brand.try_shape(raw)?;
-            self.check_shape_native(id)?;
-            self.register_shape_generation(id)?;
-            Ok(id)
+            self.check_access(access)?;
+            self.brand.check_shape_raw(raw)?;
+            self.record_native_object_check();
+            if !unsafe { ffi::b2Shape_IsValid(raw) } {
+                return Err(ApiError::InvalidShapeId);
+            }
+            let body = self
+                .identities
+                .resolve_body(unsafe { ffi::b2Shape_GetBody(raw) })?;
+            self.identities.register_shape(raw, body)
         })();
         self.poison_created_output_error(result)
     }
 
-    pub(crate) fn finish_created_joint(&self, raw: ffi::b2JointId) -> ApiResult<JointId> {
+    #[cfg(test)]
+    pub(crate) fn finish_created_joint(
+        &self,
+        raw: ffi::b2JointId,
+        body_a: BodyId,
+        body_b: BodyId,
+        kind: JointType,
+    ) -> ApiResult<JointId> {
+        self.finish_created_joint_with_access(raw, body_a, body_b, kind, WorldAccess::Idle)
+    }
+
+    pub(crate) fn finish_created_joint_with_access(
+        &self,
+        raw: ffi::b2JointId,
+        body_a: BodyId,
+        body_b: BodyId,
+        kind: JointType,
+        access: WorldAccess,
+    ) -> ApiResult<JointId> {
         let result = (|| {
-            self.check_available()?;
-            let id = self.brand.try_joint(raw)?;
-            self.check_joint_native(id)?;
-            self.register_joint_generation(id)?;
-            Ok(id)
+            self.check_access(access)?;
+            self.brand.check_joint_raw(raw)?;
+            self.record_native_object_check();
+            if !unsafe { ffi::b2Joint_IsValid(raw) } {
+                return Err(ApiError::InvalidJointId);
+            }
+            self.identities.register_joint(raw, body_a, body_b, kind)
         })();
         self.poison_created_output_error(result)
     }
 
+    #[cfg(test)]
     pub(crate) fn finish_created_chain(&self, raw: ffi::b2ChainId) -> ApiResult<ChainId> {
-        let result = (|| {
-            self.check_available()?;
-            let id = self.brand.try_chain(raw)?;
-            self.check_chain_native(id)?;
+        self.finish_created_chain_with_access(raw, WorldAccess::Idle)
+    }
 
-            let count = unsafe { ffi::b2Chain_GetSegmentCount(id.into_raw()) };
-            let segments = unsafe {
+    pub(crate) fn finish_created_chain_with_access(
+        &self,
+        raw: ffi::b2ChainId,
+        access: WorldAccess,
+    ) -> ApiResult<ChainId> {
+        let result = (|| {
+            self.check_access(access)?;
+            self.brand.check_chain_raw(raw)?;
+            self.record_native_object_check();
+            if !unsafe { ffi::b2Chain_IsValid(raw) } {
+                return Err(ApiError::InvalidChainId);
+            }
+            let count = unsafe { ffi::b2Chain_GetSegmentCount(raw) };
+            let segments: Vec<ffi::b2ShapeId> = unsafe {
                 crate::core::ffi_vec::try_read_mapped_from_ffi(
                     count,
-                    |out, capacity| ffi::b2Chain_GetSegments(id.into_raw(), out, capacity),
-                    |shape| self.brand.try_shape(shape),
+                    |out, capacity| ffi::b2Chain_GetSegments(raw, out, capacity),
+                    Ok,
                 )
             }?;
+            let first = segments.first().copied().ok_or(ApiError::InvalidChainId)?;
             for &segment in &segments {
-                self.check_shape_native(segment)?;
+                self.brand.check_shape_raw(segment)?;
+                if !unsafe { ffi::b2Shape_IsValid(segment) } {
+                    return Err(ApiError::InvalidShapeId);
+                }
             }
-
-            self.register_chain_generation(id)?;
-            for segment in segments {
-                self.register_shape_generation(segment)?;
-            }
+            let body = self
+                .identities
+                .resolve_body(unsafe { ffi::b2Shape_GetBody(first) })?;
+            let (id, _) = self.identities.register_chain(raw, body, &segments)?;
             Ok(id)
         })();
         self.poison_created_output_error(result)
@@ -650,7 +981,10 @@ impl WorldCore {
         self.deferred_destroys
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .push(d);
+            .push_back(d);
+        if let Some(core) = self.self_weak.upgrade() {
+            let _ = crate::core::callback_state::register_deferred_core(core);
+        }
     }
 
     pub(crate) fn events_buffers_are_borrowed(&self) -> bool {
@@ -713,22 +1047,12 @@ impl WorldCore {
                 .map_err(|_| ApiError::ReentrantAccess)?;
             let mut entries = Vec::new();
             if let Some(body) = body
-                && let Some(entry) = store.bodies.get(&crate::core::user_data::IdKey::from(body))
+                && let Some(entry) = store.bodies.get(&body)
             {
                 entries.push(Rc::clone(entry));
             }
-            entries.extend(shapes.iter().filter_map(|id| {
-                store
-                    .shapes
-                    .get(&crate::core::user_data::IdKey::from(*id))
-                    .cloned()
-            }));
-            entries.extend(joints.iter().filter_map(|id| {
-                store
-                    .joints
-                    .get(&crate::core::user_data::IdKey::from(*id))
-                    .cloned()
-            }));
+            entries.extend(shapes.iter().filter_map(|id| store.shapes.get(id).cloned()));
+            entries.extend(joints.iter().filter_map(|id| store.joints.get(id).cloned()));
             entries
         };
 
@@ -738,9 +1062,13 @@ impl WorldCore {
         Ok(())
     }
 
-    fn check_object_destroy_preconditions(&self, brand: IdBrand) -> ApiResult<()> {
+    fn check_object_destroy_preconditions_with(
+        &self,
+        brand: IdBrand,
+        access: WorldAccess,
+    ) -> ApiResult<()> {
         crate::core::callback_state::check_not_in_callback()?;
-        self.check_available()?;
+        self.check_access(access)?;
         self.check_brand_identity(brand)?;
         if self.events_buffers_are_borrowed() {
             return Err(ApiError::WorldBusy);
@@ -781,48 +1109,101 @@ impl WorldCore {
         retired
     }
 
+    fn drop_retired_user_data(retired: Vec<crate::core::user_data::ErasedUserData>) {
+        let mut panic = crate::core::callback_state::PanicSlot::default();
+        for value in retired {
+            panic.run_cleanup(|| drop(value));
+        }
+        panic.resume_or_forget();
+    }
+
     pub(crate) fn destroy_body_now(&self, id: BodyId) -> ApiResult<()> {
-        self.check_object_destroy_preconditions(id.brand())?;
-        self.check_body_native(id)?;
+        self.destroy_body_now_with_access(id, WorldAccess::Idle)
+    }
+
+    pub(crate) fn destroy_body_now_with_access(
+        &self,
+        id: BodyId,
+        access: WorldAccess,
+    ) -> ApiResult<()> {
+        self.check_object_destroy_preconditions_with(id.brand(), access)?;
+        self.check_body_identity_with_access(id, access)?;
+        self.check_body_native_after_identity(id)?;
         let shapes = self.body_shapes_for_destroy(id)?;
         let joints = self.body_joints_for_destroy(id)?;
         self.check_user_data_mutable(Some(id), &shapes, &joints)?;
-        #[cfg(feature = "serialize")]
-        self.cleanup_before_destroy_body(id);
+        let _user_data_cleanup = self.begin_user_data_access_with(access)?;
         unsafe { ffi::b2DestroyBody(id.into_raw()) };
-        drop(self.retire_user_data(Some(id), &shapes, &joints));
+        let unregistered = self.identities.unregister_body(id);
+        debug_assert!(unregistered);
+        Self::drop_retired_user_data(self.retire_user_data(Some(id), &shapes, &joints));
         Ok(())
     }
 
     pub(crate) fn destroy_shape_now(&self, id: ShapeId, update_body_mass: bool) -> ApiResult<()> {
-        self.check_object_destroy_preconditions(id.brand())?;
+        self.destroy_shape_now_with_access(id, update_body_mass, WorldAccess::Idle)
+    }
+
+    pub(crate) fn destroy_shape_now_with_access(
+        &self,
+        id: ShapeId,
+        update_body_mass: bool,
+        access: WorldAccess,
+    ) -> ApiResult<()> {
+        self.check_object_destroy_preconditions_with(id.brand(), access)?;
         self.check_shape_native(id)?;
+        if unsafe { ffi::b2Shape_GetParentChain(id.into_raw()) }.index1 != 0 {
+            return Err(ApiError::ChainOwnedShape);
+        }
         self.check_user_data_mutable(None, core::slice::from_ref(&id), &[])?;
+        let _user_data_cleanup = self.begin_user_data_access_with(access)?;
         unsafe { ffi::b2DestroyShape(id.into_raw(), update_body_mass) };
-        #[cfg(feature = "serialize")]
-        self.remove_shape_flags(id);
-        drop(self.retire_user_data(None, core::slice::from_ref(&id), &[]));
+        let unregistered = self.identities.unregister_shape(id);
+        debug_assert!(unregistered);
+        Self::drop_retired_user_data(self.retire_user_data(None, core::slice::from_ref(&id), &[]));
         Ok(())
     }
 
     pub(crate) fn destroy_joint_now(&self, id: JointId, wake_bodies: bool) -> ApiResult<()> {
-        self.check_object_destroy_preconditions(id.brand())?;
-        self.check_joint_native(id)?;
+        self.destroy_joint_now_with_access(id, wake_bodies, WorldAccess::Idle)
+    }
+
+    pub(crate) fn destroy_joint_now_with_access(
+        &self,
+        id: JointId,
+        wake_bodies: bool,
+        access: WorldAccess,
+    ) -> ApiResult<()> {
+        self.check_object_destroy_preconditions_with(id.brand(), access)?;
+        self.check_joint_identity_with_access(id, access)?;
+        self.check_joint_native_after_identity(id)?;
         self.check_user_data_mutable(None, &[], core::slice::from_ref(&id))?;
+        let _user_data_cleanup = self.begin_user_data_access_with(access)?;
         unsafe { ffi::b2DestroyJoint(id.into_raw(), wake_bodies) };
-        drop(self.retire_user_data(None, &[], core::slice::from_ref(&id)));
+        let unregistered = self.identities.unregister_joint(id);
+        debug_assert!(unregistered);
+        Self::drop_retired_user_data(self.retire_user_data(None, &[], core::slice::from_ref(&id)));
         Ok(())
     }
 
     pub(crate) fn destroy_chain_now(&self, id: ChainId) -> ApiResult<()> {
-        self.check_object_destroy_preconditions(id.brand())?;
-        self.check_chain_native(id)?;
+        self.destroy_chain_now_with_access(id, WorldAccess::Idle)
+    }
+
+    pub(crate) fn destroy_chain_now_with_access(
+        &self,
+        id: ChainId,
+        access: WorldAccess,
+    ) -> ApiResult<()> {
+        self.check_object_destroy_preconditions_with(id.brand(), access)?;
+        self.check_chain_with_access(id, access)?;
         let shapes = self.chain_shapes_for_destroy(id)?;
         self.check_user_data_mutable(None, &shapes, &[])?;
+        let _user_data_cleanup = self.begin_user_data_access_with(access)?;
         unsafe { ffi::b2DestroyChain(id.into_raw()) };
-        #[cfg(feature = "serialize")]
-        self.remove_chain(id);
-        drop(self.retire_user_data(None, &shapes, &[]));
+        let unregistered = self.identities.unregister_chain(id);
+        debug_assert!(unregistered);
+        Self::drop_retired_user_data(self.retire_user_data(None, &shapes, &[]));
         Ok(())
     }
 
@@ -852,36 +1233,53 @@ impl WorldCore {
     }
 
     pub(crate) fn process_deferred_destroys(&self) {
+        if self.shutdown_requested.get() && !self.native_destroyed.get() {
+            if !crate::core::callback_state::in_callback()
+                && self.native_calls.get() == 0
+                && self.user_data_accesses.get() == 0
+            {
+                self.finish_native_shutdown();
+            }
+            return;
+        }
         if self.owned_destroy_gate() != OwnedDestroyGate::Ready {
             return;
         }
-        let mut pending = self
+        let pending_count = self
             .deferred_destroys
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if pending.is_empty() {
-            return;
-        }
-        let items = core::mem::take(&mut *pending);
-        drop(pending);
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .len();
+        let mut panic = crate::core::callback_state::PanicSlot::default();
 
-        let mut retry = Vec::new();
-        for item in items {
-            match self.destroy_deferred_now(item) {
-                Ok(()) => {}
-                Err(error) if item.is_stale_error(error) => {}
-                Err(_) => retry.push(item),
+        for _ in 0..pending_count {
+            if self.owned_destroy_gate() != OwnedDestroyGate::Ready {
+                break;
+            }
+            let item = {
+                let mut pending = self
+                    .deferred_destroys
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                let Some(item) = pending.pop_front() else {
+                    break;
+                };
+                item
+            };
+
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                self.destroy_deferred_now(item)
+            })) {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) if item.is_stale_error(error) => {}
+                Ok(Err(_)) => self.defer_destroy(item),
+                Err(payload) => panic.capture(payload),
             }
         }
 
-        if !retry.is_empty() {
-            let mut pending = self
-                .deferred_destroys
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            retry.append(&mut pending);
-            *pending = retry;
-        }
+        // This cleanup can be reached from a destructor after an outer panic has already begun.
+        // Never start a second unwind or drop a later arbitrary payload on that stack.
+        panic.resume_or_forget();
     }
 
     /// End the native world's lifetime while retaining an inert Rust shell for residual handles.
@@ -892,7 +1290,18 @@ impl WorldCore {
         self.lifecycle.set(LifecycleState::Destroyed);
         self.activity.set(ActivityState::Idle);
         self.shutdown_requested.set(true);
-        if self.native_calls.get() == 0 {
+        if crate::core::callback_state::in_callback() {
+            if let Some(core) = self.self_weak.upgrade()
+                && let Err(core) = crate::core::callback_state::register_deferred_core(core)
+            {
+                // Worker/process callbacks have no owner-thread drain boundary. Keep the inert
+                // core, native world, callback state, and foundation lease alive permanently
+                // instead of re-entering Box2D or allowing replay over leaked native state.
+                core::mem::forget(core);
+            }
+            return;
+        }
+        if self.native_calls.get() == 0 && self.user_data_accesses.get() == 0 {
             self.finish_native_shutdown();
         }
     }
@@ -903,71 +1312,108 @@ impl WorldCore {
         }
         debug_assert!(self.shutdown_requested.get());
         debug_assert_eq!(self.native_calls.get(), 0);
+        debug_assert_eq!(self.user_data_accesses.get(), 0);
 
         {
-            let _guard = crate::core::box2d_lock::lock();
+            let _world_slot_guard = crate::core::foundation::lock_world_slot_mutation();
             // SAFETY: `World` owns the native lifetime and this method transitions the shared
             // lifecycle to `Destroyed` before making the one idempotent teardown call.
             unsafe { ffi::b2DestroyWorld(self.id) };
         }
+        // Native destruction has joined the scheduler. From this point no safe id, including one
+        // held by a surviving worker callback context, may resolve to a live registration.
+        self.identities.clear_and_uninstall();
+        // Keep this local alive until every callback owner and arbitrary user-data payload below
+        // has been released. Rust also drops it last if one of those destructors panics.
+        let mut foundation_lease = self.foundation_lease.take();
+        let mut panic = crate::core::callback_state::PanicSlot::default();
 
-        if let Some(slot) = self
-            .material_mix_slot
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .take()
+        #[cfg(not(target_arch = "wasm32"))]
         {
-            crate::core::material_mix_registry::set_friction_ptr(slot, core::ptr::null_mut());
-            crate::core::material_mix_registry::set_restitution_ptr(slot, core::ptr::null_mut());
-            crate::core::material_mix_registry::release_slot(slot);
+            if let Some(slot) = self
+                .material_mix_slot
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .take()
+            {
+                crate::core::material_mix_registry::set_friction_ptr(slot, core::ptr::null_mut());
+                crate::core::material_mix_registry::set_restitution_ptr(
+                    slot,
+                    core::ptr::null_mut(),
+                );
+                crate::core::material_mix_registry::release_slot(slot);
+            }
         }
 
+        #[cfg(not(target_arch = "wasm32"))]
         let custom_filter = self
             .custom_filter
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .take();
+        #[cfg(not(target_arch = "wasm32"))]
         let pre_solve = self
             .pre_solve
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .take();
+        #[cfg(not(target_arch = "wasm32"))]
         let friction_mix = self
             .friction_mix
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .take();
+        #[cfg(not(target_arch = "wasm32"))]
         let restitution_mix = self
             .restitution_mix
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .take();
 
-        self.worker_callbacks.clear_panic();
+        #[cfg(not(target_arch = "wasm32"))]
+        let worker_panic = self.worker_callbacks.take_panic();
         self.deferred_destroys
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clear();
-        #[cfg(feature = "serialize")]
-        {
-            *self
-                .registries
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner()) =
-                crate::core::serialize_registry::Registries::default();
+        // Draining the entries severs core -> user data -> handle -> core cycles. Each arbitrary
+        // payload is dropped behind its own panic boundary after native teardown.
+        let user_data_entries = self
+            .user_data
+            .try_borrow_mut()
+            .ok()
+            .map(|mut store| store.drain_entries());
+        if user_data_entries.is_none() {
+            // Retaining the lease is conservative but necessary: the still-borrowed store may own
+            // arbitrary payloads, and replay must not begin before those payloads are releasable.
+            self.foundation_lease.set(foundation_lease.take());
+            panic.capture(Box::new(
+                "world user data remained borrowed during native shutdown",
+            ));
         }
 
-        // Replacing the whole store severs core -> user data -> handle -> core cycles. Payloads
-        // are dropped only after native teardown, so their owned handles cannot call object FFI.
-        let user_data = self
-            .user_data
-            .replace(crate::core::user_data::UserDataStore::default());
-
-        drop(custom_filter);
-        drop(pre_solve);
-        drop(friction_mix);
-        drop(restitution_mix);
-        drop(user_data);
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            panic.run_cleanup(|| drop(custom_filter));
+            panic.run_cleanup(|| drop(pre_solve));
+            panic.run_cleanup(|| drop(friction_mix));
+            panic.run_cleanup(|| drop(restitution_mix));
+            if let Some(payload) = worker_panic {
+                panic.run_cleanup(|| drop(payload));
+            }
+        }
+        if let Some(entries) = user_data_entries {
+            for entry in entries {
+                panic.run_cleanup(|| {
+                    let value = entry
+                        .take_erased()
+                        .expect("world user data cannot remain borrowed during native shutdown");
+                    drop(value);
+                });
+            }
+        }
+        drop(foundation_lease);
+        panic.resume_or_forget();
     }
 
     pub(crate) fn clear_world_user_data(
@@ -982,6 +1428,7 @@ impl WorldCore {
         };
         let retired = entry.take_erased()?;
         store.world = None;
+        store.mark_changed();
         Ok(retired)
     }
 
@@ -989,16 +1436,16 @@ impl WorldCore {
         &self,
         id: BodyId,
     ) -> ApiResult<Option<crate::core::user_data::ErasedUserData>> {
-        let key = crate::core::user_data::IdKey::from(id);
         let mut store = self
             .user_data
             .try_borrow_mut()
             .map_err(|_| ApiError::ReentrantAccess)?;
-        let Some(entry) = store.bodies.get(&key).cloned() else {
+        let Some(entry) = store.bodies.get(&id).cloned() else {
             return Ok(None);
         };
         let retired = entry.take_erased()?;
-        store.bodies.remove(&key);
+        store.bodies.remove(&id);
+        store.mark_changed();
         Ok(retired)
     }
 
@@ -1006,16 +1453,16 @@ impl WorldCore {
         &self,
         id: ShapeId,
     ) -> ApiResult<Option<crate::core::user_data::ErasedUserData>> {
-        let key = crate::core::user_data::IdKey::from(id);
         let mut store = self
             .user_data
             .try_borrow_mut()
             .map_err(|_| ApiError::ReentrantAccess)?;
-        let Some(entry) = store.shapes.get(&key).cloned() else {
+        let Some(entry) = store.shapes.get(&id).cloned() else {
             return Ok(None);
         };
         let retired = entry.take_erased()?;
-        store.shapes.remove(&key);
+        store.shapes.remove(&id);
+        store.mark_changed();
         Ok(retired)
     }
 
@@ -1023,16 +1470,16 @@ impl WorldCore {
         &self,
         id: JointId,
     ) -> ApiResult<Option<crate::core::user_data::ErasedUserData>> {
-        let key = crate::core::user_data::IdKey::from(id);
         let mut store = self
             .user_data
             .try_borrow_mut()
             .map_err(|_| ApiError::ReentrantAccess)?;
-        let Some(entry) = store.joints.get(&key).cloned() else {
+        let Some(entry) = store.joints.get(&id).cloned() else {
             return Ok(None);
         };
         let retired = entry.take_erased()?;
-        store.joints.remove(&key);
+        store.joints.remove(&id);
+        store.mark_changed();
         Ok(retired)
     }
 
@@ -1040,21 +1487,18 @@ impl WorldCore {
         &self,
         value: T,
     ) -> ApiResult<crate::core::user_data::UserDataUpdate> {
-        let entry = self
+        let mut store = self
             .user_data
-            .try_borrow()
-            .map_err(|_| ApiError::ReentrantAccess)?
-            .world
-            .clone();
+            .try_borrow_mut()
+            .map_err(|_| ApiError::ReentrantAccess)?;
+        let version = store.next_version()?;
+        let entry = store.world.clone();
         if let Some(entry) = entry {
-            return entry.replace(value);
+            return entry.replace(value, version);
         }
 
-        let (entry, pointer) = crate::core::user_data::UserDataEntry::new(value);
-        self.user_data
-            .try_borrow_mut()
-            .map_err(|_| ApiError::ReentrantAccess)?
-            .world = Some(entry);
+        let (entry, pointer) = crate::core::user_data::UserDataEntry::new(value, version);
+        store.world = Some(entry);
         Ok(crate::core::user_data::UserDataUpdate::inserted(pointer))
     }
 
@@ -1063,24 +1507,22 @@ impl WorldCore {
         id: BodyId,
         value: T,
     ) -> ApiResult<crate::core::user_data::UserDataUpdate> {
-        let key = crate::core::user_data::IdKey::from(id);
-        let entry = self
+        let mut store = self
             .user_data
-            .try_borrow()
-            .map_err(|_| ApiError::ReentrantAccess)?
-            .bodies
-            .get(&key)
-            .cloned();
+            .try_borrow_mut()
+            .map_err(|_| ApiError::ReentrantAccess)?;
+        let version = store.next_version()?;
+        let entry = store.bodies.get(&id).cloned();
         if let Some(entry) = entry {
-            return entry.replace(value);
+            return entry.replace(value, version);
         }
 
-        let (entry, pointer) = crate::core::user_data::UserDataEntry::new(value);
-        self.user_data
-            .try_borrow_mut()
-            .map_err(|_| ApiError::ReentrantAccess)?
+        store
             .bodies
-            .insert(key, entry);
+            .try_reserve(1)
+            .map_err(|_| ApiError::UserDataAllocationFailed)?;
+        let (entry, pointer) = crate::core::user_data::UserDataEntry::new(value, version);
+        store.bodies.insert(id, entry);
         Ok(crate::core::user_data::UserDataUpdate::inserted(pointer))
     }
 
@@ -1089,24 +1531,22 @@ impl WorldCore {
         id: ShapeId,
         value: T,
     ) -> ApiResult<crate::core::user_data::UserDataUpdate> {
-        let key = crate::core::user_data::IdKey::from(id);
-        let entry = self
+        let mut store = self
             .user_data
-            .try_borrow()
-            .map_err(|_| ApiError::ReentrantAccess)?
-            .shapes
-            .get(&key)
-            .cloned();
+            .try_borrow_mut()
+            .map_err(|_| ApiError::ReentrantAccess)?;
+        let version = store.next_version()?;
+        let entry = store.shapes.get(&id).cloned();
         if let Some(entry) = entry {
-            return entry.replace(value);
+            return entry.replace(value, version);
         }
 
-        let (entry, pointer) = crate::core::user_data::UserDataEntry::new(value);
-        self.user_data
-            .try_borrow_mut()
-            .map_err(|_| ApiError::ReentrantAccess)?
+        store
             .shapes
-            .insert(key, entry);
+            .try_reserve(1)
+            .map_err(|_| ApiError::UserDataAllocationFailed)?;
+        let (entry, pointer) = crate::core::user_data::UserDataEntry::new(value, version);
+        store.shapes.insert(id, entry);
         Ok(crate::core::user_data::UserDataUpdate::inserted(pointer))
     }
 
@@ -1115,24 +1555,22 @@ impl WorldCore {
         id: JointId,
         value: T,
     ) -> ApiResult<crate::core::user_data::UserDataUpdate> {
-        let key = crate::core::user_data::IdKey::from(id);
-        let entry = self
+        let mut store = self
             .user_data
-            .try_borrow()
-            .map_err(|_| ApiError::ReentrantAccess)?
-            .joints
-            .get(&key)
-            .cloned();
+            .try_borrow_mut()
+            .map_err(|_| ApiError::ReentrantAccess)?;
+        let version = store.next_version()?;
+        let entry = store.joints.get(&id).cloned();
         if let Some(entry) = entry {
-            return entry.replace(value);
+            return entry.replace(value, version);
         }
 
-        let (entry, pointer) = crate::core::user_data::UserDataEntry::new(value);
-        self.user_data
-            .try_borrow_mut()
-            .map_err(|_| ApiError::ReentrantAccess)?
+        store
             .joints
-            .insert(key, entry);
+            .try_reserve(1)
+            .map_err(|_| ApiError::UserDataAllocationFailed)?;
+        let (entry, pointer) = crate::core::user_data::UserDataEntry::new(value, version);
+        store.joints.insert(id, entry);
         Ok(crate::core::user_data::UserDataUpdate::inserted(pointer))
     }
 
@@ -1140,6 +1578,7 @@ impl WorldCore {
         &self,
         f: impl FnOnce(&T) -> R,
     ) -> crate::error::ApiResult<Option<R>> {
+        let _access = self.begin_user_data_access()?;
         let entry = self
             .user_data
             .try_borrow()
@@ -1157,13 +1596,13 @@ impl WorldCore {
         id: BodyId,
         f: impl FnOnce(&T) -> R,
     ) -> crate::error::ApiResult<Option<R>> {
-        let key = crate::core::user_data::IdKey::from(id);
+        let _access = self.begin_user_data_access()?;
         let entry = self
             .user_data
             .try_borrow()
             .map_err(|_| ApiError::ReentrantAccess)?
             .bodies
-            .get(&key)
+            .get(&id)
             .cloned();
         let Some(entry) = entry else {
             return Ok(None);
@@ -1176,13 +1615,13 @@ impl WorldCore {
         id: ShapeId,
         f: impl FnOnce(&T) -> R,
     ) -> crate::error::ApiResult<Option<R>> {
-        let key = crate::core::user_data::IdKey::from(id);
+        let _access = self.begin_user_data_access()?;
         let entry = self
             .user_data
             .try_borrow()
             .map_err(|_| ApiError::ReentrantAccess)?
             .shapes
-            .get(&key)
+            .get(&id)
             .cloned();
         let Some(entry) = entry else {
             return Ok(None);
@@ -1195,13 +1634,13 @@ impl WorldCore {
         id: JointId,
         f: impl FnOnce(&T) -> R,
     ) -> crate::error::ApiResult<Option<R>> {
-        let key = crate::core::user_data::IdKey::from(id);
+        let _access = self.begin_user_data_access()?;
         let entry = self
             .user_data
             .try_borrow()
             .map_err(|_| ApiError::ReentrantAccess)?
             .joints
-            .get(&key)
+            .get(&id)
             .cloned();
         let Some(entry) = entry else {
             return Ok(None);
@@ -1214,13 +1653,13 @@ impl WorldCore {
         id: BodyId,
         f: impl FnOnce(&mut T) -> R,
     ) -> crate::error::ApiResult<Option<R>> {
-        let key = crate::core::user_data::IdKey::from(id);
+        let _access = self.begin_user_data_access()?;
         let entry = self
             .user_data
             .try_borrow()
             .map_err(|_| ApiError::ReentrantAccess)?
             .bodies
-            .get(&key)
+            .get(&id)
             .cloned();
         let Some(entry) = entry else {
             return Ok(None);
@@ -1233,13 +1672,13 @@ impl WorldCore {
         id: ShapeId,
         f: impl FnOnce(&mut T) -> R,
     ) -> crate::error::ApiResult<Option<R>> {
-        let key = crate::core::user_data::IdKey::from(id);
+        let _access = self.begin_user_data_access()?;
         let entry = self
             .user_data
             .try_borrow()
             .map_err(|_| ApiError::ReentrantAccess)?
             .shapes
-            .get(&key)
+            .get(&id)
             .cloned();
         let Some(entry) = entry else {
             return Ok(None);
@@ -1252,13 +1691,13 @@ impl WorldCore {
         id: JointId,
         f: impl FnOnce(&mut T) -> R,
     ) -> crate::error::ApiResult<Option<R>> {
-        let key = crate::core::user_data::IdKey::from(id);
+        let _access = self.begin_user_data_access()?;
         let entry = self
             .user_data
             .try_borrow()
             .map_err(|_| ApiError::ReentrantAccess)?
             .joints
-            .get(&key)
+            .get(&id)
             .cloned();
         let Some(entry) = entry else {
             return Ok(None);
@@ -1276,6 +1715,7 @@ impl WorldCore {
         };
         let value = entry.take::<T>()?;
         store.world = None;
+        store.mark_changed();
         Ok(value)
     }
 
@@ -1283,16 +1723,16 @@ impl WorldCore {
         &self,
         id: BodyId,
     ) -> crate::error::ApiResult<Option<T>> {
-        let key = crate::core::user_data::IdKey::from(id);
         let mut store = self
             .user_data
             .try_borrow_mut()
             .map_err(|_| ApiError::ReentrantAccess)?;
-        let Some(entry) = store.bodies.get(&key).cloned() else {
+        let Some(entry) = store.bodies.get(&id).cloned() else {
             return Ok(None);
         };
         let value = entry.take::<T>()?;
-        store.bodies.remove(&key);
+        store.bodies.remove(&id);
+        store.mark_changed();
         Ok(value)
     }
 
@@ -1300,16 +1740,16 @@ impl WorldCore {
         &self,
         id: ShapeId,
     ) -> crate::error::ApiResult<Option<T>> {
-        let key = crate::core::user_data::IdKey::from(id);
         let mut store = self
             .user_data
             .try_borrow_mut()
             .map_err(|_| ApiError::ReentrantAccess)?;
-        let Some(entry) = store.shapes.get(&key).cloned() else {
+        let Some(entry) = store.shapes.get(&id).cloned() else {
             return Ok(None);
         };
         let value = entry.take::<T>()?;
-        store.shapes.remove(&key);
+        store.shapes.remove(&id);
+        store.mark_changed();
         Ok(value)
     }
 
@@ -1317,73 +1757,17 @@ impl WorldCore {
         &self,
         id: JointId,
     ) -> crate::error::ApiResult<Option<T>> {
-        let key = crate::core::user_data::IdKey::from(id);
         let mut store = self
             .user_data
             .try_borrow_mut()
             .map_err(|_| ApiError::ReentrantAccess)?;
-        let Some(entry) = store.joints.get(&key).cloned() else {
+        let Some(entry) = store.joints.get(&id).cloned() else {
             return Ok(None);
         };
         let value = entry.take::<T>()?;
-        store.joints.remove(&key);
+        store.joints.remove(&id);
+        store.mark_changed();
         Ok(value)
-    }
-
-    #[cfg(feature = "serialize")]
-    pub(crate) fn record_body(&self, id: BodyId) {
-        self.registries
-            .lock()
-            .expect("registries mutex poisoned")
-            .record_body(id);
-    }
-
-    #[cfg(feature = "serialize")]
-    pub(crate) fn record_chain(
-        &self,
-        id: crate::types::ChainId,
-        meta: crate::core::serialize_registry::ChainCreateMeta,
-    ) {
-        self.registries
-            .lock()
-            .expect("registries mutex poisoned")
-            .record_chain(id, meta);
-    }
-
-    #[cfg(feature = "serialize")]
-    pub(crate) fn record_shape_flags(&self, sid: ShapeId, body: BodyId, def: &ffi::b2ShapeDef) {
-        self.registries
-            .lock()
-            .expect("registries mutex poisoned")
-            .record_shape_flags(sid, body, def);
-    }
-
-    #[cfg(feature = "serialize")]
-    pub(crate) fn remove_chain(&self, id: crate::types::ChainId) {
-        self.registries
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .remove_chain(id);
-    }
-
-    #[cfg(feature = "serialize")]
-    pub(crate) fn remove_shape_flags(&self, sid: ShapeId) {
-        self.registries
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .remove_shape_flags(sid);
-    }
-
-    #[cfg(feature = "serialize")]
-    pub(crate) fn cleanup_before_destroy_body(&self, id: BodyId) {
-        crate::core::callback_state::assert_not_in_callback();
-        let mut r = self
-            .registries
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        r.remove_shape_flags_for_body(id);
-        r.remove_chains_for_body(id);
-        r.remove_body(id);
     }
 }
 
@@ -1395,12 +1779,30 @@ pub(crate) struct NativeCallGuard {
     core: Rc<WorldCore>,
 }
 
+struct UserDataAccessGuard<'a> {
+    core: &'a WorldCore,
+}
+
 impl Drop for NativeCallGuard {
     fn drop(&mut self) {
         let depth = self.core.native_calls.get();
         debug_assert!(depth > 0, "native call counter underflow");
         self.core.native_calls.set(depth.saturating_sub(1));
-        if depth == 1 && self.core.shutdown_requested.get() {
+        if depth == 1
+            && self.core.shutdown_requested.get()
+            && self.core.user_data_accesses.get() == 0
+        {
+            self.core.finish_native_shutdown();
+        }
+    }
+}
+
+impl Drop for UserDataAccessGuard<'_> {
+    fn drop(&mut self) {
+        let depth = self.core.user_data_accesses.get();
+        debug_assert!(depth > 0, "user-data access counter underflow");
+        self.core.user_data_accesses.set(depth.saturating_sub(1));
+        if depth == 1 && self.core.shutdown_requested.get() && self.core.native_calls.get() == 0 {
             self.core.finish_native_shutdown();
         }
     }
@@ -1424,26 +1826,58 @@ impl Drop for WorldCore {
 
 #[cfg(test)]
 mod identity_tests {
-    use super::{GenerationLedger, LifecycleState};
+    use super::{LifecycleState, WorldAccess};
     use crate::id::ContactEpoch;
-    use crate::{ApiError, BodyBuilder, World, WorldDef};
+    use crate::shapes::{Circle, ShapeDef, circle};
+    use crate::{ApiError, BodyBuilder, BodyId, BodyType, ShapeId, World, WorldDef};
     use boxdd_sys::ffi;
 
-    #[test]
-    fn generation_ledger_rejects_repeated_or_wrapped_slot_generations() {
-        let mut ledger = GenerationLedger::default();
+    fn create_raw_circle(body: BodyId, def: &ShapeDef, circle: Circle) -> ffi::b2ShapeId {
+        let def = def.clone().into_raw();
+        let circle = circle.into_raw();
+        unsafe { ffi::b2CreateCircleShape(body.into_raw(), &def, &circle) }
+    }
 
-        assert_eq!(ledger.register(1, u16::MAX - 1), Ok(()));
-        assert_eq!(ledger.register(1, u16::MAX), Ok(()));
-        assert_eq!(
-            ledger.register(1, 0),
-            Err(ApiError::ObjectIdentityExhausted)
-        );
-        assert_eq!(
-            ledger.register(1, u16::MAX),
-            Err(ApiError::ObjectIdentityExhausted)
-        );
-        assert_eq!(ledger.register(2, 0), Ok(()));
+    fn raw_shape_eq(left: ffi::b2ShapeId, right: ffi::b2ShapeId) -> bool {
+        left.index1 == right.index1
+            && left.world0 == right.world0
+            && left.generation == right.generation
+    }
+
+    fn destroy_registered_shape(world: &World, shape: ShapeId) {
+        unsafe { ffi::b2DestroyShape(shape.into_raw(), true) };
+        assert!(world.core().identities.unregister_shape(shape));
+    }
+
+    fn expose_pending_native_end_events(world: &World) {
+        // This test-only raw step deliberately leaves the Rust retired-output table intact so the
+        // native end event and its host identity can be inspected in the vulnerable reuse window.
+        unsafe { ffi::b2World_Step(world.raw(), 1.0 / 60.0, 4) };
+    }
+
+    fn recycle_raw_shape_slot_until_retired_key_conflicts(
+        world: &World,
+        body: BodyId,
+        def: &ShapeDef,
+        circle: Circle,
+        retired: ShapeId,
+    ) -> ffi::b2ShapeId {
+        let retired_raw = retired.into_raw();
+        for offset in 1..=u16::MAX {
+            let expected_generation = retired_raw.generation.wrapping_add(offset);
+            let raw = create_raw_circle(body, def, circle);
+            assert_eq!(raw.index1, retired_raw.index1);
+            assert_eq!(raw.generation, expected_generation);
+            let active = world
+                .core()
+                .finish_created_shape_with_access(raw, WorldAccess::Idle)
+                .unwrap();
+            destroy_registered_shape(world, active);
+        }
+
+        let raw = create_raw_circle(body, def, circle);
+        assert!(raw_shape_eq(raw, retired_raw));
+        raw
     }
 
     #[test]
@@ -1467,14 +1901,118 @@ mod identity_tests {
         let body = world.create_body_id(BodyBuilder::new().build());
         let core = world.core_rc();
 
-        // Creation paths register this generation. The explicit registration keeps this test
-        // valid while those paths are migrated in parallel.
-        let _ = core.register_body_generation(body);
         assert_eq!(
-            core.finish_created_body(body.into_raw()),
+            core.finish_created_body_with_access(body.into_raw(), WorldAccess::Idle),
             Err(ApiError::ObjectIdentityExhausted)
         );
         assert_eq!(core.lifecycle(), LifecycleState::Poisoned);
+    }
+
+    #[test]
+    fn retained_contact_end_shape_key_rejects_u16_generation_wrap_and_poisons_world() {
+        let mut world = World::new(WorldDef::builder().gravity([0.0_f32, 0.0]).build()).unwrap();
+        let static_body = world.create_body_id(BodyBuilder::new().build());
+        let dynamic_body = world.create_body_id(
+            BodyBuilder::new()
+                .body_type(BodyType::Dynamic)
+                .gravity_scale(0.0)
+                .build(),
+        );
+        let contact_def = ShapeDef::builder().enable_contact_events(true).build();
+        let circle = circle([0.0_f32, 0.0], 0.5);
+        let static_shape = world.create_circle_shape_for(static_body, &contact_def, &circle);
+        let retired = world.create_circle_shape_for(dynamic_body, &contact_def, &circle);
+
+        world.step(1.0 / 60.0, 4);
+        assert!(world.contact_events().begin.iter().any(|event| {
+            (event.shape_a == static_shape && event.shape_b == retired)
+                || (event.shape_a == retired && event.shape_b == static_shape)
+        }));
+
+        destroy_registered_shape(&world, retired);
+        expose_pending_native_end_events(&world);
+        let end_raw = unsafe { ffi::b2World_GetContactEvents(world.raw()) };
+        assert!(end_raw.endCount > 0);
+        assert!(!end_raw.endEvents.is_null());
+        let end =
+            unsafe { core::slice::from_raw_parts(end_raw.endEvents, end_raw.endCount as usize) };
+        assert!(end.iter().any(|event| {
+            raw_shape_eq(event.shapeIdA, retired.into_raw())
+                || raw_shape_eq(event.shapeIdB, retired.into_raw())
+        }));
+        assert_eq!(world.brand().try_shape(retired.into_raw()), Ok(retired));
+
+        let conflicting_raw = recycle_raw_shape_slot_until_retired_key_conflicts(
+            &world,
+            dynamic_body,
+            &contact_def,
+            circle,
+            retired,
+        );
+        assert_eq!(
+            world
+                .core()
+                .finish_created_shape_with_access(conflicting_raw, WorldAccess::Idle),
+            Err(ApiError::ObjectIdentityExhausted)
+        );
+        assert_eq!(world.core().lifecycle(), LifecycleState::Poisoned);
+    }
+
+    #[test]
+    fn retained_sensor_end_shape_key_rejects_u16_generation_wrap_and_poisons_world() {
+        let mut world = World::new(WorldDef::builder().gravity([0.0_f32, 0.0]).build()).unwrap();
+        let sensor_body = world.create_body_id(BodyBuilder::new().build());
+        let visitor_body = world.create_body_id(
+            BodyBuilder::new()
+                .body_type(BodyType::Dynamic)
+                .gravity_scale(0.0)
+                .build(),
+        );
+        let sensor_def = ShapeDef::builder()
+            .sensor(true)
+            .enable_sensor_events(true)
+            .build();
+        let visitor_def = ShapeDef::builder().enable_sensor_events(true).build();
+        let circle = circle([0.0_f32, 0.0], 0.5);
+        let sensor = world.create_circle_shape_for(sensor_body, &sensor_def, &circle);
+        let retired = world.create_circle_shape_for(visitor_body, &visitor_def, &circle);
+
+        world.step(1.0 / 60.0, 4);
+        assert!(
+            world
+                .sensor_events()
+                .begin
+                .iter()
+                .any(|event| { event.sensor_shape == sensor && event.visitor_shape == retired })
+        );
+
+        destroy_registered_shape(&world, retired);
+        expose_pending_native_end_events(&world);
+        let end_raw = unsafe { ffi::b2World_GetSensorEvents(world.raw()) };
+        assert!(end_raw.endCount > 0);
+        assert!(!end_raw.endEvents.is_null());
+        let end =
+            unsafe { core::slice::from_raw_parts(end_raw.endEvents, end_raw.endCount as usize) };
+        assert!(end.iter().any(|event| {
+            raw_shape_eq(event.sensorShapeId, sensor.into_raw())
+                && raw_shape_eq(event.visitorShapeId, retired.into_raw())
+        }));
+        assert_eq!(world.brand().try_shape(retired.into_raw()), Ok(retired));
+
+        let conflicting_raw = recycle_raw_shape_slot_until_retired_key_conflicts(
+            &world,
+            visitor_body,
+            &visitor_def,
+            circle,
+            retired,
+        );
+        assert_eq!(
+            world
+                .core()
+                .finish_created_shape_with_access(conflicting_raw, WorldAccess::Idle),
+            Err(ApiError::ObjectIdentityExhausted)
+        );
+        assert_eq!(world.core().lifecycle(), LifecycleState::Poisoned);
     }
 
     #[test]
@@ -1482,59 +2020,51 @@ mod identity_tests {
         let world = World::new(WorldDef::default()).unwrap();
         let core = world.core_rc();
         assert_eq!(
-            core.finish_created_body(ffi::b2BodyId {
-                index1: 0,
-                world0: core.brand().world0(),
-                generation: 0,
-            }),
+            core.finish_created_body_with_access(
+                ffi::b2BodyId {
+                    index1: 0,
+                    world0: core.brand().world0(),
+                    generation: 0,
+                },
+                WorldAccess::Idle,
+            ),
             Err(ApiError::InvalidBodyId)
         );
         assert_eq!(core.lifecycle(), LifecycleState::Poisoned);
-        assert!(
-            core.object_generations
-                .borrow()
-                .bodies
-                .last_by_slot
-                .is_empty()
-        );
 
         let world = World::new(WorldDef::default()).unwrap();
         let core = world.core_rc();
         assert_eq!(
-            core.finish_created_shape(ffi::b2ShapeId {
-                index1: 0,
-                world0: core.brand().world0(),
-                generation: 0,
-            }),
+            core.finish_created_shape_with_access(
+                ffi::b2ShapeId {
+                    index1: 0,
+                    world0: core.brand().world0(),
+                    generation: 0,
+                },
+                WorldAccess::Idle,
+            ),
             Err(ApiError::InvalidShapeId)
         );
         assert_eq!(core.lifecycle(), LifecycleState::Poisoned);
-        assert!(
-            core.object_generations
-                .borrow()
-                .shapes
-                .last_by_slot
-                .is_empty()
-        );
 
-        let world = World::new(WorldDef::default()).unwrap();
+        let mut world = World::new(WorldDef::default()).unwrap();
+        let body_a = world.create_body_id(crate::BodyBuilder::new().build());
+        let body_b = world.create_body_id(crate::BodyBuilder::new().build());
         let core = world.core_rc();
         assert_eq!(
-            core.finish_created_joint(ffi::b2JointId {
-                index1: 0,
-                world0: core.brand().world0(),
-                generation: 0,
-            }),
+            core.finish_created_joint(
+                ffi::b2JointId {
+                    index1: 0,
+                    world0: core.brand().world0(),
+                    generation: 0,
+                },
+                body_a,
+                body_b,
+                crate::JointType::Distance,
+            ),
             Err(ApiError::InvalidJointId)
         );
         assert_eq!(core.lifecycle(), LifecycleState::Poisoned);
-        assert!(
-            core.object_generations
-                .borrow()
-                .joints
-                .last_by_slot
-                .is_empty()
-        );
 
         let world = World::new(WorldDef::default()).unwrap();
         let core = world.core_rc();
@@ -1547,13 +2077,6 @@ mod identity_tests {
             Err(ApiError::InvalidChainId)
         );
         assert_eq!(core.lifecycle(), LifecycleState::Poisoned);
-        assert!(
-            core.object_generations
-                .borrow()
-                .chains
-                .last_by_slot
-                .is_empty()
-        );
     }
 
     #[test]
@@ -1588,7 +2111,9 @@ mod identity_tests {
     fn native_call_guard_defers_world_teardown_but_terminalizes_rust_state() {
         let world = World::new(WorldDef::default()).unwrap();
         let core = world.core_rc();
-        let call = core.begin_native_call().unwrap();
+        let call = core
+            .begin_native_call_with_access(WorldAccess::Idle)
+            .unwrap();
 
         drop(world);
 
@@ -1631,16 +2156,22 @@ mod auto_trait_tests {
 
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
-    use super::{ActivityState, LifecycleState, WorkerCallbackState, WorldCore, ffi};
+    use super::{ActivityState, LifecycleState, WorldCore, ffi};
+    #[cfg(not(target_arch = "wasm32"))]
+    use crate::core::callback_state::WorkerCallbackState;
     use crate::{ApiError, BodyBuilder, BodyType, ShapeDef, Vec2, World, WorldDef, shapes};
 
+    #[cfg(not(target_arch = "wasm32"))]
     assert_impl_all!(WorkerCallbackState: Send, Sync);
     assert_not_impl_any!(WorldCore: Send, Sync);
 
+    #[cfg(not(target_arch = "wasm32"))]
     static PANICKING_PAYLOAD_DROPS: AtomicUsize = AtomicUsize::new(0);
 
+    #[cfg(not(target_arch = "wasm32"))]
     struct PanickingPayload;
 
+    #[cfg(not(target_arch = "wasm32"))]
     impl Drop for PanickingPayload {
         fn drop(&mut self) {
             PANICKING_PAYLOAD_DROPS.fetch_add(1, Ordering::SeqCst);
@@ -1677,6 +2208,7 @@ mod auto_trait_tests {
     }
 
     #[test]
+    #[cfg(not(target_arch = "wasm32"))]
     fn competing_worker_panic_payload_is_not_dropped_on_the_callback_stack() {
         PANICKING_PAYLOAD_DROPS.store(0, Ordering::SeqCst);
         let world = World::new(WorldDef::default()).unwrap();
@@ -1789,14 +2321,14 @@ mod auto_trait_tests {
     }
 
     #[test]
-    fn world_drop_recovers_a_poisoned_box2d_lock() {
+    fn world_drop_recovers_a_poisoned_world_slot_lock() {
         let world = World::new(WorldDef::default()).unwrap();
         let raw_world = world.raw();
         let core = world.core_rc();
 
         let poison = std::panic::catch_unwind(|| {
-            let _guard = crate::core::box2d_lock::lock();
-            panic!("poison the Box2D lock for teardown coverage");
+            let _guard = crate::core::foundation::lock_world_slot_mutation();
+            panic!("poison the Box2D world-slot lock for teardown coverage");
         });
         assert!(poison.is_err());
 

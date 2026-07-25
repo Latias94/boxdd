@@ -1,19 +1,26 @@
 use super::*;
 
-fn finish_body_creation(world: &World, raw: ffi::b2BodyId) -> crate::error::ApiResult<BodyId> {
-    let id = world.core.finish_created_body(raw)?;
-    #[cfg(feature = "serialize")]
-    {
-        world.core.record_body(id);
-    }
-    Ok(id)
+fn finish_body_creation(
+    world: &World,
+    raw: ffi::b2BodyId,
+    access: crate::core::world_core::WorldAccess,
+) -> crate::error::ApiResult<BodyId> {
+    world.core.finish_created_body_with_access(raw, access)
+}
+
+pub(crate) fn try_create_body_id_with_access(
+    world: &mut World,
+    def: BodyDef,
+    access: crate::core::world_core::WorldAccess,
+) -> crate::error::ApiResult<BodyId> {
+    world.core.check_access(access)?;
+    let raw = def.into_raw_guard();
+    let raw_id = unsafe { ffi::b2CreateBody(world.raw(), raw.as_raw()) };
+    finish_body_creation(world, raw_id, access)
 }
 
 fn try_create_body_id_impl(world: &mut World, def: BodyDef) -> crate::error::ApiResult<BodyId> {
-    world.core.check_available()?;
-    let raw = def.0;
-    let raw_id = unsafe { ffi::b2CreateBody(world.raw(), &raw) };
-    finish_body_creation(world, raw_id)
+    try_create_body_id_with_access(world, def, crate::core::world_core::WorldAccess::Idle)
 }
 
 fn create_body_id_impl(world: &mut World, def: BodyDef) -> BodyId {
@@ -93,11 +100,11 @@ mod tests {
 
         assert_eq!(world.core.check_body(id), Ok(()));
 
-        #[cfg(feature = "serialize")]
-        assert_eq!(world.body_ids(), vec![id]);
-
         assert_eq!(
-            world.core.finish_created_body(id.into_raw()),
+            world.core.finish_created_body_with_access(
+                id.into_raw(),
+                crate::core::world_core::WorldAccess::Idle,
+            ),
             Err(crate::error::ApiError::ObjectIdentityExhausted)
         );
         assert_eq!(

@@ -12,8 +12,17 @@ readme = "README.md"
 keywords = ["box2d", "bevy", "physics", "game", "simulation"]
 categories = ["game-engines", "api-bindings"]
 
+include = [
+    "Cargo.toml",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+    "src/**",
+]
+
 [features]
 default = []
+double-precision = ["boxdd/double-precision"]
 
 [dependencies]
 boxdd.workspace = true
@@ -27,7 +36,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 bevy = "0.19.0"
-bevy_egui = "0.41.0"
+bevy_egui = "0.41.1"
 static_assertions = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]

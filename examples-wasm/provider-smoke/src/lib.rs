@@ -1,9 +1,9 @@
 use std::cell::RefCell;
 
 use boxdd::{
-    BodyBuilder, BodyId, BodyType, DistanceInput, DistanceJointDef, JointBaseBuilder, Position,
-    QueryFilter, ShapeCastPairInput, ShapeDef, ShapeProxy, SimplexCache, Transform, Vec2, World,
-    WorldDef, shape_cast, shape_distance, shapes,
+    BodyBuilder, BodyId, BodyType, DistanceInput, DistanceJointDef, JointBase, Position,
+    QueryFilter, ShapeCastPairInput, ShapeDef, ShapeProxy, SimplexCache, Transform, Vec2,
+    WorkerCount, World, WorldDef, shape_cast, shape_distance, shapes,
 };
 
 const OK: i32 = 0;
@@ -14,6 +14,9 @@ const ERR_MOTION: i32 = -6;
 const ERR_QUERY: i32 = -7;
 const ERR_COLLISION: i32 = -9;
 const ERR_JOINT: i32 = -10;
+const ERR_PROVIDER: i32 = -11;
+#[cfg(target_arch = "wasm32")]
+const ERR_CALLBACK_BOUNDARY: i32 = -12;
 
 const SHAPE_BOX: i32 = 1;
 const SHAPE_CIRCLE: i32 = 2;
@@ -159,6 +162,11 @@ fn with_runtime_body(index: i32, f: impl FnOnce(&RuntimeScene, RuntimeBody) -> i
 }
 
 fn run_smoke() -> Result<(), i32> {
+    verify_provider_identity()?;
+    #[cfg(target_arch = "wasm32")]
+    {
+        verify_raw_callbacks_rejected()?;
+    }
     run_drop_millimeters()?;
     run_ray_hit_millimeters()?;
     run_shape_cast_permyriad()?;
@@ -166,11 +174,94 @@ fn run_smoke() -> Result<(), i32> {
     Ok(())
 }
 
+#[cfg(target_arch = "wasm32")]
+fn verify_raw_callbacks_rejected() -> Result<(), i32> {
+    unsafe extern "C" fn friction(
+        friction_a: f32,
+        _user_material_id_a: u64,
+        friction_b: f32,
+        _user_material_id_b: u64,
+    ) -> f32 {
+        friction_a.max(friction_b)
+    }
+    unsafe extern "C" fn enqueue(
+        _task: boxdd_sys::ffi::b2TaskCallback,
+        _task_context: *mut core::ffi::c_void,
+        _user_context: *mut core::ffi::c_void,
+    ) -> *mut core::ffi::c_void {
+        core::ptr::null_mut()
+    }
+    unsafe extern "C" fn finish(
+        _user_task: *mut core::ffi::c_void,
+        _user_context: *mut core::ffi::c_void,
+    ) {
+    }
+
+    let mut material_raw = WorldDef::default().into_raw();
+    material_raw.frictionCallback = Some(friction);
+    let material = unsafe { WorldDef::from_raw(material_raw) };
+    if material.validate() != Err(boxdd::ApiError::InvalidArgument) {
+        return Err(ERR_CALLBACK_BOUNDARY);
+    }
+
+    let mut task_raw = WorldDef::default().into_raw();
+    task_raw.enqueueTask = Some(enqueue);
+    task_raw.finishTask = Some(finish);
+    let task = unsafe { WorldDef::from_raw(task_raw) };
+    if task.validate() != Err(boxdd::ApiError::InvalidArgument) {
+        return Err(ERR_CALLBACK_BOUNDARY);
+    }
+
+    Ok(())
+}
+
+fn verify_provider_identity() -> Result<(), i32> {
+    fn text(bytes: &[u8]) -> Result<&str, i32> {
+        let end = bytes
+            .iter()
+            .position(|byte| *byte == 0)
+            .unwrap_or(bytes.len());
+        std::str::from_utf8(&bytes[..end]).map_err(|_| ERR_PROVIDER)
+    }
+
+    let identity = boxdd_sys::adapter::runtime_identity().ok_or(ERR_PROVIDER)?;
+    if identity.struct_size as usize != std::mem::size_of_val(&identity)
+        || identity.abi_version != boxdd_sys::adapter::ADAPTER_ABI_VERSION
+        || identity.snapshot_version == 0
+        || identity.snapshot_layout_hash == 0
+        || identity.pointer_width != 4
+        || identity.little_endian == 0
+        || (identity.double_precision != 0) != boxdd_sys::IS_DOUBLE_PRECISION
+        || identity.validation_enabled != 0
+        || identity.private_abi_hash.iter().all(|byte| *byte == 0)
+        || text(&identity.upstream_sha)? != boxdd_sys::UPSTREAM_SHA
+        || boxdd_sys::TARGET_ABI != "wasm32-unknown-unknown"
+        || text(&identity.target_abi)? != boxdd_sys::TARGET_ABI
+        || text(&identity.adapter_source_sha256)? != boxdd_sys::ADAPTER_SOURCE_SHA256
+        || text(&identity.recording_contract_blake3)? != boxdd_sys::RECORDING_CONTRACT_BLAKE3
+    {
+        return Err(ERR_PROVIDER);
+    }
+    if unsafe { boxdd_sys::adapter::boxddAdapter_AbiVersion() } != identity.abi_version
+        || unsafe { boxdd_sys::adapter::boxddAdapter_GetSnapshotLayoutHash() }
+            != identity.snapshot_layout_hash
+        || unsafe { boxdd_sys::adapter::boxddRecPlayer_IsHealthy(std::ptr::null()) }
+        || boxdd_sys::adapter::validate_snapshot(
+            &[],
+            &boxdd_sys::adapter::SnapshotLimits::default(),
+        )
+        .is_ok()
+    {
+        return Err(ERR_PROVIDER);
+    }
+    Ok(())
+}
+
 fn run_drop_millimeters() -> Result<i32, i32> {
     let mut world = World::new(
         WorldDef::builder()
             .gravity([0.0_f32, -10.0])
-            .worker_count(0)
+            .worker_count(WorkerCount::default())
             .build(),
     )
     .map_err(|_| ERR_WORLD)?;
@@ -203,19 +294,25 @@ fn run_drop_millimeters() -> Result<i32, i32> {
 }
 
 fn run_ray_hit_millimeters() -> Result<i32, i32> {
-    let mut world =
-        World::new(WorldDef::builder().worker_count(0).build()).map_err(|_| ERR_WORLD)?;
+    let mut world = World::new(
+        WorldDef::builder()
+            .worker_count(WorkerCount::default())
+            .build(),
+    )
+    .map_err(|_| ERR_WORLD)?;
     let body = world.create_body_id(BodyBuilder::new().position(Vec2::ZERO).build());
     let circle = shapes::circle([0.0_f32, 0.0], 0.5);
     world
         .try_create_circle_shape_for(body, &ShapeDef::builder().density(1.0).build(), &circle)
         .map_err(|_| ERR_SHAPE)?;
 
-    let hit = world.cast_ray_closest(
-        Position::from([-3.0_f32, 0.0]),
-        [6.0, 0.0],
-        QueryFilter::default(),
-    );
+    let hit = world
+        .cast_ray_closest(
+            Position::from([-3.0_f32, 0.0]),
+            [6.0, 0.0],
+            QueryFilter::default(),
+        )
+        .ok_or(ERR_QUERY)?;
     if !hit.hit || !hit.fraction.is_finite() || !(0.0..=1.0).contains(&hit.fraction) {
         return Err(ERR_QUERY);
     }
@@ -267,8 +364,12 @@ fn square_proxy() -> Result<ShapeProxy, i32> {
 }
 
 fn run_joint_error_millimeters() -> Result<i32, i32> {
-    let mut world =
-        World::new(WorldDef::builder().worker_count(0).build()).map_err(|_| ERR_WORLD)?;
+    let mut world = World::new(
+        WorldDef::builder()
+            .worker_count(WorkerCount::default())
+            .build(),
+    )
+    .map_err(|_| ERR_WORLD)?;
     let anchor = world.create_body_id(BodyBuilder::new().position([0.0_f32, 0.0]).build());
     let body = world.create_body_id(
         BodyBuilder::new()
@@ -282,10 +383,7 @@ fn run_joint_error_millimeters() -> Result<i32, i32> {
         .try_create_circle_shape_for(body, &ShapeDef::builder().density(1.0).build(), &circle)
         .map_err(|_| ERR_SHAPE)?;
 
-    let base = JointBaseBuilder::new()
-        .bodies_by_id(anchor, body)
-        .local_frames([0.0_f32, 0.0], 0.0, [0.0_f32, 0.0], 0.0)
-        .build();
+    let base = JointBase::new(anchor, body);
     let joint = world.create_distance_joint_id(&DistanceJointDef::new(base).length(1.0));
     for _ in 0..60 {
         world.step(1.0 / 60.0, 4);
@@ -302,7 +400,7 @@ fn create_runtime_scene() -> Result<RuntimeScene, i32> {
     let mut world = World::new(
         WorldDef::builder()
             .gravity([0.0_f32, -10.0])
-            .worker_count(0)
+            .worker_count(WorkerCount::default())
             .build(),
     )
     .map_err(|_| ERR_WORLD)?;
@@ -355,10 +453,7 @@ fn create_runtime_scene() -> Result<RuntimeScene, i32> {
         radius: 0.36,
     });
 
-    let base = JointBaseBuilder::new()
-        .bodies_by_id(bodies[0].id, bodies[1].id)
-        .local_frames([0.0_f32, 0.0], 0.0, [0.0_f32, 0.0], 0.0)
-        .build();
+    let base = JointBase::new(bodies[0].id, bodies[1].id);
     world.create_distance_joint_id(&DistanceJointDef::new(base).length(1.6));
 
     Ok(RuntimeScene {

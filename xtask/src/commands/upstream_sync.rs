@@ -10,6 +10,9 @@ use std::{
 use serde::{Deserialize, Serialize};
 use tempfile::{NamedTempFile, TempDir};
 
+#[path = "../../../boxdd-sys/src/bindgen_contract.rs"]
+mod bindgen_contract;
+
 use crate::{
     Error, Result,
     abi_probe::{AbiProbePrecision, GeneratedAbiProbe, generate_workspace_probe},
@@ -36,6 +39,7 @@ const GENERATOR_INPUT_PATHS: &[&str] = &[
     "boxdd/tests",
     "boxdd-sys/Cargo.toml",
     "boxdd-sys/build.rs",
+    "boxdd-sys/native",
     "boxdd-sys/src",
     "tools/abi-probe",
     "xtask/Cargo.toml",
@@ -165,6 +169,60 @@ impl RustTarget {
         }
     }
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RouteBindingSpec {
+    name: &'static str,
+    path: &'static str,
+    precision: Precision,
+    target: ArtifactTarget,
+    rust_target: RustTarget,
+}
+
+const ROUTE_BINDING_SPECS: [RouteBindingSpec; 6] = [
+    RouteBindingSpec {
+        name: "bindings-single",
+        path: "boxdd-sys/src/bindings_pregenerated.rs",
+        precision: Precision::Single,
+        target: ArtifactTarget::Universal,
+        rust_target: RustTarget::X86_64UnknownLinuxGnu,
+    },
+    RouteBindingSpec {
+        name: "bindings-wasm32-unknown-unknown-single",
+        path: "boxdd-sys/src/bindings_wasm32_unknown_unknown.rs",
+        precision: Precision::Single,
+        target: ArtifactTarget::Wasm32UnknownUnknown,
+        rust_target: RustTarget::Wasm32UnknownUnknown,
+    },
+    RouteBindingSpec {
+        name: "bindings-wasm32-wasip1-single",
+        path: "boxdd-sys/src/bindings_wasm32_wasip1.rs",
+        precision: Precision::Single,
+        target: ArtifactTarget::Wasm32Wasip1,
+        rust_target: RustTarget::Wasm32Wasip1,
+    },
+    RouteBindingSpec {
+        name: "bindings-double",
+        path: "boxdd-sys/src/bindings_double.rs",
+        precision: Precision::Double,
+        target: ArtifactTarget::Universal,
+        rust_target: RustTarget::X86_64UnknownLinuxGnu,
+    },
+    RouteBindingSpec {
+        name: "bindings-wasm32-unknown-unknown-double",
+        path: "boxdd-sys/src/bindings_wasm32_unknown_unknown_double.rs",
+        precision: Precision::Double,
+        target: ArtifactTarget::Wasm32UnknownUnknown,
+        rust_target: RustTarget::Wasm32UnknownUnknown,
+    },
+    RouteBindingSpec {
+        name: "bindings-wasm32-wasip1-double",
+        path: "boxdd-sys/src/bindings_wasm32_wasip1_double.rs",
+        precision: Precision::Double,
+        target: ArtifactTarget::Wasm32Wasip1,
+        rust_target: RustTarget::Wasm32Wasip1,
+    },
+];
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -440,6 +498,9 @@ fn load_manifest_snapshot(
 }
 
 pub fn run(paths: &WorkspacePaths, args: &[String]) -> Result<()> {
+    if matches!(args, [argument] if argument == "--refresh-routes") {
+        return refresh_routes(paths);
+    }
     if matches!(args, [argument] if argument == "--prepare-next") {
         return prepare_next_candidate(paths);
     }
@@ -468,6 +529,60 @@ pub fn run(paths: &WorkspacePaths, args: &[String]) -> Result<()> {
         }
         UpdateMode::Write => apply_update(paths),
     }
+}
+
+fn refresh_routes(paths: &WorkspacePaths) -> Result<()> {
+    let _lock = UpdateLock::acquire(paths.root())?;
+    let inputs = capture_route_refresh_inputs(paths.root())?;
+    let repository_revision = inputs.repository_revision.clone();
+    let manifest_path = paths.upstream_manifest();
+    let manifest_content =
+        fs::read(&manifest_path).map_err(|source| Error::io(&manifest_path, source))?;
+    let original = UpstreamManifest::from_bytes(paths, &manifest_content)?;
+    validate_repository_core(paths, &original)?;
+    validate_recording_input_identities(paths, &original)?;
+    validate_recording_operations(paths, &original)?;
+    let target = canonical_route_refresh_manifest(paths, &original)?;
+    let baseline =
+        RouteRefreshBaseline::capture(paths, inputs, &manifest_content, &original, &target)?;
+
+    let generation =
+        IsolatedGeneration::create_at(paths, &repository_revision, &original.active_revision)?;
+    let staged_result = (|| {
+        baseline.inputs.overlay(&generation.worktree)?;
+        generation.prepare_route_refresh(&original, &target)
+    })();
+    let cleanup_result = generation.finish();
+    let staged = match (staged_result, cleanup_result) {
+        (Ok(staged), Ok(())) => staged,
+        (Err(error), Ok(())) => return Err(error),
+        (Ok(_), Err(cleanup)) => return Err(cleanup),
+        (Err(error), Err(cleanup)) => {
+            return Err(Error::message(format!(
+                "route refresh staging failed: {error}\nisolated worktree cleanup also failed: {cleanup}"
+            )));
+        }
+    };
+
+    baseline.verify_before_install(paths)?;
+    install_route_refresh(paths, &original, &staged, &baseline, None, || {
+        validate_repository(paths, &staged.manifest, false)?;
+        super::api_coverage::check(paths)
+    })?;
+    println!(
+        "refreshed {} binding routes and {} generated artifacts at Box2D {}",
+        staged.manifest.binding_routes.len(),
+        staged.manifest.artifacts.len(),
+        staged.manifest.active_revision
+    );
+    Ok(())
+}
+
+fn capture_route_refresh_inputs(root: &Path) -> Result<GeneratorInputSnapshot> {
+    let clean_baseline = GenerationBaseline::capture(root)?;
+    let inputs = GeneratorInputSnapshot::capture(root)?;
+    clean_baseline.verify(root)?;
+    Ok(inputs)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1304,6 +1419,181 @@ fn validate_binding_routes(
     }
 }
 
+pub(crate) fn canonical_route_binding_artifacts() -> Vec<GeneratedArtifact> {
+    ROUTE_BINDING_SPECS
+        .iter()
+        .map(|spec| GeneratedArtifact {
+            name: spec.name.to_owned(),
+            kind: ArtifactKind::Bindings,
+            path: spec.path.to_owned(),
+            precision: Some(spec.precision),
+            target: spec.target,
+            provider: ArtifactProvider::Universal,
+            producer: ArtifactProducer::Bindgen,
+            content_blake3: UNINITIALIZED_BLAKE3.to_owned(),
+            candidate_path: None,
+            candidate_blake3: None,
+        })
+        .collect()
+}
+
+pub(crate) fn canonical_binding_routes() -> Vec<BindingRoute> {
+    let mut routes = Vec::with_capacity(10);
+    for precision in [Precision::Single, Precision::Double] {
+        let native = match precision {
+            Precision::Single => "bindings-single",
+            Precision::Double => "bindings-double",
+        };
+        let unknown = match precision {
+            Precision::Single => "bindings-wasm32-unknown-unknown-single",
+            Precision::Double => "bindings-wasm32-unknown-unknown-double",
+        };
+        let wasip1 = match precision {
+            Precision::Single => "bindings-wasm32-wasip1-single",
+            Precision::Double => "bindings-wasm32-wasip1-double",
+        };
+        let rust_features = match precision {
+            Precision::Single => Vec::new(),
+            Precision::Double => vec!["double-precision".to_owned()],
+        };
+        for (provider, artifact, rust_target) in [
+            (
+                ArtifactProvider::Source,
+                native,
+                RustTarget::X86_64UnknownLinuxGnu,
+            ),
+            (
+                ArtifactProvider::SystemStatic,
+                native,
+                RustTarget::X86_64UnknownLinuxGnu,
+            ),
+            (
+                ArtifactProvider::PrebuiltStatic,
+                native,
+                RustTarget::X86_64UnknownLinuxGnu,
+            ),
+            (
+                ArtifactProvider::WasmRuntime,
+                unknown,
+                RustTarget::Wasm32UnknownUnknown,
+            ),
+            (
+                ArtifactProvider::WasmCompileOnly,
+                wasip1,
+                RustTarget::Wasm32Wasip1,
+            ),
+        ] {
+            routes.push(BindingRoute {
+                mode: precision,
+                provider,
+                artifact: artifact.to_owned(),
+                rust_target,
+                rust_features: rust_features.clone(),
+            });
+        }
+    }
+    routes
+}
+
+fn validate_route_refresh_topology(manifest: &UpstreamManifest) -> Result<()> {
+    let expected_routes = canonical_binding_routes();
+    if manifest.binding_routes != expected_routes {
+        return Err(Error::message(format!(
+            "route refresh requires the exact canonical 10-route matrix; observed {:?}, expected {:?}",
+            manifest.binding_routes, expected_routes
+        )));
+    }
+
+    let expected = canonical_route_binding_artifacts()
+        .into_iter()
+        .map(|artifact| {
+            (
+                artifact.name,
+                artifact.path,
+                artifact.precision,
+                artifact.target,
+                artifact.provider,
+                artifact.producer,
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    let observed = manifest
+        .binding_artifacts()
+        .map(|artifact| {
+            (
+                artifact.name.clone(),
+                artifact.path.clone(),
+                artifact.precision,
+                artifact.target,
+                artifact.provider,
+                artifact.producer,
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    if observed != expected {
+        return Err(Error::message(format!(
+            "route refresh bindings topology is incomplete or incorrect; observed {observed:?}, expected {expected:?}"
+        )));
+    }
+    Ok(())
+}
+
+fn canonical_route_refresh_manifest(
+    paths: &WorkspacePaths,
+    manifest: &UpstreamManifest,
+) -> Result<UpstreamManifest> {
+    if manifest.next_revision.is_some()
+        || !manifest.next_binding_routes.is_empty()
+        || !manifest.next_artifacts.is_empty()
+        || manifest.next_inventory.is_some()
+    {
+        return Err(Error::message(
+            "route refresh cannot run while an upstream revision transition is registered",
+        ));
+    }
+    if manifest
+        .artifacts
+        .iter()
+        .any(|artifact| artifact.candidate_path.is_some() || artifact.candidate_blake3.is_some())
+    {
+        return Err(Error::message(
+            "route refresh cannot run while reviewed artifact candidates are registered",
+        ));
+    }
+    if manifest
+        .artifacts
+        .iter()
+        .any(|artifact| artifact.path == "boxdd-sys/upstream.toml")
+    {
+        return Err(Error::message(
+            "route refresh artifacts cannot alias the upstream manifest",
+        ));
+    }
+    if manifest.recording_revision != manifest.active_revision {
+        return Err(Error::message(
+            "route refresh requires recording_revision to equal active_revision",
+        ));
+    }
+
+    let mut target = manifest.clone();
+    target
+        .artifacts
+        .retain(|artifact| artifact.kind != ArtifactKind::Bindings);
+    let mut bindings = canonical_route_binding_artifacts();
+    bindings.append(&mut target.artifacts);
+    target.artifacts = bindings;
+    target.binding_routes = canonical_binding_routes();
+    for artifact in &mut target.artifacts {
+        artifact.content_blake3 = UNINITIALIZED_BLAKE3.to_owned();
+    }
+    target.artifact_digests_initialized = false;
+
+    validate_manifest(&target)?;
+    validate_binding_route_feature_catalog(paths, &target.binding_routes)?;
+    validate_route_refresh_topology(&target)?;
+    Ok(target)
+}
+
 fn validate_binding_route_feature_catalog(
     paths: &WorkspacePaths,
     routes: &[BindingRoute],
@@ -1958,6 +2248,174 @@ impl GenerationBaseline {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum GeneratorInputEntry {
+    Directory,
+    File(Vec<u8>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct GeneratorInputSnapshot {
+    repository_revision: String,
+    entries: BTreeMap<String, GeneratorInputEntry>,
+}
+
+impl GeneratorInputSnapshot {
+    fn capture(root: &Path) -> Result<Self> {
+        let repository_revision = git_output(root, ["rev-parse", "HEAD"])?.trim().to_owned();
+        let mut entries = BTreeMap::new();
+        for relative in GENERATOR_INPUT_PATHS {
+            collect_generator_snapshot_entries(root, &root.join(relative), &mut entries)?;
+        }
+        Ok(Self {
+            repository_revision,
+            entries,
+        })
+    }
+
+    fn verify(&self, root: &Path) -> Result<()> {
+        self.verify_excluding(root, &BTreeSet::new())
+    }
+
+    fn verify_excluding(&self, root: &Path, excluded: &BTreeSet<String>) -> Result<()> {
+        let actual = Self::capture(root)?;
+        if actual.repository_revision != self.repository_revision {
+            return Err(Error::message(format!(
+                "repository HEAD changed during route refresh: expected {}, observed {}",
+                self.repository_revision, actual.repository_revision
+            )));
+        }
+        let paths = self
+            .entries
+            .keys()
+            .chain(actual.entries.keys())
+            .filter(|path| !snapshot_path_is_excluded(path, excluded))
+            .collect::<BTreeSet<_>>();
+        for path in paths {
+            let expected = self.entries.get(path);
+            let observed = actual.entries.get(path);
+            if expected != observed {
+                return Err(Error::message(format!(
+                    "controlled route generator input `{path}` changed after the refresh snapshot was captured: expected {}, observed {}",
+                    describe_generator_input_entry(expected),
+                    describe_generator_input_entry(observed)
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn overlay(&self, destination_root: &Path) -> Result<()> {
+        for relative in GENERATOR_INPUT_PATHS {
+            remove_overlay_path(&destination_root.join(relative))?;
+        }
+        for (relative, entry) in &self.entries {
+            let destination = destination_root.join(relative);
+            match entry {
+                GeneratorInputEntry::Directory => fs::create_dir_all(&destination)
+                    .map_err(|source| Error::io(&destination, source))?,
+                GeneratorInputEntry::File(content) => {
+                    let parent = destination.parent().ok_or_else(|| {
+                        Error::message(format!(
+                            "controlled generator input {} has no parent",
+                            destination.display()
+                        ))
+                    })?;
+                    fs::create_dir_all(parent).map_err(|source| Error::io(parent, source))?;
+                    write_atomic_bytes(&destination, content)?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn snapshot_path_is_excluded(path: &str, excluded: &BTreeSet<String>) -> bool {
+    excluded.iter().any(|prefix| {
+        path == prefix
+            || path
+                .strip_prefix(prefix)
+                .is_some_and(|suffix| suffix.starts_with('/'))
+    })
+}
+
+fn describe_generator_input_entry(entry: Option<&GeneratorInputEntry>) -> String {
+    match entry {
+        Some(GeneratorInputEntry::Directory) => "directory".to_owned(),
+        Some(GeneratorInputEntry::File(content)) => {
+            format!("file blake3 {}", blake3_bytes(content))
+        }
+        None => "missing".to_owned(),
+    }
+}
+
+fn collect_generator_snapshot_entries(
+    root: &Path,
+    path: &Path,
+    entries: &mut BTreeMap<String, GeneratorInputEntry>,
+) -> Result<()> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(Error::io(path, error)),
+    };
+    let relative = path.strip_prefix(root).map_err(|_| {
+        Error::message(format!(
+            "controlled generator input {} is outside repository root {}",
+            path.display(),
+            root.display()
+        ))
+    })?;
+    let relative = canonical_manifest_path(relative).ok_or_else(|| {
+        Error::message(format!(
+            "controlled generator input {} is not canonical UTF-8",
+            path.display()
+        ))
+    })?;
+    if metadata.file_type().is_symlink() {
+        return Err(Error::message(format!(
+            "controlled generator input {} is a symlink; route refresh accepts only regular files and directories",
+            path.display()
+        )));
+    }
+    if metadata.is_file() {
+        let content = fs::read(path).map_err(|source| Error::io(path, source))?;
+        entries.insert(relative, GeneratorInputEntry::File(content));
+        return Ok(());
+    }
+    if !metadata.is_dir() {
+        return Err(Error::message(format!(
+            "controlled generator input {} is neither a regular file nor a directory",
+            path.display()
+        )));
+    }
+
+    entries.insert(relative, GeneratorInputEntry::Directory);
+    let mut children = fs::read_dir(path)
+        .map_err(|source| Error::io(path, source))?
+        .map(|entry| entry.map(|entry| entry.path()))
+        .collect::<std::io::Result<Vec<_>>>()
+        .map_err(|source| Error::io(path, source))?;
+    children.sort();
+    for child in children {
+        collect_generator_snapshot_entries(root, &child, entries)?;
+    }
+    Ok(())
+}
+
+fn remove_overlay_path(path: &Path) -> Result<()> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(Error::io(path, error)),
+    };
+    if metadata.is_dir() && !metadata.file_type().is_symlink() {
+        fs::remove_dir_all(path).map_err(|source| Error::io(path, source))
+    } else {
+        fs::remove_file(path).map_err(|source| Error::io(path, source))
+    }
+}
+
 fn generator_worktree_blake3(root: &Path) -> Result<String> {
     let mut entries = Vec::<(String, PathBuf, u8)>::new();
     for relative in GENERATOR_INPUT_PATHS {
@@ -2051,12 +2509,160 @@ struct StagedUpdate {
     candidate_paths: Vec<String>,
 }
 
+#[derive(Debug)]
+struct RouteRefreshStaging {
+    manifest: UpstreamManifest,
+    files: Vec<StagedFile>,
+    removals: Vec<String>,
+}
+
+struct RouteRefreshBaseline {
+    inputs: GeneratorInputSnapshot,
+    manifest: FileBackup,
+    outputs: Vec<FileBackup>,
+    gitlink_revision: String,
+    checkout: CheckoutState,
+}
+
+impl RouteRefreshBaseline {
+    fn capture(
+        paths: &WorkspacePaths,
+        inputs: GeneratorInputSnapshot,
+        expected_manifest: &[u8],
+        original: &UpstreamManifest,
+        target: &UpstreamManifest,
+    ) -> Result<Self> {
+        let manifest = FileBackup::capture(paths.upstream_manifest())?;
+        if manifest.content.as_deref() != Some(expected_manifest) {
+            return Err(Error::message(
+                "upstream manifest changed while the route refresh snapshot was being captured",
+            ));
+        }
+        let mut relative_paths = original
+            .artifacts
+            .iter()
+            .chain(&target.artifacts)
+            .map(|artifact| artifact.path.clone())
+            .collect::<BTreeSet<_>>();
+        relative_paths.insert(super::api_coverage::RUNTIME_RECORDING_WIRE_PATH.to_owned());
+        let outputs = relative_paths
+            .into_iter()
+            .map(|relative| {
+                if !is_canonical_manifest_path(&relative) {
+                    return Err(Error::message(format!(
+                        "route refresh output `{relative}` is not a canonical relative path"
+                    )));
+                }
+                let path = paths.root().join(relative);
+                let parent = path.parent().ok_or_else(|| {
+                    Error::message(format!(
+                        "route refresh output {} has no parent directory",
+                        path.display()
+                    ))
+                })?;
+                let metadata =
+                    fs::symlink_metadata(parent).map_err(|source| Error::io(parent, source))?;
+                if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                    return Err(Error::message(format!(
+                        "route refresh output parent {} must be an existing non-symlink directory",
+                        parent.display()
+                    )));
+                }
+                FileBackup::capture(path)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let baseline = Self {
+            inputs,
+            manifest,
+            outputs,
+            gitlink_revision: indexed_gitlink(paths.root())?,
+            checkout: checkout_state(&paths.box2d())?,
+        };
+        baseline.verify_before_install(paths)?;
+        Ok(baseline)
+    }
+
+    fn verify_before_install(&self, paths: &WorkspacePaths) -> Result<()> {
+        self.inputs.verify(paths.root())?;
+        self.verify_manifest_original()?;
+        for output in &self.outputs {
+            verify_file_backup(output)?;
+        }
+        self.verify_repository_coordinates(paths)
+    }
+
+    fn verify_stable_inputs(
+        &self,
+        paths: &WorkspacePaths,
+        managed_paths: &BTreeSet<String>,
+    ) -> Result<()> {
+        self.inputs.verify_excluding(paths.root(), managed_paths)?;
+        self.verify_repository_coordinates(paths)
+    }
+
+    fn verify_manifest_original(&self) -> Result<()> {
+        verify_file_backup(&self.manifest).map_err(|error| {
+            Error::message(format!(
+                "upstream manifest changed after route refresh preflight: {error}"
+            ))
+        })
+    }
+
+    fn verify_repository_coordinates(&self, paths: &WorkspacePaths) -> Result<()> {
+        let gitlink = indexed_gitlink(paths.root())?;
+        if gitlink != self.gitlink_revision {
+            return Err(Error::message(format!(
+                "Box2D gitlink changed during route refresh: expected {}, observed {gitlink}",
+                self.gitlink_revision
+            )));
+        }
+        let checkout = checkout_state(&paths.box2d())?;
+        if checkout != self.checkout {
+            return Err(Error::message(format!(
+                "Box2D checkout changed during route refresh: expected {:?}, observed {checkout:?}",
+                self.checkout
+            )));
+        }
+        Ok(())
+    }
+
+    fn output(&self, path: &Path) -> Result<&FileBackup> {
+        self.outputs
+            .iter()
+            .find(|output| output.path == path)
+            .ok_or_else(|| {
+                Error::message(format!(
+                    "route refresh path {} was absent from the output snapshot",
+                    path.display()
+                ))
+            })
+    }
+}
+
+fn verify_file_backup(expected: &FileBackup) -> Result<()> {
+    let actual = FileBackup::capture(expected.path.clone())?;
+    if actual.content != expected.content {
+        return Err(Error::message(format!(
+            "managed route refresh path {} changed after preflight",
+            expected.path.display()
+        )));
+    }
+    Ok(())
+}
+
 #[derive(Clone, Debug)]
 #[doc(hidden)]
 pub enum ManagedArtifactDestination {
     Active,
     ReviewedActive,
-    ReviewedCandidate { path: String },
+    ReviewedCandidate {
+        path: String,
+    },
+    /// A generated file that participates in the same CAS/rollback transaction
+    /// but is intentionally not represented as an upstream manifest artifact.
+    Auxiliary {
+        path: String,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -2065,6 +2671,7 @@ pub struct ManagedArtifactWrite {
     pub artifact_name: String,
     pub destination: ManagedArtifactDestination,
     pub content: Vec<u8>,
+    reviewed_baseline_blake3: Option<String>,
 }
 
 impl ManagedArtifactWrite {
@@ -2073,6 +2680,7 @@ impl ManagedArtifactWrite {
             artifact_name: artifact_name.into(),
             destination: ManagedArtifactDestination::Active,
             content,
+            reviewed_baseline_blake3: None,
         }
     }
 
@@ -2085,6 +2693,7 @@ impl ManagedArtifactWrite {
             artifact_name: artifact_name.into(),
             destination: ManagedArtifactDestination::ReviewedCandidate { path: path.into() },
             content,
+            reviewed_baseline_blake3: None,
         }
     }
 
@@ -2093,6 +2702,30 @@ impl ManagedArtifactWrite {
             artifact_name: artifact_name.into(),
             destination: ManagedArtifactDestination::ReviewedActive,
             content,
+            reviewed_baseline_blake3: None,
+        }
+    }
+
+    pub(crate) fn reviewed_active_with_baseline_blake3(
+        artifact_name: impl Into<String>,
+        content: Vec<u8>,
+        reviewed_baseline_blake3: impl Into<String>,
+    ) -> Self {
+        Self {
+            artifact_name: artifact_name.into(),
+            destination: ManagedArtifactDestination::ReviewedActive,
+            content,
+            reviewed_baseline_blake3: Some(reviewed_baseline_blake3.into()),
+        }
+    }
+
+    pub fn auxiliary(path: impl Into<String>, content: Vec<u8>) -> Self {
+        let path = path.into();
+        Self {
+            artifact_name: format!("auxiliary:{path}"),
+            destination: ManagedArtifactDestination::Auxiliary { path },
+            content,
+            reviewed_baseline_blake3: None,
         }
     }
 }
@@ -2137,6 +2770,50 @@ where
     }
     let original_manifest = UpstreamManifest::load(paths)?;
     let bootstrap = !original_manifest.artifact_digests_initialized;
+    let mut validation_manifest = original_manifest.clone();
+    for write in writes {
+        let Some(reviewed_baseline_blake3) = &write.reviewed_baseline_blake3 else {
+            continue;
+        };
+        if bootstrap {
+            return Err(Error::message(
+                "artifact digest bootstrap cannot accept a reviewed active baseline digest",
+            ));
+        }
+        if !matches!(
+            write.destination,
+            ManagedArtifactDestination::ReviewedActive
+        ) {
+            return Err(Error::message(format!(
+                "managed artifact `{}` supplies a reviewed baseline digest without a reviewed-active destination",
+                write.artifact_name
+            )));
+        }
+        if !is_blake3(reviewed_baseline_blake3) {
+            return Err(Error::message(format!(
+                "managed artifact `{}` reviewed baseline must be a lowercase 64-character BLAKE3 digest",
+                write.artifact_name
+            )));
+        }
+        let artifact = validation_manifest
+            .artifacts
+            .iter_mut()
+            .find(|artifact| artifact.name == write.artifact_name)
+            .ok_or_else(|| {
+                Error::message(format!(
+                    "managed artifact transaction references unknown artifact `{}`",
+                    write.artifact_name
+                ))
+            })?;
+        if artifact.producer != ArtifactProducer::Reviewed {
+            return Err(Error::message(format!(
+                "artifact `{}` is produced by {}, not reviewed",
+                artifact.name,
+                artifact.producer.as_str()
+            )));
+        }
+        artifact.content_blake3.clone_from(reviewed_baseline_blake3);
+    }
     if bootstrap {
         if original_manifest
             .artifacts
@@ -2165,11 +2842,22 @@ where
                     ManagedArtifactDestination::Active => "active",
                     ManagedArtifactDestination::ReviewedActive => "reviewed-active",
                     ManagedArtifactDestination::ReviewedCandidate { .. } => "reviewed-candidate",
+                    ManagedArtifactDestination::Auxiliary { .. } => "auxiliary",
                 };
                 (write.artifact_name.as_str(), destination)
             })
+            .filter(|(_, destination)| *destination != "auxiliary")
             .collect::<BTreeSet<_>>();
-        if actual != expected || actual.len() != writes.len() {
+        let managed_write_count = writes
+            .iter()
+            .filter(|write| {
+                !matches!(
+                    write.destination,
+                    ManagedArtifactDestination::Auxiliary { .. }
+                )
+            })
+            .count();
+        if actual != expected || actual.len() != managed_write_count {
             return Err(Error::message(
                 "artifact digest bootstrap must write exactly every reviewed active and api-coverage artifact with the matching destination",
             ));
@@ -2177,7 +2865,7 @@ where
         reject_bootstrap_artifact_changes_if_present(paths, &original_manifest)?;
         validate_repository_without_artifact_digests(paths, &original_manifest)?;
     } else {
-        validate_artifact_identities(paths, &original_manifest)?;
+        validate_artifact_identities(paths, &validation_manifest)?;
         validate_candidate_identities(paths, &original_manifest)?;
     }
 
@@ -2199,19 +2887,19 @@ where
                 write.artifact_name
             )));
         }
-        let artifact = updated_manifest
-            .artifacts
-            .iter_mut()
-            .find(|artifact| artifact.name == write.artifact_name)
-            .ok_or_else(|| {
-                Error::message(format!(
-                    "managed artifact transaction references unknown artifact `{}`",
-                    write.artifact_name
-                ))
-            })?;
         let digest = blake3::hash(&write.content).to_hex().to_string();
         let relative_path = match &write.destination {
             ManagedArtifactDestination::Active => {
+                let artifact = updated_manifest
+                    .artifacts
+                    .iter_mut()
+                    .find(|artifact| artifact.name == write.artifact_name)
+                    .ok_or_else(|| {
+                        Error::message(format!(
+                            "managed artifact transaction references unknown artifact `{}`",
+                            write.artifact_name
+                        ))
+                    })?;
                 if artifact.producer != ArtifactProducer::ApiCoverage {
                     return Err(Error::message(format!(
                         "active artifact `{}` is produced by {}, not api-coverage",
@@ -2225,6 +2913,16 @@ where
                 path
             }
             ManagedArtifactDestination::ReviewedActive => {
+                let artifact = updated_manifest
+                    .artifacts
+                    .iter_mut()
+                    .find(|artifact| artifact.name == write.artifact_name)
+                    .ok_or_else(|| {
+                        Error::message(format!(
+                            "managed artifact transaction references unknown artifact `{}`",
+                            write.artifact_name
+                        ))
+                    })?;
                 if artifact.producer != ArtifactProducer::Reviewed {
                     return Err(Error::message(format!(
                         "active artifact `{}` is produced by {}, not reviewed",
@@ -2233,11 +2931,29 @@ where
                     )));
                 }
                 let path = artifact.path.clone();
-                baseline_digests.insert(path.clone(), Some(artifact.content_blake3.clone()));
+                baseline_digests.insert(
+                    path.clone(),
+                    Some(
+                        write
+                            .reviewed_baseline_blake3
+                            .clone()
+                            .unwrap_or_else(|| artifact.content_blake3.clone()),
+                    ),
+                );
                 artifact.content_blake3 = digest;
                 path
             }
             ManagedArtifactDestination::ReviewedCandidate { path } => {
+                let artifact = updated_manifest
+                    .artifacts
+                    .iter_mut()
+                    .find(|artifact| artifact.name == write.artifact_name)
+                    .ok_or_else(|| {
+                        Error::message(format!(
+                            "managed artifact transaction references unknown artifact `{}`",
+                            write.artifact_name
+                        ))
+                    })?;
                 if artifact.producer != ArtifactProducer::Reviewed {
                     return Err(Error::message(format!(
                         "artifact `{}` is not a reviewed artifact and cannot receive a candidate",
@@ -2286,6 +3002,27 @@ where
                 baseline_digests.insert(path.clone(), baseline_digest);
                 artifact.candidate_path = Some(path.clone());
                 artifact.candidate_blake3 = Some(digest);
+                path.clone()
+            }
+            ManagedArtifactDestination::Auxiliary { path } => {
+                if !is_canonical_manifest_path(path) {
+                    return Err(Error::message(format!(
+                        "auxiliary managed path `{path}` is not a canonical relative path"
+                    )));
+                }
+                let absolute = paths.root().join(path);
+                let baseline_digest = match fs::symlink_metadata(&absolute) {
+                    Ok(metadata) if metadata.file_type().is_symlink() => {
+                        return Err(Error::message(format!(
+                            "auxiliary managed path {} is a symlink",
+                            absolute.display()
+                        )));
+                    }
+                    Ok(_) => Some(file_blake3(&absolute)?),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                    Err(error) => return Err(Error::io(&absolute, error)),
+                };
+                baseline_digests.insert(path.clone(), baseline_digest);
                 path.clone()
             }
         };
@@ -2592,9 +3329,11 @@ fn abi_probe_content_blake3(generated: &GeneratedAbiProbe) -> String {
 fn run_abi_probe_test(
     workspace_root: &Path,
     target_dir: &Path,
+    cargo_home: &Path,
     precision: Precision,
 ) -> Result<()> {
     let mut command = Command::new("cargo");
+    configure_generation_command_environment(&mut command, workspace_root, cargo_home)?;
     command
         .current_dir(workspace_root)
         .args([
@@ -2607,11 +3346,6 @@ fn run_abi_probe_test(
             "--no-default-features",
         ])
         .env("CARGO_TARGET_DIR", target_dir.join(precision.as_str()));
-    for (name, _) in std::env::vars_os() {
-        if name.to_str().is_some_and(is_ambient_abi_probe_environment) {
-            command.env_remove(name);
-        }
-    }
     if precision == Precision::Double {
         command.args(["--features", "double-precision"]);
     }
@@ -2621,17 +3355,107 @@ fn run_abi_probe_test(
     )
 }
 
-fn is_ambient_abi_probe_environment(name: &str) -> bool {
+fn configure_generation_command_environment(
+    command: &mut Command,
+    workspace_root: &Path,
+    cargo_home: &Path,
+) -> Result<()> {
+    let cargo_home = prepare_isolated_cargo_home(workspace_root, cargo_home)?;
+    for (name, _) in std::env::vars_os() {
+        if name.to_str().is_some_and(is_ambient_generation_environment) {
+            command.env_remove(name);
+        }
+    }
+    command.env("CARGO_HOME", cargo_home);
+    Ok(())
+}
+
+fn prepare_isolated_cargo_home(workspace_root: &Path, cargo_home: &Path) -> Result<PathBuf> {
+    fs::create_dir_all(cargo_home).map_err(|source| Error::io(cargo_home, source))?;
+    let metadata =
+        fs::symlink_metadata(cargo_home).map_err(|source| Error::io(cargo_home, source))?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(Error::message(format!(
+            "isolated Cargo home must be a non-symlink directory: {}",
+            cargo_home.display()
+        )));
+    }
+    for name in ["config", "config.toml"] {
+        reject_ambient_cargo_config(&cargo_home.join(name), "isolated Cargo home")?;
+    }
+    for ancestor in workspace_root.ancestors().skip(1) {
+        for name in ["config", "config.toml"] {
+            reject_ambient_cargo_config(&ancestor.join(".cargo").join(name), "workspace ancestor")?;
+        }
+    }
+    fs::canonicalize(cargo_home).map_err(|source| Error::io(cargo_home, source))
+}
+
+fn reject_ambient_cargo_config(path: &Path, location: &str) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(Error::io(path, error)),
+        Ok(_) => Err(Error::message(format!(
+            "{location} Cargo config {} would alter deterministic upstream generation",
+            path.display()
+        ))),
+    }
+}
+
+fn is_ambient_generation_environment(name: &str) -> bool {
     let name = name.to_ascii_uppercase();
     name == "BOX2D_LIB_DIR"
         || name.starts_with("BOXDD_SYS_")
         || name == "CFLAGS"
         || name.starts_with("CFLAGS_")
         || name.ends_with("_CFLAGS")
+        || name == "CPPFLAGS"
+        || name.starts_with("CPPFLAGS_")
+        || name.ends_with("_CPPFLAGS")
+        || name == "LDFLAGS"
+        || name.starts_with("LDFLAGS_")
+        || name.ends_with("_LDFLAGS")
+        || name == "CC"
+        || name.starts_with("CC_")
+        || name.ends_with("_CC")
+        || name == "CXX"
+        || name.starts_with("CXX_")
+        || name.ends_with("_CXX")
+        || name == "AR"
+        || name.starts_with("AR_")
+        || name.ends_with("_AR")
+        || name == "LD"
+        || name.starts_with("LD_")
+        || name.ends_with("_LD")
+        || name == "RANLIB"
+        || name.starts_with("RANLIB_")
+        || name.ends_with("_RANLIB")
         || name.starts_with("BINDGEN_EXTRA_CLANG_ARGS_")
+        || name.starts_with("CARGO_TARGET_")
+        || name.starts_with("CARGO_BUILD_")
+        || name.starts_with("CARGO_PROFILE_")
         || matches!(
             name.as_str(),
-            "CPPFLAGS" | "CL" | "BINDGEN_EXTRA_CLANG_ARGS" | "DOCS_RS" | "CARGO_CFG_DOCSRS"
+            "CL" | "BINDGEN_EXTRA_CLANG_ARGS"
+                | "CPATH"
+                | "C_INCLUDE_PATH"
+                | "CPLUS_INCLUDE_PATH"
+                | "OBJC_INCLUDE_PATH"
+                | "SDKROOT"
+                | "LIBRARY_PATH"
+                | "RUSTFLAGS"
+                | "RUSTDOCFLAGS"
+                | "CARGO_ENCODED_RUSTFLAGS"
+                | "CARGO_ENCODED_RUSTDOCFLAGS"
+                | "CARGO_INCREMENTAL"
+                | "CARGO_HOME"
+                | "RUSTC"
+                | "RUSTC_WRAPPER"
+                | "RUSTC_WORKSPACE_WRAPPER"
+                | "RUSTC_BOOTSTRAP"
+                | "RUSTUP_TOOLCHAIN"
+                | "DOCS_RS"
+                | "CARGO_CFG_DOCSRS"
         )
 }
 
@@ -2709,8 +3533,9 @@ fn validate_abi_probe_artifacts(paths: &WorkspacePaths, manifest: &UpstreamManif
     }
 
     let target_dir = paths.root().join("target/upstream-abi-probe");
+    let cargo_home = paths.root().join("target/upstream-cargo-home");
     for precision in precisions {
-        run_abi_probe_test(paths.root(), &target_dir, precision)?;
+        run_abi_probe_test(paths.root(), &target_dir, &cargo_home, precision)?;
     }
     Ok(())
 }
@@ -2911,6 +3736,291 @@ where
     }
 }
 
+fn validate_route_refresh_staging(
+    original: &UpstreamManifest,
+    staged: &RouteRefreshStaging,
+) -> Result<()> {
+    validate_manifest(&staged.manifest)?;
+    validate_route_refresh_topology(&staged.manifest)?;
+    if !staged.manifest.artifact_digests_initialized {
+        return Err(Error::message(
+            "route refresh staging must initialize every artifact digest",
+        ));
+    }
+    if staged.manifest.active_revision != original.active_revision
+        || staged.manifest.recording_revision != original.recording_revision
+        || staged.manifest.repository != original.repository
+        || staged.manifest.source_inventory != original.source_inventory
+        || staged.manifest.recording_inputs != original.recording_inputs
+    {
+        return Err(Error::message(
+            "route refresh staging changed revision-coupled upstream identity",
+        ));
+    }
+
+    if !staged
+        .files
+        .windows(2)
+        .all(|pair| pair[0].relative_path < pair[1].relative_path)
+    {
+        return Err(Error::message(
+            "route refresh staged files must be sorted and unique",
+        ));
+    }
+    let expected_files = staged
+        .manifest
+        .artifacts
+        .iter()
+        .map(|artifact| artifact.path.clone())
+        .chain(std::iter::once(
+            super::api_coverage::RUNTIME_RECORDING_WIRE_PATH.to_owned(),
+        ))
+        .collect::<BTreeSet<_>>();
+    if expected_files.contains("boxdd-sys/upstream.toml") {
+        return Err(Error::message(
+            "route refresh outputs cannot alias the upstream manifest",
+        ));
+    }
+    if expected_files.len() != staged.manifest.artifacts.len() + 1 {
+        return Err(Error::message(
+            "route refresh artifact paths collide with the runtime recording contract",
+        ));
+    }
+    let observed_files = staged
+        .files
+        .iter()
+        .map(|file| file.relative_path.clone())
+        .collect::<BTreeSet<_>>();
+    if observed_files != expected_files || observed_files.len() != staged.files.len() {
+        return Err(Error::message(format!(
+            "route refresh staged output set is incomplete: observed {observed_files:?}, expected {expected_files:?}"
+        )));
+    }
+    for artifact in &staged.manifest.artifacts {
+        let file = staged
+            .files
+            .iter()
+            .find(|file| file.relative_path == artifact.path)
+            .expect("validated route refresh output set contains every artifact");
+        let digest = blake3_bytes(&file.content);
+        if digest != artifact.content_blake3 {
+            return Err(Error::message(format!(
+                "route refresh artifact `{}` staged digest {digest} does not match manifest digest {}",
+                artifact.name, artifact.content_blake3
+            )));
+        }
+    }
+
+    let target_paths = staged
+        .manifest
+        .artifacts
+        .iter()
+        .map(|artifact| artifact.path.as_str())
+        .collect::<BTreeSet<_>>();
+    let expected_removals = original
+        .artifacts
+        .iter()
+        .filter(|artifact| !target_paths.contains(artifact.path.as_str()))
+        .map(|artifact| artifact.path.clone())
+        .collect::<BTreeSet<_>>();
+    let observed_removals = staged.removals.iter().cloned().collect::<BTreeSet<_>>();
+    if observed_removals != expected_removals
+        || observed_removals.len() != staged.removals.len()
+        || observed_removals
+            .iter()
+            .any(|path| observed_files.contains(path))
+    {
+        return Err(Error::message(format!(
+            "route refresh stale artifact removal set is incorrect: observed {observed_removals:?}, expected {expected_removals:?}"
+        )));
+    }
+    Ok(())
+}
+
+fn install_route_refresh<F>(
+    paths: &WorkspacePaths,
+    original: &UpstreamManifest,
+    staged: &RouteRefreshStaging,
+    baseline: &RouteRefreshBaseline,
+    fail_after_operations: Option<usize>,
+    terminal_validation: F,
+) -> Result<()>
+where
+    F: FnOnce() -> Result<()>,
+{
+    validate_route_refresh_staging(original, staged)?;
+    baseline.verify_before_install(paths)?;
+    let managed_paths = staged
+        .files
+        .iter()
+        .map(|file| file.relative_path.clone())
+        .chain(staged.removals.iter().cloned())
+        .collect::<BTreeSet<_>>();
+    let mut backups = baseline.outputs.clone();
+    backups.push(baseline.manifest.clone());
+    let mut progress = TransitionProgress::default();
+
+    let transition = (|| {
+        let mut completed = 0usize;
+        for file in &staged.files {
+            maybe_inject_transition_failure(fail_after_operations, completed)?;
+            let path = paths.root().join(&file.relative_path);
+            let backup = baseline.output(&path)?;
+            let replacement = ManagedReplacement::capture(path.clone(), file.content.clone())?;
+            progress.replaced_files.insert(path.clone(), replacement);
+            let replacement = progress
+                .replaced_files
+                .get_mut(&path)
+                .expect("captured route refresh replacement");
+            replacement.validate_original(backup)?;
+            replacement.install()?;
+            completed += 1;
+        }
+        for relative in &staged.removals {
+            maybe_inject_transition_failure(fail_after_operations, completed)?;
+            let path = paths.root().join(relative);
+            let backup = baseline.output(&path)?;
+            match backup.content.as_deref() {
+                Some(expected) => {
+                    let removed = RemovedFile::capture(path.clone())?;
+                    let content_matches = removed.captured_content.as_deref() == Some(expected);
+                    let capture_error = removed.capture_error.clone();
+                    progress.removed_files.insert(path.clone(), removed);
+                    if let Some(capture_error) = capture_error {
+                        return Err(Error::message(format!(
+                            "could not quarantine stale route artifact {}: {capture_error}",
+                            path.display()
+                        )));
+                    }
+                    if !content_matches {
+                        return Err(Error::message(format!(
+                            "stale route artifact {} changed while it was quarantined",
+                            path.display()
+                        )));
+                    }
+                }
+                None if fs::symlink_metadata(&path).is_ok() => {
+                    return Err(Error::message(format!(
+                        "stale route artifact {} appeared during installation",
+                        path.display()
+                    )));
+                }
+                None => {}
+            }
+            completed += 1;
+        }
+
+        maybe_inject_transition_failure(fail_after_operations, completed)?;
+        let snapshot_exclusions =
+            route_refresh_snapshot_exclusions(paths.root(), &managed_paths, &progress)?;
+        baseline.verify_stable_inputs(paths, &snapshot_exclusions)?;
+        baseline.verify_manifest_original()?;
+        let manifest_content = render_toml(&staged.manifest)?.into_bytes();
+        let manifest_path = paths.upstream_manifest();
+        let replacement =
+            ManagedReplacement::capture(manifest_path.clone(), manifest_content.clone())?;
+        progress
+            .replaced_files
+            .insert(manifest_path.clone(), replacement);
+        let replacement = progress
+            .replaced_files
+            .get_mut(&manifest_path)
+            .expect("captured route refresh manifest replacement");
+        replacement.validate_original(&baseline.manifest)?;
+        replacement.install()?;
+        completed += 1;
+        maybe_inject_transition_failure(fail_after_operations, completed)?;
+
+        terminal_validation()?;
+        let snapshot_exclusions =
+            route_refresh_snapshot_exclusions(paths.root(), &managed_paths, &progress)?;
+        baseline.verify_stable_inputs(paths, &snapshot_exclusions)?;
+        validate_installed_route_refresh(paths, staged, &manifest_content)
+    })();
+
+    if let Err(error) = transition {
+        let rollback_errors = rollback_file_changes(&backups, &mut progress);
+        rollback_result(error, rollback_errors)
+    } else {
+        progress.finalize().map_err(|errors| {
+            Error::message(format!(
+                "route refresh installed successfully but quarantine cleanup failed:\n{}",
+                errors.join("\n")
+            ))
+        })
+    }
+}
+
+fn route_refresh_snapshot_exclusions(
+    root: &Path,
+    managed_paths: &BTreeSet<String>,
+    progress: &TransitionProgress,
+) -> Result<BTreeSet<String>> {
+    let mut excluded = managed_paths.clone();
+    let directories = progress
+        .replaced_files
+        .values()
+        .filter_map(|replacement| replacement.original.as_ref())
+        .chain(progress.removed_files.values())
+        .filter_map(|removed| removed.directory.as_ref())
+        .map(TempDir::path);
+    for directory in directories {
+        let relative = directory.strip_prefix(root).map_err(|_| {
+            Error::message(format!(
+                "route refresh quarantine {} is outside repository root {}",
+                directory.display(),
+                root.display()
+            ))
+        })?;
+        let relative = canonical_manifest_path(relative).ok_or_else(|| {
+            Error::message(format!(
+                "route refresh quarantine {} is not a canonical UTF-8 path",
+                directory.display()
+            ))
+        })?;
+        excluded.insert(relative);
+    }
+    Ok(excluded)
+}
+
+fn validate_installed_route_refresh(
+    paths: &WorkspacePaths,
+    staged: &RouteRefreshStaging,
+    manifest_content: &[u8],
+) -> Result<()> {
+    for file in &staged.files {
+        let path = paths.root().join(&file.relative_path);
+        let observed = fs::read(&path).map_err(|source| Error::io(&path, source))?;
+        if observed != file.content {
+            return Err(Error::message(format!(
+                "installed route refresh output {} changed during terminal validation",
+                path.display()
+            )));
+        }
+    }
+    for relative in &staged.removals {
+        let path = paths.root().join(relative);
+        match fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Ok(_) => {
+                return Err(Error::message(format!(
+                    "stale route artifact {} reappeared during terminal validation",
+                    path.display()
+                )));
+            }
+            Err(error) => return Err(Error::io(&path, error)),
+        }
+    }
+    let manifest_path = paths.upstream_manifest();
+    let observed = fs::read(&manifest_path).map_err(|source| Error::io(&manifest_path, source))?;
+    if observed != manifest_content {
+        return Err(Error::message(
+            "upstream manifest changed during route refresh terminal validation",
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Default)]
 struct TransitionProgress {
     replaced_files: BTreeMap<PathBuf, ManagedReplacement>,
@@ -3026,6 +4136,7 @@ fn rollback_result(original: Error, rollback_errors: Vec<String>) -> Result<()> 
     }
 }
 
+#[derive(Clone)]
 struct FileBackup {
     path: PathBuf,
     content: Option<Vec<u8>>,
@@ -3346,6 +4457,7 @@ struct IsolatedGeneration {
     source_root: PathBuf,
     worktree: PathBuf,
     target_dir: PathBuf,
+    cargo_home: PathBuf,
     repository_worktree_added: bool,
 }
 
@@ -3371,12 +4483,14 @@ impl IsolatedGeneration {
         ));
         let worktree = source_root.join("workspace");
         let target_dir = source_root.join("cargo-target");
+        let cargo_home = source_root.join("cargo-home");
         fs::create_dir_all(&source_root).map_err(|source| Error::io(&source_root, source))?;
         let mut generation = Self {
             repository_root: paths.root().to_owned(),
             source_root,
             worktree,
             target_dir,
+            cargo_home,
             repository_worktree_added: false,
         };
         command_success(
@@ -3452,6 +4566,12 @@ impl IsolatedGeneration {
         let report =
             target_manifest.artifact_path(&self.worktree, ArtifactKind::ApiCoverageReport)?;
         write_atomic_bytes(&recording_wire, &generated.recording_wire)?;
+        write_atomic_bytes(
+            &self
+                .worktree
+                .join(super::api_coverage::RUNTIME_RECORDING_WIRE_PATH),
+            &generated.runtime_recording_wire,
+        )?;
         write_atomic_bytes(&report, &generated.report)?;
         for artifact in &mut target_manifest.artifacts {
             artifact.content_blake3 = file_blake3(&self.worktree.join(&artifact.path))?;
@@ -3488,6 +4608,90 @@ impl IsolatedGeneration {
         })
     }
 
+    fn prepare_route_refresh(
+        &self,
+        original: &UpstreamManifest,
+        target: &UpstreamManifest,
+    ) -> Result<RouteRefreshStaging> {
+        let mut target_manifest = target.clone();
+        validate_route_refresh_topology(&target_manifest)?;
+        write_atomic(
+            &self.worktree.join("boxdd-sys/upstream.toml"),
+            &render_toml(&target_manifest)?,
+        )?;
+        set_indexed_gitlink(&self.worktree, &target_manifest.active_revision)?;
+
+        self.generate_bindings(&target_manifest)?;
+        self.generate_abi_metadata(&target_manifest)?;
+        let isolated_paths = WorkspacePaths::new(&self.worktree);
+        let contract = super::api_coverage::render_refreshed_contract_candidate(&isolated_paths)?;
+        let contract_path =
+            target_manifest.artifact_path(&self.worktree, ArtifactKind::ApiContract)?;
+        write_atomic_bytes(&contract_path, &contract)?;
+
+        let generated = super::api_coverage::render_generated_outputs(&isolated_paths)?;
+        let recording_wire =
+            target_manifest.artifact_path(&self.worktree, ArtifactKind::RecordingWire)?;
+        let runtime_recording_wire = self
+            .worktree
+            .join(super::api_coverage::RUNTIME_RECORDING_WIRE_PATH);
+        let report =
+            target_manifest.artifact_path(&self.worktree, ArtifactKind::ApiCoverageReport)?;
+        write_atomic_bytes(&recording_wire, &generated.recording_wire)?;
+        write_atomic_bytes(&runtime_recording_wire, &generated.runtime_recording_wire)?;
+        write_atomic_bytes(&report, &generated.report)?;
+
+        for artifact in &mut target_manifest.artifacts {
+            artifact.content_blake3 = file_blake3(&self.worktree.join(&artifact.path))?;
+        }
+        target_manifest.artifact_digests_initialized = true;
+        validate_manifest(&target_manifest)?;
+        validate_route_refresh_topology(&target_manifest)?;
+        write_atomic(
+            &self.worktree.join("boxdd-sys/upstream.toml"),
+            &render_toml(&target_manifest)?,
+        )?;
+        super::api_coverage::check(&isolated_paths)?;
+        validate_repository(&isolated_paths, &target_manifest, false)?;
+
+        let mut files = target_manifest
+            .artifacts
+            .iter()
+            .map(|artifact| {
+                let path = self.worktree.join(&artifact.path);
+                let content = fs::read(&path).map_err(|source| Error::io(&path, source))?;
+                Ok(StagedFile {
+                    relative_path: artifact.path.clone(),
+                    content,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        files.push(StagedFile {
+            relative_path: super::api_coverage::RUNTIME_RECORDING_WIRE_PATH.to_owned(),
+            content: fs::read(&runtime_recording_wire)
+                .map_err(|source| Error::io(&runtime_recording_wire, source))?,
+        });
+        files.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+
+        let target_paths = target_manifest
+            .artifacts
+            .iter()
+            .map(|artifact| artifact.path.as_str())
+            .collect::<BTreeSet<_>>();
+        let mut removals = original
+            .artifacts
+            .iter()
+            .filter(|artifact| !target_paths.contains(artifact.path.as_str()))
+            .map(|artifact| artifact.path.clone())
+            .collect::<Vec<_>>();
+        removals.sort();
+        Ok(RouteRefreshStaging {
+            manifest: target_manifest,
+            files,
+            removals,
+        })
+    }
+
     fn render_next_candidate(&self, manifest: &UpstreamManifest, target: &str) -> Result<Vec<u8>> {
         let target_manifest = manifest.promoted_for_generation(target)?;
         write_atomic(
@@ -3505,6 +4709,26 @@ impl IsolatedGeneration {
     }
 
     fn generate_bindings(&self, manifest: &UpstreamManifest) -> Result<()> {
+        let generation_targets = manifest
+            .binding_artifacts()
+            .map(|artifact| binding_generation_target(manifest, artifact))
+            .collect::<Result<BTreeSet<_>>>()?;
+        let wasi_sysroot = if generation_targets.contains(&RustTarget::Wasm32Wasip1) {
+            binding_generation_wasi_sysroot(RustTarget::Wasm32Wasip1)?
+        } else {
+            None
+        };
+        let freestanding_headers = if generation_targets.contains(&RustTarget::Wasm32UnknownUnknown)
+        {
+            bindgen_contract::resolve_unknown_unknown_headers(
+                &self.worktree.join("boxdd-sys"),
+                RustTarget::Wasm32UnknownUnknown.as_str(),
+                true,
+            )
+            .map_err(Error::message)?
+        } else {
+            None
+        };
         for artifact in manifest.binding_artifacts() {
             let precision = artifact
                 .precision
@@ -3515,23 +4739,33 @@ impl IsolatedGeneration {
                 Precision::Single => "bindgen",
                 Precision::Double => "bindgen,double-precision",
             };
-            if !matches!(
-                artifact.target,
-                ArtifactTarget::Universal | ArtifactTarget::Native
-            ) {
-                return Err(Error::message(format!(
-                    "bindings generation for target {:?} is not implemented for artifact `{}`",
-                    artifact.target, artifact.name
-                )));
-            }
+            bindgen_contract::validate_bindgen_target_override(
+                rust_target.as_str(),
+                Some(std::ffi::OsStr::new(rust_target.as_str())),
+            )
+            .map_err(Error::message)?;
             let mut command = Command::new("cargo");
+            configure_generation_command_environment(
+                &mut command,
+                &self.worktree,
+                &self.cargo_home,
+            )?;
             command
                 .current_dir(&self.worktree)
                 .args(binding_generation_cargo_args(rust_target, features))
                 .env("CARGO_TARGET_DIR", &artifact_target)
                 .env("BOXDD_SYS_SKIP_CC", "1")
                 .env("BOXDD_SYS_FORCE_BINDGEN", "1")
-                .env("BOXDD_SYS_BINDGEN_TARGET", rust_target.as_str());
+                .env("BOXDD_SYS_BINDGEN_TARGET", rust_target.as_str())
+                .env(
+                    "BOXDD_SYS_PROVIDER",
+                    binding_generation_provider(rust_target),
+                );
+            if rust_target == RustTarget::Wasm32Wasip1
+                && let Some(wasi_sysroot) = &wasi_sysroot
+            {
+                command.env("BOXDD_SYS_WASI_SYSROOT", &wasi_sysroot.canonical_path);
+            }
             command_success(
                 &mut command,
                 &format!("generate {} bindings", artifact.name),
@@ -3554,7 +4788,19 @@ impl IsolatedGeneration {
                 &self.worktree.join(&artifact.path),
                 &format!(
                     "{}\n{content}",
-                    binding_provenance(artifact, &manifest.active_revision, rust_target)
+                    binding_provenance(
+                        artifact,
+                        &manifest.active_revision,
+                        rust_target,
+                        (rust_target == RustTarget::Wasm32Wasip1)
+                            .then_some(wasi_sysroot.as_ref())
+                            .flatten()
+                            .map(bindgen_contract::ValidatedWasiSysroot::identity_sha256),
+                        (rust_target == RustTarget::Wasm32UnknownUnknown)
+                            .then_some(freestanding_headers.as_ref())
+                            .flatten()
+                            .map(bindgen_contract::ValidatedFreestandingHeaders::identity_sha256),
+                    )?
                 ),
             )?;
         }
@@ -3588,6 +4834,7 @@ impl IsolatedGeneration {
             run_abi_probe_test(
                 &self.worktree,
                 &self.target_dir.join("abi-probe"),
+                &self.cargo_home,
                 precision,
             )?;
         }
@@ -3687,6 +4934,24 @@ fn binding_generation_cargo_args(target: RustTarget, features: &str) -> Vec<Stri
     .into_iter()
     .map(str::to_owned)
     .collect()
+}
+
+const fn binding_generation_provider(target: RustTarget) -> &'static str {
+    match target {
+        RustTarget::X86_64UnknownLinuxGnu => "vendored",
+        RustTarget::Wasm32UnknownUnknown | RustTarget::Wasm32Wasip1 => "wasm-compile-only",
+    }
+}
+
+fn binding_generation_wasi_sysroot(
+    target: RustTarget,
+) -> Result<Option<bindgen_contract::ValidatedWasiSysroot>> {
+    if target != RustTarget::Wasm32Wasip1 {
+        return Ok(None);
+    }
+    let configured = std::env::var_os("BOXDD_SYS_WASI_SYSROOT").map(PathBuf::from);
+    bindgen_contract::resolve_wasi_sysroot(target.as_str(), true, configured.as_deref())
+        .map_err(Error::message)
 }
 
 fn worktree_is_registered(repository: &Path, worktree: &Path) -> Result<bool> {
@@ -3808,9 +5073,67 @@ fn binding_provenance(
     artifact: &GeneratedArtifact,
     revision: &str,
     rust_target: RustTarget,
-) -> String {
+    wasi_headers_sha256: Option<&str>,
+    freestanding_math_sha256: Option<&str>,
+) -> Result<String> {
     let precision = artifact.precision.map(Precision::as_str).unwrap_or("none");
-    format!(
+    let (wasi_libc_version, wasi_headers_sha256, freestanding_math_sha256) = match rust_target {
+        RustTarget::Wasm32Wasip1 => {
+            if freestanding_math_sha256.is_some() {
+                return Err(Error::message(format!(
+                    "WASI bindings artifact `{}` cannot claim freestanding headers",
+                    artifact.name
+                )));
+            }
+            let identity = wasi_headers_sha256.ok_or_else(|| {
+                Error::message(format!(
+                    "WASI bindings artifact `{}` has no validated wasi-libc header identity",
+                    artifact.name
+                ))
+            })?;
+            if identity != bindgen_contract::WASI_LIBC_HEADERS_SHA256 {
+                return Err(Error::message(format!(
+                    "WASI bindings artifact `{}` used header identity {identity}, expected wasi-libc {} identity {}",
+                    artifact.name,
+                    bindgen_contract::WASI_LIBC_VERSION,
+                    bindgen_contract::WASI_LIBC_HEADERS_SHA256
+                )));
+            }
+            (bindgen_contract::WASI_LIBC_VERSION, identity, "none")
+        }
+        RustTarget::Wasm32UnknownUnknown => {
+            if wasi_headers_sha256.is_some() {
+                return Err(Error::message(format!(
+                    "freestanding bindings artifact `{}` cannot claim a wasi-libc identity",
+                    artifact.name
+                )));
+            }
+            let identity = freestanding_math_sha256.ok_or_else(|| {
+                Error::message(format!(
+                    "freestanding bindings artifact `{}` has no validated math header identity",
+                    artifact.name
+                ))
+            })?;
+            if identity != bindgen_contract::UNKNOWN_UNKNOWN_MATH_HEADER_SHA256 {
+                return Err(Error::message(format!(
+                    "freestanding bindings artifact `{}` used math header identity {identity}, expected {}",
+                    artifact.name,
+                    bindgen_contract::UNKNOWN_UNKNOWN_MATH_HEADER_SHA256
+                )));
+            }
+            ("none", "none", identity)
+        }
+        RustTarget::X86_64UnknownLinuxGnu => {
+            if wasi_headers_sha256.is_some() || freestanding_math_sha256.is_some() {
+                return Err(Error::message(format!(
+                    "native bindings artifact `{}` cannot claim WASM header identities",
+                    artifact.name
+                )));
+            }
+            ("none", "none", "none")
+        }
+    };
+    Ok(format!(
         "// AUTOGENERATED: pregenerated bindings for docs.rs/offline builds\n\
 // boxdd-upstream-revision: {revision}\n\
 // boxdd-artifact-name: {}\n\
@@ -3819,14 +5142,17 @@ fn binding_provenance(
 // boxdd-artifact-provider: {}\n\
 // boxdd-artifact-producer: {}\n\
 // boxdd-artifact-rust-target: {}\n\
+// boxdd-wasi-libc-version: {wasi_libc_version}\n\
+// boxdd-wasi-headers-sha256: {wasi_headers_sha256}\n\
+// boxdd-freestanding-math-header-sha256: {freestanding_math_sha256}\n\
 // Authority: boxdd-sys/upstream.toml\n\
-// Refresh with: cargo run -p xtask -- upstream-sync --write\n",
+// Refresh with: cargo run -p xtask -- upstream-sync --refresh-routes\n",
         artifact.name,
         artifact.target.as_str(),
         artifact.provider.as_str(),
         artifact.producer.as_str(),
         rust_target.as_str(),
-    )
+    ))
 }
 
 fn validate_binding_identity(
@@ -3835,11 +5161,16 @@ fn validate_binding_identity(
     manifest: &UpstreamManifest,
 ) -> Result<()> {
     let source = fs::read_to_string(path).map_err(|error| Error::io(path, error))?;
+    let rust_target = binding_generation_target(manifest, artifact)?;
     let expected = binding_provenance(
         artifact,
         &manifest.active_revision,
-        binding_generation_target(manifest, artifact)?,
-    );
+        rust_target,
+        (rust_target == RustTarget::Wasm32Wasip1)
+            .then_some(bindgen_contract::WASI_LIBC_HEADERS_SHA256),
+        (rust_target == RustTarget::Wasm32UnknownUnknown)
+            .then_some(bindgen_contract::UNKNOWN_UNKNOWN_MATH_HEADER_SHA256),
+    )?;
     if !source.starts_with(&expected) {
         return Err(Error::message(format!(
             "bindings artifact `{}` is missing exact manifest provenance for revision {}",
@@ -4858,7 +6189,10 @@ mod tests {
                             artifact,
                             &active_revision,
                             RustTarget::X86_64UnknownLinuxGnu,
+                            None,
+                            None,
                         )
+                        .expect("fixture binding provenance")
                     ),
                     ArtifactKind::ApiContract => {
                         format!("upstream_sha = \"{active_revision}\"\n")
@@ -5110,6 +6444,68 @@ mod tests {
             source_inventory: inventory(),
             next_inventory: Some(inventory()),
         }
+    }
+
+    fn route_refresh_transaction_fixture(
+        fixture: &TemporaryWorkspace,
+    ) -> (
+        WorkspacePaths,
+        UpstreamManifest,
+        RouteRefreshStaging,
+        Vec<u8>,
+    ) {
+        let paths = fixture.paths();
+        fs::write(
+            paths.root().join("boxdd/Cargo.toml"),
+            "[package]\nname = \"boxdd-fixture\"\nversion = \"0.0.0\"\n\n[features]\ndefault = []\ndouble-precision = []\n",
+        )
+        .expect("route refresh feature catalog");
+        let mut original = fixture.manifest();
+        original.next_revision = None;
+        original.recording_revision = fixture.active_revision.clone();
+        original.next_binding_routes.clear();
+        original.next_artifacts.clear();
+        original.next_inventory = None;
+        original.recording_inputs =
+            reviewed_recording_inputs(&fixture.root.join("upstream"), &fixture.active_revision);
+        let manifest_content = render_toml(&original)
+            .expect("route refresh source manifest")
+            .into_bytes();
+        fs::write(paths.upstream_manifest(), &manifest_content)
+            .expect("route refresh source manifest");
+
+        let mut target =
+            canonical_route_refresh_manifest(&paths, &original).expect("canonical route manifest");
+        let mut files = target
+            .artifacts
+            .iter_mut()
+            .map(|artifact| {
+                let content = format!("route refresh output for {}\n", artifact.name).into_bytes();
+                artifact.content_blake3 = blake3_bytes(&content);
+                StagedFile {
+                    relative_path: artifact.path.clone(),
+                    content,
+                }
+            })
+            .collect::<Vec<_>>();
+        files.push(StagedFile {
+            relative_path: super::super::api_coverage::RUNTIME_RECORDING_WIRE_PATH.to_owned(),
+            content: b"route refresh runtime recording contract\n".to_vec(),
+        });
+        files.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+        target.artifact_digests_initialized = true;
+        let staged = RouteRefreshStaging {
+            manifest: target,
+            files,
+            removals: Vec::new(),
+        };
+        for file in &staged.files {
+            let path = paths.root().join(&file.relative_path);
+            fs::create_dir_all(path.parent().expect("route output parent"))
+                .expect("route output directory");
+        }
+        validate_route_refresh_staging(&original, &staged).expect("valid route refresh staging");
+        (paths, original, staged, manifest_content)
     }
 
     fn candidate_contract(revision: &str, modes: &[&str]) -> Vec<u8> {
@@ -5457,7 +6853,7 @@ mod tests {
     }
 
     #[test]
-    fn abi_probe_environment_cannot_select_an_ambient_provider_or_c_flags() {
+    fn generated_artifacts_cannot_inherit_ambient_provider_or_header_inputs() {
         for name in [
             "BOX2D_LIB_DIR",
             "BOXDD_SYS_LINK_KIND",
@@ -5466,16 +6862,88 @@ mod tests {
             "CFLAGS_x86_64_unknown_linux_gnu",
             "x86_64_unknown_linux_gnu_CFLAGS",
             "CPPFLAGS",
+            "CPPFLAGS_wasm32_unknown_unknown",
+            "wasm32_unknown_unknown_CPPFLAGS",
+            "LDFLAGS",
+            "CC",
+            "CC_x86_64_unknown_linux_gnu",
+            "x86_64_unknown_linux_gnu_CC",
+            "CXX",
+            "AR",
+            "LD",
+            "RANLIB",
             "CL",
             "BINDGEN_EXTRA_CLANG_ARGS",
             "BINDGEN_EXTRA_CLANG_ARGS_x86_64_unknown_linux_gnu",
+            "BINDGEN_EXTRA_CLANG_ARGS_wasm32-unknown-unknown",
+            "CPATH",
+            "C_INCLUDE_PATH",
+            "CPLUS_INCLUDE_PATH",
+            "OBJC_INCLUDE_PATH",
+            "SDKROOT",
+            "LIBRARY_PATH",
+            "RUSTFLAGS",
+            "RUSTDOCFLAGS",
+            "CARGO_ENCODED_RUSTFLAGS",
+            "CARGO_BUILD_RUSTFLAGS",
+            "CARGO_BUILD_RUSTC_WRAPPER",
+            "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER",
+            "CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS",
+            "CARGO_PROFILE_DEV_OPT_LEVEL",
+            "CARGO_INCREMENTAL",
+            "CARGO_HOME",
+            "RUSTC",
+            "RUSTC_WRAPPER",
+            "RUSTC_WORKSPACE_WRAPPER",
+            "RUSTC_BOOTSTRAP",
+            "RUSTUP_TOOLCHAIN",
             "DOCS_RS",
         ] {
-            assert!(is_ambient_abi_probe_environment(name), "{name}");
+            assert!(is_ambient_generation_environment(name), "{name}");
         }
-        for name in ["CC", "AR", "PATH", "CARGO_HOME"] {
-            assert!(!is_ambient_abi_probe_environment(name), "{name}");
+        for name in ["PATH", "HOME", "RUSTUP_HOME"] {
+            assert!(!is_ambient_generation_environment(name), "{name}");
         }
+    }
+
+    #[test]
+    fn generation_cargo_home_rejects_ambient_configs_and_is_explicitly_bound() {
+        let root = TempDir::new().expect("generation workspace parent");
+        let workspace = root.path().join("workspace");
+        let cargo_home = root.path().join("isolated-cargo-home");
+        fs::create_dir(&workspace).expect("generation workspace");
+        let mut command = Command::new("cargo");
+        configure_generation_command_environment(&mut command, &workspace, &cargo_home)
+            .expect("isolated Cargo configuration");
+        let configured_home = command
+            .get_envs()
+            .find(|(name, _)| *name == std::ffi::OsStr::new("CARGO_HOME"))
+            .and_then(|(_, value)| value)
+            .expect("explicit CARGO_HOME");
+        assert_eq!(configured_home, fs::canonicalize(&cargo_home).unwrap());
+
+        let ambient = root.path().join(".cargo");
+        fs::create_dir(&ambient).expect("ambient Cargo config directory");
+        fs::write(ambient.join("config.toml"), "[build]\nrustflags = []\n")
+            .expect("ambient Cargo config");
+        let error = prepare_isolated_cargo_home(&workspace, &cargo_home)
+            .expect_err("workspace ancestor Cargo config must fail closed");
+        assert!(
+            error
+                .to_string()
+                .contains("workspace ancestor Cargo config")
+        );
+
+        fs::remove_file(ambient.join("config.toml")).expect("remove fixture ancestor config");
+        fs::write(cargo_home.join("config"), "[build]\nrustflags = []\n")
+            .expect("isolated Cargo home config");
+        let error = prepare_isolated_cargo_home(&workspace, &cargo_home)
+            .expect_err("isolated Cargo home config must fail closed");
+        assert!(
+            error
+                .to_string()
+                .contains("isolated Cargo home Cargo config")
+        );
     }
 
     #[test]
@@ -6132,6 +7600,279 @@ mod tests {
     }
 
     #[test]
+    fn route_refresh_input_gate_rejects_controlled_dirty_and_untracked_paths() {
+        let dirty = TemporaryWorkspace::create();
+        fs::write(
+            dirty.workspace.join("boxdd/Cargo.toml"),
+            "# intentionally dirty route generator input\n",
+        )
+        .expect("dirty controlled input");
+        let error = capture_route_refresh_inputs(&dirty.workspace)
+            .expect_err("tracked controlled input drift must fail closed");
+        assert!(error.to_string().contains("generator inputs are dirty"));
+        assert!(error.to_string().contains("boxdd/Cargo.toml"));
+
+        let untracked = TemporaryWorkspace::create();
+        let untracked_input = untracked.workspace.join("boxdd/src/local.rs");
+        fs::create_dir_all(untracked_input.parent().expect("untracked input parent"))
+            .expect("untracked input directory");
+        fs::write(&untracked_input, "pub fn local() {}\n").expect("untracked controlled input");
+        let error = capture_route_refresh_inputs(&untracked.workspace)
+            .expect_err("untracked controlled input must fail closed");
+        assert!(error.to_string().contains("generator inputs are dirty"));
+        assert!(error.to_string().contains("boxdd/src/local.rs"));
+    }
+
+    #[test]
+    fn route_input_snapshot_overlays_clean_inputs_and_ignores_unrelated_paths() {
+        let fixture = TemporaryWorkspace::create();
+        fs::write(
+            fixture.workspace.join("local-notes.txt"),
+            "unrelated dirty state\n",
+        )
+        .expect("unrelated dirty path");
+        let snapshot = capture_route_refresh_inputs(&fixture.workspace)
+            .expect("unrelated paths are outside the route generator authority");
+
+        let destination = TempDir::new().expect("overlay destination");
+        fs::create_dir_all(destination.path().join("xtask/src"))
+            .expect("stale controlled directory");
+        fs::write(destination.path().join("xtask/src/stale.rs"), "stale\n")
+            .expect("stale controlled file");
+        snapshot
+            .overlay(destination.path())
+            .expect("overlay clean controlled inputs");
+        assert_eq!(
+            fs::read(destination.path().join("boxdd/Cargo.toml"))
+                .expect("overlaid controlled input"),
+            fs::read(fixture.workspace.join("boxdd/Cargo.toml")).expect("source controlled input")
+        );
+        assert!(!destination.path().join("xtask/src/stale.rs").exists());
+
+        fs::write(
+            fixture.workspace.join("boxdd/Cargo.toml"),
+            "# concurrent controlled drift\n",
+        )
+        .expect("concurrent controlled drift");
+        let error = snapshot
+            .verify(&fixture.workspace)
+            .expect_err("controlled drift must invalidate the snapshot");
+        assert!(
+            error
+                .to_string()
+                .contains("controlled route generator input")
+        );
+    }
+
+    #[test]
+    fn canonical_route_topology_rejects_missing_and_misdirected_coordinates() {
+        let mut topology = manifest();
+        topology.binding_routes = canonical_binding_routes();
+        topology
+            .artifacts
+            .retain(|artifact| artifact.kind != ArtifactKind::Bindings);
+        let mut bindings = canonical_route_binding_artifacts();
+        bindings.append(&mut topology.artifacts);
+        topology.artifacts = bindings;
+        validate_route_refresh_topology(&topology).expect("canonical route topology");
+        assert_eq!(topology.binding_routes.len(), 10);
+        assert_eq!(topology.binding_artifacts().count(), 6);
+
+        let mut missing = topology.clone();
+        missing.binding_routes.pop();
+        let error = validate_route_refresh_topology(&missing)
+            .expect_err("missing route coordinate must fail closed");
+        assert!(error.to_string().contains("canonical 10-route matrix"));
+
+        let mut wrong_target = topology;
+        let wasm = wrong_target
+            .artifacts
+            .iter_mut()
+            .find(|artifact| artifact.name == "bindings-wasm32-wasip1-single")
+            .expect("WASI binding artifact");
+        wasm.target = ArtifactTarget::Wasm32UnknownUnknown;
+        let error = validate_route_refresh_topology(&wrong_target)
+            .expect_err("misdirected artifact must fail closed");
+        assert!(error.to_string().contains("incomplete or incorrect"));
+    }
+
+    #[test]
+    fn route_refresh_transaction_rolls_back_every_install_boundary() {
+        let fixture = TemporaryWorkspace::create();
+        let (paths, original, staged, manifest_content) =
+            route_refresh_transaction_fixture(&fixture);
+        let inputs = GeneratorInputSnapshot::capture(paths.root()).expect("route input snapshot");
+        let baseline = RouteRefreshBaseline::capture(
+            &paths,
+            inputs,
+            &manifest_content,
+            &original,
+            &staged.manifest,
+        )
+        .expect("route refresh baseline");
+        let unrelated = paths.root().join("unrelated-route-notes.txt");
+        fs::write(&unrelated, "preserve me\n").expect("unrelated route state");
+        let operations = staged.files.len() + staged.removals.len() + 1;
+
+        for boundary in 0..=operations {
+            let error = install_route_refresh(
+                &paths,
+                &original,
+                &staged,
+                &baseline,
+                Some(boundary),
+                || Ok(()),
+            )
+            .expect_err("injected route refresh boundary must roll back");
+            assert!(error.to_string().contains("injected transition failure"));
+            baseline
+                .verify_before_install(&paths)
+                .unwrap_or_else(|error| {
+                    panic!("route refresh boundary {boundary} did not restore baseline: {error}")
+                });
+            assert_eq!(
+                fs::read_to_string(&unrelated).expect("preserved unrelated route state"),
+                "preserve me\n"
+            );
+        }
+
+        let error = install_route_refresh(&paths, &original, &staged, &baseline, None, || {
+            Err(Error::message("injected route terminal validation failure"))
+        })
+        .expect_err("terminal route validation failure must roll back");
+        assert!(
+            error
+                .to_string()
+                .contains("route terminal validation failure")
+        );
+        baseline
+            .verify_before_install(&paths)
+            .expect("terminal failure restored the route baseline");
+    }
+
+    #[test]
+    fn route_refresh_rejects_concurrent_controlled_drift_before_installation() {
+        let fixture = TemporaryWorkspace::create();
+        let (paths, original, staged, manifest_content) =
+            route_refresh_transaction_fixture(&fixture);
+        let inputs = GeneratorInputSnapshot::capture(paths.root()).expect("route input snapshot");
+        let baseline = RouteRefreshBaseline::capture(
+            &paths,
+            inputs,
+            &manifest_content,
+            &original,
+            &staged.manifest,
+        )
+        .expect("route refresh baseline");
+        let original_binding =
+            fs::read(paths.root().join("boxdd-sys/src/bindings_pregenerated.rs"))
+                .expect("original binding");
+        fs::write(
+            paths.root().join("boxdd/Cargo.toml"),
+            "# concurrent controlled edit\n",
+        )
+        .expect("concurrent controlled edit");
+
+        let error = install_route_refresh(&paths, &original, &staged, &baseline, None, || Ok(()))
+            .expect_err("concurrent controlled drift must fail before installation");
+        assert!(
+            error
+                .to_string()
+                .contains("controlled route generator input")
+        );
+        assert_eq!(
+            fs::read(paths.root().join("boxdd-sys/src/bindings_pregenerated.rs"))
+                .expect("unchanged binding"),
+            original_binding
+        );
+        assert_eq!(
+            fs::read(paths.upstream_manifest()).expect("unchanged manifest"),
+            manifest_content
+        );
+        assert!(
+            !paths
+                .root()
+                .join("boxdd-sys/src/bindings_wasm32_wasip1.rs")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn wasi_sysroot_and_binding_provenance_share_the_pinned_identity() {
+        let sysroot = TempDir::new().expect("WASI sysroot");
+        let missing = bindgen_contract::validate_wasi_sysroot(sysroot.path())
+            .expect_err("missing math.h must fail closed");
+        assert!(missing.contains("include/wasm32-wasip1"));
+        let headers = sysroot.path().join("include/wasm32-wasip1");
+        fs::create_dir_all(&headers).expect("WASI include directory");
+        fs::write(headers.join("math.h"), "#pragma once\n").expect("WASI math header");
+        let drift = bindgen_contract::validate_wasi_sysroot(sysroot.path())
+            .expect_err("unpinned headers must fail closed");
+        assert!(drift.contains("identity mismatch"));
+
+        let artifact = canonical_route_binding_artifacts()
+            .into_iter()
+            .find(|artifact| artifact.name == "bindings-wasm32-wasip1-single")
+            .expect("WASI binding artifact");
+        let provenance = binding_provenance(
+            &artifact,
+            "0123456789abcdef0123456789abcdef01234567",
+            RustTarget::Wasm32Wasip1,
+            Some(bindgen_contract::WASI_LIBC_HEADERS_SHA256),
+            None,
+        )
+        .expect("pinned WASI binding provenance");
+        assert!(provenance.contains(bindgen_contract::WASI_LIBC_VERSION));
+        assert!(provenance.contains(bindgen_contract::WASI_LIBC_HEADERS_SHA256));
+        assert!(
+            binding_provenance(
+                &artifact,
+                "0123456789abcdef0123456789abcdef01234567",
+                RustTarget::Wasm32Wasip1,
+                None,
+                None,
+            )
+            .is_err()
+        );
+
+        let freestanding_artifact = canonical_route_binding_artifacts()
+            .into_iter()
+            .find(|artifact| artifact.name == "bindings-wasm32-unknown-unknown-single")
+            .expect("freestanding binding artifact");
+        let provenance = binding_provenance(
+            &freestanding_artifact,
+            "0123456789abcdef0123456789abcdef01234567",
+            RustTarget::Wasm32UnknownUnknown,
+            None,
+            Some(bindgen_contract::UNKNOWN_UNKNOWN_MATH_HEADER_SHA256),
+        )
+        .expect("pinned freestanding binding provenance");
+        assert!(provenance.contains(bindgen_contract::UNKNOWN_UNKNOWN_MATH_HEADER_SHA256));
+        assert!(
+            binding_provenance(
+                &freestanding_artifact,
+                "0123456789abcdef0123456789abcdef01234567",
+                RustTarget::Wasm32UnknownUnknown,
+                None,
+                None,
+            )
+            .is_err()
+        );
+        assert_eq!(
+            binding_generation_provider(RustTarget::X86_64UnknownLinuxGnu),
+            "vendored"
+        );
+        assert_eq!(
+            binding_generation_provider(RustTarget::Wasm32UnknownUnknown),
+            "wasm-compile-only"
+        );
+        assert_eq!(
+            binding_generation_provider(RustTarget::Wasm32Wasip1),
+            "wasm-compile-only"
+        );
+    }
+
+    #[test]
     fn isolated_generation_uses_the_pinned_root_revision_and_rejects_head_drift() {
         let fixture = TemporaryWorkspace::create();
         let baseline =
@@ -6340,6 +8081,7 @@ mod tests {
 
         for args in [
             ["upstream-sync", "--write"],
+            ["upstream-sync", "--refresh-routes"],
             ["upstream-sync", "--prepare-next"],
             ["api-coverage", "--write"],
             ["api-coverage", "--refresh-abi"],
@@ -7354,6 +9096,7 @@ mod tests {
                 destination,
                 content: fs::read(paths.root().join(&artifact.path))
                     .expect("bootstrap artifact content"),
+                reviewed_baseline_blake3: None,
             }
         })
         .collect()
@@ -7392,6 +9135,56 @@ mod tests {
         assert_eq!(
             fs::read(paths.upstream_manifest()).expect("unchanged manifest"),
             original_manifest
+        );
+    }
+
+    #[test]
+    fn reviewed_active_baseline_updates_reviewed_bytes_and_manifest_atomically() {
+        let fixture = TemporaryWorkspace::create();
+        let paths = fixture.paths();
+        let original_manifest = fixture.manifest();
+        let contract_path = original_manifest
+            .artifact_path(paths.root(), ArtifactKind::ApiContract)
+            .expect("API contract path");
+        let reviewed = format!(
+            "upstream_sha = \"{}\"\nreview_state = \"accepted\"\n",
+            fixture.active_revision
+        )
+        .into_bytes();
+        fs::write(&contract_path, &reviewed).expect("manually reviewed contract");
+        let reviewed_blake3 = blake3::hash(&reviewed).to_hex().to_string();
+        let generated = format!(
+            "upstream_sha = \"{}\"\nreview_state = \"canonical\"\n",
+            fixture.active_revision
+        )
+        .into_bytes();
+
+        install_managed_artifact_writes(
+            &paths,
+            &[ManagedArtifactWrite::reviewed_active_with_baseline_blake3(
+                "api-contract",
+                generated.clone(),
+                reviewed_blake3,
+            )],
+            || Ok(()),
+        )
+        .expect("reviewed active transaction");
+
+        let updated_manifest = UpstreamManifest::load(&paths).expect("updated manifest");
+        assert_eq!(
+            fs::read(&contract_path).expect("installed reviewed contract"),
+            generated
+        );
+        assert_eq!(
+            updated_manifest
+                .artifact(ArtifactKind::ApiContract)
+                .expect("API contract artifact")
+                .content_blake3,
+            blake3::hash(&generated).to_hex().as_str()
+        );
+        assert_eq!(
+            updated_manifest.binding_routes,
+            original_manifest.binding_routes
         );
     }
 

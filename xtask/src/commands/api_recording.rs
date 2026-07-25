@@ -20,6 +20,10 @@ struct OperationExemption<'a> {
 }
 
 const LOGGED_OPERATIONS: &[(&str, &str)] = &[
+    (
+        "b2Body_EnableContactRecycling",
+        "BodyEnableContactRecycling",
+    ),
     ("b2Body_ApplyAngularImpulse", "BodyApplyAngularImpulse"),
     ("b2Body_ApplyForce", "BodyApplyForce"),
     ("b2Body_ApplyForceToCenter", "BodyApplyForceToCenter"),
@@ -55,6 +59,7 @@ const LOGGED_OPERATIONS: &[(&str, &str)] = &[
     ("b2CreateBody", "CreateBody"),
     ("b2CreateCapsuleShape", "CreateCapsuleShape"),
     ("b2CreateChain", "CreateChain"),
+    ("b2CreateChainSegmentShape", "CreateChainSegmentShape"),
     ("b2CreateCircleShape", "CreateCircleShape"),
     ("b2CreateDistanceJoint", "CreateDistanceJoint"),
     ("b2CreateFilterJoint", "CreateFilterJoint"),
@@ -196,6 +201,7 @@ const LOGGED_OPERATIONS: &[(&str, &str)] = &[
     ("b2Shape_EnableSensorEvents", "ShapeEnableSensorEvents"),
     ("b2Shape_RayCast", "ShapeRayCast"),
     ("b2Shape_SetCapsule", "ShapeSetCapsule"),
+    ("b2Shape_SetChainSegment", "ShapeSetChainSegment"),
     ("b2Shape_SetCircle", "ShapeSetCircle"),
     ("b2Shape_SetDensity", "ShapeSetDensity"),
     ("b2Shape_SetFilter", "ShapeSetFilter"),
@@ -243,6 +249,10 @@ const LOGGED_OPERATIONS: &[(&str, &str)] = &[
     ("b2World_OverlapAABB", "QueryOverlapAABB"),
     ("b2World_OverlapShape", "QueryOverlapShape"),
     ("b2World_SetContactTuning", "WorldSetContactTuning"),
+    (
+        "b2World_SetContactRecycleDistance",
+        "WorldSetContactRecycleDistance",
+    ),
     ("b2World_SetGravity", "WorldSetGravity"),
     ("b2World_SetHitEventThreshold", "WorldSetHitEventThreshold"),
     (
@@ -395,6 +405,7 @@ const READ_ONLY: &[&str] = &[
     "b2Body_GetWorldPoint",
     "b2Body_GetWorldPointVelocity",
     "b2Body_GetWorldVector",
+    "b2Body_IsContactRecyclingEnabled",
     "b2Body_IsAwake",
     "b2Body_IsBullet",
     "b2Body_IsEnabled",
@@ -535,17 +546,21 @@ const READ_ONLY: &[&str] = &[
     "b2WheelJoint_IsSpringEnabled",
     "b2World_Draw",
     "b2World_GetAwakeBodyCount",
+    "b2World_GetBounds",
     "b2World_GetBodyEvents",
     "b2World_GetContactEvents",
+    "b2World_GetContactRecycleDistance",
     "b2World_GetCounters",
     "b2World_GetGravity",
     "b2World_GetHitEventThreshold",
     "b2World_GetJointEvents",
     "b2World_GetMaximumLinearSpeed",
+    "b2World_GetMaxCapacity",
     "b2World_GetProfile",
     "b2World_GetRestitutionThreshold",
     "b2World_GetSensorEvents",
     "b2World_GetUserData",
+    "b2World_GetWorkerCount",
     "b2World_IsContinuousEnabled",
     "b2World_IsSleepingEnabled",
     "b2World_IsValid",
@@ -558,6 +573,7 @@ const UNLOGGED_MUTATION_FORBIDDEN: &[&str] = &[
     "b2Joint_SetUserData",
     "b2Shape_SetUserData",
     "b2World_SetUserData",
+    "b2World_SetWorkerCount",
 ];
 
 const CALLBACK_INSTALL_UNSUPPORTED: &[&str] = &[
@@ -565,14 +581,51 @@ const CALLBACK_INSTALL_UNSUPPORTED: &[&str] = &[
     "b2World_SetPreSolveCallback",
 ];
 
+const FOUNDATION_INITIALIZATION: &[&str] =
+    &["b2SetAssertFcn", "b2SetLengthUnitsPerMeter", "b2SetLogFcn"];
+
 const REPLAY_MIXER_LIFECYCLE: &[&str] = &[
     "b2World_SetFrictionCallback",
     "b2World_SetRestitutionCallback",
 ];
 
-const RECORDING_LIFECYCLE: &[&str] = &[];
+const RECORDING_LIFECYCLE: &[&str] = &[
+    "b2CreateRecording",
+    "b2DestroyRecording",
+    "b2World_StartRecording",
+    "b2World_StopRecording",
+];
 
-const SNAPSHOT_LIFECYCLE: &[&str] = &[];
+const SNAPSHOT_LIFECYCLE: &[&str] = &[
+    "b2CreateWorldFromSnapshot",
+    "b2World_Restore",
+    "b2World_Snapshot",
+];
+
+const REPLAY_LIFECYCLE: &[&str] = &[
+    "b2RecPlayer_Create",
+    "b2RecPlayer_Destroy",
+    "b2RecPlayer_DrawFrameQueries",
+    "b2RecPlayer_GetBodyCount",
+    "b2RecPlayer_GetBodyId",
+    "b2RecPlayer_GetDivergeFrame",
+    "b2RecPlayer_GetFrame",
+    "b2RecPlayer_GetFrameQuery",
+    "b2RecPlayer_GetFrameQueryCount",
+    "b2RecPlayer_GetFrameQueryHit",
+    "b2RecPlayer_GetInfo",
+    "b2RecPlayer_GetKeyframeBudget",
+    "b2RecPlayer_GetKeyframeBytes",
+    "b2RecPlayer_GetKeyframeInterval",
+    "b2RecPlayer_GetKeyframeMinInterval",
+    "b2RecPlayer_GetWorldId",
+    "b2RecPlayer_HasDiverged",
+    "b2RecPlayer_IsAtEnd",
+    "b2RecPlayer_Restart",
+    "b2RecPlayer_SeekFrame",
+    "b2RecPlayer_SetKeyframePolicy",
+    "b2RecPlayer_StepFrame",
+];
 
 const VERSIONED_FUNCTION_ALIASES: &[&[&str]] = &[
     &["b2Body_GetLocalCenterOfMass", "b2Body_GetLocalCenter"],
@@ -582,23 +635,7 @@ const VERSIONED_FUNCTION_ALIASES: &[&[&str]] = &[
 
 const OPERATION_EXEMPTIONS: &[OperationExemption<'static>] = &[
     OperationExemption {
-        operation: "WorldSetContactRecycleDistance",
-        rationale: "The target operation has no public function in the active header revision.",
-    },
-    OperationExemption {
         operation: "WorldRebuildStaticTree",
-        rationale: "The target operation has no public function in the active header revision.",
-    },
-    OperationExemption {
-        operation: "BodyEnableContactRecycling",
-        rationale: "The target operation has no public function in the active header revision.",
-    },
-    OperationExemption {
-        operation: "CreateChainSegmentShape",
-        rationale: "The target operation has no public function in the active header revision.",
-    },
-    OperationExemption {
-        operation: "ShapeSetChainSegment",
         rationale: "The target operation has no public function in the active header revision.",
     },
     OperationExemption {
@@ -631,6 +668,10 @@ fn production_entries() -> Vec<RegistryEntry<'static>> {
     });
     for (functions, class) in [
         (PURE_WORLDLESS, RecordingClass::PureWorldless),
+        (
+            FOUNDATION_INITIALIZATION,
+            RecordingClass::FoundationInitialization,
+        ),
         (READ_ONLY, RecordingClass::ReadOnly),
         (
             CALLBACK_INSTALL_UNSUPPORTED,
@@ -639,6 +680,7 @@ fn production_entries() -> Vec<RegistryEntry<'static>> {
         (REPLAY_MIXER_LIFECYCLE, RecordingClass::ReplayMixerLifecycle),
         (RECORDING_LIFECYCLE, RecordingClass::RecordingLifecycle),
         (SNAPSHOT_LIFECYCLE, RecordingClass::SnapshotLifecycle),
+        (REPLAY_LIFECYCLE, RecordingClass::ReplayLifecycle),
         (
             UNLOGGED_MUTATION_FORBIDDEN,
             RecordingClass::UnloggedMutationForbidden,
@@ -880,6 +922,10 @@ mod tests {
 
         let read = expected("b2Body_GetTransform", Classification::Safe, &operations()).unwrap();
         assert_eq!(read.class, RecordingClass::ReadOnly);
+
+        let foundation = expected("b2SetLogFcn", Classification::Safe, &operations()).unwrap();
+        assert_eq!(foundation.class, RecordingClass::FoundationInitialization);
+        assert_eq!(foundation.opcode, None);
 
         let unknown = expected("b2Body_LooksReadOnly", Classification::Safe, &operations());
         assert_eq!(unknown, None);

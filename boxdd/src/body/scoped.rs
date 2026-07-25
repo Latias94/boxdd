@@ -414,10 +414,21 @@ impl<'w> Body<'w> {
         BodyRuntimeHandle::try_joints_into(self, out)
     }
 
+    /// Return the body's simulation type.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this handle is unavailable or Box2D returns an unknown native discriminant. An
+    /// unknown discriminant poisons the world before this method panics.
     pub fn body_type(&self) -> BodyType {
         BodyRuntimeHandle::body_type(self)
     }
 
+    /// Try to return the body's simulation type.
+    ///
+    /// An unknown native discriminant returns
+    /// [`ApiError::InvalidNativeBodyType`](crate::ApiError::InvalidNativeBodyType) and poisons the
+    /// world.
     pub fn try_body_type(&self) -> ApiResult<BodyType> {
         BodyRuntimeHandle::try_body_type(self)
     }
@@ -553,6 +564,23 @@ impl<'w> Body<'w> {
         BodyRuntimeHandle::try_set_bullet(self, flag)
     }
 
+    /// Enable or disable contact recycling for contacts created after this call.
+    pub fn enable_contact_recycling(&mut self, flag: bool) {
+        BodyRuntimeHandle::enable_contact_recycling(self, flag)
+    }
+
+    pub fn try_enable_contact_recycling(&mut self, flag: bool) -> ApiResult<()> {
+        BodyRuntimeHandle::try_enable_contact_recycling(self, flag)
+    }
+
+    pub fn is_contact_recycling_enabled(&self) -> bool {
+        BodyRuntimeHandle::is_contact_recycling_enabled(self)
+    }
+
+    pub fn try_is_contact_recycling_enabled(&self) -> ApiResult<bool> {
+        BodyRuntimeHandle::try_is_contact_recycling_enabled(self)
+    }
+
     pub fn enable_contact_events(&mut self, flag: bool) {
         BodyRuntimeHandle::enable_contact_events(self, flag)
     }
@@ -665,7 +693,7 @@ impl<'w> Body<'w> {
         BodyRuntimeHandle::try_take_user_data(self)
     }
 
-    /// Borrow the raw id for ID-style APIs.
+    /// Borrow the world-bound branded ID for ID-style APIs.
     pub fn as_id(&self) -> BodyId {
         self.id
     }

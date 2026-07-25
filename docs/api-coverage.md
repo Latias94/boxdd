@@ -1,18 +1,22 @@
 # Box2D API Coverage
 
-<!-- api-coverage: total=478 safe=0 raw=478 omitted=0 deferred=0 -->
+<!-- api-coverage: total=478 safe=456 raw=20 omitted=2 deferred=0 -->
 
 This file is generated from the API artifact named by `boxdd-sys/upstream.toml`. The contract is validated against the exact vendored headers, canonical public Rust paths, real `#[test]` evidence, provider modes, precision-specific link symbols, explicit recording capability classes, and ABI struct/callback fingerprints.
 
 Pinned active upstream: `56edae79f2949d86142b03450d5d60f63bcf5a6f`.
 
+## Runtime Evidence Policy
+
+Policy: `ufcs-straight-line-v1`. Runtime witnesses must be executable `nextest` tests and use straight-line, unambiguous UFCS calls to a unique Safe inherent callable, or an unambiguous Safe free function. Receiver-method syntax does not count as coverage. Standard `Result`/`Option` `unwrap`, `expect`, and continuation through `?` are accepted only when their standard wrapper provenance is proven. Macros, unknown attributes, external modules, ambiguous imports or traits, and non-linear control flow fail closed. Explicit `drop` proves RAII only for a directly owned, unwrapped public value. `ReplayPlayer::with_view` additionally requires a proven must-invoke inline closure and successful result consumption. Route aggregation never substitutes for running every declared Cargo/nextest target.
+
 ## Summary
 
 | Status | Count |
 |---|---:|
-| `safe` | 0 |
-| `raw` | 478 |
-| `omitted` | 0 |
+| `safe` | 456 |
+| `raw` | 20 |
+| `omitted` | 2 |
 | `deferred` | 0 |
 | Total | 478 |
 
@@ -20,18 +24,79 @@ Pinned active upstream: `56edae79f2949d86142b03450d5d60f63bcf5a6f`.
 
 | Area | Safe | Raw | Omitted | Deferred | Total |
 |---|---:|---:|---:|---:|---:|
-| Unreviewed upstream base.h | 0 | 12 | 0 | 0 | 12 |
-| Unreviewed upstream box2d.h | 0 | 363 | 0 | 0 | 363 |
-| Unreviewed upstream collision.h | 0 | 73 | 0 | 0 | 73 |
-| Unreviewed upstream math_functions.h | 0 | 13 | 0 | 0 | 13 |
-| Unreviewed upstream types.h | 0 | 17 | 0 | 0 | 17 |
+| Body | 56 | 0 | 0 | 0 | 56 |
+| Body center of mass | 2 | 0 | 0 | 0 | 2 |
+| Body contact recycling | 2 | 0 | 0 | 0 | 2 |
+| Body coordinate conversion | 2 | 0 | 0 | 0 | 2 |
+| Body force mutation | 1 | 0 | 0 | 0 | 1 |
+| Body identity validation | 1 | 0 | 0 | 0 | 1 |
+| Body impulse mutation | 1 | 0 | 0 | 0 | 1 |
+| Body transform mutation | 2 | 0 | 0 | 0 | 2 |
+| Body transform query | 2 | 0 | 0 | 0 | 2 |
+| Body velocity query | 1 | 0 | 0 | 0 | 1 |
+| Borrowed replay body view | 1 | 0 | 0 | 0 | 1 |
+| Borrowed replay query hit | 1 | 0 | 0 | 0 | 1 |
+| Borrowed replay query view | 1 | 0 | 0 | 0 | 1 |
+| Borrowed replay view | 2 | 0 | 0 | 0 | 2 |
+| Chain | 9 | 0 | 0 | 0 | 9 |
+| Chain collision | 3 | 0 | 0 | 0 | 3 |
+| Chain identity validation | 1 | 0 | 0 | 0 | 1 |
+| Chain segment geometry mutation | 1 | 0 | 0 | 0 | 1 |
+| Chain segment shape creation | 1 | 0 | 0 | 0 | 1 |
+| Collision | 16 | 0 | 0 | 0 | 16 |
+| Collision bounds | 4 | 0 | 0 | 0 | 4 |
+| Completed-step event capture | 4 | 0 | 0 | 0 | 4 |
+| Contact identity validation | 1 | 0 | 0 | 0 | 1 |
+| Contact snapshots | 1 | 0 | 0 | 0 | 1 |
+| Debug drawing | 1 | 0 | 0 | 0 | 1 |
+| Dynamic tree box casting | 1 | 0 | 0 | 0 | 1 |
+| Dynamic tree lifecycle | 1 | 0 | 0 | 0 | 1 |
+| DynamicTree | 19 | 1 | 0 | 0 | 20 |
+| Foundation | 29 | 0 | 0 | 0 | 29 |
+| Foundation allocation diagnostics | 1 | 0 | 0 | 0 | 1 |
+| Foundation allocator configuration | 0 | 1 | 0 | 0 | 1 |
+| Foundation defaults | 2 | 0 | 0 | 0 | 2 |
+| Foundation initialization | 3 | 0 | 0 | 0 | 3 |
+| Internal solver diagnostics | 0 | 1 | 0 | 0 | 1 |
+| Internal world tuning | 0 | 1 | 0 | 0 | 1 |
+| Joint | 150 | 0 | 0 | 0 | 150 |
+| Joint identity validation | 1 | 0 | 0 | 0 | 1 |
+| Math | 5 | 0 | 0 | 0 | 5 |
+| Native assertion plumbing | 0 | 1 | 0 | 0 | 1 |
+| Native build identity | 0 | 1 | 0 | 0 | 1 |
+| Native filesystem recording helper | 0 | 2 | 0 | 0 | 2 |
+| Native recording buffer ownership | 0 | 2 | 0 | 0 | 2 |
+| Native replay validator | 0 | 1 | 0 | 0 | 1 |
+| Native value validation primitive | 0 | 9 | 0 | 0 | 9 |
+| Recording ownership | 2 | 0 | 0 | 0 | 2 |
+| Replay foundation compatibility | 1 | 0 | 0 | 0 | 1 |
+| Replay keyframe policy | 5 | 0 | 0 | 0 | 5 |
+| Replay metadata | 1 | 0 | 0 | 0 | 1 |
+| Replay navigation | 3 | 0 | 0 | 0 | 3 |
+| Replay player ownership | 2 | 0 | 0 | 0 | 2 |
+| Replay query drawing | 1 | 0 | 0 | 0 | 1 |
+| Replay state | 4 | 0 | 0 | 0 | 4 |
+| Replay world ownership | 1 | 0 | 0 | 0 | 1 |
+| Shape | 55 | 0 | 0 | 0 | 55 |
+| Shape identity validation | 1 | 0 | 0 | 0 | 1 |
+| Shape query | 3 | 0 | 0 | 0 | 3 |
+| Snapshot world creation | 1 | 0 | 0 | 0 | 1 |
+| World | 28 | 0 | 2 | 0 | 30 |
+| World contact recycling | 2 | 0 | 0 | 0 | 2 |
+| World diagnostics | 2 | 0 | 0 | 0 | 2 |
+| World operational metadata | 2 | 0 | 0 | 0 | 2 |
+| World recording lifecycle | 2 | 0 | 0 | 0 | 2 |
+| World snapshot capture | 1 | 0 | 0 | 0 | 1 |
+| World snapshot restore | 1 | 0 | 0 | 0 | 1 |
+| World spatial query | 7 | 0 | 0 | 0 | 7 |
+| World worker configuration | 2 | 0 | 0 | 0 | 2 |
 
 ## ABI Safe Rust Exposure
 
 | Capability | Safe | Raw | Omitted | Deferred | Total |
 |---|---:|---:|---:|---:|---:|
-| Structs | 51 | 28 | 2 | 6 | 87 |
-| Fields | 276 | 96 | 53 | 51 | 476 |
+| Structs | 33 | 46 | 2 | 6 | 87 |
+| Fields | 199 | 173 | 53 | 51 | 476 |
 | Callbacks | 3 | 12 | 0 | 2 | 17 |
 
 ### Non-Safe ABI Capabilities
@@ -49,6 +114,7 @@ Pinned active upstream: `56edae79f2949d86142b03450d5d60f63bcf5a6f`.
 | `struct b2BodyEvents` | `deferred` | No public Safe Rust path currently has an exact AST raw-type witness for boxdd_sys::ffi::b2BodyEvents; the reviewed semantic adapter cannot satisfy a strict Safe classification until that proof exists. |
 | `b2BodyEvents::moveEvents` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2BodyEvents::moveEvents; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `b2BodyEvents::moveCount` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2BodyEvents::moveCount; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
+| `struct b2BodyId` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2BodyId::index1` | `omitted` | boxdd_sys::ffi::b2BodyId::index1 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2BodyId::world0` | `omitted` | boxdd_sys::ffi::b2BodyId::world0 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2BodyId::generation` | `omitted` | boxdd_sys::ffi::b2BodyId::generation is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
@@ -72,14 +138,17 @@ Pinned active upstream: `56edae79f2949d86142b03450d5d60f63bcf5a6f`.
 | `b2ChainDef::count` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ChainDef::count; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `b2ChainDef::materialCount` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ChainDef::materialCount; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `b2ChainDef::internalValue` | `omitted` | boxdd_sys::ffi::b2ChainDef::internalValue is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
+| `struct b2ChainId` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2ChainId::index1` | `omitted` | boxdd_sys::ffi::b2ChainId::index1 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2ChainId::world0` | `omitted` | boxdd_sys::ffi::b2ChainId::world0 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2ChainId::generation` | `omitted` | boxdd_sys::ffi::b2ChainId::generation is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
+| `struct b2ContactBeginTouchEvent` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2ContactBeginTouchEvent::shapeIdA` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ContactBeginTouchEvent::shapeIdA; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `b2ContactBeginTouchEvent::shapeIdB` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ContactBeginTouchEvent::shapeIdB; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `b2ContactBeginTouchEvent::contactId` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ContactBeginTouchEvent::contactId; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `struct b2ContactData` | `raw` | The declaration identity or precision-specific raw ABI proof for `b2ContactData` changed, so the previous Safe review was not inherited and this refreshed capability is conservatively raw. |
 | `b2ContactData::manifold` | `raw` | The declaration, overlay contract, or precision-specific raw ABI proof for `b2ContactData::manifold` changed, so the previous Safe review was not inherited and this refreshed field is conservatively raw. |
+| `struct b2ContactEndTouchEvent` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2ContactEndTouchEvent::shapeIdA` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ContactEndTouchEvent::shapeIdA; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `b2ContactEndTouchEvent::shapeIdB` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ContactEndTouchEvent::shapeIdB; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `b2ContactEndTouchEvent::contactId` | `deferred` | boxdd_sys::ffi::b2ContactEndTouchEvent::contactId is intentionally classified as deferred; raw layout reachability is not a Safe Rust witness. |
@@ -97,6 +166,7 @@ Pinned active upstream: `56edae79f2949d86142b03450d5d60f63bcf5a6f`.
 | `b2ContactHitEvent::point` | `raw` | The declaration, overlay contract, or precision-specific raw ABI proof for `b2ContactHitEvent::point` changed, so the previous Safe review was not inherited and this refreshed field is conservatively raw. |
 | `b2ContactHitEvent::normal` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ContactHitEvent::normal; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `b2ContactHitEvent::approachSpeed` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ContactHitEvent::approachSpeed; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
+| `struct b2ContactId` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2ContactId::index1` | `omitted` | boxdd_sys::ffi::b2ContactId::index1 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2ContactId::world0` | `omitted` | boxdd_sys::ffi::b2ContactId::world0 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2ContactId::padding` | `omitted` | boxdd_sys::ffi::b2ContactId::padding is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
@@ -125,6 +195,20 @@ Pinned active upstream: `56edae79f2949d86142b03450d5d60f63bcf5a6f`.
 | `b2DebugDraw::drawChainNormals` | `raw` | The exact native field `b2DebugDraw::drawChainNormals` remains available through the reviewed raw ABI mapping. |
 | `struct b2DistanceInput` | `raw` | The declaration identity or precision-specific raw ABI proof for `b2DistanceInput` changed, so the previous Safe review was not inherited and this refreshed capability is conservatively raw. |
 | `b2DistanceInput::transform` | `raw` | The exact native field `b2DistanceInput::transform` remains available through the reviewed raw ABI mapping. |
+| `struct b2DistanceJointDef` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DistanceJointDef::base` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DistanceJointDef::length` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DistanceJointDef::enableSpring` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DistanceJointDef::lowerSpringForce` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DistanceJointDef::upperSpringForce` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DistanceJointDef::hertz` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DistanceJointDef::dampingRatio` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DistanceJointDef::enableLimit` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DistanceJointDef::minLength` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DistanceJointDef::maxLength` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DistanceJointDef::enableMotor` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DistanceJointDef::maxMotorForce` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DistanceJointDef::motorSpeed` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2DistanceJointDef::internalValue` | `omitted` | boxdd_sys::ffi::b2DistanceJointDef::internalValue is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `struct b2DynamicTree` | `raw` | The declaration identity or precision-specific raw ABI proof for `b2DynamicTree` changed, so the previous Safe review was not inherited and this refreshed capability is conservatively raw. |
 | `b2DynamicTree::nodes` | `omitted` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2DynamicTree::nodes; fail-closed validation recommends omitted rather than accepting the reviewed semantic path as proof. |
@@ -140,15 +224,29 @@ Pinned active upstream: `56edae79f2949d86142b03450d5d60f63bcf5a6f`.
 | `b2DynamicTree::rebuildCapacity` | `raw` | The declaration, overlay contract, or precision-specific raw ABI proof for `b2DynamicTree::rebuildCapacity` changed, so the previous Safe review was not inherited and this refreshed field is conservatively raw. |
 | `struct b2ExplosionDef` | `raw` | The declaration identity or precision-specific raw ABI proof for `b2ExplosionDef` changed, so the previous Safe review was not inherited and this refreshed capability is conservatively raw. |
 | `b2ExplosionDef::position` | `raw` | The declaration, overlay contract, or precision-specific raw ABI proof for `b2ExplosionDef::position` changed, so the previous Safe review was not inherited and this refreshed field is conservatively raw. |
+| `b2FilterJointDef::base` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2FilterJointDef::internalValue` | `omitted` | boxdd_sys::ffi::b2FilterJointDef::internalValue is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2Hull::points` | `omitted` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2Hull::points; fail-closed validation recommends omitted rather than accepting the reviewed semantic path as proof. |
 | `b2Hull::count` | `omitted` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2Hull::count; fail-closed validation recommends omitted rather than accepting the reviewed semantic path as proof. |
+| `struct b2JointDef` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2JointDef::userData` | `omitted` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2JointDef::userData; fail-closed validation recommends omitted rather than accepting the reviewed semantic path as proof. |
+| `b2JointDef::bodyIdA` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2JointDef::bodyIdB` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2JointDef::localFrameA` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2JointDef::localFrameB` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2JointDef::forceThreshold` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2JointDef::torqueThreshold` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2JointDef::constraintHertz` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2JointDef::constraintDampingRatio` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2JointDef::drawScale` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2JointDef::collideConnected` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `struct b2JointEvent` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2JointEvent::jointId` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2JointEvent::jointId; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `b2JointEvent::userData` | `omitted` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2JointEvent::userData; fail-closed validation recommends omitted rather than accepting the reviewed semantic path as proof. |
 | `struct b2JointEvents` | `deferred` | No public Safe Rust path currently has an exact AST raw-type witness for boxdd_sys::ffi::b2JointEvents; the reviewed semantic adapter cannot satisfy a strict Safe classification until that proof exists. |
 | `b2JointEvents::jointEvents` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2JointEvents::jointEvents; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `b2JointEvents::count` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2JointEvents::count; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
+| `struct b2JointId` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2JointId::index1` | `omitted` | boxdd_sys::ffi::b2JointId::index1 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2JointId::world0` | `omitted` | boxdd_sys::ffi::b2JointId::world0 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2JointId::generation` | `omitted` | boxdd_sys::ffi::b2JointId::generation is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
@@ -167,6 +265,18 @@ Pinned active upstream: `56edae79f2949d86142b03450d5d60f63bcf5a6f`.
 | `struct b2Mat22` | `raw` | boxdd_sys::ffi::b2Mat22 is intentionally classified as raw; raw ABI presence is not a Safe Rust witness. |
 | `b2Mat22::cx` | `raw` | boxdd_sys::ffi::b2Mat22::cx is intentionally classified as raw; raw layout reachability is not a Safe Rust witness. |
 | `b2Mat22::cy` | `raw` | boxdd_sys::ffi::b2Mat22::cy is intentionally classified as raw; raw layout reachability is not a Safe Rust witness. |
+| `struct b2MotorJointDef` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2MotorJointDef::base` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2MotorJointDef::linearVelocity` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2MotorJointDef::maxVelocityForce` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2MotorJointDef::angularVelocity` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2MotorJointDef::maxVelocityTorque` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2MotorJointDef::linearHertz` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2MotorJointDef::linearDampingRatio` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2MotorJointDef::maxSpringForce` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2MotorJointDef::angularHertz` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2MotorJointDef::angularDampingRatio` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2MotorJointDef::maxSpringTorque` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2MotorJointDef::internalValue` | `omitted` | boxdd_sys::ffi::b2MotorJointDef::internalValue is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `struct b2PlaneResult` | `deferred` | No public Safe Rust path currently has an exact AST raw-type witness for boxdd_sys::ffi::b2PlaneResult; the reviewed semantic adapter cannot satisfy a strict Safe classification until that proof exists. |
 | `b2PlaneResult::plane` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2PlaneResult::plane; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
@@ -180,15 +290,30 @@ Pinned active upstream: `56edae79f2949d86142b03450d5d60f63bcf5a6f`.
 | `struct b2Pos` | `raw` | The exact native structure `b2Pos` remains available through the reviewed raw ABI mapping. |
 | `b2Pos::x` | `raw` | The exact native field `b2Pos::x` remains available through the reviewed raw ABI mapping. |
 | `b2Pos::y` | `raw` | The exact native field `b2Pos::y` remains available through the reviewed raw ABI mapping. |
+| `struct b2PrismaticJointDef` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2PrismaticJointDef::base` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2PrismaticJointDef::enableSpring` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2PrismaticJointDef::hertz` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2PrismaticJointDef::dampingRatio` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2PrismaticJointDef::targetTranslation` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2PrismaticJointDef::targetTranslation; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
+| `b2PrismaticJointDef::enableLimit` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2PrismaticJointDef::lowerTranslation` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2PrismaticJointDef::upperTranslation` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2PrismaticJointDef::enableMotor` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2PrismaticJointDef::maxMotorForce` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2PrismaticJointDef::motorSpeed` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2PrismaticJointDef::internalValue` | `omitted` | boxdd_sys::ffi::b2PrismaticJointDef::internalValue is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `struct b2Profile` | `raw` | The declaration identity or precision-specific raw ABI proof for `b2Profile` changed, so the previous Safe review was not inherited and this refreshed capability is conservatively raw. |
 | `b2Profile::solverSetup` | `raw` | The exact native field `b2Profile::solverSetup` remains available through the reviewed raw ABI mapping. |
 | `b2Profile::constraints` | `raw` | The exact native field `b2Profile::constraints` remains available through the reviewed raw ABI mapping. |
 | `struct b2RayResult` | `raw` | The declaration identity or precision-specific raw ABI proof for `b2RayResult` changed, so the previous Safe review was not inherited and this refreshed capability is conservatively raw. |
+| `b2RayResult::shapeId` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2RayResult::point` | `raw` | The declaration, overlay contract, or precision-specific raw ABI proof for `b2RayResult::point` changed, so the previous Safe review was not inherited and this refreshed field is conservatively raw. |
+| `b2RayResult::normal` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2RayResult::fraction` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2RayResult::nodeVisits` | `deferred` | boxdd_sys::ffi::b2RayResult::nodeVisits is intentionally classified as deferred; raw layout reachability is not a Safe Rust witness. |
 | `b2RayResult::leafVisits` | `deferred` | boxdd_sys::ffi::b2RayResult::leafVisits is intentionally classified as deferred; raw layout reachability is not a Safe Rust witness. |
+| `b2RayResult::hit` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `struct b2RecPlayerInfo` | `raw` | The exact native structure `b2RecPlayerInfo` remains available through the reviewed raw ABI mapping. |
 | `b2RecPlayerInfo::frameCount` | `raw` | The exact native field `b2RecPlayerInfo::frameCount` remains available through the reviewed raw ABI mapping. |
 | `b2RecPlayerInfo::workerCount` | `raw` | The exact native field `b2RecPlayerInfo::workerCount` remains available through the reviewed raw ABI mapping. |
@@ -209,9 +334,23 @@ Pinned active upstream: `56edae79f2949d86142b03450d5d60f63bcf5a6f`.
 | `b2RecQueryInfo::translation` | `raw` | The exact native field `b2RecQueryInfo::translation` remains available through the reviewed raw ABI mapping. |
 | `b2RecQueryInfo::shape` | `raw` | The exact native field `b2RecQueryInfo::shape` remains available through the reviewed raw ABI mapping. |
 | `b2RecQueryInfo::hitCount` | `raw` | The exact native field `b2RecQueryInfo::hitCount` remains available through the reviewed raw ABI mapping. |
+| `struct b2RevoluteJointDef` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2RevoluteJointDef::base` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2RevoluteJointDef::targetAngle` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2RevoluteJointDef::enableSpring` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2RevoluteJointDef::hertz` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2RevoluteJointDef::dampingRatio` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2RevoluteJointDef::enableLimit` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2RevoluteJointDef::lowerAngle` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2RevoluteJointDef::upperAngle` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2RevoluteJointDef::enableMotor` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2RevoluteJointDef::maxMotorTorque` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2RevoluteJointDef::motorSpeed` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2RevoluteJointDef::internalValue` | `omitted` | boxdd_sys::ffi::b2RevoluteJointDef::internalValue is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
+| `struct b2SensorBeginTouchEvent` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2SensorBeginTouchEvent::sensorShapeId` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2SensorBeginTouchEvent::sensorShapeId; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `b2SensorBeginTouchEvent::visitorShapeId` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2SensorBeginTouchEvent::visitorShapeId; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
+| `struct b2SensorEndTouchEvent` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2SensorEndTouchEvent::sensorShapeId` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2SensorEndTouchEvent::sensorShapeId; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `b2SensorEndTouchEvent::visitorShapeId` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2SensorEndTouchEvent::visitorShapeId; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `struct b2SensorEvents` | `deferred` | No public Safe Rust path currently has an exact AST raw-type witness for boxdd_sys::ffi::b2SensorEvents; the reviewed semantic adapter cannot satisfy a strict Safe classification until that proof exists. |
@@ -223,6 +362,7 @@ Pinned active upstream: `56edae79f2949d86142b03450d5d60f63bcf5a6f`.
 | `b2ShapeCastPairInput::transform` | `raw` | The exact native field `b2ShapeCastPairInput::transform` remains available through the reviewed raw ABI mapping. |
 | `b2ShapeDef::userData` | `omitted` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ShapeDef::userData; fail-closed validation recommends omitted rather than accepting the reviewed semantic path as proof. |
 | `b2ShapeDef::internalValue` | `omitted` | boxdd_sys::ffi::b2ShapeDef::internalValue is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
+| `struct b2ShapeId` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2ShapeId::index1` | `omitted` | boxdd_sys::ffi::b2ShapeId::index1 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2ShapeId::world0` | `omitted` | boxdd_sys::ffi::b2ShapeId::world0 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2ShapeId::generation` | `omitted` | boxdd_sys::ffi::b2ShapeId::generation is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
@@ -240,6 +380,9 @@ Pinned active upstream: `56edae79f2949d86142b03450d5d60f63bcf5a6f`.
 | `b2SimplexVertex::a` | `omitted` | boxdd_sys::ffi::b2SimplexVertex::a is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2SimplexVertex::indexA` | `omitted` | boxdd_sys::ffi::b2SimplexVertex::indexA is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2SimplexVertex::indexB` | `omitted` | boxdd_sys::ffi::b2SimplexVertex::indexB is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
+| `struct b2Transform` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2Transform::p` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2Transform::q` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `struct b2TreeNode` | `raw` | The exact native structure `b2TreeNode` remains available through the reviewed raw ABI mapping. |
 | `b2TreeNode::aabb` | `raw` | The exact native field `b2TreeNode::aabb` remains available through the reviewed raw ABI mapping. |
 | `b2TreeNode::categoryBits` | `raw` | The exact native field `b2TreeNode::categoryBits` remains available through the reviewed raw ABI mapping. |
@@ -252,7 +395,24 @@ Pinned active upstream: `56edae79f2949d86142b03450d5d60f63bcf5a6f`.
 | `struct b2TreeNodeChildren` | `raw` | The exact native structure `b2TreeNodeChildren` remains available through the reviewed raw ABI mapping. |
 | `b2TreeNodeChildren::child1` | `raw` | The exact native field `b2TreeNodeChildren::child1` remains available through the reviewed raw ABI mapping. |
 | `b2TreeNodeChildren::child2` | `raw` | The exact native field `b2TreeNodeChildren::child2` remains available through the reviewed raw ABI mapping. |
+| `struct b2WeldJointDef` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2WeldJointDef::base` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2WeldJointDef::linearHertz` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2WeldJointDef::angularHertz` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2WeldJointDef::linearDampingRatio` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2WeldJointDef::angularDampingRatio` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2WeldJointDef::internalValue` | `omitted` | boxdd_sys::ffi::b2WeldJointDef::internalValue is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
+| `struct b2WheelJointDef` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2WheelJointDef::base` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2WheelJointDef::enableSpring` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2WheelJointDef::hertz` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2WheelJointDef::dampingRatio` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2WheelJointDef::enableLimit` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2WheelJointDef::lowerTranslation` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2WheelJointDef::upperTranslation` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2WheelJointDef::enableMotor` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2WheelJointDef::maxMotorTorque` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2WheelJointDef::motorSpeed` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2WheelJointDef::internalValue` | `omitted` | boxdd_sys::ffi::b2WheelJointDef::internalValue is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `struct b2WorldCastOutput` | `raw` | The exact native structure `b2WorldCastOutput` remains available through the reviewed raw ABI mapping. |
 | `b2WorldCastOutput::normal` | `raw` | The exact native field `b2WorldCastOutput::normal` remains available through the reviewed raw ABI mapping. |
@@ -293,484 +453,28 @@ Pinned active upstream: `56edae79f2949d86142b03450d5d60f63bcf5a6f`.
 
 | Logical API | Status | Area | Rationale |
 |---|---|---|---|
-| `b2Atan2` | `raw` | Unreviewed upstream math_functions.h | The new or changed upstream function `b2Atan2` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_ApplyAngularImpulse` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_ApplyAngularImpulse` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_ApplyForce` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_ApplyForce` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_ApplyForceToCenter` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_ApplyForceToCenter` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_ApplyLinearImpulse` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_ApplyLinearImpulse` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_ApplyLinearImpulseToCenter` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_ApplyLinearImpulseToCenter` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_ApplyMassFromShapes` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_ApplyMassFromShapes` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_ApplyTorque` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_ApplyTorque` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_ClearForces` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_ClearForces` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_ComputeAABB` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_ComputeAABB` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_Disable` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_Disable` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_Enable` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_Enable` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_EnableContactEvents` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_EnableContactEvents` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_EnableContactRecycling` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_EnableContactRecycling` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_EnableHitEvents` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_EnableHitEvents` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_EnableSleep` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_EnableSleep` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetAngularDamping` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetAngularDamping` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetAngularVelocity` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetAngularVelocity` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetContactCapacity` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetContactCapacity` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetContactData` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetContactData` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetGravityScale` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetGravityScale` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetJointCount` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetJointCount` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetJoints` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetJoints` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetLinearDamping` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetLinearDamping` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetLinearVelocity` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetLinearVelocity` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetLocalCenter` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetLocalCenter` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetLocalPoint` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetLocalPoint` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetLocalPointVelocity` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetLocalPointVelocity` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetLocalVector` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetLocalVector` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetMass` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetMass` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetMassData` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetMassData` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetMotionLocks` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetMotionLocks` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetName` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetName` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetPosition` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetPosition` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetRotation` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetRotation` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetRotationalInertia` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetRotationalInertia` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetShapeCount` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetShapeCount` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetShapes` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetShapes` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetSleepThreshold` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetSleepThreshold` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetTransform` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetTransform` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetType` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetType` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetUserData` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetUserData` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetWorld` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetWorld` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetWorldCenter` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetWorldCenter` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetWorldPoint` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetWorldPoint` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetWorldPointVelocity` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetWorldPointVelocity` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_GetWorldVector` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_GetWorldVector` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_IsAwake` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_IsAwake` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_IsBullet` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_IsBullet` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_IsContactRecyclingEnabled` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_IsContactRecyclingEnabled` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_IsEnabled` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_IsEnabled` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_IsSleepEnabled` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_IsSleepEnabled` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_IsValid` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_IsValid` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_SetAngularDamping` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_SetAngularDamping` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_SetAngularVelocity` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_SetAngularVelocity` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_SetAwake` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_SetAwake` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_SetBullet` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_SetBullet` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_SetGravityScale` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_SetGravityScale` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_SetLinearDamping` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_SetLinearDamping` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_SetLinearVelocity` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_SetLinearVelocity` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_SetMassData` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_SetMassData` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_SetMotionLocks` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_SetMotionLocks` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_SetName` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_SetName` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_SetSleepThreshold` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_SetSleepThreshold` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_SetTargetTransform` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_SetTargetTransform` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_SetTransform` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_SetTransform` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_SetType` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_SetType` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_SetUserData` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_SetUserData` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Body_WakeTouching` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Body_WakeTouching` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Chain_GetSegmentCount` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Chain_GetSegmentCount` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Chain_GetSegments` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Chain_GetSegments` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Chain_GetSurfaceMaterial` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Chain_GetSurfaceMaterial` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Chain_GetSurfaceMaterialCount` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Chain_GetSurfaceMaterialCount` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Chain_GetWorld` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Chain_GetWorld` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Chain_IsValid` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Chain_IsValid` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Chain_SetSurfaceMaterial` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Chain_SetSurfaceMaterial` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2ClipVector` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2ClipVector` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CollideCapsuleAndCircle` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2CollideCapsuleAndCircle` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CollideCapsules` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2CollideCapsules` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CollideChainSegmentAndCapsule` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2CollideChainSegmentAndCapsule` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CollideChainSegmentAndCircle` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2CollideChainSegmentAndCircle` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CollideChainSegmentAndPolygon` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2CollideChainSegmentAndPolygon` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CollideCircles` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2CollideCircles` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CollidePolygonAndCapsule` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2CollidePolygonAndCapsule` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CollidePolygonAndCircle` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2CollidePolygonAndCircle` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CollidePolygons` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2CollidePolygons` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CollideSegmentAndCapsule` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2CollideSegmentAndCapsule` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CollideSegmentAndCircle` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2CollideSegmentAndCircle` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CollideSegmentAndPolygon` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2CollideSegmentAndPolygon` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2ComputeCapsuleAABB` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2ComputeCapsuleAABB` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2ComputeCapsuleMass` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2ComputeCapsuleMass` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2ComputeCircleAABB` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2ComputeCircleAABB` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2ComputeCircleMass` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2ComputeCircleMass` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2ComputeCosSin` | `raw` | Unreviewed upstream math_functions.h | The new or changed upstream function `b2ComputeCosSin` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2ComputeHull` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2ComputeHull` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2ComputePolygonAABB` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2ComputePolygonAABB` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2ComputePolygonMass` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2ComputePolygonMass` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2ComputeRotationBetweenUnitVectors` | `raw` | Unreviewed upstream math_functions.h | The new or changed upstream function `b2ComputeRotationBetweenUnitVectors` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2ComputeSegmentAABB` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2ComputeSegmentAABB` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Contact_GetData` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Contact_GetData` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Contact_IsValid` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Contact_IsValid` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CreateBody` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2CreateBody` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CreateCapsuleShape` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2CreateCapsuleShape` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CreateChain` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2CreateChain` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CreateChainSegmentShape` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2CreateChainSegmentShape` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CreateCircleShape` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2CreateCircleShape` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CreateDistanceJoint` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2CreateDistanceJoint` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CreateFilterJoint` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2CreateFilterJoint` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CreateMotorJoint` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2CreateMotorJoint` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CreatePolygonShape` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2CreatePolygonShape` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CreatePrismaticJoint` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2CreatePrismaticJoint` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CreateRecording` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2CreateRecording` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CreateRevoluteJoint` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2CreateRevoluteJoint` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CreateSegmentShape` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2CreateSegmentShape` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CreateWeldJoint` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2CreateWeldJoint` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CreateWheelJoint` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2CreateWheelJoint` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CreateWorld` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2CreateWorld` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2CreateWorldFromSnapshot` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2CreateWorldFromSnapshot` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DefaultBodyDef` | `raw` | Unreviewed upstream types.h | The new or changed upstream function `b2DefaultBodyDef` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DefaultChainDef` | `raw` | Unreviewed upstream types.h | The new or changed upstream function `b2DefaultChainDef` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DefaultDebugDraw` | `raw` | Unreviewed upstream types.h | The new or changed upstream function `b2DefaultDebugDraw` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DefaultDistanceJointDef` | `raw` | Unreviewed upstream types.h | The new or changed upstream function `b2DefaultDistanceJointDef` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DefaultExplosionDef` | `raw` | Unreviewed upstream types.h | The new or changed upstream function `b2DefaultExplosionDef` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DefaultFilter` | `raw` | Unreviewed upstream types.h | The new or changed upstream function `b2DefaultFilter` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DefaultFilterJointDef` | `raw` | Unreviewed upstream types.h | The new or changed upstream function `b2DefaultFilterJointDef` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DefaultMotorJointDef` | `raw` | Unreviewed upstream types.h | The new or changed upstream function `b2DefaultMotorJointDef` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DefaultPrismaticJointDef` | `raw` | Unreviewed upstream types.h | The new or changed upstream function `b2DefaultPrismaticJointDef` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DefaultQueryFilter` | `raw` | Unreviewed upstream types.h | The new or changed upstream function `b2DefaultQueryFilter` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DefaultRevoluteJointDef` | `raw` | Unreviewed upstream types.h | The new or changed upstream function `b2DefaultRevoluteJointDef` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DefaultShapeDef` | `raw` | Unreviewed upstream types.h | The new or changed upstream function `b2DefaultShapeDef` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DefaultSurfaceMaterial` | `raw` | Unreviewed upstream types.h | The new or changed upstream function `b2DefaultSurfaceMaterial` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DefaultWeldJointDef` | `raw` | Unreviewed upstream types.h | The new or changed upstream function `b2DefaultWeldJointDef` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DefaultWheelJointDef` | `raw` | Unreviewed upstream types.h | The new or changed upstream function `b2DefaultWheelJointDef` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DefaultWorldDef` | `raw` | Unreviewed upstream types.h | The new or changed upstream function `b2DefaultWorldDef` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DestroyBody` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DestroyBody` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DestroyChain` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DestroyChain` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DestroyJoint` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DestroyJoint` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DestroyRecording` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DestroyRecording` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DestroyShape` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DestroyShape` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DestroyWorld` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DestroyWorld` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DistanceJoint_EnableLimit` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DistanceJoint_EnableLimit` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DistanceJoint_EnableMotor` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DistanceJoint_EnableMotor` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DistanceJoint_EnableSpring` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DistanceJoint_EnableSpring` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DistanceJoint_GetCurrentLength` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DistanceJoint_GetCurrentLength` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DistanceJoint_GetLength` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DistanceJoint_GetLength` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DistanceJoint_GetMaxLength` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DistanceJoint_GetMaxLength` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DistanceJoint_GetMaxMotorForce` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DistanceJoint_GetMaxMotorForce` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DistanceJoint_GetMinLength` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DistanceJoint_GetMinLength` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DistanceJoint_GetMotorForce` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DistanceJoint_GetMotorForce` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DistanceJoint_GetMotorSpeed` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DistanceJoint_GetMotorSpeed` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DistanceJoint_GetSpringDampingRatio` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DistanceJoint_GetSpringDampingRatio` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DistanceJoint_GetSpringForceRange` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DistanceJoint_GetSpringForceRange` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DistanceJoint_GetSpringHertz` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DistanceJoint_GetSpringHertz` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DistanceJoint_IsLimitEnabled` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DistanceJoint_IsLimitEnabled` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DistanceJoint_IsMotorEnabled` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DistanceJoint_IsMotorEnabled` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DistanceJoint_IsSpringEnabled` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DistanceJoint_IsSpringEnabled` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DistanceJoint_SetLength` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DistanceJoint_SetLength` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DistanceJoint_SetLengthRange` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DistanceJoint_SetLengthRange` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DistanceJoint_SetMaxMotorForce` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DistanceJoint_SetMaxMotorForce` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DistanceJoint_SetMotorSpeed` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DistanceJoint_SetMotorSpeed` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DistanceJoint_SetSpringDampingRatio` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DistanceJoint_SetSpringDampingRatio` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DistanceJoint_SetSpringForceRange` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DistanceJoint_SetSpringForceRange` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DistanceJoint_SetSpringHertz` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2DistanceJoint_SetSpringHertz` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DynamicTree_BoxCast` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2DynamicTree_BoxCast` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DynamicTree_Create` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2DynamicTree_Create` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DynamicTree_CreateProxy` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2DynamicTree_CreateProxy` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DynamicTree_Destroy` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2DynamicTree_Destroy` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DynamicTree_DestroyProxy` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2DynamicTree_DestroyProxy` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DynamicTree_EnlargeProxy` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2DynamicTree_EnlargeProxy` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DynamicTree_GetAABB` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2DynamicTree_GetAABB` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DynamicTree_GetAreaRatio` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2DynamicTree_GetAreaRatio` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DynamicTree_GetByteCount` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2DynamicTree_GetByteCount` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DynamicTree_GetCategoryBits` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2DynamicTree_GetCategoryBits` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DynamicTree_GetHeight` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2DynamicTree_GetHeight` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DynamicTree_GetProxyCount` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2DynamicTree_GetProxyCount` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DynamicTree_GetRootBounds` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2DynamicTree_GetRootBounds` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DynamicTree_GetUserData` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2DynamicTree_GetUserData` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DynamicTree_MoveProxy` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2DynamicTree_MoveProxy` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DynamicTree_Query` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2DynamicTree_Query` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DynamicTree_QueryAll` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2DynamicTree_QueryAll` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DynamicTree_RayCast` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2DynamicTree_RayCast` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DynamicTree_Rebuild` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2DynamicTree_Rebuild` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DynamicTree_SetCategoryBits` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2DynamicTree_SetCategoryBits` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DynamicTree_Validate` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2DynamicTree_Validate` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2DynamicTree_ValidateNoEnlarged` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2DynamicTree_ValidateNoEnlarged` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2GetByteCount` | `raw` | Unreviewed upstream base.h | The new or changed upstream function `b2GetByteCount` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2GetGraphColor` | `raw` | Unreviewed upstream types.h | The new or changed upstream function `b2GetGraphColor` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2GetLengthUnitsPerMeter` | `raw` | Unreviewed upstream math_functions.h | The new or changed upstream function `b2GetLengthUnitsPerMeter` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2GetMilliseconds` | `raw` | Unreviewed upstream base.h | The new or changed upstream function `b2GetMilliseconds` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2GetMillisecondsAndReset` | `raw` | Unreviewed upstream base.h | The new or changed upstream function `b2GetMillisecondsAndReset` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2GetSweepTransform` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2GetSweepTransform` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2GetTicks` | `raw` | Unreviewed upstream base.h | The new or changed upstream function `b2GetTicks` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2GetVersion` | `raw` | Unreviewed upstream base.h | The new or changed upstream function `b2GetVersion` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Hash` | `raw` | Unreviewed upstream base.h | The new or changed upstream function `b2Hash` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2InternalAssert` | `raw` | Unreviewed upstream base.h | The new or changed upstream function `b2InternalAssert` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2IsDoublePrecision` | `raw` | Unreviewed upstream base.h | The new or changed upstream function `b2IsDoublePrecision` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2IsValidAABB` | `raw` | Unreviewed upstream math_functions.h | The new or changed upstream function `b2IsValidAABB` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2IsValidFloat` | `raw` | Unreviewed upstream math_functions.h | The new or changed upstream function `b2IsValidFloat` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2IsValidPlane` | `raw` | Unreviewed upstream math_functions.h | The new or changed upstream function `b2IsValidPlane` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2IsValidPosition` | `raw` | Unreviewed upstream math_functions.h | The new or changed upstream function `b2IsValidPosition` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2IsValidRay` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2IsValidRay` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2IsValidRotation` | `raw` | Unreviewed upstream math_functions.h | The new or changed upstream function `b2IsValidRotation` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2IsValidTransform` | `raw` | Unreviewed upstream math_functions.h | The new or changed upstream function `b2IsValidTransform` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2IsValidVec2` | `raw` | Unreviewed upstream math_functions.h | The new or changed upstream function `b2IsValidVec2` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2IsValidWorldTransform` | `raw` | Unreviewed upstream math_functions.h | The new or changed upstream function `b2IsValidWorldTransform` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_GetAngularSeparation` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_GetAngularSeparation` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_GetBodyA` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_GetBodyA` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_GetBodyB` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_GetBodyB` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_GetCollideConnected` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_GetCollideConnected` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_GetConstraintForce` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_GetConstraintForce` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_GetConstraintTorque` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_GetConstraintTorque` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_GetConstraintTuning` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_GetConstraintTuning` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_GetForceThreshold` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_GetForceThreshold` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_GetLinearSeparation` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_GetLinearSeparation` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_GetLocalFrameA` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_GetLocalFrameA` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_GetLocalFrameB` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_GetLocalFrameB` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_GetTorqueThreshold` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_GetTorqueThreshold` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_GetType` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_GetType` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_GetUserData` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_GetUserData` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_GetWorld` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_GetWorld` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_IsValid` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_IsValid` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_SetCollideConnected` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_SetCollideConnected` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_SetConstraintTuning` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_SetConstraintTuning` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_SetForceThreshold` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_SetForceThreshold` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_SetLocalFrameA` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_SetLocalFrameA` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_SetLocalFrameB` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_SetLocalFrameB` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_SetTorqueThreshold` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_SetTorqueThreshold` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_SetUserData` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_SetUserData` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Joint_WakeBodies` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Joint_WakeBodies` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2LoadRecordingFromFile` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2LoadRecordingFromFile` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MakeBox` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2MakeBox` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MakeOffsetBox` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2MakeOffsetBox` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MakeOffsetPolygon` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2MakeOffsetPolygon` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MakeOffsetProxy` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2MakeOffsetProxy` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MakeOffsetRoundedBox` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2MakeOffsetRoundedBox` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MakeOffsetRoundedPolygon` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2MakeOffsetRoundedPolygon` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MakePolygon` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2MakePolygon` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MakeProxy` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2MakeProxy` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MakeRoundedBox` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2MakeRoundedBox` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MakeSquare` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2MakeSquare` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MotorJoint_GetAngularDampingRatio` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2MotorJoint_GetAngularDampingRatio` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MotorJoint_GetAngularHertz` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2MotorJoint_GetAngularHertz` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MotorJoint_GetAngularVelocity` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2MotorJoint_GetAngularVelocity` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MotorJoint_GetLinearDampingRatio` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2MotorJoint_GetLinearDampingRatio` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MotorJoint_GetLinearHertz` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2MotorJoint_GetLinearHertz` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MotorJoint_GetLinearVelocity` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2MotorJoint_GetLinearVelocity` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MotorJoint_GetMaxSpringForce` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2MotorJoint_GetMaxSpringForce` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MotorJoint_GetMaxSpringTorque` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2MotorJoint_GetMaxSpringTorque` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MotorJoint_GetMaxVelocityForce` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2MotorJoint_GetMaxVelocityForce` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MotorJoint_GetMaxVelocityTorque` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2MotorJoint_GetMaxVelocityTorque` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MotorJoint_SetAngularDampingRatio` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2MotorJoint_SetAngularDampingRatio` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MotorJoint_SetAngularHertz` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2MotorJoint_SetAngularHertz` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MotorJoint_SetAngularVelocity` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2MotorJoint_SetAngularVelocity` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MotorJoint_SetLinearDampingRatio` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2MotorJoint_SetLinearDampingRatio` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MotorJoint_SetLinearHertz` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2MotorJoint_SetLinearHertz` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MotorJoint_SetLinearVelocity` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2MotorJoint_SetLinearVelocity` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MotorJoint_SetMaxSpringForce` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2MotorJoint_SetMaxSpringForce` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MotorJoint_SetMaxSpringTorque` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2MotorJoint_SetMaxSpringTorque` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MotorJoint_SetMaxVelocityForce` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2MotorJoint_SetMaxVelocityForce` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2MotorJoint_SetMaxVelocityTorque` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2MotorJoint_SetMaxVelocityTorque` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PointInCapsule` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2PointInCapsule` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PointInCircle` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2PointInCircle` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PointInPolygon` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2PointInPolygon` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PrismaticJoint_EnableLimit` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2PrismaticJoint_EnableLimit` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PrismaticJoint_EnableMotor` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2PrismaticJoint_EnableMotor` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PrismaticJoint_EnableSpring` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2PrismaticJoint_EnableSpring` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PrismaticJoint_GetLowerLimit` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2PrismaticJoint_GetLowerLimit` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PrismaticJoint_GetMaxMotorForce` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2PrismaticJoint_GetMaxMotorForce` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PrismaticJoint_GetMotorForce` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2PrismaticJoint_GetMotorForce` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PrismaticJoint_GetMotorSpeed` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2PrismaticJoint_GetMotorSpeed` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PrismaticJoint_GetSpeed` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2PrismaticJoint_GetSpeed` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PrismaticJoint_GetSpringDampingRatio` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2PrismaticJoint_GetSpringDampingRatio` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PrismaticJoint_GetSpringHertz` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2PrismaticJoint_GetSpringHertz` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PrismaticJoint_GetTargetTranslation` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2PrismaticJoint_GetTargetTranslation` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PrismaticJoint_GetTranslation` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2PrismaticJoint_GetTranslation` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PrismaticJoint_GetUpperLimit` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2PrismaticJoint_GetUpperLimit` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PrismaticJoint_IsLimitEnabled` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2PrismaticJoint_IsLimitEnabled` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PrismaticJoint_IsMotorEnabled` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2PrismaticJoint_IsMotorEnabled` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PrismaticJoint_IsSpringEnabled` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2PrismaticJoint_IsSpringEnabled` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PrismaticJoint_SetLimits` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2PrismaticJoint_SetLimits` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PrismaticJoint_SetMaxMotorForce` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2PrismaticJoint_SetMaxMotorForce` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PrismaticJoint_SetMotorSpeed` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2PrismaticJoint_SetMotorSpeed` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PrismaticJoint_SetSpringDampingRatio` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2PrismaticJoint_SetSpringDampingRatio` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PrismaticJoint_SetSpringHertz` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2PrismaticJoint_SetSpringHertz` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2PrismaticJoint_SetTargetTranslation` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2PrismaticJoint_SetTargetTranslation` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RayCastCapsule` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2RayCastCapsule` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RayCastCircle` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2RayCastCircle` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RayCastPolygon` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2RayCastPolygon` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RayCastSegment` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2RayCastSegment` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RecPlayer_Create` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RecPlayer_Create` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RecPlayer_Destroy` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RecPlayer_Destroy` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RecPlayer_DrawFrameQueries` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RecPlayer_DrawFrameQueries` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RecPlayer_GetBodyCount` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RecPlayer_GetBodyCount` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RecPlayer_GetBodyId` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RecPlayer_GetBodyId` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RecPlayer_GetDivergeFrame` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RecPlayer_GetDivergeFrame` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RecPlayer_GetFrame` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RecPlayer_GetFrame` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RecPlayer_GetFrameQuery` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RecPlayer_GetFrameQuery` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RecPlayer_GetFrameQueryCount` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RecPlayer_GetFrameQueryCount` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RecPlayer_GetFrameQueryHit` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RecPlayer_GetFrameQueryHit` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RecPlayer_GetInfo` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RecPlayer_GetInfo` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RecPlayer_GetKeyframeBudget` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RecPlayer_GetKeyframeBudget` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RecPlayer_GetKeyframeBytes` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RecPlayer_GetKeyframeBytes` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RecPlayer_GetKeyframeInterval` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RecPlayer_GetKeyframeInterval` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RecPlayer_GetKeyframeMinInterval` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RecPlayer_GetKeyframeMinInterval` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RecPlayer_GetWorldId` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RecPlayer_GetWorldId` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RecPlayer_HasDiverged` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RecPlayer_HasDiverged` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RecPlayer_IsAtEnd` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RecPlayer_IsAtEnd` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RecPlayer_Restart` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RecPlayer_Restart` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RecPlayer_SeekFrame` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RecPlayer_SeekFrame` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RecPlayer_SetKeyframePolicy` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RecPlayer_SetKeyframePolicy` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RecPlayer_StepFrame` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RecPlayer_StepFrame` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Recording_GetData` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Recording_GetData` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Recording_GetSize` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Recording_GetSize` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RevoluteJoint_EnableLimit` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RevoluteJoint_EnableLimit` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RevoluteJoint_EnableMotor` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RevoluteJoint_EnableMotor` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RevoluteJoint_EnableSpring` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RevoluteJoint_EnableSpring` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RevoluteJoint_GetAngle` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RevoluteJoint_GetAngle` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RevoluteJoint_GetLowerLimit` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RevoluteJoint_GetLowerLimit` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RevoluteJoint_GetMaxMotorTorque` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RevoluteJoint_GetMaxMotorTorque` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RevoluteJoint_GetMotorSpeed` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RevoluteJoint_GetMotorSpeed` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RevoluteJoint_GetMotorTorque` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RevoluteJoint_GetMotorTorque` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RevoluteJoint_GetSpringDampingRatio` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RevoluteJoint_GetSpringDampingRatio` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RevoluteJoint_GetSpringHertz` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RevoluteJoint_GetSpringHertz` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RevoluteJoint_GetTargetAngle` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RevoluteJoint_GetTargetAngle` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RevoluteJoint_GetUpperLimit` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RevoluteJoint_GetUpperLimit` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RevoluteJoint_IsLimitEnabled` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RevoluteJoint_IsLimitEnabled` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RevoluteJoint_IsMotorEnabled` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RevoluteJoint_IsMotorEnabled` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RevoluteJoint_IsSpringEnabled` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RevoluteJoint_IsSpringEnabled` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RevoluteJoint_SetLimits` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RevoluteJoint_SetLimits` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RevoluteJoint_SetMaxMotorTorque` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RevoluteJoint_SetMaxMotorTorque` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RevoluteJoint_SetMotorSpeed` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RevoluteJoint_SetMotorSpeed` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RevoluteJoint_SetSpringDampingRatio` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RevoluteJoint_SetSpringDampingRatio` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RevoluteJoint_SetSpringHertz` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RevoluteJoint_SetSpringHertz` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2RevoluteJoint_SetTargetAngle` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2RevoluteJoint_SetTargetAngle` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2SaveRecordingToFile` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2SaveRecordingToFile` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2SegmentDistance` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2SegmentDistance` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2SetAllocator` | `raw` | Unreviewed upstream base.h | The new or changed upstream function `b2SetAllocator` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2SetAssertFcn` | `raw` | Unreviewed upstream base.h | The new or changed upstream function `b2SetAssertFcn` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2SetLengthUnitsPerMeter` | `raw` | Unreviewed upstream math_functions.h | The new or changed upstream function `b2SetLengthUnitsPerMeter` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2SetLogFcn` | `raw` | Unreviewed upstream base.h | The new or changed upstream function `b2SetLogFcn` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2ShapeCast` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2ShapeCast` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2ShapeCastCapsule` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2ShapeCastCapsule` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2ShapeCastCircle` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2ShapeCastCircle` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2ShapeCastPolygon` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2ShapeCastPolygon` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2ShapeCastSegment` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2ShapeCastSegment` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2ShapeDistance` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2ShapeDistance` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_ApplyWind` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_ApplyWind` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_AreContactEventsEnabled` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_AreContactEventsEnabled` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_AreHitEventsEnabled` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_AreHitEventsEnabled` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_ArePreSolveEventsEnabled` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_ArePreSolveEventsEnabled` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_AreSensorEventsEnabled` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_AreSensorEventsEnabled` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_ComputeMassData` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_ComputeMassData` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_EnableContactEvents` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_EnableContactEvents` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_EnableHitEvents` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_EnableHitEvents` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_EnablePreSolveEvents` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_EnablePreSolveEvents` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_EnableSensorEvents` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_EnableSensorEvents` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_GetAABB` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_GetAABB` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_GetBody` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_GetBody` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_GetCapsule` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_GetCapsule` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_GetChainSegment` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_GetChainSegment` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_GetCircle` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_GetCircle` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_GetClosestPoint` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_GetClosestPoint` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_GetContactCapacity` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_GetContactCapacity` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_GetContactData` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_GetContactData` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_GetDensity` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_GetDensity` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_GetFilter` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_GetFilter` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_GetFriction` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_GetFriction` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_GetParentChain` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_GetParentChain` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_GetPolygon` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_GetPolygon` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_GetRestitution` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_GetRestitution` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_GetSegment` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_GetSegment` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_GetSensorCapacity` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_GetSensorCapacity` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_GetSensorData` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_GetSensorData` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_GetSurfaceMaterial` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_GetSurfaceMaterial` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_GetType` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_GetType` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_GetUserData` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_GetUserData` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_GetUserMaterial` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_GetUserMaterial` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_GetWorld` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_GetWorld` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_IsSensor` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_IsSensor` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_IsValid` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_IsValid` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_RayCast` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_RayCast` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_SetCapsule` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_SetCapsule` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_SetChainSegment` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_SetChainSegment` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_SetCircle` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_SetCircle` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_SetDensity` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_SetDensity` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_SetFilter` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_SetFilter` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_SetFriction` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_SetFriction` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_SetPolygon` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_SetPolygon` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_SetRestitution` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_SetRestitution` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_SetSegment` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_SetSegment` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_SetSurfaceMaterial` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_SetSurfaceMaterial` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_SetUserData` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_SetUserData` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_SetUserMaterial` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_SetUserMaterial` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Shape_TestPoint` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2Shape_TestPoint` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2SolvePlanes` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2SolvePlanes` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2TimeOfImpact` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2TimeOfImpact` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2TransformPolygon` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2TransformPolygon` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2ValidateHull` | `raw` | Unreviewed upstream collision.h | The new or changed upstream function `b2ValidateHull` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2ValidateReplay` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2ValidateReplay` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WeldJoint_GetAngularDampingRatio` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WeldJoint_GetAngularDampingRatio` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WeldJoint_GetAngularHertz` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WeldJoint_GetAngularHertz` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WeldJoint_GetLinearDampingRatio` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WeldJoint_GetLinearDampingRatio` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WeldJoint_GetLinearHertz` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WeldJoint_GetLinearHertz` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WeldJoint_SetAngularDampingRatio` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WeldJoint_SetAngularDampingRatio` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WeldJoint_SetAngularHertz` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WeldJoint_SetAngularHertz` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WeldJoint_SetLinearDampingRatio` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WeldJoint_SetLinearDampingRatio` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WeldJoint_SetLinearHertz` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WeldJoint_SetLinearHertz` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WheelJoint_EnableLimit` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WheelJoint_EnableLimit` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WheelJoint_EnableMotor` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WheelJoint_EnableMotor` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WheelJoint_EnableSpring` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WheelJoint_EnableSpring` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WheelJoint_GetLowerLimit` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WheelJoint_GetLowerLimit` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WheelJoint_GetMaxMotorTorque` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WheelJoint_GetMaxMotorTorque` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WheelJoint_GetMotorSpeed` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WheelJoint_GetMotorSpeed` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WheelJoint_GetMotorTorque` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WheelJoint_GetMotorTorque` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WheelJoint_GetSpringDampingRatio` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WheelJoint_GetSpringDampingRatio` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WheelJoint_GetSpringHertz` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WheelJoint_GetSpringHertz` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WheelJoint_GetUpperLimit` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WheelJoint_GetUpperLimit` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WheelJoint_IsLimitEnabled` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WheelJoint_IsLimitEnabled` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WheelJoint_IsMotorEnabled` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WheelJoint_IsMotorEnabled` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WheelJoint_IsSpringEnabled` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WheelJoint_IsSpringEnabled` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WheelJoint_SetLimits` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WheelJoint_SetLimits` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WheelJoint_SetMaxMotorTorque` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WheelJoint_SetMaxMotorTorque` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WheelJoint_SetMotorSpeed` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WheelJoint_SetMotorSpeed` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WheelJoint_SetSpringDampingRatio` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WheelJoint_SetSpringDampingRatio` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2WheelJoint_SetSpringHertz` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2WheelJoint_SetSpringHertz` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_CastMover` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_CastMover` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_CastRay` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_CastRay` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_CastRayClosest` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_CastRayClosest` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_CastShape` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_CastShape` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_CollideMover` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_CollideMover` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_Draw` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_Draw` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_DumpMemoryStats` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_DumpMemoryStats` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_EnableContinuous` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_EnableContinuous` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_EnableSleeping` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_EnableSleeping` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_EnableSpeculative` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_EnableSpeculative` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_EnableWarmStarting` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_EnableWarmStarting` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_Explode` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_Explode` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_GetAwakeBodyCount` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_GetAwakeBodyCount` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_GetBodyEvents` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_GetBodyEvents` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_GetBounds` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_GetBounds` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_GetContactEvents` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_GetContactEvents` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_GetContactRecycleDistance` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_GetContactRecycleDistance` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_GetCounters` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_GetCounters` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_GetGravity` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_GetGravity` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_GetHitEventThreshold` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_GetHitEventThreshold` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_GetJointEvents` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_GetJointEvents` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_GetMaxCapacity` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_GetMaxCapacity` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_GetMaximumLinearSpeed` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_GetMaximumLinearSpeed` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_GetProfile` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_GetProfile` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_GetRestitutionThreshold` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_GetRestitutionThreshold` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_GetSensorEvents` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_GetSensorEvents` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_GetUserData` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_GetUserData` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_GetWorkerCount` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_GetWorkerCount` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_IsContinuousEnabled` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_IsContinuousEnabled` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_IsSleepingEnabled` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_IsSleepingEnabled` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_IsValid` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_IsValid` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_IsWarmStartingEnabled` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_IsWarmStartingEnabled` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_OverlapAABB` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_OverlapAABB` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_OverlapShape` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_OverlapShape` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_RebuildStaticTree` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_RebuildStaticTree` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_Restore` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_Restore` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_SetContactRecycleDistance` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_SetContactRecycleDistance` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_SetContactTuning` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_SetContactTuning` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_SetCustomFilterCallback` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_SetCustomFilterCallback` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_SetFrictionCallback` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_SetFrictionCallback` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_SetGravity` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_SetGravity` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_SetHitEventThreshold` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_SetHitEventThreshold` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_SetMaximumLinearSpeed` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_SetMaximumLinearSpeed` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_SetPreSolveCallback` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_SetPreSolveCallback` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_SetRestitutionCallback` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_SetRestitutionCallback` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_SetRestitutionThreshold` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_SetRestitutionThreshold` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_SetUserData` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_SetUserData` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_SetWorkerCount` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_SetWorkerCount` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_Snapshot` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_Snapshot` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_StartRecording` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_StartRecording` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_Step` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_Step` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2World_StopRecording` | `raw` | Unreviewed upstream box2d.h | The new or changed upstream function `b2World_StopRecording` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
-| `b2Yield` | `raw` | Unreviewed upstream base.h | The new or changed upstream function `b2Yield` is conservatively exposed only through raw FFI until its Safe Rust semantics are reviewed. |
+| `b2DynamicTree_SetCategoryBits` | `raw` | DynamicTree | The pinned upstream assertion aliases `b2TreeNode` leaf user data as `children.child1` and can trap for valid non-sentinel user data. The Safe `DynamicTree::replace_category_bits` capability creates an equivalent proxy, destroys the old proxy, and returns the new identity without calling this defective native function. |
+| `b2GetGraphColor` | `raw` | Internal solver diagnostics | Graph colors expose upstream solver-internal scheduling state without a stable Safe Rust semantic contract. |
+| `b2InternalAssert` | `raw` | Native assertion plumbing | The native assertion entry point accepts C source metadata and remains an explicit low-level FFI capability. |
+| `b2IsDoublePrecision` | `raw` | Native build identity | Precision is selected and authenticated by Cargo features and ABI route metadata; the exact runtime probe remains raw. |
+| `b2IsValidAABB` | `raw` | Native value validation primitive | Safe AABB validation is implemented in Rust so malformed values are rejected before FFI; the exact native predicate remains a raw primitive. |
+| `b2IsValidFloat` | `raw` | Native value validation primitive | Safe scalar validation is implemented in Rust before FFI; the exact native predicate remains a raw primitive. |
+| `b2IsValidPlane` | `raw` | Native value validation primitive | Safe plane validation is implemented in Rust before FFI; the exact native predicate remains a raw primitive. |
+| `b2IsValidPosition` | `raw` | Native value validation primitive | Safe position validation is implemented in Rust before FFI; the exact native predicate remains a raw primitive. |
+| `b2IsValidRay` | `raw` | Native value validation primitive | Safe ray inputs are validated in Rust before FFI; the exact native predicate remains a raw primitive. |
+| `b2IsValidRotation` | `raw` | Native value validation primitive | Safe rotation validation is implemented in Rust before FFI; the exact native predicate remains a raw primitive. |
+| `b2IsValidTransform` | `raw` | Native value validation primitive | Safe transform validation is implemented in Rust before FFI; the exact native predicate remains a raw primitive. |
+| `b2IsValidVec2` | `raw` | Native value validation primitive | Safe vector validation is implemented in Rust before FFI; the exact native predicate remains a raw primitive. |
+| `b2IsValidWorldTransform` | `raw` | Native value validation primitive | Safe world-transform validation is implemented in Rust before FFI; the exact native predicate remains a raw primitive. |
+| `b2LoadRecordingFromFile` | `raw` | Native filesystem recording helper | Safe Rust loads owned bytes through std::fs and validates them before replay, avoiding native path encoding and allocator ownership. |
+| `b2Recording_GetData` | `raw` | Native recording buffer ownership | Safe Recording owns a copied Rust byte buffer and never exposes the native recording handle or borrowed native pointer. |
+| `b2Recording_GetSize` | `raw` | Native recording buffer ownership | Safe Recording derives length from its owned Rust byte buffer rather than retaining a native recording handle. |
+| `b2SaveRecordingToFile` | `raw` | Native filesystem recording helper | Safe Rust saves owned recording bytes through std::fs, avoiding native path encoding and error-channel ambiguity. |
+| `b2SetAllocator` | `raw` | Foundation allocator configuration | Revalidated against the authenticated Box2D 3.2 declaration; the process-global allocator hook still requires a scoped startup guard before it can be exposed safely. |
+| `b2ValidateReplay` | `raw` | Native replay validator | Safe replay performs bounded Rust preflight parsing before native allocation; the separate native validator remains a raw diagnostic primitive. |
+| `b2World_DumpMemoryStats` | `omitted` | World | Intentionally omitted: upstream writes fixed diagnostic output, so callers should use upstream diagnostics tooling explicitly. |
+| `b2World_EnableSpeculative` | `raw` | Internal world tuning | Upstream documents speculative collision toggling as an internal testing hook, so it is intentionally excluded from the stable Safe Rust surface. |
+| `b2World_RebuildStaticTree` | `omitted` | World | Intentionally omitted: upstream labels this as internal testing support, not stable runtime API. |
 
 ## Maintenance
 

@@ -1,0 +1,10 @@
+[package]
+name = "boxdd-package-consumer-bevy"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy_boxdd = { version = "=0.0.0-BOXDD-VERSION", registry = "boxdd-local" }
+
+[workspace]

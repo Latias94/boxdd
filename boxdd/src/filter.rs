@@ -10,11 +10,18 @@ pub struct Filter {
 
 impl Default for Filter {
     fn default() -> Self {
+        let _lease = crate::core::foundation::assert_transient_native_lease();
         Self::from_raw(unsafe { ffi::b2DefaultFilter() })
     }
 }
 
 impl Filter {
+    /// Create a collision filter using Box2D's defaults.
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     #[inline]
     /// Construct from the raw Box2D filter value.
     pub const fn from_raw(raw: ffi::b2Filter) -> Self {

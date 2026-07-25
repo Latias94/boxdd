@@ -97,7 +97,7 @@ async function fetchArrayBufferWithProgress(url, label) {
 
 async function main() {
   const providerGenerated = new URL("../wasm/generated/", import.meta.url);
-  const providerWasmUrl = new URL("box2d-sys-v0.wasm", providerGenerated);
+  const providerWasmUrl = new URL("box2d-sys-v1-single.wasm", providerGenerated);
   const bevyWasmUrl = generatedUrl("generated/bevy_boxdd_testbed_bg.wasm");
 
   setStatus("loading", "Loading JavaScript modules", `Preparing the browser runtime for ${sceneName}.`);
@@ -107,7 +107,7 @@ async function main() {
     { setBox2dProvider, setBoxddAppExports },
   ] =
     await Promise.all([
-      import(new URL("box2d-sys-v0.js", providerGenerated).href),
+      import(new URL("box2d-sys-v1-single.js", providerGenerated).href),
       import(generatedUrl("generated/bevy_boxdd_testbed.js").href),
       import(generatedUrl("generated/box2d-provider-shim.js").href),
     ]);
@@ -119,8 +119,8 @@ async function main() {
     wasmMemory: memory,
     wasmBinary: providerWasm,
     locateFile: (path) => new URL(path, providerGenerated).href,
-    print: (text) => console.log(`[box2d-sys-v0] ${text}`),
-    printErr: (text) => console.warn(`[box2d-sys-v0] ${text}`),
+    print: (text) => console.log(`[box2d-sys-v1-single] ${text}`),
+    printErr: (text) => console.warn(`[box2d-sys-v1-single] ${text}`),
   });
 
   if (provider.wasmMemory && provider.wasmMemory !== memory) {

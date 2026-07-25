@@ -45,6 +45,7 @@ impl WorldHandle {
 
     /// Collide a mover whose capsule centers are local to the absolute world
     /// `origin`. Result contact points remain local to that origin.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn collide_mover<V1: Into<Vec2>, V2: Into<Vec2>>(
         &self,
         origin: Position,
@@ -56,6 +57,7 @@ impl WorldHandle {
         collide_mover_checked_impl(self.query_target(), origin, c1, c2, radius, filter)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn collide_mover_into<V1: Into<Vec2>, V2: Into<Vec2>>(
         &self,
         origin: Position,
@@ -68,6 +70,7 @@ impl WorldHandle {
         collide_mover_into_checked_impl(self.query_target(), origin, c1, c2, radius, filter, out);
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn try_collide_mover<V1: Into<Vec2>, V2: Into<Vec2>>(
         &self,
         origin: Position,
@@ -79,6 +82,7 @@ impl WorldHandle {
         try_collide_mover_impl(self.query_target(), origin, c1, c2, radius, filter)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn try_collide_mover_into<V1: Into<Vec2>, V2: Into<Vec2>>(
         &self,
         origin: Position,

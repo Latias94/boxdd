@@ -1,7 +1,10 @@
 use super::*;
 
 fn retain_valid_shape_ids(ids: &mut Vec<ShapeId>) {
-    ids.retain(|sid| unsafe { ffi::b2Shape_IsValid(raw_shape_id(*sid)) });
+    ids.retain(|sid| {
+        crate::core::identity_registry::shape_is_active(*sid)
+            && unsafe { ffi::b2Shape_IsValid(raw_shape_id(*sid)) }
+    });
 }
 
 unsafe fn try_fill_sensor_output(
@@ -82,15 +85,32 @@ pub(crate) fn shape_sensor_capacity_impl(id: ShapeId) -> i32 {
 mod tests {
     use super::*;
 
-    fn test_brand() -> crate::id::IdBrand {
-        crate::id::IdBrand::new(
+    fn test_registry() -> (
+        crate::id::IdBrand,
+        std::sync::Arc<crate::core::identity_registry::ActiveIdentityRegistry>,
+    ) {
+        let brand = crate::id::IdBrand::new(
             ffi::b2WorldId {
                 index1: 4,
                 generation: 7,
             },
             crate::id::WorldToken::allocate().unwrap(),
         )
-        .unwrap()
+        .unwrap();
+        let registry = crate::core::identity_registry::ActiveIdentityRegistry::new(brand);
+        let body = registry
+            .register_body(ffi::b2BodyId {
+                index1: 1,
+                world0: brand.world0(),
+                generation: 1,
+            })
+            .unwrap();
+        for index1 in [2, 9] {
+            registry
+                .register_shape(raw_shape(index1, brand.world0()), body)
+                .unwrap();
+        }
+        (brand, registry)
     }
 
     fn raw_shape(index1: i32, world0: u16) -> ffi::b2ShapeId {
@@ -103,9 +123,9 @@ mod tests {
 
     #[test]
     fn sensor_output_rejects_invalid_ids_and_reuses_safe_output_allocation() {
-        let brand = test_brand();
+        let (brand, _registry) = test_registry();
         let mut out = Vec::<ShapeId>::with_capacity(4);
-        out.push(brand.shape(raw_shape(9, brand.world0())));
+        out.push(brand.try_shape(raw_shape(9, brand.world0())).unwrap());
         let expected_ptr = out.as_ptr();
         let expected_capacity = out.capacity();
 

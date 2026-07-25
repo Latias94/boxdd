@@ -28,6 +28,7 @@ pub struct WheelJointDef {
 
 impl WheelJointDef {
     pub fn new(base: JointBase) -> Self {
+        let _lease = crate::core::foundation::assert_transient_native_lease();
         let raw = unsafe { ffi::b2DefaultWheelJointDef() };
         Self {
             base,
@@ -332,17 +333,25 @@ impl<'w> WheelJointBuilder<'w> {
     }
 
     fn configure_local_frames(&mut self) -> ApiResult<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        super::creation::check_joint_target_identity(self.world, self.def.base())?;
+        self.def.validate()?;
+        if let Some(anchor) = self.anchor_a_world {
+            super::validation::check_joint_position(anchor)?;
+        }
+        if let Some(anchor) = self.anchor_b_world {
+            super::validation::check_joint_position(anchor)?;
+        }
+        let axis = self.axis_world.unwrap_or(Vec2::new(1.0, 0.0));
+        super::validation::check_joint_axis(axis)?;
+        super::creation::check_joint_target_native(self.world, self.def.base())?;
+
         let body_a = self.def.base().body_a_id();
         let body_b = self.def.base().body_b_id();
-        crate::core::callback_state::check_not_in_callback()?;
-        self.world.core().check_body(body_a)?;
-        self.world.core().check_body(body_b)?;
-
         let ta = WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(body_a)) });
         let tb = WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(body_b)) });
         let aw = self.anchor_a_world.unwrap_or_else(|| ta.position());
         let bw = self.anchor_b_world.unwrap_or_else(|| tb.position());
-        let axis = self.axis_world.unwrap_or(Vec2::new(1.0, 0.0));
         let la = super::base_def::checked_world_to_local_point(ta, aw)?;
         let lb = super::base_def::checked_world_to_local_point(tb, bw)?;
         let ra = super::base_def::checked_world_axis_to_local_rotation(ta, axis)?;

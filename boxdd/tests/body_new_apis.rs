@@ -1,4 +1,6 @@
 use boxdd::{prelude::*, shapes};
+use boxdd_sys::ffi;
+use std::ffi::{CStr, CString};
 
 fn approx_eq(a: f32, b: f32, eps: f32) -> bool {
     (a - b).abs() <= eps
@@ -22,7 +24,9 @@ fn body_def_is_a_readable_value_type_and_can_seed_a_builder() {
         .angular_velocity(1.25)
         .linear_damping(0.2)
         .angular_damping(0.4)
+        .sleep_threshold(0.3)
         .gravity_scale(1.75)
+        .name("dynamic")
         .enable_sleep(false)
         .awake(false)
         .bullet(true)
@@ -30,7 +34,7 @@ fn body_def_is_a_readable_value_type_and_can_seed_a_builder() {
         .enabled(false)
         .build();
 
-    assert_eq!(def.body_type(), BodyType::Dynamic);
+    assert_eq!(def.body_type(), Some(BodyType::Dynamic));
     assert_eq!(def.position(), Position::new(1.5, -2.25));
     assert!(approx_eq(def.angle(), 0.75, 1.0e-6));
     assert!(approx_eq(def.rotation().angle(), 0.75, 1.0e-6));
@@ -38,7 +42,9 @@ fn body_def_is_a_readable_value_type_and_can_seed_a_builder() {
     assert!(approx_eq(def.angular_velocity(), 1.25, 1.0e-6));
     assert!(approx_eq(def.linear_damping(), 0.2, 1.0e-6));
     assert!(approx_eq(def.angular_damping(), 0.4, 1.0e-6));
+    assert!(approx_eq(def.sleep_threshold(), 0.3, 1.0e-6));
     assert!(approx_eq(def.gravity_scale(), 1.75, 1.0e-6));
+    assert_eq!(def.name(), Some(c"dynamic"));
     assert!(!def.is_sleep_enabled());
     assert!(!def.is_awake());
     assert!(def.is_bullet());
@@ -49,19 +55,95 @@ fn body_def_is_a_readable_value_type_and_can_seed_a_builder() {
         .position([0.0_f32, 2.0])
         .enabled(true)
         .build();
-    assert_eq!(rebuilt.body_type(), BodyType::Dynamic);
+    assert_eq!(rebuilt.body_type(), Some(BodyType::Dynamic));
     assert_eq!(rebuilt.position(), Position::new(0.0, 2.0));
     assert!(approx_eq(rebuilt.angle(), 0.75, 1.0e-6));
     assert_eq!(rebuilt.linear_velocity(), Vec2::new(-3.0, 4.5));
     assert!(rebuilt.is_enabled());
     assert!(rebuilt.is_bullet());
     assert!(rebuilt.is_fast_rotation_allowed());
+    assert_eq!(rebuilt.name(), Some(c"dynamic"));
 
-    let roundtrip = unsafe { BodyDef::from_raw(def.into_raw()) };
-    assert_eq!(roundtrip.body_type(), BodyType::Dynamic);
+    let raw = def.into_raw_guard();
+    let roundtrip = unsafe { BodyDef::from_raw(*raw.as_raw()) };
+    assert_eq!(roundtrip.body_type(), Some(BodyType::Dynamic));
     assert_eq!(roundtrip.position(), Position::new(1.5, -2.25));
     assert!(approx_eq(roundtrip.angle(), 0.75, 1.0e-6));
     assert_eq!(roundtrip.linear_velocity(), Vec2::new(-3.0, 4.5));
+    assert_eq!(roundtrip.name(), Some(c"dynamic"));
+}
+
+#[test]
+fn body_def_owns_names_across_clone_raw_import_and_creation() {
+    let default = BodyDef::default();
+    assert_eq!(default.name(), None);
+    assert!(default.sleep_threshold().is_finite());
+    assert!(default.sleep_threshold() >= 0.0);
+
+    let definition = BodyBuilder::new().name("owned").build();
+    let cloned = definition.clone();
+    assert_eq!(definition.name(), Some(c"owned"));
+    assert_eq!(cloned.name(), Some(c"owned"));
+
+    let definition_guard = definition.into_raw_guard();
+    let cloned_guard = cloned.into_raw_guard();
+    assert_ne!(definition_guard.as_raw().name, cloned_guard.as_raw().name);
+    assert_eq!(
+        definition_guard.as_ptr(),
+        definition_guard.as_raw() as *const _
+    );
+    assert_eq!(
+        unsafe { CStr::from_ptr(definition_guard.as_raw().name) },
+        c"owned"
+    );
+
+    let source_name = CString::new("copied").unwrap();
+    let default_guard = BodyDef::default().into_raw_guard();
+    let mut imported_raw = *default_guard.as_raw();
+    imported_raw.name = source_name.as_ptr();
+    let imported = unsafe { BodyDef::from_raw(imported_raw) };
+    assert_ne!(imported.name().unwrap().as_ptr(), source_name.as_ptr());
+    drop(source_name);
+    assert_eq!(imported.name(), Some(c"copied"));
+
+    let cleared = BodyBuilder::from(imported).clear_name().build();
+    assert_eq!(cleared.name(), None);
+
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body = world.create_body_id(BodyBuilder::new().name("created").build());
+    assert_eq!(world.body_name(body).as_deref(), Some("created"));
+}
+
+#[test]
+fn raw_body_def_with_unknown_type_is_rejected_before_creation() {
+    let mut raw = unsafe { ffi::b2DefaultBodyDef() };
+    raw.type_ = ffi::b2BodyType_b2_bodyTypeCount;
+    // SAFETY: the default definition has no name pointer; this deliberately changes only the
+    // type discriminant to exercise validation before any native body-creation call.
+    let definition = unsafe { BodyDef::from_raw(raw) };
+
+    assert_eq!(definition.body_type(), None);
+    assert_eq!(definition.validate(), Err(ApiError::InvalidArgument));
+
+    let mut world = World::new(WorldDef::default()).unwrap();
+    assert_eq!(
+        world.try_create_body_id(definition),
+        Err(ApiError::InvalidArgument)
+    );
+}
+
+#[test]
+fn body_builder_name_validation_is_available_in_both_error_styles() {
+    assert_eq!(
+        BodyBuilder::new().try_name("nul\0byte").unwrap_err(),
+        ApiError::NulByteInString
+    );
+    assert_eq!(
+        BodyBuilder::new().try_name("12345678901").unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert!(std::panic::catch_unwind(|| BodyBuilder::new().name("nul\0byte")).is_err());
+    assert!(std::panic::catch_unwind(|| BodyBuilder::new().name("12345678901")).is_err());
 }
 
 #[test]

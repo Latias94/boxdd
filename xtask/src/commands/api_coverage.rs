@@ -2,6 +2,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Write as _,
     fs,
+    process::Command,
 };
 
 use serde::{Deserialize, Serialize};
@@ -13,12 +14,14 @@ use crate::{
         AbiBindingIndex, AbiBindingIndexes, AbiBindingRoute, AbiBindingRoutes, AbiContract,
         AbiFunctionSymbols, AbiPrecisionInventories, AbiRustIndexes, AbiValidationContext,
         bootstrap_legacy_precision_proofs, discard_unproven_reviewed_exposure,
-        map_precision_inventory, preserve_reviewed_exposure, validate as validate_abi,
+        map_precision_inventory, preserve_reviewed_exposure, promote_proven_deferred_exposure,
+        validate as validate_abi, validate_reviewed_deferred_migration_invariant,
     },
     c_api::{CAbiPrecision, CApiInventory, parse_headers, parse_headers_for_precision},
     commands::upstream_sync::{
-        ArtifactKind, ArtifactTarget, ManagedArtifactWrite, RustTarget, UpdateLock,
-        UpstreamManifest, expanded_binding_route_features, install_managed_artifact_writes_locked,
+        ArtifactKind, ArtifactTarget, GeneratedArtifact, ManagedArtifactWrite, RustTarget,
+        UpdateLock, UpstreamManifest, canonical_binding_routes, canonical_route_binding_artifacts,
+        expanded_binding_route_features, install_managed_artifact_writes_locked,
         reviewed_recording_operations_source, validate_repository,
     },
     commands::{UpdateMode, parse_update_mode},
@@ -26,13 +29,15 @@ use crate::{
     paths::WorkspacePaths,
     recording_ops::parse as parse_recording_ops,
     recording_wire::{
-        RecordingWireContract, generate_wire_contract, reviewed_sources_aggregate_blake3,
-        validate_wire_contract,
+        RecordingWireContract, generate_wire_contract, render_runtime_parser,
+        reviewed_sources_aggregate_blake3, validate_wire_contract,
     },
     rust_index::{
-        RustIndex, RustIndexCoordinate, TestEvidenceIndex, discover_test_evidence_items,
-        index_boxdd_routes, index_test_evidence_for_gate_at_coordinate,
+        RustFfiTypeHints, RustIndex, RustIndexCoordinate, TestEvidenceIndex,
+        discover_test_evidence_items, index_boxdd_routes_with_ffi_hints,
+        index_test_evidence_for_gate_at_coordinate,
     },
+    source_overlay::effective_source_identity,
 };
 
 const AVAILABILITY: &[&str] = &[
@@ -43,6 +48,7 @@ const AVAILABILITY: &[&str] = &[
 ];
 const API_CLASSIFICATION_EVIDENCE_ID: &str = "api-classification-validator";
 const BOX2D_3_2_TARGET_REVISION: &str = "56edae79f2949d86142b03450d5d60f63bcf5a6f";
+pub(crate) const RUNTIME_RECORDING_WIRE_PATH: &str = "boxdd/src/generated/recording_wire.rs";
 const BOX2D_3_2_EXPORTED_FUNCTION_COUNT: usize = 478;
 const BOX2D_3_2_LOGICAL_FUNCTIONS_BLAKE3: &str =
     "73314b5a229524dc25da96da268e950e57ebe7f3701da743057a10525c5a410d";
@@ -51,6 +57,15 @@ const BOX2D_3_2_SINGLE_FUNCTIONS_BLAKE3: &str =
 const BOX2D_3_2_DOUBLE_FUNCTIONS_BLAKE3: &str =
     "bdc19edc4fd8c005d570c18e833d2c1e7c27fc034fb098e1c1287c9c97518cdf";
 const FUNCTION_INVENTORY_DIGEST_DOMAIN: &[u8] = b"boxdd-api-function-inventory-v1\0";
+const REVIEWED_MIGRATION_OVERRIDES_PATH: &str =
+    "xtask/fixtures/api-contract-3.2-reviewed-migration.toml";
+const SAFE_CALL_EVIDENCE_POLICY: &str = "route-conditioned-safe-call-v2";
+
+fn effective_source_sha256(paths: &WorkspacePaths) -> Result<String> {
+    effective_source_identity(&paths.root().join("boxdd-sys"))
+        .map(|identity| identity.effective_source_sha256)
+        .map_err(|error| Error::message(format!("validate effective source identity: {error}")))
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -124,8 +139,15 @@ pub struct TestEvidence {
     pub role: TestEvidenceRole,
     #[serde(default)]
     pub fingerprint: String,
+    /// Exact precision modes in which this evidence is indexed.
     #[serde(default)]
-    pub runtime_witnesses: Vec<RuntimeCallWitness>,
+    pub modes: Vec<String>,
+    /// Exact providers in which this evidence is indexed.
+    #[serde(default)]
+    pub providers: Vec<String>,
+    /// Exact public calls proven by an executable straight-line Rust test source.
+    #[serde(default, alias = "runtime_witnesses")]
+    pub call_witnesses: Vec<SafeCallWitness>,
     #[serde(default)]
     pub classification_witnesses: Vec<FunctionClassificationWitness>,
 }
@@ -134,7 +156,8 @@ pub struct TestEvidence {
 #[serde(rename_all = "kebab-case")]
 pub enum TestEvidenceRole {
     #[default]
-    Runtime,
+    #[serde(alias = "runtime")]
+    SafeCall,
     FunctionClassificationValidator,
     AbiHeaderInventory,
     AbiBindingAst,
@@ -143,8 +166,10 @@ pub enum TestEvidenceRole {
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct RuntimeCallWitness {
+pub struct SafeCallWitness {
+    /// Logical C API row reached by the reviewed Rust call.
     pub function: String,
+    /// Canonical Safe Rust callable, proven through the contract's evidence policy.
     pub rust_path: String,
 }
 
@@ -155,15 +180,27 @@ pub struct FunctionClassificationWitness {
     pub classification: Classification,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct FunctionProviderOverride {
+    pub providers: Vec<String>,
+    pub classification: Classification,
+    pub rust_paths: Vec<String>,
+    pub rationale: String,
+    pub evidence: Vec<String>,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RecordingClass {
     PureWorldless,
+    FoundationInitialization,
     ReadOnly,
     LoggedMutation,
     LoggedQuery,
     RecordingLifecycle,
     SnapshotLifecycle,
+    ReplayLifecycle,
     ReplayMixerLifecycle,
     CallbackInstallUnsupported,
     UnloggedMutationForbidden,
@@ -224,13 +261,79 @@ pub struct FunctionContract {
     pub providers: Vec<String>,
     pub availability: Vec<String>,
     pub evidence: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub provider_overrides: Vec<FunctionProviderOverride>,
     pub recording: Option<RecordingCoverage>,
+}
+
+#[derive(Clone, Copy)]
+enum FunctionExposureReview<'a> {
+    Default(&'a FunctionContract),
+    Override(&'a FunctionProviderOverride),
+}
+
+impl<'a> FunctionExposureReview<'a> {
+    fn classification(self) -> Classification {
+        match self {
+            Self::Default(function) => function.classification,
+            Self::Override(provider_override) => provider_override.classification,
+        }
+    }
+
+    fn exposure(self) -> FunctionExposureKind {
+        match self {
+            Self::Default(function) => function.exposure,
+            Self::Override(_) => FunctionExposureKind::Callable,
+        }
+    }
+
+    fn rust_paths(self) -> &'a [String] {
+        match self {
+            Self::Default(function) => &function.rust_paths,
+            Self::Override(provider_override) => &provider_override.rust_paths,
+        }
+    }
+
+    fn rationale(self) -> &'a str {
+        match self {
+            Self::Default(function) => &function.rationale,
+            Self::Override(provider_override) => &provider_override.rationale,
+        }
+    }
+
+    fn evidence(self) -> &'a [String] {
+        match self {
+            Self::Default(function) => &function.evidence,
+            Self::Override(provider_override) => &provider_override.evidence,
+        }
+    }
+}
+
+fn function_exposure_for_provider<'a>(
+    function: &'a FunctionContract,
+    provider: &str,
+) -> FunctionExposureReview<'a> {
+    function
+        .provider_overrides
+        .iter()
+        .find(|provider_override| {
+            provider_override
+                .providers
+                .iter()
+                .any(|candidate| candidate == provider)
+        })
+        .map_or(
+            FunctionExposureReview::Default(function),
+            FunctionExposureReview::Override,
+        )
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ApiContract {
     pub schema_version: u32,
+    #[serde(default = "default_safe_call_evidence_policy")]
+    pub evidence_policy: String,
     pub upstream_sha: String,
     #[serde(default)]
     pub function_inventory_digests: FunctionInventoryDigests,
@@ -239,6 +342,47 @@ pub struct ApiContract {
     pub evidence: Vec<TestEvidence>,
     pub functions: Vec<FunctionContract>,
     pub abi: AbiContract,
+}
+
+fn default_safe_call_evidence_policy() -> String {
+    SAFE_CALL_EVIDENCE_POLICY.to_owned()
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct ReviewedMigrationOverrides {
+    schema_version: u32,
+    reviewed_revision: String,
+    active_revision: String,
+    expected_counts: CoverageCounts,
+    functions: Vec<ReviewedFunctionOverride>,
+    #[serde(default)]
+    canonical_refreshes: Vec<ReviewedCanonicalRefresh>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct ReviewedFunctionOverride {
+    logical_name: String,
+    classification: Classification,
+    #[serde(default)]
+    exposure: FunctionExposureKind,
+    area: String,
+    #[serde(default)]
+    rust_paths: Vec<String>,
+    rationale: String,
+    #[serde(default)]
+    previous_classification: Option<Classification>,
+    #[serde(default)]
+    revalidated: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct ReviewedCanonicalRefresh {
+    logical_name: String,
+    rust_paths: Vec<String>,
+    rationale: String,
 }
 
 pub fn run(paths: &WorkspacePaths, args: &[String]) -> Result<()> {
@@ -252,8 +396,24 @@ pub fn run(paths: &WorkspacePaths, args: &[String]) -> Result<()> {
     if matches!(args, [argument] if argument == "--audit-canonical-paths") {
         return audit_canonical_paths(paths);
     }
+    if let [argument, revision] = args
+        && argument == "--audit-reviewed-migration"
+    {
+        return audit_reviewed_migration(paths, revision);
+    }
+    if let [argument, revision] = args
+        && argument == "--migrate-reviewed-contract"
+    {
+        return migrate_reviewed_contract(paths, revision);
+    }
     if matches!(args, [argument] if argument == "--refresh-abi") {
-        return refresh_abi_contract(paths);
+        return refresh_abi_contract(paths, None);
+    }
+    if let [argument, digest_flag, digest] = args
+        && argument == "--refresh-abi"
+        && digest_flag == "--reviewed-contract-blake3"
+    {
+        return refresh_abi_contract(paths, Some(digest));
     }
     match parse_update_mode("api-coverage", args)? {
         UpdateMode::Check => check(paths),
@@ -268,8 +428,11 @@ Usage:
   cargo run -p xtask -- api-coverage --check
   cargo run -p xtask -- api-coverage --write
   cargo run -p xtask -- api-coverage --refresh-abi
+  cargo run -p xtask -- api-coverage --refresh-abi --reviewed-contract-blake3 <64-hex-blake3>
   cargo run -p xtask -- api-coverage --audit-evidence
   cargo run -p xtask -- api-coverage --audit-canonical-paths
+  cargo run -p xtask -- api-coverage --audit-reviewed-migration <40-hex-commit>
+  cargo run -p xtask -- api-coverage --migrate-reviewed-contract <40-hex-commit>
 "
     );
 }
@@ -293,6 +456,7 @@ pub fn check(paths: &WorkspacePaths) -> Result<()> {
         &validated.recording_source_git_blobs,
         &validated.recording_sources_aggregate,
     )?;
+    validate_runtime_recording_parser(paths, &recording_wire_path)?;
     let report_path = validated
         .manifest
         .artifact_path(paths.root(), ArtifactKind::ApiCoverageReport)?;
@@ -329,16 +493,21 @@ fn write(paths: &WorkspacePaths) -> Result<()> {
     let writes = [
         ManagedArtifactWrite::active("recording-wire", outputs.recording_wire),
         ManagedArtifactWrite::active("api-coverage-report", outputs.report),
+        ManagedArtifactWrite::auxiliary(
+            RUNTIME_RECORDING_WIRE_PATH,
+            outputs.runtime_recording_wire,
+        ),
     ];
     install_managed_artifact_writes_locked(paths, &writes, Some(&manifest_baseline), || {
         validate_managed_repository_and_api(paths)
     })?;
-    println!("wrote generated recording contract and API coverage report");
+    println!("wrote generated recording contract, runtime parser, and API coverage report");
     Ok(())
 }
 
 pub(crate) struct GeneratedApiCoverageOutputs {
     pub(crate) recording_wire: Vec<u8>,
+    pub(crate) runtime_recording_wire: Vec<u8>,
     pub(crate) report: Vec<u8>,
 }
 
@@ -360,10 +529,38 @@ fn render_generated_outputs_with_manifest(
         &validated.recording_source_git_blobs,
         &validated.recording_sources_aggregate,
     )?;
+    let recording_wire = render_toml(&wire)?.into_bytes();
+    let contract_blake3 = blake3::hash(&recording_wire).to_hex().to_string();
+    let effective_source_sha256 = effective_source_sha256(paths)?;
+    let runtime_recording_wire =
+        render_runtime_parser(&wire, &contract_blake3, &effective_source_sha256)?.into_bytes();
     Ok(GeneratedApiCoverageOutputs {
-        recording_wire: render_toml(&wire)?.into_bytes(),
+        recording_wire,
+        runtime_recording_wire,
         report: validated.report.into_bytes(),
     })
+}
+
+fn validate_runtime_recording_parser(
+    paths: &WorkspacePaths,
+    recording_wire_path: &std::path::Path,
+) -> Result<()> {
+    let contract_bytes =
+        fs::read(recording_wire_path).map_err(|source| Error::io(recording_wire_path, source))?;
+    let contract: RecordingWireContract = read_toml(recording_wire_path)?;
+    let digest = blake3::hash(&contract_bytes).to_hex().to_string();
+    let effective_source_sha256 = effective_source_sha256(paths)?;
+    let expected = render_runtime_parser(&contract, &digest, &effective_source_sha256)?;
+    let runtime_path = paths.root().join(RUNTIME_RECORDING_WIRE_PATH);
+    let actual =
+        fs::read_to_string(&runtime_path).map_err(|source| Error::io(&runtime_path, source))?;
+    if normalize_newlines(&actual) != normalize_newlines(&expected) {
+        return Err(Error::message(format!(
+            "{} is stale; run cargo run -p xtask -- api-coverage --write",
+            runtime_path.display()
+        )));
+    }
+    Ok(())
 }
 
 struct ValidatedCoverage {
@@ -380,12 +577,22 @@ fn load_validated_coverage_with_manifest(
     manifest: UpstreamManifest,
 ) -> Result<ValidatedCoverage> {
     let api_contract_path = manifest.artifact_path(paths.root(), ArtifactKind::ApiContract)?;
+    let contract: ApiContract = read_toml(&api_contract_path)?;
+    if manifest.active_revision == BOX2D_3_2_TARGET_REVISION
+        && contract.schema_version == API_CONTRACT_SCHEMA
+    {
+        let mut errors = Vec::new();
+        validate_pinned_box2d_3_2_binding_artifacts(&manifest.artifacts, &mut errors);
+        if !errors.is_empty() {
+            return Err(Error::message(errors.join("\n")));
+        }
+    }
     let inventory = parse_headers(&paths.box2d_headers())?;
     let binding_indexes = load_binding_indexes(paths, &manifest)?;
     let binding_routes = load_binding_routes(&manifest)?;
     let precision_inventories = load_precision_inventories(paths, &binding_routes)?;
-    let rust_indexes = load_rust_indexes(paths, &binding_routes, &binding_indexes)?;
-    let contract: ApiContract = read_toml(&api_contract_path)?;
+    let rust_indexes =
+        load_rust_indexes_with_inventory(paths, &binding_routes, &binding_indexes, &inventory)?;
     let recording_operations =
         parse_recording_ops(&reviewed_recording_operations_source(paths, &manifest)?)?;
     let recording_source_git_blobs = manifest.recording_source_git_blobs();
@@ -580,11 +787,23 @@ pub fn validate_contract(
             contract.schema_version
         ));
     }
+    if contract.evidence_policy != SAFE_CALL_EVIDENCE_POLICY {
+        errors.push(format!(
+            "API contract evidence policy `{}` does not match supported policy `{SAFE_CALL_EVIDENCE_POLICY}`",
+            contract.evidence_policy
+        ));
+    }
     if contract.upstream_sha != expected_active_revision {
         errors.push(format!(
             "API contract upstream {} does not match active revision {expected_active_revision}",
             contract.upstream_sha,
         ));
+    }
+    if expected_active_revision == BOX2D_3_2_TARGET_REVISION
+        && contract.schema_version == API_CONTRACT_SCHEMA
+    {
+        validate_pinned_box2d_3_2_binding_routes(binding_routes, &mut errors);
+        validate_pinned_box2d_3_2_no_deferred_functions(contract, &mut errors);
     }
 
     let inventory_by_name = inventory
@@ -592,6 +811,15 @@ pub fn validate_contract(
         .iter()
         .map(|function| (function.name.as_str(), function))
         .collect::<BTreeMap<_, _>>();
+    let route_coordinates = binding_routes.keys().cloned().collect::<BTreeSet<_>>();
+    let route_modes = binding_routes
+        .keys()
+        .map(|(mode, _)| mode.as_str())
+        .collect::<BTreeSet<_>>();
+    let route_providers = binding_routes
+        .keys()
+        .map(|(_, provider)| provider.as_str())
+        .collect::<BTreeSet<_>>();
     let mut evidence_by_id = BTreeMap::new();
     let mut evidence_indexes = BTreeMap::new();
     for evidence in &contract.evidence {
@@ -601,6 +829,13 @@ pub fn validate_contract(
         {
             errors.push(format!("duplicate evidence id `{}`", evidence.id));
         }
+        validate_evidence_scope(
+            evidence,
+            &route_coordinates,
+            &route_modes,
+            &route_providers,
+            &mut errors,
+        );
         match index_evidence_across_routes(paths, evidence, rust_indexes, binding_routes) {
             Ok(actual) => {
                 let fingerprint = aggregate_evidence_fingerprint(&actual);
@@ -634,15 +869,6 @@ pub fn validate_contract(
             &mut errors,
         );
     }
-    let route_coordinates = binding_routes.keys().cloned().collect::<BTreeSet<_>>();
-    let route_modes = binding_routes
-        .keys()
-        .map(|(mode, _)| mode.as_str())
-        .collect::<BTreeSet<_>>();
-    let route_providers = binding_routes
-        .keys()
-        .map(|(_, provider)| provider.as_str())
-        .collect::<BTreeSet<_>>();
     let availability_registry = AVAILABILITY.iter().copied().collect::<BTreeSet<_>>();
     let mut rows = BTreeSet::new();
     for function in &contract.functions {
@@ -771,35 +997,62 @@ pub fn validate_contract(
         if function.area.trim().is_empty() {
             errors.push(format!("`{}` has no explicit area", function.logical_name));
         }
-        if !has_rationale(&function.rationale) {
-            errors.push(format!(
-                "`{}` needs a specific rationale",
-                function.logical_name
-            ));
-        }
-        if function.evidence.is_empty() {
-            errors.push(format!("`{}` has no test evidence", function.logical_name));
-        }
-        for evidence in &function.evidence {
-            let expected_role = match function.classification {
-                Classification::Safe => TestEvidenceRole::Runtime,
-                Classification::Raw | Classification::Omitted | Classification::Deferred => {
-                    TestEvidenceRole::FunctionClassificationValidator
-                }
-            };
-            match evidence_by_id.get(evidence.as_str()) {
-                None => errors.push(format!(
-                    "`{}` references unknown evidence `{evidence}`",
+        let default_providers =
+            validate_function_provider_overrides(function, &route_providers, &mut errors);
+        let default_coordinates = route_coordinates
+            .iter()
+            .filter(|(_, provider)| default_providers.contains(provider.as_str()))
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        validate_function_exposure_review(
+            function,
+            "default",
+            FunctionExposureReview::Default(function),
+            &default_coordinates,
+            declaration,
+            rust_indexes,
+            &evidence_by_id,
+            &mut errors,
+        );
+        for provider_override in &function.provider_overrides {
+            let coordinates = route_coordinates
+                .iter()
+                .filter(|(_, provider)| provider_override.providers.contains(provider))
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            validate_function_exposure_review(
+                function,
+                &format!("provider override {:?}", provider_override.providers),
+                FunctionExposureReview::Override(provider_override),
+                &coordinates,
+                declaration,
+                rust_indexes,
+                &evidence_by_id,
+                &mut errors,
+            );
+            if provider_override
+                .providers
+                .iter()
+                .any(|provider| !is_wasm_provider(provider))
+            {
+                errors.push(format!(
+                    "function `{}` may only use conservative provider overrides for WASM providers",
                     function.logical_name
-                )),
-                Some(row) if row.role != expected_role => errors.push(format!(
-                    "{} function `{}` references evidence `{evidence}` with role {:?}, expected {:?}",
-                    function.classification.as_str(),
-                    function.logical_name,
-                    row.role,
-                    expected_role
-                )),
-                Some(_) => {}
+                ));
+            }
+            for coordinate in &coordinates {
+                if safe_function_review_matches_coordinate(
+                    &function.rust_paths,
+                    function.exposure,
+                    declaration,
+                    coordinate,
+                    rust_indexes,
+                ) {
+                    errors.push(format!(
+                        "function `{}` provider override unnecessarily hides a proven Safe path at route `{}/{}`",
+                        function.logical_name, coordinate.0, coordinate.1
+                    ));
+                }
             }
         }
         let expected_recording = super::api_recording::expected(
@@ -822,78 +1075,6 @@ pub fn validate_contract(
                 function.logical_name, function.recording, expected_recording
             ));
         }
-        if function.classification != Classification::Safe
-            && function.exposure != FunctionExposureKind::Callable
-        {
-            errors.push(format!(
-                "{} function `{}` cannot claim the {:?} Safe Rust exposure kind",
-                function.classification.as_str(),
-                function.logical_name,
-                function.exposure
-            ));
-        }
-        match function.classification {
-            Classification::Safe => {
-                if function.rust_paths.is_empty() {
-                    errors.push(format!(
-                        "safe function `{}` has no canonical Rust path",
-                        function.logical_name
-                    ));
-                }
-                for coordinate in &route_coordinates {
-                    let Some(index) = rust_indexes.get(coordinate) else {
-                        errors.push(format!(
-                            "safe function `{}` has no Rust index for route `{}/{}`",
-                            function.logical_name, coordinate.0, coordinate.1
-                        ));
-                        continue;
-                    };
-                    let Some(symbol) = declaration.physical_symbols.get(&coordinate.0) else {
-                        continue;
-                    };
-                    for path in &function.rust_paths {
-                        if !safe_exposure_path_exists(index, function.exposure, path) {
-                            errors.push(format!(
-                                "safe function `{}` references nonexistent {} `{path}` at route `{}/{}`",
-                                function.logical_name,
-                                function.exposure.path_kind(),
-                                coordinate.0,
-                                coordinate.1
-                            ));
-                        } else if !index.path_reaches_symbol(path, symbol) {
-                            errors.push(format!(
-                                "{} `{path}` does not reach physical symbol `{symbol}` through the Rust AST call graph at route `{}/{}`",
-                                function.exposure.path_kind(),
-                                coordinate.0, coordinate.1
-                            ));
-                        }
-                    }
-                }
-            }
-            Classification::Raw => {
-                let expected_paths = route_modes
-                    .iter()
-                    .filter_map(|mode| declaration.physical_symbols.get(*mode))
-                    .map(|symbol| format!("boxdd_sys::ffi::{symbol}"))
-                    .collect::<BTreeSet<_>>();
-                let actual_paths = function.rust_paths.iter().cloned().collect::<BTreeSet<_>>();
-                if actual_paths != expected_paths || function.rust_paths.is_empty() {
-                    errors.push(format!(
-                        "raw function `{}` must name exactly its header-derived boxdd_sys::ffi physical paths",
-                        function.logical_name,
-                    ));
-                }
-            }
-            Classification::Omitted | Classification::Deferred => {
-                if !function.rust_paths.is_empty() {
-                    errors.push(format!(
-                        "{} function `{}` cannot claim a Rust path",
-                        function.classification.as_str(),
-                        function.logical_name
-                    ));
-                }
-            }
-        }
     }
     for declaration in &inventory.functions {
         if !rows.contains(declaration.name.as_str()) {
@@ -904,7 +1085,13 @@ pub fn validate_contract(
         }
     }
 
-    validate_typed_evidence(contract, &evidence_by_id, &evidence_indexes, &mut errors);
+    validate_typed_evidence_v8(
+        contract,
+        binding_routes,
+        &evidence_by_id,
+        &evidence_indexes,
+        &mut errors,
+    );
 
     validate_migration(contract, &mut errors);
     let evidence_ids = evidence_by_id
@@ -936,10 +1123,299 @@ pub fn validate_contract(
         .with_expected_function_count(expected_function_count);
         validate_abi(&contract.abi, &abi_context, &mut errors);
     }
+    if expected_active_revision == BOX2D_3_2_TARGET_REVISION
+        && contract.schema_version == API_CONTRACT_SCHEMA
+    {
+        validate_reviewed_deferred_migration_invariant(&contract.abi, &mut errors);
+    }
     if errors.is_empty() {
         Ok(())
     } else {
         Err(Error::message(errors.join("\n")))
+    }
+}
+
+fn pinned_box2d_3_2_binding_routes() -> AbiBindingRoutes {
+    canonical_binding_routes()
+        .into_iter()
+        .map(|route| {
+            let mode = route.mode.as_str().to_owned();
+            let provider = route.provider.as_str().to_owned();
+            (
+                (mode.clone(), provider.clone()),
+                AbiBindingRoute {
+                    mode,
+                    provider,
+                    artifact: route.artifact,
+                    rust_target: route.rust_target,
+                    rust_features: route.rust_features,
+                },
+            )
+        })
+        .collect()
+}
+
+fn validate_pinned_box2d_3_2_binding_routes(
+    binding_routes: &AbiBindingRoutes,
+    errors: &mut Vec<String>,
+) {
+    let expected = pinned_box2d_3_2_binding_routes();
+    if binding_routes != &expected {
+        errors.push(format!(
+            "pinned Box2D 3.2 schema-8 contract requires the exact canonical 10-route matrix; observed {binding_routes:?}, expected {expected:?}"
+        ));
+    }
+}
+
+fn validate_pinned_box2d_3_2_binding_artifacts(
+    artifacts: &[GeneratedArtifact],
+    errors: &mut Vec<String>,
+) {
+    let expected = canonical_route_binding_artifacts()
+        .into_iter()
+        .map(|artifact| {
+            (
+                artifact.name,
+                artifact.path,
+                artifact.precision,
+                artifact.target,
+                artifact.provider,
+                artifact.producer,
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    let observed = artifacts
+        .iter()
+        .filter(|artifact| artifact.kind == ArtifactKind::Bindings)
+        .map(|artifact| {
+            (
+                artifact.name.clone(),
+                artifact.path.clone(),
+                artifact.precision,
+                artifact.target,
+                artifact.provider,
+                artifact.producer,
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    if observed != expected {
+        errors.push(format!(
+            "pinned Box2D 3.2 schema-8 contract requires the exact canonical six binding artifact identities; observed {observed:?}, expected {expected:?}"
+        ));
+    }
+}
+
+fn validate_pinned_box2d_3_2_no_deferred_functions(
+    contract: &ApiContract,
+    errors: &mut Vec<String>,
+) {
+    for function in &contract.functions {
+        if function.classification == Classification::Deferred {
+            errors.push(format!(
+                "pinned Box2D 3.2 schema-8 function `{}` reintroduces Deferred",
+                function.logical_name
+            ));
+        }
+        for provider_override in &function.provider_overrides {
+            if provider_override.classification == Classification::Deferred {
+                errors.push(format!(
+                    "pinned Box2D 3.2 schema-8 function `{}` provider override {:?} reintroduces Deferred",
+                    function.logical_name, provider_override.providers
+                ));
+            }
+        }
+    }
+}
+
+fn validate_function_provider_overrides(
+    function: &FunctionContract,
+    route_providers: &BTreeSet<&str>,
+    errors: &mut Vec<String>,
+) -> BTreeSet<String> {
+    if !function
+        .provider_overrides
+        .windows(2)
+        .all(|pair| pair[0].providers < pair[1].providers)
+    {
+        errors.push(format!(
+            "function `{}` provider overrides must be strictly sorted by provider scope",
+            function.logical_name
+        ));
+    }
+    let mut overridden = BTreeSet::new();
+    for provider_override in &function.provider_overrides {
+        if function.classification != Classification::Safe
+            || provider_override.classification != Classification::Raw
+        {
+            errors.push(format!(
+                "function `{}` provider overrides may only conservatively narrow a default Safe exposure to Raw",
+                function.logical_name
+            ));
+        }
+        if provider_override.providers.is_empty() {
+            errors.push(format!(
+                "function `{}` has an empty provider override",
+                function.logical_name
+            ));
+        }
+        if !provider_override
+            .providers
+            .windows(2)
+            .all(|pair| pair[0] < pair[1])
+        {
+            errors.push(format!(
+                "function `{}` provider override {:?} must be strictly sorted and unique",
+                function.logical_name, provider_override.providers
+            ));
+        }
+        for provider in &provider_override.providers {
+            if !route_providers.contains(provider.as_str())
+                || !function.providers.contains(provider)
+            {
+                errors.push(format!(
+                    "function `{}` override references unregistered provider `{provider}`",
+                    function.logical_name
+                ));
+            }
+            if !overridden.insert(provider.clone()) {
+                errors.push(format!(
+                    "function `{}` provider `{provider}` is covered by multiple overrides",
+                    function.logical_name
+                ));
+            }
+        }
+    }
+    let defaults = function
+        .providers
+        .iter()
+        .filter(|provider| !overridden.contains(*provider))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    if defaults.is_empty() {
+        errors.push(format!(
+            "function `{}` provider overrides consume the entire default exposure",
+            function.logical_name
+        ));
+    }
+    defaults
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_function_exposure_review(
+    function: &FunctionContract,
+    label: &str,
+    review: FunctionExposureReview<'_>,
+    coordinates: &BTreeSet<(String, String)>,
+    declaration: &crate::c_api::FunctionDecl,
+    rust_indexes: &AbiRustIndexes,
+    evidence_by_id: &BTreeMap<&str, &TestEvidence>,
+    errors: &mut Vec<String>,
+) {
+    let subject = format!("function `{}` {label}", function.logical_name);
+    if coordinates.is_empty() {
+        errors.push(format!("{subject} has no executable route"));
+    }
+    if !has_rationale(review.rationale()) {
+        errors.push(format!("{subject} needs a specific rationale"));
+    }
+    if review.evidence().is_empty() {
+        errors.push(format!("{subject} has no test evidence"));
+    }
+    let expected_role = match review.classification() {
+        Classification::Safe => TestEvidenceRole::SafeCall,
+        Classification::Raw | Classification::Omitted | Classification::Deferred => {
+            TestEvidenceRole::FunctionClassificationValidator
+        }
+    };
+    let mut unique_evidence = BTreeSet::new();
+    for evidence in review.evidence() {
+        if !unique_evidence.insert(evidence.as_str()) {
+            errors.push(format!("{subject} repeats evidence `{evidence}`"));
+        }
+        match evidence_by_id.get(evidence.as_str()) {
+            None => errors.push(format!("{subject} references unknown evidence `{evidence}`")),
+            Some(row) if row.role != expected_role => errors.push(format!(
+                "{subject} references evidence `{evidence}` with role {:?}, expected {:?}",
+                row.role, expected_role
+            )),
+            Some(row) if test_evidence_coordinates(row) != *coordinates => errors.push(format!(
+                "{subject} evidence `{evidence}` scope {:?} must exactly match effective routes {:?}",
+                test_evidence_coordinates(row),
+                coordinates
+            )),
+            Some(_) => {}
+        }
+    }
+    if !review.rust_paths().windows(2).all(|pair| pair[0] < pair[1]) {
+        errors.push(format!(
+            "{subject} Rust paths must be strictly sorted and unique"
+        ));
+    }
+    if review.classification() != Classification::Safe
+        && review.exposure() != FunctionExposureKind::Callable
+    {
+        errors.push(format!(
+            "{subject} is {} and cannot claim the {:?} Safe Rust exposure kind",
+            review.classification().as_str(),
+            review.exposure()
+        ));
+    }
+    match review.classification() {
+        Classification::Safe => {
+            if review.rust_paths().is_empty() {
+                errors.push(format!("{subject} has no canonical Rust path"));
+            }
+            for coordinate in coordinates {
+                let Some(index) = rust_indexes.get(coordinate) else {
+                    errors.push(format!(
+                        "{subject} has no Rust index for route `{}/{}`",
+                        coordinate.0, coordinate.1
+                    ));
+                    continue;
+                };
+                let Some(symbol) = declaration.physical_symbols.get(&coordinate.0) else {
+                    continue;
+                };
+                for path in review.rust_paths() {
+                    if !safe_exposure_path_exists(index, review.exposure(), path) {
+                        errors.push(format!(
+                            "{subject} references nonexistent {} `{path}` at route `{}/{}`",
+                            review.exposure().path_kind(),
+                            coordinate.0,
+                            coordinate.1
+                        ));
+                    } else if !index.path_reaches_symbol(path, symbol) {
+                        errors.push(format!(
+                            "{} `{path}` does not reach physical symbol `{symbol}` through the Rust AST call graph at route `{}/{}`",
+                            review.exposure().path_kind(),
+                            coordinate.0,
+                            coordinate.1
+                        ));
+                    }
+                }
+            }
+        }
+        Classification::Raw => {
+            let expected_paths = coordinates
+                .iter()
+                .filter_map(|(mode, _)| declaration.physical_symbols.get(mode))
+                .map(|symbol| format!("boxdd_sys::ffi::{symbol}"))
+                .collect::<BTreeSet<_>>();
+            let actual_paths = review.rust_paths().iter().cloned().collect::<BTreeSet<_>>();
+            if actual_paths != expected_paths || review.rust_paths().is_empty() {
+                errors.push(format!(
+                    "{subject} must name exactly its route-derived boxdd_sys::ffi physical paths"
+                ));
+            }
+        }
+        Classification::Omitted | Classification::Deferred => {
+            if !review.rust_paths().is_empty() {
+                errors.push(format!(
+                    "{subject} is {} and cannot claim a Rust path",
+                    review.classification().as_str()
+                ));
+            }
+        }
     }
 }
 
@@ -1046,9 +1522,31 @@ fn index_evidence_across_routes(
     rust_indexes: &AbiRustIndexes,
     binding_routes: &AbiBindingRoutes,
 ) -> Result<BTreeMap<(String, String), TestEvidenceIndex>> {
+    let requested = evidence
+        .modes
+        .iter()
+        .flat_map(|mode| {
+            evidence
+                .providers
+                .iter()
+                .map(move |provider| (mode.clone(), provider.clone()))
+        })
+        .collect::<BTreeSet<_>>();
+    if requested.is_empty() {
+        return Err(Error::message(format!(
+            "evidence `{}` must declare a non-empty mode/provider scope",
+            evidence.id
+        )));
+    }
     let mut indexed_routes = BTreeMap::new();
-    for (coordinate, rust_index) in rust_indexes {
-        let route = binding_routes.get(coordinate).ok_or_else(|| {
+    for coordinate in requested {
+        let rust_index = rust_indexes.get(&coordinate).ok_or_else(|| {
+            Error::message(format!(
+                "evidence `{}` scope references missing Rust route `{}/{}`",
+                evidence.id, coordinate.0, coordinate.1
+            ))
+        })?;
+        let route = binding_routes.get(&coordinate).ok_or_else(|| {
             Error::message(format!(
                 "evidence route `{}/{}` has no binding route",
                 coordinate.0, coordinate.1
@@ -1066,7 +1564,7 @@ fn index_evidence_across_routes(
             rust_index,
             &rust_coordinate,
         )?;
-        indexed_routes.insert(coordinate.clone(), indexed);
+        indexed_routes.insert(coordinate, indexed);
     }
     if indexed_routes.is_empty() {
         Err(Error::message(format!(
@@ -1078,18 +1576,91 @@ fn index_evidence_across_routes(
     }
 }
 
+fn validate_evidence_scope(
+    evidence: &TestEvidence,
+    route_coordinates: &BTreeSet<(String, String)>,
+    route_modes: &BTreeSet<&str>,
+    route_providers: &BTreeSet<&str>,
+    errors: &mut Vec<String>,
+) {
+    validate_registry_values(
+        &format!("evidence `{}`", evidence.id),
+        "mode",
+        &evidence.modes,
+        route_modes,
+        errors,
+    );
+    validate_registry_values(
+        &format!("evidence `{}`", evidence.id),
+        "provider",
+        &evidence.providers,
+        route_providers,
+        errors,
+    );
+    if !evidence.modes.windows(2).all(|pair| pair[0] < pair[1]) {
+        errors.push(format!(
+            "evidence `{}` modes must be strictly sorted and unique",
+            evidence.id
+        ));
+    }
+    if !evidence.providers.windows(2).all(|pair| pair[0] < pair[1]) {
+        errors.push(format!(
+            "evidence `{}` providers must be strictly sorted and unique",
+            evidence.id
+        ));
+    }
+    let coordinates = test_evidence_coordinates(evidence);
+    if coordinates.is_empty() {
+        errors.push(format!(
+            "evidence `{}` must declare a non-empty mode/provider scope",
+            evidence.id
+        ));
+    }
+    for coordinate in coordinates.difference(route_coordinates) {
+        errors.push(format!(
+            "evidence `{}` scope contains unregistered route `{}/{}`",
+            evidence.id, coordinate.0, coordinate.1
+        ));
+    }
+    if matches!(
+        evidence.role,
+        TestEvidenceRole::AbiHeaderInventory
+            | TestEvidenceRole::AbiBindingAst
+            | TestEvidenceRole::AbiContractValidator
+    ) && coordinates != *route_coordinates
+    {
+        errors.push(format!(
+            "ABI evidence `{}` scope {:?} must exactly cover every binding route {:?}",
+            evidence.id, coordinates, route_coordinates
+        ));
+    }
+}
+
+fn test_evidence_coordinates(evidence: &TestEvidence) -> BTreeSet<(String, String)> {
+    evidence
+        .modes
+        .iter()
+        .flat_map(|mode| {
+            evidence
+                .providers
+                .iter()
+                .map(move |provider| (mode.clone(), provider.clone()))
+        })
+        .collect()
+}
+
 fn aggregate_evidence_fingerprint(
     indexed_routes: &BTreeMap<(String, String), TestEvidenceIndex>,
 ) -> String {
     let mut hasher = blake3::Hasher::new();
-    hasher.update(b"boxdd-test-evidence-route-fingerprint-v1\0");
+    hasher.update(b"boxdd-test-evidence-route-fingerprint-v2\0");
     for ((mode, provider), index) in indexed_routes {
         for component in [mode.as_str(), provider.as_str(), index.fingerprint.as_str()] {
             hasher.update(&(component.len() as u64).to_le_bytes());
             hasher.update(component.as_bytes());
         }
     }
-    format!("blake3-routes-v1:{}", hasher.finalize().to_hex())
+    format!("blake3-routes-v2:{}", hasher.finalize().to_hex())
 }
 
 fn validate_evidence_role(
@@ -1098,16 +1669,16 @@ fn validate_evidence_role(
     errors: &mut Vec<String>,
 ) {
     let (expected, required_local_path) = match evidence.role {
-        TestEvidenceRole::Runtime => {
+        TestEvidenceRole::SafeCall => {
             if evidence.package != "boxdd" || !evidence.file.starts_with("boxdd/tests/") {
                 errors.push(format!(
-                    "runtime evidence `{}` must be an executable boxdd integration test",
+                    "Safe-call evidence `{}` must be an executable boxdd integration test source",
                     evidence.id
                 ));
             }
             if !evidence.classification_witnesses.is_empty() {
                 errors.push(format!(
-                    "runtime evidence `{}` cannot contain classification witnesses",
+                    "Safe-call evidence `{}` cannot contain classification witnesses",
                     evidence.id
                 ));
             }
@@ -1146,16 +1717,22 @@ fn validate_evidence_role(
             "validate_contract",
         ),
     };
-    if (
-        evidence.id.as_str(),
-        evidence.file.as_str(),
-        evidence.item.as_str(),
-        evidence.package.as_str(),
-        evidence.gate.as_str(),
-    ) != (expected.0, expected.1, expected.2, "xtask", "nextest")
+    let id_matches = if evidence.role == TestEvidenceRole::FunctionClassificationValidator {
+        evidence.id == API_CLASSIFICATION_EVIDENCE_ID
+            || evidence.id.starts_with("api-classification-")
+    } else {
+        evidence.id == expected.0
+    };
+    if !id_matches
+        || (
+            evidence.file.as_str(),
+            evidence.item.as_str(),
+            evidence.package.as_str(),
+            evidence.gate.as_str(),
+        ) != (expected.1, expected.2, "xtask", "nextest")
     {
         errors.push(format!(
-            "ABI evidence role {:?} must point to the reviewed production validator `{}` in `{}`",
+            "evidence role {:?} must point to the reviewed production validator `{}` in `{}`",
             evidence.role, expected.2, expected.1
         ));
     }
@@ -1173,9 +1750,9 @@ fn validate_evidence_role(
             evidence.id, evidence.role
         ));
     }
-    if !evidence.runtime_witnesses.is_empty() {
+    if !evidence.call_witnesses.is_empty() {
         errors.push(format!(
-            "ABI evidence `{}` cannot contain runtime call witnesses",
+            "non-Safe-call evidence `{}` cannot contain Safe-call witnesses",
             evidence.id
         ));
     }
@@ -1189,6 +1766,283 @@ fn validate_evidence_role(
     }
 }
 
+fn validate_typed_evidence_v8(
+    contract: &ApiContract,
+    binding_routes: &AbiBindingRoutes,
+    evidence_by_id: &BTreeMap<&str, &TestEvidence>,
+    evidence_indexes: &BTreeMap<&str, BTreeMap<(String, String), TestEvidenceIndex>>,
+    errors: &mut Vec<String>,
+) {
+    let functions = contract
+        .functions
+        .iter()
+        .map(|function| (function.logical_name.as_str(), function))
+        .collect::<BTreeMap<_, _>>();
+    let mut referenced = BTreeSet::new();
+    for function in &contract.functions {
+        referenced.extend(function.evidence.iter().map(String::as_str));
+        for provider_override in &function.provider_overrides {
+            referenced.extend(provider_override.evidence.iter().map(String::as_str));
+        }
+    }
+    validate_abi_typed_evidence(contract, evidence_by_id, &mut referenced, errors);
+
+    type WitnessCoordinate = (String, String, String);
+    let mut safe_calls = BTreeMap::<WitnessCoordinate, BTreeSet<&str>>::new();
+    let mut classifications = BTreeMap::<WitnessCoordinate, BTreeSet<&str>>::new();
+    for evidence in &contract.evidence {
+        if !referenced.contains(evidence.id.as_str()) {
+            errors.push(format!(
+                "evidence `{}` is orphaned because no function or ABI policy references it",
+                evidence.id
+            ));
+        }
+        if evidence
+            .call_witnesses
+            .windows(2)
+            .any(|pair| pair[0] >= pair[1])
+        {
+            errors.push(format!(
+                "evidence `{}` Safe-call witnesses must be unique and strictly sorted",
+                evidence.id
+            ));
+        }
+        if evidence
+            .classification_witnesses
+            .windows(2)
+            .any(|pair| pair[0] >= pair[1])
+        {
+            errors.push(format!(
+                "evidence `{}` classification witnesses must be unique and strictly sorted",
+                evidence.id
+            ));
+        }
+        if evidence.role == TestEvidenceRole::SafeCall && evidence.call_witnesses.is_empty() {
+            errors.push(format!(
+                "Safe-call evidence `{}` has no exact executable call witness",
+                evidence.id
+            ));
+        }
+        if evidence.role == TestEvidenceRole::FunctionClassificationValidator
+            && evidence.classification_witnesses.is_empty()
+        {
+            errors.push(format!(
+                "classification evidence `{}` has no exact function classification witness",
+                evidence.id
+            ));
+        }
+        let Some(indexed_routes) = evidence_indexes.get(evidence.id.as_str()) else {
+            continue;
+        };
+        for witness in &evidence.call_witnesses {
+            let Some(function) = functions.get(witness.function.as_str()) else {
+                errors.push(format!(
+                    "evidence `{}` witnesses unknown function `{}`",
+                    evidence.id, witness.function
+                ));
+                continue;
+            };
+            if evidence.role != TestEvidenceRole::SafeCall {
+                errors.push(format!(
+                    "non-Safe-call evidence `{}` cannot witness executable calls",
+                    evidence.id
+                ));
+                continue;
+            }
+            for ((mode, provider), index) in indexed_routes {
+                let review = function_exposure_for_provider(function, provider);
+                let key = (
+                    function.logical_name.clone(),
+                    mode.clone(),
+                    provider.clone(),
+                );
+                let mut valid = true;
+                if review.classification() != Classification::Safe {
+                    errors.push(format!(
+                        "evidence `{}` Safe-call witness targets {} function `{}` at route `{mode}/{provider}`",
+                        evidence.id,
+                        review.classification().as_str(),
+                        witness.function
+                    ));
+                    valid = false;
+                }
+                if !review.evidence().contains(&evidence.id) {
+                    errors.push(format!(
+                        "evidence `{}` is not referenced by function `{}` at route `{mode}/{provider}`",
+                        evidence.id, witness.function
+                    ));
+                    valid = false;
+                }
+                if !review.rust_paths().contains(&witness.rust_path) {
+                    errors.push(format!(
+                        "evidence `{}` witnesses `{}` through unreviewed Rust path `{}` at route `{mode}/{provider}`",
+                        evidence.id, witness.function, witness.rust_path
+                    ));
+                    valid = false;
+                } else if !evidence_invokes_exposure(index, review.exposure(), &witness.rust_path)
+                    || !function.link_symbols.get(mode).is_some_and(|symbol| {
+                        index.implementation_reachable_symbols.contains(symbol)
+                    })
+                {
+                    errors.push(format!(
+                        "evidence `{}` does not establish a must-invoke relation from `{}` to the reviewed physical symbol for `{}` at route `{mode}/{provider}`",
+                        evidence.id, witness.rust_path, witness.function
+                    ));
+                    valid = false;
+                }
+                if valid {
+                    safe_calls
+                        .entry(key)
+                        .or_default()
+                        .insert(evidence.id.as_str());
+                }
+            }
+        }
+        for witness in &evidence.classification_witnesses {
+            let Some(function) = functions.get(witness.function.as_str()) else {
+                errors.push(format!(
+                    "evidence `{}` classifies unknown function `{}`",
+                    evidence.id, witness.function
+                ));
+                continue;
+            };
+            if evidence.role != TestEvidenceRole::FunctionClassificationValidator {
+                errors.push(format!(
+                    "evidence `{}` has classification witnesses without the classification-validator role",
+                    evidence.id
+                ));
+                continue;
+            }
+            for (mode, provider) in indexed_routes.keys() {
+                let review = function_exposure_for_provider(function, provider);
+                let key = (
+                    function.logical_name.clone(),
+                    mode.clone(),
+                    provider.clone(),
+                );
+                let mut valid = true;
+                if review.classification() == Classification::Safe {
+                    errors.push(format!(
+                        "classification evidence `{}` cannot replace a Safe-call witness for function `{}` at route `{mode}/{provider}`",
+                        evidence.id, witness.function
+                    ));
+                    valid = false;
+                } else if witness.classification != review.classification() {
+                    errors.push(format!(
+                        "classification evidence `{}` records `{}` as {}, but route `{mode}/{provider}` is {}",
+                        evidence.id,
+                        witness.function,
+                        witness.classification.as_str(),
+                        review.classification().as_str()
+                    ));
+                    valid = false;
+                }
+                if !review.evidence().contains(&evidence.id) {
+                    errors.push(format!(
+                        "classification evidence `{}` is not referenced by function `{}` at route `{mode}/{provider}`",
+                        evidence.id, witness.function
+                    ));
+                    valid = false;
+                }
+                if valid {
+                    classifications
+                        .entry(key)
+                        .or_default()
+                        .insert(evidence.id.as_str());
+                }
+            }
+        }
+    }
+
+    for function in &contract.functions {
+        for (mode, provider) in binding_routes.keys() {
+            let review = function_exposure_for_provider(function, provider);
+            let key = (
+                function.logical_name.clone(),
+                mode.clone(),
+                provider.clone(),
+            );
+            let declared = review
+                .evidence()
+                .iter()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>();
+            let witnessed = match review.classification() {
+                Classification::Safe => safe_calls.get(&key),
+                Classification::Raw | Classification::Omitted | Classification::Deferred => {
+                    classifications.get(&key)
+                }
+            }
+            .cloned()
+            .unwrap_or_default();
+            if declared != witnessed || review.evidence().len() != declared.len() {
+                errors.push(format!(
+                    "{} function `{}` route `{mode}/{provider}` evidence references {:?} do not exactly match typed witnesses {:?}",
+                    review.classification().as_str(),
+                    function.logical_name,
+                    declared,
+                    witnessed
+                ));
+            }
+            if witnessed.is_empty() {
+                errors.push(format!(
+                    "{} function `{}` has no exact route-conditioned witness at `{mode}/{provider}`",
+                    review.classification().as_str(),
+                    function.logical_name
+                ));
+            }
+        }
+    }
+}
+
+fn validate_abi_typed_evidence<'a>(
+    contract: &'a ApiContract,
+    evidence_by_id: &BTreeMap<&str, &TestEvidence>,
+    referenced: &mut BTreeSet<&'a str>,
+    errors: &mut Vec<String>,
+) {
+    for policy in &contract.abi.policies {
+        referenced.extend(policy.evidence.iter().map(String::as_str));
+        let roles = policy
+            .evidence
+            .iter()
+            .filter_map(|id| evidence_by_id.get(id.as_str()))
+            .map(|evidence| evidence.role)
+            .collect::<BTreeSet<_>>();
+        let required = BTreeSet::from([
+            TestEvidenceRole::AbiHeaderInventory,
+            TestEvidenceRole::AbiBindingAst,
+            TestEvidenceRole::AbiContractValidator,
+        ]);
+        if roles != required {
+            errors.push(format!(
+                "ABI policy `{}` must reference exactly the header inventory, binding AST, and contract validator evidence roles",
+                policy.id
+            ));
+        }
+        let ids = policy
+            .evidence
+            .iter()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        let required_ids = BTreeSet::from([
+            ABI_HEADER_EVIDENCE_ID,
+            ABI_BINDING_EVIDENCE_ID,
+            ABI_VALIDATOR_EVIDENCE_ID,
+        ]);
+        if ids != required_ids || policy.evidence.len() != required_ids.len() {
+            errors.push(format!(
+                "ABI policy `{}` must reference exactly the reviewed ABI evidence rows",
+                policy.id
+            ));
+        }
+    }
+}
+
+#[allow(
+    dead_code,
+    reason = "retained temporarily as a schema-7 migration oracle"
+)]
 fn validate_typed_evidence(
     contract: &ApiContract,
     evidence_by_id: &BTreeMap<&str, &TestEvidence>,
@@ -1252,7 +2106,7 @@ fn validate_typed_evidence(
             ));
         }
         if evidence
-            .runtime_witnesses
+            .call_witnesses
             .windows(2)
             .any(|pair| pair[0] >= pair[1])
         {
@@ -1271,7 +2125,7 @@ fn validate_typed_evidence(
                 evidence.id
             ));
         }
-        if evidence.role == TestEvidenceRole::Runtime && evidence.runtime_witnesses.is_empty() {
+        if evidence.role == TestEvidenceRole::SafeCall && evidence.call_witnesses.is_empty() {
             errors.push(format!(
                 "runtime evidence `{}` has no exact executable call witness",
                 evidence.id
@@ -1286,7 +2140,7 @@ fn validate_typed_evidence(
             ));
         }
         let indexed = evidence_indexes.get(evidence.id.as_str());
-        for witness in &evidence.runtime_witnesses {
+        for witness in &evidence.call_witnesses {
             let Some(function) = functions.get(witness.function.as_str()) else {
                 errors.push(format!(
                     "evidence `{}` witnesses unknown function `{}`",
@@ -1294,7 +2148,7 @@ fn validate_typed_evidence(
                 ));
                 continue;
             };
-            if evidence.role != TestEvidenceRole::Runtime {
+            if evidence.role != TestEvidenceRole::SafeCall {
                 errors.push(format!(
                     "non-runtime evidence `{}` cannot witness executable calls",
                     evidence.id
@@ -1479,7 +2333,8 @@ fn audit_runtime_evidence(paths: &WorkspacePaths) -> Result<()> {
     let binding_indexes = load_binding_indexes(paths, &manifest)?;
     let binding_routes = load_binding_routes(&manifest)?;
     let precision_inventories = load_precision_inventories(paths, &binding_routes)?;
-    let rust_indexes = load_rust_indexes(paths, &binding_routes, &binding_indexes)?;
+    let rust_indexes =
+        load_rust_indexes_with_inventory(paths, &binding_routes, &binding_indexes, &inventory)?;
     let recording_operations =
         parse_recording_ops(&reviewed_recording_operations_source(paths, &manifest)?)?;
     let mut contract: ApiContract = read_toml(&contract_path)?;
@@ -1506,7 +2361,7 @@ fn audit_runtime_evidence(paths: &WorkspacePaths) -> Result<()> {
         .filter(|function| function.classification == Classification::Safe)
         .count();
     println!(
-        "runtime evidence audit: {} proven, {} gaps, {} Safe functions",
+        "Safe-call witness audit: {} proven, {} gaps, {} Safe functions",
         safe_total - gaps.len(),
         gaps.len(),
         safe_total
@@ -1526,9 +2381,9 @@ fn audit_runtime_evidence(paths: &WorkspacePaths) -> Result<()> {
     for evidence in contract
         .evidence
         .iter()
-        .filter(|evidence| evidence.role == TestEvidenceRole::Runtime)
+        .filter(|evidence| evidence.role == TestEvidenceRole::SafeCall)
     {
-        for witness in &evidence.runtime_witnesses {
+        for witness in &evidence.call_witnesses {
             println!(
                 "PROVEN\t{}\t{}\t{}\t{}\t{}",
                 witness.function, witness.rust_path, evidence.id, evidence.file, evidence.item
@@ -1549,9 +2404,11 @@ fn audit_runtime_evidence(paths: &WorkspacePaths) -> Result<()> {
 fn audit_canonical_paths(paths: &WorkspacePaths) -> Result<()> {
     let manifest = UpstreamManifest::load(paths)?;
     let contract_path = manifest.artifact_path(paths.root(), ArtifactKind::ApiContract)?;
+    let inventory = parse_headers(&paths.box2d_headers())?;
     let binding_indexes = load_binding_indexes(paths, &manifest)?;
     let binding_routes = load_binding_routes(&manifest)?;
-    let rust_indexes = load_rust_indexes(paths, &binding_routes, &binding_indexes)?;
+    let rust_indexes =
+        load_rust_indexes_with_inventory(paths, &binding_routes, &binding_indexes, &inventory)?;
     let contract: ApiContract = read_toml(&contract_path)?;
 
     for function in contract
@@ -1602,18 +2459,332 @@ fn audit_canonical_paths(paths: &WorkspacePaths) -> Result<()> {
     Ok(())
 }
 
-fn refresh_abi_contract(paths: &WorkspacePaths) -> Result<()> {
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ReviewedMigrationGap {
+    function: String,
+    kind: ReviewedMigrationGapKind,
+    reviewed_paths: Vec<String>,
+    callable_candidates: Vec<String>,
+    raii_drop_candidates: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ReviewedMigrationGapKind {
+    DeclarationDrift,
+    Route,
+}
+
+fn audit_reviewed_migration(paths: &WorkspacePaths, revision: &str) -> Result<()> {
+    let manifest = UpstreamManifest::load(paths)?;
+    let contract_path = manifest.artifact_path(paths.root(), ArtifactKind::ApiContract)?;
+    let inventory = parse_headers(&paths.box2d_headers())?;
+    let binding_indexes = load_binding_indexes(paths, &manifest)?;
+    let binding_routes = load_binding_routes(&manifest)?;
+    let precision_inventories = load_precision_inventories(paths, &binding_routes)?;
+    let rust_indexes =
+        load_rust_indexes_with_inventory(paths, &binding_routes, &binding_indexes, &inventory)?;
+    let recording_operations =
+        parse_recording_ops(&reviewed_recording_operations_source(paths, &manifest)?)?;
+    let mut current: ApiContract = read_toml(&contract_path)?;
+    let reviewed = read_api_contract_from_git(paths, &contract_path, revision)?;
+
+    reconcile_functions(
+        &mut current,
+        &inventory,
+        Some(&precision_inventories),
+        &binding_routes,
+        &rust_indexes,
+        &recording_operations,
+    );
+    let review_gaps = inherit_reviewed_function_semantics(
+        &mut current,
+        &reviewed,
+        &inventory,
+        Some(&precision_inventories),
+        &binding_routes,
+        &rust_indexes,
+        &recording_operations,
+    );
+    synchronize_classification_evidence(&mut current);
+    let mut evidence_gaps =
+        synchronize_runtime_evidence(paths, &mut current, &rust_indexes, &binding_routes)?;
+    evidence_gaps.sort_by(|left, right| left.function.cmp(&right.function));
+
+    let reviewed_names = reviewed
+        .functions
+        .iter()
+        .map(|function| function.logical_name.as_str())
+        .collect::<BTreeSet<_>>();
+    let current_names = current
+        .functions
+        .iter()
+        .map(|function| function.logical_name.as_str())
+        .collect::<BTreeSet<_>>();
+    let classifications = counts(&current.functions);
+    println!(
+        "reviewed migration audit: {} candidate functions ({} safe, {} raw, {} omitted), {} declaration gaps, {} route gaps, {} runtime-evidence gaps, {} added, {} removed",
+        classifications.total,
+        classifications.safe,
+        classifications.raw,
+        classifications.omitted,
+        review_gaps
+            .iter()
+            .filter(|gap| gap.kind == ReviewedMigrationGapKind::DeclarationDrift)
+            .count(),
+        review_gaps
+            .iter()
+            .filter(|gap| gap.kind == ReviewedMigrationGapKind::Route)
+            .count(),
+        evidence_gaps.len(),
+        current_names.difference(&reviewed_names).count(),
+        reviewed_names.difference(&current_names).count(),
+    );
+    let review_gap_names = review_gaps
+        .iter()
+        .map(|gap| gap.function.as_str())
+        .collect::<BTreeSet<_>>();
+    for gap in &review_gaps {
+        println!(
+            "{}\t{}\t{}\tcallable={}\traii-drop={}",
+            match gap.kind {
+                ReviewedMigrationGapKind::DeclarationDrift => "DECLARATION-GAP",
+                ReviewedMigrationGapKind::Route => "ROUTE-GAP",
+            },
+            gap.function,
+            gap.reviewed_paths.join(","),
+            gap.callable_candidates.join(","),
+            gap.raii_drop_candidates.join(",")
+        );
+    }
+    for function in current.functions.iter().filter(|function| {
+        reviewed_names.contains(function.logical_name.as_str())
+            && !review_gap_names.contains(function.logical_name.as_str())
+            && function.classification == Classification::Safe
+            && matches!(
+                function.recording,
+                Some(RecordingCoverage {
+                    class: RecordingClass::LoggedMutation,
+                    ..
+                })
+            )
+    }) {
+        let declaration = inventory
+            .functions
+            .iter()
+            .find(|declaration| declaration.name == function.logical_name)
+            .expect("current function has an inventory declaration");
+        let session_paths = common_safe_paths_for_symbol(
+            declaration,
+            FunctionExposureKind::Callable,
+            &binding_routes,
+            &rust_indexes,
+        )
+        .into_iter()
+        .filter(|path| is_recording_session_path(path))
+        .collect::<Vec<_>>();
+        println!(
+            "CANONICAL-REFRESH\t{}\t{}",
+            function.logical_name,
+            session_paths.join(",")
+        );
+    }
+    for gap in evidence_gaps {
+        println!(
+            "EVIDENCE-GAP\t{}\t{}\t{}",
+            gap.area,
+            gap.function,
+            gap.rust_paths.join(",")
+        );
+    }
+    for function in current
+        .functions
+        .iter()
+        .filter(|function| !reviewed_names.contains(function.logical_name.as_str()))
+    {
+        let declaration = inventory
+            .functions
+            .iter()
+            .find(|declaration| declaration.name == function.logical_name)
+            .expect("current function has an inventory declaration");
+        println!(
+            "ADDED\t{}\t{}\t{}\tcallable={}\traii-drop={}",
+            function.logical_name,
+            function.classification.as_str(),
+            function.rust_paths.join(","),
+            common_safe_paths_for_symbol(
+                declaration,
+                FunctionExposureKind::Callable,
+                &binding_routes,
+                &rust_indexes,
+            )
+            .join(","),
+            common_safe_paths_for_symbol(
+                declaration,
+                FunctionExposureKind::RaiiDrop,
+                &binding_routes,
+                &rust_indexes,
+            )
+            .join(",")
+        );
+    }
+    for function in reviewed
+        .functions
+        .iter()
+        .filter(|function| !current_names.contains(function.logical_name.as_str()))
+    {
+        println!(
+            "REMOVED\t{}\t{}\t{}",
+            function.logical_name,
+            function.classification.as_str(),
+            function.rust_paths.join(",")
+        );
+    }
+    Ok(())
+}
+
+fn migrate_reviewed_contract(paths: &WorkspacePaths, revision: &str) -> Result<()> {
     let _lock = UpdateLock::acquire(paths.root())?;
     let manifest_baseline = fs::read(paths.upstream_manifest())
         .map_err(|source| Error::io(paths.upstream_manifest(), source))?;
     let manifest = UpstreamManifest::load(paths)?;
-    if manifest.artifact_digests_initialized {
-        validate_repository(paths, &manifest, false)?;
-    }
+    let snapshot = validate_repository(paths, &manifest, false)?;
+    validate_authenticated_revision(
+        &manifest.active_revision,
+        &snapshot.gitlink_revision,
+        &snapshot.worktree_revision,
+    )?;
+
     let contract_path = manifest.artifact_path(paths.root(), ArtifactKind::ApiContract)?;
+    let inventory = parse_headers(&paths.box2d_headers())?;
+    let binding_indexes = load_binding_indexes(paths, &manifest)?;
+    let binding_routes = load_binding_routes(&manifest)?;
+    let precision_inventories = load_precision_inventories(paths, &binding_routes)?;
+    let rust_indexes =
+        load_rust_indexes_with_inventory(paths, &binding_routes, &binding_indexes, &inventory)?;
     let recording_operations =
         parse_recording_ops(&reviewed_recording_operations_source(paths, &manifest)?)?;
-    let contract = build_refreshed_contract(paths, &manifest, &recording_operations)?;
+    let mut contract: ApiContract = read_toml(&contract_path)?;
+    let reviewed = read_api_contract_from_git(paths, &contract_path, revision)?;
+    let override_path = paths.root().join(REVIEWED_MIGRATION_OVERRIDES_PATH);
+    let overrides: ReviewedMigrationOverrides = read_toml(&override_path)?;
+
+    if overrides.schema_version != 1 {
+        return Err(Error::message(format!(
+            "{} has unsupported reviewed migration schema {}; expected 1",
+            override_path.display(),
+            overrides.schema_version
+        )));
+    }
+    if overrides.reviewed_revision != revision {
+        return Err(Error::message(format!(
+            "{} is pinned to reviewed revision `{}`, not requested immutable revision `{revision}`",
+            override_path.display(),
+            overrides.reviewed_revision
+        )));
+    }
+    if overrides.active_revision != manifest.active_revision {
+        return Err(Error::message(format!(
+            "{} is pinned to active revision `{}`, not authenticated revision `{}`",
+            override_path.display(),
+            overrides.active_revision,
+            manifest.active_revision
+        )));
+    }
+
+    reconcile_functions(
+        &mut contract,
+        &inventory,
+        Some(&precision_inventories),
+        &binding_routes,
+        &rust_indexes,
+        &recording_operations,
+    );
+    let review_gaps = inherit_reviewed_function_semantics(
+        &mut contract,
+        &reviewed,
+        &inventory,
+        Some(&precision_inventories),
+        &binding_routes,
+        &rust_indexes,
+        &recording_operations,
+    );
+    apply_reviewed_migration_overrides(
+        &mut contract,
+        &reviewed,
+        &overrides,
+        &review_gaps,
+        &inventory,
+        &binding_routes,
+        &rust_indexes,
+        &recording_operations,
+    )?;
+
+    contract.schema_version = API_CONTRACT_SCHEMA;
+    contract.evidence_policy = SAFE_CALL_EVIDENCE_POLICY.to_owned();
+    set_active_refresh_identity(&mut contract, &manifest.active_revision);
+    contract.function_inventory_digests = compute_function_inventory_digests(&inventory)?;
+    recompute_migration_baseline(&mut contract);
+    synchronize_classification_evidence(&mut contract);
+    let mut safe_call_gaps =
+        synchronize_runtime_evidence(paths, &mut contract, &rust_indexes, &binding_routes)?;
+    safe_call_gaps.sort_by(|left, right| left.function.cmp(&right.function));
+    if !safe_call_gaps.is_empty() {
+        return Err(Error::message(format!(
+            "reviewed migration has Safe Rust functions without route-conditioned Safe-call witnesses:\n{}",
+            safe_call_gaps
+                .iter()
+                .map(|gap| format!(
+                    "{}: {} ({})",
+                    gap.area,
+                    gap.function,
+                    gap.rust_paths.join(", ")
+                ))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )));
+    }
+
+    let previous_abi = contract.abi.clone();
+    let mut generated_abi = map_precision_inventory(
+        &inventory,
+        &precision_inventories,
+        &binding_routes,
+        &binding_indexes,
+    )?;
+    preserve_reviewed_exposure(&previous_abi, &mut generated_abi);
+    promote_proven_deferred_exposure(
+        &mut generated_abi,
+        &inventory,
+        &binding_routes,
+        &rust_indexes,
+    )?;
+    discard_unproven_reviewed_exposure(
+        &mut generated_abi,
+        &inventory,
+        &binding_routes,
+        &rust_indexes,
+    );
+    contract.abi = generated_abi;
+    refresh_route_scoped_evidence_metadata(paths, &mut contract, &rust_indexes, &binding_routes)?;
+    validate_contract(
+        paths,
+        &contract,
+        &inventory,
+        Some(&precision_inventories),
+        &rust_indexes,
+        &binding_routes,
+        &binding_indexes,
+        &manifest.active_revision,
+        &recording_operations,
+    )?;
+
+    let observed_counts = counts(&contract.functions);
+    if observed_counts != overrides.expected_counts {
+        return Err(Error::message(format!(
+            "reviewed migration coverage counts drifted: expected {:?}, observed {:?}",
+            overrides.expected_counts, observed_counts
+        )));
+    }
     let recording_source_git_blobs = manifest.recording_source_git_blobs();
     let recording_sources_aggregate =
         reviewed_sources_aggregate_blake3(&recording_source_git_blobs)?;
@@ -1623,10 +2794,831 @@ fn refresh_abi_contract(paths: &WorkspacePaths) -> Result<()> {
         &recording_source_git_blobs,
         &recording_sources_aggregate,
     )?;
+    let recording_wire = render_toml(&wire)?.into_bytes();
+    let wire_digest = blake3::hash(&recording_wire).to_hex().to_string();
+    let effective_source_sha256 = effective_source_sha256(paths)?;
+    let runtime_recording_wire =
+        render_runtime_parser(&wire, &wire_digest, &effective_source_sha256)?.into_bytes();
     let writes = [
         ManagedArtifactWrite::reviewed_active("api-contract", render_toml(&contract)?.into_bytes()),
-        ManagedArtifactWrite::active("recording-wire", render_toml(&wire)?.into_bytes()),
+        ManagedArtifactWrite::active("recording-wire", recording_wire),
         ManagedArtifactWrite::active("api-coverage-report", render_report(&contract).into_bytes()),
+        ManagedArtifactWrite::auxiliary(RUNTIME_RECORDING_WIRE_PATH, runtime_recording_wire),
+    ];
+    install_managed_artifact_writes_locked(paths, &writes, Some(&manifest_baseline), || {
+        validate_managed_repository_and_api(paths)
+    })?;
+    println!(
+        "migrated reviewed API contract: {} functions ({} safe, {} raw, {} omitted)",
+        observed_counts.total, observed_counts.safe, observed_counts.raw, observed_counts.omitted
+    );
+    Ok(())
+}
+
+fn synchronize_abi_evidence_scopes(contract: &mut ApiContract, binding_routes: &AbiBindingRoutes) {
+    let modes = binding_routes
+        .keys()
+        .map(|(mode, _)| mode.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let providers = binding_routes
+        .keys()
+        .map(|(_, provider)| provider.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    for evidence in &mut contract.evidence {
+        if matches!(
+            evidence.role,
+            TestEvidenceRole::AbiHeaderInventory
+                | TestEvidenceRole::AbiBindingAst
+                | TestEvidenceRole::AbiContractValidator
+        ) {
+            evidence.modes.clone_from(&modes);
+            evidence.providers.clone_from(&providers);
+        }
+    }
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the migration joins immutable review history, current ABI facts, and route proofs"
+)]
+fn apply_reviewed_migration_overrides(
+    contract: &mut ApiContract,
+    reviewed: &ApiContract,
+    overrides: &ReviewedMigrationOverrides,
+    review_gaps: &[ReviewedMigrationGap],
+    inventory: &CApiInventory,
+    binding_routes: &AbiBindingRoutes,
+    rust_indexes: &AbiRustIndexes,
+    recording_operations: &[crate::recording_ops::RecordingOp],
+) -> Result<()> {
+    let reviewed_by_name = reviewed
+        .functions
+        .iter()
+        .map(|function| (function.logical_name.as_str(), function))
+        .collect::<BTreeMap<_, _>>();
+    let historical_changes = reviewed.classification_changes.clone();
+    let current_names = contract
+        .functions
+        .iter()
+        .map(|function| function.logical_name.clone())
+        .collect::<BTreeSet<_>>();
+    let reviewed_names = reviewed_by_name
+        .keys()
+        .map(|name| (*name).to_owned())
+        .collect::<BTreeSet<_>>();
+    let mut expected_overrides = review_gaps
+        .iter()
+        .map(|gap| gap.function.clone())
+        .collect::<BTreeSet<_>>();
+    let declaration_gaps = review_gaps
+        .iter()
+        .filter(|gap| gap.kind == ReviewedMigrationGapKind::DeclarationDrift)
+        .map(|gap| gap.function.as_str())
+        .collect::<BTreeSet<_>>();
+    expected_overrides.extend(current_names.difference(&reviewed_names).cloned());
+
+    let mut override_names = BTreeSet::new();
+    for function in &overrides.functions {
+        if !override_names.insert(function.logical_name.clone()) {
+            return Err(Error::message(format!(
+                "duplicate reviewed migration override `{}`",
+                function.logical_name
+            )));
+        }
+    }
+    let missing = expected_overrides
+        .difference(&override_names)
+        .cloned()
+        .collect::<Vec<_>>();
+    let unexpected = override_names
+        .difference(&expected_overrides)
+        .cloned()
+        .collect::<Vec<_>>();
+    if !missing.is_empty() || !unexpected.is_empty() {
+        return Err(Error::message(format!(
+            "reviewed migration overrides must exactly cover declaration gaps, route gaps, and added functions; missing={missing:?}, unexpected={unexpected:?}"
+        )));
+    }
+
+    let declarations = inventory
+        .functions
+        .iter()
+        .map(|declaration| (declaration.name.as_str(), declaration))
+        .collect::<BTreeMap<_, _>>();
+    let mut changes = Vec::new();
+    for reviewed_override in &overrides.functions {
+        let requires_revalidation =
+            declaration_gaps.contains(reviewed_override.logical_name.as_str());
+        if reviewed_override.revalidated != requires_revalidation {
+            return Err(Error::message(format!(
+                "reviewed migration override `{}` must set revalidated={} for its authenticated declaration state",
+                reviewed_override.logical_name, requires_revalidation
+            )));
+        }
+        if reviewed_override.area.trim().is_empty() || reviewed_override.rationale.trim().is_empty()
+        {
+            return Err(Error::message(format!(
+                "reviewed migration override `{}` requires non-empty area and rationale",
+                reviewed_override.logical_name
+            )));
+        }
+        if reviewed_override.area.contains("Unreviewed upstream")
+            || reviewed_override
+                .rationale
+                .contains("until its Safe Rust semantics are reviewed")
+        {
+            return Err(Error::message(format!(
+                "reviewed migration override `{}` contains placeholder review text",
+                reviewed_override.logical_name
+            )));
+        }
+        let declaration = declarations
+            .get(reviewed_override.logical_name.as_str())
+            .ok_or_else(|| {
+                Error::message(format!(
+                    "reviewed migration override `{}` is absent from the current header inventory",
+                    reviewed_override.logical_name
+                ))
+            })?;
+        let function = contract
+            .functions
+            .iter_mut()
+            .find(|function| function.logical_name == reviewed_override.logical_name)
+            .expect("override names were proven to be current functions");
+        function.classification = reviewed_override.classification;
+        function.exposure = reviewed_override.exposure;
+        function.area.clone_from(&reviewed_override.area);
+        function.rationale.clone_from(&reviewed_override.rationale);
+        function
+            .rust_paths
+            .clone_from(&reviewed_override.rust_paths);
+        function.rust_paths.sort();
+        function.rust_paths.dedup();
+        match function.classification {
+            Classification::Safe => {
+                if !safe_function_review_matches_routes(
+                    function,
+                    declaration,
+                    binding_routes,
+                    rust_indexes,
+                ) {
+                    return Err(Error::message(format!(
+                        "reviewed Safe Rust override `{}` does not prove every configured route",
+                        function.logical_name
+                    )));
+                }
+            }
+            Classification::Raw => {
+                if !reviewed_override.rust_paths.is_empty()
+                    || reviewed_override.exposure != FunctionExposureKind::Callable
+                {
+                    return Err(Error::message(format!(
+                        "raw override `{}` must omit Rust paths and use callable exposure",
+                        function.logical_name
+                    )));
+                }
+                function.rust_paths = function
+                    .link_symbols
+                    .values()
+                    .map(|symbol| format!("boxdd_sys::ffi::{symbol}"))
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect();
+            }
+            Classification::Omitted | Classification::Deferred => {
+                return Err(Error::message(format!(
+                    "reviewed migration override `{}` cannot introduce {} coverage",
+                    function.logical_name,
+                    function.classification.as_str()
+                )));
+            }
+        }
+        function.recording = super::api_recording::expected(
+            &function.logical_name,
+            function.classification,
+            recording_operations,
+        );
+        if matches!(
+            function.recording,
+            Some(RecordingCoverage {
+                class: RecordingClass::LoggedMutation,
+                ..
+            })
+        ) && !function
+            .rust_paths
+            .iter()
+            .any(|path| is_recording_session_path(path))
+        {
+            return Err(Error::message(format!(
+                "reviewed logged-mutation override `{}` must use a RecordingSession canonical path",
+                function.logical_name
+            )));
+        }
+
+        if requires_revalidation && reviewed_override.previous_classification.is_none() {
+            return Err(Error::message(format!(
+                "declaration revalidation for `{}` must authenticate its previous classification",
+                function.logical_name
+            )));
+        }
+        if let Some(previous) = reviewed_override.previous_classification {
+            let historical = reviewed_by_name
+                .get(function.logical_name.as_str())
+                .ok_or_else(|| {
+                    Error::message(format!(
+                        "added function `{}` cannot claim a previous classification",
+                        function.logical_name
+                    ))
+                })?;
+            if historical.classification != previous
+                || (previous == function.classification && !reviewed_override.revalidated)
+            {
+                return Err(Error::message(format!(
+                    "classification transition for `{}` is not authenticated by the immutable reviewed contract",
+                    function.logical_name
+                )));
+            }
+            if previous != function.classification {
+                changes.push(ClassificationChange {
+                    logical_name: function.logical_name.clone(),
+                    from: previous,
+                    to: function.classification,
+                    unit: "box2d-3.2-reviewed-migration".to_owned(),
+                    rationale: function.rationale.clone(),
+                });
+            }
+        }
+    }
+    changes.sort_by(|left, right| left.logical_name.cmp(&right.logical_name));
+    apply_reviewed_canonical_refreshes(
+        contract,
+        &reviewed_by_name,
+        overrides,
+        &expected_overrides,
+        &declarations,
+        binding_routes,
+        rust_indexes,
+        recording_operations,
+    )?;
+
+    let final_classifications = contract
+        .functions
+        .iter()
+        .map(|function| (function.logical_name.as_str(), function.classification))
+        .collect::<BTreeMap<_, _>>();
+    let mut all_changes = historical_changes
+        .into_iter()
+        .filter(|change| {
+            final_classifications
+                .get(change.logical_name.as_str())
+                .is_some_and(|classification| *classification == change.to)
+        })
+        .map(|change| (change.logical_name.clone(), change))
+        .collect::<BTreeMap<_, _>>();
+    for change in changes {
+        all_changes.insert(change.logical_name.clone(), change);
+    }
+    contract.classification_changes = all_changes.into_values().collect();
+
+    for function in &contract.functions {
+        if function.area.contains("Unreviewed upstream")
+            || function
+                .rationale
+                .contains("until its Safe Rust semantics are reviewed")
+        {
+            return Err(Error::message(format!(
+                "function `{}` still contains placeholder review text after migration",
+                function.logical_name
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "canonical refresh validation joins historical review, current headers, route proofs, and canonical semantics"
+)]
+fn apply_reviewed_canonical_refreshes(
+    contract: &mut ApiContract,
+    reviewed_by_name: &BTreeMap<&str, &FunctionContract>,
+    overrides: &ReviewedMigrationOverrides,
+    required_overrides: &BTreeSet<String>,
+    declarations: &BTreeMap<&str, &crate::c_api::FunctionDecl>,
+    binding_routes: &AbiBindingRoutes,
+    rust_indexes: &AbiRustIndexes,
+    recording_operations: &[crate::recording_ops::RecordingOp],
+) -> Result<()> {
+    let unchanged_safe_functions = contract
+        .functions
+        .iter()
+        .filter(|function| !required_overrides.contains(&function.logical_name))
+        .filter(|function| function.classification == Classification::Safe)
+        .filter(|function| {
+            reviewed_by_name
+                .get(function.logical_name.as_str())
+                .is_some_and(|historical| historical.classification == Classification::Safe)
+        });
+    let expected_recording_refresh_names = unchanged_safe_functions
+        .clone()
+        .filter(|function| {
+            matches!(
+                super::api_recording::expected(
+                    &function.logical_name,
+                    Classification::Safe,
+                    recording_operations,
+                ),
+                Some(RecordingCoverage {
+                    class: RecordingClass::LoggedMutation,
+                    ..
+                })
+            )
+        })
+        .map(|function| function.logical_name.clone())
+        .collect::<BTreeSet<_>>();
+    let expected_default_refresh_owners = unchanged_safe_functions
+        .filter_map(|function| {
+            let historical = reviewed_by_name.get(function.logical_name.as_str())?;
+            reviewed_default_owner(historical)
+                .map(|owner| (function.logical_name.clone(), owner.to_owned()))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let expected_refresh_names = expected_recording_refresh_names
+        .iter()
+        .cloned()
+        .chain(expected_default_refresh_owners.keys().cloned())
+        .collect::<BTreeSet<_>>();
+    let supplied_refresh_names = overrides
+        .canonical_refreshes
+        .iter()
+        .map(|refresh| refresh.logical_name.clone())
+        .collect::<BTreeSet<_>>();
+    if supplied_refresh_names.len() != overrides.canonical_refreshes.len() {
+        return Err(Error::message(
+            "reviewed canonical refresh list contains duplicate logical names",
+        ));
+    }
+    let missing = expected_refresh_names
+        .difference(&supplied_refresh_names)
+        .cloned()
+        .collect::<Vec<_>>();
+    let unexpected = supplied_refresh_names
+        .difference(&expected_refresh_names)
+        .cloned()
+        .collect::<Vec<_>>();
+    if !missing.is_empty() || !unexpected.is_empty() {
+        return Err(Error::message(format!(
+            "reviewed canonical refreshes must exactly cover unchanged Safe logged mutations and default constructors; missing={missing:?}, unexpected={unexpected:?}"
+        )));
+    }
+
+    for refresh in &overrides.canonical_refreshes {
+        if required_overrides.contains(refresh.logical_name.as_str()) {
+            return Err(Error::message(format!(
+                "canonical refresh `{}` must be an unchanged historical function, not a required migration override",
+                refresh.logical_name
+            )));
+        }
+        if refresh.rationale.trim().is_empty()
+            || refresh
+                .rationale
+                .contains("until its Safe Rust semantics are reviewed")
+            || refresh.rust_paths.is_empty()
+        {
+            return Err(Error::message(format!(
+                "canonical refresh `{}` requires reviewed rationale and at least one Rust path",
+                refresh.logical_name
+            )));
+        }
+        let historical = reviewed_by_name
+            .get(refresh.logical_name.as_str())
+            .ok_or_else(|| {
+                Error::message(format!(
+                    "canonical refresh `{}` is absent from the immutable reviewed contract",
+                    refresh.logical_name
+                ))
+            })?;
+        let declaration = declarations
+            .get(refresh.logical_name.as_str())
+            .ok_or_else(|| {
+                Error::message(format!(
+                    "canonical refresh `{}` is absent from the current header inventory",
+                    refresh.logical_name
+                ))
+            })?;
+        let function = contract
+            .functions
+            .iter_mut()
+            .find(|function| function.logical_name == refresh.logical_name)
+            .expect("canonical refresh was proven to be a current function");
+        let recording = super::api_recording::expected(
+            &refresh.logical_name,
+            Classification::Safe,
+            recording_operations,
+        );
+        if historical.classification != Classification::Safe
+            || function.classification != Classification::Safe
+        {
+            return Err(Error::message(format!(
+                "canonical refresh `{}` must preserve historical and current Safe classification",
+                refresh.logical_name
+            )));
+        }
+        let is_recording_refresh =
+            expected_recording_refresh_names.contains(refresh.logical_name.as_str());
+        let default_owner = expected_default_refresh_owners.get(refresh.logical_name.as_str());
+        match (is_recording_refresh, default_owner) {
+            (true, None) => {
+                if !refresh
+                    .rust_paths
+                    .iter()
+                    .all(|path| is_recording_session_path(path))
+                {
+                    return Err(Error::message(format!(
+                        "logged-mutation canonical refresh `{}` requires RecordingSession paths",
+                        refresh.logical_name
+                    )));
+                }
+            }
+            (false, Some(owner)) => {
+                if refresh.rust_paths.len() != 1
+                    || !is_reviewed_default_constructor_path(&refresh.rust_paths[0], owner)
+                {
+                    return Err(Error::message(format!(
+                        "default canonical refresh `{}` must replace `{owner}::default` with exactly one same-owner `new` or `builder` path",
+                        refresh.logical_name
+                    )));
+                }
+            }
+            (true, Some(_)) => {
+                return Err(Error::message(format!(
+                    "canonical refresh `{}` is ambiguously classified as both a logged mutation and a default constructor",
+                    refresh.logical_name
+                )));
+            }
+            (false, None) => {
+                return Err(Error::message(format!(
+                    "canonical refresh `{}` is outside the computed reviewed refresh set",
+                    refresh.logical_name
+                )));
+            }
+        }
+
+        function.exposure = FunctionExposureKind::Callable;
+        function.rust_paths.clone_from(&refresh.rust_paths);
+        function.rust_paths.sort();
+        function.rust_paths.dedup();
+        function.rationale.clone_from(&refresh.rationale);
+        function.recording = recording;
+        if !safe_function_review_matches_routes(function, declaration, binding_routes, rust_indexes)
+        {
+            return Err(Error::message(format!(
+                "reviewed canonical refresh `{}` does not prove every configured route",
+                refresh.logical_name
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn reviewed_default_owner(function: &FunctionContract) -> Option<&str> {
+    let native_owner = function.logical_name.strip_prefix("b2Default")?;
+    let [rust_path] = function.rust_paths.as_slice() else {
+        return None;
+    };
+    let owner = rust_path.strip_suffix("::default")?;
+    (owner.starts_with("boxdd::")
+        && !native_owner.is_empty()
+        && owner.rsplit("::").next() == Some(native_owner))
+    .then_some(owner)
+}
+
+fn is_reviewed_default_constructor_path(path: &str, owner: &str) -> bool {
+    path.strip_prefix(owner)
+        .and_then(|suffix| suffix.strip_prefix("::"))
+        .is_some_and(|constructor| matches!(constructor, "new" | "builder"))
+}
+
+fn is_recording_session_path(path: &str) -> bool {
+    path.starts_with("boxdd::RecordingSession::")
+        || path.starts_with("boxdd::recording::RecordingSession::")
+}
+
+fn read_api_contract_from_git(
+    paths: &WorkspacePaths,
+    contract_path: &std::path::Path,
+    revision: &str,
+) -> Result<ApiContract> {
+    if revision.len() != 40 || !revision.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(Error::message(
+            "reviewed migration revision must be an immutable 40-hex commit",
+        ));
+    }
+    let object_type = Command::new("git")
+        .current_dir(paths.root())
+        .args(["--no-replace-objects", "cat-file", "-t", revision])
+        .output()
+        .map_err(|source| Error::io(paths.root().join(".git"), source))?;
+    if !object_type.status.success()
+        || String::from_utf8_lossy(&object_type.stdout).trim() != "commit"
+    {
+        return Err(Error::message(format!(
+            "reviewed migration revision `{revision}` is not an immutable commit object"
+        )));
+    }
+    let verified_revision = format!("{revision}^{{commit}}");
+    let verification = Command::new("git")
+        .current_dir(paths.root())
+        .args([
+            "--no-replace-objects",
+            "rev-parse",
+            "--verify",
+            "--end-of-options",
+            &verified_revision,
+        ])
+        .output()
+        .map_err(|source| Error::io(paths.root().join(".git"), source))?;
+    if !verification.status.success()
+        || String::from_utf8_lossy(&verification.stdout).trim() != revision
+    {
+        return Err(Error::message(format!(
+            "reviewed migration revision `{revision}` could not be authenticated as an exact commit"
+        )));
+    }
+    let relative = contract_path.strip_prefix(paths.root()).map_err(|_| {
+        Error::message(format!(
+            "API contract {} is outside the workspace root {}",
+            contract_path.display(),
+            paths.root().display()
+        ))
+    })?;
+    let object = format!(
+        "{revision}:{}",
+        relative.to_string_lossy().replace('\\', "/")
+    );
+    let output = Command::new("git")
+        .current_dir(paths.root())
+        .args(["--no-replace-objects", "show", "--no-textconv", &object])
+        .output()
+        .map_err(|source| Error::io(paths.root().join(".git"), source))?;
+    if !output.status.success() {
+        return Err(Error::message(format!(
+            "could not read reviewed API contract `{object}`: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    let source = std::str::from_utf8(&output.stdout).map_err(|error| {
+        Error::message(format!(
+            "reviewed API contract `{object}` is not UTF-8: {error}"
+        ))
+    })?;
+    let contract = toml::from_str::<ApiContract>(source).map_err(|error| {
+        Error::message(format!(
+            "reviewed API contract `{object}` is invalid TOML: {error}"
+        ))
+    })?;
+    if contract.schema_version == 0 || contract.schema_version > API_CONTRACT_SCHEMA {
+        return Err(Error::message(format!(
+            "reviewed API contract `{object}` has unsupported schema {}",
+            contract.schema_version
+        )));
+    }
+    let mut names = BTreeSet::new();
+    for function in &contract.functions {
+        if !names.insert(function.logical_name.as_str()) {
+            return Err(Error::message(format!(
+                "reviewed API contract `{object}` contains duplicate function `{}`",
+                function.logical_name
+            )));
+        }
+    }
+    if names.is_empty() {
+        return Err(Error::message(format!(
+            "reviewed API contract `{object}` contains no functions"
+        )));
+    }
+    Ok(contract)
+}
+
+fn inherit_reviewed_function_semantics(
+    current: &mut ApiContract,
+    reviewed: &ApiContract,
+    inventory: &CApiInventory,
+    precision_inventories: Option<&AbiPrecisionInventories>,
+    binding_routes: &AbiBindingRoutes,
+    rust_indexes: &AbiRustIndexes,
+    recording_operations: &[crate::recording_ops::RecordingOp],
+) -> Vec<ReviewedMigrationGap> {
+    let declarations = inventory
+        .functions
+        .iter()
+        .map(|declaration| (declaration.name.as_str(), declaration))
+        .collect::<BTreeMap<_, _>>();
+    let reviewed_by_name = reviewed
+        .functions
+        .iter()
+        .map(|function| (function.logical_name.as_str(), function))
+        .collect::<BTreeMap<_, _>>();
+    let mut review_gaps = Vec::new();
+
+    for function in &mut current.functions {
+        let Some(previous) = reviewed_by_name.get(function.logical_name.as_str()) else {
+            continue;
+        };
+        let Some(declaration) = declarations.get(function.logical_name.as_str()) else {
+            continue;
+        };
+        if !reviewed_function_metadata_matches(previous, function, precision_inventories) {
+            review_gaps.push(ReviewedMigrationGap {
+                function: function.logical_name.clone(),
+                kind: ReviewedMigrationGapKind::DeclarationDrift,
+                reviewed_paths: previous.rust_paths.clone(),
+                callable_candidates: common_safe_paths_for_symbol(
+                    declaration,
+                    FunctionExposureKind::Callable,
+                    binding_routes,
+                    rust_indexes,
+                ),
+                raii_drop_candidates: common_safe_paths_for_symbol(
+                    declaration,
+                    FunctionExposureKind::RaiiDrop,
+                    binding_routes,
+                    rust_indexes,
+                ),
+            });
+            continue;
+        }
+        let mut candidate = function.clone();
+        candidate.classification = previous.classification;
+        candidate.exposure = previous.exposure;
+        candidate.area.clone_from(&previous.area);
+        candidate.rust_paths.clone_from(&previous.rust_paths);
+        candidate.rationale.clone_from(&previous.rationale);
+        candidate.recording = super::api_recording::expected(
+            &candidate.logical_name,
+            candidate.classification,
+            recording_operations,
+        );
+        if candidate.classification == Classification::Raw {
+            candidate.rust_paths = candidate
+                .link_symbols
+                .values()
+                .map(|symbol| format!("boxdd_sys::ffi::{symbol}"))
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
+        } else if matches!(
+            candidate.classification,
+            Classification::Omitted | Classification::Deferred
+        ) {
+            candidate.rust_paths.clear();
+        }
+
+        if candidate.classification == Classification::Safe
+            && !safe_function_review_matches_routes(
+                &candidate,
+                declaration,
+                binding_routes,
+                rust_indexes,
+            )
+        {
+            review_gaps.push(ReviewedMigrationGap {
+                function: candidate.logical_name.clone(),
+                kind: ReviewedMigrationGapKind::Route,
+                reviewed_paths: candidate.rust_paths.clone(),
+                callable_candidates: common_safe_paths_for_symbol(
+                    declaration,
+                    FunctionExposureKind::Callable,
+                    binding_routes,
+                    rust_indexes,
+                ),
+                raii_drop_candidates: common_safe_paths_for_symbol(
+                    declaration,
+                    FunctionExposureKind::RaiiDrop,
+                    binding_routes,
+                    rust_indexes,
+                ),
+            });
+            continue;
+        }
+        *function = candidate;
+    }
+    review_gaps.sort_by(|left, right| left.function.cmp(&right.function));
+    review_gaps
+}
+
+fn reviewed_function_metadata_matches(
+    reviewed: &FunctionContract,
+    current: &FunctionContract,
+    precision_inventories: Option<&AbiPrecisionInventories>,
+) -> bool {
+    reviewed.signature == current.signature
+        && reviewed.fingerprint == current.fingerprint
+        && reviewed.availability == current.availability
+        && reviewed
+            .link_symbols
+            .iter()
+            .all(|(mode, symbol)| current.link_symbols.get(mode) == Some(symbol))
+        && (precision_inventories.is_none()
+            || reviewed
+                .abi_fingerprints
+                .iter()
+                .all(|(mode, fingerprint)| current.abi_fingerprints.get(mode) == Some(fingerprint)))
+}
+
+fn common_safe_paths_for_symbol(
+    declaration: &crate::c_api::FunctionDecl,
+    exposure: FunctionExposureKind,
+    binding_routes: &AbiBindingRoutes,
+    rust_indexes: &AbiRustIndexes,
+) -> Vec<String> {
+    let mut common: Option<BTreeSet<String>> = None;
+    for coordinate in binding_routes.keys() {
+        let Some(index) = rust_indexes.get(coordinate) else {
+            return Vec::new();
+        };
+        let Some(symbol) = declaration.physical_symbols.get(&coordinate.0) else {
+            return Vec::new();
+        };
+        let candidates = index
+            .paths_for_symbol(symbol)
+            .filter(|path| safe_exposure_path_exists(index, exposure, path))
+            .map(str::to_owned)
+            .collect::<BTreeSet<_>>();
+        common = Some(match common {
+            Some(previous) => previous.intersection(&candidates).cloned().collect(),
+            None => candidates,
+        });
+    }
+    common.unwrap_or_default().into_iter().collect()
+}
+
+fn refresh_abi_contract(
+    paths: &WorkspacePaths,
+    reviewed_contract_blake3: Option<&str>,
+) -> Result<()> {
+    let _lock = UpdateLock::acquire(paths.root())?;
+    let manifest_baseline = fs::read(paths.upstream_manifest())
+        .map_err(|source| Error::io(paths.upstream_manifest(), source))?;
+    let manifest = UpstreamManifest::load(paths)?;
+    let contract_path = manifest.artifact_path(paths.root(), ArtifactKind::ApiContract)?;
+    let reviewed_contract = read_reviewed_contract_snapshot(&contract_path)?;
+    if manifest.artifact_digests_initialized {
+        let expected = match reviewed_contract_blake3 {
+            Some(expected) => expected,
+            None => manifest
+                .artifact(ArtifactKind::ApiContract)?
+                .content_blake3
+                .as_str(),
+        };
+        let preflight_manifest =
+            reviewed_contract_preflight_manifest(&manifest, &reviewed_contract.bytes, expected)?;
+        validate_repository(paths, &preflight_manifest, false)?;
+    } else if reviewed_contract_blake3.is_some() {
+        return Err(Error::message(
+            "--reviewed-contract-blake3 is only valid for an initialized artifact manifest",
+        ));
+    }
+    let recording_operations =
+        parse_recording_ops(&reviewed_recording_operations_source(paths, &manifest)?)?;
+    let contract = build_refreshed_contract(
+        paths,
+        &manifest,
+        &recording_operations,
+        reviewed_contract.contract,
+    )?;
+    let recording_source_git_blobs = manifest.recording_source_git_blobs();
+    let recording_sources_aggregate =
+        reviewed_sources_aggregate_blake3(&recording_source_git_blobs)?;
+    let wire = generate_wire_contract(
+        &manifest.recording_revision,
+        &recording_operations,
+        &recording_source_git_blobs,
+        &recording_sources_aggregate,
+    )?;
+    let recording_wire = render_toml(&wire)?.into_bytes();
+    let wire_digest = blake3::hash(&recording_wire).to_hex().to_string();
+    let effective_source_sha256 = effective_source_sha256(paths)?;
+    let runtime_recording_wire =
+        render_runtime_parser(&wire, &wire_digest, &effective_source_sha256)?.into_bytes();
+    let contract_content = render_toml(&contract)?.into_bytes();
+    let contract_write = match reviewed_contract_blake3 {
+        Some(baseline_blake3) => ManagedArtifactWrite::reviewed_active_with_baseline_blake3(
+            "api-contract",
+            contract_content,
+            baseline_blake3,
+        ),
+        None => ManagedArtifactWrite::reviewed_active("api-contract", contract_content),
+    };
+    let writes = [
+        contract_write,
+        ManagedArtifactWrite::active("recording-wire", recording_wire),
+        ManagedArtifactWrite::active("api-coverage-report", render_report(&contract).into_bytes()),
+        ManagedArtifactWrite::auxiliary(RUNTIME_RECORDING_WIRE_PATH, runtime_recording_wire),
     ];
     install_managed_artifact_writes_locked(paths, &writes, Some(&manifest_baseline), || {
         validate_managed_repository_and_api(paths)
@@ -1640,6 +3632,53 @@ fn refresh_abi_contract(paths: &WorkspacePaths) -> Result<()> {
     Ok(())
 }
 
+struct ReviewedContractSnapshot {
+    bytes: Vec<u8>,
+    contract: ApiContract,
+}
+
+fn read_reviewed_contract_snapshot(path: &std::path::Path) -> Result<ReviewedContractSnapshot> {
+    let bytes = fs::read(path).map_err(|source| Error::io(path, source))?;
+    let source = std::str::from_utf8(&bytes)
+        .map_err(|error| Error::message(format!("{} is not UTF-8: {error}", path.display())))?;
+    let contract = toml::from_str(source)
+        .map_err(|error| Error::message(format!("{}: invalid TOML: {error}", path.display())))?;
+    Ok(ReviewedContractSnapshot { bytes, contract })
+}
+
+fn reviewed_contract_preflight_manifest(
+    manifest: &UpstreamManifest,
+    reviewed_contract: &[u8],
+    expected_blake3: &str,
+) -> Result<UpstreamManifest> {
+    if expected_blake3.len() != 64
+        || !expected_blake3
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(Error::message(
+            "--reviewed-contract-blake3 must be a lowercase 64-character BLAKE3 digest",
+        ));
+    }
+
+    let observed_blake3 = blake3::hash(reviewed_contract).to_hex().to_string();
+    if observed_blake3 != expected_blake3 {
+        return Err(Error::message(format!(
+            "reviewed API contract BLAKE3 mismatch: expected {expected_blake3}, observed {observed_blake3}"
+        )));
+    }
+
+    manifest.artifact(ArtifactKind::ApiContract)?;
+    let mut preflight_manifest = manifest.clone();
+    let artifact = preflight_manifest
+        .artifacts
+        .iter_mut()
+        .find(|artifact| artifact.kind == ArtifactKind::ApiContract)
+        .expect("validated API contract artifact exists");
+    artifact.content_blake3 = observed_blake3;
+    Ok(preflight_manifest)
+}
+
 fn validate_managed_repository_and_api(paths: &WorkspacePaths) -> Result<()> {
     let manifest = UpstreamManifest::load(paths)?;
     validate_repository(paths, &manifest, false)?;
@@ -1648,9 +3687,16 @@ fn validate_managed_repository_and_api(paths: &WorkspacePaths) -> Result<()> {
 
 pub(crate) fn render_refreshed_contract_candidate(paths: &WorkspacePaths) -> Result<Vec<u8>> {
     let manifest = UpstreamManifest::load(paths)?;
+    let contract_path = manifest.artifact_path(paths.root(), ArtifactKind::ApiContract)?;
+    let reviewed_contract = read_reviewed_contract_snapshot(&contract_path)?;
     let recording_operations =
         parse_recording_ops(&reviewed_recording_operations_source(paths, &manifest)?)?;
-    let contract = build_refreshed_contract(paths, &manifest, &recording_operations)?;
+    let contract = build_refreshed_contract(
+        paths,
+        &manifest,
+        &recording_operations,
+        reviewed_contract.contract,
+    )?;
     Ok(render_toml(&contract)?.into_bytes())
 }
 
@@ -1658,18 +3704,17 @@ fn build_refreshed_contract(
     paths: &WorkspacePaths,
     manifest: &UpstreamManifest,
     recording_operations: &[crate::recording_ops::RecordingOp],
+    mut contract: ApiContract,
 ) -> Result<ApiContract> {
-    let contract_path = manifest.artifact_path(paths.root(), ArtifactKind::ApiContract)?;
     let inventory = parse_headers(&paths.box2d_headers())?;
     let binding_indexes = load_binding_indexes(paths, manifest)?;
     let binding_routes = load_binding_routes(manifest)?;
     let precision_inventories = load_precision_inventories(paths, &binding_routes)?;
-    let rust_indexes = load_rust_indexes(paths, &binding_routes, &binding_indexes)?;
-    let mut contract: ApiContract = read_toml(&contract_path)?;
-
+    let rust_indexes =
+        load_rust_indexes_with_inventory(paths, &binding_routes, &binding_indexes, &inventory)?;
     let bootstrap_legacy_precision =
         contract.schema_version == 4 && contract.upstream_sha == manifest.active_revision;
-    if !matches!(contract.schema_version, 4 | 5 | API_CONTRACT_SCHEMA) {
+    if !matches!(contract.schema_version, 4 | 5 | 6 | 7 | API_CONTRACT_SCHEMA) {
         return Err(Error::message(format!(
             "cannot refresh API contract schema {} into schema {API_CONTRACT_SCHEMA}",
             contract.schema_version
@@ -1685,6 +3730,7 @@ fn build_refreshed_contract(
     }
 
     contract.schema_version = API_CONTRACT_SCHEMA;
+    contract.evidence_policy = SAFE_CALL_EVIDENCE_POLICY.to_owned();
     set_active_refresh_identity(&mut contract, &manifest.active_revision);
     reconcile_functions(
         &mut contract,
@@ -1709,6 +3755,12 @@ fn build_refreshed_contract(
         bootstrap_legacy_precision_proofs(&mut previous_abi, &generated_abi);
     }
     preserve_reviewed_exposure(&previous_abi, &mut generated_abi);
+    promote_proven_deferred_exposure(
+        &mut generated_abi,
+        &inventory,
+        &binding_routes,
+        &rust_indexes,
+    )?;
     discard_unproven_reviewed_exposure(
         &mut generated_abi,
         &inventory,
@@ -1716,7 +3768,7 @@ fn build_refreshed_contract(
         &rust_indexes,
     );
     contract.abi = generated_abi;
-    refresh_evidence_metadata(paths, &mut contract, &rust_indexes, &binding_routes)?;
+    refresh_route_scoped_evidence_metadata(paths, &mut contract, &rust_indexes, &binding_routes)?;
     validate_contract(
         paths,
         &contract,
@@ -1849,7 +3901,7 @@ fn reconcile_functions(
                     || precision_inventories.is_none()
                     || (current_abi_fingerprints.len() == modes.len()
                         && function.abi_fingerprints == current_abi_fingerprints))
-                && safe_function_review_matches_routes(
+                && safe_function_review_matches_native_routes(
                     function,
                     declaration,
                     binding_routes,
@@ -1892,6 +3944,7 @@ fn reconcile_functions(
                 providers: Vec::new(),
                 availability: Vec::new(),
                 evidence: vec![API_CLASSIFICATION_EVIDENCE_ID.to_owned()],
+                provider_overrides: Vec::new(),
                 recording: None,
             }
         };
@@ -1914,6 +3967,12 @@ fn reconcile_functions(
                 .into_iter()
                 .collect();
         }
+        synchronize_wasm_function_overrides(
+            &mut function,
+            declaration,
+            binding_routes,
+            rust_indexes,
+        );
         function.recording = super::api_recording::expected(
             &function.logical_name,
             function.classification,
@@ -1945,19 +4004,109 @@ fn safe_function_review_matches_routes(
     if function.classification != Classification::Safe {
         return true;
     }
-    !function.rust_paths.is_empty()
-        && binding_routes.keys().all(|coordinate| {
-            let Some(index) = rust_indexes.get(coordinate) else {
-                return false;
-            };
+    binding_routes.keys().all(|coordinate| {
+        let review = function_exposure_for_provider(function, &coordinate.1);
+        review.classification() != Classification::Safe
+            || safe_function_review_matches_coordinate(
+                review.rust_paths(),
+                review.exposure(),
+                declaration,
+                coordinate,
+                rust_indexes,
+            )
+    })
+}
+
+fn safe_function_review_matches_native_routes(
+    function: &FunctionContract,
+    declaration: &crate::c_api::FunctionDecl,
+    binding_routes: &AbiBindingRoutes,
+    rust_indexes: &AbiRustIndexes,
+) -> bool {
+    function.classification != Classification::Safe
+        || binding_routes
+            .keys()
+            .filter(|(_, provider)| !is_wasm_provider(provider))
+            .all(|coordinate| {
+                safe_function_review_matches_coordinate(
+                    &function.rust_paths,
+                    function.exposure,
+                    declaration,
+                    coordinate,
+                    rust_indexes,
+                )
+            })
+}
+
+fn safe_function_review_matches_coordinate(
+    rust_paths: &[String],
+    exposure: FunctionExposureKind,
+    declaration: &crate::c_api::FunctionDecl,
+    coordinate: &(String, String),
+    rust_indexes: &AbiRustIndexes,
+) -> bool {
+    !rust_paths.is_empty()
+        && rust_indexes.get(coordinate).is_some_and(|index| {
             let Some(symbol) = declaration.physical_symbols.get(&coordinate.0) else {
                 return false;
             };
-            function.rust_paths.iter().all(|path| {
-                safe_exposure_path_exists(index, function.exposure, path)
+            rust_paths.iter().all(|path| {
+                safe_exposure_path_exists(index, exposure, path)
                     && index.path_reaches_symbol(path, symbol)
             })
         })
+}
+
+fn synchronize_wasm_function_overrides(
+    function: &mut FunctionContract,
+    declaration: &crate::c_api::FunctionDecl,
+    binding_routes: &AbiBindingRoutes,
+    rust_indexes: &AbiRustIndexes,
+) {
+    if function.classification != Classification::Safe {
+        function.provider_overrides.clear();
+        return;
+    }
+    let downgraded = binding_routes
+        .keys()
+        .filter(|(_, provider)| is_wasm_provider(provider))
+        .filter(|coordinate| {
+            !safe_function_review_matches_coordinate(
+                &function.rust_paths,
+                function.exposure,
+                declaration,
+                coordinate,
+                rust_indexes,
+            )
+        })
+        .map(|(_, provider)| provider.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    if downgraded.is_empty() {
+        function.provider_overrides.clear();
+        return;
+    }
+    let rust_paths = function
+        .modes
+        .iter()
+        .filter_map(|mode| declaration.physical_symbols.get(mode))
+        .map(|symbol| format!("boxdd_sys::ffi::{symbol}"))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    function.provider_overrides = vec![FunctionProviderOverride {
+        providers: downgraded,
+        classification: Classification::Raw,
+        rust_paths,
+        rationale: "The route-conditioned Rust index proves this Safe adapter on native providers, but its callback-bearing path is cfg-disabled on these WASM providers, where only exact raw FFI remains available."
+            .to_owned(),
+        evidence: Vec::new(),
+    }];
+}
+
+fn is_wasm_provider(provider: &str) -> bool {
+    matches!(provider, "wasm-runtime" | "wasm-compile-only")
 }
 
 fn safe_exposure_path_exists(
@@ -1983,46 +4132,97 @@ fn evidence_invokes_exposure(
 }
 
 fn synchronize_classification_evidence(contract: &mut ApiContract) {
-    let mut witnesses = contract
+    type Scope = (Vec<String>, Vec<String>);
+    let all_providers = contract
         .functions
-        .iter_mut()
-        .filter(|function| function.classification != Classification::Safe)
-        .map(|function| {
-            function.evidence = vec![API_CLASSIFICATION_EVIDENCE_ID.to_owned()];
-            FunctionClassificationWitness {
-                function: function.logical_name.clone(),
-                classification: function.classification,
+        .first()
+        .map_or_else(Vec::new, |function| function.providers.clone());
+    let mut grouped = BTreeMap::<Scope, Vec<FunctionClassificationWitness>>::new();
+    for function in &mut contract.functions {
+        let overridden = function
+            .provider_overrides
+            .iter()
+            .flat_map(|provider_override| provider_override.providers.iter().cloned())
+            .collect::<BTreeSet<_>>();
+        let default_providers = function
+            .providers
+            .iter()
+            .filter(|provider| !overridden.contains(*provider))
+            .cloned()
+            .collect::<Vec<_>>();
+        if function.classification != Classification::Safe {
+            let scope = (function.modes.clone(), default_providers);
+            let evidence_id = classification_evidence_id(&scope, &all_providers);
+            function.evidence = vec![evidence_id];
+            grouped
+                .entry(scope)
+                .or_default()
+                .push(FunctionClassificationWitness {
+                    function: function.logical_name.clone(),
+                    classification: function.classification,
+                });
+        }
+        for provider_override in &mut function.provider_overrides {
+            if provider_override.classification == Classification::Safe {
+                continue;
             }
-        })
-        .collect::<Vec<_>>();
-    witnesses.sort();
-    if witnesses.is_empty() {
-        contract
-            .evidence
-            .retain(|evidence| evidence.id != API_CLASSIFICATION_EVIDENCE_ID);
-        return;
+            let scope = (function.modes.clone(), provider_override.providers.clone());
+            let evidence_id = classification_evidence_id(&scope, &all_providers);
+            provider_override.evidence = vec![evidence_id];
+            grouped
+                .entry(scope)
+                .or_default()
+                .push(FunctionClassificationWitness {
+                    function: function.logical_name.clone(),
+                    classification: provider_override.classification,
+                });
+        }
     }
-    let row = TestEvidence {
-        id: API_CLASSIFICATION_EVIDENCE_ID.to_owned(),
-        file: "xtask/src/commands/api_coverage.rs".to_owned(),
-        item: "typed_function_classification_evidence_rejects_unrelated_subjects".to_owned(),
-        package: "xtask".to_owned(),
-        gate: "nextest".to_owned(),
-        role: TestEvidenceRole::FunctionClassificationValidator,
-        fingerprint: String::new(),
-        runtime_witnesses: Vec::new(),
-        classification_witnesses: witnesses,
-    };
-    if let Some(existing) = contract
+
+    let previous_fingerprints = contract
         .evidence
-        .iter_mut()
-        .find(|evidence| evidence.id == API_CLASSIFICATION_EVIDENCE_ID)
-    {
-        let fingerprint = std::mem::take(&mut existing.fingerprint);
-        *existing = TestEvidence { fingerprint, ..row };
-    } else {
-        contract.evidence.push(row);
+        .iter()
+        .filter(|evidence| evidence.role == TestEvidenceRole::FunctionClassificationValidator)
+        .map(|evidence| (evidence.id.clone(), evidence.fingerprint.clone()))
+        .collect::<BTreeMap<_, _>>();
+    contract
+        .evidence
+        .retain(|evidence| evidence.role != TestEvidenceRole::FunctionClassificationValidator);
+    for ((modes, providers), mut witnesses) in grouped {
+        witnesses.sort();
+        witnesses.dedup();
+        let scope = (modes, providers);
+        let id = classification_evidence_id(&scope, &all_providers);
+        contract.evidence.push(TestEvidence {
+            fingerprint: previous_fingerprints.get(&id).cloned().unwrap_or_default(),
+            id,
+            file: "xtask/src/commands/api_coverage.rs".to_owned(),
+            item: "typed_function_classification_evidence_rejects_unrelated_subjects".to_owned(),
+            package: "xtask".to_owned(),
+            gate: "nextest".to_owned(),
+            role: TestEvidenceRole::FunctionClassificationValidator,
+            modes: scope.0,
+            providers: scope.1,
+            call_witnesses: Vec::new(),
+            classification_witnesses: witnesses,
+        });
     }
+}
+
+fn classification_evidence_id(
+    scope: &(Vec<String>, Vec<String>),
+    all_providers: &[String],
+) -> String {
+    if scope.1 == all_providers {
+        return API_CLASSIFICATION_EVIDENCE_ID.to_owned();
+    }
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"boxdd-function-classification-scope-v1\0");
+    for value in scope.0.iter().chain(&scope.1) {
+        hasher.update(&(value.len() as u64).to_le_bytes());
+        hasher.update(value.as_bytes());
+    }
+    format!("api-classification-{}", &hasher.finalize().to_hex()[..16])
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2038,6 +4238,221 @@ fn synchronize_runtime_evidence(
     rust_indexes: &AbiRustIndexes,
     binding_routes: &AbiBindingRoutes,
 ) -> Result<Vec<RuntimeEvidenceGap>> {
+    #[derive(Clone)]
+    struct SafeReview {
+        function: FunctionContract,
+        modes: Vec<String>,
+        providers: Vec<String>,
+    }
+
+    let all_providers = binding_routes
+        .keys()
+        .map(|(_, provider)| provider.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let safe_reviews = contract
+        .functions
+        .iter()
+        .filter(|function| function.classification == Classification::Safe)
+        .map(|function| {
+            let overridden = function
+                .provider_overrides
+                .iter()
+                .flat_map(|provider_override| provider_override.providers.iter().cloned())
+                .collect::<BTreeSet<_>>();
+            SafeReview {
+                function: function.clone(),
+                modes: function.modes.clone(),
+                providers: function
+                    .providers
+                    .iter()
+                    .filter(|provider| !overridden.contains(*provider))
+                    .cloned()
+                    .collect(),
+            }
+        })
+        .collect::<Vec<_>>();
+    let scopes = safe_reviews
+        .iter()
+        .map(|review| (review.modes.clone(), review.providers.clone()))
+        .collect::<BTreeSet<_>>();
+    let mut candidates = Vec::<TestEvidence>::new();
+    let mut matches = BTreeMap::<String, Vec<(usize, SafeCallWitness)>>::new();
+
+    for discovered in discover_test_evidence_items(paths.root())?
+        .into_iter()
+        .filter(|item| item.package == "boxdd")
+    {
+        for (modes, providers) in &scopes {
+            let mut evidence = TestEvidence {
+                id: safe_call_evidence_id(
+                    &discovered.file,
+                    &discovered.item,
+                    modes,
+                    providers,
+                    &all_providers,
+                ),
+                file: discovered.file.clone(),
+                item: discovered.item.clone(),
+                package: discovered.package.clone(),
+                gate: discovered.gate.clone(),
+                role: TestEvidenceRole::SafeCall,
+                fingerprint: String::new(),
+                modes: modes.clone(),
+                providers: providers.clone(),
+                call_witnesses: Vec::new(),
+                classification_witnesses: Vec::new(),
+            };
+            let Ok(indexed_routes) =
+                index_evidence_across_routes(paths, &evidence, rust_indexes, binding_routes)
+            else {
+                continue;
+            };
+            evidence.fingerprint = aggregate_evidence_fingerprint(&indexed_routes);
+            let candidate_index = candidates.len();
+            for review in safe_reviews
+                .iter()
+                .filter(|review| review.modes == *modes && review.providers == *providers)
+            {
+                let function = &review.function;
+                let Some(rust_path) = function.rust_paths.iter().find(|rust_path| {
+                    indexed_routes.iter().all(|((mode, _provider), indexed)| {
+                        evidence_invokes_exposure(indexed, function.exposure, rust_path)
+                            && function.link_symbols.get(mode).is_some_and(|symbol| {
+                                indexed.implementation_reachable_symbols.contains(symbol)
+                            })
+                    })
+                }) else {
+                    continue;
+                };
+                matches
+                    .entry(function.logical_name.clone())
+                    .or_default()
+                    .push((
+                        candidate_index,
+                        SafeCallWitness {
+                            function: function.logical_name.clone(),
+                            rust_path: rust_path.clone(),
+                        },
+                    ));
+            }
+            candidates.push(evidence);
+        }
+    }
+
+    let existing_references = contract
+        .functions
+        .iter()
+        .map(|function| {
+            (
+                function.logical_name.clone(),
+                function.evidence.iter().cloned().collect::<BTreeSet<_>>(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut selected = BTreeMap::<String, (usize, SafeCallWitness)>::new();
+    for review in &safe_reviews {
+        let function = &review.function;
+        let Some(options) = matches.get_mut(&function.logical_name) else {
+            continue;
+        };
+        let reviewed = existing_references
+            .get(&function.logical_name)
+            .expect("reviewed function evidence");
+        options.sort_by_key(|(index, witness)| {
+            (
+                !reviewed.contains(&candidates[*index].id),
+                candidates[*index].id.clone(),
+                witness.rust_path.clone(),
+            )
+        });
+        selected.insert(function.logical_name.clone(), options[0].clone());
+    }
+
+    let mut witnesses_by_candidate = BTreeMap::<usize, Vec<SafeCallWitness>>::new();
+    for (candidate, witness) in selected.values() {
+        witnesses_by_candidate
+            .entry(*candidate)
+            .or_default()
+            .push(witness.clone());
+    }
+    let evidence_id_by_function = selected
+        .iter()
+        .map(|(function, (candidate, _))| (function.as_str(), candidates[*candidate].id.clone()))
+        .collect::<BTreeMap<_, _>>();
+    for function in &mut contract.functions {
+        if function.classification == Classification::Safe {
+            function.evidence = evidence_id_by_function
+                .get(function.logical_name.as_str())
+                .cloned()
+                .into_iter()
+                .collect();
+        }
+    }
+
+    let mut rows = witnesses_by_candidate
+        .into_iter()
+        .map(|(candidate, mut witnesses)| {
+            witnesses.sort();
+            witnesses.dedup();
+            let mut evidence = candidates[candidate].clone();
+            evidence.call_witnesses = witnesses;
+            evidence
+        })
+        .collect::<Vec<_>>();
+    rows.sort_by(|left, right| left.id.cmp(&right.id));
+    contract
+        .evidence
+        .retain(|evidence| evidence.role != TestEvidenceRole::SafeCall);
+    contract.evidence.extend(rows);
+
+    Ok(safe_reviews
+        .into_iter()
+        .filter(|review| !selected.contains_key(&review.function.logical_name))
+        .map(|review| RuntimeEvidenceGap {
+            area: review.function.area,
+            function: review.function.logical_name,
+            rust_paths: review.function.rust_paths,
+        })
+        .collect())
+}
+
+fn safe_call_evidence_id(
+    file: &str,
+    item: &str,
+    modes: &[String],
+    providers: &[String],
+    all_providers: &[String],
+) -> String {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"boxdd-safe-call-evidence-v2\0");
+    for value in std::iter::once(file)
+        .chain(std::iter::once(item))
+        .chain(modes.iter().map(String::as_str))
+        .chain(providers.iter().map(String::as_str))
+    {
+        hasher.update(&(value.len() as u64).to_le_bytes());
+        hasher.update(value.as_bytes());
+    }
+    if providers == all_providers {
+        let legacy = blake3::hash(format!("{file}\0{item}").as_bytes());
+        format!("runtime-auto-{}", &legacy.to_hex()[..16])
+    } else {
+        format!("safe-call-auto-{}", &hasher.finalize().to_hex()[..16])
+    }
+}
+
+#[allow(
+    dead_code,
+    reason = "retained temporarily as a schema-7 migration oracle"
+)]
+fn synchronize_runtime_evidence_legacy(
+    paths: &WorkspacePaths,
+    contract: &mut ApiContract,
+    rust_indexes: &AbiRustIndexes,
+    binding_routes: &AbiBindingRoutes,
+) -> Result<Vec<RuntimeEvidenceGap>> {
     let safe_functions = contract
         .functions
         .iter()
@@ -2047,7 +4462,7 @@ fn synchronize_runtime_evidence(
     let reviewed_ids = contract
         .evidence
         .iter()
-        .filter(|evidence| evidence.role == TestEvidenceRole::Runtime)
+        .filter(|evidence| evidence.role == TestEvidenceRole::SafeCall)
         .map(|evidence| {
             (
                 (evidence.file.clone(), evidence.item.clone()),
@@ -2056,7 +4471,7 @@ fn synchronize_runtime_evidence(
         })
         .collect::<BTreeMap<_, _>>();
     let mut candidates = Vec::<TestEvidence>::new();
-    let mut matches = BTreeMap::<String, Vec<(usize, RuntimeCallWitness)>>::new();
+    let mut matches = BTreeMap::<String, Vec<(usize, SafeCallWitness)>>::new();
 
     for discovered in discover_test_evidence_items(paths.root())?
         .into_iter()
@@ -2072,9 +4487,21 @@ fn synchronize_runtime_evidence(
             item: discovered.item,
             package: discovered.package,
             gate: discovered.gate,
-            role: TestEvidenceRole::Runtime,
+            role: TestEvidenceRole::SafeCall,
             fingerprint: String::new(),
-            runtime_witnesses: Vec::new(),
+            modes: binding_routes
+                .keys()
+                .map(|(mode, _)| mode.clone())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect(),
+            providers: binding_routes
+                .keys()
+                .map(|(_, provider)| provider.clone())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect(),
+            call_witnesses: Vec::new(),
             classification_witnesses: Vec::new(),
         };
         let Ok(indexed_routes) =
@@ -2100,7 +4527,7 @@ fn synchronize_runtime_evidence(
                 .or_default()
                 .push((
                     candidate_index,
-                    RuntimeCallWitness {
+                    SafeCallWitness {
                         function: function.logical_name.clone(),
                         rust_path: rust_path.clone(),
                     },
@@ -2119,7 +4546,7 @@ fn synchronize_runtime_evidence(
             )
         })
         .collect::<BTreeMap<_, _>>();
-    let mut selected = BTreeMap::<String, (usize, RuntimeCallWitness)>::new();
+    let mut selected = BTreeMap::<String, (usize, SafeCallWitness)>::new();
     for function in &safe_functions {
         let Some(options) = matches.get_mut(&function.logical_name) else {
             continue;
@@ -2137,7 +4564,7 @@ fn synchronize_runtime_evidence(
         selected.insert(function.logical_name.clone(), options[0].clone());
     }
 
-    let mut witnesses_by_candidate = BTreeMap::<usize, Vec<RuntimeCallWitness>>::new();
+    let mut witnesses_by_candidate = BTreeMap::<usize, Vec<SafeCallWitness>>::new();
     for (candidate, witness) in selected.values() {
         witnesses_by_candidate
             .entry(*candidate)
@@ -2163,14 +4590,14 @@ fn synchronize_runtime_evidence(
         .map(|(candidate, mut witnesses)| {
             witnesses.sort();
             let mut evidence = candidates[candidate].clone();
-            evidence.runtime_witnesses = witnesses;
+            evidence.call_witnesses = witnesses;
             evidence
         })
         .collect::<Vec<_>>();
     runtime_rows.sort_by(|left, right| left.id.cmp(&right.id));
     contract
         .evidence
-        .retain(|evidence| evidence.role != TestEvidenceRole::Runtime);
+        .retain(|evidence| evidence.role != TestEvidenceRole::SafeCall);
     contract.evidence.extend(runtime_rows);
 
     Ok(safe_functions
@@ -2211,6 +4638,16 @@ fn set_active_refresh_identity(contract: &mut ApiContract, active_revision: &str
     contract.upstream_sha = active_revision.to_owned();
 }
 
+fn refresh_route_scoped_evidence_metadata(
+    paths: &WorkspacePaths,
+    contract: &mut ApiContract,
+    rust_indexes: &AbiRustIndexes,
+    binding_routes: &AbiBindingRoutes,
+) -> Result<()> {
+    synchronize_abi_evidence_scopes(contract, binding_routes);
+    refresh_evidence_metadata(paths, contract, rust_indexes, binding_routes)
+}
+
 fn refresh_evidence_metadata(
     paths: &WorkspacePaths,
     contract: &mut ApiContract,
@@ -2220,7 +4657,14 @@ fn refresh_evidence_metadata(
     let mut expected = contract
         .functions
         .iter()
-        .flat_map(|function| function.evidence.iter().cloned())
+        .flat_map(|function| {
+            function.evidence.iter().cloned().chain(
+                function
+                    .provider_overrides
+                    .iter()
+                    .flat_map(|provider_override| provider_override.evidence.iter().cloned()),
+            )
+        })
         .chain(
             contract
                 .abi
@@ -2369,8 +4813,10 @@ fn load_rust_indexes(
     paths: &WorkspacePaths,
     routes: &AbiBindingRoutes,
     binding_indexes: &AbiBindingIndexes,
+    inventory: Option<&CApiInventory>,
 ) -> Result<AbiRustIndexes> {
     let mut coordinates = BTreeMap::new();
+    let mut ffi_type_hints = BTreeMap::new();
     for ((mode, provider), route) in routes {
         let binding = binding_indexes.get(&route.artifact).ok_or_else(|| {
             Error::message(format!(
@@ -2407,8 +4853,44 @@ fn load_rust_indexes(
                 route.mode, route.provider
             )));
         }
+        let mut route_hints = RustFfiTypeHints::default();
+        if let Some(inventory) = inventory {
+            for function in &inventory.functions {
+                let Some(physical_symbol) = function.physical_symbols.get(mode) else {
+                    continue;
+                };
+                let physical_path = format!("boxdd_sys::ffi::{physical_symbol}");
+                if let Some(return_type) =
+                    binding.index.function_return_type_path(&physical_path)?
+                {
+                    route_hints.insert_function_return(
+                        format!("boxdd_sys::ffi::{}", function.name),
+                        return_type,
+                    );
+                }
+            }
+        }
+        ffi_type_hints.insert((mode.clone(), provider.clone()), route_hints);
     }
-    index_boxdd_routes(paths.root(), &coordinates)
+    index_boxdd_routes_with_ffi_hints(paths.root(), &coordinates, &ffi_type_hints)
+}
+
+fn load_rust_indexes_with_inventory(
+    paths: &WorkspacePaths,
+    routes: &AbiBindingRoutes,
+    binding_indexes: &AbiBindingIndexes,
+    inventory: &CApiInventory,
+) -> Result<AbiRustIndexes> {
+    let mut indexes = load_rust_indexes(paths, routes, binding_indexes, Some(inventory))?;
+    for ((mode, _provider), index) in &mut indexes {
+        index.add_symbol_aliases(inventory.functions.iter().filter_map(|function| {
+            function
+                .physical_symbols
+                .get(mode)
+                .map(|physical| (function.name.clone(), physical.clone()))
+        }));
+    }
+    Ok(indexes)
 }
 
 fn rust_index_coordinate(target: RustTarget) -> RustIndexCoordinate {
@@ -2476,6 +4958,35 @@ fn counts(functions: &[FunctionContract]) -> CoverageCounts {
     counts
 }
 
+fn function_route_counts(
+    functions: &[FunctionContract],
+) -> BTreeMap<(String, String), CoverageCounts> {
+    let coordinates = functions
+        .iter()
+        .flat_map(|function| {
+            function.modes.iter().flat_map(|mode| {
+                function
+                    .providers
+                    .iter()
+                    .map(move |provider| (mode.clone(), provider.clone()))
+            })
+        })
+        .collect::<BTreeSet<_>>();
+    coordinates
+        .into_iter()
+        .map(|coordinate| {
+            let mut counts = CoverageCounts::default();
+            for function in functions.iter().filter(|function| {
+                function.modes.contains(&coordinate.0) && function.providers.contains(&coordinate.1)
+            }) {
+                counts
+                    .add(function_exposure_for_provider(function, &coordinate.1).classification());
+            }
+            (coordinate, counts)
+        })
+        .collect()
+}
+
 fn render_report(contract: &ApiContract) -> String {
     let counts = counts(&contract.functions);
     let mut by_area: BTreeMap<&str, CoverageCounts> = BTreeMap::new();
@@ -2500,12 +5011,30 @@ fn render_report(contract: &ApiContract) -> String {
         contract.upstream_sha
     )
     .expect("write to string");
+    writeln!(output, "## Safe-call Witness Policy\n").expect("write to string");
+    writeln!(
+        output,
+        "Policy: `{}`. A Safe-call witness is a route-conditioned source proof: an executable `nextest` test must use a straight-line, unambiguous UFCS call to a unique Safe inherent callable, or an unambiguous Safe free function. Receiver-method syntax does not count as coverage. Standard `Result`/`Option` `unwrap`, `expect`, and continuation through `?` are accepted only when their standard wrapper provenance is proven. Macros, unknown attributes, external modules, ambiguous imports or traits, and non-linear control flow fail closed. Explicit `drop` proves RAII only for a directly owned, unwrapped public value. `ReplayPlayer::with_view` additionally requires a proven must-invoke inline closure and successful result consumption. These witnesses do not qualify a provider by themselves: native fresh-consumer gates, WASM Node/Chromium gates, and compile-only gates independently establish provider identity and execution or compilation support. Route aggregation never substitutes for running every declared verification target.\n",
+        contract.evidence_policy
+    )
+    .expect("write to string");
     output.push_str("## Summary\n\n| Status | Count |\n|---|---:|\n");
     writeln!(output, "| `safe` | {} |", counts.safe).expect("write to string");
     writeln!(output, "| `raw` | {} |", counts.raw).expect("write to string");
     writeln!(output, "| `omitted` | {} |", counts.omitted).expect("write to string");
     writeln!(output, "| `deferred` | {} |", counts.deferred).expect("write to string");
     writeln!(output, "| Total | {} |\n", counts.total).expect("write to string");
+    output.push_str("## Effective Function Exposure by Route\n\n| Precision | Provider | Safe | Raw | Omitted | Deferred | Total |\n|---|---|---:|---:|---:|---:|---:|\n");
+    let route_counts = function_route_counts(&contract.functions);
+    for ((mode, provider), counts) in &route_counts {
+        writeln!(
+            output,
+            "| `{mode}` | `{provider}` | {} | {} | {} | {} | {} |",
+            counts.safe, counts.raw, counts.omitted, counts.deferred, counts.total
+        )
+        .expect("write to string");
+    }
+    output.push('\n');
     output.push_str("## By Area\n\n| Area | Safe | Raw | Omitted | Deferred | Total |\n|---|---:|---:|---:|---:|---:|\n");
     for (area, counts) in by_area {
         writeln!(
@@ -2529,6 +5058,22 @@ fn render_report(contract: &ApiContract) -> String {
         )
         .expect("write to string");
     }
+    output.push_str("\n### Effective ABI Exposure by Route\n\n| Precision | Provider | Capability | Safe | Raw | Omitted | Deferred | Total |\n|---|---|---|---:|---:|---:|---:|---:|\n");
+    for (mode, provider) in route_counts.keys() {
+        let effective = abi_exposure_counts_for_provider(&contract.abi, provider);
+        for (kind, counts) in [
+            ("Structs", effective.structs),
+            ("Fields", effective.fields),
+            ("Callbacks", effective.callbacks),
+        ] {
+            writeln!(
+                output,
+                "| `{mode}` | `{provider}` | {kind} | {} | {} | {} | {} | {} |",
+                counts.safe, counts.raw, counts.omitted, counts.deferred, counts.total
+            )
+            .expect("write to string");
+        }
+    }
     output.push_str(
         "\n### Non-Safe ABI Capabilities\n\n| Capability | Status | Rationale |\n|---|---|---|\n",
     );
@@ -2546,12 +5091,24 @@ fn render_report(contract: &ApiContract) -> String {
             &structure.rationale,
             &policies,
         );
+        render_non_safe_abi_overrides(
+            &mut output,
+            &format!("struct {}", structure.name),
+            &structure.provider_overrides,
+            &policies,
+        );
         for field in &structure.fields {
             render_non_safe_abi_row(
                 &mut output,
                 &format!("{}::{}", structure.name, field.name),
                 &field.policy,
                 &field.rationale,
+                &policies,
+            );
+            render_non_safe_abi_overrides(
+                &mut output,
+                &format!("{}::{}", structure.name, field.name),
+                &field.provider_overrides,
                 &policies,
             );
         }
@@ -2562,6 +5119,12 @@ fn render_report(contract: &ApiContract) -> String {
             &format!("callback {}", callback.name),
             &callback.policy,
             &callback.rationale,
+            &policies,
+        );
+        render_non_safe_abi_overrides(
+            &mut output,
+            &format!("callback {}", callback.name),
+            &callback.provider_overrides,
             &policies,
         );
     }
@@ -2580,6 +5143,20 @@ fn render_report(contract: &ApiContract) -> String {
             escape_table(&function.rationale)
         )
         .expect("write to string");
+    }
+    for function in &contract.functions {
+        for provider_override in &function.provider_overrides {
+            writeln!(
+                output,
+                "| `{}` [{}] | `{}` | {} | {} |",
+                function.logical_name,
+                provider_override.providers.join(", "),
+                provider_override.classification.as_str(),
+                escape_table(&function.area),
+                escape_table(&provider_override.rationale)
+            )
+            .expect("write to string");
+        }
     }
     output.push_str("\n## Maintenance\n\n- Run `cargo run -p xtask -- api-coverage --check` to reject header, Rust path, evidence, recording-capability, wire-schema, ABI, or generated-document drift.\n- Run `cargo run -p xtask -- api-coverage --write` only to regenerate this report after the structured contract has been reviewed.\n- Run `cargo run -p xtask -- upstream-sync --check` to verify the manifest, gitlink, checkout, exact source-path inventory, reviewed recording-source Git objects, and all named artifacts.\n");
     output
@@ -2617,6 +5194,66 @@ fn abi_exposure_counts(contract: &AbiContract) -> AbiExposureCounts {
     counts
 }
 
+fn abi_exposure_counts_for_provider(contract: &AbiContract, provider: &str) -> AbiExposureCounts {
+    let policies = contract
+        .policies
+        .iter()
+        .map(|policy| (policy.id.as_str(), policy.classification))
+        .collect::<BTreeMap<_, _>>();
+    let mut counts = AbiExposureCounts::default();
+    for structure in &contract.structs {
+        if let Some(classification) = effective_abi_classification(
+            &structure.policy,
+            &structure.provider_overrides,
+            provider,
+            &policies,
+        ) {
+            counts.structs.add(classification);
+        }
+        for field in &structure.fields {
+            if let Some(classification) = effective_abi_classification(
+                &field.policy,
+                &field.provider_overrides,
+                provider,
+                &policies,
+            ) {
+                counts.fields.add(classification);
+            }
+        }
+    }
+    for callback in &contract.callbacks {
+        if let Some(classification) = effective_abi_classification(
+            &callback.policy,
+            &callback.provider_overrides,
+            provider,
+            &policies,
+        ) {
+            counts.callbacks.add(classification);
+        }
+    }
+    counts
+}
+
+fn effective_abi_classification(
+    policy_id: &str,
+    provider_overrides: &[crate::abi_contract::AbiProviderOverride],
+    provider: &str,
+    policies: &BTreeMap<&str, Classification>,
+) -> Option<Classification> {
+    let effective_policy = provider_overrides
+        .iter()
+        .find(|provider_override| {
+            provider_override
+                .providers
+                .iter()
+                .any(|candidate| candidate == provider)
+        })
+        .map_or(policy_id, |provider_override| {
+            provider_override.policy.as_str()
+        });
+    policies.get(effective_policy).copied()
+}
+
 fn render_non_safe_abi_row(
     output: &mut String,
     identifier: &str,
@@ -2638,6 +5275,31 @@ fn render_non_safe_abi_row(
         escape_table(rationale)
     )
     .expect("write to string");
+}
+
+fn render_non_safe_abi_overrides(
+    output: &mut String,
+    identifier: &str,
+    provider_overrides: &[crate::abi_contract::AbiProviderOverride],
+    policies: &BTreeMap<&str, &crate::abi_contract::AbiCapabilityPolicy>,
+) {
+    for provider_override in provider_overrides {
+        let Some(policy) = policies.get(provider_override.policy.as_str()) else {
+            continue;
+        };
+        if policy.classification == Classification::Safe {
+            continue;
+        }
+        writeln!(
+            output,
+            "| `{}` [{}] | `{}` | {} |",
+            escape_table(identifier),
+            provider_override.providers.join(", "),
+            policy.classification.as_str(),
+            escape_table(&provider_override.rationale)
+        )
+        .expect("write to string");
+    }
 }
 
 fn has_rationale(value: &str) -> bool {
@@ -2674,7 +5336,7 @@ mod tests {
             AbiCallableShape, AbiPrimitive, AbiTypeShape, CallbackDecl, FieldDecl, OverlayDecl,
             PrecisionCApiInventory, StructDecl,
         },
-        commands::upstream_sync::{ArtifactProvider, Precision},
+        commands::upstream_sync::{ArtifactProducer, ArtifactProvider, Precision},
         rust_index::index_boxdd,
     };
 
@@ -2687,6 +5349,90 @@ mod tests {
         contract: ApiContract,
         operations: Vec<crate::recording_ops::RecordingOp>,
         active_revision: String,
+    }
+
+    fn workspace_manifest_and_contract() -> (UpstreamManifest, Vec<u8>) {
+        let paths = WorkspacePaths::discover().expect("workspace paths");
+        let manifest = UpstreamManifest::load(&paths).expect("upstream manifest");
+        let contract_path = manifest
+            .artifact_path(paths.root(), ArtifactKind::ApiContract)
+            .expect("API contract path");
+        let contract = fs::read(contract_path).expect("reviewed API contract");
+        (manifest, contract)
+    }
+
+    #[test]
+    fn reviewed_contract_preflight_rejects_malformed_digest() {
+        let (manifest, contract) = workspace_manifest_and_contract();
+
+        let error = reviewed_contract_preflight_manifest(&manifest, &contract, &"A".repeat(64))
+            .expect_err("uppercase digest must fail closed");
+
+        assert!(error.to_string().contains("lowercase 64-character"));
+    }
+
+    #[test]
+    fn reviewed_contract_preflight_rejects_digest_mismatch() {
+        let (manifest, contract) = workspace_manifest_and_contract();
+        let observed = blake3::hash(&contract).to_hex().to_string();
+        let mismatched = if observed == "0".repeat(64) {
+            "1".repeat(64)
+        } else {
+            "0".repeat(64)
+        };
+
+        let error = reviewed_contract_preflight_manifest(&manifest, &contract, &mismatched)
+            .expect_err("a digest for different bytes must fail closed");
+
+        assert!(error.to_string().contains("BLAKE3 mismatch"));
+        assert!(error.to_string().contains(&observed));
+    }
+
+    #[test]
+    fn reviewed_contract_preflight_changes_only_contract_digest() {
+        let (manifest, contract) = workspace_manifest_and_contract();
+        let digest = blake3::hash(&contract).to_hex().to_string();
+        let mut expected = manifest.clone();
+        expected
+            .artifacts
+            .iter_mut()
+            .find(|artifact| artifact.kind == ArtifactKind::ApiContract)
+            .expect("API contract artifact")
+            .content_blake3
+            .clone_from(&digest);
+
+        let preflight = reviewed_contract_preflight_manifest(&manifest, &contract, &digest)
+            .expect("the exact reviewed bytes must be accepted");
+
+        assert_eq!(preflight, expected);
+    }
+
+    #[test]
+    fn reviewed_contract_snapshot_resists_path_aba_during_refresh() {
+        let (manifest, approved_bytes) = workspace_manifest_and_contract();
+        let temporary = tempfile::tempdir().expect("temporary contract directory");
+        let contract_path = temporary.path().join("api_contract.toml");
+        fs::write(&contract_path, &approved_bytes).expect("approved contract bytes");
+        let approved = read_reviewed_contract_snapshot(&contract_path).expect("approved snapshot");
+        let mut unreviewed_contract = approved.contract.clone();
+        unreviewed_contract.upstream_sha = "0".repeat(40);
+        let unreviewed_bytes = render_toml(&unreviewed_contract)
+            .expect("unreviewed contract TOML")
+            .into_bytes();
+
+        fs::write(&contract_path, &unreviewed_bytes).expect("concurrent unreviewed contract");
+        let reopened = read_reviewed_contract_snapshot(&contract_path)
+            .expect("a vulnerable second read would observe the unreviewed contract");
+        fs::write(&contract_path, &approved_bytes).expect("concurrent ABA restore");
+
+        assert_eq!(approved.bytes, approved_bytes);
+        assert_eq!(approved.contract.upstream_sha, manifest.active_revision);
+        assert_eq!(reopened.contract.upstream_sha, "0".repeat(40));
+        assert_eq!(
+            fs::read(&contract_path).expect("restored contract bytes"),
+            approved.bytes
+        );
+        assert_ne!(approved.contract, reopened.contract);
     }
 
     #[test]
@@ -2786,6 +5532,126 @@ mod tests {
     }
 
     #[test]
+    fn pinned_box2d_schema_8_route_topology_is_exact_and_persistent() {
+        let routes = pinned_box2d_3_2_binding_routes();
+        let coordinates = routes.keys().cloned().collect::<BTreeSet<_>>();
+        let artifacts = routes
+            .values()
+            .map(|route| route.artifact.as_str())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(routes.len(), 10);
+        assert_eq!(
+            coordinates,
+            BTreeSet::from([
+                ("double".to_owned(), "prebuilt-static".to_owned()),
+                ("double".to_owned(), "source".to_owned()),
+                ("double".to_owned(), "system-static".to_owned()),
+                ("double".to_owned(), "wasm-compile-only".to_owned()),
+                ("double".to_owned(), "wasm-runtime".to_owned()),
+                ("single".to_owned(), "prebuilt-static".to_owned()),
+                ("single".to_owned(), "source".to_owned()),
+                ("single".to_owned(), "system-static".to_owned()),
+                ("single".to_owned(), "wasm-compile-only".to_owned()),
+                ("single".to_owned(), "wasm-runtime".to_owned()),
+            ])
+        );
+        assert_eq!(
+            artifacts,
+            BTreeSet::from([
+                "bindings-double",
+                "bindings-single",
+                "bindings-wasm32-unknown-unknown-double",
+                "bindings-wasm32-unknown-unknown-single",
+                "bindings-wasm32-wasip1-double",
+                "bindings-wasm32-wasip1-single",
+            ])
+        );
+        let mut errors = Vec::new();
+        validate_pinned_box2d_3_2_binding_routes(&routes, &mut errors);
+        assert!(errors.is_empty(), "canonical route matrix: {errors:?}");
+
+        let mut missing = routes.clone();
+        missing.remove(&("single".to_owned(), "system-static".to_owned()));
+        validate_pinned_box2d_3_2_binding_routes(&missing, &mut errors);
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("exact canonical 10-route matrix")),
+            "a self-consistent route subset must not bypass the pinned topology: {errors:?}"
+        );
+
+        errors.clear();
+        let mut drifted = routes;
+        drifted
+            .get_mut(&("double".to_owned(), "wasm-runtime".to_owned()))
+            .expect("double WASM runtime route")
+            .rust_target = RustTarget::Wasm32Wasip1;
+        validate_pinned_box2d_3_2_binding_routes(&drifted, &mut errors);
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("exact canonical 10-route matrix")),
+            "route target drift must fail closed: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn pinned_box2d_schema_8_binding_artifact_identities_are_exact() {
+        let canonical = canonical_route_binding_artifacts();
+        assert_eq!(canonical.len(), 6);
+        let mut errors = Vec::new();
+        validate_pinned_box2d_3_2_binding_artifacts(&canonical, &mut errors);
+        assert!(errors.is_empty(), "canonical binding artifacts: {errors:?}");
+
+        let assert_rejected = |artifacts: &[GeneratedArtifact], mutation: &str| {
+            let mut errors = Vec::new();
+            validate_pinned_box2d_3_2_binding_artifacts(artifacts, &mut errors);
+            assert!(
+                errors
+                    .iter()
+                    .any(|error| error.contains("exact canonical six binding artifact identities")),
+                "{mutation} must fail closed: {errors:?}"
+            );
+        };
+
+        let mut drifted = canonical.clone();
+        drifted[0].path = "boxdd-sys/src/bindings_decoy.rs".to_owned();
+        assert_rejected(&drifted, "path drift");
+
+        let mut drifted = canonical.clone();
+        drifted[0].precision = Some(Precision::Double);
+        assert_rejected(&drifted, "precision drift");
+
+        let mut drifted = canonical.clone();
+        drifted[0].target = ArtifactTarget::Wasm32UnknownUnknown;
+        assert_rejected(&drifted, "target drift");
+
+        let mut drifted = canonical.clone();
+        drifted[0].provider = ArtifactProvider::Source;
+        assert_rejected(&drifted, "provider drift");
+
+        let mut drifted = canonical;
+        drifted[0].producer = ArtifactProducer::Reviewed;
+        assert_rejected(&drifted, "producer drift");
+    }
+
+    #[test]
+    fn pinned_box2d_schema_8_rejects_function_deferred_reentry() {
+        let mut fixture = ContractFixture::create();
+        fixture.contract.functions[0].classification = Classification::Deferred;
+        let mut errors = Vec::new();
+
+        validate_pinned_box2d_3_2_no_deferred_functions(&fixture.contract, &mut errors);
+
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("reintroduces Deferred")),
+            "function Deferred reentry must fail closed: {errors:?}"
+        );
+    }
+
+    #[test]
     fn runtime_evidence_distinguishes_callable_and_raii_drop_witnesses() {
         let callable = "boxdd::World::step".to_owned();
         let owner = "boxdd::World".to_owned();
@@ -2847,7 +5713,7 @@ mod tests {
             ),
         ]);
         let aggregate = aggregate_evidence_fingerprint(&routes);
-        assert!(aggregate.starts_with("blake3-routes-v1:"));
+        assert!(aggregate.starts_with("blake3-routes-v2:"));
         assert_eq!(aggregate, aggregate_evidence_fingerprint(&routes));
 
         let mut changed_ast = routes.clone();
@@ -2888,6 +5754,12 @@ mod tests {
                 r#"
                     pub fn set_transform() {
                         unsafe { boxdd_sys::ffi::b2Body_SetTransform(); }
+                    }
+                    pub struct RecordingSession;
+                    impl RecordingSession {
+                        pub fn try_set_transform(&mut self) {
+                            unsafe { boxdd_sys::ffi::b2Body_SetTransform(); }
+                        }
                     }
                     pub struct Example { pub count: i32 }
                     impl Example {
@@ -2991,6 +5863,7 @@ mod tests {
                 .expect("fixture function inventory digest");
             let contract = ApiContract {
                 schema_version: API_CONTRACT_SCHEMA,
+                evidence_policy: SAFE_CALL_EVIDENCE_POLICY.to_owned(),
                 upstream_sha: active_revision.clone(),
                 function_inventory_digests,
                 migration_baseline: CoverageCounts {
@@ -3005,9 +5878,11 @@ mod tests {
                     item: "covers_body_set_transform".to_owned(),
                     package: "boxdd".to_owned(),
                     gate: "nextest".to_owned(),
-                    role: TestEvidenceRole::Runtime,
+                    role: TestEvidenceRole::SafeCall,
                     fingerprint: evidence_fingerprint,
-                    runtime_witnesses: vec![RuntimeCallWitness {
+                    modes: vec!["single".to_owned()],
+                    providers: vec!["source".to_owned()],
+                    call_witnesses: vec![SafeCallWitness {
                         function: "b2Body_SetTransform".to_owned(),
                         rust_path: "boxdd::set_transform".to_owned(),
                     }],
@@ -3032,6 +5907,7 @@ mod tests {
                     providers: vec!["source".to_owned()],
                     availability: vec!["always".to_owned()],
                     evidence: vec!["body-runtime".to_owned()],
+                    provider_overrides: Vec::new(),
                     recording: Some(RecordingCoverage {
                         class: RecordingClass::LoggedMutation,
                         opcode: Some(0x20),
@@ -3056,6 +5932,70 @@ mod tests {
                 active_revision,
             };
             fixture.validate().expect("valid contract fixture");
+            fixture
+        }
+
+        fn create_default_constructor_refresh() -> Self {
+            let mut fixture = Self::create();
+            fs::write(
+                fixture.root.join("boxdd/src/lib.rs"),
+                r#"
+                    pub struct Filter;
+                    impl Default for Filter {
+                        fn default() -> Self {
+                            unsafe { boxdd_sys::ffi::b2DefaultFilter(); }
+                            Self
+                        }
+                    }
+                    impl Filter {
+                        pub fn new() -> Self {
+                            Self::default()
+                        }
+                        pub fn builder() -> Self {
+                            Self::default()
+                        }
+                    }
+                "#,
+            )
+            .expect("default constructor fixture source");
+            let index = index_boxdd(&fixture.root).expect("default constructor Rust index");
+            fixture.rust_indexes =
+                AbiRustIndexes::from([(("single".to_owned(), "source".to_owned()), index)]);
+
+            let signature = {
+                let declaration = fixture
+                    .inventory
+                    .functions
+                    .first_mut()
+                    .expect("fixture declaration");
+                declaration.name = "b2DefaultFilter".to_owned();
+                declaration.signature = "void b2DefaultFilter ( void )".to_owned();
+                declaration.physical_symbols = BTreeMap::from([
+                    ("single".to_owned(), "b2DefaultFilter".to_owned()),
+                    ("double".to_owned(), "b2DefaultFilter".to_owned()),
+                ]);
+                declaration.signature.clone()
+            };
+            fixture.contract.function_inventory_digests =
+                compute_function_inventory_digests(&fixture.inventory)
+                    .expect("default constructor inventory digest");
+            fixture.contract.evidence.clear();
+            let function = fixture
+                .contract
+                .functions
+                .first_mut()
+                .expect("fixture function");
+            function.logical_name = "b2DefaultFilter".to_owned();
+            function.signature = signature;
+            function.link_symbols =
+                BTreeMap::from([("single".to_owned(), "b2DefaultFilter".to_owned())]);
+            function.area = "Foundation".to_owned();
+            function.rust_paths = vec!["boxdd::Filter::new".to_owned()];
+            function.rationale =
+                "Filter::new constructs the reviewed Box2D collision-filter defaults.".to_owned();
+            function.evidence.clear();
+            function.recording = None;
+            fixture.operations.clear();
             fixture
         }
 
@@ -3153,6 +6093,20 @@ mod tests {
                     TestEvidenceRole::AbiContractValidator,
                 ),
             ];
+            let modes = self
+                .binding_routes
+                .keys()
+                .map(|(mode, _)| mode.clone())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+            let providers = self
+                .binding_routes
+                .keys()
+                .map(|(_, provider)| provider.clone())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
             for (id, file, item, role) in evidence {
                 let mut row = TestEvidence {
                     id: id.to_owned(),
@@ -3162,7 +6116,9 @@ mod tests {
                     gate: "nextest".to_owned(),
                     role,
                     fingerprint: String::new(),
-                    runtime_witnesses: Vec::new(),
+                    modes: modes.clone(),
+                    providers: providers.clone(),
+                    call_witnesses: Vec::new(),
                     classification_witnesses: Vec::new(),
                 };
                 let indexed_routes = index_evidence_across_routes(
@@ -3189,7 +6145,9 @@ mod tests {
                 gate: "nextest".to_owned(),
                 role: TestEvidenceRole::FunctionClassificationValidator,
                 fingerprint: String::new(),
-                runtime_witnesses: Vec::new(),
+                modes: vec!["single".to_owned()],
+                providers: vec!["source".to_owned()],
+                call_witnesses: Vec::new(),
                 classification_witnesses: vec![FunctionClassificationWitness {
                     function: "b2Body_SetTransform".to_owned(),
                     classification: Classification::Raw,
@@ -3256,6 +6214,7 @@ mod tests {
     fn migration_baseline_requires_explicit_classification_changes() {
         let mut contract = ApiContract {
             schema_version: API_CONTRACT_SCHEMA,
+            evidence_policy: SAFE_CALL_EVIDENCE_POLICY.to_owned(),
             upstream_sha: "0123456789abcdef0123456789abcdef01234567".to_owned(),
             function_inventory_digests: FunctionInventoryDigests::default(),
             migration_baseline: CoverageCounts {
@@ -3288,6 +6247,7 @@ mod tests {
                 providers: Vec::new(),
                 availability: Vec::new(),
                 evidence: Vec::new(),
+                provider_overrides: Vec::new(),
                 recording: None,
             }],
             abi: AbiContract::default(),
@@ -3311,6 +6271,288 @@ mod tests {
 
         assert_eq!(fixture.contract.upstream_sha, fixture.active_revision);
         assert_ne!(fixture.contract.upstream_sha, next_revision);
+    }
+
+    fn reviewed_added_function_override(fixture: &ContractFixture) -> ReviewedMigrationOverrides {
+        ReviewedMigrationOverrides {
+            schema_version: 1,
+            reviewed_revision: "0123456789abcdef0123456789abcdef01234567".to_owned(),
+            active_revision: fixture.active_revision.clone(),
+            expected_counts: CoverageCounts {
+                total: 1,
+                safe: 1,
+                ..CoverageCounts::default()
+            },
+            functions: vec![ReviewedFunctionOverride {
+                logical_name: "b2Body_SetTransform".to_owned(),
+                classification: Classification::Safe,
+                exposure: FunctionExposureKind::Callable,
+                area: "Body transform".to_owned(),
+                rust_paths: vec!["boxdd::set_transform".to_owned()],
+                rationale: "The Safe Rust wrapper validates ownership before the native mutation."
+                    .to_owned(),
+                previous_classification: None,
+                revalidated: false,
+            }],
+            canonical_refreshes: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn reviewed_migration_requires_exact_override_coverage() {
+        let fixture = ContractFixture::create();
+        let mut reviewed = fixture.contract.clone();
+        reviewed.functions.clear();
+        let mut missing = reviewed_added_function_override(&fixture);
+        missing.functions.clear();
+
+        let error = apply_reviewed_migration_overrides(
+            &mut fixture.contract.clone(),
+            &reviewed,
+            &missing,
+            &[],
+            &fixture.inventory,
+            &fixture.binding_routes,
+            &fixture.rust_indexes,
+            &fixture.operations,
+        )
+        .expect_err("every added function needs an explicit reviewed override");
+        assert!(
+            error
+                .to_string()
+                .contains("missing=[\"b2Body_SetTransform\"]")
+        );
+
+        let mut unexpected = reviewed_added_function_override(&fixture);
+        unexpected.functions.push(ReviewedFunctionOverride {
+            logical_name: "b2Unexpected".to_owned(),
+            classification: Classification::Raw,
+            exposure: FunctionExposureKind::Callable,
+            area: "Unexpected".to_owned(),
+            rust_paths: Vec::new(),
+            rationale: "This row must be rejected before it can alter the reviewed contract."
+                .to_owned(),
+            previous_classification: None,
+            revalidated: false,
+        });
+        let error = apply_reviewed_migration_overrides(
+            &mut fixture.contract.clone(),
+            &reviewed,
+            &unexpected,
+            &[],
+            &fixture.inventory,
+            &fixture.binding_routes,
+            &fixture.rust_indexes,
+            &fixture.operations,
+        )
+        .expect_err("unrelated overrides must fail closed");
+        assert!(error.to_string().contains("unexpected=[\"b2Unexpected\"]"));
+    }
+
+    #[test]
+    fn reviewed_migration_rejects_placeholder_review_text() {
+        let fixture = ContractFixture::create();
+        let mut reviewed = fixture.contract.clone();
+        reviewed.functions.clear();
+        let mut overrides = reviewed_added_function_override(&fixture);
+        overrides.functions[0].area = "Unreviewed upstream box2d.h".to_owned();
+
+        let error = apply_reviewed_migration_overrides(
+            &mut fixture.contract.clone(),
+            &reviewed,
+            &overrides,
+            &[],
+            &fixture.inventory,
+            &fixture.binding_routes,
+            &fixture.rust_indexes,
+            &fixture.operations,
+        )
+        .expect_err("placeholder review text must never enter the reviewed contract");
+        assert!(error.to_string().contains("placeholder review text"));
+    }
+
+    #[test]
+    fn reviewed_migration_logged_mutation_refresh_requires_recording_session_paths() {
+        let fixture = ContractFixture::create();
+        let mut overrides = reviewed_added_function_override(&fixture);
+        overrides.functions.clear();
+        overrides.canonical_refreshes = vec![ReviewedCanonicalRefresh {
+            logical_name: "b2Body_SetTransform".to_owned(),
+            rust_paths: vec!["boxdd::RecordingSession::try_set_transform".to_owned()],
+            rationale: "RecordingSession validates the body identity before recording the transform mutation."
+                .to_owned(),
+        }];
+        apply_reviewed_migration_overrides(
+            &mut fixture.contract.clone(),
+            &fixture.contract,
+            &overrides,
+            &[],
+            &fixture.inventory,
+            &fixture.binding_routes,
+            &fixture.rust_indexes,
+            &fixture.operations,
+        )
+        .expect("a reviewed logged mutation may move to its RecordingSession path");
+
+        overrides.canonical_refreshes[0].rust_paths = vec!["boxdd::set_transform".to_owned()];
+        let error = apply_reviewed_migration_overrides(
+            &mut fixture.contract.clone(),
+            &fixture.contract,
+            &overrides,
+            &[],
+            &fixture.inventory,
+            &fixture.binding_routes,
+            &fixture.rust_indexes,
+            &fixture.operations,
+        )
+        .expect_err("a canonical refresh cannot bless an arbitrary alternate path");
+        assert!(error.to_string().contains("RecordingSession paths"));
+    }
+
+    fn reviewed_default_constructor_fixture()
+    -> (ContractFixture, ApiContract, ReviewedMigrationOverrides) {
+        let fixture = ContractFixture::create_default_constructor_refresh();
+        let mut reviewed = fixture.contract.clone();
+        reviewed.functions[0].rust_paths = vec!["boxdd::Filter::default".to_owned()];
+        let mut overrides = reviewed_added_function_override(&fixture);
+        overrides.functions.clear();
+        overrides.canonical_refreshes = vec![ReviewedCanonicalRefresh {
+            logical_name: "b2DefaultFilter".to_owned(),
+            rust_paths: vec!["boxdd::Filter::new".to_owned()],
+            rationale: "Filter::new preserves the reviewed native defaults through an inherent constructor."
+                .to_owned(),
+        }];
+        (fixture, reviewed, overrides)
+    }
+
+    #[test]
+    fn reviewed_migration_accepts_same_owner_default_constructors() {
+        let (fixture, reviewed, overrides) = reviewed_default_constructor_fixture();
+
+        for constructor in ["new", "builder"] {
+            let mut contract = fixture.contract.clone();
+            let mut candidate = overrides.clone();
+            candidate.canonical_refreshes[0].rust_paths =
+                vec![format!("boxdd::Filter::{constructor}")];
+            apply_reviewed_migration_overrides(
+                &mut contract,
+                &reviewed,
+                &candidate,
+                &[],
+                &fixture.inventory,
+                &fixture.binding_routes,
+                &fixture.rust_indexes,
+                &fixture.operations,
+            )
+            .expect("a reviewed default may move to a same-owner inherent constructor");
+            assert_eq!(
+                contract.functions[0].rust_paths,
+                candidate.canonical_refreshes[0].rust_paths
+            );
+        }
+    }
+
+    #[test]
+    fn reviewed_migration_default_refreshes_fail_closed() {
+        let (fixture, reviewed, overrides) = reviewed_default_constructor_fixture();
+
+        let mut missing = overrides.clone();
+        missing.canonical_refreshes.clear();
+        let error = apply_reviewed_migration_overrides(
+            &mut fixture.contract.clone(),
+            &reviewed,
+            &missing,
+            &[],
+            &fixture.inventory,
+            &fixture.binding_routes,
+            &fixture.rust_indexes,
+            &fixture.operations,
+        )
+        .expect_err("every reviewed default constructor refresh is required");
+        assert!(error.to_string().contains("missing=[\"b2DefaultFilter\"]"));
+
+        let mut unexpected = overrides.clone();
+        unexpected
+            .canonical_refreshes
+            .push(ReviewedCanonicalRefresh {
+                logical_name: "b2DefaultOther".to_owned(),
+                rust_paths: vec!["boxdd::Other::new".to_owned()],
+                rationale: "An unrelated default must not enter the reviewed refresh set."
+                    .to_owned(),
+            });
+        let error = apply_reviewed_migration_overrides(
+            &mut fixture.contract.clone(),
+            &reviewed,
+            &unexpected,
+            &[],
+            &fixture.inventory,
+            &fixture.binding_routes,
+            &fixture.rust_indexes,
+            &fixture.operations,
+        )
+        .expect_err("unrelated default refreshes must fail closed");
+        assert!(
+            error
+                .to_string()
+                .contains("unexpected=[\"b2DefaultOther\"]")
+        );
+
+        for path in ["boxdd::Other::new", "boxdd::Filter::from_raw"] {
+            let mut candidate = overrides.clone();
+            candidate.canonical_refreshes[0].rust_paths = vec![path.to_owned()];
+            let error = apply_reviewed_migration_overrides(
+                &mut fixture.contract.clone(),
+                &reviewed,
+                &candidate,
+                &[],
+                &fixture.inventory,
+                &fixture.binding_routes,
+                &fixture.rust_indexes,
+                &fixture.operations,
+            )
+            .expect_err("default refreshes require a same-owner new or builder path");
+            assert!(error.to_string().contains("same-owner `new` or `builder`"));
+        }
+    }
+
+    #[test]
+    fn reviewed_migration_preserves_applicable_historical_classification_changes() {
+        let fixture = ContractFixture::create();
+        let mut reviewed = fixture.contract.clone();
+        reviewed.classification_changes = vec![ClassificationChange {
+            logical_name: "b2Body_SetTransform".to_owned(),
+            from: Classification::Raw,
+            to: Classification::Safe,
+            unit: "historical-review".to_owned(),
+            rationale: "The historical review promoted the validated wrapper to Safe Rust."
+                .to_owned(),
+        }];
+        let mut contract = fixture.contract.clone();
+        let mut overrides = reviewed_added_function_override(&fixture);
+        overrides.functions.clear();
+        overrides.canonical_refreshes = vec![ReviewedCanonicalRefresh {
+            logical_name: "b2Body_SetTransform".to_owned(),
+            rust_paths: vec!["boxdd::RecordingSession::try_set_transform".to_owned()],
+            rationale: "RecordingSession validates the body identity before recording the transform mutation."
+                .to_owned(),
+        }];
+
+        apply_reviewed_migration_overrides(
+            &mut contract,
+            &reviewed,
+            &overrides,
+            &[],
+            &fixture.inventory,
+            &fixture.binding_routes,
+            &fixture.rust_indexes,
+            &fixture.operations,
+        )
+        .expect("unchanged historical Safe review should migrate");
+
+        assert_eq!(
+            contract.classification_changes,
+            reviewed.classification_changes
+        );
     }
 
     #[test]
@@ -3618,7 +6860,7 @@ mod tests {
     }
 
     #[test]
-    fn evidence_fingerprints_and_runtime_witnesses_fail_closed() {
+    fn evidence_fingerprints_and_safe_call_witnesses_fail_closed() {
         let mut drifted = ContractFixture::create();
         drifted.contract.evidence[0].fingerprint =
             "blake3:0000000000000000000000000000000000000000000000000000000000000000".to_owned();
@@ -3628,24 +6870,24 @@ mod tests {
         assert!(error.to_string().contains("fingerprint drifted"));
 
         let mut missing = ContractFixture::create();
-        missing.contract.evidence[0].runtime_witnesses.clear();
+        missing.contract.evidence[0].call_witnesses.clear();
         let error = missing
             .validate()
-            .expect_err("a missing runtime witness must fail");
+            .expect_err("a missing Safe-call witness must fail");
         assert!(
             error
                 .to_string()
-                .contains("has no exact executable runtime witness")
+                .contains("has no exact executable call witness")
         );
 
         let mut extra = ContractFixture::create();
-        extra.contract.evidence[0].runtime_witnesses = vec![RuntimeCallWitness {
+        extra.contract.evidence[0].call_witnesses = vec![SafeCallWitness {
             function: "b2Other".to_owned(),
             rust_path: "boxdd::set_transform".to_owned(),
         }];
         let error = extra
             .validate()
-            .expect_err("an unknown runtime witness must fail");
+            .expect_err("an unknown Safe-call witness must fail");
         assert!(
             error
                 .to_string()
@@ -3654,18 +6896,18 @@ mod tests {
 
         let mut duplicate = ContractFixture::create();
         duplicate.contract.evidence[0]
-            .runtime_witnesses
-            .push(RuntimeCallWitness {
+            .call_witnesses
+            .push(SafeCallWitness {
                 function: "b2Body_SetTransform".to_owned(),
                 rust_path: "boxdd::set_transform".to_owned(),
             });
         let error = duplicate
             .validate()
-            .expect_err("a repeated runtime witness must fail");
+            .expect_err("a repeated Safe-call witness must fail");
         assert!(
             error
                 .to_string()
-                .contains("runtime witnesses must be unique")
+                .contains("Safe-call witnesses must be unique")
         );
 
         let mut orphan = ContractFixture::create();
@@ -3692,10 +6934,10 @@ mod tests {
             .retain(|evidence| evidence.id == API_CLASSIFICATION_EVIDENCE_ID);
         let function = &mut fixture.contract.functions[0];
         function.classification = Classification::Raw;
-        function.rust_paths = vec!["boxdd_sys::ffi::b2Body_SetTransform".to_owned()];
-        function.evidence = vec![API_CLASSIFICATION_EVIDENCE_ID.to_owned()];
+        function.rust_paths = Vec::from(["boxdd_sys::ffi::b2Body_SetTransform".to_owned()]);
+        function.evidence = Vec::from([API_CLASSIFICATION_EVIDENCE_ID.to_owned()]);
         function.recording = None;
-        fixture.contract.classification_changes = vec![ClassificationChange {
+        fixture.contract.classification_changes = Vec::from([ClassificationChange {
             logical_name: "b2Body_SetTransform".to_owned(),
             from: Classification::Safe,
             to: Classification::Raw,
@@ -3703,7 +6945,7 @@ mod tests {
             rationale:
                 "The fixture deliberately exercises the conservative raw classification gate."
                     .to_owned(),
-        }];
+        }]);
 
         validate_contract(
             &fixture.paths(),
@@ -3740,6 +6982,28 @@ mod tests {
             error
                 .to_string()
                 .contains("records `b2Body_SetTransform` as omitted")
+        );
+    }
+
+    #[test]
+    fn classification_evidence_invokes_production_validator_on_a_straight_line_path() {
+        let paths = WorkspacePaths::discover().expect("workspace paths");
+        let index = crate::rust_index::index_test_evidence_for_gate(
+            paths.root(),
+            "xtask/src/commands/api_coverage.rs",
+            "typed_function_classification_evidence_rejects_unrelated_subjects",
+            "xtask",
+            "nextest",
+            &RustIndex::default(),
+        )
+        .expect("classification evidence index");
+
+        assert!(
+            index.called_local_paths.iter().any(|path| {
+                path == "validate_contract" || path.ends_with("::validate_contract")
+            }),
+            "classification evidence must invoke validate_contract before any opaque control flow; unresolved calls: {:?}",
+            index.unresolved_calls
         );
     }
 
@@ -4018,6 +7282,108 @@ mod tests {
     }
 
     #[test]
+    fn abi_evidence_scopes_follow_every_route_without_widening_safe_call_evidence() {
+        let mut fixture = ContractFixture::create();
+        fixture.enable_abi_capabilities();
+        let safe_call_scope = fixture
+            .contract
+            .evidence
+            .iter()
+            .find(|evidence| evidence.role == TestEvidenceRole::SafeCall)
+            .map(|evidence| (evidence.modes.clone(), evidence.providers.clone()))
+            .expect("Safe-call evidence row");
+        let routes = pinned_box2d_3_2_binding_routes();
+        let route_coordinates = routes.keys().cloned().collect::<BTreeSet<_>>();
+        let route_modes = routes
+            .keys()
+            .map(|(mode, _)| mode.as_str())
+            .collect::<BTreeSet<_>>();
+        let route_providers = routes
+            .keys()
+            .map(|(_, provider)| provider.as_str())
+            .collect::<BTreeSet<_>>();
+
+        synchronize_abi_evidence_scopes(&mut fixture.contract, &routes);
+
+        for evidence in fixture.contract.evidence.iter().filter(|evidence| {
+            matches!(
+                evidence.role,
+                TestEvidenceRole::AbiHeaderInventory
+                    | TestEvidenceRole::AbiBindingAst
+                    | TestEvidenceRole::AbiContractValidator
+            )
+        }) {
+            assert_eq!(evidence.modes, ["double", "single"]);
+            assert_eq!(
+                evidence.providers,
+                [
+                    "prebuilt-static",
+                    "source",
+                    "system-static",
+                    "wasm-compile-only",
+                    "wasm-runtime",
+                ]
+            );
+            let mut errors = Vec::new();
+            validate_evidence_scope(
+                evidence,
+                &route_coordinates,
+                &route_modes,
+                &route_providers,
+                &mut errors,
+            );
+            assert!(errors.is_empty(), "full ABI evidence scope: {errors:?}");
+        }
+        let safe_call = fixture
+            .contract
+            .evidence
+            .iter()
+            .find(|evidence| evidence.role == TestEvidenceRole::SafeCall)
+            .expect("Safe-call evidence row");
+        assert_eq!(
+            (safe_call.modes.clone(), safe_call.providers.clone()),
+            safe_call_scope,
+            "ABI provider qualification must not widen Safe-call evidence"
+        );
+        let mut errors = Vec::new();
+        validate_evidence_scope(
+            safe_call,
+            &route_coordinates,
+            &route_modes,
+            &route_providers,
+            &mut errors,
+        );
+        assert!(
+            errors.is_empty(),
+            "Safe-call evidence may cover an exact route subset: {errors:?}"
+        );
+
+        let mut narrowed_abi = fixture
+            .contract
+            .evidence
+            .iter()
+            .find(|evidence| evidence.role == TestEvidenceRole::AbiBindingAst)
+            .cloned()
+            .expect("ABI binding evidence row");
+        narrowed_abi.modes = vec!["single".to_owned()];
+        narrowed_abi.providers = vec!["source".to_owned()];
+        errors.clear();
+        validate_evidence_scope(
+            &narrowed_abi,
+            &route_coordinates,
+            &route_modes,
+            &route_providers,
+            &mut errors,
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("must exactly cover every binding route")),
+            "narrowed ABI evidence must fail closed: {errors:?}"
+        );
+    }
+
+    #[test]
     fn fingerprint_drift_does_not_hide_required_production_entry() {
         let mut fixture = ContractFixture::create();
         fixture.enable_abi_capabilities();
@@ -4146,6 +7512,7 @@ mod tests {
         fixture.contract.abi.structs[0].fields[0].safe_witnesses =
             vec![crate::abi_contract::AbiSafeWitness {
                 path: "boxdd::Example::from_raw".to_owned(),
+                producer_path: None,
                 kind: crate::abi_contract::AbiSafeWitnessKind::Accessor,
                 raw_type: "boxdd_sys::ffi::b2Example".to_owned(),
                 raw_field: Some("count".to_owned()),
@@ -4194,6 +7561,7 @@ mod tests {
         field.safe_paths = vec!["boxdd::Example::from_raw".to_owned()];
         field.safe_witnesses = vec![crate::abi_contract::AbiSafeWitness {
             path: "boxdd::Example::from_raw".to_owned(),
+            producer_path: None,
             kind: crate::abi_contract::AbiSafeWitnessKind::Accessor,
             raw_type: "boxdd_sys::ffi::b2Example".to_owned(),
             raw_field: Some("count".to_owned()),
@@ -4265,6 +7633,7 @@ mod tests {
         structure.safe_paths = vec!["boxdd::Example".to_owned()];
         structure.safe_witnesses = vec![crate::abi_contract::AbiSafeWitness {
             path: "boxdd::Example".to_owned(),
+            producer_path: None,
             kind: crate::abi_contract::AbiSafeWitnessKind::PublicType,
             raw_type: "boxdd_sys::ffi::b2Example".to_owned(),
             raw_field: None,
@@ -4363,6 +7732,7 @@ mod tests {
         callback.safe_paths = vec!["boxdd::World::new".to_owned()];
         callback.safe_witnesses = vec![crate::abi_contract::AbiSafeWitness {
             path: "boxdd::World::new".to_owned(),
+            producer_path: None,
             kind: crate::abi_contract::AbiSafeWitnessKind::CallbackAdapter,
             raw_type: "boxdd_sys::ffi::b2ExampleCallback".to_owned(),
             raw_field: None,
@@ -4426,7 +7796,7 @@ mod tests {
             "#[test]\nfn covers_body_set_transform() { boxdd::overlap(); }\n",
         )
         .expect("callback runtime evidence");
-        fixture.contract.evidence[0].runtime_witnesses[0].rust_path = "boxdd::overlap".to_owned();
+        fixture.contract.evidence[0].call_witnesses[0].rust_path = "boxdd::overlap".to_owned();
         fixture.refresh_evidence_fingerprint("body-runtime");
         fixture.inventory.callbacks.push(CallbackDecl {
             name: "b2ExampleCallback".to_owned(),
@@ -4454,6 +7824,7 @@ mod tests {
         callback.safe_paths = vec!["boxdd::overlap".to_owned()];
         callback.safe_witnesses = vec![crate::abi_contract::AbiSafeWitness {
             path: "boxdd::overlap".to_owned(),
+            producer_path: None,
             kind: crate::abi_contract::AbiSafeWitnessKind::CallbackAdapter,
             raw_type: "boxdd_sys::ffi::b2ExampleCallback".to_owned(),
             raw_field: None,
@@ -4548,6 +7919,7 @@ mod tests {
         callback.safe_paths = vec!["boxdd::overlap".to_owned()];
         callback.safe_witnesses = vec![crate::abi_contract::AbiSafeWitness {
             path: "boxdd::overlap".to_owned(),
+            producer_path: None,
             kind: crate::abi_contract::AbiSafeWitnessKind::CallbackAdapter,
             raw_type: "boxdd_sys::ffi::b2ExampleCallback".to_owned(),
             raw_field: None,
@@ -4615,6 +7987,7 @@ mod tests {
         previous.structs[0].fields[0].safe_paths = vec!["boxdd::Example::from_raw".to_owned()];
         previous.structs[0].fields[0].safe_witnesses = vec![crate::abi_contract::AbiSafeWitness {
             path: "boxdd::Example::from_raw".to_owned(),
+            producer_path: None,
             kind: crate::abi_contract::AbiSafeWitnessKind::Accessor,
             raw_type: "boxdd_sys::ffi::b2Example".to_owned(),
             raw_field: Some("count".to_owned()),
@@ -4736,6 +8109,7 @@ mod tests {
         previous.structs[0].safe_paths = vec!["boxdd::Example".to_owned()];
         previous.structs[0].safe_witnesses = vec![crate::abi_contract::AbiSafeWitness {
             path: "boxdd::Example".to_owned(),
+            producer_path: None,
             kind: crate::abi_contract::AbiSafeWitnessKind::PublicType,
             raw_type: "boxdd_sys::ffi::b2Example".to_owned(),
             raw_field: None,
@@ -4745,6 +8119,7 @@ mod tests {
         previous.structs[0].fields[0].safe_paths = vec!["boxdd::Example::from_raw".to_owned()];
         previous.structs[0].fields[0].safe_witnesses = vec![crate::abi_contract::AbiSafeWitness {
             path: "boxdd::Example::from_raw".to_owned(),
+            producer_path: None,
             kind: crate::abi_contract::AbiSafeWitnessKind::Accessor,
             raw_type: "boxdd_sys::ffi::b2Example".to_owned(),
             raw_field: Some("count".to_owned()),
@@ -4754,6 +8129,7 @@ mod tests {
         previous.callbacks[0].safe_paths = vec!["boxdd::set_transform".to_owned()];
         previous.callbacks[0].safe_witnesses = vec![crate::abi_contract::AbiSafeWitness {
             path: "boxdd::set_transform".to_owned(),
+            producer_path: None,
             kind: crate::abi_contract::AbiSafeWitnessKind::CallbackAdapter,
             raw_type: "boxdd_sys::ffi::b2ExampleCallback".to_owned(),
             raw_field: None,
@@ -4854,6 +8230,9 @@ mod tests {
         fixture.contract.functions[0]
             .providers
             .push("system-static".to_owned());
+        fixture.contract.evidence[0]
+            .providers
+            .push("system-static".to_owned());
         fixture.refresh_evidence_fingerprint("body-runtime");
         fixture.enable_abi_capabilities();
         assert_eq!(fixture.contract.abi.structs[0].raw_mappings.len(), 2);
@@ -4932,6 +8311,7 @@ mod tests {
             &fixture.paths(),
             &fixture.binding_routes,
             &fixture.binding_indexes,
+            None,
         )
         .expect("manifest route should drive the Rust index");
         let index = indexes
@@ -4940,6 +8320,83 @@ mod tests {
         assert!(index.contains_public_path("boxdd::linux_only"));
         assert!(!index.contains_public_path("boxdd::macos_only"));
         assert!(index.contains_public_path("boxdd::enabled_through_alias"));
+    }
+
+    #[test]
+    fn route_binding_return_types_drive_exact_safe_producer_provenance() {
+        let mut fixture = ContractFixture::create();
+        fs::write(
+            fixture.root.join("boxdd/src/lib.rs"),
+            r#"
+                pub struct Example {
+                    pub count: i32,
+                }
+
+                pub fn make_example() -> Example {
+                    let raw = unsafe { boxdd_sys::ffi::b2MakeExample() };
+                    Example { count: raw.count }
+                }
+            "#,
+        )
+        .expect("Safe producer fixture");
+        let binding_path = fixture.root.join("boxdd-sys/src/bindings_pregenerated.rs");
+        fs::write(
+            &binding_path,
+            r#"
+                #[repr(C)]
+                pub struct b2Example { pub count: i32 }
+                unsafe extern "C" {
+                    pub fn b2MakeExample() -> b2Example;
+                }
+            "#,
+        )
+        .expect("route binding fixture");
+        fixture.inventory.functions = vec![crate::c_api::FunctionDecl {
+            name: "b2MakeExample".to_owned(),
+            signature: "b2Example b2MakeExample ( void )".to_owned(),
+            fingerprint: "fnv1a64:fixture-make-example".to_owned(),
+            parameters: Vec::new(),
+            physical_symbols: BTreeMap::from([
+                ("single".to_owned(), "b2MakeExample".to_owned()),
+                ("double".to_owned(), "b2MakeExample_double".to_owned()),
+            ]),
+            availability: vec!["always".to_owned()],
+            header: "box2d.h".to_owned(),
+            line: 1,
+        }];
+        let binding = AbiBindingIndex::from_path(
+            "bindings-single",
+            Precision::Single,
+            ArtifactTarget::Universal,
+            ArtifactProvider::Universal,
+            &binding_path,
+        )
+        .expect("route binding index");
+        fixture
+            .binding_indexes
+            .insert(binding.artifact.clone(), binding);
+
+        let indexes = load_rust_indexes(
+            &fixture.paths(),
+            &fixture.binding_routes,
+            &fixture.binding_indexes,
+            Some(&fixture.inventory),
+        )
+        .expect("route-specific return type should drive the Rust index");
+        let index = indexes
+            .get(&("single".to_owned(), "source".to_owned()))
+            .expect("source route index");
+        assert!(index.path_has_safe_ffi_type_witness_from(
+            "boxdd::make_example",
+            "boxdd::Example",
+            "boxdd_sys::ffi::b2Example",
+        ));
+        assert!(index.path_has_safe_ffi_field_witness_from(
+            "boxdd::make_example",
+            "boxdd::Example::count",
+            "boxdd_sys::ffi::b2Example",
+            "count",
+        ));
     }
 
     #[test]
@@ -5085,6 +8542,103 @@ mod tests {
     }
 
     #[test]
+    fn function_provider_override_rejects_native_provider() {
+        let mut fixture = ContractFixture::create();
+        let source_route = fixture
+            .binding_routes
+            .get(&("single".to_owned(), "source".to_owned()))
+            .expect("source route")
+            .clone();
+        let mut system_route = source_route;
+        system_route.provider = "system-static".to_owned();
+        fixture.binding_routes.insert(
+            (system_route.mode.clone(), system_route.provider.clone()),
+            system_route,
+        );
+        let source_index = fixture
+            .rust_indexes
+            .get(&("single".to_owned(), "source".to_owned()))
+            .expect("source Rust index")
+            .clone();
+        fixture.rust_indexes.insert(
+            ("single".to_owned(), "system-static".to_owned()),
+            source_index,
+        );
+        let function = fixture
+            .contract
+            .functions
+            .first_mut()
+            .expect("fixture function");
+        function.providers.push("system-static".to_owned());
+        function.provider_overrides = vec![FunctionProviderOverride {
+            providers: vec!["system-static".to_owned()],
+            classification: Classification::Raw,
+            rust_paths: vec!["boxdd_sys::ffi::b2Body_SetTransform".to_owned()],
+            rationale: "The system provider is deliberately forged as a narrower raw route."
+                .to_owned(),
+            evidence: Vec::new(),
+        }];
+
+        let error = fixture
+            .validate()
+            .expect_err("native provider overrides must fail closed");
+
+        assert!(
+            error
+                .to_string()
+                .contains("may only use conservative provider overrides for WASM providers")
+        );
+    }
+
+    #[test]
+    fn function_provider_override_cannot_hide_proven_wasm_safe_path() {
+        let mut fixture = ContractFixture::create();
+        let source_route = fixture
+            .binding_routes
+            .get(&("single".to_owned(), "source".to_owned()))
+            .expect("source route")
+            .clone();
+        let mut wasm_route = source_route;
+        wasm_route.provider = "wasm-runtime".to_owned();
+        wasm_route.rust_target = RustTarget::Wasm32UnknownUnknown;
+        fixture.binding_routes.insert(
+            (wasm_route.mode.clone(), wasm_route.provider.clone()),
+            wasm_route,
+        );
+        let source_index = fixture
+            .rust_indexes
+            .get(&("single".to_owned(), "source".to_owned()))
+            .expect("source Rust index")
+            .clone();
+        fixture.rust_indexes.insert(
+            ("single".to_owned(), "wasm-runtime".to_owned()),
+            source_index,
+        );
+        let function = fixture
+            .contract
+            .functions
+            .first_mut()
+            .expect("fixture function");
+        function.providers.push("wasm-runtime".to_owned());
+        function.provider_overrides = vec![FunctionProviderOverride {
+            providers: vec!["wasm-runtime".to_owned()],
+            classification: Classification::Raw,
+            rust_paths: vec!["boxdd_sys::ffi::b2Body_SetTransform".to_owned()],
+            rationale: "The browser route is deliberately forged as raw despite its Safe path."
+                .to_owned(),
+            evidence: Vec::new(),
+        }];
+
+        let error = fixture
+            .validate()
+            .expect_err("a proven WASM Safe path cannot be hidden by an override");
+
+        assert!(error.to_string().contains(
+            "provider override unnecessarily hides a proven Safe path at route `single/wasm-runtime`"
+        ));
+    }
+
+    #[test]
     fn coverage_report_rendering_is_deterministic_and_manual_edits_drift() {
         let fixture = ContractFixture::create();
         let first = render_report(&fixture.contract);
@@ -5092,5 +8646,78 @@ mod tests {
         assert_eq!(first, second);
         let edited = first.replacen("| `safe` | 1 |", "| `safe` | 99 |", 1);
         assert_ne!(normalize_newlines(&edited), normalize_newlines(&second));
+    }
+
+    #[test]
+    fn coverage_report_renders_effective_function_and_abi_provider_counts() {
+        let mut fixture = ContractFixture::create();
+        let function = fixture
+            .contract
+            .functions
+            .first_mut()
+            .expect("fixture function");
+        function.providers.push("wasm-runtime".to_owned());
+        function.provider_overrides = vec![FunctionProviderOverride {
+            providers: vec!["wasm-runtime".to_owned()],
+            classification: Classification::Raw,
+            rust_paths: vec!["boxdd_sys::ffi::b2Body_SetTransform".to_owned()],
+            rationale: "The Safe adapter is cfg-disabled on the browser WASM provider route."
+                .to_owned(),
+            evidence: vec!["api-classification-wasm".to_owned()],
+        }];
+        fixture.contract.abi = AbiContract {
+            policies: vec![
+                crate::abi_contract::AbiCapabilityPolicy {
+                    id: "safe-abi-adapter".to_owned(),
+                    classification: Classification::Safe,
+                    rationale:
+                        "The reviewed adapter safely represents this aggregate on native routes."
+                            .to_owned(),
+                    modes: vec!["single".to_owned()],
+                    providers: vec!["source".to_owned(), "wasm-runtime".to_owned()],
+                    availability: vec!["always".to_owned()],
+                    evidence: Vec::new(),
+                },
+                crate::abi_contract::AbiCapabilityPolicy {
+                    id: crate::abi_contract::ABI_POLICY_ID.to_owned(),
+                    classification: Classification::Raw,
+                    rationale: "The generated binding retains the exact raw ABI representation."
+                        .to_owned(),
+                    modes: vec!["single".to_owned()],
+                    providers: vec!["source".to_owned(), "wasm-runtime".to_owned()],
+                    availability: vec!["always".to_owned()],
+                    evidence: Vec::new(),
+                },
+            ],
+            structs: vec![crate::abi_contract::AbiStructContract {
+                name: "b2Example".to_owned(),
+                fingerprint: "fnv1a64:fixture".to_owned(),
+                header: "box2d.h".to_owned(),
+                rationale: "The reviewed aggregate has a canonical crate-owned representation."
+                    .to_owned(),
+                policy: "safe-abi-adapter".to_owned(),
+                safe_paths: vec!["boxdd::Example".to_owned()],
+                safe_witnesses: Vec::new(),
+                provider_overrides: vec![crate::abi_contract::AbiProviderOverride {
+                    providers: vec!["wasm-runtime".to_owned()],
+                    rationale: "The crate-owned representation is cfg-disabled on browser WASM."
+                        .to_owned(),
+                    policy: crate::abi_contract::ABI_POLICY_ID.to_owned(),
+                    safe_paths: Vec::new(),
+                    safe_witnesses: Vec::new(),
+                }],
+                raw_mappings: Vec::new(),
+                fields: Vec::new(),
+            }],
+            callbacks: Vec::new(),
+        };
+
+        let report = render_report(&fixture.contract);
+        assert!(report.contains("## Safe-call Witness Policy"));
+        assert!(report.contains("| `single` | `source` | 1 | 0 | 0 | 0 | 1 |"));
+        assert!(report.contains("| `single` | `wasm-runtime` | 0 | 1 | 0 | 0 | 1 |"));
+        assert!(report.contains("| `single` | `source` | Structs | 1 | 0 | 0 | 0 | 1 |"));
+        assert!(report.contains("| `single` | `wasm-runtime` | Structs | 0 | 1 | 0 | 0 | 1 |"));
+        assert!(report.contains("provider identity and execution or compilation support"));
     }
 }

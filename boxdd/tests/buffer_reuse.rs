@@ -438,13 +438,13 @@ fn world_event_snapshots_into_reuse_buffers() {
         let mut body_events = Vec::with_capacity(8);
         let body_events_ptr = body_events.as_ptr();
 
-        let body_baseline = loop {
-            world.step(1.0 / 60.0, 4);
-            let baseline = world.body_events();
-            if !baseline.is_empty() {
-                break baseline;
-            }
-        };
+        let body_baseline = (0..240)
+            .find_map(|_| {
+                world.step(1.0 / 60.0, 4);
+                let baseline = world.body_events();
+                (!baseline.is_empty()).then_some(baseline)
+            })
+            .expect("expected at least one body move event");
 
         world.body_events_into(&mut body_events);
         assert_eq!(body_events.len(), body_baseline.len());
@@ -493,13 +493,13 @@ fn world_event_snapshots_into_reuse_buffers() {
         let contact_end_ptr = contact_events.end.as_ptr();
         let contact_hit_ptr = contact_events.hit.as_ptr();
 
-        let contact_baseline = loop {
-            world.step(1.0 / 60.0, 4);
-            let baseline = world.contact_events();
-            if !baseline.begin.is_empty() {
-                break baseline;
-            }
-        };
+        let contact_baseline = (0..240)
+            .find_map(|_| {
+                world.step(1.0 / 60.0, 4);
+                let baseline = world.contact_events();
+                (!baseline.begin.is_empty()).then_some(baseline)
+            })
+            .expect("expected at least one contact begin event");
 
         world.contact_events_into(&mut contact_events);
         assert_eq!(contact_events.begin.len(), contact_baseline.begin.len());
@@ -558,13 +558,13 @@ fn world_event_snapshots_into_reuse_buffers() {
         let sensor_begin_ptr = sensor_events.begin.as_ptr();
         let sensor_end_ptr = sensor_events.end.as_ptr();
 
-        let sensor_baseline = loop {
-            world.step(1.0 / 60.0, 4);
-            let baseline = world.sensor_events();
-            if !baseline.begin.is_empty() {
-                break baseline;
-            }
-        };
+        let sensor_baseline = (0..600)
+            .find_map(|_| {
+                world.step(1.0 / 60.0, 4);
+                let baseline = world.sensor_events();
+                (!baseline.begin.is_empty()).then_some(baseline)
+            })
+            .expect("expected at least one sensor begin event");
 
         world.sensor_events_into(&mut sensor_events);
         assert_eq!(sensor_events.begin.len(), sensor_baseline.begin.len());
@@ -615,6 +615,10 @@ fn world_event_snapshots_into_reuse_buffers() {
                 break;
             }
         }
+        assert!(
+            !joint_baseline.is_empty(),
+            "expected the zero-threshold distance joint to emit a break event"
+        );
 
         world.joint_events_into(&mut joint_events);
         assert_eq!(joint_events.len(), joint_baseline.len());

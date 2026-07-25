@@ -11,6 +11,8 @@ If you are new to `boxdd`, start with the first section instead of scanning file
 
 - `world_basics.rs`: minimal world, body, shape creation, and stepping
 - `basic.rs`: slightly broader foundation sample after `world_basics`
+- `foundation_scheduler.rs`: one-time length configuration, validated native worker count, and
+  runtime scheduler diagnostics
 - `shapes_variety.rs`: safe shape geometry creation across the common built-in shape types
 - `joints.rs` and `joints_presets.rs`: common joint setup paths
 
@@ -27,7 +29,7 @@ If you are new to `boxdd`, start with the first section instead of scanning file
 - `raycast.rs`: focused ray-cast sample
 - `shapecast.rs`: focused shape-cast sample
 - `character_mover.rs`: the full safe mover pipeline (`cast_mover`, `collide_mover`, `solve_planes`, `clip_vector`)
-- `collision_basics.rs`: standalone low-level collision geometry (`segment_distance`, `shape_distance`, `shape_cast`, TOI, manifolds, `Aabb::ray_cast`) without a live world
+- `collision_basics.rs`: standalone low-level collision geometry (`segment_distance`, `shape_distance`, `shape_cast`, TOI, shape-A local manifolds, explicit world reconstruction, `Aabb::ray_cast`) without a live world
 - `debug_draw.rs`: collected/safe debug draw flows
 
 ## Events and Contacts
@@ -51,10 +53,10 @@ If you are new to `boxdd`, start with the first section instead of scanning file
 
 ## Integration and Ownership Models
 
-- `scene_serialize.rs`: scene snapshot round-trip (`--features serialize`)
+- `persistence.rs`: transactional same-world snapshot restore, validated fresh-world image load,
+  owned recording, and exclusive epoch-bound replay
 - `physics_thread.rs`: dedicated-thread ownership model for apps that are otherwise multi-threaded or async-driven
 - `world_handle_reads.rs`: stored read-only `WorldHandle` queries, including reusable-buffer overlap reads and follow-up body/shape inspection
-- `wasm_wasi_smoke.rs`: minimal WASM/WASI-oriented smoke example
 - `../../bevy_boxdd/examples/falling_box_2d.rs`: Bevy ECS adapter smoke example for body/shape creation and transform sync
 - `../../bevy_boxdd/examples/ray_query_2d.rs` and `../../bevy_boxdd/examples/overlap_query_2d.rs`: Bevy entity-mapped query helpers for rays and AABB overlaps
 - `../../bevy_boxdd/examples/joint_bridge_2d.rs`: Bevy ECS distance/revolute joint authoring
@@ -67,3 +69,6 @@ If you are new to `boxdd`, start with the first section instead of scanning file
 - `testbed_imgui_glow.rs`: optional interactive testbed using the current `dear-imgui-rs` + `dear-imgui-winit` + `dear-imgui-glow` stack
 
 The testbed scene router lives under `examples/testbed/` and intentionally groups many focused physics demos behind one UI instead of exposing each scene as a separate top-level Cargo example.
+
+WASM runtime qualification is intentionally separate from core examples. See
+`../../docs/platforms/wasm.md`; `wasm32-wasip1` is compile-only and has no runtime example.

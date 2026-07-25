@@ -4,9 +4,10 @@ use crate::components::{Collider, JointDescriptor, PhysicsMaterial};
 use crate::math::to_boxdd_vec2;
 use bevy_ecs::prelude::{Entity, Resource};
 use bevy_math::Vec2 as BevyVec2;
+#[cfg(not(target_arch = "wasm32"))]
+use boxdd::{Aabb, DebugDrawCmd, DebugDrawOptions};
 use boxdd::{
-    Aabb, ApiResult, BodyId, DebugDrawCmd, DebugDrawOptions, JointId, Position, QueryFilter,
-    RayResult, ShapeId, World, WorldDef,
+    ApiResult, BodyId, JointId, Position, QueryFilter, RayResult, ShapeId, World, WorldDef,
 };
 use std::collections::HashMap;
 
@@ -62,7 +63,9 @@ pub struct BoxddPhysicsContext {
     pub(crate) entity_to_joint: HashMap<Entity, JointId>,
     pub(crate) joint_to_entity: HashMap<JointId, Entity>,
     pub(crate) joint_descriptors: HashMap<Entity, JointDescriptor>,
+    #[cfg(not(target_arch = "wasm32"))]
     ray_hits: Vec<RayResult>,
+    #[cfg(not(target_arch = "wasm32"))]
     shape_hits: Vec<ShapeId>,
     pub(crate) last_step_failed: bool,
 }
@@ -74,6 +77,17 @@ pub struct BoxddRayHit {
     pub hit: RayResult,
     /// Bevy entity mapped to `hit.shape_id`, if the shape is owned by this plugin.
     pub entity: Option<Entity>,
+}
+
+/// Closest ray-cast result enriched with Bevy entity mapping and traversal statistics.
+#[derive(Copy, Clone, Debug)]
+pub struct BoxddClosestRayCastResult {
+    /// Closest hit with its mapped entity, or `None` when no shape was hit.
+    pub hit: Option<BoxddRayHit>,
+    /// Number of broad-phase tree nodes visited by Box2D.
+    pub node_visits: i32,
+    /// Number of broad-phase leaves visited by Box2D.
+    pub leaf_visits: i32,
 }
 
 /// AABB overlap hit enriched with the Bevy entity mapped to the native shape.
@@ -124,7 +138,9 @@ impl BoxddPhysicsContext {
             entity_to_joint: HashMap::new(),
             joint_to_entity: HashMap::new(),
             joint_descriptors: HashMap::new(),
+            #[cfg(not(target_arch = "wasm32"))]
             ray_hits: Vec::new(),
+            #[cfg(not(target_arch = "wasm32"))]
             shape_hits: Vec::new(),
             last_step_failed: true,
         }
@@ -143,7 +159,9 @@ impl BoxddPhysicsContext {
             entity_to_joint: HashMap::new(),
             joint_to_entity: HashMap::new(),
             joint_descriptors: HashMap::new(),
+            #[cfg(not(target_arch = "wasm32"))]
             ray_hits: Vec::new(),
+            #[cfg(not(target_arch = "wasm32"))]
             shape_hits: Vec::new(),
             last_step_failed: false,
         }
@@ -182,15 +200,38 @@ impl BoxddPhysicsContext {
         translation: BevyVec2,
         filter: QueryFilter,
     ) -> ApiResult<Option<BoxddRayHit>> {
+        self.try_cast_ray_closest_entity_with_stats(origin, translation, filter)
+            .map(|result| result.hit)
+    }
+
+    /// Casts a ray and returns its mapped closest hit together with traversal statistics.
+    ///
+    /// Statistics remain available when the ray misses every shape.
+    pub fn try_cast_ray_closest_entity_with_stats(
+        &self,
+        origin: Position,
+        translation: BevyVec2,
+        filter: QueryFilter,
+    ) -> ApiResult<BoxddClosestRayCastResult> {
         let Some(world) = self.world() else {
-            return Ok(None);
+            return Ok(BoxddClosestRayCastResult {
+                hit: None,
+                node_visits: 0,
+                leaf_visits: 0,
+            });
         };
-        let hit = world.try_cast_ray_closest(origin, to_boxdd_vec2(translation), filter)?;
-        Ok(hit.hit.then(|| self.ray_hit_with_entity(hit)))
+        let result =
+            world.try_cast_ray_closest_with_stats(origin, to_boxdd_vec2(translation), filter)?;
+        Ok(BoxddClosestRayCastResult {
+            hit: result.hit.map(|hit| self.ray_hit_with_entity(hit)),
+            node_visits: result.node_visits,
+            leaf_visits: result.leaf_visits,
+        })
     }
 
     /// Casts from an absolute world `origin` by a local `translation` and writes
     /// all hits with mapped Bevy shape entities into `out`.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn try_cast_ray_all_entities_into(
         &mut self,
         origin: Position,
@@ -222,6 +263,7 @@ impl BoxddPhysicsContext {
 
     /// Casts from an absolute world `origin` by a local `translation` and returns
     /// all hits with mapped Bevy shape entities.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn try_cast_ray_all_entities(
         &mut self,
         origin: Position,
@@ -235,6 +277,7 @@ impl BoxddPhysicsContext {
 
     /// Queries AABB bounds local to the absolute world `origin` and writes all
     /// hits with mapped Bevy shape entities into `out`.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn try_overlap_aabb_entities_into(
         &mut self,
         origin: Position,
@@ -261,6 +304,7 @@ impl BoxddPhysicsContext {
 
     /// Queries AABB bounds local to the absolute world `origin` and returns all
     /// hits with mapped Bevy shape entities.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn try_overlap_aabb_entities(
         &mut self,
         origin: Position,
@@ -273,6 +317,7 @@ impl BoxddPhysicsContext {
     }
 
     /// Collects Box2D debug-draw commands into a caller-owned buffer.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn try_debug_draw_collect_into(
         &mut self,
         out: &mut Vec<DebugDrawCmd>,
@@ -286,6 +331,7 @@ impl BoxddPhysicsContext {
     }
 
     /// Collects Box2D debug-draw commands into a new vector.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn try_debug_draw_collect(
         &mut self,
         options: DebugDrawOptions,
@@ -302,6 +348,7 @@ impl BoxddPhysicsContext {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn shape_hit_with_entity(&self, shape_id: ShapeId) -> BoxddShapeHit {
         BoxddShapeHit {
             shape_id,

@@ -1,0 +1,7 @@
+# Provider toolchain identity is part of the WASM ABI contract.
+schema_version = 1
+provider_abi = "box2d-sys-v1"
+emscripten_version = "6.0.3"
+emsdk_repository = "https://github.com/emscripten-core/emsdk.git"
+emsdk_revision = "db04e88298d9916fc51fcd3743045ca3eb695127"
+wasm_bindgen_version = "0.2.126"

@@ -1,6 +1,20 @@
 use boxdd::{
-    ApiError, BodyBuilder, Polygon, ShapeCastInput, ShapeDef, ShapeProxy, World, WorldDef, shapes,
+    Aabb, ApiError, BodyBuilder, Polygon, Position, QueryFilter, RecordingCapacity, ShapeCastInput,
+    ShapeDef, ShapeProxy, SurfaceMaterial, Vec2, World, WorldDef, shapes,
 };
+use std::cell::Cell;
+
+struct ConversionProbe<'a> {
+    conversions: &'a Cell<usize>,
+    value: Vec2,
+}
+
+impl From<ConversionProbe<'_>> for Vec2 {
+    fn from(probe: ConversionProbe<'_>) -> Self {
+        probe.conversions.set(probe.conversions.get() + 1);
+        probe.value
+    }
+}
 
 fn assert_cast_output_eq(actual: boxdd::CastOutput, expected: boxdd::CastOutput) {
     assert_eq!(actual.normal, expected.normal);
@@ -29,7 +43,9 @@ fn world_try_shape_set_geometry_rejects_invalid_values() {
     raw_polygon.radius = -1.0;
     assert_eq!(
         world
-            .try_shape_set_polygon(shape_id, &Polygon::from_raw(raw_polygon))
+            // SAFETY: this intentionally violates the radius invariant to verify defensive
+            // validation rejects the value before native use.
+            .try_shape_set_polygon(shape_id, &unsafe { Polygon::from_raw(raw_polygon) })
             .unwrap_err(),
         ApiError::InvalidArgument
     );
@@ -54,6 +70,113 @@ fn owned_shape_try_set_geometry_rejects_invalid_values() {
             .try_set_capsule(&shapes::capsule([0.0_f32, 0.0], [0.0_f32, 0.0], 0.25))
             .unwrap_err(),
         ApiError::InvalidArgument
+    );
+}
+
+#[test]
+fn surface_material_validation_rejects_every_invalid_numeric_field() {
+    assert!(SurfaceMaterial::default().validate().is_ok());
+    assert!(
+        SurfaceMaterial::default()
+            .with_tangent_speed(-1.0)
+            .validate()
+            .is_ok()
+    );
+
+    for material in [
+        SurfaceMaterial::default().with_friction(f32::NAN),
+        SurfaceMaterial::default().with_friction(f32::INFINITY),
+        SurfaceMaterial::default().with_friction(-1.0),
+        SurfaceMaterial::default().with_restitution(f32::NAN),
+        SurfaceMaterial::default().with_restitution(f32::INFINITY),
+        SurfaceMaterial::default().with_restitution(-1.0),
+        SurfaceMaterial::default().with_rolling_resistance(f32::NAN),
+        SurfaceMaterial::default().with_rolling_resistance(f32::INFINITY),
+        SurfaceMaterial::default().with_rolling_resistance(-1.0),
+        SurfaceMaterial::default().with_tangent_speed(f32::NAN),
+        SurfaceMaterial::default().with_tangent_speed(f32::INFINITY),
+        SurfaceMaterial::default().with_tangent_speed(f32::NEG_INFINITY),
+    ] {
+        assert_eq!(material.validate(), Err(ApiError::InvalidArgument));
+    }
+}
+
+#[test]
+fn every_shape_material_setter_rejects_invalid_values_without_mutation() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body = world.create_body_id(BodyBuilder::new().build());
+    let shape = world.create_circle_shape_for(
+        body,
+        &ShapeDef::default(),
+        &shapes::circle([0.0_f32, 0.0], 0.5),
+    );
+    let baseline = world.shape_surface_material(shape);
+    let invalid = SurfaceMaterial::default().with_rolling_resistance(f32::INFINITY);
+
+    assert_eq!(
+        world.try_shape_set_surface_material(shape, &invalid),
+        Err(ApiError::InvalidArgument)
+    );
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            world.shape_set_surface_material(shape, &invalid)
+        }))
+        .is_err()
+    );
+    assert_eq!(world.shape_surface_material(shape), baseline);
+
+    {
+        let mut scoped = world.shape(shape).unwrap();
+        assert_eq!(
+            scoped.try_set_surface_material(&invalid),
+            Err(ApiError::InvalidArgument)
+        );
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                scoped.set_surface_material(&invalid)
+            }))
+            .is_err()
+        );
+        assert_eq!(scoped.surface_material(), baseline);
+    }
+
+    let mut owned = world.create_circle_shape_for_owned(
+        body,
+        &ShapeDef::default(),
+        &shapes::circle([1.0_f32, 0.0], 0.5),
+    );
+    let owned_baseline = owned.surface_material();
+    assert_eq!(
+        owned.try_set_surface_material(&invalid),
+        Err(ApiError::InvalidArgument)
+    );
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            owned.set_surface_material(&invalid)
+        }))
+        .is_err()
+    );
+    assert_eq!(owned.surface_material(), owned_baseline);
+
+    {
+        let mut session = world.start_recording(RecordingCapacity::default());
+        assert_eq!(
+            session.try_shape_set_surface_material(shape, &invalid),
+            Err(ApiError::InvalidArgument)
+        );
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                session.shape_set_surface_material(shape, &invalid)
+            }))
+            .is_err()
+        );
+    }
+    assert_eq!(world.shape_surface_material(shape), baseline);
+
+    world.destroy_shape_id(shape, true);
+    assert_eq!(
+        world.try_shape_set_surface_material(shape, &invalid),
+        Err(ApiError::InvalidArgument)
     );
 }
 
@@ -121,12 +244,162 @@ fn standalone_geometry_try_helpers_reject_invalid_inputs() {
 
     let mut raw_polygon = polygon.into_raw();
     raw_polygon.radius = -1.0;
-    let invalid_polygon = Polygon::from_raw(raw_polygon);
+    // SAFETY: this intentionally violates the radius invariant to exercise fallible validation.
+    let invalid_polygon = unsafe { Polygon::from_raw(raw_polygon) };
     assert_eq!(
         invalid_polygon
             .try_aabb(boxdd::WorldTransform::IDENTITY)
             .unwrap_err(),
         ApiError::InvalidArgument
+    );
+}
+
+#[test]
+fn polygon_validation_rejects_degenerate_and_clockwise_raw_geometry() {
+    let mut degenerate_raw = shapes::box_polygon(1.0, 1.0).into_raw();
+    degenerate_raw.vertices[0] = Vec2::new(-1.0, 0.0).into_raw();
+    degenerate_raw.vertices[1] = Vec2::new(0.0, 0.0).into_raw();
+    degenerate_raw.vertices[2] = Vec2::new(1.0, 0.0).into_raw();
+    degenerate_raw.vertices[3] = Vec2::new(2.0, 0.0).into_raw();
+    // SAFETY: this intentionally violates the convex-polygon invariant for a validation test.
+    let degenerate = unsafe { Polygon::from_raw(degenerate_raw) };
+    assert!(!degenerate.is_valid());
+    assert_eq!(
+        degenerate.validate().unwrap_err(),
+        ApiError::InvalidArgument
+    );
+    assert_eq!(
+        degenerate.try_mass_data(1.0).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+
+    let mut clockwise_raw = shapes::box_polygon(1.0, 1.0).into_raw();
+    clockwise_raw.vertices[..4].reverse();
+    clockwise_raw.normals[..4].reverse();
+    // SAFETY: this intentionally violates the counter-clockwise invariant for a validation test.
+    let clockwise = unsafe { Polygon::from_raw(clockwise_raw) };
+    assert!(!clockwise.is_valid());
+    assert_eq!(clockwise.validate().unwrap_err(), ApiError::InvalidArgument);
+    assert_eq!(
+        clockwise.try_mass_data(1.0).unwrap_err(),
+        ApiError::InvalidArgument
+    );
+}
+
+#[test]
+fn native_polygon_helpers_satisfy_complete_semantic_validation() {
+    let polygons = [
+        shapes::box_polygon(50.0, 10.0),
+        shapes::box_polygon(1.25, 0.75),
+        shapes::offset_box_polygon(
+            1.5,
+            0.625,
+            boxdd::Transform::from_pos_angle([1_000.25_f32, -750.5], 0.37),
+        ),
+        shapes::rounded_box_polygon(1.0, 0.5, 0.2),
+        shapes::polygon_from_points(
+            [
+                Vec2::new(-1.25, -0.5),
+                Vec2::new(0.75, -1.0),
+                Vec2::new(1.5, 0.25),
+                Vec2::new(0.25, 1.25),
+                Vec2::new(-1.0, 0.75),
+            ],
+            0.125,
+        )
+        .expect("valid native polygon hull"),
+    ];
+
+    for polygon in polygons {
+        assert!(polygon.is_valid());
+        polygon.validate().expect("native polygon must validate");
+    }
+
+    let mut wrong_centroid = shapes::box_polygon(50.0, 10.0).into_raw();
+    wrong_centroid.centroid.x += 0.25;
+    // SAFETY: this intentionally violates the centroid invariant for a validation test.
+    let wrong_centroid = unsafe { Polygon::from_raw(wrong_centroid) };
+    assert!(!wrong_centroid.is_valid());
+    assert_eq!(
+        wrong_centroid.validate().unwrap_err(),
+        ApiError::InvalidArgument
+    );
+}
+
+#[test]
+fn polygon_hull_validation_has_a_recoverable_native_path() {
+    let valid = [
+        Vec2::new(-1.0, 0.0),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(0.0, -1.0),
+    ];
+    assert!(shapes::try_polygon_hull_is_valid(valid).unwrap());
+
+    let collinear = [
+        Vec2::new(-1.0, 0.0),
+        Vec2::new(0.0, 0.0),
+        Vec2::new(1.0, 0.0),
+    ];
+    assert!(!shapes::try_polygon_hull_is_valid(collinear).unwrap());
+
+    assert_eq!(
+        shapes::try_polygon_hull_is_valid([
+            Vec2::new(f32::NAN, 0.0),
+            Vec2::new(0.0, 1.0),
+            Vec2::new(1.0, 0.0),
+        ])
+        .unwrap_err(),
+        ApiError::InvalidArgument
+    );
+}
+
+#[test]
+fn definition_validation_checks_pure_fields_before_callback_lease() {
+    let invalid_world = WorldDef::builder().gravity([f32::NAN, 0.0]).build();
+    let invalid_body = BodyBuilder::new().linear_damping(f32::NAN).build();
+    let invalid_shape = ShapeDef::builder().density(f32::NAN).build();
+    let valid_world = WorldDef::default();
+    let valid_body = BodyBuilder::new().build();
+    let valid_shape = ShapeDef::default();
+
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body = world.create_body_id(BodyBuilder::new().build());
+    world.create_circle_shape_for(
+        body,
+        &ShapeDef::default(),
+        &shapes::circle([0.0_f32, 0.0], 0.5),
+    );
+
+    let mut observed = None;
+    let completed = world.visit_overlap_aabb(
+        Position::ZERO,
+        Aabb::new([-1.0_f32, -1.0], [1.0, 1.0]),
+        QueryFilter::default(),
+        |_| {
+            observed = Some((
+                invalid_world.validate(),
+                invalid_body.validate(),
+                invalid_shape.validate(),
+                valid_world.validate(),
+                valid_body.validate(),
+                valid_shape.validate(),
+            ));
+            false
+        },
+    );
+
+    assert!(!completed);
+    assert_eq!(
+        observed,
+        Some((
+            Err(ApiError::InvalidArgument),
+            Err(ApiError::InvalidArgument),
+            Err(ApiError::InvalidArgument),
+            Err(ApiError::InCallback),
+            Err(ApiError::InCallback),
+            Err(ApiError::InCallback),
+        ))
     );
 }
 
@@ -255,4 +528,126 @@ fn degenerate_segment_and_capsule_helpers_remain_usable() {
             .unwrap(),
         capsule.ray_cast([-1.0_f32, 0.0], [2.0_f32, 0.0]),
     );
+}
+
+#[test]
+fn standalone_geometry_keeps_validation_callback_safe_and_gates_native_calls() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body = world.create_body_id(BodyBuilder::new().build());
+    world.create_circle_shape_for(
+        body,
+        &ShapeDef::default(),
+        &shapes::circle([0.0_f32, 0.0], 0.5),
+    );
+
+    let circle = shapes::circle([0.0_f32, 0.0], 0.5);
+    let segment = shapes::segment([-1.0_f32, 0.0], [1.0_f32, 0.0]);
+    let capsule = shapes::capsule([-0.5_f32, 0.0], [0.5_f32, 0.0], 0.25);
+    let chain_segment = shapes::chain_segment(
+        [-2.0_f32, 0.0],
+        [-1.0_f32, 0.0],
+        [1.0_f32, 0.0],
+        [2.0_f32, 0.0],
+    );
+    let polygon = shapes::box_polygon(0.5, 0.5);
+    let conversions = Cell::new(0);
+    let mut callback_results = None;
+    let completed = world.visit_overlap_aabb(
+        Position::ZERO,
+        Aabb::new([-1.0_f32, -1.0], [1.0, 1.0]),
+        QueryFilter::default(),
+        |_| {
+            let point_error = circle
+                .try_contains_point(ConversionProbe {
+                    conversions: &conversions,
+                    value: Vec2::ZERO,
+                })
+                .unwrap_err();
+            let polygon_error = shapes::try_polygon_from_points(
+                [
+                    ConversionProbe {
+                        conversions: &conversions,
+                        value: Vec2::new(-1.0, 0.0),
+                    },
+                    ConversionProbe {
+                        conversions: &conversions,
+                        value: Vec2::new(1.0, 0.0),
+                    },
+                    ConversionProbe {
+                        conversions: &conversions,
+                        value: Vec2::new(0.0, 1.0),
+                    },
+                ],
+                0.0,
+            )
+            .unwrap_err();
+            let hull_error = shapes::try_polygon_hull_is_valid([
+                ConversionProbe {
+                    conversions: &conversions,
+                    value: Vec2::new(-1.0, 0.0),
+                },
+                ConversionProbe {
+                    conversions: &conversions,
+                    value: Vec2::new(1.0, 0.0),
+                },
+                ConversionProbe {
+                    conversions: &conversions,
+                    value: Vec2::new(0.0, 1.0),
+                },
+            ])
+            .unwrap_err();
+            let invalid_hull_error = shapes::try_polygon_hull_is_valid([
+                Vec2::new(f32::NAN, 0.0),
+                Vec2::new(1.0, 0.0),
+                Vec2::new(0.0, 1.0),
+            ])
+            .unwrap_err();
+            callback_results = Some((
+                point_error,
+                polygon_error,
+                hull_error,
+                invalid_hull_error,
+                circle.is_valid()
+                    && segment.is_valid()
+                    && capsule.is_valid()
+                    && chain_segment.is_valid()
+                    && polygon.is_valid(),
+                circle.validate().is_ok()
+                    && segment.validate().is_ok()
+                    && capsule.validate().is_ok()
+                    && chain_segment.validate().is_ok()
+                    && polygon.validate().is_ok(),
+                shapes::circle([f32::NAN, 0.0], 0.5).validate(),
+            ));
+            false
+        },
+    );
+
+    assert!(!completed);
+    assert_eq!(conversions.get(), 7);
+    assert_eq!(
+        callback_results,
+        Some((
+            ApiError::InCallback,
+            ApiError::InCallback,
+            ApiError::InCallback,
+            ApiError::InvalidArgument,
+            true,
+            true,
+            Err(ApiError::InvalidArgument),
+        ))
+    );
+
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        world.visit_overlap_aabb(
+            Position::ZERO,
+            Aabb::new([-1.0_f32, -1.0], [1.0, 1.0]),
+            QueryFilter::default(),
+            |_| {
+                circle.mass_data(1.0);
+                true
+            },
+        );
+    }));
+    assert!(panic.is_err());
 }

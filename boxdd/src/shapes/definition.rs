@@ -21,11 +21,18 @@ const _: () = {
 
 impl Default for SurfaceMaterial {
     fn default() -> Self {
+        let _lease = crate::core::foundation::assert_transient_native_lease();
         Self(unsafe { ffi::b2DefaultSurfaceMaterial() })
     }
 }
 
 impl SurfaceMaterial {
+    /// Create a surface material using Box2D's defaults.
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     #[inline]
     pub const fn from_raw(raw: ffi::b2SurfaceMaterial) -> Self {
         Self(raw)
@@ -116,6 +123,7 @@ pub struct ShapeDef(pub(crate) ffi::b2ShapeDef);
 
 impl Default for ShapeDef {
     fn default() -> Self {
+        let _lease = crate::core::foundation::assert_transient_native_lease();
         Self(unsafe { ffi::b2DefaultShapeDef() })
     }
 }
@@ -128,9 +136,16 @@ impl ShapeDef {
         }
     }
 
-    /// Construct from the raw Box2D shape definition value.
+    /// Construct from a raw Box2D shape definition value.
+    ///
+    /// # Safety
+    /// `raw` must have been initialized by `b2DefaultShapeDef` from the same Box2D ABI as this
+    /// crate. Its `userData` pointer must remain valid for the full lifetime of every shape
+    /// created from this definition, and it must satisfy Box2D's ownership, aliasing, and
+    /// synchronization requirements. This constructor cannot validate those pointer
+    /// obligations.
     #[inline]
-    pub fn from_raw(raw: ffi::b2ShapeDef) -> Self {
+    pub unsafe fn from_raw(raw: ffi::b2ShapeDef) -> Self {
         Self(raw)
     }
 

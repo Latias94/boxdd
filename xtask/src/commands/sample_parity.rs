@@ -109,7 +109,14 @@ fn discover_upstream_samples(root: &Path) -> Result<BTreeSet<Sample>> {
 
         let content = fs::read_to_string(&path).map_err(|source| Error::io(&path, source))?;
         for (line_index, line) in content.lines().enumerate() {
-            if !line.contains("RegisterSample(") && !line.contains("RegisterReplay(") {
+            if ![
+                "RegisterSample(",
+                "RegisterSampleWithCapacity(",
+                "RegisterReplay(",
+            ]
+            .iter()
+            .any(|registration| line.contains(registration))
+            {
                 continue;
             }
             let strings = quoted_strings(line);
@@ -186,6 +193,18 @@ fn write_sample_matrix(
             )
         })
         .collect();
+    let mut existing_by_stable_key = BTreeMap::new();
+    for row in existing_rows {
+        let key = (
+            row.category.as_str(),
+            row.name.as_str(),
+            sample_source_path(&row.source),
+        );
+        existing_by_stable_key
+            .entry(key)
+            .and_modify(|row| *row = None)
+            .or_insert(Some(row));
+    }
 
     let mut output = String::new();
     output.push_str("# Box2D Sample Parity Matrix\n\n");
@@ -207,16 +226,23 @@ fn write_sample_matrix(
             sample.name.as_str(),
             sample.source.as_str(),
         );
-        let seeded_coverage;
-        let (status, artifact) = if let Some(row) = existing_by_key
+        let stable_key = (
+            sample.category.as_str(),
+            sample.name.as_str(),
+            sample_source_path(&sample.source),
+        );
+        let existing_row = existing_by_key
             .get(&key)
-            .filter(|row| !is_unassigned_sample_row(row))
-        {
-            (row.status.as_str(), row.artifact.as_str())
-        } else {
-            seeded_coverage = sample_coverage(sample);
-            (seeded_coverage.status, seeded_coverage.artifact.as_str())
-        };
+            .copied()
+            .or_else(|| existing_by_stable_key.get(&stable_key).copied().flatten());
+        let seeded_coverage;
+        let (status, artifact) =
+            if let Some(row) = existing_row.filter(|row| !is_unassigned_sample_row(row)) {
+                (row.status.as_str(), row.artifact.as_str())
+            } else {
+                seeded_coverage = sample_coverage(sample);
+                (seeded_coverage.status, seeded_coverage.artifact.as_str())
+            };
         output.push_str(&format!(
             "| `{}` | `{}` | `{}` | {} | `{}` |\n",
             escape_table_cell(&sample.category),
@@ -228,6 +254,13 @@ fn write_sample_matrix(
     }
 
     fs::write(path, output).map_err(|source| Error::io(path, source))
+}
+
+fn sample_source_path(source: &str) -> &str {
+    source
+        .rsplit_once(':')
+        .filter(|(_, line)| line.parse::<usize>().is_ok())
+        .map_or(source, |(path, _)| path)
 }
 
 fn sample_coverage(sample: &Sample) -> SampleCoverage {
@@ -251,6 +284,12 @@ fn sample_coverage(sample: &Sample) -> SampleCoverage {
         "Geometry" => link_artifact("boxdd/examples/convex_hull.rs"),
         "Issues" => link_artifact("boxdd/examples/issues.rs"),
         "Joints" => joints_sample_artifact(&sample.name),
+        "Replay" => {
+            return SampleCoverage {
+                status: "TestOnly",
+                artifact: link_artifact("boxdd/tests/replay.rs"),
+            };
+        }
         "Robustness" => link_artifact("boxdd/examples/robustness.rs"),
         "Shapes" => shapes_sample_artifact(&sample.name),
         "Stacking" => stacking_sample_artifact(&sample.name),
@@ -273,10 +312,16 @@ fn sample_coverage(sample: &Sample) -> SampleCoverage {
 }
 
 fn is_unassigned_sample_row(row: &MatrixRow) -> bool {
-    row.status == "UpstreamReference"
+    (row.status == "UpstreamReference"
         && row
             .artifact
-            .contains("Upstream sample indexed; Rust port not assigned yet.")
+            .contains("Upstream sample indexed; Rust port not assigned yet."))
+        || (row.status == "Deferred"
+            && row.artifact
+                == format!(
+                    "No Rust artifact has been assigned for the `{}` category yet.",
+                    row.category
+                ))
 }
 
 fn link_artifact(path: &str) -> String {
@@ -723,6 +768,93 @@ mod tests {
         let content = fs::read_to_string(&matrix).expect("matrix should be readable");
         assert!(content.contains("`TeachingAdaptation`"));
         assert!(content.contains("boxdd/examples/raycast.rs"));
+        fs::remove_dir_all(&root).expect("test root should be cleaned up");
+    }
+
+    #[test]
+    fn discovers_capacity_aware_sample_registration() {
+        let root = unique_test_root("capacity-registration");
+        let samples_dir = root.join("boxdd-sys/third-party/box2d/samples");
+        fs::create_dir_all(&samples_dir).expect("sample directory should be created");
+        fs::write(
+            samples_dir.join("sample_benchmark.cpp"),
+            "static int sample = RegisterSampleWithCapacity(\"Benchmark\", \"Many Pyramids\", Create, Capacity);\n",
+        )
+        .expect("sample source should be written");
+
+        let samples = discover_upstream_samples(&root).expect("sample should be discovered");
+        assert_eq!(
+            samples,
+            BTreeSet::from([sample(
+                "Benchmark",
+                "Many Pyramids",
+                "boxdd-sys/third-party/box2d/samples/sample_benchmark.cpp:1",
+            )])
+        );
+        fs::remove_dir_all(&root).expect("test root should be cleaned up");
+    }
+
+    #[test]
+    fn write_preserves_manual_mapping_when_source_line_moves() {
+        let root = unique_test_root("preserve-line-move");
+        let matrix = root.join("docs/upstream-parity/box2d-sample-matrix.md");
+        let old_source = "boxdd-sys/third-party/box2d/samples/sample_collision.cpp:1201";
+        let new_source = "boxdd-sys/third-party/box2d/samples/sample_collision.cpp:1188";
+        let mut samples = BTreeSet::new();
+        samples.insert(sample("Collision", "Ray Cast", new_source));
+        let rows = [row(
+            "Collision",
+            "Ray Cast",
+            "FaithfulPort",
+            "`boxdd/examples/raycast.rs`",
+            old_source,
+        )];
+
+        write_sample_matrix(&matrix, &samples, &rows).expect("matrix should be written");
+        let content = fs::read_to_string(&matrix).expect("matrix should be readable");
+        assert!(content.contains(
+            "| `Collision` | `Ray Cast` | `FaithfulPort` | `boxdd/examples/raycast.rs` |"
+        ));
+        assert!(content.contains(new_source));
+        assert!(!content.contains(old_source));
+        fs::remove_dir_all(&root).expect("test root should be cleaned up");
+    }
+
+    #[test]
+    fn replay_sample_uses_runtime_test_artifact() {
+        let coverage = sample_coverage(&sample(
+            "Replay",
+            "Viewer",
+            "boxdd-sys/third-party/box2d/samples/sample_replay.cpp:1243",
+        ));
+
+        assert_eq!(coverage.status, "TestOnly");
+        assert_eq!(
+            coverage.artifact,
+            "[`boxdd/tests/replay.rs`](boxdd/tests/replay.rs)"
+        );
+    }
+
+    #[test]
+    fn write_replaces_generated_deferred_mapping_when_coverage_is_added() {
+        let root = unique_test_root("replace-generated-deferred");
+        let matrix = root.join("docs/upstream-parity/box2d-sample-matrix.md");
+        let source = "boxdd-sys/third-party/box2d/samples/sample_replay.cpp:1243";
+        let mut samples = BTreeSet::new();
+        samples.insert(sample("Replay", "Viewer", source));
+        let rows = [row(
+            "Replay",
+            "Viewer",
+            "Deferred",
+            "No Rust artifact has been assigned for the `Replay` category yet.",
+            source,
+        )];
+
+        write_sample_matrix(&matrix, &samples, &rows).expect("matrix should be written");
+        let content = fs::read_to_string(&matrix).expect("matrix should be readable");
+        assert!(content.contains(
+            "| `Replay` | `Viewer` | `TestOnly` | [`boxdd/tests/replay.rs`](boxdd/tests/replay.rs) |"
+        ));
         fs::remove_dir_all(&root).expect("test root should be cleaned up");
     }
 }

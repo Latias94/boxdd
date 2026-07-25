@@ -14,7 +14,9 @@ pub(crate) fn overlap_aabb_checked_impl(
     checked_query_preflight(&target);
     assert_query_position_valid("origin", origin);
     assert_query_aabb_valid(aabb);
-    checked_query_impl(&target, || overlap_aabb_impl(&target, origin, aabb, filter))
+    checked_query_impl(&target, || {
+        crate::query::raw::overlap_aabb_impl(&target, origin, aabb, filter)
+    })
 }
 
 pub(crate) fn visit_overlap_aabb_checked_impl<F>(
@@ -31,7 +33,7 @@ where
     assert_query_position_valid("origin", origin);
     assert_query_aabb_valid(aabb);
     checked_query_impl(&target, || {
-        visit_overlap_aabb_impl(&target, origin, aabb, filter, visit)
+        crate::query::raw::visit_overlap_aabb_impl(&target, origin, aabb, filter, visit)
     })
 }
 
@@ -46,7 +48,7 @@ pub(crate) fn overlap_aabb_into_checked_impl(
     assert_query_position_valid("origin", origin);
     assert_query_aabb_valid(aabb);
     checked_query_impl(&target, || {
-        overlap_aabb_into_impl(&target, origin, aabb, filter, out);
+        crate::query::raw::overlap_aabb_into_impl(&target, origin, aabb, filter, out);
     });
 }
 
@@ -60,7 +62,9 @@ pub(crate) fn try_overlap_aabb_impl(
     check_query_position_valid(origin)?;
     check_query_aabb_valid(aabb)?;
     try_checked_query_result_impl(&target, || {
-        Ok(overlap_aabb_impl(&target, origin, aabb, filter))
+        Ok(crate::query::raw::overlap_aabb_impl(
+            &target, origin, aabb, filter,
+        ))
     })
 }
 
@@ -78,7 +82,7 @@ where
     check_query_position_valid(origin)?;
     check_query_aabb_valid(aabb)?;
     try_checked_query_result_impl(&target, || {
-        Ok(visit_overlap_aabb_impl(
+        Ok(crate::query::raw::visit_overlap_aabb_impl(
             &target, origin, aabb, filter, visit,
         ))
     })
@@ -95,7 +99,7 @@ pub(crate) fn try_overlap_aabb_into_impl(
     check_query_position_valid(origin)?;
     check_query_aabb_valid(aabb)?;
     try_checked_query_result_impl(&target, || {
-        overlap_aabb_into_impl(&target, origin, aabb, filter, out);
+        crate::query::raw::overlap_aabb_into_impl(&target, origin, aabb, filter, out);
         Ok(())
     })
 }
@@ -116,7 +120,7 @@ where
     assert_query_non_negative_finite_scalar("radius", radius);
     let points = collect_asserted_proxy_points(points);
     checked_query_impl(&target, || {
-        overlap_polygon_points_impl(&target, origin, &points, radius, filter)
+        crate::query::raw::overlap_polygon_points_impl(&target, origin, &points, radius, filter)
     })
 }
 
@@ -138,7 +142,9 @@ where
     assert_query_non_negative_finite_scalar("radius", radius);
     let points = collect_asserted_proxy_points(points);
     checked_query_impl(&target, || {
-        visit_overlap_polygon_points_impl(&target, origin, &points, radius, filter, visit)
+        crate::query::raw::visit_overlap_polygon_points_impl(
+            &target, origin, &points, radius, filter, visit,
+        )
     })
 }
 
@@ -158,7 +164,9 @@ pub(crate) fn overlap_polygon_points_into_checked_impl<I, P>(
     assert_query_non_negative_finite_scalar("radius", radius);
     let points = collect_asserted_proxy_points(points);
     checked_query_impl(&target, || {
-        overlap_polygon_points_into_impl(&target, origin, &points, radius, filter, out)
+        crate::query::raw::overlap_polygon_points_into_impl(
+            &target, origin, &points, radius, filter, out,
+        )
     });
 }
 
@@ -178,7 +186,7 @@ where
     check_query_non_negative_finite_scalar(radius)?;
     let points = try_collect_proxy_points(points)?;
     try_checked_query_result_impl(&target, || {
-        Ok(overlap_polygon_points_impl(
+        Ok(crate::query::raw::overlap_polygon_points_impl(
             &target, origin, &points, radius, filter,
         ))
     })
@@ -202,7 +210,7 @@ where
     check_query_non_negative_finite_scalar(radius)?;
     let points = try_collect_proxy_points(points)?;
     try_checked_query_result_impl(&target, || {
-        Ok(visit_overlap_polygon_points_impl(
+        Ok(crate::query::raw::visit_overlap_polygon_points_impl(
             &target, origin, &points, radius, filter, visit,
         ))
     })
@@ -225,7 +233,9 @@ where
     check_query_non_negative_finite_scalar(radius)?;
     let points = try_collect_proxy_points(points)?;
     try_checked_query_result_impl(&target, || {
-        overlap_polygon_points_into_impl(&target, origin, &points, radius, filter, out);
+        crate::query::raw::overlap_polygon_points_into_impl(
+            &target, origin, &points, radius, filter, out,
+        );
         Ok(())
     })
 }
@@ -254,7 +264,7 @@ where
     assert_query_angle_valid(angle_radians);
     let points = collect_asserted_proxy_points(points);
     checked_query_impl(&target, || {
-        overlap_polygon_points_with_offset_impl(
+        crate::query::raw::overlap_polygon_points_with_offset_impl(
             &target,
             origin,
             &points,
@@ -292,7 +302,7 @@ where
     assert_query_angle_valid(angle_radians);
     let points = collect_asserted_proxy_points(points);
     checked_query_impl(&target, || {
-        visit_overlap_polygon_points_with_offset_impl(
+        crate::query::raw::visit_overlap_polygon_points_with_offset_impl(
             &target,
             origin,
             &points,
@@ -329,7 +339,7 @@ pub(crate) fn overlap_polygon_points_with_offset_into_checked_impl<I, P, V, A>(
     assert_query_angle_valid(angle_radians);
     let points = collect_asserted_proxy_points(points);
     checked_query_impl(&target, || {
-        overlap_polygon_points_with_offset_into_impl(
+        crate::query::raw::overlap_polygon_points_with_offset_into_impl(
             &target,
             origin,
             &points,
@@ -366,7 +376,7 @@ where
     check_query_angle_valid(angle_radians)?;
     let points = try_collect_proxy_points(points)?;
     try_checked_query_result_impl(&target, || {
-        Ok(overlap_polygon_points_with_offset_impl(
+        Ok(crate::query::raw::overlap_polygon_points_with_offset_impl(
             &target,
             origin,
             &points,
@@ -404,16 +414,18 @@ where
     check_query_angle_valid(angle_radians)?;
     let points = try_collect_proxy_points(points)?;
     try_checked_query_result_impl(&target, || {
-        Ok(visit_overlap_polygon_points_with_offset_impl(
-            &target,
-            origin,
-            &points,
-            radius,
-            position,
-            angle_radians,
-            filter,
-            visit,
-        ))
+        Ok(
+            crate::query::raw::visit_overlap_polygon_points_with_offset_impl(
+                &target,
+                origin,
+                &points,
+                radius,
+                position,
+                angle_radians,
+                filter,
+                visit,
+            ),
+        )
     })
 }
 
@@ -442,7 +454,7 @@ where
     check_query_angle_valid(angle_radians)?;
     let points = try_collect_proxy_points(points)?;
     try_checked_query_result_impl(&target, || {
-        overlap_polygon_points_with_offset_into_impl(
+        crate::query::raw::overlap_polygon_points_with_offset_into_impl(
             &target,
             origin,
             &points,

@@ -4,9 +4,19 @@ pub mod c_api;
 pub mod config;
 pub mod error;
 pub mod paths;
+#[path = "../../boxdd-sys/src/provenance_policy.rs"]
+pub(crate) mod provenance_policy;
+#[allow(dead_code)]
+#[path = "../../boxdd-sys/src/provider_archive.rs"]
+pub(crate) mod provider_archive;
+#[allow(dead_code)]
+#[path = "../../boxdd-sys/src/provider_manifest.rs"]
+pub(crate) mod provider_manifest;
 pub mod recording_ops;
 pub mod recording_wire;
 pub mod rust_index;
+#[path = "../../boxdd-sys/src/source_overlay.rs"]
+pub mod source_overlay;
 pub mod sys_abi_index;
 pub mod toolchains;
 
@@ -35,6 +45,9 @@ pub fn run_in(paths: &WorkspacePaths, args: impl IntoIterator<Item = String>) ->
         [command, rest @ ..] if command == "api-coverage" => {
             commands::api_coverage::run(paths, rest)
         }
+        [command, rest @ ..] if command == "recording-wire-codegen" => {
+            commands::recording_codegen::run(paths, rest)
+        }
         [command, rest @ ..] if command == "upstream-sync" => {
             commands::upstream_sync::run(paths, rest)
         }
@@ -54,6 +67,33 @@ pub fn run_in(paths: &WorkspacePaths, args: impl IntoIterator<Item = String>) ->
         }
         [command, rest @ ..] if command == "verify-precision-contract" => {
             commands::precision_contract::run(paths.root(), rest)
+        }
+        [command, rest @ ..] if command == "verify-feature-matrix" => {
+            commands::verification::verify_feature_matrix(paths.root(), rest)
+        }
+        [command, rest @ ..] if command == "verify-compile-fail" => {
+            commands::verification::verify_compile_fail(paths.root(), rest)
+        }
+        [command, rest @ ..] if command == "verify-wasm" => {
+            commands::verification::verify_wasm(paths.root(), rest)
+        }
+        [command, rest @ ..] if command == "verify-miri" => {
+            commands::verification::verify_miri(paths.root(), rest)
+        }
+        [command, rest @ ..] if command == "verify-sanitizers" => {
+            commands::verification::verify_sanitizers(paths.root(), rest)
+        }
+        [command, rest @ ..] if command == "verify-semver" => {
+            commands::verification::verify_semver(paths.root(), rest)
+        }
+        [command, rest @ ..] if command == "verify-packages" => {
+            commands::package_registry::run(paths.root(), rest)
+        }
+        [command, rest @ ..] if command == "release-contract" => {
+            commands::release_contract::run(paths.root(), rest)
+        }
+        [command, rest @ ..] if command == "qualify-native-provider" => {
+            commands::native_provider::run(paths.root(), rest)
         }
         [command] if command == "build-pages-wasm" => {
             commands::pages::build_pages_wasm(paths.root())
@@ -77,13 +117,27 @@ Usage:
   cargo run -p xtask -- api-coverage --check
   cargo run -p xtask -- api-coverage --write
   cargo run -p xtask -- api-coverage --refresh-abi
+  cargo run -p xtask -- recording-wire-codegen --check
+  cargo run -p xtask -- recording-wire-codegen --write
   cargo run -p xtask -- api-coverage --audit-evidence
   cargo run -p xtask -- api-coverage --audit-canonical-paths
+  cargo run -p xtask -- api-coverage --audit-reviewed-migration <40-hex-commit>
+  cargo run -p xtask -- api-coverage --migrate-reviewed-contract <40-hex-commit>
   cargo run -p xtask -- upstream-sync --check
   cargo run -p xtask -- upstream-sync --prepare-next
   cargo run -p xtask -- upstream-sync --write
   cargo run -p xtask -- verify-toolchains
   cargo run -p xtask -- verify-precision-contract
+  cargo run -p xtask -- verify-feature-matrix
+  cargo run -p xtask -- verify-compile-fail
+  cargo run -p xtask -- verify-wasm --compile-only
+  cargo run -p xtask -- verify-wasm --runtime
+  cargo run -p xtask -- verify-miri
+  cargo run -p xtask -- verify-sanitizers --address|--undefined|--thread
+  cargo run -p xtask -- verify-semver
+  cargo run -p xtask -- verify-packages
+  cargo run -p xtask -- release-contract --check
+  cargo run -p xtask -- qualify-native-provider --provider system ...
   cargo run -p xtask -- provider-smoke-app
   cargo run -p xtask -- provider-smoke
   cargo run -p xtask -- build-pages-wasm
@@ -91,11 +145,21 @@ Usage:
   cargo run -p xtask -- validate-pages
 
 Commands:
-  api-coverage  Validate, regenerate, or audit the structured API contract and report
+  api-coverage  Validate, regenerate, audit, or perform an explicitly reviewed structured API-contract migration
+  recording-wire-codegen  Validate or regenerate the allocation-free runtime parser table
   upstream-sync  Validate, prepare, or apply the exact-SHA Box2D migration transaction
   sample-parity  Validate or regenerate the upstream sample parity report
   verify-toolchains  Validate workspace versions and pinned compiler configuration
   verify-precision-contract  Verify matching precision routes and deterministic mismatch failures
+  verify-feature-matrix  Check every supported feature, provider, and precision coordinate
+  verify-compile-fail  Run the ownership and lifetime compile-fail contract in both precisions
+  verify-wasm  Run compile-only targets or Node + Chromium provider runtime in both precisions
+  verify-miri  Run pure-Rust unsafe helper and state-machine tests under the pinned nightly
+  verify-sanitizers  Run mixed C/Rust ASan, C UBSan, or targeted mixed TSan suites
+  verify-semver  Check the intentional 0.5-to-0.6 public break with pinned SemVer tooling
+  verify-packages  Package and consume all publishable crates through an isolated registry
+  release-contract  Validate tag, commit, upstream, changelog, artifacts, digests, and provenance
+  qualify-native-provider  Qualify a packaged crate against one exact native provider coordinate
   provider-smoke-app  Build the Rust wasm provider-smoke app and export list
   provider-smoke  Build the Rust app, Box2D provider, and run Node smoke
   build-pages-wasm  Build browser provider and Bevy testbed assets into docs/pages

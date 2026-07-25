@@ -4,18 +4,22 @@
 )]
 
 use crate::error::ApiResult;
-use crate::types::{Position, ShapeId, Vec2};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::types::ShapeId;
+use crate::types::{Position, Vec2};
 use boxdd_sys::ffi;
+#[cfg(not(target_arch = "wasm32"))]
 use smallvec::SmallVec;
-use std::any::Any;
 
 use super::QueryTarget;
 use super::types::*;
 
+#[cfg(not(target_arch = "wasm32"))]
 const MAX_PROXY_POINTS: usize = ffi::B2_MAX_POLYGON_VERTICES as usize;
+#[cfg(not(target_arch = "wasm32"))]
 type ProxyPoints = SmallVec<[ffi::b2Vec2; MAX_PROXY_POINTS]>;
-type PanicPayload = Box<dyn Any + Send + 'static>;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn collect_asserted_proxy_points<I, P>(points: I) -> ProxyPoints
 where
     I: IntoIterator<Item = P>,
@@ -30,6 +34,7 @@ where
     out
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn try_collect_proxy_points<I, P>(points: I) -> ApiResult<ProxyPoints>
 where
     I: IntoIterator<Item = P>,
@@ -45,6 +50,7 @@ where
 }
 
 #[inline]
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn make_proxy_from_points(
     points: &ProxyPoints,
     radius: f32,
@@ -57,6 +63,7 @@ pub(super) fn make_proxy_from_points(
 }
 
 #[inline]
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn make_offset_proxy_from_points(
     points: &ProxyPoints,
     radius: f32,
@@ -79,70 +86,64 @@ pub(super) fn make_offset_proxy_from_points(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 struct CollectCtx<'a, T> {
     out: &'a mut Vec<T>,
     brand: crate::id::IdBrand,
-    panicked: bool,
-    panic: Option<PanicPayload>,
+    panic: crate::core::callback_state::PanicSlot,
     invalid_output: Option<crate::error::ApiError>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<'a, T> CollectCtx<'a, T> {
     fn from_cleared(out: &'a mut Vec<T>, brand: crate::id::IdBrand) -> Self {
         Self {
             out,
             brand,
-            panicked: false,
-            panic: None,
+            panic: crate::core::callback_state::PanicSlot::default(),
             invalid_output: None,
         }
     }
 
     fn shape(&mut self, raw: ffi::b2ShapeId) -> Option<ShapeId> {
         match self.brand.try_shape(raw) {
-            Ok(id) => Some(id),
-            Err(error) => {
-                self.invalid_output = Some(error);
-                None
+            ::std::result::Result::Ok(id) => ::std::option::Option::Some(id),
+            ::std::result::Result::Err(error) => {
+                self.invalid_output = ::std::option::Option::Some(error);
+                ::std::option::Option::None
             }
         }
     }
 
     fn push(&mut self, value: T) -> bool {
-        if self.panicked {
-            return false;
-        }
-        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::core::callback_state::invoke_owner_callback(&mut self.panic, false, || {
             self.out.push(value);
-        }));
-        match r {
-            Ok(()) => true,
-            Err(p) => {
-                self.panicked = true;
-                self.panic = Some(p);
-                false
-            }
-        }
+            true
+        })
     }
 
-    fn resume_unwind_if_needed(self) {
-        if let Some(p) = self.panic {
-            std::panic::resume_unwind(p);
+    fn finish(mut self) {
+        if !crate::core::callback_state::PanicSlot::has_panicked(&self.panic)
+            && let ::std::option::Option::Some(error) = self.invalid_output
+        {
+            crate::core::callback_state::PanicSlot::run_cleanup(&mut self.panic, || {
+                panic!("Box2D returned an invalid query shape id: {error}")
+            });
         }
-        if let Some(error) = self.invalid_output {
-            panic!("Box2D returned an invalid query shape id: {error}");
-        }
+        crate::core::callback_state::PanicSlot::resume_or_forget(self.panic);
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 struct VisitShapeIdCtx<'a, F> {
     visit: &'a mut F,
     brand: crate::id::IdBrand,
     stopped_early: bool,
-    panic: Option<PanicPayload>,
+    panic: crate::core::callback_state::PanicSlot,
     invalid_output: Option<crate::error::ApiError>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<'a, F> VisitShapeIdCtx<'a, F>
 where
     F: FnMut(ShapeId) -> bool,
@@ -152,7 +153,7 @@ where
             visit,
             brand,
             stopped_early: false,
-            panic: None,
+            panic: crate::core::callback_state::PanicSlot::default(),
             invalid_output: None,
         }
     }
@@ -168,34 +169,38 @@ where
     }
 
     fn visit(&mut self, shape_id: ShapeId) -> bool {
-        if self.stopped_early || self.panic.is_some() {
+        if self.stopped_early || self.panic.has_panicked() {
             return false;
         }
-        let _callback_guard = crate::core::callback_state::CallbackGuard::enter();
-        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (self.visit)(shape_id))) {
-            Ok(true) => true,
-            Ok(false) => {
+        let result =
+            crate::core::callback_state::invoke_owner_callback(&mut self.panic, false, || {
+                (self.visit)(shape_id)
+            });
+        if result {
+            true
+        } else {
+            if !self.panic.has_panicked() {
                 self.stopped_early = true;
-                false
             }
-            Err(p) => {
-                self.panic = Some(p);
-                false
-            }
+            false
         }
     }
 
-    fn finish(self) -> bool {
-        if let Some(p) = self.panic {
-            std::panic::resume_unwind(p);
+    fn finish(mut self) -> bool {
+        let completed =
+            !self.stopped_early && !self.panic.has_panicked() && self.invalid_output.is_none();
+        if !self.panic.has_panicked()
+            && let Some(error) = self.invalid_output
+        {
+            self.panic
+                .run_cleanup(|| panic!("Box2D returned an invalid query shape id: {error}"));
         }
-        if let Some(error) = self.invalid_output {
-            panic!("Box2D returned an invalid query shape id: {error}");
-        }
-        !self.stopped_early
+        self.panic.resume_or_forget();
+        completed
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 unsafe extern "C" fn visit_shape_id_cb<F>(
     shape_id: ffi::b2ShapeId,
     ctx: *mut core::ffi::c_void,
@@ -211,6 +216,7 @@ where
 }
 
 #[allow(clippy::unnecessary_cast)]
+#[cfg(not(target_arch = "wasm32"))]
 unsafe extern "C" fn collect_ray_result_cb(
     shape_id: ffi::b2ShapeId,
     point: ffi::b2Pos,
@@ -235,6 +241,7 @@ unsafe extern "C" fn collect_ray_result_cb(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 unsafe extern "C" fn collect_mover_plane_result_cb(
     shape_id: ffi::b2ShapeId,
     plane: *const ffi::b2PlaneResult,
@@ -242,7 +249,7 @@ unsafe extern "C" fn collect_mover_plane_result_cb(
 ) -> bool {
     let ctx = unsafe { &mut *(ctx as *mut CollectCtx<'_, MoverPlaneResult>) };
     let plane = unsafe { *plane };
-    let Some(shape_id) = ctx.shape(shape_id) else {
+    let ::std::option::Option::Some(shape_id) = ctx.shape(shape_id) else {
         return false;
     };
     ctx.push(MoverPlaneResult {
@@ -257,6 +264,7 @@ pub(super) fn make_capsule(c1: Vec2, c2: Vec2, radius: f32) -> ffi::b2Capsule {
     crate::shapes::Capsule::new(c1, c2, radius).into_raw()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn visit_overlap_aabb_impl<F>(
     target: &QueryTarget,
     origin: Position,
@@ -281,6 +289,7 @@ where
     ctx.finish()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn overlap_aabb_into_impl(
     target: &QueryTarget,
     origin: Position,
@@ -296,6 +305,7 @@ pub(super) fn overlap_aabb_into_impl(
     let _ = visit_overlap_aabb_impl(target, origin, aabb, filter, &mut collect);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn overlap_aabb_impl(
     target: &QueryTarget,
     origin: Position,
@@ -307,6 +317,7 @@ pub(super) fn overlap_aabb_impl(
     out
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn visit_overlap_shape_proxy_impl<F>(
     target: &QueryTarget,
     origin: Position,
@@ -331,19 +342,19 @@ where
     ctx.finish()
 }
 
-pub(super) fn cast_ray_closest_impl(
+pub(super) fn cast_ray_closest_with_stats_impl(
     target: &QueryTarget,
     origin: Position,
     translation: Vec2,
     filter: QueryFilter,
-) -> Option<RayResult> {
+) -> ApiResult<ClosestRayCastResult> {
     let o = origin.into_raw();
     let t = translation.into_raw();
     let raw = unsafe { ffi::b2World_CastRayClosest(target.raw(), o, t, filter.0) };
-    RayResult::from_raw_in(target.brand(), raw)
-        .expect("Box2D returned an invalid closest-ray shape id")
+    ClosestRayCastResult::from_raw_in(target.brand(), raw)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn cast_ray_all_impl(
     target: &QueryTarget,
     origin: Position,
@@ -355,6 +366,7 @@ pub(super) fn cast_ray_all_impl(
     out
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn cast_ray_all_into_impl(
     target: &QueryTarget,
     origin: Position,
@@ -376,9 +388,10 @@ pub(super) fn cast_ray_all_into_impl(
             &mut ctx as *mut _ as *mut _,
         );
     }
-    ctx.resume_unwind_if_needed();
+    ctx.finish();
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn overlap_polygon_points_into_impl(
     target: &QueryTarget,
     origin: Position,
@@ -395,6 +408,7 @@ pub(super) fn overlap_polygon_points_into_impl(
     let _ = visit_overlap_polygon_points_impl(target, origin, points, radius, filter, &mut collect);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn visit_overlap_polygon_points_impl<F>(
     target: &QueryTarget,
     origin: Position,
@@ -412,6 +426,7 @@ where
     visit_overlap_shape_proxy_impl(target, origin, &proxy, filter, visit)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn overlap_polygon_points_impl(
     target: &QueryTarget,
     origin: Position,
@@ -424,6 +439,7 @@ pub(super) fn overlap_polygon_points_impl(
     out
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn cast_shape_points_into_impl(
     target: &QueryTarget,
     origin: Position,
@@ -450,9 +466,10 @@ pub(super) fn cast_shape_points_into_impl(
             &mut ctx as *mut _ as *mut _,
         );
     }
-    ctx.resume_unwind_if_needed();
+    ctx.finish();
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn cast_shape_points_impl(
     target: &QueryTarget,
     origin: Position,
@@ -488,6 +505,7 @@ pub(super) fn cast_mover_impl(
     unsafe { ffi::b2World_CastMover(target.raw(), origin.into_raw(), &cap, t, filter.0) }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn collide_mover_into_impl(
     target: &QueryTarget,
     origin: Position,
@@ -506,13 +524,14 @@ pub(super) fn collide_mover_into_impl(
             origin.into_raw(),
             &cap,
             filter.0,
-            Some(collect_mover_plane_result_cb),
+            ::std::option::Option::Some(collect_mover_plane_result_cb),
             &mut ctx as *mut _ as *mut _,
         );
     }
-    ctx.resume_unwind_if_needed();
+    ctx.finish();
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn collide_mover_impl(
     target: &QueryTarget,
     origin: Position,
@@ -526,6 +545,7 @@ pub(super) fn collide_mover_impl(
     out
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn overlap_polygon_points_with_offset_into_impl(
     target: &QueryTarget,
     origin: Position,
@@ -553,6 +573,7 @@ pub(super) fn overlap_polygon_points_with_offset_into_impl(
     );
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn visit_overlap_polygon_points_with_offset_impl<F>(
     target: &QueryTarget,
     origin: Position,
@@ -572,6 +593,7 @@ where
     visit_overlap_shape_proxy_impl(target, origin, &proxy, filter, visit)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn overlap_polygon_points_with_offset_impl(
     target: &QueryTarget,
     origin: Position,
@@ -596,6 +618,7 @@ pub(super) fn overlap_polygon_points_with_offset_impl(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn cast_shape_points_with_offset_into_impl(
     target: &QueryTarget,
     origin: Position,
@@ -624,9 +647,10 @@ pub(super) fn cast_shape_points_with_offset_into_impl(
             &mut ctx as *mut _ as *mut _,
         );
     }
-    ctx.resume_unwind_if_needed();
+    ctx.finish();
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn cast_shape_points_with_offset_impl(
     target: &QueryTarget,
     origin: Position,
@@ -711,5 +735,38 @@ mod tests {
         let _: CastShape = ffi::b2World_CastShape;
         let _: CastMover = ffi::b2World_CastMover;
         let _: CollideMover = ffi::b2World_CollideMover;
+    }
+
+    #[test]
+    fn panicking_overlap_visitor_returns_stop_sentinel() {
+        fn panic_visitor(_: ShapeId) -> bool {
+            panic!("overlap visitor test panic");
+        }
+
+        let mut world = crate::World::new(crate::WorldDef::default()).unwrap();
+        let body = world.create_body_id(
+            crate::BodyBuilder::new()
+                .body_type(crate::BodyType::Dynamic)
+                .build(),
+        );
+        let shape = world.create_polygon_shape_for(
+            body,
+            &crate::ShapeDef::builder().density(1.0).build(),
+            &crate::shapes::box_polygon(0.5, 0.5),
+        );
+        let mut visitor: fn(ShapeId) -> bool = panic_visitor;
+        let mut context = VisitShapeIdCtx::new(&mut visitor, world.brand());
+        let context_ptr = core::ptr::from_mut(&mut context).cast::<core::ffi::c_void>();
+
+        // SAFETY: `context_ptr` refers to the live context and `shape` belongs to its brand.
+        let first = unsafe {
+            visit_shape_id_cb::<fn(ShapeId) -> bool>(shape.unbind().into_ffi(), context_ptr)
+        };
+        let second = unsafe {
+            visit_shape_id_cb::<fn(ShapeId) -> bool>(shape.unbind().into_ffi(), context_ptr)
+        };
+        assert!(!first);
+        assert!(!second);
+        assert!(context.panic.has_panicked());
     }
 }

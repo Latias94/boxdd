@@ -19,7 +19,7 @@ pub(crate) fn cast_mover_checked_impl<V1: Into<Vec2>, V2: Into<Vec2>, VT: Into<V
     assert_query_vec2_valid("translation", translation);
     assert_query_mover_radius_valid(radius);
     checked_query_impl(&target, || {
-        cast_mover_impl(&target, origin, c1, c2, radius, translation, filter)
+        crate::query::raw::cast_mover_impl(&target, origin, c1, c2, radius, translation, filter)
     })
 }
 
@@ -42,7 +42,7 @@ pub(crate) fn try_cast_mover_impl<V1: Into<Vec2>, V2: Into<Vec2>, VT: Into<Vec2>
     check_query_vec2_valid(translation)?;
     check_query_mover_radius_valid(radius)?;
     try_checked_query_result_impl(&target, || {
-        Ok(cast_mover_impl(
+        Ok(crate::query::raw::cast_mover_impl(
             &target,
             origin,
             c1,
@@ -54,6 +54,7 @@ pub(crate) fn try_cast_mover_impl<V1: Into<Vec2>, V2: Into<Vec2>, VT: Into<Vec2>
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn collide_mover_checked_impl<V1: Into<Vec2>, V2: Into<Vec2>>(
     target: QueryTarget,
     origin: Position,
@@ -70,10 +71,11 @@ pub(crate) fn collide_mover_checked_impl<V1: Into<Vec2>, V2: Into<Vec2>>(
     assert_query_vec2_valid("c2", c2);
     assert_query_mover_radius_valid(radius);
     checked_query_impl(&target, || {
-        collide_mover_impl(&target, origin, c1, c2, radius, filter)
+        crate::query::raw::collide_mover_impl(&target, origin, c1, c2, radius, filter)
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn collide_mover_into_checked_impl<V1: Into<Vec2>, V2: Into<Vec2>>(
     target: QueryTarget,
     origin: Position,
@@ -91,10 +93,11 @@ pub(crate) fn collide_mover_into_checked_impl<V1: Into<Vec2>, V2: Into<Vec2>>(
     assert_query_vec2_valid("c2", c2);
     assert_query_mover_radius_valid(radius);
     checked_query_impl(&target, || {
-        collide_mover_into_impl(&target, origin, c1, c2, radius, filter, out);
+        crate::query::raw::collide_mover_into_impl(&target, origin, c1, c2, radius, filter, out);
     });
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn try_collide_mover_impl<V1: Into<Vec2>, V2: Into<Vec2>>(
     target: QueryTarget,
     origin: Position,
@@ -111,10 +114,13 @@ pub(crate) fn try_collide_mover_impl<V1: Into<Vec2>, V2: Into<Vec2>>(
     check_query_vec2_valid(c2)?;
     check_query_mover_radius_valid(radius)?;
     try_checked_query_result_impl(&target, || {
-        Ok(collide_mover_impl(&target, origin, c1, c2, radius, filter))
+        Ok(crate::query::raw::collide_mover_impl(
+            &target, origin, c1, c2, radius, filter,
+        ))
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn try_collide_mover_into_impl<V1: Into<Vec2>, V2: Into<Vec2>>(
     target: QueryTarget,
     origin: Position,
@@ -132,7 +138,7 @@ pub(crate) fn try_collide_mover_into_impl<V1: Into<Vec2>, V2: Into<Vec2>>(
     check_query_vec2_valid(c2)?;
     check_query_mover_radius_valid(radius)?;
     try_checked_query_result_impl(&target, || {
-        collide_mover_into_impl(&target, origin, c1, c2, radius, filter, out);
+        crate::query::raw::collide_mover_into_impl(&target, origin, c1, c2, radius, filter, out);
         Ok(())
     })
 }

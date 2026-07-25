@@ -26,11 +26,6 @@ fn body_world_id_impl(id: BodyId) -> ffi::b2WorldId {
 }
 
 #[inline]
-fn body_is_valid_impl(id: BodyId) -> bool {
-    unsafe { ffi::b2Body_IsValid(raw_body_id(id)) }
-}
-
-#[inline]
 pub(crate) fn body_position_impl(id: BodyId) -> Position {
     Position::from_raw(unsafe { ffi::b2Body_GetPosition(raw_body_id(id)) })
 }
@@ -307,8 +302,39 @@ pub(crate) fn body_joints_in_impl(
 }
 
 #[inline]
-pub(crate) fn body_type_impl(id: BodyId) -> BodyType {
-    BodyType::from_raw(unsafe { ffi::b2Body_GetType(raw_body_id(id)) })
+fn body_type_raw_impl(id: BodyId) -> ffi::b2BodyType {
+    #[cfg(test)]
+    {
+        BODY_GET_TYPE_CALLS.with(|calls| calls.set(calls.get().saturating_add(1)));
+        if let Some(raw) = BODY_GET_TYPE_OVERRIDE.with(core::cell::Cell::get) {
+            return raw;
+        }
+    }
+    unsafe { ffi::b2Body_GetType(raw_body_id(id)) }
+}
+
+#[cfg(test)]
+thread_local! {
+    static BODY_GET_TYPE_OVERRIDE: core::cell::Cell<Option<ffi::b2BodyType>> = const {
+        core::cell::Cell::new(None)
+    };
+    static BODY_GET_TYPE_CALLS: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
+}
+
+#[inline]
+pub(crate) fn resolve_body_type_output(
+    core: &crate::core::world_core::WorldCore,
+    raw: ffi::b2BodyType,
+) -> ApiResult<BodyType> {
+    BodyType::decode_native(raw).inspect_err(|_| core.poison())
+}
+
+#[inline]
+pub(crate) fn try_body_type_impl(
+    core: &crate::core::world_core::WorldCore,
+    id: BodyId,
+) -> ApiResult<BodyType> {
+    resolve_body_type_output(core, body_type_raw_impl(id))
 }
 
 #[inline]
@@ -402,6 +428,16 @@ pub(crate) fn body_set_bullet_impl(id: BodyId, bullet: bool) {
 }
 
 #[inline]
+pub(crate) fn body_enable_contact_recycling_impl(id: BodyId, flag: bool) {
+    unsafe { ffi::b2Body_EnableContactRecycling(raw_body_id(id), flag) }
+}
+
+#[inline]
+pub(crate) fn body_is_contact_recycling_enabled_impl(id: BodyId) -> bool {
+    unsafe { ffi::b2Body_IsContactRecyclingEnabled(raw_body_id(id)) }
+}
+
+#[inline]
 pub(crate) fn body_enable_contact_events_impl(id: BodyId, flag: bool) {
     unsafe { ffi::b2Body_EnableContactEvents(raw_body_id(id), flag) }
 }
@@ -427,5 +463,97 @@ pub(crate) fn body_name_impl(id: BodyId) -> Option<String> {
                 .to_string_lossy()
                 .into_owned(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{ApiError, BodyBuilder, World, WorldDef};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    struct BodyGetTypeOverride;
+
+    impl BodyGetTypeOverride {
+        fn install(raw: ffi::b2BodyType) -> Self {
+            BODY_GET_TYPE_OVERRIDE.with(|current| {
+                assert_eq!(current.replace(Some(raw)), None);
+            });
+            BODY_GET_TYPE_CALLS.with(|calls| calls.set(0));
+            Self
+        }
+
+        fn calls(&self) -> usize {
+            BODY_GET_TYPE_CALLS.with(core::cell::Cell::get)
+        }
+    }
+
+    impl Drop for BodyGetTypeOverride {
+        fn drop(&mut self) {
+            BODY_GET_TYPE_OVERRIDE.with(|current| current.set(None));
+            BODY_GET_TYPE_CALLS.with(|calls| calls.set(0));
+        }
+    }
+
+    #[test]
+    fn all_public_body_type_getters_report_unknown_once_then_stop_before_get_type() {
+        let raw = ffi::b2BodyType_b2_bodyTypeCount;
+
+        {
+            let mut world = World::new(WorldDef::default()).unwrap();
+            let body = world.create_body_owned(BodyBuilder::new().build());
+            let get_type = BodyGetTypeOverride::install(raw);
+
+            assert_eq!(
+                body.try_body_type(),
+                Err(ApiError::InvalidNativeBodyType { raw })
+            );
+            assert_eq!(get_type.calls(), 1);
+            assert_eq!(body.try_body_type(), Err(ApiError::WorldPoisoned));
+            assert_eq!(get_type.calls(), 1);
+        }
+
+        {
+            let mut world = World::new(WorldDef::default()).unwrap();
+            let body = world.create_body_id(BodyBuilder::new().build());
+            let handle = world.handle();
+            let get_type = BodyGetTypeOverride::install(raw);
+
+            assert_eq!(
+                handle.try_body_type(body),
+                Err(ApiError::InvalidNativeBodyType { raw })
+            );
+            assert_eq!(get_type.calls(), 1);
+            assert_eq!(handle.try_body_type(body), Err(ApiError::WorldPoisoned));
+            assert_eq!(get_type.calls(), 1);
+        }
+
+        {
+            let mut world = World::new(WorldDef::default()).unwrap();
+            let body = world.create_body_id(BodyBuilder::new().build());
+            let body = world.body(body).unwrap();
+            let get_type = BodyGetTypeOverride::install(raw);
+
+            assert_eq!(
+                body.try_body_type(),
+                Err(ApiError::InvalidNativeBodyType { raw })
+            );
+            assert_eq!(get_type.calls(), 1);
+            assert_eq!(body.try_body_type(), Err(ApiError::WorldPoisoned));
+            assert_eq!(get_type.calls(), 1);
+        }
+    }
+
+    #[test]
+    fn infallible_body_type_poisoning_precedes_its_unknown_native_panic() {
+        let mut world = World::new(WorldDef::default()).unwrap();
+        let body = world.create_body_owned(BodyBuilder::new().build());
+        let raw = ffi::b2BodyType_b2_bodyTypeCount;
+        let get_type = BodyGetTypeOverride::install(raw);
+
+        assert!(catch_unwind(AssertUnwindSafe(|| body.body_type())).is_err());
+        assert_eq!(get_type.calls(), 1);
+        assert_eq!(body.try_body_type(), Err(ApiError::WorldPoisoned));
+        assert_eq!(get_type.calls(), 1);
     }
 }

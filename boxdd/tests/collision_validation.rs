@@ -113,6 +113,85 @@ fn standalone_collision_try_apis_reject_invalid_inputs() {
 }
 
 #[test]
+fn sweep_transform_rejects_invalid_sweeps_and_times() {
+    let valid_sweep = Sweep::new(
+        [0.0_f32, 0.0],
+        [1.0_f32, 2.0],
+        [3.0_f32, 4.0],
+        Rot::IDENTITY,
+        Rot::IDENTITY,
+    );
+    let start = Sweep::try_transform_at(valid_sweep, 0.0).unwrap();
+    let end = Sweep::try_transform_at(valid_sweep, 1.0).unwrap();
+
+    assert_eq!(start.position(), boxdd::Vec2::new(1.0, 2.0));
+    assert_eq!(end.position(), boxdd::Vec2::new(3.0, 4.0));
+
+    for invalid_time in [
+        f32::NAN,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        -f32::EPSILON,
+        1.0 + f32::EPSILON,
+    ] {
+        assert_eq!(
+            Sweep::try_transform_at(valid_sweep, invalid_time).unwrap_err(),
+            ApiError::InvalidArgument
+        );
+    }
+
+    let invalid_rotation = Rot::from_raw(boxdd_sys::ffi::b2Rot { c: 2.0, s: 0.0 });
+    let non_finite_rotation = Rot::from_raw(boxdd_sys::ffi::b2Rot {
+        c: f32::NAN,
+        s: 0.0,
+    });
+    for invalid_sweep in [
+        Sweep::new(
+            [f32::NAN, 0.0],
+            [1.0_f32, 2.0],
+            [3.0_f32, 4.0],
+            Rot::IDENTITY,
+            Rot::IDENTITY,
+        ),
+        Sweep::new(
+            [0.0_f32, 0.0],
+            [f32::INFINITY, 2.0],
+            [3.0_f32, 4.0],
+            Rot::IDENTITY,
+            Rot::IDENTITY,
+        ),
+        Sweep::new(
+            [0.0_f32, 0.0],
+            [1.0_f32, 2.0],
+            [3.0_f32, f32::NEG_INFINITY],
+            Rot::IDENTITY,
+            Rot::IDENTITY,
+        ),
+        Sweep::new(
+            [0.0_f32, 0.0],
+            [1.0_f32, 2.0],
+            [3.0_f32, 4.0],
+            invalid_rotation,
+            Rot::IDENTITY,
+        ),
+        Sweep::new(
+            [0.0_f32, 0.0],
+            [1.0_f32, 2.0],
+            [3.0_f32, 4.0],
+            Rot::IDENTITY,
+            non_finite_rotation,
+        ),
+    ] {
+        assert_eq!(
+            Sweep::try_transform_at(invalid_sweep, 0.5).unwrap_err(),
+            ApiError::InvalidArgument
+        );
+    }
+
+    assert!(std::panic::catch_unwind(|| valid_sweep.transform_at(f32::NAN)).is_err());
+}
+
+#[test]
 fn geometry_values_expose_validation_for_invalid_inputs() {
     assert_eq!(
         shapes::circle([f32::NAN, 0.0], 0.5).validate().unwrap_err(),
@@ -145,7 +224,10 @@ fn geometry_values_expose_validation_for_invalid_inputs() {
     let mut raw_polygon = shapes::box_polygon(1.0, 1.0).into_raw();
     raw_polygon.radius = -1.0;
     assert_eq!(
-        Polygon::from_raw(raw_polygon).validate().unwrap_err(),
+        // SAFETY: this intentionally violates the radius invariant to test validation.
+        unsafe { Polygon::from_raw(raw_polygon) }
+            .validate()
+            .unwrap_err(),
         ApiError::InvalidArgument
     );
     assert!(Polygon::from_points([[f32::NAN, 0.0], [1.0, 0.0], [0.0, 1.0]], 0.0).is_none());

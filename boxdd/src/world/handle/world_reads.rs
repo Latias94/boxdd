@@ -16,7 +16,7 @@ impl WorldHandle {
     }
 
     pub(crate) fn brand(&self) -> crate::id::IdBrand {
-        self.core.brand()
+        WorldCore::brand(&self.core)
     }
 
     pub(crate) fn core(&self) -> &WorldCore {

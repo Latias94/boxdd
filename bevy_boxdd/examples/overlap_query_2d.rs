@@ -56,12 +56,16 @@ fn move_probe(time: Res<Time>, mut probe: Single<&mut Transform, With<Probe>>) {
 
 fn highlight_pickups(
     mut context: NonSendMut<BoxddPhysicsContext>,
+    world_origin: Res<BoxddWorldOrigin>,
     probe: Single<&Transform, With<Probe>>,
     mut hits: Local<Vec<BoxddShapeHit>>,
     mut pickups: Query<(Entity, &mut Sprite), With<Pickup>>,
 ) {
     let center = probe.translation.truncate();
-    let origin = boxdd::Position::from([center.x, center.y]);
+    let Ok(origin) = world_origin.checked_local_to_absolute(center) else {
+        warn!("overlap probe is outside the active world-origin frame");
+        return;
+    };
     let aabb = boxdd::Aabb::from_center_half_extents(
         boxdd::Vec2::ZERO,
         PROBE_HALF_EXTENTS.to_boxdd_vec2(),

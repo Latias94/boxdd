@@ -1,5 +1,145 @@
 use super::*;
 
+fn check_shape_with_access(
+    core: &crate::core::world_core::WorldCore,
+    shape: ShapeId,
+    access: crate::core::world_core::WorldAccess,
+) -> ApiResult<()> {
+    crate::core::callback_state::check_not_in_callback()?;
+    core.check_shape_with_access(shape, access)
+}
+
+pub(crate) fn try_shape_set_filter_with_access(
+    core: &crate::core::world_core::WorldCore,
+    shape: ShapeId,
+    filter: Filter,
+    access: crate::core::world_core::WorldAccess,
+) -> ApiResult<()> {
+    check_shape_with_access(core, shape, access)?;
+    shape_set_filter_impl(shape, filter);
+    Ok(())
+}
+
+pub(crate) fn try_shape_set_density_with_access(
+    core: &crate::core::world_core::WorldCore,
+    shape: ShapeId,
+    density: f32,
+    update_body_mass: bool,
+    access: crate::core::world_core::WorldAccess,
+) -> ApiResult<()> {
+    check_non_negative_finite_shape_scalar(density)?;
+    check_shape_with_access(core, shape, access)?;
+    shape_set_density_impl(shape, density, update_body_mass);
+    Ok(())
+}
+
+pub(crate) fn try_shape_set_friction_with_access(
+    core: &crate::core::world_core::WorldCore,
+    shape: ShapeId,
+    friction: f32,
+    access: crate::core::world_core::WorldAccess,
+) -> ApiResult<()> {
+    check_non_negative_finite_shape_scalar(friction)?;
+    check_shape_with_access(core, shape, access)?;
+    shape_set_friction_impl(shape, friction);
+    Ok(())
+}
+
+pub(crate) fn try_shape_set_restitution_with_access(
+    core: &crate::core::world_core::WorldCore,
+    shape: ShapeId,
+    restitution: f32,
+    access: crate::core::world_core::WorldAccess,
+) -> ApiResult<()> {
+    check_non_negative_finite_shape_scalar(restitution)?;
+    check_shape_with_access(core, shape, access)?;
+    shape_set_restitution_impl(shape, restitution);
+    Ok(())
+}
+
+pub(crate) fn try_shape_set_surface_material_with_access(
+    core: &crate::core::world_core::WorldCore,
+    shape: ShapeId,
+    material: &SurfaceMaterial,
+    access: crate::core::world_core::WorldAccess,
+) -> ApiResult<()> {
+    check_surface_material_valid(material)?;
+    check_shape_with_access(core, shape, access)?;
+    shape_set_surface_material_impl(shape, material);
+    Ok(())
+}
+
+pub(crate) fn try_shape_set_user_material_with_access(
+    core: &crate::core::world_core::WorldCore,
+    shape: ShapeId,
+    material: u64,
+    access: crate::core::world_core::WorldAccess,
+) -> ApiResult<()> {
+    check_shape_with_access(core, shape, access)?;
+    shape_set_user_material_impl(shape, material);
+    Ok(())
+}
+
+pub(crate) fn try_shape_enable_sensor_events_with_access(
+    core: &crate::core::world_core::WorldCore,
+    shape: ShapeId,
+    flag: bool,
+    access: crate::core::world_core::WorldAccess,
+) -> ApiResult<()> {
+    check_shape_with_access(core, shape, access)?;
+    shape_enable_sensor_events_impl(shape, flag);
+    Ok(())
+}
+
+pub(crate) fn try_shape_enable_contact_events_with_access(
+    core: &crate::core::world_core::WorldCore,
+    shape: ShapeId,
+    flag: bool,
+    access: crate::core::world_core::WorldAccess,
+) -> ApiResult<()> {
+    check_shape_with_access(core, shape, access)?;
+    shape_enable_contact_events_impl(shape, flag);
+    Ok(())
+}
+
+pub(crate) fn try_shape_enable_pre_solve_events_with_access(
+    core: &crate::core::world_core::WorldCore,
+    shape: ShapeId,
+    flag: bool,
+    access: crate::core::world_core::WorldAccess,
+) -> ApiResult<()> {
+    check_shape_with_access(core, shape, access)?;
+    shape_enable_pre_solve_events_impl(shape, flag);
+    Ok(())
+}
+
+pub(crate) fn try_shape_enable_hit_events_with_access(
+    core: &crate::core::world_core::WorldCore,
+    shape: ShapeId,
+    flag: bool,
+    access: crate::core::world_core::WorldAccess,
+) -> ApiResult<()> {
+    check_shape_with_access(core, shape, access)?;
+    shape_enable_hit_events_impl(shape, flag);
+    Ok(())
+}
+
+pub(crate) fn try_shape_apply_wind_with_access<V: Into<Vec2>>(
+    core: &crate::core::world_core::WorldCore,
+    shape: ShapeId,
+    wind: V,
+    drag: f32,
+    lift: f32,
+    wake: bool,
+    access: crate::core::world_core::WorldAccess,
+) -> ApiResult<()> {
+    let wind = wind.into();
+    check_shape_wind_parameters_valid(wind, drag, lift)?;
+    check_shape_with_access(core, shape, access)?;
+    shape_apply_wind_impl(shape, wind, drag, lift, wake);
+    Ok(())
+}
+
 pub(crate) trait ShapeRuntimeHandle {
     fn shape_id(&self) -> ShapeId;
     fn shape_world_core(&self) -> &crate::core::world_core::WorldCore;
@@ -47,11 +187,7 @@ pub(crate) trait ShapeRuntimeHandle {
         crate::core::callback_state::check_not_in_callback()?;
         let core = self.shape_world_core();
         core.check_available()?;
-        let id = self.shape_id();
-        if id.brand() != core.brand() {
-            return Err(ApiError::WrongWorld);
-        }
-        Ok(shape_is_valid_impl(id))
+        core.shape_is_valid(self.shape_id())
     }
 
     unsafe fn set_user_data_ptr_raw(&mut self, p: *mut c_void) {
@@ -236,9 +372,12 @@ pub(crate) trait ShapeRuntimeHandle {
     }
 
     fn try_enable_sensor_events(&mut self, flag: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_enable_sensor_events_impl(self.shape_id(), flag);
-        Ok(())
+        try_shape_enable_sensor_events_with_access(
+            self.shape_world_core(),
+            self.shape_id(),
+            flag,
+            crate::core::world_core::WorldAccess::Idle,
+        )
     }
 
     fn sensor_events_enabled(&self) -> bool {
@@ -257,9 +396,12 @@ pub(crate) trait ShapeRuntimeHandle {
     }
 
     fn try_enable_contact_events(&mut self, flag: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_enable_contact_events_impl(self.shape_id(), flag);
-        Ok(())
+        try_shape_enable_contact_events_with_access(
+            self.shape_world_core(),
+            self.shape_id(),
+            flag,
+            crate::core::world_core::WorldAccess::Idle,
+        )
     }
 
     fn contact_events_enabled(&self) -> bool {
@@ -278,9 +420,12 @@ pub(crate) trait ShapeRuntimeHandle {
     }
 
     fn try_enable_pre_solve_events(&mut self, flag: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_enable_pre_solve_events_impl(self.shape_id(), flag);
-        Ok(())
+        try_shape_enable_pre_solve_events_with_access(
+            self.shape_world_core(),
+            self.shape_id(),
+            flag,
+            crate::core::world_core::WorldAccess::Idle,
+        )
     }
 
     fn pre_solve_events_enabled(&self) -> bool {
@@ -299,9 +444,12 @@ pub(crate) trait ShapeRuntimeHandle {
     }
 
     fn try_enable_hit_events(&mut self, flag: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_enable_hit_events_impl(self.shape_id(), flag);
-        Ok(())
+        try_shape_enable_hit_events_with_access(
+            self.shape_world_core(),
+            self.shape_id(),
+            flag,
+            crate::core::world_core::WorldAccess::Idle,
+        )
     }
 
     fn hit_events_enabled(&self) -> bool {
@@ -315,13 +463,13 @@ pub(crate) trait ShapeRuntimeHandle {
     }
 
     fn shape_type(&self) -> ShapeType {
-        self.assert_valid();
-        shape_type_impl(self.shape_id())
+        self.try_shape_type()
+            .expect("shape handle is unavailable or Box2D returned an unknown shape type")
     }
 
     fn try_shape_type(&self) -> ApiResult<ShapeType> {
         self.check_valid()?;
-        Ok(shape_type_impl(self.shape_id()))
+        try_shape_type_impl(self.shape_world_core(), self.shape_id())
     }
 
     fn shape_type_raw(&self) -> ffi::b2ShapeType {
@@ -429,11 +577,16 @@ pub(crate) trait ShapeRuntimeHandle {
     }
 
     fn apply_wind<V: Into<Vec2>>(&mut self, wind: V, drag: f32, lift: f32, wake: bool) {
-        self.assert_valid();
-        let wind = wind.into();
-        assert_shape_vec2_valid("wind", wind);
-        self.assert_valid();
-        shape_apply_wind_impl(self.shape_id(), wind, drag, lift, wake)
+        try_shape_apply_wind_with_access(
+            self.shape_world_core(),
+            self.shape_id(),
+            wind,
+            drag,
+            lift,
+            wake,
+            crate::core::world_core::WorldAccess::Idle,
+        )
+        .expect("shape handle received invalid wind parameters")
     }
 
     fn try_apply_wind<V: Into<Vec2>>(
@@ -443,62 +596,81 @@ pub(crate) trait ShapeRuntimeHandle {
         lift: f32,
         wake: bool,
     ) -> ApiResult<()> {
-        self.check_valid()?;
-        let wind = wind.into();
-        check_shape_vec2_valid(wind)?;
-        self.check_valid()?;
-        shape_apply_wind_impl(self.shape_id(), wind, drag, lift, wake);
-        Ok(())
+        try_shape_apply_wind_with_access(
+            self.shape_world_core(),
+            self.shape_id(),
+            wind,
+            drag,
+            lift,
+            wake,
+            crate::core::world_core::WorldAccess::Idle,
+        )
     }
 
     fn set_circle(&mut self, circle: &Circle) {
-        self.assert_valid();
         assert_circle_geometry_valid(circle);
+        assert_orphan_shape_mutation_target(self.shape_world_core(), self.shape_id());
         shape_set_circle_impl(self.shape_id(), circle)
     }
 
     fn try_set_circle(&mut self, circle: &Circle) -> ApiResult<()> {
-        self.check_valid()?;
         check_circle_geometry_valid(circle)?;
+        try_check_orphan_shape_mutation_target(self.shape_world_core(), self.shape_id())?;
         shape_set_circle_impl(self.shape_id(), circle);
         Ok(())
     }
 
     fn set_segment(&mut self, segment: &Segment) {
-        self.assert_valid();
         assert_segment_geometry_valid(segment);
+        assert_orphan_shape_mutation_target(self.shape_world_core(), self.shape_id());
         shape_set_segment_impl(self.shape_id(), segment)
     }
 
     fn try_set_segment(&mut self, segment: &Segment) -> ApiResult<()> {
-        self.check_valid()?;
         check_segment_geometry_valid(segment)?;
+        try_check_orphan_shape_mutation_target(self.shape_world_core(), self.shape_id())?;
         shape_set_segment_impl(self.shape_id(), segment);
         Ok(())
     }
 
+    fn set_chain_segment(&mut self, chain_segment: &ChainSegment) {
+        shape_set_chain_segment_checked_impl(
+            self.shape_world_core(),
+            self.shape_id(),
+            chain_segment,
+        )
+    }
+
+    fn try_set_chain_segment(&mut self, chain_segment: &ChainSegment) -> ApiResult<()> {
+        try_shape_set_chain_segment_checked_impl(
+            self.shape_world_core(),
+            self.shape_id(),
+            chain_segment,
+        )
+    }
+
     fn set_capsule(&mut self, capsule: &Capsule) {
-        self.assert_valid();
         assert_capsule_geometry_valid(capsule);
+        assert_orphan_shape_mutation_target(self.shape_world_core(), self.shape_id());
         shape_set_capsule_impl(self.shape_id(), capsule)
     }
 
     fn try_set_capsule(&mut self, capsule: &Capsule) -> ApiResult<()> {
-        self.check_valid()?;
         check_capsule_geometry_valid(capsule)?;
+        try_check_orphan_shape_mutation_target(self.shape_world_core(), self.shape_id())?;
         shape_set_capsule_impl(self.shape_id(), capsule);
         Ok(())
     }
 
     fn set_polygon(&mut self, polygon: &Polygon) {
-        self.assert_valid();
         assert_polygon_geometry_valid(polygon);
+        assert_orphan_shape_mutation_target(self.shape_world_core(), self.shape_id());
         shape_set_polygon_impl(self.shape_id(), polygon)
     }
 
     fn try_set_polygon(&mut self, polygon: &Polygon) -> ApiResult<()> {
-        self.check_valid()?;
         check_polygon_geometry_valid(polygon)?;
+        try_check_orphan_shape_mutation_target(self.shape_world_core(), self.shape_id())?;
         shape_set_polygon_impl(self.shape_id(), polygon);
         Ok(())
     }
@@ -519,22 +691,28 @@ pub(crate) trait ShapeRuntimeHandle {
     }
 
     fn try_set_filter(&mut self, filter: Filter) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_set_filter_impl(self.shape_id(), filter);
-        Ok(())
+        try_shape_set_filter_with_access(
+            self.shape_world_core(),
+            self.shape_id(),
+            filter,
+            crate::core::world_core::WorldAccess::Idle,
+        )
     }
 
     fn set_density(&mut self, density: f32, update_body_mass: bool) {
-        self.assert_valid();
         assert_non_negative_finite_shape_scalar("density", density);
+        self.assert_valid();
         shape_set_density_impl(self.shape_id(), density, update_body_mass)
     }
 
     fn try_set_density(&mut self, density: f32, update_body_mass: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        check_non_negative_finite_shape_scalar(density)?;
-        shape_set_density_impl(self.shape_id(), density, update_body_mass);
-        Ok(())
+        try_shape_set_density_with_access(
+            self.shape_world_core(),
+            self.shape_id(),
+            density,
+            update_body_mass,
+            crate::core::world_core::WorldAccess::Idle,
+        )
     }
 
     fn density(&self) -> f32 {
@@ -558,16 +736,18 @@ pub(crate) trait ShapeRuntimeHandle {
     }
 
     fn set_friction(&mut self, friction: f32) {
-        self.assert_valid();
         assert_non_negative_finite_shape_scalar("friction", friction);
+        self.assert_valid();
         shape_set_friction_impl(self.shape_id(), friction)
     }
 
     fn try_set_friction(&mut self, friction: f32) -> ApiResult<()> {
-        self.check_valid()?;
-        check_non_negative_finite_shape_scalar(friction)?;
-        shape_set_friction_impl(self.shape_id(), friction);
-        Ok(())
+        try_shape_set_friction_with_access(
+            self.shape_world_core(),
+            self.shape_id(),
+            friction,
+            crate::core::world_core::WorldAccess::Idle,
+        )
     }
 
     fn friction(&self) -> f32 {
@@ -581,16 +761,18 @@ pub(crate) trait ShapeRuntimeHandle {
     }
 
     fn set_restitution(&mut self, restitution: f32) {
-        self.assert_valid();
         assert_non_negative_finite_shape_scalar("restitution", restitution);
+        self.assert_valid();
         shape_set_restitution_impl(self.shape_id(), restitution)
     }
 
     fn try_set_restitution(&mut self, restitution: f32) -> ApiResult<()> {
-        self.check_valid()?;
-        check_non_negative_finite_shape_scalar(restitution)?;
-        shape_set_restitution_impl(self.shape_id(), restitution);
-        Ok(())
+        try_shape_set_restitution_with_access(
+            self.shape_world_core(),
+            self.shape_id(),
+            restitution,
+            crate::core::world_core::WorldAccess::Idle,
+        )
     }
 
     fn restitution(&self) -> f32 {
@@ -609,9 +791,12 @@ pub(crate) trait ShapeRuntimeHandle {
     }
 
     fn try_set_user_material(&mut self, material: u64) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_set_user_material_impl(self.shape_id(), material);
-        Ok(())
+        try_shape_set_user_material_with_access(
+            self.shape_world_core(),
+            self.shape_id(),
+            material,
+            crate::core::world_core::WorldAccess::Idle,
+        )
     }
 
     fn user_material(&self) -> u64 {
@@ -625,14 +810,18 @@ pub(crate) trait ShapeRuntimeHandle {
     }
 
     fn set_surface_material(&mut self, material: &SurfaceMaterial) {
+        assert_surface_material_valid(material);
         self.assert_valid();
         shape_set_surface_material_impl(self.shape_id(), material)
     }
 
     fn try_set_surface_material(&mut self, material: &SurfaceMaterial) -> ApiResult<()> {
-        self.check_valid()?;
-        shape_set_surface_material_impl(self.shape_id(), material);
-        Ok(())
+        try_shape_set_surface_material_with_access(
+            self.shape_world_core(),
+            self.shape_id(),
+            material,
+            crate::core::world_core::WorldAccess::Idle,
+        )
     }
 
     fn surface_material(&self) -> SurfaceMaterial {

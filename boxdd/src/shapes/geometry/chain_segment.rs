@@ -61,13 +61,13 @@ impl ChainSegment {
     #[inline]
     /// Validate this chain segment for standalone collision use.
     pub fn is_valid(self) -> bool {
-        self.ghost1.is_valid() && self.segment.is_valid() && self.ghost2.is_valid()
+        chain_segment_geometry_is_valid(self)
     }
 
     #[inline]
     /// Validate this chain segment for standalone collision use.
     pub fn validate(self) -> ApiResult<()> {
-        geometry_is_valid_or_err(self.is_valid())
+        geometry_is_valid_or_err(chain_segment_geometry_is_valid(self))
     }
 }
 

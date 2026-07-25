@@ -42,7 +42,7 @@ impl Vec2 {
 
     #[inline]
     pub fn is_valid(self) -> bool {
-        unsafe { ffi::b2IsValidVec2(self.into_raw()) }
+        self.x.is_finite() && self.y.is_finite()
     }
 }
 
@@ -88,36 +88,6 @@ impl From<Vec2> for mint::Point2<f32> {
     #[inline]
     fn from(v: Vec2) -> Self {
         Self { x: v.x, y: v.y }
-    }
-}
-
-// Optional conversions with common math libraries
-#[cfg(feature = "cgmath")]
-impl From<cgmath::Vector2<f32>> for Vec2 {
-    #[inline]
-    fn from(v: cgmath::Vector2<f32>) -> Self {
-        Self { x: v.x, y: v.y }
-    }
-}
-#[cfg(feature = "cgmath")]
-impl From<Vec2> for cgmath::Vector2<f32> {
-    #[inline]
-    fn from(v: Vec2) -> Self {
-        cgmath::Vector2 { x: v.x, y: v.y }
-    }
-}
-#[cfg(feature = "cgmath")]
-impl From<cgmath::Point2<f32>> for Vec2 {
-    #[inline]
-    fn from(p: cgmath::Point2<f32>) -> Self {
-        Self { x: p.x, y: p.y }
-    }
-}
-#[cfg(feature = "cgmath")]
-impl From<Vec2> for cgmath::Point2<f32> {
-    #[inline]
-    fn from(v: Vec2) -> Self {
-        cgmath::Point2 { x: v.x, y: v.y }
     }
 }
 
@@ -244,7 +214,7 @@ impl Position {
     /// Returns whether both coordinates are finite and valid for Box2D.
     #[inline]
     pub fn is_valid(self) -> bool {
-        unsafe { ffi::b2IsValidPosition(self.into_raw()) }
+        self.x.is_finite() && self.y.is_finite()
     }
 
     /// Offsets this world position by a local `f32` vector without narrowing coordinates.
@@ -348,22 +318,6 @@ impl From<Position> for mint::Point2<WorldScalar> {
     }
 }
 
-#[cfg(feature = "cgmath")]
-impl From<cgmath::Point2<WorldScalar>> for Position {
-    #[inline]
-    fn from(value: cgmath::Point2<WorldScalar>) -> Self {
-        Self::new(value.x, value.y)
-    }
-}
-
-#[cfg(feature = "cgmath")]
-impl From<Position> for cgmath::Point2<WorldScalar> {
-    #[inline]
-    fn from(value: Position) -> Self {
-        Self::new(value.x, value.y)
-    }
-}
-
 #[cfg(feature = "nalgebra")]
 impl From<nalgebra::Point2<WorldScalar>> for Position {
     #[inline]
@@ -416,6 +370,93 @@ impl From<Position> for glam::DVec2 {
 unsafe impl bytemuck::Zeroable for Position {}
 #[cfg(feature = "bytemuck")]
 unsafe impl bytemuck::Pod for Position {}
+
+/// Failure while converting an external world-space transform into a [`WorldTransform`].
+///
+/// External translations use [`WorldScalar`] and are never narrowed. Rotations remain `f32`
+/// internally, so conversion into Box2D is explicit and rejects values that cannot form a finite
+/// rigid rotation.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum WorldTransformFromInteropError {
+    /// At least one matrix, rotation, or translation component is NaN or infinite.
+    #[error("external world transform contains a non-finite value")]
+    NonFinite,
+    /// The linear part contains scale, shear, or reflection instead of a pure rotation.
+    #[error("external world transform is not a pure rotation + translation")]
+    NotPureRotation,
+    /// The external rotation cannot be represented by Box2D's local `f32` rotation scalar.
+    #[error("external world transform rotation exceeds the f32 range")]
+    RotationOutOfRange,
+}
+
+#[cfg(any(feature = "mint", feature = "nalgebra", feature = "glam"))]
+#[inline]
+fn checked_world_scalar_to_f32(value: WorldScalar) -> Result<f32, WorldTransformFromInteropError> {
+    if !value.is_finite() {
+        return Err(WorldTransformFromInteropError::NonFinite);
+    }
+
+    #[cfg(not(feature = "double-precision"))]
+    {
+        Ok(value)
+    }
+
+    #[cfg(feature = "double-precision")]
+    {
+        if value < f64::from(f32::MIN) || value > f64::from(f32::MAX) {
+            return Err(WorldTransformFromInteropError::RotationOutOfRange);
+        }
+        Ok(value as f32)
+    }
+}
+
+#[cfg(any(feature = "mint", feature = "nalgebra", feature = "glam"))]
+#[inline]
+fn world_transform_from_affine_components(
+    x_axis_x: WorldScalar,
+    x_axis_y: WorldScalar,
+    y_axis_x: WorldScalar,
+    y_axis_y: WorldScalar,
+    translation_x: WorldScalar,
+    translation_y: WorldScalar,
+) -> Result<WorldTransform, WorldTransformFromInteropError> {
+    if !(x_axis_x.is_finite()
+        && x_axis_y.is_finite()
+        && y_axis_x.is_finite()
+        && y_axis_y.is_finite()
+        && translation_x.is_finite()
+        && translation_y.is_finite())
+    {
+        return Err(WorldTransformFromInteropError::NonFinite);
+    }
+
+    let one = WorldScalar::from(1.0_f32);
+    let epsilon = WorldScalar::from(1.0e-4_f32);
+    let determinant_epsilon = WorldScalar::from(5.0e-4_f32);
+    let x_length_squared = x_axis_x * x_axis_x + x_axis_y * x_axis_y;
+    let y_length_squared = y_axis_x * y_axis_x + y_axis_y * y_axis_y;
+    let dot = x_axis_x * y_axis_x + x_axis_y * y_axis_y;
+    let determinant = x_axis_x * y_axis_y - x_axis_y * y_axis_x;
+
+    if (x_length_squared - one).abs() > epsilon
+        || (y_length_squared - one).abs() > epsilon
+        || dot.abs() > epsilon
+        || (determinant - one).abs() > determinant_epsilon
+        || (y_axis_x + x_axis_y).abs() > epsilon
+        || (y_axis_y - x_axis_x).abs() > epsilon
+    {
+        return Err(WorldTransformFromInteropError::NotPureRotation);
+    }
+
+    let rotation = Rot {
+        c: checked_world_scalar_to_f32(x_axis_x)?,
+        s: checked_world_scalar_to_f32(x_axis_y)?,
+    };
+    Ok(WorldTransform::new(
+        Position::new(translation_x, translation_y),
+        rotation,
+    ))
+}
 
 /// A rigid transform whose translation is an absolute world [`Position`].
 ///
@@ -483,7 +524,7 @@ impl WorldTransform {
     /// Returns whether the position and rotation are valid for Box2D.
     #[inline]
     pub fn is_valid(self) -> bool {
-        unsafe { ffi::b2IsValidWorldTransform(self.into_raw()) }
+        self.p.is_valid() && self.q.is_valid()
     }
 
     /// Transforms a local point into an absolute world position.
@@ -496,6 +537,321 @@ impl WorldTransform {
 impl Default for WorldTransform {
     fn default() -> Self {
         Self::IDENTITY
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<WorldTransform> for mint::RowMatrix3x2<WorldScalar> {
+    #[inline]
+    fn from(value: WorldTransform) -> Self {
+        let position = value.position();
+        let rotation = value.rotation();
+        let c = WorldScalar::from(rotation.c);
+        let s = WorldScalar::from(rotation.s);
+        Self {
+            x: mint::Vector2 { x: c, y: -s },
+            y: mint::Vector2 { x: s, y: c },
+            z: mint::Vector2 {
+                x: position.x,
+                y: position.y,
+            },
+        }
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<&WorldTransform> for mint::RowMatrix3x2<WorldScalar> {
+    #[inline]
+    fn from(value: &WorldTransform) -> Self {
+        (*value).into()
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<mint::RowMatrix3x2<WorldScalar>> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: mint::RowMatrix3x2<WorldScalar>) -> Result<Self, Self::Error> {
+        world_transform_from_affine_components(
+            value.x.x, value.y.x, value.x.y, value.y.y, value.z.x, value.z.y,
+        )
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<&mint::RowMatrix3x2<WorldScalar>> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: &mint::RowMatrix3x2<WorldScalar>) -> Result<Self, Self::Error> {
+        Self::try_from(*value)
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<WorldTransform> for mint::ColumnMatrix3x2<WorldScalar> {
+    #[inline]
+    fn from(value: WorldTransform) -> Self {
+        mint::RowMatrix3x2::from(value).into()
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<&WorldTransform> for mint::ColumnMatrix3x2<WorldScalar> {
+    #[inline]
+    fn from(value: &WorldTransform) -> Self {
+        (*value).into()
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<mint::ColumnMatrix3x2<WorldScalar>> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: mint::ColumnMatrix3x2<WorldScalar>) -> Result<Self, Self::Error> {
+        Self::try_from(mint::RowMatrix3x2::from(value))
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<&mint::ColumnMatrix3x2<WorldScalar>> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: &mint::ColumnMatrix3x2<WorldScalar>) -> Result<Self, Self::Error> {
+        Self::try_from(*value)
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<WorldTransform> for mint::RowMatrix2x3<WorldScalar> {
+    #[inline]
+    fn from(value: WorldTransform) -> Self {
+        let position = value.position();
+        let rotation = value.rotation();
+        let c = WorldScalar::from(rotation.c);
+        let s = WorldScalar::from(rotation.s);
+        Self {
+            x: mint::Vector3 {
+                x: c,
+                y: -s,
+                z: position.x,
+            },
+            y: mint::Vector3 {
+                x: s,
+                y: c,
+                z: position.y,
+            },
+        }
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<&WorldTransform> for mint::RowMatrix2x3<WorldScalar> {
+    #[inline]
+    fn from(value: &WorldTransform) -> Self {
+        (*value).into()
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<mint::RowMatrix2x3<WorldScalar>> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: mint::RowMatrix2x3<WorldScalar>) -> Result<Self, Self::Error> {
+        world_transform_from_affine_components(
+            value.x.x, value.y.x, value.x.y, value.y.y, value.x.z, value.y.z,
+        )
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<&mint::RowMatrix2x3<WorldScalar>> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: &mint::RowMatrix2x3<WorldScalar>) -> Result<Self, Self::Error> {
+        Self::try_from(*value)
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<WorldTransform> for mint::ColumnMatrix2x3<WorldScalar> {
+    #[inline]
+    fn from(value: WorldTransform) -> Self {
+        mint::RowMatrix2x3::from(value).into()
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<&WorldTransform> for mint::ColumnMatrix2x3<WorldScalar> {
+    #[inline]
+    fn from(value: &WorldTransform) -> Self {
+        (*value).into()
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<mint::ColumnMatrix2x3<WorldScalar>> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: mint::ColumnMatrix2x3<WorldScalar>) -> Result<Self, Self::Error> {
+        Self::try_from(mint::RowMatrix2x3::from(value))
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<&mint::ColumnMatrix2x3<WorldScalar>> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: &mint::ColumnMatrix2x3<WorldScalar>) -> Result<Self, Self::Error> {
+        Self::try_from(*value)
+    }
+}
+
+#[cfg(feature = "nalgebra")]
+impl From<WorldTransform> for nalgebra::Isometry2<WorldScalar> {
+    #[inline]
+    fn from(value: WorldTransform) -> Self {
+        let position = value.position();
+        let rotation = value.rotation();
+        let rotation = nalgebra::UnitComplex::from_cos_sin_unchecked(
+            WorldScalar::from(rotation.c),
+            WorldScalar::from(rotation.s),
+        );
+        Self::from_parts(
+            nalgebra::Translation2::new(position.x, position.y),
+            rotation,
+        )
+    }
+}
+
+#[cfg(feature = "nalgebra")]
+impl From<&WorldTransform> for nalgebra::Isometry2<WorldScalar> {
+    #[inline]
+    fn from(value: &WorldTransform) -> Self {
+        (*value).into()
+    }
+}
+
+#[cfg(feature = "nalgebra")]
+impl TryFrom<nalgebra::Isometry2<WorldScalar>> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: nalgebra::Isometry2<WorldScalar>) -> Result<Self, Self::Error> {
+        Self::try_from(&value)
+    }
+}
+
+#[cfg(feature = "nalgebra")]
+impl TryFrom<&nalgebra::Isometry2<WorldScalar>> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: &nalgebra::Isometry2<WorldScalar>) -> Result<Self, Self::Error> {
+        let c = value.rotation.cos_angle();
+        let s = value.rotation.sin_angle();
+        let position = &value.translation.vector;
+        world_transform_from_affine_components(c, s, -s, c, position.x, position.y)
+    }
+}
+
+#[cfg(all(feature = "glam", not(feature = "double-precision")))]
+impl From<WorldTransform> for glam::Affine2 {
+    #[inline]
+    fn from(value: WorldTransform) -> Self {
+        let position = value.position();
+        let rotation = value.rotation();
+        glam::Affine2::from_mat2_translation(
+            glam::Mat2::from_cols(
+                glam::Vec2::new(rotation.c, rotation.s),
+                glam::Vec2::new(-rotation.s, rotation.c),
+            ),
+            glam::Vec2::new(position.x, position.y),
+        )
+    }
+}
+
+#[cfg(all(feature = "glam", not(feature = "double-precision")))]
+impl From<&WorldTransform> for glam::Affine2 {
+    #[inline]
+    fn from(value: &WorldTransform) -> Self {
+        (*value).into()
+    }
+}
+
+#[cfg(all(feature = "glam", not(feature = "double-precision")))]
+impl TryFrom<glam::Affine2> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: glam::Affine2) -> Result<Self, Self::Error> {
+        let x = value.matrix2.x_axis;
+        let y = value.matrix2.y_axis;
+        let translation = value.translation;
+        world_transform_from_affine_components(x.x, x.y, y.x, y.y, translation.x, translation.y)
+    }
+}
+
+#[cfg(all(feature = "glam", not(feature = "double-precision")))]
+impl TryFrom<&glam::Affine2> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: &glam::Affine2) -> Result<Self, Self::Error> {
+        Self::try_from(*value)
+    }
+}
+
+#[cfg(all(feature = "glam", feature = "double-precision"))]
+impl From<WorldTransform> for glam::DAffine2 {
+    #[inline]
+    fn from(value: WorldTransform) -> Self {
+        let position = value.position();
+        let rotation = value.rotation();
+        let c = f64::from(rotation.c);
+        let s = f64::from(rotation.s);
+        glam::DAffine2::from_mat2_translation(
+            glam::DMat2::from_cols(glam::DVec2::new(c, s), glam::DVec2::new(-s, c)),
+            glam::DVec2::new(position.x, position.y),
+        )
+    }
+}
+
+#[cfg(all(feature = "glam", feature = "double-precision"))]
+impl From<&WorldTransform> for glam::DAffine2 {
+    #[inline]
+    fn from(value: &WorldTransform) -> Self {
+        (*value).into()
+    }
+}
+
+#[cfg(all(feature = "glam", feature = "double-precision"))]
+impl TryFrom<glam::DAffine2> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: glam::DAffine2) -> Result<Self, Self::Error> {
+        let x = value.matrix2.x_axis;
+        let y = value.matrix2.y_axis;
+        let translation = value.translation;
+        world_transform_from_affine_components(x.x, x.y, y.x, y.y, translation.x, translation.y)
+    }
+}
+
+#[cfg(all(feature = "glam", feature = "double-precision"))]
+impl TryFrom<&glam::DAffine2> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: &glam::DAffine2) -> Result<Self, Self::Error> {
+        Self::try_from(*value)
     }
 }
 
@@ -544,6 +900,19 @@ unsafe impl bytemuck::Pod for WorldTransform {}
 #[cfg(feature = "bytemuck")]
 const _: () = {
     assert!(core::mem::size_of::<Position>() == 2 * core::mem::size_of::<WorldScalar>());
+    assert!(core::mem::align_of::<Position>() == core::mem::align_of::<WorldScalar>());
+    assert!(core::mem::offset_of!(Position, x) == 0);
+    assert!(core::mem::offset_of!(Position, y) == core::mem::size_of::<WorldScalar>());
+
+    assert!(core::mem::size_of::<Rot>() == 2 * core::mem::size_of::<f32>());
+    assert!(core::mem::align_of::<Rot>() == core::mem::align_of::<f32>());
+    assert!(core::mem::offset_of!(WorldTransform, p) == 0);
+    assert!(core::mem::offset_of!(WorldTransform, q) == core::mem::size_of::<Position>());
+    assert!(
+        core::mem::size_of::<WorldTransform>()
+            == core::mem::size_of::<Position>() + core::mem::size_of::<Rot>()
+    );
+    assert!(core::mem::align_of::<WorldTransform>() == core::mem::align_of::<Position>());
 
     #[cfg(not(feature = "double-precision"))]
     assert!(core::mem::size_of::<WorldTransform>() == 16);
@@ -910,6 +1279,17 @@ mod tests {
             crate::id::WorldToken::allocate().unwrap(),
         )
         .unwrap();
+        let identities = crate::core::identity_registry::ActiveIdentityRegistry::new(brand);
+        let body = identities
+            .register_body(ffi::b2BodyId {
+                index1: 1,
+                world0: brand.world0(),
+                generation: 1,
+            })
+            .unwrap();
+        let valid = contact_data_raw(brand);
+        identities.register_shape(valid.shapeIdA, body).unwrap();
+        identities.register_shape(valid.shapeIdB, body).unwrap();
 
         let mut raw = contact_data_raw(brand);
         raw.contactId.index1 = 0;
@@ -1109,5 +1489,18 @@ mod tests {
             bytemuck::bytes_of(&WorldTransform::IDENTITY).len(),
             core::mem::size_of::<WorldTransform>()
         );
+    }
+
+    #[test]
+    fn vector_position_and_world_transform_validation_are_pure_rust() {
+        let _callback_guard = crate::core::callback_state::CallbackGuard::enter();
+
+        assert!(Vec2::new(1.0, -2.0).is_valid());
+        assert!(!Vec2::new(f32::INFINITY, 0.0).is_valid());
+        assert!(Position::new(1.0, -2.0).is_valid());
+        assert!(!Position::new(WorldScalar::NEG_INFINITY, 0.0).is_valid());
+        assert!(WorldTransform::IDENTITY.is_valid());
+        let invalid = WorldTransform::new(Position::new(WorldScalar::NAN, 0.0), Rot::IDENTITY);
+        assert!(!invalid.is_valid());
     }
 }

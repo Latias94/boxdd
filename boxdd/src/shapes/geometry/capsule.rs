@@ -33,16 +33,13 @@ impl Capsule {
     #[inline]
     /// Validate this capsule for safe Box2D shape and standalone collision use.
     pub fn is_valid(self) -> bool {
-        self.center1.is_valid()
-            && self.center2.is_valid()
-            && geometry_scalar_is_non_negative_finite(self.radius)
-            && point_pair_has_minimum_separation(self.center1, self.center2)
+        capsule_geometry_is_valid(self)
     }
 
     #[inline]
     /// Validate this capsule for safe Box2D shape and standalone collision use.
     pub fn validate(self) -> ApiResult<()> {
-        geometry_is_valid_or_err(self.is_valid())
+        geometry_is_valid_or_err(capsule_geometry_is_valid(self))
     }
 
     #[inline]
@@ -50,6 +47,7 @@ impl Capsule {
         assert_capsule_helper_geometry_valid(self);
         assert_non_negative_finite_density(density);
         let raw = self.into_raw();
+        let _lease = assert_transient_native_lease();
         MassData::from_raw(unsafe { ffi::b2ComputeCapsuleMass(&raw, density) })
     }
 
@@ -58,6 +56,7 @@ impl Capsule {
         check_capsule_helper_geometry_valid(self)?;
         check_non_negative_finite_density(density)?;
         let raw = self.into_raw();
+        let _lease = transient_native_lease()?;
         Ok(MassData::from_raw(unsafe {
             ffi::b2ComputeCapsuleMass(&raw, density)
         }))
@@ -73,6 +72,7 @@ impl Capsule {
         assert_capsule_helper_geometry_valid(self);
         assert_world_transform_valid(transform);
         let raw = self.into_raw();
+        let _lease = assert_transient_native_lease();
         Aabb::from_raw(unsafe { ffi::b2ComputeCapsuleAABB(&raw, transform.into_raw()) })
     }
 
@@ -81,6 +81,7 @@ impl Capsule {
         check_capsule_helper_geometry_valid(self)?;
         check_world_transform_valid(transform)?;
         let raw = self.into_raw();
+        let _lease = transient_native_lease()?;
         Ok(Aabb::from_raw(unsafe {
             ffi::b2ComputeCapsuleAABB(&raw, transform.into_raw())
         }))
@@ -88,19 +89,21 @@ impl Capsule {
 
     #[inline]
     pub fn contains_point<P: Into<Vec2>>(self, point: P) -> bool {
-        assert_capsule_helper_geometry_valid(self);
         let point = point.into();
+        assert_capsule_helper_geometry_valid(self);
         assert_valid_geometry_vec2("point", point);
         let raw = self.into_raw();
+        let _lease = assert_transient_native_lease();
         unsafe { ffi::b2PointInCapsule(&raw, point.into_raw()) }
     }
 
     #[inline]
     pub fn try_contains_point<P: Into<Vec2>>(self, point: P) -> ApiResult<bool> {
-        check_capsule_helper_geometry_valid(self)?;
         let point = point.into();
+        check_capsule_helper_geometry_valid(self)?;
         check_valid_geometry_vec2(point)?;
         let raw = self.into_raw();
+        let _lease = transient_native_lease()?;
         Ok(unsafe { ffi::b2PointInCapsule(&raw, point.into_raw()) })
     }
 
@@ -110,9 +113,11 @@ impl Capsule {
         origin: VO,
         translation: VT,
     ) -> CastOutput {
+        let input = materialize_ray_input(origin, translation);
         assert_capsule_helper_geometry_valid(self);
+        assert_ray_input_valid(&input);
         let raw = self.into_raw();
-        let input = make_ray_input(origin, translation);
+        let _lease = assert_transient_native_lease();
         CastOutput::from_raw(unsafe { ffi::b2RayCastCapsule(&raw, &input) })
     }
 
@@ -122,9 +127,11 @@ impl Capsule {
         origin: VO,
         translation: VT,
     ) -> ApiResult<CastOutput> {
+        let input = materialize_ray_input(origin, translation);
         check_capsule_helper_geometry_valid(self)?;
+        check_ray_input_valid(&input)?;
         let raw = self.into_raw();
-        let input = try_make_ray_input(origin, translation)?;
+        let _lease = transient_native_lease()?;
         Ok(CastOutput::from_raw(unsafe {
             ffi::b2RayCastCapsule(&raw, &input)
         }))
@@ -139,6 +146,7 @@ impl Capsule {
         );
         let raw = self.into_raw();
         let input = input.into_raw();
+        let _lease = assert_transient_native_lease();
         CastOutput::from_raw(unsafe { ffi::b2ShapeCastCapsule(&raw, &input) })
     }
 
@@ -148,6 +156,7 @@ impl Capsule {
         input.validate()?;
         let raw = self.into_raw();
         let input = input.into_raw();
+        let _lease = transient_native_lease()?;
         Ok(CastOutput::from_raw(unsafe {
             ffi::b2ShapeCastCapsule(&raw, &input)
         }))

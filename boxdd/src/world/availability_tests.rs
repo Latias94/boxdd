@@ -99,6 +99,80 @@ fn world_entries_reject_busy_worlds_before_access_or_mutation() {
 }
 
 #[test]
+fn body_contact_recycling_gates_activity_before_brand_and_stale_checks() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let handle = world.handle();
+    let mut owned = world.create_body_owned(crate::BodyDef::default());
+    let stale = world.create_body_id(crate::BodyDef::default());
+    world.destroy_body_id(stale);
+
+    let mut foreign_world = World::new(WorldDef::default()).unwrap();
+    let foreign = foreign_world.create_body_id(crate::BodyDef::default());
+
+    world
+        .core()
+        .set_activity(ActivityState::Idle, ActivityState::Recording)
+        .unwrap();
+
+    assert_eq!(
+        world
+            .try_body_is_contact_recycling_enabled(stale)
+            .unwrap_err(),
+        ApiError::WorldBusy
+    );
+    assert_eq!(
+        world
+            .try_body_enable_contact_recycling(foreign, false)
+            .unwrap_err(),
+        ApiError::WorldBusy
+    );
+    assert_eq!(
+        handle
+            .try_body_is_contact_recycling_enabled(foreign)
+            .unwrap_err(),
+        ApiError::WorldBusy
+    );
+    assert_eq!(
+        owned.try_is_contact_recycling_enabled().unwrap_err(),
+        ApiError::WorldBusy
+    );
+    assert_eq!(
+        owned.try_enable_contact_recycling(false).unwrap_err(),
+        ApiError::WorldBusy
+    );
+
+    world
+        .core()
+        .set_activity(ActivityState::Recording, ActivityState::Idle)
+        .unwrap();
+    assert!(owned.try_is_contact_recycling_enabled().unwrap());
+
+    world.core().poison();
+    assert_eq!(
+        world
+            .try_body_is_contact_recycling_enabled(stale)
+            .unwrap_err(),
+        ApiError::WorldPoisoned
+    );
+    assert_eq!(
+        world
+            .try_body_enable_contact_recycling(foreign, false)
+            .unwrap_err(),
+        ApiError::WorldPoisoned
+    );
+    assert_eq!(
+        handle
+            .try_body_is_contact_recycling_enabled(foreign)
+            .unwrap_err(),
+        ApiError::WorldPoisoned
+    );
+    assert_eq!(
+        owned.try_enable_contact_recycling(false).unwrap_err(),
+        ApiError::WorldPoisoned
+    );
+}
+
+#[test]
 fn runtime_control_entries_gate_before_validation_and_conversion() {
     let mut world = World::new(WorldDef::default()).unwrap();
     let original_gravity = world.gravity();
@@ -255,32 +329,6 @@ fn debug_draw_and_explosion_entries_gate_before_outputs_or_user_code() {
     );
     assert_eq!(commands.len(), 1);
     assert!(catch_unwind(AssertUnwindSafe(|| world.explode(&explosion))).is_err());
-
-    world
-        .core()
-        .set_activity(ActivityState::Recording, ActivityState::Idle)
-        .unwrap();
-}
-
-#[cfg(feature = "serialize")]
-#[test]
-fn registry_entries_reject_busy_worlds_without_rewriting_outputs() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let body = world.create_body_id(crate::BodyBuilder::new().build());
-    let mut bodies = vec![body];
-
-    world
-        .core()
-        .set_activity(ActivityState::Idle, ActivityState::Recording)
-        .unwrap();
-
-    assert_eq!(
-        world.try_body_ids_into(&mut bodies).unwrap_err(),
-        ApiError::WorldBusy
-    );
-    assert_eq!(bodies, [body]);
-    assert_eq!(world.try_chain_records().unwrap_err(), ApiError::WorldBusy);
-    assert!(catch_unwind(AssertUnwindSafe(|| world.body_ids())).is_err());
 
     world
         .core()

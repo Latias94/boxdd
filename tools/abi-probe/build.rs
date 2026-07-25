@@ -3,7 +3,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use xtask::abi_probe::{AbiProbePrecision, generate_workspace_probe};
+use xtask::{
+    abi_probe::{AbiProbePrecision, generate_workspace_probe_from_public_include},
+    source_overlay::materialize_effective_box2d_sources,
+};
 
 const SOURCE_ROUTE_OVERRIDE_ENV: [&str; 4] = [
     "BOX2D_LIB_DIR",
@@ -35,8 +38,15 @@ fn run() -> Result<(), String> {
     } else {
         AbiProbePrecision::Single
     };
-    let generated = generate_workspace_probe(workspace_root, precision)
-        .map_err(|error| format!("generate {} probe: {error}", precision.as_str()))?;
+    let sys_manifest_dir = workspace_root.join("boxdd-sys");
+    let materialized_sources = materialize_effective_box2d_sources(&sys_manifest_dir, &out_dir)
+        .map_err(|error| format!("materialize effective Box2D source tree: {error}"))?;
+    let generated = generate_workspace_probe_from_public_include(
+        workspace_root,
+        &materialized_sources.public_include,
+        precision,
+    )
+    .map_err(|error| format!("generate {} probe: {error}", precision.as_str()))?;
 
     let c_source = out_dir.join("abi_probe.c");
     let mixed_source = out_dir.join("abi_probe_mixed.c");
@@ -48,11 +58,25 @@ fn run() -> Result<(), String> {
     fs::write(&rust_source, generated.rust_source)
         .map_err(|error| format!("write {}: {error}", rust_source.display()))?;
 
-    let include_dir = workspace_root.join("boxdd-sys/third-party/box2d/include");
-    compile_c_source(&c_source, &include_dir, "boxdd_abi_probe");
-    compile_c_source(&mixed_source, &include_dir, "boxdd_abi_probe_mixed");
+    compile_c_source(
+        &c_source,
+        &materialized_sources.public_include,
+        "boxdd_abi_probe",
+    );
+    compile_c_source(
+        &mixed_source,
+        &materialized_sources.public_include,
+        "boxdd_abi_probe_mixed",
+    );
 
-    println!("cargo:rerun-if-changed={}", include_dir.display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        sys_manifest_dir.join("third-party/box2d").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        sys_manifest_dir.join("effective-source.toml").display()
+    );
     println!(
         "cargo:rerun-if-changed={}",
         workspace_root

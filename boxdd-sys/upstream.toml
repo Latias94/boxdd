@@ -61,7 +61,7 @@ precision = "single"
 target = "universal"
 provider = "universal"
 producer = "bindgen"
-content_blake3 = "281af83f29465ae22e60a607bf8bc093276ab1821a357962ef0693382582fbdc"
+content_blake3 = "8979c95e6048d1f1b1b014871fd3f79e5683446b96b43224dd0dd477aefdeaba"
 
 [[artifacts]]
 name = "api-contract"
@@ -70,7 +70,7 @@ path = "boxdd/tests/fixtures/api_contract.toml"
 target = "universal"
 provider = "universal"
 producer = "reviewed"
-content_blake3 = "e1b3cda7595fcfe7892340db6063459b6ad4a0061b4170d2ecdeb222fa69b6c8"
+content_blake3 = "59d116796ffabc191be8e6d0a504714b2b6ed47230d751e3e0015ad88c138a37"
 
 [[artifacts]]
 name = "recording-wire"
@@ -88,7 +88,7 @@ path = "docs/api-coverage.md"
 target = "universal"
 provider = "universal"
 producer = "api-coverage"
-content_blake3 = "10b010f30c6748639f9acf5bbcc209d80d7ff3d506191197d7f175375aea6554"
+content_blake3 = "7a7954a847b23798e551082609d91e348a31369f84a75e542843774468d01c10"
 
 [[artifacts]]
 name = "bindings-double"
@@ -98,7 +98,7 @@ precision = "double"
 target = "universal"
 provider = "universal"
 producer = "bindgen"
-content_blake3 = "364c0a4b6fb9443a20fb2f8090e6dd47f440860e6e5e53231d1773fee2e5ec3e"
+content_blake3 = "04027c458a30427b1c8f905080d42cdfaa3aff64f101d1a52f80a49145ddee05"
 
 [[artifacts]]
 name = "abi-source-single"
@@ -108,7 +108,7 @@ precision = "single"
 target = "native"
 provider = "source"
 producer = "abi-probe"
-content_blake3 = "26296b676ec07b361c56c8d141e0c2b66959b5586720b4801386409d6320a411"
+content_blake3 = "72a1cb248efab6c640dd4907020e46f0ae3a4181b4c715fae6de7f8d4b57d910"
 
 [[artifacts]]
 name = "abi-source-double"
@@ -118,7 +118,7 @@ precision = "double"
 target = "native"
 provider = "source"
 producer = "abi-probe"
-content_blake3 = "4f09c0c9b01b135650712c632a5e2ff2a3add529943d88bcff090ab950db0023"
+content_blake3 = "361333cdc10649ee0f06c4e53de881fe9a2a19551ec57630c276012636c52f88"
 
 [source_inventory]
 tree = "63a1ab02e3d2bf7c4d86b257b78976842b8c5ddb"

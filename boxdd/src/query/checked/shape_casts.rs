@@ -25,7 +25,14 @@ where
     assert_query_vec2_valid("translation", translation);
     let points = collect_asserted_proxy_points(points);
     checked_query_impl(&target, || {
-        cast_shape_points_impl(&target, origin, &points, radius, translation, filter)
+        crate::query::raw::cast_shape_points_impl(
+            &target,
+            origin,
+            &points,
+            radius,
+            translation,
+            filter,
+        )
     })
 }
 
@@ -49,7 +56,15 @@ pub(crate) fn cast_shape_points_into_checked_impl<I, P, VT>(
     assert_query_vec2_valid("translation", translation);
     let points = collect_asserted_proxy_points(points);
     checked_query_impl(&target, || {
-        cast_shape_points_into_impl(&target, origin, &points, radius, translation, filter, out)
+        crate::query::raw::cast_shape_points_into_impl(
+            &target,
+            origin,
+            &points,
+            radius,
+            translation,
+            filter,
+            out,
+        )
     });
 }
 
@@ -73,7 +88,7 @@ where
     check_query_vec2_valid(translation)?;
     let points = try_collect_proxy_points(points)?;
     try_checked_query_result_impl(&target, || {
-        Ok(cast_shape_points_impl(
+        Ok(crate::query::raw::cast_shape_points_impl(
             &target,
             origin,
             &points,
@@ -105,7 +120,15 @@ where
     check_query_vec2_valid(translation)?;
     let points = try_collect_proxy_points(points)?;
     try_checked_query_result_impl(&target, || {
-        cast_shape_points_into_impl(&target, origin, &points, radius, translation, filter, out);
+        crate::query::raw::cast_shape_points_into_impl(
+            &target,
+            origin,
+            &points,
+            radius,
+            translation,
+            filter,
+            out,
+        );
         Ok(())
     })
 }
@@ -138,7 +161,7 @@ where
     assert_query_vec2_valid("translation", translation);
     let points = collect_asserted_proxy_points(points);
     checked_query_impl(&target, || {
-        cast_shape_points_with_offset_impl(
+        crate::query::raw::cast_shape_points_with_offset_impl(
             &target,
             origin,
             &points,
@@ -180,7 +203,7 @@ pub(crate) fn cast_shape_points_with_offset_into_checked_impl<I, P, V, A, VT>(
     assert_query_vec2_valid("translation", translation);
     let points = collect_asserted_proxy_points(points);
     checked_query_impl(&target, || {
-        cast_shape_points_with_offset_into_impl(
+        crate::query::raw::cast_shape_points_with_offset_into_impl(
             &target,
             origin,
             &points,
@@ -222,7 +245,7 @@ where
     check_query_vec2_valid(translation)?;
     let points = try_collect_proxy_points(points)?;
     try_checked_query_result_impl(&target, || {
-        Ok(cast_shape_points_with_offset_impl(
+        Ok(crate::query::raw::cast_shape_points_with_offset_impl(
             &target,
             origin,
             &points,
@@ -265,7 +288,7 @@ where
     check_query_vec2_valid(translation)?;
     let points = try_collect_proxy_points(points)?;
     try_checked_query_result_impl(&target, || {
-        cast_shape_points_with_offset_into_impl(
+        crate::query::raw::cast_shape_points_with_offset_into_impl(
             &target,
             origin,
             &points,

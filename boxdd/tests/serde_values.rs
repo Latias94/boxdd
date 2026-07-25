@@ -1,11 +1,13 @@
 #![cfg(feature = "serde")]
 
 use boxdd::{
-    Aabb, ApiError, BodyBuilder, BodyId, BodyType, ChainId, ContactId, DistanceJointDef, JointBase,
-    JointId, QueryFilter, RawBodyId, RawChainId, RawContactId, RawJointId, RawShapeId, ShapeDef,
-    ShapeId, Vec2, World, WorldDef,
+    Aabb, ApiError, BodyBuilder, BodyDef, BodyId, BodyType, ChainId, ContactId, DistanceJointDef,
+    JointBase, JointId, Position, QueryFilter, RawBodyId, RawChainId, RawContactId, RawJointId,
+    RawShapeId, Rot, ShapeDef, ShapeId, Vec2, WorkerCount, World, WorldCapacity, WorldDef,
+    WorldScalar, WorldTransform,
     shapes::{self, chain::ChainDef},
 };
+use boxdd_sys::ffi;
 use serde::{Serialize, de::DeserializeOwned};
 use static_assertions::assert_not_impl_any;
 
@@ -14,6 +16,11 @@ assert_not_impl_any!(ShapeId: Serialize);
 assert_not_impl_any!(JointId: Serialize);
 assert_not_impl_any!(ChainId: Serialize);
 assert_not_impl_any!(ContactId: Serialize);
+
+#[cfg(not(feature = "double-precision"))]
+const TEST_WORLD_X: WorldScalar = 10_000.125;
+#[cfg(feature = "double-precision")]
+const TEST_WORLD_X: WorldScalar = 10_000_000.001;
 
 fn roundtrip<T>(value: T) -> T
 where
@@ -38,12 +45,90 @@ fn aabb_serde_roundtrip() {
 }
 
 #[test]
+fn world_precision_values_serde_roundtrip_without_narrowing() {
+    let position = Position::new(TEST_WORLD_X, -TEST_WORLD_X);
+    assert_eq!(roundtrip(position), position);
+
+    let transform = WorldTransform::new(position, Rot::from_radians(0.375));
+    let round_trip = roundtrip(transform);
+    assert_eq!(round_trip.position(), position);
+    assert!((round_trip.rotation().angle() - transform.rotation().angle()).abs() < 1.0e-6);
+
+    #[cfg(feature = "double-precision")]
+    assert_ne!(
+        f64::from(round_trip.position().x as f32),
+        round_trip.position().x
+    );
+}
+
+#[test]
 fn query_filter_serde_roundtrip() {
     let q = QueryFilter::default().category(0x11).mask(0x22);
     let s = serde_json::to_string(&q).unwrap();
     let q2: QueryFilter = serde_json::from_str(&s).unwrap();
     assert_eq!(q.category_bits(), q2.category_bits());
     assert_eq!(q.mask_bits(), q2.mask_bits());
+}
+
+#[test]
+fn body_definition_serde_preserves_name_and_sleep_threshold_with_legacy_defaults() {
+    let definition = BodyBuilder::new()
+        .name("serialized")
+        .sleep_threshold(0.375)
+        .build();
+    let decoded = roundtrip(definition);
+    assert_eq!(decoded.name(), Some(c"serialized"));
+    assert_eq!(decoded.sleep_threshold(), 0.375);
+
+    let default = BodyDef::default();
+    let mut legacy = serde_json::to_value(&default).unwrap();
+    let object = legacy.as_object_mut().unwrap();
+    object.remove("name");
+    object.remove("sleep_threshold");
+    let decoded: BodyDef = serde_json::from_value(legacy).unwrap();
+    assert_eq!(decoded.name(), None);
+    assert_eq!(decoded.sleep_threshold(), default.sleep_threshold());
+}
+
+#[test]
+fn body_definition_serde_rejects_unknown_raw_type() {
+    let mut raw = unsafe { ffi::b2DefaultBodyDef() };
+    raw.type_ = ffi::b2BodyType_b2_bodyTypeCount;
+    // SAFETY: the default definition has no name pointer; this deliberately changes only the
+    // type discriminant to verify that serialization does not substitute a known body type.
+    let definition = unsafe { BodyDef::from_raw(raw) };
+
+    let error = serde_json::to_string(&definition).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("unknown Box2D body type discriminant")
+    );
+}
+
+#[test]
+fn world_operational_values_serde_preserves_validation() {
+    let capacity = WorldCapacity::new(1, 2, 3, 4, 5).unwrap();
+    let def = WorldDef::builder()
+        .worker_count(WorkerCount::new(2).unwrap())
+        .capacity(capacity)
+        .build();
+    let decoded: WorldDef = roundtrip(def);
+    assert_eq!(decoded.worker_count().get(), 2);
+    assert_eq!(decoded.capacity(), capacity);
+
+    assert!(serde_json::from_str::<WorkerCount>("0").is_err());
+    assert!(serde_json::from_str::<WorkerCount>("33").is_err());
+    assert!(
+        serde_json::from_value::<WorldCapacity>(serde_json::json!({
+            "static_shape_count": u64::from(i32::MAX as u32) + 1,
+            "dynamic_shape_count": 0,
+            "static_body_count": 0,
+            "dynamic_body_count": 0,
+            "contact_count": 0
+        }))
+        .is_err()
+    );
 }
 
 #[test]
@@ -132,6 +217,7 @@ fn tampering_with_any_serialized_raw_id_field_invalidates_authentication() {
     let raw = body.unbind();
     let encoded = serde_json::to_value(raw).unwrap();
     let token = encoded["token"].as_u64().unwrap();
+    let registration_nonce = encoded["registration_nonce"].as_u64().unwrap();
     let auth = encoded["auth"].as_u64().unwrap();
 
     for (field, replacement) in [
@@ -148,6 +234,10 @@ fn tampering_with_any_serialized_raw_id_field_invalidates_authentication() {
             serde_json::json!(raw.world_generation.wrapping_add(1)),
         ),
         ("token", serde_json::json!(token + 1)),
+        (
+            "registration_nonce",
+            serde_json::json!(registration_nonce + 1),
+        ),
         ("auth", serde_json::json!(auth ^ 1)),
     ] {
         let mut tampered = encoded.clone();

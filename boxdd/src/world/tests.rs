@@ -61,11 +61,44 @@ fn try_world_runtime_extras_return_in_callback() {
         crate::ApiError::InCallback
     );
     assert_eq!(
-        world.try_profile().unwrap_err(),
+        handle.try_bounds().unwrap_err(),
         crate::ApiError::InCallback
     );
     assert_eq!(
-        world.try_enable_speculative(true).unwrap_err(),
+        handle.try_maximum_capacity().unwrap_err(),
+        crate::ApiError::InCallback
+    );
+    assert_eq!(
+        handle.try_contact_recycle_distance().unwrap_err(),
+        crate::ApiError::InCallback
+    );
+    assert_eq!(
+        handle.try_worker_count().unwrap_err(),
+        crate::ApiError::InCallback
+    );
+    assert_eq!(
+        world.try_profile().unwrap_err(),
+        crate::ApiError::InCallback
+    );
+    assert_eq!(world.try_bounds().unwrap_err(), crate::ApiError::InCallback);
+    assert_eq!(
+        world.try_maximum_capacity().unwrap_err(),
+        crate::ApiError::InCallback
+    );
+    assert_eq!(
+        world.try_contact_recycle_distance().unwrap_err(),
+        crate::ApiError::InCallback
+    );
+    assert_eq!(
+        world.try_set_contact_recycle_distance(0.0).unwrap_err(),
+        crate::ApiError::InCallback
+    );
+    assert_eq!(
+        world.try_worker_count().unwrap_err(),
+        crate::ApiError::InCallback
+    );
+    assert_eq!(
+        world.try_set_worker_count(1).unwrap_err(),
         crate::ApiError::InCallback
     );
     assert_eq!(

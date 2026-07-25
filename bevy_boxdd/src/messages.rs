@@ -1,5 +1,6 @@
 //! Bevy messages emitted by the physics plugin.
 
+use crate::origin::BoxddWorldOriginError;
 use bevy_ecs::prelude::{Entity, Message};
 use boxdd::{
     ApiError, BodyId, ContactId, Position as BoxddPosition, ShapeId, Vec2 as BoxddVec2,
@@ -12,6 +13,9 @@ pub enum BoxddPluginError {
     /// Error reported by the safe `boxdd` API.
     #[error(transparent)]
     Api(#[from] ApiError),
+    /// Coordinate conversion or world-origin rebase failed.
+    #[error(transparent)]
+    WorldOrigin(#[from] BoxddWorldOriginError),
     /// Native world creation failed after a valid definition was supplied.
     #[error("failed to create Box2D world")]
     CreateWorldFailed,
@@ -50,12 +54,25 @@ pub enum BoxddOperation {
     ApplyBodySettings,
     /// Configuring Bevy's fixed timestep resource.
     ConfigureFixedTimestep,
+    /// Rebasing Bevy-local transforms to a new absolute world origin.
+    RebaseWorldOrigin,
     /// Synchronizing transforms between Bevy and Box2D.
     SyncTransform,
     /// Stepping the native Box2D world.
     StepWorld,
     /// Reading body, contact, or sensor events after a step.
     ReadEvents,
+}
+
+/// Notification emitted after an atomic world-origin rebase succeeds.
+#[derive(Message, Copy, Clone, Debug, PartialEq)]
+pub struct WorldOriginRebased {
+    /// Absolute origin used before the rebase.
+    pub previous: BoxddPosition,
+    /// Newly active absolute origin.
+    pub current: BoxddPosition,
+    /// Monotonic revision assigned to this committed rebase.
+    pub revision: u64,
 }
 
 /// Recoverable plugin error routed through Bevy messages.

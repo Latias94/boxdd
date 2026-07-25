@@ -343,14 +343,25 @@ impl WorldHandle {
         crate::body::body_joints_into_in_impl(self.core.brand(), body, out)
     }
 
+    /// Return the body's simulation type.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the body or world is unavailable or Box2D returns an unknown native
+    /// discriminant. An unknown discriminant poisons the world before this method panics.
     pub fn body_type(&self, body: BodyId) -> BodyType {
-        assert_body_target(&self.core, body);
-        crate::body::body_type_impl(body)
+        self.try_body_type(body)
+            .expect("body is unavailable or Box2D returned an unknown body type")
     }
 
+    /// Try to return the body's simulation type.
+    ///
+    /// An unknown native discriminant returns
+    /// [`ApiError::InvalidNativeBodyType`](crate::ApiError::InvalidNativeBodyType) and poisons the
+    /// world.
     pub fn try_body_type(&self, body: BodyId) -> crate::error::ApiResult<BodyType> {
         check_body_target(&self.core, body)?;
-        Ok(crate::body::body_type_impl(body))
+        crate::body::try_body_type_impl(&self.core, body)
     }
 
     pub fn body_gravity_scale(&self, body: BodyId) -> f32 {
@@ -441,6 +452,19 @@ impl WorldHandle {
     pub fn try_body_is_bullet(&self, body: BodyId) -> crate::error::ApiResult<bool> {
         check_body_target(&self.core, body)?;
         Ok(crate::body::body_is_bullet_impl(body))
+    }
+
+    pub fn body_is_contact_recycling_enabled(&self, body: BodyId) -> bool {
+        assert_body_target(&self.core, body);
+        crate::body::body_is_contact_recycling_enabled_impl(body)
+    }
+
+    pub fn try_body_is_contact_recycling_enabled(
+        &self,
+        body: BodyId,
+    ) -> crate::error::ApiResult<bool> {
+        check_body_target(&self.core, body)?;
+        Ok(crate::body::body_is_contact_recycling_enabled_impl(body))
     }
 
     pub fn body_name(&self, body: BodyId) -> Option<String> {

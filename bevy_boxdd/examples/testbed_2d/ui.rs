@@ -2,9 +2,11 @@ use crate::control::{EventStats, TestbedState};
 use crate::scenes::{SCENE_REGISTRY, TestbedEntity};
 use crate::switch_scene;
 use bevy::prelude::*;
+use bevy_boxdd::BoxddWorldOrigin;
 use bevy_egui::egui::{LayerId, Ui, UiBuilder};
 use bevy_egui::{EguiContexts, egui};
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_testbed_ui(
     mut contexts: EguiContexts,
     mut state: ResMut<TestbedState>,
@@ -13,6 +15,7 @@ pub(crate) fn draw_testbed_ui(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut stats: ResMut<EventStats>,
+    origin: Res<BoxddWorldOrigin>,
 ) -> Result {
     let mut requested_scene = None;
 
@@ -116,6 +119,7 @@ pub(crate) fn draw_testbed_ui(
             &mut meshes,
             &mut materials,
             &mut stats,
+            &origin,
         );
     }
 

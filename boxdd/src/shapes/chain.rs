@@ -43,7 +43,6 @@ impl<'a> ChainDefMaterialLayout<'a> {
 /// A scoped chain handle tied to a mutable borrow of the world.
 pub struct Chain<'w> {
     pub(crate) id: ChainId,
-    #[allow(dead_code)]
     pub(crate) core: Rc<crate::core::world_core::WorldCore>,
     _world: PhantomData<&'w World>,
 }
@@ -111,15 +110,32 @@ fn chain_segments_in_impl(brand: crate::id::IdBrand, id: ChainId) -> ApiResult<V
 mod segment_output_tests {
     use super::*;
 
-    fn test_brand() -> crate::id::IdBrand {
-        crate::id::IdBrand::new(
+    fn test_registry() -> (
+        crate::id::IdBrand,
+        std::sync::Arc<crate::core::identity_registry::ActiveIdentityRegistry>,
+    ) {
+        let brand = crate::id::IdBrand::new(
             ffi::b2WorldId {
                 index1: 4,
                 generation: 7,
             },
             crate::id::WorldToken::allocate().unwrap(),
         )
-        .unwrap()
+        .unwrap();
+        let registry = crate::core::identity_registry::ActiveIdentityRegistry::new(brand);
+        let body = registry
+            .register_body(ffi::b2BodyId {
+                index1: 1,
+                world0: brand.world0(),
+                generation: 1,
+            })
+            .unwrap();
+        for index1 in [2, 9] {
+            registry
+                .register_shape(raw_shape(index1, brand.world0()), body)
+                .unwrap();
+        }
+        (brand, registry)
     }
 
     fn raw_shape(index1: i32, world0: u16) -> ffi::b2ShapeId {
@@ -132,9 +148,9 @@ mod segment_output_tests {
 
     #[test]
     fn segment_output_rejects_invalid_ids_and_reuses_safe_output_allocation() {
-        let brand = test_brand();
+        let (brand, _registry) = test_registry();
         let mut out = Vec::<ShapeId>::with_capacity(4);
-        out.push(brand.shape(raw_shape(9, brand.world0())));
+        out.push(brand.try_shape(raw_shape(9, brand.world0())).unwrap());
         let expected_ptr = out.as_ptr();
         let expected_capacity = out.capacity();
 
@@ -180,11 +196,6 @@ mod segment_output_tests {
 #[inline]
 fn chain_world_id_impl(id: ChainId) -> ffi::b2WorldId {
     unsafe { ffi::b2Chain_GetWorld(raw_chain_id(id)) }
-}
-
-#[inline]
-fn chain_is_valid_impl(id: ChainId) -> bool {
-    unsafe { ffi::b2Chain_IsValid(raw_chain_id(id)) }
 }
 
 #[inline]
@@ -272,10 +283,23 @@ fn check_chain_surface_material_index_in_range(id: ChainId, index: i32) -> ApiRe
     }
 }
 
+pub(crate) fn try_chain_set_surface_material_with_access(
+    core: &crate::core::world_core::WorldCore,
+    id: ChainId,
+    index: i32,
+    material: &SurfaceMaterial,
+    access: crate::core::world_core::WorldAccess,
+) -> ApiResult<()> {
+    crate::shapes::check_surface_material_valid(material)?;
+    crate::core::callback_state::check_not_in_callback()?;
+    core.check_chain_with_access(id, access)?;
+    check_chain_surface_material_index_in_range(id, index)?;
+    chain_set_surface_material_impl(core.brand(), id, index, material)
+}
+
 #[inline]
 fn destroy_chain_now_impl(world_core: &crate::core::world_core::WorldCore, id: ChainId) {
-    world_core
-        .destroy_chain_now(id)
+    crate::core::world_core::WorldCore::destroy_chain_now(world_core, id)
         .expect("invalid or foreign ChainId");
 }
 
@@ -283,7 +307,10 @@ fn destroy_owned_chain_if_needed_impl(
     world_core: &crate::core::world_core::WorldCore,
     id: ChainId,
 ) {
-    world_core.destroy_owned_or_defer(crate::core::world_core::DeferredDestroy::Chain(id));
+    crate::core::world_core::WorldCore::destroy_owned_or_defer(
+        world_core,
+        crate::core::world_core::DeferredDestroy::Chain(id),
+    );
 }
 
 fn destroy_scoped_chain_checked_impl(world_core: &crate::core::world_core::WorldCore, id: ChainId) {
@@ -299,8 +326,16 @@ fn try_destroy_scoped_chain_impl(
     world_core: &crate::core::world_core::WorldCore,
     id: ChainId,
 ) -> ApiResult<()> {
+    try_destroy_chain_with_access(world_core, id, crate::core::world_core::WorldAccess::Idle)
+}
+
+pub(crate) fn try_destroy_chain_with_access(
+    world_core: &crate::core::world_core::WorldCore,
+    id: ChainId,
+    access: crate::core::world_core::WorldAccess,
+) -> ApiResult<()> {
     crate::core::callback_state::check_not_in_callback()?;
-    world_core.destroy_chain_now(id)
+    world_core.destroy_chain_now_with_access(id, access)
 }
 
 trait ChainRuntimeHandle {
@@ -339,11 +374,7 @@ trait ChainRuntimeHandle {
         crate::core::callback_state::check_not_in_callback()?;
         let core = self.chain_world_core();
         core.check_available()?;
-        let id = self.chain_id();
-        if id.brand() != core.brand() {
-            return Err(ApiError::WrongWorld);
-        }
-        Ok(chain_is_valid_impl(id))
+        core.chain_is_valid(self.chain_id())
     }
 
     fn handle_segment_count(&self) -> i32 {
@@ -389,15 +420,8 @@ trait ChainRuntimeHandle {
     }
 
     fn handle_set_surface_material(&mut self, index: i32, material: &SurfaceMaterial) {
-        self.assert_valid();
-        assert_chain_surface_material_index_in_range(self.chain_id(), index);
-        chain_set_surface_material_impl(
-            self.chain_world_core().brand(),
-            self.chain_id(),
-            index,
-            material,
-        )
-        .expect(crate::core::ffi_vec::FFI_OUTPUT_EXPECT)
+        self.try_handle_set_surface_material(index, material)
+            .expect("invalid chain surface material parameters")
     }
 
     fn try_handle_set_surface_material(
@@ -405,13 +429,12 @@ trait ChainRuntimeHandle {
         index: i32,
         material: &SurfaceMaterial,
     ) -> ApiResult<()> {
-        self.check_valid()?;
-        check_chain_surface_material_index_in_range(self.chain_id(), index)?;
-        chain_set_surface_material_impl(
-            self.chain_world_core().brand(),
+        try_chain_set_surface_material_with_access(
+            self.chain_world_core(),
             self.chain_id(),
             index,
             material,
+            crate::core::world_core::WorldAccess::Idle,
         )
     }
 
@@ -480,7 +503,7 @@ impl OwnedChain {
         ChainRuntimeHandle::try_handle_is_valid(self)
     }
 
-    /// Borrow the raw id for ID-style APIs.
+    /// Borrow the world-bound branded ID for ID-style APIs.
     pub fn as_id(&self) -> ChainId {
         self.id
     }
@@ -691,6 +714,7 @@ impl Clone for ChainDef {
 
         if materials.is_empty() {
             // Keep default material pointer/count stable.
+            let _lease = crate::core::foundation::assert_transient_native_lease();
             let default_def = unsafe { ffi::b2DefaultChainDef() };
             def.materials = default_def.materials;
             def.materialCount = default_def.materialCount;
@@ -709,6 +733,7 @@ impl Clone for ChainDef {
 
 impl Default for ChainDef {
     fn default() -> Self {
+        let _lease = crate::core::foundation::assert_transient_native_lease();
         Self {
             def: unsafe { ffi::b2DefaultChainDef() },
             points: Vec::new(),
@@ -767,15 +792,6 @@ impl ChainDef {
     pub fn material_count(&self) -> usize {
         self.material_layout().count()
     }
-
-    #[cfg(feature = "serialize")]
-    pub(crate) fn points_raw_slice(&self) -> &[ffi::b2Vec2] {
-        &self.points
-    }
-    #[cfg(feature = "serialize")]
-    pub(crate) fn materials_raw_slice(&self) -> &[ffi::b2SurfaceMaterial] {
-        &self.materials
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -825,6 +841,7 @@ impl ChainDefBuilder {
         if mats.is_empty() {
             self.inner.materials.clear();
             // Reset to the upstream default material (static storage on the C side).
+            let _lease = crate::core::foundation::assert_transient_native_lease();
             let default_def = unsafe { ffi::b2DefaultChainDef() };
             self.inner.def.materials = default_def.materials;
             self.inner.def.materialCount = default_def.materialCount;
@@ -855,34 +872,18 @@ impl From<ChainDef> for ChainDefBuilder {
 #[inline]
 #[track_caller]
 pub(crate) fn assert_chain_def_valid(def: &ChainDef) {
-    let count = def.def.count;
-    assert!(
-        count >= 4,
-        "invalid ChainDef: expected at least 4 points (including ghosts), got {count}"
-    );
-    assert!(
-        !def.def.points.is_null(),
-        "invalid ChainDef: points pointer is null"
-    );
-    let mc = def.def.materialCount;
-    assert!(
-        mc == 1 || mc == count,
-        "invalid ChainDef: materialCount must be 1 or equal to count (materialCount={mc}, count={count})"
-    );
-    assert!(
-        !def.def.materials.is_null(),
-        "invalid ChainDef: materials pointer is null"
-    );
+    check_chain_def_valid(def).expect("invalid ChainDef");
 }
 
 pub(crate) fn check_chain_def_valid(def: &ChainDef) -> ApiResult<()> {
     let count = def.def.count;
-    if count < 4 {
+    if count < 4 || usize::try_from(count) != Ok(def.points.len()) {
         return Err(ApiError::InvalidChainDef);
     }
-    if def.def.points.is_null() {
+    if def.def.points.is_null() || def.def.points != def.points.as_ptr() {
         return Err(ApiError::InvalidChainDef);
     }
+
     let mc = def.def.materialCount;
     if mc != 1 && mc != count {
         return Err(ApiError::InvalidChainDef);
@@ -890,24 +891,50 @@ pub(crate) fn check_chain_def_valid(def: &ChainDef) -> ApiResult<()> {
     if def.def.materials.is_null() {
         return Err(ApiError::InvalidChainDef);
     }
+
+    let expected_material_count = if def.materials.is_empty() {
+        1
+    } else {
+        i32::try_from(def.materials.len()).map_err(|_| ApiError::InvalidChainDef)?
+    };
+    if mc != expected_material_count
+        || (!def.materials.is_empty() && def.def.materials != def.materials.as_ptr())
+    {
+        return Err(ApiError::InvalidChainDef);
+    }
+
+    if !def
+        .points
+        .iter()
+        .copied()
+        .map(Vec2::from_raw)
+        .all(Vec2::is_valid)
+    {
+        return Err(ApiError::InvalidChainDef);
+    }
+
+    if def.materials.is_empty() {
+        // `ChainDef` has no raw constructor. Its empty-material layout always retains the
+        // non-null static material returned by `b2DefaultChainDef`.
+        let material = SurfaceMaterial::from_raw(unsafe { *def.def.materials });
+        crate::shapes::check_surface_material_valid(&material)
+            .map_err(|_| ApiError::InvalidChainDef)?;
+    } else {
+        for &material in &def.materials {
+            crate::shapes::check_surface_material_valid(&SurfaceMaterial::from_raw(material))
+                .map_err(|_| ApiError::InvalidChainDef)?;
+        }
+    }
+
     Ok(())
 }
 
 fn finish_chain_creation(
     core: &crate::core::world_core::WorldCore,
-    body: BodyId,
-    def: &ChainDef,
     raw: ffi::b2ChainId,
+    access: crate::core::world_core::WorldAccess,
 ) -> ApiResult<ChainId> {
-    let id = core.finish_created_chain(raw)?;
-    #[cfg(feature = "serialize")]
-    {
-        let meta = crate::core::serialize_registry::ChainCreateMeta::from_def(body, def);
-        core.record_chain(id, meta);
-    }
-    #[cfg(not(feature = "serialize"))]
-    let _ = (body, def);
-    Ok(id)
+    core.finish_created_chain_with_access(raw, access)
 }
 
 pub(crate) fn create_chain_for_body_impl(
@@ -915,11 +942,12 @@ pub(crate) fn create_chain_for_body_impl(
     body: BodyId,
     def: &ChainDef,
 ) -> ChainId {
+    assert_chain_def_valid(def);
     crate::core::callback_state::assert_not_in_callback();
     core.check_body(body).expect("invalid or foreign BodyId");
-    assert_chain_def_valid(def);
     let raw = unsafe { ffi::b2CreateChain(body.into_raw(), &def.def) };
-    finish_chain_creation(core, body, def, raw).expect("Box2D returned an invalid ChainId")
+    finish_chain_creation(core, raw, crate::core::world_core::WorldAccess::Idle)
+        .expect("Box2D returned an invalid ChainId")
 }
 
 pub(crate) fn try_create_chain_for_body_impl(
@@ -927,11 +955,25 @@ pub(crate) fn try_create_chain_for_body_impl(
     body: BodyId,
     def: &ChainDef,
 ) -> ApiResult<ChainId> {
-    crate::core::callback_state::check_not_in_callback()?;
-    core.check_body(body)?;
+    try_create_chain_for_body_with_access(
+        core,
+        body,
+        def,
+        crate::core::world_core::WorldAccess::Idle,
+    )
+}
+
+pub(crate) fn try_create_chain_for_body_with_access(
+    core: &crate::core::world_core::WorldCore,
+    body: BodyId,
+    def: &ChainDef,
+    access: crate::core::world_core::WorldAccess,
+) -> ApiResult<ChainId> {
     check_chain_def_valid(def)?;
+    crate::core::callback_state::check_not_in_callback()?;
+    core.check_body_with_access(body, access)?;
     let raw = unsafe { ffi::b2CreateChain(body.into_raw(), &def.def) };
-    finish_chain_creation(core, body, def, raw)
+    finish_chain_creation(core, raw, access)
 }
 
 fn create_body_attached_chain_handle<T>(

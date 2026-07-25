@@ -1,0 +1,23 @@
+error[E0599]: no method named `into_raw` found for struct `TreeProxyId` in the current scope
+ --> tests/ui/tree_proxy_id_from_raw.rs:4:19
+  |
+4 |     let _ = proxy.into_raw();
+  |                   ^^^^^^^^
+  |
+help: there is a method `into` with a similar name
+  |
+4 -     let _ = proxy.into_raw();
+4 +     let _ = proxy.into();
+  |
+
+error[E0599]: no associated function or constant named `from_raw` found for struct `TreeProxyId` in the current scope
+ --> tests/ui/tree_proxy_id_from_raw.rs:8:26
+  |
+8 |     let _ = TreeProxyId::from_raw(0);
+  |                          ^^^^^^^^ associated function or constant not found in `TreeProxyId`
+  |
+help: there is an associated function `from` with a similar name
+  |
+8 -     let _ = TreeProxyId::from_raw(0);
+8 +     let _ = TreeProxyId::from(0);
+  |

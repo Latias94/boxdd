@@ -91,6 +91,36 @@ pub(super) fn run_command(command: &mut Command, label: &str) -> Result<()> {
         )))
     }
 }
+
+pub(super) fn cargo_target_dir(root: &Path) -> Result<PathBuf> {
+    let output = Command::new("cargo")
+        .args(["metadata", "--locked", "--no-deps", "--format-version", "1"])
+        .current_dir(root)
+        .output()
+        .map_err(|source| Error::io("cargo metadata", source))?;
+    if !output.status.success() {
+        return Err(Error::Message(format!(
+            "cargo metadata failed while resolving target_directory: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    parse_cargo_target_dir(&output.stdout)
+}
+
+fn parse_cargo_target_dir(metadata: &[u8]) -> Result<PathBuf> {
+    let value: serde_json::Value = serde_json::from_slice(metadata).map_err(|error| {
+        Error::Message(format!(
+            "cargo metadata returned invalid JSON while resolving target_directory: {error}"
+        ))
+    })?;
+    let target_directory = value
+        .get("target_directory")
+        .and_then(serde_json::Value::as_str)
+        .filter(|path| !path.is_empty())
+        .ok_or_else(|| Error::Message("cargo metadata omitted target_directory".to_owned()))?;
+    Ok(PathBuf::from(target_directory))
+}
+
 pub(super) fn replace_dir_under(dir: &Path, allowed_root: &Path) -> Result<()> {
     fs::create_dir_all(allowed_root).map_err(|source| Error::io(allowed_root, source))?;
     if dir.exists() {
@@ -183,5 +213,15 @@ mod tests {
             &["--profile", "wasm-release"]
         );
         assert_eq!(BuildProfile::WasmRelease.target_dir(), "wasm-release");
+    }
+
+    #[test]
+    fn cargo_metadata_target_directory_is_required_and_structured() {
+        assert_eq!(
+            parse_cargo_target_dir(br#"{"target_directory":"/tmp/boxdd-target"}"#).unwrap(),
+            PathBuf::from("/tmp/boxdd-target")
+        );
+        assert!(parse_cargo_target_dir(br#"{"packages":[]}"#).is_err());
+        assert!(parse_cargo_target_dir(b"not-json").is_err());
     }
 }

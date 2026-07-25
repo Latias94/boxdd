@@ -6,7 +6,7 @@ use boxdd_sys::ffi;
 
 #[inline]
 fn contact_is_valid_impl(core: &WorldCore, id: ContactId) -> ApiResult<bool> {
-    core.contact_is_valid(id)
+    WorldCore::contact_is_valid(core, id)
 }
 
 #[inline]
@@ -15,68 +15,109 @@ fn contact_data_raw_impl(core: &WorldCore, id: ContactId) -> ApiResult<ffi::b2Co
     Ok(unsafe { ffi::b2Contact_GetData(id.into_raw()) })
 }
 
-macro_rules! impl_contact_api {
-    ($world:ty) => {
-        impl $world {
-            /// Return whether a contact id from the current completed-step epoch is still live.
-            ///
-            /// Contact ids expire before the next valid world step enters Box2D, even when the
-            /// underlying contact remains active. Query the next completed step for a fresh id.
-            #[inline]
-            pub fn contact_is_valid(&self, id: ContactId) -> bool {
-                crate::core::callback_state::assert_not_in_callback();
-                contact_is_valid_impl(self.core(), id)
-                    .expect("contact id belongs to a different world")
-            }
+impl World {
+    /// Return whether a contact id from the current completed-step epoch is still live.
+    #[inline]
+    pub fn contact_is_valid(&self, id: ContactId) -> bool {
+        crate::core::callback_state::assert_not_in_callback();
+        contact_is_valid_impl(self.core(), id).expect("contact id belongs to a different world")
+    }
 
-            /// Recoverable version of [`Self::contact_is_valid`].
-            #[inline]
-            pub fn try_contact_is_valid(&self, id: ContactId) -> ApiResult<bool> {
-                crate::core::callback_state::check_not_in_callback()?;
-                contact_is_valid_impl(self.core(), id)
-            }
+    /// Recoverable version of [`Self::contact_is_valid`].
+    #[inline]
+    pub fn try_contact_is_valid(&self, id: ContactId) -> ApiResult<bool> {
+        crate::core::callback_state::check_not_in_callback()?;
+        contact_is_valid_impl(self.core(), id)
+    }
 
-            /// Fetch an owned contact snapshot after validating world ownership and liveness.
-            #[inline]
-            pub fn contact_data(&self, id: ContactId) -> ContactData {
-                crate::core::callback_state::assert_not_in_callback();
-                self.contact_data_impl(id)
-                    .expect("invalid contact id or contact belongs to a different world")
-            }
+    /// Fetch an owned contact snapshot after validating world ownership and liveness.
+    #[inline]
+    pub fn contact_data(&self, id: ContactId) -> ContactData {
+        crate::core::callback_state::assert_not_in_callback();
+        self.contact_data_impl(id)
+            .expect("invalid contact id or contact belongs to a different world")
+    }
 
-            /// Recoverable version of [`Self::contact_data`].
-            #[inline]
-            pub fn try_contact_data(&self, id: ContactId) -> ApiResult<ContactData> {
-                crate::core::callback_state::check_not_in_callback()?;
-                self.contact_data_impl(id)
-            }
+    /// Recoverable version of [`Self::contact_data`].
+    #[inline]
+    pub fn try_contact_data(&self, id: ContactId) -> ApiResult<ContactData> {
+        crate::core::callback_state::check_not_in_callback()?;
+        self.contact_data_impl(id)
+    }
 
-            /// Fetch the raw Box2D contact snapshot after validating ownership and liveness.
-            #[inline]
-            pub fn contact_data_raw(&self, id: ContactId) -> ffi::b2ContactData {
-                crate::core::callback_state::assert_not_in_callback();
-                contact_data_raw_impl(self.core(), id)
-                    .expect("invalid contact id or contact belongs to a different world")
-            }
+    /// Fetch the raw Box2D contact snapshot after validating ownership and liveness.
+    #[inline]
+    pub fn contact_data_raw(&self, id: ContactId) -> ffi::b2ContactData {
+        crate::core::callback_state::assert_not_in_callback();
+        contact_data_raw_impl(self.core(), id)
+            .expect("invalid contact id or contact belongs to a different world")
+    }
 
-            /// Recoverable version of [`Self::contact_data_raw`].
-            #[inline]
-            pub fn try_contact_data_raw(&self, id: ContactId) -> ApiResult<ffi::b2ContactData> {
-                crate::core::callback_state::check_not_in_callback()?;
-                contact_data_raw_impl(self.core(), id)
-            }
+    /// Recoverable version of [`Self::contact_data_raw`].
+    #[inline]
+    pub fn try_contact_data_raw(&self, id: ContactId) -> ApiResult<ffi::b2ContactData> {
+        crate::core::callback_state::check_not_in_callback()?;
+        contact_data_raw_impl(self.core(), id)
+    }
 
-            #[inline]
-            fn contact_data_impl(&self, id: ContactId) -> ApiResult<ContactData> {
-                let raw = contact_data_raw_impl(self.core(), id)?;
-                ContactData::try_from_raw_in(self.brand(), self.core().contact_epoch(), raw)
-            }
-        }
-    };
+    #[inline]
+    fn contact_data_impl(&self, id: ContactId) -> ApiResult<ContactData> {
+        let raw = contact_data_raw_impl(self.core(), id)?;
+        ContactData::try_from_raw_in(self.brand(), self.core().contact_epoch(), raw)
+    }
 }
 
-impl_contact_api!(World);
-impl_contact_api!(WorldHandle);
+impl WorldHandle {
+    /// Return whether a contact id from the current completed-step epoch is still live.
+    #[inline]
+    pub fn contact_is_valid(&self, id: ContactId) -> bool {
+        crate::core::callback_state::assert_not_in_callback();
+        contact_is_valid_impl(self.core(), id).expect("contact id belongs to a different world")
+    }
+
+    /// Recoverable version of [`Self::contact_is_valid`].
+    #[inline]
+    pub fn try_contact_is_valid(&self, id: ContactId) -> ApiResult<bool> {
+        crate::core::callback_state::check_not_in_callback()?;
+        contact_is_valid_impl(self.core(), id)
+    }
+
+    /// Fetch an owned contact snapshot after validating world ownership and liveness.
+    #[inline]
+    pub fn contact_data(&self, id: ContactId) -> ContactData {
+        crate::core::callback_state::assert_not_in_callback();
+        self.contact_data_impl(id)
+            .expect("invalid contact id or contact belongs to a different world")
+    }
+
+    /// Recoverable version of [`Self::contact_data`].
+    #[inline]
+    pub fn try_contact_data(&self, id: ContactId) -> ApiResult<ContactData> {
+        crate::core::callback_state::check_not_in_callback()?;
+        self.contact_data_impl(id)
+    }
+
+    /// Fetch the raw Box2D contact snapshot after validating ownership and liveness.
+    #[inline]
+    pub fn contact_data_raw(&self, id: ContactId) -> ffi::b2ContactData {
+        crate::core::callback_state::assert_not_in_callback();
+        contact_data_raw_impl(self.core(), id)
+            .expect("invalid contact id or contact belongs to a different world")
+    }
+
+    /// Recoverable version of [`Self::contact_data_raw`].
+    #[inline]
+    pub fn try_contact_data_raw(&self, id: ContactId) -> ApiResult<ffi::b2ContactData> {
+        crate::core::callback_state::check_not_in_callback()?;
+        contact_data_raw_impl(self.core(), id)
+    }
+
+    #[inline]
+    fn contact_data_impl(&self, id: ContactId) -> ApiResult<ContactData> {
+        let raw = contact_data_raw_impl(self.core(), id)?;
+        ContactData::try_from_raw_in(self.brand(), self.core().contact_epoch(), raw)
+    }
+}
 
 #[cfg(test)]
 mod tests {

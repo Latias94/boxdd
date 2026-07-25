@@ -1,0 +1,17 @@
+error: lifetime may not live long enough
+ --> tests/ui/replay_view_escape.rs:9:43
+  |
+9 |     let escaped = player.with_view(|view| view.body(0)).unwrap();
+  |                                     ----- ^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`
+  |                                     |   |
+  |                                     |   return type of closure is Option<ReplayBodyView<'2>>
+  |                                     has type `ReplayView<'1>`
+
+error[E0515]: cannot return value referencing function parameter `view`
+ --> tests/ui/replay_view_escape.rs:9:43
+  |
+9 |     let escaped = player.with_view(|view| view.body(0)).unwrap();
+  |                                           ----^^^^^^^^
+  |                                           |
+  |                                           returns a value referencing data owned by the current function
+  |                                           `view` is borrowed here

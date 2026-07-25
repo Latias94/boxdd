@@ -3,12 +3,6 @@
 use boxdd::prelude::*;
 
 #[test]
-fn process_global_length_setter_is_explicitly_unsafe() {
-    let setter: unsafe fn(f32) = boxdd::unchecked::set_length_units_per_meter_unchecked;
-    let _ = setter;
-}
-
-#[test]
 fn unchecked_hotpath_methods_compile_and_work() {
     let mut world = World::new(WorldDef::default()).unwrap();
     let mut body = world.create_body_owned(BodyBuilder::new().body_type(BodyType::Dynamic).build());

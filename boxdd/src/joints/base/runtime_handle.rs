@@ -8,7 +8,7 @@ use super::user_data::{
     try_joint_with_user_data_checked_impl, try_joint_with_user_data_mut_checked_impl,
 };
 use super::*;
-use crate::error::{ApiError, ApiResult};
+use crate::error::ApiResult;
 use crate::types::{BodyId, JointId, Vec2};
 use std::os::raw::c_void;
 
@@ -25,8 +25,8 @@ pub(crate) trait JointRuntimeHandle {
 
     #[inline]
     fn check_valid(&self) -> ApiResult<()> {
-        crate::core::callback_state::check_not_in_callback()?;
-        self.joint_world_core().check_joint(self.joint_id())
+        crate::joints::runtime::check_joint_access(self.joint_world_core(), self.joint_id(), None)
+            .map(|_| ())
     }
 
     fn is_valid(&self) -> bool {
@@ -38,21 +38,17 @@ pub(crate) trait JointRuntimeHandle {
         crate::core::callback_state::check_not_in_callback()?;
         let core = self.joint_world_core();
         core.check_available()?;
-        let id = self.joint_id();
-        if id.brand() != core.brand() {
-            return Err(ApiError::WrongWorld);
-        }
-        Ok(joint_is_valid_impl(id))
+        core.joint_is_valid(self.joint_id())
     }
 
     fn joint_type(&self) -> JointType {
-        self.assert_valid();
-        joint_type_impl(self.joint_id())
+        self.try_joint_type()
+            .expect("joint handle is unavailable or Box2D returned an unknown joint type")
     }
 
     fn try_joint_type(&self) -> ApiResult<JointType> {
         self.check_valid()?;
-        Ok(joint_type_impl(self.joint_id()))
+        try_joint_type_impl(self.joint_world_core(), self.joint_id())
     }
 
     fn joint_type_raw(&self) -> ffi::b2JointType {
@@ -112,14 +108,21 @@ pub(crate) trait JointRuntimeHandle {
     }
 
     fn set_collide_connected(&mut self, flag: bool) {
-        self.assert_valid();
-        joint_set_collide_connected_impl(self.joint_id(), flag);
+        crate::joints::runtime::joint_set_checked_in_impl(
+            self.joint_world_core(),
+            self.joint_id(),
+            flag,
+            JOINT_SET_COLLIDE_CONNECTED,
+        );
     }
 
     fn try_set_collide_connected(&mut self, flag: bool) -> ApiResult<()> {
-        self.check_valid()?;
-        joint_set_collide_connected_impl(self.joint_id(), flag);
-        Ok(())
+        crate::joints::runtime::try_joint_set_checked_in_impl(
+            self.joint_world_core(),
+            self.joint_id(),
+            flag,
+            JOINT_SET_COLLIDE_CONNECTED,
+        )
     }
 
     fn constraint_tuning(&self) -> ConstraintTuning {
@@ -133,14 +136,21 @@ pub(crate) trait JointRuntimeHandle {
     }
 
     fn set_constraint_tuning(&mut self, tuning: ConstraintTuning) {
-        self.assert_valid();
-        joint_set_constraint_tuning_impl(self.joint_id(), tuning);
+        crate::joints::runtime::joint_set_checked_in_impl(
+            self.joint_world_core(),
+            self.joint_id(),
+            tuning,
+            JOINT_SET_CONSTRAINT_TUNING,
+        );
     }
 
     fn try_set_constraint_tuning(&mut self, tuning: ConstraintTuning) -> ApiResult<()> {
-        self.check_valid()?;
-        joint_set_constraint_tuning_impl(self.joint_id(), tuning);
-        Ok(())
+        crate::joints::runtime::try_joint_set_checked_in_impl(
+            self.joint_world_core(),
+            self.joint_id(),
+            tuning,
+            JOINT_SET_CONSTRAINT_TUNING,
+        )
     }
 
     fn local_frame_a(&self) -> crate::Transform {
@@ -164,40 +174,57 @@ pub(crate) trait JointRuntimeHandle {
     }
 
     fn set_local_frame_a(&mut self, frame: crate::Transform) {
-        self.assert_valid();
-        assert_joint_local_frame_valid(frame);
-        joint_set_local_frame_a_impl(self.joint_id(), frame);
+        crate::joints::runtime::joint_set_checked_in_impl(
+            self.joint_world_core(),
+            self.joint_id(),
+            frame,
+            JOINT_SET_LOCAL_FRAME_A,
+        );
     }
 
     fn try_set_local_frame_a(&mut self, frame: crate::Transform) -> ApiResult<()> {
-        self.check_valid()?;
-        check_joint_local_frame_valid(frame)?;
-        joint_set_local_frame_a_impl(self.joint_id(), frame);
-        Ok(())
+        crate::joints::runtime::try_joint_set_checked_in_impl(
+            self.joint_world_core(),
+            self.joint_id(),
+            frame,
+            JOINT_SET_LOCAL_FRAME_A,
+        )
     }
 
     fn set_local_frame_b(&mut self, frame: crate::Transform) {
-        self.assert_valid();
-        assert_joint_local_frame_valid(frame);
-        joint_set_local_frame_b_impl(self.joint_id(), frame);
+        crate::joints::runtime::joint_set_checked_in_impl(
+            self.joint_world_core(),
+            self.joint_id(),
+            frame,
+            JOINT_SET_LOCAL_FRAME_B,
+        );
     }
 
     fn try_set_local_frame_b(&mut self, frame: crate::Transform) -> ApiResult<()> {
-        self.check_valid()?;
-        check_joint_local_frame_valid(frame)?;
-        joint_set_local_frame_b_impl(self.joint_id(), frame);
-        Ok(())
+        crate::joints::runtime::try_joint_set_checked_in_impl(
+            self.joint_world_core(),
+            self.joint_id(),
+            frame,
+            JOINT_SET_LOCAL_FRAME_B,
+        )
     }
 
     fn wake_bodies(&mut self) {
-        self.assert_valid();
-        joint_wake_bodies_impl(self.joint_id());
+        crate::joints::runtime::joint_set_checked_in_impl(
+            self.joint_world_core(),
+            self.joint_id(),
+            (),
+            JOINT_WAKE_BODIES,
+        );
     }
 
     fn try_wake_bodies(&mut self) -> ApiResult<()> {
-        self.check_valid()?;
-        joint_wake_bodies_impl(self.joint_id());
-        Ok(())
+        crate::joints::runtime::try_joint_set_checked_in_impl(
+            self.joint_world_core(),
+            self.joint_id(),
+            (),
+            JOINT_WAKE_BODIES,
+        )
     }
 
     fn linear_separation(&self) -> f32 {
@@ -251,14 +278,21 @@ pub(crate) trait JointRuntimeHandle {
     }
 
     fn set_force_threshold(&mut self, threshold: f32) {
-        self.assert_valid();
-        joint_set_force_threshold_impl(self.joint_id(), threshold);
+        crate::joints::runtime::joint_set_checked_in_impl(
+            self.joint_world_core(),
+            self.joint_id(),
+            threshold,
+            JOINT_SET_FORCE_THRESHOLD,
+        );
     }
 
     fn try_set_force_threshold(&mut self, threshold: f32) -> ApiResult<()> {
-        self.check_valid()?;
-        joint_set_force_threshold_impl(self.joint_id(), threshold);
-        Ok(())
+        crate::joints::runtime::try_joint_set_checked_in_impl(
+            self.joint_world_core(),
+            self.joint_id(),
+            threshold,
+            JOINT_SET_FORCE_THRESHOLD,
+        )
     }
 
     fn torque_threshold(&self) -> f32 {
@@ -272,14 +306,21 @@ pub(crate) trait JointRuntimeHandle {
     }
 
     fn set_torque_threshold(&mut self, threshold: f32) {
-        self.assert_valid();
-        joint_set_torque_threshold_impl(self.joint_id(), threshold);
+        crate::joints::runtime::joint_set_checked_in_impl(
+            self.joint_world_core(),
+            self.joint_id(),
+            threshold,
+            JOINT_SET_TORQUE_THRESHOLD,
+        );
     }
 
     fn try_set_torque_threshold(&mut self, threshold: f32) -> ApiResult<()> {
-        self.check_valid()?;
-        joint_set_torque_threshold_impl(self.joint_id(), threshold);
-        Ok(())
+        crate::joints::runtime::try_joint_set_checked_in_impl(
+            self.joint_world_core(),
+            self.joint_id(),
+            threshold,
+            JOINT_SET_TORQUE_THRESHOLD,
+        )
     }
 
     unsafe fn set_user_data_ptr_raw(&mut self, p: *mut c_void) {

@@ -106,33 +106,27 @@ pub struct SensorEvents {
     pub end: Vec<SensorEndTouchEvent>,
 }
 
-pub(super) fn capture_native_events_into(
-    world: ffi::b2WorldId,
-    brand: IdBrand,
-    out: &mut SensorEvents,
-) {
-    let raw = unsafe { ffi::b2World_GetSensorEvents(world) };
-    let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
-        unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
-    } else {
-        &[][..]
-    };
-    let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
-        unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
-    } else {
-        &[][..]
-    };
-
-    super::map_snapshot_into(&mut out.begin, begin, |event| {
-        SensorBeginTouchEvent::from_raw_in(brand, *event)
-    });
-    super::map_snapshot_into(&mut out.end, end, |event| {
-        SensorEndTouchEvent::from_raw_in(brand, *event)
-    });
+impl SensorEvents {
+    pub(super) fn capture_into(mut self, raw: ffi::b2SensorEvents, brand: IdBrand) -> Self {
+        // SAFETY: Each pointer/count pair belongs to the completed step and is fully consumed
+        // before the next world mutation.
+        self.begin = unsafe {
+            super::capture_ffi_vec(self.begin, raw.beginEvents, raw.beginCount, |event| {
+                SensorBeginTouchEvent::from_raw_in(brand, *event)
+            })
+        };
+        // SAFETY: Same completed-step ownership contract as `begin` above.
+        self.end = unsafe {
+            super::capture_ffi_vec(self.end, raw.endEvents, raw.endCount, |event| {
+                SensorEndTouchEvent::from_raw_in(brand, *event)
+            })
+        };
+        self
+    }
 }
 
 fn sensor_events_snapshot_impl(cache: &super::EventCache) -> SensorEvents {
-    cache.snapshot().sensor.clone()
+    std::clone::Clone::clone(&cache.snapshot().sensor)
 }
 
 fn sensor_events_into_impl(cache: &super::EventCache, out: &mut SensorEvents) {
@@ -220,17 +214,12 @@ impl World {
             // Low-level raw view exposing FFI slices; valid only within this call.
             // Prefer `with_sensor_events_view` to avoid leaking FFI types.
             let raw = unsafe { ffi::b2World_GetSensorEvents(self.raw()) };
-            let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
-            } else {
-                &[][..]
-            };
-            let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
-            } else {
-                &[][..]
-            };
-            f(begin, end)
+            // SAFETY: The enclosing raw-view contract keeps the native buffers valid for `f`.
+            unsafe {
+                super::with_ffi_slice(raw.beginEvents, raw.beginCount, |begin| {
+                    super::with_ffi_slice(raw.endEvents, raw.endCount, |end| f(begin, end))
+                })
+            }
         })
     }
 
@@ -244,17 +233,12 @@ impl World {
     ) -> crate::error::ApiResult<T> {
         self.try_with_borrowed_event_buffers(|| {
             let raw = unsafe { ffi::b2World_GetSensorEvents(self.raw()) };
-            let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
-            } else {
-                &[][..]
-            };
-            let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
-            } else {
-                &[][..]
-            };
-            f(begin, end)
+            // SAFETY: The enclosing raw-view contract keeps the native buffers valid for `f`.
+            unsafe {
+                super::with_ffi_slice(raw.beginEvents, raw.beginCount, |begin| {
+                    super::with_ffi_slice(raw.endEvents, raw.endCount, |end| f(begin, end))
+                })
+            }
         })
     }
 

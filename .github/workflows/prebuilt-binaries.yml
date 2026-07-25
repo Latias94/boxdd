@@ -5,128 +5,372 @@ on:
     tags:
       - 'v*'
       - 'boxdd-sys-v*'
-  release:
-    types: [published]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Git tag to build (e.g., v0.1.0)'
-        required: false
-        type: string
-      branch:
-        description: 'Branch to build (e.g., main). If provided, builds latest commit and uploads artifacts.'
-        required: false
-        type: string
-        default: main
+
+permissions: {}
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   build-prebuilt:
-    name: boxdd-sys ${{ matrix.target }}${{ matrix.crt && format(' ({0})', matrix.crt) || '' }}
-    runs-on: ${{ matrix.os }}
+    name: Build ${{ matrix.platform.target }} ${{ matrix.precision }} ${{ matrix.platform.crt }}
+    if: ${{ github.ref_protected == true }}
+    runs-on: ${{ matrix.platform.os }}
     permissions:
-      contents: write
+      contents: read
+    env:
+      BOXDD_SYS_PACKAGE_DIR: ${{ github.workspace }}/packages
+      BOXDD_SYS_PACKAGE_CRT: ${{ matrix.platform.crt }}
+      BOXDD_SYS_PACKAGE_SOURCE_COMMIT: ${{ github.sha }}
+      BOXDD_SYS_PACKAGE_RELEASE_TAG: ${{ github.ref_name }}
+      TARGET: ${{ matrix.platform.target }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # Linux
+        precision: [single, double]
+        platform:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-          # macOS (Intel)
+            crt: none
           - target: x86_64-apple-darwin
             os: macos-15-intel
-          # macOS (Apple Silicon)
+            crt: none
           - target: aarch64-apple-darwin
             os: macos-latest
-          # Windows (MD)
+            crt: none
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             crt: md
-          # Windows (MT)
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             crt: mt
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout immutable tag commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          fetch-depth: 0
           submodules: recursive
-          ref: ${{ inputs.tag || inputs.branch || github.ref }}
+          persist-credentials: false
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
         with:
-          toolchain: 1.97.0
-          targets: ${{ matrix.target }}
+          toolchain: 1.97.1
+          targets: ${{ matrix.platform.target }}
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          key: ${{ format('{0}-{1}', matrix.target, matrix.crt || 'none') }}
+          key: ${{ format('{0}-{1}-{2}', matrix.platform.target, matrix.platform.crt, matrix.precision) }}
 
       - name: Install build tools (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config
+          sudo apt-get install -y build-essential
 
       - name: Select static CRT (Windows MT)
-        if: ${{ runner.os == 'Windows' && matrix.crt == 'mt' }}
+        if: ${{ runner.os == 'Windows' && matrix.platform.crt == 'mt' }}
         shell: pwsh
         run: echo "RUSTFLAGS=-C target-feature=+crt-static" >> $env:GITHUB_ENV
 
-      - name: Build boxdd-sys (Release)
-        run: cargo build -p boxdd-sys --release --target ${{ matrix.target }}
-        env:
-          TARGET: ${{ matrix.target }}
+      - name: Build and package (single precision)
+        if: matrix.precision == 'single'
+        run: |
+          cargo build --locked -p boxdd-sys --release --target ${{ matrix.platform.target }}
+          cargo run --locked -p boxdd-sys --features package-bin --bin package --release --target ${{ matrix.platform.target }}
 
-      - name: Package boxdd-sys static library + headers
-        run: cargo run -p boxdd-sys --features package-bin --bin package --release --target ${{ matrix.target }}
-        env:
-          BOXDD_SYS_PACKAGE_DIR: ${{ github.workspace }}/packages
-          BOXDD_SYS_PACKAGE_CRT: ${{ matrix.crt || '' }}
-          TARGET: ${{ matrix.target }}
+      - name: Build and package (double precision)
+        if: matrix.precision == 'double'
+        run: |
+          cargo build --locked -p boxdd-sys --release --target ${{ matrix.platform.target }} --features double-precision
+          cargo run --locked -p boxdd-sys --features package-bin,double-precision --bin package --release --target ${{ matrix.platform.target }}
 
-      - name: Verify package artifact name
+      - name: Stage one immutable release input
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $packageRoot = Join-Path '${{ github.workspace }}' 'packages'
-          $packageFiles = @(Get-ChildItem -LiteralPath $packageRoot -Filter '*.tar.gz' -File)
+          $packageFiles = @(Get-ChildItem -LiteralPath '${{ github.workspace }}/packages' -Filter '*.tar.gz' -File)
           if ($packageFiles.Count -ne 1) {
             $names = ($packageFiles | ForEach-Object { $_.Name }) -join ', '
             throw "Expected exactly one prebuilt package, found $($packageFiles.Count): $names"
           }
 
-          $targetTriple = '${{ matrix.target }}'
-          $crt = '${{ matrix.crt }}'
-          if ([string]::IsNullOrWhiteSpace($crt)) {
-            $expectedPattern = "boxdd-prebuilt-*-$targetTriple-static.tar.gz"
+          $targetTriple = '${{ matrix.platform.target }}'
+          $precision = '${{ matrix.precision }}'
+          $crt = '${{ matrix.platform.crt }}'
+          if ($crt -eq 'none') {
+            $expectedName = "boxdd-prebuilt-0.6.0-$targetTriple-$precision-static.tar.gz"
           } else {
-            $expectedPattern = "boxdd-prebuilt-*-$targetTriple-static-$crt.tar.gz"
+            $expectedName = "boxdd-prebuilt-0.6.0-$targetTriple-$precision-static-$crt.tar.gz"
+          }
+          if ($packageFiles[0].Name -ne $expectedName) {
+            throw "Unexpected package name '$($packageFiles[0].Name)'; expected '$expectedName'"
           }
 
-          if ($packageFiles[0].Name -notlike $expectedPattern) {
-            throw "Unexpected package name '$($packageFiles[0].Name)'; expected pattern '$expectedPattern'"
-          }
+          $artifactName = "prebuilt-input-$targetTriple-$precision-$crt-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}"
+          $artifactRoot = Join-Path '${{ runner.temp }}' $artifactName
+          New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
+          Copy-Item -LiteralPath $packageFiles[0].FullName -Destination (Join-Path $artifactRoot $expectedName)
+          "ARTIFACT_NAME=$artifactName" >> $env:GITHUB_ENV
+          "ARTIFACT_ROOT=$artifactRoot" >> $env:GITHUB_ENV
 
-          Write-Host "Verified package artifact: $($packageFiles[0].Name)"
-
-      - name: Upload to release
-        uses: softprops/action-gh-release@v2
-        if: inputs.tag || github.event_name == 'release' || startsWith(github.ref, 'refs/tags/')
+      - name: Upload unprivileged release input
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
-          files: ${{ github.workspace }}/packages/*.tar.gz
-
-      - name: Upload artifact (branch builds)
-        if: inputs.branch && !inputs.tag && github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
-        with:
-          name: prebuilt-${{ matrix.target }}${{ matrix.crt && format('-{0}', matrix.crt) || '' }}-${{ inputs.branch }}-${{ github.sha }}
-          path: ${{ github.workspace }}/packages/*.tar.gz
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.ARTIFACT_ROOT }}
           if-no-files-found: error
+          retention-days: 7
+
+  aggregate:
+    name: Validate release contents before signing
+    if: ${{ github.ref_protected == true }}
+    needs: build-prebuilt
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout immutable tag commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: 1.97.1
+
+      - name: Download exact run inputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: prebuilt-input-*-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: ${{ runner.temp }}/release-inputs
+          merge-multiple: false
+
+      - name: Validate exact contents and export canonical provenance manifests
+        run: |
+          inputs="${RUNNER_TEMP}/release-inputs"
+          payloads="${RUNNER_TEMP}/signing-payloads"
+          cargo run --locked -p xtask -- release-contract --write-checksums --artifacts "$inputs"
+          mkdir "$payloads"
+          cargo run --locked -p xtask -- release-contract --check-content \
+            --artifacts "$inputs" \
+            --payloads "$payloads"
+          cp boxdd-sys/security/sigstore/trusted_root.json "$payloads/trusted_root.json"
+
+      - name: Upload validated attestation input
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: prebuilt-attestation-input-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/release-inputs
+            ${{ runner.temp }}/signing-payloads
+          if-no-files-found: error
+          retention-days: 7
+
+  attest:
+    name: Sign validated provenance manifests
+    if: ${{ github.ref_protected == true }}
+    needs: aggregate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    environment: release
+    steps:
+      - name: Download validated attestation input
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: prebuilt-attestation-input-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: ${{ runner.temp }}/attestation-input
+
+      - name: Install exact Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+
+      - name: Sign and immediately verify every validated payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="${RUNNER_TEMP}/attestation-input/signing-payloads/trusted_root.json"
+          expected_root=6494e21ea73fa7ee769f85f57d5a3e6a08725eae1e38c755fc3517c9e6bc0b66
+          test "$(sha256sum "$root" | cut -d ' ' -f 1)" = "$expected_root"
+
+          mapfile -d '' archives < <(find "${RUNNER_TEMP}/attestation-input/release-inputs" -type f -name '*.tar.gz' -print0 | sort -z)
+          test "${#archives[@]}" -eq 10
+          for archive in "${archives[@]}"; do
+            payload="${RUNNER_TEMP}/attestation-input/signing-payloads/$(basename "$archive").manifest"
+            bundle="${archive}.sigstore.json"
+            test -f "$payload"
+            cosign sign-blob --yes --bundle "$bundle" "$payload"
+            cosign verify-blob \
+              --bundle "$bundle" \
+              --trusted-root "$root" \
+              --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/prebuilt-binaries.yml@refs/tags/${GITHUB_REF_NAME}" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              --certificate-github-workflow-repository "$GITHUB_REPOSITORY" \
+              --certificate-github-workflow-ref "refs/tags/${GITHUB_REF_NAME}" \
+              --certificate-github-workflow-sha "$GITHUB_SHA" \
+              --certificate-github-workflow-trigger push \
+              --certificate-github-workflow-name "Build Prebuilt Binaries (boxdd-sys)" \
+              "$payload"
+          done
+
+      - name: Upload signed release inputs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: prebuilt-signed-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: ${{ runner.temp }}/attestation-input/release-inputs
+          if-no-files-found: error
+          retention-days: 7
+
+  verify-signed-release:
+    name: Reverify signed aggregate
+    if: ${{ github.ref_protected == true }}
+    needs: attest
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout immutable tag commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: 1.97.1
+
+      - name: Install exact Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+
+      - name: Download signed aggregate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: prebuilt-signed-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: ${{ runner.temp }}/release-inputs
+
+      - name: Reverify exact signed release contract
+        run: cargo run --locked -p xtask -- release-contract --check --artifacts "${RUNNER_TEMP}/release-inputs"
+
+  qualify-prebuilt:
+    name: Qualify ${{ matrix.platform.target }} ${{ matrix.precision }} ${{ matrix.platform.crt }} Rust ${{ matrix.toolchain }}
+    if: ${{ github.ref_protected == true }}
+    needs: verify-signed-release
+    runs-on: ${{ matrix.platform.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: ["1.95.0", "1.97.1"]
+        precision: [single, double]
+        platform:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            crt: none
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+            crt: none
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            crt: none
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            crt: md
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            crt: mt
+
+    steps:
+      - name: Checkout immutable tag commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          targets: ${{ matrix.platform.target }}
+
+      - name: Install exact Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+
+      - name: Download signed aggregate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: prebuilt-signed-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: ${{ runner.temp }}/release-inputs
+
+      - name: Consume through the authenticated prebuilt provider
+        run: cargo +${{ matrix.toolchain }} run --locked -p xtask -- qualify-native-provider --provider prebuilt --toolchain ${{ matrix.toolchain }} --precision ${{ matrix.precision }} --target ${{ matrix.platform.target }} --crt ${{ matrix.platform.crt }} --artifacts "${{ runner.temp }}/release-inputs" --cosign cosign
+
+  publish-draft:
+    name: Publish protected draft release
+    if: ${{ github.ref_protected == true }}
+    needs: qualify-prebuilt
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download qualified signed aggregate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: prebuilt-signed-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: ${{ runner.temp }}/release-inputs
+
+      - name: Create protected draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_TYPE}" = "tag"
+          test "${GITHUB_REF}" = "refs/tags/${GITHUB_REF_NAME}"
+
+          # Resolve the protected tag through the Git Data API immediately before publishing.
+          # The ref target is a commit for lightweight tags and a tag object for annotated tags.
+          tag_name_uri="$(jq -rn --arg value "${GITHUB_REF_NAME}" '$value | @uri')"
+          IFS=$'\t' read -r current_ref object_type object_sha < <(
+            gh api --method GET \
+              "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag_name_uri}" \
+              --jq '[.ref, .object.type, .object.sha] | @tsv'
+          )
+          test "${current_ref}" = "${GITHUB_REF}"
+          peel_depth=0
+          while test "${object_type}" = "tag"; do
+            peel_depth=$((peel_depth + 1))
+            test "${peel_depth}" -le 8
+            IFS=$'\t' read -r object_type object_sha < <(
+              gh api --method GET \
+                "repos/${GITHUB_REPOSITORY}/git/tags/${object_sha}" \
+                --jq '[.object.type, .object.sha] | @tsv'
+            )
+          done
+          test "${object_type}" = "commit"
+          test "${object_sha}" = "${GITHUB_SHA}"
+
+          mapfile -d '' assets < <(find "${RUNNER_TEMP}/release-inputs" -type f -print0 | sort -z)
+          test "${#assets[@]}" -eq 31
+          gh release create "${GITHUB_REF_NAME}" \
+            --draft \
+            --verify-tag \
+            --title "boxdd ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            "${assets[@]}"

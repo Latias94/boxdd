@@ -1,4 +1,4 @@
-use crate::core::world_core::MaterialMixCtx;
+use crate::core::callback_state::MaterialMixCtx;
 use crate::world::MaterialMixInput;
 use boxdd_sys::ffi;
 use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
@@ -73,7 +73,12 @@ pub(crate) fn has_any_callback(slot: usize) -> bool {
 
 #[inline]
 fn default_friction_mix(friction_a: f32, friction_b: f32) -> f32 {
-    (friction_a * friction_b).sqrt()
+    let maximum = friction_a.max(friction_b);
+    if maximum == 0.0 {
+        0.0
+    } else {
+        maximum * (friction_a.min(friction_b) / maximum).sqrt()
+    }
 }
 
 #[inline]
@@ -94,23 +99,18 @@ unsafe fn invoke_mix_callback(
     }
 
     let ctx = unsafe { &*ctx_ptr };
-    if ctx.worker.has_panicked() {
-        return default_mix(value_a, value_b);
-    }
-
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _g = crate::core::callback_state::CallbackGuard::enter();
-        (ctx.cb)(
+    let fallback = default_mix(value_a, value_b);
+    crate::core::callback_state::invoke_worker_callback(&ctx.worker, fallback, || {
+        let mixed = (ctx.cb)(
             MaterialMixInput::new(value_a, user_material_id_a),
             MaterialMixInput::new(value_b, user_material_id_b),
-        )
-    })) {
-        Ok(v) => v,
-        Err(payload) => {
-            ctx.worker.record_panic(payload);
-            default_mix(value_a, value_b)
-        }
-    }
+        );
+        assert!(
+            mixed.is_finite() && mixed >= 0.0,
+            "material mixing callback must return a finite non-negative coefficient, got {mixed}"
+        );
+        mixed
+    })
 }
 
 #[inline]
@@ -333,4 +333,76 @@ pub(crate) fn friction_callback(slot: usize) -> ffi::b2FrictionCallback {
 #[inline]
 pub(crate) fn restitution_callback(slot: usize) -> ffi::b2RestitutionCallback {
     Some(RESTITUTION_TRAMPOLINES[slot])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn null_callbacks_preserve_box2d_default_mixing_rules() {
+        let friction = unsafe {
+            invoke_mix_callback(
+                core::ptr::null_mut(),
+                0.25,
+                11,
+                0.81,
+                22,
+                default_friction_mix,
+            )
+        };
+        let restitution = unsafe {
+            invoke_mix_callback(
+                core::ptr::null_mut(),
+                0.25,
+                11,
+                0.81,
+                22,
+                default_restitution_mix,
+            )
+        };
+
+        assert_eq!(friction, (0.25_f32 * 0.81).sqrt());
+        assert_eq!(restitution, 0.81);
+    }
+
+    #[test]
+    fn panicking_material_callbacks_use_exact_defaults_and_worker_reuse() {
+        let world = crate::World::new(crate::WorldDef::default()).unwrap();
+        let worker = Arc::clone(&world.core().worker_callbacks);
+        let context = Box::new(MaterialMixCtx {
+            worker: Arc::clone(&worker),
+            cb: Box::new(|_, _| -> f32 { panic!("friction mix test panic") }),
+        });
+        let context = Box::into_raw(context);
+
+        let first =
+            unsafe { invoke_mix_callback(context, 0.25, 11, 0.81, 22, default_friction_mix) };
+        let second =
+            unsafe { invoke_mix_callback(context, 0.25, 11, 0.81, 22, default_friction_mix) };
+        let expected_friction = (0.25_f32 * 0.81).sqrt();
+        assert_eq!(first, expected_friction);
+        assert_eq!(second, expected_friction);
+
+        worker.clear_panic();
+        // SAFETY: `context` is no longer used after both callback invocations.
+        drop(unsafe { Box::from_raw(context) });
+
+        let context = Box::new(MaterialMixCtx {
+            worker: Arc::clone(&worker),
+            cb: Box::new(|_, _| -> f32 { panic!("restitution mix test panic") }),
+        });
+        let context = Box::into_raw(context);
+        let first =
+            unsafe { invoke_mix_callback(context, 0.25, 11, 0.81, 22, default_restitution_mix) };
+        let second =
+            unsafe { invoke_mix_callback(context, 0.25, 11, 0.81, 22, default_restitution_mix) };
+        assert_eq!(first, 0.81);
+        assert_eq!(second, 0.81);
+
+        worker.clear_panic();
+        // SAFETY: `context` is no longer used after both callback invocations.
+        drop(unsafe { Box::from_raw(context) });
+    }
 }

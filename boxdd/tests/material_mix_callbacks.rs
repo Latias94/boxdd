@@ -20,6 +20,11 @@ impl Drop for PanicOnDrop {
 
 fn overlapping_material_world() -> World {
     let mut world = World::new(WorldDef::builder().gravity([0.0_f32, 0.0]).build()).unwrap();
+    add_overlapping_material_pair(&mut world, 0.0);
+    world
+}
+
+fn add_overlapping_material_pair(world: &mut World, x_offset: f32) {
     let shape_def = ShapeDef::builder()
         .density(1.0)
         .material(
@@ -34,12 +39,11 @@ fn overlapping_material_world() -> World {
         let body = world.create_body_id(
             BodyBuilder::new()
                 .body_type(BodyType::Dynamic)
-                .position([x, 0.0])
+                .position([x + x_offset, 0.0])
                 .build(),
         );
         let _ = world.create_polygon_shape_for(body, &shape_def, &polygon);
     }
-    world
 }
 
 #[test]
@@ -158,6 +162,48 @@ fn material_mix_callback_panic_is_caught_and_resumed_after_step() {
         world.step(1.0 / 60.0, 1);
     }));
     assert!(r.is_err());
+
+    world.clear_friction_callback();
+    let replacement_calls = Arc::new(AtomicUsize::new(0));
+    world.set_friction_callback({
+        let replacement_calls = Arc::clone(&replacement_calls);
+        move |a, b| {
+            replacement_calls.fetch_add(1, Ordering::SeqCst);
+            (a.coefficient * b.coefficient).sqrt()
+        }
+    });
+    for _ in 0..5 {
+        world.step(1.0 / 60.0, 1);
+    }
+    assert!(replacement_calls.load(Ordering::SeqCst) > 0);
+    world.clear_friction_callback();
+}
+
+#[test]
+fn invalid_material_mix_results_are_caught_and_world_remains_reusable() {
+    for invalid in [f32::NAN, f32::INFINITY, -0.5] {
+        let mut world = overlapping_material_world();
+        world.set_friction_callback(move |_, _| invalid);
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            world.step(1.0 / 60.0, 2);
+        }));
+        assert!(result.is_err(), "invalid coefficient {invalid} must panic");
+
+        world.clear_friction_callback();
+        let replacement_calls = Arc::new(AtomicUsize::new(0));
+        world.set_friction_callback({
+            let replacement_calls = Arc::clone(&replacement_calls);
+            move |a, b| {
+                replacement_calls.fetch_add(1, Ordering::SeqCst);
+                (a.coefficient * b.coefficient).sqrt()
+            }
+        });
+        add_overlapping_material_pair(&mut world, 4.0);
+        world.step(1.0 / 60.0, 2);
+        assert!(replacement_calls.load(Ordering::SeqCst) > 0);
+        world.clear_friction_callback();
+    }
 }
 
 #[test]

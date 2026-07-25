@@ -45,27 +45,43 @@ impl<'a> Iterator for JointEventIter<'a> {
     }
 }
 
-pub(super) fn capture_native_events_into(
-    world: ffi::b2WorldId,
-    brand: IdBrand,
-    out: &mut Vec<JointEvent>,
-) {
-    let raw = unsafe { ffi::b2World_GetJointEvents(world) };
-    let slice = if raw.count > 0 && !raw.jointEvents.is_null() {
-        unsafe { core::slice::from_raw_parts(raw.jointEvents, raw.count as usize) }
-    } else {
-        &[][..]
-    };
-    super::map_snapshot_into(out, slice, |event| JointEvent::from_raw_in(brand, *event));
+#[derive(Default)]
+pub(super) struct JointEventSlot {
+    pub(super) values: Vec<JointEvent>,
+}
+
+impl JointEventSlot {
+    pub(super) fn capture_into(mut self, raw: ffi::b2JointEvents, brand: IdBrand) -> Self {
+        // SAFETY: The raw container belongs to the completed step and is consumed before any
+        // subsequent world mutation.
+        self.values = unsafe {
+            super::capture_ffi_vec(self.values, raw.jointEvents, raw.count, |event| {
+                JointEvent::from_raw_in(brand, *event)
+            })
+        };
+        self
+    }
+
+    pub(super) fn to_owned(&self) -> Vec<JointEvent> {
+        std::clone::Clone::clone(&self.values)
+    }
+
+    fn clone_into(&self, out: &mut Vec<JointEvent>) {
+        super::map_snapshot_into(out, &self.values, Clone::clone);
+    }
+
+    fn iter(&self) -> core::slice::Iter<'_, JointEvent> {
+        self.values.iter()
+    }
 }
 
 fn joint_events_snapshot_impl(cache: &super::EventCache) -> Vec<JointEvent> {
-    cache.snapshot().joint.clone()
+    JointEventSlot::to_owned(&cache.snapshot().joint)
 }
 
 fn joint_events_into_impl(cache: &super::EventCache, out: &mut Vec<JointEvent>) {
     let snapshot = cache.snapshot();
-    super::map_snapshot_into(out, &snapshot.joint, Clone::clone);
+    JointEventSlot::clone_into(&snapshot.joint, out);
 }
 
 impl World {
@@ -142,12 +158,8 @@ impl World {
     pub unsafe fn with_joint_events_raw<T>(&self, f: impl FnOnce(&[ffi::b2JointEvent]) -> T) -> T {
         self.with_borrowed_event_buffers(|| {
             let raw = unsafe { ffi::b2World_GetJointEvents(self.raw()) };
-            let slice = if raw.count > 0 && !raw.jointEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.jointEvents, raw.count as usize) }
-            } else {
-                &[][..]
-            };
-            f(slice)
+            // SAFETY: The enclosing raw-view contract keeps the native buffer valid for `f`.
+            unsafe { super::with_ffi_slice(raw.jointEvents, raw.count, f) }
         })
     }
 
@@ -161,12 +173,8 @@ impl World {
     ) -> crate::error::ApiResult<T> {
         self.try_with_borrowed_event_buffers(|| {
             let raw = unsafe { ffi::b2World_GetJointEvents(self.raw()) };
-            let slice = if raw.count > 0 && !raw.jointEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.jointEvents, raw.count as usize) }
-            } else {
-                &[][..]
-            };
-            f(slice)
+            // SAFETY: The enclosing raw-view contract keeps the native buffer valid for `f`.
+            unsafe { super::with_ffi_slice(raw.jointEvents, raw.count, f) }
         })
     }
 
@@ -187,7 +195,7 @@ impl World {
         self.with_borrowed_event_buffers(|| {
             let snapshot = self.event_cache().snapshot();
             f(JointEventIter {
-                iter: snapshot.joint.iter(),
+                iter: JointEventSlot::iter(&snapshot.joint),
             })
         })
     }
@@ -200,7 +208,7 @@ impl World {
         self.try_with_borrowed_event_buffers(|| {
             let snapshot = self.event_cache().snapshot();
             f(JointEventIter {
-                iter: snapshot.joint.iter(),
+                iter: JointEventSlot::iter(&snapshot.joint),
             })
         })
     }

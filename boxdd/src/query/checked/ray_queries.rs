@@ -1,35 +1,37 @@
 use super::*;
 
-pub(crate) fn cast_ray_closest_checked_impl<VT: Into<Vec2>>(
+pub(crate) fn cast_ray_closest_with_stats_checked_impl<VT: Into<Vec2>>(
     target: QueryTarget,
     origin: Position,
     translation: VT,
     filter: QueryFilter,
-) -> Option<RayResult> {
+) -> ClosestRayCastResult {
     checked_query_preflight(&target);
     let translation = translation.into();
     assert_query_position_valid("origin", origin);
     assert_query_vec2_valid("translation", translation);
     checked_query_impl(&target, || {
-        cast_ray_closest_impl(&target, origin, translation, filter)
+        crate::query::raw::cast_ray_closest_with_stats_impl(&target, origin, translation, filter)
     })
+    .expect("Box2D returned an invalid closest-ray shape id")
 }
 
-pub(crate) fn try_cast_ray_closest_impl<VT: Into<Vec2>>(
+pub(crate) fn try_cast_ray_closest_with_stats_impl<VT: Into<Vec2>>(
     target: QueryTarget,
     origin: Position,
     translation: VT,
     filter: QueryFilter,
-) -> ApiResult<Option<RayResult>> {
+) -> ApiResult<ClosestRayCastResult> {
     try_checked_query_preflight(&target)?;
     let translation = translation.into();
     check_query_position_valid(origin)?;
     check_query_vec2_valid(translation)?;
     try_checked_query_result_impl(&target, || {
-        Ok(cast_ray_closest_impl(&target, origin, translation, filter))
+        crate::query::raw::cast_ray_closest_with_stats_impl(&target, origin, translation, filter)
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn cast_ray_all_checked_impl<VT: Into<Vec2>>(
     target: QueryTarget,
     origin: Position,
@@ -41,10 +43,11 @@ pub(crate) fn cast_ray_all_checked_impl<VT: Into<Vec2>>(
     assert_query_position_valid("origin", origin);
     assert_query_vec2_valid("translation", translation);
     checked_query_impl(&target, || {
-        cast_ray_all_impl(&target, origin, translation, filter)
+        crate::query::raw::cast_ray_all_impl(&target, origin, translation, filter)
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn cast_ray_all_into_checked_impl<VT: Into<Vec2>>(
     target: QueryTarget,
     origin: Position,
@@ -57,10 +60,11 @@ pub(crate) fn cast_ray_all_into_checked_impl<VT: Into<Vec2>>(
     assert_query_position_valid("origin", origin);
     assert_query_vec2_valid("translation", translation);
     checked_query_impl(&target, || {
-        cast_ray_all_into_impl(&target, origin, translation, filter, out);
+        crate::query::raw::cast_ray_all_into_impl(&target, origin, translation, filter, out);
     });
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn try_cast_ray_all_impl<VT: Into<Vec2>>(
     target: QueryTarget,
     origin: Position,
@@ -72,10 +76,16 @@ pub(crate) fn try_cast_ray_all_impl<VT: Into<Vec2>>(
     check_query_position_valid(origin)?;
     check_query_vec2_valid(translation)?;
     try_checked_query_result_impl(&target, || {
-        Ok(cast_ray_all_impl(&target, origin, translation, filter))
+        Ok(crate::query::raw::cast_ray_all_impl(
+            &target,
+            origin,
+            translation,
+            filter,
+        ))
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn try_cast_ray_all_into_impl<VT: Into<Vec2>>(
     target: QueryTarget,
     origin: Position,
@@ -88,7 +98,7 @@ pub(crate) fn try_cast_ray_all_into_impl<VT: Into<Vec2>>(
     check_query_position_valid(origin)?;
     check_query_vec2_valid(translation)?;
     try_checked_query_result_impl(&target, || {
-        cast_ray_all_into_impl(&target, origin, translation, filter, out);
+        crate::query::raw::cast_ray_all_into_impl(&target, origin, translation, filter, out);
         Ok(())
     })
 }

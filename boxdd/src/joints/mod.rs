@@ -5,7 +5,7 @@
 //!   configuration/queries. Dropping the handle does **not** destroy the joint.
 //! - Owned handles: `World::create_*_joint_owned(&def) -> OwnedJoint` or `World::*().build_owned() -> OwnedJoint`
 //!   returning a RAII handle that destroys the joint on drop.
-//! - ID style: `World::create_*_joint_id(&def) -> b2JointId` returning the raw id for storage.
+//! - ID style: `World::create_*_joint_id(&def) -> JointId` returning a world-bound branded ID for storage.
 //!
 //! The `World` convenience builders (`revolute`, `prismatic`, `wheel`, `distance`, `weld`,
 //! `motor_joint`, `filter_joint`) help compose joints in world space and build local frames
@@ -26,6 +26,7 @@ mod runtime_typed_prismatic;
 mod runtime_typed_revolute;
 mod runtime_typed_weld;
 mod runtime_typed_wheel;
+mod validation;
 mod weld;
 mod wheel;
 
@@ -46,11 +47,18 @@ use crate::types::{BodyId, JointId, Vec2};
 use crate::world::{World, WorldHandle};
 use boxdd_sys::ffi;
 use runtime::*;
+use validation::*;
+
+pub(crate) use runtime::{JointWriteKind, JointWriteValue, try_joint_write_with_access};
 
 pub(crate) use creation::{
     check_distance_joint_def_valid, check_filter_joint_def_valid, check_joint_base_valid,
     check_motor_joint_def_valid, check_prismatic_joint_def_valid, check_revolute_joint_def_valid,
     check_weld_joint_def_valid, check_wheel_joint_def_valid,
+    try_create_distance_joint_id_with_access, try_create_filter_joint_id_with_access,
+    try_create_motor_joint_id_with_access, try_create_prismatic_joint_id_with_access,
+    try_create_revolute_joint_id_with_access, try_create_weld_joint_id_with_access,
+    try_create_wheel_joint_id_with_access,
 };
 
 #[inline]
@@ -65,14 +73,12 @@ fn raw_joint_id(id: JointId) -> ffi::b2JointId {
 
 #[inline]
 fn assert_joint_valid(core: &WorldCore, id: JointId) {
-    crate::core::callback_state::assert_not_in_callback();
-    core.check_joint(id).expect("invalid or foreign JointId");
+    assert_joint_access(core, id, None);
 }
 
 #[inline]
 fn check_joint_valid(core: &WorldCore, id: JointId) -> ApiResult<()> {
-    crate::core::callback_state::check_not_in_callback()?;
-    core.check_joint(id)
+    check_joint_access(core, id, None).map(|_| ())
 }
 
 #[inline]
@@ -93,6 +99,13 @@ fn try_joint_read_checked_impl<R>(
 
 #[cfg(test)]
 mod tests {
+    fn assert_panics(callback: impl FnOnce()) {
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(callback)).is_err(),
+            "native joint default constructor accepted callback reentry"
+        );
+    }
+
     #[test]
     fn try_joint_apis_return_in_callback() {
         let mut world = crate::World::new(crate::WorldDef::default()).unwrap();
@@ -102,18 +115,50 @@ mod tests {
         let def =
             crate::DistanceJointDef::new(crate::JointBase::new(a, b).with_collide_connected(false));
 
-        let _g = crate::core::callback_state::CallbackGuard::enter();
+        {
+            let _guard = crate::core::callback_state::CallbackGuard::enter();
+            assert_eq!(
+                world.try_create_distance_joint_id(&def).unwrap_err(),
+                crate::ApiError::InCallback
+            );
+        }
+
+        let builder = world.revolute(a, b).anchor_world([0.0, 0.0]);
+        let _guard = crate::core::callback_state::CallbackGuard::enter();
         assert_eq!(
-            world.try_create_distance_joint_id(&def).unwrap_err(),
+            builder.try_build().unwrap_err(),
             crate::ApiError::InCallback
         );
-        assert_eq!(
-            world
-                .revolute(a, b)
-                .anchor_world([0.0, 0.0])
-                .try_build()
-                .unwrap_err(),
-            crate::ApiError::InCallback
-        );
+    }
+
+    #[test]
+    fn native_joint_defaults_reject_callback_reentry() {
+        let mut world = crate::World::new(crate::WorldDef::default()).unwrap();
+        let a = world.create_body_id(crate::BodyBuilder::new().build());
+        let b = world.create_body_id(crate::BodyBuilder::new().build());
+        let base = crate::JointBase::new(a, b);
+
+        let _guard = crate::core::callback_state::CallbackGuard::enter();
+        assert_panics(|| {
+            let _ = crate::DistanceJointDef::new(base);
+        });
+        assert_panics(|| {
+            let _ = crate::FilterJointDef::new(base);
+        });
+        assert_panics(|| {
+            let _ = crate::MotorJointDef::new(base);
+        });
+        assert_panics(|| {
+            let _ = crate::PrismaticJointDef::new(base);
+        });
+        assert_panics(|| {
+            let _ = crate::RevoluteJointDef::new(base);
+        });
+        assert_panics(|| {
+            let _ = crate::WeldJointDef::new(base);
+        });
+        assert_panics(|| {
+            let _ = crate::WheelJointDef::new(base);
+        });
     }
 }

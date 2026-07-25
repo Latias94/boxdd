@@ -148,6 +148,34 @@ impl SysAbiIndex {
         self.function_paths.contains(path)
     }
 
+    /// Return the exact generated FFI type path produced by a foreign function.
+    ///
+    /// Primitive, pointer, generic, and otherwise non-named results intentionally return `None`;
+    /// callers use this only as a route-specific type hint for by-value Box2D aggregates.
+    pub fn function_return_type_path(&self, function_path: &str) -> Result<Option<String>> {
+        let Some(function) = self.function_shapes.get(function_path) else {
+            return Ok(None);
+        };
+        if function.has_generics || function.unsupported_parameter {
+            return Err(Error::message(format!(
+                "foreign function `{function_path}` has unsupported generic or receiver parameters"
+            )));
+        }
+        let Some(result) = &function.result else {
+            return Ok(None);
+        };
+        let result = result.parse(&format!("{function_path} result"))?;
+        let Some(path) = local_type_path(&result).filter(|path| self.type_paths.contains(path))
+        else {
+            return Ok(None);
+        };
+        Ok(matches!(
+            self.type_abi_shape(&path)?,
+            Some(AbiTypeShape::Aggregate { .. })
+        )
+        .then_some(path))
+    }
+
     /// Return the direct generated-Rust form of one logical type.
     ///
     /// Alias targets and aggregate fields retain named references. The returned shape is useful
@@ -1164,6 +1192,11 @@ fn is_public(visibility: &Visibility) -> bool {
 mod tests {
     use super::*;
 
+    const PREGENERATED_BINDINGS: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../boxdd-sys/src/bindings_pregenerated.rs"
+    );
+
     fn index(source: &str) -> SysAbiIndex {
         let syntax = syn::parse_file(source).expect("test bindings must parse");
         index_syntax(&syntax)
@@ -1171,9 +1204,8 @@ mod tests {
 
     #[test]
     fn indexes_the_checked_in_pregenerated_bindings() {
-        let bindings =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../boxdd-sys/src/bindings_pregenerated.rs");
-        let index = index_bindings(&bindings).expect("pregenerated bindings must be indexable");
+        let bindings = Path::new(PREGENERATED_BINDINGS);
+        let index = index_bindings(bindings).expect("pregenerated bindings must be indexable");
 
         assert!(index.contains_type_path("boxdd_sys::ffi::b2Vec2"));
         assert!(index.contains_field_path("boxdd_sys::ffi::b2Vec2::x"));
@@ -1200,6 +1232,70 @@ mod tests {
                 .function_abi_fingerprint("boxdd_sys::ffi::b2World_Step")
                 .expect("pregenerated function shape should resolve")
                 .is_some()
+        );
+    }
+
+    #[test]
+    fn function_return_type_path_only_reports_indexed_by_value_ffi_types() {
+        let index = index(
+            r#"
+                #[repr(C)]
+                pub struct b2Result { pub value: i32 }
+                pub type b2ResultAlias = b2Result;
+                pub type b2ScalarAlias = u32;
+                pub type b2CallbackAlias = Option<unsafe extern "C" fn(value: i32)>;
+                unsafe extern "C" {
+                    pub fn b2MakeResult() -> b2Result;
+                    pub fn b2MakeResultAlias() -> b2ResultAlias;
+                    pub fn b2Primitive() -> i32;
+                    pub fn b2ScalarAliasResult() -> b2ScalarAlias;
+                    pub fn b2CallbackAliasResult() -> b2CallbackAlias;
+                    pub fn b2Pointer() -> *const b2Result;
+                }
+            "#,
+        );
+
+        assert_eq!(
+            index
+                .function_return_type_path("boxdd_sys::ffi::b2MakeResult")
+                .expect("by-value result query"),
+            Some("boxdd_sys::ffi::b2Result".to_owned())
+        );
+        assert_eq!(
+            index
+                .function_return_type_path("boxdd_sys::ffi::b2MakeResultAlias")
+                .expect("aggregate alias result query"),
+            Some("boxdd_sys::ffi::b2ResultAlias".to_owned())
+        );
+        assert_eq!(
+            index
+                .function_return_type_path("boxdd_sys::ffi::b2Primitive")
+                .expect("primitive result query"),
+            None
+        );
+        assert_eq!(
+            index
+                .function_return_type_path("boxdd_sys::ffi::b2ScalarAliasResult")
+                .expect("primitive alias result query"),
+            None
+        );
+        assert_eq!(
+            index
+                .function_return_type_path("boxdd_sys::ffi::b2CallbackAliasResult")
+                .expect("callback alias result query"),
+            None
+        );
+        assert_eq!(
+            index
+                .function_return_type_path("boxdd_sys::ffi::b2Pointer")
+                .expect("pointer result query"),
+            None
+        );
+        assert_eq!(
+            index
+                .function_return_type_path("boxdd_sys::ffi::b2Missing")
+                .expect("missing result query"),
+            None
         );
     }
 

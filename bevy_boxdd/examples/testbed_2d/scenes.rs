@@ -62,7 +62,7 @@ pub struct TestbedSceneMetadata {
     pub name: &'static str,
     pub description: &'static str,
     pub upstream: &'static [UpstreamSampleRef],
-    spawn: fn(&mut Commands, &mut Assets<Mesh>, &mut Assets<ColorMaterial>),
+    spawn: fn(&mut Commands, &mut Assets<Mesh>, &mut Assets<ColorMaterial>, &BoxddWorldOrigin),
 }
 
 impl TestbedSceneMetadata {
@@ -307,9 +307,10 @@ pub fn spawn_scene(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    origin: &BoxddWorldOrigin,
     scene: TestbedScene,
 ) {
-    (scene.metadata().spawn)(commands, meshes, materials);
+    (scene.metadata().spawn)(commands, meshes, materials, origin);
 }
 
 pub fn animate_kinematic_platforms(
@@ -331,6 +332,7 @@ pub fn animate_spinners(time: Res<Time>, mut spinners: Query<(&Spinner, &mut Tra
 
 pub fn draw_scene_overlays(
     state: Res<crate::control::TestbedState>,
+    origin: Res<BoxddWorldOrigin>,
     joints: Query<&JointDescriptor>,
     transforms: Query<&Transform>,
     mut gizmos: Gizmos,
@@ -342,17 +344,22 @@ pub fn draw_scene_overlays(
     for descriptor in &joints {
         match descriptor.kind {
             JointKind::Distance(distance) => {
-                gizmos.line_2d(
-                    distance.anchor_a,
-                    distance.anchor_b,
-                    Color::srgb(0.75, 0.82, 0.9),
-                );
+                let (Ok(anchor_a), Ok(anchor_b)) = (
+                    origin.checked_absolute_to_local(distance.anchor_a),
+                    origin.checked_absolute_to_local(distance.anchor_b),
+                ) else {
+                    continue;
+                };
+                gizmos.line_2d(anchor_a, anchor_b, Color::srgb(0.75, 0.82, 0.9));
             }
             JointKind::Revolute(revolute) => {
-                gizmos.circle_2d(revolute.anchor, 0.16, Color::srgb(0.95, 0.68, 0.25));
+                let Ok(anchor) = origin.checked_absolute_to_local(revolute.anchor) else {
+                    continue;
+                };
+                gizmos.circle_2d(anchor, 0.16, Color::srgb(0.95, 0.68, 0.25));
                 if let Ok(transform) = transforms.get(descriptor.entity_b) {
                     gizmos.line_2d(
-                        revolute.anchor,
+                        anchor,
                         transform.translation.truncate(),
                         Color::srgb(0.95, 0.68, 0.25),
                     );
@@ -366,6 +373,7 @@ fn spawn_single_box(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     spawn_floor(commands, meshes, materials, 16.0, -3.0);
     spawn_box(
@@ -384,6 +392,7 @@ fn spawn_tilted_stack(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     spawn_floor(commands, meshes, materials, 18.0, -3.5);
     for column in 0..5 {
@@ -410,6 +419,7 @@ fn spawn_circle_stack(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     spawn_floor(commands, meshes, materials, 18.0, -3.5);
     for column in 0..4 {
@@ -431,6 +441,7 @@ fn spawn_pyramid(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     spawn_floor(commands, meshes, materials, 18.0, -3.5);
     let rows = 10;
@@ -456,6 +467,7 @@ fn spawn_body_type(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     spawn_floor(commands, meshes, materials, 16.0, -3.4);
     spawn_box(
@@ -502,6 +514,7 @@ fn spawn_kinematic_platform(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     spawn_floor(commands, meshes, materials, 16.0, -3.5);
     spawn_box(
@@ -544,6 +557,7 @@ fn spawn_continuous_bullet(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     spawn_floor(commands, meshes, materials, 16.0, -3.5);
     spawn_box(
@@ -579,6 +593,7 @@ fn spawn_restitution(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     for (index, restitution) in [0.0, 0.2, 0.4, 0.6, 0.8, 1.0].into_iter().enumerate() {
         let x = -4.2 + index as f32 * 1.65;
@@ -610,6 +625,7 @@ fn spawn_friction(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     for (index, friction) in [0.0, 0.2, 0.45, 0.75, 1.0].into_iter().enumerate() {
         let y = 0.8 - index as f32 * 1.0;
@@ -642,6 +658,7 @@ fn spawn_shape_filter(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     spawn_floor(commands, meshes, materials, 16.0, -3.4);
     let red_filter = filter(0x0002, 0x0004 | 0x0008);
@@ -682,6 +699,7 @@ fn spawn_sensor_funnel(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     spawn_floor(commands, meshes, materials, 16.0, -3.5);
     spawn_box(
@@ -737,6 +755,7 @@ fn spawn_contact_events(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     spawn_box(
         commands,
@@ -774,6 +793,7 @@ fn spawn_distance_bridge(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    origin: &BoxddWorldOrigin,
 ) {
     spawn_floor(commands, meshes, materials, 16.0, -3.7);
     let plank_count = 12;
@@ -785,7 +805,7 @@ fn spawn_distance_bridge(
     let right_anchor = spawn_anchor(commands, meshes, materials, right_x, y);
 
     let mut previous = left_anchor;
-    let mut previous_anchor = Vec2::new(left_x, y);
+    let mut previous_anchor = world_position(origin, left_x, y);
     for index in 0..plank_count {
         let x = left_x + (index as f32 + 1.0) * spacing;
         let plank = spawn_box(
@@ -798,7 +818,7 @@ fn spawn_distance_bridge(
             Color::srgb(0.53, 0.42, 0.31),
         )
         .id();
-        let anchor = Vec2::new(x, y);
+        let anchor = world_position(origin, x, y);
         commands.spawn((
             TestbedEntity,
             JointDescriptor::distance(previous, plank, previous_anchor, anchor)
@@ -813,7 +833,7 @@ fn spawn_distance_bridge(
             previous,
             right_anchor,
             previous_anchor,
-            Vec2::new(right_x, y),
+            world_position(origin, right_x, y),
         )
         .with_constraint_tuning(4.0, 0.75),
     ));
@@ -833,6 +853,7 @@ fn spawn_revolute_pendulum(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    origin: &BoxddWorldOrigin,
 ) {
     spawn_floor(commands, meshes, materials, 16.0, -3.5);
     let hinge = spawn_anchor(commands, meshes, materials, -2.4, 1.7);
@@ -849,7 +870,7 @@ fn spawn_revolute_pendulum(
     .id();
     commands.spawn((
         TestbedEntity,
-        JointDescriptor::revolute(hinge, pendulum, Vec2::new(-2.4, 1.7)),
+        JointDescriptor::revolute(hinge, pendulum, world_position(origin, -2.4, 1.7)),
     ));
     for row in 0..5 {
         for column in 0..4 {
@@ -882,6 +903,12 @@ fn spawn_floor(
         static_material(),
         Color::srgb(0.2, 0.31, 0.32),
     );
+}
+
+fn world_position(origin: &BoxddWorldOrigin, x: f32, y: f32) -> boxdd::Position {
+    origin
+        .checked_local_to_absolute(Vec2::new(x, y))
+        .expect("testbed joint anchor must be representable")
 }
 
 fn spawn_anchor(

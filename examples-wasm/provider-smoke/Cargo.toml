@@ -12,5 +12,10 @@ homepage.workspace = true
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = []
+double-precision = ["boxdd/double-precision", "boxdd-sys/double-precision"]
+
 [dependencies]
 boxdd.workspace = true
+boxdd-sys.workspace = true

@@ -55,11 +55,7 @@ pub(crate) trait BodyRuntimeHandle {
         crate::core::callback_state::check_not_in_callback()?;
         let core = self.body_world_core();
         core.check_available()?;
-        let id = self.body_id();
-        if id.brand() != core.brand() {
-            return Err(ApiError::WrongWorld);
-        }
-        Ok(body_is_valid_impl(id))
+        core.body_is_valid(self.body_id())
     }
 
     fn position(&self) -> Position {
@@ -641,13 +637,13 @@ pub(crate) trait BodyRuntimeHandle {
     }
 
     fn body_type(&self) -> BodyType {
-        self.assert_valid();
-        body_type_impl(self.body_id())
+        self.try_body_type()
+            .expect("body handle is unavailable or Box2D returned an unknown body type")
     }
 
     fn try_body_type(&self) -> ApiResult<BodyType> {
         self.check_valid()?;
-        Ok(body_type_impl(self.body_id()))
+        try_body_type_impl(self.body_world_core(), self.body_id())
     }
 
     fn set_body_type(&mut self, body_type: BodyType) {
@@ -851,6 +847,27 @@ pub(crate) trait BodyRuntimeHandle {
         self.check_valid()?;
         body_set_bullet_impl(self.body_id(), flag);
         Ok(())
+    }
+
+    fn enable_contact_recycling(&mut self, flag: bool) {
+        self.assert_valid();
+        body_enable_contact_recycling_impl(self.body_id(), flag)
+    }
+
+    fn try_enable_contact_recycling(&mut self, flag: bool) -> ApiResult<()> {
+        self.check_valid()?;
+        body_enable_contact_recycling_impl(self.body_id(), flag);
+        Ok(())
+    }
+
+    fn is_contact_recycling_enabled(&self) -> bool {
+        self.assert_valid();
+        body_is_contact_recycling_enabled_impl(self.body_id())
+    }
+
+    fn try_is_contact_recycling_enabled(&self) -> ApiResult<bool> {
+        self.check_valid()?;
+        Ok(body_is_contact_recycling_enabled_impl(self.body_id()))
     }
 
     fn enable_contact_events(&mut self, flag: bool) {

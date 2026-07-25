@@ -79,6 +79,7 @@ fn query_entry_points_reject_poisoned_worlds() {
 #[test]
 fn callback_error_takes_precedence_over_world_activity() {
     let world = World::new(WorldDef::default()).unwrap();
+    let filter = QueryFilter::default();
     world
         .core()
         .set_activity(ActivityState::Idle, ActivityState::Recording)
@@ -88,7 +89,7 @@ fn callback_error_takes_precedence_over_world_activity() {
         let _guard = crate::core::callback_state::CallbackGuard::enter();
         assert_eq!(
             world
-                .try_overlap_aabb(Position::ZERO, test_aabb(), QueryFilter::default())
+                .try_overlap_aabb(Position::ZERO, test_aabb(), filter)
                 .unwrap_err(),
             ApiError::InCallback
         );

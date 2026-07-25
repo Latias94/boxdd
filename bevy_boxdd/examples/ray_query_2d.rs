@@ -1,5 +1,5 @@
 use bevy::ecs::system::NonSend;
-use bevy::log::info;
+use bevy::log::{info, warn};
 use bevy::prelude::*;
 use bevy_boxdd::prelude::*;
 
@@ -26,13 +26,21 @@ fn setup(mut commands: Commands) {
     ));
 }
 
-fn report_first_ray_hit(context: NonSend<BoxddPhysicsContext>, mut reported: Local<bool>) {
+fn report_first_ray_hit(
+    context: NonSend<BoxddPhysicsContext>,
+    origin: Res<BoxddWorldOrigin>,
+    mut reported: Local<bool>,
+) {
     if *reported {
         return;
     }
 
+    let Ok(ray_origin) = origin.checked_local_to_absolute(Vec2::new(0.0, 3.0)) else {
+        warn!("ray origin is outside the active world-origin frame");
+        return;
+    };
     let Ok(Some(hit)) = context.try_cast_ray_closest_entity(
-        boxdd::Position::from([0.0_f32, 3.0]),
+        ray_origin,
         Vec2::new(0.0, -6.0),
         boxdd::QueryFilter::default(),
     ) else {

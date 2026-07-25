@@ -12,11 +12,15 @@ pub enum Error {
 
     #[error("the process exhausted its Rust world identity space")]
     IdentityExhausted,
+
+    #[error(transparent)]
+    FoundationActivity(#[from] crate::FoundationActivityError),
 }
 
 #[inline]
-fn world_def_cookie_is_valid(def: &WorldDef) -> bool {
-    def.0.internalValue == unsafe { ffi::b2DefaultWorldDef() }.internalValue
+fn world_def_cookie_is_valid(def: &WorldDef) -> crate::error::ApiResult<bool> {
+    let _lease = crate::core::foundation::transient_native_lease()?;
+    Ok(def.0.internalValue == unsafe { ffi::b2DefaultWorldDef() }.internalValue)
 }
 
 #[inline]
@@ -72,8 +76,16 @@ pub(crate) fn check_positive_finite_world_scalar(value: f32) -> crate::error::Ap
 }
 
 #[inline]
-fn check_world_worker_count_valid(worker_count: i32) -> crate::error::ApiResult<()> {
-    if worker_count >= 0 {
+fn check_world_task_system_valid(def: &WorldDef) -> crate::error::ApiResult<()> {
+    #[cfg(target_arch = "wasm32")]
+    if def.0.enqueueTask.is_some()
+        || def.0.finishTask.is_some()
+        || def.0.frictionCallback.is_some()
+        || def.0.restitutionCallback.is_some()
+    {
+        return Err(crate::error::ApiError::InvalidArgument);
+    }
+    if def.0.enqueueTask.is_some() == def.0.finishTask.is_some() {
         Ok(())
     } else {
         Err(crate::error::ApiError::InvalidArgument)
@@ -82,9 +94,6 @@ fn check_world_worker_count_valid(worker_count: i32) -> crate::error::ApiResult<
 
 #[inline]
 pub(crate) fn check_world_def_valid(def: &WorldDef) -> crate::error::ApiResult<()> {
-    if !world_def_cookie_is_valid(def) {
-        return Err(crate::error::ApiError::InvalidArgument);
-    }
     check_world_gravity_valid(def.gravity())?;
     check_non_negative_finite_world_scalar(def.restitution_threshold())?;
     check_non_negative_finite_world_scalar(def.hit_event_threshold())?;
@@ -92,7 +101,14 @@ pub(crate) fn check_world_def_valid(def: &WorldDef) -> crate::error::ApiResult<(
     check_non_negative_finite_world_scalar(def.contact_damping_ratio())?;
     check_non_negative_finite_world_scalar(def.contact_speed())?;
     check_positive_finite_world_scalar(def.maximum_linear_speed())?;
-    check_world_worker_count_valid(def.worker_count())
+    WorkerCount::try_from(def.0.workerCount)?;
+    WorldCapacity::try_from_raw(def.0.capacity)?;
+    check_world_task_system_valid(def)?;
+    if world_def_cookie_is_valid(def)? {
+        Ok(())
+    } else {
+        Err(crate::error::ApiError::InvalidArgument)
+    }
 }
 
 /// World definition builder for constructing a simulation world.
@@ -103,8 +119,12 @@ pub struct WorldDef(pub(crate) ffi::b2WorldDef);
 
 impl Default for WorldDef {
     fn default() -> Self {
+        let _lease = crate::core::foundation::assert_transient_native_lease();
         // SAFETY: FFI call to obtain a plain value struct
-        let def = unsafe { ffi::b2DefaultWorldDef() };
+        let mut def = unsafe { ffi::b2DefaultWorldDef() };
+        // Upstream encodes its serial default as zero. Keep every Safe Rust
+        // definition inside the runtime setter's explicit `[1, MAX]` domain.
+        def.workerCount = WorkerCount::default().as_i32();
         Self(def)
     }
 }
@@ -117,10 +137,25 @@ impl WorldDef {
     /// Construct from the raw Box2D world definition value.
     ///
     /// # Safety
-    /// Any raw callback pointers stored in `raw` (`frictionCallback`, `restitutionCallback`,
-    /// `enqueueTask`, and `finishTask`) must remain valid whenever the resulting `WorldDef` is
-    /// later used to create or step a world. This constructor does not validate callback
-    /// pointers, task contexts, or other raw pointer fields.
+    /// `raw` must have been initialized by `b2DefaultWorldDef` from the same Box2D ABI as this
+    /// crate. Its internal cookie, worker count, capacity values, and every pointer field must
+    /// remain valid for all native operations that can observe them. `World::new` rejects worker
+    /// counts outside `[1, B2_MAX_WORKERS]`, unsupported target concurrency, negative capacities,
+    /// and a task callback pair where only one callback is present before calling Box2D.
+    ///
+    /// In particular, `frictionCallback` and `restitutionCallback` can be invoked concurrently on
+    /// Box2D worker threads for the full lifetime of each world created from this definition. They
+    /// must not unwind across the C ABI, call or mutate Box2D, re-enter the world, or access shared
+    /// application state without synchronization. They must return a finite, non-negative mixing
+    /// coefficient. Any code or global state they access must remain valid until the world has
+    /// finished stepping and has been destroyed.
+    ///
+    /// `enqueueTask`, `finishTask`, and `userTaskContext` must satisfy the complete task-system
+    /// contract documented by [`WorldDef::set_task_system_raw`]. `userData` and any other raw
+    /// pointer must likewise obey its native ownership, aliasing, synchronization, and lifetime
+    /// requirements. This constructor cannot validate any of these obligations. On `wasm32`,
+    /// validation rejects every raw callback pointer because no shared provider function table is
+    /// qualified.
     pub unsafe fn from_raw(raw: ffi::b2WorldDef) -> Self {
         Self(raw)
     }
@@ -165,8 +200,14 @@ impl WorldDef {
         self.0.enableContactSoftening
     }
 
-    pub fn worker_count(&self) -> i32 {
-        self.0.workerCount
+    pub fn worker_count(&self) -> WorkerCount {
+        WorkerCount::try_from(self.0.workerCount)
+            .expect("WorldDef contains an invalid raw worker count")
+    }
+
+    pub fn capacity(&self) -> WorldCapacity {
+        WorldCapacity::try_from_raw(self.0.capacity)
+            .expect("WorldDef contains an invalid raw capacity")
     }
 
     /// Returns whether raw task-system callbacks are installed on this definition.
@@ -177,8 +218,29 @@ impl WorldDef {
     /// Install raw Box2D task-system callbacks on this definition.
     ///
     /// # Safety
-    /// `enqueue_task`, `finish_task`, and `user_task_context` must satisfy Box2D's task-system
-    /// contract and remain valid for the lifetime of any world created from this definition.
+    /// The callback function pointers and `user_task_context` must remain valid and callable until
+    /// every world created from this definition has finished all pending tasks and is destroyed.
+    /// Any state reachable through the context must support all concurrent access performed by the
+    /// configured worker count.
+    ///
+    /// Both callbacks must be non-null and `worker_count` must be in Box2D's supported range for
+    /// Box2D to select the external task system. `World::new` rejects zero, negative, excessive,
+    /// target-unsupported, and half-configured task-system definitions before native creation.
+    ///
+    /// For each non-null Box2D task and task-context pair passed to `enqueue_task`, the task system
+    /// must invoke `task(task_context)` exactly once with the unchanged pointer. Returning null from
+    /// `enqueue_task` declares that invocation complete synchronously; Box2D will not call
+    /// `finish_task` for it. Returning a non-null task handle declares that the handle remains
+    /// valid until Box2D passes it to `finish_task`; `finish_task` must wait for the task's single
+    /// invocation to complete before it returns and may then release the handle. The callbacks
+    /// must not lose, duplicate, detach beyond that finish boundary, or prematurely free a task.
+    ///
+    /// Neither callback, nor Rust code used to execute the supplied Box2D task, may unwind across
+    /// its C ABI boundary. Worker-side code must not call, mutate, or re-enter any Box2D world, and
+    /// application code must not concurrently mutate the world while tasks are outstanding.
+    /// `worker_count` and the callback pair must also form a configuration accepted by the linked
+    /// Box2D version.
+    #[cfg(not(target_arch = "wasm32"))]
     pub unsafe fn set_task_system_raw(
         &mut self,
         worker_count: i32,
@@ -194,7 +256,7 @@ impl WorldDef {
 
     /// Remove any raw Box2D task-system callbacks from this definition.
     pub fn clear_task_system_raw(&mut self) {
-        self.0.workerCount = 0;
+        self.0.workerCount = WorkerCount::default().as_i32();
         self.0.enqueueTask = None;
         self.0.finishTask = None;
         self.0.userTaskContext = core::ptr::null_mut();
@@ -227,7 +289,8 @@ impl serde::Serialize for WorldDef {
             enable_sleep: bool,
             enable_continuous: bool,
             enable_contact_softening: bool,
-            worker_count: i32,
+            worker_count: WorkerCount,
+            capacity: WorldCapacity,
         }
         let r = Repr {
             gravity: crate::types::Vec2::from_raw(self.0.gravity),
@@ -240,7 +303,8 @@ impl serde::Serialize for WorldDef {
             enable_sleep: self.0.enableSleep,
             enable_continuous: self.0.enableContinuous,
             enable_contact_softening: self.0.enableContactSoftening,
-            worker_count: self.0.workerCount,
+            worker_count: self.worker_count(),
+            capacity: self.capacity(),
         };
         r.serialize(serializer)
     }
@@ -275,7 +339,9 @@ impl<'de> serde::Deserialize<'de> for WorldDef {
             #[serde(default)]
             enable_contact_softening: Option<bool>,
             #[serde(default)]
-            worker_count: Option<i32>,
+            worker_count: Option<WorkerCount>,
+            #[serde(default)]
+            capacity: Option<WorldCapacity>,
         }
         let r = Repr::deserialize(deserializer)?;
         let mut b = WorldDef::default();
@@ -310,7 +376,10 @@ impl<'de> serde::Deserialize<'de> for WorldDef {
             b.0.enableContactSoftening = v;
         }
         if let Some(v) = r.worker_count {
-            b.0.workerCount = v;
+            b.0.workerCount = v.as_i32();
+        }
+        if let Some(v) = r.capacity {
+            b.0.capacity = v.into_raw();
         }
         Ok(b)
     }
@@ -394,23 +463,32 @@ impl WorldBuilder {
         self
     }
 
-    /// Number of worker threads Box2D may use during stepping when a task system is installed.
+    /// Number of worker threads Box2D may use during stepping.
     ///
-    /// This does not make `World` or owned handles `Send` / `Sync`. Non-zero values only become
-    /// active when advanced users also supply raw task callbacks through
+    /// Values above one select Box2D's built-in scheduler unless advanced users replace it through
     /// `unsafe WorldBuilder::task_system_raw(...)`, `WorldDef::set_task_system_raw(...)`, or an
-    /// explicit raw `WorldDef` conversion path.
-    pub fn worker_count(mut self, n: i32) -> Self {
-        self.def.0.workerCount = n;
+    /// explicit raw `WorldDef` conversion path. The validated value rejects
+    /// unsupported targets and counts outside Box2D's native range. This does
+    /// not make `World` or owned handles `Send` / `Sync`.
+    pub fn worker_count(mut self, count: WorkerCount) -> Self {
+        self.def.0.workerCount = count.as_i32();
+        self
+    }
+
+    /// Reserve initial world storage to avoid predictable run-time allocations.
+    pub fn capacity(mut self, capacity: WorldCapacity) -> Self {
+        self.def.0.capacity = capacity.into_raw();
         self
     }
 
     /// Install raw Box2D task-system callbacks on the builder.
     ///
     /// # Safety
-    /// `enqueue_task`, `finish_task`, and `user_task_context` must satisfy Box2D's task-system
-    /// contract and remain valid for the lifetime of any world created from the resulting
-    /// definition.
+    /// All exactly-once execution, finish synchronization, no-unwind, non-reentrancy, concurrency,
+    /// and lifetime requirements documented by [`WorldDef::set_task_system_raw`] apply. In
+    /// particular, the callback pointers and `user_task_context` must outlive every world created
+    /// from the resulting definition and all tasks submitted by those worlds.
+    #[cfg(not(target_arch = "wasm32"))]
     pub unsafe fn task_system_raw(
         mut self,
         worker_count: i32,

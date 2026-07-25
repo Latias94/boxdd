@@ -25,6 +25,7 @@ pub struct MotorJointDef {
 
 impl MotorJointDef {
     pub fn new(base: JointBase) -> Self {
+        let _lease = crate::core::foundation::assert_transient_native_lease();
         let raw = unsafe { ffi::b2DefaultMotorJointDef() };
         Self {
             base,

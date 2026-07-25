@@ -20,6 +20,10 @@ fn app_with_settings(settings: BoxddPhysicsSettings) -> App {
     app
 }
 
+fn world_position(x: f32, y: f32) -> boxdd::Position {
+    boxdd::Position::from([x, y])
+}
+
 fn read_messages<M>(app: &App) -> Vec<M>
 where
     M: Message + Clone,
@@ -306,6 +310,17 @@ fn physics_context_ray_query_maps_hits_to_entities() {
     step_fixed(&mut app, 1);
 
     let context = app.world().non_send::<BoxddPhysicsContext>();
+    let result = context
+        .try_cast_ray_closest_entity_with_stats(
+            boxdd::Position::from([0.0_f32, 2.0]),
+            Vec2::new(0.0, -4.0),
+            boxdd::QueryFilter::default(),
+        )
+        .unwrap();
+    assert!(result.node_visits > 0);
+    assert!(result.leaf_visits > 0);
+    assert_eq!(result.hit.and_then(|hit| hit.entity), Some(ground));
+
     let hit = context
         .try_cast_ray_closest_entity(
             boxdd::Position::from([0.0_f32, 2.0]),
@@ -573,6 +588,17 @@ fn disabled_physics_context_helpers_return_empty_results() {
         .unwrap();
     assert!(closest.is_none());
 
+    let closest_with_stats = context
+        .try_cast_ray_closest_entity_with_stats(
+            boxdd::Position::ZERO,
+            Vec2::new(1.0, 0.0),
+            boxdd::QueryFilter::default(),
+        )
+        .unwrap();
+    assert!(closest_with_stats.hit.is_none());
+    assert_eq!(closest_with_stats.node_visits, 0);
+    assert_eq!(closest_with_stats.leaf_visits, 0);
+
     let all_hits = context
         .try_cast_ray_all_entities(
             boxdd::Position::ZERO,
@@ -673,13 +699,15 @@ fn native_ray_query_still_available_for_advanced_users() {
 
     let context = app.world().non_send::<BoxddPhysicsContext>();
     let world = context.world().expect("physics world should be available");
-    let hit = world.cast_ray_closest(
-        boxdd::Position::from([0.0_f32, 2.0]),
-        boxdd::Vec2::new(0.0, -4.0),
-        boxdd::QueryFilter::default(),
-    );
+    let hit = world
+        .cast_ray_closest(
+            boxdd::Position::from([0.0_f32, 2.0]),
+            boxdd::Vec2::new(0.0, -4.0),
+            boxdd::QueryFilter::default(),
+        )
+        .expect("expected the ray to hit the plugin-created ground");
 
-    assert!(hit.hit, "expected the ray to hit the plugin-created ground");
+    assert!(hit.hit);
     assert_eq!(context.shape_entity(hit.shape_id), Some(ground));
 }
 
@@ -745,8 +773,8 @@ fn distance_joint_descriptor_creates_native_joint() {
         .spawn(JointDescriptor::distance(
             body_a,
             body_b,
-            Vec2::new(0.0, 0.0),
-            Vec2::new(1.0, 0.0),
+            world_position(0.0, 0.0),
+            world_position(1.0, 0.0),
         ))
         .id();
 
@@ -786,7 +814,7 @@ fn revolute_joint_descriptor_creates_native_joint() {
         .spawn(JointDescriptor::revolute(
             body_a,
             body_b,
-            Vec2::new(0.0, 0.5),
+            world_position(0.0, 0.5),
         ))
         .id();
 
@@ -825,8 +853,8 @@ fn changing_joint_descriptor_recreates_native_joint() {
         .spawn(JointDescriptor::distance(
             body_a,
             body_b,
-            Vec2::new(0.0, 0.0),
-            Vec2::new(1.0, 0.0),
+            world_position(0.0, 0.0),
+            world_position(1.0, 0.0),
         ))
         .id();
 
@@ -843,7 +871,7 @@ fn changing_joint_descriptor_recreates_native_joint() {
         .insert(JointDescriptor::revolute(
             body_a,
             body_b,
-            Vec2::new(0.5, 0.0),
+            world_position(0.5, 0.0),
         ));
     step_fixed(&mut app, 1);
 
@@ -894,8 +922,8 @@ fn joint_created_after_bevy_transform_change_uses_fresh_native_transform() {
         .spawn(JointDescriptor::distance(
             body_a,
             body_b,
-            Vec2::new(2.0, 0.0),
-            Vec2::new(1.0, 0.0),
+            world_position(2.0, 0.0),
+            world_position(1.0, 0.0),
         ))
         .id();
 
@@ -937,8 +965,8 @@ fn removing_joint_descriptor_destroys_native_joint() {
         .spawn(JointDescriptor::distance(
             body_a,
             body_b,
-            Vec2::new(0.0, 0.0),
-            Vec2::new(1.0, 0.0),
+            world_position(0.0, 0.0),
+            world_position(1.0, 0.0),
         ))
         .id();
 
@@ -981,7 +1009,7 @@ fn joint_missing_endpoint_body_emits_recoverable_error() {
         .spawn(JointDescriptor::revolute(
             body_a,
             missing_body,
-            Vec2::new(0.0, 0.0),
+            world_position(0.0, 0.0),
         ))
         .id();
 
@@ -1019,8 +1047,8 @@ fn removing_endpoint_body_removes_dependent_joint() {
         .spawn(JointDescriptor::distance(
             body_a,
             body_b,
-            Vec2::new(0.0, 0.0),
-            Vec2::new(1.0, 0.0),
+            world_position(0.0, 0.0),
+            world_position(1.0, 0.0),
         ))
         .id();
 

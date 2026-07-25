@@ -55,29 +55,43 @@ impl<'a> Iterator for BodyMoveIter<'a> {
     }
 }
 
-pub(super) fn capture_native_events_into(
-    world: ffi::b2WorldId,
-    brand: IdBrand,
-    out: &mut Vec<BodyMoveEvent>,
-) {
-    let raw = unsafe { ffi::b2World_GetBodyEvents(world) };
-    let slice = if raw.moveCount > 0 && !raw.moveEvents.is_null() {
-        unsafe { core::slice::from_raw_parts(raw.moveEvents, raw.moveCount as usize) }
-    } else {
-        &[][..]
-    };
-    super::map_snapshot_into(out, slice, |event| {
-        BodyMoveEvent::from_raw_in(brand, *event)
-    });
+#[derive(Default)]
+pub(super) struct BodyEventSlot {
+    pub(super) values: Vec<BodyMoveEvent>,
+}
+
+impl BodyEventSlot {
+    pub(super) fn capture_into(mut self, raw: ffi::b2BodyEvents, brand: IdBrand) -> Self {
+        // SAFETY: The raw container belongs to the completed step and is consumed before any
+        // subsequent world mutation.
+        self.values = unsafe {
+            super::capture_ffi_vec(self.values, raw.moveEvents, raw.moveCount, |event| {
+                BodyMoveEvent::from_raw_in(brand, *event)
+            })
+        };
+        self
+    }
+
+    pub(super) fn to_owned(&self) -> Vec<BodyMoveEvent> {
+        std::clone::Clone::clone(&self.values)
+    }
+
+    fn clone_into(&self, out: &mut Vec<BodyMoveEvent>) {
+        super::map_snapshot_into(out, &self.values, Clone::clone);
+    }
+
+    fn iter(&self) -> core::slice::Iter<'_, BodyMoveEvent> {
+        self.values.iter()
+    }
 }
 
 fn body_events_into_impl(cache: &super::EventCache, out: &mut Vec<BodyMoveEvent>) {
     let snapshot = cache.snapshot();
-    super::map_snapshot_into(out, &snapshot.body, Clone::clone);
+    BodyEventSlot::clone_into(&snapshot.body, out);
 }
 
 fn body_events_snapshot_impl(cache: &super::EventCache) -> Vec<BodyMoveEvent> {
-    cache.snapshot().body.clone()
+    BodyEventSlot::to_owned(&cache.snapshot().body)
 }
 
 impl World {
@@ -164,12 +178,8 @@ impl World {
     ) -> T {
         self.with_borrowed_event_buffers(|| {
             let raw = unsafe { ffi::b2World_GetBodyEvents(self.raw()) };
-            let slice = if raw.moveCount > 0 && !raw.moveEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.moveEvents, raw.moveCount as usize) }
-            } else {
-                &[][..]
-            };
-            f(slice)
+            // SAFETY: The enclosing raw-view contract keeps the native buffer valid for `f`.
+            unsafe { super::with_ffi_slice(raw.moveEvents, raw.moveCount, f) }
         })
     }
 
@@ -183,12 +193,8 @@ impl World {
     ) -> crate::error::ApiResult<T> {
         self.try_with_borrowed_event_buffers(|| {
             let raw = unsafe { ffi::b2World_GetBodyEvents(self.raw()) };
-            let slice = if raw.moveCount > 0 && !raw.moveEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.moveEvents, raw.moveCount as usize) }
-            } else {
-                &[][..]
-            };
-            f(slice)
+            // SAFETY: The enclosing raw-view contract keeps the native buffer valid for `f`.
+            unsafe { super::with_ffi_slice(raw.moveEvents, raw.moveCount, f) }
         })
     }
 
@@ -211,7 +217,7 @@ impl World {
         self.with_borrowed_event_buffers(|| {
             let snapshot = self.event_cache().snapshot();
             f(BodyMoveIter {
-                iter: snapshot.body.iter(),
+                iter: BodyEventSlot::iter(&snapshot.body),
             })
         })
     }
@@ -224,7 +230,7 @@ impl World {
         self.try_with_borrowed_event_buffers(|| {
             let snapshot = self.event_cache().snapshot();
             f(BodyMoveIter {
-                iter: snapshot.body.iter(),
+                iter: BodyEventSlot::iter(&snapshot.body),
             })
         })
     }

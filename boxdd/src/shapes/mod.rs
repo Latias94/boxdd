@@ -35,7 +35,7 @@ pub use geometry::{
     offset_rounded_box_polygon, polygon_from_points, polygon_hull_is_valid, rounded_box_polygon,
     segment, square_polygon, try_box_polygon, try_offset_box_polygon,
     try_offset_polygon_from_points, try_offset_rounded_box_polygon, try_polygon_from_points,
-    try_rounded_box_polygon, try_square_polygon,
+    try_polygon_hull_is_valid, try_rounded_box_polygon, try_square_polygon,
 };
 pub use owned::OwnedShape;
 pub use scoped::Shape;
@@ -73,6 +73,11 @@ impl ShapeType {
             Self::Polygon => ffi::b2ShapeType_b2_polygonShape,
             Self::ChainSegment => ffi::b2ShapeType_b2_chainSegmentShape,
         }
+    }
+
+    #[inline]
+    pub(crate) fn decode_native(raw: ffi::b2ShapeType) -> ApiResult<Self> {
+        Self::from_raw(raw).ok_or(ApiError::InvalidNativeShapeType { raw })
     }
 }
 

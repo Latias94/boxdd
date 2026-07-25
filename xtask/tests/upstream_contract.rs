@@ -282,8 +282,11 @@ fn binding_fixture() -> Vec<u8> {
 // boxdd-artifact-provider: universal\n\
 // boxdd-artifact-producer: bindgen\n\
 // boxdd-artifact-rust-target: x86_64-unknown-linux-gnu\n\
+// boxdd-wasi-libc-version: none\n\
+// boxdd-wasi-headers-sha256: none\n\
+// boxdd-freestanding-math-header-sha256: none\n\
 // Authority: boxdd-sys/upstream.toml\n\
-// Refresh with: cargo run -p xtask -- upstream-sync --write\n\n\
+// Refresh with: cargo run -p xtask -- upstream-sync --refresh-routes\n\n\
 pub const GENERATED: bool = true;\n"
     )
     .into_bytes()

@@ -8,6 +8,7 @@ fn same_world_id(a: boxdd_sys::ffi::b2WorldId, b: boxdd_sys::ffi::b2WorldId) -> 
 
 #[test]
 fn world_def_is_a_readable_value_type_and_can_seed_a_builder() {
+    let capacity = WorldCapacity::new(10, 20, 30, 40, 50).unwrap();
     let def = WorldDef::builder()
         .gravity([1.0_f32, -9.5])
         .restitution_threshold(2.5)
@@ -19,7 +20,8 @@ fn world_def_is_a_readable_value_type_and_can_seed_a_builder() {
         .enable_sleep(false)
         .enable_continuous(false)
         .enable_contact_softening(false)
-        .worker_count(3)
+        .worker_count(WorkerCount::new(3).unwrap())
+        .capacity(capacity)
         .build();
 
     assert_eq!(def.gravity(), Vec2::new(1.0, -9.5));
@@ -32,22 +34,25 @@ fn world_def_is_a_readable_value_type_and_can_seed_a_builder() {
     assert!(!def.is_sleep_enabled());
     assert!(!def.is_continuous_enabled());
     assert!(!def.is_contact_softening_enabled());
-    assert_eq!(def.worker_count(), 3);
+    assert_eq!(def.worker_count().get(), 3);
+    assert_eq!(def.capacity(), capacity);
     assert_eq!(def.validate(), Ok(()));
 
     let raw_roundtrip = unsafe { WorldDef::from_raw(def.clone().into_raw()) };
     assert_eq!(raw_roundtrip.gravity(), Vec2::new(1.0, -9.5));
     assert_eq!(raw_roundtrip.restitution_threshold(), 2.5);
-    assert_eq!(raw_roundtrip.worker_count(), 3);
+    assert_eq!(raw_roundtrip.worker_count().get(), 3);
+    assert_eq!(raw_roundtrip.capacity(), capacity);
 
     let rebuilt = WorldBuilder::from(def.clone())
-        .worker_count(5)
+        .worker_count(WorkerCount::new(5).unwrap())
         .enable_continuous(true)
         .build();
     assert_eq!(rebuilt.gravity(), Vec2::new(1.0, -9.5));
     assert_eq!(rebuilt.hit_event_threshold(), 7.0);
     assert!(rebuilt.is_continuous_enabled());
-    assert_eq!(rebuilt.worker_count(), 5);
+    assert_eq!(rebuilt.worker_count().get(), 5);
+    assert_eq!(rebuilt.capacity(), capacity);
 }
 
 #[test]
@@ -70,10 +75,38 @@ fn world_def_validation_rejects_invalid_numeric_values() {
         ApiError::InvalidArgument
     );
 
-    let invalid_workers = WorldDef::builder().worker_count(-1).build();
+    let mut invalid_workers_raw = WorldDef::default().into_raw();
+    invalid_workers_raw.workerCount = -1;
+    let invalid_workers = unsafe { WorldDef::from_raw(invalid_workers_raw) };
     assert_eq!(
         invalid_workers.validate().unwrap_err(),
         ApiError::InvalidArgument
+    );
+
+    for invalid_count in [0, i32::from(B2_MAX_WORKERS) + 1] {
+        let mut raw = WorldDef::default().into_raw();
+        raw.workerCount = invalid_count;
+        let def = unsafe { WorldDef::from_raw(raw) };
+        assert_eq!(def.validate(), Err(ApiError::InvalidArgument));
+        assert!(matches!(
+            World::new(def),
+            Err(boxdd::world::Error::InvalidDefinition(
+                ApiError::InvalidArgument
+            ))
+        ));
+    }
+
+    let mut invalid_capacity_raw = WorldDef::default().into_raw();
+    invalid_capacity_raw.capacity.contactCount = -1;
+    let invalid_capacity = unsafe { WorldDef::from_raw(invalid_capacity_raw) };
+    assert_eq!(invalid_capacity.validate(), Err(ApiError::InvalidArgument));
+
+    let mut partial_task_system_raw = WorldDef::default().into_raw();
+    partial_task_system_raw.enqueueTask = Some(serial_enqueue_task);
+    let partial_task_system = unsafe { WorldDef::from_raw(partial_task_system_raw) };
+    assert_eq!(
+        partial_task_system.validate(),
+        Err(ApiError::InvalidArgument)
     );
 }
 
@@ -107,7 +140,7 @@ fn world_def_raw_task_system_configuration_is_explicit() {
         );
     }
     assert!(def.has_task_system_raw());
-    assert_eq!(def.worker_count(), 2);
+    assert_eq!(def.worker_count().get(), 2);
 
     let raw = def.clone().into_raw();
     assert!(raw.enqueueTask.is_some());
@@ -118,7 +151,7 @@ fn world_def_raw_task_system_configuration_is_explicit() {
 
     let cleared = WorldBuilder::from(def).clear_task_system_raw().build();
     assert!(!cleared.has_task_system_raw());
-    assert_eq!(cleared.worker_count(), 0);
+    assert_eq!(cleared.worker_count().get(), 1);
 }
 
 #[test]
@@ -135,7 +168,7 @@ fn world_builder_can_install_raw_task_system_callbacks() {
             .build()
     };
     assert!(def.has_task_system_raw());
-    assert_eq!(def.worker_count(), 2);
+    assert_eq!(def.worker_count().get(), 2);
 
     let mut world = World::new(def).unwrap();
     world.step(1.0 / 60.0, 4);
@@ -177,9 +210,6 @@ fn world_runtime_coverage_safe_api() {
 
     world.set_contact_tuning(10.0, 2.0, 4.0);
     world.try_set_contact_tuning(9.0, 1.5, 3.0).unwrap();
-    world.enable_speculative(true);
-    world.try_enable_speculative(false).unwrap();
-
     world.set_maximum_linear_speed(10.0);
     assert_eq!(world.maximum_linear_speed(), 10.0);
     world.try_set_maximum_linear_speed(12.0).unwrap();
@@ -318,15 +348,15 @@ fn raw_ids_bind_only_to_their_live_world() {
 fn body_type_counters_and_profile_use_explicit_raw_conversions() {
     assert_eq!(
         BodyType::from_raw(boxdd_sys::ffi::b2BodyType_b2_staticBody),
-        BodyType::Static
+        Some(BodyType::Static)
     );
     assert_eq!(
         BodyType::from_raw(boxdd_sys::ffi::b2BodyType_b2_kinematicBody),
-        BodyType::Kinematic
+        Some(BodyType::Kinematic)
     );
     assert_eq!(
         BodyType::from_raw(boxdd_sys::ffi::b2BodyType_b2_dynamicBody),
-        BodyType::Dynamic
+        Some(BodyType::Dynamic)
     );
 
     assert_eq!(
@@ -450,4 +480,78 @@ fn explosion_def_is_a_readable_value_type() {
     assert_eq!(roundtrip.blast_radius(), 4.5);
     assert_eq!(roundtrip.falloff_distance(), 1.25);
     assert_eq!(roundtrip.impulse_per_unit_length(), 6.0);
+}
+
+#[test]
+fn explosion_validation_rejects_inputs_unsafe_for_the_native_query() {
+    let valid = ExplosionDef::new()
+        .position(Position::ZERO)
+        .radius(1.0)
+        .falloff(0.5)
+        .impulse_per_length(-2.0);
+
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
+    world.create_circle_shape_for(
+        body,
+        &ShapeDef::builder().density(1.0).build(),
+        &shapes::circle(Vec2::ZERO, 0.5),
+    );
+    world.try_explode(&valid.mask_bits(0)).unwrap();
+    world
+        .try_explode(&valid.mask_bits(0).radius(0.0).falloff(0.0))
+        .unwrap();
+    #[cfg(feature = "double-precision")]
+    world
+        .try_explode(
+            &valid
+                .mask_bits(0)
+                .position(Position::new(10_000_000_000.25, 0.0)),
+        )
+        .unwrap();
+
+    {
+        let mut assert_invalid = |def: ExplosionDef| {
+            assert_eq!(world.try_explode(&def), Err(ApiError::InvalidArgument));
+            assert_eq!(world.body_linear_velocity(body), Vec2::ZERO);
+            assert_eq!(world.body_angular_velocity(body), 0.0);
+        };
+
+        for position in [
+            Position::new(WorldScalar::NAN, 0.0),
+            Position::new(0.0, WorldScalar::INFINITY),
+        ] {
+            assert_invalid(valid.position(position));
+        }
+        for radius in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -1.0] {
+            assert_invalid(valid.radius(radius));
+        }
+        for falloff in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -1.0] {
+            assert_invalid(valid.falloff(falloff));
+        }
+        for impulse in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            assert_invalid(valid.impulse_per_length(impulse));
+        }
+        assert_invalid(valid.radius(f32::MAX).falloff(f32::MAX));
+        assert_invalid(
+            valid
+                .position(Position::new(WorldScalar::from(f32::MAX), 0.0))
+                .radius(f32::MAX)
+                .falloff(0.0),
+        );
+
+        #[cfg(feature = "double-precision")]
+        {
+            assert_invalid(valid.position(Position::new(f64::from(f32::MAX) * 2.0, 0.0)));
+        }
+    }
+
+    let invalid = valid.radius(f32::NAN);
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        world.explode(&invalid);
+    }));
+    assert!(panic.is_err());
+    assert_eq!(world.body_linear_velocity(body), Vec2::ZERO);
+
+    world.try_explode(&valid.impulse_per_length(0.0)).unwrap();
 }

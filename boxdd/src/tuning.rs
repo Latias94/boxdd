@@ -10,8 +10,8 @@
 //! - Linear slop (`B2_LINEAR_SLOP`): small collision/constraint tolerance.
 //!   Not directly exposed; part of solver internals. Affects contact stability.
 //! - Speculative distance (`B2_SPECULATIVE_DISTANCE`): reduces jitter with
-//!   limited speculative collision. Runtime access is exposed through
-//!   `World::enable_speculative`.
+//!   limited speculative collision. This is an upstream internal-testing hook
+//!   and is intentionally not exposed by the safe API.
 //! - AABB margin (`B2_AABB_MARGIN`): fattening of dynamic-tree proxies to avoid
 //!   frequent broadphase updates. Not directly exposed.
 //! - Max rotation per step (`B2_MAX_ROTATION`): large cap to prevent numerical
@@ -21,8 +21,8 @@
 //! - Graph color count (`B2_GRAPH_COLOR_COUNT`): internal constraint-coloring
 //!   size. Not exposed.
 //! - Max workers (`B2_MAX_WORKERS`): internal upper bound; configure desired
-//!   worker count via `WorldDef::builder().worker_count(n)`. Actual multithreaded
-//!   stepping still requires explicit raw task callbacks on `WorldDef` / `WorldBuilder`.
+//!   worker count via `WorldDef::builder().worker_count(WorkerCount::new(n)?)`. Values above one use
+//!   Box2D's built-in scheduler unless raw task callbacks replace it.
 //!
 //! Safe API controls related to tuning:
 //!
@@ -40,18 +40,20 @@
 //! - Sleeping and continuous collision detection
 //!   - `WorldBuilder::enable_sleep`, `World::enable_sleeping`, `World::is_sleeping_enabled`
 //!   - `WorldBuilder::enable_continuous`, `World::enable_continuous`, `World::is_continuous_enabled`
-//! - Speculative collision
-//!   - `World::enable_speculative`
 //! - Maximum linear speed
 //!   - `WorldBuilder::maximum_linear_speed`, `World::set_maximum_linear_speed`,
 //!     `World::maximum_linear_speed`
 //! - Worker threads
 //!   - `WorldBuilder::worker_count`
-//!   - This only affects Box2D's worker usage when a task system is also installed; `World`
-//!     itself stays pinned to one thread/task.
+//!   - Values above one enable Box2D's built-in scheduler. Advanced users may replace it with raw
+//!     task callbacks; `World` itself stays pinned to its owning thread/task in either mode.
 //!
 //! Notes
 //! - Upstream constants in `src/constants.h` are implementation details and may
 //!   change across Box2D versions. The safe API focuses on stable, high-level
 //!   controls. If you need additional tuning hooks, open an issue and we can
 //!   consider exposing them in a versioned, documented way.
+//! - `b2World_DumpMemoryStats` is intentionally omitted because it writes a
+//!   process-relative fixed filename, and `b2World_RebuildStaticTree` plus
+//!   `b2World_EnableSpeculative` are upstream internal-testing hooks. They
+//!   remain available only through the explicit raw FFI contract.

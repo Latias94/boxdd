@@ -1,6 +1,14 @@
 #![cfg(feature = "mint")]
 
-use boxdd::{Aabb, Rot, RotFromMintError, Transform, TransformFromMintError, Vec2};
+use boxdd::{
+    Aabb, Position, Rot, RotFromMintError, Transform, TransformFromMintError, Vec2, WorldScalar,
+    WorldTransform, WorldTransformFromInteropError,
+};
+
+#[cfg(not(feature = "double-precision"))]
+const TEST_WORLD_X: WorldScalar = 10_000.125;
+#[cfg(feature = "double-precision")]
+const TEST_WORLD_X: WorldScalar = 10_000_000.001;
 
 #[test]
 fn vec2_converts_to_and_from_mint() {
@@ -153,4 +161,46 @@ fn transform_try_from_mint_column_matrix_rejects_scaled() {
     };
     let err = Transform::try_from(m).unwrap_err();
     assert_eq!(err, TransformFromMintError::NotPureRotation);
+}
+
+#[test]
+fn world_types_round_trip_through_scalar_correct_mint_representations() {
+    let position = Position::new(TEST_WORLD_X, -TEST_WORLD_X);
+    let point: mint::Point2<WorldScalar> = position.into();
+    assert_eq!(Position::from(point), position);
+
+    let transform = WorldTransform::new(position, Rot::from_radians(0.375));
+
+    let row_3x2: mint::RowMatrix3x2<WorldScalar> = transform.into();
+    let from_row_3x2 = WorldTransform::try_from(row_3x2).unwrap();
+    assert_eq!(from_row_3x2.position(), position);
+    assert!((from_row_3x2.rotation().angle() - transform.rotation().angle()).abs() < 1.0e-6);
+
+    let column_3x2: mint::ColumnMatrix3x2<WorldScalar> = transform.into();
+    let from_column_3x2 = WorldTransform::try_from(&column_3x2).unwrap();
+    assert_eq!(from_column_3x2.position(), position);
+
+    let row_2x3: mint::RowMatrix2x3<WorldScalar> = transform.into();
+    let from_row_2x3 = WorldTransform::try_from(row_2x3).unwrap();
+    assert_eq!(from_row_2x3.position(), position);
+
+    let column_2x3: mint::ColumnMatrix2x3<WorldScalar> = transform.into();
+    let from_column_2x3 = WorldTransform::try_from(&column_2x3).unwrap();
+    assert_eq!(from_column_2x3.position(), position);
+
+    #[cfg(feature = "double-precision")]
+    assert_ne!(f64::from(TEST_WORLD_X as f32), TEST_WORLD_X);
+}
+
+#[test]
+fn world_transform_try_from_mint_rejects_non_rigid_matrices() {
+    let zero = WorldScalar::from(0.0_f32);
+    let two = WorldScalar::from(2.0_f32);
+    let scaled = mint::RowMatrix3x2::<WorldScalar> {
+        x: mint::Vector2 { x: two, y: zero },
+        y: mint::Vector2 { x: zero, y: two },
+        z: mint::Vector2 { x: zero, y: zero },
+    };
+    let error = WorldTransform::try_from(scaled).unwrap_err();
+    assert_eq!(error, WorldTransformFromInteropError::NotPureRotation);
 }

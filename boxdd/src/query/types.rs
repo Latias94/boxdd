@@ -1,3 +1,4 @@
+use crate::core::foundation::{assert_transient_native_lease, transient_native_lease};
 use crate::error::ApiResult;
 use crate::types::{Position, ShapeId, Vec2};
 use boxdd_sys::ffi;
@@ -36,9 +37,11 @@ pub(super) fn check_query_position_valid(value: Position) -> ApiResult<()> {
         Err(crate::error::ApiError::InvalidArgument)
     }
 }
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn assert_query_aabb_valid(aabb: Aabb) {
     assert!(aabb.is_valid(), "aabb must be valid, got {:?}", aabb);
 }
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn check_query_aabb_valid(aabb: Aabb) -> ApiResult<()> {
     if aabb.is_valid() {
         Ok(())
@@ -48,6 +51,7 @@ pub(super) fn check_query_aabb_valid(aabb: Aabb) -> ApiResult<()> {
 }
 
 #[inline]
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn assert_query_non_negative_finite_scalar(name: &str, value: f32) {
     assert!(
         crate::is_valid_float(value) && value >= 0.0,
@@ -65,6 +69,7 @@ pub(super) fn check_query_non_negative_finite_scalar(value: f32) -> ApiResult<()
 }
 
 #[inline]
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn assert_query_angle_valid(angle_radians: f32) {
     assert!(
         crate::is_valid_float(angle_radians),
@@ -73,6 +78,7 @@ pub(super) fn assert_query_angle_valid(angle_radians: f32) {
 }
 
 #[inline]
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn check_query_angle_valid(angle_radians: f32) -> ApiResult<()> {
     if crate::is_valid_float(angle_radians) {
         Ok(())
@@ -211,38 +217,6 @@ impl From<(glam::Vec2, glam::Vec2)> for Aabb {
     }
 }
 
-#[cfg(feature = "cgmath")]
-impl From<Aabb> for (cgmath::Point2<f32>, cgmath::Point2<f32>) {
-    #[inline]
-    fn from(a: Aabb) -> Self {
-        (a.lower.into(), a.upper.into())
-    }
-}
-
-#[cfg(feature = "cgmath")]
-impl From<(cgmath::Point2<f32>, cgmath::Point2<f32>)> for Aabb {
-    #[inline]
-    fn from((lower, upper): (cgmath::Point2<f32>, cgmath::Point2<f32>)) -> Self {
-        Self::new(lower, upper)
-    }
-}
-
-#[cfg(feature = "cgmath")]
-impl From<Aabb> for (cgmath::Vector2<f32>, cgmath::Vector2<f32>) {
-    #[inline]
-    fn from(a: Aabb) -> Self {
-        (a.lower.into(), a.upper.into())
-    }
-}
-
-#[cfg(feature = "cgmath")]
-impl From<(cgmath::Vector2<f32>, cgmath::Vector2<f32>)> for Aabb {
-    #[inline]
-    fn from((lower, upper): (cgmath::Vector2<f32>, cgmath::Vector2<f32>)) -> Self {
-        Self::new(lower, upper)
-    }
-}
-
 #[cfg(feature = "nalgebra")]
 impl From<Aabb> for (nalgebra::Point2<f32>, nalgebra::Point2<f32>) {
     #[inline]
@@ -282,6 +256,7 @@ pub struct QueryFilter(pub(crate) ffi::b2QueryFilter);
 
 impl Default for QueryFilter {
     fn default() -> Self {
+        let _lease = assert_transient_native_lease();
         Self(unsafe { ffi::b2DefaultQueryFilter() })
     }
 }
@@ -325,6 +300,12 @@ impl<'de> serde::Deserialize<'de> for QueryFilter {
 }
 
 impl QueryFilter {
+    /// Create a query filter using Box2D's defaults.
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn category_bits(&self) -> u64 {
         self.0.categoryBits
     }
@@ -377,6 +358,34 @@ impl RayResult {
     }
 }
 
+/// Complete result of a closest ray cast, including broad-phase traversal statistics.
+///
+/// The statistics are retained even when [`Self::hit`] is `None`.
+#[doc(alias = "closest_ray_cast_result")]
+#[derive(Copy, Clone, Debug)]
+pub struct ClosestRayCastResult {
+    /// Closest shape hit, or `None` when the ray did not hit a shape.
+    pub hit: Option<RayResult>,
+    /// Number of broad-phase tree nodes visited by Box2D.
+    pub node_visits: i32,
+    /// Number of broad-phase leaves visited by Box2D.
+    pub leaf_visits: i32,
+}
+
+impl ClosestRayCastResult {
+    #[inline]
+    pub(crate) fn from_raw_in(
+        brand: crate::id::IdBrand,
+        raw: ffi::b2RayResult,
+    ) -> crate::error::ApiResult<Self> {
+        Ok(Self {
+            hit: RayResult::from_raw_in(brand, raw)?,
+            node_visits: raw.nodeVisits,
+            leaf_visits: raw.leafVisits,
+        })
+    }
+}
+
 /// A collision plane used by Box2D's character mover helpers.
 #[doc(alias = "plane")]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -396,9 +405,13 @@ impl Plane {
         }
     }
 
+    /// Return whether this plane is valid for Box2D mover algorithms.
     #[inline]
     pub fn is_valid(self) -> bool {
-        unsafe { ffi::b2IsValidPlane(self.into_raw()) }
+        self.normal.is_valid()
+            && (1.0 - (self.normal.x * self.normal.x + self.normal.y * self.normal.y)).abs()
+                < 100.0 * f32::EPSILON
+            && self.offset.is_finite()
     }
 
     #[inline]
@@ -598,6 +611,16 @@ pub(super) fn raw_collision_planes(planes: &[CollisionPlane]) -> *const ffi::b2C
     }
 }
 
+#[inline]
+fn assert_collision_plane_count(count: usize) -> i32 {
+    i32::try_from(count).expect("collision plane count exceeds Box2D limits")
+}
+
+#[inline]
+fn check_collision_plane_count(count: usize) -> ApiResult<i32> {
+    i32::try_from(count).map_err(|_| crate::error::ApiError::InvalidArgument)
+}
+
 /// Solve the translation that best satisfies the supplied mover collision planes.
 ///
 /// The `push` field on each collision plane is updated in place by Box2D.
@@ -608,14 +631,16 @@ pub fn solve_planes<V: Into<Vec2>>(
 ) -> PlaneSolverResult {
     let target_delta = target_delta.into();
     assert_query_vec2_valid("target_delta", target_delta);
+    let plane_count = assert_collision_plane_count(planes.len());
     for plane in planes.iter() {
         assert_query_solver_collision_plane_valid(plane);
     }
+    let _lease = assert_transient_native_lease();
     let raw = unsafe {
         ffi::b2SolvePlanes(
             target_delta.into_raw(),
             raw_collision_planes_mut(planes),
-            planes.len() as i32,
+            plane_count,
         )
     };
     PlaneSolverResult::from_raw(raw)
@@ -631,14 +656,16 @@ pub fn try_solve_planes<V: Into<Vec2>>(
 ) -> ApiResult<PlaneSolverResult> {
     let target_delta = target_delta.into();
     check_query_vec2_valid(target_delta)?;
+    let plane_count = check_collision_plane_count(planes.len())?;
     for plane in planes.iter() {
         check_query_solver_collision_plane_valid(plane)?;
     }
+    let _lease = transient_native_lease()?;
     let raw = unsafe {
         ffi::b2SolvePlanes(
             target_delta.into_raw(),
             raw_collision_planes_mut(planes),
-            planes.len() as i32,
+            plane_count,
         )
     };
     Ok(PlaneSolverResult::from_raw(raw))
@@ -649,15 +676,13 @@ pub fn try_solve_planes<V: Into<Vec2>>(
 pub fn clip_vector<V: Into<Vec2>>(vector: V, planes: &[CollisionPlane]) -> Vec2 {
     let vector = vector.into();
     assert_query_vec2_valid("vector", vector);
+    let plane_count = assert_collision_plane_count(planes.len());
     for plane in planes.iter() {
         assert_query_collision_plane_valid(plane);
     }
+    let _lease = assert_transient_native_lease();
     Vec2::from_raw(unsafe {
-        ffi::b2ClipVector(
-            vector.into_raw(),
-            raw_collision_planes(planes),
-            planes.len() as i32,
-        )
+        ffi::b2ClipVector(vector.into_raw(), raw_collision_planes(planes), plane_count)
     })
 }
 
@@ -668,14 +693,98 @@ pub fn clip_vector<V: Into<Vec2>>(vector: V, planes: &[CollisionPlane]) -> Vec2 
 pub fn try_clip_vector<V: Into<Vec2>>(vector: V, planes: &[CollisionPlane]) -> ApiResult<Vec2> {
     let vector = vector.into();
     check_query_vec2_valid(vector)?;
+    let plane_count = check_collision_plane_count(planes.len())?;
     for plane in planes.iter() {
         check_query_collision_plane_valid(plane)?;
     }
+    let _lease = transient_native_lease()?;
     Ok(Vec2::from_raw(unsafe {
-        ffi::b2ClipVector(
-            vector.into_raw(),
-            raw_collision_planes(planes),
-            planes.len() as i32,
-        )
+        ffi::b2ClipVector(vector.into_raw(), raw_collision_planes(planes), plane_count)
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    struct TrackedVec2 {
+        converted: Arc<AtomicBool>,
+        value: Vec2,
+    }
+
+    impl From<TrackedVec2> for Vec2 {
+        fn from(value: TrackedVec2) -> Self {
+            value.converted.store(true, Ordering::Relaxed);
+            value.value
+        }
+    }
+
+    fn tracked(value: Vec2) -> (TrackedVec2, Arc<AtomicBool>) {
+        let converted = Arc::new(AtomicBool::new(false));
+        (
+            TrackedVec2 {
+                converted: Arc::clone(&converted),
+                value,
+            },
+            converted,
+        )
+    }
+
+    #[test]
+    fn query_filter_default_rejects_callback_reentry_before_native_activity() {
+        let _callback_guard = crate::core::callback_state::CallbackGuard::enter();
+        let result = std::panic::catch_unwind(QueryFilter::default);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn plane_validation_matches_box2d_normalization_tolerance() {
+        assert!(Plane::new([1.0, 0.0], 0.0).is_valid());
+        assert!(Plane::new([1.000_005, 0.0], 0.0).is_valid());
+        assert!(!Plane::new([1.000_01, 0.0], 0.0).is_valid());
+        assert!(!Plane::new([f32::NAN, 0.0], 0.0).is_valid());
+        assert!(!Plane::new([1.0, 0.0], f32::INFINITY).is_valid());
+    }
+
+    #[test]
+    fn pure_mover_validation_is_callback_safe_and_native_calls_reject_reentry() {
+        let plane = Plane::new([0.0, 1.0], 0.0);
+        let mut planes = [CollisionPlane::rigid(plane)];
+        let _callback_guard = crate::core::callback_state::CallbackGuard::enter();
+
+        assert!(plane.is_valid());
+        assert_eq!(planes[0].validate(), Ok(()));
+
+        let (target, target_converted) = tracked(Vec2::new(0.0, -0.2));
+        assert_eq!(
+            try_solve_planes(target, &mut planes),
+            Err(crate::error::ApiError::InCallback)
+        );
+        assert!(target_converted.load(Ordering::Relaxed));
+
+        let (vector, vector_converted) = tracked(Vec2::new(0.0, -1.0));
+        assert_eq!(
+            try_clip_vector(vector, &planes),
+            Err(crate::error::ApiError::InCallback)
+        );
+        assert!(vector_converted.load(Ordering::Relaxed));
+
+        let mut invalid_planes = [CollisionPlane::rigid(Plane::new([0.0, 2.0], 0.0))];
+        assert_eq!(
+            try_solve_planes(Vec2::ZERO, &mut invalid_planes),
+            Err(crate::error::ApiError::InvalidArgument)
+        );
+
+        let (target, target_converted) = tracked(Vec2::new(0.0, -0.2));
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                solve_planes(target, &mut planes)
+            }))
+            .is_err()
+        );
+        assert!(target_converted.load(Ordering::Relaxed));
+    }
 }

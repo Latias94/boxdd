@@ -67,6 +67,11 @@ impl JointType {
             Self::Wheel => ffi::b2JointType_b2_wheelJoint,
         }
     }
+
+    #[inline]
+    pub(crate) fn decode_native(raw: ffi::b2JointType) -> ApiResult<Self> {
+        Self::from_raw(raw).ok_or(ApiError::InvalidNativeJointType { raw })
+    }
 }
 
 impl TryFrom<ffi::b2JointType> for JointType {
@@ -76,11 +81,6 @@ impl TryFrom<ffi::b2JointType> for JointType {
     fn try_from(value: ffi::b2JointType) -> Result<Self, Self::Error> {
         Self::from_raw(value).ok_or(value)
     }
-}
-
-#[inline]
-fn joint_type_from_ffi(raw: ffi::b2JointType) -> JointType {
-    JointType::from_raw(raw).expect("Box2D returned an unknown joint type")
 }
 
 #[inline]
@@ -107,18 +107,36 @@ impl ConstraintTuning {
 }
 
 #[inline]
-pub(crate) fn joint_is_valid_impl(id: JointId) -> bool {
-    unsafe { ffi::b2Joint_IsValid(raw_joint_id(id)) }
-}
-
-#[inline]
 pub(crate) fn joint_type_raw_impl(id: JointId) -> ffi::b2JointType {
+    #[cfg(test)]
+    {
+        JOINT_GET_TYPE_CALLS.with(|calls| calls.set(calls.get().saturating_add(1)));
+        if let Some(raw) = JOINT_GET_TYPE_OVERRIDE.with(core::cell::Cell::get) {
+            return raw;
+        }
+    }
     unsafe { ffi::b2Joint_GetType(raw_joint_id(id)) }
 }
 
+#[cfg(test)]
+thread_local! {
+    static JOINT_GET_TYPE_OVERRIDE: core::cell::Cell<Option<ffi::b2JointType>> = const {
+        core::cell::Cell::new(None)
+    };
+    static JOINT_GET_TYPE_CALLS: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
+}
+
 #[inline]
-pub(crate) fn joint_type_impl(id: JointId) -> JointType {
-    joint_type_from_ffi(joint_type_raw_impl(id))
+pub(crate) fn resolve_joint_type_output(
+    core: &WorldCore,
+    raw: ffi::b2JointType,
+) -> ApiResult<JointType> {
+    JointType::decode_native(raw).inspect_err(|_| core.poison())
+}
+
+#[inline]
+pub(crate) fn try_joint_type_impl(core: &WorldCore, id: JointId) -> ApiResult<JointType> {
+    resolve_joint_type_output(core, joint_type_raw_impl(id))
 }
 
 #[inline]
@@ -175,10 +193,8 @@ pub(crate) fn joint_collide_connected_impl(id: JointId) -> bool {
     unsafe { ffi::b2Joint_GetCollideConnected(raw_joint_id(id)) }
 }
 
-#[inline]
-pub(crate) fn joint_set_collide_connected_impl(id: JointId, flag: bool) {
-    unsafe { ffi::b2Joint_SetCollideConnected(raw_joint_id(id), flag) }
-}
+pub(crate) const JOINT_SET_COLLIDE_CONNECTED: super::runtime::JointSetOp<bool> =
+    super::runtime::JointSetOp::new(super::runtime::JointWriteKind::JointSetCollideConnected);
 
 #[inline]
 pub(crate) fn joint_constraint_tuning_impl(id: JointId) -> ConstraintTuning {
@@ -188,12 +204,8 @@ pub(crate) fn joint_constraint_tuning_impl(id: JointId) -> ConstraintTuning {
     ConstraintTuning::new(hertz, damping_ratio)
 }
 
-#[inline]
-pub(crate) fn joint_set_constraint_tuning_impl(id: JointId, tuning: ConstraintTuning) {
-    unsafe {
-        ffi::b2Joint_SetConstraintTuning(raw_joint_id(id), tuning.hertz, tuning.damping_ratio)
-    }
-}
+pub(crate) const JOINT_SET_CONSTRAINT_TUNING: super::runtime::JointSetOp<ConstraintTuning> =
+    super::runtime::JointSetOp::new(super::runtime::JointWriteKind::JointSetConstraintTuning);
 
 #[inline]
 pub(crate) fn joint_local_frame_a_impl(id: JointId) -> crate::Transform {
@@ -205,55 +217,183 @@ pub(crate) fn joint_local_frame_b_impl(id: JointId) -> crate::Transform {
     crate::Transform::from_raw(unsafe { ffi::b2Joint_GetLocalFrameB(raw_joint_id(id)) })
 }
 
-#[track_caller]
-pub(crate) fn assert_joint_local_frame_valid(frame: crate::Transform) {
-    assert!(
-        frame.is_valid(),
-        "joint local frame must be a valid Box2D transform, got {:?}",
-        frame
-    );
-}
+pub(crate) const JOINT_SET_LOCAL_FRAME_A: super::runtime::JointSetOp<crate::Transform> =
+    super::runtime::JointSetOp::new(super::runtime::JointWriteKind::JointSetLocalFrameA);
 
-#[inline]
-pub(crate) fn check_joint_local_frame_valid(frame: crate::Transform) -> ApiResult<()> {
-    if frame.is_valid() {
-        Ok(())
-    } else {
-        Err(ApiError::InvalidArgument)
-    }
-}
+pub(crate) const JOINT_SET_LOCAL_FRAME_B: super::runtime::JointSetOp<crate::Transform> =
+    super::runtime::JointSetOp::new(super::runtime::JointWriteKind::JointSetLocalFrameB);
 
-#[inline]
-pub(crate) fn joint_set_local_frame_a_impl(id: JointId, frame: crate::Transform) {
-    unsafe { ffi::b2Joint_SetLocalFrameA(raw_joint_id(id), frame.into_raw()) }
-}
-
-#[inline]
-pub(crate) fn joint_set_local_frame_b_impl(id: JointId, frame: crate::Transform) {
-    unsafe { ffi::b2Joint_SetLocalFrameB(raw_joint_id(id), frame.into_raw()) }
-}
-
-#[inline]
-pub(crate) fn joint_wake_bodies_impl(id: JointId) {
-    unsafe { ffi::b2Joint_WakeBodies(raw_joint_id(id)) }
-}
+pub(crate) const JOINT_WAKE_BODIES: super::runtime::JointSetOp<()> =
+    super::runtime::JointSetOp::new(super::runtime::JointWriteKind::JointWakeBodies);
 
 #[inline]
 pub(crate) fn joint_force_threshold_impl(id: JointId) -> f32 {
     unsafe { ffi::b2Joint_GetForceThreshold(raw_joint_id(id)) }
 }
 
-#[inline]
-pub(crate) fn joint_set_force_threshold_impl(id: JointId, threshold: f32) {
-    unsafe { ffi::b2Joint_SetForceThreshold(raw_joint_id(id), threshold) }
-}
+pub(crate) const JOINT_SET_FORCE_THRESHOLD: super::runtime::JointSetOp<f32> =
+    super::runtime::JointSetOp::new(super::runtime::JointWriteKind::JointSetForceThreshold);
 
 #[inline]
 pub(crate) fn joint_torque_threshold_impl(id: JointId) -> f32 {
     unsafe { ffi::b2Joint_GetTorqueThreshold(raw_joint_id(id)) }
 }
 
-#[inline]
-pub(crate) fn joint_set_torque_threshold_impl(id: JointId, threshold: f32) {
-    unsafe { ffi::b2Joint_SetTorqueThreshold(raw_joint_id(id), threshold) }
+pub(crate) const JOINT_SET_TORQUE_THRESHOLD: super::runtime::JointSetOp<f32> =
+    super::runtime::JointSetOp::new(super::runtime::JointWriteKind::JointSetTorqueThreshold);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    struct JointGetTypeOverride;
+
+    impl JointGetTypeOverride {
+        fn install(raw: ffi::b2JointType) -> Self {
+            JOINT_GET_TYPE_OVERRIDE.with(|current| {
+                assert_eq!(current.replace(Some(raw)), None);
+            });
+            JOINT_GET_TYPE_CALLS.with(|calls| calls.set(0));
+            Self
+        }
+
+        fn calls(&self) -> usize {
+            JOINT_GET_TYPE_CALLS.with(core::cell::Cell::get)
+        }
+    }
+
+    impl Drop for JointGetTypeOverride {
+        fn drop(&mut self) {
+            JOINT_GET_TYPE_OVERRIDE.with(|current| current.set(None));
+            JOINT_GET_TYPE_CALLS.with(|calls| calls.set(0));
+        }
+    }
+
+    #[test]
+    fn joint_type_native_decoder_preserves_known_values_and_reports_the_raw_unknown() {
+        for expected in [
+            JointType::Distance,
+            JointType::Filter,
+            JointType::Motor,
+            JointType::Prismatic,
+            JointType::Revolute,
+            JointType::Weld,
+            JointType::Wheel,
+        ] {
+            assert_eq!(JointType::decode_native(expected.into_raw()), Ok(expected));
+        }
+
+        let raw = u32::MAX;
+        assert_eq!(
+            JointType::decode_native(raw),
+            Err(ApiError::InvalidNativeJointType { raw })
+        );
+    }
+
+    #[test]
+    fn all_public_joint_type_getters_report_unknown_once_then_stop_before_get_type() {
+        let raw = u32::MAX;
+
+        {
+            let mut world = crate::World::new(crate::WorldDef::default()).unwrap();
+            let body_a = world.create_body_id(crate::BodyBuilder::new().build());
+            let body_b = world.create_body_id(crate::BodyBuilder::new().build());
+            let joint = world.create_distance_joint_owned(&crate::DistanceJointDef::new(
+                crate::JointBase::new(body_a, body_b),
+            ));
+            let get_type = JointGetTypeOverride::install(raw);
+
+            assert_eq!(
+                joint.try_joint_type(),
+                Err(ApiError::InvalidNativeJointType { raw })
+            );
+            assert_eq!(get_type.calls(), 1);
+            assert_eq!(joint.try_joint_type(), Err(ApiError::WorldPoisoned));
+            assert_eq!(joint.try_joint_type_raw(), Err(ApiError::WorldPoisoned));
+            assert_eq!(get_type.calls(), 1);
+        }
+
+        {
+            let mut world = crate::World::new(crate::WorldDef::default()).unwrap();
+            let body_a = world.create_body_id(crate::BodyBuilder::new().build());
+            let body_b = world.create_body_id(crate::BodyBuilder::new().build());
+            let joint = world.create_distance_joint_id(&crate::DistanceJointDef::new(
+                crate::JointBase::new(body_a, body_b),
+            ));
+            let get_type = JointGetTypeOverride::install(raw);
+
+            assert_eq!(
+                world.try_joint_type(joint),
+                Err(ApiError::InvalidNativeJointType { raw })
+            );
+            assert_eq!(get_type.calls(), 1);
+            assert_eq!(world.try_joint_type(joint), Err(ApiError::WorldPoisoned));
+            assert_eq!(
+                world.try_joint_type_raw(joint),
+                Err(ApiError::WorldPoisoned)
+            );
+            assert_eq!(get_type.calls(), 1);
+        }
+
+        {
+            let mut world = crate::World::new(crate::WorldDef::default()).unwrap();
+            let body_a = world.create_body_id(crate::BodyBuilder::new().build());
+            let body_b = world.create_body_id(crate::BodyBuilder::new().build());
+            let joint = world.create_distance_joint_id(&crate::DistanceJointDef::new(
+                crate::JointBase::new(body_a, body_b),
+            ));
+            let handle = world.handle();
+            let get_type = JointGetTypeOverride::install(raw);
+
+            assert_eq!(
+                handle.try_joint_type(joint),
+                Err(ApiError::InvalidNativeJointType { raw })
+            );
+            assert_eq!(get_type.calls(), 1);
+            assert_eq!(handle.try_joint_type(joint), Err(ApiError::WorldPoisoned));
+            assert_eq!(
+                handle.try_joint_type_raw(joint),
+                Err(ApiError::WorldPoisoned)
+            );
+            assert_eq!(get_type.calls(), 1);
+        }
+
+        {
+            let mut world = crate::World::new(crate::WorldDef::default()).unwrap();
+            let body_a = world.create_body_id(crate::BodyBuilder::new().build());
+            let body_b = world.create_body_id(crate::BodyBuilder::new().build());
+            let joint = world.create_distance_joint_id(&crate::DistanceJointDef::new(
+                crate::JointBase::new(body_a, body_b),
+            ));
+            let joint = world.joint(joint).unwrap();
+            let get_type = JointGetTypeOverride::install(raw);
+
+            assert_eq!(
+                joint.try_joint_type(),
+                Err(ApiError::InvalidNativeJointType { raw })
+            );
+            assert_eq!(get_type.calls(), 1);
+            assert_eq!(joint.try_joint_type(), Err(ApiError::WorldPoisoned));
+            assert_eq!(joint.try_joint_type_raw(), Err(ApiError::WorldPoisoned));
+            assert_eq!(get_type.calls(), 1);
+        }
+    }
+
+    #[test]
+    fn infallible_joint_type_poisoning_precedes_its_unknown_native_panic() {
+        let mut world = crate::World::new(crate::WorldDef::default()).unwrap();
+        let body_a = world.create_body_id(crate::BodyBuilder::new().build());
+        let body_b = world.create_body_id(crate::BodyBuilder::new().build());
+        let joint = world.create_distance_joint_owned(&crate::DistanceJointDef::new(
+            crate::JointBase::new(body_a, body_b),
+        ));
+        let raw = u32::MAX;
+        let get_type = JointGetTypeOverride::install(raw);
+
+        assert!(catch_unwind(AssertUnwindSafe(|| joint.joint_type())).is_err());
+        assert_eq!(get_type.calls(), 1);
+        assert_eq!(joint.try_joint_type(), Err(ApiError::WorldPoisoned));
+        assert_eq!(get_type.calls(), 1);
+    }
 }

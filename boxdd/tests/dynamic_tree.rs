@@ -1,7 +1,17 @@
-use boxdd::{Aabb, DynamicTree, TreeBoxCastInput, TreeProxyId, TreeRayCastInput, TreeStats, Vec2};
+use boxdd::{
+    Aabb, ApiError, BodyBuilder, BodyType, DynamicTree, TreeBoxCastInput, TreeCastControl,
+    TreeProxyId, TreeRayCastInput, TreeStats, Vec2, World, WorldDef,
+};
 
 fn aabb(min_x: f32, min_y: f32, max_x: f32, max_y: f32) -> Aabb {
     Aabb::new(Vec2::new(min_x, min_y), Vec2::new(max_x, max_y))
+}
+
+fn assert_proxy_unchanged(tree: &mut DynamicTree, proxy: TreeProxyId, expected_aabb: Aabb) {
+    assert!(tree.contains_proxy(proxy));
+    assert_eq!(tree.try_user_data(proxy), Ok(11));
+    assert_eq!(tree.try_aabb(proxy), Ok(expected_aabb));
+    assert_eq!(tree.proxy_count(), 1);
 }
 
 #[test]
@@ -39,6 +49,8 @@ fn dynamic_tree_value_types_round_trip_raw_abi_fields() {
 fn dynamic_tree_capacity_is_explicit_and_checked() {
     let tree = DynamicTree::with_capacity(32);
     assert_eq!(tree.proxy_count(), 0);
+    tree.validate();
+    tree.validate_no_enlarged();
     assert_eq!(DynamicTree::DEFAULT_PROXY_CAPACITY, 16);
     const {
         assert!(DynamicTree::MAX_PROXY_CAPACITY >= DynamicTree::DEFAULT_PROXY_CAPACITY);
@@ -99,6 +111,89 @@ fn moving_and_destroying_proxy_updates_tree_state() {
 }
 
 #[test]
+fn proxy_ids_from_another_tree_are_rejected_without_mutating_the_local_proxy() {
+    let original_aabb = aabb(-1.0, -1.0, 1.0, 1.0);
+    let mut foreign_tree = DynamicTree::new();
+    let foreign = foreign_tree.create_proxy(original_aabb, u64::MAX, 7);
+    let mut tree = DynamicTree::new();
+    let local = tree.create_proxy(original_aabb, u64::MAX, 11);
+
+    assert!(!tree.contains_proxy(foreign));
+    assert_eq!(tree.try_user_data(foreign), Err(ApiError::WrongTree));
+    assert_eq!(tree.try_aabb(foreign), Err(ApiError::WrongTree));
+    assert_eq!(tree.try_category_bits(foreign), Err(ApiError::WrongTree));
+    assert_eq!(
+        tree.try_move_proxy(foreign, aabb(3.0, 3.0, 5.0, 5.0)),
+        Err(ApiError::WrongTree)
+    );
+    assert_eq!(
+        tree.try_enlarge_proxy(foreign, aabb(-2.0, -2.0, 2.0, 2.0)),
+        Err(ApiError::WrongTree)
+    );
+    assert_eq!(
+        tree.try_replace_category_bits(foreign, 0b10),
+        Err(ApiError::WrongTree)
+    );
+    assert_eq!(tree.try_destroy_proxy(foreign), Err(ApiError::WrongTree));
+    assert_proxy_unchanged(&mut tree, local, original_aabb);
+}
+
+#[test]
+fn recycled_proxy_slots_do_not_revive_destroyed_ids() {
+    let original_aabb = aabb(-1.0, -1.0, 1.0, 1.0);
+    let mut tree = DynamicTree::new();
+    let stale = tree.create_proxy(original_aabb, u64::MAX, 7);
+    tree.destroy_proxy(stale);
+    let live = tree.create_proxy(original_aabb, u64::MAX, 11);
+
+    assert_ne!(stale, live);
+    let mut callback_ids = Vec::new();
+    tree.query_all(original_aabb, &mut |proxy, _| {
+        callback_ids.push(proxy);
+        true
+    });
+    assert_eq!(callback_ids, vec![live]);
+    assert!(!tree.contains_proxy(stale));
+    assert_eq!(tree.try_user_data(stale), Err(ApiError::InvalidTreeProxyId));
+    assert_eq!(tree.try_aabb(stale), Err(ApiError::InvalidTreeProxyId));
+    assert_eq!(
+        tree.try_category_bits(stale),
+        Err(ApiError::InvalidTreeProxyId)
+    );
+    assert_eq!(
+        tree.try_move_proxy(stale, aabb(3.0, 3.0, 5.0, 5.0)),
+        Err(ApiError::InvalidTreeProxyId)
+    );
+    assert_eq!(
+        tree.try_enlarge_proxy(stale, aabb(-2.0, -2.0, 2.0, 2.0)),
+        Err(ApiError::InvalidTreeProxyId)
+    );
+    assert_eq!(
+        tree.try_replace_category_bits(stale, 0b10),
+        Err(ApiError::InvalidTreeProxyId)
+    );
+    assert_eq!(
+        tree.try_destroy_proxy(stale),
+        Err(ApiError::InvalidTreeProxyId)
+    );
+    assert_proxy_unchanged(&mut tree, live, original_aabb);
+}
+
+#[test]
+fn dropping_a_tree_does_not_make_its_proxy_valid_in_a_new_tree() {
+    let original_aabb = aabb(-1.0, -1.0, 1.0, 1.0);
+    let stale = {
+        let mut tree = DynamicTree::new();
+        tree.create_proxy(original_aabb, u64::MAX, 7)
+    };
+    let mut replacement = DynamicTree::new();
+    let live = replacement.create_proxy(original_aabb, u64::MAX, 11);
+
+    assert_eq!(replacement.try_user_data(stale), Err(ApiError::WrongTree));
+    assert_proxy_unchanged(&mut replacement, live, original_aabb);
+}
+
+#[test]
 fn move_and_enlarge_reject_native_precondition_violations() {
     let mut tree = DynamicTree::new();
     let initial = aabb(-1.0, -1.0, 1.0, 1.0);
@@ -143,7 +238,7 @@ fn ray_cast_and_box_cast_visit_tree_proxies() {
         u64::MAX,
         &mut |input, id, data| {
             ray_hits.push((id, data, input.max_fraction));
-            0.0
+            TreeCastControl::Terminate
         },
     );
     assert_eq!(ray_hits.len(), 1);
@@ -156,7 +251,7 @@ fn ray_cast_and_box_cast_visit_tree_proxies() {
         u64::MAX,
         &mut |_, id, data| {
             box_hits.push((id, data));
-            1.0
+            TreeCastControl::Continue
         },
     );
     assert!(box_hits.contains(&(proxy, 7)));
@@ -172,7 +267,7 @@ fn invalid_inputs_are_recoverable() {
             .is_err()
     );
 
-    let mut visit = |_: TreeBoxCastInput, _: TreeProxyId, _: u64| 1.0;
+    let mut visit = |_: TreeBoxCastInput, _: TreeProxyId, _: u64| TreeCastControl::Continue;
     assert!(
         tree.try_box_cast(
             TreeBoxCastInput::new(invalid_aabb, Vec2::ZERO),
@@ -216,7 +311,7 @@ fn dynamic_tree_callback_panics_are_caught_and_resumed() {
         tree.ray_cast(
             TreeRayCastInput::new(Vec2::new(-4.0, 1.0), Vec2::new(10.0, 0.0)),
             u64::MAX,
-            &mut |_, _, _| -> f32 {
+            &mut |_, _, _| -> TreeCastControl {
                 panic!("boom in dynamic tree ray cast");
             },
         );
@@ -228,13 +323,127 @@ fn dynamic_tree_callback_panics_are_caught_and_resumed() {
         tree.box_cast(
             TreeBoxCastInput::new(aabb(-4.0, 0.5, -3.0, 1.5), Vec2::new(8.0, 0.0)),
             u64::MAX,
-            &mut |_, _, _| -> f32 {
+            &mut |_, _, _| -> TreeCastControl {
                 panic!("boom in dynamic tree box cast");
             },
         );
     }));
     assert!(box_result.is_err());
     assert_tree_query_finds_proxy(&tree, proxy);
+}
+
+#[test]
+fn invalid_dynamic_tree_clip_is_caught_and_tree_remains_reusable() {
+    let mut tree = DynamicTree::new();
+    let proxy = tree.create_proxy(aabb(0.0, 0.0, 2.0, 2.0), u64::MAX, 7);
+
+    for fraction in [f32::NAN, f32::INFINITY, -0.5, 1.5] {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            tree.ray_cast(
+                TreeRayCastInput::new(Vec2::new(-4.0, 1.0), Vec2::new(10.0, 0.0)),
+                u64::MAX,
+                &mut |_, _, _| TreeCastControl::Clip(fraction),
+            );
+        }));
+        assert!(
+            result.is_err(),
+            "invalid clip fraction {fraction} must panic"
+        );
+        assert_tree_query_finds_proxy(&tree, proxy);
+    }
+}
+
+#[test]
+fn dynamic_tree_callbacks_reject_world_api_reentry() {
+    let world = World::new(WorldDef::default()).unwrap();
+    let mut tree = DynamicTree::new();
+    tree.create_proxy(aabb(0.0, 0.0, 2.0, 2.0), u64::MAX, 7);
+
+    let mut query_error = None;
+    tree.query(aabb(-1.0, -1.0, 3.0, 3.0), u64::MAX, &mut |_, _| {
+        query_error = Some(world.try_counters().unwrap_err());
+        false
+    });
+
+    let mut query_all_error = None;
+    tree.query_all(aabb(-1.0, -1.0, 3.0, 3.0), &mut |_, _| {
+        query_all_error = Some(world.try_counters().unwrap_err());
+        false
+    });
+
+    let mut ray_error = None;
+    tree.ray_cast(
+        TreeRayCastInput::new(Vec2::new(-4.0, 1.0), Vec2::new(10.0, 0.0)),
+        u64::MAX,
+        &mut |_, _, _| {
+            ray_error = Some(world.try_counters().unwrap_err());
+            TreeCastControl::Terminate
+        },
+    );
+
+    let mut box_error = None;
+    tree.box_cast(
+        TreeBoxCastInput::new(aabb(-4.0, 0.5, -3.0, 1.5), Vec2::new(8.0, 0.0)),
+        u64::MAX,
+        &mut |_, _, _| {
+            box_error = Some(world.try_counters().unwrap_err());
+            TreeCastControl::Terminate
+        },
+    );
+
+    assert_eq!(query_error, Some(ApiError::InCallback));
+    assert_eq!(query_all_error, Some(ApiError::InCallback));
+    assert_eq!(ray_error, Some(ApiError::InCallback));
+    assert_eq!(box_error, Some(ApiError::InCallback));
+}
+
+#[test]
+fn dynamic_tree_query_flushes_owned_body_drop_before_returning() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let mut body =
+        Some(world.create_body_owned(BodyBuilder::new().body_type(BodyType::Dynamic).build()));
+    let body_id = body.as_ref().unwrap().id();
+    let mut tree = DynamicTree::new();
+    tree.create_proxy(aabb(0.0, 0.0, 2.0, 2.0), u64::MAX, 7);
+
+    tree.query_all(aabb(-1.0, -1.0, 3.0, 3.0), &mut |_, _| {
+        drop(body.take());
+        false
+    });
+
+    assert!(body.is_none());
+    assert_eq!(
+        world.try_body_position(body_id),
+        Err(ApiError::InvalidBodyId)
+    );
+}
+
+#[test]
+fn dynamic_tree_panic_flushes_owned_body_drop_before_resuming() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let mut body =
+        Some(world.create_body_owned(BodyBuilder::new().body_type(BodyType::Dynamic).build()));
+    let body_id = body.as_ref().unwrap().id();
+    let mut tree = DynamicTree::new();
+    tree.create_proxy(aabb(0.0, 0.0, 2.0, 2.0), u64::MAX, 7);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        tree.ray_cast(
+            TreeRayCastInput::new(Vec2::new(-4.0, 1.0), Vec2::new(10.0, 0.0)),
+            u64::MAX,
+            &mut |_, _, _| -> TreeCastControl {
+                drop(body.take());
+                panic!("intentional dynamic-tree callback panic");
+            },
+        );
+    }));
+
+    assert!(result.is_err());
+    assert!(body.is_none());
+    assert_eq!(
+        world.try_body_position(body_id),
+        Err(ApiError::InvalidBodyId)
+    );
 }
 
 fn assert_tree_query_finds_proxy(tree: &DynamicTree, expected: TreeProxyId) {

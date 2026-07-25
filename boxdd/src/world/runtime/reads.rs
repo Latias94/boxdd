@@ -51,6 +51,26 @@ fn world_maximum_linear_speed_impl(world: ffi::b2WorldId) -> f32 {
 }
 
 #[inline]
+fn world_bounds_impl(world: ffi::b2WorldId) -> Aabb {
+    Aabb::from_raw(unsafe { ffi::b2World_GetBounds(world) })
+}
+
+#[inline]
+fn world_max_capacity_impl(world: ffi::b2WorldId) -> crate::error::ApiResult<WorldCapacity> {
+    WorldCapacity::try_from_raw(unsafe { ffi::b2World_GetMaxCapacity(world) })
+}
+
+#[inline]
+fn world_contact_recycle_distance_impl(world: ffi::b2WorldId) -> f32 {
+    unsafe { ffi::b2World_GetContactRecycleDistance(world) }
+}
+
+#[inline]
+fn world_worker_count_impl(world: ffi::b2WorldId) -> crate::error::ApiResult<WorkerCount> {
+    WorkerCount::from_native(unsafe { ffi::b2World_GetWorkerCount(world) })
+}
+
+#[inline]
 fn checked_world_read_impl<R>(f: impl FnOnce() -> R) -> R {
     crate::core::callback_state::assert_not_in_callback();
     f()
@@ -154,4 +174,48 @@ pub(crate) fn try_world_maximum_linear_speed_impl(
     world: ffi::b2WorldId,
 ) -> crate::error::ApiResult<f32> {
     try_checked_world_read_impl(|| world_maximum_linear_speed_impl(world))
+}
+
+pub(crate) fn world_bounds_checked_impl(world: ffi::b2WorldId) -> Aabb {
+    checked_world_read_impl(|| world_bounds_impl(world))
+}
+
+pub(crate) fn try_world_bounds_impl(world: ffi::b2WorldId) -> crate::error::ApiResult<Aabb> {
+    try_checked_world_read_impl(|| world_bounds_impl(world))
+}
+
+pub(crate) fn world_max_capacity_checked_impl(world: ffi::b2WorldId) -> WorldCapacity {
+    checked_world_read_impl(|| {
+        world_max_capacity_impl(world).expect("Box2D returned an invalid world capacity")
+    })
+}
+
+pub(crate) fn try_world_max_capacity_impl(
+    world: ffi::b2WorldId,
+) -> crate::error::ApiResult<WorldCapacity> {
+    crate::core::callback_state::check_not_in_callback()?;
+    world_max_capacity_impl(world)
+}
+
+pub(crate) fn world_contact_recycle_distance_checked_impl(world: ffi::b2WorldId) -> f32 {
+    checked_world_read_impl(|| world_contact_recycle_distance_impl(world))
+}
+
+pub(crate) fn try_world_contact_recycle_distance_impl(
+    world: ffi::b2WorldId,
+) -> crate::error::ApiResult<f32> {
+    try_checked_world_read_impl(|| world_contact_recycle_distance_impl(world))
+}
+
+pub(crate) fn world_worker_count_checked_impl(world: ffi::b2WorldId) -> WorkerCount {
+    checked_world_read_impl(|| {
+        world_worker_count_impl(world).expect("Box2D returned an invalid worker count")
+    })
+}
+
+pub(crate) fn try_world_worker_count_impl(
+    world: ffi::b2WorldId,
+) -> crate::error::ApiResult<WorkerCount> {
+    crate::core::callback_state::check_not_in_callback()?;
+    world_worker_count_impl(world)
 }

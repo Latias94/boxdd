@@ -10,7 +10,10 @@
 //! deliberately outside this module's contract.
 
 use crate::{
-    core::math::{Rot, Transform},
+    core::{
+        foundation::{assert_transient_native_lease, transient_native_lease},
+        math::{Rot, Transform},
+    },
     error::{ApiError, ApiResult},
     query::Aabb,
     shapes::{Capsule, ChainSegment, Circle, Polygon, Segment},
@@ -141,7 +144,10 @@ impl ShapeProxy {
         I: IntoIterator<Item = P>,
         P: Into<Vec2>,
     {
-        Self::try_new(points, radius).ok()
+        let (raw_points, count) = collect_shape_proxy_points(points, radius).ok()?;
+        let _lease = assert_transient_native_lease();
+        let raw = unsafe { ffi::b2MakeProxy(raw_points.as_ptr(), count, radius) };
+        Some(Self { raw })
     }
 
     /// Build a proxy from `1..=MAX_SHAPE_PROXY_POINTS` valid points and an external radius.
@@ -150,25 +156,9 @@ impl ShapeProxy {
         I: IntoIterator<Item = P>,
         P: Into<Vec2>,
     {
-        check_collision_non_negative_finite_scalar(radius)?;
-        let mut raw_points = [ffi::b2Vec2 { x: 0.0, y: 0.0 }; MAX_SHAPE_PROXY_POINTS];
-        let mut count = 0usize;
-
-        for point in points {
-            if count == MAX_SHAPE_PROXY_POINTS {
-                return Err(ApiError::InvalidArgument);
-            }
-            let point = point.into();
-            check_collision_vec2_valid(point)?;
-            raw_points[count] = point.into_raw();
-            count += 1;
-        }
-
-        if count == 0 {
-            return Err(ApiError::InvalidArgument);
-        }
-
-        let raw = unsafe { ffi::b2MakeProxy(raw_points.as_ptr(), count as i32, radius) };
+        let (raw_points, count) = collect_shape_proxy_points(points, radius)?;
+        let _lease = transient_native_lease()?;
+        let raw = unsafe { ffi::b2MakeProxy(raw_points.as_ptr(), count, radius) };
         Ok(Self { raw })
     }
 
@@ -212,6 +202,35 @@ impl ShapeProxy {
     fn raw(self) -> ffi::b2ShapeProxy {
         self.into_raw()
     }
+}
+
+fn collect_shape_proxy_points<I, P>(
+    points: I,
+    radius: f32,
+) -> ApiResult<([ffi::b2Vec2; MAX_SHAPE_PROXY_POINTS], i32)>
+where
+    I: IntoIterator<Item = P>,
+    P: Into<Vec2>,
+{
+    check_collision_non_negative_finite_scalar(radius)?;
+    let mut raw_points = [ffi::b2Vec2 { x: 0.0, y: 0.0 }; MAX_SHAPE_PROXY_POINTS];
+    let mut count = 0usize;
+
+    for point in points {
+        if count == MAX_SHAPE_PROXY_POINTS {
+            return Err(ApiError::InvalidArgument);
+        }
+        let point = point.into();
+        check_collision_vec2_valid(point)?;
+        raw_points[count] = point.into_raw();
+        count += 1;
+    }
+
+    if count == 0 {
+        return Err(ApiError::InvalidArgument);
+    }
+
+    Ok((raw_points, count as i32))
 }
 
 impl fmt::Debug for ShapeProxy {
@@ -697,10 +716,31 @@ impl Sweep {
     }
 
     /// Evaluate the sweep transform at `time` in the `[0, 1]` interval.
+    ///
+    /// # Panics
+    ///
+    /// Panics before entering Box2D when this sweep is invalid, `time` is non-finite or outside
+    /// `[0, 1]`, or process-global foundation activity is unavailable. Use
+    /// [`Self::try_transform_at`] for recoverable validation.
     #[inline]
     pub fn transform_at(self, time: f32) -> Transform {
+        self.try_transform_at(time)
+            .expect("sweep transform requires valid input and available foundation activity")
+    }
+
+    /// Recoverably evaluate the sweep transform at `time` in the `[0, 1]` interval.
+    ///
+    /// The complete sweep and time are validated before foundation activity is leased and before
+    /// Box2D is called.
+    #[inline]
+    pub fn try_transform_at(self, time: f32) -> ApiResult<Transform> {
+        self.validate()?;
+        check_collision_unit_interval_scalar(time)?;
+        let _lease = transient_native_lease()?;
         let raw = self.into_raw();
-        Transform::from_raw(unsafe { ffi::b2GetSweepTransform(&raw, time) })
+        Ok(Transform::from_raw(unsafe {
+            ffi::b2GetSweepTransform(&raw, time)
+        }))
     }
 }
 
@@ -832,6 +872,7 @@ where
         "segment_distance q2",
         check_collision_vec2_valid(q2).is_ok(),
     );
+    let _lease = assert_transient_native_lease();
     SegmentDistanceResult::from_raw(unsafe {
         ffi::b2SegmentDistance(p1.into_raw(), q1.into_raw(), p2.into_raw(), q2.into_raw())
     })
@@ -858,6 +899,7 @@ where
     check_collision_vec2_valid(q1)?;
     check_collision_vec2_valid(p2)?;
     check_collision_vec2_valid(q2)?;
+    let _lease = transient_native_lease()?;
     Ok(SegmentDistanceResult::from_raw(unsafe {
         ffi::b2SegmentDistance(p1.into_raw(), q1.into_raw(), p2.into_raw(), q2.into_raw())
     }))
@@ -867,6 +909,7 @@ where
 pub fn shape_distance(input: DistanceInput, cache: &mut SimplexCache) -> DistanceOutput {
     assert_collision_input_valid("shape_distance input", input.validate().is_ok());
     let raw_input = input.into_raw();
+    let _lease = assert_transient_native_lease();
     DistanceOutput::from_raw(unsafe {
         ffi::b2ShapeDistance(&raw_input, cache.raw_mut(), core::ptr::null_mut(), 0)
     })
@@ -879,6 +922,7 @@ pub fn try_shape_distance(
 ) -> ApiResult<DistanceOutput> {
     input.validate()?;
     let raw_input = input.into_raw();
+    let _lease = transient_native_lease()?;
     Ok(DistanceOutput::from_raw(unsafe {
         ffi::b2ShapeDistance(&raw_input, cache.raw_mut(), core::ptr::null_mut(), 0)
     }))
@@ -890,6 +934,7 @@ pub fn try_shape_distance(
 pub fn shape_cast(input: ShapeCastPairInput) -> CastOutput {
     assert_collision_input_valid("shape_cast input", input.validate().is_ok());
     let raw_input = input.into_raw();
+    let _lease = assert_transient_native_lease();
     CastOutput::from_raw(unsafe { ffi::b2ShapeCast(&raw_input) })
 }
 
@@ -899,6 +944,7 @@ pub fn shape_cast(input: ShapeCastPairInput) -> CastOutput {
 pub fn try_shape_cast(input: ShapeCastPairInput) -> ApiResult<CastOutput> {
     input.validate()?;
     let raw_input = input.into_raw();
+    let _lease = transient_native_lease()?;
     Ok(CastOutput::from_raw(unsafe {
         ffi::b2ShapeCast(&raw_input)
     }))
@@ -908,6 +954,7 @@ pub fn try_shape_cast(input: ShapeCastPairInput) -> ApiResult<CastOutput> {
 pub fn time_of_impact(input: ToiInput) -> ToiOutput {
     assert_collision_input_valid("time_of_impact input", input.validate().is_ok());
     let raw_input = input.into_raw();
+    let _lease = assert_transient_native_lease();
     ToiOutput::from_raw(unsafe { ffi::b2TimeOfImpact(&raw_input) })
 }
 
@@ -915,6 +962,7 @@ pub fn time_of_impact(input: ToiInput) -> ToiOutput {
 pub fn try_time_of_impact(input: ToiInput) -> ApiResult<ToiOutput> {
     input.validate()?;
     let raw_input = input.into_raw();
+    let _lease = transient_native_lease()?;
     Ok(ToiOutput::from_raw(unsafe {
         ffi::b2TimeOfImpact(&raw_input)
     }))
@@ -938,6 +986,7 @@ pub fn collide_circles(
     );
     let raw_a = circle_a.into_raw();
     let raw_b = circle_b.into_raw();
+    let _lease = assert_transient_native_lease();
     LocalManifold::from_raw(unsafe {
         ffi::b2CollideCircles(&raw_a, &raw_b, transform_b_in_a.into_raw())
     })
@@ -954,6 +1003,7 @@ pub fn try_collide_circles(
     check_collision_transform_valid(transform_b_in_a)?;
     let raw_a = circle_a.into_raw();
     let raw_b = circle_b.into_raw();
+    let _lease = transient_native_lease()?;
     Ok(LocalManifold::from_raw(unsafe {
         ffi::b2CollideCircles(&raw_a, &raw_b, transform_b_in_a.into_raw())
     }))
@@ -977,6 +1027,7 @@ pub fn collide_capsule_and_circle(
     );
     let raw_a = capsule_a.into_raw();
     let raw_b = circle_b.into_raw();
+    let _lease = assert_transient_native_lease();
     LocalManifold::from_raw(unsafe {
         ffi::b2CollideCapsuleAndCircle(&raw_a, &raw_b, transform_b_in_a.into_raw())
     })
@@ -993,6 +1044,7 @@ pub fn try_collide_capsule_and_circle(
     check_collision_transform_valid(transform_b_in_a)?;
     let raw_a = capsule_a.into_raw();
     let raw_b = circle_b.into_raw();
+    let _lease = transient_native_lease()?;
     Ok(LocalManifold::from_raw(unsafe {
         ffi::b2CollideCapsuleAndCircle(&raw_a, &raw_b, transform_b_in_a.into_raw())
     }))
@@ -1016,6 +1068,7 @@ pub fn collide_segment_and_circle(
     );
     let raw_a = segment_a.into_raw();
     let raw_b = circle_b.into_raw();
+    let _lease = assert_transient_native_lease();
     LocalManifold::from_raw(unsafe {
         ffi::b2CollideSegmentAndCircle(&raw_a, &raw_b, transform_b_in_a.into_raw())
     })
@@ -1032,6 +1085,7 @@ pub fn try_collide_segment_and_circle(
     check_collision_transform_valid(transform_b_in_a)?;
     let raw_a = segment_a.into_raw();
     let raw_b = circle_b.into_raw();
+    let _lease = transient_native_lease()?;
     Ok(LocalManifold::from_raw(unsafe {
         ffi::b2CollideSegmentAndCircle(&raw_a, &raw_b, transform_b_in_a.into_raw())
     }))
@@ -1055,6 +1109,7 @@ pub fn collide_polygon_and_circle(
     );
     let raw_a = polygon_a.into_raw();
     let raw_b = circle_b.into_raw();
+    let _lease = assert_transient_native_lease();
     LocalManifold::from_raw(unsafe {
         ffi::b2CollidePolygonAndCircle(&raw_a, &raw_b, transform_b_in_a.into_raw())
     })
@@ -1071,6 +1126,7 @@ pub fn try_collide_polygon_and_circle(
     check_collision_transform_valid(transform_b_in_a)?;
     let raw_a = polygon_a.into_raw();
     let raw_b = circle_b.into_raw();
+    let _lease = transient_native_lease()?;
     Ok(LocalManifold::from_raw(unsafe {
         ffi::b2CollidePolygonAndCircle(&raw_a, &raw_b, transform_b_in_a.into_raw())
     }))
@@ -1094,6 +1150,7 @@ pub fn collide_capsules(
     );
     let raw_a = capsule_a.into_raw();
     let raw_b = capsule_b.into_raw();
+    let _lease = assert_transient_native_lease();
     LocalManifold::from_raw(unsafe {
         ffi::b2CollideCapsules(&raw_a, &raw_b, transform_b_in_a.into_raw())
     })
@@ -1110,6 +1167,7 @@ pub fn try_collide_capsules(
     check_collision_transform_valid(transform_b_in_a)?;
     let raw_a = capsule_a.into_raw();
     let raw_b = capsule_b.into_raw();
+    let _lease = transient_native_lease()?;
     Ok(LocalManifold::from_raw(unsafe {
         ffi::b2CollideCapsules(&raw_a, &raw_b, transform_b_in_a.into_raw())
     }))
@@ -1133,6 +1191,7 @@ pub fn collide_segment_and_capsule(
     );
     let raw_a = segment_a.into_raw();
     let raw_b = capsule_b.into_raw();
+    let _lease = assert_transient_native_lease();
     LocalManifold::from_raw(unsafe {
         ffi::b2CollideSegmentAndCapsule(&raw_a, &raw_b, transform_b_in_a.into_raw())
     })
@@ -1149,6 +1208,7 @@ pub fn try_collide_segment_and_capsule(
     check_collision_transform_valid(transform_b_in_a)?;
     let raw_a = segment_a.into_raw();
     let raw_b = capsule_b.into_raw();
+    let _lease = transient_native_lease()?;
     Ok(LocalManifold::from_raw(unsafe {
         ffi::b2CollideSegmentAndCapsule(&raw_a, &raw_b, transform_b_in_a.into_raw())
     }))
@@ -1172,6 +1232,7 @@ pub fn collide_polygon_and_capsule(
     );
     let raw_a = polygon_a.into_raw();
     let raw_b = capsule_b.into_raw();
+    let _lease = assert_transient_native_lease();
     LocalManifold::from_raw(unsafe {
         ffi::b2CollidePolygonAndCapsule(&raw_a, &raw_b, transform_b_in_a.into_raw())
     })
@@ -1188,6 +1249,7 @@ pub fn try_collide_polygon_and_capsule(
     check_collision_transform_valid(transform_b_in_a)?;
     let raw_a = polygon_a.into_raw();
     let raw_b = capsule_b.into_raw();
+    let _lease = transient_native_lease()?;
     Ok(LocalManifold::from_raw(unsafe {
         ffi::b2CollidePolygonAndCapsule(&raw_a, &raw_b, transform_b_in_a.into_raw())
     }))
@@ -1211,6 +1273,7 @@ pub fn collide_polygons(
     );
     let raw_a = polygon_a.into_raw();
     let raw_b = polygon_b.into_raw();
+    let _lease = assert_transient_native_lease();
     LocalManifold::from_raw(unsafe {
         ffi::b2CollidePolygons(&raw_a, &raw_b, transform_b_in_a.into_raw())
     })
@@ -1227,6 +1290,7 @@ pub fn try_collide_polygons(
     check_collision_transform_valid(transform_b_in_a)?;
     let raw_a = polygon_a.into_raw();
     let raw_b = polygon_b.into_raw();
+    let _lease = transient_native_lease()?;
     Ok(LocalManifold::from_raw(unsafe {
         ffi::b2CollidePolygons(&raw_a, &raw_b, transform_b_in_a.into_raw())
     }))
@@ -1250,6 +1314,7 @@ pub fn collide_segment_and_polygon(
     );
     let raw_a = segment_a.into_raw();
     let raw_b = polygon_b.into_raw();
+    let _lease = assert_transient_native_lease();
     LocalManifold::from_raw(unsafe {
         ffi::b2CollideSegmentAndPolygon(&raw_a, &raw_b, transform_b_in_a.into_raw())
     })
@@ -1266,6 +1331,7 @@ pub fn try_collide_segment_and_polygon(
     check_collision_transform_valid(transform_b_in_a)?;
     let raw_a = segment_a.into_raw();
     let raw_b = polygon_b.into_raw();
+    let _lease = transient_native_lease()?;
     Ok(LocalManifold::from_raw(unsafe {
         ffi::b2CollideSegmentAndPolygon(&raw_a, &raw_b, transform_b_in_a.into_raw())
     }))
@@ -1289,6 +1355,7 @@ pub fn collide_chain_segment_and_circle(
     );
     let raw_a = segment_a.into_raw();
     let raw_b = circle_b.into_raw();
+    let _lease = assert_transient_native_lease();
     LocalManifold::from_raw(unsafe {
         ffi::b2CollideChainSegmentAndCircle(&raw_a, &raw_b, transform_b_in_a.into_raw())
     })
@@ -1305,6 +1372,7 @@ pub fn try_collide_chain_segment_and_circle(
     check_collision_transform_valid(transform_b_in_a)?;
     let raw_a = segment_a.into_raw();
     let raw_b = circle_b.into_raw();
+    let _lease = transient_native_lease()?;
     Ok(LocalManifold::from_raw(unsafe {
         ffi::b2CollideChainSegmentAndCircle(&raw_a, &raw_b, transform_b_in_a.into_raw())
     }))
@@ -1334,6 +1402,7 @@ pub fn collide_chain_segment_and_capsule(
     let raw_b = capsule_b.into_raw();
     let mut fallback_cache = SimplexCache::default();
     let cache_ptr = cache.unwrap_or(&mut fallback_cache).raw_mut();
+    let _lease = assert_transient_native_lease();
     LocalManifold::from_raw(unsafe {
         ffi::b2CollideChainSegmentAndCapsule(&raw_a, &raw_b, transform_b_in_a.into_raw(), cache_ptr)
     })
@@ -1353,6 +1422,7 @@ pub fn try_collide_chain_segment_and_capsule(
     let raw_b = capsule_b.into_raw();
     let mut fallback_cache = SimplexCache::default();
     let cache_ptr = cache.unwrap_or(&mut fallback_cache).raw_mut();
+    let _lease = transient_native_lease()?;
     Ok(LocalManifold::from_raw(unsafe {
         ffi::b2CollideChainSegmentAndCapsule(&raw_a, &raw_b, transform_b_in_a.into_raw(), cache_ptr)
     }))
@@ -1382,6 +1452,7 @@ pub fn collide_chain_segment_and_polygon(
     let raw_b = polygon_b.into_raw();
     let mut fallback_cache = SimplexCache::default();
     let cache_ptr = cache.unwrap_or(&mut fallback_cache).raw_mut();
+    let _lease = assert_transient_native_lease();
     LocalManifold::from_raw(unsafe {
         ffi::b2CollideChainSegmentAndPolygon(&raw_a, &raw_b, transform_b_in_a.into_raw(), cache_ptr)
     })
@@ -1401,6 +1472,7 @@ pub fn try_collide_chain_segment_and_polygon(
     let raw_b = polygon_b.into_raw();
     let mut fallback_cache = SimplexCache::default();
     let cache_ptr = cache.unwrap_or(&mut fallback_cache).raw_mut();
+    let _lease = transient_native_lease()?;
     Ok(LocalManifold::from_raw(unsafe {
         ffi::b2CollideChainSegmentAndPolygon(&raw_a, &raw_b, transform_b_in_a.into_raw(), cache_ptr)
     }))
@@ -1410,7 +1482,9 @@ impl Aabb {
     /// Check whether this AABB is valid for Box2D queries.
     #[inline]
     pub fn is_valid(self) -> bool {
-        unsafe { ffi::b2IsValidAABB(self.into_raw()) }
+        let width = self.upper.x - self.lower.x;
+        let height = self.upper.y - self.lower.y;
+        width >= 0.0 && height >= 0.0 && self.lower.is_valid() && self.upper.is_valid()
     }
 
     /// Ray cast against this AABB using Box2D-style `origin + translation`.
@@ -1421,12 +1495,12 @@ impl Aabb {
         origin: VO,
         translation: VT,
     ) -> CastOutput {
+        let origin = origin.into();
+        let translation = translation.into();
         if !self.is_valid() {
             return CastOutput::MISS;
         }
 
-        let origin = origin.into();
-        let translation = translation.into();
         let mut axis_state = RayCastAxisState {
             tmin: 0.0,
             tmax: 1.0,
@@ -1475,5 +1549,140 @@ impl Aabb {
             iterations: 0,
             hit: true,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn aabb_validation_matches_upstream_finite_and_ordering_rules() {
+        assert!(Aabb::new([0.0_f32, 0.0], [0.0_f32, 0.0]).is_valid());
+        assert!(Aabb::new([f32::MIN, f32::MIN], [f32::MAX, f32::MAX]).is_valid());
+
+        for invalid in [
+            Aabb::new([1.0_f32, 0.0], [0.0_f32, 1.0]),
+            Aabb::new([0.0_f32, 1.0], [1.0_f32, 0.0]),
+            Aabb::new([f32::NAN, 0.0], [1.0_f32, 1.0]),
+            Aabb::new([0.0_f32, 0.0], [f32::INFINITY, 1.0]),
+            Aabb::new([f32::NEG_INFINITY, 0.0], [1.0_f32, 1.0]),
+        ] {
+            assert!(!invalid.is_valid());
+        }
+    }
+
+    #[test]
+    fn worldless_native_collision_calls_obey_the_callback_gate() {
+        let proxy = ShapeProxy::new([[0.0_f32, 0.0]], 0.0).unwrap();
+        let circle = Circle::new([0.0_f32, 0.0], 0.5);
+        let invalid_circle = Circle::new([f32::NAN, 0.0], 0.5);
+        let aabb = Aabb::new([-1.0_f32, -1.0], [1.0_f32, 1.0]);
+
+        {
+            let _callback_guard = crate::core::callback_state::CallbackGuard::enter();
+            let proxy_input_was_materialized = std::cell::Cell::new(false);
+
+            assert_eq!(
+                try_segment_distance(
+                    [0.0_f32, 0.0],
+                    [1.0_f32, 0.0],
+                    [0.0_f32, 1.0],
+                    [1.0_f32, 1.0],
+                )
+                .unwrap_err(),
+                ApiError::InCallback
+            );
+            assert_eq!(
+                try_collide_circles(circle, circle, Transform::IDENTITY).unwrap_err(),
+                ApiError::InCallback
+            );
+            assert_eq!(
+                try_collide_circles(invalid_circle, circle, Transform::IDENTITY).unwrap_err(),
+                ApiError::InvalidArgument
+            );
+            assert_eq!(
+                ShapeProxy::try_new(
+                    core::iter::once_with(|| {
+                        proxy_input_was_materialized.set(true);
+                        [0.0_f32, 0.0]
+                    }),
+                    0.0,
+                )
+                .unwrap_err(),
+                ApiError::InCallback
+            );
+            assert!(proxy_input_was_materialized.get());
+            assert!(aabb.is_valid());
+            assert!(aabb.ray_cast([-2.0_f32, 0.0], [4.0_f32, 0.0]).hit);
+            assert_eq!(
+                try_segment_distance(
+                    [f32::NAN, 0.0],
+                    [1.0_f32, 0.0],
+                    [0.0_f32, 1.0],
+                    [1.0_f32, 1.0],
+                )
+                .unwrap_err(),
+                ApiError::InvalidArgument
+            );
+            assert!(
+                std::panic::catch_unwind(|| {
+                    segment_distance(
+                        [0.0_f32, 0.0],
+                        [1.0_f32, 0.0],
+                        [0.0_f32, 1.0],
+                        [1.0_f32, 1.0],
+                    );
+                })
+                .is_err()
+            );
+            assert!(std::panic::catch_unwind(|| ShapeProxy::new([[0.0_f32, 0.0]], 0.0)).is_err());
+            assert!(
+                std::panic::catch_unwind(|| {
+                    collide_circles(circle, circle, Transform::IDENTITY);
+                })
+                .is_err()
+            );
+        }
+
+        assert!(
+            try_shape_distance(
+                DistanceInput::new(proxy, proxy, Transform::IDENTITY),
+                &mut SimplexCache::default(),
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn sweep_transform_validation_precedes_foundation_activity() {
+        let valid_sweep = Sweep::new(
+            [0.0_f32, 0.0],
+            [0.0_f32, 0.0],
+            [1.0_f32, 0.0],
+            Rot::IDENTITY,
+            Rot::IDENTITY,
+        );
+        let invalid_sweep = Sweep::new(
+            [f32::NAN, 0.0],
+            [0.0_f32, 0.0],
+            [1.0_f32, 0.0],
+            Rot::IDENTITY,
+            Rot::IDENTITY,
+        );
+        let _callback_guard = crate::core::callback_state::CallbackGuard::enter();
+
+        assert_eq!(
+            invalid_sweep.try_transform_at(0.5).unwrap_err(),
+            ApiError::InvalidArgument
+        );
+        assert_eq!(
+            valid_sweep.try_transform_at(f32::NAN).unwrap_err(),
+            ApiError::InvalidArgument
+        );
+        assert_eq!(
+            valid_sweep.try_transform_at(0.5).unwrap_err(),
+            ApiError::InCallback
+        );
     }
 }

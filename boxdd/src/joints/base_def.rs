@@ -32,11 +32,8 @@ pub(crate) fn checked_world_axis_to_local_rotation(
     world_axis: Vec2,
 ) -> ApiResult<Rot> {
     let rotation = body_transform.rotation();
-    if !rotation.is_valid()
-        || !world_axis.x.is_finite()
-        || !world_axis.y.is_finite()
-        || (world_axis.x == 0.0 && world_axis.y == 0.0)
-    {
+    super::validation::check_joint_axis(world_axis)?;
+    if !rotation.is_valid() {
         return Err(ApiError::InvalidArgument);
     }
 

@@ -223,11 +223,20 @@ pub fn generate_workspace_probe(
     workspace_root: &Path,
     precision: AbiProbePrecision,
 ) -> Result<GeneratedAbiProbe> {
-    let include_dir = workspace_root.join("boxdd-sys/third-party/box2d/include/box2d");
+    let public_include = workspace_root.join("boxdd-sys/third-party/box2d/include");
+    generate_workspace_probe_from_public_include(workspace_root, &public_include, precision)
+}
+
+/// Generate an ABI probe from a caller-validated effective public-header tree.
+pub fn generate_workspace_probe_from_public_include(
+    workspace_root: &Path,
+    public_include: &Path,
+    precision: AbiProbePrecision,
+) -> Result<GeneratedAbiProbe> {
     let bindings = workspace_root
         .join("boxdd-sys/src")
         .join(precision.bindings_file());
-    generate_probe(&include_dir, &bindings, precision)
+    generate_probe(&public_include.join("box2d"), &bindings, precision)
 }
 
 fn generate_probe(

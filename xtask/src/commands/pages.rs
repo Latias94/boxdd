@@ -11,12 +11,12 @@ use crate::{Error, Result};
 
 use super::{
     provider::{
-        PROVIDER_MODULE, build_box2d_provider, collect_provider_imports, provider_smoke_dir,
-        write_exports_json,
+        ProviderPrecision, build_box2d_provider, collect_provider_imports, provider_smoke_dir,
+        verify_provider_compiler, verify_wasm_bindgen_cli, write_exports_json,
     },
     support::{
-        BuildProfile, WASM_TARGET, add_wasm_app_link_args, copy_file, ensure_file,
-        ensure_runnable_tool, replace_dir_under, run_command, runnable_path, runnable_tool,
+        BuildProfile, WASM_TARGET, add_wasm_app_link_args, cargo_target_dir, copy_file,
+        ensure_file, replace_dir_under, run_command, runnable_path, runnable_tool,
     },
 };
 
@@ -73,11 +73,16 @@ enum ExampleIndexLocation {
 }
 
 pub(crate) fn build_pages_wasm(root: &Path) -> Result<()> {
+    let target_dir = cargo_target_dir(root)?;
+    let precision = ProviderPrecision::from_env()?;
+    validate_pages_precision(precision)?;
+    verify_wasm_bindgen_cli()?;
+    verify_provider_compiler()?;
     generate_pages(root)?;
-    let bevy_artifacts = build_bevy_web_app(root)?;
-    let out_dir = provider_smoke_dir(root);
+    let bevy_artifacts = build_bevy_web_app(root, &target_dir, precision)?;
+    let out_dir = provider_smoke_dir(&target_dir);
     let exports = write_exports_json(&out_dir, &bevy_artifacts.imports)?;
-    let provider = build_box2d_provider(root, &out_dir, &exports)?;
+    let provider = build_box2d_provider(root, &out_dir, &exports, precision)?;
     let provider_wasm = provider.with_extension("wasm");
     ensure_file(&provider, "Box2D provider module")?;
     ensure_file(&provider_wasm, "Box2D provider wasm")?;
@@ -85,8 +90,14 @@ pub(crate) fn build_pages_wasm(root: &Path) -> Result<()> {
 
     let generated = pages_wasm_generated_dir(root);
     replace_dir_under(&generated, &root.join("docs/pages"))?;
-    copy_file(&provider, &generated.join("box2d-sys-v0.js"))?;
-    copy_file(&provider_wasm, &generated.join("box2d-sys-v0.wasm"))?;
+    copy_file(
+        &provider,
+        &generated.join(format!("{}.js", precision.module())),
+    )?;
+    copy_file(
+        &provider_wasm,
+        &generated.join(format!("{}.wasm", precision.module())),
+    )?;
     copy_bevy_web_artifacts(root, &bevy_artifacts)?;
 
     println!(
@@ -96,6 +107,17 @@ pub(crate) fn build_pages_wasm(root: &Path) -> Result<()> {
         bevy_artifacts.imports.len()
     );
     Ok(())
+}
+
+fn validate_pages_precision(precision: ProviderPrecision) -> Result<()> {
+    if precision == ProviderPrecision::Single {
+        Ok(())
+    } else {
+        Err(Error::Message(
+            "GitHub Pages currently qualifies only BOXDD_WASM_PRECISION=single; use provider-smoke to qualify the double-precision runtime"
+                .to_owned(),
+        ))
+    }
 }
 
 fn pages_wasm_generated_dir(root: &Path) -> PathBuf {
@@ -110,15 +132,13 @@ fn pages_bevy_testbed_dir(root: &Path) -> PathBuf {
     root.join("docs").join("pages").join("bevy-testbed")
 }
 
-fn build_bevy_web_app(root: &Path) -> Result<BevyWebArtifacts> {
-    ensure_runnable_tool(
-        "wasm-bindgen",
-        "--version",
-        "wasm-bindgen-cli is required for Bevy Web examples",
-    )?;
-
-    let out_dir = root.join("target").join("boxdd-bevy-testbed-web");
-    replace_dir_under(&out_dir, &root.join("target"))?;
+fn build_bevy_web_app(
+    root: &Path,
+    target_dir: &Path,
+    precision: ProviderPrecision,
+) -> Result<BevyWebArtifacts> {
+    let out_dir = target_dir.join("boxdd-bevy-testbed-web");
+    replace_dir_under(&out_dir, target_dir)?;
 
     let profile = BuildProfile::for_pages()?;
     let mut command = Command::new("cargo");
@@ -131,15 +151,20 @@ fn build_bevy_web_app(root: &Path) -> Result<BevyWebArtifacts> {
         .arg("--target")
         .arg(WASM_TARGET)
         .args(profile.cargo_args())
-        .env("BOXDD_SYS_WASM_MODE", "provider");
+        .current_dir(root)
+        .env("BOXDD_SYS_PROVIDER", "wasm-provider");
+    if let Some(feature) = precision.cargo_feature() {
+        command
+            .arg("--features")
+            .arg(format!("bevy_boxdd/{feature}"));
+    }
     add_wasm_app_link_args(&mut command, &[]);
     run_command(
         &mut command,
         &format!("build Bevy testbed wasm ({})", profile.label()),
     )?;
 
-    let wasm = root
-        .join("target")
+    let wasm = target_dir
         .join(WASM_TARGET)
         .join(profile.target_dir())
         .join("examples")
@@ -157,24 +182,24 @@ fn build_bevy_web_app(root: &Path) -> Result<BevyWebArtifacts> {
         .arg(&wasm);
     run_command(&mut bindgen, "run wasm-bindgen for Bevy testbed")?;
 
-    patch_bevy_bindgen_imports(&out_dir.join(BEVY_WEB_JS))?;
+    patch_bevy_bindgen_imports(&out_dir.join(BEVY_WEB_JS), precision.module())?;
     let bevy_wasm = out_dir.join(BEVY_WEB_WASM);
     optimize_wasm_if_available(&bevy_wasm, "Bevy testbed wasm")?;
-    let imports = collect_provider_imports(&bevy_wasm)?;
+    let imports = collect_provider_imports(&bevy_wasm, precision.module())?;
     write_browser_provider_shim(&out_dir, &imports)?;
 
     Ok(BevyWebArtifacts { out_dir, imports })
 }
 
-fn patch_bevy_bindgen_imports(js: &Path) -> Result<()> {
+fn patch_bevy_bindgen_imports(js: &Path, provider_module: &str) -> Result<()> {
     let source = fs::read_to_string(js).map_err(|source| Error::io(js, source))?;
     let patched_imports = source.replace(
-        &format!("from \"{PROVIDER_MODULE}\""),
+        &format!("from \"{provider_module}\""),
         &format!("from \"./{BEVY_PROVIDER_SHIM}\""),
     );
     if patched_imports == source {
         return Err(Error::Message(format!(
-            "wasm-bindgen output does not import {PROVIDER_MODULE}: {}",
+            "wasm-bindgen output does not import {provider_module}: {}",
             js.display()
         )));
     }
@@ -931,7 +956,7 @@ async function fetchArrayBufferWithProgress(url, label) {
 
 async function main() {
   const providerGenerated = new URL("../wasm/generated/", import.meta.url);
-  const providerWasmUrl = new URL("box2d-sys-v0.wasm", providerGenerated);
+  const providerWasmUrl = new URL("box2d-sys-v1-single.wasm", providerGenerated);
   const bevyWasmUrl = generatedUrl("generated/bevy_boxdd_testbed_bg.wasm");
 
   setStatus("loading", "Loading JavaScript modules", `Preparing the browser runtime for ${sceneName}.`);
@@ -941,7 +966,7 @@ async function main() {
     { setBox2dProvider, setBoxddAppExports },
   ] =
     await Promise.all([
-      import(new URL("box2d-sys-v0.js", providerGenerated).href),
+      import(new URL("box2d-sys-v1-single.js", providerGenerated).href),
       import(generatedUrl("generated/bevy_boxdd_testbed.js").href),
       import(generatedUrl("generated/box2d-provider-shim.js").href),
     ]);
@@ -953,8 +978,8 @@ async function main() {
     wasmMemory: memory,
     wasmBinary: providerWasm,
     locateFile: (path) => new URL(path, providerGenerated).href,
-    print: (text) => console.log(`[box2d-sys-v0] ${text}`),
-    printErr: (text) => console.warn(`[box2d-sys-v0] ${text}`),
+    print: (text) => console.log(`[box2d-sys-v1-single] ${text}`),
+    printErr: (text) => console.warn(`[box2d-sys-v1-single] ${text}`),
   });
 
   if (provider.wasmMemory && provider.wasmMemory !== memory) {
@@ -1162,7 +1187,7 @@ pub(crate) fn validate_pages(root: &Path) -> Result<()> {
 
     let wasm_generated = pages_wasm_generated_dir(root);
     if wasm_generated.exists() {
-        for asset in ["box2d-sys-v0.js", "box2d-sys-v0.wasm"] {
+        for asset in ["box2d-sys-v1-single.js", "box2d-sys-v1-single.wasm"] {
             let path = wasm_generated.join(asset);
             if !path.is_file() {
                 errors.push(format!(
@@ -1251,12 +1276,18 @@ fn should_skip_link(link: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::format_bytes;
+    use super::{ProviderPrecision, format_bytes, validate_pages_precision};
 
     #[test]
     fn format_bytes_uses_binary_units() {
         assert_eq!(format_bytes(31), "31 B");
         assert_eq!(format_bytes(1536), "1.50 KiB");
         assert_eq!(format_bytes(2 * 1024 * 1024), "2.00 MiB");
+    }
+
+    #[test]
+    fn pages_rejects_unimplemented_double_precision_loader() {
+        assert!(validate_pages_precision(ProviderPrecision::Single).is_ok());
+        assert!(validate_pages_precision(ProviderPrecision::Double).is_err());
     }
 }

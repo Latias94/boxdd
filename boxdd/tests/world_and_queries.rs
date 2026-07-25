@@ -14,6 +14,53 @@ fn shape_id_fields(id: ShapeId) -> (i32, u16, u16) {
 }
 
 #[test]
+fn closest_ray_stats_preserve_hit_and_miss_traversal_results() {
+    let mut world = World::new(WorldDef::default()).unwrap();
+    let body = world.create_body_id(BodyBuilder::new().build());
+    let triangle =
+        shapes::polygon_from_points([[0.0_f32, 0.0], [2.0_f32, 0.0], [0.0_f32, 2.0]], 0.0).unwrap();
+    let shape = world.create_polygon_shape_for(body, &ShapeDef::default(), &triangle);
+    let handle = world.handle();
+
+    let hit = world.cast_ray_closest_with_stats(
+        Position::new(-1.0, 0.25),
+        [4.0_f32, 0.0],
+        QueryFilter::default(),
+    );
+    assert_eq!(hit.hit.map(|result| result.shape_id), Some(shape));
+    assert!(hit.node_visits > 0);
+    assert!(hit.leaf_visits > 0);
+
+    let legacy_hit = world.cast_ray_closest(
+        Position::new(-1.0, 0.25),
+        [4.0_f32, 0.0],
+        QueryFilter::default(),
+    );
+    assert_eq!(legacy_hit.map(|result| result.shape_id), Some(shape));
+
+    let miss = handle
+        .try_cast_ray_closest_with_stats(
+            Position::new(1.7, 1.7),
+            [0.2_f32, 0.0],
+            QueryFilter::default(),
+        )
+        .unwrap();
+    assert!(miss.hit.is_none());
+    assert!(miss.node_visits > 0);
+    assert!(miss.leaf_visits > 0);
+    assert!(
+        handle
+            .try_cast_ray_closest(
+                Position::new(1.7, 1.7),
+                [0.2_f32, 0.0],
+                QueryFilter::default(),
+            )
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
 fn world_queries_preserve_local_geometry_around_explicit_origin() {
     #[cfg(feature = "double-precision")]
     let origin = Position::new(1.0e7, -1.0e7);

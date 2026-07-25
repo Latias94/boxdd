@@ -13,7 +13,7 @@ fn main() {
         .run();
 }
 
-fn setup(mut commands: Commands) {
+fn setup(mut commands: Commands, origin: Res<BoxddWorldOrigin>) {
     commands.spawn((
         RigidBody::Static,
         Collider::rectangle(6.0, 0.25),
@@ -26,7 +26,7 @@ fn setup(mut commands: Commands) {
     let right_anchor = spawn_anchor(&mut commands, right_anchor_x);
 
     let mut previous_entity = left_anchor;
-    let mut previous_anchor = Vec2::new(left_anchor_x, BRIDGE_Y);
+    let mut previous_anchor = world_position(&origin, left_anchor_x, BRIDGE_Y);
 
     for index in 0..PLANK_COUNT {
         let x = left_anchor_x + (index as f32 + 1.0) * PLANK_SPACING;
@@ -43,7 +43,7 @@ fn setup(mut commands: Commands) {
             ))
             .id();
 
-        let anchor = Vec2::new(x, BRIDGE_Y);
+        let anchor = world_position(&origin, x, BRIDGE_Y);
         commands.spawn(
             JointDescriptor::distance(previous_entity, plank, previous_anchor, anchor)
                 .with_constraint_tuning(4.0, 0.7),
@@ -58,7 +58,7 @@ fn setup(mut commands: Commands) {
             previous_entity,
             right_anchor,
             previous_anchor,
-            Vec2::new(right_anchor_x, BRIDGE_Y),
+            world_position(&origin, right_anchor_x, BRIDGE_Y),
         )
         .with_constraint_tuning(4.0, 0.7),
     );
@@ -77,8 +77,14 @@ fn setup(mut commands: Commands) {
     commands.spawn(JointDescriptor::revolute(
         hinge,
         pendulum,
-        Vec2::new(0.0, 1.35),
+        world_position(&origin, 0.0, 1.35),
     ));
+}
+
+fn world_position(origin: &BoxddWorldOrigin, x: f32, y: f32) -> boxdd::Position {
+    origin
+        .checked_local_to_absolute(Vec2::new(x, y))
+        .expect("joint anchor must be representable")
 }
 
 fn spawn_anchor(commands: &mut Commands, x: f32) -> Entity {

@@ -1,4 +1,8 @@
-use crate::types::Vec2;
+use crate::{
+    core::foundation::{assert_transient_native_lease, transient_native_lease},
+    error::{ApiError, ApiResult},
+    types::Vec2,
+};
 use boxdd_sys::ffi;
 
 /// Box2D runtime version.
@@ -33,6 +37,7 @@ impl Version {
 /// Get the linked Box2D version.
 #[inline]
 pub fn version() -> Version {
+    let _lease = assert_transient_native_lease();
     Version::from_raw(unsafe { ffi::b2GetVersion() })
 }
 
@@ -42,37 +47,47 @@ pub const HASH_INIT: u32 = ffi::B2_HASH_INIT;
 /// Check whether a scalar is valid for Box2D APIs.
 #[inline]
 pub fn is_valid_float(value: f32) -> bool {
-    unsafe { ffi::b2IsValidFloat(value) }
+    value.is_finite()
 }
 
 /// Get the total number of bytes currently allocated by Box2D.
+///
+/// The return type is fixed-width to match upstream `int64_t`, independent of
+/// the host pointer width. Box2D reports a non-negative allocation count.
 #[inline]
-pub fn allocated_byte_count() -> usize {
-    usize::try_from(unsafe { ffi::b2GetByteCount() })
+pub fn allocated_byte_count() -> i64 {
+    let _lease = assert_transient_native_lease();
+    let count = unsafe { ffi::b2GetByteCount() };
+    (count >= 0)
+        .then_some(count)
         .expect("Box2D reported a negative allocated byte count")
 }
 
 /// Get the absolute number of platform-specific system ticks.
 #[inline]
 pub fn ticks() -> u64 {
+    let _lease = assert_transient_native_lease();
     unsafe { ffi::b2GetTicks() }
 }
 
 /// Get the elapsed milliseconds since `start_ticks`.
 #[inline]
 pub fn milliseconds_since(start_ticks: u64) -> f32 {
+    let _lease = assert_transient_native_lease();
     unsafe { ffi::b2GetMilliseconds(start_ticks) }
 }
 
 /// Get the elapsed milliseconds since `start_ticks` and reset it to the current tick value.
 #[inline]
 pub fn milliseconds_and_reset(start_ticks: &mut u64) -> f32 {
+    let _lease = assert_transient_native_lease();
     unsafe { ffi::b2GetMillisecondsAndReset(start_ticks) }
 }
 
 /// Yield the current thread, matching Box2D's busy-loop helper.
 #[inline]
 pub fn yield_now() {
+    let _lease = assert_transient_native_lease();
     unsafe { ffi::b2Yield() }
 }
 
@@ -80,37 +95,79 @@ pub fn yield_now() {
 #[inline]
 pub fn hash_bytes(hash: u32, data: &[u8]) -> u32 {
     let count = i32::try_from(data.len()).expect("hash input length exceeds Box2D limits");
+    let _lease = assert_transient_native_lease();
     unsafe { ffi::b2Hash(hash, data.as_ptr(), count) }
 }
 
 /// Cross-platform deterministic `atan2` in the range `[-pi, pi]`.
 #[inline]
 pub fn atan2(y: f32, x: f32) -> f32 {
+    let _lease = assert_transient_native_lease();
     unsafe { ffi::b2Atan2(y, x) }
 }
 
 /// Cross-platform deterministic cosine/sine pair as a rotation value.
 #[inline]
 pub fn compute_cos_sin(radians: f32) -> Rot {
-    let raw = unsafe { ffi::b2ComputeCosSin(radians) };
+    let _lease = assert_transient_native_lease();
+    let raw: ffi::b2CosSin = unsafe { ffi::b2ComputeCosSin(radians) };
     Rot {
         c: raw.cosine,
         s: raw.sine,
     }
 }
 
+const UNIT_VECTOR_LENGTH_TOLERANCE: f32 = 100.0 * f32::EPSILON;
+
+#[inline]
+fn check_unit_vector(vector: Vec2) -> ApiResult<()> {
+    let length = (vector.x * vector.x + vector.y * vector.y).sqrt();
+    if vector.is_valid()
+        && length.is_finite()
+        && (1.0 - length).abs() < UNIT_VECTOR_LENGTH_TOLERANCE
+    {
+        Ok(())
+    } else {
+        Err(ApiError::InvalidArgument)
+    }
+}
+
 /// Compute the rotation between two unit vectors.
+///
+/// # Panics
+///
+/// Panics before entering Box2D when either vector is non-finite or is not unit length. Use
+/// [`try_rotation_between_unit_vectors`] to handle invalid input without panicking.
 #[inline]
 pub fn rotation_between_unit_vectors<V1: Into<Vec2>, V2: Into<Vec2>>(v1: V1, v2: V2) -> Rot {
-    Rot::from_raw(unsafe {
-        ffi::b2ComputeRotationBetweenUnitVectors(v1.into().into_raw(), v2.into().into_raw())
-    })
+    try_rotation_between_unit_vectors(v1, v2).expect("rotation inputs must be finite unit vectors")
+}
+
+/// Try to compute the rotation between two finite unit vectors.
+///
+/// The unit-length tolerance exactly matches the pinned Box2D precondition, so invalid input is
+/// rejected in Rust instead of reaching a native assertion.
+#[inline]
+pub fn try_rotation_between_unit_vectors<V1: Into<Vec2>, V2: Into<Vec2>>(
+    v1: V1,
+    v2: V2,
+) -> ApiResult<Rot> {
+    let v1 = v1.into();
+    let v2 = v2.into();
+    check_unit_vector(v1)?;
+    check_unit_vector(v2)?;
+    let _lease = transient_native_lease()?;
+    Ok(Rot::from_raw(unsafe {
+        ffi::b2ComputeRotationBetweenUnitVectors(v1.into_raw(), v2.into_raw())
+    }))
 }
 
 /// Get the current global Box2D length-units scale.
 #[inline]
 pub fn length_units_per_meter() -> f32 {
-    unsafe { ffi::b2GetLengthUnitsPerMeter() }
+    crate::core::foundation::foundation()
+        .config()
+        .length_units_per_meter()
 }
 
 #[repr(C)]
@@ -159,11 +216,24 @@ impl Rot {
     }
     #[inline]
     pub fn is_valid(self) -> bool {
-        unsafe { ffi::b2IsValidRotation(self.into_raw()) }
+        if !self.c.is_finite() || !self.s.is_finite() {
+            return false;
+        }
+
+        let magnitude_squared = self.s * self.s + self.c * self.c;
+        1.0 - 0.0006 < magnitude_squared && magnitude_squared < 1.0 + 0.0006
     }
     #[inline]
     pub fn from_unit_vectors<V1: Into<Vec2>, V2: Into<Vec2>>(v1: V1, v2: V2) -> Self {
         rotation_between_unit_vectors(v1, v2)
+    }
+    /// Try to construct a rotation between two finite unit vectors.
+    #[inline]
+    pub fn try_from_unit_vectors<V1: Into<Vec2>, V2: Into<Vec2>>(
+        v1: V1,
+        v2: V2,
+    ) -> ApiResult<Self> {
+        try_rotation_between_unit_vectors(v1, v2)
     }
     #[inline]
     pub fn rotate_vec(self, v: Vec2) -> Vec2 {
@@ -303,133 +373,6 @@ impl TryFrom<&mint::ColumnMatrix2<f32>> for Rot {
     }
 }
 
-// Interop with common math libraries for rotations
-#[cfg(feature = "cgmath")]
-impl From<Rot> for cgmath::Basis2<f32> {
-    #[inline]
-    fn from(r: Rot) -> Self {
-        use cgmath::Rotation2;
-        cgmath::Basis2::from_angle(cgmath::Rad(r.angle()))
-    }
-}
-
-#[cfg(feature = "cgmath")]
-impl<'a> From<&'a cgmath::Basis2<f32>> for Rot {
-    #[inline]
-    fn from(b: &'a cgmath::Basis2<f32>) -> Self {
-        let col_x = b.as_ref().x; // rotation's X axis
-        Rot {
-            c: col_x.x,
-            s: col_x.y,
-        }
-    }
-}
-
-#[cfg(feature = "cgmath")]
-impl From<Transform> for cgmath::Matrix3<f32> {
-    #[inline]
-    fn from(t: Transform) -> Self {
-        use cgmath::Vector3;
-        let c = t.q.c;
-        let s = t.q.s;
-        cgmath::Matrix3 {
-            // Column-major affine 2D transform:
-            // [ c -s tx ]
-            // [ s  c ty ]
-            // [ 0  0  1 ]
-            x: Vector3::new(c, s, 0.0),
-            y: Vector3::new(-s, c, 0.0),
-            z: Vector3::new(t.p.x, t.p.y, 1.0),
-        }
-    }
-}
-
-#[cfg(feature = "cgmath")]
-impl From<&Transform> for cgmath::Matrix3<f32> {
-    #[inline]
-    fn from(t: &Transform) -> Self {
-        (*t).into()
-    }
-}
-
-#[cfg(feature = "cgmath")]
-#[derive(Debug, Copy, Clone, Eq, PartialEq, thiserror::Error)]
-pub enum TransformFromCgmathError {
-    #[error("non-finite value in cgmath::Matrix3")]
-    NonFinite,
-    #[error("cgmath::Matrix3 is not a pure rotation + translation")]
-    NotPureRotation,
-}
-
-#[cfg(feature = "cgmath")]
-impl TryFrom<cgmath::Matrix3<f32>> for Transform {
-    type Error = TransformFromCgmathError;
-
-    #[inline]
-    fn try_from(m: cgmath::Matrix3<f32>) -> Result<Self, Self::Error> {
-        let x = m.x;
-        let y = m.y;
-        let z = m.z;
-
-        if !(x.x.is_finite()
-            && x.y.is_finite()
-            && x.z.is_finite()
-            && y.x.is_finite()
-            && y.y.is_finite()
-            && y.z.is_finite()
-            && z.x.is_finite()
-            && z.y.is_finite()
-            && z.z.is_finite())
-        {
-            return Err(TransformFromCgmathError::NonFinite);
-        }
-
-        // Reject non-affine 2D transforms.
-        let eps = 1.0e-4;
-        if x.z.abs() > eps || y.z.abs() > eps || (z.z - 1.0).abs() > eps {
-            return Err(TransformFromCgmathError::NotPureRotation);
-        }
-
-        // We only accept pure rotations (orthonormal basis with determinant +1).
-        let x_len2 = x.x * x.x + x.y * x.y;
-        let y_len2 = y.x * y.x + y.y * y.y;
-        if (x_len2 - 1.0).abs() > eps || (y_len2 - 1.0).abs() > eps {
-            return Err(TransformFromCgmathError::NotPureRotation);
-        }
-        if (x.x * y.x + x.y * y.y).abs() > eps {
-            return Err(TransformFromCgmathError::NotPureRotation);
-        }
-        let det = x.x * y.y - x.y * y.x;
-        if (det - 1.0).abs() > 5.0e-4 {
-            return Err(TransformFromCgmathError::NotPureRotation);
-        }
-
-        // Our convention: columns are [c, s] and [-s, c]
-        let expected_y_x = -x.y;
-        let expected_y_y = x.x;
-        let dy_x = y.x - expected_y_x;
-        let dy_y = y.y - expected_y_y;
-        if dy_x * dy_x + dy_y * dy_y > 1.0e-6 {
-            return Err(TransformFromCgmathError::NotPureRotation);
-        }
-
-        Ok(Transform {
-            p: Vec2 { x: z.x, y: z.y },
-            q: Rot { c: x.x, s: x.y },
-        })
-    }
-}
-
-#[cfg(feature = "cgmath")]
-impl TryFrom<&cgmath::Matrix3<f32>> for Transform {
-    type Error = TransformFromCgmathError;
-
-    #[inline]
-    fn try_from(m: &cgmath::Matrix3<f32>) -> Result<Self, Self::Error> {
-        Self::try_from(*m)
-    }
-}
-
 #[cfg(feature = "nalgebra")]
 impl From<Rot> for nalgebra::UnitComplex<f32> {
     #[inline]
@@ -492,7 +435,7 @@ impl Transform {
     }
     #[inline]
     pub fn is_valid(self) -> bool {
-        unsafe { ffi::b2IsValidTransform(self.into_raw()) }
+        self.p.is_valid() && self.q.is_valid()
     }
     #[inline]
     pub fn transform_point(self, v: Vec2) -> Vec2 {
@@ -933,5 +876,48 @@ impl<'a> From<&'a nalgebra::Isometry2<f32>> for Transform {
         let v = i.translation.vector;
         let angle = i.rotation.angle();
         Transform::from_pos_angle(Vec2 { x: v.x, y: v.y }, angle)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scalar_rotation_and_transform_validation_are_pure_rust() {
+        let _callback_guard = crate::core::callback_state::CallbackGuard::enter();
+
+        assert!(is_valid_float(0.0));
+        assert!(!is_valid_float(f32::INFINITY));
+        assert!(Rot::IDENTITY.is_valid());
+        assert!(!Rot { c: 2.0, s: 0.0 }.is_valid());
+        assert!(
+            !Rot {
+                c: f32::NAN,
+                s: 0.0
+            }
+            .is_valid()
+        );
+        assert!(Transform::IDENTITY.is_valid());
+        assert!(
+            !Transform {
+                p: Vec2::new(f32::NAN, 0.0),
+                q: Rot::IDENTITY,
+            }
+            .is_valid()
+        );
+    }
+
+    #[test]
+    fn native_math_helpers_reject_callback_reentry() {
+        let _callback_guard = crate::core::callback_state::CallbackGuard::enter();
+
+        assert!(std::panic::catch_unwind(version).is_err());
+        assert!(std::panic::catch_unwind(|| atan2(1.0, 1.0)).is_err());
+        assert!(std::panic::catch_unwind(|| hash_bytes(HASH_INIT, b"boxdd")).is_err());
+        assert!(matches!(
+            try_rotation_between_unit_vectors(Vec2::new(1.0, 0.0), Vec2::new(0.0, 1.0)),
+            Err(ApiError::InCallback)
+        ));
     }
 }

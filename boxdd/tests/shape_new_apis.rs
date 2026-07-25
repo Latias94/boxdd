@@ -264,7 +264,8 @@ fn geometry_value_types_round_trip_through_explicit_raw_conversions() {
     assert_eq!(Capsule::from_raw(capsule.into_raw()), capsule);
 
     let polygon = shapes::box_polygon(1.5, 0.75);
-    let polygon_roundtrip = Polygon::from_raw(polygon.into_raw());
+    // SAFETY: the raw value came directly from a valid Polygon without modification.
+    let polygon_roundtrip = unsafe { Polygon::from_raw(polygon.into_raw()) };
     assert_eq!(polygon_roundtrip.count(), polygon.count());
     assert!(approx_eq(
         polygon_roundtrip.radius(),
@@ -287,7 +288,8 @@ fn geometry_value_types_round_trip_through_explicit_raw_conversions() {
     }
 
     let rounded = shapes::rounded_box_polygon(1.5, 0.75, 0.2);
-    let rounded_roundtrip = Polygon::from_raw(rounded.into_raw());
+    // SAFETY: the raw value came directly from a valid Polygon without modification.
+    let rounded_roundtrip = unsafe { Polygon::from_raw(rounded.into_raw()) };
     assert_eq!(rounded_roundtrip.count(), 4);
     assert!(approx_eq(rounded_roundtrip.radius(), 0.2, f32::EPSILON));
     for (lhs, rhs) in rounded_roundtrip.vertices().iter().zip(rounded.vertices()) {
@@ -655,7 +657,8 @@ fn shape_def_is_a_readable_value_type_and_can_seed_a_builder() {
     assert!(!rebuilt.is_sensor());
     assert_eq!(rebuilt.filter(), filter);
 
-    let roundtrip = ShapeDef::from_raw(sdef.into_raw());
+    // SAFETY: the raw value came directly from a valid ShapeDef without modification.
+    let roundtrip = unsafe { ShapeDef::from_raw(sdef.into_raw()) };
     assert_eq!(roundtrip.material(), material);
     assert!(approx_eq(roundtrip.density(), 2.5, f32::EPSILON));
     assert_eq!(roundtrip.filter(), filter);

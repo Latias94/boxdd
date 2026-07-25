@@ -1,5 +1,7 @@
 use crate::body::{Body, BodyDef, BodyType};
-use crate::core::world_core::{CustomFilterCtx, MaterialMixCtx, PreSolveCtx, WorldCore};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::core::callback_state::{CustomFilterCtx, MaterialMixCtx, PreSolveCtx};
+use crate::core::world_core::WorldCore;
 use crate::id::{IdBrand, RawBodyId, RawChainId, RawContactId, RawJointId, RawShapeId, WorldToken};
 use crate::query::Aabb;
 use crate::shapes::{ShapeDef, SurfaceMaterial};
@@ -19,6 +21,30 @@ mod metrics;
 mod runtime;
 mod shape_api;
 
+pub(crate) use body_api::{
+    try_body_apply_angular_impulse_with_access, try_body_apply_force_to_center_with_access,
+    try_body_apply_force_with_access, try_body_apply_linear_impulse_to_center_with_access,
+    try_body_apply_linear_impulse_with_access, try_body_apply_mass_from_shapes_with_access,
+    try_body_apply_torque_with_access, try_body_clear_forces_with_access,
+    try_body_disable_with_access, try_body_enable_contact_events_with_access,
+    try_body_enable_contact_recycling_with_access, try_body_enable_hit_events_with_access,
+    try_body_enable_sleep_with_access, try_body_enable_with_access,
+    try_body_set_angular_damping_with_access, try_body_set_awake_with_access,
+    try_body_set_bullet_with_access, try_body_set_gravity_scale_with_access,
+    try_body_set_linear_damping_with_access, try_body_set_mass_data_with_access,
+    try_body_set_motion_locks_with_access, try_body_set_name_with_access,
+    try_body_set_sleep_threshold_with_access, try_body_wake_touching_with_access,
+    try_set_body_angular_velocity_with_access, try_set_body_linear_velocity_with_access,
+    try_set_body_position_and_rotation_with_access, try_set_body_target_transform_with_access,
+    try_set_body_type_with_access,
+};
+pub(crate) use creation::try_create_body_id_with_access;
+pub(crate) use shape_api::{
+    try_world_shape_set_capsule_with_access, try_world_shape_set_circle_with_access,
+    try_world_shape_set_polygon_with_access, try_world_shape_set_segment_with_access,
+    try_world_shape_set_surface_material_with_access,
+};
+
 pub use definition::{Error, WorldBuilder, WorldDef};
 pub(crate) use definition::{
     assert_non_negative_finite_world_scalar, assert_positive_finite_world_scalar,
@@ -26,14 +52,21 @@ pub(crate) use definition::{
     check_positive_finite_world_scalar, check_world_gravity_valid,
 };
 pub use handle::WorldHandle;
-pub use metrics::{Counters, OwnedHandleCounts, Profile};
+pub use metrics::{
+    B2_MAX_WORKERS, Counters, OwnedHandleCounts, Profile, WorkerCount, WorldCapacity,
+};
 pub use runtime::MaterialMixInput;
 pub(crate) use runtime::{
-    try_world_awake_body_count_impl, try_world_counters_impl, try_world_gravity_impl,
+    try_world_awake_body_count_impl, try_world_counters_impl,
+    try_world_enable_continuous_with_access, try_world_enable_sleeping_with_access,
+    try_world_enable_warm_starting_with_access, try_world_gravity_impl,
     try_world_hit_event_threshold_impl, try_world_is_continuous_enabled_impl,
     try_world_is_sleeping_enabled_impl, try_world_is_warm_starting_enabled_impl,
     try_world_maximum_linear_speed_impl, try_world_profile_impl,
-    try_world_restitution_threshold_impl, world_awake_body_count_checked_impl,
+    try_world_restitution_threshold_impl, try_world_set_contact_recycle_distance_with_access,
+    try_world_set_contact_tuning_with_access, try_world_set_gravity_with_access,
+    try_world_set_hit_event_threshold_with_access, try_world_set_maximum_linear_speed_with_access,
+    try_world_set_restitution_threshold_with_access, world_awake_body_count_checked_impl,
     world_counters_checked_impl, world_gravity_checked_impl,
     world_hit_event_threshold_checked_impl, world_is_continuous_enabled_checked_impl,
     world_is_sleeping_enabled_checked_impl, world_is_warm_starting_enabled_checked_impl,
@@ -65,6 +98,12 @@ pub(crate) fn check_world_available(core: &WorldCore) -> crate::error::ApiResult
     core.check_available()
 }
 
+#[inline]
+pub(crate) fn check_recording_world_available(core: &WorldCore) -> crate::error::ApiResult<()> {
+    crate::core::callback_state::check_not_in_callback()?;
+    core.check_recording_available()
+}
+
 /// A simulation world.
 ///
 /// Dropping `World` ends the underlying Box2D world's lifetime. Handles may retain an inert Rust
@@ -72,19 +111,19 @@ pub(crate) fn check_world_available(core: &WorldCore) -> crate::error::ApiResult
 pub struct World {
     core: Rc<WorldCore>,
     events: Rc<crate::events::EventCache>,
+    uses_raw_task_system: bool,
 }
-#[cfg(feature = "serialize")]
-pub use crate::core::serialize_registry::{
-    ChainCreateRecord, ChainMaterialsRecord, ShapeFlagsRecord,
-};
-
 impl World {
     /// Create a world from a definition.
     pub fn new(def: WorldDef) -> Result<Self, Error> {
         crate::core::callback_state::assert_not_in_callback();
         def.validate()?;
+        let uses_raw_task_system = def.has_task_system_raw();
+        let friction_mixer_present = def.0.frictionCallback.is_some();
+        let restitution_mixer_present = def.0.restitutionCallback.is_some();
         let token = WorldToken::allocate().map_err(|_| Error::IdentityExhausted)?;
-        let _guard = crate::core::box2d_lock::lock();
+        let foundation_lease = crate::core::foundation::acquire_ordinary_world_lease()?;
+        let world_slot_guard = crate::core::foundation::lock_world_slot_mutation();
         let raw = def.into_raw();
         // SAFETY: FFI call to create a world; returns an id handle
         let world_id = unsafe { ffi::b2CreateWorld(&raw) };
@@ -94,11 +133,20 @@ impl World {
                 unsafe { ffi::b2DestroyWorld(world_id) };
                 Error::CreateFailed
             })?;
+            drop(world_slot_guard);
             Ok(Self {
-                core: WorldCore::new(world_id, brand),
+                core: WorldCore::new(
+                    world_id,
+                    brand,
+                    foundation_lease,
+                    friction_mixer_present,
+                    restitution_mixer_present,
+                ),
                 events: Rc::new(crate::events::EventCache::default()),
+                uses_raw_task_system,
             })
         } else {
+            drop(world_slot_guard);
             Err(Error::CreateFailed)
         }
     }
@@ -114,7 +162,7 @@ impl World {
     }
 
     pub(crate) fn brand(&self) -> IdBrand {
-        self.core.brand()
+        WorldCore::brand(&self.core)
     }
 
     pub(crate) fn core(&self) -> &WorldCore {
@@ -123,6 +171,10 @@ impl World {
 
     pub(crate) fn event_cache(&self) -> &crate::events::EventCache {
         &self.events
+    }
+
+    pub(crate) const fn uses_raw_task_system(&self) -> bool {
+        self.uses_raw_task_system
     }
 
     pub(crate) fn query_target(&self) -> crate::query::QueryTarget {
@@ -175,20 +227,28 @@ impl World {
         Rc::clone(&self.core)
     }
 
+    pub(crate) fn from_restored_core(core: Rc<WorldCore>) -> Self {
+        Self {
+            core,
+            events: Rc::new(crate::events::EventCache::default()),
+            uses_raw_task_system: false,
+        }
+    }
+
     pub(crate) fn with_borrowed_event_buffers<T>(&self, f: impl FnOnce() -> T) -> T {
         crate::core::callback_state::assert_not_in_callback();
         self.core
             .check_available()
             .expect("world is not available for event access");
         let core = self.core_rc();
-        let out = {
+        let owner_scope = crate::core::callback_state::OwnerCallScope::enter();
+        let result = {
             let _borrow = core.borrow_event_buffers();
-            f()
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(f))
         };
         // Nested raw/view event borrows are allowed. Deferred destroys must wait until the
         // outermost borrow ends so previously returned event slices cannot be invalidated early.
-        core.process_deferred_destroys();
-        out
+        owner_scope.finish(result, [core])
     }
 
     pub(crate) fn try_with_borrowed_event_buffers<T>(
@@ -312,103 +372,6 @@ impl World {
             joints,
             chains,
         }
-    }
-
-    /// Enumerate known body ids created via this wrapper. Invalid/destroyed ids are filtered out.
-    #[cfg(feature = "serialize")]
-    pub fn body_ids(&self) -> Vec<BodyId> {
-        assert_world_available(&self.core);
-        self.core
-            .registries
-            .lock()
-            .expect("registries mutex poisoned")
-            .body_ids()
-    }
-
-    /// Enumerate known body ids created via this wrapper into a caller-owned buffer.
-    #[cfg(feature = "serialize")]
-    pub fn body_ids_into(&self, out: &mut Vec<BodyId>) {
-        assert_world_available(&self.core);
-        self.core
-            .registries
-            .lock()
-            .expect("registries mutex poisoned")
-            .body_ids_into(out);
-    }
-
-    /// Enumerate known body ids created via this wrapper. Invalid/destroyed ids are filtered out.
-    #[cfg(feature = "serialize")]
-    pub fn try_body_ids(&self) -> crate::error::ApiResult<Vec<BodyId>> {
-        check_world_available(&self.core)?;
-        let mut out = Vec::new();
-        self.core
-            .registries
-            .lock()
-            .expect("registries mutex poisoned")
-            .body_ids_into(&mut out);
-        Ok(out)
-    }
-
-    /// Enumerate known body ids created via this wrapper into a caller-owned buffer.
-    #[cfg(feature = "serialize")]
-    pub fn try_body_ids_into(&self, out: &mut Vec<BodyId>) -> crate::error::ApiResult<()> {
-        check_world_available(&self.core)?;
-        self.core
-            .registries
-            .lock()
-            .expect("registries mutex poisoned")
-            .body_ids_into(out);
-        Ok(())
-    }
-
-    /// Return chain creation records captured at creation time using crate-owned value types.
-    #[cfg(feature = "serialize")]
-    pub fn chain_records(&self) -> Vec<ChainCreateRecord> {
-        assert_world_available(&self.core);
-        self.core
-            .registries
-            .lock()
-            .expect("registries mutex poisoned")
-            .chain_records()
-    }
-
-    /// Return chain creation records captured at creation time into a caller-owned buffer.
-    #[cfg(feature = "serialize")]
-    pub fn chain_records_into(&self, out: &mut Vec<ChainCreateRecord>) {
-        assert_world_available(&self.core);
-        self.core
-            .registries
-            .lock()
-            .expect("registries mutex poisoned")
-            .chain_records_into(out);
-    }
-
-    /// Return chain creation records captured at creation time using crate-owned value types.
-    #[cfg(feature = "serialize")]
-    pub fn try_chain_records(&self) -> crate::error::ApiResult<Vec<ChainCreateRecord>> {
-        check_world_available(&self.core)?;
-        let mut out = Vec::new();
-        self.core
-            .registries
-            .lock()
-            .expect("registries mutex poisoned")
-            .chain_records_into(&mut out);
-        Ok(out)
-    }
-
-    /// Return chain creation records captured at creation time into a caller-owned buffer.
-    #[cfg(feature = "serialize")]
-    pub fn try_chain_records_into(
-        &self,
-        out: &mut Vec<ChainCreateRecord>,
-    ) -> crate::error::ApiResult<()> {
-        check_world_available(&self.core)?;
-        self.core
-            .registries
-            .lock()
-            .expect("registries mutex poisoned")
-            .chain_records_into(out);
-        Ok(())
     }
 }
 

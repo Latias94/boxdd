@@ -30,15 +30,13 @@ impl Segment {
     #[inline]
     /// Validate this segment for safe Box2D shape and standalone collision use.
     pub fn is_valid(self) -> bool {
-        self.point1.is_valid()
-            && self.point2.is_valid()
-            && point_pair_has_minimum_separation(self.point1, self.point2)
+        segment_geometry_is_valid(self)
     }
 
     #[inline]
     /// Validate this segment for safe Box2D shape and standalone collision use.
     pub fn validate(self) -> ApiResult<()> {
-        geometry_is_valid_or_err(self.is_valid())
+        geometry_is_valid_or_err(segment_geometry_is_valid(self))
     }
 
     /// Compute an absolute world-space AABB using `transform` as the segment's
@@ -51,6 +49,7 @@ impl Segment {
         assert_segment_helper_geometry_valid(self);
         assert_world_transform_valid(transform);
         let raw = self.into_raw();
+        let _lease = assert_transient_native_lease();
         Aabb::from_raw(unsafe { ffi::b2ComputeSegmentAABB(&raw, transform.into_raw()) })
     }
 
@@ -59,6 +58,7 @@ impl Segment {
         check_segment_helper_geometry_valid(self)?;
         check_world_transform_valid(transform)?;
         let raw = self.into_raw();
+        let _lease = transient_native_lease()?;
         Ok(Aabb::from_raw(unsafe {
             ffi::b2ComputeSegmentAABB(&raw, transform.into_raw())
         }))
@@ -71,9 +71,11 @@ impl Segment {
         translation: VT,
         one_sided: bool,
     ) -> CastOutput {
+        let input = materialize_ray_input(origin, translation);
         assert_segment_helper_geometry_valid(self);
+        assert_ray_input_valid(&input);
         let raw = self.into_raw();
-        let input = make_ray_input(origin, translation);
+        let _lease = assert_transient_native_lease();
         CastOutput::from_raw(unsafe { ffi::b2RayCastSegment(&raw, &input, one_sided) })
     }
 
@@ -84,9 +86,11 @@ impl Segment {
         translation: VT,
         one_sided: bool,
     ) -> ApiResult<CastOutput> {
+        let input = materialize_ray_input(origin, translation);
         check_segment_helper_geometry_valid(self)?;
+        check_ray_input_valid(&input)?;
         let raw = self.into_raw();
-        let input = try_make_ray_input(origin, translation)?;
+        let _lease = transient_native_lease()?;
         Ok(CastOutput::from_raw(unsafe {
             ffi::b2RayCastSegment(&raw, &input, one_sided)
         }))
@@ -101,6 +105,7 @@ impl Segment {
         );
         let raw = self.into_raw();
         let input = input.into_raw();
+        let _lease = assert_transient_native_lease();
         CastOutput::from_raw(unsafe { ffi::b2ShapeCastSegment(&raw, &input) })
     }
 
@@ -110,6 +115,7 @@ impl Segment {
         input.validate()?;
         let raw = self.into_raw();
         let input = input.into_raw();
+        let _lease = transient_native_lease()?;
         Ok(CastOutput::from_raw(unsafe {
             ffi::b2ShapeCastSegment(&raw, &input)
         }))

@@ -1,5 +1,7 @@
 use crate::error::ApiResult;
-use crate::types::{Position, ShapeId, Vec2};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::types::ShapeId;
+use crate::types::{Position, Vec2};
 use crate::world::{World, WorldHandle};
 
 use super::checked::*;

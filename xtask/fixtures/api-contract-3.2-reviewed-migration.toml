@@ -1,0 +1,1537 @@
+schema_version = 1
+reviewed_revision = "dec377018a0af9bd295b32a70ed0afc6fdfb06b3"
+active_revision = "56edae79f2949d86142b03450d5d60f63bcf5a6f"
+
+[expected_counts]
+total = 478
+safe = 453
+raw = 23
+omitted = 2
+deferred = 0
+
+[[functions]]
+logical_name = "b2Body_IsValid"
+classification = "safe"
+area = "Body identity validation"
+rust_paths = ["boxdd::World::try_body"]
+rationale = "World::try_body validates branded body identity before returning a scoped Safe Rust handle."
+
+[[functions]]
+logical_name = "b2Chain_IsValid"
+classification = "safe"
+area = "Chain identity validation"
+rust_paths = ["boxdd::World::try_chain"]
+rationale = "World::try_chain validates branded chain identity before returning a scoped Safe Rust handle."
+
+[[functions]]
+logical_name = "b2Contact_GetData"
+classification = "safe"
+area = "Contact snapshots"
+rust_paths = ["boxdd::World::try_contact_data"]
+rationale = "World::try_contact_data checks world ownership, completed-step epoch, and native liveness before copying contact data."
+previous_classification = "safe"
+revalidated = true
+
+[[canonical_refreshes]]
+logical_name = "b2Body_ApplyAngularImpulse"
+rust_paths = ["boxdd::RecordingSession::body_apply_angular_impulse"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Body_ApplyForceToCenter"
+rust_paths = ["boxdd::RecordingSession::body_apply_force_to_center"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Body_ApplyLinearImpulseToCenter"
+rust_paths = ["boxdd::RecordingSession::body_apply_linear_impulse_to_center"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Body_ApplyMassFromShapes"
+rust_paths = ["boxdd::RecordingSession::body_apply_mass_from_shapes"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Body_ApplyTorque"
+rust_paths = ["boxdd::RecordingSession::body_apply_torque"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Body_ClearForces"
+rust_paths = ["boxdd::RecordingSession::body_clear_forces"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Body_Disable"
+rust_paths = ["boxdd::RecordingSession::disable_body"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Body_Enable"
+rust_paths = ["boxdd::RecordingSession::enable_body"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Body_EnableContactEvents"
+rust_paths = ["boxdd::RecordingSession::body_enable_contact_events"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Body_EnableHitEvents"
+rust_paths = ["boxdd::RecordingSession::body_enable_hit_events"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Body_EnableSleep"
+rust_paths = ["boxdd::RecordingSession::body_enable_sleep"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Body_SetAngularDamping"
+rust_paths = ["boxdd::RecordingSession::set_body_angular_damping"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Body_SetAngularVelocity"
+rust_paths = ["boxdd::RecordingSession::set_body_angular_velocity"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Body_SetAwake"
+rust_paths = ["boxdd::RecordingSession::set_body_awake"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Body_SetBullet"
+rust_paths = ["boxdd::RecordingSession::set_body_bullet"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Body_SetGravityScale"
+rust_paths = ["boxdd::RecordingSession::set_body_gravity_scale"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Body_SetLinearDamping"
+rust_paths = ["boxdd::RecordingSession::set_body_linear_damping"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Body_SetLinearVelocity"
+rust_paths = ["boxdd::RecordingSession::set_body_linear_velocity"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Body_SetMassData"
+rust_paths = ["boxdd::RecordingSession::set_body_mass_data"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Body_SetMotionLocks"
+rust_paths = ["boxdd::RecordingSession::set_body_motion_locks"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Body_SetName"
+rust_paths = ["boxdd::RecordingSession::set_body_name"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Body_SetSleepThreshold"
+rust_paths = ["boxdd::RecordingSession::set_body_sleep_threshold"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Body_SetType"
+rust_paths = ["boxdd::RecordingSession::set_body_type"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Body_WakeTouching"
+rust_paths = ["boxdd::RecordingSession::body_wake_touching"]
+rationale = "Canonicalized the previously reviewed Safe mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2Chain_SetSurfaceMaterial"
+rust_paths = ["boxdd::RecordingSession::chain_set_surface_material"]
+rationale = "Canonicalized the previously reviewed Safe chain mutation through RecordingSession so the operation is validated and recorded."
+
+[[canonical_refreshes]]
+logical_name = "b2CreateBody"
+rust_paths = ["boxdd::RecordingSession::create_body"]
+rationale = "Canonicalized the previously reviewed Safe creation through RecordingSession so identity registration and recording remain coupled."
+
+[[canonical_refreshes]]
+logical_name = "b2CreateCapsuleShape"
+rust_paths = ["boxdd::RecordingSession::create_capsule_shape"]
+rationale = "Canonicalized the previously reviewed Safe creation through RecordingSession so identity registration and recording remain coupled."
+
+[[canonical_refreshes]]
+logical_name = "b2CreateChain"
+rust_paths = ["boxdd::RecordingSession::create_chain"]
+rationale = "Canonicalized the previously reviewed Safe creation through RecordingSession so identity registration and recording remain coupled."
+
+[[canonical_refreshes]]
+logical_name = "b2CreateCircleShape"
+rust_paths = ["boxdd::RecordingSession::create_circle_shape"]
+rationale = "Canonicalized the previously reviewed Safe creation through RecordingSession so identity registration and recording remain coupled."
+
+[[canonical_refreshes]]
+logical_name = "b2CreateDistanceJoint"
+rust_paths = ["boxdd::RecordingSession::create_distance_joint"]
+rationale = "Canonicalized the previously reviewed Safe creation through RecordingSession so identity registration and recording remain coupled."
+
+[[canonical_refreshes]]
+logical_name = "b2CreateFilterJoint"
+rust_paths = ["boxdd::RecordingSession::create_filter_joint"]
+rationale = "Canonicalized the previously reviewed Safe creation through RecordingSession so identity registration and recording remain coupled."
+
+[[canonical_refreshes]]
+logical_name = "b2CreateMotorJoint"
+rust_paths = ["boxdd::RecordingSession::create_motor_joint"]
+rationale = "Canonicalized the previously reviewed Safe creation through RecordingSession so identity registration and recording remain coupled."
+
+[[canonical_refreshes]]
+logical_name = "b2CreatePolygonShape"
+rust_paths = ["boxdd::RecordingSession::create_polygon_shape"]
+rationale = "Canonicalized the previously reviewed Safe creation through RecordingSession so identity registration and recording remain coupled."
+
+[[canonical_refreshes]]
+logical_name = "b2CreatePrismaticJoint"
+rust_paths = ["boxdd::RecordingSession::create_prismatic_joint"]
+rationale = "Canonicalized the previously reviewed Safe creation through RecordingSession so identity registration and recording remain coupled."
+
+[[canonical_refreshes]]
+logical_name = "b2CreateRevoluteJoint"
+rust_paths = ["boxdd::RecordingSession::create_revolute_joint"]
+rationale = "Canonicalized the previously reviewed Safe creation through RecordingSession so identity registration and recording remain coupled."
+
+[[canonical_refreshes]]
+logical_name = "b2CreateSegmentShape"
+rust_paths = ["boxdd::RecordingSession::create_segment_shape"]
+rationale = "Canonicalized the previously reviewed Safe creation through RecordingSession so identity registration and recording remain coupled."
+
+[[canonical_refreshes]]
+logical_name = "b2CreateWeldJoint"
+rust_paths = ["boxdd::RecordingSession::create_weld_joint"]
+rationale = "Canonicalized the previously reviewed Safe creation through RecordingSession so identity registration and recording remain coupled."
+
+[[canonical_refreshes]]
+logical_name = "b2CreateWheelJoint"
+rust_paths = ["boxdd::RecordingSession::create_wheel_joint"]
+rationale = "Canonicalized the previously reviewed Safe creation through RecordingSession so identity registration and recording remain coupled."
+
+[[canonical_refreshes]]
+logical_name = "b2DestroyBody"
+rust_paths = ["boxdd::RecordingSession::destroy_body"]
+rationale = "Canonicalized the previously reviewed Safe destruction through RecordingSession so identity invalidation and recording remain coupled."
+
+[[canonical_refreshes]]
+logical_name = "b2DestroyChain"
+rust_paths = ["boxdd::RecordingSession::destroy_chain"]
+rationale = "Canonicalized the previously reviewed Safe destruction through RecordingSession so identity invalidation and recording remain coupled."
+
+[[canonical_refreshes]]
+logical_name = "b2DestroyJoint"
+rust_paths = ["boxdd::RecordingSession::destroy_joint"]
+rationale = "Canonicalized the previously reviewed Safe destruction through RecordingSession so identity invalidation and recording remain coupled."
+
+[[canonical_refreshes]]
+logical_name = "b2DestroyShape"
+rust_paths = ["boxdd::RecordingSession::destroy_shape"]
+rationale = "Canonicalized the previously reviewed Safe destruction through RecordingSession so identity invalidation and recording remain coupled."
+
+[[canonical_refreshes]]
+logical_name = "b2DefaultChainDef"
+rust_paths = ["boxdd::ChainDef::builder"]
+rationale = "Canonicalized the reviewed native chain defaults through the inherent ChainDef::builder entrypoint so strict runtime evidence authenticates construction without trait-method fallback."
+
+[[canonical_refreshes]]
+logical_name = "b2DefaultExplosionDef"
+rust_paths = ["boxdd::ExplosionDef::new"]
+rationale = "Canonicalized the reviewed native explosion defaults through the inherent ExplosionDef::new entrypoint so strict runtime evidence authenticates construction without trait-method fallback."
+
+[[canonical_refreshes]]
+logical_name = "b2DefaultFilter"
+rust_paths = ["boxdd::Filter::new"]
+rationale = "Canonicalized the reviewed native collision-filter defaults through the inherent Filter::new entrypoint so strict runtime evidence authenticates construction without trait-method fallback."
+
+[[canonical_refreshes]]
+logical_name = "b2DefaultQueryFilter"
+rust_paths = ["boxdd::QueryFilter::new"]
+rationale = "Canonicalized the reviewed native query-filter defaults through the inherent QueryFilter::new entrypoint so strict runtime evidence authenticates construction without trait-method fallback."
+
+[[canonical_refreshes]]
+logical_name = "b2DefaultShapeDef"
+rust_paths = ["boxdd::ShapeDef::builder"]
+rationale = "Canonicalized the reviewed native shape defaults through the inherent ShapeDef::builder entrypoint so strict runtime evidence authenticates construction without trait-method fallback."
+
+[[canonical_refreshes]]
+logical_name = "b2DefaultSurfaceMaterial"
+rust_paths = ["boxdd::SurfaceMaterial::new"]
+rationale = "Canonicalized the reviewed native surface-material defaults through the inherent SurfaceMaterial::new entrypoint so strict runtime evidence authenticates construction without trait-method fallback."
+
+[[functions]]
+logical_name = "b2Contact_IsValid"
+classification = "safe"
+area = "Contact identity validation"
+rust_paths = ["boxdd::World::contact_is_valid"]
+rationale = "World::try_contact_is_valid rejects foreign worlds and treats expired completed-step contact epochs as invalid."
+
+[[functions]]
+logical_name = "b2GetLengthUnitsPerMeter"
+classification = "safe"
+area = "Replay foundation compatibility"
+rust_paths = ["boxdd::ReplayPlayer::open_recording"]
+rationale = "ReplayPlayer::open_recording reads the active native length scale while validating recording compatibility under the foundation lease."
+
+[[functions]]
+logical_name = "b2IsValidAABB"
+classification = "raw"
+area = "Native value validation primitive"
+rationale = "Safe AABB validation is implemented in Rust so malformed values are rejected before FFI; the exact native predicate remains a raw primitive."
+previous_classification = "safe"
+
+[[functions]]
+logical_name = "b2IsValidFloat"
+classification = "raw"
+area = "Native value validation primitive"
+rationale = "Safe scalar validation is implemented in Rust before FFI; the exact native predicate remains a raw primitive."
+previous_classification = "safe"
+
+[[functions]]
+logical_name = "b2IsValidPlane"
+classification = "raw"
+area = "Native value validation primitive"
+rationale = "Safe plane validation is implemented in Rust before FFI; the exact native predicate remains a raw primitive."
+previous_classification = "safe"
+
+[[functions]]
+logical_name = "b2IsValidRay"
+classification = "raw"
+area = "Native value validation primitive"
+rationale = "Safe ray inputs are validated in Rust before FFI; the exact native predicate remains a raw primitive."
+previous_classification = "safe"
+
+[[functions]]
+logical_name = "b2IsValidRotation"
+classification = "raw"
+area = "Native value validation primitive"
+rationale = "Safe rotation validation is implemented in Rust before FFI; the exact native predicate remains a raw primitive."
+previous_classification = "safe"
+
+[[functions]]
+logical_name = "b2IsValidTransform"
+classification = "raw"
+area = "Native value validation primitive"
+rationale = "Safe transform validation is implemented in Rust before FFI; the exact native predicate remains a raw primitive."
+previous_classification = "safe"
+
+[[functions]]
+logical_name = "b2IsValidVec2"
+classification = "raw"
+area = "Native value validation primitive"
+rationale = "Safe vector validation is implemented in Rust before FFI; the exact native predicate remains a raw primitive."
+previous_classification = "safe"
+
+[[functions]]
+logical_name = "b2Joint_IsValid"
+classification = "safe"
+area = "Joint identity validation"
+rust_paths = ["boxdd::World::try_joint"]
+rationale = "World::try_joint validates branded joint identity before returning a scoped Safe Rust handle."
+
+[[functions]]
+logical_name = "b2Shape_IsValid"
+classification = "safe"
+area = "Shape identity validation"
+rust_paths = ["boxdd::World::try_shape"]
+rationale = "World::try_shape validates branded shape identity before returning a scoped Safe Rust handle."
+
+[[functions]]
+logical_name = "b2World_EnableSpeculative"
+classification = "raw"
+area = "Internal world tuning"
+rationale = "Upstream documents speculative collision toggling as an internal testing hook, so it is intentionally excluded from the stable Safe Rust surface."
+previous_classification = "safe"
+
+[[functions]]
+logical_name = "b2World_GetBodyEvents"
+classification = "safe"
+area = "Completed-step event capture"
+rust_paths = ["boxdd::World::try_step"]
+rationale = "World::try_step copies transient native body events into an owned cache before deferred destruction can invalidate them."
+
+[[functions]]
+logical_name = "b2World_GetContactEvents"
+classification = "safe"
+area = "Completed-step event capture"
+rust_paths = ["boxdd::World::try_step"]
+rationale = "World::try_step validates and copies transient native contact events into an epoch-branded owned cache."
+
+[[functions]]
+logical_name = "b2World_GetJointEvents"
+classification = "safe"
+area = "Completed-step event capture"
+rust_paths = ["boxdd::World::try_step"]
+rationale = "World::try_step copies transient native joint events into an owned cache before deferred destruction."
+
+[[functions]]
+logical_name = "b2World_GetSensorEvents"
+classification = "safe"
+area = "Completed-step event capture"
+rust_paths = ["boxdd::World::try_step"]
+rationale = "World::try_step copies transient native sensor events into an owned cache before deferred destruction."
+
+[[functions]]
+logical_name = "b2Body_EnableContactRecycling"
+classification = "safe"
+area = "Body contact recycling"
+rust_paths = ["boxdd::RecordingSession::body_enable_contact_recycling"]
+rationale = "RecordingSession validates body ownership and records contact-recycling mutations for deterministic replay."
+
+[[functions]]
+logical_name = "b2Body_GetLocalCenter"
+classification = "safe"
+area = "Body center of mass"
+rust_paths = ["boxdd::Body::local_center_of_mass"]
+rationale = "Body::local_center_of_mass reads through its lifetime-bound world handle and converts the native local center into a Rust value."
+
+[[functions]]
+logical_name = "b2Body_GetWorldCenter"
+classification = "safe"
+area = "Body center of mass"
+rust_paths = ["boxdd::Body::try_world_center_of_mass"]
+rationale = "Body::try_world_center_of_mass validates handle liveness before converting the native world center into a precision-aware Rust position."
+
+[[functions]]
+logical_name = "b2Body_IsContactRecyclingEnabled"
+classification = "safe"
+area = "Body contact recycling"
+rust_paths = ["boxdd::World::try_body_is_contact_recycling_enabled"]
+rationale = "The recoverable world API validates body ownership before reading the native contact-recycling state."
+
+[[functions]]
+logical_name = "b2CreateChainSegmentShape"
+classification = "safe"
+area = "Chain segment shape creation"
+rust_paths = ["boxdd::RecordingSession::create_chain_segment_shape"]
+rationale = "RecordingSession validates geometry and body ownership, registers the returned identity, and records creation for deterministic replay."
+
+[[functions]]
+logical_name = "b2CreateRecording"
+classification = "safe"
+area = "Recording ownership"
+rust_paths = ["boxdd::World::try_start_recording"]
+rationale = "Starting a recording validates world state and returns a lifetime-bound RAII RecordingSession."
+
+[[functions]]
+logical_name = "b2CreateWorldFromSnapshot"
+classification = "safe"
+area = "Snapshot world creation"
+rust_paths = ["boxdd::SnapshotImage::load"]
+rationale = "Snapshot world creation validates the owned image and reconstructs all Rust-side world identity registries."
+
+[[functions]]
+logical_name = "b2DestroyRecording"
+classification = "safe"
+exposure = "raii-drop"
+area = "Recording ownership"
+rust_paths = ["boxdd::RecordingSession"]
+rationale = "RecordingSession owns the native recording and destroys it exactly once on finish or drop."
+
+[[functions]]
+logical_name = "b2DynamicTree_BoxCast"
+classification = "safe"
+area = "Dynamic tree box casting"
+rust_paths = ["boxdd::DynamicTree::try_box_cast"]
+rationale = "The recoverable tree API validates cast input, contains callback panics, and preserves the tree foundation lease."
+
+[[functions]]
+logical_name = "b2GetGraphColor"
+classification = "raw"
+area = "Internal solver diagnostics"
+rationale = "Graph colors expose upstream solver-internal scheduling state without a stable Safe Rust semantic contract."
+
+[[functions]]
+logical_name = "b2InternalAssert"
+classification = "raw"
+area = "Native assertion plumbing"
+rationale = "The native assertion entry point accepts C source metadata and remains an explicit low-level FFI capability."
+
+[[functions]]
+logical_name = "b2IsDoublePrecision"
+classification = "raw"
+area = "Native build identity"
+rationale = "Precision is selected and authenticated by Cargo features and ABI route metadata; the exact runtime probe remains raw."
+
+[[functions]]
+logical_name = "b2IsValidPosition"
+classification = "raw"
+area = "Native value validation primitive"
+rationale = "Safe position validation is implemented in Rust before FFI; the exact native predicate remains a raw primitive."
+
+[[functions]]
+logical_name = "b2IsValidWorldTransform"
+classification = "raw"
+area = "Native value validation primitive"
+rationale = "Safe world-transform validation is implemented in Rust before FFI; the exact native predicate remains a raw primitive."
+
+[[functions]]
+logical_name = "b2LoadRecordingFromFile"
+classification = "raw"
+area = "Native filesystem recording helper"
+rationale = "Safe Rust loads owned bytes through std::fs and validates them before replay, avoiding native path encoding and allocator ownership."
+
+[[functions]]
+logical_name = "b2RecPlayer_Create"
+classification = "safe"
+area = "Replay player ownership"
+rust_paths = ["boxdd::ReplayPlayer::open_recording"]
+rationale = "ReplayPlayer validates owned recording bytes and foundation compatibility before acquiring the native player."
+
+[[functions]]
+logical_name = "b2RecPlayer_Destroy"
+classification = "safe"
+exposure = "raii-drop"
+area = "Replay player ownership"
+rust_paths = ["boxdd::ReplayPlayer"]
+rationale = "ReplayPlayer owns the native replay resource and destroys it exactly once on drop."
+
+[[functions]]
+logical_name = "b2RecPlayer_DrawFrameQueries"
+classification = "safe"
+area = "Replay query drawing"
+rust_paths = ["boxdd::ReplayPlayer::draw"]
+rationale = "ReplayPlayer::draw validates replay state and confines the debug-draw callback adapter to the call."
+
+[[functions]]
+logical_name = "b2RecPlayer_GetBodyCount"
+classification = "safe"
+area = "Borrowed replay view"
+rust_paths = ["boxdd::ReplayPlayer::with_view"]
+rationale = "The scoped replay view reads body counts while preventing the native player from advancing."
+
+[[functions]]
+logical_name = "b2RecPlayer_GetBodyId"
+classification = "safe"
+area = "Borrowed replay body view"
+rust_paths = ["boxdd::ReplayView::body"]
+rationale = "ReplayView::body bounds-checks the index and returns an epoch-scoped body view."
+
+[[functions]]
+logical_name = "b2RecPlayer_GetDivergeFrame"
+classification = "safe"
+area = "Replay state"
+rust_paths = ["boxdd::ReplayPlayer::step"]
+rationale = "ReplayPlayer::step refreshes divergence state after a validated native frame transition."
+
+[[functions]]
+logical_name = "b2RecPlayer_GetFrame"
+classification = "safe"
+area = "Replay state"
+rust_paths = ["boxdd::ReplayPlayer::step"]
+rationale = "ReplayPlayer::step refreshes the current frame after a validated native frame transition."
+
+[[functions]]
+logical_name = "b2RecPlayer_GetFrameQuery"
+classification = "safe"
+area = "Borrowed replay query view"
+rust_paths = ["boxdd::ReplayView::query"]
+rationale = "ReplayView::query bounds-checks the query index and returns an epoch-scoped query view."
+
+[[functions]]
+logical_name = "b2RecPlayer_GetFrameQueryCount"
+classification = "safe"
+area = "Borrowed replay view"
+rust_paths = ["boxdd::ReplayPlayer::with_view"]
+rationale = "The scoped replay view reads frame-query counts while preventing the native player from advancing."
+
+[[functions]]
+logical_name = "b2RecPlayer_GetFrameQueryHit"
+classification = "safe"
+area = "Borrowed replay query hit"
+rust_paths = ["boxdd::ReplayQueryView::hit"]
+rationale = "ReplayQueryView::hit bounds-checks the hit index and copies the result into a Rust value."
+
+[[functions]]
+logical_name = "b2RecPlayer_GetInfo"
+classification = "safe"
+area = "Replay metadata"
+rust_paths = ["boxdd::ReplayPlayer::open_recording"]
+rationale = "ReplayPlayer creation validates native metadata against the preflight result before exposing the player."
+
+[[functions]]
+logical_name = "b2RecPlayer_GetKeyframeBudget"
+classification = "safe"
+area = "Replay keyframe policy"
+rust_paths = ["boxdd::ReplayPlayer::step"]
+rationale = "ReplayPlayer::step refreshes keyframe budget state after the native transition."
+
+[[functions]]
+logical_name = "b2RecPlayer_GetKeyframeBytes"
+classification = "safe"
+area = "Replay keyframe policy"
+rust_paths = ["boxdd::ReplayPlayer::step"]
+rationale = "ReplayPlayer::step refreshes native keyframe memory usage after the frame transition."
+
+[[functions]]
+logical_name = "b2RecPlayer_GetKeyframeInterval"
+classification = "safe"
+area = "Replay keyframe policy"
+rust_paths = ["boxdd::ReplayPlayer::step"]
+rationale = "ReplayPlayer::step refreshes the effective keyframe interval after the frame transition."
+
+[[functions]]
+logical_name = "b2RecPlayer_GetKeyframeMinInterval"
+classification = "safe"
+area = "Replay keyframe policy"
+rust_paths = ["boxdd::ReplayPlayer::step"]
+rationale = "ReplayPlayer::step refreshes the native minimum keyframe interval after the frame transition."
+
+[[functions]]
+logical_name = "b2RecPlayer_GetWorldId"
+classification = "safe"
+area = "Replay world ownership"
+rust_paths = ["boxdd::ReplayPlayer::open_recording"]
+rationale = "ReplayPlayer creation validates and registers the native replay world identity before exposure."
+
+[[functions]]
+logical_name = "b2RecPlayer_HasDiverged"
+classification = "safe"
+area = "Replay state"
+rust_paths = ["boxdd::ReplayPlayer::step"]
+rationale = "ReplayPlayer::step refreshes divergence status after a validated native frame transition."
+
+[[functions]]
+logical_name = "b2RecPlayer_IsAtEnd"
+classification = "safe"
+area = "Replay state"
+rust_paths = ["boxdd::ReplayPlayer::step"]
+rationale = "ReplayPlayer::step refreshes end-of-stream status after a validated native frame transition."
+
+[[functions]]
+logical_name = "b2RecPlayer_Restart"
+classification = "safe"
+area = "Replay navigation"
+rust_paths = ["boxdd::ReplayPlayer::restart"]
+rationale = "ReplayPlayer::restart checks callback and ownership state before restarting and refreshing replay metadata."
+
+[[functions]]
+logical_name = "b2RecPlayer_SeekFrame"
+classification = "safe"
+area = "Replay navigation"
+rust_paths = ["boxdd::ReplayPlayer::seek"]
+rationale = "ReplayPlayer::seek validates the target frame and refreshes all epoch-scoped replay state."
+
+[[functions]]
+logical_name = "b2RecPlayer_SetKeyframePolicy"
+classification = "safe"
+area = "Replay keyframe policy"
+rust_paths = ["boxdd::ReplayPlayer::set_keyframe_policy"]
+rationale = "The Safe Rust policy API validates interval and budget inputs before updating native replay state."
+
+[[functions]]
+logical_name = "b2RecPlayer_StepFrame"
+classification = "safe"
+area = "Replay navigation"
+rust_paths = ["boxdd::ReplayPlayer::step"]
+rationale = "ReplayPlayer::step owns the frame transition and invalidates all previous scoped replay views."
+
+[[functions]]
+logical_name = "b2Recording_GetData"
+classification = "raw"
+area = "Native recording buffer ownership"
+rationale = "Safe Recording owns a copied Rust byte buffer and never exposes the native recording handle or borrowed native pointer."
+
+[[functions]]
+logical_name = "b2Recording_GetSize"
+classification = "raw"
+area = "Native recording buffer ownership"
+rationale = "Safe Recording derives length from its owned Rust byte buffer rather than retaining a native recording handle."
+
+[[functions]]
+logical_name = "b2SaveRecordingToFile"
+classification = "raw"
+area = "Native filesystem recording helper"
+rationale = "Safe Rust saves owned recording bytes through std::fs, avoiding native path encoding and error-channel ambiguity."
+
+[[functions]]
+logical_name = "b2Shape_SetChainSegment"
+classification = "safe"
+area = "Chain segment geometry mutation"
+rust_paths = ["boxdd::RecordingSession::shape_set_chain_segment"]
+rationale = "RecordingSession validates shape kind, world ownership, and chain-segment geometry before recording the mutation."
+
+[[functions]]
+logical_name = "b2ValidateReplay"
+classification = "raw"
+area = "Native replay validator"
+rationale = "Safe replay performs bounded Rust preflight parsing before native allocation; the separate native validator remains a raw diagnostic primitive."
+
+[[functions]]
+logical_name = "b2World_GetBounds"
+classification = "safe"
+area = "World operational metadata"
+rust_paths = ["boxdd::World::bounds"]
+rationale = "World::bounds reads through the wrapper-owned world and converts native precision-aware bounds into a Rust AABB."
+
+[[functions]]
+logical_name = "b2World_GetContactRecycleDistance"
+classification = "safe"
+area = "World contact recycling"
+rust_paths = ["boxdd::World::try_contact_recycle_distance"]
+rationale = "The recoverable world API verifies availability before reading contact recycling distance."
+
+[[functions]]
+logical_name = "b2World_GetMaxCapacity"
+classification = "safe"
+area = "World operational metadata"
+rust_paths = ["boxdd::World::maximum_capacity"]
+rationale = "World::maximum_capacity reads the native maximum capacity through the wrapper-owned world."
+
+[[functions]]
+logical_name = "b2World_GetWorkerCount"
+classification = "safe"
+area = "World worker configuration"
+rust_paths = ["boxdd::World::worker_count"]
+rationale = "World::worker_count reads the active native worker count through the wrapper-owned world."
+
+[[functions]]
+logical_name = "b2World_Restore"
+classification = "safe"
+area = "World snapshot restore"
+rust_paths = ["boxdd::World::try_restore"]
+rationale = "World::try_restore validates snapshot compatibility and rebuilds Rust identity state around the native restore."
+
+[[functions]]
+logical_name = "b2World_SetContactRecycleDistance"
+classification = "safe"
+area = "World contact recycling"
+rust_paths = ["boxdd::RecordingSession::set_contact_recycle_distance"]
+rationale = "RecordingSession validates a finite non-negative distance and records the world mutation for deterministic replay."
+
+[[functions]]
+logical_name = "b2World_SetWorkerCount"
+classification = "safe"
+area = "World worker configuration"
+rust_paths = ["boxdd::World::try_set_worker_count"]
+rationale = "The recoverable world API validates worker policy and lifecycle constraints before changing the native count."
+
+[[functions]]
+logical_name = "b2World_Snapshot"
+classification = "safe"
+area = "World snapshot capture"
+rust_paths = ["boxdd::World::try_snapshot"]
+rationale = "World::try_snapshot validates lifecycle state and copies the native payload into an owned SnapshotImage."
+
+[[functions]]
+logical_name = "b2World_StartRecording"
+classification = "safe"
+area = "World recording lifecycle"
+rust_paths = ["boxdd::World::try_start_recording"]
+rationale = "World::try_start_recording validates lifecycle exclusivity and returns an RAII RecordingSession."
+
+[[functions]]
+logical_name = "b2World_StopRecording"
+classification = "safe"
+area = "World recording lifecycle"
+rust_paths = ["boxdd::RecordingSession::try_finish"]
+rationale = "RecordingSession::try_finish stops exactly its owning world recording and transfers bytes into an owned Recording."
+
+[[functions]]
+logical_name = "b2Body_ApplyForce"
+classification = "safe"
+area = "Body force mutation"
+rust_paths = ["boxdd::RecordingSession::body_apply_force"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; RecordingSession validates body ownership and records the force mutation for deterministic replay."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2Body_ApplyLinearImpulse"
+classification = "safe"
+area = "Body impulse mutation"
+rust_paths = ["boxdd::RecordingSession::body_apply_linear_impulse"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; RecordingSession validates body ownership and records the impulse mutation for deterministic replay."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2Body_GetLocalPoint"
+classification = "safe"
+area = "Body coordinate conversion"
+rust_paths = ["boxdd::Body::local_point"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; Body::local_point remains the lifetime-bound Safe Rust coordinate conversion."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2Body_GetPosition"
+classification = "safe"
+area = "Body transform query"
+rust_paths = ["boxdd::Body::position"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; Body::position reads through the lifetime-bound body handle."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2Body_GetTransform"
+classification = "safe"
+area = "Body transform query"
+rust_paths = ["boxdd::Body::transform"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; Body::transform reads and converts the native transform through the lifetime-bound body handle."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2Body_GetWorldPoint"
+classification = "safe"
+area = "Body coordinate conversion"
+rust_paths = ["boxdd::Body::world_point"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; Body::world_point remains the lifetime-bound Safe Rust coordinate conversion."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2Body_GetWorldPointVelocity"
+classification = "safe"
+area = "Body velocity query"
+rust_paths = ["boxdd::Body::try_world_point_velocity"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; the recoverable API validates body liveness before reading world-point velocity."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2Body_SetTargetTransform"
+classification = "safe"
+area = "Body transform mutation"
+rust_paths = ["boxdd::RecordingSession::set_body_target_transform"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; RecordingSession validates body ownership and records the target-transform mutation for deterministic replay."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2Body_SetTransform"
+classification = "safe"
+area = "Body transform mutation"
+rust_paths = ["boxdd::RecordingSession::set_body_position_and_rotation"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; RecordingSession validates body ownership and records the transform mutation for deterministic replay."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2CollideCapsuleAndCircle"
+classification = "safe"
+area = "Collision"
+rust_paths = ["boxdd::collide_capsule_and_circle"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; the free function validates Rust-owned geometry and returns an owned manifold value."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2CollideCapsules"
+classification = "safe"
+area = "Collision"
+rust_paths = ["boxdd::collide_capsules"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; the free function validates Rust-owned geometry and returns an owned manifold value."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2CollideChainSegmentAndCapsule"
+classification = "safe"
+area = "Chain collision"
+rust_paths = ["boxdd::collide_chain_segment_and_capsule"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; the free function operates on borrowed Rust geometry and returns an owned manifold value."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2CollideChainSegmentAndCircle"
+classification = "safe"
+area = "Chain collision"
+rust_paths = ["boxdd::collide_chain_segment_and_circle"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; the free function operates on borrowed Rust geometry and returns an owned manifold value."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2CollideChainSegmentAndPolygon"
+classification = "safe"
+area = "Chain collision"
+rust_paths = ["boxdd::collide_chain_segment_and_polygon"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; the free function operates on borrowed Rust geometry and returns an owned manifold value."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2CollideCircles"
+classification = "safe"
+area = "Collision"
+rust_paths = ["boxdd::collide_circles"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; the free function validates Rust-owned geometry and returns an owned manifold value."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2CollidePolygonAndCapsule"
+classification = "safe"
+area = "Collision"
+rust_paths = ["boxdd::collide_polygon_and_capsule"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; the free function validates Rust-owned geometry and returns an owned manifold value."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2CollidePolygonAndCircle"
+classification = "safe"
+area = "Collision"
+rust_paths = ["boxdd::collide_polygon_and_circle"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; the free function validates Rust-owned geometry and returns an owned manifold value."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2CollidePolygons"
+classification = "safe"
+area = "Collision"
+rust_paths = ["boxdd::collide_polygons"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; the free function validates Rust-owned geometry and returns an owned manifold value."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2CollideSegmentAndCapsule"
+classification = "safe"
+area = "Collision"
+rust_paths = ["boxdd::collide_segment_and_capsule"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; the free function operates on borrowed Rust geometry and returns an owned manifold value."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2CollideSegmentAndCircle"
+classification = "safe"
+area = "Collision"
+rust_paths = ["boxdd::collide_segment_and_circle"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; the free function operates on borrowed Rust geometry and returns an owned manifold value."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2CollideSegmentAndPolygon"
+classification = "safe"
+area = "Collision"
+rust_paths = ["boxdd::collide_segment_and_polygon"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; the free function operates on borrowed Rust geometry and returns an owned manifold value."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2ComputeCapsuleAABB"
+classification = "safe"
+area = "Collision bounds"
+rust_paths = ["boxdd::Capsule::aabb"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; Capsule::aabb computes precision-aware bounds from a validated Rust value."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2ComputeCircleAABB"
+classification = "safe"
+area = "Collision bounds"
+rust_paths = ["boxdd::Circle::aabb"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; Circle::aabb computes precision-aware bounds from a validated Rust value."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2ComputePolygonAABB"
+classification = "safe"
+area = "Collision bounds"
+rust_paths = ["boxdd::Polygon::aabb"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; Polygon::aabb computes precision-aware bounds from a validated Rust value."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2ComputeSegmentAABB"
+classification = "safe"
+area = "Collision bounds"
+rust_paths = ["boxdd::Segment::aabb"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; Segment::aabb computes precision-aware bounds from a validated Rust value."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2DefaultBodyDef"
+classification = "safe"
+area = "Foundation defaults"
+rust_paths = ["boxdd::BodyDef::builder"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; the inherent BodyDef::builder entrypoint constructs a fully initialized Rust-owned definition without relying on a trait-method fallback."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2DefaultDebugDraw"
+classification = "safe"
+area = "Debug drawing"
+rust_paths = ["boxdd::World::debug_draw"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; World::debug_draw constructs, scopes, and owns the native callback table internally."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2DefaultWorldDef"
+classification = "safe"
+area = "Foundation defaults"
+rust_paths = ["boxdd::WorldDef::builder"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; the inherent WorldDef::builder entrypoint constructs a fully initialized Rust-owned definition without relying on a trait-method fallback."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2DynamicTree_Create"
+classification = "safe"
+area = "Dynamic tree lifecycle"
+rust_paths = ["boxdd::DynamicTree::new"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; DynamicTree::new creates an RAII-owned native tree."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2GetByteCount"
+classification = "safe"
+area = "Foundation allocation diagnostics"
+rust_paths = ["boxdd::allocated_byte_count"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; allocated_byte_count exposes the read-only native allocation counter under the foundation lifecycle guard."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2SetAllocator"
+classification = "raw"
+area = "Foundation allocator configuration"
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; the process-global allocator hook still requires a scoped startup guard before it can be exposed safely."
+previous_classification = "raw"
+revalidated = true
+
+[[functions]]
+logical_name = "b2Shape_GetClosestPoint"
+classification = "safe"
+area = "Shape query"
+rust_paths = ["boxdd::OwnedShape::closest_point"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; OwnedShape validates world ownership and shape liveness before querying the closest point."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2Shape_RayCast"
+classification = "safe"
+area = "Shape query"
+rust_paths = ["boxdd::OwnedShape::ray_cast"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; OwnedShape validates ownership and ray input before returning an owned cast result."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2Shape_TestPoint"
+classification = "safe"
+area = "Shape query"
+rust_paths = ["boxdd::OwnedShape::test_point"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; OwnedShape validates world ownership and shape liveness before testing the point."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2World_CastMover"
+classification = "safe"
+area = "World spatial query"
+rust_paths = ["boxdd::World::cast_mover"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; World::cast_mover validates geometry and confines native callbacks to the call."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2World_CastRay"
+classification = "safe"
+area = "World spatial query"
+rust_paths = ["boxdd::World::cast_ray_all"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; World::cast_ray_all validates ray input and returns owned hit data after callback completion."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2World_CastRayClosest"
+classification = "safe"
+area = "World spatial query"
+rust_paths = ["boxdd::World::cast_ray_closest"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; World::cast_ray_closest validates ray input and returns an owned optional hit."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2World_CastShape"
+classification = "safe"
+area = "World spatial query"
+rust_paths = ["boxdd::World::cast_shape_points"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; World::cast_shape_points validates the hull and transform before returning owned hit data."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2World_CollideMover"
+classification = "safe"
+area = "World spatial query"
+rust_paths = ["boxdd::World::collide_mover"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; World::collide_mover validates mover geometry and confines native callbacks to the call."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2World_GetCounters"
+classification = "safe"
+area = "World diagnostics"
+rust_paths = ["boxdd::World::counters"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; World::counters copies native counters into an owned Rust snapshot."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2World_GetProfile"
+classification = "safe"
+area = "World diagnostics"
+rust_paths = ["boxdd::World::profile"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; World::profile copies native timing data into an owned Rust snapshot."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2World_OverlapAABB"
+classification = "safe"
+area = "World spatial query"
+rust_paths = ["boxdd::World::overlap_aabb"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; World::overlap_aabb validates bounds and returns owned shape identities after callback completion."
+previous_classification = "safe"
+revalidated = true
+
+[[functions]]
+logical_name = "b2World_OverlapShape"
+classification = "safe"
+area = "World spatial query"
+rust_paths = ["boxdd::World::overlap_polygon_points"]
+rationale = "Revalidated against the authenticated Box2D 3.2 declaration; World::overlap_polygon_points validates the polygon and transform before returning owned shape identities."
+previous_classification = "safe"
+revalidated = true
+
+[[canonical_refreshes]]
+logical_name = "b2DistanceJoint_EnableLimit"
+rust_paths = ["boxdd::RecordingSession::distance_joint_enable_limit"]
+rationale = "Canonicalized the previously reviewed Safe distance-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2DistanceJoint_EnableMotor"
+rust_paths = ["boxdd::RecordingSession::distance_joint_enable_motor"]
+rationale = "Canonicalized the previously reviewed Safe distance-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2DistanceJoint_EnableSpring"
+rust_paths = ["boxdd::RecordingSession::distance_joint_enable_spring"]
+rationale = "Canonicalized the previously reviewed Safe distance-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2DistanceJoint_SetLength"
+rust_paths = ["boxdd::RecordingSession::distance_joint_set_length"]
+rationale = "Canonicalized the previously reviewed Safe distance-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2DistanceJoint_SetLengthRange"
+rust_paths = ["boxdd::RecordingSession::distance_joint_set_length_range"]
+rationale = "Canonicalized the previously reviewed Safe distance-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2DistanceJoint_SetMaxMotorForce"
+rust_paths = ["boxdd::RecordingSession::distance_joint_set_max_motor_force"]
+rationale = "Canonicalized the previously reviewed Safe distance-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2DistanceJoint_SetMotorSpeed"
+rust_paths = ["boxdd::RecordingSession::distance_joint_set_motor_speed"]
+rationale = "Canonicalized the previously reviewed Safe distance-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2DistanceJoint_SetSpringDampingRatio"
+rust_paths = ["boxdd::RecordingSession::distance_joint_set_spring_damping_ratio"]
+rationale = "Canonicalized the previously reviewed Safe distance-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2DistanceJoint_SetSpringForceRange"
+rust_paths = ["boxdd::RecordingSession::distance_joint_set_spring_force_range"]
+rationale = "Canonicalized the previously reviewed Safe distance-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2DistanceJoint_SetSpringHertz"
+rust_paths = ["boxdd::RecordingSession::distance_joint_set_spring_hertz"]
+rationale = "Canonicalized the previously reviewed Safe distance-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2Joint_SetCollideConnected"
+rust_paths = ["boxdd::RecordingSession::set_joint_collide_connected"]
+rationale = "Canonicalized the previously reviewed Safe joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2Joint_SetConstraintTuning"
+rust_paths = ["boxdd::RecordingSession::set_joint_constraint_tuning"]
+rationale = "Canonicalized the previously reviewed Safe joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2Joint_SetForceThreshold"
+rust_paths = ["boxdd::RecordingSession::set_joint_force_threshold"]
+rationale = "Canonicalized the previously reviewed Safe joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2Joint_SetLocalFrameA"
+rust_paths = ["boxdd::RecordingSession::set_joint_local_frame_a"]
+rationale = "Canonicalized the previously reviewed Safe joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2Joint_SetLocalFrameB"
+rust_paths = ["boxdd::RecordingSession::set_joint_local_frame_b"]
+rationale = "Canonicalized the previously reviewed Safe joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2Joint_SetTorqueThreshold"
+rust_paths = ["boxdd::RecordingSession::set_joint_torque_threshold"]
+rationale = "Canonicalized the previously reviewed Safe joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2Joint_WakeBodies"
+rust_paths = ["boxdd::RecordingSession::joint_wake_bodies"]
+rationale = "Canonicalized the previously reviewed Safe joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2MotorJoint_SetAngularDampingRatio"
+rust_paths = ["boxdd::RecordingSession::motor_joint_set_angular_damping_ratio"]
+rationale = "Canonicalized the previously reviewed Safe motor-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2MotorJoint_SetAngularHertz"
+rust_paths = ["boxdd::RecordingSession::motor_joint_set_angular_hertz"]
+rationale = "Canonicalized the previously reviewed Safe motor-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2MotorJoint_SetAngularVelocity"
+rust_paths = ["boxdd::RecordingSession::motor_joint_set_angular_velocity"]
+rationale = "Canonicalized the previously reviewed Safe motor-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2MotorJoint_SetLinearDampingRatio"
+rust_paths = ["boxdd::RecordingSession::motor_joint_set_linear_damping_ratio"]
+rationale = "Canonicalized the previously reviewed Safe motor-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2MotorJoint_SetLinearHertz"
+rust_paths = ["boxdd::RecordingSession::motor_joint_set_linear_hertz"]
+rationale = "Canonicalized the previously reviewed Safe motor-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2MotorJoint_SetLinearVelocity"
+rust_paths = ["boxdd::RecordingSession::motor_joint_set_linear_velocity"]
+rationale = "Canonicalized the previously reviewed Safe motor-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2MotorJoint_SetMaxSpringForce"
+rust_paths = ["boxdd::RecordingSession::motor_joint_set_max_spring_force"]
+rationale = "Canonicalized the previously reviewed Safe motor-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2MotorJoint_SetMaxSpringTorque"
+rust_paths = ["boxdd::RecordingSession::motor_joint_set_max_spring_torque"]
+rationale = "Canonicalized the previously reviewed Safe motor-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2MotorJoint_SetMaxVelocityForce"
+rust_paths = ["boxdd::RecordingSession::motor_joint_set_max_velocity_force"]
+rationale = "Canonicalized the previously reviewed Safe motor-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2MotorJoint_SetMaxVelocityTorque"
+rust_paths = ["boxdd::RecordingSession::motor_joint_set_max_velocity_torque"]
+rationale = "Canonicalized the previously reviewed Safe motor-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2PrismaticJoint_EnableLimit"
+rust_paths = ["boxdd::RecordingSession::prismatic_joint_enable_limit"]
+rationale = "Canonicalized the previously reviewed Safe prismatic-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2PrismaticJoint_EnableMotor"
+rust_paths = ["boxdd::RecordingSession::prismatic_joint_enable_motor"]
+rationale = "Canonicalized the previously reviewed Safe prismatic-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2PrismaticJoint_EnableSpring"
+rust_paths = ["boxdd::RecordingSession::prismatic_joint_enable_spring"]
+rationale = "Canonicalized the previously reviewed Safe prismatic-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2PrismaticJoint_SetLimits"
+rust_paths = ["boxdd::RecordingSession::prismatic_joint_set_limits"]
+rationale = "Canonicalized the previously reviewed Safe prismatic-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2PrismaticJoint_SetMaxMotorForce"
+rust_paths = ["boxdd::RecordingSession::prismatic_joint_set_max_motor_force"]
+rationale = "Canonicalized the previously reviewed Safe prismatic-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2PrismaticJoint_SetMotorSpeed"
+rust_paths = ["boxdd::RecordingSession::prismatic_joint_set_motor_speed"]
+rationale = "Canonicalized the previously reviewed Safe prismatic-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2PrismaticJoint_SetSpringDampingRatio"
+rust_paths = ["boxdd::RecordingSession::prismatic_joint_set_spring_damping_ratio"]
+rationale = "Canonicalized the previously reviewed Safe prismatic-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2PrismaticJoint_SetSpringHertz"
+rust_paths = ["boxdd::RecordingSession::prismatic_joint_set_spring_hertz"]
+rationale = "Canonicalized the previously reviewed Safe prismatic-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2PrismaticJoint_SetTargetTranslation"
+rust_paths = ["boxdd::RecordingSession::prismatic_joint_set_target_translation"]
+rationale = "Canonicalized the previously reviewed Safe prismatic-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2RevoluteJoint_EnableLimit"
+rust_paths = ["boxdd::RecordingSession::revolute_joint_enable_limit"]
+rationale = "Canonicalized the previously reviewed Safe revolute-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2RevoluteJoint_EnableMotor"
+rust_paths = ["boxdd::RecordingSession::revolute_joint_enable_motor"]
+rationale = "Canonicalized the previously reviewed Safe revolute-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2RevoluteJoint_EnableSpring"
+rust_paths = ["boxdd::RecordingSession::revolute_joint_enable_spring"]
+rationale = "Canonicalized the previously reviewed Safe revolute-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2RevoluteJoint_SetLimits"
+rust_paths = ["boxdd::RecordingSession::revolute_joint_set_limits"]
+rationale = "Canonicalized the previously reviewed Safe revolute-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2RevoluteJoint_SetMaxMotorTorque"
+rust_paths = ["boxdd::RecordingSession::revolute_joint_set_max_motor_torque"]
+rationale = "Canonicalized the previously reviewed Safe revolute-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2RevoluteJoint_SetMotorSpeed"
+rust_paths = ["boxdd::RecordingSession::revolute_joint_set_motor_speed"]
+rationale = "Canonicalized the previously reviewed Safe revolute-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2RevoluteJoint_SetSpringDampingRatio"
+rust_paths = ["boxdd::RecordingSession::revolute_joint_set_spring_damping_ratio"]
+rationale = "Canonicalized the previously reviewed Safe revolute-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2RevoluteJoint_SetSpringHertz"
+rust_paths = ["boxdd::RecordingSession::revolute_joint_set_spring_hertz"]
+rationale = "Canonicalized the previously reviewed Safe revolute-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2RevoluteJoint_SetTargetAngle"
+rust_paths = ["boxdd::RecordingSession::revolute_joint_set_target_angle"]
+rationale = "Canonicalized the previously reviewed Safe revolute-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2Shape_ApplyWind"
+rust_paths = ["boxdd::RecordingSession::shape_apply_wind"]
+rationale = "Canonicalized the previously reviewed Safe shape mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2Shape_EnableContactEvents"
+rust_paths = ["boxdd::RecordingSession::shape_enable_contact_events"]
+rationale = "Canonicalized the previously reviewed Safe shape mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2Shape_EnableHitEvents"
+rust_paths = ["boxdd::RecordingSession::shape_enable_hit_events"]
+rationale = "Canonicalized the previously reviewed Safe shape mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2Shape_EnablePreSolveEvents"
+rust_paths = ["boxdd::RecordingSession::shape_enable_pre_solve_events"]
+rationale = "Canonicalized the previously reviewed Safe shape mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2Shape_EnableSensorEvents"
+rust_paths = ["boxdd::RecordingSession::shape_enable_sensor_events"]
+rationale = "Canonicalized the previously reviewed Safe shape mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2Shape_SetCapsule"
+rust_paths = ["boxdd::RecordingSession::shape_set_capsule"]
+rationale = "Canonicalized the previously reviewed Safe shape mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2Shape_SetCircle"
+rust_paths = ["boxdd::RecordingSession::shape_set_circle"]
+rationale = "Canonicalized the previously reviewed Safe shape mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2Shape_SetDensity"
+rust_paths = ["boxdd::RecordingSession::shape_set_density"]
+rationale = "Canonicalized the previously reviewed Safe shape mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2Shape_SetFilter"
+rust_paths = ["boxdd::RecordingSession::shape_set_filter"]
+rationale = "Canonicalized the previously reviewed Safe shape mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2Shape_SetFriction"
+rust_paths = ["boxdd::RecordingSession::shape_set_friction"]
+rationale = "Canonicalized the previously reviewed Safe shape mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2Shape_SetPolygon"
+rust_paths = ["boxdd::RecordingSession::shape_set_polygon"]
+rationale = "Canonicalized the previously reviewed Safe shape mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2Shape_SetRestitution"
+rust_paths = ["boxdd::RecordingSession::shape_set_restitution"]
+rationale = "Canonicalized the previously reviewed Safe shape mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2Shape_SetSegment"
+rust_paths = ["boxdd::RecordingSession::shape_set_segment"]
+rationale = "Canonicalized the previously reviewed Safe shape mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2Shape_SetSurfaceMaterial"
+rust_paths = ["boxdd::RecordingSession::shape_set_surface_material"]
+rationale = "Canonicalized the previously reviewed Safe shape mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2Shape_SetUserMaterial"
+rust_paths = ["boxdd::RecordingSession::shape_set_user_material"]
+rationale = "Canonicalized the previously reviewed Safe shape mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2WeldJoint_SetAngularDampingRatio"
+rust_paths = ["boxdd::RecordingSession::weld_joint_set_angular_damping_ratio"]
+rationale = "Canonicalized the previously reviewed Safe weld-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2WeldJoint_SetAngularHertz"
+rust_paths = ["boxdd::RecordingSession::weld_joint_set_angular_hertz"]
+rationale = "Canonicalized the previously reviewed Safe weld-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2WeldJoint_SetLinearDampingRatio"
+rust_paths = ["boxdd::RecordingSession::weld_joint_set_linear_damping_ratio"]
+rationale = "Canonicalized the previously reviewed Safe weld-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2WeldJoint_SetLinearHertz"
+rust_paths = ["boxdd::RecordingSession::weld_joint_set_linear_hertz"]
+rationale = "Canonicalized the previously reviewed Safe weld-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2WheelJoint_EnableLimit"
+rust_paths = ["boxdd::RecordingSession::wheel_joint_enable_limit"]
+rationale = "Canonicalized the previously reviewed Safe wheel-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2WheelJoint_EnableMotor"
+rust_paths = ["boxdd::RecordingSession::wheel_joint_enable_motor"]
+rationale = "Canonicalized the previously reviewed Safe wheel-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2WheelJoint_EnableSpring"
+rust_paths = ["boxdd::RecordingSession::wheel_joint_enable_spring"]
+rationale = "Canonicalized the previously reviewed Safe wheel-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2WheelJoint_SetLimits"
+rust_paths = ["boxdd::RecordingSession::wheel_joint_set_limits"]
+rationale = "Canonicalized the previously reviewed Safe wheel-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2WheelJoint_SetMaxMotorTorque"
+rust_paths = ["boxdd::RecordingSession::wheel_joint_set_max_motor_torque"]
+rationale = "Canonicalized the previously reviewed Safe wheel-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2WheelJoint_SetMotorSpeed"
+rust_paths = ["boxdd::RecordingSession::wheel_joint_set_motor_speed"]
+rationale = "Canonicalized the previously reviewed Safe wheel-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2WheelJoint_SetSpringDampingRatio"
+rust_paths = ["boxdd::RecordingSession::wheel_joint_set_spring_damping_ratio"]
+rationale = "Canonicalized the previously reviewed Safe wheel-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2WheelJoint_SetSpringHertz"
+rust_paths = ["boxdd::RecordingSession::wheel_joint_set_spring_hertz"]
+rationale = "Canonicalized the previously reviewed Safe wheel-joint mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2World_EnableContinuous"
+rust_paths = ["boxdd::RecordingSession::enable_continuous"]
+rationale = "Canonicalized the previously reviewed Safe world mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2World_EnableSleeping"
+rust_paths = ["boxdd::RecordingSession::enable_sleeping"]
+rationale = "Canonicalized the previously reviewed Safe world mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2World_EnableWarmStarting"
+rust_paths = ["boxdd::RecordingSession::enable_warm_starting"]
+rationale = "Canonicalized the previously reviewed Safe world mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2World_Explode"
+rust_paths = ["boxdd::RecordingSession::explode"]
+rationale = "Canonicalized the previously reviewed Safe world mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2World_SetContactTuning"
+rust_paths = ["boxdd::RecordingSession::set_contact_tuning"]
+rationale = "Canonicalized the previously reviewed Safe world mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2World_SetGravity"
+rust_paths = ["boxdd::RecordingSession::set_gravity"]
+rationale = "Canonicalized the previously reviewed Safe world mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2World_SetHitEventThreshold"
+rust_paths = ["boxdd::RecordingSession::set_hit_event_threshold"]
+rationale = "Canonicalized the previously reviewed Safe world mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2World_SetMaximumLinearSpeed"
+rust_paths = ["boxdd::RecordingSession::set_maximum_linear_speed"]
+rationale = "Canonicalized the previously reviewed Safe world mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2World_SetRestitutionThreshold"
+rust_paths = ["boxdd::RecordingSession::set_restitution_threshold"]
+rationale = "Canonicalized the previously reviewed Safe world mutation through RecordingSession for validated deterministic recording."
+
+[[canonical_refreshes]]
+logical_name = "b2World_Step"
+rust_paths = ["boxdd::RecordingSession::step"]
+rationale = "Canonicalized the previously reviewed Safe world step through RecordingSession so simulation advancement and recording remain coupled."

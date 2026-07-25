@@ -57,7 +57,7 @@ impl OwnedShape {
         ShapeRuntimeHandle::try_is_valid(self)
     }
 
-    /// Borrow the raw id for ID-style APIs.
+    /// Borrow the world-bound branded ID for ID-style APIs.
     pub fn as_id(&self) -> ShapeId {
         self.id
     }
@@ -134,18 +134,31 @@ impl OwnedShape {
         ShapeRuntimeHandle::try_hit_events_enabled(self)
     }
 
+    /// Return the shape's geometry type.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this handle is unavailable or Box2D returns an unknown native discriminant. An
+    /// unknown discriminant poisons the world before this method panics.
     pub fn shape_type(&self) -> ShapeType {
         ShapeRuntimeHandle::shape_type(self)
     }
 
+    /// Try to return the shape's geometry type.
+    ///
+    /// An unknown native discriminant returns
+    /// [`ApiError::InvalidNativeShapeType`](crate::ApiError::InvalidNativeShapeType) and poisons
+    /// the world.
     pub fn try_shape_type(&self) -> ApiResult<ShapeType> {
         ShapeRuntimeHandle::try_shape_type(self)
     }
 
+    /// Return Box2D's raw shape-type discriminant without closed-enum decoding.
     pub fn shape_type_raw(&self) -> ffi::b2ShapeType {
         ShapeRuntimeHandle::shape_type_raw(self)
     }
 
+    /// Fallible variant of [`Self::shape_type_raw`].
     pub fn try_shape_type_raw(&self) -> ApiResult<ffi::b2ShapeType> {
         ShapeRuntimeHandle::try_shape_type_raw(self)
     }
@@ -213,10 +226,16 @@ impl OwnedShape {
     }
 
     /// Apply wind force/torque approximation to the shape.
+    ///
+    /// `wind` must be finite and `drag` must be finite and non-negative. `lift` must be finite;
+    /// negative values reverse the perpendicular lift direction.
     pub fn apply_wind<V: Into<Vec2>>(&mut self, wind: V, drag: f32, lift: f32, wake: bool) {
         ShapeRuntimeHandle::apply_wind(self, wind, drag, lift, wake)
     }
 
+    /// Fallible form of [`Self::apply_wind`].
+    ///
+    /// Returns `ApiError::InvalidArgument` when a numeric parameter violates its constraints.
     pub fn try_apply_wind<V: Into<Vec2>>(
         &mut self,
         wind: V,
@@ -238,6 +257,13 @@ impl OwnedShape {
     }
     pub fn try_set_segment(&mut self, s: &Segment) -> ApiResult<()> {
         ShapeRuntimeHandle::try_set_segment(self, s)
+    }
+    /// Change this shape into an orphan chain segment, or update its orphan geometry.
+    pub fn set_chain_segment(&mut self, segment: &ChainSegment) {
+        ShapeRuntimeHandle::set_chain_segment(self, segment)
+    }
+    pub fn try_set_chain_segment(&mut self, segment: &ChainSegment) -> ApiResult<()> {
+        ShapeRuntimeHandle::try_set_chain_segment(self, segment)
     }
     pub fn set_capsule(&mut self, c: &Capsule) {
         ShapeRuntimeHandle::set_capsule(self, c)
@@ -501,7 +527,7 @@ impl OwnedShape {
         self
     }
 
-    /// Disarm RAII and return the raw id for manual lifetime management.
+    /// Disarm RAII and return the branded ID for manual lifetime management.
     pub fn into_id(mut self) -> ShapeId {
         self.core
             .check_owned_policy_change()
@@ -513,11 +539,13 @@ impl OwnedShape {
     /// Destroy the shape immediately and disarm drop.
     pub fn destroy(mut self, update_body_mass: bool) {
         if self.destroy_on_drop {
-            self.core
-                .destroy_owned_or_defer(crate::core::world_core::DeferredDestroy::Shape {
+            crate::core::world_core::WorldCore::destroy_owned_or_defer(
+                &self.core,
+                crate::core::world_core::DeferredDestroy::Shape {
                     id: self.id,
                     update_body_mass,
-                });
+                },
+            );
             self.destroy_on_drop = false;
         }
     }
@@ -532,11 +560,13 @@ impl Drop for OwnedShape {
             |count| Some(count.saturating_sub(1)),
         );
         if self.destroy_on_drop {
-            self.core
-                .destroy_owned_or_defer(crate::core::world_core::DeferredDestroy::Shape {
+            crate::core::world_core::WorldCore::destroy_owned_or_defer(
+                &self.core,
+                crate::core::world_core::DeferredDestroy::Shape {
                     id: self.id,
                     update_body_mass: self.update_body_mass_on_drop,
-                });
+                },
+            );
         }
     }
 }

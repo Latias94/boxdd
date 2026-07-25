@@ -7,8 +7,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: github-pages
@@ -19,21 +17,23 @@ jobs:
     name: Build and upload static site
     runs-on: ubuntu-latest
     env:
-      EMSDK_VERSION: "6.0.2"
+      EMSDK_VERSION: "6.0.3"
+      EMSDK_REVISION: "db04e88298d9916fc51fcd3743045ca3eb695127"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           submodules: recursive
+          persist-credentials: false
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
         with:
-          toolchain: 1.97.0
+          toolchain: 1.97.1
           targets: wasm32-unknown-unknown
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
       - name: Install wasm-bindgen CLI
         run: cargo install wasm-bindgen-cli --version 0.2.126 --locked
@@ -42,25 +42,33 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git clone --depth 1 --branch "${EMSDK_VERSION}" https://github.com/emscripten-core/emsdk.git "${RUNNER_TEMP}/emsdk"
+          git init "${RUNNER_TEMP}/emsdk"
+          git -C "${RUNNER_TEMP}/emsdk" remote add origin https://github.com/emscripten-core/emsdk.git
+          git -C "${RUNNER_TEMP}/emsdk" fetch --depth 1 origin "${EMSDK_REVISION}"
+          git -C "${RUNNER_TEMP}/emsdk" checkout --detach FETCH_HEAD
+          test "$(git -C "${RUNNER_TEMP}/emsdk" rev-parse HEAD)" = "${EMSDK_REVISION}"
           "${RUNNER_TEMP}/emsdk/emsdk" install "${EMSDK_VERSION}"
           "${RUNNER_TEMP}/emsdk/emsdk" activate "${EMSDK_VERSION}"
-          echo "EMSDK=${RUNNER_TEMP}/emsdk" >> "$GITHUB_ENV"
-          echo "${RUNNER_TEMP}/emsdk" >> "$GITHUB_PATH"
-          echo "${RUNNER_TEMP}/emsdk/upstream/emscripten" >> "$GITHUB_PATH"
-          echo "${RUNNER_TEMP}/emsdk/upstream/bin" >> "$GITHUB_PATH"
+          {
+            echo "EMSDK=${RUNNER_TEMP}/emsdk"
+          } >> "$GITHUB_ENV"
+          {
+            echo "${RUNNER_TEMP}/emsdk"
+            echo "${RUNNER_TEMP}/emsdk/upstream/emscripten"
+            echo "${RUNNER_TEMP}/emsdk/upstream/bin"
+          } >> "$GITHUB_PATH"
 
       - name: Build Pages WASM assets
-        run: cargo run -p xtask -- build-pages-wasm
+        run: cargo run --locked -p xtask -- build-pages-wasm
 
       - name: Validate Pages content
-        run: cargo run -p xtask -- validate-pages
+        run: cargo run --locked -p xtask -- validate-pages
 
       - name: Configure Pages
-        uses: actions/configure-pages@v6
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v5
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: docs/pages
 
@@ -69,10 +77,14 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Deploy Pages
         id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
