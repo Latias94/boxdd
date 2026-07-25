@@ -6,9 +6,9 @@ This file is generated from the API artifact named by `boxdd-sys/upstream.toml`.
 
 Pinned active upstream: `56edae79f2949d86142b03450d5d60f63bcf5a6f`.
 
-## Runtime Evidence Policy
+## Safe-call Witness Policy
 
-Policy: `ufcs-straight-line-v1`. Runtime witnesses must be executable `nextest` tests and use straight-line, unambiguous UFCS calls to a unique Safe inherent callable, or an unambiguous Safe free function. Receiver-method syntax does not count as coverage. Standard `Result`/`Option` `unwrap`, `expect`, and continuation through `?` are accepted only when their standard wrapper provenance is proven. Macros, unknown attributes, external modules, ambiguous imports or traits, and non-linear control flow fail closed. Explicit `drop` proves RAII only for a directly owned, unwrapped public value. `ReplayPlayer::with_view` additionally requires a proven must-invoke inline closure and successful result consumption. Route aggregation never substitutes for running every declared Cargo/nextest target.
+Policy: `route-conditioned-safe-call-v2`. A Safe-call witness is a route-conditioned source proof: an executable `nextest` test must use a straight-line, unambiguous UFCS call to a unique Safe inherent callable, or an unambiguous Safe free function. Receiver-method syntax does not count as coverage. Standard `Result`/`Option` `unwrap`, `expect`, and continuation through `?` are accepted only when their standard wrapper provenance is proven. Macros, unknown attributes, external modules, ambiguous imports or traits, and non-linear control flow fail closed. Explicit `drop` proves RAII only for a directly owned, unwrapped public value. `ReplayPlayer::with_view` additionally requires a proven must-invoke inline closure and successful result consumption. These witnesses do not qualify a provider by themselves: native fresh-consumer gates, WASM Node/Chromium gates, and compile-only gates independently establish provider identity and execution or compilation support. Route aggregation never substitutes for running every declared verification target.
 
 ## Summary
 
@@ -19,6 +19,21 @@ Policy: `ufcs-straight-line-v1`. Runtime witnesses must be executable `nextest` 
 | `omitted` | 2 |
 | `deferred` | 0 |
 | Total | 478 |
+
+## Effective Function Exposure by Route
+
+| Precision | Provider | Safe | Raw | Omitted | Deferred | Total |
+|---|---|---:|---:|---:|---:|---:|
+| `double` | `prebuilt-static` | 456 | 20 | 2 | 0 | 478 |
+| `double` | `source` | 456 | 20 | 2 | 0 | 478 |
+| `double` | `system-static` | 456 | 20 | 2 | 0 | 478 |
+| `double` | `wasm-compile-only` | 437 | 39 | 2 | 0 | 478 |
+| `double` | `wasm-runtime` | 437 | 39 | 2 | 0 | 478 |
+| `single` | `prebuilt-static` | 456 | 20 | 2 | 0 | 478 |
+| `single` | `source` | 456 | 20 | 2 | 0 | 478 |
+| `single` | `system-static` | 456 | 20 | 2 | 0 | 478 |
+| `single` | `wasm-compile-only` | 437 | 39 | 2 | 0 | 478 |
+| `single` | `wasm-runtime` | 437 | 39 | 2 | 0 | 478 |
 
 ## By Area
 
@@ -95,25 +110,57 @@ Policy: `ufcs-straight-line-v1`. Runtime witnesses must be executable `nextest` 
 
 | Capability | Safe | Raw | Omitted | Deferred | Total |
 |---|---:|---:|---:|---:|---:|
-| Structs | 33 | 46 | 2 | 6 | 87 |
-| Fields | 199 | 173 | 53 | 51 | 476 |
-| Callbacks | 3 | 12 | 0 | 2 | 17 |
+| Structs | 37 | 48 | 2 | 0 | 87 |
+| Fields | 220 | 203 | 53 | 0 | 476 |
+| Callbacks | 5 | 12 | 0 | 0 | 17 |
+
+### Effective ABI Exposure by Route
+
+| Precision | Provider | Capability | Safe | Raw | Omitted | Deferred | Total |
+|---|---|---|---:|---:|---:|---:|---:|
+| `double` | `prebuilt-static` | Structs | 37 | 48 | 2 | 0 | 87 |
+| `double` | `prebuilt-static` | Fields | 220 | 203 | 53 | 0 | 476 |
+| `double` | `prebuilt-static` | Callbacks | 5 | 12 | 0 | 0 | 17 |
+| `double` | `source` | Structs | 37 | 48 | 2 | 0 | 87 |
+| `double` | `source` | Fields | 220 | 203 | 53 | 0 | 476 |
+| `double` | `source` | Callbacks | 5 | 12 | 0 | 0 | 17 |
+| `double` | `system-static` | Structs | 37 | 48 | 2 | 0 | 87 |
+| `double` | `system-static` | Fields | 220 | 203 | 53 | 0 | 476 |
+| `double` | `system-static` | Callbacks | 5 | 12 | 0 | 0 | 17 |
+| `double` | `wasm-compile-only` | Structs | 36 | 49 | 2 | 0 | 87 |
+| `double` | `wasm-compile-only` | Fields | 217 | 206 | 53 | 0 | 476 |
+| `double` | `wasm-compile-only` | Callbacks | 0 | 17 | 0 | 0 | 17 |
+| `double` | `wasm-runtime` | Structs | 36 | 49 | 2 | 0 | 87 |
+| `double` | `wasm-runtime` | Fields | 217 | 206 | 53 | 0 | 476 |
+| `double` | `wasm-runtime` | Callbacks | 0 | 17 | 0 | 0 | 17 |
+| `single` | `prebuilt-static` | Structs | 37 | 48 | 2 | 0 | 87 |
+| `single` | `prebuilt-static` | Fields | 220 | 203 | 53 | 0 | 476 |
+| `single` | `prebuilt-static` | Callbacks | 5 | 12 | 0 | 0 | 17 |
+| `single` | `source` | Structs | 37 | 48 | 2 | 0 | 87 |
+| `single` | `source` | Fields | 220 | 203 | 53 | 0 | 476 |
+| `single` | `source` | Callbacks | 5 | 12 | 0 | 0 | 17 |
+| `single` | `system-static` | Structs | 37 | 48 | 2 | 0 | 87 |
+| `single` | `system-static` | Fields | 220 | 203 | 53 | 0 | 476 |
+| `single` | `system-static` | Callbacks | 5 | 12 | 0 | 0 | 17 |
+| `single` | `wasm-compile-only` | Structs | 36 | 49 | 2 | 0 | 87 |
+| `single` | `wasm-compile-only` | Fields | 217 | 206 | 53 | 0 | 476 |
+| `single` | `wasm-compile-only` | Callbacks | 0 | 17 | 0 | 0 | 17 |
+| `single` | `wasm-runtime` | Structs | 36 | 49 | 2 | 0 | 87 |
+| `single` | `wasm-runtime` | Fields | 217 | 206 | 53 | 0 | 476 |
+| `single` | `wasm-runtime` | Callbacks | 0 | 17 | 0 | 0 | 17 |
 
 ### Non-Safe ABI Capabilities
 
 | Capability | Status | Rationale |
 |---|---|---|
 | `struct b2BodyDef` | `raw` | The declaration identity or precision-specific raw ABI proof for `b2BodyDef` changed, so the previous Safe review was not inherited and this refreshed capability is conservatively raw. |
+| `b2BodyDef::type` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2BodyDef::position` | `raw` | The declaration, overlay contract, or precision-specific raw ABI proof for `b2BodyDef::position` changed, so the previous Safe review was not inherited and this refreshed field is conservatively raw. |
-| `b2BodyDef::sleepThreshold` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2BodyDef::sleepThreshold; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2BodyDef::name` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2BodyDef::name; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
+| `b2BodyDef::rotation` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2BodyDef::linearVelocity` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2BodyDef::userData` | `omitted` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2BodyDef::userData; fail-closed validation recommends omitted rather than accepting the reviewed semantic path as proof. |
-| `b2BodyDef::motionLocks` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2BodyDef::motionLocks; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `b2BodyDef::enableContactRecycling` | `raw` | The exact native field `b2BodyDef::enableContactRecycling` remains available through the reviewed raw ABI mapping. |
 | `b2BodyDef::internalValue` | `omitted` | boxdd_sys::ffi::b2BodyDef::internalValue is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
-| `struct b2BodyEvents` | `deferred` | No public Safe Rust path currently has an exact AST raw-type witness for boxdd_sys::ffi::b2BodyEvents; the reviewed semantic adapter cannot satisfy a strict Safe classification until that proof exists. |
-| `b2BodyEvents::moveEvents` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2BodyEvents::moveEvents; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2BodyEvents::moveCount` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2BodyEvents::moveCount; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `struct b2BodyId` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2BodyId::index1` | `omitted` | boxdd_sys::ffi::b2BodyId::index1 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2BodyId::world0` | `omitted` | boxdd_sys::ffi::b2BodyId::world0 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
@@ -121,8 +168,6 @@ Policy: `ufcs-straight-line-v1`. Runtime witnesses must be executable `nextest` 
 | `struct b2BodyMoveEvent` | `raw` | The declaration identity or precision-specific raw ABI proof for `b2BodyMoveEvent` changed, so the previous Safe review was not inherited and this refreshed capability is conservatively raw. |
 | `b2BodyMoveEvent::userData` | `omitted` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2BodyMoveEvent::userData; fail-closed validation recommends omitted rather than accepting the reviewed semantic path as proof. |
 | `b2BodyMoveEvent::transform` | `raw` | The declaration, overlay contract, or precision-specific raw ABI proof for `b2BodyMoveEvent::transform` changed, so the previous Safe review was not inherited and this refreshed field is conservatively raw. |
-| `b2BodyMoveEvent::bodyId` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2BodyMoveEvent::bodyId; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2BodyMoveEvent::fellAsleep` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2BodyMoveEvent::fellAsleep; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `struct b2BoxCastInput` | `raw` | The exact native structure `b2BoxCastInput` remains available through the reviewed raw ABI mapping. |
 | `b2BoxCastInput::box` | `raw` | The exact native field `b2BoxCastInput::box` remains available through the reviewed raw ABI mapping. |
 | `b2BoxCastInput::translation` | `raw` | The exact native field `b2BoxCastInput::translation` remains available through the reviewed raw ABI mapping. |
@@ -134,46 +179,24 @@ Policy: `ufcs-straight-line-v1`. Runtime witnesses must be executable `nextest` 
 | `b2Capacity::dynamicBodyCount` | `raw` | The exact native field `b2Capacity::dynamicBodyCount` remains available through the reviewed raw ABI mapping. |
 | `b2Capacity::contactCount` | `raw` | The exact native field `b2Capacity::contactCount` remains available through the reviewed raw ABI mapping. |
 | `b2ChainDef::userData` | `omitted` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ChainDef::userData; fail-closed validation recommends omitted rather than accepting the reviewed semantic path as proof. |
-| `b2ChainDef::points` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ChainDef::points; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2ChainDef::count` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ChainDef::count; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2ChainDef::materialCount` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ChainDef::materialCount; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
+| `b2ChainDef::materials` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2ChainDef::filter` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2ChainDef::internalValue` | `omitted` | boxdd_sys::ffi::b2ChainDef::internalValue is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `struct b2ChainId` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2ChainId::index1` | `omitted` | boxdd_sys::ffi::b2ChainId::index1 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2ChainId::world0` | `omitted` | boxdd_sys::ffi::b2ChainId::world0 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2ChainId::generation` | `omitted` | boxdd_sys::ffi::b2ChainId::generation is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `struct b2ContactBeginTouchEvent` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
-| `b2ContactBeginTouchEvent::shapeIdA` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ContactBeginTouchEvent::shapeIdA; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2ContactBeginTouchEvent::shapeIdB` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ContactBeginTouchEvent::shapeIdB; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2ContactBeginTouchEvent::contactId` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ContactBeginTouchEvent::contactId; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `struct b2ContactData` | `raw` | The declaration identity or precision-specific raw ABI proof for `b2ContactData` changed, so the previous Safe review was not inherited and this refreshed capability is conservatively raw. |
 | `b2ContactData::manifold` | `raw` | The declaration, overlay contract, or precision-specific raw ABI proof for `b2ContactData::manifold` changed, so the previous Safe review was not inherited and this refreshed field is conservatively raw. |
 | `struct b2ContactEndTouchEvent` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
-| `b2ContactEndTouchEvent::shapeIdA` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ContactEndTouchEvent::shapeIdA; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2ContactEndTouchEvent::shapeIdB` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ContactEndTouchEvent::shapeIdB; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2ContactEndTouchEvent::contactId` | `deferred` | boxdd_sys::ffi::b2ContactEndTouchEvent::contactId is intentionally classified as deferred; raw layout reachability is not a Safe Rust witness. |
-| `struct b2ContactEvents` | `deferred` | No public Safe Rust path currently has an exact AST raw-type witness for boxdd_sys::ffi::b2ContactEvents; the reviewed semantic adapter cannot satisfy a strict Safe classification until that proof exists. |
-| `b2ContactEvents::beginEvents` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ContactEvents::beginEvents; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2ContactEvents::endEvents` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ContactEvents::endEvents; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2ContactEvents::hitEvents` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ContactEvents::hitEvents; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2ContactEvents::beginCount` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ContactEvents::beginCount; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2ContactEvents::endCount` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ContactEvents::endCount; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2ContactEvents::hitCount` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ContactEvents::hitCount; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `struct b2ContactHitEvent` | `raw` | The declaration identity or precision-specific raw ABI proof for `b2ContactHitEvent` changed, so the previous Safe review was not inherited and this refreshed capability is conservatively raw. |
-| `b2ContactHitEvent::shapeIdA` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ContactHitEvent::shapeIdA; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2ContactHitEvent::shapeIdB` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ContactHitEvent::shapeIdB; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2ContactHitEvent::contactId` | `deferred` | boxdd_sys::ffi::b2ContactHitEvent::contactId is intentionally classified as deferred; raw layout reachability is not a Safe Rust witness. |
 | `b2ContactHitEvent::point` | `raw` | The declaration, overlay contract, or precision-specific raw ABI proof for `b2ContactHitEvent::point` changed, so the previous Safe review was not inherited and this refreshed field is conservatively raw. |
-| `b2ContactHitEvent::normal` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ContactHitEvent::normal; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2ContactHitEvent::approachSpeed` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ContactHitEvent::approachSpeed; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `struct b2ContactId` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2ContactId::index1` | `omitted` | boxdd_sys::ffi::b2ContactId::index1 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2ContactId::world0` | `omitted` | boxdd_sys::ffi::b2ContactId::world0 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2ContactId::padding` | `omitted` | boxdd_sys::ffi::b2ContactId::padding is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2ContactId::generation` | `omitted` | boxdd_sys::ffi::b2ContactId::generation is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
-| `struct b2CosSin` | `deferred` | No public Safe Rust path currently has an exact AST raw-type witness for boxdd_sys::ffi::b2CosSin; the reviewed semantic adapter cannot satisfy a strict Safe classification until that proof exists. |
-| `b2CosSin::cosine` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2CosSin::cosine; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2CosSin::sine` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2CosSin::sine; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `struct b2Counters` | `raw` | The declaration identity or precision-specific raw ABI proof for `b2Counters` changed, so the previous Safe review was not inherited and this refreshed capability is conservatively raw. |
 | `b2Counters::byteCount` | `raw` | The declaration, overlay contract, or precision-specific raw ABI proof for `b2Counters::byteCount` changed, so the previous Safe review was not inherited and this refreshed field is conservatively raw. |
 | `b2Counters::awakeContactCount` | `raw` | The exact native field `b2Counters::awakeContactCount` remains available through the reviewed raw ABI mapping. |
@@ -190,9 +213,24 @@ Policy: `ufcs-straight-line-v1`. Runtime witnesses must be executable `nextest` 
 | `b2DebugDraw::DrawStringFcn` | `raw` | The declaration, overlay contract, or precision-specific raw ABI proof for `b2DebugDraw::DrawStringFcn` changed, so the previous Safe review was not inherited and this refreshed field is conservatively raw. |
 | `b2DebugDraw::DrawBoundsFcn` | `raw` | The exact native field `b2DebugDraw::DrawBoundsFcn` remains available through the reviewed raw ABI mapping. |
 | `b2DebugDraw::drawingBounds` | `raw` | boxdd_sys::ffi::b2DebugDraw::drawingBounds is intentionally classified as raw; raw layout reachability is not a Safe Rust witness. |
+| `b2DebugDraw::forceScale` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DebugDraw::jointScale` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2DebugDraw::drawContacts` | `raw` | The exact native field `b2DebugDraw::drawContacts` remains available through the reviewed raw ABI mapping. |
 | `b2DebugDraw::drawAnchorA` | `raw` | The exact native field `b2DebugDraw::drawAnchorA` remains available through the reviewed raw ABI mapping. |
+| `b2DebugDraw::drawShapes` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2DebugDraw::drawChainNormals` | `raw` | The exact native field `b2DebugDraw::drawChainNormals` remains available through the reviewed raw ABI mapping. |
+| `b2DebugDraw::drawJoints` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DebugDraw::drawJointExtras` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DebugDraw::drawBounds` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DebugDraw::drawMass` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DebugDraw::drawBodyNames` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DebugDraw::drawGraphColors` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DebugDraw::drawContactFeatures` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DebugDraw::drawContactNormals` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DebugDraw::drawContactForces` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DebugDraw::drawFrictionForces` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DebugDraw::drawIslands` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2DebugDraw::context` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `struct b2DistanceInput` | `raw` | The declaration identity or precision-specific raw ABI proof for `b2DistanceInput` changed, so the previous Safe review was not inherited and this refreshed capability is conservatively raw. |
 | `b2DistanceInput::transform` | `raw` | The exact native field `b2DistanceInput::transform` remains available through the reviewed raw ABI mapping. |
 | `struct b2DistanceJointDef` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
@@ -226,6 +264,7 @@ Policy: `ufcs-straight-line-v1`. Runtime witnesses must be executable `nextest` 
 | `b2ExplosionDef::position` | `raw` | The declaration, overlay contract, or precision-specific raw ABI proof for `b2ExplosionDef::position` changed, so the previous Safe review was not inherited and this refreshed field is conservatively raw. |
 | `b2FilterJointDef::base` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2FilterJointDef::internalValue` | `omitted` | boxdd_sys::ffi::b2FilterJointDef::internalValue is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
+| `struct b2Hull` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2Hull::points` | `omitted` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2Hull::points; fail-closed validation recommends omitted rather than accepting the reviewed semantic path as proof. |
 | `b2Hull::count` | `omitted` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2Hull::count; fail-closed validation recommends omitted rather than accepting the reviewed semantic path as proof. |
 | `struct b2JointDef` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
@@ -241,11 +280,7 @@ Policy: `ufcs-straight-line-v1`. Runtime witnesses must be executable `nextest` 
 | `b2JointDef::drawScale` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2JointDef::collideConnected` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `struct b2JointEvent` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
-| `b2JointEvent::jointId` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2JointEvent::jointId; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `b2JointEvent::userData` | `omitted` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2JointEvent::userData; fail-closed validation recommends omitted rather than accepting the reviewed semantic path as proof. |
-| `struct b2JointEvents` | `deferred` | No public Safe Rust path currently has an exact AST raw-type witness for boxdd_sys::ffi::b2JointEvents; the reviewed semantic adapter cannot satisfy a strict Safe classification until that proof exists. |
-| `b2JointEvents::jointEvents` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2JointEvents::jointEvents; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2JointEvents::count` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2JointEvents::count; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `struct b2JointId` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2JointId::index1` | `omitted` | boxdd_sys::ffi::b2JointId::index1 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2JointId::world0` | `omitted` | boxdd_sys::ffi::b2JointId::world0 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
@@ -278,15 +313,14 @@ Policy: `ufcs-straight-line-v1`. Runtime witnesses must be executable `nextest` 
 | `b2MotorJointDef::angularDampingRatio` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2MotorJointDef::maxSpringTorque` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2MotorJointDef::internalValue` | `omitted` | boxdd_sys::ffi::b2MotorJointDef::internalValue is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
-| `struct b2PlaneResult` | `deferred` | No public Safe Rust path currently has an exact AST raw-type witness for boxdd_sys::ffi::b2PlaneResult; the reviewed semantic adapter cannot satisfy a strict Safe classification until that proof exists. |
-| `b2PlaneResult::plane` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2PlaneResult::plane; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2PlaneResult::point` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2PlaneResult::point; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2PlaneResult::hit` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2PlaneResult::hit; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2Polygon::vertices` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2Polygon::vertices; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2Polygon::normals` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2Polygon::normals; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2Polygon::centroid` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2Polygon::centroid; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2Polygon::radius` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2Polygon::radius; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2Polygon::count` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2Polygon::count; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
+| `struct b2PlaneResult` [wasm-compile-only] | `raw` | Exact route-conditioned Rust AST provenance proves `boxdd::World::collide_mover` produces this ABI capability for the crate-owned Safe Rust exposure `boxdd::MoverPlaneResult`. The route-conditioned Rust ABI index does not expose this Safe adapter on the overridden WASM provider, where the exact generated raw FFI capability remains available. |
+| `struct b2PlaneResult` [wasm-runtime] | `raw` | Exact route-conditioned Rust AST provenance proves `boxdd::World::collide_mover` produces this ABI capability for the crate-owned Safe Rust exposure `boxdd::MoverPlaneResult`. The route-conditioned Rust ABI index does not expose this Safe adapter on the overridden WASM provider, where the exact generated raw FFI capability remains available. |
+| `b2PlaneResult::plane` [wasm-compile-only] | `raw` | Exact route-conditioned Rust AST provenance proves `boxdd::World::collide_mover` produces this ABI capability for the crate-owned Safe Rust exposure `boxdd::MoverPlaneResult::plane`. The route-conditioned Rust ABI index does not expose this Safe adapter on the overridden WASM provider, where the exact generated raw FFI capability remains available. |
+| `b2PlaneResult::plane` [wasm-runtime] | `raw` | Exact route-conditioned Rust AST provenance proves `boxdd::World::collide_mover` produces this ABI capability for the crate-owned Safe Rust exposure `boxdd::MoverPlaneResult::plane`. The route-conditioned Rust ABI index does not expose this Safe adapter on the overridden WASM provider, where the exact generated raw FFI capability remains available. |
+| `b2PlaneResult::point` [wasm-compile-only] | `raw` | Exact route-conditioned Rust AST provenance proves `boxdd::World::collide_mover` produces this ABI capability for the crate-owned Safe Rust exposure `boxdd::MoverPlaneResult::point`. The route-conditioned Rust ABI index does not expose this Safe adapter on the overridden WASM provider, where the exact generated raw FFI capability remains available. |
+| `b2PlaneResult::point` [wasm-runtime] | `raw` | Exact route-conditioned Rust AST provenance proves `boxdd::World::collide_mover` produces this ABI capability for the crate-owned Safe Rust exposure `boxdd::MoverPlaneResult::point`. The route-conditioned Rust ABI index does not expose this Safe adapter on the overridden WASM provider, where the exact generated raw FFI capability remains available. |
+| `b2PlaneResult::hit` [wasm-compile-only] | `raw` | Exact route-conditioned Rust AST provenance proves `boxdd::World::collide_mover` produces this ABI capability for the crate-owned Safe Rust exposure `boxdd::MoverPlaneResult::hit`. The route-conditioned Rust ABI index does not expose this Safe adapter on the overridden WASM provider, where the exact generated raw FFI capability remains available. |
+| `b2PlaneResult::hit` [wasm-runtime] | `raw` | Exact route-conditioned Rust AST provenance proves `boxdd::World::collide_mover` produces this ABI capability for the crate-owned Safe Rust exposure `boxdd::MoverPlaneResult::hit`. The route-conditioned Rust ABI index does not expose this Safe adapter on the overridden WASM provider, where the exact generated raw FFI capability remains available. |
 | `struct b2Pos` | `raw` | The exact native structure `b2Pos` remains available through the reviewed raw ABI mapping. |
 | `b2Pos::x` | `raw` | The exact native field `b2Pos::x` remains available through the reviewed raw ABI mapping. |
 | `b2Pos::y` | `raw` | The exact native field `b2Pos::y` remains available through the reviewed raw ABI mapping. |
@@ -295,7 +329,6 @@ Policy: `ufcs-straight-line-v1`. Runtime witnesses must be executable `nextest` 
 | `b2PrismaticJointDef::enableSpring` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2PrismaticJointDef::hertz` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2PrismaticJointDef::dampingRatio` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
-| `b2PrismaticJointDef::targetTranslation` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2PrismaticJointDef::targetTranslation; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `b2PrismaticJointDef::enableLimit` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2PrismaticJointDef::lowerTranslation` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2PrismaticJointDef::upperTranslation` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
@@ -311,8 +344,6 @@ Policy: `ufcs-straight-line-v1`. Runtime witnesses must be executable `nextest` 
 | `b2RayResult::point` | `raw` | The declaration, overlay contract, or precision-specific raw ABI proof for `b2RayResult::point` changed, so the previous Safe review was not inherited and this refreshed field is conservatively raw. |
 | `b2RayResult::normal` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2RayResult::fraction` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
-| `b2RayResult::nodeVisits` | `deferred` | boxdd_sys::ffi::b2RayResult::nodeVisits is intentionally classified as deferred; raw layout reachability is not a Safe Rust witness. |
-| `b2RayResult::leafVisits` | `deferred` | boxdd_sys::ffi::b2RayResult::leafVisits is intentionally classified as deferred; raw layout reachability is not a Safe Rust witness. |
 | `b2RayResult::hit` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `struct b2RecPlayerInfo` | `raw` | The exact native structure `b2RecPlayerInfo` remains available through the reviewed raw ABI mapping. |
 | `b2RecPlayerInfo::frameCount` | `raw` | The exact native field `b2RecPlayerInfo::frameCount` remains available through the reviewed raw ABI mapping. |
@@ -347,30 +378,28 @@ Policy: `ufcs-straight-line-v1`. Runtime witnesses must be executable `nextest` 
 | `b2RevoluteJointDef::maxMotorTorque` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2RevoluteJointDef::motorSpeed` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2RevoluteJointDef::internalValue` | `omitted` | boxdd_sys::ffi::b2RevoluteJointDef::internalValue is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
+| `b2Rot::c` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2Rot::s` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `struct b2SensorBeginTouchEvent` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
-| `b2SensorBeginTouchEvent::sensorShapeId` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2SensorBeginTouchEvent::sensorShapeId; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2SensorBeginTouchEvent::visitorShapeId` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2SensorBeginTouchEvent::visitorShapeId; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `struct b2SensorEndTouchEvent` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
-| `b2SensorEndTouchEvent::sensorShapeId` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2SensorEndTouchEvent::sensorShapeId; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2SensorEndTouchEvent::visitorShapeId` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2SensorEndTouchEvent::visitorShapeId; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `struct b2SensorEvents` | `deferred` | No public Safe Rust path currently has an exact AST raw-type witness for boxdd_sys::ffi::b2SensorEvents; the reviewed semantic adapter cannot satisfy a strict Safe classification until that proof exists. |
-| `b2SensorEvents::beginEvents` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2SensorEvents::beginEvents; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2SensorEvents::endEvents` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2SensorEvents::endEvents; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2SensorEvents::beginCount` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2SensorEvents::beginCount; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
-| `b2SensorEvents::endCount` | `deferred` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2SensorEvents::endCount; fail-closed validation recommends deferred rather than accepting the reviewed semantic path as proof. |
 | `struct b2ShapeCastPairInput` | `raw` | The declaration identity or precision-specific raw ABI proof for `b2ShapeCastPairInput` changed, so the previous Safe review was not inherited and this refreshed capability is conservatively raw. |
 | `b2ShapeCastPairInput::transform` | `raw` | The exact native field `b2ShapeCastPairInput::transform` remains available through the reviewed raw ABI mapping. |
 | `b2ShapeDef::userData` | `omitted` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2ShapeDef::userData; fail-closed validation recommends omitted rather than accepting the reviewed semantic path as proof. |
+| `b2ShapeDef::material` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2ShapeDef::filter` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2ShapeDef::internalValue` | `omitted` | boxdd_sys::ffi::b2ShapeDef::internalValue is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `struct b2ShapeId` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2ShapeId::index1` | `omitted` | boxdd_sys::ffi::b2ShapeId::index1 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2ShapeId::world0` | `omitted` | boxdd_sys::ffi::b2ShapeId::world0 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2ShapeId::generation` | `omitted` | boxdd_sys::ffi::b2ShapeId::generation is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
+| `b2ShapeProxy::points` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
+| `b2ShapeProxy::count` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `struct b2Simplex` | `omitted` | boxdd_sys::ffi::b2Simplex is intentionally classified as omitted; raw ABI presence is not a Safe Rust witness. |
 | `b2Simplex::v1` | `omitted` | boxdd_sys::ffi::b2Simplex::v1 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2Simplex::v2` | `omitted` | boxdd_sys::ffi::b2Simplex::v2 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2Simplex::v3` | `omitted` | boxdd_sys::ffi::b2Simplex::v3 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2Simplex::count` | `omitted` | boxdd_sys::ffi::b2Simplex::count is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
+| `b2SimplexCache::count` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2SimplexCache::indexA` | `omitted` | boxdd_sys::ffi::b2SimplexCache::indexA is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2SimplexCache::indexB` | `omitted` | boxdd_sys::ffi::b2SimplexCache::indexB is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `struct b2SimplexVertex` | `omitted` | boxdd_sys::ffi::b2SimplexVertex is intentionally classified as omitted; raw ABI presence is not a Safe Rust witness. |
@@ -380,6 +409,7 @@ Policy: `ufcs-straight-line-v1`. Runtime witnesses must be executable `nextest` 
 | `b2SimplexVertex::a` | `omitted` | boxdd_sys::ffi::b2SimplexVertex::a is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2SimplexVertex::indexA` | `omitted` | boxdd_sys::ffi::b2SimplexVertex::indexA is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2SimplexVertex::indexB` | `omitted` | boxdd_sys::ffi::b2SimplexVertex::indexB is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
+| `b2SurfaceMaterial::customColor` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `struct b2Transform` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2Transform::p` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2Transform::q` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
@@ -421,14 +451,17 @@ Policy: `ufcs-straight-line-v1`. Runtime witnesses must be executable `nextest` 
 | `b2WorldCastOutput::iterations` | `raw` | The exact native field `b2WorldCastOutput::iterations` remains available through the reviewed raw ABI mapping. |
 | `b2WorldCastOutput::hit` | `raw` | The exact native field `b2WorldCastOutput::hit` remains available through the reviewed raw ABI mapping. |
 | `struct b2WorldDef` | `raw` | The declaration identity or precision-specific raw ABI proof for `b2WorldDef` changed, so the previous Safe review was not inherited and this refreshed capability is conservatively raw. |
+| `b2WorldDef::gravity` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2WorldDef::frictionCallback` | `raw` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2WorldDef::frictionCallback; fail-closed validation recommends raw rather than accepting the reviewed semantic path as proof. |
 | `b2WorldDef::restitutionCallback` | `raw` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2WorldDef::restitutionCallback; fail-closed validation recommends raw rather than accepting the reviewed semantic path as proof. |
+| `b2WorldDef::workerCount` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2WorldDef::enqueueTask` | `raw` | The declaration, overlay contract, or precision-specific raw ABI proof for `b2WorldDef::enqueueTask` changed, so the previous Safe review was not inherited and this refreshed field is conservatively raw. |
 | `b2WorldDef::finishTask` | `raw` | boxdd_sys::ffi::b2WorldDef::finishTask is intentionally classified as raw; raw layout reachability is not a Safe Rust witness. |
 | `b2WorldDef::userTaskContext` | `raw` | boxdd_sys::ffi::b2WorldDef::userTaskContext is intentionally classified as raw; raw layout reachability is not a Safe Rust witness. |
 | `b2WorldDef::userData` | `omitted` | No public Safe Rust path currently has an exact AST raw-field witness for boxdd_sys::ffi::b2WorldDef::userData; fail-closed validation recommends omitted rather than accepting the reviewed semantic path as proof. |
 | `b2WorldDef::capacity` | `raw` | The exact native field `b2WorldDef::capacity` remains available through the reviewed raw ABI mapping. |
 | `b2WorldDef::internalValue` | `omitted` | boxdd_sys::ffi::b2WorldDef::internalValue is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
+| `struct b2WorldId` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `b2WorldId::index1` | `omitted` | boxdd_sys::ffi::b2WorldId::index1 is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `b2WorldId::generation` | `omitted` | boxdd_sys::ffi::b2WorldId::generation is intentionally classified as omitted; raw layout reachability is not a Safe Rust witness. |
 | `struct b2WorldTransform` | `raw` | The exact native structure `b2WorldTransform` remains available through the reviewed raw ABI mapping. |
@@ -437,17 +470,25 @@ Policy: `ufcs-straight-line-v1`. Runtime witnesses must be executable `nextest` 
 | `callback b2AllocFcn` | `raw` | The declaration identity or precision-specific raw ABI proof for `b2AllocFcn` changed, so the previous Safe review was not inherited and this refreshed callback is conservatively raw. |
 | `callback b2AssertFcn` | `raw` | boxdd_sys::ffi::b2AssertFcn remains raw because its process-global or scheduler safety contract is not exposed as an ordinary Safe Rust callback adapter. |
 | `callback b2CastResultFcn` | `raw` | The declaration identity or precision-specific raw ABI proof for `b2CastResultFcn` changed, so the previous Safe review was not inherited and this refreshed callback is conservatively raw. |
+| `callback b2CustomFilterFcn` [wasm-compile-only] | `raw` | The Rust AST call graph proves that public path boxdd::World::set_custom_filter passes a callable value in the exact callback argument slot of the native installation call. The route-conditioned Rust ABI index does not expose this Safe adapter on the overridden WASM provider, where the exact generated raw FFI capability remains available. |
+| `callback b2CustomFilterFcn` [wasm-runtime] | `raw` | The Rust AST call graph proves that public path boxdd::World::set_custom_filter passes a callable value in the exact callback argument slot of the native installation call. The route-conditioned Rust ABI index does not expose this Safe adapter on the overridden WASM provider, where the exact generated raw FFI capability remains available. |
 | `callback b2EnqueueTaskCallback` | `raw` | The declaration identity or precision-specific raw ABI proof for `b2EnqueueTaskCallback` changed, so the previous Safe review was not inherited and this refreshed callback is conservatively raw. |
 | `callback b2FinishTaskCallback` | `raw` | boxdd_sys::ffi::b2FinishTaskCallback remains raw because its process-global or scheduler safety contract is not exposed as an ordinary Safe Rust callback adapter. |
 | `callback b2FreeFcn` | `raw` | The declaration identity or precision-specific raw ABI proof for `b2FreeFcn` changed, so the previous Safe review was not inherited and this refreshed callback is conservatively raw. |
-| `callback b2FrictionCallback` | `deferred` | No reviewed public path proves a callable value in the exact native argument slot for b2FrictionCallback; reaching a callback-taking symbol, including passing None, is insufficient. |
+| `callback b2FrictionCallback` [wasm-compile-only] | `raw` | Exact route-conditioned Rust AST evidence proves `boxdd::World::set_friction_callback` exposes this ABI capability through a crate-owned Safe Rust adapter. The route-conditioned Rust ABI index does not expose this Safe adapter on the overridden WASM provider, where the exact generated raw FFI capability remains available. |
+| `callback b2FrictionCallback` [wasm-runtime] | `raw` | Exact route-conditioned Rust AST evidence proves `boxdd::World::set_friction_callback` exposes this ABI capability through a crate-owned Safe Rust adapter. The route-conditioned Rust ABI index does not expose this Safe adapter on the overridden WASM provider, where the exact generated raw FFI capability remains available. |
 | `callback b2LogFcn` | `raw` | boxdd_sys::ffi::b2LogFcn remains raw because its process-global or scheduler safety contract is not exposed as an ordinary Safe Rust callback adapter. |
 | `callback b2OverlapResultFcn` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `callback b2PlaneResultFcn` | `raw` | The native declaration is unchanged, but its previous Safe Rust exposure proof no longer matches the refreshed upstream call graph, so this capability is conservatively raw. |
 | `callback b2PreSolveFcn` | `raw` | The declaration identity or precision-specific raw ABI proof for `b2PreSolveFcn` changed, so the previous Safe review was not inherited and this refreshed callback is conservatively raw. |
-| `callback b2RestitutionCallback` | `deferred` | No reviewed public path proves a callable value in the exact native argument slot for b2RestitutionCallback; reaching a callback-taking symbol, including passing None, is insufficient. |
+| `callback b2RestitutionCallback` [wasm-compile-only] | `raw` | Exact route-conditioned Rust AST evidence proves `boxdd::World::set_restitution_callback` exposes this ABI capability through a crate-owned Safe Rust adapter. The route-conditioned Rust ABI index does not expose this Safe adapter on the overridden WASM provider, where the exact generated raw FFI capability remains available. |
+| `callback b2RestitutionCallback` [wasm-runtime] | `raw` | Exact route-conditioned Rust AST evidence proves `boxdd::World::set_restitution_callback` exposes this ABI capability through a crate-owned Safe Rust adapter. The route-conditioned Rust ABI index does not expose this Safe adapter on the overridden WASM provider, where the exact generated raw FFI capability remains available. |
 | `callback b2TaskCallback` | `raw` | The declaration identity or precision-specific raw ABI proof for `b2TaskCallback` changed, so the previous Safe review was not inherited and this refreshed callback is conservatively raw. |
 | `callback b2TreeBoxCastCallbackFcn` | `raw` | The exact native callback `b2TreeBoxCastCallbackFcn` remains available through the reviewed raw ABI mapping. |
+| `callback b2TreeQueryCallbackFcn` [wasm-compile-only] | `raw` | The Rust AST call graph proves that the query and query_all adapters each pass a callable value in the exact native callback argument slot. The route-conditioned Rust ABI index does not expose this Safe adapter on the overridden WASM provider, where the exact generated raw FFI capability remains available. |
+| `callback b2TreeQueryCallbackFcn` [wasm-runtime] | `raw` | The Rust AST call graph proves that the query and query_all adapters each pass a callable value in the exact native callback argument slot. The route-conditioned Rust ABI index does not expose this Safe adapter on the overridden WASM provider, where the exact generated raw FFI capability remains available. |
+| `callback b2TreeRayCastCallbackFcn` [wasm-compile-only] | `raw` | The Rust AST call graph proves that public path boxdd::DynamicTree::ray_cast passes a callable value in the exact callback argument slot of the native installation call. The route-conditioned Rust ABI index does not expose this Safe adapter on the overridden WASM provider, where the exact generated raw FFI capability remains available. |
+| `callback b2TreeRayCastCallbackFcn` [wasm-runtime] | `raw` | The Rust AST call graph proves that public path boxdd::DynamicTree::ray_cast passes a callable value in the exact callback argument slot of the native installation call. The route-conditioned Rust ABI index does not expose this Safe adapter on the overridden WASM provider, where the exact generated raw FFI capability remains available. |
 
 ## Non-Safe Capabilities
 
@@ -475,6 +516,25 @@ Policy: `ufcs-straight-line-v1`. Runtime witnesses must be executable `nextest` 
 | `b2World_DumpMemoryStats` | `omitted` | World | Intentionally omitted: upstream writes fixed diagnostic output, so callers should use upstream diagnostics tooling explicitly. |
 | `b2World_EnableSpeculative` | `raw` | Internal world tuning | Upstream documents speculative collision toggling as an internal testing hook, so it is intentionally excluded from the stable Safe Rust surface. |
 | `b2World_RebuildStaticTree` | `omitted` | World | Intentionally omitted: upstream labels this as internal testing support, not stable runtime API. |
+| `b2DefaultDebugDraw` [wasm-compile-only, wasm-runtime] | `raw` | Debug drawing | The route-conditioned Rust index proves this Safe adapter on native providers, but its callback-bearing path is cfg-disabled on these WASM providers, where only exact raw FFI remains available. |
+| `b2DynamicTree_BoxCast` [wasm-compile-only, wasm-runtime] | `raw` | Dynamic tree box casting | The route-conditioned Rust index proves this Safe adapter on native providers, but its callback-bearing path is cfg-disabled on these WASM providers, where only exact raw FFI remains available. |
+| `b2DynamicTree_Query` [wasm-compile-only, wasm-runtime] | `raw` | DynamicTree | The route-conditioned Rust index proves this Safe adapter on native providers, but its callback-bearing path is cfg-disabled on these WASM providers, where only exact raw FFI remains available. |
+| `b2DynamicTree_QueryAll` [wasm-compile-only, wasm-runtime] | `raw` | DynamicTree | The route-conditioned Rust index proves this Safe adapter on native providers, but its callback-bearing path is cfg-disabled on these WASM providers, where only exact raw FFI remains available. |
+| `b2DynamicTree_RayCast` [wasm-compile-only, wasm-runtime] | `raw` | DynamicTree | The route-conditioned Rust index proves this Safe adapter on native providers, but its callback-bearing path is cfg-disabled on these WASM providers, where only exact raw FFI remains available. |
+| `b2MakeOffsetProxy` [wasm-compile-only, wasm-runtime] | `raw` | Foundation | The route-conditioned Rust index proves this Safe adapter on native providers, but its callback-bearing path is cfg-disabled on these WASM providers, where only exact raw FFI remains available. |
+| `b2RecPlayer_DrawFrameQueries` [wasm-compile-only, wasm-runtime] | `raw` | Replay query drawing | The route-conditioned Rust index proves this Safe adapter on native providers, but its callback-bearing path is cfg-disabled on these WASM providers, where only exact raw FFI remains available. |
+| `b2SetAssertFcn` [wasm-compile-only, wasm-runtime] | `raw` | Foundation initialization | The route-conditioned Rust index proves this Safe adapter on native providers, but its callback-bearing path is cfg-disabled on these WASM providers, where only exact raw FFI remains available. |
+| `b2SetLogFcn` [wasm-compile-only, wasm-runtime] | `raw` | Foundation initialization | The route-conditioned Rust index proves this Safe adapter on native providers, but its callback-bearing path is cfg-disabled on these WASM providers, where only exact raw FFI remains available. |
+| `b2World_CastRay` [wasm-compile-only, wasm-runtime] | `raw` | World spatial query | The route-conditioned Rust index proves this Safe adapter on native providers, but its callback-bearing path is cfg-disabled on these WASM providers, where only exact raw FFI remains available. |
+| `b2World_CastShape` [wasm-compile-only, wasm-runtime] | `raw` | World spatial query | The route-conditioned Rust index proves this Safe adapter on native providers, but its callback-bearing path is cfg-disabled on these WASM providers, where only exact raw FFI remains available. |
+| `b2World_CollideMover` [wasm-compile-only, wasm-runtime] | `raw` | World spatial query | The route-conditioned Rust index proves this Safe adapter on native providers, but its callback-bearing path is cfg-disabled on these WASM providers, where only exact raw FFI remains available. |
+| `b2World_Draw` [wasm-compile-only, wasm-runtime] | `raw` | World | The route-conditioned Rust index proves this Safe adapter on native providers, but its callback-bearing path is cfg-disabled on these WASM providers, where only exact raw FFI remains available. |
+| `b2World_OverlapAABB` [wasm-compile-only, wasm-runtime] | `raw` | World spatial query | The route-conditioned Rust index proves this Safe adapter on native providers, but its callback-bearing path is cfg-disabled on these WASM providers, where only exact raw FFI remains available. |
+| `b2World_OverlapShape` [wasm-compile-only, wasm-runtime] | `raw` | World spatial query | The route-conditioned Rust index proves this Safe adapter on native providers, but its callback-bearing path is cfg-disabled on these WASM providers, where only exact raw FFI remains available. |
+| `b2World_SetCustomFilterCallback` [wasm-compile-only, wasm-runtime] | `raw` | World | The route-conditioned Rust index proves this Safe adapter on native providers, but its callback-bearing path is cfg-disabled on these WASM providers, where only exact raw FFI remains available. |
+| `b2World_SetFrictionCallback` [wasm-compile-only, wasm-runtime] | `raw` | World | The route-conditioned Rust index proves this Safe adapter on native providers, but its callback-bearing path is cfg-disabled on these WASM providers, where only exact raw FFI remains available. |
+| `b2World_SetPreSolveCallback` [wasm-compile-only, wasm-runtime] | `raw` | World | The route-conditioned Rust index proves this Safe adapter on native providers, but its callback-bearing path is cfg-disabled on these WASM providers, where only exact raw FFI remains available. |
+| `b2World_SetRestitutionCallback` [wasm-compile-only, wasm-runtime] | `raw` | World | The route-conditioned Rust index proves this Safe adapter on native providers, but its callback-bearing path is cfg-disabled on these WASM providers, where only exact raw FFI remains available. |
 
 ## Maintenance
 

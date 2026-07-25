@@ -12,10 +12,66 @@ rust_target = "x86_64-unknown-linux-gnu"
 rust_features = []
 
 [[binding_routes]]
+mode = "single"
+provider = "system-static"
+artifact = "bindings-single"
+rust_target = "x86_64-unknown-linux-gnu"
+rust_features = []
+
+[[binding_routes]]
+mode = "single"
+provider = "prebuilt-static"
+artifact = "bindings-single"
+rust_target = "x86_64-unknown-linux-gnu"
+rust_features = []
+
+[[binding_routes]]
+mode = "single"
+provider = "wasm-runtime"
+artifact = "bindings-wasm32-unknown-unknown-single"
+rust_target = "wasm32-unknown-unknown"
+rust_features = []
+
+[[binding_routes]]
+mode = "single"
+provider = "wasm-compile-only"
+artifact = "bindings-wasm32-wasip1-single"
+rust_target = "wasm32-wasip1"
+rust_features = []
+
+[[binding_routes]]
 mode = "double"
 provider = "source"
 artifact = "bindings-double"
 rust_target = "x86_64-unknown-linux-gnu"
+rust_features = ["double-precision"]
+
+[[binding_routes]]
+mode = "double"
+provider = "system-static"
+artifact = "bindings-double"
+rust_target = "x86_64-unknown-linux-gnu"
+rust_features = ["double-precision"]
+
+[[binding_routes]]
+mode = "double"
+provider = "prebuilt-static"
+artifact = "bindings-double"
+rust_target = "x86_64-unknown-linux-gnu"
+rust_features = ["double-precision"]
+
+[[binding_routes]]
+mode = "double"
+provider = "wasm-runtime"
+artifact = "bindings-wasm32-unknown-unknown-double"
+rust_target = "wasm32-unknown-unknown"
+rust_features = ["double-precision"]
+
+[[binding_routes]]
+mode = "double"
+provider = "wasm-compile-only"
+artifact = "bindings-wasm32-wasip1-double"
+rust_target = "wasm32-wasip1"
 rust_features = ["double-precision"]
 
 [[recording_inputs]]
@@ -64,13 +120,63 @@ producer = "bindgen"
 content_blake3 = "8979c95e6048d1f1b1b014871fd3f79e5683446b96b43224dd0dd477aefdeaba"
 
 [[artifacts]]
+name = "bindings-wasm32-unknown-unknown-single"
+kind = "bindings"
+path = "boxdd-sys/src/bindings_wasm32_unknown_unknown.rs"
+precision = "single"
+target = "wasm32-unknown-unknown"
+provider = "universal"
+producer = "bindgen"
+content_blake3 = "a28f8ce120032dc4e178042cb2c20739582b632ae7d980f2c41ca921649b6473"
+
+[[artifacts]]
+name = "bindings-wasm32-wasip1-single"
+kind = "bindings"
+path = "boxdd-sys/src/bindings_wasm32_wasip1.rs"
+precision = "single"
+target = "wasm32-wasip1"
+provider = "universal"
+producer = "bindgen"
+content_blake3 = "be399e348d7a53f98d2370d4e7ca5d0ee0f8b76cceaf876ff2b16997537fcdcd"
+
+[[artifacts]]
+name = "bindings-double"
+kind = "bindings"
+path = "boxdd-sys/src/bindings_double.rs"
+precision = "double"
+target = "universal"
+provider = "universal"
+producer = "bindgen"
+content_blake3 = "04027c458a30427b1c8f905080d42cdfaa3aff64f101d1a52f80a49145ddee05"
+
+[[artifacts]]
+name = "bindings-wasm32-unknown-unknown-double"
+kind = "bindings"
+path = "boxdd-sys/src/bindings_wasm32_unknown_unknown_double.rs"
+precision = "double"
+target = "wasm32-unknown-unknown"
+provider = "universal"
+producer = "bindgen"
+content_blake3 = "0cf8c49d13c91e28c347c5c60b90fcf3d38e5d87e3ed347503e638e250576c28"
+
+[[artifacts]]
+name = "bindings-wasm32-wasip1-double"
+kind = "bindings"
+path = "boxdd-sys/src/bindings_wasm32_wasip1_double.rs"
+precision = "double"
+target = "wasm32-wasip1"
+provider = "universal"
+producer = "bindgen"
+content_blake3 = "0235a0a5dbb7eb4203122501e987a2ac1d757d0701372bff65e4ecbc4f593d7b"
+
+[[artifacts]]
 name = "api-contract"
 kind = "api-contract"
 path = "boxdd/tests/fixtures/api_contract.toml"
 target = "universal"
 provider = "universal"
 producer = "reviewed"
-content_blake3 = "59d116796ffabc191be8e6d0a504714b2b6ed47230d751e3e0015ad88c138a37"
+content_blake3 = "c33f7e8e65d242f0b634c9bcf1d9f9569ab7b462f41a44cdad74a9bb787bb070"
 
 [[artifacts]]
 name = "recording-wire"
@@ -88,17 +194,7 @@ path = "docs/api-coverage.md"
 target = "universal"
 provider = "universal"
 producer = "api-coverage"
-content_blake3 = "7a7954a847b23798e551082609d91e348a31369f84a75e542843774468d01c10"
-
-[[artifacts]]
-name = "bindings-double"
-kind = "bindings"
-path = "boxdd-sys/src/bindings_double.rs"
-precision = "double"
-target = "universal"
-provider = "universal"
-producer = "bindgen"
-content_blake3 = "04027c458a30427b1c8f905080d42cdfaa3aff64f101d1a52f80a49145ddee05"
+content_blake3 = "c72cd21a6592609d52f0ccab001f13b2a379426c6269d6d4b902e7fb6a2780e7"
 
 [[artifacts]]
 name = "abi-source-single"
