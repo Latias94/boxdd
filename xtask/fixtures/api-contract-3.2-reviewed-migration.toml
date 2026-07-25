@@ -1,11 +1,11 @@
-schema_version = 1
+schema_version = 2
 reviewed_revision = "dec377018a0af9bd295b32a70ed0afc6fdfb06b3"
 active_revision = "56edae79f2949d86142b03450d5d60f63bcf5a6f"
 
 [expected_counts]
 total = 478
-safe = 453
-raw = 23
+safe = 456
+raw = 20
 omitted = 2
 deferred = 0
 
@@ -348,6 +348,33 @@ classification = "safe"
 area = "Shape identity validation"
 rust_paths = ["boxdd::World::try_shape"]
 rationale = "World::try_shape validates branded shape identity before returning a scoped Safe Rust handle."
+
+[[functions]]
+logical_name = "b2SetAssertFcn"
+classification = "safe"
+area = "Foundation initialization"
+rust_paths = ["boxdd::initialize_foundation"]
+rationale = "Foundation initialization installs one permanent panic-contained assertion trampoline before publishing the process-global configuration."
+previous_classification = "raw"
+transition_unit = "U6"
+
+[[functions]]
+logical_name = "b2SetLengthUnitsPerMeter"
+classification = "safe"
+area = "Foundation initialization"
+rust_paths = ["boxdd::initialize_foundation"]
+rationale = "Foundation initialization validates a finite positive scale and writes it once under the initialization mutex before publishing the process-global configuration."
+previous_classification = "raw"
+transition_unit = "U6"
+
+[[functions]]
+logical_name = "b2SetLogFcn"
+classification = "safe"
+area = "Foundation initialization"
+rust_paths = ["boxdd::initialize_foundation"]
+rationale = "Foundation initialization installs one permanent panic-contained log trampoline before publishing the process-global configuration."
+previous_classification = "raw"
+transition_unit = "U6"
 
 [[functions]]
 logical_name = "b2World_EnableSpeculative"

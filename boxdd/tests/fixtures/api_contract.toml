@@ -9,8 +9,8 @@ double = "bdc19edc4fd8c005d570c18e833d2c1e7c27fc034fb098e1c1287c9c97518cdf"
 
 [migration_baseline]
 total = 478
-safe = 463
-raw = 13
+safe = 462
+raw = 14
 omitted = 2
 deferred = 0
 
@@ -78,6 +78,13 @@ unit = "U6"
 rationale = "Foundation initialization installs one permanent panic-contained assertion trampoline before publishing the process-global configuration."
 
 [[classification_changes]]
+logical_name = "b2SetLengthUnitsPerMeter"
+from = "raw"
+to = "safe"
+unit = "U6"
+rationale = "Foundation initialization validates a finite positive scale and writes it once under the initialization mutex before publishing the process-global configuration."
+
+[[classification_changes]]
 logical_name = "b2SetLogFcn"
 from = "raw"
 to = "safe"
@@ -142,7 +149,7 @@ item = "abi_capability_mapping_rejects_deleted_forged_and_unknown_references"
 package = "xtask"
 gate = "nextest"
 role = "abi-contract-validator"
-fingerprint = "blake3-routes-v2:ed2658496b3ee16ca229f1bec19a812b86d582949d5e3d7e9a702764d08787ac"
+fingerprint = "blake3-routes-v2:7427974c03cee8c05933055c094ee84710f098c49e0d8d6fbb1dc86ad45800ec"
 modes = [
     "double",
     "single",
@@ -164,7 +171,7 @@ item = "typed_function_classification_evidence_rejects_unrelated_subjects"
 package = "xtask"
 gate = "nextest"
 role = "function-classification-validator"
-fingerprint = "blake3-routes-v2:280b374e23512d6351d2089464fe5b3a41a719545702d1131fb1d00766102b8d"
+fingerprint = "blake3-routes-v2:20e0ecd6a7ca746f1f791ae63be88b23aa50cddb2c55523f9e0269a8deeb0992"
 modes = [
     "double",
     "single",
@@ -273,7 +280,7 @@ item = "typed_function_classification_evidence_rejects_unrelated_subjects"
 package = "xtask"
 gate = "nextest"
 role = "function-classification-validator"
-fingerprint = "blake3-routes-v2:22730ce06c384ae683c0d5aad393ee1ceab7302e1f2520bc4117a1c5ae7b3681"
+fingerprint = "blake3-routes-v2:7adc041b8edb2530a323857ab3b480445426ddbea99a63b5683de58329efd719"
 modes = [
     "double",
     "single",
@@ -14259,7 +14266,7 @@ fingerprint = "fnv1a64:8aa6fe66d828f9f1"
 classification = "safe"
 area = "Foundation initialization"
 rust_paths = ["boxdd::initialize_foundation"]
-rationale = "Safe foundation initialization installs the process-global assertion trampoline at most once under the initialization mutex before publishing the configuration; callback panics are contained and cannot unwind across C."
+rationale = "Foundation initialization installs one permanent panic-contained assertion trampoline before publishing the process-global configuration."
 modes = [
     "double",
     "single",
@@ -14302,7 +14309,7 @@ fingerprint = "fnv1a64:5c5a4006dd3348bc"
 classification = "safe"
 area = "Foundation initialization"
 rust_paths = ["boxdd::initialize_foundation"]
-rationale = "Safe foundation initialization validates a finite positive scale and writes it once under the initialization mutex before publishing the process-global configuration."
+rationale = "Foundation initialization validates a finite positive scale and writes it once under the initialization mutex before publishing the process-global configuration."
 modes = [
     "double",
     "single",
@@ -14335,7 +14342,7 @@ fingerprint = "fnv1a64:055fa301f9fc1931"
 classification = "safe"
 area = "Foundation initialization"
 rust_paths = ["boxdd::initialize_foundation"]
-rationale = "Safe foundation initialization installs the process-global log trampoline at most once under the initialization mutex before publishing the configuration; callback panics are contained and cannot unwind across C."
+rationale = "Foundation initialization installs one permanent panic-contained log trampoline before publishing the process-global configuration."
 modes = [
     "double",
     "single",

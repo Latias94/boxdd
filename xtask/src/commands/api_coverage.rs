@@ -59,6 +59,7 @@ const BOX2D_3_2_DOUBLE_FUNCTIONS_BLAKE3: &str =
 const FUNCTION_INVENTORY_DIGEST_DOMAIN: &[u8] = b"boxdd-api-function-inventory-v1\0";
 const REVIEWED_MIGRATION_OVERRIDES_PATH: &str =
     "xtask/fixtures/api-contract-3.2-reviewed-migration.toml";
+const REVIEWED_MIGRATION_SCHEMA: u32 = 2;
 const SAFE_CALL_EVIDENCE_POLICY: &str = "route-conditioned-safe-call-v2";
 
 fn effective_source_sha256(paths: &WorkspacePaths) -> Result<String> {
@@ -373,6 +374,8 @@ struct ReviewedFunctionOverride {
     rationale: String,
     #[serde(default)]
     previous_classification: Option<Classification>,
+    #[serde(default)]
+    transition_unit: Option<String>,
     #[serde(default)]
     revalidated: bool,
 }
@@ -2474,6 +2477,32 @@ enum ReviewedMigrationGapKind {
     Route,
 }
 
+fn reviewed_classification_transitions(
+    reviewed: &ApiContract,
+    active: &ApiContract,
+) -> BTreeMap<String, (Classification, Classification)> {
+    let active_classifications = active
+        .functions
+        .iter()
+        .map(|function| (function.logical_name.as_str(), function.classification))
+        .collect::<BTreeMap<_, _>>();
+    reviewed
+        .functions
+        .iter()
+        .filter_map(|historical| {
+            let active_classification = active_classifications
+                .get(historical.logical_name.as_str())
+                .copied()?;
+            (active_classification != historical.classification).then(|| {
+                (
+                    historical.logical_name.clone(),
+                    (historical.classification, active_classification),
+                )
+            })
+        })
+        .collect()
+}
+
 fn audit_reviewed_migration(paths: &WorkspacePaths, revision: &str) -> Result<()> {
     let manifest = UpstreamManifest::load(paths)?;
     let contract_path = manifest.artifact_path(paths.root(), ArtifactKind::ApiContract)?;
@@ -2487,6 +2516,7 @@ fn audit_reviewed_migration(paths: &WorkspacePaths, revision: &str) -> Result<()
         parse_recording_ops(&reviewed_recording_operations_source(paths, &manifest)?)?;
     let mut current: ApiContract = read_toml(&contract_path)?;
     let reviewed = read_api_contract_from_git(paths, &contract_path, revision)?;
+    let classification_transitions = reviewed_classification_transitions(&reviewed, &current);
 
     reconcile_functions(
         &mut current,
@@ -2522,11 +2552,12 @@ fn audit_reviewed_migration(paths: &WorkspacePaths, revision: &str) -> Result<()
         .collect::<BTreeSet<_>>();
     let classifications = counts(&current.functions);
     println!(
-        "reviewed migration audit: {} candidate functions ({} safe, {} raw, {} omitted), {} declaration gaps, {} route gaps, {} runtime-evidence gaps, {} added, {} removed",
+        "reviewed migration audit: {} candidate functions ({} safe, {} raw, {} omitted), {} classification transitions, {} declaration gaps, {} route gaps, {} runtime-evidence gaps, {} added, {} removed",
         classifications.total,
         classifications.safe,
         classifications.raw,
         classifications.omitted,
+        classification_transitions.len(),
         review_gaps
             .iter()
             .filter(|gap| gap.kind == ReviewedMigrationGapKind::DeclarationDrift)
@@ -2539,6 +2570,14 @@ fn audit_reviewed_migration(paths: &WorkspacePaths, revision: &str) -> Result<()
         current_names.difference(&reviewed_names).count(),
         reviewed_names.difference(&current_names).count(),
     );
+    for (logical_name, (historical, active)) in classification_transitions {
+        println!(
+            "CLASSIFICATION-TRANSITION\t{}\t{}\t{}",
+            logical_name,
+            historical.as_str(),
+            active.as_str()
+        );
+    }
     let review_gap_names = review_gaps
         .iter()
         .map(|gap| gap.function.as_str())
@@ -2664,15 +2703,17 @@ fn migrate_reviewed_contract(paths: &WorkspacePaths, revision: &str) -> Result<(
     let recording_operations =
         parse_recording_ops(&reviewed_recording_operations_source(paths, &manifest)?)?;
     let mut contract: ApiContract = read_toml(&contract_path)?;
+    let active_contract = contract.clone();
     let reviewed = read_api_contract_from_git(paths, &contract_path, revision)?;
     let override_path = paths.root().join(REVIEWED_MIGRATION_OVERRIDES_PATH);
     let overrides: ReviewedMigrationOverrides = read_toml(&override_path)?;
 
-    if overrides.schema_version != 1 {
+    if overrides.schema_version != REVIEWED_MIGRATION_SCHEMA {
         return Err(Error::message(format!(
-            "{} has unsupported reviewed migration schema {}; expected 1",
+            "{} has unsupported reviewed migration schema {}; expected {}",
             override_path.display(),
-            overrides.schema_version
+            overrides.schema_version,
+            REVIEWED_MIGRATION_SCHEMA
         )));
     }
     if overrides.reviewed_revision != revision {
@@ -2711,6 +2752,7 @@ fn migrate_reviewed_contract(paths: &WorkspacePaths, revision: &str) -> Result<(
     apply_reviewed_migration_overrides(
         &mut contract,
         &reviewed,
+        &active_contract,
         &overrides,
         &review_gaps,
         &inventory,
@@ -2848,6 +2890,7 @@ fn synchronize_abi_evidence_scopes(contract: &mut ApiContract, binding_routes: &
 fn apply_reviewed_migration_overrides(
     contract: &mut ApiContract,
     reviewed: &ApiContract,
+    active: &ApiContract,
     overrides: &ReviewedMigrationOverrides,
     review_gaps: &[ReviewedMigrationGap],
     inventory: &CApiInventory,
@@ -2870,6 +2913,17 @@ fn apply_reviewed_migration_overrides(
         .keys()
         .map(|name| (*name).to_owned())
         .collect::<BTreeSet<_>>();
+    let active_classifications = active
+        .functions
+        .iter()
+        .map(|function| (function.logical_name.as_str(), function.classification))
+        .collect::<BTreeMap<_, _>>();
+    let active_changes = active
+        .classification_changes
+        .iter()
+        .map(|change| (change.logical_name.as_str(), change))
+        .collect::<BTreeMap<_, _>>();
+    let active_transitions = reviewed_classification_transitions(reviewed, active);
     let mut expected_overrides = review_gaps
         .iter()
         .map(|gap| gap.function.clone())
@@ -2880,6 +2934,12 @@ fn apply_reviewed_migration_overrides(
         .map(|gap| gap.function.as_str())
         .collect::<BTreeSet<_>>();
     expected_overrides.extend(current_names.difference(&reviewed_names).cloned());
+    expected_overrides.extend(
+        active_transitions
+            .keys()
+            .filter(|logical_name| current_names.contains(*logical_name))
+            .cloned(),
+    );
 
     let mut override_names = BTreeSet::new();
     for function in &overrides.functions {
@@ -2900,7 +2960,7 @@ fn apply_reviewed_migration_overrides(
         .collect::<Vec<_>>();
     if !missing.is_empty() || !unexpected.is_empty() {
         return Err(Error::message(format!(
-            "reviewed migration overrides must exactly cover declaration gaps, route gaps, and added functions; missing={missing:?}, unexpected={unexpected:?}"
+            "reviewed migration overrides must exactly cover classification transitions, declaration gaps, route gaps, and added functions; missing={missing:?}, unexpected={unexpected:?}"
         )));
     }
 
@@ -2911,6 +2971,18 @@ fn apply_reviewed_migration_overrides(
         .collect::<BTreeMap<_, _>>();
     let mut changes = Vec::new();
     for reviewed_override in &overrides.functions {
+        if let Some((historical, active)) =
+            active_transitions.get(reviewed_override.logical_name.as_str())
+            && (reviewed_override.previous_classification != Some(*historical)
+                || reviewed_override.classification != *active)
+        {
+            return Err(Error::message(format!(
+                "active classification transition for `{}` requires previous_classification={} and classification={}",
+                reviewed_override.logical_name,
+                historical.as_str(),
+                active.as_str()
+            )));
+        }
         let requires_revalidation =
             declaration_gaps.contains(reviewed_override.logical_name.as_str());
         if reviewed_override.revalidated != requires_revalidation {
@@ -2923,6 +2995,26 @@ fn apply_reviewed_migration_overrides(
         {
             return Err(Error::message(format!(
                 "reviewed migration override `{}` requires non-empty area and rationale",
+                reviewed_override.logical_name
+            )));
+        }
+        if reviewed_override
+            .transition_unit
+            .as_ref()
+            .is_some_and(|unit| unit.trim().is_empty())
+        {
+            return Err(Error::message(format!(
+                "reviewed migration override `{}` has an empty classification transition unit",
+                reviewed_override.logical_name
+            )));
+        }
+        if reviewed_override.transition_unit.is_some()
+            && !reviewed_override
+                .previous_classification
+                .is_some_and(|previous| previous != reviewed_override.classification)
+        {
+            return Err(Error::message(format!(
+                "reviewed migration override `{}` may set a transition unit only for a classification change",
                 reviewed_override.logical_name
             )));
         }
@@ -2958,6 +3050,7 @@ fn apply_reviewed_migration_overrides(
             .clone_from(&reviewed_override.rust_paths);
         function.rust_paths.sort();
         function.rust_paths.dedup();
+        synchronize_wasm_function_overrides(function, declaration, binding_routes, rust_indexes);
         match function.classification {
             Classification::Safe => {
                 if !safe_function_review_matches_routes(
@@ -3043,13 +3136,48 @@ fn apply_reviewed_migration_overrides(
                 )));
             }
             if previous != function.classification {
-                changes.push(ClassificationChange {
-                    logical_name: function.logical_name.clone(),
-                    from: previous,
-                    to: function.classification,
-                    unit: "box2d-3.2-reviewed-migration".to_owned(),
-                    rationale: function.rationale.clone(),
-                });
+                let active_classification = active_classifications
+                    .get(function.logical_name.as_str())
+                    .ok_or_else(|| {
+                        Error::message(format!(
+                            "classification transition for `{}` is absent from the active reviewed contract",
+                            function.logical_name
+                        ))
+                    })?;
+                if *active_classification != function.classification {
+                    return Err(Error::message(format!(
+                        "classification transition for `{}` targets {}, but the active reviewed contract authenticates {}",
+                        function.logical_name,
+                        function.classification.as_str(),
+                        active_classification.as_str()
+                    )));
+                }
+                let preserved_change =
+                    active_changes
+                        .get(function.logical_name.as_str())
+                        .filter(|change| {
+                            change.from == previous && change.to == function.classification
+                        });
+                let change = if let Some(unit) = &reviewed_override.transition_unit {
+                    ClassificationChange {
+                        logical_name: function.logical_name.clone(),
+                        from: previous,
+                        to: function.classification,
+                        unit: unit.clone(),
+                        rationale: function.rationale.clone(),
+                    }
+                } else if let Some(change) = preserved_change {
+                    (*change).clone()
+                } else {
+                    ClassificationChange {
+                        logical_name: function.logical_name.clone(),
+                        from: previous,
+                        to: function.classification,
+                        unit: "box2d-3.2-reviewed-migration".to_owned(),
+                        rationale: function.rationale.clone(),
+                    }
+                };
+                changes.push(change);
             }
         }
     }
@@ -3477,6 +3605,12 @@ fn inherit_reviewed_function_semantics(
         ) {
             candidate.rust_paths.clear();
         }
+        synchronize_wasm_function_overrides(
+            &mut candidate,
+            declaration,
+            binding_routes,
+            rust_indexes,
+        );
 
         if candidate.classification == Classification::Safe
             && !safe_function_review_matches_routes(
@@ -6275,7 +6409,7 @@ mod tests {
 
     fn reviewed_added_function_override(fixture: &ContractFixture) -> ReviewedMigrationOverrides {
         ReviewedMigrationOverrides {
-            schema_version: 1,
+            schema_version: REVIEWED_MIGRATION_SCHEMA,
             reviewed_revision: "0123456789abcdef0123456789abcdef01234567".to_owned(),
             active_revision: fixture.active_revision.clone(),
             expected_counts: CoverageCounts {
@@ -6292,6 +6426,7 @@ mod tests {
                 rationale: "The Safe Rust wrapper validates ownership before the native mutation."
                     .to_owned(),
                 previous_classification: None,
+                transition_unit: None,
                 revalidated: false,
             }],
             canonical_refreshes: Vec::new(),
@@ -6309,6 +6444,7 @@ mod tests {
         let error = apply_reviewed_migration_overrides(
             &mut fixture.contract.clone(),
             &reviewed,
+            &fixture.contract,
             &missing,
             &[],
             &fixture.inventory,
@@ -6333,11 +6469,13 @@ mod tests {
             rationale: "This row must be rejected before it can alter the reviewed contract."
                 .to_owned(),
             previous_classification: None,
+            transition_unit: None,
             revalidated: false,
         });
         let error = apply_reviewed_migration_overrides(
             &mut fixture.contract.clone(),
             &reviewed,
+            &fixture.contract,
             &unexpected,
             &[],
             &fixture.inventory,
@@ -6347,6 +6485,240 @@ mod tests {
         )
         .expect_err("unrelated overrides must fail closed");
         assert!(error.to_string().contains("unexpected=[\"b2Unexpected\"]"));
+    }
+
+    #[test]
+    fn reviewed_migration_authenticates_exact_classification_transitions() {
+        let fixture = ContractFixture::create();
+        let mut reviewed = fixture.contract.clone();
+        let historical = reviewed.functions.first_mut().expect("historical function");
+        historical.classification = Classification::Raw;
+        historical.rust_paths = vec!["boxdd_sys::ffi::b2Body_SetTransform".to_owned()];
+        historical.provider_overrides.clear();
+
+        let mut transition = reviewed_added_function_override(&fixture);
+        transition.functions[0] = ReviewedFunctionOverride {
+            logical_name: "b2Body_SetTransform".to_owned(),
+            classification: Classification::Safe,
+            exposure: FunctionExposureKind::Callable,
+            area: "Body transform".to_owned(),
+            rust_paths: vec!["boxdd::RecordingSession::try_set_transform".to_owned()],
+            rationale:
+                "RecordingSession validates ownership before applying and recording the transform."
+                    .to_owned(),
+            previous_classification: Some(Classification::Raw),
+            transition_unit: Some("U6".to_owned()),
+            revalidated: false,
+        };
+
+        let mut missing = transition.clone();
+        missing.functions.clear();
+        let error = apply_reviewed_migration_overrides(
+            &mut reviewed.clone(),
+            &reviewed,
+            &fixture.contract,
+            &missing,
+            &[],
+            &fixture.inventory,
+            &fixture.binding_routes,
+            &fixture.rust_indexes,
+            &fixture.operations,
+        )
+        .expect_err("an active classification transition requires an explicit override");
+        assert!(
+            error
+                .to_string()
+                .contains("missing=[\"b2Body_SetTransform\"]")
+        );
+
+        let mut unauthenticated_transition = transition.clone();
+        unauthenticated_transition.functions[0].previous_classification = None;
+        let error = apply_reviewed_migration_overrides(
+            &mut reviewed.clone(),
+            &reviewed,
+            &fixture.contract,
+            &unauthenticated_transition,
+            &[],
+            &fixture.inventory,
+            &fixture.binding_routes,
+            &fixture.rust_indexes,
+            &fixture.operations,
+        )
+        .expect_err("an active transition must authenticate its historical classification");
+        assert!(
+            error
+                .to_string()
+                .contains("requires previous_classification=raw and classification=safe")
+        );
+
+        let mut wrong_target = transition.clone();
+        wrong_target.functions[0].classification = Classification::Raw;
+        let error = apply_reviewed_migration_overrides(
+            &mut reviewed.clone(),
+            &reviewed,
+            &fixture.contract,
+            &wrong_target,
+            &[],
+            &fixture.inventory,
+            &fixture.binding_routes,
+            &fixture.rust_indexes,
+            &fixture.operations,
+        )
+        .expect_err("an active transition override must reproduce its reviewed target");
+        assert!(
+            error
+                .to_string()
+                .contains("requires previous_classification=raw and classification=safe")
+        );
+
+        let mut unauthenticated_active = fixture.contract.clone();
+        unauthenticated_active.functions[0].classification = Classification::Raw;
+        let error = apply_reviewed_migration_overrides(
+            &mut reviewed.clone(),
+            &reviewed,
+            &unauthenticated_active,
+            &transition,
+            &[],
+            &fixture.inventory,
+            &fixture.binding_routes,
+            &fixture.rust_indexes,
+            &fixture.operations,
+        )
+        .expect_err("the active reviewed contract must authenticate the transition target");
+        assert!(
+            error
+                .to_string()
+                .contains("unexpected=[\"b2Body_SetTransform\"]")
+        );
+
+        let mut binding_routes = fixture.binding_routes.clone();
+        let wasm_route = AbiBindingRoute {
+            mode: "single".to_owned(),
+            provider: "wasm-runtime".to_owned(),
+            artifact: "bindings-single".to_owned(),
+            rust_target: RustTarget::Wasm32UnknownUnknown,
+            rust_features: Vec::new(),
+        };
+        binding_routes.insert(
+            (wasm_route.mode.clone(), wasm_route.provider.clone()),
+            wasm_route,
+        );
+        let active_change = ClassificationChange {
+            logical_name: "b2Body_SetTransform".to_owned(),
+            from: Classification::Raw,
+            to: Classification::Safe,
+            unit: "stale-unit".to_owned(),
+            rationale: "This active provenance is superseded by the reviewed migration row."
+                .to_owned(),
+        };
+        let mut authenticated_active = fixture.contract.clone();
+        authenticated_active.classification_changes = vec![active_change.clone()];
+        let mut migrated = reviewed.clone();
+        apply_reviewed_migration_overrides(
+            &mut migrated,
+            &reviewed,
+            &authenticated_active,
+            &transition,
+            &[],
+            &fixture.inventory,
+            &binding_routes,
+            &fixture.rust_indexes,
+            &fixture.operations,
+        )
+        .expect("both immutable and active contracts authenticate the exact transition");
+
+        let function = &migrated.functions[0];
+        assert_eq!(function.classification, Classification::Safe);
+        assert_eq!(
+            function.provider_overrides[0].providers,
+            ["wasm-runtime".to_owned()]
+        );
+        assert_eq!(
+            migrated.classification_changes,
+            [ClassificationChange {
+                logical_name: "b2Body_SetTransform".to_owned(),
+                from: Classification::Raw,
+                to: Classification::Safe,
+                unit: "U6".to_owned(),
+                rationale: transition.functions[0].rationale.clone(),
+            }]
+        );
+    }
+
+    #[test]
+    fn reviewed_migration_does_not_require_overrides_for_removed_transitions() {
+        let fixture = ContractFixture::create();
+        let mut reviewed = fixture.contract.clone();
+        reviewed.functions[0].classification = Classification::Raw;
+        reviewed.functions[0].rust_paths = vec!["boxdd_sys::ffi::b2Body_SetTransform".to_owned()];
+        let mut migrated = reviewed.clone();
+        migrated.functions.clear();
+        let mut overrides = reviewed_added_function_override(&fixture);
+        overrides.functions.clear();
+
+        apply_reviewed_migration_overrides(
+            &mut migrated,
+            &reviewed,
+            &fixture.contract,
+            &overrides,
+            &[],
+            &fixture.inventory,
+            &fixture.binding_routes,
+            &fixture.rust_indexes,
+            &fixture.operations,
+        )
+        .expect("a removed function cannot require an active classification override");
+
+        assert!(migrated.functions.is_empty());
+        assert!(migrated.classification_changes.is_empty());
+    }
+
+    #[test]
+    fn reviewed_inheritance_clears_provider_overrides_after_safe_to_raw_reversion() {
+        let fixture = ContractFixture::create();
+        let mut binding_routes = fixture.binding_routes.clone();
+        let wasm_route = AbiBindingRoute {
+            mode: "single".to_owned(),
+            provider: "wasm-runtime".to_owned(),
+            artifact: "bindings-single".to_owned(),
+            rust_target: RustTarget::Wasm32UnknownUnknown,
+            rust_features: Vec::new(),
+        };
+        binding_routes.insert(
+            (wasm_route.mode.clone(), wasm_route.provider.clone()),
+            wasm_route,
+        );
+
+        let mut current = fixture.contract.clone();
+        synchronize_wasm_function_overrides(
+            &mut current.functions[0],
+            &fixture.inventory.functions[0],
+            &binding_routes,
+            &fixture.rust_indexes,
+        );
+        assert_eq!(
+            current.functions[0].provider_overrides[0].providers,
+            ["wasm-runtime".to_owned()]
+        );
+
+        let mut reviewed = current.clone();
+        reviewed.functions[0].classification = Classification::Raw;
+        reviewed.functions[0].rust_paths = vec!["boxdd_sys::ffi::b2Body_SetTransform".to_owned()];
+        reviewed.functions[0].provider_overrides.clear();
+
+        let gaps = inherit_reviewed_function_semantics(
+            &mut current,
+            &reviewed,
+            &fixture.inventory,
+            None,
+            &binding_routes,
+            &fixture.rust_indexes,
+            &fixture.operations,
+        );
+
+        assert!(gaps.is_empty());
+        assert_eq!(current.functions[0].classification, Classification::Raw);
+        assert!(current.functions[0].provider_overrides.is_empty());
     }
 
     #[test]
@@ -6360,6 +6732,7 @@ mod tests {
         let error = apply_reviewed_migration_overrides(
             &mut fixture.contract.clone(),
             &reviewed,
+            &fixture.contract,
             &overrides,
             &[],
             &fixture.inventory,
@@ -6385,6 +6758,7 @@ mod tests {
         apply_reviewed_migration_overrides(
             &mut fixture.contract.clone(),
             &fixture.contract,
+            &fixture.contract,
             &overrides,
             &[],
             &fixture.inventory,
@@ -6397,6 +6771,7 @@ mod tests {
         overrides.canonical_refreshes[0].rust_paths = vec!["boxdd::set_transform".to_owned()];
         let error = apply_reviewed_migration_overrides(
             &mut fixture.contract.clone(),
+            &fixture.contract,
             &fixture.contract,
             &overrides,
             &[],
@@ -6437,6 +6812,7 @@ mod tests {
             apply_reviewed_migration_overrides(
                 &mut contract,
                 &reviewed,
+                &fixture.contract,
                 &candidate,
                 &[],
                 &fixture.inventory,
@@ -6461,6 +6837,7 @@ mod tests {
         let error = apply_reviewed_migration_overrides(
             &mut fixture.contract.clone(),
             &reviewed,
+            &fixture.contract,
             &missing,
             &[],
             &fixture.inventory,
@@ -6483,6 +6860,7 @@ mod tests {
         let error = apply_reviewed_migration_overrides(
             &mut fixture.contract.clone(),
             &reviewed,
+            &fixture.contract,
             &unexpected,
             &[],
             &fixture.inventory,
@@ -6503,6 +6881,7 @@ mod tests {
             let error = apply_reviewed_migration_overrides(
                 &mut fixture.contract.clone(),
                 &reviewed,
+                &fixture.contract,
                 &candidate,
                 &[],
                 &fixture.inventory,
@@ -6540,6 +6919,7 @@ mod tests {
         apply_reviewed_migration_overrides(
             &mut contract,
             &reviewed,
+            &fixture.contract,
             &overrides,
             &[],
             &fixture.inventory,
