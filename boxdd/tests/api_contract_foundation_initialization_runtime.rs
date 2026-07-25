@@ -74,7 +74,12 @@ fn run_foundation_initialization_contract() {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn run_foundation_initialization_contract() {}
+fn run_foundation_initialization_contract() {
+    let foundation = boxdd::initialize_foundation(boxdd::FoundationConfig::new(2.5))
+        .expect("the first valid foundation configuration must initialize");
+
+    assert_eq!(foundation.config().length_units_per_meter(), 2.5);
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
