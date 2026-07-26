@@ -35,6 +35,18 @@ pub const REQUIRED_ADAPTER_SYMBOLS: &[&str] = &[
     "boxddSnapshot_Validate",
 ];
 
+/// Callable adapter imports that every WASM app must retain before it can use Box2D.
+///
+/// `boxddEffectiveSourceSha256` remains part of [`REQUIRED_ADAPTER_SYMBOLS`] because native
+/// archive inspection reads its immutable data bytes. WASM imports are functions, however; the
+/// runtime receives and verifies that same digest through `boxddAdapter_GetIdentity`.
+#[allow(dead_code)] // Shared with xtask; boxdd-sys/build.rs only audits native archive symbols.
+pub const REQUIRED_RUNTIME_IDENTITY_IMPORTS: &[&str] = &[
+    "boxddAdapter_AbiVersion",
+    "boxddAdapter_GetIdentity",
+    "boxddAdapter_GetSnapshotLayoutHash",
+];
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArtifactManifest {
     pub schema_version: u64,
@@ -891,6 +903,14 @@ mod tests {
         assert_eq!(ADAPTER_ABI_VERSION, 2);
         assert!(ADAPTER_SOURCE_PATHS.contains(&"effective-source.toml"));
         assert!(REQUIRED_ADAPTER_SYMBOLS.contains(&"boxddEffectiveSourceSha256"));
+        assert_eq!(
+            REQUIRED_RUNTIME_IDENTITY_IMPORTS,
+            [
+                "boxddAdapter_AbiVersion",
+                "boxddAdapter_GetIdentity",
+                "boxddAdapter_GetSnapshotLayoutHash",
+            ]
+        );
         let adapter_source_sha256 = "a".repeat(64);
         let manifest = valid_manifest(&adapter_source_sha256);
         let parsed = ArtifactManifest::parse(&manifest.render()).unwrap();

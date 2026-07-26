@@ -14,7 +14,7 @@ use crate::{
         validate_wasm_bindgen_lock, version_has_exact_token,
     },
     provider_manifest::{
-        ADAPTER_SOURCE_PATHS, RECORDING_CONTRACT_BLAKE3, REQUIRED_ADAPTER_SYMBOLS,
+        ADAPTER_SOURCE_PATHS, RECORDING_CONTRACT_BLAKE3, REQUIRED_RUNTIME_IDENTITY_IMPORTS,
         adapter_source_sha256,
     },
     source_overlay::materialize_effective_box2d_sources,
@@ -247,12 +247,12 @@ for (const name of names) console.log(name);
             wasm.display()
         )));
     }
-    if let Some(missing) = REQUIRED_ADAPTER_SYMBOLS
+    if let Some(missing) = REQUIRED_RUNTIME_IDENTITY_IMPORTS
         .iter()
         .find(|required| !imports.iter().any(|import| import == *required))
     {
         return Err(Error::Message(format!(
-            "{} does not import required provider adapter symbol `{missing}` from {provider_module}",
+            "{} does not import required provider runtime identity function `{missing}` from {provider_module}",
             wasm.display()
         )));
     }
