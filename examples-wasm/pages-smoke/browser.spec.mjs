@@ -14,6 +14,7 @@ const runtimeBuildCommand = 'cargo run --locked -p xtask -- build-pages-wasm';
 let canonicalPagesRoot;
 let origin;
 let server;
+let expectedRuntimeFetchPaths;
 
 class HttpError extends Error {
   constructor(status, message, options) {
@@ -159,6 +160,7 @@ async function requireGeneratedRuntime() {
   if (!Array.isArray(manifest.assets) || manifest.assets.length === 0) {
     throw new Error('generated Pages runtime manifest does not list any assets');
   }
+  expectedRuntimeFetchPaths = new Set([runtimeManifestPath]);
   for (const asset of manifest.assets) {
     if (
       !asset
@@ -173,6 +175,7 @@ async function requireGeneratedRuntime() {
     } catch (error) {
       throw new Error(`generated Pages runtime asset is missing or unsafe: ${asset.path}`, { cause: error });
     }
+    expectedRuntimeFetchPaths.add(`/${asset.path}`);
   }
 
   const loader = await readOrdinaryPagesFile('/bevy-testbed/loader.js');
@@ -249,6 +252,8 @@ test('published Bevy runtime survives shared-memory growth and keeps stepping ph
   const consoleErrors = [];
   const pageErrors = [];
   const requestFailures = [];
+  const verifiedRuntimeFetches = new Set();
+  const toleratedRuntimeAborts = [];
   const unexpectedHttp = [];
 
   page.on('console', (message) => {
@@ -264,9 +269,30 @@ test('published Bevy runtime survives shared-memory growth and keeps stepping ph
     }
   });
   page.on('requestfailed', (request) => {
-    requestFailures.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText ?? 'unknown error'}`);
+    const url = new URL(request.url());
+    const errorText = request.failure()?.errorText ?? 'unknown error';
+    if (
+      url.origin === origin
+      && expectedRuntimeFetchPaths.has(url.pathname)
+      && request.resourceType() === 'fetch'
+      && errorText === 'net::ERR_ABORTED'
+    ) {
+      // Chromium can report cancellation after the loader has consumed verified bytes into a Blob.
+      toleratedRuntimeAborts.push(`${request.method()} ${url.pathname}: ${errorText}`);
+      return;
+    }
+    requestFailures.push(`${request.method()} ${request.url()}: ${errorText}`);
   });
   page.on('response', (response) => {
+    const url = new URL(response.url());
+    if (
+      url.origin === origin
+      && expectedRuntimeFetchPaths.has(url.pathname)
+      && response.status() >= 200
+      && response.status() < 300
+    ) {
+      verifiedRuntimeFetches.add(url.pathname);
+    }
     if (response.status() < 200 || response.status() >= 300) {
       unexpectedHttp.push(`HTTP ${response.status()}: ${response.url()}`);
     }
@@ -338,6 +364,12 @@ test('published Bevy runtime survives shared-memory growth and keeps stepping ph
 
   expect(pageErrors).toEqual([]);
   expect(consoleErrors).toEqual([]);
+  const missingRuntimeFetches = [...expectedRuntimeFetchPaths]
+    .filter((path) => !verifiedRuntimeFetches.has(path));
+  expect(
+    missingRuntimeFetches,
+    `expected every manifest asset to return 2xx; tolerated aborts: ${JSON.stringify(toleratedRuntimeAborts)}`,
+  ).toEqual([]);
   expect(requestFailures).toEqual([]);
   expect(unexpectedHttp).toEqual([]);
 });
