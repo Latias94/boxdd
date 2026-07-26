@@ -687,16 +687,8 @@ fn build_bevy_web_app(
 
 fn patch_bevy_bindgen_imports(js: &Path, provider_module: &str) -> Result<()> {
     let source = fs::read_to_string(js).map_err(|source| Error::io(js, source))?;
-    let patched_imports = source.replace(
-        &format!("from \"{provider_module}\""),
-        &format!("from \"./{BEVY_PROVIDER_SHIM}\""),
-    );
-    if patched_imports == source {
-        return Err(Error::Message(format!(
-            "wasm-bindgen output does not import {provider_module}: {}",
-            js.display()
-        )));
-    }
+    let patched_imports = rewrite_bevy_bindgen_provider_imports(&source, provider_module)
+        .map_err(|error| Error::Message(format!("{error}: {}", js.display())))?;
     let patched = patched_imports.replace(
         "    wasm = instance.exports;\n",
         "    wasm = instance.exports;\n    if (typeof import1.setBoxddAppExports === \"function\") {\n        import1.setBoxddAppExports(wasm);\n    }\n",
@@ -718,6 +710,71 @@ fn patch_bevy_bindgen_imports(js: &Path, provider_module: &str) -> Result<()> {
         )));
     }
     write_atomic(js, &decode_patched)
+}
+
+fn rewrite_bevy_bindgen_provider_imports(source: &str, provider_module: &str) -> Result<String> {
+    let provider_import = format!("from \"{provider_module}\"");
+    let provider_suffix = format!(" {provider_import}");
+    let mut import_lines = Vec::new();
+    let mut import_bindings = BTreeSet::new();
+
+    for (line_number, source_line) in source.lines().enumerate() {
+        if !source_line.contains(provider_module) {
+            continue;
+        }
+
+        let line = source_line.strip_suffix('\r').unwrap_or(source_line);
+        let line = line.strip_suffix(';').unwrap_or(line);
+        let Some(numeric_suffix) = line
+            .strip_prefix("import * as import")
+            .and_then(|line| line.strip_suffix(&provider_suffix))
+        else {
+            return Err(Error::Message(format!(
+                "wasm-bindgen output has an unsupported provider import at line {}; expected `import * as importN {provider_import}`",
+                line_number + 1
+            )));
+        };
+        if numeric_suffix.is_empty() || !numeric_suffix.as_bytes().iter().all(u8::is_ascii_digit) {
+            return Err(Error::Message(format!(
+                "wasm-bindgen output has an unsupported provider namespace at line {}; expected `importN`",
+                line_number + 1
+            )));
+        }
+
+        let binding = format!("import{numeric_suffix}");
+        if !import_bindings.insert(binding) {
+            return Err(Error::Message(format!(
+                "wasm-bindgen output repeats a provider namespace at line {}",
+                line_number + 1
+            )));
+        }
+        import_lines.push(line_number);
+    }
+
+    if import_lines.is_empty() {
+        return Err(Error::Message(format!(
+            "wasm-bindgen output does not import {provider_module}"
+        )));
+    }
+    if import_lines
+        .iter()
+        .enumerate()
+        .any(|(offset, line_number)| *line_number != import_lines[0] + offset)
+    {
+        return Err(Error::Message(format!(
+            "wasm-bindgen provider imports for {provider_module} must form one contiguous namespace declaration block"
+        )));
+    }
+    if !import_bindings.contains("import1") {
+        return Err(Error::Message(format!(
+            "wasm-bindgen provider imports for {provider_module} must include import1 for the application export handoff"
+        )));
+    }
+
+    Ok(source.replace(
+        &provider_import,
+        &format!("from \"./{BEVY_PROVIDER_SHIM}\""),
+    ))
 }
 
 fn write_browser_provider_shim(out_dir: &Path, imports: &[String]) -> Result<PathBuf> {
@@ -1649,11 +1706,30 @@ async function loadVerifiedRuntimeAssets(manifest) {
 
 function replaceShimImport(appBytes, shimModuleUrl) {
   const source = decodeUtf8(appBytes, "Bevy app JavaScript");
-  const specifier = 'from "./box2d-provider-shim.js"';
-  if (source.split(specifier).length !== 2) {
-    throw new Error("Bevy app JavaScript must contain exactly one qualified provider shim import");
+  const shimModuleName = "box2d-provider-shim.js";
+  const specifier = '"./box2d-provider-shim.js"';
+  const shimImportPattern = /^import \* as (import[0-9]+) from "\.\/box2d-provider-shim\.js";?$/;
+  const importLines = [];
+  const importBindings = new Set();
+  for (const [lineNumber, line] of source.split(/\r?\n/).entries()) {
+    if (!line.includes(shimModuleName)) {
+      continue;
+    }
+    const match = shimImportPattern.exec(line);
+    if (!match || importBindings.has(match[1])) {
+      throw new Error("Bevy app JavaScript contains an unsupported wasm-bindgen provider shim import");
+    }
+    importBindings.add(match[1]);
+    importLines.push(lineNumber);
   }
-  return source.replace(specifier, `from ${JSON.stringify(shimModuleUrl)}`);
+  if (
+    importLines.length === 0 ||
+    importLines.some((lineNumber, offset) => lineNumber !== importLines[0] + offset) ||
+    !importBindings.has("import1")
+  ) {
+    throw new Error("Bevy app JavaScript must contain one contiguous block of qualified wasm-bindgen provider shim imports");
+  }
+  return source.replaceAll(specifier, JSON.stringify(shimModuleUrl));
 }
 
 async function importVerifiedRuntimeModules(assets) {
@@ -2236,8 +2312,8 @@ mod tests {
         JAVASCRIPT_MAX_SAFE_INTEGER, PAGES_RUNTIME_ASSETS, PagesLoaderTrust, PagesRuntimeAsset,
         PagesRuntimeManifest, ProviderPrecision, bevy_testbed_loader_js, collect_html_files,
         ensure_pages_output_parent, format_bytes, is_git_environment_key, pages_runtime_asset,
-        validate_pages_asset_byte_length, validate_pages_precision,
-        validate_pages_runtime_asset_records,
+        rewrite_bevy_bindgen_provider_imports, validate_pages_asset_byte_length,
+        validate_pages_precision, validate_pages_runtime_asset_records,
     };
 
     fn manifest() -> PagesRuntimeManifest {
@@ -2380,9 +2456,63 @@ mod tests {
         assert!(loader.contains("staleBufferDetached"));
         assert!(loader.contains("postGrowthPhysicsStep"));
         assert!(loader.contains("BOXDD_BEVY_RUNTIME_EVIDENCE"));
+        assert!(loader.contains("const shimImportPattern = /^import \\* as (import[0-9]+)"));
+        assert!(loader.contains("importLines.some"));
+        assert!(loader.contains("source.replaceAll(specifier, JSON.stringify(shimModuleUrl))"));
         assert!(verify < import);
         assert!(import < instantiate);
         assert!(bevy_testbed_loader_js(None).contains("const runtimeTrust = null;"));
+    }
+
+    #[test]
+    fn bindgen_provider_import_rewrite_requires_one_contiguous_namespace_block() {
+        let source = concat!(
+            "/* wasm-bindgen output */\n",
+            "import * as import1 from \"box2d-sys-v1-single\"\n",
+            "import * as import2 from \"box2d-sys-v1-single\";\n",
+            "export const ready = true;\n",
+        );
+        let patched = rewrite_bevy_bindgen_provider_imports(source, "box2d-sys-v1-single").unwrap();
+        assert_eq!(
+            patched.matches("from \"./box2d-provider-shim.js\"").count(),
+            2
+        );
+
+        let interleaved = concat!(
+            "import * as import1 from \"box2d-sys-v1-single\"\n",
+            "const unrelated = true;\n",
+            "import * as import2 from \"box2d-sys-v1-single\"\n",
+        );
+        assert!(rewrite_bevy_bindgen_provider_imports(interleaved, "box2d-sys-v1-single").is_err());
+    }
+
+    #[test]
+    fn bindgen_provider_import_rewrite_rejects_unsupported_provider_references() {
+        let unsupported = concat!(
+            "import * as import1 from \"box2d-sys-v1-single\"\n",
+            "const providerModule = \"box2d-sys-v1-single\";\n",
+        );
+        assert!(rewrite_bevy_bindgen_provider_imports(unsupported, "box2d-sys-v1-single").is_err());
+
+        let missing_handoff = "import * as import2 from \"box2d-sys-v1-single\"\n";
+        assert!(
+            rewrite_bevy_bindgen_provider_imports(missing_handoff, "box2d-sys-v1-single").is_err()
+        );
+
+        let duplicate_namespace = concat!(
+            "import * as import1 from \"box2d-sys-v1-single\"\n",
+            "import * as import1 from \"box2d-sys-v1-single\"\n",
+        );
+        assert!(
+            rewrite_bevy_bindgen_provider_imports(duplicate_namespace, "box2d-sys-v1-single")
+                .is_err()
+        );
+
+        let indented_namespace = " import * as import1 from \"box2d-sys-v1-single\"\n";
+        assert!(
+            rewrite_bevy_bindgen_provider_imports(indented_namespace, "box2d-sys-v1-single")
+                .is_err()
+        );
     }
 
     #[test]

@@ -273,14 +273,22 @@ test('published Bevy runtime survives shared-memory growth and keeps stepping ph
   });
 
   await page.goto(`${origin}/bevy-testbed/?boxdd-runtime-proof=1`, { waitUntil: 'domcontentloaded' });
-  await expect.poll(
-    () => page.evaluate(() => ({
-      ready: window.BOXDD_BEVY_TESTBED_READY === true,
-      state: document.querySelector('#bevy-status')?.dataset.state ?? null,
-      status: document.querySelector('#bevy-status')?.textContent?.trim() ?? null,
-    })),
-    { timeout: 45_000, message: 'the verified Bevy runtime did not reach its running state' },
-  ).toMatchObject({ ready: true, state: 'running' });
+  const readRuntimeStatus = () => page.evaluate(() => ({
+    ready: window.BOXDD_BEVY_TESTBED_READY === true,
+    state: document.querySelector('#bevy-status')?.dataset.state ?? null,
+    status: document.querySelector('#bevy-status')?.textContent?.trim() ?? null,
+  }));
+  try {
+    await expect.poll(
+      readRuntimeStatus,
+      { timeout: 45_000, message: 'the verified Bevy runtime did not reach its running state' },
+    ).toMatchObject({ ready: true, state: 'running' });
+  } catch (error) {
+    throw new Error(
+      `the verified Bevy runtime did not reach its running state: ${JSON.stringify(await readRuntimeStatus())}; page errors: ${JSON.stringify(pageErrors)}; console errors: ${JSON.stringify(consoleErrors)}`,
+      { cause: error },
+    );
+  }
 
   const canvas = page.locator('#bevy-canvas');
   await expect(canvas).toBeVisible();
