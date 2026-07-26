@@ -719,7 +719,7 @@ fn rewrite_bevy_bindgen_provider_imports(source: &str, provider_module: &str) ->
     let mut import_bindings = BTreeSet::new();
 
     for (line_number, source_line) in source.lines().enumerate() {
-        if !source_line.contains(provider_module) {
+        if !source_line.contains(&provider_import) {
             continue;
         }
 
@@ -2487,10 +2487,18 @@ mod tests {
     }
 
     #[test]
-    fn bindgen_provider_import_rewrite_rejects_unsupported_provider_references() {
+    fn bindgen_provider_import_rewrite_preserves_metadata_and_rejects_non_import_replacements() {
+        let metadata = concat!(
+            "import * as import1 from \"box2d-sys-v1-single\"\n",
+            "const imports = { \"box2d-sys-v1-single\": import1 };\n",
+        );
+        let patched =
+            rewrite_bevy_bindgen_provider_imports(metadata, "box2d-sys-v1-single").unwrap();
+        assert!(patched.contains("\"box2d-sys-v1-single\": import1"));
+
         let unsupported = concat!(
             "import * as import1 from \"box2d-sys-v1-single\"\n",
-            "const providerModule = \"box2d-sys-v1-single\";\n",
+            "const unexpected = 'from \"box2d-sys-v1-single\"';\n",
         );
         assert!(rewrite_bevy_bindgen_provider_imports(unsupported, "box2d-sys-v1-single").is_err());
 
