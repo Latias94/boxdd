@@ -13,6 +13,7 @@ use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 use yaml_serde::{Mapping as YamlMapping, Value as YamlValue};
 
+use crate::emscripten_sdk::{SDK_CONTRACT_RELATIVE_PATH, SdkContract};
 use crate::provenance_policy::{
     self, COSIGN_VERSION, PUBLISHER_REPOSITORY, PUBLISHER_WORKFLOW, SIGSTORE_TRUSTED_ROOT_SHA256,
 };
@@ -42,6 +43,12 @@ const RUST_TOOLCHAIN_ACTION: &str =
     "dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c";
 const CHECKOUT_ACTION: &str = "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0";
 const RUST_CACHE_ACTION: &str = "Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4";
+const SETUP_NODE_ACTION: &str = "actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f";
+const CONFIGURE_PAGES_ACTION: &str =
+    "actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d";
+const UPLOAD_PAGES_ACTION: &str =
+    "actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9";
+const DEPLOY_PAGES_ACTION: &str = "actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128";
 const UPLOAD_ARTIFACT_ACTION: &str =
     "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a";
 const DOWNLOAD_ARTIFACT_ACTION: &str =
@@ -1682,6 +1689,24 @@ fn require_exact_bool_field(
     }
 }
 
+fn require_exact_trimmed_string_field(
+    mapping: &YamlMapping,
+    key: &str,
+    expected: &str,
+    context: &str,
+) -> Result<()> {
+    let actual = required_yaml_field(mapping, key, context)?
+        .as_str()
+        .ok_or_else(|| Error::message(format!("{context} {key:?} must be a string")))?;
+    if actual.trim() == expected.trim() {
+        Ok(())
+    } else {
+        Err(Error::message(format!(
+            "{context} {key:?} does not match the reviewed command contract"
+        )))
+    }
+}
+
 fn require_absent_field(mapping: &YamlMapping, key: &str, context: &str) -> Result<()> {
     if yaml_field(mapping, key).is_none() {
         Ok(())
@@ -3156,16 +3181,121 @@ fn require_ci_job_fragments(section: &str, name: &str, fragments: &[&str]) -> Re
     Ok(())
 }
 
-fn validate_pages_workflow(root: &Path) -> Result<()> {
-    let path = root.join(".github/workflows/pages.yml");
-    let source = fs::read_to_string(&path).map_err(|error| Error::io(&path, error))?;
-    let workflow = parse_workflow_yaml(&source, "Pages workflow")?;
+fn validate_pages_workflow_source(source: &str, sdk: &SdkContract) -> Result<()> {
+    let workflow = parse_workflow_yaml(source, "Pages workflow")?;
     let workflow = yaml_mapping(&workflow, "Pages workflow")?;
+    require_exact_mapping_keys(
+        workflow,
+        &["name", "on", "permissions", "concurrency", "jobs"],
+        "Pages workflow",
+    )?;
+    require_exact_string_field(workflow, "name", "Pages", "Pages workflow")?;
     require_exact_permissions(workflow, "Pages workflow", &[("contents", "read")])?;
+
+    let trigger = yaml_mapping(
+        required_yaml_field(workflow, "on", "Pages workflow")?,
+        "Pages workflow trigger",
+    )?;
+    require_exact_mapping_keys(
+        trigger,
+        &["push", "workflow_dispatch"],
+        "Pages workflow trigger",
+    )?;
+    let push = yaml_mapping(
+        required_yaml_field(trigger, "push", "Pages workflow trigger")?,
+        "Pages workflow push trigger",
+    )?;
+    require_exact_mapping_keys(push, &["branches"], "Pages workflow push trigger")?;
+    let branches = required_yaml_field(push, "branches", "Pages workflow push trigger")?
+        .as_sequence()
+        .ok_or_else(|| Error::message("Pages workflow branches must be a sequence"))?;
+    if branches.as_slice() != [YamlValue::String("main".to_owned())] {
+        return Err(Error::message(
+            "Pages workflow push branches must be exactly [main]",
+        ));
+    }
+    match required_yaml_field(trigger, "workflow_dispatch", "Pages workflow trigger")? {
+        YamlValue::Null => {}
+        YamlValue::Mapping(mapping) if mapping.is_empty() => {}
+        _ => {
+            return Err(Error::message(
+                "Pages workflow_dispatch trigger must not declare inputs or options",
+            ));
+        }
+    }
+
+    let concurrency = yaml_mapping(
+        required_yaml_field(workflow, "concurrency", "Pages workflow")?,
+        "Pages workflow concurrency",
+    )?;
+    require_exact_mapping_keys(
+        concurrency,
+        &["group", "cancel-in-progress"],
+        "Pages workflow concurrency",
+    )?;
+    require_exact_string_field(
+        concurrency,
+        "group",
+        "github-pages",
+        "Pages workflow concurrency",
+    )?;
+    require_exact_bool_field(
+        concurrency,
+        "cancel-in-progress",
+        true,
+        "Pages workflow concurrency",
+    )?;
+
     let jobs = workflow_jobs(workflow, "Pages workflow")?;
+    require_exact_mapping_keys(jobs, &["build", "deploy"], "Pages workflow jobs")?;
     let build = workflow_job_mapping(jobs, "build", "Pages workflow")?;
     let deploy = workflow_job_mapping(jobs, "deploy", "Pages workflow")?;
+    require_exact_mapping_keys(
+        build,
+        &["name", "runs-on", "env", "steps"],
+        "Pages build job",
+    )?;
+    require_exact_string_field(
+        build,
+        "name",
+        "Build and upload static site",
+        "Pages build job",
+    )?;
+    require_exact_string_field(build, "runs-on", "ubuntu-latest", "Pages build job")?;
     require_absent_field(build, "permissions", "Pages build job")?;
+    require_exact_string_mapping_field(
+        build,
+        "env",
+        &[
+            ("EMSDK_VERSION", sdk.emscripten_version.as_str()),
+            ("EMSDK_REVISION", sdk.emsdk_revision.as_str()),
+        ],
+        "Pages build job",
+    )?;
+    validate_pages_build_steps(build, sdk)?;
+
+    require_exact_mapping_keys(
+        deploy,
+        &[
+            "name",
+            "if",
+            "needs",
+            "runs-on",
+            "permissions",
+            "environment",
+            "steps",
+        ],
+        "Pages deploy job",
+    )?;
+    require_exact_string_field(deploy, "name", "Deploy", "Pages deploy job")?;
+    require_exact_string_field(
+        deploy,
+        "if",
+        "github.ref == 'refs/heads/main' && github.ref_protected == true",
+        "Pages deploy job",
+    )?;
+    require_exact_string_field(deploy, "needs", "build", "Pages deploy job")?;
+    require_exact_string_field(deploy, "runs-on", "ubuntu-latest", "Pages deploy job")?;
     require_exact_permissions(
         deploy,
         "Pages deploy job",
@@ -3191,7 +3321,228 @@ fn validate_pages_workflow(root: &Path) -> Result<()> {
         "url",
         "${{ steps.deployment.outputs.page_url }}",
         "Pages deploy environment",
+    )?;
+    validate_pages_deploy_steps(deploy)
+}
+
+fn pages_step<'a>(
+    steps: &'a [YamlValue],
+    index: usize,
+    expected_name: &str,
+    expected_keys: &[&str],
+) -> Result<&'a YamlMapping> {
+    let context = format!("Pages workflow step {index}");
+    let step = steps
+        .get(index)
+        .ok_or_else(|| Error::message(format!("Pages workflow is missing step {index}")))?;
+    let step = yaml_mapping(step, &context)?;
+    require_exact_mapping_keys(step, expected_keys, &context)?;
+    require_exact_string_field(step, "name", expected_name, &context)?;
+    Ok(step)
+}
+
+fn validate_pages_build_steps(build: &YamlMapping, sdk: &SdkContract) -> Result<()> {
+    const EMSDK_INSTALL_COMMAND_TEMPLATE: &str = r#"set -euo pipefail
+git init "${RUNNER_TEMP}/emsdk"
+git -C "${RUNNER_TEMP}/emsdk" remote add origin __EMSDK_REPOSITORY__
+git -C "${RUNNER_TEMP}/emsdk" fetch --depth 1 origin "${EMSDK_REVISION}"
+git -C "${RUNNER_TEMP}/emsdk" checkout --detach FETCH_HEAD
+test "$(git -C "${RUNNER_TEMP}/emsdk" rev-parse HEAD)" = "${EMSDK_REVISION}"
+"${RUNNER_TEMP}/emsdk/emsdk" install "${EMSDK_VERSION}"
+"${RUNNER_TEMP}/emsdk/emsdk" activate "${EMSDK_VERSION}"
+{
+  echo "EMSDK=${RUNNER_TEMP}/emsdk"
+} >> "$GITHUB_ENV"
+{
+  echo "${RUNNER_TEMP}/emsdk"
+  echo "${RUNNER_TEMP}/emsdk/upstream/emscripten"
+  echo "${RUNNER_TEMP}/emsdk/upstream/bin"
+} >> "$GITHUB_PATH""#;
+    let emsdk_install_command =
+        EMSDK_INSTALL_COMMAND_TEMPLATE.replace("__EMSDK_REPOSITORY__", &sdk.emsdk_repository);
+
+    let steps = workflow_steps(build, "Pages build")?;
+    if steps.len() != 13 {
+        return Err(Error::message(format!(
+            "Pages build job must contain exactly 13 reviewed steps; found {}",
+            steps.len()
+        )));
+    }
+
+    let checkout = pages_step(steps, 0, "Checkout", &["name", "uses", "with"])?;
+    require_exact_string_field(checkout, "uses", CHECKOUT_ACTION, "Pages checkout step")?;
+    let checkout_inputs = yaml_mapping(
+        required_yaml_field(checkout, "with", "Pages checkout step")?,
+        "Pages checkout inputs",
+    )?;
+    require_exact_mapping_keys(
+        checkout_inputs,
+        &["submodules", "persist-credentials"],
+        "Pages checkout inputs",
+    )?;
+    require_exact_string_field(
+        checkout_inputs,
+        "submodules",
+        "recursive",
+        "Pages checkout inputs",
+    )?;
+    require_exact_bool_field(
+        checkout_inputs,
+        "persist-credentials",
+        false,
+        "Pages checkout inputs",
+    )?;
+
+    let rust = pages_step(steps, 1, "Install Rust", &["name", "uses", "with"])?;
+    require_exact_string_field(rust, "uses", RUST_TOOLCHAIN_ACTION, "Pages Rust step")?;
+    require_exact_string_mapping_field(
+        rust,
+        "with",
+        &[
+            ("toolchain", "1.97.1"),
+            ("targets", "wasm32-unknown-unknown"),
+        ],
+        "Pages Rust step",
+    )?;
+
+    let cache = pages_step(steps, 2, "Cache Rust dependencies", &["name", "uses"])?;
+    require_exact_string_field(cache, "uses", RUST_CACHE_ACTION, "Pages cache step")?;
+
+    let wasm_bindgen = pages_step(steps, 3, "Install wasm-bindgen CLI", &["name", "run"])?;
+    require_exact_string_field(
+        wasm_bindgen,
+        "run",
+        &format!(
+            "cargo install wasm-bindgen-cli --version {} --locked",
+            sdk.wasm_bindgen_version
+        ),
+        "Pages wasm-bindgen step",
+    )?;
+
+    let emsdk = pages_step(
+        steps,
+        4,
+        "Install Emscripten SDK",
+        &["name", "shell", "run"],
+    )?;
+    require_exact_string_field(emsdk, "shell", "bash", "Pages Emscripten step")?;
+    require_exact_trimmed_string_field(
+        emsdk,
+        "run",
+        &emsdk_install_command,
+        "Pages Emscripten step",
+    )?;
+
+    let build_assets = pages_step(steps, 5, "Build Pages WASM assets", &["name", "run"])?;
+    require_exact_string_field(
+        build_assets,
+        "run",
+        "cargo run --locked -p xtask -- build-pages-wasm",
+        "Pages build-assets step",
+    )?;
+
+    let node = pages_step(steps, 6, "Install Node.js", &["name", "uses", "with"])?;
+    require_exact_string_field(node, "uses", SETUP_NODE_ACTION, "Pages Node.js step")?;
+    require_exact_string_mapping_field(
+        node,
+        "with",
+        &[
+            ("node-version", sdk.node_version.as_str()),
+            ("cache", "npm"),
+        ],
+        "Pages Node.js step",
+    )?;
+
+    let npm = pages_step(
+        steps,
+        7,
+        "Install browser test dependencies",
+        &["name", "run"],
+    )?;
+    require_exact_string_field(
+        npm,
+        "run",
+        "npm ci --ignore-scripts",
+        "Pages npm dependency step",
+    )?;
+
+    let chromium = pages_step(steps, 8, "Install Chromium", &["name", "run"])?;
+    require_exact_string_field(
+        chromium,
+        "run",
+        "npx playwright install --with-deps chromium",
+        "Pages Chromium step",
+    )?;
+
+    let browser = pages_step(
+        steps,
+        9,
+        "Prove published Pages runtime in Chromium",
+        &["name", "run"],
+    )?;
+    require_exact_string_field(
+        browser,
+        "run",
+        "npm run test:pages-browser",
+        "Pages browser proof step",
+    )?;
+
+    let validate = pages_step(
+        steps,
+        10,
+        "Validate commit-bound Pages content and runtime manifest",
+        &["name", "run"],
+    )?;
+    require_exact_string_field(
+        validate,
+        "run",
+        "cargo run --locked -p xtask -- validate-pages",
+        "Pages validation step",
+    )?;
+
+    let configure = pages_step(steps, 11, "Configure Pages", &["name", "uses"])?;
+    require_exact_string_field(
+        configure,
+        "uses",
+        CONFIGURE_PAGES_ACTION,
+        "Pages configuration step",
+    )?;
+
+    let upload = pages_step(steps, 12, "Upload artifact", &["name", "uses", "with"])?;
+    require_exact_string_field(upload, "uses", UPLOAD_PAGES_ACTION, "Pages upload step")?;
+    require_exact_string_mapping_field(
+        upload,
+        "with",
+        &[("path", "docs/pages")],
+        "Pages upload step",
     )
+}
+
+fn validate_pages_deploy_steps(deploy: &YamlMapping) -> Result<()> {
+    let steps = workflow_steps(deploy, "Pages deploy")?;
+    if steps.len() != 1 {
+        return Err(Error::message(format!(
+            "Pages deploy job must contain exactly one reviewed step; found {}",
+            steps.len()
+        )));
+    }
+    let deployment = pages_step(steps, 0, "Deploy Pages", &["name", "id", "uses"])?;
+    require_exact_string_field(deployment, "id", "deployment", "Pages deployment step")?;
+    require_exact_string_field(
+        deployment,
+        "uses",
+        DEPLOY_PAGES_ACTION,
+        "Pages deployment step",
+    )
+}
+
+fn validate_pages_workflow(root: &Path) -> Result<()> {
+    let path = root.join(".github/workflows/pages.yml");
+    let source = fs::read_to_string(&path).map_err(|error| Error::io(&path, error))?;
+    let sdk_path = root.join("boxdd-sys").join(SDK_CONTRACT_RELATIVE_PATH);
+    let sdk_source = fs::read_to_string(&sdk_path).map_err(|error| Error::io(&sdk_path, error))?;
+    let sdk = SdkContract::parse(&sdk_source).map_err(Error::message)?;
+    validate_pages_workflow_source(&source, &sdk)
 }
 
 fn validate_audit_policy(root: &Path) -> Result<()> {
@@ -3297,6 +3648,10 @@ fn require_success(output: &Output, label: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pages_sdk_contract() -> SdkContract {
+        SdkContract::parse(include_str!("../../../boxdd-sys/emscripten-sdk.toml")).unwrap()
+    }
 
     fn write_tar_fixture(path: &Path, entries: &[(&str, &[u8])]) {
         let file = fs::File::create(path).unwrap();
@@ -3773,6 +4128,133 @@ mod tests {
         validate_ci_workflow(workspace).unwrap();
         validate_pages_workflow(workspace).unwrap();
         validate_audit_policy(workspace).unwrap();
+    }
+
+    #[test]
+    fn pages_workflow_rejects_execution_and_provenance_drift() {
+        let source = include_str!("../../../.github/workflows/pages.yml");
+        let sdk = pages_sdk_contract();
+        assert!(validate_pages_workflow_source(source, &sdk).is_ok());
+
+        for (reviewed, drifted) in [
+            ("branches: [ main ]", "branches: [ feature ]"),
+            ("group: github-pages", "group: unreviewed-pages"),
+            ("cancel-in-progress: true", "cancel-in-progress: false"),
+            (
+                "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
+                "actions/checkout@main",
+            ),
+            (
+                "dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c",
+                "dtolnay/rust-toolchain@master",
+            ),
+            (
+                "Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4",
+                "Swatinem/rust-cache@v2",
+            ),
+            (
+                "actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f",
+                "actions/setup-node@main",
+            ),
+            (
+                "actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d",
+                "actions/configure-pages@v6",
+            ),
+            (
+                "actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9",
+                "actions/upload-pages-artifact@v5",
+            ),
+            (
+                "actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128",
+                "actions/deploy-pages@v5",
+            ),
+            ("toolchain: 1.97.1", "toolchain: stable"),
+            ("targets: wasm32-unknown-unknown", "targets: wasm32-wasip1"),
+            ("EMSDK_VERSION: \"6.0.3\"", "EMSDK_VERSION: latest"),
+            (
+                "EMSDK_REVISION: \"db04e88298d9916fc51fcd3743045ca3eb695127\"",
+                "EMSDK_REVISION: main",
+            ),
+            (
+                "cargo install wasm-bindgen-cli --version 0.2.126 --locked",
+                "cargo install wasm-bindgen-cli --locked",
+            ),
+            ("node-version: \"22.16.0\"", "node-version: latest"),
+            ("npm ci --ignore-scripts", "npm install"),
+            (
+                "npx playwright install --with-deps chromium",
+                "npx playwright install chromium",
+            ),
+            ("npm run test:pages-browser", "true # browser proof removed"),
+            (
+                "cargo run --locked -p xtask -- build-pages-wasm",
+                "cargo run --locked -p xtask -- validate-pages",
+            ),
+            (
+                "cargo run --locked -p xtask -- validate-pages",
+                "true # validation removed",
+            ),
+            ("path: docs/pages", "path: docs"),
+            ("needs: build", "needs: unreviewed-build"),
+            (
+                "if: github.ref == 'refs/heads/main' && github.ref_protected == true",
+                "if: github.ref == 'refs/heads/main'",
+            ),
+            ("pages: write", "pages: read"),
+            ("id-token: write", "id-token: read"),
+            ("name: github-pages", "name: unprotected-pages"),
+        ] {
+            assert!(source.contains(reviewed), "missing fixture {reviewed:?}");
+            let mutated = source.replacen(reviewed, drifted, 1);
+            assert!(
+                validate_pages_workflow_source(&mutated, &sdk).is_err(),
+                "Pages workflow policy accepted drift of {reviewed:?}"
+            );
+        }
+
+        let extra_trigger = source.replacen(
+            "  workflow_dispatch:\n",
+            "  workflow_dispatch:\n    inputs:\n      unsafe:\n        required: false\n",
+            1,
+        );
+        assert!(
+            validate_pages_workflow_source(&extra_trigger, &sdk).is_err(),
+            "Pages workflow policy accepted unreviewed dispatch inputs"
+        );
+
+        let extra_job = source.replacen(
+            "jobs:\n  build:",
+            "jobs:\n  unreviewed:\n    runs-on: ubuntu-latest\n    steps: []\n  build:",
+            1,
+        );
+        assert!(
+            validate_pages_workflow_source(&extra_job, &sdk).is_err(),
+            "Pages workflow policy accepted an unreviewed job"
+        );
+
+        let injected_build_command = source.replacen(
+            "          set -euo pipefail",
+            "          set -euo pipefail\n          true # unreviewed command",
+            1,
+        );
+        assert!(
+            validate_pages_workflow_source(&injected_build_command, &sdk).is_err(),
+            "Pages workflow policy accepted an unreviewed Emscripten setup command"
+        );
+
+        let privileged_build = source.replacen(
+            "    env:\n      EMSDK_VERSION:",
+            "    permissions:\n      contents: write\n    env:\n      EMSDK_VERSION:",
+            1,
+        );
+        assert!(
+            validate_pages_workflow_source(&privileged_build, &sdk).is_err(),
+            "Pages workflow policy accepted build-job write permissions"
+        );
+
+        let mut drifted_sdk = sdk.clone();
+        drifted_sdk.node_version = "22.17.0".to_owned();
+        assert!(validate_pages_workflow_source(source, &drifted_sdk).is_err());
     }
 
     #[test]

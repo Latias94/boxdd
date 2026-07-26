@@ -6,6 +6,8 @@ use std::{
     path::{Component, Path},
 };
 
+use crate::emscripten_sdk::{SdkContract, validate_wasm_bindgen_lock};
+
 const RELEASE_VERSION: &str = "0.6.0";
 const RUST_VERSION: &str = "1.95";
 const MSRV: &str = "1.95.0";
@@ -18,14 +20,19 @@ pub(crate) struct Verification {
     msrv: String,
     development: String,
     verification_nightly: String,
+    wasm_bindgen: String,
 }
 
 impl fmt::Display for Verification {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
-            "toolchain configuration ok: workspace {}, MSRV {}, development {}, verification {}",
-            self.workspace_version, self.msrv, self.development, self.verification_nightly
+            "toolchain configuration ok: workspace {}, MSRV {}, development {}, verification {}, wasm-bindgen {}",
+            self.workspace_version,
+            self.msrv,
+            self.development,
+            self.verification_nightly,
+            self.wasm_bindgen
         )
     }
 }
@@ -184,11 +191,23 @@ pub(crate) fn verify_configuration(root: &Path) -> Result<Verification, VerifyEr
         &["clippy", "rustfmt"],
     )?;
 
+    let sdk_path = root.join("boxdd-sys/emscripten-sdk.toml");
+    let sdk_source = fs::read_to_string(&sdk_path).map_err(|error| {
+        VerifyError::message(format!("failed to read {}: {error}", sdk_path.display()))
+    })?;
+    let sdk = SdkContract::parse(&sdk_source).map_err(VerifyError::message)?;
+    let lock_path = root.join("Cargo.lock");
+    let lock_source = fs::read_to_string(&lock_path).map_err(|error| {
+        VerifyError::message(format!("failed to read {}: {error}", lock_path.display()))
+    })?;
+    validate_wasm_bindgen_lock(&sdk, &lock_source).map_err(VerifyError::message)?;
+
     Ok(Verification {
         workspace_version: manifest.workspace.package.version,
         msrv: policy.msrv.clone(),
         development: policy.development.clone(),
         verification_nightly: policy.verification_nightly.clone(),
+        wasm_bindgen: sdk.wasm_bindgen_version,
     })
 }
 
@@ -388,6 +407,22 @@ profile = "minimal"
 "#,
             )
             .expect("toolchain fixture should be written");
+            fs::write(
+                root.join("boxdd-sys/emscripten-sdk.toml"),
+                include_str!("../../boxdd-sys/emscripten-sdk.toml"),
+            )
+            .expect("SDK contract fixture should be written");
+            fs::write(
+                root.join("Cargo.lock"),
+                r#"version = 4
+
+[[package]]
+name = "wasm-bindgen"
+version = "0.2.126"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+"#,
+            )
+            .expect("lockfile fixture should be written");
             Self { root }
         }
 
@@ -519,5 +554,15 @@ profile = "minimal"
         let error =
             verify_configuration(&fixture.root).expect_err("missing nightly component must fail");
         assert!(error.to_string().contains("verification components"));
+    }
+
+    #[test]
+    fn rejects_wasm_bindgen_lockfile_drift() {
+        let fixture = Fixture::new("wasm-bindgen-lockfile");
+        fixture.rewrite("Cargo.lock", "version = \"0.2.126\"", "version = \"0.2.0\"");
+
+        let error =
+            verify_configuration(&fixture.root).expect_err("wasm-bindgen lockfile drift must fail");
+        assert!(error.to_string().contains("wasm-bindgen version"));
     }
 }

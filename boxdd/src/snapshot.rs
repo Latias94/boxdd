@@ -1036,6 +1036,15 @@ mod tests {
     fn effective_source_digest_mismatch_rejects_before_native_validation() {
         let world = World::new(WorldDef::default()).unwrap();
         let mut bytes = world.snapshot().image().as_bytes().to_vec();
+
+        reset_native_validation_calls();
+        SnapshotImage::from_bytes(&bytes).expect("the control image must reach native validation");
+        assert_eq!(
+            native_validation_calls(),
+            1,
+            "the native-validation counter must observe its control call"
+        );
+
         bytes[IMAGE_EFFECTIVE_SOURCE_SHA256.start] ^= 1;
         let checksum = image_checksum(&bytes);
         bytes[IMAGE_CHECKSUM].copy_from_slice(&checksum);
@@ -1045,7 +1054,11 @@ mod tests {
             SnapshotImage::from_bytes(&bytes),
             Err(ApiError::SnapshotAbiMismatch)
         ));
-        assert_eq!(native_validation_calls(), 0);
+        assert_eq!(
+            native_validation_calls(),
+            0,
+            "effective-source mismatch must fail before native validation"
+        );
     }
 
     #[test]

@@ -13,6 +13,9 @@ pub mod adapter;
 #[cfg(test)]
 mod build_support;
 
+#[cfg(test)]
+mod emscripten_sdk;
+
 pub mod ffi;
 
 pub use precision::{

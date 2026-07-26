@@ -8,6 +8,9 @@ use object::{Object, ObjectSection, ObjectSymbol};
 #[path = "src/build_support.rs"]
 mod build_support;
 
+#[path = "src/emscripten_sdk.rs"]
+mod emscripten_sdk;
+
 #[path = "src/bindgen_contract.rs"]
 mod bindgen_contract;
 
@@ -39,6 +42,7 @@ use build_support::{
     cosign_verify_blob_args, cosign_version_is_qualified, select_provider, simd_identity,
     validate_c_source_paths, validate_skip_cc_policy,
 };
+use emscripten_sdk::{EmscriptenSdkInputs, SDK_CONTRACT_RELATIVE_PATH, qualify_emscripten_sdk};
 use precision::Precision;
 use provider_archive::{
     ArchiveExpectation, private_abi_hash, private_abi_hash_hex, snapshot_layout_hash,
@@ -241,6 +245,7 @@ fn main() {
     println!("cargo:rustc-check-cfg=cfg(boxdd_sys_wasm_provider)");
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=src/bindgen_contract.rs");
+    println!("cargo:rerun-if-changed=src/emscripten_sdk.rs");
     println!("cargo:rerun-if-changed=src/precision.rs");
     println!("cargo:rerun-if-changed=src/source_overlay.rs");
     println!("cargo:rerun-if-changed=src/provider_archive.rs");
@@ -254,6 +259,7 @@ fn main() {
     println!("cargo:rerun-if-changed=src/bindgen_headers/wasm32_unknown_unknown/math.h");
     println!("cargo:rerun-if-changed=upstream.toml");
     println!("cargo:rerun-if-changed=effective-source.toml");
+    println!("cargo:rerun-if-changed={SDK_CONTRACT_RELATIVE_PATH}");
     println!("cargo:rerun-if-changed=third-party/box2d/include/box2d/box2d.h");
     println!("cargo:rerun-if-changed=third-party/box2d");
     println!("cargo:rerun-if-changed=native");
@@ -271,7 +277,9 @@ fn main() {
     println!("cargo:rerun-if-env-changed=BOXDD_SYS_BINDGEN_TARGET");
     println!("cargo:rerun-if-env-changed=BOXDD_SYS_WASI_SYSROOT");
     println!("cargo:rerun-if-env-changed=BOXDD_SYS_EMCC");
+    println!("cargo:rerun-if-env-changed=BOXDD_EMSDK_REVISION");
     println!("cargo:rerun-if-env-changed=EMSDK");
+    println!("cargo:rerun-if-env-changed=EM_CONFIG");
     println!("cargo:rerun-if-env-changed=DOCS_RS");
     println!("cargo:rerun-if-env-changed=CARGO_CFG_DOCSRS");
 
@@ -1297,11 +1305,31 @@ fn build_wasm_provider_identity_probe(
         .manifest_dir
         .join("native")
         .join("boxdd_identity_values.c");
-    let compiler = find_emscripten_compiler();
+    let emsdk = env::var_os("EMSDK");
+    let compiler_override = env::var_os("BOXDD_SYS_EMCC");
+    let em_config_override = env::var_os("EM_CONFIG");
+    let self_attested_revision = env::var_os("BOXDD_EMSDK_REVISION");
+    let sdk = qualify_emscripten_sdk(
+        &config.manifest_dir,
+        EmscriptenSdkInputs {
+            root: emsdk.as_deref(),
+            compiler_override: compiler_override.as_deref(),
+            em_config_override: em_config_override.as_deref(),
+            self_attested_revision: self_attested_revision.as_deref(),
+        },
+    )
+    .unwrap_or_else(|error| panic!("Emscripten SDK is not qualified for wasm-provider: {error}"));
+    println!(
+        "cargo:emscripten_sdk_contract_sha256={}",
+        sdk.contract_sha256
+    );
+    for path in &sdk.watched_paths {
+        println!("cargo:rerun-if-changed={}", path.display());
+    }
     let mut build = cc::Build::new();
     build
         .target("wasm32-unknown-emscripten")
-        .compiler(&compiler)
+        .compiler(&sdk.compiler)
         .cargo_metadata(false)
         .include(&effective_sources.public_include)
         .include(&effective_sources.private_include)
@@ -1310,6 +1338,8 @@ fn build_wasm_provider_identity_probe(
     build.flag("-std=c17");
     build.flag("-O2");
     build.flag("--target=wasm32-unknown-emscripten");
+    build.flag("--em-config");
+    build.flag(&sdk.em_config);
     build.define("BOX2D_DISABLE_SIMD", None);
     define_effective_source_identity(&mut build, effective_source_sha256);
     if config.precision == Precision::Double {
@@ -1341,22 +1371,6 @@ fn exact_identity_probe(objects: Vec<PathBuf>, label: &str) -> CompiledIdentityP
 fn define_effective_source_identity(build: &mut cc::Build, effective_source_sha256: &str) {
     let value = c_string_define(effective_source_sha256, "effective source SHA-256");
     build.define("BOXDD_EFFECTIVE_SOURCE_SHA256", Some(value.as_str()));
-}
-
-fn find_emscripten_compiler() -> PathBuf {
-    if let Some(path) = env::var_os("BOXDD_SYS_EMCC") {
-        return PathBuf::from(path);
-    }
-    if let Some(root) = env::var_os("EMSDK") {
-        let emscripten = PathBuf::from(root).join("upstream").join("emscripten");
-        for name in ["emcc", "emcc.exe", "emcc.bat"] {
-            let candidate = emscripten.join(name);
-            if candidate.is_file() {
-                return candidate;
-            }
-        }
-    }
-    PathBuf::from(if cfg!(windows) { "emcc.bat" } else { "emcc" })
 }
 
 fn read_compiled_adapter_identity_file(object_path: &Path) -> NativeAbiIdentity {

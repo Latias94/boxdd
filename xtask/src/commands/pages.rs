@@ -1,13 +1,23 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     env,
+    ffi::OsStr,
     fmt::Write as _,
     fs, io,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     process::Command,
 };
 
-use crate::{Error, Result};
+use crate::{
+    Error, Result,
+    config::{write_atomic, write_atomic_bytes},
+    emscripten_sdk::{SDK_CONTRACT_RELATIVE_PATH, SdkContract},
+    provenance_policy::PUBLISHER_REPOSITORY,
+    provider_manifest::{
+        self, ADAPTER_ABI_VERSION, RECORDING_CONTRACT_BLAKE3, adapter_source_sha256,
+    },
+    source_overlay::effective_source_identity,
+};
 
 use super::{
     provider::{
@@ -29,6 +39,105 @@ const BEVY_WEB_OUT_NAME: &str = "bevy_boxdd_testbed";
 const BEVY_WEB_JS: &str = "bevy_boxdd_testbed.js";
 const BEVY_WEB_WASM: &str = "bevy_boxdd_testbed_bg.wasm";
 const BEVY_PROVIDER_SHIM: &str = "box2d-provider-shim.js";
+const PAGES_RUNTIME_MANIFEST: &str = "wasm/generated/boxdd-pages-runtime-v1.json";
+const PAGES_RUNTIME_SCHEMA: &str = "boxdd-pages-runtime-v1";
+const PAGES_RUNTIME_SCHEMA_VERSION: u64 = 1;
+const PAGES_PROVIDER_ABI: &str = "box2d-sys-v1";
+const PAGES_PUBLISHER_WORKFLOW: &str = ".github/workflows/pages.yml";
+const JAVASCRIPT_MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PagesAssetSpec {
+    role: &'static str,
+    path: &'static str,
+}
+
+const PAGES_RUNTIME_ASSETS: [PagesAssetSpec; 5] = [
+    PagesAssetSpec {
+        role: "provider_js",
+        path: "wasm/generated/box2d-sys-v1-single.js",
+    },
+    PagesAssetSpec {
+        role: "provider_wasm",
+        path: "wasm/generated/box2d-sys-v1-single.wasm",
+    },
+    PagesAssetSpec {
+        role: "app_js",
+        path: "bevy-testbed/generated/bevy_boxdd_testbed.js",
+    },
+    PagesAssetSpec {
+        role: "app_wasm",
+        path: "bevy-testbed/generated/bevy_boxdd_testbed_bg.wasm",
+    },
+    PagesAssetSpec {
+        role: "provider_shim_js",
+        path: "bevy-testbed/generated/box2d-provider-shim.js",
+    },
+];
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct PagesRuntimeManifest {
+    schema_version: u64,
+    schema: String,
+    publisher_repository: String,
+    publisher_workflow: String,
+    provider: String,
+    provider_abi: String,
+    adapter_abi_version: u64,
+    crate_version: String,
+    source_commit: String,
+    upstream_sha: String,
+    source_tree: String,
+    effective_source_sha256: String,
+    adapter_source_sha256: String,
+    emscripten_sdk_contract_sha256: String,
+    recording_contract_blake3: String,
+    precision: String,
+    target: String,
+    assets: Vec<PagesRuntimeAsset>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct PagesRuntimeAsset {
+    role: String,
+    path: String,
+    byte_length: u64,
+    sha256: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PagesRuntimeIdentity {
+    source_commit: String,
+    upstream_sha: String,
+    source_tree: String,
+    effective_source_sha256: String,
+    adapter_source_sha256: String,
+    emscripten_sdk_contract_sha256: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PagesLoaderTrust {
+    manifest_sha256: String,
+    schema_version: u64,
+    schema: String,
+    publisher_repository: String,
+    publisher_workflow: String,
+    provider: String,
+    provider_abi: String,
+    adapter_abi_version: u64,
+    crate_version: String,
+    source_commit: String,
+    upstream_sha: String,
+    source_tree: String,
+    effective_source_sha256: String,
+    adapter_source_sha256: String,
+    emscripten_sdk_contract_sha256: String,
+    recording_contract_blake3: String,
+    precision: String,
+    target: String,
+}
 
 struct RegistrySample {
     id: String,
@@ -73,9 +182,11 @@ enum ExampleIndexLocation {
 }
 
 pub(crate) fn build_pages_wasm(root: &Path) -> Result<()> {
+    ensure_pages_build_inputs_clean(root)?;
     let target_dir = cargo_target_dir(root)?;
     let precision = ProviderPrecision::from_env()?;
     validate_pages_precision(precision)?;
+    let identity = pages_runtime_identity(root)?;
     verify_wasm_bindgen_cli()?;
     verify_provider_compiler()?;
     generate_pages(root)?;
@@ -99,6 +210,11 @@ pub(crate) fn build_pages_wasm(root: &Path) -> Result<()> {
         &generated.join(format!("{}.wasm", precision.module())),
     )?;
     copy_bevy_web_artifacts(root, &bevy_artifacts)?;
+    ensure_pages_source_state(root, &identity)?;
+    let (manifest, manifest_sha256) = write_pages_runtime_manifest(root, precision, &identity)?;
+    let trust = PagesLoaderTrust::from_manifest(&manifest, manifest_sha256);
+    write_bevy_testbed_loader(root, Some(&trust))?;
+    ensure_pages_source_state(root, &identity)?;
 
     println!(
         "pages wasm assets ready: {} and {} ({} Bevy imports)",
@@ -107,6 +223,384 @@ pub(crate) fn build_pages_wasm(root: &Path) -> Result<()> {
         bevy_artifacts.imports.len()
     );
     Ok(())
+}
+
+impl PagesRuntimeManifest {
+    fn parse(bytes: &[u8]) -> Result<Self> {
+        let manifest: Self = serde_json::from_slice(bytes).map_err(|error| {
+            Error::Message(format!(
+                "Pages runtime manifest is not valid strict JSON: {error}"
+            ))
+        })?;
+        if manifest.render()? != bytes {
+            return Err(Error::Message(
+                "Pages runtime manifest must use its canonical byte representation".to_owned(),
+            ));
+        }
+        Ok(manifest)
+    }
+
+    fn render(&self) -> Result<Vec<u8>> {
+        let mut bytes = serde_json::to_vec_pretty(self).map_err(|error| {
+            Error::Message(format!(
+                "failed to serialize canonical Pages runtime manifest: {error}"
+            ))
+        })?;
+        bytes.push(b'\n');
+        Ok(bytes)
+    }
+}
+
+impl PagesLoaderTrust {
+    fn from_manifest(manifest: &PagesRuntimeManifest, manifest_sha256: String) -> Self {
+        Self {
+            manifest_sha256,
+            schema_version: manifest.schema_version,
+            schema: manifest.schema.clone(),
+            publisher_repository: manifest.publisher_repository.clone(),
+            publisher_workflow: manifest.publisher_workflow.clone(),
+            provider: manifest.provider.clone(),
+            provider_abi: manifest.provider_abi.clone(),
+            adapter_abi_version: manifest.adapter_abi_version,
+            crate_version: manifest.crate_version.clone(),
+            source_commit: manifest.source_commit.clone(),
+            upstream_sha: manifest.upstream_sha.clone(),
+            source_tree: manifest.source_tree.clone(),
+            effective_source_sha256: manifest.effective_source_sha256.clone(),
+            adapter_source_sha256: manifest.adapter_source_sha256.clone(),
+            emscripten_sdk_contract_sha256: manifest.emscripten_sdk_contract_sha256.clone(),
+            recording_contract_blake3: manifest.recording_contract_blake3.clone(),
+            precision: manifest.precision.clone(),
+            target: manifest.target.clone(),
+        }
+    }
+}
+
+fn pages_runtime_manifest_path(root: &Path) -> PathBuf {
+    root.join("docs").join("pages").join(PAGES_RUNTIME_MANIFEST)
+}
+
+fn pages_runtime_identity(root: &Path) -> Result<PagesRuntimeIdentity> {
+    let effective = effective_source_identity(&root.join("boxdd-sys")).map_err(|error| {
+        Error::Message(format!(
+            "failed to identify Pages provider effective sources: {error}"
+        ))
+    })?;
+    let adapter_source_sha256 =
+        adapter_source_sha256(&root.join("boxdd-sys")).map_err(|error| {
+            Error::Message(format!(
+                "failed to identify Pages provider adapter: {error}"
+            ))
+        })?;
+    Ok(PagesRuntimeIdentity {
+        source_commit: pages_source_commit(root)?,
+        upstream_sha: effective.upstream_sha,
+        source_tree: effective.source_tree,
+        effective_source_sha256: effective.effective_source_sha256,
+        adapter_source_sha256,
+        emscripten_sdk_contract_sha256: pages_sdk_contract_sha256(root)?,
+    })
+}
+
+fn pages_sdk_contract_sha256(root: &Path) -> Result<String> {
+    let path = root.join("boxdd-sys").join(SDK_CONTRACT_RELATIVE_PATH);
+    let metadata = fs::symlink_metadata(&path).map_err(|source| Error::io(&path, source))?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        return Err(Error::Message(format!(
+            "Pages Emscripten SDK contract must be a regular non-symlink file: {}",
+            path.display()
+        )));
+    }
+    let bytes = fs::read(&path).map_err(|source| Error::io(&path, source))?;
+    let source = std::str::from_utf8(&bytes).map_err(|error| {
+        Error::Message(format!(
+            "Pages Emscripten SDK contract is not UTF-8: {error}"
+        ))
+    })?;
+    SdkContract::parse(source).map_err(|error| {
+        Error::Message(format!("Pages Emscripten SDK contract is invalid: {error}"))
+    })?;
+    Ok(provider_manifest::sha256_bytes(&bytes))
+}
+
+fn pages_source_commit(root: &Path) -> Result<String> {
+    let commit = git_stdout(
+        root,
+        &["rev-parse", "--verify", "HEAD^{commit}"],
+        "resolve Pages source commit",
+    )?;
+    validate_lower_hex("Pages source commit", &commit, 40)?;
+    if env::var("GITHUB_ACTIONS").ok().as_deref() == Some("true") {
+        let github_repository = required_environment("GITHUB_REPOSITORY")?;
+        if github_repository != PUBLISHER_REPOSITORY {
+            return Err(Error::Message(format!(
+                "Pages publisher repository {github_repository:?} does not match {PUBLISHER_REPOSITORY:?}"
+            )));
+        }
+        let workflow_ref = required_environment("GITHUB_WORKFLOW_REF")?;
+        let expected_workflow_ref =
+            format!("{PUBLISHER_REPOSITORY}/{PAGES_PUBLISHER_WORKFLOW}@refs/heads/main");
+        if workflow_ref != expected_workflow_ref {
+            return Err(Error::Message(format!(
+                "Pages workflow identity {workflow_ref:?} does not match {expected_workflow_ref:?}"
+            )));
+        }
+        let github_sha = required_environment("GITHUB_SHA")?;
+        validate_lower_hex("GITHUB_SHA", &github_sha, 40)?;
+        if github_sha != commit {
+            return Err(Error::Message(format!(
+                "Pages checkout commit {commit} does not match GITHUB_SHA {github_sha}"
+            )));
+        }
+    }
+    Ok(commit)
+}
+
+fn required_environment(name: &str) -> Result<String> {
+    env::var(name)
+        .map_err(|_| Error::Message(format!("GitHub Pages requires non-empty {name}")))
+        .and_then(|value| {
+            if value.is_empty() {
+                Err(Error::Message(format!(
+                    "GitHub Pages requires non-empty {name}"
+                )))
+            } else {
+                Ok(value)
+            }
+        })
+}
+
+fn ensure_pages_build_inputs_clean(root: &Path) -> Result<()> {
+    let status = git_stdout(
+        root,
+        &[
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            "--",
+            ".",
+            ":(exclude)docs/pages/**",
+        ],
+        "inspect Pages build inputs",
+    )?;
+    if status.is_empty() {
+        Ok(())
+    } else {
+        Err(Error::Message(format!(
+            "Pages runtime assets require commit-bound clean inputs outside docs/pages; commit or remove these changes first:\n{status}"
+        )))
+    }
+}
+
+fn ensure_pages_source_state(root: &Path, expected: &PagesRuntimeIdentity) -> Result<()> {
+    ensure_pages_build_inputs_clean(root)?;
+    let actual = pages_runtime_identity(root)?;
+    if &actual == expected {
+        Ok(())
+    } else {
+        Err(Error::Message(
+            "Pages source identity changed while runtime assets were being built; discard the generated output and rebuild from one clean commit"
+                .to_owned(),
+        ))
+    }
+}
+
+fn git_stdout(root: &Path, args: &[&str], label: &str) -> Result<String> {
+    let mut command = Command::new("git");
+    for (key, _) in env::vars_os() {
+        if is_git_environment_key(&key) {
+            command.env_remove(key);
+        }
+    }
+    let output = command
+        .args(["--no-replace-objects", "-c", "core.fsmonitor=false"])
+        .args(args)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", null_device())
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .current_dir(root)
+        .output()
+        .map_err(|error| Error::Message(format!("failed to {label}: {error}")))?;
+    if !output.status.success() {
+        return Err(Error::Message(format!(
+            "failed to {label}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    String::from_utf8(output.stdout)
+        .map(|value| value.trim().to_owned())
+        .map_err(|error| Error::Message(format!("{label} returned non-UTF-8 output: {error}")))
+}
+
+fn is_git_environment_key(key: &OsStr) -> bool {
+    key.to_string_lossy()
+        .get(..4)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("GIT_"))
+}
+
+#[cfg(windows)]
+fn null_device() -> &'static str {
+    "NUL"
+}
+
+#[cfg(not(windows))]
+fn null_device() -> &'static str {
+    "/dev/null"
+}
+
+fn write_pages_runtime_manifest(
+    root: &Path,
+    precision: ProviderPrecision,
+    identity: &PagesRuntimeIdentity,
+) -> Result<(PagesRuntimeManifest, String)> {
+    let pages_dir = root.join("docs/pages");
+    let assets = PAGES_RUNTIME_ASSETS
+        .iter()
+        .map(|spec| pages_runtime_asset(&pages_dir, *spec))
+        .collect::<Result<Vec<_>>>()?;
+    let manifest = PagesRuntimeManifest {
+        schema_version: PAGES_RUNTIME_SCHEMA_VERSION,
+        schema: PAGES_RUNTIME_SCHEMA.to_owned(),
+        publisher_repository: PUBLISHER_REPOSITORY.to_owned(),
+        publisher_workflow: PAGES_PUBLISHER_WORKFLOW.to_owned(),
+        provider: "wasm-runtime".to_owned(),
+        provider_abi: PAGES_PROVIDER_ABI.to_owned(),
+        adapter_abi_version: ADAPTER_ABI_VERSION,
+        crate_version: env!("CARGO_PKG_VERSION").to_owned(),
+        source_commit: identity.source_commit.clone(),
+        upstream_sha: identity.upstream_sha.clone(),
+        source_tree: identity.source_tree.clone(),
+        effective_source_sha256: identity.effective_source_sha256.clone(),
+        adapter_source_sha256: identity.adapter_source_sha256.clone(),
+        emscripten_sdk_contract_sha256: identity.emscripten_sdk_contract_sha256.clone(),
+        recording_contract_blake3: RECORDING_CONTRACT_BLAKE3.to_owned(),
+        precision: precision.as_str().to_owned(),
+        target: WASM_TARGET.to_owned(),
+        assets,
+    };
+    validate_pages_runtime_manifest_identity(&manifest, identity)?;
+    let bytes = manifest.render()?;
+    let path = pages_runtime_manifest_path(root);
+    ensure_pages_output_parent(root, &path)?;
+    write_atomic_bytes(&path, &bytes)?;
+    Ok((manifest, provider_manifest::sha256_bytes(&bytes)))
+}
+
+fn pages_runtime_asset(pages_dir: &Path, spec: PagesAssetSpec) -> Result<PagesRuntimeAsset> {
+    let path = pages_dir.join(spec.path);
+    let metadata = fs::symlink_metadata(&path).map_err(|source| Error::io(&path, source))?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        return Err(Error::Message(format!(
+            "Pages runtime asset must be a regular non-symlink file: {}",
+            path.display()
+        )));
+    }
+    validate_pages_asset_byte_length(&path, metadata.len())?;
+    Ok(PagesRuntimeAsset {
+        role: spec.role.to_owned(),
+        path: spec.path.to_owned(),
+        byte_length: metadata.len(),
+        sha256: provider_manifest::sha256_file(&path).map_err(Error::Message)?,
+    })
+}
+
+fn validate_pages_asset_byte_length(path: &Path, byte_length: u64) -> Result<()> {
+    if byte_length == 0 || byte_length > JAVASCRIPT_MAX_SAFE_INTEGER {
+        return Err(Error::Message(format!(
+            "Pages runtime asset byte length must be within 1..={JAVASCRIPT_MAX_SAFE_INTEGER}: {}",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+fn validate_pages_runtime_manifest_identity(
+    manifest: &PagesRuntimeManifest,
+    identity: &PagesRuntimeIdentity,
+) -> Result<()> {
+    if manifest.schema_version != PAGES_RUNTIME_SCHEMA_VERSION
+        || manifest.schema != PAGES_RUNTIME_SCHEMA
+    {
+        return Err(Error::Message(format!(
+            "unsupported Pages runtime manifest schema: version={} name={:?}",
+            manifest.schema_version, manifest.schema
+        )));
+    }
+    if manifest.provider != "wasm-runtime"
+        || manifest.publisher_repository != PUBLISHER_REPOSITORY
+        || manifest.publisher_workflow != PAGES_PUBLISHER_WORKFLOW
+        || manifest.provider_abi != PAGES_PROVIDER_ABI
+        || manifest.adapter_abi_version != ADAPTER_ABI_VERSION
+        || manifest.crate_version != env!("CARGO_PKG_VERSION")
+        || manifest.precision != ProviderPrecision::Single.as_str()
+        || manifest.target != WASM_TARGET
+        || manifest.recording_contract_blake3 != RECORDING_CONTRACT_BLAKE3
+    {
+        return Err(Error::Message(
+            "Pages runtime manifest ABI, crate, precision, target, or recording identity does not match this build"
+                .to_owned(),
+        ));
+    }
+    for (label, actual, expected, digits) in [
+        (
+            "source_commit",
+            manifest.source_commit.as_str(),
+            identity.source_commit.as_str(),
+            40,
+        ),
+        (
+            "upstream_sha",
+            manifest.upstream_sha.as_str(),
+            identity.upstream_sha.as_str(),
+            40,
+        ),
+        (
+            "source_tree",
+            manifest.source_tree.as_str(),
+            identity.source_tree.as_str(),
+            40,
+        ),
+        (
+            "effective_source_sha256",
+            manifest.effective_source_sha256.as_str(),
+            identity.effective_source_sha256.as_str(),
+            64,
+        ),
+        (
+            "adapter_source_sha256",
+            manifest.adapter_source_sha256.as_str(),
+            identity.adapter_source_sha256.as_str(),
+            64,
+        ),
+        (
+            "emscripten_sdk_contract_sha256",
+            manifest.emscripten_sdk_contract_sha256.as_str(),
+            identity.emscripten_sdk_contract_sha256.as_str(),
+            64,
+        ),
+    ] {
+        validate_lower_hex(label, actual, digits)?;
+        if actual != expected {
+            return Err(Error::Message(format!(
+                "Pages runtime manifest {label} {actual} does not match {expected}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_lower_hex(label: &str, value: &str, digits: usize) -> Result<()> {
+    if value.len() == digits
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        Ok(())
+    } else {
+        Err(Error::Message(format!(
+            "{label} must be exactly {digits} lowercase hexadecimal characters"
+        )))
+    }
 }
 
 fn validate_pages_precision(precision: ProviderPrecision) -> Result<()> {
@@ -223,7 +717,7 @@ fn patch_bevy_bindgen_imports(js: &Path, provider_module: &str) -> Result<()> {
             js.display()
         )));
     }
-    fs::write(js, decode_patched).map_err(|source| Error::io(js, source))
+    write_atomic(js, &decode_patched)
 }
 
 fn write_browser_provider_shim(out_dir: &Path, imports: &[String]) -> Result<PathBuf> {
@@ -236,6 +730,8 @@ fn write_browser_provider_shim(out_dir: &Path, imports: &[String]) -> Result<Pat
         .join("\n");
     let shim = format!(
         r#"let provider;
+let providerCalls = 0;
+let stepCalls = 0;
 
 export function setBox2dProvider(nextProvider) {{
   provider = nextProvider;
@@ -260,14 +756,22 @@ function resolveProviderExport(name) {{
 }}
 
 function callProvider(name, args) {{
+  providerCalls += 1;
+  if (name === "b2World_Step") {{
+    stepCalls += 1;
+  }}
   return resolveProviderExport(name)(...args);
+}}
+
+export function boxddProviderRuntimeEvidence() {{
+  return Object.freeze({{ providerCalls, stepCalls }});
 }}
 
 {exports}
 "#
     );
     let path = out_dir.join(BEVY_PROVIDER_SHIM);
-    fs::write(&path, shim).map_err(|source| Error::io(&path, source))?;
+    write_atomic(&path, &shim)?;
     Ok(path)
 }
 
@@ -383,12 +887,10 @@ pub(crate) fn generate_pages(root: &Path) -> Result<()> {
 
     reset_generated_examples_dir(&pages_dir, &examples_dir)?;
     for (path, html) in pages {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|source| Error::io(parent, source))?;
-        }
-        fs::write(&path, html).map_err(|source| Error::io(&path, source))?;
+        ensure_pages_output_parent(root, &path)?;
+        write_atomic(&path, &html)?;
     }
-    write_bevy_testbed_loader(root)?;
+    write_bevy_testbed_loader(root, None)?;
     remove_file_if_exists(&pages_dir.join("wasm/index.html"))?;
     remove_file_if_exists(&pages_dir.join("wasm/loader.js"))?;
 
@@ -435,11 +937,93 @@ fn remove_file_if_exists(path: &Path) -> Result<()> {
     }
 }
 
-fn write_bevy_testbed_loader(root: &Path) -> Result<()> {
-    let dir = pages_bevy_testbed_dir(root);
-    fs::create_dir_all(&dir).map_err(|source| Error::io(&dir, source))?;
-    let path = dir.join("loader.js");
-    fs::write(&path, bevy_testbed_loader_js()).map_err(|source| Error::io(&path, source))
+fn write_bevy_testbed_loader(root: &Path, trust: Option<&PagesLoaderTrust>) -> Result<()> {
+    let path = pages_bevy_testbed_dir(root).join("loader.js");
+    ensure_pages_output_parent(root, &path)?;
+    write_atomic(&path, &bevy_testbed_loader_js(trust))
+}
+
+fn ensure_pages_output_parent(root: &Path, path: &Path) -> Result<()> {
+    pages_output_parent(root, path, true)
+}
+
+fn require_pages_output_parent(root: &Path, path: &Path) -> Result<()> {
+    pages_output_parent(root, path, false)
+}
+
+fn pages_output_parent(root: &Path, path: &Path, create_missing: bool) -> Result<()> {
+    let pages_dir = root.join("docs/pages");
+    let parent = path.parent().ok_or_else(|| {
+        Error::Message(format!(
+            "Pages output has no parent directory: {}",
+            path.display()
+        ))
+    })?;
+    let relative = parent.strip_prefix(&pages_dir).map_err(|_| {
+        Error::Message(format!(
+            "Pages output must remain under {}: {}",
+            pages_dir.display(),
+            path.display()
+        ))
+    })?;
+    if relative
+        .components()
+        .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return Err(Error::Message(format!(
+            "Pages output path is not canonical: {}",
+            path.display()
+        )));
+    }
+
+    require_real_directory(&pages_dir, "Pages output root")?;
+    let canonical_pages = pages_dir
+        .canonicalize()
+        .map_err(|source| Error::io(&pages_dir, source))?;
+    let mut current = pages_dir;
+    for component in relative.components() {
+        let Component::Normal(component) = component else {
+            unreachable!("relative Pages components were validated");
+        };
+        current.push(component);
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_dir() && !metadata.file_type().is_symlink() => {
+            }
+            Ok(_) => {
+                return Err(Error::Message(format!(
+                    "Pages output directory tree contains a symlink or non-directory: {}",
+                    current.display()
+                )));
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound && create_missing => {
+                fs::create_dir(&current).map_err(|source| Error::io(&current, source))?;
+            }
+            Err(source) => return Err(Error::io(&current, source)),
+        }
+        let canonical = current
+            .canonicalize()
+            .map_err(|source| Error::io(&current, source))?;
+        if !canonical.starts_with(&canonical_pages) {
+            return Err(Error::Message(format!(
+                "Pages output directory escaped {}: {}",
+                canonical_pages.display(),
+                canonical.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn require_real_directory(path: &Path, label: &str) -> Result<()> {
+    let metadata = fs::symlink_metadata(path).map_err(|source| Error::io(path, source))?;
+    if metadata.file_type().is_dir() && !metadata.file_type().is_symlink() {
+        Ok(())
+    } else {
+        Err(Error::Message(format!(
+            "{label} must be a real directory: {}",
+            path.display()
+        )))
+    }
 }
 
 fn read_testbed_registry(root: &Path) -> Result<Vec<RegistrySample>> {
@@ -654,26 +1238,13 @@ fn is_slug(value: &str) -> bool {
 }
 
 fn reset_generated_examples_dir(pages_dir: &Path, examples_dir: &Path) -> Result<()> {
-    if !examples_dir.exists() {
-        fs::create_dir_all(examples_dir).map_err(|source| Error::io(examples_dir, source))?;
-        return Ok(());
-    }
-    let pages_dir = pages_dir
-        .canonicalize()
-        .map_err(|source| Error::io(pages_dir, source))?;
-    let examples_dir = examples_dir
-        .canonicalize()
-        .map_err(|source| Error::io(examples_dir, source))?;
-    if !examples_dir.starts_with(&pages_dir)
-        || examples_dir.file_name().and_then(|name| name.to_str()) != Some("examples")
-    {
+    if examples_dir.file_name().and_then(|name| name.to_str()) != Some("examples") {
         return Err(Error::Message(format!(
             "refusing to replace unexpected generated examples dir: {}",
             examples_dir.display()
         )));
     }
-    fs::remove_dir_all(&examples_dir).map_err(|source| Error::io(&examples_dir, source))?;
-    fs::create_dir_all(&examples_dir).map_err(|source| Error::io(&examples_dir, source))
+    replace_dir_under(examples_dir, pages_dir)
 }
 
 fn bevy_example_index_page(samples: &[RegistrySample], location: ExampleIndexLocation) -> String {
@@ -856,8 +1427,40 @@ fn parity_mode_label(mode: &str) -> String {
     label
 }
 
-fn bevy_testbed_loader_js() -> &'static str {
-    r##"const statusPanel = document.querySelector("#bevy-status");
+fn bevy_testbed_loader_js(trust: Option<&PagesLoaderTrust>) -> String {
+    r##"const runtimeTrust = __BOXDD_RUNTIME_TRUST__;
+const runtimeManifestUrl = new URL("../wasm/generated/boxdd-pages-runtime-v1.json", import.meta.url);
+const expectedAssets = Object.freeze([
+  Object.freeze({ role: "provider_js", path: "wasm/generated/box2d-sys-v1-single.js" }),
+  Object.freeze({ role: "provider_wasm", path: "wasm/generated/box2d-sys-v1-single.wasm" }),
+  Object.freeze({ role: "app_js", path: "bevy-testbed/generated/bevy_boxdd_testbed.js" }),
+  Object.freeze({ role: "app_wasm", path: "bevy-testbed/generated/bevy_boxdd_testbed_bg.wasm" }),
+  Object.freeze({ role: "provider_shim_js", path: "bevy-testbed/generated/box2d-provider-shim.js" }),
+]);
+const manifestKeys = Object.freeze([
+  "adapter_abi_version",
+  "adapter_source_sha256",
+  "assets",
+  "crate_version",
+  "emscripten_sdk_contract_sha256",
+  "effective_source_sha256",
+  "precision",
+  "provider",
+  "provider_abi",
+  "publisher_repository",
+  "publisher_workflow",
+  "recording_contract_blake3",
+  "schema",
+  "schema_version",
+  "source_commit",
+  "source_tree",
+  "target",
+  "upstream_sha",
+]);
+const identityKeys = Object.freeze(manifestKeys.filter((key) => key !== "assets"));
+const assetKeys = Object.freeze(["byte_length", "path", "role", "sha256"]);
+
+const statusPanel = document.querySelector("#bevy-status");
 const appRoot = document.querySelector("#bevy-app");
 const sceneId = appRoot?.dataset.sceneId || "";
 const sceneName = appRoot?.dataset.sceneName || "Bevy testbed";
@@ -888,8 +1491,8 @@ function setStatus(state, title, detail, progress) {
   }
 }
 
-function generatedUrl(path) {
-  return new URL(path, import.meta.url);
+function pageAssetUrl(path) {
+  return new URL(`../${path}`, import.meta.url);
 }
 
 function progressTextFor(loaded, total) {
@@ -954,30 +1557,160 @@ async function fetchArrayBufferWithProgress(url, label) {
   return bytes.buffer;
 }
 
-async function main() {
-  const providerGenerated = new URL("../wasm/generated/", import.meta.url);
-  const providerWasmUrl = new URL("box2d-sys-v1-single.wasm", providerGenerated);
-  const bevyWasmUrl = generatedUrl("generated/bevy_boxdd_testbed_bg.wasm");
+function assertExactObjectKeys(value, expected, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+  const actual = Object.keys(value).sort();
+  const required = [...expected].sort();
+  if (actual.length !== required.length || actual.some((key, index) => key !== required[index])) {
+    throw new Error(`${label} fields do not match the canonical schema`);
+  }
+}
 
-  setStatus("loading", "Loading JavaScript modules", `Preparing the browser runtime for ${sceneName}.`);
+function decodeUtf8(bytes, label) {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch (error) {
+    throw new Error(`${label} is not valid UTF-8`, { cause: error });
+  }
+}
+
+async function sha256Hex(bytes) {
+  if (!globalThis.crypto?.subtle) {
+    throw new Error("Web Crypto SHA-256 is unavailable; refusing unverified runtime assets");
+  }
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function verifySha256(bytes, expected, label) {
+  if (!/^[0-9a-f]{64}$/.test(expected)) {
+    throw new Error(`${label} manifest SHA-256 is malformed`);
+  }
+  const actual = await sha256Hex(bytes);
+  if (actual !== expected) {
+    throw new Error(`${label} SHA-256 mismatch: expected ${expected}, got ${actual}`);
+  }
+}
+
+async function loadRuntimeManifest() {
+  if (!runtimeTrust) {
+    throw new Error("Pages runtime trust anchor is absent; publish assets with build-pages-wasm");
+  }
+  const bytes = await fetchArrayBufferWithProgress(runtimeManifestUrl, "runtime manifest");
+  await verifySha256(bytes, runtimeTrust.manifest_sha256, "runtime manifest");
+
+  let manifest;
+  try {
+    manifest = JSON.parse(decodeUtf8(bytes, "runtime manifest"));
+  } catch (error) {
+    throw new Error("runtime manifest is not valid JSON", { cause: error });
+  }
+  assertExactObjectKeys(manifest, manifestKeys, "runtime manifest");
+  for (const key of identityKeys) {
+    if (manifest[key] !== runtimeTrust[key]) {
+      throw new Error(`runtime manifest identity ${key} does not match the loader trust anchor`);
+    }
+  }
+  if (!Array.isArray(manifest.assets) || manifest.assets.length !== expectedAssets.length) {
+    throw new Error("runtime manifest must contain the exact qualified asset set");
+  }
+  manifest.assets.forEach((asset, index) => {
+    assertExactObjectKeys(asset, assetKeys, `runtime asset ${index}`);
+    const expected = expectedAssets[index];
+    if (asset.role !== expected.role || asset.path !== expected.path) {
+      throw new Error(`runtime asset ${index} does not match the canonical role and path`);
+    }
+    if (!Number.isSafeInteger(asset.byte_length) || asset.byte_length <= 0) {
+      throw new Error(`runtime asset ${asset.role} has an invalid byte length`);
+    }
+    if (!/^[0-9a-f]{64}$/.test(asset.sha256)) {
+      throw new Error(`runtime asset ${asset.role} has an invalid SHA-256`);
+    }
+  });
+  return manifest;
+}
+
+async function loadVerifiedRuntimeAssets(manifest) {
+  const verified = new Map();
+  for (const asset of manifest.assets) {
+    const bytes = await fetchArrayBufferWithProgress(pageAssetUrl(asset.path), asset.role);
+    if (bytes.byteLength !== asset.byte_length) {
+      throw new Error(
+        `${asset.role} byte length mismatch: expected ${asset.byte_length}, got ${bytes.byteLength}`,
+      );
+    }
+    await verifySha256(bytes, asset.sha256, asset.role);
+    verified.set(asset.role, bytes);
+  }
+  return verified;
+}
+
+function replaceShimImport(appBytes, shimModuleUrl) {
+  const source = decodeUtf8(appBytes, "Bevy app JavaScript");
+  const specifier = 'from "./box2d-provider-shim.js"';
+  if (source.split(specifier).length !== 2) {
+    throw new Error("Bevy app JavaScript must contain exactly one qualified provider shim import");
+  }
+  return source.replace(specifier, `from ${JSON.stringify(shimModuleUrl)}`);
+}
+
+async function importVerifiedRuntimeModules(assets) {
+  const shimUrl = URL.createObjectURL(
+    new Blob([assets.get("provider_shim_js")], { type: "text/javascript" }),
+  );
+  const providerUrl = URL.createObjectURL(
+    new Blob([assets.get("provider_js")], { type: "text/javascript" }),
+  );
+  const appSource = replaceShimImport(assets.get("app_js"), shimUrl);
+  const appUrl = URL.createObjectURL(new Blob([appSource], { type: "text/javascript" }));
+
+  try {
+    return await Promise.all([import(providerUrl), import(appUrl), import(shimUrl)]);
+  } finally {
+    URL.revokeObjectURL(appUrl);
+    URL.revokeObjectURL(providerUrl);
+    URL.revokeObjectURL(shimUrl);
+  }
+}
+
+async function waitForProviderStep(providerEvidence, previousSteps, label) {
+  const deadline = performance.now() + 20_000;
+  for (;;) {
+    const evidence = providerEvidence();
+    if (
+      Number.isSafeInteger(evidence.providerCalls) &&
+      Number.isSafeInteger(evidence.stepCalls) &&
+      evidence.providerCalls >= evidence.stepCalls &&
+      evidence.stepCalls > previousSteps
+    ) {
+      return evidence;
+    }
+    if (performance.now() >= deadline) {
+      throw new Error(`${label} did not observe a Box2D physics step before the deadline`);
+    }
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  }
+}
+
+async function main() {
+  setStatus("loading", "Verifying runtime identity", `Checking the published assets for ${sceneName}.`);
+  const manifest = await loadRuntimeManifest();
+  const assets = await loadVerifiedRuntimeAssets(manifest);
+  setStatus("loading", "Loading verified modules", `Preparing the browser runtime for ${sceneName}.`);
   const [
     { default: createProvider },
     { default: initBevyTestbed },
-    { setBox2dProvider, setBoxddAppExports },
-  ] =
-    await Promise.all([
-      import(new URL("box2d-sys-v1-single.js", providerGenerated).href),
-      import(generatedUrl("generated/bevy_boxdd_testbed.js").href),
-      import(generatedUrl("generated/box2d-provider-shim.js").href),
-    ]);
+    { boxddProviderRuntimeEvidence, setBox2dProvider, setBoxddAppExports },
+  ] = await importVerifiedRuntimeModules(assets);
   const memory = new WebAssembly.Memory({ initial: 4096, maximum: 8192 });
 
-  const providerWasm = await fetchArrayBufferWithProgress(providerWasmUrl, "Box2D provider wasm");
   setStatus("loading", "Starting Box2D provider", `Instantiating the shared Box2D C provider for ${sceneName}.`);
   const provider = await createProvider({
     wasmMemory: memory,
-    wasmBinary: providerWasm,
-    locateFile: (path) => new URL(path, providerGenerated).href,
+    wasmBinary: assets.get("provider_wasm"),
+    locateFile: (path) => pageAssetUrl(`wasm/generated/${path}`).href,
     print: (text) => console.log(`[box2d-sys-v1-single] ${text}`),
     printErr: (text) => console.warn(`[box2d-sys-v1-single] ${text}`),
   });
@@ -985,16 +1718,66 @@ async function main() {
   if (provider.wasmMemory && provider.wasmMemory !== memory) {
     throw new Error("Box2D provider did not use the shared WebAssembly.Memory");
   }
+  const adapterAbiVersion = provider._boxddAdapter_AbiVersion || provider.boxddAdapter_AbiVersion;
+  if (typeof adapterAbiVersion !== "function" || adapterAbiVersion() !== manifest.adapter_abi_version) {
+    throw new Error("Box2D provider runtime adapter ABI does not match the verified manifest");
+  }
 
   setBox2dProvider(provider);
-  const bevyWasm = await fetchArrayBufferWithProgress(bevyWasmUrl, `${sceneName} Bevy wasm`);
   setStatus("loading", `Starting ${sceneName}`, "Instantiating the Rust Bevy + egui wasm module.");
 
   const bevyExports = await initBevyTestbed({
-    module_or_path: bevyWasm,
+    module_or_path: assets.get("app_wasm"),
     memory,
   });
   setBoxddAppExports(bevyExports);
+
+  const initialEvidence = await waitForProviderStep(
+    boxddProviderRuntimeEvidence,
+    0,
+    "initial runtime proof",
+  );
+  const proofRequested = new URLSearchParams(window.location.search).get("boxdd-runtime-proof") === "1";
+  const memoryProof = {
+    requested: proofRequested,
+    memoryGrew: false,
+    staleBufferDetached: false,
+    postGrowthPhysicsStep: false,
+    byteLengthBeforeGrowth: memory.buffer.byteLength,
+    byteLengthAfterGrowth: memory.buffer.byteLength,
+    stepCallsBeforeGrowth: initialEvidence.stepCalls,
+    stepCallsAfterGrowth: initialEvidence.stepCalls,
+  };
+  if (proofRequested) {
+    const staleBuffer = memory.buffer;
+    memory.grow(1);
+    memoryProof.memoryGrew = memory.buffer !== staleBuffer;
+    memoryProof.staleBufferDetached = staleBuffer.byteLength === 0;
+    memoryProof.byteLengthAfterGrowth = memory.buffer.byteLength;
+    if (
+      !memoryProof.memoryGrew ||
+      !memoryProof.staleBufferDetached ||
+      memoryProof.byteLengthAfterGrowth <= memoryProof.byteLengthBeforeGrowth
+    ) {
+      throw new Error("shared WebAssembly.Memory did not detach and grow its buffer");
+    }
+    const postGrowthEvidence = await waitForProviderStep(
+      boxddProviderRuntimeEvidence,
+      memoryProof.stepCallsBeforeGrowth,
+      "post-growth runtime proof",
+    );
+    memoryProof.stepCallsAfterGrowth = postGrowthEvidence.stepCalls;
+    memoryProof.postGrowthPhysicsStep = true;
+  }
+
+  window.BOXDD_BEVY_RUNTIME_EVIDENCE = () => {
+    const evidence = boxddProviderRuntimeEvidence();
+    return Object.freeze({
+      providerCalls: evidence.providerCalls,
+      stepCalls: evidence.stepCalls,
+      memoryProof: Object.freeze({ ...memoryProof }),
+    });
+  };
 
   window.BOXDD_BEVY_TESTBED_READY = true;
   window.BOXDD_BEVY_EXAMPLE_READY = true;
@@ -1014,6 +1797,34 @@ main().catch((error) => {
   setStatus("error", `${sceneName} failed`, message);
 });
 "##
+        .replace("__BOXDD_RUNTIME_TRUST__", &pages_loader_trust_js(trust))
+}
+
+fn pages_loader_trust_js(trust: Option<&PagesLoaderTrust>) -> String {
+    let Some(trust) = trust else {
+        return "null".to_owned();
+    };
+    let value = serde_json::json!({
+        "manifest_sha256": trust.manifest_sha256,
+        "schema_version": trust.schema_version,
+        "schema": trust.schema,
+        "publisher_repository": trust.publisher_repository,
+        "publisher_workflow": trust.publisher_workflow,
+        "provider": trust.provider,
+        "provider_abi": trust.provider_abi,
+        "adapter_abi_version": trust.adapter_abi_version,
+        "crate_version": trust.crate_version,
+        "source_commit": trust.source_commit,
+        "upstream_sha": trust.upstream_sha,
+        "source_tree": trust.source_tree,
+        "effective_source_sha256": trust.effective_source_sha256,
+        "adapter_source_sha256": trust.adapter_source_sha256,
+        "emscripten_sdk_contract_sha256": trust.emscripten_sdk_contract_sha256,
+        "recording_contract_blake3": trust.recording_contract_blake3,
+        "precision": trust.precision,
+        "target": trust.target,
+    });
+    format!("Object.freeze({value})")
 }
 
 impl ExampleIndexLocation {
@@ -1099,8 +1910,146 @@ fn escape_html(value: &str) -> String {
         .replace('"', "&quot;")
 }
 
+fn validate_pages_runtime(root: &Path) -> Result<Option<PagesLoaderTrust>> {
+    let wasm_generated = pages_wasm_generated_dir(root);
+    let bevy_generated = pages_bevy_generated_dir(root);
+    let wasm_metadata = optional_symlink_metadata(&wasm_generated)?;
+    let bevy_metadata = optional_symlink_metadata(&bevy_generated)?;
+    if wasm_metadata.is_none() && bevy_metadata.is_none() {
+        return Ok(None);
+    }
+    if !wasm_metadata
+        .is_some_and(|metadata| metadata.file_type().is_dir() && !metadata.file_type().is_symlink())
+        || !bevy_metadata.is_some_and(|metadata| {
+            metadata.file_type().is_dir() && !metadata.file_type().is_symlink()
+        })
+    {
+        return Err(Error::Message(
+            "Pages runtime generation is partial or contains a symlink; both generated paths must be real directories"
+                .to_owned(),
+        ));
+    }
+    for spec in PAGES_RUNTIME_ASSETS {
+        require_pages_output_parent(root, &root.join("docs/pages").join(spec.path))?;
+    }
+    ensure_pages_build_inputs_clean(root)?;
+    let identity = pages_runtime_identity(root)?;
+
+    validate_pages_runtime_directory(
+        &wasm_generated,
+        &[
+            "box2d-sys-v1-single.js",
+            "box2d-sys-v1-single.wasm",
+            "boxdd-pages-runtime-v1.json",
+        ],
+    )?;
+    validate_pages_runtime_directory(
+        &bevy_generated,
+        &[BEVY_WEB_JS, BEVY_WEB_WASM, BEVY_PROVIDER_SHIM],
+    )?;
+
+    let manifest_path = pages_runtime_manifest_path(root);
+    let metadata =
+        fs::symlink_metadata(&manifest_path).map_err(|source| Error::io(&manifest_path, source))?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        return Err(Error::Message(format!(
+            "Pages runtime manifest must be a regular non-symlink file: {}",
+            manifest_path.display()
+        )));
+    }
+    let bytes = fs::read(&manifest_path).map_err(|source| Error::io(&manifest_path, source))?;
+    let manifest = PagesRuntimeManifest::parse(&bytes)?;
+    validate_pages_runtime_manifest_identity(&manifest, &identity)?;
+    validate_pages_runtime_asset_records(&root.join("docs/pages"), &manifest)?;
+    ensure_pages_source_state(root, &identity)?;
+
+    Ok(Some(PagesLoaderTrust::from_manifest(
+        &manifest,
+        provider_manifest::sha256_bytes(&bytes),
+    )))
+}
+
+fn optional_symlink_metadata(path: &Path) -> Result<Option<fs::Metadata>> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => Ok(Some(metadata)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(Error::io(path, source)),
+    }
+}
+
+fn validate_pages_runtime_asset_records(
+    pages_dir: &Path,
+    manifest: &PagesRuntimeManifest,
+) -> Result<()> {
+    if manifest.assets.len() != PAGES_RUNTIME_ASSETS.len() {
+        return Err(Error::Message(format!(
+            "Pages runtime manifest contains {} assets, expected exactly {}",
+            manifest.assets.len(),
+            PAGES_RUNTIME_ASSETS.len()
+        )));
+    }
+
+    for (recorded, spec) in manifest.assets.iter().zip(PAGES_RUNTIME_ASSETS) {
+        if recorded.role != spec.role || recorded.path != spec.path {
+            return Err(Error::Message(format!(
+                "Pages runtime manifest asset `{}` at `{}` does not match canonical role `{}` at `{}`",
+                recorded.role, recorded.path, spec.role, spec.path
+            )));
+        }
+        validate_lower_hex(
+            &format!("Pages runtime asset {} SHA-256", recorded.role),
+            &recorded.sha256,
+            64,
+        )?;
+        let actual = pages_runtime_asset(pages_dir, spec)?;
+        if &actual != recorded {
+            return Err(Error::Message(format!(
+                "Pages runtime asset `{}` bytes do not match the canonical manifest",
+                recorded.role
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_pages_runtime_directory(dir: &Path, expected_names: &[&str]) -> Result<()> {
+    let expected = expected_names.iter().copied().collect::<BTreeSet<_>>();
+    let mut actual = BTreeSet::new();
+    for entry in fs::read_dir(dir).map_err(|source| Error::io(dir, source))? {
+        let entry = entry.map_err(|source| Error::io(dir, source))?;
+        let path = entry.path();
+        let kind = entry
+            .file_type()
+            .map_err(|source| Error::io(&path, source))?;
+        if !kind.is_file() || kind.is_symlink() {
+            return Err(Error::Message(format!(
+                "Pages runtime generated directory contains a non-regular entry: {}",
+                path.display()
+            )));
+        }
+        let name = entry.file_name().into_string().map_err(|_| {
+            Error::Message(format!(
+                "Pages runtime asset is not UTF-8: {}",
+                path.display()
+            ))
+        })?;
+        actual.insert(name);
+    }
+    let actual_refs = actual.iter().map(String::as_str).collect::<BTreeSet<_>>();
+    if actual_refs != expected {
+        return Err(Error::Message(format!(
+            "Pages runtime generated directory {} contains {:?}, expected exactly {:?}",
+            dir.display(),
+            actual_refs,
+            expected
+        )));
+    }
+    Ok(())
+}
+
 pub(crate) fn validate_pages(root: &Path) -> Result<()> {
     let pages_dir = root.join("docs/pages");
+    require_real_directory(&pages_dir, "Pages output root")?;
     let samples = read_testbed_registry(root)?;
     let expected_pages = expected_bevy_pages(root, &samples);
     let html_files = collect_html_files(&pages_dir)?;
@@ -1158,54 +2107,53 @@ pub(crate) fn validate_pages(root: &Path) -> Result<()> {
         }
     }
 
+    let runtime_trust = match validate_pages_runtime(root) {
+        Ok(trust) => trust,
+        Err(error) => {
+            errors.push(error.to_string());
+            None
+        }
+    };
+
     let loader = pages_bevy_testbed_dir(root).join("loader.js");
     if !loader.exists() {
         errors.push(
             "missing generated Bevy testbed loader docs/pages/bevy-testbed/loader.js".to_owned(),
         );
     } else {
-        let actual = fs::read_to_string(&loader).map_err(|source| Error::io(&loader, source))?;
-        if normalize_newlines(&actual) != normalize_newlines(bevy_testbed_loader_js()) {
-            errors.push(
-                "docs/pages/bevy-testbed/loader.js is stale; run `cargo run -p xtask -- generate-pages`".to_owned(),
-            );
-        }
-        for required in [
-            "box2d-provider-shim.js",
-            "setBox2dProvider",
-            "setBoxddAppExports",
-            "bevyExports",
-        ] {
-            if !actual.contains(required) {
-                errors.push(format!(
-                    "{} is missing required Bevy provider glue `{required}`",
-                    loader.strip_prefix(root).unwrap_or(&loader).display()
-                ));
+        require_pages_output_parent(root, &loader)?;
+        let metadata =
+            fs::symlink_metadata(&loader).map_err(|source| Error::io(&loader, source))?;
+        if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+            errors.push(format!(
+                "{} must be a regular non-symlink generated loader",
+                loader.strip_prefix(root).unwrap_or(&loader).display()
+            ));
+        } else {
+            let actual =
+                fs::read_to_string(&loader).map_err(|source| Error::io(&loader, source))?;
+            if normalize_newlines(&actual)
+                != normalize_newlines(&bevy_testbed_loader_js(runtime_trust.as_ref()))
+            {
+                errors.push(
+                    "docs/pages/bevy-testbed/loader.js is stale or does not bind the validated runtime manifest; run `cargo run -p xtask -- build-pages-wasm` for runtime assets or `generate-pages` without them".to_owned(),
+                );
             }
-        }
-    }
-
-    let wasm_generated = pages_wasm_generated_dir(root);
-    if wasm_generated.exists() {
-        for asset in ["box2d-sys-v1-single.js", "box2d-sys-v1-single.wasm"] {
-            let path = wasm_generated.join(asset);
-            if !path.is_file() {
-                errors.push(format!(
-                    "missing provider wasm asset {}; run `cargo run -p xtask -- build-pages-wasm`",
-                    path.strip_prefix(root).unwrap_or(&path).display()
-                ));
-            }
-        }
-    }
-    let bevy_generated = pages_bevy_generated_dir(root);
-    if bevy_generated.exists() {
-        for asset in [BEVY_WEB_JS, BEVY_WEB_WASM, BEVY_PROVIDER_SHIM] {
-            let path = bevy_generated.join(asset);
-            if !path.is_file() {
-                errors.push(format!(
-                    "missing Bevy wasm asset {}; run `cargo run -p xtask -- build-pages-wasm`",
-                    path.strip_prefix(root).unwrap_or(&path).display()
-                ));
+            for required in [
+                "runtimeTrust",
+                "crypto.subtle.digest",
+                "verifySha256",
+                "box2d-provider-shim.js",
+                "setBox2dProvider",
+                "setBoxddAppExports",
+                "bevyExports",
+            ] {
+                if !actual.contains(required) {
+                    errors.push(format!(
+                        "{} is missing required Bevy provider glue `{required}`",
+                        loader.strip_prefix(root).unwrap_or(&loader).display()
+                    ));
+                }
             }
         }
     }
@@ -1234,15 +2182,21 @@ fn collect_html_files(dir: &Path) -> Result<Vec<PathBuf>> {
 }
 
 fn collect_html_files_into(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    if !dir.exists() {
-        return Ok(());
-    }
     for entry in fs::read_dir(dir).map_err(|source| Error::io(dir, source))? {
         let entry = entry.map_err(|source| Error::io(dir, source))?;
         let path = entry.path();
-        if path.is_dir() {
+        let file_type = entry
+            .file_type()
+            .map_err(|source| Error::io(&path, source))?;
+        if file_type.is_symlink() {
+            return Err(Error::Message(format!(
+                "Pages HTML tree contains a symbolic link: {}",
+                path.display()
+            )));
+        }
+        if file_type.is_dir() {
             collect_html_files_into(&path, out)?;
-        } else if path.extension().is_some_and(|ext| ext == "html") {
+        } else if file_type.is_file() && path.extension().is_some_and(|ext| ext == "html") {
             out.push(path);
         }
     }
@@ -1276,7 +2230,47 @@ fn should_skip_link(link: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{ProviderPrecision, format_bytes, validate_pages_precision};
+    use std::fs;
+
+    use super::{
+        JAVASCRIPT_MAX_SAFE_INTEGER, PAGES_RUNTIME_ASSETS, PagesLoaderTrust, PagesRuntimeAsset,
+        PagesRuntimeManifest, ProviderPrecision, bevy_testbed_loader_js, collect_html_files,
+        ensure_pages_output_parent, format_bytes, is_git_environment_key, pages_runtime_asset,
+        validate_pages_asset_byte_length, validate_pages_precision,
+        validate_pages_runtime_asset_records,
+    };
+
+    fn manifest() -> PagesRuntimeManifest {
+        PagesRuntimeManifest {
+            schema_version: 1,
+            schema: "boxdd-pages-runtime-v1".to_owned(),
+            publisher_repository: "Latias94/boxdd".to_owned(),
+            publisher_workflow: ".github/workflows/pages.yml".to_owned(),
+            provider: "wasm-runtime".to_owned(),
+            provider_abi: "box2d-sys-v1".to_owned(),
+            adapter_abi_version: 2,
+            crate_version: "0.6.0".to_owned(),
+            source_commit: "1".repeat(40),
+            upstream_sha: "2".repeat(40),
+            source_tree: "3".repeat(40),
+            effective_source_sha256: "4".repeat(64),
+            adapter_source_sha256: "5".repeat(64),
+            emscripten_sdk_contract_sha256: "6".repeat(64),
+            recording_contract_blake3: "7".repeat(64),
+            precision: "single".to_owned(),
+            target: "wasm32-unknown-unknown".to_owned(),
+            assets: PAGES_RUNTIME_ASSETS
+                .iter()
+                .enumerate()
+                .map(|(index, spec)| PagesRuntimeAsset {
+                    role: spec.role.to_owned(),
+                    path: spec.path.to_owned(),
+                    byte_length: (index + 1) as u64,
+                    sha256: format!("{index:064x}"),
+                })
+                .collect(),
+        }
+    }
 
     #[test]
     fn format_bytes_uses_binary_units() {
@@ -1289,5 +2283,124 @@ mod tests {
     fn pages_rejects_unimplemented_double_precision_loader() {
         assert!(validate_pages_precision(ProviderPrecision::Single).is_ok());
         assert!(validate_pages_precision(ProviderPrecision::Double).is_err());
+    }
+
+    #[test]
+    fn pages_assets_must_fit_the_browser_integer_contract() {
+        let path = std::path::Path::new("asset.wasm");
+        assert!(validate_pages_asset_byte_length(path, 1).is_ok());
+        assert!(validate_pages_asset_byte_length(path, JAVASCRIPT_MAX_SAFE_INTEGER).is_ok());
+        assert!(validate_pages_asset_byte_length(path, 0).is_err());
+        assert!(validate_pages_asset_byte_length(path, JAVASCRIPT_MAX_SAFE_INTEGER + 1).is_err());
+    }
+
+    #[test]
+    fn pages_git_commands_ignore_ambient_git_redirection() {
+        assert!(is_git_environment_key(std::ffi::OsStr::new("GIT_DIR")));
+        assert!(is_git_environment_key(std::ffi::OsStr::new(
+            "git_object_directory"
+        )));
+        assert!(!is_git_environment_key(std::ffi::OsStr::new(
+            "LEGIT_SETTING"
+        )));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pages_output_rejects_a_symlinked_parent() {
+        use std::os::unix::fs::symlink;
+
+        let fixture = tempfile::tempdir().unwrap();
+        let pages = fixture.path().join("docs/pages");
+        let outside = fixture.path().join("outside");
+        fs::create_dir_all(&pages).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        symlink(&outside, pages.join("generated")).unwrap();
+
+        let output = pages.join("generated/runtime.js");
+        assert!(ensure_pages_output_parent(fixture.path(), &output).is_err());
+        assert!(!outside.join("runtime.js").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pages_html_scan_rejects_nested_symbolic_links() {
+        use std::os::unix::fs::symlink;
+
+        let fixture = tempfile::tempdir().unwrap();
+        let pages = fixture.path().join("pages");
+        let outside = fixture.path().join("outside");
+        fs::create_dir_all(&pages).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("index.html"), "outside").unwrap();
+        symlink(&outside, pages.join("nested")).unwrap();
+
+        assert!(collect_html_files(&pages).is_err());
+    }
+
+    #[test]
+    fn runtime_manifest_has_one_canonical_strict_representation() {
+        let manifest = manifest();
+        let bytes = manifest.render().unwrap();
+        assert_eq!(PagesRuntimeManifest::parse(&bytes).unwrap(), manifest);
+
+        let with_unknown_field =
+            String::from_utf8(bytes)
+                .unwrap()
+                .replacen("{\n", "{\n  \"unknown\": true,\n", 1);
+        assert!(PagesRuntimeManifest::parse(with_unknown_field.as_bytes()).is_err());
+
+        let noncanonical = manifest
+            .render()
+            .unwrap()
+            .into_iter()
+            .filter(|byte| *byte != b' ' && *byte != b'\n')
+            .collect::<Vec<_>>();
+        assert!(PagesRuntimeManifest::parse(&noncanonical).is_err());
+    }
+
+    #[test]
+    fn loader_verifies_all_assets_before_importing_or_instantiating() {
+        let manifest = manifest();
+        let trust = PagesLoaderTrust::from_manifest(&manifest, "7".repeat(64));
+        let loader = bevy_testbed_loader_js(Some(&trust));
+        let verify = loader
+            .find("const assets = await loadVerifiedRuntimeAssets(manifest);")
+            .unwrap();
+        let import = loader
+            .find("] = await importVerifiedRuntimeModules(assets);")
+            .unwrap();
+        let instantiate = loader.find("await createProvider({").unwrap();
+
+        assert!(loader.contains("crypto.subtle.digest(\"SHA-256\", bytes)"));
+        assert!(loader.contains("manifest_sha256"));
+        assert!(loader.contains("emscripten_sdk_contract_sha256"));
+        assert!(loader.contains("boxddProviderRuntimeEvidence"));
+        assert!(loader.contains("memory.grow(1)"));
+        assert!(loader.contains("staleBufferDetached"));
+        assert!(loader.contains("postGrowthPhysicsStep"));
+        assert!(loader.contains("BOXDD_BEVY_RUNTIME_EVIDENCE"));
+        assert!(verify < import);
+        assert!(import < instantiate);
+        assert!(bevy_testbed_loader_js(None).contains("const runtimeTrust = null;"));
+    }
+
+    #[test]
+    fn runtime_asset_validation_rejects_bytes_changed_after_manifest_generation() {
+        let temp = tempfile::tempdir().unwrap();
+        for (index, spec) in PAGES_RUNTIME_ASSETS.iter().enumerate() {
+            let path = temp.path().join(spec.path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, [index as u8 + 1]).unwrap();
+        }
+        let mut manifest = manifest();
+        manifest.assets = PAGES_RUNTIME_ASSETS
+            .iter()
+            .map(|spec| pages_runtime_asset(temp.path(), *spec).unwrap())
+            .collect();
+        validate_pages_runtime_asset_records(temp.path(), &manifest).unwrap();
+
+        fs::write(temp.path().join(PAGES_RUNTIME_ASSETS[1].path), b"changed").unwrap();
+        assert!(validate_pages_runtime_asset_records(temp.path(), &manifest).is_err());
     }
 }

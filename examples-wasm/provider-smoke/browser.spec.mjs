@@ -1,7 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { extname, resolve } from 'node:path';
+import { dirname, extname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const precision = process.env.BOXDD_WASM_PRECISION === 'double' ? 'double' : 'single';
 const providerModule = `box2d-sys-v1-${precision}`;
@@ -9,6 +10,8 @@ const artifactRoot = resolve(process.env.CARGO_TARGET_DIR || 'target', 'boxdd-pr
 const providerScript = `${providerModule}.js`;
 const providerWasm = `${providerModule}.wasm`;
 const appWasm = 'boxdd_provider_smoke.wasm';
+const providerRuntimeContract = 'provider-runtime-contract.mjs';
+const fixtureRoot = dirname(fileURLToPath(import.meta.url));
 
 const browserPage = `<!doctype html>
 <meta charset="utf-8">
@@ -47,86 +50,17 @@ try {
   }
 
   const appModule = await WebAssembly.compile(appBytes);
-  const providerImports = WebAssembly.Module.imports(appModule)
-    .filter((item) => item.kind === 'function' && item.module === providerModule)
-    .map((item) => item.name);
-  if (providerImports.length === 0) {
-    throw new Error(`application does not import ${providerModule}`);
-  }
-  const importObject = { env: { memory }, [providerModule]: {} };
-  for (const name of providerImports) {
-    const exported = provider[`_${name}`] || provider[name];
-    if (typeof exported !== 'function') {
-      throw new Error(`provider is missing export for ${name}`);
-    }
-    importObject[providerModule][name] = exported;
-  }
-
-  const instance = await WebAssembly.instantiate(appModule, importObject);
-  const beforeGrowth = memory.buffer;
-  memory.grow(1);
-  if (beforeGrowth === memory.buffer) {
-    throw new Error('shared WebAssembly.Memory did not grow');
-  }
-  const postGrowthMetric = instance.exports.boxdd_provider_ray_hit_millimeters();
-  if (postGrowthMetric < 0) {
-    throw new Error(`provider failed after memory growth: ${postGrowthMetric}`);
-  }
-
-  const smoke = instance.exports.boxdd_provider_smoke();
-  if (smoke !== 0) {
-    throw new Error(`provider smoke failed with code ${smoke}`);
-  }
-  const metrics = {};
-  for (const [label, name] of Object.entries({
-    dropMillimeters: 'boxdd_provider_drop_millimeters',
-    rayHitMillimeters: 'boxdd_provider_ray_hit_millimeters',
-    shapeCastPermyriad: 'boxdd_provider_shape_cast_permyriad',
-    jointErrorMillimeters: 'boxdd_provider_joint_error_millimeters',
-  })) {
-    const exported = instance.exports[name];
-    if (typeof exported !== 'function') throw new Error(`${name} export is missing`);
-    const value = exported();
-    if (value < 0) throw new Error(`${name} failed with code ${value}`);
-    metrics[label] = value;
-  }
-  if (instance.exports.boxdd_runtime_init() !== 0) throw new Error('runtime init failed');
-  for (let frame = 0; frame < 30; frame += 1) {
-    if (instance.exports.boxdd_runtime_step() < 0) throw new Error('runtime step failed');
-  }
-  const runtimeBodies = instance.exports.boxdd_runtime_body_count();
-  if (runtimeBodies <= 0) throw new Error('runtime body count failed');
-  const runtimeState = [];
-  for (let index = 0; index < runtimeBodies; index += 1) {
-    const body = {
-      shape: instance.exports.boxdd_runtime_body_shape(index),
-      xMillimeters: instance.exports.boxdd_runtime_body_x_millimeters(index),
-      yMillimeters: instance.exports.boxdd_runtime_body_y_millimeters(index),
-      angleMilliradians: instance.exports.boxdd_runtime_body_angle_milliradians(index),
-      halfWidthMillimeters: instance.exports.boxdd_runtime_body_half_width_millimeters(index),
-      halfHeightMillimeters: instance.exports.boxdd_runtime_body_half_height_millimeters(index),
-      radiusMillimeters: instance.exports.boxdd_runtime_body_radius_millimeters(index),
-    };
-    if (body.shape === 1) {
-      if (body.halfWidthMillimeters <= 0 || body.halfHeightMillimeters <= 0 || body.radiusMillimeters !== 0) {
-        throw new Error(`invalid box geometry at runtime body ${index}: ${JSON.stringify(body)}`);
-      }
-    } else if (body.shape === 2) {
-      if (body.halfWidthMillimeters !== 0 || body.halfHeightMillimeters !== 0 || body.radiusMillimeters <= 0) {
-        throw new Error(`invalid circle geometry at runtime body ${index}: ${JSON.stringify(body)}`);
-      }
-    } else {
-      throw new Error(`unknown runtime shape ${body.shape} at body ${index}`);
-    }
-    runtimeState.push(body);
-  }
+  const providerContract = inspectProviderContract(appModule, providerModule);
+  const providerFunctions = resolveProviderFunctions(provider, providerContract.names);
+  const result = await runProviderPhysicsScenario({
+    appModule,
+    memory,
+    contract: providerContract,
+    functions: providerFunctions,
+  });
   setResult('passed', {
     precision,
-    providerImports: providerImports.length,
-    memoryGrew: true,
-    metrics,
-    runtimeBodies,
-    runtimeState,
+    ...result,
   });
 } catch (error) {
   setResult('failed', { error: String(error), stack: error?.stack });
@@ -134,10 +68,19 @@ try {
 }
 }
 
-const browserScript = `(${runBrowserSmoke.toString()})();`;
+const browserScript = `
+import {
+  inspectProviderContract,
+  resolveProviderFunctions,
+  runProviderPhysicsScenario,
+} from '/provider-runtime-contract.mjs';
+
+(${runBrowserSmoke.toString()})();
+`;
 
 let server;
 let origin;
+let providerRuntimeContractSource;
 
 function contentType(pathname) {
   switch (extname(pathname)) {
@@ -157,6 +100,7 @@ test.beforeAll(async () => {
   for (const file of [providerScript, providerWasm, appWasm]) {
     await readFile(resolve(artifactRoot, file));
   }
+  providerRuntimeContractSource = await readFile(resolve(fixtureRoot, providerRuntimeContract));
   server = createServer(async (request, response) => {
     const pathname = new URL(request.url, 'http://127.0.0.1').pathname;
     let body;
@@ -166,6 +110,9 @@ test.beforeAll(async () => {
       contentTypeHeader = 'text/html; charset=utf-8';
     } else if (pathname === '/browser-smoke.mjs') {
       body = browserScript;
+      contentTypeHeader = 'text/javascript; charset=utf-8';
+    } else if (pathname === `/${providerRuntimeContract}`) {
+      body = providerRuntimeContractSource;
       contentTypeHeader = 'text/javascript; charset=utf-8';
     } else if (pathname.startsWith('/artifacts/')) {
       const file = pathname.slice('/artifacts/'.length);
@@ -203,7 +150,20 @@ test(`browser provider smoke (${precision})`, async ({ page }) => {
   const result = JSON.parse(await page.locator('body').textContent());
   expect(result.precision).toBe(precision);
   expect(result.providerImports).toBeGreaterThan(0);
-  expect(result.memoryGrew).toBe(true);
+  expect(result.memoryProof).toEqual({
+    memoryGrew: true,
+    staleTypedArrayRejected: true,
+    staleDataViewRejected: true,
+    refreshedViewsReadWrite: true,
+    providerGlueCallsAfterGrowth: expect.any(Number),
+  });
+  expect(result.memoryProof.providerGlueCallsAfterGrowth).toBeGreaterThan(0);
+  expect(result.linkFailures).toEqual({
+    oldProviderAbi: true,
+    wrongPrecision: true,
+    wrongFunctionType: true,
+    providerCallsBeforePhysics: 0,
+  });
   expect(result.runtimeBodies).toBeGreaterThan(0);
   expect(result.runtimeState).toHaveLength(result.runtimeBodies);
   expect(result.runtimeState.every((body) => Number.isInteger(body.xMillimeters))).toBe(true);

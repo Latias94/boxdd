@@ -65,14 +65,14 @@ names include target, precision, static link kind, and applicable CRT identity.
 ## WASM (experimental)
 - Targets
   - `wasm32-unknown-unknown`: compile-only by default, or use `BOXDD_SYS_PROVIDER=wasm-provider` to import Box2D symbols from a browser/Emscripten provider module.
-  - `wasm32-unknown-emscripten`: source builds are only supported when the pinned SDK/toolchain gate passes.
   - `wasm32-wasip1`: compile-only qualification only; no WASI runtime is claimed.
 - Modes
   - `BOXDD_SYS_PROVIDER=wasm-compile-only`: generate/check bindings and skip native C linkage.
   - `BOXDD_SYS_PROVIDER=wasm-provider`: import symbols from the precision-specific `box2d-sys-v1-single` or `box2d-sys-v1-double` module on `wasm32-unknown-unknown` only; `wasm32-wasip1` and Emscripten-target Rust builds are rejected, and the runtime requires the pinned Emscripten 6.0.3 SDK.
 - Notes
   - No prebuilt for WASM targets.
-  - `wasm-provider` identity probing uses `emcc` from `EMSDK` or `PATH`; set `BOXDD_SYS_EMCC` to an explicit compiler path when toolchain discovery must be overridden.
+  - Emscripten builds the standalone C provider only. Rust applications target `wasm32-unknown-unknown`; `wasm32-unknown-emscripten` Rust builds are not supported.
+  - `wasm-provider` identity probing requires `EMSDK` to name the clean, detached SDK checkout pinned by `emscripten-sdk.toml`. `PATH` discovery and revision self-attestation are rejected; `BOXDD_SYS_EMCC` may only assert the canonical compiler inside that checkout.
   - Node and Chromium provider smoke tests verify the runtime adapter identity and all required adapter symbols in both precision modes. GitHub Pages currently qualifies single precision only and rejects `BOXDD_WASM_PRECISION=double`.
   - The high-level `boxdd` crate removes Rust callback-table entry points on `wasm32`. The current provider does not qualify cross-module function pointers for world callbacks, callback-backed queries/tree traversal, raw task callbacks, replay mixers, or debug draw.
   - Bindgen requires libclang.

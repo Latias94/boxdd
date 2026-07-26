@@ -18106,7 +18106,7 @@ fn closest_ray_result_conversion_is_capability_gated(
         "fixture" => "IdBrand",
         _ => return false,
     };
-    if public_path != &format!("{}::ClosestRayCastResult", builder.crate_name)
+    if public_path != format!("{}::ClosestRayCastResult", builder.crate_name)
         || node.public_path.is_some()
         || node.ident != "from_raw_in"
         || !node_returns_exact_owner_with_wrappers(builder, node, owner, &[ReturnWrapper::Result])

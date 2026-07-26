@@ -186,12 +186,16 @@ pub enum FoundationAdapterIdentityField {
     TargetAbi,
     /// Repository adapter source digest.
     AdapterSource,
+    /// Canonical effective Box2D source digest.
+    EffectiveSource,
     /// Generated recording contract digest.
     RecordingContract,
     /// Private snapshot layout identity.
     SnapshotLayout,
     /// Private C ABI identity.
     PrivateAbi,
+    /// Identity field introduced by a newer low-level adapter.
+    Unknown,
 }
 
 impl From<adapter::AdapterIdentityField> for FoundationAdapterIdentityField {
@@ -208,10 +212,11 @@ impl From<adapter::AdapterIdentityField> for FoundationAdapterIdentityField {
             adapter::AdapterIdentityField::UpstreamSha => Self::UpstreamSha,
             adapter::AdapterIdentityField::TargetAbi => Self::TargetAbi,
             adapter::AdapterIdentityField::AdapterSource => Self::AdapterSource,
+            adapter::AdapterIdentityField::EffectiveSource => Self::EffectiveSource,
             adapter::AdapterIdentityField::RecordingContract => Self::RecordingContract,
             adapter::AdapterIdentityField::SnapshotLayout => Self::SnapshotLayout,
             adapter::AdapterIdentityField::PrivateAbi => Self::PrivateAbi,
-            _ => Self::PrivateAbi,
+            _ => Self::Unknown,
         }
     }
 }
@@ -910,6 +915,18 @@ mod tests {
                 Err(FoundationInitError::InvalidLengthUnitsPerMeter)
             );
         }
+    }
+
+    #[test]
+    fn adapter_identity_mapping_preserves_effective_source_and_private_abi() {
+        assert_eq!(
+            FoundationAdapterIdentityField::from(adapter::AdapterIdentityField::EffectiveSource),
+            FoundationAdapterIdentityField::EffectiveSource
+        );
+        assert_eq!(
+            FoundationAdapterIdentityField::from(adapter::AdapterIdentityField::PrivateAbi),
+            FoundationAdapterIdentityField::PrivateAbi
+        );
     }
 
     #[test]

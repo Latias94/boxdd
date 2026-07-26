@@ -1,12 +1,18 @@
 use std::{
     collections::BTreeSet,
-    env, fs,
+    env,
+    ffi::OsString,
+    fs,
     path::{Path, PathBuf},
     process::Command,
 };
 
 use crate::{
     Error, Result,
+    emscripten_sdk::{
+        EMSCRIPTEN_VERSION, EmscriptenSdkInputs, SdkContract, qualify_emscripten_sdk,
+        validate_wasm_bindgen_lock, version_has_exact_token,
+    },
     provider_manifest::{
         ADAPTER_SOURCE_PATHS, RECORDING_CONTRACT_BLAKE3, REQUIRED_ADAPTER_SYMBOLS,
         adapter_source_sha256,
@@ -16,19 +22,21 @@ use crate::{
 
 use super::support::{
     BuildProfile, WASM_TARGET, add_wasm_app_link_args, cargo_target_dir, copy_file, ensure_file,
-    ensure_runnable_tool, replace_dir_under, run_command, runnable_tool,
+    ensure_runnable_tool, replace_dir_under, run_command,
 };
 
 pub(super) const PROVIDER_MODULE: &str = "box2d-sys-v1-single";
 const PROVIDER_MODULE_DOUBLE: &str = "box2d-sys-v1-double";
-const PROVIDER_ABI: &str = "box2d-sys-v1";
-const EMSCRIPTEN_VERSION: &str = "6.0.3";
-const EMSDK_REPOSITORY: &str = "https://github.com/emscripten-core/emsdk.git";
-const EMSDK_REVISION: &str = "db04e88298d9916fc51fcd3743045ca3eb695127";
-const WASM_BINDGEN_VERSION: &str = "0.2.126";
-const SDK_CONFIG: &str = include_str!("../../../tools/emscripten-provider.toml");
+const SDK_CONFIG: &str = include_str!("../../../boxdd-sys/emscripten-sdk.toml");
+const CARGO_LOCK: &str = include_str!("../../../Cargo.lock");
+const BOXDD_SYS_MANIFEST_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../boxdd-sys");
 const PROVIDER_SMOKE_PACKAGE: &str = "boxdd-provider-smoke";
 const PROVIDER_SMOKE_WASM: &str = "boxdd_provider_smoke.wasm";
+const PROVIDER_RUNTIME_CONTRACT_FILE: &str = "provider-runtime-contract.mjs";
+const PROVIDER_RUNTIME_CONTRACT: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../examples-wasm/provider-smoke/provider-runtime-contract.mjs"
+));
 const PROVIDER_SMOKE_EXPORTS: &[&str] = &[
     "boxdd_provider_smoke",
     "boxdd_provider_drop_millimeters",
@@ -51,18 +59,7 @@ const RUNTIME_EXPORTS: &[&str] = &[
 
 struct EmccInvocation {
     program: PathBuf,
-    args: Vec<PathBuf>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ProviderSdkIdentity {
-    schema_version: u64,
-    provider_abi: String,
-    emscripten_version: String,
-    emsdk_repository: String,
-    emsdk_revision: String,
-    wasm_bindgen_version: String,
+    args: Vec<OsString>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -147,6 +144,7 @@ pub(super) fn provider_smoke_for_precision(
 ) -> Result<()> {
     let target_dir = cargo_target_dir(root)?;
     verify_provider_compiler()?;
+    verify_wasm_bindgen_cli()?;
     let app_wasm = build_provider_smoke_app(root, &target_dir, precision)?;
     let imports = collect_provider_imports(&app_wasm, precision.module())?;
     let out_dir = provider_smoke_dir(&target_dir);
@@ -430,14 +428,14 @@ fn write_node_runner(
 import {{ dirname, join }} from 'node:path';
 import {{ fileURLToPath }} from 'node:url';
 import createProvider from './{provider_name}';
+import {{
+  inspectProviderContract,
+  resolveProviderFunctions,
+  runProviderPhysicsScenario,
+}} from './provider-runtime-contract.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const memory = new WebAssembly.Memory({{ initial: 2048, maximum: 8192 }});
-let memoryBuffer = memory.buffer;
-function refreshMemoryViews() {{
-  // WebAssembly.Memory.buffer is replaced after growth; every typed view must be rebound.
-  if (memoryBuffer !== memory.buffer) memoryBuffer = memory.buffer;
-}}
 const provider = await createProvider({{
   wasmMemory: memory,
   locateFile: (path) => join(here, path),
@@ -452,210 +450,71 @@ if (provider.wasmMemory && provider.wasmMemory !== memory) {{
 const providerImports = [
 {imports_array}
 ];
-const importObject = {{
-  env: {{ memory }},
-  '{provider_module}': {{}},
-}};
-
-for (const name of providerImports) {{
-  const exported = provider[`_${{name}}`] || provider[name];
-  if (typeof exported !== 'function') {{
-    throw new Error(`provider is missing export for ${{name}}`);
-  }}
-  importObject['{provider_module}'][name] = exported;
-}}
-
 const appBytes = fs.readFileSync(join(here, '{app_name}'));
-const {{ instance }} = await WebAssembly.instantiate(appBytes, importObject);
-if (typeof instance.exports.boxdd_provider_smoke !== 'function') {{
-  throw new Error('boxdd_provider_smoke export is missing from Rust wasm');
+const appModule = await WebAssembly.compile(appBytes);
+const providerContract = inspectProviderContract(appModule, '{provider_module}');
+if (JSON.stringify(providerContract.names) !== JSON.stringify(providerImports)) {{
+  throw new Error('generated provider import inventory differs from the runtime module');
 }}
-
-const beforeGrowth = memory.buffer;
-memory.grow(1);
-refreshMemoryViews();
-if (beforeGrowth === memory.buffer) {{
-  throw new Error('shared WebAssembly.Memory did not grow');
-}}
-const postGrowthMetric = instance.exports.boxdd_provider_ray_hit_millimeters();
-if (postGrowthMetric < 0) {{
-  throw new Error(`provider failed after memory growth with code ${{postGrowthMetric}}`);
-}}
-
-const code = instance.exports.boxdd_provider_smoke();
-refreshMemoryViews();
-if (code !== 0) {{
-  throw new Error(`boxdd provider smoke failed with code ${{code}}`);
-}}
-
-const metricExports = {{
-  dropMillimeters: 'boxdd_provider_drop_millimeters',
-  rayHitMillimeters: 'boxdd_provider_ray_hit_millimeters',
-  shapeCastPermyriad: 'boxdd_provider_shape_cast_permyriad',
-  jointErrorMillimeters: 'boxdd_provider_joint_error_millimeters',
-}};
-const metrics = {{}};
-for (const [label, exportName] of Object.entries(metricExports)) {{
-  const exported = instance.exports[exportName];
-  if (typeof exported !== 'function') {{
-    throw new Error(`${{exportName}} export is missing from Rust wasm`);
-  }}
-  const value = exported();
-  refreshMemoryViews();
-  if (value < 0) {{
-    throw new Error(`${{exportName}} failed with code ${{value}}`);
-  }}
-  metrics[label] = value;
-}}
-
-const runtimeInit = instance.exports.boxdd_runtime_init();
-if (runtimeInit !== 0) {{
-  throw new Error(`boxdd runtime init failed with code ${{runtimeInit}}`);
-}}
-for (let i = 0; i < 30; i += 1) {{
-  const frame = instance.exports.boxdd_runtime_step();
-  refreshMemoryViews();
-  if (frame < 0) throw new Error(`boxdd runtime step failed with code ${{frame}}`);
-}}
-const runtimeBodies = instance.exports.boxdd_runtime_body_count();
-if (runtimeBodies <= 0) {{
-  throw new Error(`boxdd runtime body count failed with code ${{runtimeBodies}}`);
-}}
-const runtimeState = [];
-for (let index = 0; index < runtimeBodies; index += 1) {{
-  const body = {{
-    shape: instance.exports.boxdd_runtime_body_shape(index),
-    xMillimeters: instance.exports.boxdd_runtime_body_x_millimeters(index),
-    yMillimeters: instance.exports.boxdd_runtime_body_y_millimeters(index),
-    angleMilliradians: instance.exports.boxdd_runtime_body_angle_milliradians(index),
-    halfWidthMillimeters: instance.exports.boxdd_runtime_body_half_width_millimeters(index),
-    halfHeightMillimeters: instance.exports.boxdd_runtime_body_half_height_millimeters(index),
-    radiusMillimeters: instance.exports.boxdd_runtime_body_radius_millimeters(index),
-  }};
-  if (body.shape === 1) {{
-    if (
-      body.halfWidthMillimeters <= 0 ||
-      body.halfHeightMillimeters <= 0 ||
-      body.radiusMillimeters !== 0
-    ) {{
-      throw new Error(`invalid box geometry at runtime body ${{index}}: ${{JSON.stringify(body)}}`);
-    }}
-  }} else if (body.shape === 2) {{
-    if (
-      body.halfWidthMillimeters !== 0 ||
-      body.halfHeightMillimeters !== 0 ||
-      body.radiusMillimeters <= 0
-    ) {{
-      throw new Error(`invalid circle geometry at runtime body ${{index}}: ${{JSON.stringify(body)}}`);
-    }}
-  }} else {{
-    throw new Error(`unknown runtime shape ${{body.shape}} at body ${{index}}`);
-  }}
-  runtimeState.push(body);
-}}
+const providerFunctions = resolveProviderFunctions(provider, providerContract.names);
+const result = await runProviderPhysicsScenario({{
+  appModule,
+  memory,
+  contract: providerContract,
+  functions: providerFunctions,
+}});
 
 console.log(
-  `boxdd provider smoke passed: drop_mm=${{metrics.dropMillimeters}}, ` +
-    `ray_hit_mm=${{metrics.rayHitMillimeters}}, ` +
-    `shape_cast_permyriad=${{metrics.shapeCastPermyriad}}, ` +
-    `joint_error_mm=${{metrics.jointErrorMillimeters}}, ` +
-    `runtime_bodies=${{runtimeBodies}}, ` +
-    `runtime_state=${{JSON.stringify(runtimeState)}}`
+  `boxdd provider smoke passed: drop_mm=${{result.metrics.dropMillimeters}}, ` +
+    `ray_hit_mm=${{result.metrics.rayHitMillimeters}}, ` +
+    `shape_cast_permyriad=${{result.metrics.shapeCastPermyriad}}, ` +
+    `joint_error_mm=${{result.metrics.jointErrorMillimeters}}, ` +
+    `stale_views_rejected=${{result.memoryProof.staleTypedArrayRejected && result.memoryProof.staleDataViewRejected}}, ` +
+    `provider_glue_calls_after_growth=${{result.memoryProof.providerGlueCallsAfterGrowth}}, ` +
+    `link_failures=${{JSON.stringify(result.linkFailures)}}, ` +
+    `runtime_bodies=${{result.runtimeBodies}}, ` +
+    `runtime_state=${{JSON.stringify(result.runtimeState)}}`
 );
 "#
     );
     let package_json = out_dir.join("package.json");
     fs::write(&package_json, r#"{"type":"module"}"#)
         .map_err(|source| Error::io(&package_json, source))?;
+    let runtime_contract = out_dir.join(PROVIDER_RUNTIME_CONTRACT_FILE);
+    fs::write(&runtime_contract, PROVIDER_RUNTIME_CONTRACT)
+        .map_err(|source| Error::io(&runtime_contract, source))?;
     let path = out_dir.join("run-provider-smoke.mjs");
     fs::write(&path, runner).map_err(|source| Error::io(&path, source))
 }
 
 fn find_emcc() -> Result<EmccInvocation> {
-    if let Ok(root) = env::var("EMSDK") {
-        let emsdk = PathBuf::from(root);
-        let emscripten = emsdk.join("upstream").join("emscripten");
-        for name in ["emcc", "emcc.exe", "emcc.bat"] {
-            let candidate = emscripten.join(name);
-            if candidate.exists() {
-                let invocation = EmccInvocation {
-                    program: candidate,
-                    args: Vec::new(),
-                };
-                verify_emcc(&invocation, Some(&emsdk))?;
-                return Ok(invocation);
-            }
-        }
-        let emcc_py = emscripten.join("emcc.py");
-        if emcc_py.exists()
-            && let Some(python) = find_emsdk_python(&emsdk)
-        {
-            let invocation = EmccInvocation {
-                program: python,
-                args: vec![emcc_py],
-            };
-            verify_emcc(&invocation, Some(&emsdk))?;
-            return Ok(invocation);
-        }
-    }
+    let root = env::var_os("EMSDK").filter(|value| !value.is_empty());
+    let compiler_override = env::var_os("BOXDD_SYS_EMCC").filter(|value| !value.is_empty());
+    let em_config_override = env::var_os("EM_CONFIG").filter(|value| !value.is_empty());
+    let self_attested_revision =
+        env::var_os("BOXDD_EMSDK_REVISION").filter(|value| !value.is_empty());
+    let sdk = qualify_emscripten_sdk(
+        Path::new(BOXDD_SYS_MANIFEST_DIR),
+        EmscriptenSdkInputs {
+            root: root.as_deref(),
+            compiler_override: compiler_override.as_deref(),
+            em_config_override: em_config_override.as_deref(),
+            self_attested_revision: self_attested_revision.as_deref(),
+        },
+    )
+    .map_err(Error::Message)?;
 
-    if let Some(path) = runnable_tool("emcc", "--version") {
-        let invocation = EmccInvocation {
-            program: path,
-            args: Vec::new(),
-        };
-        verify_emcc(&invocation, None)?;
-        return Ok(invocation);
-    }
-
-    Err(Error::Message(
-        "failed to locate emcc; install emsdk, run emsdk_env, or set EMSDK to the emsdk root"
-            .to_owned(),
-    ))
-}
-
-fn verify_emcc(invocation: &EmccInvocation, emsdk: Option<&Path>) -> Result<()> {
-    validate_sdk_config(SDK_CONFIG)?;
-    let mut command = invocation.command();
-    command.arg("--version");
-    let output = command
-        .output()
-        .map_err(|source| Error::io("emcc --version", source))?;
-    if !output.status.success() {
-        return Err(Error::Message(format!(
-            "Emscripten compiler failed --version with status {}",
-            output.status
-        )));
-    }
-    let version = String::from_utf8_lossy(&output.stdout);
-    if !version_has_exact_token(&version, EMSCRIPTEN_VERSION) {
-        return Err(Error::Message(format!(
-            "provider runtime requires Emscripten {EMSCRIPTEN_VERSION}; found {}",
-            version.lines().next().unwrap_or("unknown version")
-        )));
-    }
-
-    let revision = emsdk
-        .and_then(|root| {
-            Command::new("git")
-                .args(["-C", root.to_string_lossy().as_ref(), "rev-parse", "HEAD"])
-                .output()
-                .ok()
-                .filter(|output| output.status.success())
-                .and_then(|output| String::from_utf8(output.stdout).ok())
-                .map(|value| value.trim().to_owned())
-        })
-        .or_else(|| env::var("BOXDD_EMSDK_REVISION").ok());
-    if revision.as_deref() != Some(EMSDK_REVISION) {
-        return Err(Error::Message(format!(
-            "provider runtime requires immutable emsdk revision {EMSDK_REVISION}; set EMSDK to that checkout or BOXDD_EMSDK_REVISION to attest a PATH compiler"
-        )));
-    }
-    Ok(())
+    Ok(EmccInvocation {
+        program: sdk.compiler,
+        args: vec![
+            OsString::from("--em-config"),
+            sdk.em_config.into_os_string(),
+        ],
+    })
 }
 
 pub(super) fn verify_wasm_bindgen_cli() -> Result<()> {
-    validate_sdk_config(SDK_CONFIG)?;
+    let contract = provider_toolchain_contract()?;
     let output = Command::new("wasm-bindgen")
         .arg("--version")
         .output()
@@ -667,55 +526,20 @@ pub(super) fn verify_wasm_bindgen_cli() -> Result<()> {
         )));
     }
     let version = String::from_utf8_lossy(&output.stdout);
-    if !version_has_exact_token(&version, WASM_BINDGEN_VERSION) {
+    if !version_has_exact_token(&version, &contract.wasm_bindgen_version) {
         return Err(Error::Message(format!(
-            "provider runtime requires wasm-bindgen-cli {WASM_BINDGEN_VERSION}; found {}",
+            "provider runtime requires wasm-bindgen-cli {}; found {}",
+            contract.wasm_bindgen_version,
             version.lines().next().unwrap_or("unknown version")
         )));
     }
     Ok(())
 }
 
-fn validate_sdk_config(source: &str) -> Result<()> {
-    let identity: ProviderSdkIdentity = toml::from_str(source).map_err(|error| {
-        Error::Message(format!(
-            "tools/emscripten-provider.toml is invalid: {error}"
-        ))
-    })?;
-    if identity.schema_version != 1
-        || identity.provider_abi != PROVIDER_ABI
-        || identity.emscripten_version != EMSCRIPTEN_VERSION
-        || identity.emsdk_repository != EMSDK_REPOSITORY
-        || identity.emsdk_revision != EMSDK_REVISION
-        || identity.wasm_bindgen_version != WASM_BINDGEN_VERSION
-    {
-        return Err(Error::Message(
-            "tools/emscripten-provider.toml is inconsistent with the provider ABI constants"
-                .to_owned(),
-        ));
-    }
-    Ok(())
-}
-
-fn version_has_exact_token(output: &str, expected: &str) -> bool {
-    output
-        .split(|character: char| !character.is_ascii_alphanumeric() && character != '.')
-        .any(|token| token == expected)
-}
-
-fn find_emsdk_python(emsdk: &Path) -> Option<PathBuf> {
-    let python_dir = emsdk.join("python");
-    let mut candidates = Vec::new();
-    if let Ok(entries) = fs::read_dir(&python_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path().join("python.exe");
-            if path.exists() {
-                candidates.push(path);
-            }
-        }
-    }
-    candidates.sort();
-    candidates.pop()
+fn provider_toolchain_contract() -> Result<SdkContract> {
+    let contract = SdkContract::parse(SDK_CONFIG).map_err(Error::Message)?;
+    validate_wasm_bindgen_lock(&contract, CARGO_LOCK).map_err(Error::Message)?;
+    Ok(contract)
 }
 
 #[cfg(test)]
@@ -738,11 +562,62 @@ mod tests {
     }
 
     #[test]
-    fn sdk_contract_is_structured_exact_and_fail_closed() {
-        validate_sdk_config(SDK_CONFIG).unwrap();
-        assert!(validate_sdk_config(&SDK_CONFIG.replace("6.0.3", "6.0.30")).is_err());
-        assert!(validate_sdk_config(&format!("{SDK_CONFIG}\nunknown = true\n")).is_err());
+    fn provider_uses_the_canonical_sdk_and_lockfile_contract() {
+        let contract = provider_toolchain_contract().unwrap();
+        assert_eq!(contract.provider_abi, crate::emscripten_sdk::PROVIDER_ABI);
+        assert_eq!(contract.emscripten_version, EMSCRIPTEN_VERSION);
         assert!(version_has_exact_token("emcc 6.0.3", "6.0.3"));
         assert!(!version_has_exact_token("emcc 16.0.30", "6.0.3"));
+        assert!(!version_has_exact_token(
+            "wasm-bindgen 0.2.126-custom",
+            "0.2.126"
+        ));
+
+        let entry = format!(
+            "name = \"wasm-bindgen\"\nversion = \"{}\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"",
+            contract.wasm_bindgen_version
+        );
+        for drifted in [
+            CARGO_LOCK.replacen(&entry, &entry.replace("0.2.126", "0.2.0"), 1),
+            CARGO_LOCK.replacen(
+                &entry,
+                &entry.replace(
+                    "registry+https://github.com/rust-lang/crates.io-index",
+                    "git+https://example.invalid/wasm-bindgen?rev=unreviewed",
+                ),
+                1,
+            ),
+            CARGO_LOCK.replacen(
+                &entry,
+                "name = \"wasm-bindgen\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"",
+                1,
+            ),
+            format!("{CARGO_LOCK}\n[[package]]\n{entry}\n"),
+        ] {
+            assert_ne!(drifted, CARGO_LOCK);
+            assert!(validate_wasm_bindgen_lock(&contract, &drifted).is_err());
+        }
+    }
+
+    #[test]
+    fn node_runner_materializes_shared_runtime_contract() {
+        let output = tempfile::tempdir().unwrap();
+        write_node_runner(
+            output.path(),
+            Path::new("box2d-sys-v1-single.js"),
+            Path::new(PROVIDER_SMOKE_WASM),
+            &["boxddAdapter_AbiVersion".to_owned()],
+            PROVIDER_MODULE,
+        )
+        .unwrap();
+
+        let runner = fs::read_to_string(output.path().join("run-provider-smoke.mjs")).unwrap();
+        assert!(runner.contains("runProviderPhysicsScenario"));
+        assert!(!runner.contains("boxdd_runtime_step"));
+        assert!(!runner.contains("RefreshableMemoryViews"));
+        assert_eq!(
+            fs::read_to_string(output.path().join(PROVIDER_RUNTIME_CONTRACT_FILE)).unwrap(),
+            PROVIDER_RUNTIME_CONTRACT
+        );
     }
 }

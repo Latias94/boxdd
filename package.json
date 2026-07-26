@@ -6,7 +6,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "test:browser": "playwright test"
+    "test:browser": "playwright test --project=provider-smoke",
+    "test:pages-browser": "playwright test --project=pages-smoke"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1"

@@ -987,6 +987,87 @@ fn write_response(stream: &mut TcpStream, status: &str, body: &[u8]) -> std::io:
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+    use syn::{
+        Expr, Item, Lit, Token,
+        parse::Parser,
+        punctuated::Punctuated,
+        visit::{self, Visit},
+    };
+
+    fn declared_adapter_abi_version(source: &str) -> u32 {
+        let syntax = syn::parse_file(source).expect("adapter source must parse");
+        syntax
+            .items
+            .into_iter()
+            .find_map(|item| {
+                let Item::Const(item) = item else {
+                    return None;
+                };
+                if item.ident != "ADAPTER_ABI_VERSION" {
+                    return None;
+                }
+                let Expr::Lit(expression) = *item.expr else {
+                    panic!("adapter ABI version must be an integer literal");
+                };
+                let Lit::Int(value) = expression.lit else {
+                    panic!("adapter ABI version must be an integer literal");
+                };
+                Some(
+                    value
+                        .base10_parse()
+                        .expect("adapter ABI version must fit in u32"),
+                )
+            })
+            .expect("adapter source must declare ADAPTER_ABI_VERSION")
+    }
+
+    #[derive(Default)]
+    struct AdapterAbiAssertion {
+        version: Option<u32>,
+    }
+
+    impl<'ast> Visit<'ast> for AdapterAbiAssertion {
+        fn visit_macro(&mut self, macro_call: &'ast syn::Macro) {
+            if macro_call.path.is_ident("assert_eq") {
+                let arguments = Punctuated::<Expr, Token![,]>::parse_terminated
+                    .parse2(macro_call.tokens.clone())
+                    .expect("package consumer assert_eq! arguments must parse");
+                let mut arguments = arguments.iter();
+                if let (Some(Expr::Path(actual)), Some(Expr::Lit(expected))) =
+                    (arguments.next(), arguments.next())
+                {
+                    let expected_path = ["boxdd_sys", "adapter", "ADAPTER_ABI_VERSION"];
+                    let is_adapter_abi = actual.path.segments.len() == expected_path.len()
+                        && actual
+                            .path
+                            .segments
+                            .iter()
+                            .zip(expected_path)
+                            .all(|(segment, expected)| segment.ident == expected);
+                    if is_adapter_abi {
+                        let Lit::Int(value) = &expected.lit else {
+                            panic!("package consumer adapter ABI assertion must use an integer");
+                        };
+                        self.version = Some(
+                            value
+                                .base10_parse()
+                                .expect("package consumer adapter ABI must fit in u32"),
+                        );
+                    }
+                }
+            }
+            visit::visit_macro(self, macro_call);
+        }
+    }
+
+    fn asserted_adapter_abi_version(source: &str) -> u32 {
+        let syntax = syn::parse_file(source).expect("sys package consumer source must parse");
+        let mut assertion = AdapterAbiAssertion::default();
+        assertion.visit_file(&syntax);
+        assertion
+            .version
+            .expect("sys package consumer must assert the adapter ABI version")
+    }
 
     #[test]
     fn registry_paths_follow_cargo_index_layout() {
@@ -1046,5 +1127,19 @@ mod tests {
             .map(|package| package.name)
             .collect::<BTreeSet<_>>();
         assert_eq!(names, BTreeSet::from(["bevy_boxdd", "boxdd", "boxdd-sys"]));
+    }
+
+    #[test]
+    fn sys_consumer_asserts_current_adapter_abi_version() {
+        let declared =
+            declared_adapter_abi_version(include_str!("../../../boxdd-sys/src/adapter.rs"));
+        let asserted = asserted_adapter_abi_version(include_str!(
+            "../../fixtures/package-consumers/sys/src/main.rs"
+        ));
+
+        assert_eq!(
+            asserted, declared,
+            "the isolated-registry sys consumer must track the published adapter ABI"
+        );
     }
 }

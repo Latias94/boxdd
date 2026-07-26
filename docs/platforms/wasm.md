@@ -81,7 +81,7 @@ server and the same generated artifacts as the Node runner.
 rustup target add wasm32-unknown-unknown wasm32-wasip1
 cargo install wasm-bindgen-cli --version 0.2.126 --locked
 
-# Requires the immutable Emscripten SDK source in tools/emscripten-provider.toml.
+# Requires the immutable toolchain identity in boxdd-sys/emscripten-sdk.toml.
 cargo run -p xtask -- provider-smoke-app
 cargo run -p xtask -- provider-smoke
 BOXDD_WASM_PRECISION=double cargo run -p xtask -- provider-smoke
@@ -92,8 +92,10 @@ cargo run -p xtask -- verify-wasm --runtime
 `verify-wasm --runtime` is the reusable release gate: it runs the Node and Chromium proofs in both
 precision modes. Neither a compile-only check nor a prepared app should be described as working
 WASM physics.
-The build-time provider identity probe resolves `emcc` from `EMSDK` or `PATH`; set
-`BOXDD_SYS_EMCC` to an explicit compiler path only when that discovery must be overridden.
+The build-time provider identity probe requires `EMSDK` to name the clean, detached checkout and
+installed release pinned by `boxdd-sys/emscripten-sdk.toml`. `PATH` discovery and
+`BOXDD_EMSDK_REVISION` self-attestation are rejected. `BOXDD_SYS_EMCC`, when present, must resolve
+to the canonical compiler inside that qualified checkout.
 
 ## Pages
 
@@ -104,11 +106,47 @@ rejected; outside the Pages build, both precisions are runtime-qualified under N
 ```text
 cargo run -p xtask -- build-pages-wasm
 cargo run -p xtask -- validate-pages
+npm ci --ignore-scripts
+npx playwright install chromium
+npm run test:pages-browser
 ```
 
 The build uses the `wasm-release` profile and applies `wasm-opt -Oz` when Binaryen is available.
 Set `BOXDD_PAGES_WASM_PROFILE=debug` or `release` to override the profile, and
 `BOXDD_PAGES_WASM_OPT=0` to skip optimization while debugging generated output.
+
+`build-pages-wasm` requires clean commit-bound inputs outside `docs/pages`. It writes the canonical
+`wasm/generated/boxdd-pages-runtime-v1.json` manifest for the provider JavaScript/WASM, Bevy
+JavaScript/WASM, and provider shim. The manifest binds every byte length and SHA-256 to the v1
+provider and adapter ABI, precision, target, crate version, upstream commit/tree, effective-source
+digest, adapter-source digest, canonical Emscripten SDK-contract digest, recording contract,
+repository, workflow, and checkout commit. It rechecks the clean input state and source identity
+before manifest creation and again after the loader is written. `validate-pages` reparses the strict
+schema, requires canonical bytes and the exact asset set, then recomputes every identity and digest
+from a clean non-Pages worktree.
+The SDK digest identifies the repository-owned SDK contract only; it is not a signature or portable
+provenance statement for a maintainer's local Emscripten installation tree.
+
+The generated loader contains the manifest SHA-256 and identity as its deployment trust anchor. It
+verifies the manifest and all five assets with Web Crypto before importing JavaScript or
+instantiating either WASM module, then checks the provider's runtime adapter ABI before exposing it
+to the Rust app. The committed loader intentionally has no runtime trust anchor; only
+`build-pages-wasm` can produce a runnable deployment.
+
+`npm run test:pages-browser` serves only regular files rooted under `docs/pages`, rejects path
+traversal and symbolic links, and opens the actual generated testbed in Chromium. With its test-only
+query flag, the loader grows the shared `WebAssembly.Memory`, proves the old buffer detached, then
+waits for a later real `b2World_Step` call and exposes a live counter snapshot. The test also
+requires further physics steps after that proof. This demonstrates the shipped Emscripten shim and
+wasm-bindgen glue still work after memory growth; it is not a substitute for signed release
+provenance.
+
+The Pages workflow keeps build permissions read-only, derives its Emscripten, wasm-bindgen, and Node
+versions from the canonical SDK contract, runs the Chromium proof before final validation, and allows
+deployment only from protected `main` through the `github-pages` environment, where GitHub Pages
+consumes an OIDC token. This authenticates the deployment but does not create a portable Sigstore
+bundle. Tag-bound downloadable runtime provenance remains owned by the protected release signing
+flow; Pages must not be presented as a substitute for that release artifact signature.
 
 ## Deliberate Boundaries
 

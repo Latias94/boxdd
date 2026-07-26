@@ -2,6 +2,8 @@ pub mod abi_contract;
 pub mod abi_probe;
 pub mod c_api;
 pub mod config;
+#[path = "../../boxdd-sys/src/emscripten_sdk.rs"]
+pub(crate) mod emscripten_sdk;
 pub mod error;
 pub mod paths;
 #[path = "../../boxdd-sys/src/provenance_policy.rs"]

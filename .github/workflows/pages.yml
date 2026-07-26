@@ -2,7 +2,7 @@ name: Pages
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
@@ -61,7 +61,22 @@ jobs:
       - name: Build Pages WASM assets
         run: cargo run --locked -p xtask -- build-pages-wasm
 
-      - name: Validate Pages content
+      - name: Install Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: "22.16.0"
+          cache: npm
+
+      - name: Install browser test dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Prove published Pages runtime in Chromium
+        run: npm run test:pages-browser
+
+      - name: Validate commit-bound Pages content and runtime manifest
         run: cargo run --locked -p xtask -- validate-pages
 
       - name: Configure Pages
@@ -74,7 +89,7 @@ jobs:
 
   deploy:
     name: Deploy
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/main' && github.ref_protected == true
     needs: build
     runs-on: ubuntu-latest
     permissions:

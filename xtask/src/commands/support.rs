@@ -1,6 +1,6 @@
 use std::{
     env, fs,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     process::Command,
 };
 
@@ -123,23 +123,118 @@ fn parse_cargo_target_dir(metadata: &[u8]) -> Result<PathBuf> {
 
 pub(super) fn replace_dir_under(dir: &Path, allowed_root: &Path) -> Result<()> {
     fs::create_dir_all(allowed_root).map_err(|source| Error::io(allowed_root, source))?;
-    if dir.exists() {
-        let canonical_dir = dir
-            .canonicalize()
-            .map_err(|source| Error::io(dir, source))?;
-        let canonical_root = allowed_root
-            .canonicalize()
-            .map_err(|source| Error::io(allowed_root, source))?;
-        if !canonical_dir.starts_with(&canonical_root) {
+    require_real_directory(allowed_root, "allowed replacement root")?;
+    let canonical_root = allowed_root
+        .canonicalize()
+        .map_err(|source| Error::io(allowed_root, source))?;
+    let relative = dir.strip_prefix(allowed_root).map_err(|_| {
+        Error::Message(format!(
+            "refusing to replace directory outside {}: {}",
+            allowed_root.display(),
+            dir.display()
+        ))
+    })?;
+    if relative.as_os_str().is_empty()
+        || relative
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return Err(Error::Message(format!(
+            "replacement directory must be a canonical child of {}: {}",
+            allowed_root.display(),
+            dir.display()
+        )));
+    }
+
+    let parent = dir.parent().ok_or_else(|| {
+        Error::Message(format!(
+            "replacement directory has no parent: {}",
+            dir.display()
+        ))
+    })?;
+    ensure_real_directory_tree(allowed_root, parent, &canonical_root)?;
+
+    match fs::symlink_metadata(dir) {
+        Ok(metadata) if metadata.file_type().is_dir() && !metadata.file_type().is_symlink() => {
+            let canonical_dir = dir
+                .canonicalize()
+                .map_err(|source| Error::io(dir, source))?;
+            if !canonical_dir.starts_with(&canonical_root) {
+                return Err(Error::Message(format!(
+                    "refusing to remove directory outside {}: {}",
+                    canonical_root.display(),
+                    canonical_dir.display()
+                )));
+            }
+            fs::remove_dir_all(dir).map_err(|source| Error::io(dir, source))?;
+        }
+        Ok(_) => {
             return Err(Error::Message(format!(
-                "refusing to remove directory outside {}: {}",
-                canonical_root.display(),
-                canonical_dir.display()
+                "replacement target must be a real directory: {}",
+                dir.display()
             )));
         }
-        fs::remove_dir_all(&canonical_dir).map_err(|source| Error::io(&canonical_dir, source))?;
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(source) => return Err(Error::io(dir, source)),
     }
-    fs::create_dir_all(dir).map_err(|source| Error::io(dir, source))
+    fs::create_dir(dir).map_err(|source| Error::io(dir, source))
+}
+
+fn ensure_real_directory_tree(root: &Path, dir: &Path, canonical_root: &Path) -> Result<()> {
+    let relative = dir.strip_prefix(root).map_err(|_| {
+        Error::Message(format!(
+            "directory must remain under {}: {}",
+            root.display(),
+            dir.display()
+        ))
+    })?;
+    let mut current = root.to_path_buf();
+    for component in relative.components() {
+        let Component::Normal(component) = component else {
+            return Err(Error::Message(format!(
+                "directory path is not canonical: {}",
+                dir.display()
+            )));
+        };
+        current.push(component);
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_dir() && !metadata.file_type().is_symlink() => {
+            }
+            Ok(_) => {
+                return Err(Error::Message(format!(
+                    "directory tree contains a symlink or non-directory: {}",
+                    current.display()
+                )));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                fs::create_dir(&current).map_err(|source| Error::io(&current, source))?;
+            }
+            Err(source) => return Err(Error::io(&current, source)),
+        }
+        let canonical = current
+            .canonicalize()
+            .map_err(|source| Error::io(&current, source))?;
+        if !canonical.starts_with(canonical_root) {
+            return Err(Error::Message(format!(
+                "directory escaped {}: {}",
+                canonical_root.display(),
+                canonical.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn require_real_directory(path: &Path, label: &str) -> Result<()> {
+    let metadata = fs::symlink_metadata(path).map_err(|source| Error::io(path, source))?;
+    if metadata.file_type().is_dir() && !metadata.file_type().is_symlink() {
+        Ok(())
+    } else {
+        Err(Error::Message(format!(
+            "{label} must be a real directory: {}",
+            path.display()
+        )))
+    }
 }
 
 pub(super) fn copy_file(from: &Path, to: &Path) -> Result<()> {
@@ -223,5 +318,32 @@ mod tests {
         );
         assert!(parse_cargo_target_dir(br#"{"packages":[]}"#).is_err());
         assert!(parse_cargo_target_dir(b"not-json").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn replace_dir_rejects_a_symlink_without_removing_its_target() {
+        use std::os::unix::fs::symlink;
+
+        let fixture = tempfile::tempdir().unwrap();
+        let allowed = fixture.path().join("pages");
+        let outside = fixture.path().join("outside");
+        fs::create_dir_all(&allowed).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("preserved.txt"), b"preserved").unwrap();
+        let target = allowed.join("generated");
+        symlink(&outside, &target).unwrap();
+
+        assert!(replace_dir_under(&target, &allowed).is_err());
+        assert_eq!(
+            fs::read(outside.join("preserved.txt")).unwrap(),
+            b"preserved"
+        );
+        assert!(
+            fs::symlink_metadata(target)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
     }
 }
