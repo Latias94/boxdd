@@ -165,7 +165,9 @@ The generated loader contains the manifest SHA-256 and identity as its deploymen
 verifies the manifest and all five assets with Web Crypto before importing JavaScript or
 instantiating either WASM module, then checks the provider's runtime adapter ABI before exposing it
 to the Rust app. The committed loader intentionally has no runtime trust anchor; only
-`build-pages-wasm` can produce a runnable deployment.
+`build-pages-wasm` can produce a runnable deployment. Running `generate-pages` removes both ignored
+runtime asset directories and restores that committed null-trust state, so stale deployment bytes
+cannot affect static Pages validation.
 
 `npm run test:pages-browser` serves only regular files rooted under `docs/pages`, rejects path
 traversal and symbolic links, and opens the actual generated testbed in Chromium. With its test-only

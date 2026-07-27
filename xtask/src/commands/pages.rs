@@ -971,6 +971,7 @@ pub(crate) fn generate_pages(root: &Path) -> Result<()> {
     let pages_dir = root.join("docs/pages");
     let examples_dir = pages_dir.join("examples");
 
+    clear_pages_runtime_assets(root)?;
     reset_generated_examples_dir(&pages_dir, &examples_dir)?;
     for (path, html) in pages {
         ensure_pages_output_parent(root, &path)?;
@@ -985,6 +986,18 @@ pub(crate) fn generate_pages(root: &Path) -> Result<()> {
         samples.len(),
         pages_dir.display()
     );
+    Ok(())
+}
+
+fn clear_pages_runtime_assets(root: &Path) -> Result<()> {
+    let pages_dir = root.join("docs/pages");
+    for generated in [
+        pages_wasm_generated_dir(root),
+        pages_bevy_generated_dir(root),
+    ] {
+        replace_dir_under(&generated, &pages_dir)?;
+        fs::remove_dir(&generated).map_err(|source| Error::io(&generated, source))?;
+    }
     Ok(())
 }
 
@@ -2345,8 +2358,9 @@ mod tests {
         PAGES_RUNTIME_ASSETS, PAGES_RUNTIME_SCHEMA, PAGES_RUNTIME_SCHEMA_VERSION, PROVIDER_ABI,
         PUBLISHER_REPOSITORY, PagesLoaderTrust, PagesRuntimeAsset, PagesRuntimeIdentity,
         PagesRuntimeManifest, ProviderPrecision, RECORDING_CONTRACT_BLAKE3, WASM_TARGET,
-        bevy_testbed_loader_js, collect_html_files, ensure_pages_output_parent, format_bytes,
-        pages_runtime_asset, rewrite_bevy_bindgen_provider_imports,
+        bevy_testbed_loader_js, clear_pages_runtime_assets, collect_html_files,
+        ensure_pages_output_parent, format_bytes, pages_bevy_generated_dir, pages_runtime_asset,
+        pages_wasm_generated_dir, rewrite_bevy_bindgen_provider_imports,
         validate_pages_asset_byte_length, validate_pages_precision,
         validate_pages_runtime_asset_records, validate_pages_runtime_manifest_identity,
     };
@@ -2456,6 +2470,24 @@ mod tests {
         symlink(&outside, pages.join("nested")).unwrap();
 
         assert!(collect_html_files(&pages).is_err());
+    }
+
+    #[test]
+    fn null_trust_generation_removes_runtime_asset_directories() {
+        let fixture = tempfile::tempdir().unwrap();
+        let pages = fixture.path().join("docs/pages");
+        let wasm = pages_wasm_generated_dir(fixture.path());
+        let bevy = pages_bevy_generated_dir(fixture.path());
+        fs::create_dir_all(&wasm).unwrap();
+        fs::create_dir_all(&bevy).unwrap();
+        fs::write(wasm.join("stale.json"), b"stale").unwrap();
+        fs::write(bevy.join("stale.wasm"), b"stale").unwrap();
+
+        clear_pages_runtime_assets(fixture.path()).unwrap();
+
+        assert!(pages.is_dir());
+        assert!(!wasm.exists());
+        assert!(!bevy.exists());
     }
 
     #[test]
