@@ -191,6 +191,7 @@ pub(crate) struct QualifiedEmscriptenSdk {
     python: PathBuf,
     python_runtime_root: PathBuf,
     node: PathBuf,
+    npm_cli: PathBuf,
     git: PathBuf,
     contract: SdkContract,
     contract_path: PathBuf,
@@ -420,6 +421,24 @@ impl QualifiedEmscriptenSdk {
         Ok(command)
     }
 
+    pub(crate) fn npm_command(&self) -> Result<Command, String> {
+        let mut command = self.node_command()?;
+        command.arg(&self.npm_cli);
+        let node_bin = self.node.parent().ok_or_else(|| {
+            format!(
+                "qualified EMSDK Node.js executable has no parent: {}",
+                self.node.display()
+            )
+        })?;
+        let ambient_path = env::var_os("PATH").unwrap_or_default();
+        let path = env::join_paths(
+            std::iter::once(node_bin.to_path_buf()).chain(env::split_paths(&ambient_path)),
+        )
+        .map_err(|error| format!("failed to prepare qualified EMSDK npm PATH: {error}"))?;
+        command.env("PATH", path);
+        Ok(command)
+    }
+
     pub(crate) fn wasm_opt_command(&self) -> Result<Command, String> {
         self.revalidate()?;
         let mut command = Command::new(&self.wasm_opt);
@@ -616,6 +635,11 @@ pub(crate) fn qualify_emscripten_sdk(
         &format!("node-{}-64bit", contract.node_version),
     )?;
     let node = resolve_node(&node_root, inputs.node_override.map(Path::new), platform)?;
+    let npm_cli = canonical_regular_file_within(
+        &node_root,
+        &node_root.join("lib/node_modules/npm/bin/npm-cli.js"),
+        "pinned EMSDK npm CLI",
+    )?;
     let wasm_opt = resolve_wasm_opt(&canonical_root, &upstream_root, platform)?;
 
     let mut qualified_trees = vec![
@@ -626,7 +650,7 @@ pub(crate) fn qualify_emscripten_sdk(
         )?,
         qualify_tree(
             "installed EMSDK Node.js tree",
-            node_root,
+            node_root.clone(),
             &host.node_tree_sha256,
         )?,
     ];
@@ -676,6 +700,7 @@ pub(crate) fn qualify_emscripten_sdk(
         python,
         python_runtime_root,
         node,
+        npm_cli,
         git,
         contract,
         contract_path,

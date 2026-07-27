@@ -338,6 +338,8 @@ test('published Bevy runtime survives shared-memory growth and keeps stepping ph
     'byteLengthBeforeGrowth',
     'memoryGrew',
     'postGrowthPhysicsStep',
+    'providerHeapReadWrite',
+    'providerHeapViewRefreshed',
     'requested',
     'staleBufferDetached',
     'stepCallsAfterGrowth',
@@ -346,6 +348,8 @@ test('published Bevy runtime survives shared-memory growth and keeps stepping ph
   expect(evidence.memoryProof).toMatchObject({
     memoryGrew: true,
     postGrowthPhysicsStep: true,
+    providerHeapReadWrite: true,
+    providerHeapViewRefreshed: true,
     requested: true,
     staleBufferDetached: true,
   });

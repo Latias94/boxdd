@@ -24,6 +24,7 @@ pub const ADAPTER_SOURCE_PATHS: &[&str] = &[
     "native/boxdd_recording_adapter.c",
     "native/boxdd_snapshot_layout.inl",
     "native/boxdd_snapshot_validate.c",
+    "native/boxdd_wasm_runtime.js",
     "src/source_overlay.rs",
 ];
 pub const REQUIRED_ADAPTER_SYMBOLS: &[&str] = &[

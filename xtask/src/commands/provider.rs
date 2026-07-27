@@ -157,13 +157,13 @@ pub(crate) fn provider_smoke_app(root: &Path) -> Result<()> {
 
 pub(crate) fn provider_smoke(root: &Path) -> Result<()> {
     let precision = ProviderPrecision::from_env()?;
-    provider_smoke_for_precision(root, precision)
+    provider_smoke_for_precision(root, precision).map(|_| ())
 }
 
 pub(super) fn provider_smoke_for_precision(
     root: &Path,
     precision: ProviderPrecision,
-) -> Result<()> {
+) -> Result<QualifiedEmscriptenSdk> {
     let _lock = UpdateLock::acquire(root)?;
     let cargo = QualifiedCargo::qualify(root)?;
     let target_dir = cargo.target_dir().to_path_buf();
@@ -179,7 +179,8 @@ pub(super) fn provider_smoke_for_precision(
     let runner = out_dir.join("run-provider-smoke.mjs");
     let mut command = sdk.node_command().map_err(Error::Message)?;
     command.arg(runner);
-    run_command(&mut command, "run provider shared-memory smoke")
+    run_command(&mut command, "run provider shared-memory smoke")?;
+    Ok(sdk)
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -238,6 +239,10 @@ impl CapturedWasmProviderSources {
             .iter()
             .filter(|relative| relative.ends_with(".c"))
             .map(|relative| self.adapter_crate_root.join(relative))
+    }
+
+    fn wasm_runtime_source(&self) -> PathBuf {
+        self.adapter_dir().join("boxdd_wasm_runtime.js")
     }
 
     fn revalidate(&self, root: &Path, sdk: &QualifiedEmscriptenSdk) -> Result<()> {
@@ -1384,6 +1389,11 @@ pub(super) fn build_box2d_provider(
     for source in &adapter_sources {
         ensure_file(source, "captured BoxDD provider adapter source")?;
     }
+    let wasm_runtime_source = captured.wasm_runtime_source();
+    ensure_file(
+        &wasm_runtime_source,
+        "captured BoxDD provider WASM runtime source",
+    )?;
     let compiled_identity =
         verify_wasm_provider_identity_contract(root, sdk, precision, &captured)?;
 
@@ -1406,6 +1416,10 @@ pub(super) fn build_box2d_provider(
         .arg("ENVIRONMENT=node,web")
         .arg("-s")
         .arg("INCOMING_MODULE_JS_API=['wasmMemory','wasmBinary','locateFile','print','printErr']")
+        .arg("-s")
+        .arg("EXPORTED_RUNTIME_METHODS=['HEAPU8']")
+        .arg("--post-js")
+        .arg(&wasm_runtime_source)
         .arg("-s")
         .arg("GLOBAL_BASE=67108864")
         .arg("-s")
@@ -1675,6 +1689,14 @@ fn validate_box2d_provider_runtime(provider: &Path) -> Result<()> {
             provider.display()
         )));
     }
+    for required in ["boxddRefreshMemoryViews", "HEAPU8", "updateMemoryViews"] {
+        if !source.contains(required) {
+            return Err(Error::Message(format!(
+                "{} does not expose required refreshable Emscripten runtime symbol {required}",
+                provider.display()
+            )));
+        }
+    }
     Ok(())
 }
 
@@ -1739,6 +1761,7 @@ const providerFunctions = resolveProviderFunctions(provider, providerContract.na
 const result = await runProviderPhysicsScenario({{
   appModule,
   memory,
+  provider,
   contract: providerContract,
   functions: providerFunctions,
 }});

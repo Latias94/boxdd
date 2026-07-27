@@ -55,6 +55,7 @@ try {
   const result = await runProviderPhysicsScenario({
     appModule,
     memory,
+    provider,
     contract: providerContract,
     functions: providerFunctions,
   });
@@ -155,6 +156,8 @@ test(`browser provider smoke (${precision})`, async ({ page }) => {
     staleTypedArrayRejected: true,
     staleDataViewRejected: true,
     refreshedViewsReadWrite: true,
+    providerHeapViewRefreshed: true,
+    providerHeapReadWrite: true,
     providerGlueCallsAfterGrowth: expect.any(Number),
   });
   expect(result.memoryProof.providerGlueCallsAfterGrowth).toBeGreaterThan(0);

@@ -845,6 +845,14 @@ let providerCalls = 0;
 let stepCalls = 0;
 
 export function setBox2dProvider(nextProvider) {{
+  const refreshMemoryViews = nextProvider?.boxddRefreshMemoryViews;
+  if (typeof refreshMemoryViews !== "function") {{
+    throw new Error("Box2D provider does not expose boxddRefreshMemoryViews");
+  }}
+  const heap = refreshMemoryViews();
+  if (!(heap instanceof Uint8Array) || heap !== nextProvider.HEAPU8) {{
+    throw new Error("Box2D provider does not expose its canonical Emscripten HEAPU8 view");
+  }}
   provider = nextProvider;
 }}
 
@@ -867,6 +875,7 @@ function resolveProviderExport(name) {{
 }}
 
 function callProvider(name, args) {{
+  provider.boxddRefreshMemoryViews();
   providerCalls += 1;
   if (name === "b2World_Step") {{
     stepCalls += 1;
@@ -1861,6 +1870,8 @@ async function main() {
     requested: proofRequested,
     memoryGrew: false,
     staleBufferDetached: false,
+    providerHeapViewRefreshed: false,
+    providerHeapReadWrite: false,
     postGrowthPhysicsStep: false,
     byteLengthBeforeGrowth: memory.buffer.byteLength,
     byteLengthAfterGrowth: memory.buffer.byteLength,
@@ -1869,6 +1880,10 @@ async function main() {
   };
   if (proofRequested) {
     const staleBuffer = memory.buffer;
+    const staleProviderHeap = provider.boxddRefreshMemoryViews();
+    if (staleProviderHeap !== provider.HEAPU8 || staleProviderHeap.buffer !== staleBuffer) {
+      throw new Error("Box2D provider HEAPU8 does not bind the shared WebAssembly.Memory");
+    }
     memory.grow(1);
     memoryProof.memoryGrew = memory.buffer !== staleBuffer;
     memoryProof.staleBufferDetached = staleBuffer.byteLength === 0;
@@ -1876,9 +1891,28 @@ async function main() {
     if (
       !memoryProof.memoryGrew ||
       !memoryProof.staleBufferDetached ||
+      staleProviderHeap.byteLength !== 0 ||
       memoryProof.byteLengthAfterGrowth <= memoryProof.byteLengthBeforeGrowth
     ) {
       throw new Error("shared WebAssembly.Memory did not detach and grow its buffer");
+    }
+    const refreshedProviderHeap = provider.boxddRefreshMemoryViews();
+    memoryProof.providerHeapViewRefreshed =
+      refreshedProviderHeap instanceof Uint8Array &&
+      refreshedProviderHeap === provider.HEAPU8 &&
+      refreshedProviderHeap.buffer === memory.buffer;
+    if (!memoryProof.providerHeapViewRefreshed) {
+      throw new Error("Emscripten HEAPU8 was not rebound after external memory.grow");
+    }
+    const probeOffset = memoryProof.byteLengthBeforeGrowth;
+    const refreshedData = new DataView(memory.buffer);
+    const original = refreshedData.getUint32(probeOffset, true);
+    refreshedProviderHeap.set([0x12, 0x34, 0x56, 0x78], probeOffset);
+    memoryProof.providerHeapReadWrite =
+      refreshedData.getUint32(probeOffset, true) === 0x78563412;
+    refreshedData.setUint32(probeOffset, original, true);
+    if (!memoryProof.providerHeapReadWrite) {
+      throw new Error("refreshed Emscripten HEAPU8 is not readable and writable");
     }
     const postGrowthEvidence = await waitForProviderStep(
       boxddProviderRuntimeEvidence,
@@ -2546,6 +2580,8 @@ mod tests {
         assert!(loader.contains("boxddProviderRuntimeEvidence"));
         assert!(loader.contains("memory.grow(1)"));
         assert!(loader.contains("staleBufferDetached"));
+        assert!(loader.contains("boxddRefreshMemoryViews"));
+        assert!(loader.contains("providerHeapViewRefreshed"));
         assert!(loader.contains("postGrowthPhysicsStep"));
         assert!(loader.contains("BOXDD_BEVY_RUNTIME_EVIDENCE"));
         assert!(loader.contains("const shimImportPattern = /^import \\* as (import[0-9]+)"));

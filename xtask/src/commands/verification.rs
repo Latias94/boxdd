@@ -575,8 +575,8 @@ fn verify_wasm_runtime(root: &Path) -> Result<()> {
     for precision in [ProviderPrecision::Single, ProviderPrecision::Double] {
         // The provider command validates the pinned Emscripten and wasm-bindgen identities before
         // compiling, so a missing or stale SDK is an explicit qualification failure.
-        provider::provider_smoke_for_precision(root, precision)?;
-        let mut browser = browser_provider_smoke_command(root, &target_dir, precision);
+        let sdk = provider::provider_smoke_for_precision(root, precision)?;
+        let mut browser = browser_provider_smoke_command(root, &target_dir, precision, &sdk)?;
         run_command(
             &mut browser,
             &format!(
@@ -592,8 +592,20 @@ fn browser_provider_smoke_command(
     root: &Path,
     target_dir: &Path,
     precision: ProviderPrecision,
+    sdk: &crate::emscripten_sdk::QualifiedEmscriptenSdk,
+) -> Result<Command> {
+    let command = sdk.npm_command().map_err(Error::message)?;
+    Ok(configure_browser_provider_smoke_command(
+        command, root, target_dir, precision,
+    ))
+}
+
+fn configure_browser_provider_smoke_command(
+    mut command: Command,
+    root: &Path,
+    target_dir: &Path,
+    precision: ProviderPrecision,
 ) -> Command {
-    let mut command = Command::new("npm");
     command
         .current_dir(root)
         .args(["run", "test:browser"])
@@ -1248,19 +1260,22 @@ mod tests {
     }
 
     #[test]
-    fn wasm_runtime_browser_command_binds_precision_and_target_directory() {
+    fn wasm_runtime_browser_command_preserves_qualified_npm_and_binds_coordinates() {
         let root = Path::new("/workspace/boxdd");
         let target_dir = Path::new("/tmp/boxdd-target");
 
         for precision in [ProviderPrecision::Single, ProviderPrecision::Double] {
-            let command = browser_provider_smoke_command(root, target_dir, precision);
-            assert_eq!(command.get_program(), "npm");
+            let mut npm = Command::new("/qualified/node");
+            npm.arg("/qualified/npm-cli.js");
+            let command =
+                configure_browser_provider_smoke_command(npm, root, target_dir, precision);
+            assert_eq!(command.get_program(), "/qualified/node");
             assert_eq!(
                 command
                     .get_args()
                     .map(|argument| argument.to_str().expect("literal npm argument"))
                     .collect::<Vec<_>>(),
-                ["run", "test:browser"]
+                ["/qualified/npm-cli.js", "run", "test:browser"]
             );
             assert_eq!(command.get_current_dir(), Some(root));
             assert!(command.get_envs().any(|(key, value)| {

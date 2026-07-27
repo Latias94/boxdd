@@ -54,13 +54,25 @@ export function inspectProviderContract(appModule, expectedModule) {
 }
 
 export function resolveProviderFunctions(provider, names) {
+  const refreshMemoryViews = provider.boxddRefreshMemoryViews;
+  if (typeof refreshMemoryViews !== 'function') {
+    throw new Error('provider does not expose boxddRefreshMemoryViews');
+  }
+  const initialHeap = refreshMemoryViews();
+  if (!(initialHeap instanceof Uint8Array) || initialHeap !== provider.HEAPU8) {
+    throw new Error('provider does not expose its canonical Emscripten HEAPU8 view');
+  }
+
   const functions = Object.create(null);
   for (const name of names) {
     const exported = provider[`_${name}`] ?? provider[name];
     if (typeof exported !== 'function') {
       throw new Error(`provider export ${name} is not a function`);
     }
-    functions[name] = exported;
+    functions[name] = (...args) => {
+      refreshMemoryViews();
+      return exported(...args);
+    };
   }
   return functions;
 }
@@ -189,10 +201,14 @@ export class RefreshableMemoryViews {
   }
 }
 
-export function growAndProveMemoryViews(memory, views) {
+export function growAndProveMemoryViews(memory, views, provider) {
   const staleBuffer = views.buffer;
   const staleBytes = views.bytes;
   const staleData = views.data;
+  const staleProviderHeap = provider.boxddRefreshMemoryViews();
+  if (staleProviderHeap.buffer !== memory.buffer || staleProviderHeap !== provider.HEAPU8) {
+    throw new Error('provider HEAPU8 does not initially bind the shared WebAssembly.Memory');
+  }
   const oldByteLength = staleBuffer.byteLength;
 
   memory.grow(1);
@@ -216,6 +232,7 @@ export function growAndProveMemoryViews(memory, views) {
     staleBuffer.byteLength !== 0 ||
     staleBytes.byteLength !== 0 ||
     staleBytes[0] !== undefined ||
+    staleProviderHeap.byteLength !== 0 ||
     !staleTypedArrayRejected ||
     !staleDataViewRejected
   ) {
@@ -228,6 +245,14 @@ export function growAndProveMemoryViews(memory, views) {
   if (!(views.bytes instanceof Uint8Array) || !(views.data instanceof DataView)) {
     throw new Error('refreshed memory views have the wrong JavaScript types');
   }
+  const refreshedProviderHeap = provider.boxddRefreshMemoryViews();
+  const providerHeapViewRefreshed =
+    refreshedProviderHeap instanceof Uint8Array &&
+    refreshedProviderHeap === provider.HEAPU8 &&
+    refreshedProviderHeap.buffer === memory.buffer;
+  if (!providerHeapViewRefreshed) {
+    throw new Error('Emscripten HEAPU8 was not rebound after external memory.grow');
+  }
 
   const probeOffset = oldByteLength;
   const original = views.data.getUint32(probeOffset, true);
@@ -236,7 +261,9 @@ export function growAndProveMemoryViews(memory, views) {
     views.bytes[probeOffset] === 0x12 &&
     views.bytes[probeOffset + 1] === 0x34 &&
     views.bytes[probeOffset + 2] === 0x56 &&
-    views.bytes[probeOffset + 3] === 0x78;
+    views.bytes[probeOffset + 3] === 0x78 &&
+    refreshedProviderHeap[probeOffset] === 0x12 &&
+    refreshedProviderHeap[probeOffset + 3] === 0x78;
   views.data.setUint32(probeOffset, original, true);
   if (!refreshedViewsReadWrite) {
     throw new Error('refreshed Uint8Array and DataView do not share readable, writable memory');
@@ -247,6 +274,8 @@ export function growAndProveMemoryViews(memory, views) {
     staleTypedArrayRejected,
     staleDataViewRejected,
     refreshedViewsReadWrite,
+    providerHeapViewRefreshed,
+    providerHeapReadWrite: refreshedViewsReadWrite,
   };
 }
 
@@ -264,7 +293,7 @@ function callAppExport(instance, views, name, ...args) {
   return value;
 }
 
-export async function runProviderPhysicsScenario({ appModule, memory, contract, functions }) {
+export async function runProviderPhysicsScenario({ appModule, memory, provider, contract, functions }) {
   const linkFailures = await proveProviderLinkFailures(appModule, memory, contract, functions);
   let memoryGrew = false;
   let providerGlueCallsAfterGrowth = 0;
@@ -284,7 +313,7 @@ export async function runProviderPhysicsScenario({ appModule, memory, contract, 
   requiredExport(instance, 'boxdd_provider_smoke');
 
   const memoryViews = new RefreshableMemoryViews(memory);
-  const memoryProof = growAndProveMemoryViews(memory, memoryViews);
+  const memoryProof = growAndProveMemoryViews(memory, memoryViews, provider);
   memoryGrew = true;
   const postGrowthMetric = callAppExport(
     instance,
