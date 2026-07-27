@@ -8,12 +8,14 @@ use std::{
     process::{Command, Output},
 };
 
-use flate2::read::GzDecoder;
+use flate2::bufread::GzDecoder;
 use sha2::{Digest, Sha256};
+#[cfg(test)]
 use tempfile::TempDir;
 use yaml_serde::{Mapping as YamlMapping, Value as YamlValue};
 
 use crate::emscripten_sdk::{SDK_CONTRACT_RELATIVE_PATH, SdkContract};
+use crate::prebuilt_provenance::{self, PrebuiltProvenanceStatement};
 use crate::provenance_policy::{
     self, COSIGN_VERSION, PUBLISHER_REPOSITORY, PUBLISHER_WORKFLOW, SIGSTORE_TRUSTED_ROOT_SHA256,
 };
@@ -28,13 +30,16 @@ use super::support::run_command;
 
 const UPSTREAM_SHA: &str = "56edae79f2949d86142b03450d5d60f63bcf5a6f";
 const CHECKSUMS_FILE: &str = "SHA256SUMS";
-const MAX_ARCHIVE_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
-const MAX_ARCHIVE_TOTAL_BYTES: u64 = 256 * 1024 * 1024;
-const MAX_ARCHIVE_ENTRIES: usize = 4_096;
+const MAX_ARCHIVE_ENTRY_BYTES: u64 = prebuilt_provenance::MAX_MEMBER_BYTES;
+const MAX_ARCHIVE_TOTAL_BYTES: u64 = prebuilt_provenance::MAX_TOTAL_MEMBER_BYTES;
+const MAX_ARCHIVE_ENTRIES: usize = prebuilt_provenance::MAX_MEMBERS;
 const TAR_BLOCK_BYTES: u64 = 512;
 const MAX_ARCHIVE_STREAM_BYTES: u64 = MAX_ARCHIVE_TOTAL_BYTES
     + (MAX_ARCHIVE_ENTRIES as u64 * TAR_BLOCK_BYTES * 2)
     + (TAR_BLOCK_BYTES * 2);
+const MAX_PROVENANCE_STATEMENT_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_SIGSTORE_BUNDLE_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_TRUSTED_ROOT_BYTES: u64 = 4 * 1024 * 1024;
 const QUALIFICATION_TOOLCHAINS: &[&str] = &["1.95.0", "1.97.1"];
 const QUALIFICATION_PRECISIONS: &[&str] = &["single", "double"];
 const CI_WORKFLOW: &str = ".github/workflows/ci.yml";
@@ -245,10 +250,10 @@ const AGGREGATE_STEPS: &[WorkflowStepPolicy] = &[
         digest: "9c8040bd529b22ca288a1a27d213544e1ae97175392d0f722eddb52ca2d06d64",
     },
     WorkflowStepPolicy {
-        name: "Validate exact contents and export canonical provenance manifests",
+        name: "Validate exact contents and export canonical provenance statements",
         kind: WorkflowStepKind::Run,
         keys: &["name", "run"],
-        digest: "fd1e90eccc426dbc674ef44b4bfc858f8b76ac88c694e1085abc3db450a2d2f5",
+        digest: "65b81cebb61f7574076251847170fd4defe16c5b160c3fdbe0f1a36e47448cfe",
     },
     WorkflowStepPolicy {
         name: "Upload validated attestation input",
@@ -290,7 +295,7 @@ const ATTEST_STEPS: &[WorkflowStepPolicy] = &[
         name: "Sign and immediately verify every validated payload",
         kind: WorkflowStepKind::Run,
         keys: &["name", "shell", "run"],
-        digest: "4f178886b05d790199301919819bed76c611275a943ddf9c5c56ae46c2cf50bf",
+        digest: "8a8a90fe89c274c1b52521b654c189974f3dab24c3bddbf51e5375644aec0715",
     },
     WorkflowStepPolicy {
         name: "Upload signed release inputs",
@@ -377,7 +382,7 @@ const PUBLISH_DRAFT_STEPS: &[WorkflowStepPolicy] = &[
         name: "Create protected draft release",
         kind: WorkflowStepKind::Run,
         keys: &["name", "shell", "env", "run"],
-        digest: "b0020ed4b6626bda28b85bc34642d844aeba85b037312cf1db4098403c397aa0",
+        digest: "b90c74a7450b70056b7f81072f7210e36da81b76b0381fd9ac8eded97817a557",
     },
 ];
 
@@ -475,6 +480,14 @@ struct ReleaseIdentity {
     upstream_sha: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ValidatedReleaseContext {
+    run_id: String,
+    run_attempt: String,
+    repository: String,
+    workflow_ref: String,
+}
+
 pub fn run(root: &Path, args: &[String]) -> Result<()> {
     let options = Options::parse(args)?;
     let identity = validate_repository_identity(root, &options)?;
@@ -495,12 +508,12 @@ pub fn run(root: &Path, args: &[String]) -> Result<()> {
             "release-contract --check-content requires --artifacts",
         )),
         (Mode::CheckContent, Some(artifacts)) => {
-            validate_release_context(&options, &identity)?;
-            validate_artifacts(root, artifacts, &options, &identity, false)
+            let context = validate_release_context(&options, &identity)?;
+            validate_artifacts(root, artifacts, &options, &identity, &context, false)
         }
         (Mode::Check, Some(artifacts)) => {
-            validate_release_context(&options, &identity)?;
-            validate_artifacts(root, artifacts, &options, &identity, true)
+            let context = validate_release_context(&options, &identity)?;
+            validate_artifacts(root, artifacts, &options, &identity, &context, true)
         }
         (Mode::Check, None) => {
             println!(
@@ -890,7 +903,10 @@ impl Version {
     }
 }
 
-fn validate_release_context(options: &Options, identity: &ReleaseIdentity) -> Result<()> {
+fn validate_release_context(
+    options: &Options,
+    identity: &ReleaseIdentity,
+) -> Result<ValidatedReleaseContext> {
     let protected = env::var("GITHUB_REF_PROTECTED")
         .map_err(|_| Error::message("artifact validation requires GITHUB_REF_PROTECTED=true"))?;
     if protected != "true" {
@@ -932,7 +948,12 @@ fn validate_release_context(options: &Options, identity: &ReleaseIdentity) -> Re
             "release workflow ref {workflow_ref:?} is not the protected tag workflow {expected:?}"
         )));
     }
-    Ok(())
+    Ok(ValidatedReleaseContext {
+        run_id,
+        run_attempt,
+        repository,
+        workflow_ref,
+    })
 }
 
 fn expected_artifacts(version: &str) -> Vec<ArtifactSpec> {
@@ -977,8 +998,7 @@ fn write_aggregate_checksums(root: &Path, version: &str) -> Result<()> {
 }
 
 struct ValidatedArchive {
-    _directory: TempDir,
-    provenance_payload: PathBuf,
+    statement: PrebuiltProvenanceStatement,
 }
 
 fn validate_artifacts(
@@ -986,6 +1006,7 @@ fn validate_artifacts(
     artifact_root: &Path,
     options: &Options,
     identity: &ReleaseIdentity,
+    context: &ValidatedReleaseContext,
     require_signatures: bool,
 ) -> Result<()> {
     let canonical_root =
@@ -1007,7 +1028,18 @@ fn validate_artifacts(
             .map_err(|error| Error::io("read current directory", error))?
             .join(trusted_root)
     };
-    require_trusted_root(&trusted_root)?;
+    let verification_inputs = tempfile::Builder::new()
+        .prefix("boxdd-release-verification-")
+        .tempdir()
+        .map_err(|error| Error::io("create private release verification directory", error))?;
+    let (trusted_root, trusted_root_bytes) = snapshot_verification_input(
+        &trusted_root,
+        verification_inputs.path(),
+        "trusted-root.json",
+        MAX_TRUSTED_ROOT_BYTES,
+        "Sigstore trusted root",
+    )?;
+    require_trusted_root(&trusted_root, &trusted_root_bytes)?;
     if require_signatures {
         verify_cosign_version(&options.cosign)?;
     }
@@ -1016,14 +1048,19 @@ fn validate_artifacts(
         .as_deref()
         .map(prepare_empty_payload_directory)
         .transpose()?;
+    if payload_root
+        .as_ref()
+        .is_some_and(|payload_root| payload_root.starts_with(&canonical_root))
+    {
+        return Err(Error::message(
+            "signing payload output must remain outside the release input tree",
+        ));
+    }
 
     let files = collect_files(&canonical_root)?;
     let expected = expected_artifacts(&identity.version);
     let archives = map_expected_archives(&files, &expected)?;
-    let run_id = option_or_env(&options.run_id, "GITHUB_RUN_ID")?
-        .ok_or_else(|| Error::message("release run ID is missing"))?;
-    let run_attempt = option_or_env(&options.run_attempt, "GITHUB_RUN_ATTEMPT")?
-        .ok_or_else(|| Error::message("release run attempt is missing"))?;
+    require_exact_release_file_set(&files, &archives, &canonical_root, require_signatures)?;
     let mut allowed = BTreeSet::new();
     let mut aggregate = String::new();
 
@@ -1031,7 +1068,12 @@ fn validate_artifacts(
         let archive = &archives[&spec.archive];
         let expected_parent = format!(
             "prebuilt-input-{}-{}-{}-{run_id}-{run_attempt}-{}",
-            spec.target, spec.precision, spec.crt, identity.commit
+            spec.target,
+            spec.precision,
+            spec.crt,
+            identity.commit,
+            run_id = context.run_id,
+            run_attempt = context.run_attempt,
         );
         let parent = archive
             .parent()
@@ -1044,10 +1086,13 @@ fn validate_artifacts(
                 spec.archive
             )));
         }
-        let digest = sha256_file(archive)?;
+        let validated =
+            validate_archive_manifest(repository_root, archive, spec, identity, context)?;
+        let digest = &validated.statement.package_sha256;
         aggregate.push_str(&format!("{digest}  {}\n", spec.archive));
         let checksum = archive.with_file_name(format!("{}.sha256", spec.archive));
-        let bundle = archive.with_file_name(format!("{}.sigstore.json", spec.archive));
+        let statement = archive.with_file_name(format!("{}.provenance.toml", spec.archive));
+        let bundle = archive.with_file_name(format!("{}.provenance.sigstore.json", spec.archive));
         let expected_checksum = format!("{digest}  {}\n", spec.archive);
         let actual_checksum =
             fs::read_to_string(&checksum).map_err(|error| Error::io(&checksum, error))?;
@@ -1057,29 +1102,54 @@ fn validate_artifacts(
                 checksum.display()
             )));
         }
-        let validated = validate_archive_manifest(repository_root, archive, spec, identity)?;
         if let Some(payload_root) = &payload_root {
-            let destination = payload_root.join(format!("{}.manifest", spec.archive));
-            fs::copy(&validated.provenance_payload, &destination)
+            let destination = payload_root.join(format!("{}.provenance.toml", spec.archive));
+            let mut output = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&destination)
+                .map_err(|error| Error::io(&destination, error))?;
+            output
+                .write_all(
+                    &validated
+                        .statement
+                        .canonical_bytes()
+                        .map_err(Error::message)?,
+                )
                 .map_err(|error| Error::io(&destination, error))?;
         }
         allowed.extend([archive.clone(), checksum]);
         if require_signatures {
-            if !bundle.is_file() {
+            let (statement_snapshot, statement_bytes) = snapshot_verification_input(
+                &statement,
+                verification_inputs.path(),
+                &format!("{}.provenance.toml", spec.archive),
+                MAX_PROVENANCE_STATEMENT_BYTES,
+                "prebuilt provenance statement",
+            )?;
+            let (bundle_snapshot, _) = snapshot_verification_input(
+                &bundle,
+                verification_inputs.path(),
+                &format!("{}.provenance.sigstore.json", spec.archive),
+                MAX_SIGSTORE_BUNDLE_BYTES,
+                "prebuilt Sigstore bundle",
+            )?;
+            let supplied = PrebuiltProvenanceStatement::parse_canonical(&statement_bytes)
+                .map_err(Error::message)?;
+            if supplied != validated.statement {
                 return Err(Error::message(format!(
-                    "artifact {} is missing Sigstore bundle {}",
-                    spec.archive,
-                    bundle.display()
+                    "artifact {} provenance statement does not match its exact package and release context",
+                    spec.archive
                 )));
             }
             verify_sigstore(
                 &options.cosign,
-                &validated.provenance_payload,
-                &bundle,
+                &statement_snapshot,
+                &bundle_snapshot,
                 &trusted_root,
                 identity,
             )?;
-            allowed.insert(bundle);
+            allowed.extend([statement, bundle]);
         }
     }
 
@@ -1168,18 +1238,62 @@ fn map_expected_archives(
     Ok(archives)
 }
 
+fn require_exact_release_file_set(
+    files: &[PathBuf],
+    archives: &BTreeMap<String, PathBuf>,
+    root: &Path,
+    require_signatures: bool,
+) -> Result<()> {
+    let mut expected = BTreeSet::from([root.join(CHECKSUMS_FILE)]);
+    for (archive_name, archive) in archives {
+        expected.insert(archive.clone());
+        expected.insert(archive.with_file_name(format!("{archive_name}.sha256")));
+        if require_signatures {
+            expected.insert(archive.with_file_name(format!("{archive_name}.provenance.toml")));
+            expected
+                .insert(archive.with_file_name(format!("{archive_name}.provenance.sigstore.json")));
+        }
+    }
+    let actual = files.iter().cloned().collect::<BTreeSet<_>>();
+    let missing = expected.difference(&actual).collect::<Vec<_>>();
+    let unexpected = actual.difference(&expected).collect::<Vec<_>>();
+    if missing.is_empty() && unexpected.is_empty() {
+        return Ok(());
+    }
+    Err(Error::message(format!(
+        "release input file set mismatch; missing=[{}] unexpected=[{}]",
+        missing
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", "),
+        unexpected
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    )))
+}
+
 fn validate_archive_manifest(
     repository_root: &Path,
     archive_path: &Path,
     spec: &ArtifactSpec,
     identity: &ReleaseIdentity,
+    context: &ValidatedReleaseContext,
 ) -> Result<ValidatedArchive> {
+    let package_bytes = read_regular_package(archive_path)?;
     let expected_paths = expected_archive_paths(repository_root, spec)?;
     let directory = tempfile::Builder::new()
         .prefix("boxdd-release-archive-")
         .tempdir()
         .map_err(|error| Error::io("create release archive inspection directory", error))?;
-    let files = read_release_archive(archive_path, &expected_paths, directory.path())?;
+    let files = read_release_archive_bytes(
+        archive_path,
+        &package_bytes,
+        &expected_paths,
+        directory.path(),
+    )?;
 
     verify_inner_checksums(&files, archive_path)?;
     verify_repository_owned_files(repository_root, &files, spec)?;
@@ -1287,24 +1401,107 @@ fn validate_archive_manifest(
         ));
     }
 
-    let provenance_payload = directory.path().join("manifest.toml");
-    Ok(ValidatedArchive {
-        _directory: directory,
-        provenance_payload,
-    })
+    let members = prebuilt_provenance::members_from_files(&files).map_err(Error::message)?;
+    let inner_checksums = files
+        .get("checksums.sha256")
+        .expect("checksums presence was validated above");
+    let statement = PrebuiltProvenanceStatement {
+        schema_version: prebuilt_provenance::SCHEMA_VERSION,
+        schema: prebuilt_provenance::SCHEMA_NAME.to_owned(),
+        repository: context.repository.clone(),
+        workflow: PUBLISHER_WORKFLOW.to_owned(),
+        workflow_ref: context.workflow_ref.clone(),
+        source_commit: identity.commit.clone(),
+        release_tag: identity.tag.clone(),
+        run_id: context.run_id.clone(),
+        run_attempt: context.run_attempt.clone(),
+        crate_version: identity.version.clone(),
+        package_name: spec.archive.clone(),
+        package_size: package_bytes.len() as u64,
+        package_sha256: prebuilt_provenance::sha256_bytes(&package_bytes),
+        provider_manifest_sha256: provider_manifest::sha256_bytes(manifest_bytes),
+        inner_checksums_sha256: provider_manifest::sha256_bytes(inner_checksums),
+        provider: manifest.provider.clone(),
+        target: manifest.target.clone(),
+        precision: manifest.precision.clone(),
+        link: manifest.link.clone(),
+        crt: manifest.crt.clone(),
+        upstream_sha: manifest.upstream_sha.clone(),
+        effective_source_sha256: manifest.effective_source_sha256.clone(),
+        simd: manifest.simd.clone(),
+        validate: manifest.validate,
+        adapter_abi_version: manifest.adapter_abi_version,
+        adapter_source_sha256: manifest.adapter_source_sha256.clone(),
+        private_abi_hash: manifest.private_abi_hash.clone(),
+        snapshot_layout_hash: manifest.snapshot_layout_hash,
+        recording_contract_blake3: manifest.recording_contract_blake3.clone(),
+        member_count: members.len() as u64,
+        members,
+    };
+    statement.validate_intrinsic().map_err(Error::message)?;
+    statement
+        .validate_publisher(PUBLISHER_REPOSITORY, PUBLISHER_WORKFLOW)
+        .map_err(Error::message)?;
+    statement
+        .verify_package_bytes(&package_bytes)
+        .map_err(Error::message)?;
+    statement
+        .validate_provider_manifest(manifest_bytes)
+        .map_err(Error::message)?;
+    statement
+        .verify_extracted_root(directory.path())
+        .map_err(Error::message)?;
+    Ok(ValidatedArchive { statement })
 }
 
+fn read_regular_package(path: &Path) -> Result<Vec<u8>> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| Error::io(path, error))?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        return Err(Error::message(format!(
+            "release package must be a regular non-symlink file: {}",
+            path.display()
+        )));
+    }
+    if metadata.len() == 0 || metadata.len() > prebuilt_provenance::MAX_PACKAGE_BYTES {
+        return Err(Error::message(format!(
+            "release package {} has invalid size {}; maximum is {}",
+            path.display(),
+            metadata.len(),
+            prebuilt_provenance::MAX_PACKAGE_BYTES
+        )));
+    }
+    let bytes = fs::read(path).map_err(|error| Error::io(path, error))?;
+    if bytes.len() as u64 != metadata.len() {
+        return Err(Error::message(format!(
+            "release package {} changed while it was being read",
+            path.display()
+        )));
+    }
+    Ok(bytes)
+}
+
+#[cfg(test)]
 fn read_release_archive(
     archive_path: &Path,
     expected_paths: &BTreeSet<String>,
     destination_root: &Path,
 ) -> Result<BTreeMap<String, Vec<u8>>> {
-    let file = fs::File::open(archive_path).map_err(|error| Error::io(archive_path, error))?;
-    let decoder = GzDecoder::new(file);
+    let bytes = read_regular_package(archive_path)?;
+    read_release_archive_bytes(archive_path, &bytes, expected_paths, destination_root)
+}
+
+fn read_release_archive_bytes(
+    archive_path: &Path,
+    archive_bytes: &[u8],
+    expected_paths: &BTreeSet<String>,
+    destination_root: &Path,
+) -> Result<BTreeMap<String, Vec<u8>>> {
+    let decoder = GzDecoder::new(std::io::Cursor::new(archive_bytes));
     let mut archive = tar::Archive::new(BoundedReader::new(decoder, MAX_ARCHIVE_STREAM_BYTES));
     let entries = archive
         .entries()
-        .map_err(|error| Error::message(format!("read {}: {error}", archive_path.display())))?;
+        .map_err(|error| Error::message(format!("read {}: {error}", archive_path.display())))?
+        .raw(true);
     let mut files = BTreeMap::new();
     let mut total_bytes = 0_u64;
     let mut entry_count = 0_usize;
@@ -1371,6 +1568,33 @@ fn read_release_archive(
     }
     let actual_paths = files.keys().cloned().collect::<BTreeSet<_>>();
     require_exact_archive_paths(&actual_paths, expected_paths, archive_path)?;
+    let mut bounded = archive.into_inner();
+    let mut decompressed_tail = Vec::new();
+    bounded
+        .by_ref()
+        .take(TAR_BLOCK_BYTES + 1)
+        .read_to_end(&mut decompressed_tail)
+        .map_err(|error| {
+            Error::message(format!(
+                "read {} canonical tar terminator: {error}",
+                archive_path.display()
+            ))
+        })?;
+    if decompressed_tail.len() as u64 != TAR_BLOCK_BYTES
+        || decompressed_tail.iter().any(|byte| *byte != 0)
+    {
+        return Err(Error::message(format!(
+            "{} does not contain exactly two canonical tar termination blocks",
+            archive_path.display()
+        )));
+    }
+    let decoder = bounded.inner;
+    if decoder.get_ref().position() != archive_bytes.len() as u64 {
+        return Err(Error::message(format!(
+            "{} contains a second gzip member or trailing compressed data",
+            archive_path.display()
+        )));
+    }
     Ok(files)
 }
 
@@ -1472,9 +1696,40 @@ fn read_canonical_archive_entry<R: Read>(
     entry: tar::Entry<'_, R>,
     archive_path: &Path,
 ) -> Result<(String, Vec<u8>)> {
-    if !entry.header().entry_type().is_file() {
+    let header = entry.header();
+    if !header.entry_type().is_file() {
         return Err(Error::message(format!(
             "{} contains a non-regular tar entry",
+            archive_path.display()
+        )));
+    }
+    let mode = header.mode().map_err(|error| {
+        Error::message(format!(
+            "read {} entry mode: {error}",
+            archive_path.display()
+        ))
+    })?;
+    let uid = header.uid().map_err(|error| {
+        Error::message(format!(
+            "read {} entry uid: {error}",
+            archive_path.display()
+        ))
+    })?;
+    let gid = header.gid().map_err(|error| {
+        Error::message(format!(
+            "read {} entry gid: {error}",
+            archive_path.display()
+        ))
+    })?;
+    let mtime = header.mtime().map_err(|error| {
+        Error::message(format!(
+            "read {} entry mtime: {error}",
+            archive_path.display()
+        ))
+    })?;
+    if mode != 0o644 || uid != 0 || gid != 0 || mtime != 0 {
+        return Err(Error::message(format!(
+            "{} contains non-canonical tar metadata: mode={mode:o} uid={uid} gid={gid} mtime={mtime}",
             archive_path.display()
         )));
     }
@@ -1622,8 +1877,86 @@ fn require_packaged_bytes(
     Ok(())
 }
 
-fn require_trusted_root(path: &Path) -> Result<()> {
-    let digest = sha256_file(path)?;
+fn snapshot_verification_input(
+    source: &Path,
+    destination_root: &Path,
+    destination_name: &str,
+    maximum_bytes: u64,
+    label: &str,
+) -> Result<(PathBuf, Vec<u8>)> {
+    let source_metadata = fs::symlink_metadata(source).map_err(|error| Error::io(source, error))?;
+    if !source_metadata.file_type().is_file() || source_metadata.file_type().is_symlink() {
+        return Err(Error::message(format!(
+            "{label} must be a regular non-symlink file: {}",
+            source.display()
+        )));
+    }
+    if source_metadata.len() == 0 || source_metadata.len() > maximum_bytes {
+        return Err(Error::message(format!(
+            "{label} size {} is outside the accepted 1..={maximum_bytes} byte range",
+            source_metadata.len()
+        )));
+    }
+    let input = fs::File::open(source).map_err(|error| Error::io(source, error))?;
+    let opened_metadata = input.metadata().map_err(|error| Error::io(source, error))?;
+    if !opened_metadata.is_file() || opened_metadata.len() != source_metadata.len() {
+        return Err(Error::message(format!(
+            "{label} changed while it was being opened for snapshotting: {}",
+            source.display()
+        )));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        if opened_metadata.dev() != source_metadata.dev()
+            || opened_metadata.ino() != source_metadata.ino()
+        {
+            return Err(Error::message(format!(
+                "{label} changed while it was being opened for snapshotting: {}",
+                source.display()
+            )));
+        }
+    }
+    let mut bytes = Vec::with_capacity(source_metadata.len() as usize);
+    input
+        .take(maximum_bytes + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| Error::io(source, error))?;
+    if bytes.len() as u64 != source_metadata.len() {
+        return Err(Error::message(format!(
+            "{label} changed while its exact bytes were being snapshotted: {}",
+            source.display()
+        )));
+    }
+
+    let destination = destination_root.join(destination_name);
+    let mut output = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&destination)
+        .map_err(|error| Error::io(&destination, error))?;
+    output
+        .write_all(&bytes)
+        .map_err(|error| Error::io(&destination, error))?;
+    output
+        .flush()
+        .map_err(|error| Error::io(&destination, error))?;
+    let destination_metadata =
+        fs::symlink_metadata(&destination).map_err(|error| Error::io(&destination, error))?;
+    if !destination_metadata.file_type().is_file()
+        || destination_metadata.file_type().is_symlink()
+        || destination_metadata.len() != bytes.len() as u64
+    {
+        return Err(Error::message(format!(
+            "private {label} snapshot is not the exact regular file written: {}",
+            destination.display()
+        )));
+    }
+    Ok((destination, bytes))
+}
+
+fn require_trusted_root(path: &Path, bytes: &[u8]) -> Result<()> {
+    let digest = hex_digest(Sha256::digest(bytes));
     if digest == SIGSTORE_TRUSTED_ROOT_SHA256 {
         Ok(())
     } else {
@@ -2221,7 +2554,7 @@ fn validate_release_workflow_source(source: &str) -> Result<()> {
             "environment",
             "steps",
         ],
-        "Sign validated provenance manifests",
+        "Sign validated provenance statements",
         "ubuntu-latest",
         ATTEST_STEPS,
     )?;
@@ -2316,7 +2649,7 @@ fn validate_release_workflow_source(source: &str) -> Result<()> {
     require_job_command_fragment(
         &aggregate_commands,
         "--payloads \"$payloads\"",
-        "aggregate must export canonical provenance manifests",
+        "aggregate must export canonical provenance statements",
     )?;
     require_action_input_fragment(
         aggregate_yaml,
@@ -2336,7 +2669,10 @@ fn validate_release_workflow_source(source: &str) -> Result<()> {
     for required in [
         "cosign sign-blob",
         "cosign verify-blob",
-        ".manifest",
+        ".provenance.toml",
+        ".provenance.sigstore.json",
+        "cp \"$payload\" \"$statement\"",
+        "test ! -e \"$bundle\"",
         "--certificate-github-workflow-trigger push",
         "--certificate-github-workflow-name \"Build Prebuilt Binaries (boxdd-sys)\"",
     ] {
@@ -2351,7 +2687,7 @@ fn validate_release_workflow_source(source: &str) -> Result<()> {
         .any(|command| command.contains(".link"))
     {
         return Err(Error::message(
-            "attest must sign canonical provenance manifests, not bare link payloads",
+            "attest must sign canonical provenance statements, not bare link payloads",
         ));
     }
 
@@ -2391,6 +2727,7 @@ fn validate_release_workflow_source(source: &str) -> Result<()> {
         "git/tags/${object_sha}",
         "test \"${object_type}\" = \"commit\"",
         "test \"${object_sha}\" = \"${GITHUB_SHA}\"",
+        "test \"${#assets[@]}\" -eq 41",
         "--verify-tag",
     ] {
         require_job_command_fragment(
@@ -4059,6 +4396,11 @@ fn collect_files(root: &Path) -> Result<Vec<PathBuf>> {
                 pending.push(entry.path());
             } else if kind.is_file() {
                 files.push(entry.path());
+            } else {
+                return Err(Error::message(format!(
+                    "release input cannot contain special filesystem entries: {}",
+                    entry.path().display()
+                )));
             }
         }
     }
@@ -4142,10 +4484,60 @@ mod tests {
         for (name, bytes) in entries {
             let mut header = tar::Header::new_gnu();
             header.set_mode(0o644);
+            header.set_mtime(0);
+            header.set_uid(0);
+            header.set_gid(0);
             header.set_size(bytes.len() as u64);
             header.set_cksum();
             archive.append_data(&mut header, *name, *bytes).unwrap();
         }
+        archive.finish().unwrap();
+    }
+
+    fn read_gzip_payload(path: &Path) -> Vec<u8> {
+        let mut decoder = flate2::read::GzDecoder::new(fs::File::open(path).unwrap());
+        let mut bytes = Vec::new();
+        decoder.read_to_end(&mut bytes).unwrap();
+        bytes
+    }
+
+    fn write_gzip_payload(path: &Path, bytes: &[u8]) {
+        let file = fs::File::create(path).unwrap();
+        let mut encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+        encoder.write_all(bytes).unwrap();
+        encoder.finish().unwrap();
+    }
+
+    fn write_metadata_tar_fixture(path: &Path, entry_type: tar::EntryType) {
+        let file = fs::File::create(path).unwrap();
+        let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+        let mut archive = tar::Builder::new(encoder);
+        let metadata_bytes = if entry_type.is_gnu_longname() || entry_type.is_gnu_longlink() {
+            b"a\0".as_slice()
+        } else {
+            b"10 path=a\n".as_slice()
+        };
+        let mut metadata = tar::Header::new_gnu();
+        metadata.set_entry_type(entry_type);
+        metadata.set_mode(0o644);
+        metadata.set_mtime(0);
+        metadata.set_uid(0);
+        metadata.set_gid(0);
+        metadata.set_size(metadata_bytes.len() as u64);
+        metadata.set_cksum();
+        archive
+            .append_data(&mut metadata, "metadata", metadata_bytes)
+            .unwrap();
+        let mut file = tar::Header::new_gnu();
+        file.set_mode(0o644);
+        file.set_mtime(0);
+        file.set_uid(0);
+        file.set_gid(0);
+        file.set_size(3);
+        file.set_cksum();
+        archive
+            .append_data(&mut file, "a", b"one".as_slice())
+            .unwrap();
         archive.finish().unwrap();
     }
 
@@ -4313,6 +4705,91 @@ mod tests {
     }
 
     #[test]
+    fn release_file_set_requires_exact_unsigned_and_signed_assets() {
+        let root = PathBuf::from("release-inputs");
+        let archives = expected_artifacts("0.6.0")
+            .into_iter()
+            .map(|artifact| {
+                let name = artifact.archive;
+                let path = root.join(format!("artifact-{name}")).join(&name);
+                (name, path)
+            })
+            .collect::<BTreeMap<_, _>>();
+        let mut unsigned = vec![root.join(CHECKSUMS_FILE)];
+        for (name, archive) in &archives {
+            unsigned.push(archive.clone());
+            unsigned.push(archive.with_file_name(format!("{name}.sha256")));
+        }
+        assert_eq!(unsigned.len(), 21);
+        assert!(require_exact_release_file_set(&unsigned, &archives, &root, false).is_ok());
+
+        let mut signed = unsigned.clone();
+        for (name, archive) in &archives {
+            signed.push(archive.with_file_name(format!("{name}.provenance.toml")));
+            signed.push(archive.with_file_name(format!("{name}.provenance.sigstore.json")));
+        }
+        assert_eq!(signed.len(), 41);
+        assert!(require_exact_release_file_set(&signed, &archives, &root, true).is_ok());
+
+        let mut missing_statement = signed.clone();
+        missing_statement.pop();
+        assert!(
+            require_exact_release_file_set(&missing_statement, &archives, &root, true).is_err()
+        );
+        let mut legacy = signed;
+        let (name, archive) = archives.iter().next().unwrap();
+        legacy.push(archive.with_file_name(format!("{name}.manifest")));
+        assert!(require_exact_release_file_set(&legacy, &archives, &root, true).is_err());
+    }
+
+    #[test]
+    fn verification_inputs_are_bounded_private_create_new_snapshots() {
+        let temp = TempDir::new().unwrap();
+        let source = temp.path().join("source");
+        let snapshots = temp.path().join("snapshots");
+        fs::create_dir(&snapshots).unwrap();
+        fs::write(&source, b"trusted bytes").unwrap();
+        let (snapshot, bytes) =
+            snapshot_verification_input(&source, &snapshots, "statement.toml", 64, "fixture")
+                .unwrap();
+        assert_eq!(bytes, b"trusted bytes");
+        assert_eq!(fs::read(snapshot).unwrap(), b"trusted bytes");
+        fs::write(&source, b"changed bytes").unwrap();
+        assert_eq!(bytes, b"trusted bytes");
+        assert!(
+            snapshot_verification_input(&source, &snapshots, "statement.toml", 64, "fixture",)
+                .is_err(),
+            "snapshot helper overwrote an existing private input"
+        );
+        assert!(
+            snapshot_verification_input(&source, &snapshots, "oversized", 2, "fixture").is_err()
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            let link = temp.path().join("source-link");
+            symlink(&source, &link).unwrap();
+            assert!(snapshot_verification_input(&link, &snapshots, "link", 64, "fixture").is_err());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn release_file_collection_rejects_special_entries() {
+        use std::os::unix::net::UnixListener;
+
+        let temp = TempDir::new().unwrap();
+        fs::write(temp.path().join("regular"), b"bytes").unwrap();
+        let socket = temp.path().join("socket");
+        let _listener = UnixListener::bind(&socket).unwrap();
+        assert!(
+            collect_files(temp.path()).is_err(),
+            "release input traversal silently ignored a Unix socket"
+        );
+    }
+
+    #[test]
     fn archive_layout_rejects_missing_and_extra_files() {
         let expected = BTreeSet::from(["manifest.toml".to_owned(), "lib/libbox2d.a".to_owned()]);
         assert!(require_exact_archive_paths(&expected, &expected, Path::new("ok.tar.gz")).is_ok());
@@ -4360,6 +4837,45 @@ mod tests {
         let files = read_release_archive(&valid, &expected, &output).unwrap();
         assert_eq!(files["a"], b"one");
 
+        let canonical_tar = read_gzip_payload(&valid);
+        assert!(canonical_tar.ends_with(&[0; 1024]));
+        let missing_terminator = temp.path().join("missing-terminator.tar.gz");
+        write_gzip_payload(
+            &missing_terminator,
+            &canonical_tar[..canonical_tar.len() - TAR_BLOCK_BYTES as usize],
+        );
+        let output = temp.path().join("missing-terminator-output");
+        fs::create_dir(&output).unwrap();
+        assert!(read_release_archive(&missing_terminator, &expected, &output).is_err());
+
+        let extra_terminator = temp.path().join("extra-terminator.tar.gz");
+        let mut extra_tar = canonical_tar;
+        extra_tar.extend_from_slice(&[0; TAR_BLOCK_BYTES as usize]);
+        write_gzip_payload(&extra_terminator, &extra_tar);
+        let output = temp.path().join("extra-terminator-output");
+        fs::create_dir(&output).unwrap();
+        assert!(read_release_archive(&extra_terminator, &expected, &output).is_err());
+
+        let trailing = temp.path().join("trailing.tar.gz");
+        fs::copy(&valid, &trailing).unwrap();
+        fs::OpenOptions::new()
+            .append(true)
+            .open(&trailing)
+            .unwrap()
+            .write_all(b"trailing")
+            .unwrap();
+        let output = temp.path().join("trailing-output");
+        fs::create_dir(&output).unwrap();
+        assert!(read_release_archive(&trailing, &expected, &output).is_err());
+
+        let second_member = temp.path().join("second-member.tar.gz");
+        let mut first = fs::read(&valid).unwrap();
+        first.extend_from_slice(&fs::read(&valid).unwrap());
+        fs::write(&second_member, first).unwrap();
+        let output = temp.path().join("second-member-output");
+        fs::create_dir(&output).unwrap();
+        assert!(read_release_archive(&second_member, &expected, &output).is_err());
+
         for (name, entries) in [
             (
                 "unsorted",
@@ -4397,6 +4913,44 @@ mod tests {
             )
             .is_err()
         );
+
+        let metadata = temp.path().join("metadata.tar.gz");
+        let file = fs::File::create(&metadata).unwrap();
+        let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+        let mut archive = tar::Builder::new(encoder);
+        let mut header = tar::Header::new_gnu();
+        header.set_mode(0o755);
+        header.set_mtime(0);
+        header.set_uid(0);
+        header.set_gid(0);
+        header.set_size(3);
+        header.set_cksum();
+        archive
+            .append_data(&mut header, "a", b"one".as_slice())
+            .unwrap();
+        archive.finish().unwrap();
+        let output = temp.path().join("metadata-output");
+        fs::create_dir(&output).unwrap();
+        assert!(
+            read_release_archive(&metadata, &BTreeSet::from(["a".to_owned()]), &output,).is_err()
+        );
+
+        for (name, entry_type) in [
+            ("pax", tar::EntryType::XHeader),
+            ("global-pax", tar::EntryType::XGlobalHeader),
+            ("gnu-long-name", tar::EntryType::GNULongName),
+            ("gnu-long-link", tar::EntryType::GNULongLink),
+        ] {
+            let metadata = temp.path().join(format!("{name}.tar.gz"));
+            write_metadata_tar_fixture(&metadata, entry_type);
+            let output = temp.path().join(format!("{name}-output"));
+            fs::create_dir(&output).unwrap();
+            assert!(
+                read_release_archive(&metadata, &BTreeSet::from(["a".to_owned()]), &output)
+                    .is_err(),
+                "raw archive reader accepted hidden metadata entry {name}"
+            );
+        }
     }
 
     #[test]

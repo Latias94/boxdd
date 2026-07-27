@@ -90,6 +90,7 @@ fn generate_provider_policy_sources() {
         "rust-toolchain.toml",
         "boxdd-sys/Cargo.toml",
         "boxdd-sys/build.rs",
+        "boxdd-sys/src/prebuilt_provenance.rs",
         "boxdd-sys/src/provider_archive.rs",
         "boxdd-sys/src/provider_manifest.rs",
         "boxdd-sys/src/source_overlay.rs",

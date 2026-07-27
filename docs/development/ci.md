@@ -128,8 +128,11 @@ and are not suppressed.
 the normalized manifests, project and upstream licenses, the crate-owned Sigstore root, and runs
 fresh consumers whose lockfiles must resolve every internal crate from that registry.
 `release-contract` additionally checks the protected tag/commit, exact
-Box2D submodule checkout, clean source state, archive ABI/symbol identity, canonical manifest
-signatures (including the archive digest and CRT/SIMD coordinates), and signature workflow policy.
+Box2D submodule checkout, clean source state, archive ABI/symbol identity, canonical provenance
+statement signatures, and signature workflow policy. Each statement binds the outer archive's
+exact file name, size, and SHA-256; its strict complete member inventory and per-member digests;
+the provider manifest and inner checksums digests; provider and ABI coordinates; and the
+repository, workflow, workflow ref, source commit, release tag, run ID, and run attempt.
 Release archive parsing rejects non-canonical entries and bounds each entry, the returned file
 total, the entry count, and the complete decompressed tar stream, including metadata headers.
 Release artifact names include both `github.run_id` and `github.run_attempt` so a rerun cannot
@@ -168,18 +171,28 @@ branch run.
 The protected prebuilt workflow builds ten target/precision/CRT artifacts once while the reusable
 qualification runs independently. The read-only aggregate job requires both results and validates
 the qualification receipt against the release `github.sha` before checking out or executing
-repository code. Only then may the workflow sign the canonical manifests and qualify every artifact
-with fresh consumers under both Rust 1.95.0 and 1.97.1. Each qualification coordinate uses the
-selected toolchain explicitly for `cargo package`, `cargo generate-lockfile`, `cargo metadata
---locked`, and `cargo build`, and consumes the packaged crate source rather than the checkout
-dependency. The helper selects exactly one downloaded target/precision/CRT archive, adjacent Sigstore
-bundle, and resolved Cosign executable. The provider itself receives only those already-local
-verified inputs; it has no downloader, fallback, or provider cache. Before invoking Cargo, the
-helper removes ambient provider, runner, compiler-wrapper, Rust flags, C toolchain, bindgen,
-`RUSTC_BOOTSTRAP`, and unstable-Cargo overrides, sets the isolated Cargo home, and runs every Cargo
-command from the isolated temporary root so checkout-local configuration is outside Cargo's search
-path. Runtime identity and receipt
+repository code. Only then may the workflow generate and sign the canonical TOML provenance
+statements and qualify every artifact with fresh consumers under both Rust 1.95.0 and 1.97.1.
+Each qualification coordinate uses the selected toolchain explicitly for `cargo package`,
+`cargo generate-lockfile`, `cargo metadata --locked`, and `cargo build`, and consumes the packaged
+crate source rather than the checkout dependency. The helper selects exactly one downloaded
+target/precision/CRT archive, its adjacent
+`<archive>.provenance.toml` statement and `<archive>.provenance.sigstore.json` bundle, and the
+resolved Cosign executable. It snapshots those inputs, verifies the statement signature and exact
+outer package identity, and only then performs bounded extraction. The `boxdd-sys` build receives
+only already-local extracted inputs, re-verifies the signed statement, provider manifest, and
+complete extracted member inventory, and links the exact verified archive bytes. It has no
+downloader, extractor, fallback, or provider cache. Before invoking Cargo, the helper removes
+ambient provider, runner, compiler-wrapper, Rust flags, C toolchain, bindgen, `RUSTC_BOOTSTRAP`, and
+unstable-Cargo overrides, sets the isolated Cargo home, and runs every Cargo command from the
+isolated temporary root so checkout-local configuration is outside Cargo's search path. Runtime
+identity and receipt
 variables are absent from every Cargo process and exist only for the direct consumer execution.
+
+The protected draft release contains exactly 41 assets: ten archives, ten archive checksum
+sidecars, ten canonical provenance statements, ten Sigstore bundles, and one aggregate
+`SHA256SUMS`. For an official prebuilt provider, `PROVIDER_PROVENANCE_SHA256` identifies the signed
+statement bytes rather than the bundle.
 
 For local development against a dirty checkout, the helper accepts an explicit `--allow-dirty`
 flag so `cargo package` can exercise uncommitted source. The CI and protected release workflows do

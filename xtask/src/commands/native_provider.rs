@@ -13,8 +13,14 @@ use flate2::read::GzDecoder;
 
 use crate::{
     Error, Result,
+    prebuilt_provenance::{MAX_PACKAGE_BYTES, PrebuiltProvenanceStatement},
+    provenance_policy::{
+        self, COSIGN_VERSION, PUBLISHER_REPOSITORY, PUBLISHER_WORKFLOW,
+        SIGSTORE_TRUSTED_ROOT_RELATIVE_PATH, SIGSTORE_TRUSTED_ROOT_SHA256,
+    },
     provider_archive::{ArchiveExpectation, verify_provider_archive},
     provider_manifest,
+    qualified_git::qualified_git_command,
     source_overlay::effective_source_identity,
 };
 
@@ -26,6 +32,9 @@ const TAR_BLOCK_BYTES: u64 = 512;
 const MAX_ARCHIVE_STREAM_BYTES: u64 = MAX_ARCHIVE_TOTAL_BYTES
     + (MAX_ARCHIVE_ENTRIES as u64 * TAR_BLOCK_BYTES * 2)
     + (TAR_BLOCK_BYTES * 2);
+const MAX_PROVENANCE_STATEMENT_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_SIGSTORE_BUNDLE_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_TRUSTED_ROOT_BYTES: u64 = 4 * 1024 * 1024;
 const CONSUMER_NAME: &str = "boxdd-native-provider-consumer";
 
 struct BoundedReader<R> {
@@ -269,6 +278,7 @@ impl CommandEnvironment {
             "BOX2D_LIB_DIR",
             "BOXDD_SYS_SYSTEM_MANIFEST",
             "BOXDD_SYS_PREBUILT_MANIFEST",
+            "BOXDD_SYS_PREBUILT_PROVENANCE",
             "BOXDD_SYS_PREBUILT_BUNDLE",
             "BOXDD_SYS_PREBUILT_TRUSTED_ROOT",
             "BOXDD_SYS_COSIGN",
@@ -379,6 +389,25 @@ fn qualify(root: &Path, options: &Options) -> Result<()> {
     validate_cargo_configuration_isolation(&scratch_root, &cargo_home)?;
 
     let version = workspace_version(&checkout)?;
+    let checkout_commit = if options.provider == Provider::Prebuilt {
+        Some(qualified_checkout_commit(&checkout)?)
+    } else {
+        None
+    };
+    let prepared_prebuilt = if options.provider == Provider::Prebuilt {
+        Some(prepare_prebuilt_provider(
+            options,
+            &version,
+            checkout_commit
+                .as_deref()
+                .expect("prebuilt qualification must resolve one checkout commit"),
+            &checkout.join("boxdd-sys"),
+            &scratch_root,
+            &checkout,
+        )?)
+    } else {
+        None
+    };
     let crate_archive =
         package_boxdd_sys(&checkout, &scratch_root, &cargo_home, options, &version)?;
     let crate_extract = scratch_root.join("crate-extract");
@@ -404,7 +433,23 @@ fn qualify(root: &Path, options: &Options) -> Result<()> {
         &checkout,
     )?;
 
-    let prepared = prepare_provider(options, &version, &crate_root, &scratch_root, &checkout)?;
+    let prepared = match prepared_prebuilt {
+        Some(prepared) => {
+            revalidate_prebuilt_provider(
+                &prepared,
+                options,
+                &version,
+                checkout_commit
+                    .as_deref()
+                    .expect("prebuilt qualification must retain its checkout commit"),
+                &crate_root,
+                &scratch_root,
+                &checkout,
+            )?;
+            prepared
+        }
+        None => prepare_system_provider(options, &version, &crate_root, &checkout)?,
+    };
     let target_dir = scratch_root.join(format!(
         "target-{}-{}-{}-{}",
         options.provider.as_str(),
@@ -509,6 +554,36 @@ fn workspace_version(root: &Path) -> Result<String> {
         .ok_or_else(|| Error::message("workspace.package.version is required"))
 }
 
+fn qualified_checkout_commit(root: &Path) -> Result<String> {
+    let mut command = qualified_git_command().map_err(Error::message)?;
+    let output = command
+        .arg("-C")
+        .arg(root)
+        .args(["rev-parse", "--verify", "HEAD^{commit}"])
+        .output()
+        .map_err(|error| Error::io("resolve native qualification checkout commit", error))?;
+    if !output.status.success() {
+        return Err(Error::message(format!(
+            "failed to resolve native qualification checkout commit: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    let commit = String::from_utf8(output.stdout)
+        .map_err(|error| Error::message(format!("Git returned a non-UTF-8 commit: {error}")))?
+        .trim()
+        .to_owned();
+    if commit.len() != 40
+        || !commit
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(Error::message(format!(
+            "native qualification checkout commit must be a lowercase 40-character Git SHA; found {commit:?}"
+        )));
+    }
+    Ok(commit)
+}
+
 fn package_boxdd_sys(
     checkout: &Path,
     scratch: &Path,
@@ -586,7 +661,16 @@ fn extract_archive(archive_path: &Path, output: &Path, required_root: Option<&st
         )));
     }
     let file = File::open(archive_path).map_err(|error| Error::io(archive_path, error))?;
-    let decoder = GzDecoder::new(file);
+    extract_archive_reader(file, archive_path, output, required_root)
+}
+
+fn extract_archive_reader<R: Read>(
+    compressed: R,
+    archive_path: &Path,
+    output: &Path,
+    required_root: Option<&str>,
+) -> Result<()> {
+    let decoder = GzDecoder::new(compressed);
     let mut archive = tar::Archive::new(BoundedReader::new(decoder, MAX_ARCHIVE_STREAM_BYTES));
     let entries = archive.entries().map_err(|error| {
         Error::message(format!(
@@ -995,6 +1079,8 @@ struct PreparedProvider {
     provider: Provider,
     root: PathBuf,
     manifest: PathBuf,
+    archive: Option<PathBuf>,
+    provenance: Option<PathBuf>,
     bundle: Option<PathBuf>,
     cosign: Option<PathBuf>,
     manifest_sha256: String,
@@ -1021,6 +1107,13 @@ impl PreparedProvider {
             }
             Provider::Prebuilt => {
                 environment.set("BOXDD_SYS_PREBUILT_MANIFEST", self.manifest.as_os_str());
+                environment.set(
+                    "BOXDD_SYS_PREBUILT_PROVENANCE",
+                    self.provenance
+                        .as_deref()
+                        .expect("prebuilt preparation must bind one provenance statement")
+                        .as_os_str(),
+                );
                 environment.set(
                     "BOXDD_SYS_PREBUILT_BUNDLE",
                     self.bundle
@@ -1114,13 +1207,57 @@ fn validate_execution_receipt(receipt: &Path, nonce: &str, scratch: &Path) -> Re
     }
 }
 
-fn prepare_provider(
+fn prepare_system_provider(
     options: &Options,
     version: &str,
     crate_root: &Path,
+    checkout: &Path,
+) -> Result<PreparedProvider> {
+    if options.provider != Provider::System {
+        return Err(Error::message(
+            "system provider preparation received a non-system provider",
+        ));
+    }
+    let artifacts = canonicalize(&options.artifacts, "native provider artifact directory")?;
+    if !artifacts.is_dir() {
+        return Err(Error::message(format!(
+            "native provider artifacts must be a directory: {}",
+            artifacts.display()
+        )));
+    }
+    require_outside(&artifacts, checkout, "native provider artifact directory")?;
+    let manifest = artifacts.join("manifest.toml");
+    let identity = validate_provider_manifest(
+        &manifest, &artifacts, options, version, crate_root, checkout,
+    )?;
+    Ok(PreparedProvider {
+        provider: Provider::System,
+        root: artifacts,
+        manifest,
+        archive: None,
+        provenance: None,
+        bundle: None,
+        cosign: None,
+        manifest_sha256: identity.manifest_sha256,
+        archive_sha256: identity.archive_sha256,
+        provenance_sha256: String::new(),
+        trusted_root_sha256: String::new(),
+    })
+}
+
+fn prepare_prebuilt_provider(
+    options: &Options,
+    version: &str,
+    checkout_commit: &str,
+    checkout_crate_root: &Path,
     scratch: &Path,
     checkout: &Path,
 ) -> Result<PreparedProvider> {
+    if options.provider != Provider::Prebuilt {
+        return Err(Error::message(
+            "prebuilt provider preparation received a non-prebuilt provider",
+        ));
+    }
     let artifacts = canonicalize(&options.artifacts, "native provider artifact directory")?;
     if !artifacts.is_dir() {
         return Err(Error::message(format!(
@@ -1130,63 +1267,484 @@ fn prepare_provider(
     }
     require_outside(&artifacts, checkout, "native provider artifact directory")?;
 
-    let (root, bundle, cosign) = match options.provider {
-        Provider::System => (artifacts, None, None),
-        Provider::Prebuilt => {
-            let archive_name = prebuilt_archive_name(version, options);
-            let archive = find_exact_regular_file(&artifacts, &archive_name)?;
-            let bundle = adjacent_bundle(&archive)?;
-            require_contained(&bundle, &artifacts, "prebuilt Sigstore bundle")?;
-            let extraction = scratch.join("prebuilt-artifact");
-            fs::create_dir(&extraction).map_err(|error| Error::io(&extraction, error))?;
-            extract_archive(&archive, &extraction, None)?;
-            let extraction = canonicalize(&extraction, "prebuilt artifact extraction root")?;
-            require_contained(&extraction, scratch, "prebuilt artifact extraction root")?;
-            require_outside(&extraction, checkout, "prebuilt artifact extraction root")?;
-            let cosign = resolve_executable(
-                options
-                    .cosign
-                    .as_deref()
-                    .expect("validated prebuilt options must include Cosign"),
-            )?;
-            (extraction, Some(bundle), Some(cosign))
-        }
-    };
-    let manifest = root.join("manifest.toml");
-    let identity =
-        validate_provider_manifest(&manifest, &root, options, version, crate_root, checkout)?;
-    let (provenance_sha256, trusted_root_sha256) = match options.provider {
-        Provider::System => (String::new(), String::new()),
-        Provider::Prebuilt => {
-            let bundle = bundle
-                .as_deref()
-                .expect("prebuilt preparation must contain a bundle");
-            let provenance = provider_manifest::sha256_file(bundle).map_err(Error::message)?;
-            let trusted_root = crate_root.join("security/sigstore/trusted_root.json");
-            let trusted_root = canonicalize(&trusted_root, "packaged Sigstore trusted root")?;
-            require_contained(&trusted_root, crate_root, "packaged Sigstore trusted root")?;
-            require_contained(&trusted_root, scratch, "packaged Sigstore trusted root")?;
-            require_outside(&trusted_root, checkout, "packaged Sigstore trusted root")?;
-            let trusted = provider_manifest::sha256_file(&trusted_root).map_err(Error::message)?;
-            if trusted != crate::provenance_policy::SIGSTORE_TRUSTED_ROOT_SHA256 {
-                return Err(Error::message(format!(
-                    "packaged Sigstore trusted root digest {trusted} does not match the qualified root"
-                )));
-            }
-            (provenance, trusted)
-        }
-    };
+    let archive_name = prebuilt_archive_name(version, options);
+    let archive_source = find_exact_regular_file(&artifacts, &archive_name)?;
+    let provenance_source =
+        adjacent_prebuilt_input(&archive_source, ".provenance.toml", "provenance statement")?;
+    let bundle_source = adjacent_prebuilt_input(
+        &archive_source,
+        ".provenance.sigstore.json",
+        "Sigstore bundle",
+    )?;
+    require_contained(
+        &provenance_source,
+        &artifacts,
+        "prebuilt provenance statement",
+    )?;
+    require_contained(&bundle_source, &artifacts, "prebuilt Sigstore bundle")?;
+
+    let private_inputs = scratch.join("prebuilt-inputs");
+    fs::create_dir(&private_inputs).map_err(|error| Error::io(&private_inputs, error))?;
+    let private_inputs = canonicalize(&private_inputs, "private prebuilt input directory")?;
+    require_contained(&private_inputs, scratch, "private prebuilt input directory")?;
+    require_outside(
+        &private_inputs,
+        checkout,
+        "private prebuilt input directory",
+    )?;
+    let archive = snapshot_bounded_regular_file(
+        &archive_source,
+        &private_inputs.join(&archive_name),
+        MAX_PACKAGE_BYTES,
+        "prebuilt package",
+    )?;
+    let provenance_name = format!("{archive_name}.provenance.toml");
+    let provenance = snapshot_bounded_regular_file(
+        &provenance_source,
+        &private_inputs.join(provenance_name),
+        MAX_PROVENANCE_STATEMENT_BYTES,
+        "prebuilt provenance statement",
+    )?;
+    let bundle_name = format!("{archive_name}.provenance.sigstore.json");
+    let bundle = snapshot_bounded_regular_file(
+        &bundle_source,
+        &private_inputs.join(bundle_name),
+        MAX_SIGSTORE_BUNDLE_BYTES,
+        "prebuilt Sigstore bundle",
+    )?;
+
+    let statement =
+        read_and_validate_prebuilt_statement(&provenance, options, version, checkout_commit)?;
+    let cosign = resolve_executable(
+        options
+            .cosign
+            .as_deref()
+            .expect("validated prebuilt options must include Cosign"),
+    )?;
+    verify_cosign_version(&cosign)?;
+    let (checkout_trusted_root, trusted_root_sha256) = snapshot_crate_trusted_root(
+        checkout_crate_root,
+        &private_inputs.join("trusted-root.checkout.json"),
+        "checkout crate-owned Sigstore trusted root",
+    )?;
+    verify_prebuilt_signature(
+        &cosign,
+        &provenance,
+        &bundle,
+        &checkout_trusted_root,
+        &statement,
+    )?;
+
+    let extraction = scratch.join("prebuilt-artifact");
+    extract_authenticated_prebuilt(&statement, &archive, &extraction)?;
+    let extraction = canonicalize(&extraction, "prebuilt artifact extraction root")?;
+    require_contained(&extraction, scratch, "prebuilt artifact extraction root")?;
+    require_outside(&extraction, checkout, "prebuilt artifact extraction root")?;
+    validate_signed_provider_tree(&statement, &extraction)?;
+    let manifest = extraction.join("manifest.toml");
+    let identity = validate_provider_manifest(
+        &manifest,
+        &extraction,
+        options,
+        version,
+        checkout_crate_root,
+        checkout,
+    )?;
+    let provenance_sha256 = provider_manifest::sha256_file(&provenance).map_err(Error::message)?;
+
     Ok(PreparedProvider {
-        provider: options.provider,
-        root,
+        provider: Provider::Prebuilt,
+        root: extraction,
         manifest,
-        bundle,
-        cosign,
+        archive: Some(archive),
+        provenance: Some(provenance),
+        bundle: Some(bundle),
+        cosign: Some(cosign),
         manifest_sha256: identity.manifest_sha256,
         archive_sha256: identity.archive_sha256,
         provenance_sha256,
         trusted_root_sha256,
     })
+}
+
+fn revalidate_prebuilt_provider(
+    prepared: &PreparedProvider,
+    options: &Options,
+    version: &str,
+    checkout_commit: &str,
+    packaged_crate_root: &Path,
+    scratch: &Path,
+    checkout: &Path,
+) -> Result<()> {
+    if prepared.provider != Provider::Prebuilt || options.provider != Provider::Prebuilt {
+        return Err(Error::message(
+            "packaged prebuilt revalidation requires a prebuilt provider",
+        ));
+    }
+    validate_packaged_prebuilt_policy(packaged_crate_root, checkout)?;
+    let provenance = prepared
+        .provenance
+        .as_deref()
+        .ok_or_else(|| Error::message("prebuilt preparation omitted its provenance statement"))?;
+    let current_checkout_commit = qualified_checkout_commit(checkout)?;
+    if current_checkout_commit != checkout_commit {
+        return Err(Error::message(format!(
+            "checkout HEAD changed during prebuilt qualification: expected {checkout_commit}, found {current_checkout_commit}"
+        )));
+    }
+    let statement =
+        read_and_validate_prebuilt_statement(provenance, options, version, checkout_commit)?;
+    let archive = prepared
+        .archive
+        .as_deref()
+        .ok_or_else(|| Error::message("prebuilt preparation omitted its package snapshot"))?;
+    let bundle = prepared
+        .bundle
+        .as_deref()
+        .ok_or_else(|| Error::message("prebuilt preparation omitted its Sigstore bundle"))?;
+    let cosign = prepared
+        .cosign
+        .as_deref()
+        .ok_or_else(|| Error::message("prebuilt preparation omitted its Cosign executable"))?;
+    verify_cosign_version(cosign)?;
+    let packaged_trusted_root_destination = scratch
+        .join("prebuilt-inputs")
+        .join("trusted-root.packaged.json");
+    let (packaged_trusted_root, trusted_root_sha256) = snapshot_crate_trusted_root(
+        packaged_crate_root,
+        &packaged_trusted_root_destination,
+        "packaged crate-owned Sigstore trusted root",
+    )?;
+    if trusted_root_sha256 != prepared.trusted_root_sha256 {
+        return Err(Error::message(
+            "packaged crate-owned Sigstore trusted root changed after checkout qualification",
+        ));
+    }
+    verify_prebuilt_signature(
+        cosign,
+        provenance,
+        bundle,
+        &packaged_trusted_root,
+        &statement,
+    )?;
+    statement.verify_outer_package(archive).map_err(|error| {
+        Error::message(format!(
+            "packaged qualification prebuilt package mismatch: {error}"
+        ))
+    })?;
+    validate_signed_provider_tree(&statement, &prepared.root)?;
+    let identity = validate_provider_manifest(
+        &prepared.manifest,
+        &prepared.root,
+        options,
+        version,
+        packaged_crate_root,
+        checkout,
+    )?;
+    if identity.manifest_sha256 != prepared.manifest_sha256
+        || identity.archive_sha256 != prepared.archive_sha256
+    {
+        return Err(Error::message(
+            "provider identity changed between checkout and packaged-crate qualification",
+        ));
+    }
+    Ok(())
+}
+
+fn snapshot_bounded_regular_file(
+    source: &Path,
+    destination: &Path,
+    maximum_bytes: u64,
+    label: &str,
+) -> Result<PathBuf> {
+    let source_metadata = fs::symlink_metadata(source).map_err(|error| Error::io(source, error))?;
+    if !source_metadata.file_type().is_file() || source_metadata.file_type().is_symlink() {
+        return Err(Error::message(format!(
+            "{label} must be a regular non-symlink file: {}",
+            source.display()
+        )));
+    }
+    if source_metadata.len() == 0 || source_metadata.len() > maximum_bytes {
+        return Err(Error::message(format!(
+            "{label} size {} is outside the accepted 1..={maximum_bytes} byte range",
+            source_metadata.len()
+        )));
+    }
+    let mut input = File::open(source).map_err(|error| Error::io(source, error))?;
+    let opened_metadata = input.metadata().map_err(|error| Error::io(source, error))?;
+    if !opened_metadata.is_file() || opened_metadata.len() != source_metadata.len() {
+        return Err(Error::message(format!(
+            "{label} changed while it was being opened for snapshotting: {}",
+            source.display()
+        )));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        if opened_metadata.dev() != source_metadata.dev()
+            || opened_metadata.ino() != source_metadata.ino()
+        {
+            return Err(Error::message(format!(
+                "{label} changed while it was being opened for snapshotting: {}",
+                source.display()
+            )));
+        }
+    }
+    let mut output = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(destination)
+        .map_err(|error| Error::io(destination, error))?;
+    let copied = io::copy(
+        &mut Read::by_ref(&mut input).take(maximum_bytes + 1),
+        &mut output,
+    )
+    .map_err(|error| Error::io(destination, error))?;
+    if copied != source_metadata.len() {
+        return Err(Error::message(format!(
+            "{label} changed while its exact bytes were being snapshotted: {}",
+            source.display()
+        )));
+    }
+    output
+        .flush()
+        .map_err(|error| Error::io(destination, error))?;
+    let destination = canonicalize(destination, &format!("private {label} snapshot"))?;
+    let destination_metadata =
+        fs::symlink_metadata(&destination).map_err(|error| Error::io(&destination, error))?;
+    if !destination_metadata.file_type().is_file()
+        || destination_metadata.file_type().is_symlink()
+        || destination_metadata.len() != copied
+    {
+        return Err(Error::message(format!(
+            "private {label} snapshot is not the exact regular file written: {}",
+            destination.display()
+        )));
+    }
+    Ok(destination)
+}
+
+fn read_and_validate_prebuilt_statement(
+    path: &Path,
+    options: &Options,
+    version: &str,
+    checkout_commit: &str,
+) -> Result<PrebuiltProvenanceStatement> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| Error::io(path, error))?;
+    if !metadata.file_type().is_file()
+        || metadata.file_type().is_symlink()
+        || metadata.len() == 0
+        || metadata.len() > MAX_PROVENANCE_STATEMENT_BYTES
+    {
+        return Err(Error::message(format!(
+            "prebuilt provenance statement must be a bounded regular non-symlink file: {}",
+            path.display()
+        )));
+    }
+    let bytes = fs::read(path).map_err(|error| Error::io(path, error))?;
+    if bytes.len() as u64 != metadata.len() {
+        return Err(Error::message(
+            "prebuilt provenance statement changed while it was being read",
+        ));
+    }
+    let statement = PrebuiltProvenanceStatement::parse_canonical(&bytes).map_err(|error| {
+        Error::message(format!("invalid prebuilt provenance statement: {error}"))
+    })?;
+    statement
+        .validate_publisher(PUBLISHER_REPOSITORY, PUBLISHER_WORKFLOW)
+        .map_err(|error| {
+            Error::message(format!("untrusted prebuilt provenance statement: {error}"))
+        })?;
+    if statement.source_commit != checkout_commit {
+        return Err(Error::message(format!(
+            "prebuilt provenance source commit {} does not match qualified checkout HEAD {checkout_commit}",
+            statement.source_commit
+        )));
+    }
+    if statement.crate_version != version
+        || statement.target != options.target
+        || statement.precision != options.precision.as_str()
+        || statement.crt != options.crt
+    {
+        return Err(Error::message(format!(
+            "prebuilt provenance coordinates {}/{}/{}/{} do not match requested {version}/{}/{}/{}",
+            statement.crate_version,
+            statement.target,
+            statement.precision,
+            statement.crt,
+            options.target,
+            options.precision.as_str(),
+            options.crt,
+        )));
+    }
+    Ok(statement)
+}
+
+fn snapshot_crate_trusted_root(
+    crate_root: &Path,
+    destination: &Path,
+    label: &str,
+) -> Result<(PathBuf, String)> {
+    let crate_root = canonicalize(crate_root, "crate root for Sigstore policy")?;
+    let source = crate_root.join(SIGSTORE_TRUSTED_ROOT_RELATIVE_PATH);
+    let metadata = fs::symlink_metadata(&source).map_err(|error| Error::io(&source, error))?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        return Err(Error::message(format!(
+            "{label} must be a regular non-symlink file: {}",
+            source.display()
+        )));
+    }
+    let source = canonicalize(&source, label)?;
+    require_contained(&source, &crate_root, label)?;
+    let snapshot =
+        snapshot_bounded_regular_file(&source, destination, MAX_TRUSTED_ROOT_BYTES, label)?;
+    let digest = provider_manifest::sha256_file(&snapshot).map_err(Error::message)?;
+    if digest != SIGSTORE_TRUSTED_ROOT_SHA256 {
+        return Err(Error::message(format!(
+            "{label} digest {digest} does not match the qualified crate-owned trust anchor {SIGSTORE_TRUSTED_ROOT_SHA256}"
+        )));
+    }
+    Ok((snapshot, digest))
+}
+
+fn verify_cosign_version(cosign: &Path) -> Result<()> {
+    let output = Command::new(cosign)
+        .arg("version")
+        .output()
+        .map_err(|error| Error::io(cosign, error))?;
+    if !output.status.success() {
+        return Err(Error::message(format!(
+            "prebuilt qualification requires Cosign {COSIGN_VERSION}; version command failed with {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    let version_text = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    if provenance_policy::cosign_version_is_qualified(&version_text) {
+        Ok(())
+    } else {
+        Err(Error::message(format!(
+            "prebuilt qualification requires exact Cosign {COSIGN_VERSION}; found {}",
+            version_text
+                .lines()
+                .find(|line| !line.trim().is_empty())
+                .unwrap_or("unknown version")
+        )))
+    }
+}
+
+fn verify_prebuilt_signature(
+    cosign: &Path,
+    provenance: &Path,
+    bundle: &Path,
+    trusted_root: &Path,
+    statement: &PrebuiltProvenanceStatement,
+) -> Result<()> {
+    let args = provenance_policy::cosign_verify_blob_args(provenance_policy::PrebuiltProvenance {
+        crate_version: &statement.crate_version,
+        source_commit: &statement.source_commit,
+        release_tag: &statement.release_tag,
+        payload: provenance,
+        bundle,
+        trusted_root,
+    })
+    .map_err(|error| Error::message(format!("invalid prebuilt Sigstore policy input: {error}")))?;
+    let output = Command::new(cosign)
+        .args(args)
+        .output()
+        .map_err(|error| Error::io("verify prebuilt provenance signature", error))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(Error::message(format!(
+            "prebuilt provenance signature verification failed with {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        )))
+    }
+}
+
+fn extract_authenticated_prebuilt(
+    statement: &PrebuiltProvenanceStatement,
+    archive: &Path,
+    extraction: &Path,
+) -> Result<()> {
+    let package_bytes = statement.verify_outer_package(archive).map_err(|error| {
+        Error::message(format!(
+            "prebuilt package does not match signed provenance: {error}"
+        ))
+    })?;
+    fs::create_dir(extraction).map_err(|error| Error::io(extraction, error))?;
+    extract_archive_reader(io::Cursor::new(package_bytes), archive, extraction, None)
+}
+
+fn validate_signed_provider_tree(
+    statement: &PrebuiltProvenanceStatement,
+    root: &Path,
+) -> Result<()> {
+    statement.verify_extracted_root(root).map_err(|error| {
+        Error::message(format!(
+            "prebuilt extracted tree does not match signed provenance: {error}"
+        ))
+    })?;
+    let manifest_path = root.join("manifest.toml");
+    let manifest_bytes =
+        fs::read(&manifest_path).map_err(|error| Error::io(&manifest_path, error))?;
+    statement
+        .validate_provider_manifest(&manifest_bytes)
+        .map_err(|error| {
+            Error::message(format!(
+                "prebuilt provider manifest does not match signed provenance: {error}"
+            ))
+        })?;
+    Ok(())
+}
+
+fn validate_packaged_prebuilt_policy(packaged_crate_root: &Path, checkout: &Path) -> Result<()> {
+    let checkout_crate_root = canonicalize(&checkout.join("boxdd-sys"), "checkout boxdd-sys")?;
+    let packaged_crate_root = canonicalize(packaged_crate_root, "packaged boxdd-sys")?;
+    for relative in [
+        "build.rs",
+        "src/build_support.rs",
+        "src/prebuilt_provenance.rs",
+        "src/provenance_policy.rs",
+        "src/provider_archive.rs",
+        "src/provider_manifest.rs",
+        "src/source_overlay.rs",
+    ] {
+        let checkout_path = checkout_crate_root.join(relative);
+        let packaged_path = packaged_crate_root.join(relative);
+        let checkout_bytes = read_regular_file(&checkout_path, "checkout prebuilt policy input")?;
+        let packaged_bytes = read_regular_file(&packaged_path, "packaged prebuilt policy input")?;
+        if packaged_bytes != checkout_bytes {
+            return Err(Error::message(format!(
+                "packaged prebuilt policy {relative} does not match the qualified checkout"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn read_regular_file(path: &Path, label: &str) -> Result<Vec<u8>> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| Error::io(path, error))?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        return Err(Error::message(format!(
+            "{label} must be a regular non-symlink file: {}",
+            path.display()
+        )));
+    }
+    let bytes = fs::read(path).map_err(|error| Error::io(path, error))?;
+    if bytes.len() as u64 != metadata.len() {
+        return Err(Error::message(format!(
+            "{label} changed while it was being read: {}",
+            path.display()
+        )));
+    }
+    Ok(bytes)
 }
 
 struct ProviderIdentity {
@@ -1358,18 +1916,18 @@ fn find_exact_regular_file(root: &Path, name: &str) -> Result<PathBuf> {
     }
 }
 
-fn adjacent_bundle(archive: &Path) -> Result<PathBuf> {
+fn adjacent_prebuilt_input(archive: &Path, suffix: &str, label: &str) -> Result<PathBuf> {
     let mut name = archive.as_os_str().to_os_string();
-    name.push(".sigstore.json");
+    name.push(suffix);
     let path = PathBuf::from(name);
     let metadata = fs::symlink_metadata(&path).map_err(|error| Error::io(&path, error))?;
     if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
         return Err(Error::message(format!(
-            "prebuilt Sigstore bundle must be a regular adjacent file: {}",
+            "prebuilt {label} must be a regular adjacent non-symlink file: {}",
             path.display()
         )));
     }
-    canonicalize(&path, "prebuilt Sigstore bundle")
+    canonicalize(&path, &format!("prebuilt {label}"))
 }
 
 fn resolve_executable(requested: &Path) -> Result<PathBuf> {
@@ -1755,6 +2313,63 @@ mod tests {
         args
     }
 
+    fn prebuilt_statement(package_name: &str, package_bytes: &[u8]) -> PrebuiltProvenanceStatement {
+        use crate::prebuilt_provenance::{
+            MemberDigest, SCHEMA_NAME, SCHEMA_VERSION, canonical_inner_checksums_bytes,
+            sha256_bytes,
+        };
+
+        let manifest = b"canonical provider manifest";
+        let mut members = vec![
+            MemberDigest {
+                path: "checksums.sha256".to_owned(),
+                size: 0,
+                sha256: "0".repeat(64),
+            },
+            MemberDigest {
+                path: "manifest.toml".to_owned(),
+                size: manifest.len() as u64,
+                sha256: sha256_bytes(manifest),
+            },
+        ];
+        let checksums = canonical_inner_checksums_bytes(&members).unwrap();
+        members[0].size = checksums.len() as u64;
+        members[0].sha256 = sha256_bytes(&checksums);
+        PrebuiltProvenanceStatement {
+            schema_version: SCHEMA_VERSION,
+            schema: SCHEMA_NAME.to_owned(),
+            repository: PUBLISHER_REPOSITORY.to_owned(),
+            workflow: PUBLISHER_WORKFLOW.to_owned(),
+            workflow_ref: format!("{PUBLISHER_REPOSITORY}/{PUBLISHER_WORKFLOW}@refs/tags/v0.6.0"),
+            source_commit: "a".repeat(40),
+            release_tag: "v0.6.0".to_owned(),
+            run_id: "1".to_owned(),
+            run_attempt: "1".to_owned(),
+            crate_version: "0.6.0".to_owned(),
+            package_name: package_name.to_owned(),
+            package_size: package_bytes.len() as u64,
+            package_sha256: sha256_bytes(package_bytes),
+            provider_manifest_sha256: sha256_bytes(manifest),
+            inner_checksums_sha256: sha256_bytes(&checksums),
+            provider: "prebuilt".to_owned(),
+            target: "x86_64-unknown-linux-gnu".to_owned(),
+            precision: "single".to_owned(),
+            link: "static".to_owned(),
+            crt: "none".to_owned(),
+            upstream_sha: "b".repeat(40),
+            effective_source_sha256: "c".repeat(64),
+            simd: "default".to_owned(),
+            validate: false,
+            adapter_abi_version: provider_manifest::ADAPTER_ABI_VERSION,
+            adapter_source_sha256: "d".repeat(64),
+            private_abi_hash: "e".repeat(64),
+            snapshot_layout_hash: 1,
+            recording_contract_blake3: provider_manifest::RECORDING_CONTRACT_BLAKE3.to_owned(),
+            member_count: members.len() as u64,
+            members,
+        }
+    }
+
     #[test]
     fn parser_accepts_only_qualified_provider_coordinates() {
         assert!(
@@ -1841,6 +2456,7 @@ mod tests {
             "CARGO_BUILD_RUSTC",
             "CARGO_BUILD_RUNNER",
             "CARGO_TARGET_DIR",
+            "BOXDD_SYS_PREBUILT_PROVENANCE",
         ] {
             assert!(environment.remove.contains(OsStr::new(key)), "{key}");
         }
@@ -1857,6 +2473,179 @@ mod tests {
                 .find(|(key, _)| key == OsStr::new("CARGO_HOME"))
                 .map(|(_, value)| value.as_os_str()),
             Some(temp.path().as_os_str())
+        );
+    }
+
+    #[test]
+    fn prebuilt_sidecars_require_canonical_provenance_names() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp
+            .path()
+            .join("boxdd-prebuilt-0.6.0-x86_64-unknown-linux-gnu-single-static.tar.gz");
+        fs::write(&archive, b"archive").unwrap();
+        let mut legacy_name = archive.as_os_str().to_os_string();
+        legacy_name.push(".sigstore.json");
+        fs::write(PathBuf::from(legacy_name), b"legacy").unwrap();
+        assert!(
+            adjacent_prebuilt_input(&archive, ".provenance.toml", "provenance statement").is_err()
+        );
+        assert!(
+            adjacent_prebuilt_input(&archive, ".provenance.sigstore.json", "Sigstore bundle")
+                .is_err()
+        );
+
+        let mut provenance_name = archive.as_os_str().to_os_string();
+        provenance_name.push(".provenance.toml");
+        let provenance = PathBuf::from(provenance_name);
+        fs::write(&provenance, b"statement").unwrap();
+        let mut bundle_name = archive.as_os_str().to_os_string();
+        bundle_name.push(".provenance.sigstore.json");
+        let bundle = PathBuf::from(bundle_name);
+        fs::write(&bundle, b"bundle").unwrap();
+        assert_eq!(
+            adjacent_prebuilt_input(&archive, ".provenance.toml", "provenance statement").unwrap(),
+            fs::canonicalize(provenance).unwrap()
+        );
+        assert_eq!(
+            adjacent_prebuilt_input(&archive, ".provenance.sigstore.json", "Sigstore bundle")
+                .unwrap(),
+            fs::canonicalize(bundle).unwrap()
+        );
+    }
+
+    #[test]
+    fn prebuilt_input_snapshot_is_bounded_non_symlink_and_create_new() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        let destination = temp.path().join("snapshot");
+        fs::write(&source, b"exact bytes").unwrap();
+        let snapshot =
+            snapshot_bounded_regular_file(&source, &destination, 32, "test input").unwrap();
+        assert_eq!(fs::read(snapshot).unwrap(), b"exact bytes");
+        assert!(snapshot_bounded_regular_file(&source, &destination, 32, "test input").is_err());
+        assert!(
+            snapshot_bounded_regular_file(&source, &temp.path().join("too-small"), 4, "test input")
+                .is_err()
+        );
+
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&source, temp.path().join("source-link")).unwrap();
+            assert!(
+                snapshot_bounded_regular_file(
+                    &temp.path().join("source-link"),
+                    &temp.path().join("link-snapshot"),
+                    32,
+                    "test input"
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn provenance_statement_rejects_replayed_commit_and_coordinate() {
+        let temp = tempfile::tempdir().unwrap();
+        let package_name = "boxdd-prebuilt-0.6.0-x86_64-unknown-linux-gnu-single-static.tar.gz";
+        let statement = prebuilt_statement(package_name, b"package");
+        let path = temp.path().join(format!("{package_name}.provenance.toml"));
+        fs::write(&path, statement.canonical_bytes().unwrap()).unwrap();
+        let options = Options::parse(&arguments(
+            "prebuilt",
+            "single",
+            "x86_64-unknown-linux-gnu",
+            "none",
+        ))
+        .unwrap();
+        assert!(
+            read_and_validate_prebuilt_statement(&path, &options, "0.6.0", &"a".repeat(40)).is_ok()
+        );
+        assert!(
+            read_and_validate_prebuilt_statement(&path, &options, "0.6.0", &"f".repeat(40))
+                .is_err()
+        );
+        let other_target = Options::parse(&arguments(
+            "prebuilt",
+            "single",
+            "x86_64-apple-darwin",
+            "none",
+        ))
+        .unwrap();
+        assert!(
+            read_and_validate_prebuilt_statement(&path, &other_target, "0.6.0", &"a".repeat(40))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn outer_package_mismatch_is_rejected_before_extraction() {
+        let temp = tempfile::tempdir().unwrap();
+        let package_name = "boxdd-prebuilt-0.6.0-x86_64-unknown-linux-gnu-single-static.tar.gz";
+        let archive = temp.path().join(package_name);
+        write_archive(&archive, &[("manifest.toml", b"manifest")]);
+        let original = fs::read(&archive).unwrap();
+        let statement = prebuilt_statement(package_name, &original);
+        OpenOptions::new()
+            .append(true)
+            .open(&archive)
+            .unwrap()
+            .write_all(b"tampered")
+            .unwrap();
+        let extraction = temp.path().join("must-not-exist");
+        assert!(extract_authenticated_prebuilt(&statement, &archive, &extraction).is_err());
+        assert!(!extraction.exists());
+    }
+
+    #[test]
+    fn prebuilt_build_environment_uses_private_statement_and_bundle_snapshots() {
+        let temp = tempfile::tempdir().unwrap();
+        let cargo_home = temp.path().join("cargo-home");
+        fs::create_dir(&cargo_home).unwrap();
+        let provenance = temp.path().join("private.provenance.toml");
+        let bundle = temp.path().join("private.provenance.sigstore.json");
+        let prepared = PreparedProvider {
+            provider: Provider::Prebuilt,
+            root: temp.path().join("provider"),
+            manifest: temp.path().join("provider/manifest.toml"),
+            archive: Some(temp.path().join("private.tar.gz")),
+            provenance: Some(provenance.clone()),
+            bundle: Some(bundle.clone()),
+            cosign: Some(temp.path().join("cosign")),
+            manifest_sha256: "1".repeat(64),
+            archive_sha256: "2".repeat(64),
+            provenance_sha256: "3".repeat(64),
+            trusted_root_sha256: "4".repeat(64),
+        };
+        let options = Options::parse(&arguments(
+            "prebuilt",
+            "single",
+            "x86_64-unknown-linux-gnu",
+            "none",
+        ))
+        .unwrap();
+        let environment =
+            prepared.command_environment(&options, &temp.path().join("target"), &cargo_home);
+        assert_eq!(
+            environment
+                .values
+                .iter()
+                .find(|(key, _)| key == OsStr::new("BOXDD_SYS_PREBUILT_PROVENANCE"))
+                .map(|(_, value)| value.as_os_str()),
+            Some(provenance.as_os_str())
+        );
+        assert_eq!(
+            environment
+                .values
+                .iter()
+                .find(|(key, _)| key == OsStr::new("BOXDD_SYS_PREBUILT_BUNDLE"))
+                .map(|(_, value)| value.as_os_str()),
+            Some(bundle.as_os_str())
+        );
+        assert!(
+            environment
+                .values
+                .iter()
+                .all(|(key, _)| { key != OsStr::new("BOXDD_SYS_PREBUILT_TRUSTED_ROOT") })
         );
     }
 
@@ -1950,6 +2739,8 @@ mod tests {
             provider: Provider::System,
             root: temp.path().join("provider"),
             manifest: temp.path().join("provider/manifest.toml"),
+            archive: None,
+            provenance: None,
             bundle: None,
             cosign: None,
             manifest_sha256: "1".repeat(64),

@@ -1,5 +1,6 @@
 use std::env;
 use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -13,6 +14,10 @@ mod bindgen_contract;
 
 #[path = "src/provider_manifest.rs"]
 mod provider_manifest;
+
+#[allow(dead_code)]
+#[path = "src/prebuilt_provenance.rs"]
+mod prebuilt_provenance;
 
 #[path = "src/provider_archive.rs"]
 mod provider_archive;
@@ -34,11 +39,13 @@ use bindgen_contract::{
     validate_bindgen_target_override,
 };
 use build_support::{
-    BindingTargetFamily, COSIGN_VERSION, PrebuiltProvenance, ProviderAdapter, ProviderInputs,
-    SIGSTORE_TRUSTED_ROOT_RELATIVE_PATH, SIGSTORE_TRUSTED_ROOT_SHA256, classify_binding_target,
-    cosign_verify_blob_args, cosign_version_is_qualified, select_provider, simd_identity,
-    validate_c_source_paths, validate_skip_cc_policy,
+    BindingTargetFamily, COSIGN_VERSION, PUBLISHER_REPOSITORY, PUBLISHER_WORKFLOW,
+    PrebuiltProvenance, ProviderAdapter, ProviderInputs, SIGSTORE_TRUSTED_ROOT_RELATIVE_PATH,
+    SIGSTORE_TRUSTED_ROOT_SHA256, classify_binding_target, cosign_verify_blob_args,
+    cosign_version_is_qualified, select_provider, simd_identity, validate_c_source_paths,
+    validate_skip_cc_policy,
 };
+use prebuilt_provenance::PrebuiltProvenanceStatement;
 use precision::Precision;
 use provider_archive::{
     ArchiveExpectation, private_abi_hash, private_abi_hash_hex, snapshot_layout_hash,
@@ -47,8 +54,7 @@ use provider_archive::{
 use provider_manifest::{
     ArtifactExpectation, ArtifactIdentityExpectation, RECORDING_CONTRACT_BLAKE3,
     REQUIRED_ADAPTER_SYMBOLS, VENDORED_SOURCE_IDENTITY_SHA256, VerifiedArtifact,
-    adapter_source_sha256, sha256_bytes, sha256_file, vendored_source_identity_sha256,
-    verify_artifact,
+    adapter_source_sha256, sha256_file, vendored_source_identity_sha256, verify_artifact,
 };
 use source_overlay::{
     EffectiveSourceIdentity, MaterializedEffectiveSources, effective_source_identity,
@@ -94,6 +100,13 @@ struct PreparedExternal {
     native_abi_identity: NativeAbiIdentity,
     provenance_sha256: Option<String>,
     trusted_root_sha256: Option<String>,
+}
+
+#[derive(Debug)]
+struct AuthenticatedPrebuiltProvenance {
+    statement: PrebuiltProvenanceStatement,
+    statement_sha256: String,
+    trusted_root_sha256: String,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -162,6 +175,7 @@ impl BuildConfig {
             has_system_dir: env::var_os("BOX2D_LIB_DIR").is_some(),
             has_system_manifest: env::var_os("BOXDD_SYS_SYSTEM_MANIFEST").is_some(),
             has_prebuilt_manifest: env::var_os("BOXDD_SYS_PREBUILT_MANIFEST").is_some(),
+            has_prebuilt_provenance: env::var_os("BOXDD_SYS_PREBUILT_PROVENANCE").is_some(),
             has_prebuilt_bundle: env::var_os("BOXDD_SYS_PREBUILT_BUNDLE").is_some(),
             has_prebuilt_trusted_root: env::var_os("BOXDD_SYS_PREBUILT_TRUSTED_ROOT").is_some(),
             // docs.rs still needs the vendored adapter for binding/type checking, but its
@@ -270,6 +284,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=BOX2D_LIB_DIR");
     println!("cargo:rerun-if-env-changed=BOXDD_SYS_SYSTEM_MANIFEST");
     println!("cargo:rerun-if-env-changed=BOXDD_SYS_PREBUILT_MANIFEST");
+    println!("cargo:rerun-if-env-changed=BOXDD_SYS_PREBUILT_PROVENANCE");
     println!("cargo:rerun-if-env-changed=BOXDD_SYS_PREBUILT_BUNDLE");
     println!("cargo:rerun-if-env-changed=BOXDD_SYS_PREBUILT_TRUSTED_ROOT");
     println!("cargo:rerun-if-env-changed=BOXDD_SYS_COSIGN");
@@ -770,6 +785,11 @@ fn prepare_external_provider(
         header_path: &header_path,
         bindings_path: &bindings_path,
     };
+    let authenticated_prebuilt = if config.provider == ProviderAdapter::Prebuilt {
+        Some(authenticate_prebuilt_provenance(config))
+    } else {
+        None
+    };
     let verified = verify_artifact(&manifest_path, &expectation).unwrap_or_else(|error| {
         panic!(
             "failed to verify {provider} provider manifest {}: {error}",
@@ -827,12 +847,16 @@ fn prepare_external_provider(
         "cargo:rerun-if-changed={}",
         verified.bindings_path.display()
     );
-    let (provenance_sha256, trusted_root_sha256) = if config.provider == ProviderAdapter::Prebuilt {
-        let (provenance, trusted_root) = verify_prebuilt_provenance(config, &verified);
-        (Some(provenance), Some(trusted_root))
-    } else {
-        (None, None)
-    };
+    let (provenance_sha256, trusted_root_sha256) =
+        if let Some(authenticated) = authenticated_prebuilt {
+            validate_authenticated_prebuilt_provenance(&authenticated, &verified);
+            (
+                Some(authenticated.statement_sha256),
+                Some(authenticated.trusted_root_sha256),
+            )
+        } else {
+            (None, None)
+        };
     Some(PreparedExternal {
         artifact: verified,
         archive_bytes: verified_archive.archive_bytes,
@@ -842,23 +866,27 @@ fn prepare_external_provider(
     })
 }
 
-fn verify_prebuilt_provenance(
-    config: &BuildConfig,
-    artifact: &VerifiedArtifact,
-) -> (String, String) {
-    let bundle = canonical_env_file("BOXDD_SYS_PREBUILT_BUNDLE");
-    let trusted_root = trusted_root_file(config);
-    let payload = config
-        .out_dir
-        .join("boxdd-prebuilt-provenance-manifest.toml");
-    let payload_bytes = artifact.manifest.render();
-    assert_eq!(
-        sha256_bytes(&payload_bytes),
-        artifact.manifest_sha256,
-        "verified prebuilt manifest is not the canonical signed payload"
+fn authenticate_prebuilt_provenance(config: &BuildConfig) -> AuthenticatedPrebuiltProvenance {
+    let (statement_path, statement_bytes) = snapshot_prebuilt_input(
+        config,
+        "BOXDD_SYS_PREBUILT_PROVENANCE",
+        "statement",
+        "toml",
+        4 * 1024 * 1024,
     );
-    fs::write(&payload, payload_bytes)
-        .unwrap_or_else(|error| panic!("failed to write canonical provenance payload: {error}"));
+    let statement = PrebuiltProvenanceStatement::parse_canonical(&statement_bytes)
+        .unwrap_or_else(|error| panic!("invalid prebuilt provenance statement: {error}"));
+    statement
+        .validate_publisher(PUBLISHER_REPOSITORY, PUBLISHER_WORKFLOW)
+        .unwrap_or_else(|error| panic!("untrusted prebuilt provenance statement: {error}"));
+    let (bundle, _) = snapshot_prebuilt_input(
+        config,
+        "BOXDD_SYS_PREBUILT_BUNDLE",
+        "bundle",
+        "json",
+        16 * 1024 * 1024,
+    );
+    let (trusted_root, trusted_root_sha256) = trusted_root_file(config);
     let cosign = env::var_os("BOXDD_SYS_COSIGN").unwrap_or_else(|| "cosign".into());
     let version_output = Command::new(&cosign)
         .arg("version")
@@ -890,17 +918,9 @@ fn verify_prebuilt_provenance(
 
     let args = cosign_verify_blob_args(PrebuiltProvenance {
         crate_version: env!("CARGO_PKG_VERSION"),
-        source_commit: artifact
-            .manifest
-            .source_commit
-            .as_deref()
-            .expect("validated prebuilt manifest must contain source_commit"),
-        release_tag: artifact
-            .manifest
-            .release_tag
-            .as_deref()
-            .expect("validated prebuilt manifest must contain release_tag"),
-        payload: &payload,
+        source_commit: &statement.source_commit,
+        release_tag: &statement.release_tag,
+        payload: &statement_path,
         bundle: &bundle,
         trusted_root: &trusted_root,
     })
@@ -916,15 +936,155 @@ fn verify_prebuilt_provenance(
         "prebuilt provider provenance verification failed before linking: {}",
         String::from_utf8_lossy(&output.stderr).trim()
     );
-    println!("cargo:rerun-if-changed={}", bundle.display());
-    println!("cargo:rerun-if-changed={}", trusted_root.display());
-    (
-        sha256_file(&bundle).expect("failed to hash verified Sigstore bundle"),
-        sha256_file(&trusted_root).expect("failed to hash the Sigstore trusted root"),
-    )
+    AuthenticatedPrebuiltProvenance {
+        statement,
+        statement_sha256: prebuilt_provenance::sha256_bytes(&statement_bytes),
+        trusted_root_sha256,
+    }
 }
 
-fn trusted_root_file(config: &BuildConfig) -> PathBuf {
+fn validate_authenticated_prebuilt_provenance(
+    authenticated: &AuthenticatedPrebuiltProvenance,
+    artifact: &VerifiedArtifact,
+) {
+    let manifest_bytes = artifact.manifest.render();
+    let statement_manifest = authenticated
+        .statement
+        .validate_provider_manifest(&manifest_bytes)
+        .unwrap_or_else(|error| panic!("prebuilt provenance manifest mismatch: {error}"));
+    assert_eq!(
+        statement_manifest, artifact.manifest,
+        "prebuilt provenance did not authenticate the verified provider manifest"
+    );
+    let provider_root = artifact
+        .manifest_path
+        .parent()
+        .expect("verified prebuilt manifest must have a parent directory");
+    authenticated
+        .statement
+        .verify_extracted_root(provider_root)
+        .unwrap_or_else(|error| panic!("prebuilt provenance inventory mismatch: {error}"));
+}
+
+fn snapshot_prebuilt_input(
+    config: &BuildConfig,
+    key: &str,
+    label: &str,
+    extension: &str,
+    maximum_bytes: u64,
+) -> (PathBuf, Vec<u8>) {
+    let source = PathBuf::from(
+        env::var_os(key).unwrap_or_else(|| panic!("{key} is required for the prebuilt provider")),
+    );
+    snapshot_prebuilt_file(config, &source, key, label, extension, maximum_bytes)
+}
+
+fn snapshot_prebuilt_file(
+    config: &BuildConfig,
+    source: &Path,
+    source_description: &str,
+    label: &str,
+    extension: &str,
+    maximum_bytes: u64,
+) -> (PathBuf, Vec<u8>) {
+    let metadata = fs::symlink_metadata(source).unwrap_or_else(|error| {
+        panic!(
+            "failed to inspect {source_description} {}: {error}",
+            source.display()
+        )
+    });
+    assert!(
+        metadata.file_type().is_file() && !metadata.file_type().is_symlink(),
+        "{source_description} must identify a regular non-symlink file: {}",
+        source.display()
+    );
+    assert!(
+        metadata.len() > 0 && metadata.len() <= maximum_bytes,
+        "{source_description} size {} is outside the accepted 1..={maximum_bytes} byte range",
+        metadata.len()
+    );
+    let input = fs::File::open(source).unwrap_or_else(|error| {
+        panic!(
+            "failed to open {source_description} {}: {error}",
+            source.display()
+        )
+    });
+    let opened_metadata = input.metadata().unwrap_or_else(|error| {
+        panic!(
+            "failed to inspect opened {source_description} {}: {error}",
+            source.display()
+        )
+    });
+    assert!(
+        opened_metadata.is_file() && opened_metadata.len() == metadata.len(),
+        "{source_description} changed while it was being opened for snapshotting"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        assert!(
+            opened_metadata.dev() == metadata.dev() && opened_metadata.ino() == metadata.ino(),
+            "{source_description} changed while it was being opened for snapshotting"
+        );
+    }
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    use std::io::Read as _;
+    input
+        .take(maximum_bytes + 1)
+        .read_to_end(&mut bytes)
+        .unwrap_or_else(|error| {
+            panic!(
+                "failed to read {source_description} {}: {error}",
+                source.display()
+            )
+        });
+    assert_eq!(
+        bytes.len() as u64,
+        metadata.len(),
+        "{source_description} changed while its exact bytes were being snapshotted"
+    );
+    let digest = prebuilt_provenance::sha256_bytes(&bytes);
+    let destination = config.out_dir.join(format!(
+        "boxdd-prebuilt-{label}-{}.{}",
+        &digest[..16],
+        extension
+    ));
+    match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&destination)
+    {
+        Ok(mut output) => {
+            use std::io::Write as _;
+            output.write_all(&bytes).unwrap_or_else(|error| {
+                panic!(
+                    "failed to write prebuilt {label} snapshot {}: {error}",
+                    destination.display()
+                )
+            });
+        }
+        Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+            let existing = fs::read(&destination).unwrap_or_else(|read_error| {
+                panic!(
+                    "failed to read existing prebuilt {label} snapshot {}: {read_error}",
+                    destination.display()
+                )
+            });
+            assert_eq!(
+                existing, bytes,
+                "existing prebuilt {label} snapshot does not contain the expected exact bytes"
+            );
+        }
+        Err(error) => panic!(
+            "failed to create prebuilt {label} snapshot {}: {error}",
+            destination.display()
+        ),
+    }
+    println!("cargo:rerun-if-changed={}", source.display());
+    (destination, bytes)
+}
+
+fn trusted_root_file(config: &BuildConfig) -> (PathBuf, String) {
     let (description, path) = match env::var_os("BOXDD_SYS_PREBUILT_TRUSTED_ROOT") {
         Some(path) => ("BOXDD_SYS_PREBUILT_TRUSTED_ROOT", PathBuf::from(path)),
         None => (
@@ -934,38 +1094,20 @@ fn trusted_root_file(config: &BuildConfig) -> PathBuf {
                 .join(SIGSTORE_TRUSTED_ROOT_RELATIVE_PATH),
         ),
     };
-    let canonical = fs::canonicalize(&path).unwrap_or_else(|error| {
-        panic!(
-            "failed to resolve {description} {}: {error}",
-            path.display()
-        )
-    });
-    assert!(
-        canonical.is_file(),
-        "{description} must identify a local regular file: {}",
-        canonical.display()
+    let (snapshot, bytes) = snapshot_prebuilt_file(
+        config,
+        &path,
+        description,
+        "trusted-root",
+        "json",
+        4 * 1024 * 1024,
     );
-    let digest = sha256_file(&canonical)
-        .unwrap_or_else(|error| panic!("failed to hash {description}: {error}"));
+    let digest = prebuilt_provenance::sha256_bytes(&bytes);
     assert_eq!(
         digest, SIGSTORE_TRUSTED_ROOT_SHA256,
         "{description} does not match the crate-owned authenticated Sigstore trusted root"
     );
-    canonical
-}
-
-fn canonical_env_file(key: &str) -> PathBuf {
-    let path = PathBuf::from(
-        env::var_os(key).unwrap_or_else(|| panic!("{key} is required for the prebuilt provider")),
-    );
-    let canonical = fs::canonicalize(&path)
-        .unwrap_or_else(|error| panic!("failed to resolve {key} {}: {error}", path.display()));
-    assert!(
-        canonical.is_file(),
-        "{key} must identify a local regular file: {}",
-        canonical.display()
-    );
-    canonical
+    (snapshot, digest)
 }
 
 fn link_verified_artifact(config: &BuildConfig, artifact: VerifiedArtifact, archive_bytes: &[u8]) {

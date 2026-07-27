@@ -381,13 +381,28 @@ target, precision, CRT, SIMD, validation flags, private ABI, snapshot layout, an
 contract. Generate a caller-trusted local manifest with the `boxdd-sys` package helper described in
 [`boxdd-sys/README.md`](../boxdd-sys/README.md).
 
-Official prebuilt selection additionally requires `BOXDD_SYS_PREBUILT_MANIFEST` and
-`BOXDD_SYS_PREBUILT_BUNDLE`. `boxdd-sys` uses its packaged, digest-pinned Sigstore trusted root by
-default. `BOXDD_SYS_PREBUILT_TRUSTED_ROOT` is an optional path override and is accepted only when
-its digest matches that crate-owned root exactly. Publisher provenance is a signature over the
-canonical provider manifest and must match this repository, workflow name, push trigger, source
-commit, release tag, target coordinates, and archive digest. Neither adapter performs network
-access or archive extraction.
+Official prebuilt selection additionally requires all three provenance inputs:
+
+```text
+BOXDD_SYS_PREBUILT_MANIFEST=/provider/extracted/manifest.toml
+BOXDD_SYS_PREBUILT_PROVENANCE=/downloads/artifact.tar.gz.provenance.toml
+BOXDD_SYS_PREBUILT_BUNDLE=/downloads/artifact.tar.gz.provenance.sigstore.json
+```
+
+`boxdd-sys` uses its packaged, digest-pinned Sigstore trusted root by default.
+`BOXDD_SYS_PREBUILT_TRUSTED_ROOT` is an optional path override and is accepted only when its digest
+matches that crate-owned root exactly. Cosign signs the canonical TOML provenance statement rather
+than the provider manifest or bundle. The statement binds the outer tar archive's exact file name,
+size, and SHA-256; its strict complete member inventory and digests; the manifest and inner
+checksums digests; provider and ABI coordinates; and the repository, workflow, workflow ref, source
+commit, release tag, run ID, and run attempt.
+
+The repository qualification helper verifies the statement signature and outer package identity
+before extraction. `boxdd-sys` performs no network access, extraction, or caching; it re-verifies
+the statement, provider manifest, and complete member inventory in the already-local extracted
+directory before linking the exact archive bytes. `PROVIDER_PROVENANCE_SHA256` is now the signed
+statement's SHA-256, not the bundle's SHA-256. The local `system` adapter remains caller-attested
+compatibility evidence and has no publisher provenance claim.
 
 For WASM, distinguish compile-only checks from runtime support. `wasm32-unknown-unknown` and
 `wasm32-wasip1` can be compile-only; only the versioned Emscripten provider is a runtime adapter.

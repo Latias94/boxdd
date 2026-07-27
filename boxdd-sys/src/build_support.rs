@@ -10,8 +10,9 @@ mod bindgen_contract;
 mod provenance_policy;
 #[allow(unused_imports)]
 pub(crate) use provenance_policy::{
-    COSIGN_VERSION, PrebuiltProvenance, SIGSTORE_TRUSTED_ROOT_RELATIVE_PATH,
-    SIGSTORE_TRUSTED_ROOT_SHA256, cosign_verify_blob_args, cosign_version_is_qualified,
+    COSIGN_VERSION, PUBLISHER_REPOSITORY, PUBLISHER_WORKFLOW, PrebuiltProvenance,
+    SIGSTORE_TRUSTED_ROOT_RELATIVE_PATH, SIGSTORE_TRUSTED_ROOT_SHA256, cosign_verify_blob_args,
+    cosign_version_is_qualified,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -139,6 +140,7 @@ pub(crate) struct ProviderInputs<'a> {
     pub(crate) has_system_dir: bool,
     pub(crate) has_system_manifest: bool,
     pub(crate) has_prebuilt_manifest: bool,
+    pub(crate) has_prebuilt_provenance: bool,
     pub(crate) has_prebuilt_bundle: bool,
     pub(crate) has_prebuilt_trusted_root: bool,
     pub(crate) build_from_source_enabled: bool,
@@ -152,6 +154,7 @@ pub(crate) fn select_provider(inputs: ProviderInputs<'_>) -> Result<ProviderAdap
 
     let has_system_signal = inputs.has_system_dir || inputs.has_system_manifest;
     let has_prebuilt_signal = inputs.has_prebuilt_manifest
+        || inputs.has_prebuilt_provenance
         || inputs.has_prebuilt_bundle
         || inputs.has_prebuilt_trusted_root;
     if has_system_signal && has_prebuilt_signal {
@@ -209,9 +212,12 @@ pub(crate) fn select_provider(inputs: ProviderInputs<'_>) -> Result<ProviderAdap
             if has_system_signal {
                 return Err("prebuilt provider cannot use system provider inputs".to_owned());
             }
-            if !inputs.has_prebuilt_manifest || !inputs.has_prebuilt_bundle {
+            if !inputs.has_prebuilt_manifest
+                || !inputs.has_prebuilt_provenance
+                || !inputs.has_prebuilt_bundle
+            {
                 return Err(
-                    "prebuilt provider requires BOXDD_SYS_PREBUILT_MANIFEST and BOXDD_SYS_PREBUILT_BUNDLE"
+                    "prebuilt provider requires BOXDD_SYS_PREBUILT_MANIFEST, BOXDD_SYS_PREBUILT_PROVENANCE, and BOXDD_SYS_PREBUILT_BUNDLE"
                         .to_owned(),
                 );
             }
@@ -228,6 +234,7 @@ fn select_wasm_provider(inputs: ProviderInputs<'_>) -> Result<ProviderAdapter, S
     if inputs.has_system_dir
         || inputs.has_system_manifest
         || inputs.has_prebuilt_manifest
+        || inputs.has_prebuilt_provenance
         || inputs.has_prebuilt_bundle
         || inputs.has_prebuilt_trusted_root
         || inputs.link_kind.is_some()
@@ -422,6 +429,7 @@ mod tests {
             has_system_dir: false,
             has_system_manifest: false,
             has_prebuilt_manifest: false,
+            has_prebuilt_provenance: false,
             has_prebuilt_bundle: false,
             has_prebuilt_trusted_root: false,
             build_from_source_enabled: true,
@@ -453,6 +461,8 @@ mod tests {
         prebuilt.explicit_provider = Some("prebuilt");
         prebuilt.has_prebuilt_manifest = true;
         assert!(select_provider(prebuilt).is_err());
+        prebuilt.has_prebuilt_provenance = true;
+        assert!(select_provider(prebuilt).is_err());
         prebuilt.has_prebuilt_bundle = true;
         assert_eq!(
             select_provider(prebuilt).unwrap(),
@@ -470,6 +480,7 @@ mod tests {
         inputs.has_system_dir = true;
         inputs.has_system_manifest = true;
         inputs.has_prebuilt_manifest = true;
+        inputs.has_prebuilt_provenance = true;
         inputs.has_prebuilt_bundle = true;
         inputs.has_prebuilt_trusted_root = true;
         assert!(select_provider(inputs).is_err());

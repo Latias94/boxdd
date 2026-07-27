@@ -5,6 +5,9 @@ pub mod config;
 pub(crate) mod emscripten_sdk;
 pub mod error;
 pub mod paths;
+#[allow(dead_code)]
+#[path = "../../boxdd-sys/src/prebuilt_provenance.rs"]
+pub(crate) mod prebuilt_provenance;
 #[path = "../../boxdd-sys/src/provenance_policy.rs"]
 pub(crate) mod provenance_policy;
 #[allow(dead_code)]

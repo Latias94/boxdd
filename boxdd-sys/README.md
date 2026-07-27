@@ -29,15 +29,28 @@ wrappers live in the companion crate `boxdd`.
 ## Prebuilt Linking
 
 Prebuilt archives use the same static manifest contract plus authenticated publisher provenance:
-`BOXDD_SYS_PROVIDER=prebuilt BOXDD_SYS_PREBUILT_MANIFEST=/path/to/manifest.toml
-BOXDD_SYS_PREBUILT_BUNDLE=/path/to/artifact.sigstore.json`.
-The adapter requires exact Cosign 3.0.6 (override its path with `BOXDD_SYS_COSIGN`) and verifies a
-signature over the archive's canonical `manifest.toml`. That signed manifest binds the publisher
-workflow, release tag, source commit, target/precision/CRT/SIMD coordinates, ABI identities, and
-the exact static archive SHA-256 before linking. The crate never downloads, extracts,
-caches, or discovers a library by name. Missing provenance fails closed. A caller who explicitly
-trusts a local package can run the package helper's `trust-local-system` command and select the
-`system` adapter; that manifest deliberately carries no authenticated provenance claim.
+
+```text
+BOXDD_SYS_PROVIDER=prebuilt
+BOXDD_SYS_PREBUILT_MANIFEST=/path/to/extracted/manifest.toml
+BOXDD_SYS_PREBUILT_PROVENANCE=/path/to/artifact.tar.gz.provenance.toml
+BOXDD_SYS_PREBUILT_BUNDLE=/path/to/artifact.tar.gz.provenance.sigstore.json
+```
+
+The adapter requires exact Cosign 3.0.6 (override its path with `BOXDD_SYS_COSIGN`) and verifies the
+signature over the canonical TOML provenance statement. The statement binds the outer tar archive's
+exact file name, byte size, and SHA-256; the strict complete member inventory and per-member
+digests; the provider manifest and inner checksums digests; provider and ABI coordinates; and the
+repository, workflow, workflow ref, source commit, release tag, run ID, and run attempt.
+
+Repository qualification verifies the signed statement and exact outer archive before extracting
+anything. `boxdd-sys` never downloads, extracts, or caches a package: it consumes an already-local
+extracted directory, re-verifies the statement, manifest, and complete member inventory, and links
+the exact verified static archive bytes. It never discovers a library by name. Missing or
+inconsistent provenance fails closed. `PROVIDER_PROVENANCE_SHA256` reports the SHA-256 of the
+verified signed statement, not the Sigstore bundle. A caller who explicitly trusts a local package
+can run the package helper's `trust-local-system` command and select the `system` adapter; that
+manifest deliberately carries no authenticated provenance claim.
 
 The Sigstore trust anchor is shipped in the crate and pinned by SHA-256. The optional
 `BOXDD_SYS_PREBUILT_TRUSTED_ROOT` override is accepted only when its contents have the exact same

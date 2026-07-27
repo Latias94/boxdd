@@ -155,14 +155,16 @@ required. See `boxdd/examples/persistence.rs` for the happy path.
 | --- | --- | --- |
 | Vendored source | default | Builds the pinned source inventory with matching generated bindings. |
 | Local system | `BOXDD_SYS_PROVIDER=system` | Caller-supplied static archive, header, bindings, and exact local attestation manifest. |
-| Official prebuilt | `BOXDD_SYS_PROVIDER=prebuilt` | Exact static manifest plus repository/workflow/commit/tag-bound Sigstore provenance. |
+| Official prebuilt | `BOXDD_SYS_PROVIDER=prebuilt` | Exact static manifest plus a signed whole-package provenance statement and Sigstore bundle. |
 | WASM compile-only | `BOXDD_SYS_PROVIDER=wasm-compile-only` | Type/build qualification only; no runtime claim. |
 | WASM runtime | `BOXDD_SYS_PROVIDER=wasm-provider` | Versioned precision-specific imports backed by the pinned Emscripten 6.0.3 provider. |
 
-System and prebuilt adapters never download, extract, discover by name, dynamically link, or fall
-back to vendored source. A provider reporting only `b2GetVersion() == 3.2.0` is insufficient.
-Single and double precision artifacts, manifests, bindings, and dependent crate features cannot be
-mixed.
+System and prebuilt adapters never download, extract, cache, discover by name, dynamically link, or
+fall back to vendored source. Official prebuilt qualification authenticates the canonical
+provenance statement and exact outer archive before extraction; `boxdd-sys` then re-verifies the
+already-local complete member inventory and manifest before linking exact bytes. A provider
+reporting only `b2GetVersion() == 3.2.0` is insufficient. Single and double precision artifacts,
+manifests, bindings, and dependent crate features cannot be mixed.
 
 See [`boxdd-sys/README.md`](boxdd-sys/README.md) for manifest inputs and
 [`docs/platforms/wasm.md`](docs/platforms/wasm.md) for the WASM runtime boundary.

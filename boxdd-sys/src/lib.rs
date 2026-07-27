@@ -56,7 +56,7 @@ pub const PROVIDER_MANIFEST_SHA256: &str = env!("BOXDD_SYS_PROVIDER_MANIFEST_SHA
 /// SHA-256 of the exact static archive linked by an external provider.
 pub const PROVIDER_ARCHIVE_SHA256: &str = env!("BOXDD_SYS_PROVIDER_ARCHIVE_SHA256");
 
-/// SHA-256 of the Sigstore bundle verified for an official prebuilt provider.
+/// SHA-256 of the signed provenance statement verified for an official prebuilt provider.
 pub const PROVIDER_PROVENANCE_SHA256: &str = env!("BOXDD_SYS_PROVIDER_PROVENANCE_SHA256");
 
 /// SHA-256 of the caller-supplied Sigstore trusted root used for verification.
