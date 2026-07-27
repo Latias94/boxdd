@@ -1,0 +1,13 @@
+[package]
+name = "boxdd-package-consumer-wasm-provider-BOXDD-WASM-PRECISION"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+boxdd-sys = { version = "=0.0.0-BOXDD-VERSION", registry = "boxdd-local" }
+
+[features]
+double-precision = ["boxdd-sys/double-precision"]
+
+[workspace]

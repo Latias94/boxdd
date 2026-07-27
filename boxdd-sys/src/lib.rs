@@ -14,7 +14,7 @@ pub mod adapter;
 mod build_support;
 
 #[cfg(test)]
-mod emscripten_sdk;
+mod wasm_provider_contract;
 
 pub mod ffi;
 

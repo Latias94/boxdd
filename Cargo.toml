@@ -50,6 +50,7 @@ blake3 = "1"
 sha2 = "0.10"
 object = { version = "0.37", default-features = false, features = ["read", "wasm", "std"] }
 wasmparser = { version = "0.236", default-features = false }
+wasm-bindgen-cli-support = "=0.2.126"
 trybuild = "1.0.118"
 
 [workspace.metadata.toolchains]

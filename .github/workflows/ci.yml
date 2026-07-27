@@ -312,13 +312,11 @@ jobs:
 
   provider-runtime:
     name: WASM Provider Runtime (Node + Chromium, single + double)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     env:
-      EMSDK_VERSION: "6.0.3"
-      EMSDK_REVISION: "db04e88298d9916fc51fcd3743045ca3eb695127"
-      CARGO_TARGET_DIR: target/provider-runtime
+      CARGO_TARGET_DIR: target
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -335,7 +333,7 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
-          node-version: "22"
+          node-version: "22.16.0"
           cache: npm
 
       - name: Cache Rust dependencies
@@ -348,23 +346,12 @@ jobs:
           npm ci --ignore-scripts
           npx playwright install --with-deps chromium
 
-      - name: Install Emscripten SDK
+      - name: Provision Emscripten SDK
         shell: bash
-        run: |
-          set -euo pipefail
-          git init "${RUNNER_TEMP}/emsdk"
-          git -C "${RUNNER_TEMP}/emsdk" remote add origin https://github.com/emscripten-core/emsdk.git
-          git -C "${RUNNER_TEMP}/emsdk" fetch --depth 1 origin "${EMSDK_REVISION}"
-          git -C "${RUNNER_TEMP}/emsdk" checkout --detach FETCH_HEAD
-          test "$(git -C "${RUNNER_TEMP}/emsdk" rev-parse HEAD)" = "${EMSDK_REVISION}"
-          "${RUNNER_TEMP}/emsdk/emsdk" install "${EMSDK_VERSION}"
-          "${RUNNER_TEMP}/emsdk/emsdk" activate "${EMSDK_VERSION}"
-          echo "EMSDK=${RUNNER_TEMP}/emsdk" >> "$GITHUB_ENV"
-          {
-            echo "${RUNNER_TEMP}/emsdk"
-            echo "${RUNNER_TEMP}/emsdk/upstream/emscripten"
-            echo "${RUNNER_TEMP}/emsdk/upstream/bin"
-          } >> "$GITHUB_PATH"
+        run: cargo run --locked -p xtask -- provision-emsdk --root "${RUNNER_TEMP}/emsdk" --github-actions
+
+      - name: Verify checked WASM provider identities
+        run: cargo run --locked -p xtask -- wasm-provider-contract --check
 
       - name: Run provider runtime contract
         run: cargo run --locked -p xtask -- verify-wasm --runtime
@@ -391,6 +378,7 @@ jobs:
         uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
         with:
           toolchain: 1.97.1
+          targets: wasm32-unknown-unknown
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1

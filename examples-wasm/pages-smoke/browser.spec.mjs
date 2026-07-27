@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const fixtureRoot = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(fixtureRoot, '../..');
 const pagesRoot = resolve(repositoryRoot, 'docs/pages');
-const runtimeManifestPath = '/wasm/generated/boxdd-pages-runtime-v1.json';
+const runtimeManifestPath = '/wasm/generated/boxdd-pages-runtime-v2.json';
 const runtimeBuildCommand = 'cargo run --locked -p xtask -- build-pages-wasm';
 
 let canonicalPagesRoot;

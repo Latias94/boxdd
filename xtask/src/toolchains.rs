@@ -11,7 +11,7 @@ use crate::emscripten_sdk::{SdkContract, validate_wasm_bindgen_lock};
 const RELEASE_VERSION: &str = "0.6.0";
 const RUST_VERSION: &str = "1.95";
 const MSRV: &str = "1.95.0";
-const DEVELOPMENT: &str = "1.97.1";
+pub(crate) const DEVELOPMENT: &str = "1.97.1";
 const VERIFICATION_NIGHTLY: &str = "nightly-2026-05-27";
 
 #[derive(Debug)]
@@ -191,7 +191,7 @@ pub(crate) fn verify_configuration(root: &Path) -> Result<Verification, VerifyEr
         &["clippy", "rustfmt"],
     )?;
 
-    let sdk_path = root.join("boxdd-sys/emscripten-sdk.toml");
+    let sdk_path = root.join("xtask/toolchains/emscripten-sdk.toml");
     let sdk_source = fs::read_to_string(&sdk_path).map_err(|error| {
         VerifyError::message(format!("failed to read {}: {error}", sdk_path.display()))
     })?;
@@ -407,9 +407,11 @@ profile = "minimal"
 "#,
             )
             .expect("toolchain fixture should be written");
+            fs::create_dir_all(root.join("xtask/toolchains"))
+                .expect("xtask toolchain fixture directory should exist");
             fs::write(
-                root.join("boxdd-sys/emscripten-sdk.toml"),
-                include_str!("../../boxdd-sys/emscripten-sdk.toml"),
+                root.join("xtask/toolchains/emscripten-sdk.toml"),
+                include_str!("../toolchains/emscripten-sdk.toml"),
             )
             .expect("SDK contract fixture should be written");
             fs::write(
@@ -420,6 +422,13 @@ profile = "minimal"
 name = "wasm-bindgen"
 version = "0.2.126"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b067c0c11094aef6b7a801c1e34a26affafdf3d051dba08456b868789aaf9a4"
+
+[[package]]
+name = "wasm-bindgen-cli-support"
+version = "0.2.126"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80c3e3bac5bcdc2a15ba22862e2cb7c0d1beddf9d46dd320bec1f6ae82f2da53"
 "#,
             )
             .expect("lockfile fixture should be written");

@@ -4,11 +4,19 @@ This workspace uses CI to keep the Rust safe layer aligned with the vendored Box
 
 See [Upstream Synchronization Contract](upstream-sync.md) for the revision transition and rollback model.
 
+The provider-runtime checks require the qualified Emscripten, Python, and Node.js setup described
+in [WebAssembly Support](../platforms/wasm.md). Provision it with `provision-emsdk` and set the
+four exact paths selected by its host contract before running provider commands. Pages uses the lockfile-pinned
+`wasm-bindgen-cli-support` library and the qualified SDK's Binaryen executable; it does not accept
+an external wasm-bindgen CLI or discover tools on `PATH`. `build-pages-wasm` also requires a clean
+commit outside `docs/pages`: run `generate-pages` and commit the null-trust loader with the source
+changes before building the commit-bound runtime assets.
+
 ## Required local checks
 
 Run these before opening a release PR:
 
-```powershell
+```bash
 cargo metadata --format-version 1 --no-deps
 cargo fmt --all -- --check
 cargo check --workspace --all-targets
@@ -21,16 +29,27 @@ cargo run -p xtask -- verify-precision-contract
 cargo run -p xtask -- upstream-sync --check
 cargo run -p xtask -- api-coverage --check
 cargo run -p xtask -- sample-parity --check
-cargo run -p xtask -- generate-pages
-cargo run -p xtask -- validate-pages
 rustup target add wasm32-unknown-unknown wasm32-wasip1
-cargo install wasm-bindgen-cli --version 0.2.126 --locked
-cargo run -p xtask -- verify-wasm --runtime
-cargo run -p xtask -- build-pages-wasm
+# On a qualified Ubuntu 24.04 or macOS arm64 host:
+cargo run --locked -p xtask -- provision-emsdk --root /absolute/path/emsdk
+export EMSDK=/absolute/path/emsdk
+export EM_CONFIG="$EMSDK/.emscripten"
+# Ubuntu 24.04 uses Emsdk's upstream system-Python policy.
+export EMSDK_PYTHON=/usr/bin/python3
+# On macOS arm64 instead:
+# export EMSDK_PYTHON="$EMSDK/python/3.13.3_64bit/bin/python3.13"
+export EMSDK_NODE="$EMSDK/node/22.16.0_64bit/bin/node"
 npm ci --ignore-scripts
 npx playwright install chromium
+cargo run -p xtask -- wasm-provider-contract --check
+cargo run -p xtask -- verify-wasm --runtime
+cargo run -p xtask -- generate-pages
+# Commit the source and generated null-trust loader before this command.
+cargo run -p xtask -- build-pages-wasm
 npm run test:pages-browser
-# Optional for local builds: expose Binaryen's wasm-opt on PATH or through EMSDK/upstream/bin for smaller Pages assets.
+cargo run -p xtask -- validate-pages
+# Restore the tracked null-trust loader after validating the commit-bound runtime.
+cargo run -p xtask -- generate-pages
 cargo nextest run --workspace
 cargo nextest run -p boxdd --test collision_validation --test joint_new_apis --test world_callbacks --test panic_across_ffi_is_caught --test world_and_queries --test dynamic_tree --test events_and_sensors --test world_destroy_and_recycle --test material_mix_callbacks --test user_data --test ffi_lifecycle --test buffer_reuse
 cargo nextest run -p boxdd-sys --test layout
@@ -171,8 +190,9 @@ general lockfile refresh.
 
 GitHub Actions are pinned to full immutable commit SHAs with human-readable version comments.
 The Pages provider similarly pins Emscripten 6.0.3 to SDK revision
-`db04e88298d9916fc51fcd3743045ca3eb695127` and installs `wasm-bindgen-cli 0.2.126`
-exactly.
+`db04e88298d9916fc51fcd3743045ca3eb695127`, provisions its verified host trees through
+`provision-emsdk`, and runs wasm-bindgen in-process from the lockfile-pinned 0.2.126 support
+library.
 
 Every checkout sets `persist-credentials: false`. CI jobs declare `contents: read` explicitly. The
 prebuilt release workflow is split into read-only build/content validation, an OIDC-only signing
@@ -216,7 +236,7 @@ an adversarial workflow definition from reaching privileged jobs.
 - `generate-pages` rebuilds the GitHub Pages Bevy Web example index from `bevy_boxdd/examples/testbed_2d/scenes.rs`.
 - `provider-smoke` builds a Rust `wasm32-unknown-unknown` app, builds an Emscripten Box2D provider module, and verifies the shared-memory runtime under Node.
 - `verify-wasm --runtime` runs that Node proof and the matching Chromium proof in both precision modes; CI and local release qualification use this same entry point.
-- `build-pages-wasm` requires clean commit-bound inputs, rebuilds the example index, compiles the Bevy + egui testbed with the `wasm-release` profile, runs `wasm-bindgen`, builds the Emscripten Box2D provider, runs `wasm-opt -Oz` when available, and writes runtime assets in `docs/pages/wasm/generated` plus `docs/pages/bevy-testbed/generated`. It also emits a canonical manifest that binds the provider JS/WASM, Bevy JS/WASM, and shim digests to the ABI, precision, upstream, effective-source, canonical Emscripten SDK contract, repository/workflow, and checkout identities; source state is checked before and after the long build.
+- `build-pages-wasm` requires clean commit-bound inputs, rebuilds the example index, compiles the Bevy + egui testbed with the `wasm-release` profile, runs lockfile-pinned wasm-bindgen support in-process, builds the Emscripten Box2D provider, runs the qualified SDK's `wasm-opt -Oz` unless explicitly disabled, and writes runtime assets in `docs/pages/wasm/generated` plus `docs/pages/bevy-testbed/generated`. It also emits a canonical manifest that binds the provider JS/WASM, Bevy JS/WASM, and shim digests to the ABI, precision, upstream, effective-source, canonical Emscripten SDK contract, repository/workflow, and checkout identities; source state is checked before and after the long build.
 - `validate-pages` rejects stale generated Pages HTML, a loader that does not pin the exact manifest, non-canonical or identity-mismatched manifests, missing/extra/digest-mismatched runtime assets, and broken local links. The browser verifies all manifest-bound bytes before dynamic import or WASM instantiation and checks the runtime adapter ABI before handing the provider to Rust. `npm run test:pages-browser` then grows the actual shared memory, proves old-buffer detachment, and requires post-growth and continuing Box2D steps in Chromium.
 - `boxdd-sys` layout tests protect representative ABI assumptions at the raw FFI boundary.
 - `bevy_boxdd` plugin tests verify ECS creation, transform sync, distance/revolute joint lifecycle, contact/sensor messages, entity ray/AABB query mappings, debug draw collection, recoverable input errors, and public non-send boundaries without adding Bevy dependencies to the core crate.
@@ -236,7 +256,7 @@ CI should keep heavy checks staged:
   and attested system archives in single/double precision. Protected prebuilt consumers repeat both
   toolchains for every target/precision/CRT artifact after signed aggregate verification;
   isolated-registry package consumers and WASM runtime quadrants run in their dedicated jobs.
-- Pages runtime: install `wasm32-unknown-unknown`, `wasm-bindgen-cli 0.2.126`, and Emscripten 6.0.3 at revision `db04e88298d9916fc51fcd3743045ca3eb695127`, expose `emsdk/upstream/bin` so `wasm-opt` can be found, then run `cargo run -p xtask -- build-pages-wasm`, install the pinned Playwright dependencies and Chromium, run `npm run test:pages-browser`, and finally run `cargo run -p xtask -- validate-pages`.
+- Pages runtime: install `wasm32-unknown-unknown`, provision Emscripten 6.0.3 at revision `db04e88298d9916fc51fcd3743045ca3eb695127` with `provision-emsdk --github-actions`, then run `cargo run -p xtask -- build-pages-wasm`, install the pinned Playwright dependencies and Chromium, run `npm run test:pages-browser`, and finally run `cargo run -p xtask -- validate-pages`. wasm-bindgen runs from the committed lockfile and Binaryen is addressed through the qualified SDK.
 - Docs: set `RUSTDOCFLAGS` to `-D warnings --cfg docsrs`, run workspace rustdoc, then build `boxdd`
   and `bevy_boxdd` rustdoc again in double precision.
 - Packaging: `cargo package -p boxdd-sys --allow-dirty --no-verify`, then `boxdd`, then `bevy_boxdd` as metadata smoke checks in publish order. For a new shared workspace version, dependent package checks are expected to wait until the previous crate in the chain is visible on crates.io. Run full package verification without `--no-verify` before publishing each crate.

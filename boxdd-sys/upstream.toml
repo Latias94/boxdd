@@ -216,6 +216,26 @@ provider = "source"
 producer = "abi-probe"
 content_blake3 = "361333cdc10649ee0f06c4e53de881fe9a2a19551ec57630c276012636c52f88"
 
+[[artifacts]]
+name = "wasm-provider-identity-single"
+kind = "provider-identity"
+path = "boxdd-sys/abi/wasm32-unknown-unknown-single.toml"
+precision = "single"
+target = "wasm32-unknown-unknown"
+provider = "wasm-runtime"
+producer = "provider-attestation"
+content_blake3 = "5dc0c3018b7dc6ec1daf1f3b5da1b6c8a5d6c69b0b96825271908add6d33d588"
+
+[[artifacts]]
+name = "wasm-provider-identity-double"
+kind = "provider-identity"
+path = "boxdd-sys/abi/wasm32-unknown-unknown-double.toml"
+precision = "double"
+target = "wasm32-unknown-unknown"
+provider = "wasm-runtime"
+producer = "provider-attestation"
+content_blake3 = "7ac23e6256d22f85f5562282d6348f34a4064ec58233f384ac889821e85e3de2"
+
 [source_inventory]
 tree = "63a1ab02e3d2bf7c4d86b257b78976842b8c5ddb"
 c_sources = [

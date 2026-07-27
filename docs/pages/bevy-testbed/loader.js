@@ -1,5 +1,5 @@
 const runtimeTrust = null;
-const runtimeManifestUrl = new URL("../wasm/generated/boxdd-pages-runtime-v1.json", import.meta.url);
+const runtimeManifestUrl = new URL("../wasm/generated/boxdd-pages-runtime-v2.json", import.meta.url);
 const expectedAssets = Object.freeze([
   Object.freeze({ role: "provider_js", path: "wasm/generated/box2d-sys-v1-single.js" }),
   Object.freeze({ role: "provider_wasm", path: "wasm/generated/box2d-sys-v1-single.wasm" }),
@@ -26,6 +26,7 @@ const manifestKeys = Object.freeze([
   "source_tree",
   "target",
   "upstream_sha",
+  "wasm_provider_contract_sha256",
 ]);
 const identityKeys = Object.freeze(manifestKeys.filter((key) => key !== "assets"));
 const assetKeys = Object.freeze(["byte_length", "path", "role", "sha256"]);

@@ -72,7 +72,8 @@ names include target, precision, static link kind, and applicable CRT identity.
 - Notes
   - No prebuilt for WASM targets.
   - Emscripten builds the standalone C provider only. Rust applications target `wasm32-unknown-unknown`; `wasm32-unknown-emscripten` Rust builds are not supported.
-  - `wasm-provider` identity probing requires `EMSDK` to name the clean, detached SDK checkout pinned by `emscripten-sdk.toml`. `PATH` discovery and revision self-attestation are rejected; `BOXDD_SYS_EMCC` may only assert the canonical compiler inside that checkout.
+  - `wasm-provider` consumes the precision-specific checked-in contract under `abi/`; building this crate never discovers or executes Emscripten. Repository runtime qualification is owned by `xtask` and uses the SDK pinned by `xtask/toolchains/emscripten-sdk.toml`.
+  - Maintainers validate both checked contracts with `cargo run -p xtask -- wasm-provider-contract --check` and atomically refresh the pair with `--write`; ordinary consumers do neither.
   - Node and Chromium provider smoke tests verify the runtime adapter identity and all required adapter symbols in both precision modes. GitHub Pages currently qualifies single precision only and rejects `BOXDD_WASM_PRECISION=double`.
   - The high-level `boxdd` crate removes Rust callback-table entry points on `wasm32`. The current provider does not qualify cross-module function pointers for world callbacks, callback-backed queries/tree traversal, raw task callbacks, replay mixers, or debug draw.
   - Bindgen requires libclang.

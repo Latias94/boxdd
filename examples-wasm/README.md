@@ -13,9 +13,20 @@ both modules share one `WebAssembly.Memory`.
 rustup target add wasm32-unknown-unknown
 cargo run -p xtask -- provider-smoke-app
 
-# Requires the pinned Emscripten 6.0.3 SDK identity in `boxdd-sys/emscripten-sdk.toml`.
+# Full runtime qualification uses the SDK pinned by `xtask/toolchains/emscripten-sdk.toml`.
+cargo run --locked -p xtask -- provision-emsdk --root /absolute/path/emsdk
+export EMSDK=/absolute/path/emsdk
+export EM_CONFIG="$EMSDK/.emscripten"
+# Ubuntu 24.04 uses Emsdk's upstream system-Python policy.
+export EMSDK_PYTHON=/usr/bin/python3
+# On macOS arm64 instead:
+# export EMSDK_PYTHON="$EMSDK/python/3.13.3_64bit/bin/python3.13"
+export EMSDK_NODE="$EMSDK/node/22.16.0_64bit/bin/node"
+cargo run -p xtask -- wasm-provider-contract --check
 cargo run -p xtask -- provider-smoke
 cargo run -p xtask -- verify-wasm --runtime
+
+# Pages generation uses lockfile-pinned wasm-bindgen support and the same qualified SDK.
 cargo run -p xtask -- build-pages-wasm
 npm run test:pages-browser
 ```

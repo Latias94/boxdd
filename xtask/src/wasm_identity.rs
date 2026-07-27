@@ -1,3 +1,5 @@
+//! Parsing for Emscripten relocatable identity objects.
+
 use std::fmt;
 
 use wasmparser::{KnownCustom, Linking, Parser, Payload, SymbolInfo};

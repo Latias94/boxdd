@@ -17,12 +17,17 @@ use flate2::read::GzDecoder;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::{Error, Result};
+use crate::{Error, Result, qualified_git::qualified_git_command};
 
-use super::support::run_command;
+use super::{
+    provider::ProviderPrecision,
+    support::{QualifiedCargo, WASM_TARGET, run_command},
+};
 
 const REGISTRY_NAME: &str = "boxdd-local";
 const CRATES_IO_INDEX: &str = "https://github.com/rust-lang/crates.io-index";
+const VERSION_PLACEHOLDER: &str = "0.0.0-BOXDD-VERSION";
+const WASM_PROVIDER_PRECISION_PLACEHOLDER: &str = "BOXDD-WASM-PRECISION";
 const PACKAGES: &[PackageSpec] = &[
     PackageSpec {
         name: "boxdd-sys",
@@ -41,18 +46,33 @@ const PACKAGES: &[PackageSpec] = &[
 const CONSUMERS: &[ConsumerSpec] = &[
     ConsumerSpec {
         name: "sys",
+        fixture: "sys",
         internal_packages: &["boxdd-sys"],
-        run: true,
+        mode: ConsumerMode::RunNative,
     },
     ConsumerSpec {
         name: "core",
+        fixture: "core",
         internal_packages: &["boxdd", "boxdd-sys"],
-        run: true,
+        mode: ConsumerMode::RunNative,
     },
     ConsumerSpec {
         name: "bevy",
+        fixture: "bevy",
         internal_packages: &["bevy_boxdd", "boxdd", "boxdd-sys"],
-        run: true,
+        mode: ConsumerMode::RunNative,
+    },
+    ConsumerSpec {
+        name: "wasm-provider-single",
+        fixture: "wasm-provider",
+        internal_packages: &["boxdd-sys"],
+        mode: ConsumerMode::CheckWasmProvider(ProviderPrecision::Single),
+    },
+    ConsumerSpec {
+        name: "wasm-provider-double",
+        fixture: "wasm-provider",
+        internal_packages: &["boxdd-sys"],
+        mode: ConsumerMode::CheckWasmProvider(ProviderPrecision::Double),
     },
 ];
 
@@ -65,8 +85,15 @@ struct PackageSpec {
 #[derive(Clone, Copy)]
 struct ConsumerSpec {
     name: &'static str,
+    fixture: &'static str,
     internal_packages: &'static [&'static str],
-    run: bool,
+    mode: ConsumerMode,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ConsumerMode {
+    RunNative,
+    CheckWasmProvider(ProviderPrecision),
 }
 
 pub fn run(root: &Path, args: &[String]) -> Result<()> {
@@ -85,7 +112,13 @@ pub fn run(root: &Path, args: &[String]) -> Result<()> {
         .prefix("boxdd-isolated-registry-")
         .tempdir()
         .map_err(|source| Error::io("create isolated registry", source))?;
-    let registry_root = temporary.path().join("registry");
+    let cargo_home = create_isolated_cargo_home(temporary.path())?;
+    let temporary_root = temporary
+        .path()
+        .canonicalize()
+        .map_err(|source| Error::io(temporary.path(), source))?;
+    let cargo = QualifiedCargo::qualify_isolated(root, &cargo_home, &temporary_root)?;
+    let registry_root = temporary_root.join("registry");
     let index_root = registry_root.join("index");
     let crate_root = registry_root.join("crates");
     fs::create_dir_all(&index_root).map_err(|source| Error::io(&index_root, source))?;
@@ -95,15 +128,16 @@ pub fn run(root: &Path, args: &[String]) -> Result<()> {
     let index_url = file_url(&index_root)?;
     initialize_index(&index_root, &server.download_url())?;
 
-    let package_target = temporary.path().join("package-target");
+    let package_target = temporary_root.join("package-target");
     for package in PACKAGES {
         let archive = package_crate(
             root,
-            temporary.path(),
+            &temporary_root,
             &package_target,
             package,
             &version,
             &index_url,
+            &cargo,
         )?;
         index_package(
             &index_root,
@@ -116,7 +150,14 @@ pub fn run(root: &Path, args: &[String]) -> Result<()> {
     }
 
     for consumer in CONSUMERS {
-        consume_fixture(root, temporary.path(), &index_url, &version, *consumer)?;
+        consume_fixture(
+            root,
+            &temporary_root,
+            &index_url,
+            &version,
+            &cargo,
+            *consumer,
+        )?;
     }
 
     println!(
@@ -125,6 +166,29 @@ pub fn run(root: &Path, args: &[String]) -> Result<()> {
         CONSUMERS.len()
     );
     Ok(())
+}
+
+fn create_isolated_cargo_home(temporary: &Path) -> Result<PathBuf> {
+    let root = fs::canonicalize(temporary).map_err(|source| Error::io(temporary, source))?;
+    let cargo_home = temporary.join("cargo-home");
+    fs::create_dir(&cargo_home).map_err(|source| Error::io(&cargo_home, source))?;
+    let metadata =
+        fs::symlink_metadata(&cargo_home).map_err(|source| Error::io(&cargo_home, source))?;
+    if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
+        return Err(Error::message(format!(
+            "isolated Cargo home must be a real directory: {}",
+            cargo_home.display()
+        )));
+    }
+    let canonical =
+        fs::canonicalize(&cargo_home).map_err(|source| Error::io(&cargo_home, source))?;
+    if canonical.parent() != Some(root.as_path()) {
+        return Err(Error::message(format!(
+            "isolated Cargo home escaped its temporary root: {}",
+            canonical.display()
+        )));
+    }
+    Ok(canonical)
 }
 
 fn workspace_version(root: &Path) -> Result<String> {
@@ -148,6 +212,7 @@ fn package_crate(
     package: &PackageSpec,
     version: &str,
     index_url: &str,
+    cargo: &QualifiedCargo,
 ) -> Result<PathBuf> {
     let manifest = root.join(package.manifest);
     if !manifest.is_file() {
@@ -157,19 +222,7 @@ fn package_crate(
         )));
     }
     let staging = stage_package_workspace(root, temporary, package, version)?;
-    let mut command = Command::new("cargo");
-    command.current_dir(&staging).args([
-        "package",
-        "--allow-dirty",
-        "--no-verify",
-        "--registry",
-        REGISTRY_NAME,
-        "--target-dir",
-    ]);
-    command
-        .arg(target)
-        .args(["-p", package.name])
-        .env("CARGO_REGISTRIES_BOXDD_LOCAL_INDEX", index_url);
+    let mut command = package_cargo_command(&staging, target, package.name, index_url, cargo)?;
     run_command(
         &mut command,
         &format!("package {} from repository source", package.name),
@@ -187,6 +240,28 @@ fn package_crate(
             archive.display()
         )))
     }
+}
+
+fn package_cargo_command(
+    staging: &Path,
+    target: &Path,
+    package: &str,
+    index_url: &str,
+    cargo: &QualifiedCargo,
+) -> Result<Command> {
+    let mut command = cargo.command_in(staging, target)?;
+    add_loopback_proxy_bypass(&mut command);
+    command.args([
+        "package",
+        "--allow-dirty",
+        "--no-verify",
+        "--registry",
+        REGISTRY_NAME,
+    ]);
+    command
+        .args(["-p", package])
+        .env("CARGO_REGISTRIES_BOXDD_LOCAL_INDEX", index_url);
+    Ok(command)
 }
 
 fn validate_package_archive(
@@ -253,6 +328,14 @@ fn validate_package_archive(
             (
                 format!("{prefix}security/sigstore/trusted_root.json"),
                 repository_root.join("boxdd-sys/security/sigstore/trusted_root.json"),
+            ),
+            (
+                format!("{prefix}abi/wasm32-unknown-unknown-single.toml"),
+                repository_root.join("boxdd-sys/abi/wasm32-unknown-unknown-single.toml"),
+            ),
+            (
+                format!("{prefix}abi/wasm32-unknown-unknown-double.toml"),
+                repository_root.join("boxdd-sys/abi/wasm32-unknown-unknown-double.toml"),
             ),
         ]);
     }
@@ -422,37 +505,22 @@ fn consume_fixture(
     temporary: &Path,
     index_url: &str,
     version: &str,
+    cargo: &QualifiedCargo,
     consumer: ConsumerSpec,
 ) -> Result<()> {
     let source = root
         .join("xtask/fixtures/package-consumers")
-        .join(consumer.name);
+        .join(consumer.fixture);
     let destination = temporary.join("consumers").join(consumer.name);
     copy_tree(&source, &destination)?;
     let manifest = destination.join("Cargo.toml");
     let manifest_source =
         fs::read_to_string(&manifest).map_err(|error| Error::io(&manifest, error))?;
-    let rendered = manifest_source.replace("0.0.0-BOXDD-VERSION", version);
-    if rendered == manifest_source {
-        return Err(Error::message(format!(
-            "package consumer {} has no version placeholder",
-            consumer.name
-        )));
-    }
+    let rendered = render_consumer_manifest(&manifest_source, version, consumer)?;
     write_file(&manifest, rendered.as_bytes())?;
 
-    let config = destination.join(".cargo/config.toml");
-    write_file(
-        &config,
-        format!("[registries.{REGISTRY_NAME}]\nindex = {index_url:?}\n").as_bytes(),
-    )?;
-
     let target = temporary.join("consumer-targets").join(consumer.name);
-    let mut generate = Command::new("cargo");
-    generate
-        .current_dir(&destination)
-        .env("CARGO_TARGET_DIR", &target)
-        .args(["generate-lockfile"]);
+    let mut generate = consumer_lockfile_command(&destination, &target, index_url, cargo)?;
     run_command(
         &mut generate,
         &format!(
@@ -467,16 +535,118 @@ fn consume_fixture(
         consumer.internal_packages,
     )?;
 
-    let mut verify = Command::new("cargo");
-    verify
-        .current_dir(&destination)
-        .env("CARGO_TARGET_DIR", &target)
-        .arg(if consumer.run { "run" } else { "check" })
-        .args(["--locked"]);
+    let mut verify =
+        consumer_verify_command(&destination, &target, index_url, cargo, consumer.mode)?;
     run_command(
         &mut verify,
-        &format!("build and run fixed {} package consumer", consumer.name),
+        &format!("verify fixed {} package consumer", consumer.name),
     )
+}
+
+fn consumer_lockfile_command(
+    destination: &Path,
+    target: &Path,
+    index_url: &str,
+    cargo: &QualifiedCargo,
+) -> Result<Command> {
+    let mut command = cargo.command_in(destination, target)?;
+    add_loopback_proxy_bypass(&mut command);
+    command
+        .env("CARGO_REGISTRIES_BOXDD_LOCAL_INDEX", index_url)
+        .args(["generate-lockfile"]);
+    Ok(command)
+}
+
+fn render_consumer_manifest(source: &str, version: &str, consumer: ConsumerSpec) -> Result<String> {
+    if !source.contains(VERSION_PLACEHOLDER) {
+        return Err(Error::message(format!(
+            "package consumer {} has no version placeholder",
+            consumer.name
+        )));
+    }
+    let mut rendered = source.replace(VERSION_PLACEHOLDER, version);
+    match consumer.mode {
+        ConsumerMode::RunNative => {
+            if rendered.contains(WASM_PROVIDER_PRECISION_PLACEHOLDER) {
+                return Err(Error::message(format!(
+                    "native package consumer {} contains a WASM precision placeholder",
+                    consumer.name
+                )));
+            }
+        }
+        ConsumerMode::CheckWasmProvider(precision) => {
+            if !rendered.contains(WASM_PROVIDER_PRECISION_PLACEHOLDER) {
+                return Err(Error::message(format!(
+                    "WASM provider consumer {} has no precision placeholder",
+                    consumer.name
+                )));
+            }
+            rendered = rendered.replace(WASM_PROVIDER_PRECISION_PLACEHOLDER, precision.as_str());
+        }
+    }
+    Ok(rendered)
+}
+
+fn consumer_verify_command(
+    destination: &Path,
+    target: &Path,
+    index_url: &str,
+    cargo: &QualifiedCargo,
+    mode: ConsumerMode,
+) -> Result<Command> {
+    let mut command = cargo.command_in(destination, target)?;
+    add_loopback_proxy_bypass(&mut command);
+    command.env("CARGO_REGISTRIES_BOXDD_LOCAL_INDEX", index_url);
+    match mode {
+        ConsumerMode::RunNative => {
+            command.args(["run", "--locked"]);
+        }
+        ConsumerMode::CheckWasmProvider(precision) => {
+            command
+                .args([
+                    "check",
+                    "--locked",
+                    "--target",
+                    WASM_TARGET,
+                    "--no-default-features",
+                ])
+                .env("BOXDD_SYS_PROVIDER", "wasm-provider");
+            if let Some(feature) = precision.cargo_feature() {
+                command.args(["--features", feature]);
+            }
+        }
+    }
+    Ok(command)
+}
+
+fn add_loopback_proxy_bypass(command: &mut Command) {
+    let keys: &[&str] = if cfg!(windows) {
+        &["NO_PROXY"]
+    } else {
+        &["NO_PROXY", "no_proxy"]
+    };
+    for key in keys {
+        let explicit = command.get_envs().find(|(name, _)| {
+            #[cfg(windows)]
+            {
+                name.to_string_lossy().eq_ignore_ascii_case(key)
+            }
+            #[cfg(not(windows))]
+            {
+                *name == std::ffi::OsStr::new(key)
+            }
+        });
+        let mut value = match explicit {
+            Some((_, Some(value))) => value.to_owned(),
+            Some((_, None)) => Default::default(),
+            None => std::env::var_os(key).unwrap_or_default(),
+        };
+        if !value.is_empty() {
+            value.push(",");
+        }
+        value.push("127.0.0.1,localhost,::1");
+        command.env(key, value);
+    }
 }
 
 fn assert_internal_sources(
@@ -787,13 +957,13 @@ fn file_url(path: &Path) -> Result<String> {
 }
 
 fn run_git(root: &Path, args: &[&str], label: &str) -> Result<()> {
-    let mut command = Command::new("git");
+    let mut command = qualified_git_command().map_err(Error::Message)?;
     command.current_dir(root).args(args);
     run_command(&mut command, label)
 }
 
 fn commit_index(root: &Path, message: &str) -> Result<()> {
-    let mut command = Command::new("git");
+    let mut command = qualified_git_command().map_err(Error::Message)?;
     command
         .current_dir(root)
         .args(["-c", "user.name=boxdd verification"])
@@ -986,13 +1156,22 @@ fn write_response(stream: &mut TcpStream, status: &str, body: &[u8]) -> std::io:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeSet;
+    use std::{collections::BTreeSet, ffi::OsStr};
     use syn::{
         Expr, Item, Lit, Token,
         parse::Parser,
         punctuated::Punctuated,
         visit::{self, Visit},
     };
+
+    fn isolated_test_cargo() -> (tempfile::TempDir, PathBuf, PathBuf, QualifiedCargo) {
+        let temporary = tempfile::tempdir().unwrap();
+        let cargo_home = create_isolated_cargo_home(temporary.path()).unwrap();
+        let root = temporary.path().canonicalize().unwrap();
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let cargo = QualifiedCargo::qualify_isolated(repository, &cargo_home, &root).unwrap();
+        (temporary, root, cargo_home, cargo)
+    }
 
     fn declared_adapter_abi_version(source: &str) -> u32 {
         let syntax = syn::parse_file(source).expect("adapter source must parse");
@@ -1127,6 +1306,248 @@ mod tests {
             .map(|package| package.name)
             .collect::<BTreeSet<_>>();
         assert_eq!(names, BTreeSet::from(["bevy_boxdd", "boxdd", "boxdd-sys"]));
+    }
+
+    #[test]
+    fn isolated_cargo_home_starts_empty_under_the_temporary_root() {
+        let temporary = tempfile::tempdir().unwrap();
+        let cargo_home = create_isolated_cargo_home(temporary.path()).unwrap();
+        let root = temporary.path().canonicalize().unwrap();
+
+        assert_eq!(cargo_home.parent(), Some(root.as_path()));
+        assert_eq!(fs::read_dir(&cargo_home).unwrap().count(), 0);
+        assert!(create_isolated_cargo_home(temporary.path()).is_err());
+    }
+
+    #[test]
+    fn package_and_consumer_commands_share_isolated_cargo_home() {
+        let (_temporary, root, cargo_home, cargo) = isolated_test_cargo();
+        let staging = root.join("staging");
+        let consumer_root = root.join("consumer");
+        fs::create_dir_all(&staging).unwrap();
+        fs::create_dir_all(&consumer_root).unwrap();
+        let package_target = root.join("targets/package");
+        let consumer_target = root.join("targets/consumer");
+        let index_url = "file:///isolated-index";
+        let package =
+            package_cargo_command(&staging, &package_target, "boxdd-sys", index_url, &cargo)
+                .unwrap();
+        let lockfile =
+            consumer_lockfile_command(&consumer_root, &consumer_target, index_url, &cargo).unwrap();
+        let consumer = consumer_verify_command(
+            &consumer_root,
+            &consumer_target,
+            index_url,
+            &cargo,
+            ConsumerMode::RunNative,
+        )
+        .unwrap();
+
+        for command in [&package, &lockfile, &consumer] {
+            assert!(Path::new(command.get_program()).is_absolute());
+            let environment = command
+                .get_envs()
+                .collect::<std::collections::BTreeMap<_, _>>();
+            assert_eq!(
+                environment.get(OsStr::new("CARGO_HOME")).copied().flatten(),
+                Some(cargo_home.as_os_str()),
+            );
+            assert_eq!(environment.get(OsStr::new("DOCS_RS")).copied(), Some(None));
+            assert_eq!(
+                environment.get(OsStr::new("RUSTFLAGS")).copied(),
+                Some(None)
+            );
+            assert_eq!(
+                environment
+                    .get(OsStr::new("CARGO_NET_GIT_FETCH_WITH_CLI"))
+                    .copied(),
+                Some(None)
+            );
+            assert_eq!(
+                environment
+                    .get(OsStr::new("CARGO_REGISTRIES_BOXDD_LOCAL_INDEX"))
+                    .copied()
+                    .flatten(),
+                Some(OsStr::new(index_url))
+            );
+            let rustc = environment
+                .get(OsStr::new("RUSTC"))
+                .copied()
+                .flatten()
+                .expect("qualified RUSTC");
+            assert!(Path::new(rustc).is_absolute());
+            let target = Path::new(
+                environment
+                    .get(OsStr::new("CARGO_TARGET_DIR"))
+                    .copied()
+                    .flatten()
+                    .expect("controlled Cargo target"),
+            );
+            assert!(target.is_absolute());
+            assert!(target.starts_with(&root));
+            assert_ne!(target, root.as_path());
+        }
+    }
+
+    #[test]
+    fn package_commands_preserve_proxies_and_bypass_the_loopback_registry() {
+        let (_temporary, root, _cargo_home, cargo) = isolated_test_cargo();
+        let staging = root.join("staging");
+        fs::create_dir(&staging).unwrap();
+        let mut command = cargo.command_in(&staging, &root.join("target")).unwrap();
+        command
+            .env("CARGO_HTTP_PROXY", "http://127.0.0.1:10809")
+            .env("NO_PROXY", "example.invalid");
+        #[cfg(not(windows))]
+        command.env("no_proxy", "internal.invalid");
+
+        add_loopback_proxy_bypass(&mut command);
+
+        let environment = command
+            .get_envs()
+            .collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(
+            environment
+                .get(OsStr::new("CARGO_HTTP_PROXY"))
+                .copied()
+                .flatten(),
+            Some(OsStr::new("http://127.0.0.1:10809"))
+        );
+        assert_eq!(
+            environment.get(OsStr::new("NO_PROXY")).copied().flatten(),
+            Some(OsStr::new("example.invalid,127.0.0.1,localhost,::1"))
+        );
+        #[cfg(not(windows))]
+        assert_eq!(
+            environment.get(OsStr::new("no_proxy")).copied().flatten(),
+            Some(OsStr::new("internal.invalid,127.0.0.1,localhost,::1"))
+        );
+    }
+
+    #[test]
+    fn wasm_provider_consumers_route_distinct_single_and_double_coordinates() {
+        let single = *CONSUMERS
+            .iter()
+            .find(|consumer| {
+                consumer.mode == ConsumerMode::CheckWasmProvider(ProviderPrecision::Single)
+            })
+            .expect("single-precision WASM provider consumer");
+        let double = *CONSUMERS
+            .iter()
+            .find(|consumer| {
+                consumer.mode == ConsumerMode::CheckWasmProvider(ProviderPrecision::Double)
+            })
+            .expect("double-precision WASM provider consumer");
+        assert_ne!(single.name, double.name);
+        assert_eq!(single.fixture, "wasm-provider");
+        assert_eq!(double.fixture, "wasm-provider");
+
+        let manifest_source =
+            include_str!("../../fixtures/package-consumers/wasm-provider/Cargo.toml");
+        let single_manifest = render_consumer_manifest(manifest_source, "0.6.0", single).unwrap();
+        let double_manifest = render_consumer_manifest(manifest_source, "0.6.0", double).unwrap();
+        assert!(single_manifest.contains("name = \"boxdd-package-consumer-wasm-provider-single\""));
+        assert!(double_manifest.contains("name = \"boxdd-package-consumer-wasm-provider-double\""));
+        assert!(single_manifest.contains("double-precision = [\"boxdd-sys/double-precision\"]"));
+        assert!(double_manifest.contains("double-precision = [\"boxdd-sys/double-precision\"]"));
+        assert!(!single_manifest.contains(WASM_PROVIDER_PRECISION_PLACEHOLDER));
+        assert!(!double_manifest.contains(WASM_PROVIDER_PRECISION_PLACEHOLDER));
+
+        let (_temporary, root, cargo_home, cargo) = isolated_test_cargo();
+        let destination = root.join("consumer");
+        fs::create_dir(&destination).unwrap();
+        let single_target = root.join("targets/wasm-provider-single");
+        let double_target = root.join("targets/wasm-provider-double");
+        let index_url = "file:///isolated-index";
+        let single_command =
+            consumer_verify_command(&destination, &single_target, index_url, &cargo, single.mode)
+                .unwrap();
+        let double_command =
+            consumer_verify_command(&destination, &double_target, index_url, &cargo, double.mode)
+                .unwrap();
+        let single_args = single_command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        let double_args = double_command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            single_args,
+            [
+                "check",
+                "--locked",
+                "--target",
+                WASM_TARGET,
+                "--no-default-features"
+            ]
+        );
+        assert_eq!(
+            double_args,
+            [
+                "check",
+                "--locked",
+                "--target",
+                WASM_TARGET,
+                "--no-default-features",
+                "--features",
+                "double-precision"
+            ]
+        );
+
+        for (command, target) in [
+            (&single_command, &single_target),
+            (&double_command, &double_target),
+        ] {
+            let environment = command
+                .get_envs()
+                .collect::<std::collections::BTreeMap<_, _>>();
+            assert_eq!(
+                environment
+                    .get(OsStr::new("BOXDD_SYS_PROVIDER"))
+                    .copied()
+                    .flatten(),
+                Some(OsStr::new("wasm-provider"))
+            );
+            assert_eq!(
+                environment
+                    .get(OsStr::new("CARGO_TARGET_DIR"))
+                    .copied()
+                    .flatten(),
+                Some(target.as_os_str())
+            );
+            assert_eq!(
+                environment.get(OsStr::new("CARGO_HOME")).copied().flatten(),
+                Some(cargo_home.as_os_str()),
+            );
+            assert_eq!(
+                environment
+                    .get(OsStr::new("CARGO_BUILD_JOBS"))
+                    .copied()
+                    .flatten(),
+                Some(OsStr::new("2"))
+            );
+            assert_eq!(
+                environment
+                    .get(OsStr::new("CARGO_INCREMENTAL"))
+                    .copied()
+                    .flatten(),
+                Some(OsStr::new("0"))
+            );
+            for key in [
+                "DOCS_RS",
+                "CARGO_CFG_DOCSRS",
+                "RUSTFLAGS",
+                "CARGO_ENCODED_RUSTFLAGS",
+            ] {
+                assert_eq!(
+                    environment.get(OsStr::new(key)).copied(),
+                    Some(None),
+                    "{key} must be removed from {target:?}"
+                );
+            }
+        }
     }
 
     #[test]

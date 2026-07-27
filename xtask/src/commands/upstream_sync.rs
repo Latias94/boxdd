@@ -4,8 +4,10 @@ use std::{
     io::Write as _,
     path::{Component, Path, PathBuf},
     process::{Command, Output},
-    time::{SystemTime, UNIX_EPOCH},
 };
+
+#[cfg(test)]
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tempfile::{NamedTempFile, TempDir};
@@ -16,16 +18,24 @@ mod bindgen_contract;
 use crate::{
     Error, Result,
     abi_probe::{AbiProbePrecision, GeneratedAbiProbe, generate_workspace_probe},
-    commands::{UpdateMode, parse_update_mode},
+    commands::{
+        UpdateMode, parse_update_mode,
+        support::{QualifiedCargo, controlled_child_directory},
+    },
     config::{
-        UPSTREAM_MANIFEST_SCHEMA, read_toml, render_toml, write_atomic, write_atomic_bytes,
+        UPSTREAM_MANIFEST_SCHEMA, ensure_no_pending_atomic_batches_for_workspace, read_toml,
+        recover_atomic_batches, render_toml, write_atomic, write_atomic_bytes,
         write_new_bytes_noclobber,
     },
     paths::WorkspacePaths,
+    qualified_git::{qualified_git_command, repository_lock_path},
     recording_ops,
 };
 
 const BOX2D_GITLINK: &str = "boxdd-sys/third-party/box2d";
+const ISOLATED_GENERATION_DIRECTORY_PREFIX: &str = "boxdd-upstream-sync-";
+const ISOLATED_GENERATION_MARKER: &str = ".boxdd-isolated-generation.toml";
+const ISOLATED_GENERATION_MARKER_SCHEMA: u32 = 1;
 const UNINITIALIZED_BLAKE3: &str =
     "0000000000000000000000000000000000000000000000000000000000000000";
 const ABI_PROBE_METADATA_SCHEMA: u32 = 1;
@@ -42,9 +52,11 @@ const GENERATOR_INPUT_PATHS: &[&str] = &[
     "boxdd-sys/native",
     "boxdd-sys/src",
     "tools/abi-probe",
+    "xtask/build.rs",
     "xtask/Cargo.toml",
     "xtask/src",
     "xtask/tests",
+    "xtask/toolchains",
 ];
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -331,9 +343,12 @@ impl UpstreamManifest {
     }
 
     pub fn artifact(&self, kind: ArtifactKind) -> Result<&GeneratedArtifact> {
-        if kind == ArtifactKind::Bindings {
+        if matches!(
+            kind,
+            ArtifactKind::Bindings | ArtifactKind::AbiMetadata | ArtifactKind::ProviderIdentity
+        ) {
             return Err(Error::message(
-                "bindings artifacts must be selected by precision, target, and provider",
+                "precision-specific artifacts must be selected by precision, target, and provider",
             ));
         }
         let mut matches = self
@@ -512,7 +527,9 @@ pub fn run(paths: &WorkspacePaths, args: &[String]) -> Result<()> {
         UpdateMode::Check => {
             let _lock = UpdateLock::acquire(paths.root())?;
             let (manifest, baseline) = load_manifest_snapshot(paths, false)?;
+            require_provider_identity_topology(&manifest)?;
             let snapshot = validate_repository(paths, &manifest, false)?;
+            super::provider::validate_checked_wasm_provider_contracts(paths.root())?;
             super::api_coverage::check(paths)?;
             if manifest.next_revision.is_some() {
                 let (summary, digest) =
@@ -539,6 +556,7 @@ fn refresh_routes(paths: &WorkspacePaths) -> Result<()> {
     let manifest_content =
         fs::read(&manifest_path).map_err(|source| Error::io(&manifest_path, source))?;
     let original = UpstreamManifest::from_bytes(paths, &manifest_content)?;
+    require_provider_identity_topology(&original)?;
     validate_repository_core(paths, &original)?;
     validate_recording_input_identities(paths, &original)?;
     validate_recording_operations(paths, &original)?;
@@ -567,6 +585,7 @@ fn refresh_routes(paths: &WorkspacePaths) -> Result<()> {
     baseline.verify_before_install(paths)?;
     install_route_refresh(paths, &original, &staged, &baseline, None, || {
         validate_repository(paths, &staged.manifest, false)?;
+        super::provider::validate_checked_wasm_provider_contracts(paths.root())?;
         super::api_coverage::check(paths)
     })?;
     println!(
@@ -609,7 +628,9 @@ struct NextCandidateRegistration<'a> {
 fn check_next_candidate(paths: &WorkspacePaths) -> Result<()> {
     let _lock = UpdateLock::acquire(paths.root())?;
     let (manifest, baseline) = load_manifest_snapshot(paths, true)?;
+    require_provider_identity_topology(&manifest)?;
     validate_repository(paths, &manifest, true)?;
+    super::provider::validate_checked_wasm_provider_contracts(paths.root())?;
     super::api_coverage::check(paths)?;
     let (summary, digest) = validate_registered_next_candidate(paths, &manifest, &baseline)?;
     print_next_candidate_summary(&summary, &digest);
@@ -923,7 +944,9 @@ fn prepare_next_candidate(paths: &WorkspacePaths) -> Result<()> {
     let _lock = UpdateLock::acquire(paths.root())?;
     let (manifest, baseline) = load_manifest_snapshot(paths, true)?;
     let manifest_baseline = baseline.manifest_content(paths)?.to_vec();
+    require_provider_identity_topology(&manifest)?;
     validate_repository(paths, &manifest, true)?;
+    super::provider::validate_checked_wasm_provider_contracts(paths.root())?;
     super::api_coverage::check(paths)?;
     let target = manifest
         .next_revision
@@ -984,7 +1007,10 @@ fn reviewed_candidate_path(artifact: &GeneratedArtifact) -> Result<String> {
 
 pub fn checked_snapshot(paths: &WorkspacePaths) -> Result<UpstreamSnapshot> {
     let manifest = UpstreamManifest::load(paths)?;
-    validate_repository(paths, &manifest, false)
+    require_provider_identity_topology(&manifest)?;
+    let snapshot = validate_repository(paths, &manifest, false)?;
+    super::provider::validate_checked_wasm_provider_contracts(paths.root())?;
+    Ok(snapshot)
 }
 
 pub fn validate_repository(
@@ -1831,6 +1857,67 @@ fn validate_artifacts(artifacts: &[GeneratedArtifact], errors: &mut Vec<String>)
             ));
         }
     }
+    validate_provider_identity_topology(artifacts, errors);
+}
+
+fn validate_provider_identity_topology(artifacts: &[GeneratedArtifact], errors: &mut Vec<String>) {
+    let observed = artifacts
+        .iter()
+        .filter(|artifact| artifact.kind == ArtifactKind::ProviderIdentity)
+        .map(|artifact| {
+            (
+                artifact.name.as_str(),
+                artifact.path.as_str(),
+                artifact.precision,
+                artifact.target,
+                artifact.provider,
+                artifact.producer,
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    if observed.is_empty() {
+        return;
+    }
+    let expected = BTreeSet::from([
+        (
+            "wasm-provider-identity-single",
+            "boxdd-sys/abi/wasm32-unknown-unknown-single.toml",
+            Some(Precision::Single),
+            ArtifactTarget::Wasm32UnknownUnknown,
+            ArtifactProvider::WasmRuntime,
+            ArtifactProducer::ProviderAttestation,
+        ),
+        (
+            "wasm-provider-identity-double",
+            "boxdd-sys/abi/wasm32-unknown-unknown-double.toml",
+            Some(Precision::Double),
+            ArtifactTarget::Wasm32UnknownUnknown,
+            ArtifactProvider::WasmRuntime,
+            ArtifactProducer::ProviderAttestation,
+        ),
+    ]);
+    if observed != expected {
+        errors.push(format!(
+            "WASM provider identity topology must contain the exact single/double contract pair; observed {observed:?}, expected {expected:?}"
+        ));
+    }
+}
+
+pub(super) fn require_provider_identity_topology(manifest: &UpstreamManifest) -> Result<()> {
+    let mut errors = Vec::new();
+    validate_provider_identity_topology(&manifest.artifacts, &mut errors);
+    if !manifest
+        .artifacts
+        .iter()
+        .any(|artifact| artifact.kind == ArtifactKind::ProviderIdentity)
+    {
+        errors.push("upstream manifest has no WASM provider identity artifacts".to_owned());
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(Error::message(errors.join("\n")))
+    }
 }
 
 fn validate_artifact_path_reservation(
@@ -1937,6 +2024,8 @@ fn apply_update(paths: &WorkspacePaths) -> Result<()> {
         .next_revision
         .as_deref()
         .ok_or_else(|| Error::message("upstream manifest has no next_revision to apply"))?;
+    require_provider_identity_topology(&manifest)?;
+    super::provider::validate_checked_wasm_provider_contracts(paths.root())?;
     validate_update_preconditions(paths, &manifest)?;
 
     let staging =
@@ -1993,16 +2082,7 @@ pub(crate) struct UpdateLock {
 
 impl UpdateLock {
     pub(crate) fn acquire(root: &Path) -> Result<Self> {
-        let git_path = git_output(
-            root,
-            ["rev-parse", "--git-path", "boxdd-upstream-sync.lock"],
-        )?;
-        let git_path = PathBuf::from(git_path.trim());
-        let path = if git_path.is_absolute() {
-            git_path
-        } else {
-            root.join(git_path)
-        };
+        let path = Self::lock_path(root)?;
         let file = fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -2010,6 +2090,14 @@ impl UpdateLock {
             .truncate(false)
             .open(&path)
             .map_err(|source| Error::io(&path, source))?;
+        let verified_path = Self::lock_path(root)?;
+        if verified_path != path {
+            return Err(Error::message(format!(
+                "upstream-sync lock path changed while opening it: expected {}, found {}",
+                path.display(),
+                verified_path.display()
+            )));
+        }
         file.try_lock().map_err(|source| {
             Error::message(format!(
                 "could not acquire upstream-sync lock {}: {source}; another update may be running",
@@ -2027,7 +2115,13 @@ impl UpdateLock {
             .map_err(|source| Error::io(&lock.path, source))?;
         file.sync_all()
             .map_err(|source| Error::io(&lock.path, source))?;
+        recover_atomic_batches(root)?;
+        cleanup_deferred_isolated_generations(root)?;
         Ok(lock)
+    }
+
+    fn lock_path(root: &Path) -> Result<PathBuf> {
+        repository_lock_path(root, Path::new("boxdd-upstream-sync.lock")).map_err(Error::message)
     }
 }
 
@@ -3141,17 +3235,6 @@ fn validate_repository_without_artifact_digests(
 }
 
 fn validate_bootstrap_bindings(paths: &WorkspacePaths, manifest: &UpstreamManifest) -> Result<()> {
-    if let Some(artifact) = manifest
-        .artifacts
-        .iter()
-        .find(|artifact| artifact.producer == ArtifactProducer::ProviderAttestation)
-    {
-        return Err(Error::message(format!(
-            "artifact digest bootstrap has no reproducible generator for target-native artifact `{}` produced by {}; bootstrap refuses to hash-and-bless it",
-            artifact.name,
-            artifact.producer.as_str()
-        )));
-    }
     let baseline = GenerationBaseline::capture(paths.root())?;
     let generation = IsolatedGeneration::create_at(
         paths,
@@ -3161,8 +3244,24 @@ fn validate_bootstrap_bindings(paths: &WorkspacePaths, manifest: &UpstreamManife
     let validation = (|| {
         generation.generate_bindings(manifest)?;
         generation.generate_abi_metadata(manifest)?;
+        let has_provider_identities = manifest
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.kind == ArtifactKind::ProviderIdentity);
+        if has_provider_identities {
+            let provider_sdk = super::provider::qualified_provider_sdk_for(&generation.worktree)?;
+            super::provider::refresh_wasm_provider_contracts_unlocked(
+                &generation.worktree,
+                &generation.target_dir.join("wasm-provider-contracts"),
+                &provider_sdk,
+            )?;
+        }
         compare_binding_artifacts(paths.root(), &generation.worktree, manifest)?;
-        compare_abi_metadata_artifacts(paths.root(), &generation.worktree, manifest)
+        compare_abi_metadata_artifacts(paths.root(), &generation.worktree, manifest)?;
+        if has_provider_identities {
+            compare_provider_identity_artifacts(paths.root(), &generation.worktree, manifest)?;
+        }
+        Ok(())
     })();
     let cleanup = generation.finish();
     match (validation, cleanup) {
@@ -3173,6 +3272,32 @@ fn validate_bootstrap_bindings(paths: &WorkspacePaths, manifest: &UpstreamManife
             "bootstrap bindings validation failed: {error}\nisolated worktree cleanup also failed: {cleanup}"
         ))),
     }
+}
+
+fn compare_provider_identity_artifacts(
+    installed_root: &Path,
+    generated_root: &Path,
+    manifest: &UpstreamManifest,
+) -> Result<()> {
+    for artifact in manifest
+        .artifacts
+        .iter()
+        .filter(|artifact| artifact.kind == ArtifactKind::ProviderIdentity)
+    {
+        let installed_path = installed_root.join(&artifact.path);
+        let generated_path = generated_root.join(&artifact.path);
+        let installed =
+            fs::read(&installed_path).map_err(|source| Error::io(&installed_path, source))?;
+        let generated =
+            fs::read(&generated_path).map_err(|source| Error::io(&generated_path, source))?;
+        if installed != generated {
+            return Err(Error::message(format!(
+                "provider identity artifact `{}` does not match isolated regeneration",
+                artifact.name
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn compare_abi_metadata_artifacts(
@@ -3327,25 +3452,20 @@ fn abi_probe_content_blake3(generated: &GeneratedAbiProbe) -> String {
 }
 
 fn run_abi_probe_test(
-    workspace_root: &Path,
+    cargo: &QualifiedCargo,
     target_dir: &Path,
-    cargo_home: &Path,
     precision: Precision,
 ) -> Result<()> {
-    let mut command = Command::new("cargo");
-    configure_generation_command_environment(&mut command, workspace_root, cargo_home)?;
-    command
-        .current_dir(workspace_root)
-        .args([
-            "test",
-            "--locked",
-            "-p",
-            "boxdd-abi-probe",
-            "--test",
-            "abi",
-            "--no-default-features",
-        ])
-        .env("CARGO_TARGET_DIR", target_dir.join(precision.as_str()));
+    let mut command = cargo.command_at_working_root(&target_dir.join(precision.as_str()))?;
+    command.args([
+        "test",
+        "--locked",
+        "-p",
+        "boxdd-abi-probe",
+        "--test",
+        "abi",
+        "--no-default-features",
+    ]);
     if precision == Precision::Double {
         command.args(["--features", "double-precision"]);
     }
@@ -3355,108 +3475,13 @@ fn run_abi_probe_test(
     )
 }
 
-fn configure_generation_command_environment(
-    command: &mut Command,
-    workspace_root: &Path,
+fn qualify_generation_cargo(
+    anchor_root: &Path,
+    working_root: &Path,
     cargo_home: &Path,
-) -> Result<()> {
-    let cargo_home = prepare_isolated_cargo_home(workspace_root, cargo_home)?;
-    for (name, _) in std::env::vars_os() {
-        if name.to_str().is_some_and(is_ambient_generation_environment) {
-            command.env_remove(name);
-        }
-    }
-    command.env("CARGO_HOME", cargo_home);
-    Ok(())
-}
-
-fn prepare_isolated_cargo_home(workspace_root: &Path, cargo_home: &Path) -> Result<PathBuf> {
-    fs::create_dir_all(cargo_home).map_err(|source| Error::io(cargo_home, source))?;
-    let metadata =
-        fs::symlink_metadata(cargo_home).map_err(|source| Error::io(cargo_home, source))?;
-    if !metadata.is_dir() || metadata.file_type().is_symlink() {
-        return Err(Error::message(format!(
-            "isolated Cargo home must be a non-symlink directory: {}",
-            cargo_home.display()
-        )));
-    }
-    for name in ["config", "config.toml"] {
-        reject_ambient_cargo_config(&cargo_home.join(name), "isolated Cargo home")?;
-    }
-    for ancestor in workspace_root.ancestors().skip(1) {
-        for name in ["config", "config.toml"] {
-            reject_ambient_cargo_config(&ancestor.join(".cargo").join(name), "workspace ancestor")?;
-        }
-    }
-    fs::canonicalize(cargo_home).map_err(|source| Error::io(cargo_home, source))
-}
-
-fn reject_ambient_cargo_config(path: &Path, location: &str) -> Result<()> {
-    match fs::symlink_metadata(path) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(Error::io(path, error)),
-        Ok(_) => Err(Error::message(format!(
-            "{location} Cargo config {} would alter deterministic upstream generation",
-            path.display()
-        ))),
-    }
-}
-
-fn is_ambient_generation_environment(name: &str) -> bool {
-    let name = name.to_ascii_uppercase();
-    name == "BOX2D_LIB_DIR"
-        || name.starts_with("BOXDD_SYS_")
-        || name == "CFLAGS"
-        || name.starts_with("CFLAGS_")
-        || name.ends_with("_CFLAGS")
-        || name == "CPPFLAGS"
-        || name.starts_with("CPPFLAGS_")
-        || name.ends_with("_CPPFLAGS")
-        || name == "LDFLAGS"
-        || name.starts_with("LDFLAGS_")
-        || name.ends_with("_LDFLAGS")
-        || name == "CC"
-        || name.starts_with("CC_")
-        || name.ends_with("_CC")
-        || name == "CXX"
-        || name.starts_with("CXX_")
-        || name.ends_with("_CXX")
-        || name == "AR"
-        || name.starts_with("AR_")
-        || name.ends_with("_AR")
-        || name == "LD"
-        || name.starts_with("LD_")
-        || name.ends_with("_LD")
-        || name == "RANLIB"
-        || name.starts_with("RANLIB_")
-        || name.ends_with("_RANLIB")
-        || name.starts_with("BINDGEN_EXTRA_CLANG_ARGS_")
-        || name.starts_with("CARGO_TARGET_")
-        || name.starts_with("CARGO_BUILD_")
-        || name.starts_with("CARGO_PROFILE_")
-        || matches!(
-            name.as_str(),
-            "CL" | "BINDGEN_EXTRA_CLANG_ARGS"
-                | "CPATH"
-                | "C_INCLUDE_PATH"
-                | "CPLUS_INCLUDE_PATH"
-                | "OBJC_INCLUDE_PATH"
-                | "SDKROOT"
-                | "LIBRARY_PATH"
-                | "RUSTFLAGS"
-                | "RUSTDOCFLAGS"
-                | "CARGO_ENCODED_RUSTFLAGS"
-                | "CARGO_ENCODED_RUSTDOCFLAGS"
-                | "CARGO_INCREMENTAL"
-                | "CARGO_HOME"
-                | "RUSTC"
-                | "RUSTC_WRAPPER"
-                | "RUSTC_WORKSPACE_WRAPPER"
-                | "RUSTC_BOOTSTRAP"
-                | "RUSTUP_TOOLCHAIN"
-                | "DOCS_RS"
-                | "CARGO_CFG_DOCSRS"
-        )
+    output_root: &Path,
+) -> Result<QualifiedCargo> {
+    QualifiedCargo::qualify_isolated_scoped(anchor_root, working_root, cargo_home, output_root)
 }
 
 fn command_success_with_output(command: &mut Command, label: &str) -> Result<()> {
@@ -3532,10 +3557,20 @@ fn validate_abi_probe_artifacts(paths: &WorkspacePaths, manifest: &UpstreamManif
         precisions.insert(metadata.precision);
     }
 
-    let target_dir = paths.root().join("target/upstream-abi-probe");
-    let cargo_home = paths.root().join("target/upstream-cargo-home");
+    let output_root = controlled_child_directory(
+        paths.root(),
+        Path::new("target/upstream-abi-verification"),
+        "upstream ABI verification root",
+    )?;
+    let cargo_home = controlled_child_directory(
+        &output_root,
+        Path::new("cargo-home"),
+        "upstream ABI verification Cargo home",
+    )?;
+    let target_dir = output_root.join("cargo-target");
+    let cargo = qualify_generation_cargo(paths.root(), paths.root(), &cargo_home, &output_root)?;
     for precision in precisions {
-        run_abi_probe_test(paths.root(), &target_dir, &cargo_home, precision)?;
+        run_abi_probe_test(&cargo, &target_dir, precision)?;
     }
     Ok(())
 }
@@ -3555,6 +3590,7 @@ fn install_staged_update(
         fail_after_operations,
         || {
             validate_repository(paths, &staged.manifest, false)?;
+            super::provider::validate_checked_wasm_provider_contracts(paths.root())?;
             super::api_coverage::check(paths)
         },
     )
@@ -4454,11 +4490,22 @@ impl FileBackup {
 
 struct IsolatedGeneration {
     repository_root: PathBuf,
+    source_directory: Option<TempDir>,
     source_root: PathBuf,
     worktree: PathBuf,
     target_dir: PathBuf,
     cargo_home: PathBuf,
+    cargo: Option<QualifiedCargo>,
     repository_worktree_added: bool,
+}
+
+#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+struct IsolatedGenerationMarker {
+    schema: u32,
+    common_directory: PathBuf,
+    source_root: PathBuf,
+    worktree: PathBuf,
 }
 
 impl IsolatedGeneration {
@@ -4473,54 +4520,94 @@ impl IsolatedGeneration {
         repository_revision: &str,
         revision: &str,
     ) -> Result<Self> {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|error| Error::message(format!("system clock is before Unix epoch: {error}")))?
-            .as_nanos();
-        let source_root = std::env::temp_dir().join(format!(
-            "boxdd-upstream-sync-{}-{nonce}",
-            std::process::id()
-        ));
+        Self::create_at_with_cleanup(paths, repository_revision, revision, Self::cleanup)
+    }
+
+    fn create_at_with_cleanup<F>(
+        paths: &WorkspacePaths,
+        repository_revision: &str,
+        revision: &str,
+        cleanup: F,
+    ) -> Result<Self>
+    where
+        F: FnOnce(&mut Self) -> Result<()>,
+    {
+        let isolation_parent = isolated_generation_parent(paths.root())?;
+        let source_directory = tempfile::Builder::new()
+            .prefix(&format!(
+                "{ISOLATED_GENERATION_DIRECTORY_PREFIX}{}-",
+                std::process::id()
+            ))
+            .tempdir_in(&isolation_parent)
+            .map_err(|source| Error::io(&isolation_parent, source))?;
+        let source_root = fs::canonicalize(source_directory.path())
+            .map_err(|source| Error::io(source_directory.path(), source))?;
         let worktree = source_root.join("workspace");
         let target_dir = source_root.join("cargo-target");
         let cargo_home = source_root.join("cargo-home");
-        fs::create_dir_all(&source_root).map_err(|source| Error::io(&source_root, source))?;
+        write_isolated_generation_marker(&isolation_parent, &source_root, &worktree)?;
         let mut generation = Self {
             repository_root: paths.root().to_owned(),
+            source_directory: Some(source_directory),
             source_root,
             worktree,
             target_dir,
             cargo_home,
+            cargo: None,
             repository_worktree_added: false,
         };
-        command_success(
-            Command::new("git")
-                .current_dir(&generation.repository_root)
-                .args(["worktree", "add", "--detach"])
-                .arg(&generation.worktree)
-                .arg(repository_revision),
-            "create isolated repository worktree",
-        )?;
-        generation.repository_worktree_added = true;
+        let initialization = (|| {
+            generation.cargo_home = controlled_child_directory(
+                &generation.source_root,
+                Path::new("cargo-home"),
+                "isolated upstream Cargo home",
+            )?;
+            command_success(
+                git_command()?
+                    .current_dir(&generation.repository_root)
+                    .args(["worktree", "add", "--detach"])
+                    .arg(&generation.worktree)
+                    .arg(repository_revision),
+                "create isolated repository worktree",
+            )?;
+            generation.repository_worktree_added = true;
 
-        let isolated_submodule = generation.worktree.join(BOX2D_GITLINK);
-        if isolated_submodule.exists() {
-            fs::remove_dir_all(&isolated_submodule)
-                .map_err(|source| Error::io(&isolated_submodule, source))?;
+            let isolated_submodule = generation.worktree.join(BOX2D_GITLINK);
+            if isolated_submodule.exists() {
+                fs::remove_dir_all(&isolated_submodule)
+                    .map_err(|source| Error::io(&isolated_submodule, source))?;
+            }
+            let parent = isolated_submodule
+                .parent()
+                .ok_or_else(|| Error::message("isolated submodule path has no parent"))?;
+            fs::create_dir_all(parent).map_err(|source| Error::io(parent, source))?;
+            command_success(
+                git_command()?
+                    .args(["clone", "--no-hardlinks", "--no-checkout"])
+                    .arg(paths.box2d())
+                    .arg(&isolated_submodule),
+                "clone local Box2D object store into isolated worktree",
+            )?;
+            checkout_detached(&isolated_submodule, revision)?;
+            generation.cargo = Some(qualify_generation_cargo(
+                &generation.worktree,
+                &generation.worktree,
+                &generation.cargo_home,
+                &generation.source_root,
+            )?);
+            Ok(())
+        })();
+        if let Err(error) = initialization {
+            let cleanup_result = cleanup(&mut generation);
+            return Err(merge_isolated_initialization_failure(error, cleanup_result));
         }
-        let parent = isolated_submodule
-            .parent()
-            .ok_or_else(|| Error::message("isolated submodule path has no parent"))?;
-        fs::create_dir_all(parent).map_err(|source| Error::io(parent, source))?;
-        command_success(
-            Command::new("git")
-                .args(["clone", "--no-hardlinks", "--no-checkout"])
-                .arg(paths.box2d())
-                .arg(&isolated_submodule),
-            "clone local Box2D object store into isolated worktree",
-        )?;
-        checkout_detached(&isolated_submodule, revision)?;
         Ok(generation)
+    }
+
+    fn qualified_cargo(&self) -> Result<&QualifiedCargo> {
+        self.cargo
+            .as_ref()
+            .ok_or_else(|| Error::message("isolated upstream Cargo was not qualified"))
     }
 
     fn prepare_update(&self, manifest: &UpstreamManifest, target: &str) -> Result<StagedUpdate> {
@@ -4533,15 +4620,18 @@ impl IsolatedGeneration {
         set_indexed_gitlink(&self.worktree, target)?;
         self.generate_bindings(&target_manifest)?;
         self.generate_abi_metadata(&target_manifest)?;
-        if let Some(artifact) = target_manifest
+        if target_manifest
             .artifacts
             .iter()
-            .find(|artifact| artifact.kind == ArtifactKind::ProviderIdentity)
+            .any(|artifact| artifact.kind == ArtifactKind::ProviderIdentity)
         {
-            return Err(Error::message(format!(
-                "artifact `{}` requires its target-native {:?} generator before upstream-sync may stage an update",
-                artifact.name, artifact.producer
-            )));
+            let provider_sdk = super::provider::qualified_provider_sdk_for(&self.worktree)?;
+            super::provider::refresh_wasm_provider_contracts_unlocked(
+                &self.worktree,
+                &self.target_dir.join("wasm-provider-contracts"),
+                &provider_sdk,
+            )?;
+            super::provider::validate_checked_wasm_provider_contracts(&self.worktree)?;
         }
 
         let isolated_paths = WorkspacePaths::new(&self.worktree);
@@ -4623,6 +4713,19 @@ impl IsolatedGeneration {
 
         self.generate_bindings(&target_manifest)?;
         self.generate_abi_metadata(&target_manifest)?;
+        if target_manifest
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.kind == ArtifactKind::ProviderIdentity)
+        {
+            let provider_sdk = super::provider::qualified_provider_sdk_for(&self.worktree)?;
+            super::provider::refresh_wasm_provider_contracts_unlocked(
+                &self.worktree,
+                &self.target_dir.join("wasm-provider-contracts"),
+                &provider_sdk,
+            )?;
+            super::provider::validate_checked_wasm_provider_contracts(&self.worktree)?;
+        }
         let isolated_paths = WorkspacePaths::new(&self.worktree);
         let contract = super::api_coverage::render_refreshed_contract_candidate(&isolated_paths)?;
         let contract_path =
@@ -4709,6 +4812,7 @@ impl IsolatedGeneration {
     }
 
     fn generate_bindings(&self, manifest: &UpstreamManifest) -> Result<()> {
+        let cargo = self.qualified_cargo()?;
         let generation_targets = manifest
             .binding_artifacts()
             .map(|artifact| binding_generation_target(manifest, artifact))
@@ -4744,16 +4848,9 @@ impl IsolatedGeneration {
                 Some(std::ffi::OsStr::new(rust_target.as_str())),
             )
             .map_err(Error::message)?;
-            let mut command = Command::new("cargo");
-            configure_generation_command_environment(
-                &mut command,
-                &self.worktree,
-                &self.cargo_home,
-            )?;
+            let mut command = cargo.command_at_working_root(&artifact_target)?;
             command
-                .current_dir(&self.worktree)
                 .args(binding_generation_cargo_args(rust_target, features))
-                .env("CARGO_TARGET_DIR", &artifact_target)
                 .env("BOXDD_SYS_SKIP_CC", "1")
                 .env("BOXDD_SYS_FORCE_BINDGEN", "1")
                 .env("BOXDD_SYS_BINDGEN_TARGET", rust_target.as_str())
@@ -4830,13 +4927,9 @@ impl IsolatedGeneration {
             write_atomic_bytes(&self.worktree.join(&artifact.path), &content)?;
             precisions.insert(precision);
         }
+        let cargo = self.qualified_cargo()?;
         for precision in precisions {
-            run_abi_probe_test(
-                &self.worktree,
-                &self.target_dir.join("abi-probe"),
-                &self.cargo_home,
-                precision,
-            )?;
+            run_abi_probe_test(cargo, &self.target_dir.join("abi-probe"), precision)?;
         }
         Ok(())
     }
@@ -4850,12 +4943,39 @@ impl IsolatedGeneration {
     }
 
     fn cleanup(&mut self) -> Result<()> {
+        if self.source_directory.is_none() {
+            return Ok(());
+        }
+        if self.worktree.exists()
+            && let Err(error) = ensure_no_pending_atomic_batches_for_workspace(&self.worktree)
+        {
+            let preserved = self
+                .source_directory
+                .take()
+                .expect("checked isolated source directory")
+                .keep();
+            return Err(Error::message(format!(
+                "{error}\nisolated source directory preserved at {} because atomic batch recovery is pending",
+                preserved.display()
+            )));
+        }
         let registration = worktree_is_registered(&self.repository_root, &self.worktree)
             .map_err(|error| Error::message(format!("inspect isolated worktree: {error}")));
         self.cleanup_after_inspection(registration)
     }
 
     fn cleanup_after_inspection(&mut self, registration: Result<bool>) -> Result<()> {
+        self.cleanup_after_inspection_with(registration, remove_repository_worktree)
+    }
+
+    fn cleanup_after_inspection_with<F>(
+        &mut self,
+        registration: Result<bool>,
+        remove_worktree: F,
+    ) -> Result<()>
+    where
+        F: FnOnce(&Path, &Path) -> Result<()>,
+    {
         let mut errors = Vec::new();
         let should_attempt_registered_removal = match registration {
             Ok(registered) => registered,
@@ -4865,23 +4985,26 @@ impl IsolatedGeneration {
             }
         };
         if should_attempt_registered_removal {
-            if let Err(error) = command_success(
-                Command::new("git")
-                    .current_dir(&self.repository_root)
-                    .args(["worktree", "remove", "--force"])
-                    .arg(&self.worktree),
-                "remove isolated repository worktree",
-            ) {
+            if let Err(error) = remove_worktree(&self.repository_root, &self.worktree) {
                 errors.push(error.to_string());
+                if let Some(directory) = self.source_directory.take() {
+                    let preserved = directory.keep();
+                    errors.push(format!(
+                        "isolated source directory preserved at {} because its Git worktree registration could not be removed",
+                        preserved.display()
+                    ));
+                }
+                return Err(Error::message(errors.join("\n")));
             } else {
                 self.repository_worktree_added = false;
             }
         } else {
             self.repository_worktree_added = false;
         }
-        if self.source_root.exists() {
-            if let Err(source) = fs::remove_dir_all(&self.source_root) {
-                errors.push(Error::io(&self.source_root, source).to_string());
+        if let Some(directory) = self.source_directory.take() {
+            let path = directory.path().to_owned();
+            if let Err(source) = directory.close() {
+                errors.push(Error::io(path, source).to_string());
             } else {
                 self.repository_worktree_added = false;
             }
@@ -4891,6 +5014,130 @@ impl IsolatedGeneration {
         } else {
             Err(Error::message(errors.join("\n")))
         }
+    }
+}
+
+fn remove_repository_worktree(repository: &Path, worktree: &Path) -> Result<()> {
+    git_command().and_then(|mut command| {
+        command
+            .current_dir(repository)
+            .args(["worktree", "remove", "--force"])
+            .arg(worktree);
+        command_success(&mut command, "remove isolated repository worktree")
+    })
+}
+
+fn isolated_generation_parent(root: &Path) -> Result<PathBuf> {
+    let isolation_anchor =
+        repository_lock_path(root, Path::new("boxdd-isolated-generation.anchor"))
+            .map_err(Error::message)?;
+    isolation_anchor
+        .parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| {
+            Error::message(format!(
+                "repository-owned isolation anchor has no parent: {}",
+                isolation_anchor.display()
+            ))
+        })
+}
+
+fn write_isolated_generation_marker(
+    common_directory: &Path,
+    source_root: &Path,
+    worktree: &Path,
+) -> Result<()> {
+    let marker = IsolatedGenerationMarker {
+        schema: ISOLATED_GENERATION_MARKER_SCHEMA,
+        common_directory: common_directory.to_path_buf(),
+        source_root: source_root.to_path_buf(),
+        worktree: worktree.to_path_buf(),
+    };
+    let path = source_root.join(ISOLATED_GENERATION_MARKER);
+    write_atomic(&path, &render_toml(&marker)?)?;
+    let installed = read_toml::<IsolatedGenerationMarker>(&path)?;
+    if installed == marker {
+        Ok(())
+    } else {
+        Err(Error::message(format!(
+            "isolated generation ownership marker changed while it was installed: {}",
+            path.display()
+        )))
+    }
+}
+
+fn cleanup_deferred_isolated_generations(root: &Path) -> Result<()> {
+    let common_directory = isolated_generation_parent(root)?;
+    let mut candidates = fs::read_dir(&common_directory)
+        .map_err(|source| Error::io(&common_directory, source))?
+        .map(|entry| entry.map(|entry| entry.path()))
+        .collect::<std::io::Result<Vec<_>>>()
+        .map_err(|source| Error::io(&common_directory, source))?;
+    candidates.sort();
+
+    for candidate in candidates {
+        let Some(name) = candidate.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !name.starts_with(ISOLATED_GENERATION_DIRECTORY_PREFIX) {
+            continue;
+        }
+        let candidate_metadata =
+            fs::symlink_metadata(&candidate).map_err(|source| Error::io(&candidate, source))?;
+        if !candidate_metadata.file_type().is_dir() || candidate_metadata.file_type().is_symlink() {
+            return Err(Error::message(format!(
+                "deferred isolated generation candidate is not a real directory; preserved at {}",
+                candidate.display()
+            )));
+        }
+        let marker_path = candidate.join(ISOLATED_GENERATION_MARKER);
+        match fs::symlink_metadata(&marker_path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(Error::io(&marker_path, error)),
+            Ok(metadata)
+                if !metadata.file_type().is_file() || metadata.file_type().is_symlink() =>
+            {
+                return Err(Error::message(format!(
+                    "deferred isolated generation marker is not a regular non-symlink file: {}",
+                    marker_path.display()
+                )));
+            }
+            Ok(_) => {}
+        }
+
+        let source_root = candidate
+            .canonicalize()
+            .map_err(|source| Error::io(&candidate, source))?;
+        let marker = read_toml::<IsolatedGenerationMarker>(&marker_path)?;
+        let expected_worktree = source_root.join("workspace");
+        if marker.schema != ISOLATED_GENERATION_MARKER_SCHEMA
+            || marker.common_directory != common_directory
+            || marker.source_root != source_root
+            || marker.worktree != expected_worktree
+            || source_root.parent() != Some(common_directory.as_path())
+        {
+            return Err(Error::message(format!(
+                "deferred isolated generation marker does not own its directory; preserved at {}",
+                source_root.display()
+            )));
+        }
+        if expected_worktree.exists() {
+            ensure_no_pending_atomic_batches_for_workspace(&expected_worktree)?;
+        }
+        if worktree_is_registered(root, &expected_worktree)? {
+            remove_repository_worktree(root, &expected_worktree)?;
+        }
+        fs::remove_dir_all(&source_root).map_err(|source| Error::io(&source_root, source))?;
+    }
+    Ok(())
+}
+
+fn merge_isolated_initialization_failure(error: Error, cleanup: Result<()>) -> Error {
+    match cleanup {
+        Ok(()) => error,
+        Err(cleanup) => Error::message(format!(
+            "isolated worktree initialization failed: {error}\nisolated worktree cleanup also failed: {cleanup}"
+        )),
     }
 }
 
@@ -5284,10 +5531,9 @@ fn git_blob_blake3(repository: &Path, revision: &str, path: &str) -> Result<Stri
 
 fn git_blob_bytes(repository: &Path, revision: &str, path: &str) -> Result<Vec<u8>> {
     let object = format!("{revision}:{path}");
-    let output = Command::new("git")
+    let output = git_command()?
         .current_dir(repository)
         .args(["cat-file", "blob", &object])
-        .env("GIT_OPTIONAL_LOCKS", "0")
         .output()
         .map_err(|source| Error::io("git cat-file", source))?;
     if !output.status.success() {
@@ -5415,10 +5661,9 @@ fn validate_exact_inventory(expected: &SourceInventory, actual: &SourceInventory
 }
 
 fn managed_status(root: &Path, manifest: &UpstreamManifest) -> Result<String> {
-    let mut command = Command::new("git");
+    let mut command = git_command()?;
     command
         .current_dir(root)
-        .env("GIT_OPTIONAL_LOCKS", "0")
         .args(["status", "--porcelain=v1", "--untracked-files=all", "--"]);
     command.arg("boxdd-sys/upstream.toml");
     command.args(
@@ -5446,11 +5691,13 @@ fn reject_bootstrap_artifact_changes_if_present(
     paths: &WorkspacePaths,
     manifest: &UpstreamManifest,
 ) -> Result<()> {
-    let mut command = Command::new("git");
-    command
-        .current_dir(paths.root())
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .args(["status", "--porcelain=v1", "--untracked-files=all", "--"]);
+    let mut command = git_command()?;
+    command.current_dir(paths.root()).args([
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+        "--",
+    ]);
     command.args(manifest.artifacts.iter().map(|artifact| &artifact.path));
     let dirty = output_text(
         command
@@ -5658,7 +5905,7 @@ fn index_with_gitlink(
     let index = temporary.path();
     let cache_info = format!("160000,{revision},{BOX2D_GITLINK}");
     command_success(
-        Command::new("git")
+        git_command()?
             .current_dir(root)
             .env("GIT_INDEX_FILE", index)
             .args(["update-index", "--add", "--cacheinfo", &cache_info]),
@@ -5711,9 +5958,8 @@ fn indexed_gitlink(root: &Path) -> Result<String> {
 fn indexed_gitlink_from_snapshot(root: &Path, snapshot: &GitIndexSnapshot) -> Result<String> {
     let temporary = materialize_index_snapshot(snapshot)?;
     let index = temporary.path();
-    let output = Command::new("git")
+    let output = git_command()?
         .current_dir(root)
-        .env("GIT_OPTIONAL_LOCKS", "0")
         .env("GIT_INDEX_FILE", index)
         .args(["ls-files", "--stage", "--", BOX2D_GITLINK])
         .output()
@@ -5755,7 +6001,7 @@ fn parse_indexed_gitlink(output: &str) -> Result<String> {
 fn set_indexed_gitlink(root: &Path, revision: &str) -> Result<()> {
     let cache_info = format!("160000,{revision},{BOX2D_GITLINK}");
     command_success(
-        Command::new("git").current_dir(root).args([
+        git_command()?.current_dir(root).args([
             "update-index",
             "--add",
             "--cacheinfo",
@@ -5768,9 +6014,8 @@ fn set_indexed_gitlink(root: &Path, revision: &str) -> Result<()> {
 fn ensure_commit_object(repository: &Path, revision: &str) -> Result<()> {
     let object = format!("{revision}^{{commit}}");
     command_success(
-        Command::new("git")
+        git_command()?
             .current_dir(repository)
-            .env("GIT_OPTIONAL_LOCKS", "0")
             .args(["cat-file", "-e", &object]),
         &format!("verify commit object {revision}"),
     )
@@ -5778,7 +6023,7 @@ fn ensure_commit_object(repository: &Path, revision: &str) -> Result<()> {
 
 fn checkout_detached(repository: &Path, revision: &str) -> Result<()> {
     command_success(
-        Command::new("git").current_dir(repository).args([
+        git_command()?.current_dir(repository).args([
             "checkout",
             "--no-overwrite-ignore",
             "--detach",
@@ -5809,9 +6054,8 @@ fn checkout_state(repository: &Path) -> Result<CheckoutState> {
     let revision = git_output(repository, ["rev-parse", "HEAD"])?
         .trim()
         .to_owned();
-    let output = Command::new("git")
+    let output = git_command()?
         .current_dir(repository)
-        .env("GIT_OPTIONAL_LOCKS", "0")
         .args(["symbolic-ref", "-q", "HEAD"])
         .output()
         .map_err(|source| Error::io("git symbolic-ref", source))?;
@@ -5863,11 +6107,9 @@ fn restore_checkout_state(repository: &Path, state: &CheckoutState) -> Result<()
         ))
     })?;
     command_success(
-        Command::new("git").current_dir(repository).args([
-            "checkout",
-            "--no-overwrite-ignore",
-            branch,
-        ]),
+        git_command()?
+            .current_dir(repository)
+            .args(["checkout", "--no-overwrite-ignore", branch]),
         &format!("restore submodule checkout {symbolic_ref}"),
     )?;
     let restored = checkout_state(repository)?;
@@ -5879,10 +6121,13 @@ fn restore_checkout_state(repository: &Path, state: &CheckoutState) -> Result<()
     Ok(())
 }
 
+fn git_command() -> Result<Command> {
+    qualified_git_command().map_err(Error::message)
+}
+
 fn git_output<const N: usize>(repository: &Path, args: [&str; N]) -> Result<String> {
-    let output = Command::new("git")
+    let output = git_command()?
         .current_dir(repository)
-        .env("GIT_OPTIONAL_LOCKS", "0")
         .args(args)
         .output()
         .map_err(|source| Error::io("git", source))?;
@@ -5890,9 +6135,8 @@ fn git_output<const N: usize>(repository: &Path, args: [&str; N]) -> Result<Stri
 }
 
 fn git_output_with_paths(repository: &Path, args: &[&str], paths: &[&str]) -> Result<String> {
-    let output = Command::new("git")
+    let output = git_command()?
         .current_dir(repository)
-        .env("GIT_OPTIONAL_LOCKS", "0")
         .args(args)
         .args(paths)
         .output()
@@ -6149,7 +6393,8 @@ mod tests {
             configure_git(&workspace);
             let upstream_arg = upstream.to_string_lossy().into_owned();
             command_success(
-                Command::new("git")
+                git_command()
+                    .expect("qualified Git")
                     .current_dir(&workspace)
                     .args(["-c", "protocol.file.allow=always", "submodule", "add"])
                     .arg(&upstream_arg)
@@ -6203,8 +6448,11 @@ mod tests {
                     ArtifactKind::ApiCoverageReport => {
                         format!("Pinned active upstream: `{active_revision}`.\n")
                     }
-                    ArtifactKind::AbiMetadata | ArtifactKind::ProviderIdentity => {
-                        unreachable!("fixture does not declare optional artifacts")
+                    ArtifactKind::ProviderIdentity => {
+                        format!("upstream_sha = \"{active_revision}\"\n")
+                    }
+                    ArtifactKind::AbiMetadata => {
+                        unreachable!("fixture does not declare optional ABI metadata")
                     }
                 };
                 fs::write(path, content).expect("artifact fixture");
@@ -6285,7 +6533,10 @@ mod tests {
 
     fn run_git(repository: &Path, args: &[&str]) {
         command_success(
-            Command::new("git").current_dir(repository).args(args),
+            git_command()
+                .expect("qualified Git")
+                .current_dir(repository)
+                .args(args),
             &format!("git {}", args.join(" ")),
         )
         .expect("fixture git command");
@@ -6803,6 +7054,65 @@ mod tests {
     }
 
     #[test]
+    fn provider_identity_topology_requires_the_exact_single_double_pair() {
+        assert!(require_provider_identity_topology(&manifest()).is_err());
+        let mut canonical = artifacts();
+        canonical.extend([
+            GeneratedArtifact {
+                name: "wasm-provider-identity-single".to_owned(),
+                kind: ArtifactKind::ProviderIdentity,
+                path: "boxdd-sys/abi/wasm32-unknown-unknown-single.toml".to_owned(),
+                precision: Some(Precision::Single),
+                target: ArtifactTarget::Wasm32UnknownUnknown,
+                provider: ArtifactProvider::WasmRuntime,
+                producer: ArtifactProducer::ProviderAttestation,
+                content_blake3: "1".repeat(64),
+                candidate_path: None,
+                candidate_blake3: None,
+            },
+            GeneratedArtifact {
+                name: "wasm-provider-identity-double".to_owned(),
+                kind: ArtifactKind::ProviderIdentity,
+                path: "boxdd-sys/abi/wasm32-unknown-unknown-double.toml".to_owned(),
+                precision: Some(Precision::Double),
+                target: ArtifactTarget::Wasm32UnknownUnknown,
+                provider: ArtifactProvider::WasmRuntime,
+                producer: ArtifactProducer::ProviderAttestation,
+                content_blake3: "2".repeat(64),
+                candidate_path: None,
+                candidate_blake3: None,
+            },
+        ]);
+        let mut errors = Vec::new();
+        validate_provider_identity_topology(&canonical, &mut errors);
+        assert!(errors.is_empty(), "canonical topology: {errors:?}");
+
+        let mut missing = canonical.clone();
+        missing.retain(|artifact| artifact.name != "wasm-provider-identity-double");
+        let mut errors = Vec::new();
+        validate_provider_identity_topology(&missing, &mut errors);
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("exact single/double"))
+        );
+
+        let mut wrong_provider = canonical;
+        wrong_provider
+            .iter_mut()
+            .find(|artifact| artifact.name == "wasm-provider-identity-single")
+            .expect("single provider identity")
+            .provider = ArtifactProvider::WasmCompileOnly;
+        let mut errors = Vec::new();
+        validate_provider_identity_topology(&wrong_provider, &mut errors);
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("exact single/double"))
+        );
+    }
+
+    #[test]
     fn abi_metadata_topology_exactly_covers_source_routes() {
         let routes = dual_precision_routes();
         let metadata = |precision: Precision, name: &str, path: &str| GeneratedArtifact {
@@ -6853,80 +7163,47 @@ mod tests {
     }
 
     #[test]
-    fn generated_artifacts_cannot_inherit_ambient_provider_or_header_inputs() {
-        for name in [
-            "BOX2D_LIB_DIR",
-            "BOXDD_SYS_LINK_KIND",
-            "BOXDD_SYS_SKIP_CC",
-            "CFLAGS",
-            "CFLAGS_x86_64_unknown_linux_gnu",
-            "x86_64_unknown_linux_gnu_CFLAGS",
-            "CPPFLAGS",
-            "CPPFLAGS_wasm32_unknown_unknown",
-            "wasm32_unknown_unknown_CPPFLAGS",
-            "LDFLAGS",
-            "CC",
-            "CC_x86_64_unknown_linux_gnu",
-            "x86_64_unknown_linux_gnu_CC",
-            "CXX",
-            "AR",
-            "LD",
-            "RANLIB",
-            "CL",
-            "BINDGEN_EXTRA_CLANG_ARGS",
-            "BINDGEN_EXTRA_CLANG_ARGS_x86_64_unknown_linux_gnu",
-            "BINDGEN_EXTRA_CLANG_ARGS_wasm32-unknown-unknown",
-            "CPATH",
-            "C_INCLUDE_PATH",
-            "CPLUS_INCLUDE_PATH",
-            "OBJC_INCLUDE_PATH",
-            "SDKROOT",
-            "LIBRARY_PATH",
-            "RUSTFLAGS",
-            "RUSTDOCFLAGS",
-            "CARGO_ENCODED_RUSTFLAGS",
-            "CARGO_BUILD_RUSTFLAGS",
-            "CARGO_BUILD_RUSTC_WRAPPER",
-            "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER",
-            "CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS",
-            "CARGO_PROFILE_DEV_OPT_LEVEL",
-            "CARGO_INCREMENTAL",
-            "CARGO_HOME",
-            "RUSTC",
-            "RUSTC_WRAPPER",
-            "RUSTC_WORKSPACE_WRAPPER",
-            "RUSTC_BOOTSTRAP",
-            "RUSTUP_TOOLCHAIN",
-            "DOCS_RS",
-        ] {
-            assert!(is_ambient_generation_environment(name), "{name}");
-        }
-        for name in ["PATH", "HOME", "RUSTUP_HOME"] {
-            assert!(!is_ambient_generation_environment(name), "{name}");
-        }
-    }
-
-    #[test]
-    fn generation_cargo_home_rejects_ambient_configs_and_is_explicitly_bound() {
+    fn generation_cargo_is_qualified_scoped_and_rejects_ambient_configs() {
         let root = TempDir::new().expect("generation workspace parent");
         let workspace = root.path().join("workspace");
-        let cargo_home = root.path().join("isolated-cargo-home");
         fs::create_dir(&workspace).expect("generation workspace");
-        let mut command = Command::new("cargo");
-        configure_generation_command_environment(&mut command, &workspace, &cargo_home)
-            .expect("isolated Cargo configuration");
+        let workspace = fs::canonicalize(&workspace).expect("canonical generation workspace");
+        let output_root = controlled_child_directory(
+            &workspace,
+            Path::new("isolated-output"),
+            "test generation output root",
+        )
+        .expect("controlled generation output root");
+        let cargo_home = controlled_child_directory(
+            &output_root,
+            Path::new("cargo-home"),
+            "test generation Cargo home",
+        )
+        .expect("controlled generation Cargo home");
+        let cargo = qualify_generation_cargo(&workspace, &workspace, &cargo_home, &output_root)
+            .expect("isolated Cargo qualification");
+        let command = cargo
+            .command_at_working_root(&output_root.join("cargo-target"))
+            .expect("qualified generation command");
+        assert!(Path::new(command.get_program()).is_absolute());
         let configured_home = command
             .get_envs()
             .find(|(name, _)| *name == std::ffi::OsStr::new("CARGO_HOME"))
             .and_then(|(_, value)| value)
             .expect("explicit CARGO_HOME");
-        assert_eq!(configured_home, fs::canonicalize(&cargo_home).unwrap());
+        assert_eq!(configured_home, cargo_home.as_os_str());
+        let rustc = command
+            .get_envs()
+            .find(|(name, _)| *name == std::ffi::OsStr::new("RUSTC"))
+            .and_then(|(_, value)| value)
+            .expect("qualified RUSTC");
+        assert!(Path::new(rustc).is_absolute());
 
         let ambient = root.path().join(".cargo");
         fs::create_dir(&ambient).expect("ambient Cargo config directory");
         fs::write(ambient.join("config.toml"), "[build]\nrustflags = []\n")
             .expect("ambient Cargo config");
-        let error = prepare_isolated_cargo_home(&workspace, &cargo_home)
+        let error = qualify_generation_cargo(&workspace, &workspace, &cargo_home, &output_root)
             .expect_err("workspace ancestor Cargo config must fail closed");
         assert!(
             error
@@ -6935,15 +7212,27 @@ mod tests {
         );
 
         fs::remove_file(ambient.join("config.toml")).expect("remove fixture ancestor config");
-        fs::write(cargo_home.join("config"), "[build]\nrustflags = []\n")
-            .expect("isolated Cargo home config");
-        let error = prepare_isolated_cargo_home(&workspace, &cargo_home)
-            .expect_err("isolated Cargo home config must fail closed");
+        let workspace_config = workspace.join(".cargo");
+        fs::create_dir(&workspace_config).expect("workspace Cargo config directory");
+        fs::write(
+            workspace_config.join("config.toml"),
+            "[build]\nrustflags = []\n",
+        )
+        .expect("workspace Cargo config");
+        let error = qualify_generation_cargo(&workspace, &workspace, &cargo_home, &output_root)
+            .expect_err("workspace Cargo config must fail closed");
         assert!(
             error
                 .to_string()
-                .contains("isolated Cargo home Cargo config")
+                .contains("workspace ancestor Cargo config")
         );
+
+        fs::remove_dir_all(&workspace_config).expect("remove fixture workspace config");
+        fs::write(cargo_home.join("config"), "[build]\nrustflags = []\n")
+            .expect("isolated Cargo home config");
+        let error = qualify_generation_cargo(&workspace, &workspace, &cargo_home, &output_root)
+            .expect_err("isolated Cargo home config must fail closed");
+        assert!(error.to_string().contains("Cargo home Cargo config"));
     }
 
     #[test]
@@ -7332,19 +7621,6 @@ mod tests {
         let error = compare_binding_artifacts(&fixture.workspace, generated.path(), &manifest)
             .expect_err("bootstrap must not hash-and-bless stale bindings");
         assert!(error.to_string().contains("not byte-for-byte reproducible"));
-
-        let mut unsupported = manifest.clone();
-        let mut provider_artifact = artifact.clone();
-        provider_artifact.name = "provider-single".to_owned();
-        provider_artifact.kind = ArtifactKind::ProviderIdentity;
-        provider_artifact.path = "boxdd-sys/provider-single.toml".to_owned();
-        provider_artifact.target = ArtifactTarget::Native;
-        provider_artifact.provider = ArtifactProvider::Source;
-        provider_artifact.producer = ArtifactProducer::ProviderAttestation;
-        unsupported.artifacts.push(provider_artifact);
-        let error = validate_bootstrap_bindings(&fixture.paths(), &unsupported)
-            .expect_err("unsupported native artifacts must not be hash-and-blessed");
-        assert!(error.to_string().contains("no reproducible generator"));
     }
 
     #[test]
@@ -7535,6 +7811,49 @@ mod tests {
             .expect("isolated generation");
         let worktree = generation.worktree.clone();
         let source_root = generation.source_root.clone();
+        let common_anchor = repository_lock_path(
+            &fixture.workspace,
+            Path::new("boxdd-isolated-generation-test.anchor"),
+        )
+        .expect("repository-owned isolation anchor");
+        let common_directory = common_anchor.parent().expect("Git common directory");
+        assert_eq!(source_root.parent(), Some(common_directory));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt as _;
+
+            assert_eq!(
+                fs::metadata(&source_root).expect("source metadata").dev(),
+                fs::metadata(common_directory)
+                    .expect("Git common directory metadata")
+                    .dev()
+            );
+            assert_eq!(
+                fs::metadata(&worktree).expect("worktree metadata").dev(),
+                fs::metadata(&source_root).expect("source metadata").dev()
+            );
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt as _;
+
+            assert_eq!(
+                fs::metadata(&source_root)
+                    .expect("source metadata")
+                    .volume_serial_number(),
+                fs::metadata(common_directory)
+                    .expect("Git common directory metadata")
+                    .volume_serial_number()
+            );
+            assert_eq!(
+                fs::metadata(&worktree)
+                    .expect("worktree metadata")
+                    .volume_serial_number(),
+                fs::metadata(&source_root)
+                    .expect("source metadata")
+                    .volume_serial_number()
+            );
+        }
         let before = git_output(&fixture.workspace, ["worktree", "list", "--porcelain"])
             .expect("worktree list");
         assert!(before.contains(&worktree.to_string_lossy().into_owned()));
@@ -7930,6 +8249,80 @@ mod tests {
     }
 
     #[test]
+    fn initialization_failure_reports_a_concurrent_cleanup_failure() {
+        let fixture = TemporaryWorkspace::create();
+        let cargo_config = fixture.workspace.join(".cargo");
+        fs::create_dir(&cargo_config).expect("fixture Cargo config directory");
+        fs::write(
+            cargo_config.join("config.toml"),
+            "[build]\nrustflags = []\n",
+        )
+        .expect("fixture Cargo config");
+        run_git(&fixture.workspace, &["add", ".cargo/config.toml"]);
+        run_git(&fixture.workspace, &["commit", "-m", "inject Cargo config"]);
+        let repository_revision = git_output(&fixture.workspace, ["rev-parse", "HEAD"])
+            .expect("fixture repository revision");
+
+        let error = match IsolatedGeneration::create_at_with_cleanup(
+            &fixture.paths(),
+            repository_revision.trim(),
+            &fixture.next_revision,
+            |generation| {
+                assert!(generation.repository_worktree_added);
+                assert!(
+                    worktree_is_registered(&generation.repository_root, &generation.worktree)
+                        .expect("registered worktree before injected cleanup failure")
+                );
+                Err(Error::message("injected cleanup failure"))
+            },
+        ) {
+            Ok(_) => panic!("worktree-local Cargo config must fail qualification"),
+            Err(error) => error,
+        };
+        let message = error.to_string();
+        assert!(message.contains("workspace ancestor Cargo config"));
+        assert!(message.contains("isolated worktree cleanup also failed"));
+        assert!(message.contains("injected cleanup failure"));
+    }
+
+    #[test]
+    fn failed_cargo_qualification_removes_the_isolated_worktree_registration() {
+        let fixture = TemporaryWorkspace::create();
+        let cargo_config = fixture.workspace.join(".cargo");
+        fs::create_dir(&cargo_config).expect("fixture Cargo config directory");
+        fs::write(
+            cargo_config.join("config.toml"),
+            "[build]\nrustflags = []\n",
+        )
+        .expect("fixture Cargo config");
+        run_git(&fixture.workspace, &["add", ".cargo/config.toml"]);
+        run_git(&fixture.workspace, &["commit", "-m", "inject Cargo config"]);
+        let repository_revision = git_output(&fixture.workspace, ["rev-parse", "HEAD"])
+            .expect("fixture repository revision");
+        let registrations_before =
+            git_output(&fixture.workspace, ["worktree", "list", "--porcelain"])
+                .expect("worktree list before qualification failure");
+
+        let error = match IsolatedGeneration::create_at(
+            &fixture.paths(),
+            repository_revision.trim(),
+            &fixture.next_revision,
+        ) {
+            Ok(_) => panic!("worktree-local Cargo config must fail qualification"),
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("workspace ancestor Cargo config")
+        );
+        let registrations_after =
+            git_output(&fixture.workspace, ["worktree", "list", "--porcelain"])
+                .expect("worktree list after qualification failure");
+        assert_eq!(registrations_after, registrations_before);
+    }
+
+    #[test]
     fn worktree_cleanup_continues_after_registration_inspection_failure() {
         let fixture = TemporaryWorkspace::create();
         let mut generation = IsolatedGeneration::create(&fixture.paths(), &fixture.next_revision)
@@ -7950,11 +8343,96 @@ mod tests {
     }
 
     #[test]
+    fn worktree_cleanup_preserves_the_directory_when_registration_removal_fails() {
+        let fixture = TemporaryWorkspace::create();
+        let mut generation = IsolatedGeneration::create(&fixture.paths(), &fixture.next_revision)
+            .expect("isolated generation");
+        let worktree = generation.worktree.clone();
+        let source_root = generation.source_root.clone();
+
+        let error = generation
+            .cleanup_after_inspection_with(Ok(true), |_, _| {
+                Err(Error::message("injected worktree removal failure"))
+            })
+            .expect_err("worktree removal failure must be reported");
+
+        let message = error.to_string();
+        assert!(message.contains("injected worktree removal failure"));
+        assert!(message.contains("isolated source directory preserved at"));
+        assert!(source_root.exists());
+        assert!(worktree.exists());
+        assert!(
+            worktree_is_registered(&fixture.workspace, &worktree)
+                .expect("registration after failed removal")
+        );
+
+        remove_repository_worktree(&fixture.workspace, &worktree)
+            .expect("remove preserved fixture worktree registration");
+        fs::remove_dir_all(&source_root).expect("remove preserved fixture source directory");
+        generation.repository_worktree_added = false;
+    }
+
+    #[test]
+    fn worktree_cleanup_preserves_workspace_needed_by_pending_atomic_recovery() {
+        let fixture = TemporaryWorkspace::create();
+        let mut generation = IsolatedGeneration::create(&fixture.paths(), &fixture.next_revision)
+            .expect("isolated generation");
+        let worktree = generation.worktree.clone();
+        let source_root = generation.source_root.clone();
+        let recovery_root = crate::config::atomic_batch_recovery_root(&worktree)
+            .expect("atomic batch recovery root");
+        let transaction = recovery_root.join("transaction-incomplete-publish");
+        fs::create_dir(&transaction).expect("published transaction without journal");
+
+        let error = generation
+            .cleanup()
+            .expect_err("pending recovery must preserve its workspace");
+
+        let message = error.to_string();
+        assert!(message.contains("atomic batch recovery"));
+        assert!(message.contains("isolated source directory preserved at"));
+        assert!(source_root.exists());
+        assert!(worktree.exists());
+        assert!(
+            worktree_is_registered(&fixture.workspace, &worktree)
+                .expect("registration after deferred cleanup")
+        );
+
+        fs::remove_dir(&transaction).expect("remove incomplete transaction fixture");
+        cleanup_deferred_isolated_generations(&fixture.workspace)
+            .expect("finish deferred isolated generation cleanup");
+        assert!(!source_root.exists());
+        assert!(
+            !worktree_is_registered(&fixture.workspace, &worktree)
+                .expect("registration after deferred cleanup completes")
+        );
+        generation.repository_worktree_added = false;
+    }
+
+    #[test]
+    fn deferred_isolated_cleanup_requires_an_exact_ownership_marker() {
+        let fixture = TemporaryWorkspace::create();
+        let common_directory = isolated_generation_parent(&fixture.workspace)
+            .expect("isolated generation common directory");
+        let unrelated = common_directory.join(format!(
+            "{ISOLATED_GENERATION_DIRECTORY_PREFIX}unowned-fixture"
+        ));
+        fs::create_dir(&unrelated).expect("unowned prefix directory");
+
+        cleanup_deferred_isolated_generations(&fixture.workspace)
+            .expect("unowned prefix directory must be ignored");
+
+        assert!(unrelated.is_dir());
+        fs::remove_dir(&unrelated).expect("remove unowned prefix directory fixture");
+    }
+
+    #[test]
     fn isolated_cleanup_does_not_prune_unrelated_worktree_registrations() {
         let fixture = TemporaryWorkspace::create();
         let unrelated = fixture.root.join("unrelated-worktree");
         command_success(
-            Command::new("git")
+            git_command()
+                .expect("qualified Git")
                 .current_dir(&fixture.workspace)
                 .args(["worktree", "add", "--detach"])
                 .arg(&unrelated)
@@ -7983,6 +8461,42 @@ mod tests {
         assert!(error.contains("another update may be running"));
         drop(first);
         UpdateLock::acquire(&fixture.workspace).expect("lock after release");
+    }
+
+    #[test]
+    fn update_lock_uses_the_common_directory_across_worktrees() {
+        let fixture = TemporaryWorkspace::create();
+        let worktree = fixture.root.join("lock-worktree");
+        command_success(
+            git_command()
+                .expect("qualified Git")
+                .current_dir(&fixture.workspace)
+                .args(["worktree", "add", "--detach"])
+                .arg(&worktree)
+                .arg("HEAD"),
+            "create lock fixture worktree",
+        )
+        .expect("fixture worktree");
+
+        assert_eq!(
+            UpdateLock::lock_path(&fixture.workspace).expect("main worktree lock path"),
+            UpdateLock::lock_path(&worktree).expect("linked worktree lock path")
+        );
+        let first = UpdateLock::acquire(&fixture.workspace).expect("main worktree lock");
+        let error = UpdateLock::acquire(&worktree)
+            .expect_err("linked worktree must observe the common lock")
+            .to_string();
+        assert!(error.contains("another update may be running"));
+        drop(first);
+        command_success(
+            git_command()
+                .expect("qualified Git")
+                .current_dir(&fixture.workspace)
+                .args(["worktree", "remove", "--force"])
+                .arg(&worktree),
+            "remove lock fixture worktree",
+        )
+        .expect("fixture worktree cleanup");
     }
 
     #[test]

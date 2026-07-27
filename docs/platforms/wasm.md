@@ -79,23 +79,56 @@ server and the same generated artifacts as the Node runner.
 
 ```text
 rustup target add wasm32-unknown-unknown wasm32-wasip1
-cargo install wasm-bindgen-cli --version 0.2.126 --locked
 
-# Requires the immutable toolchain identity in boxdd-sys/emscripten-sdk.toml.
+# Does not require Emscripten: boxdd-sys consumes a checked-in provider ABI contract.
 cargo run -p xtask -- provider-smoke-app
+
+# Provision the exact host SDK before runtime or Pages commands.
+cargo run --locked -p xtask -- provision-emsdk --root /absolute/path/emsdk
+export EMSDK=/absolute/path/emsdk
+export EM_CONFIG="$EMSDK/.emscripten"
+# Ubuntu 24.04 uses Emsdk's upstream system-Python policy.
+export EMSDK_PYTHON=/usr/bin/python3
+# On macOS arm64 instead:
+# export EMSDK_PYTHON="$EMSDK/python/3.13.3_64bit/bin/python3.13"
+export EMSDK_NODE="$EMSDK/node/22.16.0_64bit/bin/node"
+
+# Full provider qualification requires the toolchain pinned by xtask.
+cargo run -p xtask -- wasm-provider-contract --check
 cargo run -p xtask -- provider-smoke
 BOXDD_WASM_PRECISION=double cargo run -p xtask -- provider-smoke
 cargo run -p xtask -- verify-wasm --runtime
+
+cargo run -p xtask -- build-pages-wasm
 ```
 
 `provider-smoke-app` only prepares the Rust side. `provider-smoke` performs the runtime proof.
 `verify-wasm --runtime` is the reusable release gate: it runs the Node and Chromium proofs in both
 precision modes. Neither a compile-only check nor a prepared app should be described as working
 WASM physics.
-The build-time provider identity probe requires `EMSDK` to name the clean, detached checkout and
-installed release pinned by `boxdd-sys/emscripten-sdk.toml`. `PATH` discovery and
-`BOXDD_EMSDK_REVISION` self-attestation are rejected. `BOXDD_SYS_EMCC`, when present, must resolve
-to the canonical compiler inside that qualified checkout.
+`wasm-provider-contract --check` recompiles both precision-specific ABI probes without modifying the
+repository. After an intentional source, binding, adapter, or pinned SDK update, maintainers use
+`wasm-provider-contract --write` to generate both canonical TOML files before one checked
+multi-file transaction installs them. The command captures its inputs and existing outputs before
+generation, revalidates the SDK, and rolls back both files if installation or terminal validation
+fails.
+The `boxdd-sys` build consumes the selected checked-in contract under `boxdd-sys/abi` and never
+discovers or executes Emscripten. Full provider qualification is owned by `xtask`; it requires
+`EMSDK` to name the clean, detached checkout and installed release pinned by
+`xtask/toolchains/emscripten-sdk.toml`. `provision-emsdk` downloads the pinned release and Node.js
+archives plus the bundled Python archive on macOS, verifies every downloaded archive and expanded
+tree, writes the exact activation configuration, and qualifies the result before publication. On
+Linux it follows Emsdk's upstream policy by requiring root-owned `/usr/bin/python3` version 3.10 or
+newer instead of packaging a non-relocatable interpreter. The current contract validates Ubuntu
+24.04 x86_64 through `/etc/os-release` and supports macOS arm64; it does not qualify Windows
+provisioning. `PATH` discovery and `BOXDD_EMSDK_REVISION` self-attestation are rejected.
+`EM_CONFIG`, `EMSDK_PYTHON`, and `EMSDK_NODE` must resolve to the exact paths selected by the host
+contract. Ambient compiler overrides such as
+`EMCC_CFLAGS`, `_EMCC_CCACHE`, `EM_CACHE`, `EM_COMPILER_WRAPPER`, `NODE_OPTIONS`, and `PYTHONPATH`
+are rejected.
+The Rust consumer build is separately pinned to the repository development Cargo/Rustc toolchain;
+ambient Cargo configuration, compiler wrappers, target/profile overrides, and injected flags are
+rejected or scrubbed before provider and Pages compilation.
 
 ## Pages
 
@@ -111,20 +144,21 @@ npx playwright install chromium
 npm run test:pages-browser
 ```
 
-The build uses the `wasm-release` profile and applies `wasm-opt -Oz` when Binaryen is available.
-Set `BOXDD_PAGES_WASM_PROFILE=debug` or `release` to override the profile, and
-`BOXDD_PAGES_WASM_OPT=0` to skip optimization while debugging generated output.
+The build uses the `wasm-release` profile, lockfile-pinned wasm-bindgen support, and the qualified
+SDK's Binaryen `wasm-opt -Oz`. Set `BOXDD_PAGES_WASM_PROFILE=debug` or `release` to override the
+profile, and `BOXDD_PAGES_WASM_OPT=0` to skip optimization while debugging generated output.
 
 `build-pages-wasm` requires clean commit-bound inputs outside `docs/pages`. It writes the canonical
-`wasm/generated/boxdd-pages-runtime-v1.json` manifest for the provider JavaScript/WASM, Bevy
+`wasm/generated/boxdd-pages-runtime-v2.json` manifest for the provider JavaScript/WASM, Bevy
 JavaScript/WASM, and provider shim. The manifest binds every byte length and SHA-256 to the v1
 provider and adapter ABI, precision, target, crate version, upstream commit/tree, effective-source
-digest, adapter-source digest, canonical Emscripten SDK-contract digest, recording contract,
-repository, workflow, and checkout commit. It rechecks the clean input state and source identity
-before manifest creation and again after the loader is written. `validate-pages` reparses the strict
-schema, requires canonical bytes and the exact asset set, then recomputes every identity and digest
-from a clean non-Pages worktree.
-The SDK digest identifies the repository-owned SDK contract only; it is not a signature or portable
+digest, adapter-source digest, the selected WASM provider ABI-contract digest, canonical Emscripten
+SDK-contract digest, recording contract, repository, workflow, and checkout commit. It rechecks the
+clean input state and source identity before manifest creation and again after the loader is written.
+`validate-pages` reparses the strict schema, requires canonical bytes and the exact asset set, then
+recomputes every identity and digest from a clean non-Pages worktree.
+The provider-contract digest identifies the ABI identity consumed by `boxdd-sys`; the SDK digest
+separately identifies the repository-owned build-tool contract. Neither is a signature or portable
 provenance statement for a maintainer's local Emscripten installation tree.
 
 The generated loader contains the manifest SHA-256 and identity as its deployment trust anchor. It

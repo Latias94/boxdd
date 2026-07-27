@@ -276,7 +276,6 @@ impl CommandEnvironment {
             "BOXDD_SYS_SKIP_CC",
             "BOXDD_SYS_FORCE_BINDGEN",
             "BOXDD_SYS_BINDGEN_TARGET",
-            "BOXDD_SYS_EMCC",
             "BOXDD_SYS_PACKAGE_CRT",
             "BOXDD_SYS_PACKAGE_DIR",
             "BOXDD_SYS_PACKAGE_OUT_DIR",

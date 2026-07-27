@@ -8,9 +8,6 @@ use object::{Object, ObjectSection, ObjectSymbol};
 #[path = "src/build_support.rs"]
 mod build_support;
 
-#[path = "src/emscripten_sdk.rs"]
-mod emscripten_sdk;
-
 #[path = "src/bindgen_contract.rs"]
 mod bindgen_contract;
 
@@ -24,8 +21,8 @@ mod provider_archive;
 #[path = "src/source_overlay.rs"]
 mod source_overlay;
 
-#[path = "src/wasm_identity.rs"]
-mod wasm_identity;
+#[path = "src/wasm_provider_contract.rs"]
+mod wasm_provider_contract;
 
 #[allow(dead_code)]
 #[path = "src/precision.rs"]
@@ -42,7 +39,6 @@ use build_support::{
     cosign_verify_blob_args, cosign_version_is_qualified, select_provider, simd_identity,
     validate_c_source_paths, validate_skip_cc_policy,
 };
-use emscripten_sdk::{EmscriptenSdkInputs, SDK_CONTRACT_RELATIVE_PATH, qualify_emscripten_sdk};
 use precision::Precision;
 use provider_archive::{
     ArchiveExpectation, private_abi_hash, private_abi_hash_hex, snapshot_layout_hash,
@@ -57,6 +53,10 @@ use provider_manifest::{
 use source_overlay::{
     EffectiveSourceIdentity, MaterializedEffectiveSources, effective_source_identity,
     materialize_effective_box2d_sources,
+};
+use wasm_provider_contract::{
+    COMPILER_TARGET, ENDIANNESS, POINTER_WIDTH, PROVIDER_ABI, SIMD_MODE, WasmProviderExpectation,
+    WasmProviderIdentity, contract_relative_path,
 };
 
 #[derive(Debug)]
@@ -245,10 +245,12 @@ fn main() {
     println!("cargo:rustc-check-cfg=cfg(boxdd_sys_wasm_provider)");
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=src/bindgen_contract.rs");
-    println!("cargo:rerun-if-changed=src/emscripten_sdk.rs");
     println!("cargo:rerun-if-changed=src/precision.rs");
     println!("cargo:rerun-if-changed=src/source_overlay.rs");
     println!("cargo:rerun-if-changed=src/provider_archive.rs");
+    println!("cargo:rerun-if-changed=src/wasm_provider_contract.rs");
+    println!("cargo:rerun-if-changed=abi/wasm32-unknown-unknown-single.toml");
+    println!("cargo:rerun-if-changed=abi/wasm32-unknown-unknown-double.toml");
     println!("cargo:rerun-if-changed=src/bindings_pregenerated.rs");
     println!("cargo:rerun-if-changed=src/bindings_double.rs");
     println!("cargo:rerun-if-changed=src/bindings_wasm32_unknown_unknown.rs");
@@ -259,7 +261,6 @@ fn main() {
     println!("cargo:rerun-if-changed=src/bindgen_headers/wasm32_unknown_unknown/math.h");
     println!("cargo:rerun-if-changed=upstream.toml");
     println!("cargo:rerun-if-changed=effective-source.toml");
-    println!("cargo:rerun-if-changed={SDK_CONTRACT_RELATIVE_PATH}");
     println!("cargo:rerun-if-changed=third-party/box2d/include/box2d/box2d.h");
     println!("cargo:rerun-if-changed=third-party/box2d");
     println!("cargo:rerun-if-changed=native");
@@ -276,14 +277,11 @@ fn main() {
     println!("cargo:rerun-if-env-changed=BOXDD_SYS_FORCE_BINDGEN");
     println!("cargo:rerun-if-env-changed=BOXDD_SYS_BINDGEN_TARGET");
     println!("cargo:rerun-if-env-changed=BOXDD_SYS_WASI_SYSROOT");
-    println!("cargo:rerun-if-env-changed=BOXDD_SYS_EMCC");
-    println!("cargo:rerun-if-env-changed=BOXDD_EMSDK_REVISION");
-    println!("cargo:rerun-if-env-changed=EMSDK");
-    println!("cargo:rerun-if-env-changed=EM_CONFIG");
     println!("cargo:rerun-if-env-changed=DOCS_RS");
     println!("cargo:rerun-if-env-changed=CARGO_CFG_DOCSRS");
 
     let config = BuildConfig::from_env();
+    validate_build_config(&config);
     if let Some(wasi_sysroot) = &config.wasi_bindgen_sysroot {
         println!(
             "cargo:rerun-if-changed={}",
@@ -301,7 +299,7 @@ fn main() {
             headers.identity_sha256()
         );
     }
-    reject_external_precision_overrides(&config.target);
+    reject_precision_macro_overrides(&config.target);
     let upstream = load_upstream_manifest(&config.manifest_dir);
     validate_vendored_source(&config.manifest_dir, &upstream);
     let effective_source = effective_source_identity(&config.manifest_dir)
@@ -327,7 +325,6 @@ fn main() {
     let adapter_source_sha256 = adapter_source_sha256(&config.manifest_dir)
         .unwrap_or_else(|error| panic!("failed to identify the repository adapter: {error}"));
 
-    validate_build_config(&config);
     let external = prepare_external_provider(
         &config,
         &upstream.active_revision,
@@ -412,10 +409,12 @@ fn main() {
             println!(
                 "cargo:warning=boxdd-sys WASM provider mode is active; runtime identity must be verified before instantiation"
             );
-            let identity = build_wasm_provider_identity_probe(
+            let identity = load_wasm_provider_identity_contract(
                 &config,
+                &upstream.active_revision,
+                &effective_source.source_tree,
                 &effective_source.effective_source_sha256,
-                &materialized_sources,
+                &adapter_source_sha256,
             );
             write_expected_adapter_identity(&config.out_dir, identity);
         }
@@ -452,6 +451,16 @@ fn validate_build_config(config: &BuildConfig) {
         config.provider,
     )
     .unwrap_or_else(|error| panic!("invalid BOXDD_SYS_SKIP_CC configuration: {error}"));
+    if config.provider == ProviderAdapter::WasmProvider && config.force_bindgen {
+        panic!(
+            "BOXDD_SYS_PROVIDER=wasm-provider requires the checked pregenerated bindings identity"
+        );
+    }
+    if config.provider == ProviderAdapter::WasmProvider && cfg!(feature = "validate") {
+        panic!(
+            "BOXDD_SYS_PROVIDER=wasm-provider does not have a checked validation-enabled ABI route"
+        );
+    }
 }
 
 fn load_upstream_manifest(manifest_dir: &Path) -> UpstreamBuildManifest {
@@ -1010,20 +1019,36 @@ fn expected_crt_identity(config: &BuildConfig) -> &'static str {
     }
 }
 
-fn reject_external_precision_overrides(target: &str) {
+fn reject_precision_macro_overrides(target: &str) {
     let normalized_target = target.replace('-', "_");
     let target_keys = [
         format!("CFLAGS_{target}"),
         format!("CFLAGS_{normalized_target}"),
         format!("{target}_CFLAGS"),
         format!("{normalized_target}_CFLAGS"),
+        "HOST_CFLAGS".to_owned(),
+        "TARGET_CFLAGS".to_owned(),
         format!("BINDGEN_EXTRA_CLANG_ARGS_{target}"),
         format!("BINDGEN_EXTRA_CLANG_ARGS_{normalized_target}"),
     ];
-    for key in ["CFLAGS", "CPPFLAGS", "CL", "BINDGEN_EXTRA_CLANG_ARGS"]
-        .into_iter()
-        .map(str::to_owned)
-        .chain(target_keys)
+    for key in [
+        "CFLAGS",
+        "CPPFLAGS",
+        "CL",
+        "CPATH",
+        "C_INCLUDE_PATH",
+        "CPLUS_INCLUDE_PATH",
+        "OBJC_INCLUDE_PATH",
+        "SDKROOT",
+        "INCLUDE",
+        "BINDGEN_EXTRA_CLANG_ARGS",
+        "CRATE_CC_NO_DEFAULTS",
+        "CC_SHELL_ESCAPED_FLAGS",
+        "CC_FORCE_DISABLE",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .chain(target_keys)
     {
         println!("cargo:rerun-if-env-changed={key}");
         let Some(value) = env::var_os(&key) else {
@@ -1292,67 +1317,59 @@ fn compile_adapter_identity_probe(
     exact_identity_probe(objects, "native provider")
 }
 
-fn build_wasm_provider_identity_probe(
+fn load_wasm_provider_identity_contract(
     config: &BuildConfig,
+    upstream_sha: &str,
+    source_tree: &str,
     effective_source_sha256: &str,
-    effective_sources: &MaterializedEffectiveSources,
+    adapter_source_sha256: &str,
 ) -> NativeAbiIdentity {
-    assert_eq!(
-        effective_sources.identity.effective_source_sha256, effective_source_sha256,
-        "materialized WASM identity probe inputs do not match the prevalidated effective-source identity"
-    );
-    let source = config
-        .manifest_dir
-        .join("native")
-        .join("boxdd_identity_values.c");
-    let emsdk = env::var_os("EMSDK");
-    let compiler_override = env::var_os("BOXDD_SYS_EMCC");
-    let em_config_override = env::var_os("EM_CONFIG");
-    let self_attested_revision = env::var_os("BOXDD_EMSDK_REVISION");
-    let sdk = qualify_emscripten_sdk(
+    if cfg!(feature = "validate") {
+        panic!(
+            "BOXDD_SYS_PROVIDER=wasm-provider does not have a checked validation-enabled ABI route"
+        );
+    }
+    if config.force_bindgen {
+        panic!(
+            "BOXDD_SYS_PROVIDER=wasm-provider requires the checked pregenerated bindings identity"
+        );
+    }
+    let relative = contract_relative_path(config.precision.as_str())
+        .unwrap_or_else(|error| panic!("invalid WASM provider identity route: {error}"));
+    let path = config.manifest_dir.join(relative);
+    let bindings_sha256 = sha256_file(&config.pregenerated_bindings())
+        .unwrap_or_else(|error| panic!("failed to identify WASM provider bindings: {error}"));
+    let identity = WasmProviderIdentity::load(
         &config.manifest_dir,
-        EmscriptenSdkInputs {
-            root: emsdk.as_deref(),
-            compiler_override: compiler_override.as_deref(),
-            em_config_override: em_config_override.as_deref(),
-            self_attested_revision: self_attested_revision.as_deref(),
+        Path::new(relative),
+        &WasmProviderExpectation {
+            provider_abi: PROVIDER_ABI,
+            target: &config.target,
+            compiler_target: COMPILER_TARGET,
+            precision: config.precision.as_str(),
+            upstream_sha,
+            source_tree,
+            effective_source_sha256,
+            adapter_abi_version: provider_manifest::ADAPTER_ABI_VERSION,
+            adapter_source_sha256,
+            recording_contract_blake3: RECORDING_CONTRACT_BLAKE3,
+            validation_enabled: false,
+            simd: SIMD_MODE,
+            pointer_width: POINTER_WIDTH,
+            endianness: ENDIANNESS,
+            bindings_sha256: &bindings_sha256,
         },
     )
-    .unwrap_or_else(|error| panic!("Emscripten SDK is not qualified for wasm-provider: {error}"));
-    println!(
-        "cargo:emscripten_sdk_contract_sha256={}",
-        sdk.contract_sha256
-    );
-    for path in &sdk.watched_paths {
-        println!("cargo:rerun-if-changed={}", path.display());
-    }
-    let mut build = cc::Build::new();
-    build
-        .target("wasm32-unknown-emscripten")
-        .compiler(&sdk.compiler)
-        .cargo_metadata(false)
-        .include(&effective_sources.public_include)
-        .include(&effective_sources.private_include)
-        .include(config.manifest_dir.join("native"))
-        .file(source);
-    build.flag("-std=c17");
-    build.flag("-O2");
-    build.flag("--target=wasm32-unknown-emscripten");
-    build.flag("--em-config");
-    build.flag(&sdk.em_config);
-    build.define("BOX2D_DISABLE_SIMD", None);
-    define_effective_source_identity(&mut build, effective_source_sha256);
-    if config.precision == Precision::Double {
-        build.define("BOX2D_DOUBLE_PRECISION", None);
-    }
-    if cfg!(feature = "validate") {
-        build.define("BOX2D_VALIDATE", None);
-    }
-
-    let objects = build.try_compile_intermediates().unwrap_or_else(|error| {
-        panic!("failed to compile Emscripten WASM provider identity probe: {error}")
+    .unwrap_or_else(|error| {
+        panic!(
+            "failed to verify WASM provider identity contract {}: {error}",
+            path.display()
+        )
     });
-    exact_identity_probe(objects, "Emscripten WASM provider").identity
+    NativeAbiIdentity {
+        private_abi_hash: identity.private_abi_hash,
+        snapshot_layout_hash: identity.snapshot_layout_hash,
+    }
 }
 
 fn exact_identity_probe(objects: Vec<PathBuf>, label: &str) -> CompiledIdentityProbe {
@@ -1379,28 +1396,12 @@ fn read_compiled_adapter_identity_file(object_path: &Path) -> NativeAbiIdentity 
     let file = object::File::parse(bytes.as_slice())
         .unwrap_or_else(|error| panic!("failed to parse {}: {error}", object_path.display()));
     let little_endian = file.is_little_endian();
-    let private_count = read_identity_scalar(
-        &file,
-        bytes.as_slice(),
-        "boxddPrivateAbiValueCount",
-        little_endian,
-    );
-    let layout_count = read_identity_scalar(
-        &file,
-        bytes.as_slice(),
-        "boxddSnapshotLayoutValueCount",
-        little_endian,
-    );
-    let private_values = read_identity_values(
-        &file,
-        bytes.as_slice(),
-        "boxddPrivateAbiValues",
-        private_count,
-        little_endian,
-    );
+    let private_count = read_identity_scalar(&file, "boxddPrivateAbiValueCount", little_endian);
+    let layout_count = read_identity_scalar(&file, "boxddSnapshotLayoutValueCount", little_endian);
+    let private_values =
+        read_identity_values(&file, "boxddPrivateAbiValues", private_count, little_endian);
     let layout_values = read_identity_values(
         &file,
-        bytes.as_slice(),
         "boxddSnapshotLayoutValues",
         layout_count,
         little_endian,
@@ -1413,11 +1414,10 @@ fn read_compiled_adapter_identity_file(object_path: &Path) -> NativeAbiIdentity 
 
 fn read_identity_scalar<'data>(
     file: &object::File<'data>,
-    object_bytes: &'data [u8],
     name: &str,
     little_endian: bool,
 ) -> usize {
-    let value_bytes = identity_symbol_bytes(file, object_bytes, name, 8);
+    let value_bytes = identity_symbol_bytes(file, name, 8);
     let value = if little_endian {
         u64::from_le_bytes(value_bytes.try_into().expect("identity scalar width"))
     } else {
@@ -1428,7 +1428,6 @@ fn read_identity_scalar<'data>(
 
 fn read_identity_values<'data>(
     file: &object::File<'data>,
-    object_bytes: &'data [u8],
     name: &str,
     count: usize,
     little_endian: bool,
@@ -1436,7 +1435,7 @@ fn read_identity_values<'data>(
     let byte_count = count
         .checked_mul(8)
         .unwrap_or_else(|| panic!("adapter identity array {name} is too large"));
-    identity_symbol_bytes(file, object_bytes, name, byte_count)
+    identity_symbol_bytes(file, name, byte_count)
         .chunks_exact(8)
         .map(|bytes| {
             let bytes: [u8; 8] = bytes.try_into().expect("identity value width");
@@ -1451,15 +1450,9 @@ fn read_identity_values<'data>(
 
 fn identity_symbol_bytes<'data>(
     file: &'data object::File<'data>,
-    object_bytes: &'data [u8],
     expected_name: &str,
     width: usize,
 ) -> &'data [u8] {
-    if file.format() == object::BinaryFormat::Wasm {
-        return wasm_identity::symbol_bytes(object_bytes, expected_name, width)
-            .unwrap_or_else(|error| panic!("{error}"));
-    }
-
     let symbol = file
         .symbols()
         .find(|symbol| {

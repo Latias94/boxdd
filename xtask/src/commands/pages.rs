@@ -1,33 +1,38 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     env,
-    ffi::OsStr,
     fmt::Write as _,
     fs, io,
     path::{Component, Path, PathBuf},
-    process::Command,
 };
+use wasm_bindgen_cli_support::Bindgen;
 
 use crate::{
     Error, Result,
     config::{write_atomic, write_atomic_bytes},
-    emscripten_sdk::{SDK_CONTRACT_RELATIVE_PATH, SdkContract},
+    emscripten_sdk::{QualifiedEmscriptenSdk, SDK_CONTRACT_RELATIVE_PATH, SdkContract},
     provenance_policy::PUBLISHER_REPOSITORY,
     provider_manifest::{
         self, ADAPTER_ABI_VERSION, RECORDING_CONTRACT_BLAKE3, adapter_source_sha256,
     },
+    qualified_git::qualified_git_command,
     source_overlay::effective_source_identity,
+    wasm_provider_contract::{
+        COMPILER_TARGET, ENDIANNESS, POINTER_WIDTH, PROVIDER_ABI, SIMD_MODE,
+        WasmProviderExpectation, WasmProviderIdentity, contract_relative_path,
+    },
 };
 
 use super::{
     provider::{
         ProviderPrecision, build_box2d_provider, collect_provider_imports, provider_smoke_dir,
-        verify_provider_compiler, verify_wasm_bindgen_cli, write_exports_json,
+        provider_toolchain_contract, qualified_provider_sdk, write_exports_json,
     },
     support::{
-        BuildProfile, WASM_TARGET, add_wasm_app_link_args, cargo_target_dir, copy_file,
-        ensure_file, replace_dir_under, run_command, runnable_path, runnable_tool,
+        BuildProfile, QualifiedCargo, WASM_TARGET, add_wasm_app_link_args, copy_file, ensure_file,
+        replace_dir_under, run_command,
     },
+    upstream_sync::UpdateLock,
 };
 
 const PAGES_WASM_OPT_ENV: &str = "BOXDD_PAGES_WASM_OPT";
@@ -39,10 +44,9 @@ const BEVY_WEB_OUT_NAME: &str = "bevy_boxdd_testbed";
 const BEVY_WEB_JS: &str = "bevy_boxdd_testbed.js";
 const BEVY_WEB_WASM: &str = "bevy_boxdd_testbed_bg.wasm";
 const BEVY_PROVIDER_SHIM: &str = "box2d-provider-shim.js";
-const PAGES_RUNTIME_MANIFEST: &str = "wasm/generated/boxdd-pages-runtime-v1.json";
-const PAGES_RUNTIME_SCHEMA: &str = "boxdd-pages-runtime-v1";
-const PAGES_RUNTIME_SCHEMA_VERSION: u64 = 1;
-const PAGES_PROVIDER_ABI: &str = "box2d-sys-v1";
+const PAGES_RUNTIME_MANIFEST: &str = "wasm/generated/boxdd-pages-runtime-v2.json";
+const PAGES_RUNTIME_SCHEMA: &str = "boxdd-pages-runtime-v2";
+const PAGES_RUNTIME_SCHEMA_VERSION: u64 = 2;
 const PAGES_PUBLISHER_WORKFLOW: &str = ".github/workflows/pages.yml";
 const JAVASCRIPT_MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
@@ -92,6 +96,7 @@ struct PagesRuntimeManifest {
     effective_source_sha256: String,
     adapter_source_sha256: String,
     emscripten_sdk_contract_sha256: String,
+    wasm_provider_contract_sha256: String,
     recording_contract_blake3: String,
     precision: String,
     target: String,
@@ -115,6 +120,7 @@ struct PagesRuntimeIdentity {
     effective_source_sha256: String,
     adapter_source_sha256: String,
     emscripten_sdk_contract_sha256: String,
+    wasm_provider_contract_sha256: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -134,6 +140,7 @@ struct PagesLoaderTrust {
     effective_source_sha256: String,
     adapter_source_sha256: String,
     emscripten_sdk_contract_sha256: String,
+    wasm_provider_contract_sha256: String,
     recording_contract_blake3: String,
     precision: String,
     target: String,
@@ -182,22 +189,29 @@ enum ExampleIndexLocation {
 }
 
 pub(crate) fn build_pages_wasm(root: &Path) -> Result<()> {
+    let _lock = UpdateLock::acquire(root)?;
     ensure_pages_build_inputs_clean(root)?;
-    let target_dir = cargo_target_dir(root)?;
+    let cargo = QualifiedCargo::qualify(root)?;
+    let target_dir = cargo.target_dir().to_path_buf();
     let precision = ProviderPrecision::from_env()?;
     validate_pages_precision(precision)?;
-    let identity = pages_runtime_identity(root)?;
-    verify_wasm_bindgen_cli()?;
-    verify_provider_compiler()?;
+    let sdk = qualified_provider_sdk()?;
+    let identity = pages_runtime_identity(root, precision)?;
+    if identity.emscripten_sdk_contract_sha256 != sdk.contract_sha256() {
+        return Err(Error::Message(
+            "qualified Emscripten SDK contract does not match the Pages source identity".to_owned(),
+        ));
+    }
+    provider_toolchain_contract()?;
     generate_pages(root)?;
-    let bevy_artifacts = build_bevy_web_app(root, &target_dir, precision)?;
+    let bevy_artifacts = build_bevy_web_app(root, &target_dir, &cargo, &sdk, precision)?;
     let out_dir = provider_smoke_dir(&target_dir);
     let exports = write_exports_json(&out_dir, &bevy_artifacts.imports)?;
-    let provider = build_box2d_provider(root, &out_dir, &exports, precision)?;
+    let provider = build_box2d_provider(root, &out_dir, &exports, &sdk, precision)?;
     let provider_wasm = provider.with_extension("wasm");
     ensure_file(&provider, "Box2D provider module")?;
     ensure_file(&provider_wasm, "Box2D provider wasm")?;
-    optimize_wasm_if_available(&provider_wasm, "Box2D provider wasm")?;
+    optimize_wasm_if_available(&sdk, &provider_wasm, "Box2D provider wasm")?;
 
     let generated = pages_wasm_generated_dir(root);
     replace_dir_under(&generated, &root.join("docs/pages"))?;
@@ -210,11 +224,11 @@ pub(crate) fn build_pages_wasm(root: &Path) -> Result<()> {
         &generated.join(format!("{}.wasm", precision.module())),
     )?;
     copy_bevy_web_artifacts(root, &bevy_artifacts)?;
-    ensure_pages_source_state(root, &identity)?;
+    ensure_pages_source_state(root, precision, &identity)?;
     let (manifest, manifest_sha256) = write_pages_runtime_manifest(root, precision, &identity)?;
     let trust = PagesLoaderTrust::from_manifest(&manifest, manifest_sha256);
     write_bevy_testbed_loader(root, Some(&trust))?;
-    ensure_pages_source_state(root, &identity)?;
+    ensure_pages_source_state(root, precision, &identity)?;
 
     println!(
         "pages wasm assets ready: {} and {} ({} Bevy imports)",
@@ -269,6 +283,7 @@ impl PagesLoaderTrust {
             effective_source_sha256: manifest.effective_source_sha256.clone(),
             adapter_source_sha256: manifest.adapter_source_sha256.clone(),
             emscripten_sdk_contract_sha256: manifest.emscripten_sdk_contract_sha256.clone(),
+            wasm_provider_contract_sha256: manifest.wasm_provider_contract_sha256.clone(),
             recording_contract_blake3: manifest.recording_contract_blake3.clone(),
             precision: manifest.precision.clone(),
             target: manifest.target.clone(),
@@ -280,7 +295,10 @@ fn pages_runtime_manifest_path(root: &Path) -> PathBuf {
     root.join("docs").join("pages").join(PAGES_RUNTIME_MANIFEST)
 }
 
-fn pages_runtime_identity(root: &Path) -> Result<PagesRuntimeIdentity> {
+fn pages_runtime_identity(
+    root: &Path,
+    precision: ProviderPrecision,
+) -> Result<PagesRuntimeIdentity> {
     let effective = effective_source_identity(&root.join("boxdd-sys")).map_err(|error| {
         Error::Message(format!(
             "failed to identify Pages provider effective sources: {error}"
@@ -292,6 +310,14 @@ fn pages_runtime_identity(root: &Path) -> Result<PagesRuntimeIdentity> {
                 "failed to identify Pages provider adapter: {error}"
             ))
         })?;
+    let wasm_provider_contract_sha256 = pages_provider_contract_sha256(
+        root,
+        precision,
+        &effective.upstream_sha,
+        &effective.source_tree,
+        &effective.effective_source_sha256,
+        &adapter_source_sha256,
+    )?;
     Ok(PagesRuntimeIdentity {
         source_commit: pages_source_commit(root)?,
         upstream_sha: effective.upstream_sha,
@@ -299,11 +325,50 @@ fn pages_runtime_identity(root: &Path) -> Result<PagesRuntimeIdentity> {
         effective_source_sha256: effective.effective_source_sha256,
         adapter_source_sha256,
         emscripten_sdk_contract_sha256: pages_sdk_contract_sha256(root)?,
+        wasm_provider_contract_sha256,
     })
 }
 
+fn pages_provider_contract_sha256(
+    root: &Path,
+    precision: ProviderPrecision,
+    upstream_sha: &str,
+    source_tree: &str,
+    effective_source_sha256: &str,
+    adapter_source_sha256: &str,
+) -> Result<String> {
+    let relative = contract_relative_path(precision.as_str()).map_err(Error::Message)?;
+    let bindings = root
+        .join("boxdd-sys/src")
+        .join(precision.wasm_bindings_file());
+    let bindings_sha256 = provider_manifest::sha256_file(&bindings).map_err(Error::Message)?;
+    let (_, source) = WasmProviderIdentity::load_with_source_bytes(
+        &root.join("boxdd-sys"),
+        Path::new(relative),
+        &WasmProviderExpectation {
+            provider_abi: PROVIDER_ABI,
+            target: WASM_TARGET,
+            compiler_target: COMPILER_TARGET,
+            precision: precision.as_str(),
+            upstream_sha,
+            source_tree,
+            effective_source_sha256,
+            adapter_abi_version: ADAPTER_ABI_VERSION,
+            adapter_source_sha256,
+            recording_contract_blake3: RECORDING_CONTRACT_BLAKE3,
+            validation_enabled: false,
+            simd: SIMD_MODE,
+            pointer_width: POINTER_WIDTH,
+            endianness: ENDIANNESS,
+            bindings_sha256: &bindings_sha256,
+        },
+    )
+    .map_err(Error::Message)?;
+    Ok(provider_manifest::sha256_bytes(&source))
+}
+
 fn pages_sdk_contract_sha256(root: &Path) -> Result<String> {
-    let path = root.join("boxdd-sys").join(SDK_CONTRACT_RELATIVE_PATH);
+    let path = root.join("xtask").join(SDK_CONTRACT_RELATIVE_PATH);
     let metadata = fs::symlink_metadata(&path).map_err(|source| Error::io(&path, source))?;
     if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
         return Err(Error::Message(format!(
@@ -392,9 +457,13 @@ fn ensure_pages_build_inputs_clean(root: &Path) -> Result<()> {
     }
 }
 
-fn ensure_pages_source_state(root: &Path, expected: &PagesRuntimeIdentity) -> Result<()> {
+fn ensure_pages_source_state(
+    root: &Path,
+    precision: ProviderPrecision,
+    expected: &PagesRuntimeIdentity,
+) -> Result<()> {
     ensure_pages_build_inputs_clean(root)?;
-    let actual = pages_runtime_identity(root)?;
+    let actual = pages_runtime_identity(root, precision)?;
     if &actual == expected {
         Ok(())
     } else {
@@ -406,19 +475,11 @@ fn ensure_pages_source_state(root: &Path, expected: &PagesRuntimeIdentity) -> Re
 }
 
 fn git_stdout(root: &Path, args: &[&str], label: &str) -> Result<String> {
-    let mut command = Command::new("git");
-    for (key, _) in env::vars_os() {
-        if is_git_environment_key(&key) {
-            command.env_remove(key);
-        }
-    }
+    let mut command = qualified_git_command().map_err(Error::Message)?;
     let output = command
-        .args(["--no-replace-objects", "-c", "core.fsmonitor=false"])
+        .arg("-C")
+        .arg(root)
         .args(args)
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", null_device())
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .current_dir(root)
         .output()
         .map_err(|error| Error::Message(format!("failed to {label}: {error}")))?;
     if !output.status.success() {
@@ -430,22 +491,6 @@ fn git_stdout(root: &Path, args: &[&str], label: &str) -> Result<String> {
     String::from_utf8(output.stdout)
         .map(|value| value.trim().to_owned())
         .map_err(|error| Error::Message(format!("{label} returned non-UTF-8 output: {error}")))
-}
-
-fn is_git_environment_key(key: &OsStr) -> bool {
-    key.to_string_lossy()
-        .get(..4)
-        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("GIT_"))
-}
-
-#[cfg(windows)]
-fn null_device() -> &'static str {
-    "NUL"
-}
-
-#[cfg(not(windows))]
-fn null_device() -> &'static str {
-    "/dev/null"
 }
 
 fn write_pages_runtime_manifest(
@@ -464,7 +509,7 @@ fn write_pages_runtime_manifest(
         publisher_repository: PUBLISHER_REPOSITORY.to_owned(),
         publisher_workflow: PAGES_PUBLISHER_WORKFLOW.to_owned(),
         provider: "wasm-runtime".to_owned(),
-        provider_abi: PAGES_PROVIDER_ABI.to_owned(),
+        provider_abi: PROVIDER_ABI.to_owned(),
         adapter_abi_version: ADAPTER_ABI_VERSION,
         crate_version: env!("CARGO_PKG_VERSION").to_owned(),
         source_commit: identity.source_commit.clone(),
@@ -473,6 +518,7 @@ fn write_pages_runtime_manifest(
         effective_source_sha256: identity.effective_source_sha256.clone(),
         adapter_source_sha256: identity.adapter_source_sha256.clone(),
         emscripten_sdk_contract_sha256: identity.emscripten_sdk_contract_sha256.clone(),
+        wasm_provider_contract_sha256: identity.wasm_provider_contract_sha256.clone(),
         recording_contract_blake3: RECORDING_CONTRACT_BLAKE3.to_owned(),
         precision: precision.as_str().to_owned(),
         target: WASM_TARGET.to_owned(),
@@ -529,7 +575,7 @@ fn validate_pages_runtime_manifest_identity(
     if manifest.provider != "wasm-runtime"
         || manifest.publisher_repository != PUBLISHER_REPOSITORY
         || manifest.publisher_workflow != PAGES_PUBLISHER_WORKFLOW
-        || manifest.provider_abi != PAGES_PROVIDER_ABI
+        || manifest.provider_abi != PROVIDER_ABI
         || manifest.adapter_abi_version != ADAPTER_ABI_VERSION
         || manifest.crate_version != env!("CARGO_PKG_VERSION")
         || manifest.precision != ProviderPrecision::Single.as_str()
@@ -576,6 +622,12 @@ fn validate_pages_runtime_manifest_identity(
             "emscripten_sdk_contract_sha256",
             manifest.emscripten_sdk_contract_sha256.as_str(),
             identity.emscripten_sdk_contract_sha256.as_str(),
+            64,
+        ),
+        (
+            "wasm_provider_contract_sha256",
+            manifest.wasm_provider_contract_sha256.as_str(),
+            identity.wasm_provider_contract_sha256.as_str(),
             64,
         ),
     ] {
@@ -629,15 +681,18 @@ fn pages_bevy_testbed_dir(root: &Path) -> PathBuf {
 fn build_bevy_web_app(
     root: &Path,
     target_dir: &Path,
+    cargo: &QualifiedCargo,
+    sdk: &QualifiedEmscriptenSdk,
     precision: ProviderPrecision,
 ) -> Result<BevyWebArtifacts> {
     let out_dir = target_dir.join("boxdd-bevy-testbed-web");
     replace_dir_under(&out_dir, target_dir)?;
 
     let profile = BuildProfile::for_pages()?;
-    let mut command = Command::new("cargo");
+    let mut command = cargo.command(root)?;
     command
         .arg("rustc")
+        .arg("--locked")
         .arg("-p")
         .arg("bevy_boxdd")
         .arg("--example")
@@ -665,20 +720,19 @@ fn build_bevy_web_app(
         .join(format!("{BEVY_WEB_EXAMPLE}.wasm"));
     ensure_file(&wasm, "Bevy testbed wasm")?;
 
-    let mut bindgen = Command::new("wasm-bindgen");
+    let mut bindgen = Bindgen::new();
     bindgen
-        .arg("--target")
-        .arg("web")
-        .arg("--out-dir")
-        .arg(&out_dir)
-        .arg("--out-name")
-        .arg(BEVY_WEB_OUT_NAME)
-        .arg(&wasm);
-    run_command(&mut bindgen, "run wasm-bindgen for Bevy testbed")?;
+        .input_path(&wasm)
+        .out_name(BEVY_WEB_OUT_NAME)
+        .typescript(true)
+        .web(true)
+        .map_err(|error| Error::Message(format!("configure wasm-bindgen: {error}")))?
+        .generate(&out_dir)
+        .map_err(|error| Error::Message(format!("run wasm-bindgen for Bevy testbed: {error}")))?;
 
     patch_bevy_bindgen_imports(&out_dir.join(BEVY_WEB_JS), precision.module())?;
     let bevy_wasm = out_dir.join(BEVY_WEB_WASM);
-    optimize_wasm_if_available(&bevy_wasm, "Bevy testbed wasm")?;
+    optimize_wasm_if_available(sdk, &bevy_wasm, "Bevy testbed wasm")?;
     let imports = collect_provider_imports(&bevy_wasm, precision.module())?;
     write_browser_provider_shim(&out_dir, &imports)?;
 
@@ -843,20 +897,19 @@ fn copy_bevy_web_artifacts(root: &Path, artifacts: &BevyWebArtifacts) -> Result<
     Ok(())
 }
 
-fn optimize_wasm_if_available(wasm: &Path, label: &str) -> Result<()> {
+fn optimize_wasm_if_available(
+    sdk: &QualifiedEmscriptenSdk,
+    wasm: &Path,
+    label: &str,
+) -> Result<()> {
     if !pages_wasm_opt_enabled() {
         println!("wasm-opt skipped for {label}: disabled by {PAGES_WASM_OPT_ENV}");
         return Ok(());
     }
 
-    let Some(wasm_opt) = find_wasm_opt() else {
-        println!("wasm-opt skipped for {label}: install Binaryen or expose EMSDK/upstream/bin");
-        return Ok(());
-    };
-
     let before = file_size(wasm)?;
     let tmp = wasm.with_extension("wasm-opt.tmp");
-    let mut command = Command::new(wasm_opt);
+    let mut command = sdk.wasm_opt_command().map_err(Error::Message)?;
     command
         .arg("-Oz")
         .arg("--enable-bulk-memory")
@@ -912,30 +965,6 @@ fn format_bytes(bytes: u64) -> String {
         format!("{bytes} B")
     }
 }
-fn find_wasm_opt() -> Option<PathBuf> {
-    if let Some(path) = runnable_tool("wasm-opt", "--version") {
-        return Some(path);
-    }
-
-    let mut candidates = Vec::new();
-    if let Ok(emsdk) = env::var("EMSDK") {
-        candidates.push(PathBuf::from(emsdk).join("upstream").join("bin"));
-    }
-
-    for dir in candidates {
-        for name in ["wasm-opt", "wasm-opt.exe"] {
-            let candidate = dir.join(name);
-            if candidate.exists()
-                && let Some(path) = runnable_path(&candidate, "--version")
-            {
-                return Some(path);
-            }
-        }
-    }
-
-    None
-}
-
 pub(crate) fn generate_pages(root: &Path) -> Result<()> {
     let samples = read_testbed_registry(root)?;
     let pages = expected_bevy_pages(root, &samples);
@@ -1486,7 +1515,7 @@ fn parity_mode_label(mode: &str) -> String {
 
 fn bevy_testbed_loader_js(trust: Option<&PagesLoaderTrust>) -> String {
     r##"const runtimeTrust = __BOXDD_RUNTIME_TRUST__;
-const runtimeManifestUrl = new URL("../wasm/generated/boxdd-pages-runtime-v1.json", import.meta.url);
+const runtimeManifestUrl = new URL("../wasm/generated/boxdd-pages-runtime-v2.json", import.meta.url);
 const expectedAssets = Object.freeze([
   Object.freeze({ role: "provider_js", path: "wasm/generated/box2d-sys-v1-single.js" }),
   Object.freeze({ role: "provider_wasm", path: "wasm/generated/box2d-sys-v1-single.wasm" }),
@@ -1513,6 +1542,7 @@ const manifestKeys = Object.freeze([
   "source_tree",
   "target",
   "upstream_sha",
+  "wasm_provider_contract_sha256",
 ]);
 const identityKeys = Object.freeze(manifestKeys.filter((key) => key !== "assets"));
 const assetKeys = Object.freeze(["byte_length", "path", "role", "sha256"]);
@@ -1896,6 +1926,7 @@ fn pages_loader_trust_js(trust: Option<&PagesLoaderTrust>) -> String {
         "effective_source_sha256": trust.effective_source_sha256,
         "adapter_source_sha256": trust.adapter_source_sha256,
         "emscripten_sdk_contract_sha256": trust.emscripten_sdk_contract_sha256,
+        "wasm_provider_contract_sha256": trust.wasm_provider_contract_sha256,
         "recording_contract_blake3": trust.recording_contract_blake3,
         "precision": trust.precision,
         "target": trust.target,
@@ -2009,14 +2040,15 @@ fn validate_pages_runtime(root: &Path) -> Result<Option<PagesLoaderTrust>> {
         require_pages_output_parent(root, &root.join("docs/pages").join(spec.path))?;
     }
     ensure_pages_build_inputs_clean(root)?;
-    let identity = pages_runtime_identity(root)?;
+    let precision = ProviderPrecision::Single;
+    let identity = pages_runtime_identity(root, precision)?;
 
     validate_pages_runtime_directory(
         &wasm_generated,
         &[
             "box2d-sys-v1-single.js",
             "box2d-sys-v1-single.wasm",
-            "boxdd-pages-runtime-v1.json",
+            "boxdd-pages-runtime-v2.json",
         ],
     )?;
     validate_pages_runtime_directory(
@@ -2037,7 +2069,7 @@ fn validate_pages_runtime(root: &Path) -> Result<Option<PagesLoaderTrust>> {
     let manifest = PagesRuntimeManifest::parse(&bytes)?;
     validate_pages_runtime_manifest_identity(&manifest, &identity)?;
     validate_pages_runtime_asset_records(&root.join("docs/pages"), &manifest)?;
-    ensure_pages_source_state(root, &identity)?;
+    ensure_pages_source_state(root, precision, &identity)?;
 
     Ok(Some(PagesLoaderTrust::from_manifest(
         &manifest,
@@ -2309,32 +2341,37 @@ mod tests {
     use std::fs;
 
     use super::{
-        JAVASCRIPT_MAX_SAFE_INTEGER, PAGES_RUNTIME_ASSETS, PagesLoaderTrust, PagesRuntimeAsset,
-        PagesRuntimeManifest, ProviderPrecision, bevy_testbed_loader_js, collect_html_files,
-        ensure_pages_output_parent, format_bytes, is_git_environment_key, pages_runtime_asset,
-        rewrite_bevy_bindgen_provider_imports, validate_pages_asset_byte_length,
-        validate_pages_precision, validate_pages_runtime_asset_records,
+        ADAPTER_ABI_VERSION, JAVASCRIPT_MAX_SAFE_INTEGER, PAGES_PUBLISHER_WORKFLOW,
+        PAGES_RUNTIME_ASSETS, PAGES_RUNTIME_SCHEMA, PAGES_RUNTIME_SCHEMA_VERSION, PROVIDER_ABI,
+        PUBLISHER_REPOSITORY, PagesLoaderTrust, PagesRuntimeAsset, PagesRuntimeIdentity,
+        PagesRuntimeManifest, ProviderPrecision, RECORDING_CONTRACT_BLAKE3, WASM_TARGET,
+        bevy_testbed_loader_js, collect_html_files, ensure_pages_output_parent, format_bytes,
+        pages_runtime_asset, rewrite_bevy_bindgen_provider_imports,
+        validate_pages_asset_byte_length, validate_pages_precision,
+        validate_pages_runtime_asset_records, validate_pages_runtime_manifest_identity,
     };
+    use crate::qualified_git::qualified_git_command;
 
     fn manifest() -> PagesRuntimeManifest {
         PagesRuntimeManifest {
-            schema_version: 1,
-            schema: "boxdd-pages-runtime-v1".to_owned(),
-            publisher_repository: "Latias94/boxdd".to_owned(),
-            publisher_workflow: ".github/workflows/pages.yml".to_owned(),
+            schema_version: PAGES_RUNTIME_SCHEMA_VERSION,
+            schema: PAGES_RUNTIME_SCHEMA.to_owned(),
+            publisher_repository: PUBLISHER_REPOSITORY.to_owned(),
+            publisher_workflow: PAGES_PUBLISHER_WORKFLOW.to_owned(),
             provider: "wasm-runtime".to_owned(),
-            provider_abi: "box2d-sys-v1".to_owned(),
-            adapter_abi_version: 2,
-            crate_version: "0.6.0".to_owned(),
+            provider_abi: PROVIDER_ABI.to_owned(),
+            adapter_abi_version: ADAPTER_ABI_VERSION,
+            crate_version: env!("CARGO_PKG_VERSION").to_owned(),
             source_commit: "1".repeat(40),
             upstream_sha: "2".repeat(40),
             source_tree: "3".repeat(40),
             effective_source_sha256: "4".repeat(64),
             adapter_source_sha256: "5".repeat(64),
             emscripten_sdk_contract_sha256: "6".repeat(64),
-            recording_contract_blake3: "7".repeat(64),
-            precision: "single".to_owned(),
-            target: "wasm32-unknown-unknown".to_owned(),
+            wasm_provider_contract_sha256: "8".repeat(64),
+            recording_contract_blake3: RECORDING_CONTRACT_BLAKE3.to_owned(),
+            precision: ProviderPrecision::Single.as_str().to_owned(),
+            target: WASM_TARGET.to_owned(),
             assets: PAGES_RUNTIME_ASSETS
                 .iter()
                 .enumerate()
@@ -2345,6 +2382,18 @@ mod tests {
                     sha256: format!("{index:064x}"),
                 })
                 .collect(),
+        }
+    }
+
+    fn runtime_identity(manifest: &PagesRuntimeManifest) -> PagesRuntimeIdentity {
+        PagesRuntimeIdentity {
+            source_commit: manifest.source_commit.clone(),
+            upstream_sha: manifest.upstream_sha.clone(),
+            source_tree: manifest.source_tree.clone(),
+            effective_source_sha256: manifest.effective_source_sha256.clone(),
+            adapter_source_sha256: manifest.adapter_source_sha256.clone(),
+            emscripten_sdk_contract_sha256: manifest.emscripten_sdk_contract_sha256.clone(),
+            wasm_provider_contract_sha256: manifest.wasm_provider_contract_sha256.clone(),
         }
     }
 
@@ -2371,14 +2420,9 @@ mod tests {
     }
 
     #[test]
-    fn pages_git_commands_ignore_ambient_git_redirection() {
-        assert!(is_git_environment_key(std::ffi::OsStr::new("GIT_DIR")));
-        assert!(is_git_environment_key(std::ffi::OsStr::new(
-            "git_object_directory"
-        )));
-        assert!(!is_git_environment_key(std::ffi::OsStr::new(
-            "LEGIT_SETTING"
-        )));
+    fn pages_git_commands_use_a_qualified_absolute_program() {
+        let command = qualified_git_command().unwrap();
+        assert!(std::path::Path::new(command.get_program()).is_absolute());
     }
 
     #[cfg(unix)]
@@ -2436,6 +2480,21 @@ mod tests {
     }
 
     #[test]
+    fn runtime_manifest_rejects_mismatched_wasm_provider_contract_digest() {
+        let mut manifest = manifest();
+        let identity = runtime_identity(&manifest);
+        validate_pages_runtime_manifest_identity(&manifest, &identity).unwrap();
+
+        manifest.wasm_provider_contract_sha256 = "9".repeat(64);
+        let error = validate_pages_runtime_manifest_identity(&manifest, &identity).unwrap_err();
+
+        assert!(
+            error.to_string().contains("wasm_provider_contract_sha256"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
     fn loader_verifies_all_assets_before_importing_or_instantiating() {
         let manifest = manifest();
         let trust = PagesLoaderTrust::from_manifest(&manifest, "7".repeat(64));
@@ -2451,6 +2510,7 @@ mod tests {
         assert!(loader.contains("crypto.subtle.digest(\"SHA-256\", bytes)"));
         assert!(loader.contains("manifest_sha256"));
         assert!(loader.contains("emscripten_sdk_contract_sha256"));
+        assert!(loader.contains("wasm_provider_contract_sha256"));
         assert!(loader.contains("boxddProviderRuntimeEvidence"));
         assert!(loader.contains("memory.grow(1)"));
         assert!(loader.contains("staleBufferDetached"));

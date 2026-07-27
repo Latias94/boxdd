@@ -15,10 +15,7 @@ concurrency:
 jobs:
   build:
     name: Build and upload static site
-    runs-on: ubuntu-latest
-    env:
-      EMSDK_VERSION: "6.0.3"
-      EMSDK_REVISION: "db04e88298d9916fc51fcd3743045ca3eb695127"
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -35,28 +32,9 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
-      - name: Install wasm-bindgen CLI
-        run: cargo install wasm-bindgen-cli --version 0.2.126 --locked
-
-      - name: Install Emscripten SDK
+      - name: Provision Emscripten SDK
         shell: bash
-        run: |
-          set -euo pipefail
-          git init "${RUNNER_TEMP}/emsdk"
-          git -C "${RUNNER_TEMP}/emsdk" remote add origin https://github.com/emscripten-core/emsdk.git
-          git -C "${RUNNER_TEMP}/emsdk" fetch --depth 1 origin "${EMSDK_REVISION}"
-          git -C "${RUNNER_TEMP}/emsdk" checkout --detach FETCH_HEAD
-          test "$(git -C "${RUNNER_TEMP}/emsdk" rev-parse HEAD)" = "${EMSDK_REVISION}"
-          "${RUNNER_TEMP}/emsdk/emsdk" install "${EMSDK_VERSION}"
-          "${RUNNER_TEMP}/emsdk/emsdk" activate "${EMSDK_VERSION}"
-          {
-            echo "EMSDK=${RUNNER_TEMP}/emsdk"
-          } >> "$GITHUB_ENV"
-          {
-            echo "${RUNNER_TEMP}/emsdk"
-            echo "${RUNNER_TEMP}/emsdk/upstream/emscripten"
-            echo "${RUNNER_TEMP}/emsdk/upstream/bin"
-          } >> "$GITHUB_PATH"
+        run: cargo run --locked -p xtask -- provision-emsdk --root "${RUNNER_TEMP}/emsdk" --github-actions
 
       - name: Build Pages WASM assets
         run: cargo run --locked -p xtask -- build-pages-wasm

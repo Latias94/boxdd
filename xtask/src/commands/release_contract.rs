@@ -44,6 +44,7 @@ const RUST_TOOLCHAIN_ACTION: &str =
 const CHECKOUT_ACTION: &str = "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0";
 const RUST_CACHE_ACTION: &str = "Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4";
 const SETUP_NODE_ACTION: &str = "actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f";
+const PROVISION_EMSDK_COMMAND: &str = "cargo run --locked -p xtask -- provision-emsdk --root \"${RUNNER_TEMP}/emsdk\" --github-actions";
 const CONFIGURE_PAGES_ACTION: &str =
     "actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d";
 const UPLOAD_PAGES_ACTION: &str =
@@ -1689,24 +1690,6 @@ fn require_exact_bool_field(
     }
 }
 
-fn require_exact_trimmed_string_field(
-    mapping: &YamlMapping,
-    key: &str,
-    expected: &str,
-    context: &str,
-) -> Result<()> {
-    let actual = required_yaml_field(mapping, key, context)?
-        .as_str()
-        .ok_or_else(|| Error::message(format!("{context} {key:?} must be a string")))?;
-    if actual.trim() == expected.trim() {
-        Ok(())
-    } else {
-        Err(Error::message(format!(
-            "{context} {key:?} does not match the reviewed command contract"
-        )))
-    }
-}
-
 fn require_absent_field(mapping: &YamlMapping, key: &str, context: &str) -> Result<()> {
     if yaml_field(mapping, key).is_none() {
         Ok(())
@@ -2328,6 +2311,162 @@ fn validate_system_provider_matrix(job: &YamlMapping) -> Result<()> {
     )?;
     validate_matrix_axis(matrix, name, "toolchain", QUALIFICATION_TOOLCHAINS)?;
     validate_matrix_axis(matrix, name, "precision", QUALIFICATION_PRECISIONS)
+}
+
+fn provider_runtime_step<'a>(
+    steps: &'a [YamlValue],
+    index: usize,
+    expected_name: &str,
+    expected_keys: &[&str],
+) -> Result<&'a YamlMapping> {
+    let context = format!("WASM provider runtime step {index}");
+    let step = steps.get(index).ok_or_else(|| {
+        Error::message(format!("WASM provider runtime job is missing step {index}"))
+    })?;
+    let step = yaml_mapping(step, &context)?;
+    require_exact_mapping_keys(step, expected_keys, &context)?;
+    require_exact_string_field(step, "name", expected_name, &context)?;
+    Ok(step)
+}
+
+fn validate_provider_runtime_job(job: &YamlMapping) -> Result<()> {
+    const CONTEXT: &str = "WASM provider runtime job";
+
+    require_exact_mapping_keys(
+        job,
+        &["name", "runs-on", "permissions", "env", "steps"],
+        CONTEXT,
+    )?;
+    require_exact_string_field(
+        job,
+        "name",
+        "WASM Provider Runtime (Node + Chromium, single + double)",
+        CONTEXT,
+    )?;
+    require_exact_string_field(job, "runs-on", "ubuntu-24.04", CONTEXT)?;
+    require_exact_permissions(job, CONTEXT, &[("contents", "read")])?;
+    require_exact_string_mapping_field(job, "env", &[("CARGO_TARGET_DIR", "target")], CONTEXT)?;
+
+    let steps = workflow_steps(job, "WASM provider runtime")?;
+    if steps.len() != 8 {
+        return Err(Error::message(format!(
+            "{CONTEXT} must contain exactly 8 reviewed steps; found {}",
+            steps.len()
+        )));
+    }
+
+    let checkout = provider_runtime_step(steps, 0, "Checkout", &["name", "uses", "with"])?;
+    require_exact_string_field(
+        checkout,
+        "uses",
+        CHECKOUT_ACTION,
+        "provider runtime checkout",
+    )?;
+    let checkout_inputs = yaml_mapping(
+        required_yaml_field(checkout, "with", "provider runtime checkout")?,
+        "provider runtime checkout inputs",
+    )?;
+    require_exact_mapping_keys(
+        checkout_inputs,
+        &["submodules", "persist-credentials"],
+        "provider runtime checkout inputs",
+    )?;
+    require_exact_string_field(
+        checkout_inputs,
+        "submodules",
+        "recursive",
+        "provider runtime checkout inputs",
+    )?;
+    require_exact_bool_field(
+        checkout_inputs,
+        "persist-credentials",
+        false,
+        "provider runtime checkout inputs",
+    )?;
+
+    let rust = provider_runtime_step(steps, 1, "Install Rust", &["name", "uses", "with"])?;
+    require_exact_string_field(rust, "uses", RUST_TOOLCHAIN_ACTION, "provider runtime Rust")?;
+    require_exact_string_mapping_field(
+        rust,
+        "with",
+        &[
+            ("toolchain", "1.97.1"),
+            ("targets", "wasm32-unknown-unknown"),
+        ],
+        "provider runtime Rust",
+    )?;
+
+    let node = provider_runtime_step(steps, 2, "Install Node.js", &["name", "uses", "with"])?;
+    require_exact_string_field(node, "uses", SETUP_NODE_ACTION, "provider runtime Node.js")?;
+    require_exact_string_mapping_field(
+        node,
+        "with",
+        &[("node-version", "22.16.0"), ("cache", "npm")],
+        "provider runtime Node.js",
+    )?;
+
+    let cache = provider_runtime_step(
+        steps,
+        3,
+        "Cache Rust dependencies",
+        &["name", "uses", "with"],
+    )?;
+    require_exact_string_field(cache, "uses", RUST_CACHE_ACTION, "provider runtime cache")?;
+    require_exact_string_mapping_field(
+        cache,
+        "with",
+        &[("shared-key", "provider-runtime")],
+        "provider runtime cache",
+    )?;
+
+    let browser_dependencies = provider_runtime_step(
+        steps,
+        4,
+        "Install browser test dependencies",
+        &["name", "run"],
+    )?;
+    require_exact_string_field(
+        browser_dependencies,
+        "run",
+        "npm ci --ignore-scripts\nnpx playwright install --with-deps chromium\n",
+        "provider runtime browser dependencies",
+    )?;
+
+    let emsdk = provider_runtime_step(
+        steps,
+        5,
+        "Provision Emscripten SDK",
+        &["name", "shell", "run"],
+    )?;
+    require_exact_string_field(emsdk, "shell", "bash", "provider runtime Emscripten")?;
+    require_exact_string_field(
+        emsdk,
+        "run",
+        PROVISION_EMSDK_COMMAND,
+        "provider runtime Emscripten",
+    )?;
+
+    let identities = provider_runtime_step(
+        steps,
+        6,
+        "Verify checked WASM provider identities",
+        &["name", "run"],
+    )?;
+    require_exact_string_field(
+        identities,
+        "run",
+        "cargo run --locked -p xtask -- wasm-provider-contract --check",
+        "provider runtime identity verification",
+    )?;
+
+    let runtime =
+        provider_runtime_step(steps, 7, "Run provider runtime contract", &["name", "run"])?;
+    require_exact_string_field(
+        runtime,
+        "run",
+        "cargo run --locked -p xtask -- verify-wasm --runtime",
+        "provider runtime proof",
+    )
 }
 
 fn job_matrix<'a>(job: &'a YamlMapping, name: &str) -> Result<&'a YamlMapping> {
@@ -2952,6 +3091,9 @@ fn validate_ci_workflow_source(source: &str) -> Result<()> {
         "pages: write",
         "serialize",
         "--all-features",
+        "actions/setup-python",
+        "wasm-bindgen-cli",
+        "BOXDD_WASM_BINDGEN",
     ] {
         if source.contains(forbidden) {
             return Err(Error::message(format!(
@@ -2984,6 +3126,7 @@ fn validate_ci_workflow_source(source: &str) -> Result<()> {
     let miri_yaml = workflow_job_mapping(structured_jobs, "miri", "CI workflow")?;
     let sanitizers_yaml = workflow_job_mapping(structured_jobs, "sanitizers", "CI workflow")?;
     validate_native_matrix(native)?;
+    validate_provider_runtime_job(provider_runtime_yaml)?;
     validate_exact_workflow_job(
         system_provider_yaml,
         "system-provider",
@@ -3122,12 +3265,14 @@ fn validate_ci_workflow_source(source: &str) -> Result<()> {
         provider_runtime,
         "WASM provider runtime",
         &[
-            "EMSDK_VERSION: \"6.0.3\"",
-            "EMSDK_REVISION: \"db04e88298d9916fc51fcd3743045ca3eb695127\"",
-            "CARGO_TARGET_DIR: target/provider-runtime",
+            "runs-on: ubuntu-24.04",
+            "CARGO_TARGET_DIR: target",
             "targets: wasm32-unknown-unknown",
+            "node-version: \"22.16.0\"",
             "npm ci --ignore-scripts",
             "npx playwright install --with-deps chromium",
+            PROVISION_EMSDK_COMMAND,
+            "cargo run --locked -p xtask -- wasm-provider-contract --check",
             "cargo run --locked -p xtask -- verify-wasm --runtime",
         ],
     )?;
@@ -3135,6 +3280,7 @@ fn validate_ci_workflow_source(source: &str) -> Result<()> {
         security,
         "supply chain",
         &[
+            "targets: wasm32-unknown-unknown",
             "cargo audit --file Cargo.lock",
             "cargo run --locked -p xtask -- verify-packages",
             "cargo run --locked -p xtask -- verify-semver",
@@ -3182,6 +3328,17 @@ fn require_ci_job_fragments(section: &str, name: &str, fragments: &[&str]) -> Re
 }
 
 fn validate_pages_workflow_source(source: &str, sdk: &SdkContract) -> Result<()> {
+    for forbidden in [
+        "actions/setup-python",
+        "wasm-bindgen-cli",
+        "BOXDD_WASM_BINDGEN",
+    ] {
+        if source.contains(forbidden) {
+            return Err(Error::message(format!(
+                "Pages workflow contains removed toolchain provisioning fragment {forbidden:?}"
+            )));
+        }
+    }
     let workflow = parse_workflow_yaml(source, "Pages workflow")?;
     let workflow = yaml_mapping(&workflow, "Pages workflow")?;
     require_exact_mapping_keys(
@@ -3250,28 +3407,15 @@ fn validate_pages_workflow_source(source: &str, sdk: &SdkContract) -> Result<()>
     require_exact_mapping_keys(jobs, &["build", "deploy"], "Pages workflow jobs")?;
     let build = workflow_job_mapping(jobs, "build", "Pages workflow")?;
     let deploy = workflow_job_mapping(jobs, "deploy", "Pages workflow")?;
-    require_exact_mapping_keys(
-        build,
-        &["name", "runs-on", "env", "steps"],
-        "Pages build job",
-    )?;
+    require_exact_mapping_keys(build, &["name", "runs-on", "steps"], "Pages build job")?;
     require_exact_string_field(
         build,
         "name",
         "Build and upload static site",
         "Pages build job",
     )?;
-    require_exact_string_field(build, "runs-on", "ubuntu-latest", "Pages build job")?;
+    require_exact_string_field(build, "runs-on", "ubuntu-24.04", "Pages build job")?;
     require_absent_field(build, "permissions", "Pages build job")?;
-    require_exact_string_mapping_field(
-        build,
-        "env",
-        &[
-            ("EMSDK_VERSION", sdk.emscripten_version.as_str()),
-            ("EMSDK_REVISION", sdk.emsdk_revision.as_str()),
-        ],
-        "Pages build job",
-    )?;
     validate_pages_build_steps(build, sdk)?;
 
     require_exact_mapping_keys(
@@ -3342,29 +3486,10 @@ fn pages_step<'a>(
 }
 
 fn validate_pages_build_steps(build: &YamlMapping, sdk: &SdkContract) -> Result<()> {
-    const EMSDK_INSTALL_COMMAND_TEMPLATE: &str = r#"set -euo pipefail
-git init "${RUNNER_TEMP}/emsdk"
-git -C "${RUNNER_TEMP}/emsdk" remote add origin __EMSDK_REPOSITORY__
-git -C "${RUNNER_TEMP}/emsdk" fetch --depth 1 origin "${EMSDK_REVISION}"
-git -C "${RUNNER_TEMP}/emsdk" checkout --detach FETCH_HEAD
-test "$(git -C "${RUNNER_TEMP}/emsdk" rev-parse HEAD)" = "${EMSDK_REVISION}"
-"${RUNNER_TEMP}/emsdk/emsdk" install "${EMSDK_VERSION}"
-"${RUNNER_TEMP}/emsdk/emsdk" activate "${EMSDK_VERSION}"
-{
-  echo "EMSDK=${RUNNER_TEMP}/emsdk"
-} >> "$GITHUB_ENV"
-{
-  echo "${RUNNER_TEMP}/emsdk"
-  echo "${RUNNER_TEMP}/emsdk/upstream/emscripten"
-  echo "${RUNNER_TEMP}/emsdk/upstream/bin"
-} >> "$GITHUB_PATH""#;
-    let emsdk_install_command =
-        EMSDK_INSTALL_COMMAND_TEMPLATE.replace("__EMSDK_REPOSITORY__", &sdk.emsdk_repository);
-
     let steps = workflow_steps(build, "Pages build")?;
-    if steps.len() != 13 {
+    if steps.len() != 12 {
         return Err(Error::message(format!(
-            "Pages build job must contain exactly 13 reviewed steps; found {}",
+            "Pages build job must contain exactly 12 reviewed steps; found {}",
             steps.len()
         )));
     }
@@ -3408,32 +3533,21 @@ test "$(git -C "${RUNNER_TEMP}/emsdk" rev-parse HEAD)" = "${EMSDK_REVISION}"
     let cache = pages_step(steps, 2, "Cache Rust dependencies", &["name", "uses"])?;
     require_exact_string_field(cache, "uses", RUST_CACHE_ACTION, "Pages cache step")?;
 
-    let wasm_bindgen = pages_step(steps, 3, "Install wasm-bindgen CLI", &["name", "run"])?;
-    require_exact_string_field(
-        wasm_bindgen,
-        "run",
-        &format!(
-            "cargo install wasm-bindgen-cli --version {} --locked",
-            sdk.wasm_bindgen_version
-        ),
-        "Pages wasm-bindgen step",
-    )?;
-
     let emsdk = pages_step(
         steps,
-        4,
-        "Install Emscripten SDK",
+        3,
+        "Provision Emscripten SDK",
         &["name", "shell", "run"],
     )?;
     require_exact_string_field(emsdk, "shell", "bash", "Pages Emscripten step")?;
-    require_exact_trimmed_string_field(
+    require_exact_string_field(
         emsdk,
         "run",
-        &emsdk_install_command,
+        PROVISION_EMSDK_COMMAND,
         "Pages Emscripten step",
     )?;
 
-    let build_assets = pages_step(steps, 5, "Build Pages WASM assets", &["name", "run"])?;
+    let build_assets = pages_step(steps, 4, "Build Pages WASM assets", &["name", "run"])?;
     require_exact_string_field(
         build_assets,
         "run",
@@ -3441,7 +3555,7 @@ test "$(git -C "${RUNNER_TEMP}/emsdk" rev-parse HEAD)" = "${EMSDK_REVISION}"
         "Pages build-assets step",
     )?;
 
-    let node = pages_step(steps, 6, "Install Node.js", &["name", "uses", "with"])?;
+    let node = pages_step(steps, 5, "Install Node.js", &["name", "uses", "with"])?;
     require_exact_string_field(node, "uses", SETUP_NODE_ACTION, "Pages Node.js step")?;
     require_exact_string_mapping_field(
         node,
@@ -3455,7 +3569,7 @@ test "$(git -C "${RUNNER_TEMP}/emsdk" rev-parse HEAD)" = "${EMSDK_REVISION}"
 
     let npm = pages_step(
         steps,
-        7,
+        6,
         "Install browser test dependencies",
         &["name", "run"],
     )?;
@@ -3466,7 +3580,7 @@ test "$(git -C "${RUNNER_TEMP}/emsdk" rev-parse HEAD)" = "${EMSDK_REVISION}"
         "Pages npm dependency step",
     )?;
 
-    let chromium = pages_step(steps, 8, "Install Chromium", &["name", "run"])?;
+    let chromium = pages_step(steps, 7, "Install Chromium", &["name", "run"])?;
     require_exact_string_field(
         chromium,
         "run",
@@ -3476,7 +3590,7 @@ test "$(git -C "${RUNNER_TEMP}/emsdk" rev-parse HEAD)" = "${EMSDK_REVISION}"
 
     let browser = pages_step(
         steps,
-        9,
+        8,
         "Prove published Pages runtime in Chromium",
         &["name", "run"],
     )?;
@@ -3489,7 +3603,7 @@ test "$(git -C "${RUNNER_TEMP}/emsdk" rev-parse HEAD)" = "${EMSDK_REVISION}"
 
     let validate = pages_step(
         steps,
-        10,
+        9,
         "Validate commit-bound Pages content and runtime manifest",
         &["name", "run"],
     )?;
@@ -3500,7 +3614,7 @@ test "$(git -C "${RUNNER_TEMP}/emsdk" rev-parse HEAD)" = "${EMSDK_REVISION}"
         "Pages validation step",
     )?;
 
-    let configure = pages_step(steps, 11, "Configure Pages", &["name", "uses"])?;
+    let configure = pages_step(steps, 10, "Configure Pages", &["name", "uses"])?;
     require_exact_string_field(
         configure,
         "uses",
@@ -3508,7 +3622,7 @@ test "$(git -C "${RUNNER_TEMP}/emsdk" rev-parse HEAD)" = "${EMSDK_REVISION}"
         "Pages configuration step",
     )?;
 
-    let upload = pages_step(steps, 12, "Upload artifact", &["name", "uses", "with"])?;
+    let upload = pages_step(steps, 11, "Upload artifact", &["name", "uses", "with"])?;
     require_exact_string_field(upload, "uses", UPLOAD_PAGES_ACTION, "Pages upload step")?;
     require_exact_string_mapping_field(
         upload,
@@ -3539,7 +3653,7 @@ fn validate_pages_deploy_steps(deploy: &YamlMapping) -> Result<()> {
 fn validate_pages_workflow(root: &Path) -> Result<()> {
     let path = root.join(".github/workflows/pages.yml");
     let source = fs::read_to_string(&path).map_err(|error| Error::io(&path, error))?;
-    let sdk_path = root.join("boxdd-sys").join(SDK_CONTRACT_RELATIVE_PATH);
+    let sdk_path = root.join("xtask").join(SDK_CONTRACT_RELATIVE_PATH);
     let sdk_source = fs::read_to_string(&sdk_path).map_err(|error| Error::io(&sdk_path, error))?;
     let sdk = SdkContract::parse(&sdk_source).map_err(Error::message)?;
     validate_pages_workflow_source(&source, &sdk)
@@ -3650,7 +3764,7 @@ mod tests {
     use super::*;
 
     fn pages_sdk_contract() -> SdkContract {
-        SdkContract::parse(include_str!("../../../boxdd-sys/emscripten-sdk.toml")).unwrap()
+        SdkContract::parse(include_str!("../../toolchains/emscripten-sdk.toml")).unwrap()
     }
 
     fn write_tar_fixture(path: &Path, entries: &[(&str, &[u8])]) {
@@ -4170,14 +4284,10 @@ mod tests {
             ),
             ("toolchain: 1.97.1", "toolchain: stable"),
             ("targets: wasm32-unknown-unknown", "targets: wasm32-wasip1"),
-            ("EMSDK_VERSION: \"6.0.3\"", "EMSDK_VERSION: latest"),
+            ("runs-on: ubuntu-24.04", "runs-on: ubuntu-latest"),
             (
-                "EMSDK_REVISION: \"db04e88298d9916fc51fcd3743045ca3eb695127\"",
-                "EMSDK_REVISION: main",
-            ),
-            (
-                "cargo install wasm-bindgen-cli --version 0.2.126 --locked",
-                "cargo install wasm-bindgen-cli --locked",
+                PROVISION_EMSDK_COMMAND,
+                "cargo run --locked -p xtask -- provision-emsdk --root \"/tmp/emsdk\" --github-actions",
             ),
             ("node-version: \"22.16.0\"", "node-version: latest"),
             ("npm ci --ignore-scripts", "npm install"),
@@ -4233,8 +4343,8 @@ mod tests {
         );
 
         let injected_build_command = source.replacen(
-            "          set -euo pipefail",
-            "          set -euo pipefail\n          true # unreviewed command",
+            PROVISION_EMSDK_COMMAND,
+            "true # unreviewed Emscripten setup command",
             1,
         );
         assert!(
@@ -4242,9 +4352,21 @@ mod tests {
             "Pages workflow policy accepted an unreviewed Emscripten setup command"
         );
 
+        for stale_fragment in [
+            "actions/setup-python@main",
+            "cargo install wasm-bindgen-cli --locked",
+            "BOXDD_WASM_BINDGEN=/tmp/wasm-bindgen",
+        ] {
+            let stale_toolchain = source.replacen(PROVISION_EMSDK_COMMAND, stale_fragment, 1);
+            assert!(
+                validate_pages_workflow_source(&stale_toolchain, &sdk).is_err(),
+                "Pages workflow policy accepted removed provisioning fragment {stale_fragment:?}"
+            );
+        }
+
         let privileged_build = source.replacen(
-            "    env:\n      EMSDK_VERSION:",
-            "    permissions:\n      contents: write\n    env:\n      EMSDK_VERSION:",
+            "    steps:\n",
+            "    permissions:\n      contents: write\n    steps:\n",
             1,
         );
         assert!(
@@ -4260,7 +4382,7 @@ mod tests {
     #[test]
     fn ci_workflow_rejects_verification_contract_drift() {
         let source = include_str!("../../../.github/workflows/ci.yml");
-        assert!(validate_ci_workflow_source(source).is_ok());
+        validate_ci_workflow_source(source).unwrap();
 
         for required in [
             "cargo run --locked -p xtask -- verify-precision-contract",
@@ -4281,6 +4403,10 @@ mod tests {
             "CARGO_TARGET_DIR=\"$attest_target\" cargo +${{ matrix.toolchain }} run --locked -p boxdd-sys --features \"${{ matrix.precision == 'double' && 'package-bin,double-precision' || 'package-bin' }}\" --bin package -- attest-local-system \"$SYS_DIR/libbox2d.a\" \"$SYS_DIR/box2d.h\" \"$SYS_DIR/bindings.rs\" \"$SYS_DIR/manifest.toml\"",
             SYSTEM_QUALIFICATION_COMMAND,
             "cargo doc --locked --no-deps -p bevy_boxdd --features double-precision",
+            "runs-on: ubuntu-24.04",
+            "node-version: \"22.16.0\"",
+            PROVISION_EMSDK_COMMAND,
+            "cargo run --locked -p xtask -- wasm-provider-contract --check",
         ] {
             assert!(
                 source.contains(required),
@@ -4290,6 +4416,91 @@ mod tests {
             assert!(
                 validate_ci_workflow_source(&drifted).is_err(),
                 "CI policy accepted removal of {required:?}"
+            );
+        }
+
+        for stale_fragment in [
+            "actions/setup-python@main",
+            "cargo install wasm-bindgen-cli --locked",
+            "BOXDD_WASM_BINDGEN=/tmp/wasm-bindgen",
+        ] {
+            let stale_toolchain = source.replacen(PROVISION_EMSDK_COMMAND, stale_fragment, 1);
+            assert!(
+                validate_ci_workflow_source(&stale_toolchain).is_err(),
+                "CI policy accepted removed provisioning fragment {stale_fragment:?}"
+            );
+        }
+
+        let assert_provider_runtime_drift_rejected = |drifted: String, label: &str| {
+            assert_ne!(
+                drifted, source,
+                "missing provider runtime fixture for {label}"
+            );
+            assert!(
+                validate_ci_workflow_source(&drifted).is_err(),
+                "CI policy accepted provider runtime drift: {label}"
+            );
+        };
+
+        assert_provider_runtime_drift_rejected(
+            source.replacen(
+                "    env:\n      CARGO_TARGET_DIR: target\n    steps:\n      - name: Checkout",
+                "    env:\n      CARGO_TARGET_DIR: target\n      PATH: /tmp/fake\n    steps:\n      - name: Checkout",
+                1,
+            ),
+            "job-level PATH injection",
+        );
+        assert_provider_runtime_drift_rejected(
+            source.replacen(
+                "      - name: Provision Emscripten SDK\n        shell: bash\n        run:",
+                "      - name: Provision Emscripten SDK\n        shell: bash\n        env:\n          PATH: /tmp/fake\n        run:",
+                1,
+            ),
+            "step-level PATH injection",
+        );
+        assert_provider_runtime_drift_rejected(
+            source.replacen(
+                "      - name: Provision Emscripten SDK\n        shell: bash",
+                "      - name: Provision Emscripten SDK\n        shell: python",
+                1,
+            ),
+            "alternate shell",
+        );
+        assert_provider_runtime_drift_rejected(
+            source.replacen(
+                "      - name: Provision Emscripten SDK\n",
+                "      - name: Unreviewed provider action\n        uses: example.invalid/action@0000000000000000000000000000000000000000\n\n      - name: Provision Emscripten SDK\n",
+                1,
+            ),
+            "extra action",
+        );
+        assert_provider_runtime_drift_rejected(
+            source.replacen(
+                "      - name: Provision Emscripten SDK\n",
+                "      - name: Unreviewed provider command\n        run: echo unreviewed\n\n      - name: Provision Emscripten SDK\n",
+                1,
+            ),
+            "extra run step",
+        );
+
+        for (label, job_fragment) in [
+            (
+                "job defaults",
+                "    defaults:\n      run:\n        shell: bash\n",
+            ),
+            ("job container", "    container: ubuntu:24.04\n"),
+            (
+                "job services",
+                "    services:\n      helper:\n        image: redis:7\n",
+            ),
+        ] {
+            assert_provider_runtime_drift_rejected(
+                source.replacen(
+                    "      CARGO_TARGET_DIR: target\n    steps:\n",
+                    &format!("      CARGO_TARGET_DIR: target\n{job_fragment}    steps:\n"),
+                    1,
+                ),
+                label,
             );
         }
 
