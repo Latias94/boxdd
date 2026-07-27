@@ -201,9 +201,122 @@ pub(crate) struct QualifiedEmscriptenSdk {
     revision_path: PathBuf,
     watched_files: Vec<QualifiedFile>,
     qualified_trees: Vec<QualifiedTree>,
-    scratch: tempfile::TempDir,
+    scratch: QualifiedScratch,
+}
+
+#[derive(Debug)]
+struct QualifiedScratch {
+    guard: tempfile::TempDir,
     cache: PathBuf,
     ports: PathBuf,
+}
+
+impl QualifiedScratch {
+    fn create() -> Result<Self, String> {
+        Self::create_in(&env::temp_dir())
+    }
+
+    fn create_in(temporary_root: &Path) -> Result<Self, String> {
+        let temporary_root = fs::canonicalize(temporary_root).map_err(|error| {
+            format!(
+                "failed to resolve private Emscripten temporary root {}: {error}",
+                temporary_root.display()
+            )
+        })?;
+        require_real_canonical_directory(&temporary_root, "private Emscripten temporary root")?;
+        let guard = tempfile::Builder::new()
+            .prefix("boxdd-emscripten-")
+            .tempdir_in(&temporary_root)
+            .map_err(|error| {
+                format!("failed to create private Emscripten scratch directory: {error}")
+            })?;
+        Self::from_tempdir(guard)
+    }
+
+    fn from_tempdir(guard: tempfile::TempDir) -> Result<Self, String> {
+        secure_private_directory(guard.path(), "private Emscripten scratch directory")?;
+        let root = fs::canonicalize(guard.path()).map_err(|error| {
+            format!(
+                "failed to resolve private Emscripten scratch directory {}: {error}",
+                guard.path().display()
+            )
+        })?;
+        require_real_canonical_directory(&root, "private Emscripten scratch directory")?;
+        if guard.path() != root {
+            return Err(format!(
+                "private Emscripten scratch guard must use its physical path: logical {}, physical {}",
+                guard.path().display(),
+                root.display()
+            ));
+        }
+        let cache = root.join("cache");
+        let ports = root.join("ports");
+        for (label, path) in [
+            ("private Emscripten cache", &cache),
+            ("private Emscripten ports cache", &ports),
+        ] {
+            fs::create_dir(path)
+                .map_err(|error| format!("failed to create {label} {}: {error}", path.display()))?;
+            secure_private_directory(path, label)?;
+        }
+        let scratch = Self {
+            guard,
+            cache,
+            ports,
+        };
+        validate_scratch_directory(&scratch)?;
+        Ok(scratch)
+    }
+
+    fn root(&self) -> &Path {
+        self.guard.path()
+    }
+}
+
+#[derive(Debug, Default)]
+struct ProvisioningTreeSeals {
+    roots: Vec<(PathBuf, String)>,
+    armed: bool,
+}
+
+impl ProvisioningTreeSeals {
+    fn seal(&mut self, root: &Path, label: &str) -> Result<(), String> {
+        let root = fs::canonicalize(root)
+            .map_err(|error| format!("failed to resolve {label} {}: {error}", root.display()))?;
+        require_real_canonical_directory(&root, label)?;
+        self.roots.push((root.clone(), label.to_owned()));
+        self.armed = true;
+        seal_qualified_tree(&root, label)
+    }
+
+    fn restore_for_cleanup(&mut self) -> Result<(), String> {
+        if !self.armed {
+            return Ok(());
+        }
+
+        let mut errors = Vec::new();
+        for (root, label) in self.roots.iter().rev() {
+            if let Err(error) = restore_tree_owner_directory_access(root, label) {
+                errors.push(error);
+            }
+        }
+        if errors.is_empty() {
+            self.armed = false;
+            Ok(())
+        } else {
+            Err(errors.join("; "))
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for ProvisioningTreeSeals {
+    fn drop(&mut self) {
+        let _ = self.restore_for_cleanup();
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -286,9 +399,9 @@ impl QualifiedEmscriptenSdk {
             em_config: &self.em_config,
             python: &self.python,
             node: &self.node,
-            cache: &self.cache,
-            ports: &self.ports,
-            scratch: self.scratch.path(),
+            cache: &self.scratch.cache,
+            ports: &self.scratch.ports,
+            scratch: self.scratch.root(),
         }
     }
 
@@ -301,9 +414,9 @@ impl QualifiedEmscriptenSdk {
         let mut command = Command::new(&self.node);
         remove_process_injection_environment(&mut command);
         remove_matching_environment(&mut command, is_node_environment_key);
-        command.env("TMPDIR", self.scratch.path());
-        command.env("TMP", self.scratch.path());
-        command.env("TEMP", self.scratch.path());
+        command.env("TMPDIR", self.scratch.root());
+        command.env("TMP", self.scratch.root());
+        command.env("TEMP", self.scratch.root());
         Ok(command)
     }
 
@@ -312,9 +425,9 @@ impl QualifiedEmscriptenSdk {
         let mut command = Command::new(&self.wasm_opt);
         remove_process_injection_environment(&mut command);
         remove_matching_environment(&mut command, is_qualified_tool_environment_key);
-        command.env("TMPDIR", self.scratch.path());
-        command.env("TMP", self.scratch.path());
-        command.env("TEMP", self.scratch.path());
+        command.env("TMPDIR", self.scratch.root());
+        command.env("TMP", self.scratch.root());
+        command.env("TEMP", self.scratch.root());
         Ok(command)
     }
 
@@ -323,7 +436,7 @@ impl QualifiedEmscriptenSdk {
         require_private_emsdk_root(&self.root, "qualified EMSDK root")?;
         validate_qualified_files(&self.watched_files)?;
         validate_qualified_trees(&self.qualified_trees)?;
-        validate_scratch_directory(&self.scratch, &self.cache, &self.ports)?;
+        validate_scratch_directory(&self.scratch)?;
         let contract_bytes = read_regular_file(&self.contract_path, "Emscripten SDK contract")?;
         require_identity(
             "Emscripten SDK contract SHA-256",
@@ -552,21 +665,7 @@ pub(crate) fn qualify_emscripten_sdk(
         python.clone(),
     ];
     let watched_files = qualify_files(watched_paths)?;
-    let scratch = tempfile::Builder::new()
-        .prefix("boxdd-emscripten-")
-        .tempdir()
-        .map_err(|error| {
-            format!("failed to create private Emscripten scratch directory: {error}")
-        })?;
-    secure_private_directory(scratch.path(), "private Emscripten scratch directory")?;
-    let cache = scratch.path().join("cache");
-    let ports = scratch.path().join("ports");
-    fs::create_dir(&cache)
-        .map_err(|error| format!("failed to create private Emscripten cache: {error}"))?;
-    fs::create_dir(&ports)
-        .map_err(|error| format!("failed to create private Emscripten ports cache: {error}"))?;
-    secure_private_directory(&cache, "private Emscripten cache")?;
-    secure_private_directory(&ports, "private Emscripten ports cache")?;
+    let scratch = QualifiedScratch::create()?;
     let sdk = QualifiedEmscriptenSdk {
         root: canonical_root,
         compiler,
@@ -588,8 +687,6 @@ pub(crate) fn qualify_emscripten_sdk(
         watched_files,
         qualified_trees,
         scratch,
-        cache,
-        ports,
     };
     sdk.revalidate()?;
     Ok(sdk)
@@ -714,7 +811,24 @@ pub(crate) fn provision_emscripten_sdk(
         )
     })?;
 
-    let qualified = qualify_emscripten_sdk(
+    let mut tree_seals = ProvisioningTreeSeals::default();
+    let seal_result = (|| {
+        tree_seals.seal(&release_root, "installed Emscripten release tree")?;
+        tree_seals.seal(&node_root, "installed EMSDK Node.js tree")?;
+        if let PythonRuntimeContract::Archive { version, .. } = &host.python {
+            tree_seals.seal(
+                &archived_python_root(staging.path(), version),
+                "installed EMSDK Python tree",
+            )?;
+        }
+        Ok(())
+    })();
+    if let Err(seal_error) = seal_result {
+        let cleanup_result = close_provisioning_staging(staging, &mut tree_seals);
+        return Err(with_provisioning_cleanup_error(seal_error, cleanup_result));
+    }
+
+    let qualified = match qualify_emscripten_sdk(
         xtask_manifest_dir,
         EmscriptenSdkInputs {
             root: Some(staging.path().as_os_str()),
@@ -723,7 +837,16 @@ pub(crate) fn provision_emscripten_sdk(
             node_override: None,
             self_attested_revision: None,
         },
-    )?;
+    ) {
+        Ok(qualified) => qualified,
+        Err(qualification_error) => {
+            let cleanup_result = close_provisioning_staging(staging, &mut tree_seals);
+            return Err(with_provisioning_cleanup_error(
+                qualification_error,
+                cleanup_result,
+            ));
+        }
+    };
     drop(qualified);
 
     if let Err(publish_error) = fs::rename(staging.path(), &destination) {
@@ -741,22 +864,32 @@ pub(crate) fn provision_emscripten_sdk(
                 )
             },
         );
-        match reuse_result {
-            Ok(()) => {
+        let cleanup_result = close_provisioning_staging(staging, &mut tree_seals);
+        return match (reuse_result, cleanup_result) {
+            (Ok(()), Ok(())) => {
                 println!(
                     "concurrently provisioned qualified Emscripten SDK reused at {}",
                     destination.display()
                 );
-                return Ok(());
+                Ok(())
             }
-            Err(reuse_error) => {
-                return Err(format!(
+            (Ok(()), Err(cleanup_error)) => Err(format!(
+                "a concurrently provisioned Emscripten SDK at {} qualified, but the losing staging directory could not be removed: {cleanup_error}",
+                destination.display()
+            )),
+            (Err(reuse_error), cleanup_result) => {
+                let publish_error = format!(
                     "failed to publish qualified Emscripten SDK at {}: {publish_error}; no qualified concurrent provision could be reused: {reuse_error}",
                     destination.display()
-                ));
+                );
+                Err(with_provisioning_cleanup_error(
+                    publish_error,
+                    cleanup_result,
+                ))
             }
-        }
+        };
     }
+    tree_seals.disarm();
     let _ = staging.keep();
     let destination = fs::canonicalize(&destination).map_err(|error| {
         format!(
@@ -772,6 +905,34 @@ pub(crate) fn provision_emscripten_sdk(
         destination.display()
     );
     Ok(())
+}
+
+fn close_provisioning_staging(
+    staging: tempfile::TempDir,
+    tree_seals: &mut ProvisioningTreeSeals,
+) -> Result<(), String> {
+    let restore_result = tree_seals.restore_for_cleanup();
+    let close_result = staging.close().map_err(|error| {
+        format!("failed to remove the Emscripten provisioning staging directory: {error}")
+    });
+    if close_result.is_ok() {
+        tree_seals.disarm();
+    }
+    match (restore_result, close_result) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(restore_error), Ok(())) => Err(restore_error),
+        (Ok(()), Err(close_error)) => Err(close_error),
+        (Err(restore_error), Err(close_error)) => Err(format!("{restore_error}; {close_error}")),
+    }
+}
+
+fn with_provisioning_cleanup_error(primary: String, cleanup: Result<(), String>) -> String {
+    match cleanup {
+        Ok(()) => primary,
+        Err(cleanup_error) => {
+            format!("{primary}; additionally, staging cleanup failed: {cleanup_error}")
+        }
+    }
 }
 
 fn reuse_qualified_emscripten_sdk(
@@ -2571,6 +2732,188 @@ fn sha256_file(path: &Path) -> Result<String, String> {
     read_regular_file(path, "qualified SDK input").map(|bytes| sha256_bytes(&bytes))
 }
 
+#[cfg(unix)]
+fn seal_qualified_tree(root: &Path, label: &str) -> Result<(), String> {
+    let root = fs::canonicalize(root)
+        .map_err(|error| format!("failed to resolve {label} {}: {error}", root.display()))?;
+    require_real_canonical_directory(&root, label)?;
+    walk_qualified_tree_postorder(&root, label, &mut |path, metadata| {
+        if metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+            require_single_tree_link(metadata, path, label)?;
+        }
+        Ok(())
+    })?;
+    walk_qualified_tree_postorder(&root, label, &mut |path, metadata| {
+        if metadata.file_type().is_symlink() {
+            return Ok(());
+        }
+        let mut permissions = metadata.permissions();
+        if !permissions.readonly() {
+            permissions.set_readonly(true);
+            fs::set_permissions(path, permissions).map_err(|error| {
+                format!(
+                    "failed to make {label} entry read-only at {}: {error}",
+                    path.display()
+                )
+            })?;
+        }
+        let actual = fs::symlink_metadata(path).map_err(|error| {
+            format!(
+                "failed to revalidate sealed {label} entry {}: {error}",
+                path.display()
+            )
+        })?;
+        if actual.file_type() != metadata.file_type() {
+            return Err(format!(
+                "{label} entry changed type while being made read-only: {}",
+                path.display()
+            ));
+        }
+        require_tree_entry_read_only(path, &actual, label)
+    })
+}
+
+#[cfg(not(unix))]
+fn seal_qualified_tree(_root: &Path, label: &str) -> Result<(), String> {
+    Err(format!(
+        "{label} read-only provisioning is not qualified on this host"
+    ))
+}
+
+#[cfg(unix)]
+fn restore_tree_owner_directory_access(root: &Path, label: &str) -> Result<(), String> {
+    fn restore(directory: &Path, label: &str) -> Result<(), String> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let metadata = fs::symlink_metadata(directory).map_err(|error| {
+            format!(
+                "failed to inspect sealed {label} directory {} during cleanup: {error}",
+                directory.display()
+            )
+        })?;
+        if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
+            return Err(format!(
+                "sealed {label} cleanup root must remain a real directory: {}",
+                directory.display()
+            ));
+        }
+        let mut permissions = metadata.permissions();
+        permissions.set_mode(permissions.mode() | 0o700);
+        fs::set_permissions(directory, permissions).map_err(|error| {
+            format!(
+                "failed to restore owner access to sealed {label} directory {}: {error}",
+                directory.display()
+            )
+        })?;
+
+        let children = fs::read_dir(directory).map_err(|error| {
+            format!(
+                "failed to enumerate sealed {label} directory {} during cleanup: {error}",
+                directory.display()
+            )
+        })?;
+        for child in children {
+            let path = child
+                .map_err(|error| {
+                    format!(
+                        "failed to enumerate sealed {label} directory {} during cleanup: {error}",
+                        directory.display()
+                    )
+                })?
+                .path();
+            let child_metadata = fs::symlink_metadata(&path).map_err(|error| {
+                format!(
+                    "failed to inspect sealed {label} entry {} during cleanup: {error}",
+                    path.display()
+                )
+            })?;
+            if child_metadata.file_type().is_dir() && !child_metadata.file_type().is_symlink() {
+                restore(&path, label)?;
+            }
+        }
+        Ok(())
+    }
+
+    restore(root, label)
+}
+
+#[cfg(not(unix))]
+fn restore_tree_owner_directory_access(_root: &Path, label: &str) -> Result<(), String> {
+    Err(format!(
+        "{label} staging cleanup is not qualified on this host"
+    ))
+}
+
+fn require_tree_entry_read_only(
+    path: &Path,
+    metadata: &fs::Metadata,
+    label: &str,
+) -> Result<(), String> {
+    if !metadata.file_type().is_symlink() && !metadata.permissions().readonly() {
+        Err(format!(
+            "{label} entry must be read-only: {}",
+            path.display()
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
+fn walk_qualified_tree_postorder(
+    directory: &Path,
+    label: &str,
+    visitor: &mut impl FnMut(&Path, &fs::Metadata) -> Result<(), String>,
+) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(directory).map_err(|error| {
+        format!(
+            "failed to inspect {label} entry {}: {error}",
+            directory.display()
+        )
+    })?;
+    if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
+        return Err(format!(
+            "{label} tree traversal requires a real directory: {}",
+            directory.display()
+        ));
+    }
+    let mut children = fs::read_dir(directory)
+        .map_err(|error| {
+            format!(
+                "failed to enumerate {label} {}: {error}",
+                directory.display()
+            )
+        })?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| {
+            format!(
+                "failed to enumerate {label} {}: {error}",
+                directory.display()
+            )
+        })?;
+    children.sort_by_key(|entry| entry.file_name());
+    for child in children {
+        let path = child.path();
+        let child_metadata = fs::symlink_metadata(&path).map_err(|error| {
+            format!(
+                "failed to inspect {label} entry {}: {error}",
+                path.display()
+            )
+        })?;
+        if child_metadata.file_type().is_dir() && !child_metadata.file_type().is_symlink() {
+            walk_qualified_tree_postorder(&path, label, visitor)?;
+        } else if child_metadata.file_type().is_file() || child_metadata.file_type().is_symlink() {
+            visitor(&path, &child_metadata)?;
+        } else {
+            return Err(format!(
+                "{label} contains an unsupported filesystem object: {}",
+                path.display()
+            ));
+        }
+    }
+    visitor(directory, &metadata)
+}
+
 fn qualify_tree(
     label: &'static str,
     root: PathBuf,
@@ -2578,7 +2921,7 @@ fn qualify_tree(
 ) -> Result<QualifiedTree, String> {
     require_lower_sha256(&format!("{label} SHA-256"), expected_sha256)?;
     require_real_canonical_directory(&root, label)?;
-    let actual_sha256 = qualified_tree_sha256(&root, label)?;
+    let actual_sha256 = qualified_read_only_tree_sha256(&root, label)?;
     require_identity(&format!("{label} SHA-256"), &actual_sha256, expected_sha256)?;
     Ok(QualifiedTree {
         label,
@@ -2590,7 +2933,7 @@ fn qualify_tree(
 fn validate_qualified_trees(trees: &[QualifiedTree]) -> Result<(), String> {
     for tree in trees {
         require_real_canonical_directory(&tree.root, tree.label)?;
-        let actual_sha256 = qualified_tree_sha256(&tree.root, tree.label)?;
+        let actual_sha256 = qualified_read_only_tree_sha256(&tree.root, tree.label)?;
         require_identity(
             &format!("{} SHA-256", tree.label),
             &actual_sha256,
@@ -2613,12 +2956,38 @@ enum TreeEntry {
     },
 }
 
+#[cfg(test)]
 fn qualified_tree_sha256(root: &Path, label: &str) -> Result<String, String> {
+    qualified_tree_sha256_with_access(root, label, false)
+}
+
+#[cfg(unix)]
+fn qualified_read_only_tree_sha256(root: &Path, label: &str) -> Result<String, String> {
+    qualified_tree_sha256_with_access(root, label, true)
+}
+
+#[cfg(not(unix))]
+fn qualified_read_only_tree_sha256(_root: &Path, label: &str) -> Result<String, String> {
+    Err(format!(
+        "{label} read-only qualification is not supported on this host"
+    ))
+}
+
+fn qualified_tree_sha256_with_access(
+    root: &Path,
+    label: &str,
+    require_read_only: bool,
+) -> Result<String, String> {
     let root = fs::canonicalize(root)
         .map_err(|error| format!("failed to resolve {label} {}: {error}", root.display()))?;
     require_real_canonical_directory(&root, label)?;
+    if require_read_only {
+        let metadata = fs::symlink_metadata(&root)
+            .map_err(|error| format!("failed to inspect {label} {}: {error}", root.display()))?;
+        require_tree_entry_read_only(&root, &metadata, label)?;
+    }
     let mut entries = BTreeMap::new();
-    collect_tree_entries(&root, &root, &mut entries, label)?;
+    collect_tree_entries(&root, &root, &mut entries, label, require_read_only)?;
     let mut seen_case_folded_paths = BTreeSet::new();
     let mut hasher = Sha256::new();
     hasher.update(TREE_DIGEST_DOMAIN);
@@ -2660,6 +3029,7 @@ fn collect_tree_entries(
     directory: &Path,
     entries: &mut BTreeMap<String, TreeEntry>,
     label: &str,
+    require_read_only: bool,
 ) -> Result<(), String> {
     let mut children = fs::read_dir(directory)
         .map_err(|error| {
@@ -2685,6 +3055,9 @@ fn collect_tree_entries(
                 path.display()
             )
         })?;
+        if require_read_only {
+            require_tree_entry_read_only(&path, &metadata, label)?;
+        }
         let entry = if metadata.file_type().is_dir() {
             TreeEntry::Directory
         } else if metadata.file_type().is_file() {
@@ -2713,7 +3086,7 @@ fn collect_tree_entries(
             ));
         }
         if metadata.file_type().is_dir() {
-            collect_tree_entries(root, &path, entries, label)?;
+            collect_tree_entries(root, &path, entries, label, require_read_only)?;
         }
     }
     Ok(())
@@ -2954,7 +3327,7 @@ fn secure_private_directory(path: &Path, label: &str) -> Result<(), String> {
     }
     #[cfg(unix)]
     {
-        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        use std::os::unix::fs::PermissionsExt;
 
         fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(|error| {
             format!(
@@ -2962,27 +3335,31 @@ fn secure_private_directory(path: &Path, label: &str) -> Result<(), String> {
                 path.display()
             )
         })?;
-        let mode = fs::symlink_metadata(path)
-            .map_err(|error| format!("failed to revalidate {label} {}: {error}", path.display()))?
-            .permissions()
-            .mode()
-            & 0o777;
+    }
+    require_private_directory(path, label)
+}
+
+fn require_private_directory(path: &Path, label: &str) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|error| format!("failed to inspect {label} {}: {error}", path.display()))?;
+    if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
+        return Err(format!(
+            "{label} must be a real directory: {}",
+            path.display()
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+        let mode = metadata.permissions().mode() & 0o777;
         if mode != 0o700 {
             return Err(format!(
                 "{label} must retain mode 0700; found {mode:04o} at {}",
                 path.display()
             ));
         }
-        if fs::symlink_metadata(path)
-            .map_err(|error| {
-                format!(
-                    "failed to inspect private {label} owner {}: {error}",
-                    path.display()
-                )
-            })?
-            .uid()
-            != current_process_uid()?
-        {
+        if metadata.uid() != current_process_uid()? {
             return Err(format!(
                 "{label} must be owned by the current user: {}",
                 path.display()
@@ -3167,23 +3544,26 @@ fn require_root_owned_directory_ancestry(path: &Path, label: &str) -> Result<(),
     Ok(())
 }
 
-fn validate_scratch_directory(
-    scratch: &tempfile::TempDir,
-    cache: &Path,
-    ports: &Path,
-) -> Result<(), String> {
-    let root = fs::canonicalize(scratch.path()).map_err(|error| {
+fn validate_scratch_directory(scratch: &QualifiedScratch) -> Result<(), String> {
+    let root = fs::canonicalize(scratch.guard.path()).map_err(|error| {
         format!(
             "failed to resolve private Emscripten scratch directory {}: {error}",
-            scratch.path().display()
+            scratch.guard.path().display()
         )
     })?;
-    secure_private_directory(&root, "private Emscripten scratch directory")?;
+    if root != scratch.root() {
+        return Err(format!(
+            "private Emscripten scratch directory changed after qualification: expected {}, found {}",
+            scratch.root().display(),
+            root.display()
+        ));
+    }
+    require_private_directory(&root, "private Emscripten scratch directory")?;
     for (label, path) in [
-        ("private Emscripten cache", cache),
-        ("private Emscripten ports cache", ports),
+        ("private Emscripten cache", &scratch.cache),
+        ("private Emscripten ports cache", &scratch.ports),
     ] {
-        secure_private_directory(path, label)?;
+        require_private_directory(path, label)?;
         let canonical = fs::canonicalize(path)
             .map_err(|error| format!("failed to resolve {label} {}: {error}", path.display()))?;
         require_path_within(&root, &canonical, label)?;
@@ -3577,6 +3957,41 @@ mod tests {
         assert_eq!(
             command_environment(&command, "PYTHONDONTWRITEBYTECODE"),
             Some(Some(OsStr::new("1")))
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn qualified_scratch_uses_physical_paths_under_a_symlinked_temp_root() {
+        use std::os::unix::fs::symlink;
+
+        let fixture = tempfile::tempdir().unwrap();
+        let physical_parent = fixture.path().join("physical");
+        let replacement_parent = fixture.path().join("replacement");
+        let logical_parent = fixture.path().join("logical");
+        fs::create_dir(&physical_parent).unwrap();
+        fs::create_dir(&replacement_parent).unwrap();
+        symlink(&physical_parent, &logical_parent).unwrap();
+
+        let scratch = QualifiedScratch::create_in(&logical_parent).unwrap();
+        let physical_root = scratch.root().to_owned();
+        assert_eq!(scratch.guard.path(), physical_root);
+        assert_eq!(scratch.cache, physical_root.join("cache"));
+        assert_eq!(scratch.ports, physical_root.join("ports"));
+        assert!(physical_root.starts_with(fs::canonicalize(&physical_parent).unwrap()));
+
+        let scratch_name = physical_root.file_name().unwrap();
+        let replacement_scratch = replacement_parent.join(scratch_name);
+        fs::create_dir(&replacement_scratch).unwrap();
+        fs::write(replacement_scratch.join("sentinel"), b"must survive").unwrap();
+        fs::remove_file(&logical_parent).unwrap();
+        symlink(&replacement_parent, &logical_parent).unwrap();
+
+        drop(scratch);
+        assert!(!physical_root.exists());
+        assert_eq!(
+            fs::read(replacement_scratch.join("sentinel")).unwrap(),
+            b"must survive"
         );
     }
 
@@ -3997,18 +4412,27 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn qualified_tree_revalidation_rejects_post_qualification_mutation() {
+        use std::os::unix::fs::PermissionsExt;
+
         let temp = tempfile::tempdir().unwrap();
-        let file = temp.path().join("tool");
+        let tree_root = temp.path().join("tree");
+        fs::create_dir(&tree_root).unwrap();
+        let file = tree_root.join("tool");
         fs::write(&file, b"qualified bytes").unwrap();
-        let digest = qualified_tree_sha256(temp.path(), "test tree").unwrap();
-        let root = fs::canonicalize(temp.path()).unwrap();
+        seal_qualified_tree(&tree_root, "test tree").unwrap();
+        let digest = qualified_tree_sha256(&tree_root, "test tree").unwrap();
+        let root = fs::canonicalize(&tree_root).unwrap();
         let tree = qualify_tree("test tree", root, &digest).unwrap();
         validate_qualified_trees(std::slice::from_ref(&tree)).unwrap();
 
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
         fs::write(&file, b"mutated bytes").unwrap();
         assert!(validate_qualified_trees(&[tree]).is_err());
+
+        fs::set_permissions(&tree_root, fs::Permissions::from_mode(0o700)).unwrap();
     }
 
     #[cfg(unix)]
@@ -4041,6 +4465,41 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn sealed_qualified_tree_is_read_only_without_changing_its_digest() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let fixture = tempfile::tempdir().unwrap();
+        let tree = fixture.path().join("tree");
+        let nested = tree.join("nested");
+        let tool = nested.join("tool");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(&tool, b"tool bytes").unwrap();
+        fs::set_permissions(&tool, fs::Permissions::from_mode(0o755)).unwrap();
+        let before = qualified_tree_sha256(&tree, "test tree").unwrap();
+
+        seal_qualified_tree(&tree, "test tree").unwrap();
+        qualified_read_only_tree_sha256(&tree, "test tree").unwrap();
+        assert_eq!(before, qualified_tree_sha256(&tree, "test tree").unwrap());
+        for path in [&tree, &nested, &tool] {
+            assert_eq!(
+                fs::symlink_metadata(path).unwrap().permissions().mode() & 0o222,
+                0,
+                "{} remained writable",
+                path.display()
+            );
+        }
+
+        fs::set_permissions(&nested, fs::Permissions::from_mode(0o755)).unwrap();
+        let error = qualified_read_only_tree_sha256(&tree, "test tree").unwrap_err();
+        assert!(error.contains("must be read-only"), "{error}");
+
+        fs::set_permissions(&tree, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::set_permissions(&nested, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::set_permissions(&tool, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn qualified_tree_digest_rejects_symlink_escape() {
         use std::os::unix::fs::symlink;
 
@@ -4064,6 +4523,44 @@ mod tests {
 
         let error = qualified_tree_sha256(temp.path(), "test tree").unwrap_err();
         assert!(error.contains("must not have hard links"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sealing_rejects_hard_links_before_changing_external_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let fixture = tempfile::tempdir().unwrap();
+        let tree = fixture.path().join("tree");
+        let outside = fixture.path().join("outside");
+        fs::create_dir(&tree).unwrap();
+        fs::write(&outside, b"shared inode").unwrap();
+        fs::set_permissions(&outside, fs::Permissions::from_mode(0o640)).unwrap();
+        fs::hard_link(&outside, tree.join("linked")).unwrap();
+        let before = fs::symlink_metadata(&outside).unwrap().permissions().mode();
+
+        let error = seal_qualified_tree(&tree, "test tree").unwrap_err();
+        assert!(error.contains("must not have hard links"), "{error}");
+        assert_eq!(
+            before,
+            fs::symlink_metadata(&outside).unwrap().permissions().mode()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sealed_provisioning_staging_is_removed_during_failure_cleanup() {
+        let staging = tempfile::tempdir().unwrap();
+        let staging_path = staging.path().to_owned();
+        let tree = staging.path().join("tree");
+        fs::create_dir_all(tree.join("nested")).unwrap();
+        fs::write(tree.join("nested/tool"), b"tool").unwrap();
+        let mut tree_seals = ProvisioningTreeSeals::default();
+        tree_seals.seal(&tree, "test tree").unwrap();
+
+        close_provisioning_staging(staging, &mut tree_seals).unwrap();
+
+        assert!(!staging_path.exists());
     }
 
     #[test]
