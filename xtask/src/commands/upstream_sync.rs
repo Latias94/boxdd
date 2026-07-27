@@ -5121,9 +5121,6 @@ fn cleanup_deferred_isolated_generations(root: &Path) -> Result<()> {
                 source_root.display()
             )));
         }
-        if expected_worktree.exists() {
-            ensure_no_pending_atomic_batches_for_workspace(&expected_worktree)?;
-        }
         if worktree_is_registered(root, &expected_worktree)? {
             remove_repository_worktree(root, &expected_worktree)?;
         }
@@ -8424,6 +8421,31 @@ mod tests {
 
         assert!(unrelated.is_dir());
         fs::remove_dir(&unrelated).expect("remove unowned prefix directory fixture");
+    }
+
+    #[test]
+    fn deferred_isolated_cleanup_removes_a_half_initialized_worktree() {
+        let fixture = TemporaryWorkspace::create();
+        let common_directory = isolated_generation_parent(&fixture.workspace)
+            .expect("isolated generation common directory");
+        let source = tempfile::Builder::new()
+            .prefix(ISOLATED_GENERATION_DIRECTORY_PREFIX)
+            .tempdir_in(&common_directory)
+            .expect("half-initialized source directory");
+        let source_root = source.keep().canonicalize().expect("canonical source root");
+        let worktree = source_root.join("workspace");
+        fs::create_dir(&worktree).expect("half-initialized worktree directory");
+        write_isolated_generation_marker(&common_directory, &source_root, &worktree)
+            .expect("isolated generation marker");
+
+        cleanup_deferred_isolated_generations(&fixture.workspace)
+            .expect("half-initialized worktree cleanup");
+
+        assert!(!source_root.exists());
+        assert!(
+            !worktree_is_registered(&fixture.workspace, &worktree)
+                .expect("half-initialized worktree registration")
+        );
     }
 
     #[test]
