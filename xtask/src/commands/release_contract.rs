@@ -37,6 +37,49 @@ const MAX_ARCHIVE_STREAM_BYTES: u64 = MAX_ARCHIVE_TOTAL_BYTES
     + (TAR_BLOCK_BYTES * 2);
 const QUALIFICATION_TOOLCHAINS: &[&str] = &["1.95.0", "1.97.1"];
 const QUALIFICATION_PRECISIONS: &[&str] = &["single", "double"];
+const CI_WORKFLOW: &str = ".github/workflows/ci.yml";
+const CI_QUALIFICATION_JOB_POLICIES: &[WorkflowJobPolicy] = &[
+    WorkflowJobPolicy {
+        name: "compiler-baseline",
+        digest: "eb4d5dbfd66979a893aa6937db60d7d02dad5b140bc4764fae71487518bd8979",
+    },
+    WorkflowJobPolicy {
+        name: "system-provider",
+        digest: "3bcccd74baaece598826ee2c37b6939a92693074a6d80e7d1b544c662bf7dbc4",
+    },
+    WorkflowJobPolicy {
+        name: "lint",
+        digest: "3f6ba9de20511f9a128b976fda34206e4e88e591786629d570bba4a4a7b453e6",
+    },
+    WorkflowJobPolicy {
+        name: "build",
+        digest: "d13041bc112cb510541cdc3bf8cce2fb0e227ec4527f6445516bf4790ec38076",
+    },
+    WorkflowJobPolicy {
+        name: "features",
+        digest: "a2d91d3607a473f4919c549ec23f000453054bd4c966f021e859e54107ae7dc2",
+    },
+    WorkflowJobPolicy {
+        name: "wasm",
+        digest: "026494d877bfd62ecd47960ad95421843c89d4729a0d40b00046465f80fd61d5",
+    },
+    WorkflowJobPolicy {
+        name: "provider-runtime",
+        digest: "1eee225742b73b4ab7fd8b2351acdec2a96c08ef143d0b85c852ce5a98666bce",
+    },
+    WorkflowJobPolicy {
+        name: "security",
+        digest: "2d80d18a2db1ad963399ddd87bc36e8d86bdc54ac38edb89aeb715c61a89dbcb",
+    },
+    WorkflowJobPolicy {
+        name: "miri",
+        digest: "2807f9f91d09629ca5dd97ab58ddbf889a41e5ea8cdf93d4bda5c03b5c1059ad",
+    },
+    WorkflowJobPolicy {
+        name: "sanitizers",
+        digest: "de101e93bf7049c33eb8e37c140da69670f5740c6eee0a1e69fe8d91de21c7dd",
+    },
+];
 const SYSTEM_QUALIFICATION_COMMAND: &str = "cargo +${{ matrix.toolchain }} run --locked -p xtask -- qualify-native-provider --provider system --toolchain ${{ matrix.toolchain }} --precision ${{ matrix.precision }} --target x86_64-unknown-linux-gnu --crt none --artifacts \"${{ runner.temp }}/boxdd-system-artifact\"";
 const PREBUILT_QUALIFICATION_COMMAND: &str = "cargo +${{ matrix.toolchain }} run --locked -p xtask -- qualify-native-provider --provider prebuilt --toolchain ${{ matrix.toolchain }} --precision ${{ matrix.precision }} --target ${{ matrix.platform.target }} --crt ${{ matrix.platform.crt }} --artifacts \"${{ runner.temp }}/release-inputs\" --cosign cosign";
 const RUST_TOOLCHAIN_ACTION: &str =
@@ -113,6 +156,12 @@ struct WorkflowStepPolicy {
     digest: &'static str,
 }
 
+#[derive(Clone, Copy)]
+struct WorkflowJobPolicy {
+    name: &'static str,
+    digest: &'static str,
+}
+
 const BUILD_PREBUILT_STEPS: &[WorkflowStepPolicy] = &[
     WorkflowStepPolicy {
         name: "Checkout immutable tag commit",
@@ -172,6 +221,12 @@ const BUILD_PREBUILT_STEPS: &[WorkflowStepPolicy] = &[
 
 const AGGREGATE_STEPS: &[WorkflowStepPolicy] = &[
     WorkflowStepPolicy {
+        name: "Bind full qualification to exact release commit",
+        kind: WorkflowStepKind::Run,
+        keys: &["name", "shell", "env", "run"],
+        digest: "073d7ce4c191b78b3ebfd99ef4135fa8b43c000abb4a7d1dc5fa1f3062fc513b",
+    },
+    WorkflowStepPolicy {
         name: "Checkout immutable tag commit",
         kind: WorkflowStepKind::Action(CHECKOUT_ACTION),
         keys: &["name", "uses", "with"],
@@ -200,6 +255,21 @@ const AGGREGATE_STEPS: &[WorkflowStepPolicy] = &[
         kind: WorkflowStepKind::Action(UPLOAD_ARTIFACT_ACTION),
         keys: &["name", "uses", "with"],
         digest: "a5105393d7466266455c4c08aaffb0ff6d4c04a0e27a5f7d9b66e9460f090aec",
+    },
+];
+
+const QUALIFICATION_RECEIPT_STEPS: &[WorkflowStepPolicy] = &[
+    WorkflowStepPolicy {
+        name: "Checkout exact qualification commit",
+        kind: WorkflowStepKind::Action(CHECKOUT_ACTION),
+        keys: &["name", "uses", "with"],
+        digest: "6f1567f91ab7da2f7dd7c5135804431ef422f10e12ddeb056fe4b86b3f02312f",
+    },
+    WorkflowStepPolicy {
+        name: "Bind successful qualification to exact commit",
+        kind: WorkflowStepKind::Run,
+        keys: &["name", "id", "shell", "env", "run"],
+        digest: "11e47d40b5bfb4183e32cbbdd7a16f64c8fe4045ac05261d42a64f2aeedafae8",
     },
 ];
 
@@ -316,7 +386,7 @@ const SYSTEM_PROVIDER_STEPS: &[WorkflowStepPolicy] = &[
         name: "Checkout",
         kind: WorkflowStepKind::Action(CHECKOUT_ACTION),
         keys: &["name", "uses", "with"],
-        digest: "b8aae87cc187dff7701257b398903e9dfa31e43c5b81fbbf8f7a312850125c84",
+        digest: "a9312a57a31c59c0e74992634133428ca6a6a430d540febe2057cc93a269bca3",
     },
     WorkflowStepPolicy {
         name: "Install Rust",
@@ -409,7 +479,7 @@ pub fn run(root: &Path, args: &[String]) -> Result<()> {
     let options = Options::parse(args)?;
     let identity = validate_repository_identity(root, &options)?;
     validate_release_workflow(root, &identity.commit)?;
-    validate_ci_workflow(root)?;
+    validate_ci_workflow(root, &identity.commit)?;
     validate_pages_workflow(root)?;
     validate_audit_policy(root)?;
     validate_semver_intent(&identity.version)?;
@@ -1731,25 +1801,72 @@ fn require_exact_permissions(
     }
 }
 
+fn require_exact_string_sequence_field(
+    mapping: &YamlMapping,
+    key: &str,
+    expected: &[&str],
+    context: &str,
+) -> Result<()> {
+    let values = required_yaml_field(mapping, key, context)?
+        .as_sequence()
+        .ok_or_else(|| Error::message(format!("{context} {key:?} must be a sequence")))?;
+    let actual = values
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .ok_or_else(|| Error::message(format!("{context} {key:?} entries must be strings")))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if actual.as_slice() == expected {
+        Ok(())
+    } else {
+        Err(Error::message(format!(
+            "{context} {key:?} must be exactly {expected:?}; found {actual:?}"
+        )))
+    }
+}
+
+fn require_exact_needs(job: &YamlMapping, expected: &[&str], context: &str) -> Result<()> {
+    match expected {
+        [] => require_absent_field(job, "needs", context),
+        [need] => require_exact_string_field(job, "needs", need, context),
+        needs => require_exact_string_sequence_field(job, "needs", needs, context),
+    }
+}
+
 fn validate_release_security_job(
     job: &YamlMapping,
     name: &str,
-    expected_needs: Option<&str>,
+    expected_needs: &[&str],
     expected_permissions: &[(&str, &str)],
     expected_environment: Option<&str>,
 ) -> Result<()> {
     let context = format!("release job {name:?}");
     require_exact_string_field(job, "if", "${{ github.ref_protected == true }}", &context)?;
-    match expected_needs {
-        Some(needs) => require_exact_string_field(job, "needs", needs, &context)?,
-        None => require_absent_field(job, "needs", &context)?,
-    }
+    require_exact_needs(job, expected_needs, &context)?;
     require_exact_permissions(job, &context, expected_permissions)?;
     match expected_environment {
         Some(environment) => require_exact_string_field(job, "environment", environment, &context)?,
         None => require_absent_field(job, "environment", &context)?,
     }
     require_absent_field(job, "continue-on-error", &context)
+}
+
+fn validate_release_qualification_job(job: &YamlMapping) -> Result<()> {
+    const CONTEXT: &str = "release job \"qualification\"";
+
+    require_exact_mapping_keys(job, &["name", "if", "permissions", "uses", "with"], CONTEXT)?;
+    require_exact_string_field(job, "name", "Qualify exact release commit", CONTEXT)?;
+    require_exact_string_field(job, "if", "${{ github.ref_protected == true }}", CONTEXT)?;
+    require_exact_permissions(job, CONTEXT, &[("contents", "read")])?;
+    require_exact_string_field(job, "uses", "./.github/workflows/ci.yml", CONTEXT)?;
+    require_exact_string_mapping_field(
+        job,
+        "with",
+        &[("expected-sha", "${{ github.sha }}")],
+        CONTEXT,
+    )
 }
 
 fn validate_release_trigger(workflow: &YamlMapping) -> Result<()> {
@@ -1881,6 +1998,12 @@ fn forbid_job_fragments(
 }
 
 fn validate_release_workflow(root: &Path, expected_commit: &str) -> Result<()> {
+    let github_sha = workflow_commit_from_environment(expected_commit)?;
+    let source = read_release_workflow_source(root, github_sha.as_deref())?;
+    validate_release_workflow_source(&source)
+}
+
+fn workflow_commit_from_environment(expected_commit: &str) -> Result<Option<String>> {
     let github_sha = match env::var("GITHUB_SHA") {
         Ok(value) => Some(value),
         Err(env::VarError::NotPresent) => None,
@@ -1891,48 +2014,64 @@ fn validate_release_workflow(root: &Path, expected_commit: &str) -> Result<()> {
     if let Some(github_sha) = &github_sha {
         require_matching_identity("workflow GITHUB_SHA", github_sha, expected_commit)?;
     }
-    let source = read_release_workflow_source(root, github_sha.as_deref())?;
-    validate_release_workflow_source(&source)
+    Ok(github_sha)
 }
 
 fn read_release_workflow_source(root: &Path, commit: Option<&str>) -> Result<String> {
-    let path = root.join(PUBLISHER_WORKFLOW);
+    read_workflow_source(root, commit, PUBLISHER_WORKFLOW, "release workflow")
+}
+
+fn read_ci_workflow_source(root: &Path, commit: Option<&str>) -> Result<String> {
+    read_workflow_source(root, commit, CI_WORKFLOW, "CI workflow")
+}
+
+fn read_workflow_source(
+    root: &Path,
+    commit: Option<&str>,
+    relative_path: &str,
+    label: &str,
+) -> Result<String> {
+    let path = root.join(relative_path);
     let Some(commit) = commit else {
         return fs::read_to_string(&path).map_err(|error| Error::io(&path, error));
     };
-    validate_git_sha("release workflow commit", commit)?;
-    require_unflagged_workflow_index_entry(root)?;
-    read_immutable_git_blob(root, commit, PUBLISHER_WORKFLOW)
+    validate_git_sha(&format!("{label} commit"), commit)?;
+    require_unflagged_workflow_index_entry(root, relative_path, label)?;
+    read_immutable_git_blob(root, commit, relative_path, label)
 }
 
-fn require_unflagged_workflow_index_entry(root: &Path) -> Result<()> {
+fn require_unflagged_workflow_index_entry(
+    root: &Path,
+    relative_path: &str,
+    label: &str,
+) -> Result<()> {
     let output = isolated_git_output(
         root,
-        &["ls-files", "-v", "--full-name", "--", PUBLISHER_WORKFLOW],
-        "inspect release workflow index flags",
+        &["ls-files", "-v", "--full-name", "--", relative_path],
+        &format!("inspect {label} index flags"),
     )?;
     let actual = String::from_utf8(output.stdout)
-        .map_err(|_| Error::message("release workflow index entry must be valid UTF-8"))?;
-    let expected = format!("H {PUBLISHER_WORKFLOW}\n");
+        .map_err(|_| Error::message(format!("{label} index entry must be valid UTF-8")))?;
+    let expected = format!("H {relative_path}\n");
     if actual == expected {
         Ok(())
     } else {
         Err(Error::message(format!(
-            "release workflow index entry must be an ordinary tracked file without assume-unchanged or skip-worktree flags; found {:?}",
+            "{label} index entry must be an ordinary tracked file without assume-unchanged or skip-worktree flags; found {:?}",
             actual.trim_end()
         )))
     }
 }
 
-fn read_immutable_git_blob(root: &Path, commit: &str, path: &str) -> Result<String> {
+fn read_immutable_git_blob(root: &Path, commit: &str, path: &str, label: &str) -> Result<String> {
     let object = format!("{commit}:{path}");
     let output = isolated_git_output(
         root,
         &["--no-replace-objects", "cat-file", "blob", &object],
-        "read immutable release workflow blob",
+        &format!("read immutable {label} blob"),
     )?;
     String::from_utf8(output.stdout)
-        .map_err(|_| Error::message("release workflow Git blob must be valid UTF-8"))
+        .map_err(|_| Error::message(format!("{label} Git blob must be valid UTF-8")))
 }
 
 fn isolated_git_output(root: &Path, args: &[&str], label: &str) -> Result<Output> {
@@ -2016,12 +2155,15 @@ fn validate_release_workflow_source(source: &str) -> Result<()> {
             "attest",
             "build-prebuilt",
             "publish-draft",
+            "qualification",
             "qualify-prebuilt",
             "verify-signed-release",
         ],
         "release workflow jobs",
     )?;
     let build_yaml = workflow_job_mapping(structured_jobs, "build-prebuilt", "release workflow")?;
+    let qualification_yaml =
+        workflow_job_mapping(structured_jobs, "qualification", "release workflow")?;
     let aggregate_yaml = workflow_job_mapping(structured_jobs, "aggregate", "release workflow")?;
     let attest_yaml = workflow_job_mapping(structured_jobs, "attest", "release workflow")?;
     let signed_yaml =
@@ -2030,6 +2172,7 @@ fn validate_release_workflow_source(source: &str) -> Result<()> {
         workflow_job_mapping(structured_jobs, "qualify-prebuilt", "release workflow")?;
     let publish_yaml = workflow_job_mapping(structured_jobs, "publish-draft", "release workflow")?;
 
+    validate_release_qualification_job(qualification_yaml)?;
     validate_exact_workflow_job(
         build_yaml,
         "build-prebuilt",
@@ -2118,48 +2261,53 @@ fn validate_release_workflow_source(source: &str) -> Result<()> {
     validate_release_security_job(
         build_yaml,
         "build-prebuilt",
-        None,
+        &[],
         &[("contents", "read")],
         None,
     )?;
     validate_release_security_job(
         aggregate_yaml,
         "aggregate",
-        Some("build-prebuilt"),
+        &["qualification", "build-prebuilt"],
         &[("contents", "read")],
         None,
     )?;
     validate_release_security_job(
         attest_yaml,
         "attest",
-        Some("aggregate"),
+        &["aggregate"],
         &[("contents", "read"), ("id-token", "write")],
         Some("release"),
     )?;
     validate_release_security_job(
         signed_yaml,
         "verify-signed-release",
-        Some("attest"),
+        &["attest"],
         &[("contents", "read")],
         None,
     )?;
     validate_release_security_job(
         qualify_yaml,
         "qualify-prebuilt",
-        Some("verify-signed-release"),
+        &["verify-signed-release"],
         &[("contents", "read")],
         None,
     )?;
     validate_release_security_job(
         publish_yaml,
         "publish-draft",
-        Some("qualify-prebuilt"),
+        &["qualify-prebuilt"],
         &[("contents", "write")],
         None,
     )?;
     validate_release_matrix(build_yaml, "build-prebuilt", false)?;
     validate_release_matrix(qualify_yaml, "qualify-prebuilt", true)?;
     let aggregate_commands = job_executable_lines(aggregate_yaml, "aggregate")?;
+    require_job_command_fragment(
+        &aggregate_commands,
+        "test \"${QUALIFIED_SHA}\" = \"${RELEASE_SHA}\"",
+        "aggregate must bind the full qualification receipt to the release commit",
+    )?;
     require_job_command_fragment(
         &aggregate_commands,
         "release-contract --check-content",
@@ -2368,7 +2516,13 @@ fn validate_provider_runtime_job(job: &YamlMapping) -> Result<()> {
     )?;
     require_exact_mapping_keys(
         checkout_inputs,
-        &["submodules", "persist-credentials"],
+        &["ref", "submodules", "persist-credentials"],
+        "provider runtime checkout inputs",
+    )?;
+    require_exact_string_field(
+        checkout_inputs,
+        "ref",
+        "${{ github.sha }}",
         "provider runtime checkout inputs",
     )?;
     require_exact_string_field(
@@ -2970,23 +3124,98 @@ fn require_ci_metadata_line(section: &str, name: &str, line: &str) -> Result<()>
     }
 }
 
-fn validate_ci_triggers(global: &str) -> Result<()> {
-    require_workflow_fragment(
-        global,
-        "on:\n  push:\n    branches: [ main, master ]\n  pull_request:\n    branches: [ main, master ]",
-        "CI must run on pushes and pull requests to main/master without path filtering",
+fn validate_ci_branch_trigger(trigger: &YamlMapping, event: &str) -> Result<()> {
+    let context = format!("CI {event} trigger");
+    let event = yaml_mapping(
+        required_yaml_field(trigger, event, "CI workflow trigger")?,
+        &context,
     )?;
-    for line in global.lines().map(str::trim) {
-        if line.starts_with("paths:")
-            || line.starts_with("paths-ignore:")
-            || line.starts_with("branches-ignore:")
-        {
-            return Err(Error::message(format!(
-                "CI trigger contains a restrictive filter: {line}"
-            )));
-        }
-    }
-    Ok(())
+    require_exact_mapping_keys(event, &["branches"], &context)?;
+    require_exact_string_sequence_field(event, "branches", &["main", "master"], &context)
+}
+
+fn validate_ci_triggers(workflow: &YamlMapping) -> Result<()> {
+    let trigger = yaml_mapping(
+        required_yaml_field(workflow, "on", "CI workflow")?,
+        "CI workflow trigger",
+    )?;
+    require_exact_mapping_keys(
+        trigger,
+        &["push", "pull_request", "workflow_call"],
+        "CI workflow trigger",
+    )?;
+    validate_ci_branch_trigger(trigger, "push")?;
+    validate_ci_branch_trigger(trigger, "pull_request")?;
+
+    let workflow_call = yaml_mapping(
+        required_yaml_field(trigger, "workflow_call", "CI workflow trigger")?,
+        "CI workflow_call trigger",
+    )?;
+    require_exact_mapping_keys(
+        workflow_call,
+        &["inputs", "outputs"],
+        "CI workflow_call trigger",
+    )?;
+
+    let inputs = yaml_mapping(
+        required_yaml_field(workflow_call, "inputs", "CI workflow_call trigger")?,
+        "CI workflow_call inputs",
+    )?;
+    require_exact_mapping_keys(inputs, &["expected-sha"], "CI workflow_call inputs")?;
+    let expected_sha = yaml_mapping(
+        required_yaml_field(inputs, "expected-sha", "CI workflow_call inputs")?,
+        "CI workflow_call expected-sha input",
+    )?;
+    require_exact_mapping_keys(
+        expected_sha,
+        &["description", "required", "type"],
+        "CI workflow_call expected-sha input",
+    )?;
+    require_exact_string_field(
+        expected_sha,
+        "description",
+        "Immutable commit expected to pass every qualification job",
+        "CI workflow_call expected-sha input",
+    )?;
+    require_exact_bool_field(
+        expected_sha,
+        "required",
+        true,
+        "CI workflow_call expected-sha input",
+    )?;
+    require_exact_string_field(
+        expected_sha,
+        "type",
+        "string",
+        "CI workflow_call expected-sha input",
+    )?;
+
+    let outputs = yaml_mapping(
+        required_yaml_field(workflow_call, "outputs", "CI workflow_call trigger")?,
+        "CI workflow_call outputs",
+    )?;
+    require_exact_mapping_keys(outputs, &["qualified-sha"], "CI workflow_call outputs")?;
+    let qualified_sha = yaml_mapping(
+        required_yaml_field(outputs, "qualified-sha", "CI workflow_call outputs")?,
+        "CI workflow_call qualified-sha output",
+    )?;
+    require_exact_mapping_keys(
+        qualified_sha,
+        &["description", "value"],
+        "CI workflow_call qualified-sha output",
+    )?;
+    require_exact_string_field(
+        qualified_sha,
+        "description",
+        "Immutable commit that passed every qualification job",
+        "CI workflow_call qualified-sha output",
+    )?;
+    require_exact_string_field(
+        qualified_sha,
+        "value",
+        "${{ jobs.qualification-receipt.outputs['qualified-sha'] }}",
+        "CI workflow_call qualified-sha output",
+    )
 }
 
 fn validate_native_matrix(section: &str) -> Result<()> {
@@ -3003,14 +3232,6 @@ fn validate_native_matrix(section: &str) -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn require_workflow_fragment(source: &str, fragment: &str, message: &str) -> Result<()> {
-    if source.contains(fragment) {
-        Ok(())
-    } else {
-        Err(Error::message(message.to_owned()))
-    }
 }
 
 fn workflow_job<'a>(jobs: &'a str, name: &str) -> Result<&'a str> {
@@ -3037,9 +3258,168 @@ fn workflow_job<'a>(jobs: &'a str, name: &str) -> Result<&'a str> {
     Ok(&rest[..end])
 }
 
-fn validate_ci_workflow(root: &Path) -> Result<()> {
-    let path = root.join(".github/workflows/ci.yml");
-    let source = fs::read_to_string(&path).map_err(|error| Error::io(&path, error))?;
+fn ci_qualification_job_names() -> Vec<&'static str> {
+    CI_QUALIFICATION_JOB_POLICIES
+        .iter()
+        .map(|policy| policy.name)
+        .collect()
+}
+
+fn validate_ci_qualification_jobs(jobs: &YamlMapping) -> Result<()> {
+    let mut digest_drift = Vec::new();
+    for policy in CI_QUALIFICATION_JOB_POLICIES {
+        let job = workflow_job_mapping(jobs, policy.name, "CI workflow")?;
+        validate_ci_qualification_job_checkout(job, policy.name)?;
+        let context = format!("CI qualification job {:?}", policy.name);
+        let actual_digest = yaml_value_digest(&YamlValue::Mapping(job.clone()), &context)?;
+        if actual_digest != policy.digest {
+            digest_drift.push(format!("{}={actual_digest}", policy.name));
+        }
+    }
+    if digest_drift.is_empty() {
+        Ok(())
+    } else {
+        Err(Error::message(format!(
+            "CI qualification jobs differ from their reviewed definitions: {}",
+            digest_drift.join(", ")
+        )))
+    }
+}
+
+fn validate_ci_qualification_job_checkout(job: &YamlMapping, name: &str) -> Result<()> {
+    let steps = workflow_steps(job, name)?;
+    let checkout = steps
+        .first()
+        .ok_or_else(|| Error::message(format!("CI qualification job {name:?} has no steps")))?;
+    let checkout = yaml_mapping(checkout, &format!("CI qualification job {name:?} checkout"))?;
+    require_exact_mapping_keys(
+        checkout,
+        &["name", "uses", "with"],
+        &format!("CI qualification job {name:?} checkout"),
+    )?;
+    require_exact_string_field(
+        checkout,
+        "name",
+        "Checkout",
+        &format!("CI qualification job {name:?} checkout"),
+    )?;
+    require_exact_string_field(
+        checkout,
+        "uses",
+        CHECKOUT_ACTION,
+        &format!("CI qualification job {name:?} checkout"),
+    )?;
+    let inputs = yaml_mapping(
+        required_yaml_field(checkout, "with", &format!("CI qualification job {name:?}"))?,
+        &format!("CI qualification job {name:?} checkout inputs"),
+    )?;
+    let expected_inputs = if name == "security" {
+        &["ref", "fetch-depth", "submodules", "persist-credentials"][..]
+    } else {
+        &["ref", "submodules", "persist-credentials"][..]
+    };
+    require_exact_mapping_keys(
+        inputs,
+        expected_inputs,
+        &format!("CI qualification job {name:?} checkout inputs"),
+    )?;
+    require_exact_string_field(
+        inputs,
+        "ref",
+        "${{ github.sha }}",
+        &format!("CI qualification job {name:?} checkout inputs"),
+    )?;
+    require_exact_string_field(
+        inputs,
+        "submodules",
+        "recursive",
+        &format!("CI qualification job {name:?} checkout inputs"),
+    )?;
+    require_exact_bool_field(
+        inputs,
+        "persist-credentials",
+        false,
+        &format!("CI qualification job {name:?} checkout inputs"),
+    )?;
+    if name == "security"
+        && required_yaml_field(inputs, "fetch-depth", "CI security checkout inputs")?.as_u64()
+            != Some(0)
+    {
+        return Err(Error::message(
+            "CI security checkout fetch-depth must be exactly zero",
+        ));
+    }
+
+    let mut checkout_actions = 0_usize;
+    for (index, step) in steps.iter().enumerate() {
+        let context = format!("CI qualification job {name:?} step {index}");
+        let step = yaml_mapping(step, &context)?;
+        let Some(action) = yaml_field(step, "uses") else {
+            continue;
+        };
+        let action = action
+            .as_str()
+            .ok_or_else(|| Error::message(format!("{context} action must be a string")))?;
+        let (repository, revision) = action.rsplit_once('@').ok_or_else(|| {
+            Error::message(format!(
+                "{context} must pin a remote action to a commit SHA"
+            ))
+        })?;
+        if repository.is_empty() {
+            return Err(Error::message(format!(
+                "{context} action repository must not be empty"
+            )));
+        }
+        validate_git_sha(&format!("{context} action revision"), revision)?;
+        if repository == "actions/checkout" {
+            checkout_actions += 1;
+        }
+    }
+    if checkout_actions == 1 {
+        Ok(())
+    } else {
+        Err(Error::message(format!(
+            "CI qualification job {name:?} must contain exactly one pinned checkout action; found {checkout_actions}"
+        )))
+    }
+}
+
+fn validate_ci_qualification_receipt(job: &YamlMapping, expected_needs: &[&str]) -> Result<()> {
+    const CONTEXT: &str = "CI qualification receipt job";
+
+    validate_exact_workflow_job(
+        job,
+        "qualification-receipt",
+        &[
+            "name",
+            "if",
+            "needs",
+            "runs-on",
+            "permissions",
+            "outputs",
+            "steps",
+        ],
+        "Full qualification receipt",
+        "ubuntu-latest",
+        QUALIFICATION_RECEIPT_STEPS,
+    )?;
+    require_exact_string_field(job, "if", "${{ always() }}", CONTEXT)?;
+    require_exact_needs(job, expected_needs, CONTEXT)?;
+    require_exact_permissions(job, CONTEXT, &[("contents", "read")])?;
+    require_exact_string_mapping_field(
+        job,
+        "outputs",
+        &[(
+            "qualified-sha",
+            "${{ steps.qualify.outputs['qualified-sha'] }}",
+        )],
+        CONTEXT,
+    )
+}
+
+fn validate_ci_workflow(root: &Path, expected_commit: &str) -> Result<()> {
+    let github_sha = workflow_commit_from_environment(expected_commit)?;
+    let source = read_ci_workflow_source(root, github_sha.as_deref())?;
     validate_ci_workflow_source(&source)
 }
 
@@ -3059,31 +3439,16 @@ fn validate_ci_workflow_source(source: &str) -> Result<()> {
         "CI workflow",
     )?;
     let structured_jobs = workflow_jobs(workflow_mapping, "CI workflow")?;
-    require_exact_mapping_keys(
-        structured_jobs,
-        &[
-            "build",
-            "compiler-baseline",
-            "features",
-            "lint",
-            "miri",
-            "provider-runtime",
-            "sanitizers",
-            "security",
-            "system-provider",
-            "wasm",
-        ],
-        "CI workflow jobs",
-    )?;
+    let qualification_jobs = ci_qualification_job_names();
+    let mut expected_jobs = qualification_jobs.clone();
+    expected_jobs.push("qualification-receipt");
+    require_exact_mapping_keys(structured_jobs, &expected_jobs, "CI workflow jobs")?;
+    validate_ci_qualification_jobs(structured_jobs)?;
     let jobs = source
         .split_once("\njobs:\n")
         .map(|(_, jobs)| jobs)
         .ok_or_else(|| Error::message("CI workflow has no jobs section"))?;
-    let global = source
-        .split_once("\njobs:\n")
-        .map(|(global, _)| global)
-        .unwrap_or(source);
-    validate_ci_triggers(global)?;
+    validate_ci_triggers(workflow_mapping)?;
     require_exact_permissions(workflow_mapping, "CI workflow", &[("contents", "read")])?;
     for forbidden in [
         "contents: write",
@@ -3122,11 +3487,14 @@ fn validate_ci_workflow_source(source: &str) -> Result<()> {
     let wasm_yaml = workflow_job_mapping(structured_jobs, "wasm", "CI workflow")?;
     let provider_runtime_yaml =
         workflow_job_mapping(structured_jobs, "provider-runtime", "CI workflow")?;
+    let qualification_receipt_yaml =
+        workflow_job_mapping(structured_jobs, "qualification-receipt", "CI workflow")?;
     let security_yaml = workflow_job_mapping(structured_jobs, "security", "CI workflow")?;
     let miri_yaml = workflow_job_mapping(structured_jobs, "miri", "CI workflow")?;
     let sanitizers_yaml = workflow_job_mapping(structured_jobs, "sanitizers", "CI workflow")?;
     validate_native_matrix(native)?;
     validate_provider_runtime_job(provider_runtime_yaml)?;
+    validate_ci_qualification_receipt(qualification_receipt_yaml, &qualification_jobs)?;
     validate_exact_workflow_job(
         system_provider_yaml,
         "system-provider",
@@ -4159,6 +4527,68 @@ mod tests {
         assert!(read_release_workflow_source(temp.path(), Some(commit)).is_err());
     }
 
+    #[test]
+    fn github_ci_policy_reads_the_commit_blob_and_rejects_hidden_index_state() {
+        let temp = TempDir::new().unwrap();
+        let workflow_path = temp.path().join(CI_WORKFLOW);
+        fs::create_dir_all(workflow_path.parent().unwrap()).unwrap();
+        let reviewed = include_str!("../../../.github/workflows/ci.yml");
+        fs::write(&workflow_path, reviewed).unwrap();
+
+        for args in [
+            &["init", "--initial-branch=main"][..],
+            &["config", "user.name", "Boxdd Test"][..],
+            &["config", "user.email", "boxdd@example.invalid"][..],
+            &["config", "commit.gpgsign", "false"][..],
+            &["add", CI_WORKFLOW][..],
+            &["commit", "-m", "review CI workflow"][..],
+        ] {
+            isolated_git_output(temp.path(), args, "prepare CI workflow Git fixture").unwrap();
+        }
+        let commit = isolated_git_output(
+            temp.path(),
+            &["rev-parse", "HEAD"],
+            "read CI workflow fixture commit",
+        )
+        .unwrap();
+        let commit = String::from_utf8(commit.stdout).unwrap();
+        let commit = commit.trim();
+
+        let injected = reviewed.replacen("ref: ${{ github.sha }}", "ref: main", 1);
+        assert_ne!(injected, reviewed);
+        fs::write(&workflow_path, &injected).unwrap();
+
+        let local_source = read_ci_workflow_source(temp.path(), None).unwrap();
+        assert!(validate_ci_workflow_source(&local_source).is_err());
+        let immutable_source = read_ci_workflow_source(temp.path(), Some(commit)).unwrap();
+        assert_eq!(immutable_source, reviewed);
+        assert!(validate_ci_workflow_source(&immutable_source).is_ok());
+
+        isolated_git_output(
+            temp.path(),
+            &["update-index", "--assume-unchanged", CI_WORKFLOW],
+            "hide CI workflow through assume-unchanged",
+        )
+        .unwrap();
+        assert!(read_ci_workflow_source(temp.path(), Some(commit)).is_err());
+
+        isolated_git_output(
+            temp.path(),
+            &["update-index", "--no-assume-unchanged", CI_WORKFLOW],
+            "clear CI workflow assume-unchanged flag",
+        )
+        .unwrap();
+        fs::write(&workflow_path, reviewed).unwrap();
+        isolated_git_output(
+            temp.path(),
+            &["update-index", "--skip-worktree", CI_WORKFLOW],
+            "hide CI workflow through skip-worktree",
+        )
+        .unwrap();
+        fs::write(&workflow_path, injected).unwrap();
+        assert!(read_ci_workflow_source(temp.path(), Some(commit)).is_err());
+    }
+
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn immutable_release_git_ignores_path_substitution() {
@@ -4239,7 +4669,7 @@ mod tests {
             .expect("xtask must live below the workspace");
         let commit = git_output(workspace, &["rev-parse", "HEAD"], "read test commit").unwrap();
         validate_release_workflow(workspace, &commit).unwrap();
-        validate_ci_workflow(workspace).unwrap();
+        validate_ci_workflow(workspace, &commit).unwrap();
         validate_pages_workflow(workspace).unwrap();
         validate_audit_policy(workspace).unwrap();
     }
@@ -4755,6 +5185,111 @@ mod tests {
     }
 
     #[test]
+    fn ci_qualification_receipt_rejects_identity_and_fail_open_drift() {
+        let source = include_str!("../../../.github/workflows/ci.yml");
+        assert!(validate_ci_workflow_source(source).is_ok());
+
+        let mutations = [
+            (
+                "missing qualification dependency",
+                source.replacen("      - sanitizers\n    runs-on:", "    runs-on:", 1),
+            ),
+            (
+                "skipped job accepted as successful",
+                source.replacen(
+                    "all(.[]; .result == \"success\")",
+                    "all(.[]; .result == \"success\" or .result == \"skipped\")",
+                    1,
+                ),
+            ),
+            (
+                "caller expected SHA ignored",
+                source.replacen(
+                    "test -n \"${EXPECTED_SHA_INPUT}\"",
+                    "true # empty reusable input accepted",
+                    1,
+                ),
+            ),
+            (
+                "caller workflow identity ignored",
+                source.replacen(
+                    "case \"${GITHUB_WORKFLOW_REF}\" in",
+                    "case \"${GITHUB_REPOSITORY}/.github/workflows/prebuilt-binaries.yml@main\" in",
+                    1,
+                ),
+            ),
+            (
+                "qualification checkout ref drift",
+                source.replacen("ref: ${{ github.sha }}", "ref: main", 1),
+            ),
+            (
+                "mutable qualification action",
+                source.replacen(
+                    CHECKOUT_ACTION,
+                    "actions/checkout@main",
+                    1,
+                ),
+            ),
+            (
+                "qualification matrix exclusion",
+                source.replacen(
+                    "        sanitizer: [address, undefined, thread]",
+                    "        sanitizer: [address, undefined, thread]\n        exclude:\n          - sanitizer: thread",
+                    1,
+                ),
+            ),
+            (
+                "source switch after qualification command",
+                source.replacen(
+                    "        run: cargo +1.95.0 check --locked --workspace --all-targets",
+                    "        run: |\n          cargo +1.95.0 check --locked --workspace --all-targets\n          git checkout HEAD^",
+                    1,
+                ),
+            ),
+            (
+                "forged workflow output",
+                source.replacen(
+                    "value: ${{ jobs.qualification-receipt.outputs['qualified-sha'] }}",
+                    "value: ${{ github.sha }}",
+                    1,
+                ),
+            ),
+            (
+                "optional reusable input",
+                source.replacen("        required: true", "        required: false", 1),
+            ),
+            (
+                "conditional receipt without always",
+                source.replacen("    if: ${{ always() }}", "    if: ${{ success() }}", 1),
+            ),
+            (
+                "receipt continue-on-error",
+                source.replacen(
+                    "    if: ${{ always() }}\n    needs:",
+                    "    if: ${{ always() }}\n    continue-on-error: true\n    needs:",
+                    1,
+                ),
+            ),
+            (
+                "receipt write permission",
+                source.replacen(
+                    "    permissions:\n      contents: read\n    outputs:\n      qualified-sha:",
+                    "    permissions:\n      contents: write\n    outputs:\n      qualified-sha:",
+                    1,
+                ),
+            ),
+        ];
+
+        for (label, mutated) in mutations {
+            assert_ne!(mutated, source, "missing CI mutation fixture for {label}");
+            assert!(
+                validate_ci_workflow_source(&mutated).is_err(),
+                "CI policy accepted {label}"
+            );
+        }
+    }
+
+    #[test]
     fn audit_policy_requires_exception_file_to_remain_absent() {
         let directory = tempfile::tempdir().unwrap();
         assert!(validate_audit_policy(directory.path()).is_ok());
@@ -4938,6 +5473,82 @@ mod tests {
             validate_release_workflow_source(&fixed_install).is_err(),
             "release policy accepted a fixed qualification toolchain installer"
         );
+    }
+
+    #[test]
+    fn release_workflow_rejects_unbound_reusable_qualification() {
+        let source = include_str!("../../../.github/workflows/prebuilt-binaries.yml");
+        assert!(validate_release_workflow_source(source).is_ok());
+
+        let mutations = [
+            (
+                "secrets inherited by qualification",
+                source.replacen(
+                    "    uses: ./.github/workflows/ci.yml\n    with:",
+                    "    uses: ./.github/workflows/ci.yml\n    secrets: inherit\n    with:",
+                    1,
+                ),
+            ),
+            (
+                "mutable remote reusable workflow",
+                source.replacen(
+                    "uses: ./.github/workflows/ci.yml",
+                    "uses: Latias94/boxdd/.github/workflows/ci.yml@main",
+                    1,
+                ),
+            ),
+            (
+                "release ref passed instead of commit",
+                source.replacen(
+                    "expected-sha: ${{ github.sha }}",
+                    "expected-sha: ${{ github.ref }}",
+                    1,
+                ),
+            ),
+            (
+                "qualification omitted from aggregate needs",
+                source.replacen(
+                    "    needs:\n      - qualification\n      - build-prebuilt",
+                    "    needs:\n      - build-prebuilt",
+                    1,
+                ),
+            ),
+            (
+                "qualification granted contents write",
+                source.replacen(
+                    "  qualification:\n    name: Qualify exact release commit\n    if: ${{ github.ref_protected == true }}\n    permissions:\n      contents: read",
+                    "  qualification:\n    name: Qualify exact release commit\n    if: ${{ github.ref_protected == true }}\n    permissions:\n      contents: write",
+                    1,
+                ),
+            ),
+            (
+                "qualification granted OIDC",
+                source.replacen(
+                    "  qualification:\n    name: Qualify exact release commit\n    if: ${{ github.ref_protected == true }}\n    permissions:\n      contents: read",
+                    "  qualification:\n    name: Qualify exact release commit\n    if: ${{ github.ref_protected == true }}\n    permissions:\n      contents: read\n      id-token: write",
+                    1,
+                ),
+            ),
+            (
+                "aggregate receipt comparison removed",
+                source.replacen(
+                    "test \"${QUALIFIED_SHA}\" = \"${RELEASE_SHA}\"",
+                    "true # qualification receipt comparison removed",
+                    1,
+                ),
+            ),
+        ];
+
+        for (label, mutated) in mutations {
+            assert_ne!(
+                mutated, source,
+                "missing release mutation fixture for {label}"
+            );
+            assert!(
+                validate_release_workflow_source(&mutated).is_err(),
+                "release policy accepted {label}"
+            );
+        }
     }
 
     #[test]

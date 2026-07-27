@@ -12,6 +12,15 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  qualification:
+    name: Qualify exact release commit
+    if: ${{ github.ref_protected == true }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      expected-sha: ${{ github.sha }}
+
   build-prebuilt:
     name: Build ${{ matrix.platform.target }} ${{ matrix.precision }} ${{ matrix.platform.crt }}
     if: ${{ github.ref_protected == true }}
@@ -127,11 +136,24 @@ jobs:
   aggregate:
     name: Validate release contents before signing
     if: ${{ github.ref_protected == true }}
-    needs: build-prebuilt
+    needs:
+      - qualification
+      - build-prebuilt
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
+      - name: Bind full qualification to exact release commit
+        shell: bash
+        env:
+          QUALIFIED_SHA: ${{ needs.qualification.outputs['qualified-sha'] }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "${QUALIFIED_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          test "${QUALIFIED_SHA}" = "${RELEASE_SHA}"
+          test "${RELEASE_SHA}" = "${GITHUB_SHA}"
+
       - name: Checkout immutable tag commit
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:

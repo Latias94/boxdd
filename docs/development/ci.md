@@ -151,17 +151,34 @@ the manifest/archive digests, and writes the matching receipt after the lifecycl
 Local system manifests bind caller-supplied bytes and identity; they are compatibility evidence,
 not publisher provenance.
 
-The protected prebuilt workflow builds ten target/precision/CRT artifacts once, signs their
-canonical manifests after aggregate validation, and then qualifies every artifact with fresh
-consumers under both Rust 1.95.0 and 1.97.1. Each qualification coordinate uses the selected
-toolchain explicitly for `cargo package`, `cargo generate-lockfile`, `cargo metadata --locked`, and
-`cargo build`, and consumes the packaged crate source rather than the checkout dependency. The helper
-selects exactly one downloaded target/precision/CRT archive, adjacent Sigstore bundle, and resolved
-Cosign executable. The provider itself receives only those already-local verified inputs; it has no
-downloader, fallback, or provider cache. Before invoking Cargo, the helper removes ambient provider,
-runner, compiler-wrapper, Rust flags, C toolchain, bindgen, `RUSTC_BOOTSTRAP`, and unstable-Cargo
-overrides, sets the isolated Cargo home, and runs every Cargo command from the isolated temporary
-root so checkout-local configuration is outside Cargo's search path. Runtime identity and receipt
+The same reusable `.github/workflows/ci.yml` is the qualification entry point for pull requests,
+protected-branch pushes, and protected release tags. Direct pull-request and branch runs use its
+normal triggers. The tag workflow calls that local workflow from the tagged commit, passes
+`github.sha` as the required `expected-sha`, and does not inherit repository or organization
+secrets; GitHub supplies only the read-only `GITHUB_TOKEN` allowed by the caller. Its final
+`qualification-receipt` runs after every compiler, platform, provider, WASM, package, Miri,
+sanitizer, and supply-chain job; it rejects failed, cancelled, or skipped dependencies and exports
+the SHA only after the checkout, caller input, caller workflow/ref, repository identity, and
+`GITHUB_SHA` all agree. Every prerequisite job checks out `github.sha` explicitly. The contract binds
+each complete job definition, including its matrix, conditions, ordered steps, and pinned actions, so
+a different ref, source-switching step, mutable action, or excluded matrix coordinate invalidates
+qualification. Release tags deliberately rerun these gates instead of trusting a potentially stale
+branch run.
+
+The protected prebuilt workflow builds ten target/precision/CRT artifacts once while the reusable
+qualification runs independently. The read-only aggregate job requires both results and validates
+the qualification receipt against the release `github.sha` before checking out or executing
+repository code. Only then may the workflow sign the canonical manifests and qualify every artifact
+with fresh consumers under both Rust 1.95.0 and 1.97.1. Each qualification coordinate uses the
+selected toolchain explicitly for `cargo package`, `cargo generate-lockfile`, `cargo metadata
+--locked`, and `cargo build`, and consumes the packaged crate source rather than the checkout
+dependency. The helper selects exactly one downloaded target/precision/CRT archive, adjacent Sigstore
+bundle, and resolved Cosign executable. The provider itself receives only those already-local
+verified inputs; it has no downloader, fallback, or provider cache. Before invoking Cargo, the
+helper removes ambient provider, runner, compiler-wrapper, Rust flags, C toolchain, bindgen,
+`RUSTC_BOOTSTRAP`, and unstable-Cargo overrides, sets the isolated Cargo home, and runs every Cargo
+command from the isolated temporary root so checkout-local configuration is outside Cargo's search
+path. Runtime identity and receipt
 variables are absent from every Cargo process and exist only for the direct consumer execution.
 
 For local development against a dirty checkout, the helper accepts an explicit `--allow-dirty`
@@ -194,33 +211,37 @@ The Pages provider similarly pins Emscripten 6.0.3 to SDK revision
 `provision-emsdk`, and runs wasm-bindgen in-process from the lockfile-pinned 0.2.126 support
 library.
 
-Every checkout sets `persist-credentials: false`. CI jobs declare `contents: read` explicitly. The
-prebuilt release workflow is split into read-only build/content validation, an OIDC-only signing
-job, signed-content revalidation and authenticated prebuilt-provider qualification, followed by a
-contents-write-only draft publisher. Release jobs require a protected tag. The OIDC signing job also
-requires the protected `release` environment; repository settings must enforce required reviewers
-for that environment and the `v*`/`boxdd-sys-v*` tag ruleset. Immediately before creating the
-draft, the publisher resolves the current lightweight or annotated tag through the Git Data API
-and requires its peeled commit to equal the immutable workflow `GITHUB_SHA`.
+Every checkout sets `persist-credentials: false`, and qualification jobs explicitly select
+`github.sha`. CI jobs and the local reusable qualification call declare only `contents: read`; the
+caller does not use `secrets: inherit`. The prebuilt release workflow is split into read-only
+exact-commit qualification/build/content validation, an OIDC-only signing job, signed-content
+revalidation and authenticated prebuilt-provider qualification, followed by a contents-write-only
+draft publisher. Release jobs require a protected tag. The OIDC signing job also requires the
+protected `release` environment; repository settings must enforce required reviewers for that
+environment and the `v*`/`boxdd-sys-v*` tag ruleset. Immediately before creating the draft, the
+publisher resolves the current lightweight or annotated tag through the Git Data API and requires
+its peeled commit to equal the immutable workflow `GITHUB_SHA`.
 
-`release-contract` treats the release workflow and the native-provider CI job as executable supply
+`release-contract` treats the release workflow and every qualification CI job as executable supply
 chain policy, not merely configuration. It accepts only the reviewed workflow, job, strategy,
 environment, and step keys; fixes each protected step's order, name, pinned action or run mode; and
-binds the complete structured YAML value of every protected step to a reviewed SHA-256 digest.
+binds the complete structured YAML value of every qualification job and protected release step to a
+reviewed SHA-256 digest.
 For the reviewed workflow running the committed verifier on an uncompromised hosted runner,
 workflow or job defaults, extra jobs or actions, step-level `PATH` injection, alternate shells,
 working directories, and command additions fail closed. When a protected step must change, review
 the semantic diff first and update its policy metadata in the same change; never refresh a digest
 solely to make the gate pass.
 
-Inside GitHub Actions, the policy source is the workflow blob addressed by the immutable
-`GITHUB_SHA`, read through the reviewed absolute system Git path with Git replace objects and
-ambient `GIT_*` overrides disabled. The checkout's workflow index entry must also remain an ordinary
-tracked entry: `assume-unchanged` and `skip-worktree` are rejected rather than trusted as evidence
-of a clean checkout. All other release identity reads use the same fixed Git binary, disable replace
-objects, and remove ambient `GIT_*` redirections in GitHub Actions. With no `GITHUB_SHA`, local
-development intentionally validates the working-tree workflow and preserves the caller's normal Git
-environment so edits and alternate local repository layouts can be tested before commit.
+Inside GitHub Actions, both CI and release policy sources are workflow blobs addressed by the
+immutable `GITHUB_SHA`, read through the reviewed absolute system Git path with Git replace objects
+and ambient `GIT_*` overrides disabled. Each checkout's workflow index entry must also remain an
+ordinary tracked entry: `assume-unchanged` and `skip-worktree` are rejected rather than trusted as
+evidence of a clean checkout. All other release identity reads use the same fixed Git binary,
+disable replace objects, and remove ambient `GIT_*` redirections in GitHub Actions. With no
+`GITHUB_SHA`, local development intentionally validates the working-tree workflows and preserves the
+caller's normal Git environment so edits and alternate local repository layouts can be tested before
+commit.
 
 This self-check is a consistency and regression gate, not an independent security boundary. It
 still trusts the hosted runner and the verifier implementation from the same commit, and it cannot
@@ -245,6 +266,9 @@ an adversarial workflow definition from reaching privileged jobs.
 
 CI should keep heavy checks staged:
 
+- Qualification receipt: pull requests and protected-branch pushes run the same jobs used by a
+  protected tag. Configure branch protection to require `Full qualification receipt`; it succeeds
+  only when every direct dependency reports `success` for the same immutable `github.sha`.
 - Fast lint: `cargo fmt` plus default and double-precision clippy coordinates for `boxdd-sys`,
   `boxdd`, and `bevy_boxdd`, without enabling mutually exclusive feature combinations.
 - Native matrix: default and double-precision `boxdd`/`boxdd-sys` nextest suites and C ABI probes
@@ -266,8 +290,12 @@ CI should keep heavy checks staged:
 
 `release-contract --check` parses each CI job and rejects removal of the compiler, platform,
 precision, workspace, package-helper, provider, WASM, Miri, sanitizer, documentation, or supply-chain
-gate. Its provider checks require the exact Rust 1.95.0/1.97.1 axes, reject matrix includes or
-excludes, and bind qualification to one exact unconditional `qualify-native-provider` command.
-Conditions, shell wrappers, `continue-on-error`, default-toolchain substitutions, and
-`--allow-dirty` all fail the policy. This keeps the checked-in workflow and the local Verification
-Contract aligned.
+gate. It also fixes the reusable input/output contract, the receipt's complete `needs` set and
+fail-closed result check, the tag caller's local workflow reference and exact SHA input, and the
+aggregate dependency on both qualification and prebuilt artifacts. Secret inheritance, write or
+OIDC permissions on qualification/build jobs, remote or mutable reusable-workflow references,
+skipped dependencies, and forged receipt outputs fail the policy. Its provider checks continue to
+require the exact Rust 1.95.0/1.97.1 axes, reject matrix includes or excludes, and bind qualification
+to one exact unconditional `qualify-native-provider` command. Conditions, shell wrappers,
+`continue-on-error`, default-toolchain substitutions, and `--allow-dirty` all fail the policy. This
+keeps the checked-in workflow and the local Verification Contract aligned.

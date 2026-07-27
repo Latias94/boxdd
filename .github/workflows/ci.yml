@@ -5,6 +5,16 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
+  workflow_call:
+    inputs:
+      expected-sha:
+        description: Immutable commit expected to pass every qualification job
+        required: true
+        type: string
+    outputs:
+      qualified-sha:
+        description: Immutable commit that passed every qualification job
+        value: ${{ jobs.qualification-receipt.outputs['qualified-sha'] }}
 
 permissions:
   contents: read
@@ -22,6 +32,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ github.sha }}
           submodules: recursive
           persist-credentials: false
 
@@ -58,6 +69,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ github.sha }}
           submodules: recursive
           persist-credentials: false
 
@@ -97,6 +109,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ github.sha }}
           submodules: recursive
           persist-credentials: false
 
@@ -193,6 +206,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ github.sha }}
           submodules: recursive
           persist-credentials: false
 
@@ -261,6 +275,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ github.sha }}
           submodules: recursive
           persist-credentials: false
 
@@ -295,6 +310,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ github.sha }}
           submodules: recursive
           persist-credentials: false
 
@@ -321,6 +337,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ github.sha }}
           submodules: recursive
           persist-credentials: false
 
@@ -365,6 +382,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
           submodules: recursive
           persist-credentials: false
@@ -410,6 +428,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ github.sha }}
           submodules: recursive
           persist-credentials: false
 
@@ -435,6 +454,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ github.sha }}
           submodules: recursive
           persist-credentials: false
 
@@ -451,3 +471,57 @@ jobs:
 
       - name: Run mixed C/Rust sanitizer suite
         run: cargo +nightly-2026-05-27 run --locked -p xtask -- verify-sanitizers --${{ matrix.sanitizer }}
+
+  qualification-receipt:
+    name: Full qualification receipt
+    if: ${{ always() }}
+    needs:
+      - compiler-baseline
+      - system-provider
+      - lint
+      - build
+      - features
+      - wasm
+      - provider-runtime
+      - security
+      - miri
+      - sanitizers
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      qualified-sha: ${{ steps.qualify.outputs['qualified-sha'] }}
+    steps:
+      - name: Checkout exact qualification commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Bind successful qualification to exact commit
+        id: qualify
+        shell: bash
+        env:
+          EXPECTED_SHA_INPUT: ${{ inputs['expected-sha'] }}
+          QUALIFICATION_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          case "${GITHUB_WORKFLOW_REF}" in
+            "${GITHUB_REPOSITORY}/.github/workflows/prebuilt-binaries.yml@"*)
+              test -n "${EXPECTED_SHA_INPUT}"
+              expected_sha="${EXPECTED_SHA_INPUT}"
+              ;;
+            "${GITHUB_REPOSITORY}/.github/workflows/ci.yml@"*)
+              test -z "${EXPECTED_SHA_INPUT}"
+              expected_sha="${GITHUB_SHA}"
+              ;;
+            *)
+              exit 1
+              ;;
+          esac
+          [[ "${expected_sha}" =~ ^[0-9a-f]{40}$ ]]
+          test "${GITHUB_REPOSITORY}" = "Latias94/boxdd"
+          test "${expected_sha}" = "${GITHUB_SHA}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          jq -e 'length > 0 and all(.[]; .result == "success")' <<<"${QUALIFICATION_RESULTS}" >/dev/null
+          printf 'qualified-sha=%s\n' "${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"
