@@ -47,7 +47,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 default = ["build-from-source"]
-# Always build vendored Box2D C sources with cc. No prebuilt linking path.
+# Build the pinned vendored Box2D C sources with cc.
 build-from-source = []
 # Enable bindgen-based regeneration of bindings (requires libclang).
 bindgen = ["dep:bindgen"]

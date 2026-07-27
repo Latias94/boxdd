@@ -1,6 +1,6 @@
 <div align="center">
 
-# boxdd-sys - Low-level FFI for Box2D v3 (C API)
+# boxdd-sys - Low-level FFI for a pinned Box2D 3.2 snapshot
 
 [![Crates.io](https://img.shields.io/crates/v/boxdd-sys.svg?style=flat-square)](https://crates.io/crates/boxdd-sys)
 [![Docs](https://docs.rs/boxdd-sys/badge.svg)](https://docs.rs/boxdd-sys)
@@ -8,8 +8,10 @@
 
 </div>
 
-Builds upstream Box2D v3 C sources from `third-party/box2d` and exposes raw FFI in `boxdd_sys::ffi`.
-High-level wrappers live in the companion crate `boxdd`.
+Builds the Box2D 3.2.0 development snapshot at commit
+`56edae79f2949d86142b03450d5d60f63bcf5a6f` from `third-party/box2d` and exposes its C API as raw
+FFI in `boxdd_sys::ffi`. It is not ABI-compatible with an arbitrary Box2D 3.2 checkout. High-level
+wrappers live in the companion crate `boxdd`.
 
 ## Build
 - From source: builds vendored Box2D C via `cc`.
@@ -118,4 +120,4 @@ BOXDD_SYS_WASI_SYSROOT=/path/to/wasi-libc-32/sysroot \
 - Huge thanks to the upstream Box2D project by Erin Catto: https://github.com/erincatto/box2d
 
 ## License
-- MIT OR Apache-2.0. Upstream Box2D v3 is MIT-licensed.
+- MIT OR Apache-2.0. The pinned upstream Box2D snapshot is MIT-licensed.
