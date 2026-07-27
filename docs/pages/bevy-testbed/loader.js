@@ -332,6 +332,8 @@ async function main() {
     requested: proofRequested,
     memoryGrew: false,
     staleBufferDetached: false,
+    providerHeapViewRefreshed: false,
+    providerHeapReadWrite: false,
     postGrowthPhysicsStep: false,
     byteLengthBeforeGrowth: memory.buffer.byteLength,
     byteLengthAfterGrowth: memory.buffer.byteLength,
@@ -340,6 +342,10 @@ async function main() {
   };
   if (proofRequested) {
     const staleBuffer = memory.buffer;
+    const staleProviderHeap = provider.boxddRefreshMemoryViews();
+    if (staleProviderHeap !== provider.HEAPU8 || staleProviderHeap.buffer !== staleBuffer) {
+      throw new Error("Box2D provider HEAPU8 does not bind the shared WebAssembly.Memory");
+    }
     memory.grow(1);
     memoryProof.memoryGrew = memory.buffer !== staleBuffer;
     memoryProof.staleBufferDetached = staleBuffer.byteLength === 0;
@@ -347,9 +353,28 @@ async function main() {
     if (
       !memoryProof.memoryGrew ||
       !memoryProof.staleBufferDetached ||
+      staleProviderHeap.byteLength !== 0 ||
       memoryProof.byteLengthAfterGrowth <= memoryProof.byteLengthBeforeGrowth
     ) {
       throw new Error("shared WebAssembly.Memory did not detach and grow its buffer");
+    }
+    const refreshedProviderHeap = provider.boxddRefreshMemoryViews();
+    memoryProof.providerHeapViewRefreshed =
+      refreshedProviderHeap instanceof Uint8Array &&
+      refreshedProviderHeap === provider.HEAPU8 &&
+      refreshedProviderHeap.buffer === memory.buffer;
+    if (!memoryProof.providerHeapViewRefreshed) {
+      throw new Error("Emscripten HEAPU8 was not rebound after external memory.grow");
+    }
+    const probeOffset = memoryProof.byteLengthBeforeGrowth;
+    const refreshedData = new DataView(memory.buffer);
+    const original = refreshedData.getUint32(probeOffset, true);
+    refreshedProviderHeap.set([0x12, 0x34, 0x56, 0x78], probeOffset);
+    memoryProof.providerHeapReadWrite =
+      refreshedData.getUint32(probeOffset, true) === 0x78563412;
+    refreshedData.setUint32(probeOffset, original, true);
+    if (!memoryProof.providerHeapReadWrite) {
+      throw new Error("refreshed Emscripten HEAPU8 is not readable and writable");
     }
     const postGrowthEvidence = await waitForProviderStep(
       boxddProviderRuntimeEvidence,
