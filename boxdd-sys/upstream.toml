@@ -224,7 +224,7 @@ precision = "single"
 target = "wasm32-unknown-unknown"
 provider = "wasm-runtime"
 producer = "provider-attestation"
-content_blake3 = "5dc0c3018b7dc6ec1daf1f3b5da1b6c8a5d6c69b0b96825271908add6d33d588"
+content_blake3 = "234c4795f447f24f42d956b0babd2a32737fbe1a96b8b63f2f635a8b3c030059"
 
 [[artifacts]]
 name = "wasm-provider-identity-double"
@@ -234,7 +234,7 @@ precision = "double"
 target = "wasm32-unknown-unknown"
 provider = "wasm-runtime"
 producer = "provider-attestation"
-content_blake3 = "7ac23e6256d22f85f5562282d6348f34a4064ec58233f384ac889821e85e3de2"
+content_blake3 = "2808f9cd45ec23c87ac9e85f53ba9617d51a4a9eb53b7f89f42f13bf59ec3fa8"
 
 [source_inventory]
 tree = "63a1ab02e3d2bf7c4d86b257b78976842b8c5ddb"
