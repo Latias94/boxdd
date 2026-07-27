@@ -251,13 +251,7 @@ fn package_cargo_command(
 ) -> Result<Command> {
     let mut command = cargo.command_in(staging, target)?;
     add_loopback_proxy_bypass(&mut command);
-    command.args([
-        "package",
-        "--allow-dirty",
-        "--no-verify",
-        "--registry",
-        REGISTRY_NAME,
-    ]);
+    command.args(["package", "--allow-dirty", "--registry", REGISTRY_NAME]);
     command
         .args(["-p", package])
         .env("CARGO_REGISTRIES_BOXDD_LOCAL_INDEX", index_url);
@@ -1387,6 +1381,22 @@ mod tests {
             assert!(target.starts_with(&root));
             assert_ne!(target, root.as_path());
         }
+
+        let package_arguments = package
+            .get_args()
+            .map(|argument| argument.to_str().expect("literal package argument"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            package_arguments,
+            [
+                "package",
+                "--allow-dirty",
+                "--registry",
+                REGISTRY_NAME,
+                "-p",
+                "boxdd-sys",
+            ]
+        );
     }
 
     #[test]

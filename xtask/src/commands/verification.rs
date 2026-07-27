@@ -4,7 +4,7 @@ use std::{
     process::{Command, Output},
 };
 
-use crate::{Error, Result};
+use crate::{Error, Result, qualified_git::qualified_git_command};
 
 use super::{
     provider::{self, ProviderPrecision},
@@ -13,6 +13,8 @@ use super::{
 
 const VERIFICATION_NIGHTLY: &str = "nightly-2026-05-27";
 const SEMVER_CHECKS_VERSION: &str = "0.48.0";
+const SEMVER_BASELINE_REFERENCE: &str = "v0.5.0^{commit}";
+const SEMVER_BASELINE_COMMIT: &str = "a3d1e2a660abb2c930ecaad4afb46b22d062fa67";
 const MIRI_FLAGS: &str = "-Zmiri-strict-provenance -Zmiri-symbolic-alignment-check";
 const MIRI_FLAGS_ALLOW_INTENTIONAL_LEAKS: &str =
     "-Zmiri-strict-provenance -Zmiri-symbolic-alignment-check -Zmiri-ignore-leaks";
@@ -832,6 +834,8 @@ fn sanitizer_command(
 
 pub fn verify_semver(root: &Path, args: &[String]) -> Result<()> {
     require_check_args("verify-semver", args)?;
+    verify_semver_baseline(root)?;
+
     let output = Command::new("cargo")
         .args(["semver-checks", "--version"])
         .output()
@@ -876,6 +880,42 @@ pub fn verify_semver(root: &Path, args: &[String]) -> Result<()> {
     Ok(())
 }
 
+fn verify_semver_baseline(root: &Path) -> Result<()> {
+    let mut command = semver_baseline_resolution_command(root)?;
+    let output = command
+        .output()
+        .map_err(|source| Error::io("resolve pinned SemVer baseline", source))?;
+    require_success(&output, "resolve pinned SemVer baseline")?;
+    require_semver_baseline_identity(&output.stdout)
+}
+
+fn semver_baseline_resolution_command(root: &Path) -> Result<Command> {
+    let mut command = qualified_git_command().map_err(Error::message)?;
+    command.current_dir(root).args([
+        "rev-parse",
+        "--verify",
+        "--end-of-options",
+        SEMVER_BASELINE_REFERENCE,
+    ]);
+    Ok(command)
+}
+
+fn require_semver_baseline_identity(stdout: &[u8]) -> Result<()> {
+    let resolved = std::str::from_utf8(stdout).map_err(|error| {
+        Error::message(format!(
+            "qualified Git returned non-UTF-8 output for SemVer baseline {SEMVER_BASELINE_REFERENCE}: {error}"
+        ))
+    })?;
+    let mut lines = resolved.lines();
+    let actual = lines.next().unwrap_or_default();
+    if actual == SEMVER_BASELINE_COMMIT && lines.next().is_none() {
+        return Ok(());
+    }
+    Err(Error::message(format!(
+        "SemVer baseline {SEMVER_BASELINE_REFERENCE} must resolve exactly to {SEMVER_BASELINE_COMMIT}; found {resolved:?}"
+    )))
+}
+
 fn semver_check_command(root: &Path, manifest: &str, release_type: Option<&str>) -> Command {
     let mut command = Command::new("cargo");
     command.current_dir(root).args([
@@ -884,7 +924,7 @@ fn semver_check_command(root: &Path, manifest: &str, release_type: Option<&str>)
         "--manifest-path",
         manifest,
         "--baseline-rev",
-        "v0.5.0",
+        SEMVER_BASELINE_COMMIT,
         "--color",
         "never",
     ]);
@@ -1229,8 +1269,17 @@ mod tests {
     }
 
     #[test]
-    fn semver_commands_bind_the_baseline_and_optional_release_type() {
+    fn semver_commands_bind_the_qualified_immutable_baseline_and_optional_release_type() {
         let root = Path::new("/workspace/boxdd");
+        let baseline = semver_baseline_resolution_command(root).expect("qualified Git command");
+        assert_eq!(baseline.get_current_dir(), Some(root));
+        assert!(baseline.get_args().collect::<Vec<_>>().ends_with(&[
+            OsStr::new("rev-parse"),
+            OsStr::new("--verify"),
+            OsStr::new("--end-of-options"),
+            OsStr::new(SEMVER_BASELINE_REFERENCE),
+        ]));
+
         let inferred = semver_check_command(root, "boxdd/Cargo.toml", None);
         assert_eq!(inferred.get_current_dir(), Some(root));
         assert_eq!(
@@ -1244,7 +1293,7 @@ mod tests {
                 "--manifest-path",
                 "boxdd/Cargo.toml",
                 "--baseline-rev",
-                "v0.5.0",
+                SEMVER_BASELINE_COMMIT,
                 "--color",
                 "never",
             ]
@@ -1257,6 +1306,25 @@ mod tests {
                 .collect::<Vec<_>>()
                 .ends_with(&[OsStr::new("--release-type"), OsStr::new("patch")])
         );
+    }
+
+    #[test]
+    fn semver_baseline_identity_rejects_tag_drift_and_ambiguous_output() {
+        assert!(
+            require_semver_baseline_identity(format!("{SEMVER_BASELINE_COMMIT}\n").as_bytes())
+                .is_ok()
+        );
+
+        let drifted = "0000000000000000000000000000000000000000\n";
+        let error = require_semver_baseline_identity(drifted.as_bytes())
+            .expect_err("a drifted baseline tag must fail closed");
+        let diagnostic = error.to_string();
+        assert!(diagnostic.contains(SEMVER_BASELINE_REFERENCE));
+        assert!(diagnostic.contains(SEMVER_BASELINE_COMMIT));
+        assert!(diagnostic.contains(drifted.trim()));
+
+        let ambiguous = format!("{SEMVER_BASELINE_COMMIT}\n{SEMVER_BASELINE_COMMIT}\n");
+        assert!(require_semver_baseline_identity(ambiguous.as_bytes()).is_err());
     }
 
     #[test]

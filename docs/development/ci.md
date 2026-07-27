@@ -85,9 +85,6 @@ cargo clippy --locked -p bevy_boxdd --all-targets --features double-precision --
 $env:RUSTDOCFLAGS='-D warnings --cfg docsrs'; cargo doc --workspace --no-deps
 $env:RUSTDOCFLAGS='-D warnings --cfg docsrs'; cargo doc -p boxdd --no-deps --features double-precision
 $env:RUSTDOCFLAGS='-D warnings --cfg docsrs'; cargo doc -p bevy_boxdd --no-deps --features double-precision
-cargo package -p boxdd-sys --allow-dirty --no-verify
-cargo package -p boxdd --allow-dirty --no-verify
-cargo package -p bevy_boxdd --allow-dirty --no-verify
 ```
 
 Use `cargo test` only as a fallback when nextest is unavailable, except for the package-helper
@@ -108,8 +105,10 @@ The mixed Rust/C sanitizer commands require the compiler and runtime support ava
 Linux CI runners. A platform or linker incompatibility fails closed before any test executes.
 ThreadSanitizer additionally requires `rust-src` and rebuilds the
 standard library with `-Z build-std`; the gate never suppresses sanitizer ABI mismatch diagnostics.
-`verify-semver` accepts the intentional `0.5.0` to `0.6.0` break and also requires the pinned
-SemVer tool to reject the same API delta when forced to patch-release rules.
+`verify-semver` first uses qualified Git to require `v0.5.0^{commit}` to resolve exactly to
+`a3d1e2a660abb2c930ecaad4afb46b22d062fa67`, then passes that immutable commit to the pinned
+SemVer tool. It accepts the intentional `0.5.0` to `0.6.0` break and also requires the tool to
+reject the same API delta when forced to patch-release rules.
 
 `verify-wasm --compile-only` qualifies `boxdd-sys` and the callback-free `boxdd` surface in both
 precisions on both installed WASM targets without selecting a runtime provider. It also compiles
@@ -125,9 +124,10 @@ no advisory-ignore configuration. Audit warnings for unmaintained or yanked crat
 and are not suppressed.
 
 `verify-packages` creates an isolated local git-index registry, packages `boxdd-sys`, `boxdd`, and
-`bevy_boxdd` in dependency order, checks the normalized manifests, project and upstream licenses,
-the crate-owned Sigstore root, and runs fresh consumers whose lockfiles must resolve every internal
-crate from that registry. `release-contract` additionally checks the protected tag/commit, exact
+`bevy_boxdd` in dependency order, runs Cargo's unpack-and-build verification for every crate, checks
+the normalized manifests, project and upstream licenses, the crate-owned Sigstore root, and runs
+fresh consumers whose lockfiles must resolve every internal crate from that registry.
+`release-contract` additionally checks the protected tag/commit, exact
 Box2D submodule checkout, clean source state, archive ABI/symbol identity, canonical manifest
 signatures (including the archive digest and CRT/SIMD coordinates), and signature workflow policy.
 Release archive parsing rejects non-canonical entries and bounds each entry, the returned file
@@ -259,7 +259,10 @@ CI should keep heavy checks staged:
 - Pages runtime: install `wasm32-unknown-unknown`, provision Emscripten 6.0.3 at revision `db04e88298d9916fc51fcd3743045ca3eb695127` with `provision-emsdk --github-actions`, then run `cargo run -p xtask -- build-pages-wasm`, install the pinned Playwright dependencies and Chromium, run `npm run test:pages-browser`, and finally run `cargo run -p xtask -- validate-pages`. wasm-bindgen runs from the committed lockfile and Binaryen is addressed through the qualified SDK.
 - Docs: set `RUSTDOCFLAGS` to `-D warnings --cfg docsrs`, run workspace rustdoc, then build `boxdd`
   and `bevy_boxdd` rustdoc again in double precision.
-- Packaging: `cargo package -p boxdd-sys --allow-dirty --no-verify`, then `boxdd`, then `bevy_boxdd` as metadata smoke checks in publish order. For a new shared workspace version, dependent package checks are expected to wait until the previous crate in the chain is visible on crates.io. Run full package verification without `--no-verify` before publishing each crate.
+- Packaging: `cargo run --locked -p xtask -- verify-packages` packages `boxdd-sys`, `boxdd`, then
+  `bevy_boxdd` through an isolated registry in publish order. Each crate passes Cargo's full package
+  verification before it is indexed, and fixed native/WASM consumers resolve only those indexed
+  archives, so an unpublished shared workspace version does not depend on crates.io visibility.
 
 `release-contract --check` parses each CI job and rejects removal of the compiler, platform,
 precision, workspace, package-helper, provider, WASM, Miri, sanitizer, documentation, or supply-chain
