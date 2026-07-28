@@ -176,7 +176,7 @@ path = "boxdd/tests/fixtures/api_contract.toml"
 target = "universal"
 provider = "universal"
 producer = "reviewed"
-content_blake3 = "d95a2bb2e90069d3a69db7254e8eb78fb05b7526acdfd7cd02173873d445b92a"
+content_blake3 = "39566982e339a9a8dc1305d5fd14b4a02d7d23b7d29311ea00f6f0e013222c0e"
 
 [[artifacts]]
 name = "recording-wire"
@@ -224,7 +224,7 @@ precision = "single"
 target = "wasm32-unknown-unknown"
 provider = "wasm-runtime"
 producer = "provider-attestation"
-content_blake3 = "234c4795f447f24f42d956b0babd2a32737fbe1a96b8b63f2f635a8b3c030059"
+content_blake3 = "1a38389354cea658336b59e46b2e51fb980fde21979a74f2e1f932cc8840e5bc"
 
 [[artifacts]]
 name = "wasm-provider-identity-double"
@@ -234,7 +234,7 @@ precision = "double"
 target = "wasm32-unknown-unknown"
 provider = "wasm-runtime"
 producer = "provider-attestation"
-content_blake3 = "2808f9cd45ec23c87ac9e85f53ba9617d51a4a9eb53b7f89f42f13bf59ec3fa8"
+content_blake3 = "f7eaa4648af05a8a5af07903812b7122248f07182244738d9b1b166901871134"
 
 [source_inventory]
 tree = "63a1ab02e3d2bf7c4d86b257b78976842b8c5ddb"

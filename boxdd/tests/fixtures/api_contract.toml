@@ -149,7 +149,7 @@ item = "abi_capability_mapping_rejects_deleted_forged_and_unknown_references"
 package = "xtask"
 gate = "nextest"
 role = "abi-contract-validator"
-fingerprint = "blake3-routes-v2:7427974c03cee8c05933055c094ee84710f098c49e0d8d6fbb1dc86ad45800ec"
+fingerprint = "blake3-routes-v2:643cf2996d65e2deb3b648f9cb5dd1d6481d140bc1de447d9ceb17b53043b482"
 modes = [
     "double",
     "single",
@@ -171,7 +171,7 @@ item = "typed_function_classification_evidence_rejects_unrelated_subjects"
 package = "xtask"
 gate = "nextest"
 role = "function-classification-validator"
-fingerprint = "blake3-routes-v2:20e0ecd6a7ca746f1f791ae63be88b23aa50cddb2c55523f9e0269a8deeb0992"
+fingerprint = "blake3-routes-v2:6d61352f797012d735cfe1ed4ffb9d5f3621e7be8f030b4ae91265533cd1be1a"
 modes = [
     "double",
     "single",
@@ -280,7 +280,7 @@ item = "typed_function_classification_evidence_rejects_unrelated_subjects"
 package = "xtask"
 gate = "nextest"
 role = "function-classification-validator"
-fingerprint = "blake3-routes-v2:7adc041b8edb2530a323857ab3b480445426ddbea99a63b5683de58329efd719"
+fingerprint = "blake3-routes-v2:f92f07049c2d7c92a00e77b8020a3c19daca2fec20cbfaf7b51dff588ae872b0"
 modes = [
     "double",
     "single",
