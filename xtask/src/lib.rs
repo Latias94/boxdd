@@ -27,6 +27,7 @@ pub mod toolchains;
 pub(crate) mod wasm_identity;
 #[path = "../../boxdd-sys/src/wasm_provider_contract.rs"]
 pub(crate) mod wasm_provider_contract;
+pub(crate) mod wasm_release_provenance;
 
 pub mod commands;
 
@@ -55,6 +56,9 @@ pub fn run_in(paths: &WorkspacePaths, args: impl IntoIterator<Item = String>) ->
         }
         [command, rest @ ..] if command == "recording-wire-codegen" => {
             commands::recording_codegen::run(paths, rest)
+        }
+        [command, rest @ ..] if command == "build-policy-sources" => {
+            commands::build_policy_sources::run(paths.root(), rest)
         }
         [command, rest @ ..] if command == "upstream-sync" => {
             commands::upstream_sync::run(paths, rest)
@@ -95,6 +99,12 @@ pub fn run_in(paths: &WorkspacePaths, args: impl IntoIterator<Item = String>) ->
         }
         [command, rest @ ..] if command == "wasm-provider-contract" => {
             commands::provider::wasm_provider_contract(paths.root(), rest)
+        }
+        [command, rest @ ..] if command == "build-wasm-provider-package" => {
+            commands::wasm_release::build(paths.root(), rest)
+        }
+        [command, rest @ ..] if command == "qualify-wasm-provider" => {
+            commands::wasm_release::qualify(paths.root(), rest)
         }
         [command, rest @ ..] if command == "verify-precision-contract" => {
             commands::precision_contract::run(paths.root(), rest)
@@ -150,6 +160,8 @@ Usage:
   cargo run -p xtask -- api-coverage --refresh-abi
   cargo run -p xtask -- recording-wire-codegen --check
   cargo run -p xtask -- recording-wire-codegen --write
+  cargo run -p xtask -- build-policy-sources --check
+  cargo run -p xtask -- build-policy-sources --write
   cargo run -p xtask -- api-coverage --audit-evidence
   cargo run -p xtask -- api-coverage --audit-canonical-paths
   cargo run -p xtask -- api-coverage --audit-reviewed-migration <40-hex-commit>
@@ -174,6 +186,8 @@ Usage:
   cargo run -p xtask -- provider-smoke
   cargo run -p xtask -- wasm-provider-contract --check
   cargo run -p xtask -- wasm-provider-contract --write
+  cargo run -p xtask -- build-wasm-provider-package --precision <single|double> --output <directory>
+  cargo run -p xtask -- qualify-wasm-provider --precision <single|double> --artifacts <directory> --cosign <path>
   cargo run -p xtask -- build-pages-wasm
   cargo run -p xtask -- generate-pages
   cargo run -p xtask -- validate-pages
@@ -181,6 +195,7 @@ Usage:
 Commands:
   api-coverage  Validate, regenerate, audit, or perform an explicitly reviewed structured API-contract migration
   recording-wire-codegen  Validate or regenerate the allocation-free runtime parser table
+  build-policy-sources  Validate or atomically refresh Rust build-policy source identities
   upstream-sync  Validate, prepare, or apply the exact-SHA Box2D migration transaction
   sample-parity  Validate or regenerate the upstream sample parity report
   verify-toolchains  Validate workspace versions and pinned compiler configuration
@@ -198,6 +213,8 @@ Commands:
   provider-smoke-app  Build the Rust wasm provider-smoke app and export list
   provider-smoke  Build the Rust app, Box2D provider, and run Node smoke
   wasm-provider-contract  Validate or atomically refresh both checked WASM provider ABI identities
+  build-wasm-provider-package  Build a deterministic official WASM provider package without executing it
+  qualify-wasm-provider  Authenticate and execute an official WASM provider package in Node and Chromium
   build-pages-wasm  Build browser provider and Bevy testbed assets into docs/pages
   generate-pages  Generate the GitHub Pages Bevy example index from SCENE_REGISTRY
   validate-pages  Validate generated pages and local links in docs/pages/**/*.html

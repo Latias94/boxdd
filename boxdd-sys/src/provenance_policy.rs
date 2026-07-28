@@ -1,5 +1,9 @@
 use std::{ffi::OsString, path::Path};
 
+#[allow(dead_code)]
+pub(crate) const BUILD_POLICY_SOURCE_SHA256: &str =
+    "033af630fc2698cd90837ebf68e31db4c99fa17dc4c681b993c31d0dd44f8a60";
+
 pub(crate) const COSIGN_VERSION: &str = "v3.0.6";
 #[allow(dead_code)]
 pub(crate) const SIGSTORE_TRUSTED_ROOT_RELATIVE_PATH: &str = "security/sigstore/trusted_root.json";

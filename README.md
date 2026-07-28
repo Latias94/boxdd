@@ -157,7 +157,7 @@ required. See `boxdd/examples/persistence.rs` for the happy path.
 | Local system | `BOXDD_SYS_PROVIDER=system` | Caller-supplied static archive, header, bindings, and exact local attestation manifest. |
 | Official prebuilt | `BOXDD_SYS_PROVIDER=prebuilt` | Exact static manifest plus a signed whole-package provenance statement and Sigstore bundle. |
 | WASM compile-only | `BOXDD_SYS_PROVIDER=wasm-compile-only` | Type/build qualification only; no runtime claim. |
-| WASM runtime | `BOXDD_SYS_PROVIDER=wasm-provider` | Versioned precision-specific imports backed by the pinned Emscripten 6.0.3 provider. |
+| WASM runtime | `BOXDD_SYS_PROVIDER=wasm-provider` | Versioned precision-specific imports; official runtime packages carry signed whole-package provenance. |
 
 System and prebuilt adapters never download, extract, cache, discover by name, dynamically link, or
 fall back to vendored source. Official prebuilt qualification authenticates the canonical
@@ -165,6 +165,11 @@ provenance statement and exact outer archive before extraction; `boxdd-sys` then
 already-local complete member inventory and manifest before linking exact bytes. A provider
 reporting only `b2GetVersion() == 3.2.0` is insufficient. Single and double precision artifacts,
 manifests, bindings, and dependent crate features cannot be mixed.
+
+The official WASM package is a runtime distribution, not a `boxdd-sys` build input. Repository-level
+`xtask` and CI commands pin Emscripten, build the provider, authenticate the complete package before
+extraction, and qualify the extracted JavaScript/WASM under Node and Chromium. Building
+`boxdd-sys` never discovers, downloads, or executes an Emscripten SDK.
 
 See [`boxdd-sys/README.md`](boxdd-sys/README.md) for manifest inputs and
 [`docs/platforms/wasm.md`](docs/platforms/wasm.md) for the WASM runtime boundary.
@@ -193,6 +198,7 @@ cargo nextest run -p boxdd -p boxdd-sys --features boxdd/double-precision
 cargo nextest run -p bevy_boxdd
 cargo check -p boxdd --examples
 cargo check -p boxdd --examples --features double-precision
+cargo run -p xtask -- build-policy-sources --check
 cargo run -p xtask -- upstream-sync --check
 cargo run -p xtask -- api-coverage --check
 ```
@@ -206,7 +212,8 @@ package, sanitizer, Miri, WASM, Pages, and release gates are exposed through `xt
   workflow. Start with `world_basics`, `foundation_scheduler`, `queries`, and `persistence`.
 - [`bevy_boxdd/README.md`](bevy_boxdd/README.md) documents the ECS adapter and explicit
   `BoxddWorldOrigin` bridge.
-- <https://frankorz.com/boxdd/> hosts the generated single-precision Bevy + egui Pages testbed.
+- <https://frankorz.com/boxdd/> hosts the generated single-precision Bevy + egui development
+  preview; signed tag-bound WASM release packages are the portable distribution artifacts.
 
 ## Documentation
 

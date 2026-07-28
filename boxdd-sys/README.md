@@ -83,11 +83,13 @@ names include target, precision, static link kind, and applicable CRT identity.
   - `wasm32-wasip1`: compile-only qualification only; no WASI runtime is claimed.
 - Modes
   - `BOXDD_SYS_PROVIDER=wasm-compile-only`: generate/check bindings and skip native C linkage.
-  - `BOXDD_SYS_PROVIDER=wasm-provider`: import symbols from the precision-specific `box2d-sys-v1-single` or `box2d-sys-v1-double` module on `wasm32-unknown-unknown` only; `wasm32-wasip1` and Emscripten-target Rust builds are rejected, and the runtime requires the pinned Emscripten 6.0.3 SDK.
+  - `BOXDD_SYS_PROVIDER=wasm-provider`: import symbols from the precision-specific `box2d-sys-v1-single` or `box2d-sys-v1-double` module on `wasm32-unknown-unknown` only; `wasm32-wasip1` and Emscripten-target Rust builds are rejected. Official provider bytes are built with the pinned Emscripten 6.0.3 SDK, but consuming them does not require that SDK.
 - Notes
-  - No prebuilt for WASM targets.
+  - There is no WASM prebuilt adapter consumed while building `boxdd-sys`. Official
+    precision-specific JavaScript/WASM runtime packages are built, authenticated, extracted, and
+    qualified by repository-level `xtask` commands and CI.
   - Emscripten builds the standalone C provider only. Rust applications target `wasm32-unknown-unknown`; `wasm32-unknown-emscripten` Rust builds are not supported.
-  - `wasm-provider` consumes the precision-specific checked-in contract under `abi/`; building this crate never discovers or executes Emscripten. Repository runtime qualification is owned by `xtask` and uses the SDK pinned by `xtask/toolchains/emscripten-sdk.toml`.
+  - `wasm-provider` consumes the precision-specific checked-in contract under `abi/`; building this crate never discovers, downloads, extracts, caches, or executes Emscripten. Repository source-provider builds, runtime smoke tests, and Pages builds use the SDK pinned by `xtask/toolchains/emscripten-sdk.toml`; signed-package qualification consumes existing JavaScript/WASM bytes and does not use the SDK.
   - Maintainers validate both checked contracts with `cargo run -p xtask -- wasm-provider-contract --check` and atomically refresh the pair with `--write`; ordinary consumers do neither.
   - Node and Chromium provider smoke tests verify the runtime adapter identity and all required adapter symbols in both precision modes. GitHub Pages currently qualifies single precision only and rejects `BOXDD_WASM_PRECISION=double`.
   - The high-level `boxdd` crate removes Rust callback-table entry points on `wasm32`. The current provider does not qualify cross-module function pointers for world callbacks, callback-backed queries/tree traversal, raw task callbacks, replay mixers, or debug draw.

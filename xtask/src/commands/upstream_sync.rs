@@ -35,7 +35,7 @@ use crate::{
 const BOX2D_GITLINK: &str = "boxdd-sys/third-party/box2d";
 const ISOLATED_GENERATION_DIRECTORY_PREFIX: &str = "boxdd-upstream-sync-";
 const ISOLATED_GENERATION_MARKER: &str = ".boxdd-isolated-generation.toml";
-const ISOLATED_GENERATION_MARKER_SCHEMA: u32 = 1;
+const ISOLATED_GENERATION_MARKER_SCHEMA: u32 = 2;
 const UNINITIALIZED_BLAKE3: &str =
     "0000000000000000000000000000000000000000000000000000000000000000";
 const ABI_PROBE_METADATA_SCHEMA: u32 = 1;
@@ -577,7 +577,7 @@ fn refresh_routes(paths: &WorkspacePaths) -> Result<()> {
         (Ok(_), Err(cleanup)) => return Err(cleanup),
         (Err(error), Err(cleanup)) => {
             return Err(Error::message(format!(
-                "route refresh staging failed: {error}\nisolated worktree cleanup also failed: {cleanup}"
+                "route refresh staging failed: {error}\nisolated checkout cleanup also failed: {cleanup}"
             )));
         }
     };
@@ -659,7 +659,7 @@ fn validate_registered_next_candidate(
         (Ok(_), Err(cleanup)) => return Err(cleanup),
         (Err(error), Err(cleanup)) => {
             return Err(Error::message(format!(
-                "target API candidate verification failed: {error}\nisolated worktree cleanup also failed: {cleanup}"
+                "target API candidate verification failed: {error}\nisolated checkout cleanup also failed: {cleanup}"
             )));
         }
     };
@@ -962,7 +962,7 @@ fn prepare_next_candidate(paths: &WorkspacePaths) -> Result<()> {
         (Ok(_), Err(cleanup)) => return Err(cleanup),
         (Err(error), Err(cleanup)) => {
             return Err(Error::message(format!(
-                "target API candidate generation failed: {error}\nisolated worktree cleanup also failed: {cleanup}"
+                "target API candidate generation failed: {error}\nisolated checkout cleanup also failed: {cleanup}"
             )));
         }
     };
@@ -2038,7 +2038,7 @@ fn apply_update(paths: &WorkspacePaths) -> Result<()> {
         (Ok(_), Err(cleanup)) => return Err(cleanup),
         (Err(error), Err(cleanup)) => {
             return Err(Error::message(format!(
-                "artifact staging failed: {error}\nisolated worktree cleanup also failed: {cleanup}"
+                "artifact staging failed: {error}\nisolated checkout cleanup also failed: {cleanup}"
             )));
         }
     };
@@ -3269,7 +3269,7 @@ fn validate_bootstrap_bindings(paths: &WorkspacePaths, manifest: &UpstreamManife
         (Err(error), Ok(())) => Err(error),
         (Ok(()), Err(cleanup)) => Err(cleanup),
         (Err(error), Err(cleanup)) => Err(Error::message(format!(
-            "bootstrap bindings validation failed: {error}\nisolated worktree cleanup also failed: {cleanup}"
+            "bootstrap bindings validation failed: {error}\nisolated checkout cleanup also failed: {cleanup}"
         ))),
     }
 }
@@ -4496,7 +4496,14 @@ struct IsolatedGeneration {
     target_dir: PathBuf,
     cargo_home: PathBuf,
     cargo: Option<QualifiedCargo>,
-    repository_worktree_added: bool,
+    checkout_kind: IsolatedCheckoutKind,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum IsolatedCheckoutKind {
+    LinkedWorktree,
+    StandaloneClone,
 }
 
 #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -4506,6 +4513,8 @@ struct IsolatedGenerationMarker {
     common_directory: PathBuf,
     source_root: PathBuf,
     worktree: PathBuf,
+    #[serde(default)]
+    checkout_kind: Option<IsolatedCheckoutKind>,
 }
 
 impl IsolatedGeneration {
@@ -4545,7 +4554,13 @@ impl IsolatedGeneration {
         let worktree = source_root.join("workspace");
         let target_dir = source_root.join("cargo-target");
         let cargo_home = source_root.join("cargo-home");
-        write_isolated_generation_marker(&isolation_parent, &source_root, &worktree)?;
+        let checkout_kind = IsolatedCheckoutKind::StandaloneClone;
+        write_isolated_generation_marker(
+            &isolation_parent,
+            &source_root,
+            &worktree,
+            checkout_kind,
+        )?;
         let mut generation = Self {
             repository_root: paths.root().to_owned(),
             source_directory: Some(source_directory),
@@ -4554,7 +4569,7 @@ impl IsolatedGeneration {
             target_dir,
             cargo_home,
             cargo: None,
-            repository_worktree_added: false,
+            checkout_kind,
         };
         let initialization = (|| {
             generation.cargo_home = controlled_child_directory(
@@ -4562,15 +4577,29 @@ impl IsolatedGeneration {
                 Path::new("cargo-home"),
                 "isolated upstream Cargo home",
             )?;
+            let template = create_private_empty_git_template(&generation.source_root)?;
             command_success(
                 git_command()?
-                    .current_dir(&generation.repository_root)
-                    .args(["worktree", "add", "--detach"])
+                    .args([
+                        "clone",
+                        "--local",
+                        "--no-hardlinks",
+                        "--dissociate",
+                        "--no-checkout",
+                        "--no-tags",
+                        "--template",
+                    ])
+                    .arg(&template)
+                    .arg(&generation.repository_root)
                     .arg(&generation.worktree)
-                    .arg(repository_revision),
-                "create isolated repository worktree",
+                    .current_dir(&generation.source_root),
+                "clone isolated repository without shared Git configuration",
             )?;
-            generation.repository_worktree_added = true;
+            validate_standalone_clone_object_store(
+                &generation.worktree,
+                "isolated repository clone",
+            )?;
+            checkout_detached(&generation.worktree, repository_revision)?;
 
             let isolated_submodule = generation.worktree.join(BOX2D_GITLINK);
             if isolated_submodule.exists() {
@@ -4583,11 +4612,19 @@ impl IsolatedGeneration {
             fs::create_dir_all(parent).map_err(|source| Error::io(parent, source))?;
             command_success(
                 git_command()?
-                    .args(["clone", "--no-hardlinks", "--no-checkout"])
+                    .args([
+                        "clone",
+                        "--local",
+                        "--no-hardlinks",
+                        "--dissociate",
+                        "--no-checkout",
+                        "--no-tags",
+                    ])
                     .arg(paths.box2d())
                     .arg(&isolated_submodule),
-                "clone local Box2D object store into isolated worktree",
+                "clone local Box2D object store into isolated checkout",
             )?;
+            validate_standalone_clone_object_store(&isolated_submodule, "isolated Box2D clone")?;
             checkout_detached(&isolated_submodule, revision)?;
             generation.cargo = Some(qualify_generation_cargo(
                 &generation.worktree,
@@ -4935,85 +4972,48 @@ impl IsolatedGeneration {
     }
 
     fn finish(mut self) -> Result<()> {
-        let result = self.cleanup();
-        if result.is_ok() {
-            self.repository_worktree_added = false;
-        }
-        result
+        self.cleanup()
     }
 
     fn cleanup(&mut self) -> Result<()> {
         if self.source_directory.is_none() {
             return Ok(());
         }
-        if self.worktree.exists()
-            && let Err(error) = ensure_no_pending_atomic_batches_for_workspace(&self.worktree)
-        {
-            let preserved = self
-                .source_directory
-                .take()
-                .expect("checked isolated source directory")
-                .keep();
-            return Err(Error::message(format!(
-                "{error}\nisolated source directory preserved at {} because atomic batch recovery is pending",
-                preserved.display()
-            )));
-        }
-        let registration = worktree_is_registered(&self.repository_root, &self.worktree)
-            .map_err(|error| Error::message(format!("inspect isolated worktree: {error}")));
-        self.cleanup_after_inspection(registration)
-    }
-
-    fn cleanup_after_inspection(&mut self, registration: Result<bool>) -> Result<()> {
-        self.cleanup_after_inspection_with(registration, remove_repository_worktree)
-    }
-
-    fn cleanup_after_inspection_with<F>(
-        &mut self,
-        registration: Result<bool>,
-        remove_worktree: F,
-    ) -> Result<()>
-    where
-        F: FnOnce(&Path, &Path) -> Result<()>,
-    {
-        let mut errors = Vec::new();
-        let should_attempt_registered_removal = match registration {
-            Ok(registered) => registered,
-            Err(error) => {
-                errors.push(error.to_string());
-                true
+        let cleanup = (|| {
+            let checkout_exists = validate_isolated_checkout_ownership(
+                &isolated_generation_parent(&self.repository_root)?,
+                &self.source_root,
+                &self.worktree,
+                self.checkout_kind,
+            )?;
+            if checkout_exists {
+                recover_atomic_batches(&self.worktree)?;
+                ensure_no_pending_atomic_batches_for_workspace(&self.worktree)?;
             }
-        };
-        if should_attempt_registered_removal {
-            if let Err(error) = remove_worktree(&self.repository_root, &self.worktree) {
-                errors.push(error.to_string());
-                if let Some(directory) = self.source_directory.take() {
-                    let preserved = directory.keep();
-                    errors.push(format!(
-                        "isolated source directory preserved at {} because its Git worktree registration could not be removed",
-                        preserved.display()
-                    ));
-                }
-                return Err(Error::message(errors.join("\n")));
-            } else {
-                self.repository_worktree_added = false;
-            }
-        } else {
-            self.repository_worktree_added = false;
+            Ok(())
+        })();
+        if let Err(error) = cleanup {
+            return Err(self.preserve_source_directory(error, "cleanup could not finish"));
         }
         if let Some(directory) = self.source_directory.take() {
             let path = directory.path().to_owned();
             if let Err(source) = directory.close() {
-                errors.push(Error::io(path, source).to_string());
-            } else {
-                self.repository_worktree_added = false;
+                return Err(Error::io(path, source));
             }
         }
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(Error::message(errors.join("\n")))
-        }
+        Ok(())
+    }
+
+    fn preserve_source_directory(&mut self, error: Error, reason: &str) -> Error {
+        let preserved = self
+            .source_directory
+            .take()
+            .expect("checked isolated source directory")
+            .keep();
+        Error::message(format!(
+            "{error}\nisolated source directory preserved at {} because {reason}",
+            preserved.display()
+        ))
     }
 }
 
@@ -5042,16 +5042,40 @@ fn isolated_generation_parent(root: &Path) -> Result<PathBuf> {
         })
 }
 
+fn create_private_empty_git_template(source_root: &Path) -> Result<PathBuf> {
+    let template = controlled_child_directory(
+        source_root,
+        Path::new("git-template"),
+        "isolated Git template directory",
+    )?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        fs::set_permissions(&template, fs::Permissions::from_mode(0o700))
+            .map_err(|source| Error::io(&template, source))?;
+    }
+    let mut entries = fs::read_dir(&template).map_err(|source| Error::io(&template, source))?;
+    if entries.next().is_some() {
+        return Err(Error::message(format!(
+            "isolated Git template directory must be empty: {}",
+            template.display()
+        )));
+    }
+    Ok(template)
+}
+
 fn write_isolated_generation_marker(
     common_directory: &Path,
     source_root: &Path,
     worktree: &Path,
+    checkout_kind: IsolatedCheckoutKind,
 ) -> Result<()> {
     let marker = IsolatedGenerationMarker {
         schema: ISOLATED_GENERATION_MARKER_SCHEMA,
         common_directory: common_directory.to_path_buf(),
         source_root: source_root.to_path_buf(),
         worktree: worktree.to_path_buf(),
+        checkout_kind: Some(checkout_kind),
     };
     let path = source_root.join(ISOLATED_GENERATION_MARKER);
     write_atomic(&path, &render_toml(&marker)?)?;
@@ -5064,6 +5088,161 @@ fn write_isolated_generation_marker(
             path.display()
         )))
     }
+}
+
+#[cfg(test)]
+fn write_legacy_isolated_generation_marker(
+    common_directory: &Path,
+    source_root: &Path,
+    worktree: &Path,
+) -> Result<()> {
+    let marker = IsolatedGenerationMarker {
+        schema: 1,
+        common_directory: common_directory.to_path_buf(),
+        source_root: source_root.to_path_buf(),
+        worktree: worktree.to_path_buf(),
+        checkout_kind: None,
+    };
+    let path = source_root.join(ISOLATED_GENERATION_MARKER);
+    write_atomic(&path, &render_toml(&marker)?)
+}
+
+fn validate_isolated_generation_marker(
+    common_directory: &Path,
+    source_root: &Path,
+    worktree: &Path,
+    marker: &IsolatedGenerationMarker,
+    checkout_kind: IsolatedCheckoutKind,
+) -> Result<()> {
+    let schema_matches = match checkout_kind {
+        IsolatedCheckoutKind::LinkedWorktree => {
+            marker.schema == 1 && marker.checkout_kind.is_none()
+        }
+        IsolatedCheckoutKind::StandaloneClone => {
+            marker.schema == ISOLATED_GENERATION_MARKER_SCHEMA
+                && marker.checkout_kind == Some(IsolatedCheckoutKind::StandaloneClone)
+        }
+    };
+    if !schema_matches
+        || marker.common_directory != common_directory
+        || marker.source_root != source_root
+        || marker.worktree != worktree
+        || source_root.parent() != Some(common_directory)
+    {
+        return Err(Error::message(format!(
+            "deferred isolated generation marker does not own its directory; preserved at {}",
+            source_root.display()
+        )));
+    }
+    Ok(())
+}
+
+fn validate_isolated_checkout_ownership(
+    common_directory: &Path,
+    source_root: &Path,
+    worktree: &Path,
+    checkout_kind: IsolatedCheckoutKind,
+) -> Result<bool> {
+    let source_metadata =
+        fs::symlink_metadata(source_root).map_err(|source| Error::io(source_root, source))?;
+    if !source_metadata.file_type().is_dir() || source_metadata.file_type().is_symlink() {
+        return Err(Error::message(format!(
+            "isolated source root is not a real directory: {}",
+            source_root.display()
+        )));
+    }
+    let canonical_source_root = source_root
+        .canonicalize()
+        .map_err(|source| Error::io(source_root, source))?;
+    if canonical_source_root != source_root || source_root.parent() != Some(common_directory) {
+        return Err(Error::message(format!(
+            "isolated source root escaped its owned parent: {}",
+            source_root.display()
+        )));
+    }
+    let marker_path = source_root.join(ISOLATED_GENERATION_MARKER);
+    let marker_metadata =
+        fs::symlink_metadata(&marker_path).map_err(|source| Error::io(&marker_path, source))?;
+    if !marker_metadata.file_type().is_file() || marker_metadata.file_type().is_symlink() {
+        return Err(Error::message(format!(
+            "isolated generation marker is not a regular non-symlink file: {}",
+            marker_path.display()
+        )));
+    }
+    let marker = read_toml::<IsolatedGenerationMarker>(&marker_path)?;
+    validate_isolated_generation_marker(
+        common_directory,
+        source_root,
+        worktree,
+        &marker,
+        checkout_kind,
+    )?;
+
+    let worktree_metadata = match fs::symlink_metadata(worktree) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(source) => return Err(Error::io(worktree, source)),
+    };
+    if !worktree_metadata.file_type().is_dir() || worktree_metadata.file_type().is_symlink() {
+        return Err(Error::message(format!(
+            "isolated checkout is not a real directory: {}",
+            worktree.display()
+        )));
+    }
+    validate_standalone_clone_object_store(worktree, "isolated standalone clone")?;
+    validate_optional_nested_clone(
+        &worktree.join(BOX2D_GITLINK),
+        "isolated Box2D standalone clone",
+    )?;
+    Ok(true)
+}
+
+fn validate_optional_nested_clone(repository: &Path, label: &str) -> Result<()> {
+    let metadata = match fs::symlink_metadata(repository) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(source) => return Err(Error::io(repository, source)),
+    };
+    if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
+        return Err(Error::message(format!(
+            "{label} is not a real directory: {}",
+            repository.display()
+        )));
+    }
+    validate_standalone_clone_object_store(repository, label)
+}
+
+fn validate_standalone_clone_object_store(repository: &Path, label: &str) -> Result<()> {
+    let git_directory = repository.join(".git");
+    let git_metadata =
+        fs::symlink_metadata(&git_directory).map_err(|source| Error::io(&git_directory, source))?;
+    if !git_metadata.file_type().is_dir() || git_metadata.file_type().is_symlink() {
+        return Err(Error::message(format!(
+            "{label} must own a .git directory: {}",
+            git_directory.display()
+        )));
+    }
+    let alternates = git_directory.join("objects/info/alternates");
+    match fs::symlink_metadata(&alternates) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(source) => return Err(Error::io(&alternates, source)),
+        Ok(metadata) => {
+            if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+                return Err(Error::message(format!(
+                    "{label} object-store alternates must be a regular non-symlink file when present: {}",
+                    alternates.display()
+                )));
+            }
+            let content = fs::read(&alternates).map_err(|source| Error::io(&alternates, source))?;
+            if !content.is_empty() {
+                return Err(Error::message(format!(
+                    "{label} must not borrow an object store through {}",
+                    alternates.display()
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn cleanup_deferred_isolated_generations(root: &Path) -> Result<()> {
@@ -5110,19 +5289,37 @@ fn cleanup_deferred_isolated_generations(root: &Path) -> Result<()> {
             .map_err(|source| Error::io(&candidate, source))?;
         let marker = read_toml::<IsolatedGenerationMarker>(&marker_path)?;
         let expected_worktree = source_root.join("workspace");
-        if marker.schema != ISOLATED_GENERATION_MARKER_SCHEMA
-            || marker.common_directory != common_directory
-            || marker.source_root != source_root
-            || marker.worktree != expected_worktree
-            || source_root.parent() != Some(common_directory.as_path())
-        {
-            return Err(Error::message(format!(
-                "deferred isolated generation marker does not own its directory; preserved at {}",
-                source_root.display()
-            )));
-        }
-        if worktree_is_registered(root, &expected_worktree)? {
-            remove_repository_worktree(root, &expected_worktree)?;
+        match (marker.schema, marker.checkout_kind) {
+            (1, None) => {
+                validate_isolated_generation_marker(
+                    &common_directory,
+                    &source_root,
+                    &expected_worktree,
+                    &marker,
+                    IsolatedCheckoutKind::LinkedWorktree,
+                )?;
+                if worktree_is_registered(root, &expected_worktree)? {
+                    remove_repository_worktree(root, &expected_worktree)?;
+                }
+            }
+            (ISOLATED_GENERATION_MARKER_SCHEMA, Some(IsolatedCheckoutKind::StandaloneClone)) => {
+                let checkout_exists = validate_isolated_checkout_ownership(
+                    &common_directory,
+                    &source_root,
+                    &expected_worktree,
+                    IsolatedCheckoutKind::StandaloneClone,
+                )?;
+                if checkout_exists {
+                    recover_atomic_batches(&expected_worktree)?;
+                    ensure_no_pending_atomic_batches_for_workspace(&expected_worktree)?;
+                }
+            }
+            _ => {
+                return Err(Error::message(format!(
+                    "deferred isolated generation marker has an unsupported checkout kind; preserved at {}",
+                    source_root.display()
+                )));
+            }
         }
         fs::remove_dir_all(&source_root).map_err(|source| Error::io(&source_root, source))?;
     }
@@ -5133,7 +5330,7 @@ fn merge_isolated_initialization_failure(error: Error, cleanup: Result<()>) -> E
     match cleanup {
         Ok(()) => error,
         Err(cleanup) => Error::message(format!(
-            "isolated worktree initialization failed: {error}\nisolated worktree cleanup also failed: {cleanup}"
+            "isolated checkout initialization failed: {error}\nisolated checkout cleanup also failed: {cleanup}"
         )),
     }
 }
@@ -6539,6 +6736,26 @@ mod tests {
         .expect("fixture git command");
     }
 
+    fn create_bare_object_store(path: &Path) -> PathBuf {
+        fs::create_dir(path).expect("bare object-store fixture directory");
+        run_git(path, &["init", "--bare"]);
+        path.join("objects")
+    }
+
+    fn install_repository_alternate(repository: &Path, object_store: &Path) -> PathBuf {
+        let git_directory = PathBuf::from(
+            git_output(repository, ["rev-parse", "--absolute-git-dir"])
+                .expect("repository Git directory")
+                .trim(),
+        );
+        let alternates = git_directory.join("objects/info/alternates");
+        fs::create_dir_all(alternates.parent().expect("alternates parent"))
+            .expect("alternates parent directory");
+        fs::write(&alternates, format!("{}\n", object_store.display()))
+            .expect("repository alternate");
+        alternates
+    }
+
     fn inventory() -> SourceInventory {
         SourceInventory {
             tree: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
@@ -7802,7 +8019,7 @@ mod tests {
     }
 
     #[test]
-    fn isolated_generation_finish_removes_worktree_registration_and_directory() {
+    fn isolated_generation_finish_removes_standalone_clone_directory() {
         let fixture = TemporaryWorkspace::create();
         let generation = IsolatedGeneration::create(&fixture.paths(), &fixture.next_revision)
             .expect("isolated generation");
@@ -7853,7 +8070,10 @@ mod tests {
         }
         let before = git_output(&fixture.workspace, ["worktree", "list", "--porcelain"])
             .expect("worktree list");
-        assert!(before.contains(&worktree.to_string_lossy().into_owned()));
+        assert!(
+            !before.contains(&worktree.to_string_lossy().into_owned()),
+            "standalone clone must not be registered as a worktree:\n{before}"
+        );
 
         generation.finish().expect("explicit generation cleanup");
 
@@ -8222,26 +8442,18 @@ mod tests {
     }
 
     #[test]
-    fn failed_staging_drop_removes_worktree_registration_and_directory() {
+    fn failed_staging_drop_removes_isolated_checkout_directory() {
         let fixture = TemporaryWorkspace::create();
         let manifest = fixture.manifest();
-        let mut generation = IsolatedGeneration::create(&fixture.paths(), &fixture.next_revision)
+        let generation = IsolatedGeneration::create(&fixture.paths(), &fixture.next_revision)
             .expect("isolated generation");
-        let worktree = generation.worktree.clone();
         let source_root = generation.source_root.clone();
 
         generation
             .prepare_update(&manifest, &fixture.next_revision)
             .expect_err("missing reviewed candidate must fail staging");
-        generation.repository_worktree_added = false;
         drop(generation);
 
-        let registrations = git_output(&fixture.workspace, ["worktree", "list", "--porcelain"])
-            .expect("worktree list after staging failure");
-        assert!(
-            !registrations.contains(&worktree.to_string_lossy().into_owned()),
-            "unexpected registration after drop:\n{registrations}"
-        );
         assert!(!source_root.exists());
     }
 
@@ -8265,11 +8477,11 @@ mod tests {
             repository_revision.trim(),
             &fixture.next_revision,
             |generation| {
-                assert!(generation.repository_worktree_added);
-                assert!(
-                    worktree_is_registered(&generation.repository_root, &generation.worktree)
-                        .expect("registered worktree before injected cleanup failure")
+                assert_eq!(
+                    generation.checkout_kind,
+                    IsolatedCheckoutKind::StandaloneClone
                 );
+                assert!(generation.worktree.join(".git").is_dir());
                 Err(Error::message("injected cleanup failure"))
             },
         ) {
@@ -8278,12 +8490,12 @@ mod tests {
         };
         let message = error.to_string();
         assert!(message.contains("workspace ancestor Cargo config"));
-        assert!(message.contains("isolated worktree cleanup also failed"));
+        assert!(message.contains("isolated checkout cleanup also failed"));
         assert!(message.contains("injected cleanup failure"));
     }
 
     #[test]
-    fn failed_cargo_qualification_removes_the_isolated_worktree_registration() {
+    fn failed_cargo_qualification_does_not_add_a_worktree_registration() {
         let fixture = TemporaryWorkspace::create();
         let cargo_config = fixture.workspace.join(".cargo");
         fs::create_dir(&cargo_config).expect("fixture Cargo config directory");
@@ -8320,57 +8532,30 @@ mod tests {
     }
 
     #[test]
-    fn worktree_cleanup_continues_after_registration_inspection_failure() {
+    fn standalone_clone_is_not_registered_as_a_live_repository_worktree() {
         let fixture = TemporaryWorkspace::create();
-        let mut generation = IsolatedGeneration::create(&fixture.paths(), &fixture.next_revision)
+        let registrations_before =
+            git_output(&fixture.workspace, ["worktree", "list", "--porcelain"])
+                .expect("worktree list before isolated clone");
+        let generation = IsolatedGeneration::create(&fixture.paths(), &fixture.next_revision)
             .expect("isolated generation");
-        let worktree = generation.worktree.clone();
         let source_root = generation.source_root.clone();
-
-        let error = generation
-            .cleanup_after_inspection(Err(Error::message("injected inspection failure")))
-            .expect_err("inspection failure remains observable");
-
-        assert!(error.to_string().contains("injected inspection failure"));
+        assert!(generation.worktree.join(".git").is_dir());
+        validate_standalone_clone_object_store(
+            &generation.worktree,
+            "isolated repository test clone",
+        )
+        .expect("independent isolated object store");
+        let registrations_during =
+            git_output(&fixture.workspace, ["worktree", "list", "--porcelain"])
+                .expect("worktree list during isolated clone");
+        assert_eq!(registrations_during, registrations_before);
+        generation.finish().expect("isolated clone cleanup");
         assert!(!source_root.exists());
-        assert!(
-            !worktree_is_registered(&fixture.workspace, &worktree)
-                .expect("registration after best-effort cleanup")
-        );
     }
 
     #[test]
-    fn worktree_cleanup_preserves_the_directory_when_registration_removal_fails() {
-        let fixture = TemporaryWorkspace::create();
-        let mut generation = IsolatedGeneration::create(&fixture.paths(), &fixture.next_revision)
-            .expect("isolated generation");
-        let worktree = generation.worktree.clone();
-        let source_root = generation.source_root.clone();
-
-        let error = generation
-            .cleanup_after_inspection_with(Ok(true), |_, _| {
-                Err(Error::message("injected worktree removal failure"))
-            })
-            .expect_err("worktree removal failure must be reported");
-
-        let message = error.to_string();
-        assert!(message.contains("injected worktree removal failure"));
-        assert!(message.contains("isolated source directory preserved at"));
-        assert!(source_root.exists());
-        assert!(worktree.exists());
-        assert!(
-            worktree_is_registered(&fixture.workspace, &worktree)
-                .expect("registration after failed removal")
-        );
-
-        remove_repository_worktree(&fixture.workspace, &worktree)
-            .expect("remove preserved fixture worktree registration");
-        fs::remove_dir_all(&source_root).expect("remove preserved fixture source directory");
-        generation.repository_worktree_added = false;
-    }
-
-    #[test]
-    fn worktree_cleanup_preserves_workspace_needed_by_pending_atomic_recovery() {
+    fn standalone_clone_cleanup_preserves_workspace_needed_by_pending_atomic_recovery() {
         let fixture = TemporaryWorkspace::create();
         let mut generation = IsolatedGeneration::create(&fixture.paths(), &fixture.next_revision)
             .expect("isolated generation");
@@ -8390,20 +8575,117 @@ mod tests {
         assert!(message.contains("isolated source directory preserved at"));
         assert!(source_root.exists());
         assert!(worktree.exists());
-        assert!(
-            worktree_is_registered(&fixture.workspace, &worktree)
-                .expect("registration after deferred cleanup")
-        );
 
         fs::remove_dir(&transaction).expect("remove incomplete transaction fixture");
         cleanup_deferred_isolated_generations(&fixture.workspace)
             .expect("finish deferred isolated generation cleanup");
         assert!(!source_root.exists());
+    }
+
+    #[test]
+    fn standalone_clones_dissociate_root_and_box2d_alternates() {
+        let fixture = TemporaryWorkspace::create();
+        let root_donor = create_bare_object_store(&fixture.root.join("root-object-donor.git"));
+        let box2d_donor = create_bare_object_store(&fixture.root.join("box2d-object-donor.git"));
+        let root_alternates = install_repository_alternate(&fixture.workspace, &root_donor);
+        let box2d_source = fixture.paths().box2d();
+        let box2d_alternates = install_repository_alternate(&box2d_source, &box2d_donor);
         assert!(
-            !worktree_is_registered(&fixture.workspace, &worktree)
-                .expect("registration after deferred cleanup completes")
+            fs::metadata(&root_alternates)
+                .expect("root alternates")
+                .len()
+                > 0
         );
-        generation.repository_worktree_added = false;
+        assert!(
+            fs::metadata(&box2d_alternates)
+                .expect("Box2D alternates")
+                .len()
+                > 0
+        );
+
+        let generation = IsolatedGeneration::create(&fixture.paths(), &fixture.next_revision)
+            .expect("dissociated isolated generation");
+        validate_standalone_clone_object_store(
+            &generation.worktree,
+            "isolated repository test clone",
+        )
+        .expect("root clone object-store isolation");
+        validate_standalone_clone_object_store(
+            &generation.worktree.join(BOX2D_GITLINK),
+            "isolated Box2D test clone",
+        )
+        .expect("Box2D clone object-store isolation");
+        generation.finish().expect("dissociated clone cleanup");
+    }
+
+    #[test]
+    fn standalone_clone_cleanup_rejects_a_borrowed_object_store() {
+        let fixture = TemporaryWorkspace::create();
+        let mut generation = IsolatedGeneration::create(&fixture.paths(), &fixture.next_revision)
+            .expect("isolated generation");
+        let source_root = generation.source_root.clone();
+        let alternates = generation.worktree.join(".git/objects/info/alternates");
+        let borrowed_objects = fixture
+            .workspace
+            .join(".git/objects")
+            .to_string_lossy()
+            .into_owned();
+        fs::write(&alternates, borrowed_objects).expect("borrowed object store fixture");
+
+        let error = generation
+            .cleanup()
+            .expect_err("borrowed object store must preserve the clone");
+        assert!(
+            error
+                .to_string()
+                .contains("must not borrow an object store")
+        );
+        assert!(error.to_string().contains("preserved at"));
+        assert!(source_root.exists());
+
+        fs::remove_file(&alternates).expect("remove borrowed object store fixture");
+        cleanup_deferred_isolated_generations(&fixture.workspace)
+            .expect("finish deferred standalone clone cleanup");
+        assert!(!source_root.exists());
+    }
+
+    #[test]
+    fn standalone_clone_cleanup_preserves_nested_object_store_drift() {
+        let fixture = TemporaryWorkspace::create();
+        let mut generation = IsolatedGeneration::create(&fixture.paths(), &fixture.next_revision)
+            .expect("isolated generation");
+        let source_root = generation.source_root.clone();
+        let alternates = generation
+            .worktree
+            .join(BOX2D_GITLINK)
+            .join(".git/objects/info/alternates");
+        let borrowed_objects = fixture
+            .workspace
+            .join(".git/objects")
+            .to_string_lossy()
+            .into_owned();
+        fs::write(&alternates, borrowed_objects).expect("nested borrowed object store fixture");
+
+        let error = generation
+            .cleanup()
+            .expect_err("nested object-store drift must preserve the clone");
+        assert!(
+            error
+                .to_string()
+                .contains("isolated Box2D standalone clone")
+        );
+        assert!(
+            error
+                .to_string()
+                .contains("must not borrow an object store")
+        );
+        assert!(error.to_string().contains("preserved at"));
+        assert!(source_root.exists());
+
+        fs::remove_file(&alternates).expect("remove nested object-store drift fixture");
+        cleanup_deferred_isolated_generations(&fixture.workspace)
+            .expect("finish deferred nested clone cleanup");
+        assert!(!source_root.exists());
     }
 
     #[test]
@@ -8424,7 +8706,7 @@ mod tests {
     }
 
     #[test]
-    fn deferred_isolated_cleanup_removes_a_half_initialized_worktree() {
+    fn deferred_isolated_schema_one_cleanup_removes_a_half_initialized_worktree() {
         let fixture = TemporaryWorkspace::create();
         let common_directory = isolated_generation_parent(&fixture.workspace)
             .expect("isolated generation common directory");
@@ -8435,8 +8717,16 @@ mod tests {
         let source_root = source.keep().canonicalize().expect("canonical source root");
         let worktree = source_root.join("workspace");
         fs::create_dir(&worktree).expect("half-initialized worktree directory");
-        write_isolated_generation_marker(&common_directory, &source_root, &worktree)
-            .expect("isolated generation marker");
+        write_legacy_isolated_generation_marker(&common_directory, &source_root, &worktree)
+            .expect("legacy isolated generation marker");
+        let marker_content = fs::read_to_string(source_root.join(ISOLATED_GENERATION_MARKER))
+            .expect("legacy marker content");
+        assert!(!marker_content.contains("checkout_kind"));
+        let marker =
+            read_toml::<IsolatedGenerationMarker>(&source_root.join(ISOLATED_GENERATION_MARKER))
+                .expect("legacy marker compatibility");
+        assert_eq!(marker.schema, 1);
+        assert_eq!(marker.checkout_kind, None);
 
         cleanup_deferred_isolated_generations(&fixture.workspace)
             .expect("half-initialized worktree cleanup");
@@ -8446,6 +8736,70 @@ mod tests {
             !worktree_is_registered(&fixture.workspace, &worktree)
                 .expect("half-initialized worktree registration")
         );
+    }
+
+    #[test]
+    fn standalone_clone_checkout_ignores_live_repository_filters() {
+        let fixture = TemporaryWorkspace::create();
+        let protected = fixture.workspace.join("isolated-filter-target.txt");
+        fs::write(&protected, "blob bytes\n").expect("protected fixture content");
+        run_git(&fixture.workspace, &["add", "isolated-filter-target.txt"]);
+        run_git(&fixture.workspace, &["commit", "-m", "add filter target"]);
+        let repository_revision =
+            git_output(&fixture.workspace, ["rev-parse", "HEAD"]).expect("repository revision");
+
+        let attributes = fixture.root.join("live-repository-attributes");
+        fs::write(
+            &attributes,
+            "isolated-filter-target.txt filter=live-sentinel\n",
+        )
+        .expect("live attributes");
+        run_git(
+            &fixture.workspace,
+            &[
+                "config",
+                "core.attributesFile",
+                attributes.to_str().expect("UTF-8 path"),
+            ],
+        );
+        run_git(
+            &fixture.workspace,
+            &[
+                "config",
+                "filter.live-sentinel.smudge",
+                "boxdd-live-filter-must-not-run",
+            ],
+        );
+        run_git(
+            &fixture.workspace,
+            &["config", "filter.live-sentinel.required", "true"],
+        );
+        let registrations_before =
+            git_output(&fixture.workspace, ["worktree", "list", "--porcelain"])
+                .expect("worktree list before clone");
+
+        let generation = IsolatedGeneration::create_at(
+            &fixture.paths(),
+            repository_revision.trim(),
+            &fixture.next_revision,
+        )
+        .expect("isolated clone with live filter configuration");
+        assert_eq!(
+            fs::read_to_string(generation.worktree.join("isolated-filter-target.txt"))
+                .expect("isolated checkout content"),
+            "blob bytes\n"
+        );
+        assert_eq!(
+            fs::read_to_string(&protected).expect("live checkout content"),
+            "blob bytes\n"
+        );
+        let registrations_during =
+            git_output(&fixture.workspace, ["worktree", "list", "--porcelain"])
+                .expect("worktree list during clone");
+        assert_eq!(registrations_during, registrations_before);
+        let source_root = generation.source_root.clone();
+        generation.finish().expect("standalone clone cleanup");
+        assert!(!source_root.exists());
     }
 
     #[test]

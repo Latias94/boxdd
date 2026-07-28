@@ -66,6 +66,18 @@ Replace cross-world ID tables with application-owned stable keys mapped to live 
 After an in-place snapshot restore, use `SnapshotRestore::{body_id,shape_id,joint_id,chain_id}` to
 translate IDs captured at snapshot time. A fresh `SnapshotLoad` publishes its newly minted IDs.
 
+`ContactId` no longer owns inherent inspection methods. Call the corresponding method on the
+owning `World` or `WorldHandle` instead:
+
+| Removed `ContactId` method | Replacement |
+| --- | --- |
+| `ContactId::is_valid` | `World::contact_is_valid(id)` or `WorldHandle::contact_is_valid(id)` |
+| `ContactId::try_is_valid` | `World::try_contact_is_valid(id)` or `WorldHandle::try_contact_is_valid(id)` |
+| `ContactId::data` | `World::contact_data(id)` or `WorldHandle::contact_data(id)` |
+| `ContactId::try_data` | `World::try_contact_data(id)` or `WorldHandle::try_contact_data(id)` |
+| `ContactId::data_raw` | `World::contact_data_raw(id)` or `WorldHandle::contact_data_raw(id)` |
+| `ContactId::try_data_raw` | `World::try_contact_data_raw(id)` or `WorldHandle::try_contact_data_raw(id)` |
+
 ## Absolute and Local Coordinates
 
 ### Type mapping

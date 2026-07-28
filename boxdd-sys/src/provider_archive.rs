@@ -13,6 +13,10 @@ use std::{
 use object::{Object, ObjectSection, ObjectSymbol};
 use sha2::{Digest, Sha256};
 
+#[allow(dead_code)]
+pub(crate) const BUILD_POLICY_SOURCE_SHA256: &str =
+    "0dd67a0054767ec23748739fad710a02c14e1b87e2a583bfbfc7e6946f4bf05b";
+
 const MAX_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_ARCHIVE_MEMBERS: usize = 16_384;
 const MAX_ARCHIVE_SYMBOLS: usize = 262_144;

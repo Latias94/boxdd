@@ -692,10 +692,6 @@ pub(super) fn run_command(command: &mut Command, label: &str) -> Result<()> {
     }
 }
 
-pub(super) fn cargo_target_dir(root: &Path) -> Result<PathBuf> {
-    QualifiedCargo::qualify(root).map(|cargo| cargo.target_dir().to_path_buf())
-}
-
 pub(super) fn replace_dir_under(dir: &Path, allowed_root: &Path) -> Result<()> {
     fs::create_dir_all(allowed_root).map_err(|source| Error::io(allowed_root, source))?;
     require_real_directory(allowed_root, "allowed replacement root")?;

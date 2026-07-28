@@ -14,6 +14,10 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+#[allow(dead_code)]
+pub(crate) const BUILD_POLICY_SOURCE_SHA256: &str =
+    "6ed071421f1d32483c693f40c2f28f45f50bbb4bea448a524589422e07e1fb6b";
+
 #[cfg(unix)]
 use std::{
     ffi::CString,
@@ -29,7 +33,11 @@ pub const EFFECTIVE_SOURCE_SCHEMA_VERSION: u64 = 1;
 pub const WORLD_SNAPSHOT_SOURCE: &str = "src/world_snapshot.c";
 
 const EFFECTIVE_SOURCE_DOMAIN: &[u8] = b"boxdd.effective-source.v1\0";
+const ADAPTER_SOURCE_DOMAIN: &[u8] = b"boxdd.adapter.sources.v1\0";
+const BUILD_POLICY_SOURCE_DOMAIN: &[u8] = b"boxdd.build-policy-source.v1\0";
+const BUILD_POLICY_DIGEST_BYTES: usize = 64;
 const MATERIALIZED_SOURCE_DIRECTORY: &str = "boxdd-effective-source";
+const MATERIALIZED_ADAPTER_SOURCE_DIRECTORY: &str = "boxdd-adapter-source";
 const STAGING_ATTEMPTS: u64 = 128;
 const SOURCE_ROOT: &str = "third-party/box2d";
 const UPSTREAM_MANIFEST: &str = "upstream.toml";
@@ -37,6 +45,48 @@ const UPSTREAM_BACKPORT_REPOSITORY: &str = "https://github.com/erincatto/box2d.g
 const UPSTREAM_BACKPORT_COMMIT: &str = "c7a044a08d8e25511b7bce8d554cf5392a783497";
 
 static STAGING_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+pub const ADAPTER_SOURCE_PATHS: &[&str] = &[
+    "effective-source.toml",
+    "native/boxdd_adapter.h",
+    "native/boxdd_adapter.c",
+    "native/boxdd_identity_values.c",
+    "native/boxdd_private_abi.inl",
+    "native/boxdd_recording_adapter.c",
+    "native/boxdd_snapshot_layout.inl",
+    "native/boxdd_snapshot_validate.c",
+    "native/boxdd_wasm_runtime.js",
+    "src/source_overlay.rs",
+];
+
+/// Build-script sources and manifests whose exact bytes define the running capture policy.
+///
+/// The build script embeds these files with `include_bytes!` and supplies them to
+/// [`materialize_build_inputs`]. Keeping the closed inventory here lets the capture reject a
+/// partially updated or stale build-script executable before it derives any artifact identity.
+pub const BUILD_POLICY_SOURCE_PATHS: &[&str] = &[
+    "Cargo.toml",
+    "build.rs",
+    "effective-source.toml",
+    "src/bindgen_contract.rs",
+    "src/build_support.rs",
+    "src/prebuilt_provenance.rs",
+    "src/precision.rs",
+    "src/provenance_policy.rs",
+    "src/provider_archive.rs",
+    "src/provider_manifest.rs",
+    "src/source_overlay.rs",
+    "src/wasm_provider_contract.rs",
+    "upstream.toml",
+];
+
+const ADAPTER_C_SOURCE_PATHS: &[&str] = &[
+    "native/boxdd_adapter.c",
+    "native/boxdd_recording_adapter.c",
+    "native/boxdd_snapshot_validate.c",
+];
+
+const ADAPTER_IDENTITY_PROBE_SOURCE: &str = "native/boxdd_identity_values.c";
 
 /// The full identity of the reviewed upstream tree after applying the declared overlay.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -54,6 +104,104 @@ pub struct MaterializedEffectiveSources {
     pub public_include: PathBuf,
     pub private_include: PathBuf,
     pub c_sources: Vec<PathBuf>,
+}
+
+/// Immutable repository-adapter bytes and the identity derived from those exact bytes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MaterializedAdapterSources {
+    pub adapter_source_sha256: String,
+    pub root: PathBuf,
+    pub native_include: PathBuf,
+    pub identity_probe_source: PathBuf,
+    pub c_sources: Vec<PathBuf>,
+}
+
+/// One source file or manifest embedded in the currently executing build script.
+#[derive(Clone, Copy, Debug)]
+pub struct CompiledBuildPolicySource<'a> {
+    relative_path: &'a str,
+    bytes: &'a [u8],
+    kind: CompiledBuildPolicySourceKind<'a>,
+}
+
+impl<'a> CompiledBuildPolicySource<'a> {
+    /// Bind a Rust policy source to both its embedded bytes and compiled AST constant.
+    pub const fn rust(
+        relative_path: &'a str,
+        bytes: &'a [u8],
+        compiled_source_sha256: &'a str,
+    ) -> Self {
+        Self {
+            relative_path,
+            bytes,
+            kind: CompiledBuildPolicySourceKind::Rust {
+                compiled_source_sha256,
+            },
+        }
+    }
+
+    /// Bind a non-Rust manifest to its embedded bytes.
+    pub const fn data(relative_path: &'a str, bytes: &'a [u8]) -> Self {
+        Self {
+            relative_path,
+            bytes,
+            kind: CompiledBuildPolicySourceKind::Data,
+        }
+    }
+
+    pub const fn relative_path(&self) -> &str {
+        self.relative_path
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum CompiledBuildPolicySourceKind<'a> {
+    Rust { compiled_source_sha256: &'a str },
+    Data,
+}
+
+/// Declared and recomputed identity of one canonical Rust build-policy source.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BuildPolicySourceIdentity {
+    pub declared_sha256: String,
+    pub normalized_sha256: String,
+}
+
+impl BuildPolicySourceIdentity {
+    pub fn is_current(&self) -> bool {
+        self.declared_sha256 == self.normalized_sha256
+    }
+}
+
+/// Effective Box2D and repository-adapter compiler inputs captured as one source generation.
+#[derive(Debug)]
+pub struct MaterializedBuildInputs {
+    pub effective: MaterializedEffectiveSources,
+    pub adapter: MaterializedAdapterSources,
+    pub vendored_source_sha256: String,
+    manifest_root: PathBuf,
+    live_files: Vec<CapturedLiveFile>,
+    effective_files: Vec<PreparedSourceFile>,
+    adapter_files: Vec<PreparedSourceFile>,
+}
+
+impl MaterializedBuildInputs {
+    /// Revalidate both the live cohort and every byte exposed to a compiler.
+    pub fn revalidate(&self) -> Result<(), String> {
+        self.revalidate_live()?;
+        self.revalidate_materialized()
+    }
+
+    /// Reject repository drift relative to the exact cohort captured by this build.
+    pub fn revalidate_live(&self) -> Result<(), String> {
+        revalidate_live_files(&self.manifest_root, &self.live_files)
+    }
+
+    /// Reject missing, extra, symlinked, or changed bytes in either materialized tree.
+    pub fn revalidate_materialized(&self) -> Result<(), String> {
+        validate_materialized_tree(&self.effective.root, &self.effective_files)?;
+        validate_materialized_tree(&self.adapter.root, &self.adapter_files)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -196,19 +344,175 @@ struct InventoryEntry {
     relative_path: PathBuf,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct PreparedEffectiveSources {
     identity: EffectiveSourceIdentity,
     files: Vec<PreparedSourceFile>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct PreparedSourceFile {
     role: SourceRole,
     normalized_path: String,
     relative_path: PathBuf,
     source_path: PathBuf,
+    source_bytes: Vec<u8>,
     effective_bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+struct CapturedLiveFile {
+    normalized_path: String,
+    relative_path: PathBuf,
+    source_path: PathBuf,
+    bytes: Vec<u8>,
+    compiled_source_sha256: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct BuildPolicySourceField {
+    value_start: usize,
+    value_end: usize,
+}
+
+/// Return whether an entry in the closed build-policy inventory is Rust source.
+pub fn is_rust_build_policy_source(relative_path: &str) -> bool {
+    relative_path.ends_with(".rs") && BUILD_POLICY_SOURCE_PATHS.contains(&relative_path)
+}
+
+/// Parse and recompute the normalized identity of one Rust build-policy source.
+pub fn build_policy_source_identity(
+    relative_path: &str,
+    source: &[u8],
+) -> Result<BuildPolicySourceIdentity, String> {
+    if !is_rust_build_policy_source(relative_path) {
+        return Err(format!(
+            "build policy source {relative_path:?} is not a Rust entry in the closed inventory"
+        ));
+    }
+    if source.starts_with(&[0xef, 0xbb, 0xbf]) {
+        return Err(format!(
+            "Rust build policy source {relative_path:?} must not contain a UTF-8 BOM"
+        ));
+    }
+    if source.contains(&b'\r') {
+        return Err(format!(
+            "Rust build policy source {relative_path:?} must use canonical LF line endings"
+        ));
+    }
+
+    let field = parse_build_policy_source_field(relative_path, source)?;
+    let declared = std::str::from_utf8(&source[field.value_start..field.value_end])
+        .expect("validated build policy digest is ASCII")
+        .to_owned();
+    let mut digest = Sha256::new();
+    digest.update(BUILD_POLICY_SOURCE_DOMAIN);
+    update_length_prefixed(&mut digest, relative_path.as_bytes());
+    digest.update((source.len() as u64).to_le_bytes());
+    digest.update(&source[..field.value_start]);
+    digest.update([b'0'; BUILD_POLICY_DIGEST_BYTES]);
+    digest.update(&source[field.value_end..]);
+
+    Ok(BuildPolicySourceIdentity {
+        declared_sha256: declared,
+        normalized_sha256: hex_digest(digest.finalize()),
+    })
+}
+
+/// Return canonical bytes with the unique self-hash field refreshed.
+pub fn canonicalize_build_policy_source(
+    relative_path: &str,
+    source: &[u8],
+) -> Result<Vec<u8>, String> {
+    let field = parse_build_policy_source_field(relative_path, source)?;
+    let identity = build_policy_source_identity(relative_path, source)?;
+    let mut canonical = source.to_vec();
+    canonical[field.value_start..field.value_end]
+        .copy_from_slice(identity.normalized_sha256.as_bytes());
+    Ok(canonical)
+}
+
+/// Validate the complete embedded/live policy cohort before any build-script side effect.
+pub fn validate_compiled_build_policy_sources(
+    manifest_dir: &Path,
+    compiled_policy_sources: &[CompiledBuildPolicySource<'_>],
+) -> Result<(), String> {
+    let manifest_root = canonical_real_root(manifest_dir, "build policy root")?;
+    let policy_files = capture_compiled_policy_sources(&manifest_root, compiled_policy_sources)?;
+    let files = policy_files.into_values().collect::<Vec<_>>();
+    revalidate_live_files(&manifest_root, &files)
+}
+
+fn parse_build_policy_source_field(
+    relative_path: &str,
+    source: &[u8],
+) -> Result<BuildPolicySourceField, String> {
+    if !is_rust_build_policy_source(relative_path) {
+        return Err(format!(
+            "build policy source {relative_path:?} is not a Rust entry in the closed inventory"
+        ));
+    }
+
+    // Keep these fragments split so this parser does not create a second field in its own source.
+    let mut anchor = b"const BUILD_POLICY_".to_vec();
+    anchor.extend_from_slice(b"SOURCE_SHA256");
+    let occurrences = source
+        .windows(anchor.len())
+        .enumerate()
+        .filter_map(|(index, window)| (window == anchor).then_some(index))
+        .collect::<Vec<_>>();
+    if occurrences.len() != 1 {
+        return Err(format!(
+            "Rust build policy source {relative_path:?} must contain exactly one self-hash field; found {}",
+            occurrences.len()
+        ));
+    }
+
+    let mut prefix = b"pub(crate) const BUILD_POLICY_".to_vec();
+    prefix.extend_from_slice(b"SOURCE_SHA256: &str =\n    \"");
+    let anchor_start = occurrences[0];
+    let declaration_start = anchor_start
+        .checked_sub(b"pub(crate) ".len())
+        .ok_or_else(|| {
+            format!(
+                "Rust build policy source {relative_path:?} self-hash field has a non-canonical prefix"
+            )
+        })?;
+    if source.get(declaration_start..declaration_start + prefix.len()) != Some(prefix.as_slice())
+        || (declaration_start != 0 && source[declaration_start - 1] != b'\n')
+    {
+        return Err(format!(
+            "Rust build policy source {relative_path:?} self-hash field has a non-canonical prefix"
+        ));
+    }
+
+    let value_start = declaration_start + prefix.len();
+    let value_end = value_start
+        .checked_add(BUILD_POLICY_DIGEST_BYTES)
+        .ok_or_else(|| format!("Rust build policy source {relative_path:?} field overflow"))?;
+    let value = source.get(value_start..value_end).ok_or_else(|| {
+        format!(
+            "Rust build policy source {relative_path:?} self-hash field is shorter than 64 bytes"
+        )
+    })?;
+    if !value
+        .iter()
+        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
+    {
+        return Err(format!(
+            "Rust build policy source {relative_path:?} self-hash field must be 64 lowercase hexadecimal bytes"
+        ));
+    }
+    if source.get(value_end..value_end + 3) != Some(b"\";\n") {
+        return Err(format!(
+            "Rust build policy source {relative_path:?} self-hash field must end with the canonical `\";` suffix and LF"
+        ));
+    }
+
+    Ok(BuildPolicySourceField {
+        value_start,
+        value_end,
+    })
 }
 
 /// Validate the complete effective-source contract without writing an overlay.
@@ -227,9 +531,96 @@ pub fn materialize_effective_box2d_sources(
     materialize_prepared_sources(prepared, output_dir)
 }
 
+/// Identify every repository-owned adapter input from one captured byte set.
+pub fn adapter_source_sha256(manifest_dir: &Path) -> Result<String, String> {
+    let files = capture_adapter_sources(manifest_dir)?;
+    Ok(captured_adapter_source_sha256(&files))
+}
+
+/// Capture and materialize every repository-owned adapter input before compilation.
+pub fn materialize_adapter_sources(
+    manifest_dir: &Path,
+    output_dir: &Path,
+) -> Result<MaterializedAdapterSources, String> {
+    let files = capture_adapter_sources(manifest_dir)?;
+    let adapter_source_sha256 = captured_adapter_source_sha256(&files);
+    materialize_prepared_adapter_sources(files, adapter_source_sha256, output_dir)
+}
+
+/// Capture effective and adapter inputs as one generation and materialize only those bytes.
+pub fn materialize_build_inputs(
+    manifest_dir: &Path,
+    output_dir: &Path,
+    compiled_policy_sources: &[CompiledBuildPolicySource<'_>],
+) -> Result<MaterializedBuildInputs, String> {
+    let manifest_root = canonical_real_root(manifest_dir, "build input root")?;
+    let policy_files = capture_compiled_policy_sources(&manifest_root, compiled_policy_sources)?;
+    let upstream_manifest = captured_policy_file(&policy_files, UPSTREAM_MANIFEST)?;
+    let effective_manifest = captured_policy_file(&policy_files, EFFECTIVE_SOURCE_MANIFEST)?;
+    let prepared_effective = prepare_effective_sources_from_manifests(
+        &manifest_root,
+        &upstream_manifest.bytes,
+        &effective_manifest.bytes,
+    )?;
+    let prepared_adapter = capture_adapter_sources_from_policy(&manifest_root, &policy_files)?;
+    let live_files = captured_build_generation_files(
+        &policy_files,
+        &prepared_effective.files,
+        &prepared_adapter,
+    )?;
+
+    // A second read closes the capture window before any compiler can consume the snapshots.
+    revalidate_live_files(&manifest_root, &live_files)?;
+
+    let effective_files = prepared_effective.files.clone();
+    let adapter_files = prepared_adapter.clone();
+    let vendored_source_sha256 = captured_vendored_source_sha256(&prepared_effective);
+    let adapter_source_sha256 = captured_adapter_source_sha256(&prepared_adapter);
+    let effective = materialize_prepared_sources(prepared_effective, output_dir)?;
+    let adapter =
+        materialize_prepared_adapter_sources(prepared_adapter, adapter_source_sha256, output_dir)?;
+    let inputs = MaterializedBuildInputs {
+        effective,
+        adapter,
+        vendored_source_sha256,
+        manifest_root,
+        live_files,
+        effective_files,
+        adapter_files,
+    };
+    inputs.revalidate()?;
+    Ok(inputs)
+}
+
 fn prepare_effective_sources(manifest_dir: &Path) -> Result<PreparedEffectiveSources, String> {
-    let upstream = load_upstream_inventory(manifest_dir)?;
-    let effective = load_effective_source_manifest(manifest_dir)?;
+    let upstream_path = manifest_dir.join(UPSTREAM_MANIFEST);
+    let upstream_bytes = fs::read(&upstream_path).map_err(|error| {
+        format!(
+            "failed to read upstream manifest {}: {error}",
+            upstream_path.display()
+        )
+    })?;
+    let effective_path = manifest_dir.join(EFFECTIVE_SOURCE_MANIFEST);
+    let effective_bytes = fs::read(&effective_path).map_err(|error| {
+        format!(
+            "failed to read effective source manifest {}: {error}",
+            effective_path.display()
+        )
+    })?;
+    prepare_effective_sources_from_manifests(manifest_dir, &upstream_bytes, &effective_bytes)
+}
+
+fn prepare_effective_sources_from_manifests(
+    manifest_dir: &Path,
+    upstream_manifest: &[u8],
+    effective_manifest: &[u8],
+) -> Result<PreparedEffectiveSources, String> {
+    let upstream =
+        parse_upstream_inventory(&manifest_dir.join(UPSTREAM_MANIFEST), upstream_manifest)?;
+    let effective = parse_effective_source_manifest(
+        &manifest_dir.join(EFFECTIVE_SOURCE_MANIFEST),
+        effective_manifest,
+    )?;
     validate_effective_source_manifest(&effective, &upstream)?;
 
     let source_root = manifest_dir.join(SOURCE_ROOT);
@@ -256,13 +647,12 @@ fn prepare_effective_sources(manifest_dir: &Path) -> Result<PreparedEffectiveSou
     }
 
     let target = &mut files[target_indices[0]];
-    let upstream_source =
-        String::from_utf8(std::mem::take(&mut target.effective_bytes)).map_err(|error| {
-            format!(
-                "reviewed upstream source {} is not UTF-8: {error}",
-                target.source_path.display()
-            )
-        })?;
+    let upstream_source = String::from_utf8(target.source_bytes.clone()).map_err(|error| {
+        format!(
+            "reviewed upstream source {} is not UTF-8: {error}",
+            target.source_path.display()
+        )
+    })?;
     target.effective_bytes = patch_world_snapshot_source(upstream_source)?.into_bytes();
 
     let identity = EffectiveSourceIdentity {
@@ -319,6 +709,382 @@ fn materialize_prepared_sources(
     materialized_sources(&prepared, root)
 }
 
+fn capture_adapter_sources(manifest_dir: &Path) -> Result<Vec<PreparedSourceFile>, String> {
+    capture_adapter_sources_from_policy(manifest_dir, &BTreeMap::new())
+}
+
+fn capture_adapter_sources_from_policy(
+    manifest_dir: &Path,
+    policy_files: &BTreeMap<String, CapturedLiveFile>,
+) -> Result<Vec<PreparedSourceFile>, String> {
+    let canonical_root = canonical_real_root(manifest_dir, "adapter source root")?;
+    ADAPTER_SOURCE_PATHS
+        .iter()
+        .map(|relative_path| {
+            let normalized_path =
+                validate_normalized_path(relative_path, "adapter source", None, None)?;
+            let relative_path = PathBuf::from(&normalized_path);
+            let (source_path, source_bytes) =
+                if let Some(compiled) = policy_files.get(&normalized_path) {
+                    (compiled.source_path.clone(), compiled.bytes.clone())
+                } else {
+                    let source_path = resolve_regular_file(
+                        &canonical_root,
+                        &relative_path,
+                        &normalized_path,
+                        "adapter source",
+                    )?;
+                    let source_bytes = fs::read(&source_path).map_err(|error| {
+                        format!(
+                            "failed to read adapter source {normalized_path:?} at {}: {error}",
+                            source_path.display()
+                        )
+                    })?;
+                    (source_path, source_bytes)
+                };
+            let role = if ADAPTER_C_SOURCE_PATHS.contains(&normalized_path.as_str()) {
+                SourceRole::CSource
+            } else {
+                SourceRole::InlineFile
+            };
+            Ok(PreparedSourceFile {
+                role,
+                normalized_path,
+                relative_path,
+                source_path,
+                effective_bytes: source_bytes.clone(),
+                source_bytes,
+            })
+        })
+        .collect()
+}
+
+fn capture_compiled_policy_sources(
+    manifest_root: &Path,
+    compiled_sources: &[CompiledBuildPolicySource<'_>],
+) -> Result<BTreeMap<String, CapturedLiveFile>, String> {
+    if compiled_sources.len() != BUILD_POLICY_SOURCE_PATHS.len() {
+        return Err(format!(
+            "compiled build policy inventory has {} entries; expected {}",
+            compiled_sources.len(),
+            BUILD_POLICY_SOURCE_PATHS.len()
+        ));
+    }
+
+    let mut captured = BTreeMap::new();
+    for (index, (expected, compiled)) in BUILD_POLICY_SOURCE_PATHS
+        .iter()
+        .zip(compiled_sources)
+        .enumerate()
+    {
+        if compiled.relative_path != *expected {
+            return Err(format!(
+                "compiled build policy entry #{index} is {:?}; expected {:?}",
+                compiled.relative_path, expected
+            ));
+        }
+        let normalized =
+            validate_normalized_path(compiled.relative_path, "compiled build policy", None, None)?;
+        let compiled_source_sha256 = match (is_rust_build_policy_source(&normalized), compiled.kind)
+        {
+            (
+                true,
+                CompiledBuildPolicySourceKind::Rust {
+                    compiled_source_sha256,
+                },
+            ) => Some(compiled_source_sha256),
+            (false, CompiledBuildPolicySourceKind::Data) => None,
+            (true, CompiledBuildPolicySourceKind::Data) => {
+                return Err(format!(
+                    "Rust build policy source {normalized:?} has no AST-compiled self-hash"
+                ));
+            }
+            (false, CompiledBuildPolicySourceKind::Rust { .. }) => {
+                return Err(format!(
+                    "non-Rust build policy input {normalized:?} must use byte identity only"
+                ));
+            }
+        };
+        if let Some(compiled_source_sha256) = compiled_source_sha256 {
+            validate_build_policy_source_generation(
+                &normalized,
+                compiled.bytes,
+                compiled_source_sha256,
+                "embedded",
+            )?;
+        }
+        let relative_path = PathBuf::from(&normalized);
+        let source_path = resolve_regular_file(
+            manifest_root,
+            &relative_path,
+            &normalized,
+            "compiled build policy",
+        )?;
+        let live_bytes = fs::read(&source_path).map_err(|error| {
+            format!(
+                "failed to read compiled build policy {normalized:?} at {}: {error}",
+                source_path.display()
+            )
+        })?;
+        if let Some(compiled_source_sha256) = compiled_source_sha256 {
+            validate_build_policy_source_generation(
+                &normalized,
+                &live_bytes,
+                compiled_source_sha256,
+                "live",
+            )?;
+        }
+        if live_bytes != compiled.bytes {
+            return Err(format!(
+                "build policy {normalized:?} differs from the bytes compiled into the running build script; rebuild before producing an artifact"
+            ));
+        }
+        let previous = captured.insert(
+            normalized.clone(),
+            CapturedLiveFile {
+                normalized_path: normalized,
+                relative_path,
+                source_path,
+                bytes: compiled.bytes.to_vec(),
+                compiled_source_sha256: compiled_source_sha256.map(str::to_owned),
+            },
+        );
+        if previous.is_some() {
+            return Err("compiled build policy inventory contains a duplicate path".to_owned());
+        }
+    }
+    Ok(captured)
+}
+
+fn captured_policy_file<'a>(
+    policy_files: &'a BTreeMap<String, CapturedLiveFile>,
+    relative_path: &str,
+) -> Result<&'a CapturedLiveFile, String> {
+    policy_files.get(relative_path).ok_or_else(|| {
+        format!("compiled build policy inventory is missing required file {relative_path:?}")
+    })
+}
+
+fn captured_build_generation_files(
+    policy_files: &BTreeMap<String, CapturedLiveFile>,
+    effective_files: &[PreparedSourceFile],
+    adapter_files: &[PreparedSourceFile],
+) -> Result<Vec<CapturedLiveFile>, String> {
+    let mut generation = policy_files.clone();
+    for file in effective_files {
+        let normalized_path = format!("{SOURCE_ROOT}/{}", file.normalized_path);
+        insert_generation_file(
+            &mut generation,
+            CapturedLiveFile {
+                relative_path: PathBuf::from(&normalized_path),
+                normalized_path,
+                source_path: file.source_path.clone(),
+                bytes: file.source_bytes.clone(),
+                compiled_source_sha256: None,
+            },
+        )?;
+    }
+    for file in adapter_files {
+        insert_generation_file(
+            &mut generation,
+            CapturedLiveFile {
+                normalized_path: file.normalized_path.clone(),
+                relative_path: file.relative_path.clone(),
+                source_path: file.source_path.clone(),
+                bytes: file.source_bytes.clone(),
+                compiled_source_sha256: None,
+            },
+        )?;
+    }
+    Ok(generation.into_values().collect())
+}
+
+fn insert_generation_file(
+    generation: &mut BTreeMap<String, CapturedLiveFile>,
+    candidate: CapturedLiveFile,
+) -> Result<(), String> {
+    if let Some(existing) = generation.get(&candidate.normalized_path) {
+        if existing.relative_path != candidate.relative_path
+            || existing.source_path != candidate.source_path
+            || existing.bytes != candidate.bytes
+        {
+            return Err(format!(
+                "overlapping build input {:?} was captured from different bytes or paths",
+                candidate.normalized_path
+            ));
+        }
+        return Ok(());
+    }
+    generation.insert(candidate.normalized_path.clone(), candidate);
+    Ok(())
+}
+
+fn revalidate_live_files(manifest_root: &Path, files: &[CapturedLiveFile]) -> Result<(), String> {
+    for file in files {
+        if let Some(compiled_source_sha256) = &file.compiled_source_sha256 {
+            validate_build_policy_source_generation(
+                &file.normalized_path,
+                &file.bytes,
+                compiled_source_sha256,
+                "embedded",
+            )?;
+        }
+        let current_path = resolve_regular_file(
+            manifest_root,
+            &file.relative_path,
+            &file.normalized_path,
+            "captured build input",
+        )?;
+        if current_path != file.source_path {
+            return Err(format!(
+                "captured build input {:?} resolved to {} instead of {}",
+                file.normalized_path,
+                current_path.display(),
+                file.source_path.display()
+            ));
+        }
+        let current = fs::read(&current_path).map_err(|error| {
+            format!(
+                "failed to re-read captured build input {:?} at {}: {error}",
+                file.normalized_path,
+                current_path.display()
+            )
+        })?;
+        if let Some(compiled_source_sha256) = &file.compiled_source_sha256 {
+            validate_build_policy_source_generation(
+                &file.normalized_path,
+                &current,
+                compiled_source_sha256,
+                "live",
+            )?;
+        }
+        if current != file.bytes {
+            return Err(format!(
+                "captured build input {:?} changed after its build generation was captured",
+                file.normalized_path
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_build_policy_source_generation(
+    relative_path: &str,
+    source: &[u8],
+    compiled_source_sha256: &str,
+    generation: &str,
+) -> Result<(), String> {
+    validate_sha256(
+        &format!("AST-compiled build policy self-hash for {relative_path:?}"),
+        compiled_source_sha256,
+    )?;
+    let identity = build_policy_source_identity(relative_path, source)?;
+    if !identity.is_current() {
+        return Err(format!(
+            "{generation} Rust build policy source {relative_path:?} declares self-hash {} but its normalized bytes require {}",
+            identity.declared_sha256, identity.normalized_sha256
+        ));
+    }
+    if identity.normalized_sha256 != compiled_source_sha256 {
+        return Err(format!(
+            "{generation} Rust build policy source {relative_path:?} has normalized self-hash {} but the executing AST compiled {compiled_source_sha256}",
+            identity.normalized_sha256
+        ));
+    }
+    Ok(())
+}
+
+fn captured_adapter_source_sha256(files: &[PreparedSourceFile]) -> String {
+    debug_assert_eq!(files.len(), ADAPTER_SOURCE_PATHS.len());
+    let mut digest = Sha256::new();
+    digest.update(ADAPTER_SOURCE_DOMAIN);
+    for file in files {
+        update_length_prefixed(&mut digest, file.normalized_path.as_bytes());
+        update_length_prefixed(&mut digest, &file.effective_bytes);
+    }
+    hex_digest(digest.finalize())
+}
+
+fn captured_vendored_source_sha256(prepared: &PreparedEffectiveSources) -> String {
+    let mut files = prepared.files.iter().collect::<Vec<_>>();
+    files.sort_by(|left, right| left.normalized_path.cmp(&right.normalized_path));
+    let mut digest = Sha256::new();
+    digest.update(b"boxdd.vendored-source-identity.v1\0");
+    update_length_prefixed(&mut digest, prepared.identity.upstream_sha.as_bytes());
+    update_length_prefixed(&mut digest, prepared.identity.source_tree.as_bytes());
+    digest.update((files.len() as u64).to_le_bytes());
+    for file in files {
+        update_length_prefixed(&mut digest, file.normalized_path.as_bytes());
+        update_length_prefixed(&mut digest, &file.source_bytes);
+    }
+    hex_digest(digest.finalize())
+}
+
+fn materialize_prepared_adapter_sources(
+    files: Vec<PreparedSourceFile>,
+    adapter_source_sha256: String,
+    output_dir: &Path,
+) -> Result<MaterializedAdapterSources, String> {
+    let parent = prepare_materialized_parent_named(
+        output_dir,
+        MATERIALIZED_ADAPTER_SOURCE_DIRECTORY,
+        "adapter source",
+    )?;
+    let root = parent.join(&adapter_source_sha256);
+    match fs::symlink_metadata(&root) {
+        Ok(_) => {
+            validate_materialized_tree(&root, &files)?;
+            return materialized_adapter_sources(files, adapter_source_sha256, root);
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(format!(
+                "failed to inspect adapter source tree {}: {error}",
+                root.display()
+            ));
+        }
+    }
+
+    let mut staging = create_staging_directory(&parent, &adapter_source_sha256)?;
+    write_materialized_tree(staging.path(), &files)?;
+    validate_materialized_tree(staging.path(), &files)?;
+
+    match publish_staging_directory(staging.path(), &root)? {
+        PublishOutcome::Published => staging.disarm(),
+        PublishOutcome::Existing => validate_materialized_tree(&root, &files)?,
+    }
+    validate_materialized_tree(&root, &files)?;
+    materialized_adapter_sources(files, adapter_source_sha256, root)
+}
+
+fn materialized_adapter_sources(
+    files: Vec<PreparedSourceFile>,
+    adapter_source_sha256: String,
+    root: PathBuf,
+) -> Result<MaterializedAdapterSources, String> {
+    validate_materialized_tree(&root, &files)?;
+    let native_include = root.join("native");
+    ensure_real_directory(&native_include, "adapter source include directory")?;
+    let identity_probe_source = root.join(ADAPTER_IDENTITY_PROBE_SOURCE);
+    let c_sources = ADAPTER_C_SOURCE_PATHS
+        .iter()
+        .map(|relative_path| root.join(relative_path))
+        .collect::<Vec<_>>();
+    if !identity_probe_source.is_file() || c_sources.iter().any(|source| !source.is_file()) {
+        return Err(format!(
+            "adapter source tree {} is missing a compiler input",
+            root.display()
+        ));
+    }
+    Ok(MaterializedAdapterSources {
+        adapter_source_sha256,
+        root,
+        native_include,
+        identity_probe_source,
+        c_sources,
+    })
+}
+
 fn materialized_sources(
     prepared: &PreparedEffectiveSources,
     root: PathBuf,
@@ -344,19 +1110,31 @@ fn materialized_sources(
 }
 
 fn prepare_materialized_parent(output_dir: &Path) -> Result<PathBuf, String> {
-    ensure_real_directory(output_dir, "effective source output directory")?;
-    let parent = output_dir.join(MATERIALIZED_SOURCE_DIRECTORY);
+    prepare_materialized_parent_named(
+        output_dir,
+        MATERIALIZED_SOURCE_DIRECTORY,
+        "effective source",
+    )
+}
+
+fn prepare_materialized_parent_named(
+    output_dir: &Path,
+    directory_name: &str,
+    label: &str,
+) -> Result<PathBuf, String> {
+    ensure_real_directory(output_dir, &format!("{label} output directory"))?;
+    let parent = output_dir.join(directory_name);
     match fs::create_dir(&parent) {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
         Err(error) => {
             return Err(format!(
-                "failed to create effective source parent {}: {error}",
+                "failed to create {label} parent {}: {error}",
                 parent.display()
             ));
         }
     }
-    ensure_real_directory(&parent, "effective source parent")?;
+    ensure_real_directory(&parent, &format!("{label} parent"))?;
     Ok(parent)
 }
 
@@ -766,9 +1544,23 @@ fn validate_materialized_directory(
     Ok(())
 }
 
+#[cfg(test)]
 fn load_effective_source_manifest(manifest_dir: &Path) -> Result<EffectiveSourceManifest, String> {
     let path = manifest_dir.join(EFFECTIVE_SOURCE_MANIFEST);
-    let value = read_toml(&path, "effective source manifest")?;
+    let bytes = fs::read(&path).map_err(|error| {
+        format!(
+            "failed to read effective source manifest {}: {error}",
+            path.display()
+        )
+    })?;
+    parse_effective_source_manifest(&path, &bytes)
+}
+
+fn parse_effective_source_manifest(
+    path: &Path,
+    bytes: &[u8],
+) -> Result<EffectiveSourceManifest, String> {
+    let value = parse_toml_bytes(path, bytes, "effective source manifest")?;
     let table = value
         .as_table()
         .ok_or_else(|| format!("{} root must be a TOML table", path.display()))?;
@@ -1000,9 +1792,20 @@ fn validate_effective_source_manifest(
     Ok(())
 }
 
+#[cfg(test)]
 fn load_upstream_inventory(manifest_dir: &Path) -> Result<UpstreamInventory, String> {
     let path = manifest_dir.join(UPSTREAM_MANIFEST);
-    let value = read_toml(&path, "upstream manifest")?;
+    let bytes = fs::read(&path).map_err(|error| {
+        format!(
+            "failed to read upstream manifest {}: {error}",
+            path.display()
+        )
+    })?;
+    parse_upstream_inventory(&path, &bytes)
+}
+
+fn parse_upstream_inventory(path: &Path, bytes: &[u8]) -> Result<UpstreamInventory, String> {
+    let value = parse_toml_bytes(path, bytes, "upstream manifest")?;
     let root = value
         .as_table()
         .ok_or_else(|| format!("{} root must be a TOML table", path.display()))?;
@@ -1070,7 +1873,7 @@ fn prepare_source_file(
 ) -> Result<PreparedSourceFile, String> {
     let source_path =
         resolve_inventory_file(canonical_root, &entry.relative_path, &entry.normalized_path)?;
-    let effective_bytes = fs::read(&source_path).map_err(|error| {
+    let source_bytes = fs::read(&source_path).map_err(|error| {
         format!(
             "failed to read vendored source {:?} at {}: {error}",
             entry.normalized_path,
@@ -1082,29 +1885,26 @@ fn prepare_source_file(
         normalized_path: entry.normalized_path.clone(),
         relative_path: entry.relative_path.clone(),
         source_path,
-        effective_bytes,
+        effective_bytes: source_bytes.clone(),
+        source_bytes,
     })
 }
 
 fn canonical_source_root(source_root: &Path) -> Result<PathBuf, String> {
-    let metadata = fs::symlink_metadata(source_root).map_err(|error| {
-        format!(
-            "failed to inspect vendored source root {}: {error}",
-            source_root.display()
-        )
-    })?;
+    canonical_real_root(source_root, "vendored source root")
+}
+
+fn canonical_real_root(root: &Path, label: &str) -> Result<PathBuf, String> {
+    let metadata = fs::symlink_metadata(root)
+        .map_err(|error| format!("failed to inspect {label} {}: {error}", root.display()))?;
     if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
         return Err(format!(
-            "vendored source root {} must be a real non-symlink directory",
-            source_root.display()
+            "{label} {} must be a real non-symlink directory",
+            root.display()
         ));
     }
-    fs::canonicalize(source_root).map_err(|error| {
-        format!(
-            "failed to resolve vendored source root {}: {error}",
-            source_root.display()
-        )
-    })
+    fs::canonicalize(root)
+        .map_err(|error| format!("failed to resolve {label} {}: {error}", root.display()))
 }
 
 fn resolve_inventory_file(
@@ -1112,46 +1912,60 @@ fn resolve_inventory_file(
     relative_path: &Path,
     normalized_path: &str,
 ) -> Result<PathBuf, String> {
+    resolve_regular_file(
+        canonical_root,
+        relative_path,
+        normalized_path,
+        "vendored source",
+    )
+}
+
+fn resolve_regular_file(
+    canonical_root: &Path,
+    relative_path: &Path,
+    normalized_path: &str,
+    label: &str,
+) -> Result<PathBuf, String> {
     let mut current = canonical_root.to_path_buf();
     for component in relative_path.components() {
         let Component::Normal(component) = component else {
             return Err(format!(
-                "vendored source {normalized_path:?} is not a normalized relative path"
+                "{label} {normalized_path:?} is not a normalized relative path"
             ));
         };
         current.push(component);
         let metadata = fs::symlink_metadata(&current).map_err(|error| {
             format!(
-                "failed to inspect vendored source {normalized_path:?} at {}: {error}",
+                "failed to inspect {label} {normalized_path:?} at {}: {error}",
                 current.display()
             )
         })?;
         if metadata.file_type().is_symlink() {
             return Err(format!(
-                "vendored source {normalized_path:?} must not traverse a symlink"
+                "{label} {normalized_path:?} must not traverse a symlink"
             ));
         }
     }
     let metadata = fs::symlink_metadata(&current).map_err(|error| {
         format!(
-            "failed to inspect vendored source {normalized_path:?} at {}: {error}",
+            "failed to inspect {label} {normalized_path:?} at {}: {error}",
             current.display()
         )
     })?;
     if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
         return Err(format!(
-            "vendored source {normalized_path:?} must be a regular non-symlink file"
+            "{label} {normalized_path:?} must be a regular non-symlink file"
         ));
     }
     let canonical = fs::canonicalize(&current).map_err(|error| {
         format!(
-            "failed to resolve vendored source {normalized_path:?} at {}: {error}",
+            "failed to resolve {label} {normalized_path:?} at {}: {error}",
             current.display()
         )
     })?;
     if !canonical.starts_with(canonical_root) {
         return Err(format!(
-            "vendored source {normalized_path:?} escapes {}",
+            "{label} {normalized_path:?} escapes {}",
             canonical_root.display()
         ));
     }
@@ -1247,10 +2061,10 @@ fn validate_normalized_path(
     Ok(value.to_owned())
 }
 
-fn read_toml(path: &Path, label: &str) -> Result<toml::Value, String> {
-    let source = fs::read_to_string(path)
-        .map_err(|error| format!("failed to read {label} {}: {error}", path.display()))?;
-    toml::from_str(&source)
+fn parse_toml_bytes(path: &Path, bytes: &[u8], label: &str) -> Result<toml::Value, String> {
+    let source = std::str::from_utf8(bytes)
+        .map_err(|error| format!("{label} {} is not UTF-8: {error}", path.display()))?;
+    toml::from_str(source)
         .map_err(|error| format!("failed to parse {label} {}: {error}", path.display()))
 }
 
@@ -1413,6 +2227,119 @@ mod tests {
             fs::copy(source, destination).unwrap();
         }
         directory
+    }
+
+    fn adapter_fixture(root: &Path) {
+        let repository = repository_manifest_dir();
+        for relative in ADAPTER_SOURCE_PATHS {
+            let source = repository.join(relative);
+            let destination = root.join(relative);
+            fs::create_dir_all(destination.parent().unwrap()).unwrap();
+            fs::copy(source, destination).unwrap();
+        }
+    }
+
+    fn build_input_fixture() -> TempDir {
+        let directory = fixture();
+        let repository = repository_manifest_dir();
+        for relative in BUILD_POLICY_SOURCE_PATHS.iter().chain(ADAPTER_SOURCE_PATHS) {
+            let source = repository.join(relative);
+            let destination = directory.path().join(relative);
+            fs::create_dir_all(destination.parent().unwrap()).unwrap();
+            fs::copy(source, destination).unwrap();
+        }
+        directory
+    }
+
+    struct CompiledPolicyFixture {
+        bytes: Vec<Vec<u8>>,
+        source_sha256: Vec<Option<String>>,
+    }
+
+    impl CompiledPolicyFixture {
+        fn capture(root: &Path) -> Self {
+            let bytes = BUILD_POLICY_SOURCE_PATHS
+                .iter()
+                .map(|relative| fs::read(root.join(relative)).unwrap())
+                .collect::<Vec<_>>();
+            let source_sha256 = BUILD_POLICY_SOURCE_PATHS
+                .iter()
+                .zip(&bytes)
+                .map(|(relative_path, source)| {
+                    is_rust_build_policy_source(relative_path).then(|| {
+                        build_policy_source_identity(relative_path, source)
+                            .unwrap()
+                            .declared_sha256
+                    })
+                })
+                .collect();
+            Self {
+                bytes,
+                source_sha256,
+            }
+        }
+
+        fn sources(&self) -> Vec<CompiledBuildPolicySource<'_>> {
+            BUILD_POLICY_SOURCE_PATHS
+                .iter()
+                .zip(&self.bytes)
+                .zip(&self.source_sha256)
+                .map(
+                    |((relative_path, bytes), source_sha256)| match source_sha256 {
+                        Some(source_sha256) => {
+                            CompiledBuildPolicySource::rust(relative_path, bytes, source_sha256)
+                        }
+                        None => CompiledBuildPolicySource::data(relative_path, bytes),
+                    },
+                )
+                .collect()
+        }
+    }
+
+    fn policy_source_with_hash(hash: &str, suffix: &[u8], body: &[u8]) -> Vec<u8> {
+        let mut source = b"pub(crate) const BUILD_POLICY_".to_vec();
+        source.extend_from_slice(b"SOURCE_SHA256: &str =\n    \"");
+        source.extend_from_slice(hash.as_bytes());
+        source.extend_from_slice(suffix);
+        source.extend_from_slice(body);
+        source
+    }
+
+    fn declared_external_policy_modules(source: &str, label: &str) -> BTreeSet<String> {
+        let mut paths = BTreeSet::new();
+        let mut pending_path = None::<String>;
+        for line in source.lines() {
+            let line = line.trim();
+            if let Some(path) = line
+                .strip_prefix("#[path = \"")
+                .and_then(|path| path.strip_suffix("\"]"))
+            {
+                assert!(pending_path.is_none(), "nested path attribute in {label}");
+                pending_path = Some(if path.starts_with("src/") {
+                    path.to_owned()
+                } else {
+                    format!("src/{path}")
+                });
+                continue;
+            }
+            let external_mod = line
+                .strip_prefix("mod ")
+                .or_else(|| line.strip_prefix("pub(crate) mod "))
+                .and_then(|module| module.strip_suffix(';'));
+            if let Some(module) = external_mod {
+                let path = pending_path
+                    .take()
+                    .unwrap_or_else(|| panic!("bare external module {module:?} in {label}"));
+                assert!(
+                    paths.insert(path),
+                    "duplicate external module path in {label}"
+                );
+            } else if pending_path.is_some() && !line.is_empty() && !line.starts_with("#[") {
+                panic!("unpaired path attribute in {label}");
+            }
+        }
+        assert!(pending_path.is_none(), "trailing path attribute in {label}");
+        paths
     }
 
     fn read_effective_manifest(directory: &TempDir) -> String {
@@ -1677,6 +2604,354 @@ mod tests {
                 .private_include
                 .join("world_snapshot.c")
                 .is_file()
+        );
+    }
+
+    #[test]
+    fn adapter_snapshot_survives_live_source_drift() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("source");
+        let output = directory.path().join("output");
+        fs::create_dir(&source).unwrap();
+        fs::create_dir(&output).unwrap();
+        adapter_fixture(&source);
+
+        let first = materialize_adapter_sources(&source, &output).unwrap();
+        let first_digest = first.adapter_source_sha256.clone();
+        let first_adapter = fs::read(first.root.join("native/boxdd_adapter.c")).unwrap();
+        let first_probe = fs::read(&first.identity_probe_source).unwrap();
+        let first_private_abi = fs::read(first.root.join("native/boxdd_private_abi.inl")).unwrap();
+
+        fs::write(
+            source.join("native/boxdd_adapter.c"),
+            b"mutated adapter source\n",
+        )
+        .unwrap();
+        fs::write(
+            source.join("native/boxdd_identity_values.c"),
+            b"mutated identity probe\n",
+        )
+        .unwrap();
+        fs::write(
+            source.join("native/boxdd_private_abi.inl"),
+            b"mutated private ABI\n",
+        )
+        .unwrap();
+
+        assert_eq!(adapter_source_sha256(&first.root).unwrap(), first_digest);
+        assert_eq!(
+            fs::read(first.root.join("native/boxdd_adapter.c")).unwrap(),
+            first_adapter
+        );
+        assert_eq!(fs::read(&first.identity_probe_source).unwrap(), first_probe);
+        assert_eq!(
+            fs::read(first.root.join("native/boxdd_private_abi.inl")).unwrap(),
+            first_private_abi
+        );
+        assert!(
+            first
+                .c_sources
+                .iter()
+                .all(|path| path.starts_with(&first.root))
+        );
+
+        let second = materialize_adapter_sources(&source, &output).unwrap();
+        assert_ne!(second.adapter_source_sha256, first_digest);
+        assert_ne!(second.root, first.root);
+
+        let unavailable = directory.path().join("source-unavailable");
+        fs::rename(&source, &unavailable).unwrap();
+        assert_eq!(
+            fs::read(first.root.join("native/boxdd_adapter.c")).unwrap(),
+            first_adapter
+        );
+        assert_eq!(fs::read(&first.identity_probe_source).unwrap(), first_probe);
+    }
+
+    #[test]
+    fn build_policy_self_hash_matches_known_answer() {
+        let source = policy_source_with_hash(
+            &"0".repeat(64),
+            b"\";\n",
+            b"pub fn answer() -> u32 {\n    42\n}\n",
+        );
+        let identity = build_policy_source_identity("src/precision.rs", &source).unwrap();
+        assert_eq!(
+            identity.normalized_sha256,
+            "341466a04f22d9a8c3ea752e5d85e19669ac947104c25906a357467c5ef8926d"
+        );
+    }
+
+    #[test]
+    fn checked_in_rust_build_policy_sources_are_canonical() {
+        let repository = repository_manifest_dir();
+        let rust_paths = BUILD_POLICY_SOURCE_PATHS
+            .iter()
+            .copied()
+            .filter(|path| is_rust_build_policy_source(path))
+            .collect::<Vec<_>>();
+        assert_eq!(rust_paths.len(), 10);
+        assert!(rust_paths.windows(2).all(|pair| pair[0] < pair[1]));
+
+        for relative_path in rust_paths {
+            let source = fs::read(repository.join(relative_path)).unwrap();
+            let identity = build_policy_source_identity(relative_path, &source).unwrap();
+            assert!(identity.is_current(), "stale self-hash in {relative_path}");
+            assert_eq!(
+                canonicalize_build_policy_source(relative_path, &source).unwrap(),
+                source,
+                "non-canonical self-hash in {relative_path}"
+            );
+        }
+    }
+
+    #[test]
+    fn build_policy_inventory_covers_executed_external_modules() {
+        let repository = repository_manifest_dir();
+        let expected = BUILD_POLICY_SOURCE_PATHS
+            .iter()
+            .copied()
+            .filter(|path| is_rust_build_policy_source(path))
+            .map(str::to_owned)
+            .collect::<BTreeSet<_>>();
+        let mut discovered = BTreeSet::from(["build.rs".to_owned()]);
+        let mut pending = vec!["build.rs".to_owned()];
+        while let Some(relative_path) = pending.pop() {
+            let source = fs::read_to_string(repository.join(&relative_path)).unwrap();
+            for dependency in declared_external_policy_modules(&source, &relative_path) {
+                assert!(
+                    expected.contains(&dependency),
+                    "{relative_path} executes untracked policy module {dependency}"
+                );
+                if discovered.insert(dependency.clone()) {
+                    pending.push(dependency);
+                }
+            }
+        }
+        assert_eq!(discovered, expected);
+    }
+
+    #[test]
+    fn build_policy_parser_rejects_duplicate_and_illegal_fields() {
+        let valid = "0".repeat(64);
+        let mut duplicate = policy_source_with_hash(&valid, b"\";\n", b"");
+        duplicate.extend_from_slice(&policy_source_with_hash(&valid, b"\";\n", b""));
+        let error = build_policy_source_identity("src/precision.rs", &duplicate).unwrap_err();
+        assert!(
+            error.contains("exactly one self-hash field; found 2"),
+            "{error}"
+        );
+
+        let uppercase = policy_source_with_hash(&"A".repeat(64), b"\";\n", b"");
+        let error = build_policy_source_identity("src/precision.rs", &uppercase).unwrap_err();
+        assert!(error.contains("64 lowercase hexadecimal bytes"), "{error}");
+
+        let bad_suffix = policy_source_with_hash(&valid, b"\"; \n", b"");
+        let error = build_policy_source_identity("src/precision.rs", &bad_suffix).unwrap_err();
+        assert!(error.contains("canonical `\";` suffix"), "{error}");
+    }
+
+    #[test]
+    fn build_policy_parser_rejects_bom_and_crlf() {
+        let valid = "0".repeat(64);
+        let mut bom = vec![0xef, 0xbb, 0xbf];
+        bom.extend_from_slice(&policy_source_with_hash(&valid, b"\";\n", b""));
+        let error = build_policy_source_identity("src/precision.rs", &bom).unwrap_err();
+        assert!(error.contains("UTF-8 BOM"), "{error}");
+
+        let crlf = policy_source_with_hash(&valid, b"\";\n", b"fn value() {}\r\n");
+        let error = build_policy_source_identity("src/precision.rs", &crlf).unwrap_err();
+        assert!(error.contains("canonical LF"), "{error}");
+    }
+
+    #[test]
+    fn build_input_capture_rejects_stale_ast_digest_with_matching_live_bytes() {
+        let directory = build_input_fixture();
+        let output = tempfile::tempdir().unwrap();
+        let mut compiled = CompiledPolicyFixture::capture(directory.path());
+        let index = BUILD_POLICY_SOURCE_PATHS
+            .iter()
+            .position(|path| *path == "src/source_overlay.rs")
+            .unwrap();
+        let stale = {
+            let current = compiled.source_sha256[index].as_ref().unwrap();
+            let replacement = if current.starts_with('0') { '1' } else { '0' };
+            format!("{replacement}{}", &current[1..])
+        };
+        compiled.source_sha256[index] = Some(stale);
+        let compiled_sources = compiled.sources();
+
+        let error = materialize_build_inputs(directory.path(), output.path(), &compiled_sources)
+            .unwrap_err();
+        assert!(error.contains("src/source_overlay.rs"), "{error}");
+        assert!(error.contains("executing AST compiled"), "{error}");
+    }
+
+    #[test]
+    fn build_policy_inventory_rejects_rust_data_kind_mismatch() {
+        let directory = build_input_fixture();
+        let compiled = CompiledPolicyFixture::capture(directory.path());
+        let mut sources = compiled.sources();
+        let rust_index = BUILD_POLICY_SOURCE_PATHS
+            .iter()
+            .position(|path| *path == "build.rs")
+            .unwrap();
+        assert_eq!(sources[rust_index].relative_path(), "build.rs");
+        sources[rust_index] =
+            CompiledBuildPolicySource::data("build.rs", &compiled.bytes[rust_index]);
+        let error = validate_compiled_build_policy_sources(directory.path(), &sources).unwrap_err();
+        assert!(error.contains("has no AST-compiled self-hash"), "{error}");
+
+        let mut sources = compiled.sources();
+        let data_index = BUILD_POLICY_SOURCE_PATHS
+            .iter()
+            .position(|path| *path == "Cargo.toml")
+            .unwrap();
+        let invalid_data_digest = "0".repeat(64);
+        sources[data_index] = CompiledBuildPolicySource::rust(
+            "Cargo.toml",
+            &compiled.bytes[data_index],
+            &invalid_data_digest,
+        );
+        let error = validate_compiled_build_policy_sources(directory.path(), &sources).unwrap_err();
+        assert!(error.contains("must use byte identity only"), "{error}");
+    }
+
+    #[test]
+    fn build_input_capture_rejects_compiled_policy_drift() {
+        let directory = build_input_fixture();
+        let output = tempfile::tempdir().unwrap();
+        let compiled = CompiledPolicyFixture::capture(directory.path());
+        fs::write(
+            directory.path().join("Cargo.toml"),
+            "[package]\nname = \"newer-policy-generation\"\n",
+        )
+        .unwrap();
+        let compiled_sources = compiled.sources();
+
+        let error = materialize_build_inputs(directory.path(), output.path(), &compiled_sources)
+            .unwrap_err();
+        assert!(error.contains("differs from the bytes compiled"), "{error}");
+        assert!(error.contains("Cargo.toml"), "{error}");
+    }
+
+    #[test]
+    fn build_input_capture_reuses_one_effective_manifest_byte_set() {
+        let directory = build_input_fixture();
+        let output = tempfile::tempdir().unwrap();
+        let compiled = CompiledPolicyFixture::capture(directory.path());
+        let compiled_sources = compiled.sources();
+        let inputs =
+            materialize_build_inputs(directory.path(), output.path(), &compiled_sources).unwrap();
+        let expected = &compiled.bytes[BUILD_POLICY_SOURCE_PATHS
+            .iter()
+            .position(|path| *path == EFFECTIVE_SOURCE_MANIFEST)
+            .unwrap()];
+
+        let materialized_manifest =
+            fs::read(inputs.adapter.root.join(EFFECTIVE_SOURCE_MANIFEST)).unwrap();
+        assert_eq!(materialized_manifest.as_slice(), expected.as_slice());
+        assert_eq!(
+            inputs
+                .live_files
+                .iter()
+                .filter(|file| file.normalized_path == EFFECTIVE_SOURCE_MANIFEST)
+                .count(),
+            1
+        );
+        assert_eq!(
+            inputs
+                .live_files
+                .iter()
+                .find(|file| file.normalized_path == EFFECTIVE_SOURCE_MANIFEST)
+                .unwrap()
+                .bytes
+                .as_slice(),
+            expected.as_slice()
+        );
+        assert_eq!(
+            adapter_source_sha256(&inputs.adapter.root).unwrap(),
+            inputs.adapter.adapter_source_sha256
+        );
+        assert_eq!(
+            inputs.vendored_source_sha256,
+            "0fac2ddee3fb443075db2a9adb8abef375fc0a27f050af93d7bf1771ec4b8de7"
+        );
+    }
+
+    #[test]
+    fn build_input_revalidation_rejects_live_generation_drift() {
+        let directory = build_input_fixture();
+        let output = tempfile::tempdir().unwrap();
+        let compiled = CompiledPolicyFixture::capture(directory.path());
+        let compiled_sources = compiled.sources();
+        let inputs =
+            materialize_build_inputs(directory.path(), output.path(), &compiled_sources).unwrap();
+
+        for relative in [
+            "native/boxdd_adapter.h",
+            "third-party/box2d/src/aabb.c",
+            "src/source_overlay.rs",
+            EFFECTIVE_SOURCE_MANIFEST,
+        ] {
+            let path = directory.path().join(relative);
+            let original = fs::read(&path).unwrap();
+            fs::write(&path, format!("drift in {relative}\n")).unwrap();
+            let error = inputs.revalidate_live().unwrap_err();
+            assert!(error.contains(relative), "{error}");
+            fs::write(&path, original).unwrap();
+            inputs.revalidate_live().unwrap();
+        }
+    }
+
+    #[test]
+    fn build_input_revalidation_rejects_materialized_tree_tampering() {
+        let directory = build_input_fixture();
+        let output = tempfile::tempdir().unwrap();
+        let compiled = CompiledPolicyFixture::capture(directory.path());
+        let compiled_sources = compiled.sources();
+        let inputs =
+            materialize_build_inputs(directory.path(), output.path(), &compiled_sources).unwrap();
+
+        let adapter = inputs.adapter.root.join("native/boxdd_adapter.c");
+        let adapter_bytes = fs::read(&adapter).unwrap();
+        fs::write(&adapter, "tampered adapter\n").unwrap();
+        let error = inputs.revalidate_materialized().unwrap_err();
+        assert!(error.contains("byte drift"), "{error}");
+        fs::write(&adapter, adapter_bytes).unwrap();
+        inputs.revalidate_materialized().unwrap();
+
+        let effective = inputs.effective.root.join("src/aabb.c");
+        fs::write(&effective, "tampered effective source\n").unwrap();
+        let error = inputs.revalidate_materialized().unwrap_err();
+        assert!(error.contains("byte drift"), "{error}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn adapter_snapshot_rejects_symlinked_inputs() {
+        use std::os::unix::fs::symlink;
+
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("source");
+        let output = directory.path().join("output");
+        let external = directory.path().join("external-adapter.c");
+        fs::create_dir(&source).unwrap();
+        fs::create_dir(&output).unwrap();
+        fs::write(&external, "unreviewed adapter source\n").unwrap();
+        adapter_fixture(&source);
+
+        let adapter = source.join("native/boxdd_adapter.c");
+        fs::remove_file(&adapter).unwrap();
+        symlink(&external, &adapter).unwrap();
+
+        let error = materialize_adapter_sources(&source, &output).unwrap_err();
+        assert!(error.contains("must not traverse a symlink"), "{error}");
+        assert!(
+            fs::symlink_metadata(&adapter)
+                .unwrap()
+                .file_type()
+                .is_symlink()
         );
     }
 

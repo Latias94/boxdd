@@ -1,3 +1,7 @@
+#[allow(dead_code)]
+pub(crate) const BUILD_POLICY_SOURCE_SHA256: &str =
+    "1b4bc2a980bebe0fa0ad4ed2f25c8b5f79d60de7f51c7f966f03916a322169bc";
+
 /// The native Box2D world-coordinate precision selected for this crate build.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Precision {

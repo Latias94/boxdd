@@ -23,7 +23,7 @@ pub(crate) use crate::wasm_provider_contract::PROVIDER_ABI;
 
 pub(crate) const SDK_CONTRACT_RELATIVE_PATH: &str = "toolchains/emscripten-sdk.toml";
 const SDK_CONTRACT_SHA256: &str =
-    "73e628846dcb3732005b3cf8598e9eee4909a1f5ddb333c31ff946855c51e9e8";
+    "3460ab0bce714228a2ef2744d340324e3d5aeec06c2a40a2612857cba30ca867";
 
 pub(crate) const EMSCRIPTEN_VERSION: &str = "6.0.3";
 pub(crate) const WASM_BINDGEN_VERSION: &str = "0.2.126";
@@ -37,6 +37,7 @@ const EMCC_BOOTSTRAP: &str = "import runpy,sys; root=sys.argv.pop(1); driver=sys
 const PROVISION_COMMAND_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const PROVISION_COMMAND_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const TRUSTED_PROVISION_PATH: &str = "/usr/bin:/bin";
+const MINIMUM_CURL_VERSION: &[u64] = &[8, 4, 0];
 
 #[cfg(unix)]
 unsafe extern "C" {
@@ -62,9 +63,11 @@ const HOST_CONTRACT_FIELDS: &[&str] = &[
     "os",
     "arch",
     "release_url",
+    "release_archive_bytes",
     "release_archive_sha256",
     "release_tree_sha256",
     "node_url",
+    "node_archive_bytes",
     "node_archive_sha256",
     "node_tree_sha256",
     "host_probe",
@@ -78,6 +81,7 @@ const ARCHIVE_PYTHON_FIELDS: &[&str] = &[
     "kind",
     "version",
     "url",
+    "archive_bytes",
     "archive_sha256",
     "tree_sha256",
     "executable",
@@ -102,9 +106,11 @@ struct HostToolchainContract {
     os: String,
     arch: String,
     release_url: String,
+    release_archive_bytes: u64,
     release_archive_sha256: String,
     release_tree_sha256: String,
     node_url: String,
+    node_archive_bytes: u64,
     node_archive_sha256: String,
     node_tree_sha256: String,
     host_probe: HostProbeContract,
@@ -127,6 +133,7 @@ enum PythonRuntimeContract {
     Archive {
         version: String,
         url: String,
+        archive_bytes: u64,
         archive_sha256: String,
         tree_sha256: String,
         executable: String,
@@ -534,13 +541,13 @@ pub(crate) fn qualify_emscripten_sdk(
 ) -> Result<QualifiedEmscriptenSdk, String> {
     if inputs.self_attested_revision.is_some() {
         return Err(
-            "BOXDD_EMSDK_REVISION is a self-attestation and is not accepted by the wasm-provider build; use EMSDK pointing at the pinned checkout"
+            "BOXDD_EMSDK_REVISION is a self-attestation and is not accepted by repository WASM source-provider builds; use EMSDK pointing at the pinned checkout"
                 .to_owned(),
         );
     }
 
     let root = PathBuf::from(inputs.root.ok_or_else(|| {
-        "BOXDD_SYS_PROVIDER=wasm-provider requires EMSDK to name the pinned SDK checkout; PATH-only compiler discovery is not qualified"
+        "repository WASM source-provider builds require EMSDK to name the pinned SDK checkout; PATH-only compiler discovery is not qualified"
             .to_owned()
     })?);
 
@@ -784,6 +791,7 @@ pub(crate) fn provision_emscripten_sdk(
         &tools,
         &downloads.join("emscripten-release.archive"),
         &host.release_url,
+        host.release_archive_bytes,
         &host.release_archive_sha256,
         &release_root,
         "Emscripten release",
@@ -792,6 +800,7 @@ pub(crate) fn provision_emscripten_sdk(
         &tools,
         &downloads.join("node.archive"),
         &host.node_url,
+        host.node_archive_bytes,
         &host.node_archive_sha256,
         &node_root,
         "EMSDK Node.js",
@@ -799,6 +808,7 @@ pub(crate) fn provision_emscripten_sdk(
     if let PythonRuntimeContract::Archive {
         version,
         url,
+        archive_bytes,
         archive_sha256,
         ..
     } = &host.python
@@ -808,6 +818,7 @@ pub(crate) fn provision_emscripten_sdk(
             &tools,
             &downloads.join("python.archive"),
             url,
+            *archive_bytes,
             archive_sha256,
             &python_root,
             "EMSDK Python",
@@ -1095,7 +1106,58 @@ fn qualified_provision_curl() -> Result<PathBuf, String> {
         "qualified system curl for Emscripten provisioning",
     )?;
     require_root_owned_system_file(&curl, "qualified system curl for Emscripten provisioning")?;
+    require_curl_version(&curl)?;
     Ok(curl)
+}
+
+fn require_curl_version(curl: &Path) -> Result<(), String> {
+    let mut command = Command::new(curl);
+    remove_process_injection_environment(&mut command);
+    remove_matching_environment(&mut command, is_curl_environment_key);
+    let output = command_output_with_timeout(
+        command.arg("--version"),
+        "inspect qualified system curl version for Emscripten provisioning",
+        Duration::from_secs(30),
+    )?;
+    if !output.status.success() {
+        return Err(format!(
+            "qualified system curl failed --version with status {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let version = parse_curl_version(&output.stdout)?;
+    if !numeric_version_at_least(&version, MINIMUM_CURL_VERSION) {
+        return Err(format!(
+            "qualified system curl must be at least {}.{}.{} so --max-filesize also limits responses without Content-Length; found {}.{}.{}",
+            MINIMUM_CURL_VERSION[0],
+            MINIMUM_CURL_VERSION[1],
+            MINIMUM_CURL_VERSION[2],
+            version[0],
+            version[1],
+            version[2]
+        ));
+    }
+    Ok(())
+}
+
+fn parse_curl_version(output: &[u8]) -> Result<Vec<u64>, String> {
+    let output = std::str::from_utf8(output)
+        .map_err(|error| format!("qualified system curl --version is not UTF-8: {error}"))?;
+    let line = output
+        .lines()
+        .next()
+        .ok_or_else(|| "qualified system curl --version printed no output".to_owned())?;
+    let mut fields = line.split_ascii_whitespace();
+    if fields.next() != Some("curl") {
+        return Err(format!(
+            "qualified system curl --version has an invalid first line: {line:?}"
+        ));
+    }
+    let version = fields.next().ok_or_else(|| {
+        format!("qualified system curl --version is missing its version: {line:?}")
+    })?;
+    parse_numeric_version(version, 3, "qualified system curl version")
 }
 
 fn qualified_provision_tar(platform: HostPlatform) -> Result<PathBuf, String> {
@@ -1135,11 +1197,19 @@ fn provision_component_tree(
     tools: &QualifiedProvisionTools,
     archive: &Path,
     url: &str,
+    expected_bytes: u64,
     expected_sha256: &str,
     destination: &Path,
     label: &str,
 ) -> Result<(), String> {
-    download_verified_archive(&tools.curl, archive, url, expected_sha256, label)?;
+    download_verified_archive(
+        &tools.curl,
+        archive,
+        url,
+        expected_bytes,
+        expected_sha256,
+        label,
+    )?;
     fs::create_dir_all(destination).map_err(|error| {
         format!(
             "failed to create {label} extraction directory {}: {error}",
@@ -1156,21 +1226,98 @@ fn download_verified_archive(
     curl: &Path,
     archive: &Path,
     url: &str,
+    expected_bytes: u64,
     expected_sha256: &str,
     label: &str,
 ) -> Result<(), String> {
-    require_lower_sha256(&format!("{label} archive SHA-256"), expected_sha256)?;
-    let mut download = configured_archive_download_command(curl, archive, url);
-    run_provision_command(&mut download, &format!("download pinned {label} archive"))?;
-    require_identity(
-        &format!("{label} archive SHA-256"),
-        &sha256_file(archive)?,
+    download_verified_archive_with_protocols(
+        curl,
+        archive,
+        url,
+        expected_bytes,
         expected_sha256,
+        label,
+        ArchiveDownloadProtocol::Https,
     )
 }
 
-fn configured_archive_download_command(curl: &Path, archive: &Path, url: &str) -> Command {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ArchiveDownloadProtocol {
+    Https,
+    #[cfg(test)]
+    HttpForTests,
+}
+
+fn download_verified_archive_with_protocols(
+    curl: &Path,
+    archive: &Path,
+    url: &str,
+    expected_bytes: u64,
+    expected_sha256: &str,
+    label: &str,
+    protocol: ArchiveDownloadProtocol,
+) -> Result<(), String> {
+    require_lower_sha256(&format!("{label} archive SHA-256"), expected_sha256)?;
+    if expected_bytes == 0 {
+        return Err(format!("{label} archive byte size must be positive"));
+    }
+    require_absent_archive(archive, label)?;
+    let partial = archive_partial_path(archive);
+    remove_stale_partial_archive(&partial, label)?;
+    let result = (|| {
+        let mut download = match protocol {
+            ArchiveDownloadProtocol::Https => {
+                configured_archive_download_command(curl, &partial, url, expected_bytes)
+            }
+            #[cfg(test)]
+            ArchiveDownloadProtocol::HttpForTests => {
+                configured_archive_download_command_with_protocols(
+                    curl,
+                    &partial,
+                    url,
+                    expected_bytes,
+                    "=http",
+                )
+            }
+        };
+        run_provision_command(&mut download, &format!("download pinned {label} archive"))?;
+        verify_downloaded_archive(&partial, expected_bytes, expected_sha256, label)?;
+        fs::rename(&partial, archive).map_err(|error| {
+            format!(
+                "failed to publish verified {label} archive {}: {error}",
+                archive.display()
+            )
+        })
+    })();
+    if let Err(download_error) = result {
+        return match remove_stale_partial_archive(&partial, label) {
+            Ok(()) => Err(download_error),
+            Err(cleanup_error) => Err(format!(
+                "{download_error}; additionally, partial archive cleanup failed: {cleanup_error}"
+            )),
+        };
+    }
+    Ok(())
+}
+
+fn configured_archive_download_command(
+    curl: &Path,
+    archive: &Path,
+    url: &str,
+    maximum_bytes: u64,
+) -> Command {
+    configured_archive_download_command_with_protocols(curl, archive, url, maximum_bytes, "=https")
+}
+
+fn configured_archive_download_command_with_protocols(
+    curl: &Path,
+    archive: &Path,
+    url: &str,
+    maximum_bytes: u64,
+    protocols: &str,
+) -> Command {
     let mut download = Command::new(curl);
+    let maximum_bytes = maximum_bytes.to_string();
     remove_process_injection_environment(&mut download);
     remove_matching_environment(&mut download, is_curl_environment_key);
     download
@@ -1183,16 +1330,18 @@ fn configured_archive_download_command(curl: &Path, archive: &Path, url: &str) -
             "--max-time",
             "900",
             "--proto",
-            "=https",
+            protocols,
             "--proto-redir",
-            "=https",
+            protocols,
             "--retry",
             "4",
-            "--retry-all-errors",
             "--retry-delay",
             "5",
             "--retry-max-time",
             "1200",
+            "--max-filesize",
+            &maximum_bytes,
+            "--remove-on-error",
             "--silent",
             "--show-error",
             "--output",
@@ -1200,6 +1349,79 @@ fn configured_archive_download_command(curl: &Path, archive: &Path, url: &str) -
         .arg(archive)
         .arg(url);
     download
+}
+
+fn archive_partial_path(archive: &Path) -> PathBuf {
+    let mut value = archive.as_os_str().to_os_string();
+    value.push(".part");
+    PathBuf::from(value)
+}
+
+fn require_absent_archive(archive: &Path, label: &str) -> Result<(), String> {
+    match fs::symlink_metadata(archive) {
+        Ok(_) => Err(format!(
+            "refusing to overwrite existing {label} archive: {}",
+            archive.display()
+        )),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!(
+            "failed to inspect destination {label} archive {}: {error}",
+            archive.display()
+        )),
+    }
+}
+
+fn remove_stale_partial_archive(partial: &Path, label: &str) -> Result<(), String> {
+    match fs::symlink_metadata(partial) {
+        Ok(metadata) if metadata.file_type().is_file() && !metadata.file_type().is_symlink() => {
+            fs::remove_file(partial).map_err(|error| {
+                format!(
+                    "failed to remove stale partial {label} archive {}: {error}",
+                    partial.display()
+                )
+            })
+        }
+        Ok(_) => Err(format!(
+            "partial {label} archive must be a regular non-symlink file: {}",
+            partial.display()
+        )),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!(
+            "failed to inspect partial {label} archive {}: {error}",
+            partial.display()
+        )),
+    }
+}
+
+fn verify_downloaded_archive(
+    archive: &Path,
+    expected_bytes: u64,
+    expected_sha256: &str,
+    label: &str,
+) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(archive).map_err(|error| {
+        format!(
+            "failed to inspect downloaded {label} archive {}: {error}",
+            archive.display()
+        )
+    })?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        return Err(format!(
+            "downloaded {label} archive must be a regular non-symlink file: {}",
+            archive.display()
+        ));
+    }
+    if metadata.len() != expected_bytes {
+        return Err(format!(
+            "downloaded {label} archive byte size does not match the pinned identity: expected {expected_bytes}, found {}",
+            metadata.len()
+        ));
+    }
+    require_identity(
+        &format!("{label} archive SHA-256"),
+        &sha256_file(archive)?,
+        expected_sha256,
+    )
 }
 
 fn configured_archive_extract_command(
@@ -1534,7 +1756,7 @@ impl SdkContract {
         if table
             .get("schema_version")
             .and_then(toml::Value::as_integer)
-            != Some(3)
+            != Some(4)
         {
             return Err("unsupported Emscripten SDK contract schema_version".to_owned());
         }
@@ -1653,9 +1875,11 @@ fn parse_host_contracts(
                 os: required_string(table, "os")?,
                 arch: required_string(table, "arch")?,
                 release_url: required_string(table, "release_url")?,
+                release_archive_bytes: required_positive_u64(table, "release_archive_bytes")?,
                 release_archive_sha256: required_string(table, "release_archive_sha256")?,
                 release_tree_sha256: required_string(table, "release_tree_sha256")?,
                 node_url: required_string(table, "node_url")?,
+                node_archive_bytes: required_positive_u64(table, "node_archive_bytes")?,
                 node_archive_sha256: required_string(table, "node_archive_sha256")?,
                 node_tree_sha256: required_string(table, "node_tree_sha256")?,
                 host_probe: parse_host_probe(required_table(table, "host_probe")?)?,
@@ -1752,6 +1976,7 @@ fn parse_python_runtime_contract(table: &toml::Table) -> Result<PythonRuntimeCon
             Ok(PythonRuntimeContract::Archive {
                 version: required_string(table, "version")?,
                 url: required_string(table, "url")?,
+                archive_bytes: required_positive_u64(table, "archive_bytes")?,
                 archive_sha256: required_string(table, "archive_sha256")?,
                 tree_sha256: required_string(table, "tree_sha256")?,
                 executable: required_string(table, "executable")?,
@@ -1785,6 +2010,7 @@ fn validate_python_runtime_contract(
         PythonRuntimeContract::Archive {
             version,
             url,
+            archive_bytes: _,
             archive_sha256,
             tree_sha256,
             executable,
@@ -2631,6 +2857,17 @@ fn required_string(table: &toml::Table, key: &str) -> Result<String, String> {
         .ok_or_else(|| format!("Emscripten SDK contract field `{key}` must be a non-empty string"))
 }
 
+fn required_positive_u64(table: &toml::Table, key: &str) -> Result<u64, String> {
+    table
+        .get(key)
+        .and_then(toml::Value::as_integer)
+        .and_then(|value| u64::try_from(value).ok())
+        .filter(|value| *value > 0)
+        .ok_or_else(|| {
+            format!("Emscripten SDK contract field `{key}` must be a positive integer byte size")
+        })
+}
+
 fn required_table<'a>(table: &'a toml::Table, key: &str) -> Result<&'a toml::Table, String> {
     table
         .get(key)
@@ -2754,7 +2991,39 @@ fn sha256_bytes(bytes: &[u8]) -> String {
 }
 
 fn sha256_file(path: &Path) -> Result<String, String> {
-    read_regular_file(path, "qualified SDK input").map(|bytes| sha256_bytes(&bytes))
+    let metadata = fs::symlink_metadata(path).map_err(|error| {
+        format!(
+            "failed to inspect qualified SDK input {}: {error}",
+            path.display()
+        )
+    })?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        return Err(format!(
+            "qualified SDK input must be a regular non-symlink file: {}",
+            path.display()
+        ));
+    }
+    let mut file = File::open(path).map_err(|error| {
+        format!(
+            "failed to open qualified SDK input {}: {error}",
+            path.display()
+        )
+    })?;
+    let mut digest = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer).map_err(|error| {
+            format!(
+                "failed to read qualified SDK input {}: {error}",
+                path.display()
+            )
+        })?;
+        if read == 0 {
+            break;
+        }
+        digest.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", digest.finalize()))
 }
 
 #[cfg(unix)]
@@ -3649,6 +3918,7 @@ pub(crate) fn version_has_exact_token(output: &str, expected: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::{TcpListener, TcpStream};
 
     const TEST_BUNDLED_PYTHON_VERSION: &str = "3.13.3";
     const TEST_MINIMUM_SYSTEM_PYTHON_VERSION: &str = "3.10";
@@ -3730,6 +4000,7 @@ mod tests {
             Path::new("/usr/bin/curl"),
             Path::new("/private/archive"),
             "https://example.invalid/archive",
+            123,
         );
         let arguments = command_arguments(&command);
         for required in [
@@ -3738,6 +4009,7 @@ mod tests {
             ["--retry", "4"],
             ["--retry-delay", "5"],
             ["--retry-max-time", "1200"],
+            ["--max-filesize", "123"],
         ] {
             assert!(
                 arguments
@@ -3749,8 +4021,127 @@ mod tests {
         assert!(
             arguments
                 .iter()
-                .any(|argument| argument == "--retry-all-errors")
+                .any(|argument| argument == "--remove-on-error")
         );
+    }
+
+    #[test]
+    fn curl_version_parser_requires_a_three_component_version() {
+        assert_eq!(
+            parse_curl_version(b"curl 8.4.0 (test)\n").unwrap(),
+            vec![8, 4, 0]
+        );
+        assert!(parse_curl_version(b"curl 8.4\n").is_err());
+        assert!(parse_curl_version(b"not-curl 8.4.0\n").is_err());
+    }
+
+    #[test]
+    fn archive_download_uses_a_part_file_and_accepts_a_lengthless_complete_response() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("archive");
+        let partial = archive_partial_path(&archive);
+        fs::write(&partial, b"stale partial data").unwrap();
+        let body = b"verified lengthless archive";
+        let server = LocalArchiveServer::start(LocalArchiveResponse::WithoutContentLength(body));
+
+        download_verified_archive_with_protocols(
+            Path::new("/usr/bin/curl"),
+            &archive,
+            &server.url(),
+            body.len() as u64,
+            &sha256_bytes(body),
+            "local test",
+            ArchiveDownloadProtocol::HttpForTests,
+        )
+        .unwrap();
+
+        assert_eq!(fs::read(&archive).unwrap(), body);
+        assert!(!partial.exists());
+        server.join();
+    }
+
+    #[test]
+    fn archive_download_rejects_an_oversized_chunked_response_without_leaving_a_part_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("archive");
+        let partial = archive_partial_path(&archive);
+        let body = b"oversized chunked response";
+        let server = LocalArchiveServer::start(LocalArchiveResponse::Chunked(body));
+
+        let error = download_verified_archive_with_protocols(
+            Path::new("/usr/bin/curl"),
+            &archive,
+            &server.url(),
+            4,
+            &sha256_bytes(body),
+            "local test",
+            ArchiveDownloadProtocol::HttpForTests,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("download pinned local test archive"));
+        assert!(!archive.exists());
+        assert!(!partial.exists());
+        server.join();
+    }
+
+    enum LocalArchiveResponse<'a> {
+        WithoutContentLength(&'a [u8]),
+        Chunked(&'a [u8]),
+    }
+
+    struct LocalArchiveServer {
+        address: std::net::SocketAddr,
+        worker: Option<thread::JoinHandle<()>>,
+    }
+
+    impl LocalArchiveServer {
+        fn start(response: LocalArchiveResponse<'static>) -> Self {
+            let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let address = listener.local_addr().unwrap();
+            let worker = thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                serve_local_archive(&mut stream, response).unwrap();
+            });
+            Self {
+                address,
+                worker: Some(worker),
+            }
+        }
+
+        fn url(&self) -> String {
+            format!("http://{}/archive", self.address)
+        }
+
+        fn join(mut self) {
+            self.worker.take().unwrap().join().unwrap();
+        }
+    }
+
+    fn serve_local_archive(
+        stream: &mut TcpStream,
+        response: LocalArchiveResponse<'_>,
+    ) -> io::Result<()> {
+        stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+        let mut request = [0_u8; 1024];
+        let _ = stream.read(&mut request)?;
+        match response {
+            LocalArchiveResponse::WithoutContentLength(body) => {
+                stream.write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\n",
+                )?;
+                stream.write_all(body)
+            }
+            LocalArchiveResponse::Chunked(body) => {
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n{:X}\r\n",
+                    body.len()
+                )?;
+                stream.write_all(body)?;
+                stream.write_all(b"\r\n0\r\n\r\n")
+            }
+        }
     }
 
     #[test]
@@ -4029,6 +4420,30 @@ mod tests {
         );
         assert!(SdkContract::parse(&source.replace("6.0.3", "6.0.30")).is_err());
         assert!(SdkContract::parse(&format!("{source}\nunknown = true\n")).is_err());
+    }
+
+    #[test]
+    fn sdk_contract_binds_exact_archive_byte_sizes_into_its_digest() {
+        let source = include_str!("../toolchains/emscripten-sdk.toml");
+        let contract = SdkContract::parse(source).unwrap();
+        assert_eq!(contract.hosts[0].release_archive_bytes, 292_035_244);
+        assert_eq!(contract.hosts[0].node_archive_bytes, 30_425_588);
+        assert_eq!(contract.hosts[1].release_archive_bytes, 266_942_072);
+        assert_eq!(contract.hosts[1].node_archive_bytes, 47_716_750);
+        assert!(matches!(
+            &contract.hosts[1].python,
+            PythonRuntimeContract::Archive {
+                archive_bytes: 44_280_478,
+                ..
+            }
+        ));
+        assert!(
+            SdkContract::parse(&source.replace(
+                "release_archive_bytes = 292035244",
+                "release_archive_bytes = 292035245",
+            ))
+            .is_err()
+        );
     }
 
     #[test]

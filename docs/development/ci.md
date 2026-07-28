@@ -26,6 +26,7 @@ cargo check -p bevy_boxdd --no-default-features
 cargo check -p bevy_boxdd --examples
 cargo run -p xtask -- verify-toolchains
 cargo run -p xtask -- verify-precision-contract
+cargo run -p xtask -- build-policy-sources --check
 cargo run -p xtask -- upstream-sync --check
 cargo run -p xtask -- api-coverage --check
 cargo run -p xtask -- sample-parity --check
@@ -101,8 +102,10 @@ the primary panic or completing all cleanup; they run as named follow-up tests w
 LeakSanitizer disabled. The allowlist is model-tested and does not weaken buffer, use-after-free,
 or double-free detection for those tests.
 
-The mixed Rust/C sanitizer commands require the compiler and runtime support available on the
-Linux CI runners. A platform or linker incompatibility fails closed before any test executes.
+The mixed Rust/C sanitizer commands are qualification gates for Linux hosts only because they
+require the compiler and runtime pairing installed on the Linux CI runners. The command rejects a
+macOS or Windows host before probing the C compiler; run the protected Linux CI gate for qualifying
+evidence. A Linux compiler or linker incompatibility still fails closed before any test executes.
 ThreadSanitizer additionally requires `rust-src` and rebuilds the
 standard library with `-Z build-std`; the gate never suppresses sanitizer ABI mismatch diagnostics.
 `verify-semver` first uses qualified Git to require `v0.5.0^{commit}` to resolve exactly to
@@ -135,8 +138,21 @@ the provider manifest and inner checksums digests; provider and ABI coordinates;
 repository, workflow, workflow ref, source commit, release tag, run ID, and run attempt.
 Release archive parsing rejects non-canonical entries and bounds each entry, the returned file
 total, the entry count, and the complete decompressed tar stream, including metadata headers.
-Release artifact names include both `github.run_id` and `github.run_attempt` so a rerun cannot
-consume an earlier attempt's inputs.
+Attempt-scoped build and attestation input names include both `github.run_id` and
+`github.run_attempt`, and those inputs are retained for seven days. A rerun therefore cannot consume
+an earlier attempt's unsigned inputs. Any failure before `attest` successfully uploads the stable
+signed aggregate must use **Re-run all jobs**: **Re-run failed jobs** increments
+`github.run_attempt` without recreating outputs from successful prerequisite jobs, so the failed job
+would correctly reject the missing current-attempt input.
+
+After the stable signed aggregate exists, verification, qualification, and draft-publication
+failures may use **Re-run failed jobs**. That aggregate is selected by run ID and commit across
+attempts while its signed provenance preserves the originating attempt. GitHub permits workflow
+runs to be rerun for [up to 30 days](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs),
+so the stable aggregate is retained for 30 days; repository, organization, and enterprise artifact
+policy must continue to permit at least that value because an artifact's `retention-days` cannot
+exceed the configured [retention limit](https://docs.github.com/en/actions/tutorials/store-and-share-data#configuring-a-custom-artifact-retention-period).
+Manual deletion of the stable aggregate ends automatic retry recovery.
 
 The Linux `system-provider` matrix runs Rust 1.95.0 and 1.97.1 in both precision modes. Each
 coordinate builds a distinct vendored static archive, creates a caller-trusted system attestation
@@ -168,11 +184,12 @@ a different ref, source-switching step, mutable action, or excluded matrix coord
 qualification. Release tags deliberately rerun these gates instead of trusting a potentially stale
 branch run.
 
-The protected prebuilt workflow builds ten target/precision/CRT artifacts once while the reusable
-qualification runs independently. The read-only aggregate job requires both results and validates
-the qualification receipt against the release `github.sha` before checking out or executing
-repository code. Only then may the workflow generate and sign the canonical TOML provenance
-statements and qualify every artifact with fresh consumers under both Rust 1.95.0 and 1.97.1.
+The protected prebuilt workflow builds ten target/precision/CRT native artifacts and two
+precision-specific WASM runtime artifacts while the reusable qualification runs independently. The
+read-only aggregate job requires all three results and validates the qualification receipt against
+the release `github.sha` before checking out or executing repository code. Only then may the
+workflow generate and sign the canonical TOML provenance statements and qualify every native
+artifact with fresh consumers under both Rust 1.95.0 and 1.97.1.
 Each qualification coordinate uses the selected toolchain explicitly for `cargo package`,
 `cargo generate-lockfile`, `cargo metadata --locked`, and `cargo build`, and consumes the packaged
 crate source rather than the checkout dependency. The helper selects exactly one downloaded
@@ -189,10 +206,17 @@ isolated temporary root so checkout-local configuration is outside Cargo's searc
 identity and receipt
 variables are absent from every Cargo process and exist only for the direct consumer execution.
 
-The protected draft release contains exactly 41 assets: ten archives, ten archive checksum
-sidecars, ten canonical provenance statements, ten Sigstore bundles, and one aggregate
-`SHA256SUMS`. For an official prebuilt provider, `PROVIDER_PROVENANCE_SHA256` identifies the signed
-statement bytes rather than the bundle.
+Each WASM statement additionally binds the precision-specific provider ABI, target/compiler,
+upstream and effective source, adapter, recording, SDK, bindings, private ABI, layout, SIMD and
+validation identities. Its read-only qualification job snapshots the archive, canonical statement,
+Sigstore bundle and trust root, verifies publisher and outer-package identity before bounded
+extraction, and then runs a fresh Rust consumer plus Node and Chromium against the extracted bytes.
+That job does not provision Emscripten and cannot invoke the package-building command.
+
+The protected draft release contains exactly 49 assets: twelve archives, twelve archive checksum
+sidecars, twelve canonical provenance statements, twelve Sigstore bundles, and one aggregate
+`SHA256SUMS`. For an official native prebuilt provider, `PROVIDER_PROVENANCE_SHA256` identifies the
+signed statement bytes rather than the bundle.
 
 For local development against a dirty checkout, the helper accepts an explicit `--allow-dirty`
 flag so `cargo package` can exercise uncommitted source. The CI and protected release workflows do
@@ -291,8 +315,10 @@ CI should keep heavy checks staged:
   or execute explicitly. `verify-feature-matrix` retains the broader Rust 1.95/1.97.1 coordinates.
 - Provider matrix: Rust 1.95.0/1.97.1 fresh packaged-crate consumers run against independently built
   and attested system archives in single/double precision. Protected prebuilt consumers repeat both
-  toolchains for every target/precision/CRT artifact after signed aggregate verification;
-  isolated-registry package consumers and WASM runtime quadrants run in their dedicated jobs.
+  toolchains for every target/precision/CRT artifact after signed aggregate verification. Protected
+  WASM consumers authenticate the matching single/double runtime package before extraction and run
+  it under Node and Chromium; isolated-registry package consumers and ordinary WASM runtime
+  quadrants run in their dedicated jobs.
 - Pages runtime: install `wasm32-unknown-unknown`, provision Emscripten 6.0.3 at revision `db04e88298d9916fc51fcd3743045ca3eb695127` with `provision-emsdk --github-actions`, then run `cargo run -p xtask -- build-pages-wasm`, install the pinned Playwright dependencies and Chromium, run `npm run test:pages-browser`, and finally run `cargo run -p xtask -- validate-pages`. wasm-bindgen runs from the committed lockfile and Binaryen is addressed through the qualified SDK.
 - Docs: set `RUSTDOCFLAGS` to `-D warnings --cfg docsrs`, run workspace rustdoc, then build `boxdd`
   and `bevy_boxdd` rustdoc again in double precision.
@@ -305,10 +331,10 @@ CI should keep heavy checks staged:
 precision, workspace, package-helper, provider, WASM, Miri, sanitizer, documentation, or supply-chain
 gate. It also fixes the reusable input/output contract, the receipt's complete `needs` set and
 fail-closed result check, the tag caller's local workflow reference and exact SHA input, and the
-aggregate dependency on both qualification and prebuilt artifacts. Secret inheritance, write or
-OIDC permissions on qualification/build jobs, remote or mutable reusable-workflow references,
+aggregate dependency on qualification plus all native and WASM build artifacts. Secret inheritance,
+write or OIDC permissions on qualification/build jobs, remote or mutable reusable-workflow references,
 skipped dependencies, and forged receipt outputs fail the policy. Its provider checks continue to
-require the exact Rust 1.95.0/1.97.1 axes, reject matrix includes or excludes, and bind qualification
-to one exact unconditional `qualify-native-provider` command. Conditions, shell wrappers,
+require the exact Rust 1.95.0/1.97.1 axes, reject matrix includes or excludes, and bind native and
+WASM qualification to their exact unconditional commands. Conditions, shell wrappers,
 `continue-on-error`, default-toolchain substitutions, and `--allow-dirty` all fail the policy. This
 keeps the checked-in workflow and the local Verification Contract aligned.

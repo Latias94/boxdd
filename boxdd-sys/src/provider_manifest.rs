@@ -8,6 +8,10 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
+#[allow(dead_code)]
+pub(crate) const BUILD_POLICY_SOURCE_SHA256: &str =
+    "6af178be63259d0085313aae8ad00b56199b51afa4cd83c4540d2e333aa2eff0";
+
 pub const SCHEMA_VERSION: u64 = 3;
 pub const SCHEMA_NAME: &str = "boxdd-sys-provider-v3";
 pub const ADAPTER_ABI_VERSION: u64 = 2;
@@ -15,18 +19,6 @@ pub const RECORDING_CONTRACT_BLAKE3: &str =
     "26e9ed79e7e4d7ac00d927be5e9c184f2058c585c7369c589ced11da14ddefe2";
 pub const VENDORED_SOURCE_IDENTITY_SHA256: &str =
     "0fac2ddee3fb443075db2a9adb8abef375fc0a27f050af93d7bf1771ec4b8de7";
-pub const ADAPTER_SOURCE_PATHS: &[&str] = &[
-    "effective-source.toml",
-    "native/boxdd_adapter.h",
-    "native/boxdd_adapter.c",
-    "native/boxdd_identity_values.c",
-    "native/boxdd_private_abi.inl",
-    "native/boxdd_recording_adapter.c",
-    "native/boxdd_snapshot_layout.inl",
-    "native/boxdd_snapshot_validate.c",
-    "native/boxdd_wasm_runtime.js",
-    "src/source_overlay.rs",
-];
 pub const REQUIRED_ADAPTER_SYMBOLS: &[&str] = &[
     "boxddAdapter_AbiVersion",
     "boxddAdapter_GetIdentity",
@@ -468,109 +460,6 @@ pub fn sha256_file(path: &Path) -> Result<String, String> {
     Ok(sha256_bytes(&bytes))
 }
 
-pub fn adapter_source_sha256(manifest_dir: &Path) -> Result<String, String> {
-    let mut digest = Sha256::new();
-    digest.update(b"boxdd.adapter.sources.v1\0");
-    for relative_path in ADAPTER_SOURCE_PATHS {
-        let contents = fs::read(manifest_dir.join(relative_path))
-            .map_err(|error| format!("failed to read adapter source {relative_path}: {error}"))?;
-        digest.update((relative_path.len() as u64).to_le_bytes());
-        digest.update(relative_path.as_bytes());
-        digest.update((contents.len() as u64).to_le_bytes());
-        digest.update(contents);
-    }
-    Ok(hex_digest(digest.finalize()))
-}
-
-pub fn vendored_source_identity_sha256(
-    upstream_sha: &str,
-    source_tree: &str,
-    source_root: &Path,
-    relative_paths: &[PathBuf],
-) -> Result<String, String> {
-    validate_git_sha("upstream_sha", upstream_sha)?;
-    validate_git_sha("source_inventory.tree", source_tree)?;
-
-    let canonical_root = fs::canonicalize(source_root).map_err(|error| {
-        format!(
-            "failed to resolve vendored source root {}: {error}",
-            source_root.display()
-        )
-    })?;
-    let mut paths = relative_paths
-        .iter()
-        .map(|path| {
-            let rendered = path
-                .to_str()
-                .ok_or_else(|| format!("vendored source path is not UTF-8: {}", path.display()))?;
-            if rendered.is_empty()
-                || rendered.contains('\\')
-                || path.is_absolute()
-                || !path
-                    .components()
-                    .all(|component| matches!(component, Component::Normal(_)))
-            {
-                return Err(format!(
-                    "vendored source path {rendered:?} is not a normalized relative path"
-                ));
-            }
-            Ok((rendered.to_owned(), path.clone()))
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    paths.sort_by(|left, right| left.0.cmp(&right.0));
-    if paths
-        .windows(2)
-        .any(|pair| pair[0].0.as_str() == pair[1].0.as_str())
-    {
-        return Err("vendored source inventory contains duplicate paths".to_owned());
-    }
-
-    let mut digest = Sha256::new();
-    digest.update(b"boxdd.vendored-source-identity.v1\0");
-    digest.update((upstream_sha.len() as u64).to_le_bytes());
-    digest.update(upstream_sha.as_bytes());
-    digest.update((source_tree.len() as u64).to_le_bytes());
-    digest.update(source_tree.as_bytes());
-    digest.update((paths.len() as u64).to_le_bytes());
-    for (rendered, relative_path) in paths {
-        let candidate = source_root.join(&relative_path);
-        let metadata = fs::symlink_metadata(&candidate).map_err(|error| {
-            format!(
-                "failed to inspect vendored source {rendered:?} at {}: {error}",
-                candidate.display()
-            )
-        })?;
-        if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
-            return Err(format!(
-                "vendored source {rendered:?} must be a regular non-symlink file"
-            ));
-        }
-        let canonical = fs::canonicalize(&candidate).map_err(|error| {
-            format!(
-                "failed to resolve vendored source {rendered:?} at {}: {error}",
-                candidate.display()
-            )
-        })?;
-        if !canonical.starts_with(&canonical_root) {
-            return Err(format!(
-                "vendored source {rendered:?} escapes {}",
-                source_root.display()
-            ));
-        }
-        let contents = fs::read(&canonical).map_err(|error| {
-            format!(
-                "failed to read vendored source {rendered:?} at {}: {error}",
-                canonical.display()
-            )
-        })?;
-        digest.update((rendered.len() as u64).to_le_bytes());
-        digest.update(rendered.as_bytes());
-        digest.update((contents.len() as u64).to_le_bytes());
-        digest.update(contents);
-    }
-    Ok(hex_digest(digest.finalize()))
-}
-
 pub fn sha256_bytes(bytes: &[u8]) -> String {
     hex_digest(Sha256::digest(bytes))
 }
@@ -814,6 +703,7 @@ fn validate_git_sha(label: &str, value: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::source_overlay::{ADAPTER_SOURCE_PATHS, adapter_source_sha256};
     use std::fs;
     use tempfile::tempdir;
 
@@ -997,45 +887,6 @@ mod tests {
         .unwrap();
         let changed_policy = adapter_source_sha256(directory.path()).unwrap();
         assert_ne!(changed, changed_policy);
-    }
-
-    #[test]
-    fn vendored_source_identity_binds_revision_tree_inventory_and_bytes() {
-        let directory = tempdir().unwrap();
-        let paths = vec![PathBuf::from("src/a.c"), PathBuf::from("include/box2d/a.h")];
-        for path in &paths {
-            let full = directory.path().join(path);
-            fs::create_dir_all(full.parent().unwrap()).unwrap();
-            fs::write(full, path.to_string_lossy().as_bytes()).unwrap();
-        }
-        let revision = "56edae79f2949d86142b03450d5d60f63bcf5a6f";
-        let tree = "63a1ab02e3d2bf7c4d86b257b78976842b8c5ddb";
-        let initial =
-            vendored_source_identity_sha256(revision, tree, directory.path(), &paths).unwrap();
-        assert_ne!(
-            initial,
-            vendored_source_identity_sha256(
-                "0000000000000000000000000000000000000000",
-                tree,
-                directory.path(),
-                &paths,
-            )
-            .unwrap()
-        );
-        fs::write(directory.path().join(&paths[0]), b"changed").unwrap();
-        assert_ne!(
-            initial,
-            vendored_source_identity_sha256(revision, tree, directory.path(), &paths).unwrap()
-        );
-        assert!(
-            vendored_source_identity_sha256(
-                revision,
-                tree,
-                directory.path(),
-                &[paths[0].clone(), paths[0].clone()],
-            )
-            .is_err()
-        );
     }
 
     #[test]

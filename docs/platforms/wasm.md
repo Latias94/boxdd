@@ -11,7 +11,8 @@ WASM support is bound to the pinned Box2D 3.2.0 development snapshot
 | Rust compile check | `wasm32-unknown-unknown` | `boxdd-sys` and callback-free `boxdd`; compile-only by default | `cargo run -p xtask -- verify-wasm --compile-only` |
 | Rust compile check | `wasm32-wasip1` | `boxdd-sys` and callback-free `boxdd`; no WASI runtime claim | `cargo run -p xtask -- verify-wasm --compile-only` |
 | Provider runtime | `wasm32-unknown-unknown` | Node- and Chromium-qualified in single and double precision | `cargo run -p xtask -- verify-wasm --runtime` |
-| GitHub Pages | Browser | Single-precision provider only | `cargo run -p xtask -- build-pages-wasm` |
+| Official provider package | Browser and Node | Signed whole-package provenance in single and double precision | Protected tag workflow; `cargo run -p xtask -- qualify-wasm-provider` verifies a signed package |
+| GitHub Pages preview | Browser | Single-precision development preview only | `cargo run -p xtask -- build-pages-wasm` |
 | Rust callback tables and debug draw | `wasm32` | Compile-time unavailable | Negative compile probes run through `verify-wasm --compile-only` |
 | Multiple workers | Provider runtime | Unsupported | `WorkerCount` accepts one |
 
@@ -25,7 +26,9 @@ WASM support is bound to the pinned Box2D 3.2.0 development snapshot
   `box2d-sys-v1-single` or `box2d-sys-v1-double` on `wasm32-unknown-unknown` only. The Rust and
   Emscripten modules share one `WebAssembly.Memory`; `boxdd-sys` rejects this runtime adapter on
   `wasm32-wasip1`.
-There is no prebuilt WASM archive adapter. Selection never falls back to another provider.
+There is no prebuilt WASM archive adapter consumed by `boxdd-sys`, and selection never falls back
+to another provider. The separately distributed official JavaScript/WASM runtime packages are
+built and authenticated by repository-level `xtask` commands; they are not crate build inputs.
 
 At startup the runtime adapter checks the complete provider identity before Safe Rust creates
 physics state: upstream SHA, precision, provider ABI/private ABI, snapshot/recording versions and
@@ -93,11 +96,15 @@ export EMSDK_PYTHON=/usr/bin/python3
 # export EMSDK_PYTHON="$EMSDK/python/3.13.3_64bit/bin/python3.13"
 export EMSDK_NODE="$EMSDK/node/22.16.0_64bit/bin/node"
 
-# Full provider qualification requires the toolchain pinned by xtask.
+# Source-provider runtime qualification requires the toolchain pinned by xtask.
 cargo run -p xtask -- wasm-provider-contract --check
 cargo run -p xtask -- provider-smoke
 BOXDD_WASM_PRECISION=double cargo run -p xtask -- provider-smoke
 cargo run -p xtask -- verify-wasm --runtime
+
+# Build one unsigned release input. The protected workflow signs it before qualification.
+cargo run -p xtask -- build-wasm-provider-package --precision single --output /tmp/boxdd-wasm
+cargo run -p xtask -- build-wasm-provider-package --precision double --output /tmp/boxdd-wasm
 
 cargo run -p xtask -- build-pages-wasm
 ```
@@ -113,12 +120,15 @@ multi-file transaction installs them. The command captures its inputs and existi
 generation, revalidates the SDK, and rolls back both files if installation or terminal validation
 fails.
 The `boxdd-sys` build consumes the selected checked-in contract under `boxdd-sys/abi` and never
-discovers or executes Emscripten. Full provider qualification is owned by `xtask`; it requires
-`EMSDK` to name the clean, detached checkout and installed release pinned by
-`xtask/toolchains/emscripten-sdk.toml`. `provision-emsdk` downloads the pinned release and Node.js
-archives plus the bundled Python archive on macOS, verifies every downloaded archive and expanded
-tree, writes the exact activation configuration, and qualifies the result before publication. On
-Linux it follows Emsdk's upstream policy by requiring root-owned `/usr/bin/python3` version 3.10 or
+discovers, downloads, extracts, caches, or executes Emscripten. Repository source-provider builds,
+`verify-wasm --runtime`, and Pages builds are owned by `xtask`; these commands require `EMSDK` to
+name the clean, detached checkout and installed release pinned by
+`xtask/toolchains/emscripten-sdk.toml`. By contrast, `qualify-wasm-provider` consumes an already-built
+signed package and never provisions or executes Emscripten. `provision-emsdk` downloads the pinned
+release and Node.js archives plus the bundled Python archive on macOS, verifies every downloaded
+archive and expanded tree, writes the exact activation configuration, and qualifies the result
+before publication. On Linux it follows Emsdk's upstream policy by requiring root-owned
+`/usr/bin/python3` version 3.10 or
 newer instead of packaging a non-relocatable interpreter. The current contract validates Ubuntu
 24.04 x86_64 through `/etc/os-release` and supports macOS arm64; it does not qualify Windows
 provisioning. `PATH` discovery and `BOXDD_EMSDK_REVISION` self-attestation are rejected.
@@ -130,11 +140,36 @@ The Rust consumer build is separately pinned to the repository development Cargo
 ambient Cargo configuration, compiler wrappers, target/profile overrides, and injected flags are
 rejected or scrubbed before provider and Pages compilation.
 
+## Official Release Packages
+
+The protected tag workflow builds exactly two runtime packages for the current 0.6.0 line:
+
+- `boxdd-wasm-provider-0.6.0-wasm32-unknown-unknown-single.tar.gz`
+- `boxdd-wasm-provider-0.6.0-wasm32-unknown-unknown-double.tar.gz`
+
+Each canonical archive contains exactly `manifest.toml`, `checksums.sha256`, the matching
+`provider/box2d-sys-v1-<precision>.js` and `.wasm`, the upstream Box2D license, and the project's
+Apache-2.0 and MIT licenses. Its canonical provenance statement binds the complete outer archive
+to the repository, protected workflow, tag, immutable commit and run, plus the full provider ABI,
+source, SDK, bindings, layout, precision, validation and SIMD identities.
+
+An unprivileged build job provisions the pinned SDK and creates each archive. A protected OIDC job
+signs the canonical statement. The later read-only qualification job snapshots the archive,
+statement, Sigstore bundle and trust root, authenticates publisher and outer-archive identity, and
+only then performs bounded extraction. It runs a fresh Rust consumer and the extracted provider
+under Node and Chromium without provisioning or executing Emscripten. This ordering prevents an
+unauthenticated JavaScript module or WASM binary from executing during qualification.
+
+`qualify-wasm-provider` is therefore a release-consumer command, while
+`build-wasm-provider-package` is a repository build command. Neither capability belongs in
+`boxdd-sys`.
+
 ## Pages
 
 The browser path uses `bevy_boxdd/examples/testbed_2d`, Bevy Web + egui, the single-precision v1
-provider shim, and generated assets under `docs/pages`. Double-precision Pages generation is
-rejected; outside the Pages build, both precisions are runtime-qualified under Node and Chromium.
+provider shim, and generated assets under `docs/pages`. It is a development preview, not the
+portable signed distribution. Double-precision Pages generation is rejected; outside the Pages
+build, both precisions are runtime-qualified under Node and Chromium.
 
 ```text
 cargo run -p xtask -- build-pages-wasm

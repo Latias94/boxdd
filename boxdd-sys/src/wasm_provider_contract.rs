@@ -4,6 +4,10 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
+#[allow(dead_code)]
+pub(crate) const BUILD_POLICY_SOURCE_SHA256: &str =
+    "2b8bbdfadc12b37f12af49c3974331d475a62fc997a4beb3beeb8ba978e82e7c";
+
 pub(crate) const SCHEMA_VERSION: u64 = 1;
 pub(crate) const SCHEMA_NAME: &str = "boxdd-wasm-provider-identity-v1";
 pub(crate) const PROVIDER_ABI: &str = "box2d-sys-v1";

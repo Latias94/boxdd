@@ -39,10 +39,10 @@ use bindgen_contract::{
     validate_bindgen_target_override,
 };
 use build_support::{
-    BindingTargetFamily, COSIGN_VERSION, PUBLISHER_REPOSITORY, PUBLISHER_WORKFLOW,
-    PrebuiltProvenance, ProviderAdapter, ProviderInputs, SIGSTORE_TRUSTED_ROOT_RELATIVE_PATH,
-    SIGSTORE_TRUSTED_ROOT_SHA256, classify_binding_target, cosign_verify_blob_args,
-    cosign_version_is_qualified, select_provider, simd_identity, validate_c_source_paths,
+    BindingTargetFamily, COSIGN_VERSION, PROVENANCE_POLICY_BUILD_POLICY_SOURCE_SHA256,
+    PUBLISHER_REPOSITORY, PUBLISHER_WORKFLOW, PrebuiltProvenance, ProviderAdapter, ProviderInputs,
+    SIGSTORE_TRUSTED_ROOT_RELATIVE_PATH, SIGSTORE_TRUSTED_ROOT_SHA256, classify_binding_target,
+    cosign_verify_blob_args, cosign_version_is_qualified, select_provider, simd_identity,
     validate_skip_cc_policy,
 };
 use prebuilt_provenance::PrebuiltProvenanceStatement;
@@ -53,17 +53,80 @@ use provider_archive::{
 };
 use provider_manifest::{
     ArtifactExpectation, ArtifactIdentityExpectation, RECORDING_CONTRACT_BLAKE3,
-    REQUIRED_ADAPTER_SYMBOLS, VENDORED_SOURCE_IDENTITY_SHA256, VerifiedArtifact,
-    adapter_source_sha256, sha256_file, vendored_source_identity_sha256, verify_artifact,
+    REQUIRED_ADAPTER_SYMBOLS, VENDORED_SOURCE_IDENTITY_SHA256, VerifiedArtifact, sha256_file,
+    verify_artifact,
 };
 use source_overlay::{
-    EffectiveSourceIdentity, MaterializedEffectiveSources, effective_source_identity,
-    materialize_effective_box2d_sources,
+    CompiledBuildPolicySource, EffectiveSourceIdentity, MaterializedBuildInputs,
+    materialize_build_inputs, validate_compiled_build_policy_sources,
 };
 use wasm_provider_contract::{
     COMPILER_TARGET, ENDIANNESS, POINTER_WIDTH, PROVIDER_ABI, SIMD_MODE, WasmProviderExpectation,
     WasmProviderIdentity, contract_relative_path,
 };
+
+#[allow(dead_code)]
+pub(crate) const BUILD_POLICY_SOURCE_SHA256: &str =
+    "9287025360d5a87d9a245ed4ce039c184a8c92df7215ab460f15caffb781fde4";
+
+const COMPILED_BUILD_POLICY_SOURCES: &[CompiledBuildPolicySource<'static>] = &[
+    CompiledBuildPolicySource::data("Cargo.toml", include_bytes!("Cargo.toml")),
+    CompiledBuildPolicySource::rust(
+        "build.rs",
+        include_bytes!("build.rs"),
+        BUILD_POLICY_SOURCE_SHA256,
+    ),
+    CompiledBuildPolicySource::data(
+        "effective-source.toml",
+        include_bytes!("effective-source.toml"),
+    ),
+    CompiledBuildPolicySource::rust(
+        "src/bindgen_contract.rs",
+        include_bytes!("src/bindgen_contract.rs"),
+        bindgen_contract::BUILD_POLICY_SOURCE_SHA256,
+    ),
+    CompiledBuildPolicySource::rust(
+        "src/build_support.rs",
+        include_bytes!("src/build_support.rs"),
+        build_support::BUILD_POLICY_SOURCE_SHA256,
+    ),
+    CompiledBuildPolicySource::rust(
+        "src/prebuilt_provenance.rs",
+        include_bytes!("src/prebuilt_provenance.rs"),
+        prebuilt_provenance::BUILD_POLICY_SOURCE_SHA256,
+    ),
+    CompiledBuildPolicySource::rust(
+        "src/precision.rs",
+        include_bytes!("src/precision.rs"),
+        precision::BUILD_POLICY_SOURCE_SHA256,
+    ),
+    CompiledBuildPolicySource::rust(
+        "src/provenance_policy.rs",
+        include_bytes!("src/provenance_policy.rs"),
+        PROVENANCE_POLICY_BUILD_POLICY_SOURCE_SHA256,
+    ),
+    CompiledBuildPolicySource::rust(
+        "src/provider_archive.rs",
+        include_bytes!("src/provider_archive.rs"),
+        provider_archive::BUILD_POLICY_SOURCE_SHA256,
+    ),
+    CompiledBuildPolicySource::rust(
+        "src/provider_manifest.rs",
+        include_bytes!("src/provider_manifest.rs"),
+        provider_manifest::BUILD_POLICY_SOURCE_SHA256,
+    ),
+    CompiledBuildPolicySource::rust(
+        "src/source_overlay.rs",
+        include_bytes!("src/source_overlay.rs"),
+        source_overlay::BUILD_POLICY_SOURCE_SHA256,
+    ),
+    CompiledBuildPolicySource::rust(
+        "src/wasm_provider_contract.rs",
+        include_bytes!("src/wasm_provider_contract.rs"),
+        wasm_provider_contract::BUILD_POLICY_SOURCE_SHA256,
+    ),
+    CompiledBuildPolicySource::data("upstream.toml", include_bytes!("upstream.toml")),
+];
 
 #[derive(Debug)]
 struct BuildConfig {
@@ -84,13 +147,6 @@ struct BuildConfig {
     freestanding_bindgen_headers: Option<ValidatedFreestandingHeaders>,
     provider: ProviderAdapter,
     precision: Precision,
-}
-
-#[derive(Debug)]
-struct UpstreamBuildManifest {
-    active_revision: String,
-    source_tree: String,
-    source_paths: Vec<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -121,11 +177,6 @@ struct CompiledIdentityProbe {
     object: PathBuf,
 }
 
-const ADAPTER_C_SOURCE_PATHS: &[&str] = &[
-    "native/boxdd_adapter.c",
-    "native/boxdd_recording_adapter.c",
-    "native/boxdd_snapshot_validate.c",
-];
 impl BuildConfig {
     fn from_env() -> Self {
         let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
@@ -254,15 +305,18 @@ fn validate_wasm_bindgen_header_environment(target: &str, binding_generation_req
 }
 
 fn main() {
+    validate_compiled_build_policy_sources(
+        Path::new(env!("CARGO_MANIFEST_DIR")),
+        COMPILED_BUILD_POLICY_SOURCES,
+    )
+    .unwrap_or_else(|error| panic!("invalid executing Box2D build policy: {error}"));
+
     println!("cargo:rustc-check-cfg=cfg(has_pregenerated)");
     println!("cargo:rustc-check-cfg=cfg(force_bindgen)");
     println!("cargo:rustc-check-cfg=cfg(boxdd_sys_wasm_provider)");
-    println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=src/bindgen_contract.rs");
-    println!("cargo:rerun-if-changed=src/precision.rs");
-    println!("cargo:rerun-if-changed=src/source_overlay.rs");
-    println!("cargo:rerun-if-changed=src/provider_archive.rs");
-    println!("cargo:rerun-if-changed=src/wasm_provider_contract.rs");
+    for source in COMPILED_BUILD_POLICY_SOURCES {
+        println!("cargo:rerun-if-changed={}", source.relative_path());
+    }
     println!("cargo:rerun-if-changed=abi/wasm32-unknown-unknown-single.toml");
     println!("cargo:rerun-if-changed=abi/wasm32-unknown-unknown-double.toml");
     println!("cargo:rerun-if-changed=src/bindings_pregenerated.rs");
@@ -273,8 +327,6 @@ fn main() {
     println!("cargo:rerun-if-changed=src/bindings_wasm32_wasip1_double.rs");
     println!("cargo:rerun-if-changed=src/bindgen_headers/wasm32_unknown_unknown");
     println!("cargo:rerun-if-changed=src/bindgen_headers/wasm32_unknown_unknown/math.h");
-    println!("cargo:rerun-if-changed=upstream.toml");
-    println!("cargo:rerun-if-changed=effective-source.toml");
     println!("cargo:rerun-if-changed=third-party/box2d/include/box2d/box2d.h");
     println!("cargo:rerun-if-changed=third-party/box2d");
     println!("cargo:rerun-if-changed=native");
@@ -315,48 +367,36 @@ fn main() {
         );
     }
     reject_precision_macro_overrides(&config.target);
-    let upstream = load_upstream_manifest(&config.manifest_dir);
-    validate_vendored_source(&config.manifest_dir, &upstream);
-    let effective_source = effective_source_identity(&config.manifest_dir)
-        .unwrap_or_else(|error| panic!("failed to validate effective Box2D sources: {error}"));
+    let build_inputs = materialize_build_inputs(
+        &config.manifest_dir,
+        &config.out_dir,
+        COMPILED_BUILD_POLICY_SOURCES,
+    )
+    .unwrap_or_else(|error| panic!("failed to capture Box2D build inputs: {error}"));
+    build_inputs
+        .revalidate()
+        .unwrap_or_else(|error| panic!("captured Box2D build inputs are not stable: {error}"));
     assert_eq!(
-        effective_source.upstream_sha, upstream.active_revision,
-        "effective-source identity does not match the validated upstream revision"
+        build_inputs.vendored_source_sha256, VENDORED_SOURCE_IDENTITY_SHA256,
+        "vendored Box2D source content/inventory does not match the reviewed identity"
     );
-    assert_eq!(
-        effective_source.source_tree, upstream.source_tree,
-        "effective-source identity does not match the validated upstream tree"
-    );
-    let materialized_sources =
-        materialize_effective_box2d_sources(&config.manifest_dir, &config.out_dir).unwrap_or_else(
-            |error| panic!("failed to materialize reviewed Box2D source tree: {error}"),
-        );
-    assert_eq!(
-        materialized_sources.identity, effective_source,
-        "materialized compiler inputs do not match the prevalidated effective-source identity"
-    );
+    validate_vendored_checkout(&config.manifest_dir, &build_inputs.effective.identity);
+    let effective_source = &build_inputs.effective.identity;
+    let adapter_source_sha256 = &build_inputs.adapter.adapter_source_sha256;
     let pregenerated = config.pregenerated_bindings();
     let has_pregenerated = pregenerated.is_file();
-    let adapter_source_sha256 = adapter_source_sha256(&config.manifest_dir)
-        .unwrap_or_else(|error| panic!("failed to identify the repository adapter: {error}"));
 
-    let external = prepare_external_provider(
-        &config,
-        &upstream.active_revision,
-        &effective_source.effective_source_sha256,
-        &adapter_source_sha256,
-        &materialized_sources,
-    );
+    let external = prepare_external_provider(&config, &build_inputs);
 
     let wasm_import_module = config.precision.wasm_import_module();
     emit_build_identity(
         &config,
-        &upstream.active_revision,
+        &effective_source.upstream_sha,
         &effective_source.effective_source_sha256,
-        &adapter_source_sha256,
+        adapter_source_sha256,
         wasm_import_module,
         external.as_ref(),
-        &materialized_sources.public_include,
+        &build_inputs.effective.public_include,
     );
     write_expected_adapter_identity(
         &config.out_dir,
@@ -382,7 +422,7 @@ fn main() {
     if config.force_bindgen || (!has_pregenerated && !config.is_docsrs) {
         #[cfg(feature = "bindgen")]
         generate_bindings(
-            &materialized_sources.public_include,
+            &build_inputs.effective.public_include,
             &config.out_dir,
             &config.target,
             config.precision,
@@ -408,47 +448,41 @@ fn main() {
 
     if config.is_docsrs {
         println!("cargo:warning=DOCS_RS detected: skipping native Box2D C build");
-        return;
-    }
-
-    if config.skip_cc {
+    } else if config.skip_cc {
         println!("cargo:warning=Skipping native Box2D C build due to BOXDD_SYS_SKIP_CC");
-        return;
+    } else {
+        match config.provider {
+            ProviderAdapter::WasmCompileOnly => println!(
+                "cargo:warning=boxdd-sys is using compile-only WASM mode; no Box2D runtime is linked"
+            ),
+            ProviderAdapter::WasmProvider => {
+                println!(
+                    "cargo:warning=boxdd-sys WASM provider mode is active; runtime identity must be verified before instantiation"
+                );
+                let identity = load_wasm_provider_identity_contract(
+                    &config,
+                    &effective_source.upstream_sha,
+                    &effective_source.source_tree,
+                    &effective_source.effective_source_sha256,
+                    adapter_source_sha256,
+                );
+                write_expected_adapter_identity(&config.out_dir, identity);
+            }
+            ProviderAdapter::Vendored => {
+                let identity = build_box2d_from_source(&config, &build_inputs);
+                write_expected_adapter_identity(&config.out_dir, identity);
+            }
+            ProviderAdapter::System | ProviderAdapter::Prebuilt => {
+                let prepared = external.expect("external provider was prepared");
+                write_expected_adapter_identity(&config.out_dir, prepared.native_abi_identity);
+                link_verified_artifact(&config, prepared.artifact, &prepared.archive_bytes);
+            }
+        }
     }
 
-    match config.provider {
-        ProviderAdapter::WasmCompileOnly => println!(
-            "cargo:warning=boxdd-sys is using compile-only WASM mode; no Box2D runtime is linked"
-        ),
-        ProviderAdapter::WasmProvider => {
-            println!(
-                "cargo:warning=boxdd-sys WASM provider mode is active; runtime identity must be verified before instantiation"
-            );
-            let identity = load_wasm_provider_identity_contract(
-                &config,
-                &upstream.active_revision,
-                &effective_source.source_tree,
-                &effective_source.effective_source_sha256,
-                &adapter_source_sha256,
-            );
-            write_expected_adapter_identity(&config.out_dir, identity);
-        }
-        ProviderAdapter::Vendored => {
-            let identity = build_box2d_from_source(
-                &config,
-                &upstream.active_revision,
-                &effective_source,
-                &adapter_source_sha256,
-                &materialized_sources,
-            );
-            write_expected_adapter_identity(&config.out_dir, identity);
-        }
-        ProviderAdapter::System | ProviderAdapter::Prebuilt => {
-            let prepared = external.expect("external provider was prepared");
-            write_expected_adapter_identity(&config.out_dir, prepared.native_abi_identity);
-            link_verified_artifact(&config, prepared.artifact, &prepared.archive_bytes);
-        }
-    }
+    build_inputs
+        .revalidate()
+        .unwrap_or_else(|error| panic!("Box2D build inputs changed while in use: {error}"));
 }
 
 fn validate_build_config(config: &BuildConfig) {
@@ -478,142 +512,8 @@ fn validate_build_config(config: &BuildConfig) {
     }
 }
 
-fn load_upstream_manifest(manifest_dir: &Path) -> UpstreamBuildManifest {
-    let path = manifest_dir.join("upstream.toml");
-    let source = fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
-    let manifest: toml::Value = toml::from_str(&source)
-        .unwrap_or_else(|error| panic!("failed to parse {}: {error}", path.display()));
-    let revision = manifest
-        .get("active_revision")
-        .and_then(toml::Value::as_str)
-        .unwrap_or_else(|| panic!("{} has no string active_revision", path.display()));
-    assert!(
-        revision.len() == 40
-            && revision
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)),
-        "{} active_revision must be a lowercase 40-character Git SHA",
-        path.display()
-    );
-
-    let raw_sources = manifest
-        .get("source_inventory")
-        .and_then(|inventory| inventory.get("c_sources"))
-        .and_then(toml::Value::as_array)
-        .unwrap_or_else(|| panic!("{} has no source_inventory.c_sources array", path.display()));
-    assert!(
-        !raw_sources.is_empty(),
-        "{} source_inventory.c_sources must not be empty",
-        path.display()
-    );
-
-    let raw_sources = raw_sources
-        .iter()
-        .map(|source| {
-            source.as_str().unwrap_or_else(|| {
-                panic!(
-                    "{} source_inventory.c_sources entries must be strings",
-                    path.display()
-                )
-            })
-        })
-        .collect::<Vec<_>>();
-    let c_sources = validate_c_source_paths(raw_sources).unwrap_or_else(|error| {
-        panic!(
-            "{} has invalid source_inventory.c_sources: {error}",
-            path.display()
-        )
-    });
-
-    let source_inventory = manifest
-        .get("source_inventory")
-        .and_then(toml::Value::as_table)
-        .unwrap_or_else(|| panic!("{} has no source_inventory table", path.display()));
-    let source_tree = source_inventory
-        .get("tree")
-        .and_then(toml::Value::as_str)
-        .unwrap_or_else(|| panic!("{} source_inventory.tree must be a string", path.display()));
-    assert_git_sha(
-        source_tree,
-        &format!("{} source_inventory.tree", path.display()),
-    );
-    let mut source_paths = c_sources.clone();
-    for (key, prefix, extension) in [
-        ("private_headers", "src/", "h"),
-        ("inline_files", "src/", "inl"),
-        ("public_headers", "include/box2d/", "h"),
-    ] {
-        let values = source_inventory
-            .get(key)
-            .and_then(toml::Value::as_array)
-            .unwrap_or_else(|| {
-                panic!("{} source_inventory.{key} must be an array", path.display())
-            });
-        for value in values {
-            let rendered = value.as_str().unwrap_or_else(|| {
-                panic!(
-                    "{} source_inventory.{key} entries must be strings",
-                    path.display()
-                )
-            });
-            assert_inventory_path(rendered, prefix, extension, &path, key);
-            source_paths.push(PathBuf::from(rendered));
-        }
-    }
-
-    UpstreamBuildManifest {
-        active_revision: revision.to_owned(),
-        source_tree: source_tree.to_owned(),
-        source_paths,
-    }
-}
-
-fn assert_git_sha(value: &str, label: &str) {
-    assert!(
-        value.len() == 40
-            && value
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)),
-        "{label} must be a lowercase 40-character Git SHA"
-    );
-}
-
-fn assert_inventory_path(
-    value: &str,
-    prefix: &str,
-    extension: &str,
-    manifest_path: &Path,
-    field: &str,
-) {
-    let path = Path::new(value);
-    assert!(
-        value.starts_with(prefix)
-            && !value.contains('\\')
-            && path.extension().and_then(|value| value.to_str()) == Some(extension)
-            && !path.is_absolute()
-            && path
-                .components()
-                .all(|component| matches!(component, std::path::Component::Normal(_))),
-        "{} source_inventory.{field} contains invalid path {value:?}",
-        manifest_path.display()
-    );
-}
-
-fn validate_vendored_source(manifest_dir: &Path, upstream: &UpstreamBuildManifest) {
+fn validate_vendored_checkout(manifest_dir: &Path, upstream: &EffectiveSourceIdentity) {
     let source_root = manifest_dir.join("third-party/box2d");
-    let actual = vendored_source_identity_sha256(
-        &upstream.active_revision,
-        &upstream.source_tree,
-        &source_root,
-        &upstream.source_paths,
-    )
-    .unwrap_or_else(|error| panic!("failed to validate vendored Box2D source identity: {error}"));
-    assert_eq!(
-        actual, VENDORED_SOURCE_IDENTITY_SHA256,
-        "vendored Box2D source content/inventory does not match the reviewed identity"
-    );
-
     if !source_root.join(".git").exists() {
         return;
     }
@@ -632,7 +532,7 @@ fn validate_vendored_source(manifest_dir: &Path, upstream: &UpstreamBuildManifes
     };
     assert_eq!(
         git_value(&["rev-parse", "HEAD"], "rev-parse HEAD"),
-        upstream.active_revision,
+        upstream.upstream_sha,
         "vendored Box2D submodule HEAD does not match upstream.toml"
     );
     assert_eq!(
@@ -739,40 +639,30 @@ fn emit_build_identity(
 
 fn prepare_external_provider(
     config: &BuildConfig,
-    upstream_sha: &str,
-    effective_source_sha256: &str,
-    adapter_source_sha256: &str,
-    effective_sources: &MaterializedEffectiveSources,
+    build_inputs: &MaterializedBuildInputs,
 ) -> Option<PreparedExternal> {
     let (provider, manifest_key) = match config.provider {
         ProviderAdapter::System => ("system", "BOXDD_SYS_SYSTEM_MANIFEST"),
         ProviderAdapter::Prebuilt => ("prebuilt", "BOXDD_SYS_PREBUILT_MANIFEST"),
         _ => return None,
     };
+    let effective_sources = &build_inputs.effective;
+    let effective_source = &effective_sources.identity;
+    let adapter_source_sha256 = &build_inputs.adapter.adapter_source_sha256;
     let manifest_path = PathBuf::from(
         env::var(manifest_key)
             .unwrap_or_else(|_| panic!("{manifest_key} is required for the {provider} provider")),
     );
-    assert_eq!(
-        effective_sources.identity.effective_source_sha256, effective_source_sha256,
-        "materialized external-provider inputs do not match the prevalidated effective-source identity"
-    );
     let header_path = effective_sources.public_include.join("box2d/box2d.h");
     let bindings_path = config.pregenerated_bindings();
-    let native_abi_identity = compile_adapter_identity_probe(
-        config,
-        &effective_sources.public_include,
-        &effective_sources.private_include,
-        effective_source_sha256,
-    )
-    .identity;
+    let native_abi_identity = compile_adapter_identity_probe(config, build_inputs).identity;
     let private_abi_hash = private_abi_hash_hex(native_abi_identity.private_abi_hash);
     let expectation = ArtifactExpectation {
         identity: ArtifactIdentityExpectation {
             provider,
             crate_version: env!("CARGO_PKG_VERSION"),
-            upstream_sha,
-            effective_source_sha256,
+            upstream_sha: &effective_source.upstream_sha,
+            effective_source_sha256: &effective_source.effective_source_sha256,
             precision: config.precision.as_str(),
             target: &config.target,
             crt: expected_crt_identity(config),
@@ -801,7 +691,7 @@ fn prepare_external_provider(
         &ArchiveExpectation {
             target: &config.target,
             required_symbols: REQUIRED_ADAPTER_SYMBOLS,
-            effective_source_sha256,
+            effective_source_sha256: &effective_source.effective_source_sha256,
             private_abi_hash: &private_abi_hash,
             snapshot_layout_hash: native_abi_identity.snapshot_layout_hash,
         },
@@ -1321,20 +1211,16 @@ fn c_string_define(value: &str, name: &str) -> String {
 
 fn build_box2d_from_source(
     config: &BuildConfig,
-    upstream_sha: &str,
-    effective_source: &EffectiveSourceIdentity,
-    adapter_source_sha256: &str,
-    effective_sources: &MaterializedEffectiveSources,
+    build_inputs: &MaterializedBuildInputs,
 ) -> NativeAbiIdentity {
-    let adapter_include = config.manifest_dir.join("native");
-    assert_eq!(
-        &effective_sources.identity, effective_source,
-        "materialized compiler inputs do not match the prevalidated effective-source identity"
-    );
+    let effective_sources = &build_inputs.effective;
+    let adapter_sources = &build_inputs.adapter;
+    let effective_source = &effective_sources.identity;
+    let adapter_source_sha256 = &adapter_sources.adapter_source_sha256;
     let mut build = cc::Build::new();
     build.include(&effective_sources.public_include);
     build.include(&effective_sources.private_include);
-    build.include(&adapter_include);
+    build.include(&adapter_sources.native_include);
     for source in &effective_sources.c_sources {
         assert!(
             source.is_file(),
@@ -1343,19 +1229,19 @@ fn build_box2d_from_source(
         );
         build.file(source);
     }
-    for relative_path in ADAPTER_C_SOURCE_PATHS {
-        build.file(config.manifest_dir.join(relative_path));
+    for source in &adapter_sources.c_sources {
+        assert!(
+            source.is_file(),
+            "captured adapter source is missing: {}",
+            source.display()
+        );
+        build.file(source);
     }
 
-    let identity_probe = compile_adapter_identity_probe(
-        config,
-        &effective_sources.public_include,
-        &effective_sources.private_include,
-        &effective_source.effective_source_sha256,
-    );
+    let identity_probe = compile_adapter_identity_probe(config, build_inputs);
     build.object(&identity_probe.object);
 
-    let upstream_define = c_string_define(upstream_sha, "upstream SHA");
+    let upstream_define = c_string_define(&effective_source.upstream_sha, "upstream SHA");
     let target_define = c_string_define(&config.target, "target ABI");
     let adapter_digest_define = c_string_define(adapter_source_sha256, "adapter source SHA-256");
     let recording_digest_define =
@@ -1425,16 +1311,19 @@ fn build_box2d_from_source(
 
 fn compile_adapter_identity_probe(
     config: &BuildConfig,
-    public_include: &Path,
-    private_include: &Path,
-    effective_source_sha256: &str,
+    build_inputs: &MaterializedBuildInputs,
 ) -> CompiledIdentityProbe {
+    let effective_sources = &build_inputs.effective;
+    let adapter_sources = &build_inputs.adapter;
     let mut build = cc::Build::new();
-    build.include(public_include);
-    build.include(private_include);
-    build.include(config.manifest_dir.join("native"));
-    build.file(config.manifest_dir.join("native/boxdd_identity_values.c"));
-    define_effective_source_identity(&mut build, effective_source_sha256);
+    build.include(&effective_sources.public_include);
+    build.include(&effective_sources.private_include);
+    build.include(&adapter_sources.native_include);
+    build.file(&adapter_sources.identity_probe_source);
+    define_effective_source_identity(
+        &mut build,
+        &effective_sources.identity.effective_source_sha256,
+    );
 
     if config.precision == Precision::Double {
         build.define("BOX2D_DOUBLE_PRECISION", None);

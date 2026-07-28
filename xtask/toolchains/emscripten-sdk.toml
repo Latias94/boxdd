@@ -1,5 +1,5 @@
-# The ordinary Cargo wasm-provider route must use this exact SDK identity.
-schema_version = 3
+# Repository WASM source-provider build commands must use this exact SDK identity.
+schema_version = 4
 provider_abi = "box2d-sys-v1"
 emscripten_version = "6.0.3"
 emsdk_repository = "https://github.com/emscripten-core/emsdk.git"
@@ -14,9 +14,11 @@ id = "linux-x86_64-ubuntu24.04"
 os = "linux"
 arch = "x86_64"
 release_url = "https://storage.googleapis.com/webassembly/emscripten-releases-builds/linux/9074aa513b501925adb1361e208932ad32a29a5f/wasm-binaries.tar.xz"
+release_archive_bytes = 292035244
 release_archive_sha256 = "3f32b91a3f8d405846ccacee911f9364da75f413fbd11ea1f3f7f23bf9d07cf3"
 release_tree_sha256 = "6585bf023890878b326f0aa16324a79f36715f24957b4c3cc44efdb30d46f55c"
 node_url = "https://storage.googleapis.com/webassembly/emscripten-releases-builds/deps/node-v22.16.0-linux-x64.tar.xz"
+node_archive_bytes = 30425588
 node_archive_sha256 = "f4cb75bb036f0d0eddf6b79d9596df1aaab9ddccd6a20bf489be5abe9467e84e"
 node_tree_sha256 = "e1f56456aff7fb39bc6ec206b8c9d149f533dc420b47a199e7637bfdcc0b33e5"
 host_probe = { kind = "linux-os-release", id = "ubuntu", version_id = "24.04" }
@@ -27,10 +29,12 @@ id = "macos-aarch64"
 os = "macos"
 arch = "aarch64"
 release_url = "https://storage.googleapis.com/webassembly/emscripten-releases-builds/mac/9074aa513b501925adb1361e208932ad32a29a5f/wasm-binaries-arm64.tar.xz"
+release_archive_bytes = 266942072
 release_archive_sha256 = "ad5930241643602333388cf5f7f4dbc7679dc47d575f05a39865b51f2679eaac"
 release_tree_sha256 = "852a69b97bc4c1062fc74188e34f9e6d17d6f2fe3bc3daa97658cb43fe6ff2c0"
 node_url = "https://storage.googleapis.com/webassembly/emscripten-releases-builds/deps/node-v22.16.0-darwin-arm64.tar.gz"
+node_archive_bytes = 47716750
 node_archive_sha256 = "1d7f34ec4c03e12d8b33481e5c4560432d7dc31a0ef3ff5a4d9a8ada7cf6ecc9"
 node_tree_sha256 = "28eff417ca59f1b9c64f6a0852b5ecf7229a8bd35144cc661e84b607703516f7"
 host_probe = { kind = "os-arch" }
-python = { kind = "archive", version = "3.13.3", url = "https://storage.googleapis.com/webassembly/emscripten-releases-builds/deps/python-3.13.3-0-macos-arm64.tar.gz", archive_sha256 = "2b0899d7ade9463b0c909ef23aeea27546a4f412637998d817a49718bc2bac19", tree_sha256 = "0ae9491cd14bc50d13ce7e07da011dd80ca8d3ce65e27b07515fbdb86e391547", executable = "bin/python3.13" }
+python = { kind = "archive", version = "3.13.3", url = "https://storage.googleapis.com/webassembly/emscripten-releases-builds/deps/python-3.13.3-0-macos-arm64.tar.gz", archive_bytes = 44280478, archive_sha256 = "2b0899d7ade9463b0c909ef23aeea27546a4f412637998d817a49718bc2bac19", tree_sha256 = "0ae9491cd14bc50d13ce7e07da011dd80ca8d3ce65e27b07515fbdb86e391547", executable = "bin/python3.13" }

@@ -21,13 +21,13 @@ use crate::{
     paths::WorkspacePaths,
     provider_archive::{private_abi_hash, snapshot_layout_hash},
     provider_manifest::{
-        ADAPTER_ABI_VERSION, ADAPTER_SOURCE_PATHS, RECORDING_CONTRACT_BLAKE3,
-        REQUIRED_RUNTIME_IDENTITY_IMPORTS, adapter_source_sha256, sha256_file,
+        ADAPTER_ABI_VERSION, RECORDING_CONTRACT_BLAKE3, REQUIRED_RUNTIME_IDENTITY_IMPORTS,
+        sha256_file,
     },
     qualified_git::qualified_git_command,
     source_overlay::{
-        EffectiveSourceIdentity, MaterializedEffectiveSources, effective_source_identity,
-        materialize_effective_box2d_sources,
+        ADAPTER_SOURCE_PATHS, EffectiveSourceIdentity, MaterializedEffectiveSources,
+        adapter_source_sha256, effective_source_identity, materialize_effective_box2d_sources,
     },
     wasm_identity,
     wasm_provider_contract::{
@@ -84,33 +84,34 @@ const RUNTIME_EXPORTS: &[&str] = &[
 ];
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub(super) enum ProviderPrecision {
+pub(crate) enum ProviderPrecision {
     Single,
     Double,
 }
 
 impl ProviderPrecision {
-    pub(super) fn from_env() -> Result<Self> {
-        match env::var("BOXDD_WASM_PRECISION")
-            .unwrap_or_else(|_| "single".to_owned())
-            .as_str()
-        {
+    pub(crate) fn parse(value: &str) -> Result<Self> {
+        match value {
             "single" => Ok(Self::Single),
             "double" => Ok(Self::Double),
-            value => Err(Error::Message(format!(
-                "invalid BOXDD_WASM_PRECISION `{value}`; expected single or double"
+            _ => Err(Error::Message(format!(
+                "invalid WASM precision `{value}`; expected single or double"
             ))),
         }
     }
 
-    pub(super) const fn module(self) -> &'static str {
+    pub(super) fn from_env() -> Result<Self> {
+        Self::parse(&env::var("BOXDD_WASM_PRECISION").unwrap_or_else(|_| "single".to_owned()))
+    }
+
+    pub(crate) const fn module(self) -> &'static str {
         match self {
             Self::Single => PROVIDER_MODULE,
             Self::Double => PROVIDER_MODULE_DOUBLE,
         }
     }
 
-    pub(super) const fn as_str(self) -> &'static str {
+    pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Single => "single",
             Self::Double => "double",
@@ -131,11 +132,34 @@ impl ProviderPrecision {
         }
     }
 
-    pub(super) const fn wasm_bindings_file(self) -> &'static str {
+    pub(crate) const fn wasm_bindings_file(self) -> &'static str {
         match self {
             Self::Single => "bindings_wasm32_unknown_unknown.rs",
             Self::Double => "bindings_wasm32_unknown_unknown_double.rs",
         }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct ProviderSmokeSession {
+    target_dir: PathBuf,
+    out_dir: PathBuf,
+    provider_js: PathBuf,
+    provider_wasm: PathBuf,
+    _update_lock: UpdateLock,
+}
+
+impl ProviderSmokeSession {
+    pub(crate) fn target_dir(&self) -> &Path {
+        &self.target_dir
+    }
+
+    pub(crate) fn provider_js(&self) -> &Path {
+        &self.provider_js
+    }
+
+    pub(crate) fn provider_wasm(&self) -> &Path {
+        &self.provider_wasm
     }
 }
 
@@ -163,8 +187,18 @@ pub(crate) fn provider_smoke(root: &Path) -> Result<()> {
 pub(super) fn provider_smoke_for_precision(
     root: &Path,
     precision: ProviderPrecision,
-) -> Result<QualifiedEmscriptenSdk> {
-    let _lock = UpdateLock::acquire(root)?;
+) -> Result<(ProviderSmokeSession, QualifiedEmscriptenSdk)> {
+    let (session, sdk) = build_provider_smoke_only(root, precision)?;
+    let command = sdk.node_command().map_err(Error::Message)?;
+    run_existing_provider_node_smoke(command, &session)?;
+    Ok((session, sdk))
+}
+
+pub(crate) fn build_provider_smoke_only(
+    root: &Path,
+    precision: ProviderPrecision,
+) -> Result<(ProviderSmokeSession, QualifiedEmscriptenSdk)> {
+    let update_lock = UpdateLock::acquire(root)?;
     let cargo = QualifiedCargo::qualify(root)?;
     let target_dir = cargo.target_dir().to_path_buf();
     let sdk = qualified_provider_sdk()?;
@@ -173,14 +207,62 @@ pub(super) fn provider_smoke_for_precision(
     let out_dir = provider_smoke_dir(&target_dir);
     let exports = write_exports_json(&out_dir, &imports)?;
     let provider = build_box2d_provider(root, &out_dir, &exports, &sdk, precision)?;
+    let provider_wasm = provider.with_extension("wasm");
+    ensure_file(&provider_wasm, "Box2D provider wasm")?;
     let app_copy = out_dir.join(PROVIDER_SMOKE_WASM);
     write_node_runner(&out_dir, &provider, &app_copy, &imports, precision.module())?;
+    Ok((
+        ProviderSmokeSession {
+            target_dir,
+            out_dir,
+            provider_js: provider,
+            provider_wasm,
+            _update_lock: update_lock,
+        },
+        sdk,
+    ))
+}
 
-    let runner = out_dir.join("run-provider-smoke.mjs");
-    let mut command = sdk.node_command().map_err(Error::Message)?;
-    command.arg(runner);
-    run_command(&mut command, "run provider shared-memory smoke")?;
-    Ok(sdk)
+pub(crate) fn prepare_existing_provider_smoke(
+    root: &Path,
+    precision: ProviderPrecision,
+    provider_js: &Path,
+    provider_wasm: &Path,
+) -> Result<ProviderSmokeSession> {
+    let update_lock = UpdateLock::acquire(root)?;
+    let cargo = QualifiedCargo::qualify(root)?;
+    let target_dir = cargo.target_dir().to_path_buf();
+    let app_wasm = build_provider_smoke_app(root, &target_dir, &cargo, precision)?;
+    let imports = collect_provider_imports(&app_wasm, precision.module())?;
+    let out_dir = provider_smoke_dir(&target_dir);
+    let installed_js = out_dir.join(format!("{}.js", precision.module()));
+    let installed_wasm = out_dir.join(format!("{}.wasm", precision.module()));
+    copy_file(provider_js, &installed_js)?;
+    copy_file(provider_wasm, &installed_wasm)?;
+    validate_box2d_provider_runtime(&installed_js)?;
+    let app_copy = out_dir.join(PROVIDER_SMOKE_WASM);
+    write_node_runner(
+        &out_dir,
+        &installed_js,
+        &app_copy,
+        &imports,
+        precision.module(),
+    )?;
+    Ok(ProviderSmokeSession {
+        target_dir,
+        out_dir,
+        provider_js: installed_js,
+        provider_wasm: installed_wasm,
+        _update_lock: update_lock,
+    })
+}
+
+pub(crate) fn run_existing_provider_node_smoke(
+    mut command: Command,
+    session: &ProviderSmokeSession,
+) -> Result<()> {
+    command.arg(session.out_dir.join("run-provider-smoke.mjs"));
+    run_command(&mut command, "run provider shared-memory smoke")
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -1817,7 +1899,7 @@ fn qualify_provider_sdk_at(xtask_manifest_dir: &Path) -> Result<QualifiedEmscrip
     .map_err(Error::Message)
 }
 
-pub(super) fn provider_toolchain_contract() -> Result<SdkContract> {
+pub(crate) fn provider_toolchain_contract() -> Result<SdkContract> {
     let contract = SdkContract::parse(SDK_CONFIG).map_err(Error::Message)?;
     validate_wasm_bindgen_lock(&contract, CARGO_LOCK).map_err(Error::Message)?;
     Ok(contract)
@@ -1840,6 +1922,26 @@ mod tests {
             "git {args:?} failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
+    }
+
+    #[test]
+    fn provider_smoke_session_holds_the_repository_update_lock() {
+        let repository = tempfile::tempdir().unwrap();
+        let root = repository.path();
+        run_test_git(root, &["init", "--quiet"]);
+
+        let session = ProviderSmokeSession {
+            target_dir: root.join("target"),
+            out_dir: root.join("target/boxdd-provider-smoke"),
+            provider_js: root.join("target/boxdd-provider-smoke/provider.js"),
+            provider_wasm: root.join("target/boxdd-provider-smoke/provider.wasm"),
+            _update_lock: UpdateLock::acquire(root).unwrap(),
+        };
+        let error = UpdateLock::acquire(root).unwrap_err().to_string();
+        assert!(error.contains("another update may be running"), "{error}");
+
+        drop(session);
+        UpdateLock::acquire(root).expect("lock after provider smoke session release");
     }
 
     fn write_adapter_fixture(root: &Path, marker: &str) {

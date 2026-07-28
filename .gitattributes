@@ -1,4 +1,14 @@
+boxdd-sys/build.rs text eol=lf
 boxdd-sys/upstream.toml text eol=lf
+boxdd-sys/src/bindgen_contract.rs text eol=lf
+boxdd-sys/src/build_support.rs text eol=lf
+boxdd-sys/src/prebuilt_provenance.rs text eol=lf
+boxdd-sys/src/precision.rs text eol=lf
+boxdd-sys/src/provenance_policy.rs text eol=lf
+boxdd-sys/src/provider_archive.rs text eol=lf
+boxdd-sys/src/provider_manifest.rs text eol=lf
+boxdd-sys/src/source_overlay.rs text eol=lf
+boxdd-sys/src/wasm_provider_contract.rs text eol=lf
 boxdd-sys/src/bindings_pregenerated.rs text eol=lf
 boxdd-sys/src/bindings_double.rs text eol=lf
 boxdd/tests/fixtures/api_contract.toml text eol=lf

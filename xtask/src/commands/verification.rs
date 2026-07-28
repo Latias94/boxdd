@@ -8,7 +8,7 @@ use crate::{Error, Result, qualified_git::qualified_git_command};
 
 use super::{
     provider::{self, ProviderPrecision},
-    support::{cargo_target_dir, run_command},
+    support::run_command,
 };
 
 const VERIFICATION_NIGHTLY: &str = "nightly-2026-05-27";
@@ -573,12 +573,11 @@ fn wasm_probe_command(
 }
 
 fn verify_wasm_runtime(root: &Path) -> Result<()> {
-    let target_dir = cargo_target_dir(root)?;
     for precision in [ProviderPrecision::Single, ProviderPrecision::Double] {
         // The provider command validates the pinned Emscripten and wasm-bindgen identities before
         // compiling, so a missing or stale SDK is an explicit qualification failure.
-        let sdk = provider::provider_smoke_for_precision(root, precision)?;
-        let mut browser = browser_provider_smoke_command(root, &target_dir, precision, &sdk)?;
+        let (session, sdk) = provider::provider_smoke_for_precision(root, precision)?;
+        let mut browser = browser_provider_smoke_command(root, precision, &session, &sdk)?;
         run_command(
             &mut browser,
             &format!(
@@ -586,20 +585,41 @@ fn verify_wasm_runtime(root: &Path) -> Result<()> {
                 precision.as_str()
             ),
         )?;
+        drop(session);
     }
     Ok(())
 }
 
 fn browser_provider_smoke_command(
     root: &Path,
-    target_dir: &Path,
     precision: ProviderPrecision,
+    session: &provider::ProviderSmokeSession,
     sdk: &crate::emscripten_sdk::QualifiedEmscriptenSdk,
 ) -> Result<Command> {
     let command = sdk.npm_command().map_err(Error::message)?;
     Ok(configure_browser_provider_smoke_command(
-        command, root, target_dir, precision,
+        command,
+        root,
+        session.target_dir(),
+        precision,
     ))
+}
+
+pub(crate) fn run_existing_provider_browser_smoke(
+    command: Command,
+    root: &Path,
+    session: &provider::ProviderSmokeSession,
+    precision: ProviderPrecision,
+) -> Result<()> {
+    let mut command =
+        configure_browser_provider_smoke_command(command, root, session.target_dir(), precision);
+    run_command(
+        &mut command,
+        &format!(
+            "Chromium authenticated provider shared-memory smoke ({})",
+            precision.as_str()
+        ),
+    )
 }
 
 fn configure_browser_provider_smoke_command(
@@ -729,6 +749,7 @@ pub fn verify_sanitizers(root: &Path, args: &[String]) -> Result<()> {
         require_rust_component(VERIFICATION_NIGHTLY, "rust-src")?;
     }
     let host = rustc_host(VERIFICATION_NIGHTLY)?;
+    require_sanitizer_qualification_host(&host)?;
     verify_c_sanitizer(sanitizer)?;
     let target_dir = root
         .join("target")
@@ -1019,6 +1040,16 @@ fn rustc_host(toolchain: &str) -> Result<String> {
         .ok_or_else(|| Error::message("rustc -vV did not report a host target"))
 }
 
+fn require_sanitizer_qualification_host(host: &str) -> Result<()> {
+    if host.split('-').any(|component| component == "linux") {
+        Ok(())
+    } else {
+        Err(Error::message(format!(
+            "mixed C/Rust sanitizer qualification requires a Linux host; {VERIFICATION_NIGHTLY} reports {host}. Run the protected Linux CI gate instead"
+        )))
+    }
+}
+
 fn verify_c_sanitizer(sanitizer: Sanitizer) -> Result<()> {
     let compiler = env::var("CC").unwrap_or_else(|_| "cc".to_owned());
     let mut command = Command::new(&compiler);
@@ -1143,6 +1174,23 @@ mod tests {
         for required in ["buffer_reuse", "events_and_sensors"] {
             assert!(Sanitizer::Address.tests().contains(&required));
             assert!(Sanitizer::Undefined.tests().contains(&required));
+        }
+    }
+
+    #[test]
+    fn sanitizer_qualification_rejects_non_linux_hosts_before_compilation() {
+        for host in [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-musl",
+            "riscv64gc-unknown-linux-gnu",
+        ] {
+            assert!(require_sanitizer_qualification_host(host).is_ok());
+        }
+
+        for host in ["aarch64-apple-darwin", "x86_64-pc-windows-msvc"] {
+            let error = require_sanitizer_qualification_host(host).unwrap_err();
+            assert!(error.to_string().contains("requires a Linux host"));
+            assert!(error.to_string().contains(host));
         }
     }
 

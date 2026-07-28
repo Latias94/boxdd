@@ -23,10 +23,14 @@ use crate::provider_archive::{ArchiveExpectation, verify_provider_archive};
 use crate::provider_manifest::{
     self, ArtifactExpectation, ArtifactIdentityExpectation, ArtifactManifest,
 };
-use crate::source_overlay::effective_source_identity;
+use crate::source_overlay::{adapter_source_sha256, effective_source_identity};
+use crate::wasm_release_provenance::WasmReleaseProvenanceStatement;
 use crate::{Error, Result};
 
-use super::support::run_command;
+use super::{
+    support::run_command,
+    wasm_release::{self, UnsignedReleaseContext},
+};
 
 const UPSTREAM_SHA: &str = "56edae79f2949d86142b03450d5d60f63bcf5a6f";
 const CHECKSUMS_FILE: &str = "SHA256SUMS";
@@ -40,6 +44,8 @@ const MAX_ARCHIVE_STREAM_BYTES: u64 = MAX_ARCHIVE_TOTAL_BYTES
 const MAX_PROVENANCE_STATEMENT_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_SIGSTORE_BUNDLE_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_TRUSTED_ROOT_BYTES: u64 = 4 * 1024 * 1024;
+const RELEASE_ATTEMPT_INPUT_RETENTION_DAYS: u64 = 7;
+const RELEASE_RERUN_WINDOW_DAYS: u64 = 30;
 const QUALIFICATION_TOOLCHAINS: &[&str] = &["1.95.0", "1.97.1"];
 const QUALIFICATION_PRECISIONS: &[&str] = &["single", "double"];
 const CI_WORKFLOW: &str = ".github/workflows/ci.yml";
@@ -54,7 +60,7 @@ const CI_QUALIFICATION_JOB_POLICIES: &[WorkflowJobPolicy] = &[
     },
     WorkflowJobPolicy {
         name: "lint",
-        digest: "3f6ba9de20511f9a128b976fda34206e4e88e591786629d570bba4a4a7b453e6",
+        digest: "c3867fe7ebe47a2de7f767636c4423946c59ec57ea5d6f764de03ab40ff40fe7",
     },
     WorkflowJobPolicy {
         name: "build",
@@ -87,6 +93,7 @@ const CI_QUALIFICATION_JOB_POLICIES: &[WorkflowJobPolicy] = &[
 ];
 const SYSTEM_QUALIFICATION_COMMAND: &str = "cargo +${{ matrix.toolchain }} run --locked -p xtask -- qualify-native-provider --provider system --toolchain ${{ matrix.toolchain }} --precision ${{ matrix.precision }} --target x86_64-unknown-linux-gnu --crt none --artifacts \"${{ runner.temp }}/boxdd-system-artifact\"";
 const PREBUILT_QUALIFICATION_COMMAND: &str = "cargo +${{ matrix.toolchain }} run --locked -p xtask -- qualify-native-provider --provider prebuilt --toolchain ${{ matrix.toolchain }} --precision ${{ matrix.precision }} --target ${{ matrix.platform.target }} --crt ${{ matrix.platform.crt }} --artifacts \"${{ runner.temp }}/release-inputs\" --cosign cosign";
+const WASM_QUALIFICATION_COMMAND: &str = "GITHUB_RUN_ATTEMPT=\"${BOXDD_RELEASE_ATTEMPT}\" cargo run --locked -p xtask -- qualify-wasm-provider --precision ${{ matrix.precision }} --artifacts \"${{ runner.temp }}/release-inputs\" --cosign cosign";
 const RUST_TOOLCHAIN_ACTION: &str =
     "dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c";
 const CHECKOUT_ACTION: &str = "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0";
@@ -224,6 +231,45 @@ const BUILD_PREBUILT_STEPS: &[WorkflowStepPolicy] = &[
     },
 ];
 
+const BUILD_WASM_PROVIDER_STEPS: &[WorkflowStepPolicy] = &[
+    WorkflowStepPolicy {
+        name: "Checkout immutable tag commit",
+        kind: WorkflowStepKind::Action(CHECKOUT_ACTION),
+        keys: &["name", "uses", "with"],
+        digest: "24d63623a2bc63419c804681add6e3f8ce72d5ed14b93957a13fee6ab8debb12",
+    },
+    WorkflowStepPolicy {
+        name: "Install Rust toolchain",
+        kind: WorkflowStepKind::Action(RUST_TOOLCHAIN_ACTION),
+        keys: &["name", "uses", "with"],
+        digest: "59e15db3c3f00370cc9d7e3c96841e2393601c3bdd8fadfdc87d997dd4bf63d7",
+    },
+    WorkflowStepPolicy {
+        name: "Cache Rust dependencies",
+        kind: WorkflowStepKind::Action(RUST_CACHE_ACTION),
+        keys: &["name", "uses", "with"],
+        digest: "d9a183970b01fd0cab5583ab02c70ae806e7f062b7ad43b6d52c6d10e11d9419",
+    },
+    WorkflowStepPolicy {
+        name: "Provision pinned Emscripten SDK",
+        kind: WorkflowStepKind::Run,
+        keys: &["name", "shell", "run"],
+        digest: "d257ef24802636c2a0dadf501fa93b189b0c9550127f806db9c0c9adfbfecea5",
+    },
+    WorkflowStepPolicy {
+        name: "Build one immutable WASM release input",
+        kind: WorkflowStepKind::Run,
+        keys: &["name", "shell", "run"],
+        digest: "43d808100b281c13d57d9875ed91d38cf1cf8e4edc723a3bef6443e9fe41e354",
+    },
+    WorkflowStepPolicy {
+        name: "Upload unprivileged WASM release input",
+        kind: WorkflowStepKind::Action(UPLOAD_ARTIFACT_ACTION),
+        keys: &["name", "uses", "with"],
+        digest: "00b0a31230c845dfb3c398bdf3a441f753acecc86109724a45a50fb7b42716b1",
+    },
+];
+
 const AGGREGATE_STEPS: &[WorkflowStepPolicy] = &[
     WorkflowStepPolicy {
         name: "Bind full qualification to exact release commit",
@@ -248,6 +294,12 @@ const AGGREGATE_STEPS: &[WorkflowStepPolicy] = &[
         kind: WorkflowStepKind::Action(DOWNLOAD_ARTIFACT_ACTION),
         keys: &["name", "uses", "with"],
         digest: "9c8040bd529b22ca288a1a27d213544e1ae97175392d0f722eddb52ca2d06d64",
+    },
+    WorkflowStepPolicy {
+        name: "Download exact WASM run inputs",
+        kind: WorkflowStepKind::Action(DOWNLOAD_ARTIFACT_ACTION),
+        keys: &["name", "uses", "with"],
+        digest: "5274d4f57d13e7d42c597ac3873d22861352153a84c887c5a5e1488ede706de0",
     },
     WorkflowStepPolicy {
         name: "Validate exact contents and export canonical provenance statements",
@@ -292,16 +344,28 @@ const ATTEST_STEPS: &[WorkflowStepPolicy] = &[
         digest: "2dce8d19eaac67464cdfe885beaf6845847e7080b2c2b2c0efd29ee63ceb7126",
     },
     WorkflowStepPolicy {
+        name: "Download reusable signed aggregate",
+        kind: WorkflowStepKind::Action(DOWNLOAD_ARTIFACT_ACTION),
+        keys: &["name", "continue-on-error", "uses", "with"],
+        digest: "c8a77d6c8ee4bd849744919c03273d92df243a0b54f8484b8ae5b47cb0192660",
+    },
+    WorkflowStepPolicy {
+        name: "Select stable signed aggregate",
+        kind: WorkflowStepKind::Run,
+        keys: &["name", "id", "shell", "run"],
+        digest: "b36c7e58f86f2b35354e22bf3a97efb7082c7d6ace8be1fcb6c23b0282b826d0",
+    },
+    WorkflowStepPolicy {
         name: "Sign and immediately verify every validated payload",
         kind: WorkflowStepKind::Run,
-        keys: &["name", "shell", "run"],
-        digest: "8a8a90fe89c274c1b52521b654c189974f3dab24c3bddbf51e5375644aec0715",
+        keys: &["name", "if", "shell", "run"],
+        digest: "423945b48c6b59e9a4b81a264fa3ffff81149484debdd1e86c2155a3f3949d0c",
     },
     WorkflowStepPolicy {
         name: "Upload signed release inputs",
         kind: WorkflowStepKind::Action(UPLOAD_ARTIFACT_ACTION),
-        keys: &["name", "uses", "with"],
-        digest: "241f5a26edb9bb583ec40477994cb29a77a590c4709841b185ad40943b9bed21",
+        keys: &["name", "if", "uses", "with"],
+        digest: "51eaa4725af598b924bbf3e8ac1f3c747350073972c89baabf84f9577eee468a",
     },
 ];
 
@@ -328,13 +392,19 @@ const VERIFY_SIGNED_RELEASE_STEPS: &[WorkflowStepPolicy] = &[
         name: "Download signed aggregate",
         kind: WorkflowStepKind::Action(DOWNLOAD_ARTIFACT_ACTION),
         keys: &["name", "uses", "with"],
-        digest: "f3161116c83afd15c3c55bcc0d58afedf81b64effc0f8d2dd7c3d5e3bf5e982d",
+        digest: "7b3197c814ac7adde887b4987fbe431a5181921e8bb6b1e730a8383ed51d0c77",
+    },
+    WorkflowStepPolicy {
+        name: "Select unique stable signed aggregate",
+        kind: WorkflowStepKind::Run,
+        keys: &["name", "shell", "run"],
+        digest: "e4fb19bc3dadcc9faec8c1c6ff474b5b1a8ebfa4f861b77010183b3b64b6bc19",
     },
     WorkflowStepPolicy {
         name: "Reverify exact signed release contract",
         kind: WorkflowStepKind::Run,
         keys: &["name", "run"],
-        digest: "745195d6d42de984c1de94269e7d5675411f46d1b9b3a0ec50283d13e9323569",
+        digest: "6cebb9de4bdf95866701805cacdf7bfe6523c1c668507228d81e80fbcea06c47",
     },
 ];
 
@@ -361,7 +431,13 @@ const QUALIFY_PREBUILT_STEPS: &[WorkflowStepPolicy] = &[
         name: "Download signed aggregate",
         kind: WorkflowStepKind::Action(DOWNLOAD_ARTIFACT_ACTION),
         keys: &["name", "uses", "with"],
-        digest: "f3161116c83afd15c3c55bcc0d58afedf81b64effc0f8d2dd7c3d5e3bf5e982d",
+        digest: "7b3197c814ac7adde887b4987fbe431a5181921e8bb6b1e730a8383ed51d0c77",
+    },
+    WorkflowStepPolicy {
+        name: "Select unique stable signed aggregate",
+        kind: WorkflowStepKind::Run,
+        keys: &["name", "shell", "run"],
+        digest: "a7deee2aa399ef997d94042810a188c0fba7b486b36bf04b54a36a647db3ed96",
     },
     WorkflowStepPolicy {
         name: "Consume through the authenticated prebuilt provider",
@@ -371,18 +447,81 @@ const QUALIFY_PREBUILT_STEPS: &[WorkflowStepPolicy] = &[
     },
 ];
 
+const QUALIFY_WASM_PROVIDER_STEPS: &[WorkflowStepPolicy] = &[
+    WorkflowStepPolicy {
+        name: "Checkout immutable tag commit",
+        kind: WorkflowStepKind::Action(CHECKOUT_ACTION),
+        keys: &["name", "uses", "with"],
+        digest: "24d63623a2bc63419c804681add6e3f8ce72d5ed14b93957a13fee6ab8debb12",
+    },
+    WorkflowStepPolicy {
+        name: "Install Rust toolchain",
+        kind: WorkflowStepKind::Action(RUST_TOOLCHAIN_ACTION),
+        keys: &["name", "uses", "with"],
+        digest: "59e15db3c3f00370cc9d7e3c96841e2393601c3bdd8fadfdc87d997dd4bf63d7",
+    },
+    WorkflowStepPolicy {
+        name: "Install Node.js",
+        kind: WorkflowStepKind::Action(SETUP_NODE_ACTION),
+        keys: &["name", "uses", "with"],
+        digest: "46927b85c7055e3e06fcffcf264ebead5b3900ad92162cdd3b052bb454a9ee9b",
+    },
+    WorkflowStepPolicy {
+        name: "Cache Rust dependencies",
+        kind: WorkflowStepKind::Action(RUST_CACHE_ACTION),
+        keys: &["name", "uses", "with"],
+        digest: "653d1fed1924d13a9de5dfd0c6349a3db4edb377a2efc56b73572f9b46a462c4",
+    },
+    WorkflowStepPolicy {
+        name: "Install browser test dependencies",
+        kind: WorkflowStepKind::Run,
+        keys: &["name", "run"],
+        digest: "01bcea7f1ac65149ebf39fd5ac2ead504f74aab651e973fb46664dda06a8dfdf",
+    },
+    WorkflowStepPolicy {
+        name: "Install Chromium",
+        kind: WorkflowStepKind::Run,
+        keys: &["name", "run"],
+        digest: "bd5ff8095991d98113fc092d0f97d06b3a0c7a552d273ac00babe021c64450d7",
+    },
+    WorkflowStepPolicy {
+        name: "Install exact Cosign",
+        kind: WorkflowStepKind::Action(COSIGN_INSTALLER_ACTION),
+        keys: &["name", "uses", "with"],
+        digest: "2dce8d19eaac67464cdfe885beaf6845847e7080b2c2b2c0efd29ee63ceb7126",
+    },
+    WorkflowStepPolicy {
+        name: "Download signed aggregate",
+        kind: WorkflowStepKind::Action(DOWNLOAD_ARTIFACT_ACTION),
+        keys: &["name", "uses", "with"],
+        digest: "7b3197c814ac7adde887b4987fbe431a5181921e8bb6b1e730a8383ed51d0c77",
+    },
+    WorkflowStepPolicy {
+        name: "Select unique stable signed aggregate",
+        kind: WorkflowStepKind::Run,
+        keys: &["name", "shell", "run"],
+        digest: "e4fb19bc3dadcc9faec8c1c6ff474b5b1a8ebfa4f861b77010183b3b64b6bc19",
+    },
+    WorkflowStepPolicy {
+        name: "Verify publisher before loading and execute the fresh consumer",
+        kind: WorkflowStepKind::Run,
+        keys: &["name", "run"],
+        digest: "cdee303a9613dca4959bd29f205c1517ce27d983ab578cec0be26f4d224891f4",
+    },
+];
+
 const PUBLISH_DRAFT_STEPS: &[WorkflowStepPolicy] = &[
     WorkflowStepPolicy {
         name: "Download qualified signed aggregate",
         kind: WorkflowStepKind::Action(DOWNLOAD_ARTIFACT_ACTION),
         keys: &["name", "uses", "with"],
-        digest: "63f6d81dd8464728322231b9b38708c74af83b1b0633664141d9835ececce719",
+        digest: "73bd7f3f58d8dfe9df6ad84ffb05be2c9c82cdc229d8c7175036ce4847ff51fd",
     },
     WorkflowStepPolicy {
         name: "Create protected draft release",
         kind: WorkflowStepKind::Run,
         keys: &["name", "shell", "env", "run"],
-        digest: "b90c74a7450b70056b7f81072f7210e36da81b76b0381fd9ac8eded97817a557",
+        digest: "8b42699288be96eead915d012470a0d059ba57ffc0a4839fa81464d5d15fafd7",
     },
 ];
 
@@ -980,18 +1119,46 @@ fn expected_artifacts(version: &str) -> Vec<ArtifactSpec> {
     artifacts
 }
 
+fn expected_wasm_artifacts(version: &str) -> Result<Vec<(&'static str, String)>> {
+    ["single", "double"]
+        .into_iter()
+        .map(|precision| {
+            wasm_release::archive_name(version, precision).map(|archive| (precision, archive))
+        })
+        .collect()
+}
+
+fn expected_release_archive_names(version: &str) -> Result<Vec<String>> {
+    let mut names = expected_artifacts(version)
+        .into_iter()
+        .map(|spec| spec.archive)
+        .collect::<Vec<_>>();
+    names.extend(
+        expected_wasm_artifacts(version)?
+            .into_iter()
+            .map(|(_, archive)| archive),
+    );
+    names.sort();
+    if names.windows(2).any(|pair| pair[0] == pair[1]) {
+        return Err(Error::message(
+            "release archive names must be globally unique",
+        ));
+    }
+    Ok(names)
+}
+
 fn write_aggregate_checksums(root: &Path, version: &str) -> Result<()> {
     let files = collect_files(root)?;
-    let expected = expected_artifacts(version);
-    let archives = map_expected_archives(&files, &expected)?;
+    let expected = expected_release_archive_names(version)?;
+    let archives = map_expected_archive_names(&files, &expected)?;
     let mut rendered = String::new();
-    for spec in expected {
-        let path = &archives[&spec.archive];
+    for archive in expected {
+        let path = &archives[&archive];
         let digest = sha256_file(path)?;
-        let sidecar = path.with_file_name(format!("{}.sha256", spec.archive));
-        let sidecar_source = format!("{digest}  {}\n", spec.archive);
-        fs::write(&sidecar, sidecar_source).map_err(|error| Error::io(&sidecar, error))?;
-        rendered.push_str(&format!("{digest}  {}\n", spec.archive));
+        let sidecar = path.with_file_name(format!("{archive}.sha256"));
+        let sidecar_source = format!("{digest}  {archive}\n");
+        fs::write(&sidecar, &sidecar_source).map_err(|error| Error::io(&sidecar, error))?;
+        rendered.push_str(&sidecar_source);
     }
     let destination = root.join(CHECKSUMS_FILE);
     fs::write(&destination, rendered).map_err(|error| Error::io(destination, error))
@@ -1059,10 +1226,12 @@ fn validate_artifacts(
 
     let files = collect_files(&canonical_root)?;
     let expected = expected_artifacts(&identity.version);
-    let archives = map_expected_archives(&files, &expected)?;
+    let expected_wasm = expected_wasm_artifacts(&identity.version)?;
+    let expected_names = expected_release_archive_names(&identity.version)?;
+    let archives = map_expected_archive_names(&files, &expected_names)?;
     require_exact_release_file_set(&files, &archives, &canonical_root, require_signatures)?;
     let mut allowed = BTreeSet::new();
-    let mut aggregate = String::new();
+    let mut aggregate_entries = BTreeMap::new();
 
     for spec in &expected {
         let archive = &archives[&spec.archive];
@@ -1089,7 +1258,15 @@ fn validate_artifacts(
         let validated =
             validate_archive_manifest(repository_root, archive, spec, identity, context)?;
         let digest = &validated.statement.package_sha256;
-        aggregate.push_str(&format!("{digest}  {}\n", spec.archive));
+        if aggregate_entries
+            .insert(spec.archive.clone(), digest.clone())
+            .is_some()
+        {
+            return Err(Error::message(format!(
+                "release aggregate contains duplicate archive {}",
+                spec.archive
+            )));
+        }
         let checksum = archive.with_file_name(format!("{}.sha256", spec.archive));
         let statement = archive.with_file_name(format!("{}.provenance.toml", spec.archive));
         let bundle = archive.with_file_name(format!("{}.provenance.sigstore.json", spec.archive));
@@ -1153,6 +1330,114 @@ fn validate_artifacts(
         }
     }
 
+    for (precision, archive_name) in &expected_wasm {
+        let archive = &archives[archive_name];
+        let expected_parent = format!(
+            "wasm-input-{precision}-{run_id}-{run_attempt}-{}",
+            identity.commit,
+            run_id = context.run_id,
+            run_attempt = context.run_attempt,
+        );
+        let parent = archive
+            .parent()
+            .and_then(Path::file_name)
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+        if parent != expected_parent {
+            return Err(Error::message(format!(
+                "artifact {archive_name} came from mutable or mismatched workflow artifact {parent:?}; expected {expected_parent:?}"
+            )));
+        }
+        let validated = wasm_release::validate_unsigned_package(
+            repository_root,
+            archive,
+            precision,
+            UnsignedReleaseContext {
+                repository: &context.repository,
+                workflow_ref: &context.workflow_ref,
+                source_commit: &identity.commit,
+                release_tag: &identity.tag,
+                run_id: &context.run_id,
+                run_attempt: &context.run_attempt,
+                crate_version: &identity.version,
+            },
+        )?;
+        let digest = &validated.package_sha256;
+        if aggregate_entries
+            .insert(archive_name.clone(), digest.clone())
+            .is_some()
+        {
+            return Err(Error::message(format!(
+                "release aggregate contains duplicate archive {archive_name}"
+            )));
+        }
+        let checksum = archive.with_file_name(format!("{archive_name}.sha256"));
+        let statement = archive.with_file_name(format!("{archive_name}.provenance.toml"));
+        let bundle = archive.with_file_name(format!("{archive_name}.provenance.sigstore.json"));
+        let expected_checksum = format!("{digest}  {archive_name}\n");
+        let actual_checksum =
+            fs::read_to_string(&checksum).map_err(|error| Error::io(&checksum, error))?;
+        if actual_checksum != expected_checksum {
+            return Err(Error::message(format!(
+                "non-canonical or incorrect checksum sidecar {}",
+                checksum.display()
+            )));
+        }
+        if let Some(payload_root) = &payload_root {
+            let destination = payload_root.join(format!("{archive_name}.provenance.toml"));
+            let mut output = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&destination)
+                .map_err(|error| Error::io(&destination, error))?;
+            output
+                .write_all(&validated.canonical_bytes().map_err(Error::message)?)
+                .map_err(|error| Error::io(&destination, error))?;
+        }
+        allowed.extend([archive.clone(), checksum]);
+        if require_signatures {
+            let (statement_snapshot, statement_bytes) = snapshot_verification_input(
+                &statement,
+                verification_inputs.path(),
+                &format!("{archive_name}.provenance.toml"),
+                MAX_PROVENANCE_STATEMENT_BYTES,
+                "WASM provider provenance statement",
+            )?;
+            let (bundle_snapshot, _) = snapshot_verification_input(
+                &bundle,
+                verification_inputs.path(),
+                &format!("{archive_name}.provenance.sigstore.json"),
+                MAX_SIGSTORE_BUNDLE_BYTES,
+                "WASM provider Sigstore bundle",
+            )?;
+            let supplied = WasmReleaseProvenanceStatement::parse_canonical(&statement_bytes)
+                .map_err(Error::message)?;
+            if supplied != validated {
+                return Err(Error::message(format!(
+                    "artifact {archive_name} provenance statement does not match its exact package and release context"
+                )));
+            }
+            verify_sigstore(
+                &options.cosign,
+                &statement_snapshot,
+                &bundle_snapshot,
+                &trusted_root,
+                identity,
+            )?;
+            allowed.extend([statement, bundle]);
+        }
+    }
+
+    if aggregate_entries.len() != expected_names.len() {
+        return Err(Error::message(
+            "release aggregate did not validate every expected archive exactly once",
+        ));
+    }
+    let aggregate = aggregate_entries
+        .iter()
+        .map(|(archive, digest)| format!("{digest}  {archive}\n"))
+        .collect::<String>();
+
     let aggregate_path = canonical_root.join(CHECKSUMS_FILE);
     let aggregate_source =
         fs::read_to_string(&aggregate_path).map_err(|error| Error::io(&aggregate_path, error))?;
@@ -1204,14 +1489,23 @@ fn prepare_empty_payload_directory(path: &Path) -> Result<PathBuf> {
     fs::canonicalize(path).map_err(|error| Error::io(path, error))
 }
 
+#[cfg(test)]
 fn map_expected_archives(
     files: &[PathBuf],
     expected: &[ArtifactSpec],
 ) -> Result<BTreeMap<String, PathBuf>> {
     let expected_names = expected
         .iter()
-        .map(|spec| spec.archive.as_str())
-        .collect::<BTreeSet<_>>();
+        .map(|spec| spec.archive.clone())
+        .collect::<Vec<_>>();
+    map_expected_archive_names(files, &expected_names)
+}
+
+fn map_expected_archive_names(
+    files: &[PathBuf],
+    expected: &[String],
+) -> Result<BTreeMap<String, PathBuf>> {
+    let expected_names = expected.iter().map(String::as_str).collect::<BTreeSet<_>>();
     let mut archives = BTreeMap::new();
     for path in files {
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
@@ -1356,8 +1650,7 @@ fn validate_archive_manifest(
     )
     .map_err(|error| Error::message(format!("provider archive proof failed: {error}")))?;
     let adapter_source_sha256 =
-        provider_manifest::adapter_source_sha256(&repository_root.join("boxdd-sys"))
-            .map_err(Error::message)?;
+        adapter_source_sha256(&repository_root.join("boxdd-sys")).map_err(Error::message)?;
     let header = repository_root.join("boxdd-sys/third-party/box2d/include/box2d/box2d.h");
     let bindings = repository_root
         .join("boxdd-sys/src")
@@ -2312,6 +2605,55 @@ fn require_action_input_fragment(
     Err(Error::message(message.to_owned()))
 }
 
+fn require_exact_action_u64_input(
+    job: &YamlMapping,
+    job_name: &str,
+    step_name: &str,
+    input: &str,
+    expected: u64,
+) -> Result<()> {
+    let mut matches = workflow_steps(job, job_name)?
+        .iter()
+        .enumerate()
+        .filter_map(|(index, step)| {
+            let context = format!("{job_name} step {index}");
+            let step = match yaml_mapping(step, &context) {
+                Ok(step) => step,
+                Err(error) => return Some(Err(error)),
+            };
+            (yaml_field(step, "name").and_then(YamlValue::as_str) == Some(step_name))
+                .then_some(Ok((step, context)))
+        });
+    let (step, context) = matches.next().transpose()?.ok_or_else(|| {
+        Error::message(format!(
+            "workflow job {job_name:?} is missing step {step_name:?}"
+        ))
+    })?;
+    if matches.next().transpose()?.is_some() {
+        return Err(Error::message(format!(
+            "workflow job {job_name:?} repeats step {step_name:?}"
+        )));
+    }
+    let inputs = yaml_mapping(
+        required_yaml_field(step, "with", &context)?,
+        &format!("{context} inputs"),
+    )?;
+    let actual = required_yaml_field(inputs, input, &format!("{context} inputs"))?
+        .as_u64()
+        .ok_or_else(|| {
+            Error::message(format!(
+                "workflow job {job_name:?} step {step_name:?} input {input:?} must be an integer"
+            ))
+        })?;
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(Error::message(format!(
+            "workflow job {job_name:?} step {step_name:?} input {input:?} must be {expected}, found {actual}"
+        )))
+    }
+}
+
 fn forbid_job_fragments(
     job: &YamlMapping,
     name: &str,
@@ -2487,14 +2829,18 @@ fn validate_release_workflow_source(source: &str) -> Result<()> {
             "aggregate",
             "attest",
             "build-prebuilt",
+            "build-wasm-provider",
             "publish-draft",
             "qualification",
             "qualify-prebuilt",
+            "qualify-wasm-provider",
             "verify-signed-release",
         ],
         "release workflow jobs",
     )?;
     let build_yaml = workflow_job_mapping(structured_jobs, "build-prebuilt", "release workflow")?;
+    let build_wasm_yaml =
+        workflow_job_mapping(structured_jobs, "build-wasm-provider", "release workflow")?;
     let qualification_yaml =
         workflow_job_mapping(structured_jobs, "qualification", "release workflow")?;
     let aggregate_yaml = workflow_job_mapping(structured_jobs, "aggregate", "release workflow")?;
@@ -2503,6 +2849,8 @@ fn validate_release_workflow_source(source: &str) -> Result<()> {
         workflow_job_mapping(structured_jobs, "verify-signed-release", "release workflow")?;
     let qualify_yaml =
         workflow_job_mapping(structured_jobs, "qualify-prebuilt", "release workflow")?;
+    let qualify_wasm_yaml =
+        workflow_job_mapping(structured_jobs, "qualify-wasm-provider", "release workflow")?;
     let publish_yaml = workflow_job_mapping(structured_jobs, "publish-draft", "release workflow")?;
 
     validate_release_qualification_job(qualification_yaml)?;
@@ -2533,6 +2881,14 @@ fn validate_release_workflow_source(source: &str) -> Result<()> {
             ("TARGET", "${{ matrix.platform.target }}"),
         ],
         "release build-prebuilt job",
+    )?;
+    validate_exact_workflow_job(
+        build_wasm_yaml,
+        "build-wasm-provider",
+        &["name", "if", "runs-on", "permissions", "strategy", "steps"],
+        "Build WASM provider ${{ matrix.precision }}",
+        "ubuntu-24.04",
+        BUILD_WASM_PROVIDER_STEPS,
     )?;
     validate_exact_workflow_job(
         aggregate_yaml,
@@ -2583,6 +2939,22 @@ fn validate_release_workflow_source(source: &str) -> Result<()> {
         QUALIFY_PREBUILT_STEPS,
     )?;
     validate_exact_workflow_job(
+        qualify_wasm_yaml,
+        "qualify-wasm-provider",
+        &[
+            "name",
+            "if",
+            "needs",
+            "runs-on",
+            "permissions",
+            "strategy",
+            "steps",
+        ],
+        "Qualify authenticated WASM provider ${{ matrix.precision }}",
+        "ubuntu-24.04",
+        QUALIFY_WASM_PROVIDER_STEPS,
+    )?;
+    validate_exact_workflow_job(
         publish_yaml,
         "publish-draft",
         &["name", "if", "needs", "runs-on", "permissions", "steps"],
@@ -2599,9 +2971,16 @@ fn validate_release_workflow_source(source: &str) -> Result<()> {
         None,
     )?;
     validate_release_security_job(
+        build_wasm_yaml,
+        "build-wasm-provider",
+        &[],
+        &[("contents", "read")],
+        None,
+    )?;
+    validate_release_security_job(
         aggregate_yaml,
         "aggregate",
-        &["qualification", "build-prebuilt"],
+        &["qualification", "build-prebuilt", "build-wasm-provider"],
         &[("contents", "read")],
         None,
     )?;
@@ -2627,14 +3006,23 @@ fn validate_release_workflow_source(source: &str) -> Result<()> {
         None,
     )?;
     validate_release_security_job(
+        qualify_wasm_yaml,
+        "qualify-wasm-provider",
+        &["verify-signed-release"],
+        &[("contents", "read")],
+        None,
+    )?;
+    validate_release_security_job(
         publish_yaml,
         "publish-draft",
-        &["qualify-prebuilt"],
+        &["qualify-prebuilt", "qualify-wasm-provider"],
         &[("contents", "write")],
         None,
     )?;
     validate_release_matrix(build_yaml, "build-prebuilt", false)?;
     validate_release_matrix(qualify_yaml, "qualify-prebuilt", true)?;
+    validate_wasm_release_matrix(build_wasm_yaml, "build-wasm-provider")?;
+    validate_wasm_release_matrix(qualify_wasm_yaml, "qualify-wasm-provider")?;
     let aggregate_commands = job_executable_lines(aggregate_yaml, "aggregate")?;
     require_job_command_fragment(
         &aggregate_commands,
@@ -2658,6 +3046,61 @@ fn validate_release_workflow_source(source: &str) -> Result<()> {
         "github.run_attempt",
         "aggregate inputs must be isolated per workflow attempt",
     )?;
+    require_action_input_fragment(
+        attest_yaml,
+        "attest",
+        "name",
+        "prebuilt-attestation-input-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}",
+        "unsigned attestation inputs must remain isolated per workflow attempt",
+    )?;
+    for (job, job_name, step_name) in [
+        (
+            build_yaml,
+            "build-prebuilt",
+            "Upload unprivileged release input",
+        ),
+        (
+            build_wasm_yaml,
+            "build-wasm-provider",
+            "Upload unprivileged WASM release input",
+        ),
+        (
+            aggregate_yaml,
+            "aggregate",
+            "Upload validated attestation input",
+        ),
+    ] {
+        require_exact_action_u64_input(
+            job,
+            job_name,
+            step_name,
+            "retention-days",
+            RELEASE_ATTEMPT_INPUT_RETENTION_DAYS,
+        )?;
+    }
+    require_exact_action_u64_input(
+        attest_yaml,
+        "attest",
+        "Upload signed release inputs",
+        "retention-days",
+        RELEASE_RERUN_WINDOW_DAYS,
+    )?;
+    let stable_signed_pattern = "prebuilt-signed-${{ github.run_id }}-*-${{ github.sha }}";
+    for (job, name) in [
+        (attest_yaml, "attest"),
+        (signed_yaml, "verify-signed-release"),
+        (qualify_yaml, "qualify-prebuilt"),
+        (qualify_wasm_yaml, "qualify-wasm-provider"),
+        (publish_yaml, "publish-draft"),
+    ] {
+        require_action_input_fragment(
+            job,
+            name,
+            "pattern",
+            stable_signed_pattern,
+            "signed aggregate selection must remain stable across workflow attempts",
+        )?;
+    }
 
     forbid_job_fragments(
         attest_yaml,
@@ -2682,6 +3125,16 @@ fn validate_release_workflow_source(source: &str) -> Result<()> {
             "attest job is missing strict Cosign identity binding",
         )?;
     }
+    for required in [
+        "test \"${#input_roots[@]}\" -eq 12",
+        "test \"${#unique_attempts[@]}\" -eq 0",
+    ] {
+        require_job_command_fragment(
+            &attest_commands,
+            required,
+            "attest must reuse at most one prior signed aggregate for the workflow run",
+        )?;
+    }
     if attest_commands
         .iter()
         .any(|command| command.contains(".link"))
@@ -2694,8 +3147,18 @@ fn validate_release_workflow_source(source: &str) -> Result<()> {
     let signed_commands = job_executable_lines(signed_yaml, "verify-signed-release")?;
     require_job_command_fragment(
         &signed_commands,
-        "release-contract --check --artifacts",
+        "release-contract --check --run-attempt \"${BOXDD_RELEASE_ATTEMPT}\" --artifacts",
         "signed aggregate must be revalidated",
+    )?;
+    require_job_command_fragment(
+        &signed_commands,
+        "test \"${#input_roots[@]}\" -eq 12",
+        "signed aggregate verification must select exactly one stable workflow artifact",
+    )?;
+    require_job_command_fragment(
+        &signed_commands,
+        "test \"${#unique_attempts[@]}\" -eq 1",
+        "signed aggregate verification must bind one provenance workflow attempt",
     )?;
     validate_matrix_toolchain_install(
         qualify_yaml,
@@ -2707,33 +3170,64 @@ fn validate_release_workflow_source(source: &str) -> Result<()> {
         "prebuilt qualification",
         PREBUILT_QUALIFICATION_COMMAND,
         Some("${{ github.ref_protected == true }}"),
-        true,
+        false,
+    )?;
+    validate_exact_qualification_job(
+        qualify_wasm_yaml,
+        "WASM provider qualification",
+        WASM_QUALIFICATION_COMMAND,
+        Some("${{ github.ref_protected == true }}"),
+        false,
+    )?;
+    forbid_job_fragments(
+        qualify_wasm_yaml,
+        "qualify-wasm-provider",
+        &["provision-emsdk", "emcc", "build-wasm-provider-package"],
+        "authenticated WASM qualification must not rebuild its provider through",
     )?;
     let publish_commands = job_executable_lines(publish_yaml, "publish-draft")?;
     require_job_command_fragment(
         &publish_commands,
-        "gh release create",
-        "publishing must create the draft release",
+        "gh api --method POST \"repos/${GITHUB_REPOSITORY}/releases\" --input \"${release_payload}\"",
+        "publishing must create the draft through the recoverable REST transaction",
     )?;
     require_job_command_fragment(
         &publish_commands,
-        "--draft",
-        "publishing must remain a draft",
+        "draft: true",
+        "publishing must create a draft",
     )?;
     for required in [
         "test \"${GITHUB_REF_TYPE}\" = \"tag\"",
         "test \"${GITHUB_REF}\" = \"refs/tags/${GITHUB_REF_NAME}\"",
+        "test \"${#input_roots[@]}\" -eq 12",
+        "test \"${#unique_attempts[@]}\" -eq 1",
         "git/ref/tags/${tag_name_uri}",
         "git/tags/${object_sha}",
         "test \"${object_type}\" = \"commit\"",
         "test \"${object_sha}\" = \"${GITHUB_SHA}\"",
-        "test \"${#assets[@]}\" -eq 41",
-        "--verify-tag",
+        "length == 49",
+        "boxdd-release-owner:v1 run=${GITHUB_RUN_ID} sha=${GITHUB_SHA} tag=${GITHUB_REF_NAME}",
+        "releases/tags/${tag_name_uri}",
+        "target_commitish: $sha",
+        "split($marker) | length) == 2",
+        "require_owned_release_id",
+        "--paginate --slurp",
+        "{name: .name, size: .size, digest: .digest, state: .state}",
+        ".state == \"uploaded\"",
+        "assert_remote_inventory_is_authorized",
+        "assert_remote_inventory_is_complete",
+        "($actual | length) == 49",
+        "test \"$(read_release_by_id | require_owned_release_id)\" = \"${release_id}\"",
+        "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?name=${asset_name_uri}",
+        "--data-binary \"@${asset_path}\"",
+        "Content-Type: application/octet-stream",
+        "Authorization: Bearer ${GH_TOKEN}",
+        "X-GitHub-Api-Version: 2022-11-28",
     ] {
         require_job_command_fragment(
             &publish_commands,
             required,
-            "publishing must bind the protected tag to the immutable workflow commit",
+            "publishing must bind the protected tag, draft owner, and asset inventory to the immutable workflow commit",
         )?;
     }
     let tag_identity_position = publish_commands
@@ -2742,11 +3236,43 @@ fn validate_release_workflow_source(source: &str) -> Result<()> {
         .ok_or_else(|| Error::message("publish tag identity check is missing"))?;
     let release_position = publish_commands
         .iter()
-        .position(|command| command.contains("gh release create"))
+        .position(|command| {
+            command.contains("gh api --method POST \"repos/${GITHUB_REPOSITORY}/releases\"")
+        })
         .ok_or_else(|| Error::message("publish release command is missing"))?;
     if tag_identity_position > release_position {
         return Err(Error::message(
             "publish must verify the protected tag before creating the release",
+        ));
+    }
+    let owned_release_position = publish_commands
+        .iter()
+        .position(|command| {
+            command.contains(
+                "test \"$(read_release_by_id | require_owned_release_id)\" = \"${release_id}\"",
+            )
+        })
+        .ok_or_else(|| Error::message("publish ownership revalidation is missing"))?;
+    let upload_position = publish_commands
+        .iter()
+        .position(|command| {
+            command.contains(
+                "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?name=${asset_name_uri}",
+            )
+        })
+        .ok_or_else(|| Error::message("publish asset upload is missing"))?;
+    if owned_release_position > upload_position {
+        return Err(Error::message(
+            "publish must revalidate draft ownership before uploading missing assets",
+        ));
+    }
+    let final_inventory_position = publish_commands
+        .iter()
+        .rposition(|command| command.contains("assert_remote_inventory_is_complete"))
+        .ok_or_else(|| Error::message("publish final inventory proof is missing"))?;
+    if final_inventory_position < upload_position {
+        return Err(Error::message(
+            "publish must prove the exact final inventory after uploading missing assets",
         ));
     }
     forbid_job_fragments(
@@ -2757,6 +3283,13 @@ fn validate_release_workflow_source(source: &str) -> Result<()> {
             "rust-toolchain",
             "cargo ",
             "cosign sign-blob",
+            "GITHUB_RUN_ATTEMPT",
+            "gh release upload",
+            "--clobber",
+            "gh release delete",
+            "gh release delete-asset",
+            "gh release edit",
+            "--method DELETE",
         ],
         "publish job must not build or sign through",
     )
@@ -2782,6 +3315,14 @@ fn validate_release_matrix(job: &YamlMapping, name: &str, require_toolchains: bo
         validate_matrix_axis(matrix, name, "toolchain", QUALIFICATION_TOOLCHAINS)?;
     }
     validate_platform_matrix(matrix, name)
+}
+
+fn validate_wasm_release_matrix(job: &YamlMapping, name: &str) -> Result<()> {
+    require_exact_string_field(job, "runs-on", "ubuntu-24.04", &format!("{name} job"))?;
+    validate_exact_strategy(job, name)?;
+    let matrix = job_matrix(job, name)?;
+    require_exact_mapping_keys(matrix, &["precision"], &format!("{name} matrix"))?;
+    validate_matrix_axis(matrix, name, "precision", QUALIFICATION_PRECISIONS)
 }
 
 fn validate_system_provider_matrix(job: &YamlMapping) -> Result<()> {
@@ -3896,6 +4437,7 @@ fn validate_ci_workflow_source(source: &str) -> Result<()> {
             "cargo clippy --locked -p boxdd --all-targets --features \"double-precision serde mint nalgebra glam bytemuck unchecked validate disable-simd\" -- -D warnings",
             "cargo clippy --locked -p bevy_boxdd --all-targets --no-default-features -- -D warnings",
             "cargo clippy --locked -p bevy_boxdd --all-targets --features double-precision -- -D warnings",
+            "cargo run --locked -p xtask -- build-policy-sources --check",
             "cargo run --locked -p xtask -- verify-precision-contract",
             "cargo run --locked -p xtask -- upstream-sync --check",
             "cargo run --locked -p xtask -- api-coverage --check",
@@ -4380,9 +4922,17 @@ fn collect_files(root: &Path) -> Result<Vec<PathBuf>> {
     let mut pending = vec![root.to_path_buf()];
     let mut files = Vec::new();
     while let Some(directory) = pending.pop() {
-        let entries = fs::read_dir(&directory).map_err(|error| Error::io(&directory, error))?;
+        let entries = fs::read_dir(&directory)
+            .map_err(|error| Error::io(&directory, error))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|error| Error::io(&directory, error))?;
+        if directory != root && entries.is_empty() {
+            return Err(Error::message(format!(
+                "release input cannot contain empty artifact directories: {}",
+                directory.display()
+            )));
+        }
         for entry in entries {
-            let entry = entry.map_err(|error| Error::io(&directory, error))?;
             let kind = entry
                 .file_type()
                 .map_err(|error| Error::io(entry.path(), error))?;
@@ -4583,6 +5133,15 @@ mod tests {
             artifact.archive.contains(artifact.target)
                 && artifact.archive.contains(artifact.precision)
         }));
+        let all = expected_release_archive_names("0.6.0").unwrap();
+        assert_eq!(all.len(), 12);
+        assert_eq!(all.iter().collect::<BTreeSet<_>>().len(), 12);
+        assert!(all.iter().any(|archive| {
+            archive == "boxdd-wasm-provider-0.6.0-wasm32-unknown-unknown-single.tar.gz"
+        }));
+        assert!(all.iter().any(|archive| {
+            archive == "boxdd-wasm-provider-0.6.0-wasm32-unknown-unknown-double.tar.gz"
+        }));
     }
 
     #[test]
@@ -4707,10 +5266,10 @@ mod tests {
     #[test]
     fn release_file_set_requires_exact_unsigned_and_signed_assets() {
         let root = PathBuf::from("release-inputs");
-        let archives = expected_artifacts("0.6.0")
+        let archives = expected_release_archive_names("0.6.0")
+            .unwrap()
             .into_iter()
-            .map(|artifact| {
-                let name = artifact.archive;
+            .map(|name| {
                 let path = root.join(format!("artifact-{name}")).join(&name);
                 (name, path)
             })
@@ -4720,7 +5279,7 @@ mod tests {
             unsigned.push(archive.clone());
             unsigned.push(archive.with_file_name(format!("{name}.sha256")));
         }
-        assert_eq!(unsigned.len(), 21);
+        assert_eq!(unsigned.len(), 25);
         assert!(require_exact_release_file_set(&unsigned, &archives, &root, false).is_ok());
 
         let mut signed = unsigned.clone();
@@ -4728,7 +5287,7 @@ mod tests {
             signed.push(archive.with_file_name(format!("{name}.provenance.toml")));
             signed.push(archive.with_file_name(format!("{name}.provenance.sigstore.json")));
         }
-        assert_eq!(signed.len(), 41);
+        assert_eq!(signed.len(), 49);
         assert!(require_exact_release_file_set(&signed, &archives, &root, true).is_ok());
 
         let mut missing_statement = signed.clone();
@@ -4786,6 +5345,17 @@ mod tests {
         assert!(
             collect_files(temp.path()).is_err(),
             "release input traversal silently ignored a Unix socket"
+        );
+    }
+
+    #[test]
+    fn release_file_collection_rejects_empty_artifact_directories() {
+        let temp = TempDir::new().unwrap();
+        fs::write(temp.path().join("regular"), b"bytes").unwrap();
+        fs::create_dir(temp.path().join("unexpected-empty-artifact")).unwrap();
+        assert!(
+            collect_files(temp.path()).is_err(),
+            "release input traversal silently ignored an empty artifact directory"
         );
     }
 
@@ -5369,6 +5939,7 @@ mod tests {
         validate_ci_workflow_source(source).unwrap();
 
         for required in [
+            "cargo run --locked -p xtask -- build-policy-sources --check",
             "cargo run --locked -p xtask -- verify-precision-contract",
             "cargo nextest run --locked --workspace",
             "cargo test --locked -p boxdd-sys --features package-bin --bin package",
@@ -6027,6 +6598,126 @@ mod tests {
             validate_release_workflow_source(&fixed_install).is_err(),
             "release policy accepted a fixed qualification toolchain installer"
         );
+
+        let retention_mutations = [
+            (
+                "stable signed aggregate shorter than the workflow rerun window",
+                source.replacen(
+                    "          retention-days: 30",
+                    "          retention-days: 7",
+                    1,
+                ),
+            ),
+            (
+                "attempt-scoped input retained as a cross-attempt artifact",
+                source.replacen(
+                    "          retention-days: 7",
+                    "          retention-days: 30",
+                    1,
+                ),
+            ),
+        ];
+        for (label, mutated) in retention_mutations {
+            assert_ne!(
+                mutated, source,
+                "missing release retention mutation fixture for {label}"
+            );
+            assert!(
+                validate_release_workflow_source(&mutated).is_err(),
+                "release policy accepted {label}"
+            );
+        }
+
+        let cross_attempt_attestation_input = source.replacen(
+            "name: prebuilt-attestation-input-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}",
+            "pattern: prebuilt-attestation-input-${{ github.run_id }}-*-${{ github.sha }}",
+            1,
+        );
+        assert_ne!(
+            cross_attempt_attestation_input, source,
+            "missing attempt-scoped attestation input mutation fixture"
+        );
+        assert!(
+            validate_release_workflow_source(&cross_attempt_attestation_input).is_err(),
+            "release policy accepted unsigned attestation input from an earlier attempt"
+        );
+
+        let publish_mutations = [
+            (
+                "draft owner marker uses retry attempt",
+                source.replacen(
+                    "run=${GITHUB_RUN_ID} sha=${GITHUB_SHA} tag=${GITHUB_REF_NAME}",
+                    "run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT} sha=${GITHUB_SHA} tag=${GITHUB_REF_NAME}",
+                    1,
+                ),
+            ),
+            (
+                "draft resumption accepts an unowned release",
+                source.replacen(
+                    "and ((.body // \"\" | split($marker) | length) == 2)",
+                    "# owner marker verification removed",
+                    1,
+                ),
+            ),
+            (
+                "asset upload resolves the mutable tag again",
+                source.replacen(
+                    "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?name=${asset_name_uri}",
+                    "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}/assets?name=${asset_name_uri}",
+                    1,
+                ),
+            ),
+            (
+                "asset upload omits per-asset numeric release ownership proof",
+                source.replacen(
+                    "            test \"$(read_release_by_id | require_owned_release_id)\" = \"${release_id}\"\n",
+                    "            true # per-asset ownership proof removed\n",
+                    1,
+                ),
+            ),
+            (
+                "stable signed aggregate is rebound to the retry attempt",
+                source.replacen(
+                    "prebuilt-signed-${{ github.run_id }}-*-${{ github.sha }}",
+                    "prebuilt-signed-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}",
+                    1,
+                ),
+            ),
+            (
+                "rerun always replaces the stable signed aggregate",
+                source.replacen(
+                    "if: steps.stable-signed.outputs.reuse != 'true'",
+                    "if: always()",
+                    1,
+                ),
+            ),
+            (
+                "stable provenance is verified as the current retry attempt",
+                source.replacen(
+                    "--run-attempt \"${BOXDD_RELEASE_ATTEMPT}\"",
+                    "--run-attempt \"${GITHUB_RUN_ATTEMPT}\"",
+                    1,
+                ),
+            ),
+            (
+                "final remote inventory proof removed",
+                source.replacen(
+                    "          assert_remote_inventory_is_complete\n",
+                    "          true # final inventory proof removed\n",
+                    1,
+                ),
+            ),
+        ];
+        for (label, mutated) in publish_mutations {
+            assert_ne!(
+                mutated, source,
+                "missing publish mutation fixture for {label}"
+            );
+            assert!(
+                validate_release_workflow_source(&mutated).is_err(),
+                "release policy accepted {label}"
+            );
+        }
     }
 
     #[test]
@@ -6111,8 +6802,8 @@ mod tests {
         assert!(validate_release_workflow_source(source).is_ok());
 
         let commented_publish_condition = source.replacen(
-            "  publish-draft:\n    name: Publish protected draft release\n    if: ${{ github.ref_protected == true }}\n    needs: qualify-prebuilt",
-            "  publish-draft:\n    name: Publish protected draft release\n    # if: ${{ github.ref_protected == true }}\n    needs: qualify-prebuilt",
+            "  publish-draft:\n    name: Publish protected draft release\n    if: ${{ github.ref_protected == true }}",
+            "  publish-draft:\n    name: Publish protected draft release\n    # if: ${{ github.ref_protected == true }}",
             1,
         );
         assert!(
@@ -6122,13 +6813,13 @@ mod tests {
 
         let step_scoped_publish_needs = source
             .replacen(
-                "    needs: qualify-prebuilt\n    runs-on: ubuntu-latest",
+                "    needs:\n      - qualify-prebuilt\n      - qualify-wasm-provider\n    runs-on: ubuntu-latest",
                 "    runs-on: ubuntu-latest",
                 1,
             )
             .replacen(
                 "      - name: Download qualified signed aggregate\n        uses:",
-                "      - name: Download qualified signed aggregate\n        needs: qualify-prebuilt\n        uses:",
+                "      - name: Download qualified signed aggregate\n        needs:\n          - qualify-prebuilt\n          - qualify-wasm-provider\n        uses:",
                 1,
             );
         assert!(

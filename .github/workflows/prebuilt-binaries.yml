@@ -133,12 +133,73 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  build-wasm-provider:
+    name: Build WASM provider ${{ matrix.precision }}
+    if: ${{ github.ref_protected == true }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        precision: [single, double]
+    steps:
+      - name: Checkout immutable tag commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: 1.97.1
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          key: wasm-provider-${{ matrix.precision }}
+
+      - name: Provision pinned Emscripten SDK
+        shell: bash
+        run: cargo run --locked -p xtask -- provision-emsdk --root "${RUNNER_TEMP}/emsdk" --github-actions
+
+      - name: Build one immutable WASM release input
+        shell: bash
+        run: |
+          set -euo pipefail
+          precision="${{ matrix.precision }}"
+          artifact_name="wasm-input-${precision}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_SHA}"
+          artifact_root="${RUNNER_TEMP}/${artifact_name}"
+          mkdir "$artifact_root"
+          cargo run --locked -p xtask -- build-wasm-provider-package \
+            --precision "$precision" \
+            --output "$artifact_root"
+          expected="boxdd-wasm-provider-0.6.0-wasm32-unknown-unknown-${precision}.tar.gz"
+          mapfile -d '' packages < <(find "$artifact_root" -maxdepth 1 -type f -name '*.tar.gz' -print0)
+          test "${#packages[@]}" -eq 1
+          test "$(basename "${packages[0]}")" = "$expected"
+          printf 'ARTIFACT_NAME=%s\n' "$artifact_name" >> "$GITHUB_ENV"
+          printf 'ARTIFACT_ROOT=%s\n' "$artifact_root" >> "$GITHUB_ENV"
+
+      - name: Upload unprivileged WASM release input
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.ARTIFACT_ROOT }}
+          if-no-files-found: error
+          retention-days: 7
+
   aggregate:
     name: Validate release contents before signing
     if: ${{ github.ref_protected == true }}
     needs:
       - qualification
       - build-prebuilt
+      - build-wasm-provider
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -170,6 +231,13 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: prebuilt-input-*-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: ${{ runner.temp }}/release-inputs
+          merge-multiple: false
+
+      - name: Download exact WASM run inputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: wasm-input-*-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
           path: ${{ runner.temp }}/release-inputs
           merge-multiple: false
 
@@ -215,7 +283,49 @@ jobs:
         with:
           cosign-release: v3.0.6
 
+      - name: Download reusable signed aggregate
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: prebuilt-signed-${{ github.run_id }}-*-${{ github.sha }}
+          path: ${{ runner.temp }}/reusable-signed
+          merge-multiple: true
+
+      - name: Select stable signed aggregate
+        id: stable-signed
+        shell: bash
+        run: |
+          set -euo pipefail
+          signed_root="${RUNNER_TEMP}/reusable-signed"
+          input_roots=()
+          if test -d "${signed_root}"; then
+            mapfile -d '' input_roots < <(
+              find "${signed_root}" -mindepth 1 -maxdepth 1 -type d \
+                \( -name "prebuilt-input-*-${GITHUB_RUN_ID}-*-${GITHUB_SHA}" \
+                -o -name "wasm-input-*-${GITHUB_RUN_ID}-*-${GITHUB_SHA}" \) \
+                -print0 | sort -z
+            )
+          fi
+          attempts=()
+          for input_root in "${input_roots[@]}"; do
+            input_name="$(basename "${input_root}")"
+            without_sha="${input_name%-"${GITHUB_SHA}"}"
+            attempt="${without_sha##*-"${GITHUB_RUN_ID}"-}"
+            [[ "${attempt}" =~ ^[0-9]+$ ]]
+            attempts+=("${attempt}")
+          done
+          mapfile -t unique_attempts < <(printf '%s\n' "${attempts[@]}" | sed '/^$/d' | sort -u)
+          if test "${#input_roots[@]}" -eq 12 && test "${#unique_attempts[@]}" -eq 1; then
+            test "${unique_attempts[0]}" -ge 1
+            printf 'reuse=true\n' >> "${GITHUB_OUTPUT}"
+          else
+            test "${#input_roots[@]}" -eq 0
+            test "${#unique_attempts[@]}" -eq 0
+            printf 'reuse=false\n' >> "${GITHUB_OUTPUT}"
+          fi
+
       - name: Sign and immediately verify every validated payload
+        if: steps.stable-signed.outputs.reuse != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -224,7 +334,7 @@ jobs:
           test "$(sha256sum "$root" | cut -d ' ' -f 1)" = "$expected_root"
 
           mapfile -d '' archives < <(find "${RUNNER_TEMP}/attestation-input/release-inputs" -type f -name '*.tar.gz' -print0 | sort -z)
-          test "${#archives[@]}" -eq 10
+          test "${#archives[@]}" -eq 12
           for archive in "${archives[@]}"; do
             payload="${RUNNER_TEMP}/attestation-input/signing-payloads/$(basename "$archive").provenance.toml"
             statement="${archive}.provenance.toml"
@@ -248,12 +358,13 @@ jobs:
           done
 
       - name: Upload signed release inputs
+        if: steps.stable-signed.outputs.reuse != 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: prebuilt-signed-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
           path: ${{ runner.temp }}/attestation-input/release-inputs
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 30
 
   verify-signed-release:
     name: Reverify signed aggregate
@@ -283,11 +394,36 @@ jobs:
       - name: Download signed aggregate
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: prebuilt-signed-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          pattern: prebuilt-signed-${{ github.run_id }}-*-${{ github.sha }}
           path: ${{ runner.temp }}/release-inputs
+          merge-multiple: true
+
+      - name: Select unique stable signed aggregate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' input_roots < <(
+            find "${RUNNER_TEMP}/release-inputs" -mindepth 1 -maxdepth 1 -type d \
+              \( -name "prebuilt-input-*-${GITHUB_RUN_ID}-*-${GITHUB_SHA}" \
+              -o -name "wasm-input-*-${GITHUB_RUN_ID}-*-${GITHUB_SHA}" \) \
+              -print0 | sort -z
+          )
+          test "${#input_roots[@]}" -eq 12
+          attempts=()
+          for input_root in "${input_roots[@]}"; do
+            input_name="$(basename "${input_root}")"
+            without_sha="${input_name%-"${GITHUB_SHA}"}"
+            attempt="${without_sha##*-"${GITHUB_RUN_ID}"-}"
+            [[ "${attempt}" =~ ^[0-9]+$ ]]
+            attempts+=("${attempt}")
+          done
+          mapfile -t unique_attempts < <(printf '%s\n' "${attempts[@]}" | sort -u)
+          test "${#unique_attempts[@]}" -eq 1
+          test "${unique_attempts[0]}" -ge 1
+          printf 'BOXDD_RELEASE_ATTEMPT=%s\n' "${unique_attempts[0]}" >> "${GITHUB_ENV}"
 
       - name: Reverify exact signed release contract
-        run: cargo run --locked -p xtask -- release-contract --check --artifacts "${RUNNER_TEMP}/release-inputs"
+        run: cargo run --locked -p xtask -- release-contract --check --run-attempt "${BOXDD_RELEASE_ATTEMPT}" --artifacts "${RUNNER_TEMP}/release-inputs"
 
   qualify-prebuilt:
     name: Qualify ${{ matrix.platform.target }} ${{ matrix.precision }} ${{ matrix.platform.crt }} Rust ${{ matrix.toolchain }}
@@ -340,16 +476,127 @@ jobs:
       - name: Download signed aggregate
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: prebuilt-signed-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          pattern: prebuilt-signed-${{ github.run_id }}-*-${{ github.sha }}
           path: ${{ runner.temp }}/release-inputs
+          merge-multiple: true
+
+      - name: Select unique stable signed aggregate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $inputRoots = @(
+            Get-ChildItem -LiteralPath (Join-Path $env:RUNNER_TEMP 'release-inputs') -Directory |
+              Where-Object {
+                $_.Name -like "prebuilt-input-*-$env:GITHUB_RUN_ID-*-$env:GITHUB_SHA" -or
+                $_.Name -like "wasm-input-*-$env:GITHUB_RUN_ID-*-$env:GITHUB_SHA"
+              }
+          )
+          if ($inputRoots.Count -ne 12) {
+            throw "Expected 12 stable signed input roots, found $($inputRoots.Count)"
+          }
+          $identity = '-' + [regex]::Escape($env:GITHUB_RUN_ID) + '-(?<attempt>[0-9]+)-' + [regex]::Escape($env:GITHUB_SHA) + '$'
+          $attempts = @($inputRoots | ForEach-Object {
+            $match = [regex]::Match($_.Name, $identity)
+            if (-not $match.Success) {
+              throw "Signed input root has an invalid workflow identity: $($_.Name)"
+            }
+            $match.Groups['attempt'].Value
+          } | Sort-Object -Unique)
+          if ($attempts.Count -ne 1 -or [int64]::Parse($attempts[0]) -lt 1) {
+            throw "Signed inputs do not bind one positive workflow attempt"
+          }
 
       - name: Consume through the authenticated prebuilt provider
         run: cargo +${{ matrix.toolchain }} run --locked -p xtask -- qualify-native-provider --provider prebuilt --toolchain ${{ matrix.toolchain }} --precision ${{ matrix.precision }} --target ${{ matrix.platform.target }} --crt ${{ matrix.platform.crt }} --artifacts "${{ runner.temp }}/release-inputs" --cosign cosign
 
+  qualify-wasm-provider:
+    name: Qualify authenticated WASM provider ${{ matrix.precision }}
+    if: ${{ github.ref_protected == true }}
+    needs: verify-signed-release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        precision: [single, double]
+    steps:
+      - name: Checkout immutable tag commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: 1.97.1
+          targets: wasm32-unknown-unknown
+
+      - name: Install Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: "22.16.0"
+          cache: npm
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          key: wasm-provider-qualification-${{ matrix.precision }}
+
+      - name: Install browser test dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Install exact Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+
+      - name: Download signed aggregate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: prebuilt-signed-${{ github.run_id }}-*-${{ github.sha }}
+          path: ${{ runner.temp }}/release-inputs
+          merge-multiple: true
+
+      - name: Select unique stable signed aggregate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' input_roots < <(
+            find "${RUNNER_TEMP}/release-inputs" -mindepth 1 -maxdepth 1 -type d \
+              \( -name "prebuilt-input-*-${GITHUB_RUN_ID}-*-${GITHUB_SHA}" \
+              -o -name "wasm-input-*-${GITHUB_RUN_ID}-*-${GITHUB_SHA}" \) \
+              -print0 | sort -z
+          )
+          test "${#input_roots[@]}" -eq 12
+          attempts=()
+          for input_root in "${input_roots[@]}"; do
+            input_name="$(basename "${input_root}")"
+            without_sha="${input_name%-"${GITHUB_SHA}"}"
+            attempt="${without_sha##*-"${GITHUB_RUN_ID}"-}"
+            [[ "${attempt}" =~ ^[0-9]+$ ]]
+            attempts+=("${attempt}")
+          done
+          mapfile -t unique_attempts < <(printf '%s\n' "${attempts[@]}" | sort -u)
+          test "${#unique_attempts[@]}" -eq 1
+          test "${unique_attempts[0]}" -ge 1
+          printf 'BOXDD_RELEASE_ATTEMPT=%s\n' "${unique_attempts[0]}" >> "${GITHUB_ENV}"
+
+      - name: Verify publisher before loading and execute the fresh consumer
+        run: GITHUB_RUN_ATTEMPT="${BOXDD_RELEASE_ATTEMPT}" cargo run --locked -p xtask -- qualify-wasm-provider --precision ${{ matrix.precision }} --artifacts "${{ runner.temp }}/release-inputs" --cosign cosign
+
   publish-draft:
     name: Publish protected draft release
     if: ${{ github.ref_protected == true }}
-    needs: qualify-prebuilt
+    needs:
+      - qualify-prebuilt
+      - qualify-wasm-provider
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -357,8 +604,9 @@ jobs:
       - name: Download qualified signed aggregate
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: prebuilt-signed-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          pattern: prebuilt-signed-${{ github.run_id }}-*-${{ github.sha }}
           path: ${{ runner.temp }}/release-inputs
+          merge-multiple: true
 
       - name: Create protected draft release
         shell: bash
@@ -369,6 +617,25 @@ jobs:
           set -euo pipefail
           test "${GITHUB_REF_TYPE}" = "tag"
           test "${GITHUB_REF}" = "refs/tags/${GITHUB_REF_NAME}"
+
+          mapfile -d '' input_roots < <(
+            find "${RUNNER_TEMP}/release-inputs" -mindepth 1 -maxdepth 1 -type d \
+              \( -name "prebuilt-input-*-${GITHUB_RUN_ID}-*-${GITHUB_SHA}" \
+              -o -name "wasm-input-*-${GITHUB_RUN_ID}-*-${GITHUB_SHA}" \) \
+              -print0 | sort -z
+          )
+          test "${#input_roots[@]}" -eq 12
+          attempts=()
+          for input_root in "${input_roots[@]}"; do
+            input_name="$(basename "${input_root}")"
+            without_sha="${input_name%-"${GITHUB_SHA}"}"
+            attempt="${without_sha##*-"${GITHUB_RUN_ID}"-}"
+            [[ "${attempt}" =~ ^[0-9]+$ ]]
+            attempts+=("${attempt}")
+          done
+          mapfile -t unique_attempts < <(printf '%s\n' "${attempts[@]}" | sort -u)
+          test "${#unique_attempts[@]}" -eq 1
+          test "${unique_attempts[0]}" -ge 1
 
           # Resolve the protected tag through the Git Data API immediately before publishing.
           # The ref target is a commit for lightweight tags and a tag object for annotated tags.
@@ -392,11 +659,122 @@ jobs:
           test "${object_type}" = "commit"
           test "${object_sha}" = "${GITHUB_SHA}"
 
-          mapfile -d '' assets < <(find "${RUNNER_TEMP}/release-inputs" -type f -print0 | sort -z)
-          test "${#assets[@]}" -eq 41
-          gh release create "${GITHUB_REF_NAME}" \
-            --draft \
-            --verify-tag \
-            --title "boxdd ${GITHUB_REF_NAME}" \
-            --generate-notes \
-            "${assets[@]}"
+          release_inputs="${RUNNER_TEMP}/release-inputs"
+          expected_inventory="${RUNNER_TEMP}/expected-release-assets.json"
+          expected_inventory_lines="${expected_inventory}.ndjson"
+          remote_inventory="${RUNNER_TEMP}/remote-release-assets.json"
+          remote_inventory_raw="${remote_inventory}.raw"
+          release_payload="${RUNNER_TEMP}/draft-release-payload.json"
+          owner_marker="<!-- boxdd-release-owner:v1 run=${GITHUB_RUN_ID} sha=${GITHUB_SHA} tag=${GITHUB_REF_NAME} -->"
+
+          # The expected inventory is the sole upload authority for this run. It binds
+          # every release asset to its exact name, byte length, and GitHub API digest.
+          while IFS= read -r -d '' asset; do
+            asset_name="$(basename "${asset}")"
+            asset_size="$(wc -c < "${asset}" | tr -d '[:space:]')"
+            asset_sha256="$(sha256sum "${asset}" | cut -d ' ' -f 1)"
+            jq -nc \
+              --arg name "${asset_name}" \
+              --arg path "${asset}" \
+              --arg digest "sha256:${asset_sha256}" \
+              --argjson size "${asset_size}" \
+              '{name: $name, path: $path, size: $size, digest: $digest, state: "uploaded"}'
+          done < <(find "${release_inputs}" -type f -print0 | sort -z) > "${expected_inventory_lines}"
+          jq -s 'sort_by(.name)' "${expected_inventory_lines}" > "${expected_inventory}"
+          jq -e '
+            length == 49
+            and ([.[].name] | unique | length) == length
+            and all(.[]; (.name | type) == "string" and (.path | type) == "string" and (.size | type) == "number" and (.digest | test("^sha256:[0-9a-f]{64}$")) and .state == "uploaded")
+          ' "${expected_inventory}" >/dev/null
+
+          tag_name_uri="$(jq -rn --arg value "${GITHUB_REF_NAME}" '$value | @uri')"
+          release_endpoint="repos/${GITHUB_REPOSITORY}/releases/tags/${tag_name_uri}"
+          release_id=""
+          read_release() {
+            gh api --method GET "${release_endpoint}"
+          }
+          read_release_by_id() {
+            gh api --method GET "repos/${GITHUB_REPOSITORY}/releases/${release_id}"
+          }
+          require_owned_release_id() {
+            jq -er \
+              --arg tag "${GITHUB_REF_NAME}" \
+              --arg sha "${GITHUB_SHA}" \
+              --arg marker "${owner_marker}" \
+              'if .tag_name == $tag and .target_commitish == $sha and .draft == true and ((.body // "" | split($marker) | length) == 2)
+               then .id
+               else error("release is not the draft owned by this tag, commit, and workflow run")
+               end'
+          }
+          read_remote_inventory() {
+            gh api --paginate --slurp \
+              "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?per_page=100" \
+              > "${remote_inventory_raw}"
+            jq '[.[][] | {name: .name, size: .size, digest: .digest, state: .state}] | sort_by(.name)' \
+              "${remote_inventory_raw}" > "${remote_inventory}"
+          }
+          assert_remote_inventory_is_authorized() {
+            jq -e --slurp '
+              .[0] as $expected_with_paths
+              | [$expected_with_paths[] | del(.path)] as $expected
+              | .[1] as $actual
+              | ($actual | length) == ([ $actual[].name ] | unique | length)
+              and all($actual[]; . as $asset | any($expected[]; . == $asset))
+            ' "${expected_inventory}" "${remote_inventory}" >/dev/null
+          }
+          assert_remote_inventory_is_complete() {
+            assert_remote_inventory_is_authorized
+            jq -e --slurp '
+              .[0] as $expected_with_paths
+              | [$expected_with_paths[] | del(.path)] as $expected
+              | .[1] as $actual
+              | ($actual | length) == 49
+              and ($actual == $expected)
+            ' "${expected_inventory}" "${remote_inventory}" >/dev/null
+          }
+
+          # A failed create request is deliberately followed by the same tag lookup: the
+          # server may have created the draft even when its response was lost in transit.
+          if ! release_json="$(read_release 2>/dev/null)"; then
+            jq -nc \
+              --arg tag "${GITHUB_REF_NAME}" \
+              --arg sha "${GITHUB_SHA}" \
+              --arg marker "${owner_marker}" \
+              '{tag_name: $tag, target_commitish: $sha, name: ("boxdd " + $tag), body: $marker, draft: true, generate_release_notes: true}' \
+              > "${release_payload}"
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/releases" --input "${release_payload}" >/dev/null || true
+            release_json="$(read_release)"
+          fi
+
+          # Only the run which created this exact draft may resume it. The marker does
+          # not include GITHUB_RUN_ATTEMPT so GitHub's retry of the same run is recoverable.
+          release_id="$(require_owned_release_id <<< "${release_json}")"
+
+          read_remote_inventory
+          assert_remote_inventory_is_authorized
+          test "$(read_release_by_id | require_owned_release_id)" = "${release_id}"
+          while IFS= read -r asset_path; do
+            # Resolve ownership again for every write, then upload to the immutable
+            # numeric release ID. A duplicate name fails without replacing any asset.
+            test "$(read_release_by_id | require_owned_release_id)" = "${release_id}"
+            asset_name_uri="$(jq -rn --arg value "$(basename "${asset_path}")" '$value | @uri')"
+            curl --fail-with-body --silent --show-error \
+              --request POST \
+              --header "Accept: application/vnd.github+json" \
+              --header "Authorization: Bearer ${GH_TOKEN}" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              --header "Content-Type: application/octet-stream" \
+              --data-binary "@${asset_path}" \
+              "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?name=${asset_name_uri}" \
+              >/dev/null
+          done < <(jq -r --slurp '
+            .[0] as $expected
+            | .[1] as $actual
+            | $expected[]
+            | select(.name as $name | ($actual | any(.name == $name) | not))
+            | .path
+          ' "${expected_inventory}" "${remote_inventory}")
+
+          read_remote_inventory
+          test "$(read_release_by_id | require_owned_release_id)" = "${release_id}"
+          assert_remote_inventory_is_complete

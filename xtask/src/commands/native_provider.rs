@@ -21,7 +21,7 @@ use crate::{
     provider_archive::{ArchiveExpectation, verify_provider_archive},
     provider_manifest,
     qualified_git::qualified_git_command,
-    source_overlay::effective_source_identity,
+    source_overlay::{adapter_source_sha256, effective_source_identity},
 };
 
 const QUALIFIED_TOOLCHAINS: &[&str] = &["1.95.0", "1.97.1"];
@@ -1807,8 +1807,7 @@ fn validate_provider_manifest(
             ));
         }
     }
-    let adapter_source_sha256 =
-        provider_manifest::adapter_source_sha256(crate_root).map_err(Error::message)?;
+    let adapter_source_sha256 = adapter_source_sha256(crate_root).map_err(Error::message)?;
     let snapshot_layout_hash = u32::try_from(manifest.snapshot_layout_hash).map_err(|_| {
         Error::message("provider snapshot layout hash does not fit the native u32 contract")
     })?;

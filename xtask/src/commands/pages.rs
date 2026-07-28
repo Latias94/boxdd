@@ -12,11 +12,9 @@ use crate::{
     config::{write_atomic, write_atomic_bytes},
     emscripten_sdk::{QualifiedEmscriptenSdk, SDK_CONTRACT_RELATIVE_PATH, SdkContract},
     provenance_policy::PUBLISHER_REPOSITORY,
-    provider_manifest::{
-        self, ADAPTER_ABI_VERSION, RECORDING_CONTRACT_BLAKE3, adapter_source_sha256,
-    },
+    provider_manifest::{self, ADAPTER_ABI_VERSION, RECORDING_CONTRACT_BLAKE3},
     qualified_git::qualified_git_command,
-    source_overlay::effective_source_identity,
+    source_overlay::{adapter_source_sha256, effective_source_identity},
     wasm_provider_contract::{
         COMPILER_TARGET, ENDIANNESS, POINTER_WIDTH, PROVIDER_ABI, SIMD_MODE,
         WasmProviderExpectation, WasmProviderIdentity, contract_relative_path,
@@ -225,6 +223,7 @@ pub(crate) fn build_pages_wasm(root: &Path) -> Result<()> {
     )?;
     copy_bevy_web_artifacts(root, &bevy_artifacts)?;
     ensure_pages_source_state(root, precision, &identity)?;
+    sdk.revalidate().map_err(Error::Message)?;
     let (manifest, manifest_sha256) = write_pages_runtime_manifest(root, precision, &identity)?;
     let trust = PagesLoaderTrust::from_manifest(&manifest, manifest_sha256);
     write_bevy_testbed_loader(root, Some(&trust))?;
@@ -918,6 +917,7 @@ fn optimize_wasm_if_available(
 
     let before = file_size(wasm)?;
     let tmp = wasm.with_extension("wasm-opt.tmp");
+    remove_optimized_wasm_temp(&tmp)?;
     let mut command = sdk.wasm_opt_command().map_err(Error::Message)?;
     command
         .arg("-Oz")
@@ -929,10 +929,22 @@ fn optimize_wasm_if_available(
         .arg(wasm)
         .arg("-o")
         .arg(&tmp);
-    run_command(&mut command, &format!("optimize {label} with wasm-opt"))?;
-
-    fs::copy(&tmp, wasm).map_err(|source| Error::io(wasm, source))?;
-    fs::remove_file(&tmp).map_err(|source| Error::io(&tmp, source))?;
+    let optimization = (|| {
+        run_command(&mut command, &format!("optimize {label} with wasm-opt"))?;
+        sdk.revalidate().map_err(Error::Message)?;
+        ensure_file(&tmp, "wasm-opt output")?;
+        fs::copy(&tmp, wasm).map_err(|source| Error::io(wasm, source))?;
+        Ok(())
+    })();
+    if let Err(error) = optimization {
+        if let Err(cleanup) = remove_optimized_wasm_temp(&tmp) {
+            return Err(Error::Message(format!(
+                "{error}; failed to remove wasm-opt temporary output: {cleanup}"
+            )));
+        }
+        return Err(error);
+    }
+    remove_optimized_wasm_temp(&tmp)?;
 
     let after = file_size(wasm)?;
     let saved = before.saturating_sub(after);
@@ -947,6 +959,14 @@ fn optimize_wasm_if_available(
         format_bytes(after)
     );
     Ok(())
+}
+
+fn remove_optimized_wasm_temp(path: &Path) -> Result<()> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(Error::io(path, error)),
+    }
 }
 
 fn pages_wasm_opt_enabled() -> bool {

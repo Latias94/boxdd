@@ -13,6 +13,10 @@ use std::{
 use crate::provider_manifest::ArtifactManifest;
 use sha2::{Digest, Sha256};
 
+#[allow(dead_code)]
+pub(crate) const BUILD_POLICY_SOURCE_SHA256: &str =
+    "115e0c5000ea1fa8127f9c989b7a609a7cc8eb9741eb993a5de46bad6e00540d";
+
 pub const SCHEMA_VERSION: u64 = 1;
 pub const SCHEMA_NAME: &str = "boxdd-sys-prebuilt-provenance-v1";
 pub const MAX_PACKAGE_BYTES: u64 = 256 * 1024 * 1024;

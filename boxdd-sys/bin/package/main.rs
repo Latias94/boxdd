@@ -20,10 +20,9 @@ use flate2::{Compression, write::GzEncoder};
 use provider_archive::{ArchiveExpectation, verify_provider_archive};
 use provider_manifest::{
     ADAPTER_ABI_VERSION, ArtifactIdentityExpectation, ArtifactManifest, RECORDING_CONTRACT_BLAKE3,
-    REQUIRED_ADAPTER_SYMBOLS, adapter_source_sha256, required_adapter_symbols_sha256, sha256_bytes,
-    sha256_file,
+    REQUIRED_ADAPTER_SYMBOLS, required_adapter_symbols_sha256, sha256_bytes, sha256_file,
 };
-use source_overlay::effective_source_identity;
+use source_overlay::{adapter_source_sha256, effective_source_identity};
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;

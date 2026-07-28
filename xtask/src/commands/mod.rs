@@ -1,5 +1,6 @@
 pub mod api_coverage;
 mod api_recording;
+pub mod build_policy_sources;
 pub mod native_provider;
 pub mod package_registry;
 pub mod pages;
@@ -10,6 +11,7 @@ pub mod release_contract;
 pub mod sample_parity;
 pub mod upstream_sync;
 pub mod verification;
+pub mod wasm_release;
 
 mod support;
 

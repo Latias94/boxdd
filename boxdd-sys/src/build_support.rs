@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
-use std::fmt;
-use std::path::{Component, PathBuf};
+
+#[allow(dead_code)]
+pub(crate) const BUILD_POLICY_SOURCE_SHA256: &str =
+    "46a68bf5a7628a0f709e02c12e80b3a92796011e06c6f39ecf6217394d036de1";
 
 #[cfg(all(test, feature = "package-bin"))]
 #[path = "bindgen_contract.rs"]
@@ -10,7 +12,8 @@ mod bindgen_contract;
 mod provenance_policy;
 #[allow(unused_imports)]
 pub(crate) use provenance_policy::{
-    COSIGN_VERSION, PUBLISHER_REPOSITORY, PUBLISHER_WORKFLOW, PrebuiltProvenance,
+    BUILD_POLICY_SOURCE_SHA256 as PROVENANCE_POLICY_BUILD_POLICY_SOURCE_SHA256, COSIGN_VERSION,
+    PUBLISHER_REPOSITORY, PUBLISHER_WORKFLOW, PrebuiltProvenance,
     SIGSTORE_TRUSTED_ROOT_RELATIVE_PATH, SIGSTORE_TRUSTED_ROOT_SHA256, cosign_verify_blob_args,
     cosign_version_is_qualified,
 };
@@ -282,144 +285,14 @@ fn require_static_link(link_kind: Option<&str>) -> Result<(), String> {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
-pub(crate) enum SourceInventoryError {
-    Empty,
-    Duplicate(PathBuf),
-    InvalidPath { path: String, reason: &'static str },
-}
-
-impl fmt::Display for SourceInventoryError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => formatter.write_str("C source inventory must not be empty"),
-            Self::Duplicate(path) => {
-                write!(
-                    formatter,
-                    "C source inventory contains duplicate path {path:?}"
-                )
-            }
-            Self::InvalidPath { path, reason } => {
-                write!(
-                    formatter,
-                    "invalid C source inventory path {path:?}: {reason}"
-                )
-            }
-        }
-    }
-}
-
-pub(crate) fn validate_c_source_paths<'a>(
-    sources: impl IntoIterator<Item = &'a str>,
-) -> Result<Vec<PathBuf>, SourceInventoryError> {
-    let mut seen = BTreeSet::new();
-    let mut validated = Vec::new();
-
-    for source in sources {
-        let source_path = validate_c_source_path(source)?;
-        if !seen.insert(source_path.clone()) {
-            return Err(SourceInventoryError::Duplicate(source_path));
-        }
-        validated.push(source_path);
-    }
-
-    if validated.is_empty() {
-        return Err(SourceInventoryError::Empty);
-    }
-    Ok(validated)
-}
-
-fn validate_c_source_path(source: &str) -> Result<PathBuf, SourceInventoryError> {
-    if source.contains('\\') {
-        return Err(invalid_path(source, "paths must use forward slashes"));
-    }
-
-    let segments = source.split('/').collect::<Vec<_>>();
-    if segments.len() < 2
-        || segments[0] != "src"
-        || segments
-            .iter()
-            .any(|segment| segment.is_empty() || *segment == "." || *segment == "..")
-    {
-        return Err(invalid_path(
-            source,
-            "paths must be normalized, relative, and below src/",
-        ));
-    }
-
-    let source_path = PathBuf::from(source);
-    if !source_path
-        .extension()
-        .is_some_and(|extension| extension == "c")
-        || !source_path
-            .components()
-            .all(|component| matches!(component, Component::Normal(_)))
-    {
-        return Err(invalid_path(source, "paths must name a .c file"));
-    }
-    Ok(source_path)
-}
-
-fn invalid_path(path: &str, reason: &'static str) -> SourceInventoryError {
-    SourceInventoryError::InvalidPath {
-        path: path.to_owned(),
-        reason,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
         BindingTargetFamily, COSIGN_VERSION, PrebuiltProvenance, ProviderAdapter, ProviderInputs,
-        SourceInventoryError, classify_binding_target, cosign_verify_blob_args,
-        cosign_version_is_qualified, select_provider, simd_identity, validate_c_source_paths,
-        validate_skip_cc_policy,
+        classify_binding_target, cosign_verify_blob_args, cosign_version_is_qualified,
+        select_provider, simd_identity, validate_skip_cc_policy,
     };
-    use std::path::{Path, PathBuf};
-
-    #[test]
-    fn accepts_normalized_nested_c_sources_in_manifest_order() {
-        let sources = ["src/core.c", "src/solver/contact.c"];
-
-        assert_eq!(
-            validate_c_source_paths(sources).unwrap(),
-            sources.map(PathBuf::from)
-        );
-    }
-
-    #[test]
-    fn rejects_empty_and_duplicate_inventories() {
-        assert_eq!(
-            validate_c_source_paths(std::iter::empty()).unwrap_err(),
-            SourceInventoryError::Empty
-        );
-        assert_eq!(
-            validate_c_source_paths(["src/core.c", "src/core.c"]).unwrap_err(),
-            SourceInventoryError::Duplicate(PathBuf::from("src/core.c"))
-        );
-    }
-
-    #[test]
-    fn rejects_paths_outside_the_reviewed_source_tree() {
-        for source in [
-            "/src/core.c",
-            "core.c",
-            "test/core.c",
-            "src/../test/core.c",
-            "src/./core.c",
-            "src//core.c",
-            "src\\core.c",
-            "src/core.cpp",
-        ] {
-            assert!(
-                matches!(
-                    validate_c_source_paths([source]),
-                    Err(SourceInventoryError::InvalidPath { .. })
-                ),
-                "unexpectedly accepted {source:?}"
-            );
-        }
-    }
+    use std::path::Path;
 
     fn native_inputs() -> ProviderInputs<'static> {
         ProviderInputs {

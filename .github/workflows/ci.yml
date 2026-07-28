@@ -149,6 +149,7 @@ jobs:
 
       - name: upstream and architecture gates
         run: |
+          cargo run --locked -p xtask -- build-policy-sources --check
           cargo run --locked -p xtask -- verify-precision-contract
           cargo run --locked -p xtask -- upstream-sync --check
           cargo run --locked -p xtask -- api-coverage --check

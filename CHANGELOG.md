@@ -113,13 +113,13 @@ release. The release targets the pinned Box2D 3.2.0 development snapshot at
 - Runtime-capable adapters verify exact upstream SHA, precision, target, CRT/SIMD/validation
   identity, source/archive digests, private ABI, snapshot layout, and recording contract before
   Safe Rust creates native state.
-- Official native prebuilt packages require a canonical, repository/workflow/commit/tag/run-bound
-  signed provenance statement covering the exact outer archive and complete member inventory. The
-  qualification tool verifies that statement and archive before extraction; `boxdd-sys` then
-  re-verifies the extracted inventory and manifest before linking. WASM artifacts still use
-  commit-bound provider manifests and do not yet provide equivalent portable Sigstore publisher
-  authentication. Caller-generated system manifests are explicitly local trust statements, not
-  project authentication.
+- Official native prebuilt and precision-specific WASM runtime packages require canonical,
+  repository/workflow/commit/tag/run-bound signed provenance statements covering the exact outer
+  archives and complete member inventories. Qualification verifies each statement and archive
+  before extraction. `boxdd-sys` then re-verifies native inputs before linking, while WASM
+  qualification verifies the extracted identity before loading JavaScript or instantiating a
+  module under Node and Chromium. Caller-generated system manifests are explicitly local trust
+  statements, not project authentication.
 - External snapshot and recording bytes are checksummed and structurally/semantically preflighted
   before native restore or replay allocation.
 - The public snapshot validator authorizes the linked runtime adapter before passing Rust-owned
