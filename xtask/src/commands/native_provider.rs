@@ -24,6 +24,8 @@ use crate::{
     source_overlay::{adapter_source_sha256, effective_source_identity},
 };
 
+use super::set_once;
+
 const QUALIFIED_TOOLCHAINS: &[&str] = &["1.95.0", "1.97.1"];
 const MAX_ARCHIVE_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_ARCHIVE_TOTAL_BYTES: u64 = 256 * 1024 * 1024;
@@ -228,14 +230,6 @@ impl Options {
 
 fn required<T>(value: Option<T>, flag: &str) -> Result<T> {
     value.ok_or_else(|| Error::message(format!("qualify-native-provider requires {flag}")))
-}
-
-fn set_once<T>(slot: &mut Option<T>, value: T, flag: &str) -> Result<()> {
-    if slot.replace(value).is_some() {
-        Err(Error::message(format!("{flag} may only be supplied once")))
-    } else {
-        Ok(())
-    }
 }
 
 fn cargo_arguments<S: AsRef<OsStr>>(toolchain: &str, arguments: &[S]) -> Result<Vec<OsString>> {

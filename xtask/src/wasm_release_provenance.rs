@@ -9,7 +9,7 @@ use std::{
     path::{Component, Path},
 };
 
-use sha2::{Digest, Sha256};
+pub(crate) use crate::provider_manifest::sha256_bytes;
 
 pub(crate) const SCHEMA_VERSION: u64 = 1;
 pub(crate) const SCHEMA_NAME: &str = "boxdd-wasm-release-provenance-v1";
@@ -565,12 +565,6 @@ pub(crate) fn canonical_inner_checksums_bytes(
     Ok(rendered.into_bytes())
 }
 
-pub(crate) fn sha256_bytes(bytes: &[u8]) -> String {
-    let mut digest = Sha256::new();
-    digest.update(bytes);
-    hex_digest(digest.finalize())
-}
-
 fn required_members(table: &toml::Table) -> Result<Vec<WasmReleaseMember>, String> {
     table
         .get("members")
@@ -646,7 +640,7 @@ fn validate_release_tag(crate_version: &str, release_tag: &str) -> Result<(), St
     }
 }
 
-fn is_canonical_semver(version: &str) -> bool {
+pub(crate) fn is_canonical_semver(version: &str) -> bool {
     let (without_build, build) = match version.split_once('+') {
         Some((left, right)) if !right.contains('+') => (left, Some(right)),
         Some(_) => return false,
@@ -746,35 +740,38 @@ fn validate_blake3(label: &str, value: &str) -> Result<(), String> {
     }
 }
 
-fn is_lower_hex(value: &str) -> bool {
+pub(crate) fn is_lower_hex(value: &str) -> bool {
     value
         .bytes()
         .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn validate_relative_path(path: &str) -> Result<(), String> {
-    let portable_ascii = path
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'-' | b'_' | b'.'));
-    if path.is_empty()
-        || !portable_ascii
-        || path.contains("//")
-        || path.starts_with("./")
-        || path.ends_with('/')
-        || Path::new(path).is_absolute()
-        || !Path::new(path)
-            .components()
-            .all(|component| matches!(component, Component::Normal(_)))
-        || path
-            .split('/')
-            .any(|component| component.is_empty() || matches!(component, "." | ".."))
-    {
+    if !is_portable_normalized_relative_path(path) {
         Err(format!(
             "WASM release member path {path:?} is not a portable normalized relative path"
         ))
     } else {
         Ok(())
     }
+}
+
+pub(crate) fn is_portable_normalized_relative_path(path: &str) -> bool {
+    let portable_ascii = path
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'-' | b'_' | b'.'));
+    !path.is_empty()
+        && portable_ascii
+        && !path.contains("//")
+        && !path.starts_with("./")
+        && !path.ends_with('/')
+        && !Path::new(path).is_absolute()
+        && Path::new(path)
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)))
+        && !path
+            .split('/')
+            .any(|component| component.is_empty() || matches!(component, "." | ".."))
 }
 
 fn expected_member_paths(precision: &str) -> [String; PACKAGE_MEMBER_COUNT] {
@@ -791,17 +788,6 @@ fn expected_member_paths(precision: &str) -> [String; PACKAGE_MEMBER_COUNT] {
 
 fn toml_string(value: &str) -> String {
     toml::Value::String(value.to_owned()).to_string()
-}
-
-fn hex_digest(bytes: impl AsRef<[u8]>) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let bytes = bytes.as_ref();
-    let mut output = String::with_capacity(bytes.len() * 2);
-    for &byte in bytes {
-        output.push(HEX[(byte >> 4) as usize] as char);
-        output.push(HEX[(byte & 0x0f) as usize] as char);
-    }
-    output
 }
 
 #[cfg(test)]

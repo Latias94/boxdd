@@ -758,7 +758,11 @@ jobs:
             # numeric release ID. A duplicate name fails without replacing any asset.
             test "$(read_release_by_id | require_owned_release_id)" = "${release_id}"
             asset_name_uri="$(jq -rn --arg value "$(basename "${asset_path}")" '$value | @uri')"
+            # A rerun reconciles remote inventory before retrying this POST, which
+            # avoids duplicating an upload whose successful response was lost.
             curl --fail-with-body --silent --show-error \
+              --connect-timeout 30 \
+              --max-time 900 \
               --request POST \
               --header "Accept: application/vnd.github+json" \
               --header "Authorization: Bearer ${GH_TOKEN}" \

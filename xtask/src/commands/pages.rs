@@ -28,7 +28,7 @@ use super::{
     },
     support::{
         BuildProfile, QualifiedCargo, WASM_TARGET, add_wasm_app_link_args, copy_file, ensure_file,
-        replace_dir_under, run_command,
+        normalize_newlines, replace_dir_under, run_command,
     },
     upstream_sync::UpdateLock,
 };
@@ -2343,10 +2343,6 @@ pub(crate) fn validate_pages(root: &Path) -> Result<()> {
     } else {
         Err(Error::Message(errors.join("\n")))
     }
-}
-
-fn normalize_newlines(value: &str) -> String {
-    value.replace("\r\n", "\n")
 }
 
 fn collect_html_files(dir: &Path) -> Result<Vec<PathBuf>> {

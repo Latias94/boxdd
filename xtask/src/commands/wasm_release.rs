@@ -4,7 +4,7 @@ use std::{
     ffi::OsStr,
     fs::{self, File, OpenOptions},
     io::{self, Cursor, Read, Write},
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
     process::Command,
 };
 
@@ -28,13 +28,14 @@ use crate::{
     wasm_release_provenance::{
         SCHEMA_NAME as PROVENANCE_SCHEMA, SCHEMA_VERSION as PROVENANCE_SCHEMA_VERSION,
         WasmReleaseContext, WasmReleaseProvenanceStatement, canonical_inner_checksums_bytes,
+        is_canonical_semver, is_lower_hex, is_portable_normalized_relative_path,
         members_from_files, sha256_bytes,
     },
 };
 
 use super::{
     provider::{self, ProviderPrecision},
-    verification,
+    set_once, verification,
 };
 
 const MANIFEST_SCHEMA_VERSION: u64 = 1;
@@ -209,7 +210,7 @@ pub(crate) fn qualify(root: &Path, args: &[String]) -> Result<()> {
 
 pub(crate) fn archive_name(version: &str, precision: &str) -> Result<String> {
     ProviderPrecision::parse(precision)?;
-    if !is_canonical_version(version) {
+    if !is_canonical_semver(version) {
         return Err(Error::message(format!(
             "WASM provider package version is not canonical: {version:?}"
         )));
@@ -296,14 +297,6 @@ fn parse_options(
         set(&pair[0], &pair[1])?;
     }
     Ok(())
-}
-
-fn set_once<T>(slot: &mut Option<T>, value: T, flag: &str) -> Result<()> {
-    if slot.replace(value).is_some() {
-        Err(Error::message(format!("{flag} may only be supplied once")))
-    } else {
-        Ok(())
-    }
 }
 
 impl WasmRuntimeManifest {
@@ -399,7 +392,7 @@ impl WasmRuntimeManifest {
                 self.schema_version, self.schema
             )));
         }
-        if !is_canonical_version(&self.crate_version) {
+        if !is_canonical_semver(&self.crate_version) {
             return Err(Error::message(
                 "WASM runtime manifest has an invalid crate version",
             ));
@@ -718,49 +711,12 @@ fn workspace_version(root: &Path) -> Result<String> {
         .and_then(|value| value.get("version"))
         .and_then(toml::Value::as_str)
         .ok_or_else(|| Error::message("workspace.package.version is missing"))?;
-    if !is_canonical_version(version) {
+    if !is_canonical_semver(version) {
         return Err(Error::message(format!(
             "workspace package version is not canonical: {version:?}"
         )));
     }
     Ok(version.to_owned())
-}
-
-fn is_canonical_version(version: &str) -> bool {
-    let (without_build, build) = match version.split_once('+') {
-        Some((left, right)) if !right.contains('+') => (left, Some(right)),
-        Some(_) => return false,
-        None => (version, None),
-    };
-    let (core, prerelease) = match without_build.split_once('-') {
-        Some((left, right)) => (left, Some(right)),
-        None => (without_build, None),
-    };
-    let core = core.split('.').collect::<Vec<_>>();
-    if core.len() != 3
-        || !core.iter().all(|part| {
-            !part.is_empty()
-                && part.bytes().all(|byte| byte.is_ascii_digit())
-                && (*part == "0" || !part.starts_with('0'))
-        })
-    {
-        return false;
-    }
-    let identifiers_are_canonical = |value: &str, reject_numeric_leading_zero: bool| {
-        !value.is_empty()
-            && value.split('.').all(|identifier| {
-                !identifier.is_empty()
-                    && identifier
-                        .bytes()
-                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-                    && (!reject_numeric_leading_zero
-                        || !identifier.bytes().all(|byte| byte.is_ascii_digit())
-                        || identifier == "0"
-                        || !identifier.starts_with('0'))
-            })
-    };
-    prerelease.is_none_or(|value| identifiers_are_canonical(value, true))
-        && build.is_none_or(|value| identifiers_are_canonical(value, false))
 }
 
 fn validate_release_tag(tag: &str, version: &str) -> Result<()> {
@@ -1310,11 +1266,7 @@ fn release_statement_from_verified_package(
 }
 
 fn validate_lower_hex(label: &str, value: &str, length: usize) -> Result<()> {
-    if value.len() == length
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    {
+    if value.len() == length && is_lower_hex(value) {
         Ok(())
     } else {
         Err(Error::message(format!(
@@ -1324,22 +1276,7 @@ fn validate_lower_hex(label: &str, value: &str, length: usize) -> Result<()> {
 }
 
 fn validate_relative_path(path: &str) -> Result<()> {
-    let portable = path
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'-' | b'_' | b'.'));
-    if path.is_empty()
-        || !portable
-        || path.contains("//")
-        || path.starts_with("./")
-        || path.ends_with('/')
-        || Path::new(path).is_absolute()
-        || !Path::new(path)
-            .components()
-            .all(|component| matches!(component, Component::Normal(_)))
-        || path
-            .split('/')
-            .any(|component| component.is_empty() || matches!(component, "." | ".."))
-    {
+    if !is_portable_normalized_relative_path(path) {
         Err(Error::message(format!(
             "WASM package path {path:?} is not a portable normalized relative path"
         )))

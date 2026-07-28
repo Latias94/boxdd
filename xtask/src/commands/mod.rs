@@ -31,3 +31,13 @@ pub fn parse_update_mode(command: &str, args: &[String]) -> crate::Result<Update
         ))),
     }
 }
+
+pub(crate) fn set_once<T>(slot: &mut Option<T>, value: T, flag: &str) -> crate::Result<()> {
+    if slot.replace(value).is_some() {
+        Err(crate::Error::message(format!(
+            "{flag} may only be supplied once"
+        )))
+    } else {
+        Ok(())
+    }
+}

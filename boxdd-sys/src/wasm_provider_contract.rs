@@ -6,7 +6,7 @@ use std::path::{Component, Path, PathBuf};
 
 #[allow(dead_code)]
 pub(crate) const BUILD_POLICY_SOURCE_SHA256: &str =
-    "2b8bbdfadc12b37f12af49c3974331d475a62fc997a4beb3beeb8ba978e82e7c";
+    "196d2dd3fbfcb0e0e196589b1857a846f2c6164ca93e3bf11288491f43065431";
 
 pub(crate) const SCHEMA_VERSION: u64 = 1;
 pub(crate) const SCHEMA_NAME: &str = "boxdd-wasm-provider-identity-v1";
@@ -498,27 +498,26 @@ fn require_equal(label: &str, actual: &str, expected: &str) -> Result<(), String
 mod tests {
     use super::*;
 
-    fn expected(precision: &'static str) -> WasmProviderExpectation<'static> {
+    fn expectation_for<'a>(
+        precision: &'static str,
+        identity: &'a WasmProviderIdentity,
+    ) -> WasmProviderExpectation<'a> {
         WasmProviderExpectation {
             provider_abi: PROVIDER_ABI,
             target: CONSUMER_TARGET,
             compiler_target: COMPILER_TARGET,
             precision,
-            upstream_sha: "56edae79f2949d86142b03450d5d60f63bcf5a6f",
-            source_tree: "63a1ab02e3d2bf7c4d86b257b78976842b8c5ddb",
-            effective_source_sha256: "9948291f4ea6e14b01304d19473e4539f47313133b4c2e7c6f3ae312d4f2c112",
-            adapter_abi_version: 2,
-            adapter_source_sha256: "3c985fa213a9ccb43934798bddbb018668e8691e9762873cd2531ea24cdcf337",
-            recording_contract_blake3: "26e9ed79e7e4d7ac00d927be5e9c184f2058c585c7369c589ced11da14ddefe2",
-            validation_enabled: false,
+            upstream_sha: &identity.upstream_sha,
+            source_tree: &identity.source_tree,
+            effective_source_sha256: &identity.effective_source_sha256,
+            adapter_abi_version: identity.adapter_abi_version,
+            adapter_source_sha256: &identity.adapter_source_sha256,
+            recording_contract_blake3: &identity.recording_contract_blake3,
+            validation_enabled: identity.validation_enabled,
             simd: SIMD_MODE,
             pointer_width: POINTER_WIDTH,
             endianness: ENDIANNESS,
-            bindings_sha256: if precision == "single" {
-                "d0fd5f8504352210e6b6d21f9e75bb435c82ab6c2fe3912fd753ef864993ad3e"
-            } else {
-                "6f5128d028fb47497b48e5db6fb4926517a459901b7707d02011f9615c440dd1"
-            },
+            bindings_sha256: &identity.bindings_sha256,
         }
     }
 
@@ -537,11 +536,13 @@ mod tests {
             let temp = tempfile::tempdir().unwrap();
             let relative = contract_relative_path(precision).unwrap();
             let path = temp.path().join(Path::new(relative).file_name().unwrap());
+            let parsed = WasmProviderIdentity::parse(source).unwrap();
+            let expected = expectation_for(precision, &parsed);
             fs::write(&path, source).unwrap();
             let identity = WasmProviderIdentity::load(
                 temp.path(),
                 Path::new(path.file_name().unwrap()),
-                &expected(precision),
+                &expected,
             )
             .unwrap();
             assert_eq!(source, identity.render());
@@ -550,7 +551,7 @@ mod tests {
                 WasmProviderIdentity::load(
                     temp.path(),
                     Path::new(path.file_name().unwrap()),
-                    &expected(precision),
+                    &expected,
                 )
                 .is_err(),
                 "non-canonical whitespace must be rejected"
@@ -564,7 +565,7 @@ mod tests {
             } else {
                 "single"
             };
-            assert!(identity.validate(&expected(other)).is_err());
+            assert!(identity.validate(&expectation_for(other, &parsed)).is_err());
         }
         assert!(contract_relative_path("extended").is_err());
     }
@@ -583,12 +584,15 @@ mod tests {
         .unwrap();
         let link = temp.path().join("provider-contract.toml");
         symlink(&target, &link).unwrap();
+        let checked =
+            WasmProviderIdentity::parse(include_str!("../abi/wasm32-unknown-unknown-single.toml"))
+                .unwrap();
 
         assert!(
             WasmProviderIdentity::load(
                 temp.path(),
                 Path::new("provider-contract.toml"),
-                &expected("single")
+                &expectation_for("single", &checked)
             )
             .is_err()
         );
@@ -607,12 +611,15 @@ mod tests {
         )
         .unwrap();
         symlink(outside.path(), temp.path().join("abi")).unwrap();
+        let checked =
+            WasmProviderIdentity::parse(include_str!("../abi/wasm32-unknown-unknown-single.toml"))
+                .unwrap();
 
         assert!(
             WasmProviderIdentity::load(
                 temp.path(),
                 Path::new("abi/provider-contract.toml"),
-                &expected("single"),
+                &expectation_for("single", &checked),
             )
             .is_err()
         );

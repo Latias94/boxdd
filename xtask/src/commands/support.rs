@@ -63,6 +63,10 @@ const CARGO_BUILD_ENVIRONMENT_KEYS: &[&str] = &[
     "BOXDD_EMSDK_REVISION",
 ];
 
+pub(super) fn normalize_newlines(value: &str) -> String {
+    value.replace("\r\n", "\n")
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct QualifiedProgram {
     invocation_path: PathBuf,

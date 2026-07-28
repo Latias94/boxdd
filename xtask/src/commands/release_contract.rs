@@ -521,7 +521,7 @@ const PUBLISH_DRAFT_STEPS: &[WorkflowStepPolicy] = &[
         name: "Create protected draft release",
         kind: WorkflowStepKind::Run,
         keys: &["name", "shell", "env", "run"],
-        digest: "8b42699288be96eead915d012470a0d059ba57ffc0a4839fa81464d5d15fafd7",
+        digest: "bae76d7edfa025bcd5cc3c5c8cf1f681a53fd714929f0d54cc8db4167bacef1b",
     },
 ];
 
@@ -1098,7 +1098,7 @@ fn validate_release_context(
 fn expected_artifacts(version: &str) -> Vec<ArtifactSpec> {
     let mut artifacts = Vec::new();
     for platform in PLATFORMS {
-        for precision in ["single", "double"] {
+        for precision in QUALIFICATION_PRECISIONS.iter().copied() {
             let suffix = if platform.crt == "none" {
                 String::new()
             } else {
@@ -1120,8 +1120,9 @@ fn expected_artifacts(version: &str) -> Vec<ArtifactSpec> {
 }
 
 fn expected_wasm_artifacts(version: &str) -> Result<Vec<(&'static str, String)>> {
-    ["single", "double"]
-        .into_iter()
+    QUALIFICATION_PRECISIONS
+        .iter()
+        .copied()
         .map(|precision| {
             wasm_release::archive_name(version, precision).map(|archive| (precision, archive))
         })
@@ -3219,6 +3220,8 @@ fn validate_release_workflow_source(source: &str) -> Result<()> {
         "($actual | length) == 49",
         "test \"$(read_release_by_id | require_owned_release_id)\" = \"${release_id}\"",
         "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?name=${asset_name_uri}",
+        "--connect-timeout 30",
+        "--max-time 900",
         "--data-binary \"@${asset_path}\"",
         "Content-Type: application/octet-stream",
         "Authorization: Bearer ${GH_TOKEN}",
@@ -6672,6 +6675,22 @@ mod tests {
                 source.replacen(
                     "            test \"$(read_release_by_id | require_owned_release_id)\" = \"${release_id}\"\n",
                     "            true # per-asset ownership proof removed\n",
+                    1,
+                ),
+            ),
+            (
+                "asset upload omits its connection deadline",
+                source.replacen(
+                    "              --connect-timeout 30 \\\n",
+                    "              # connection deadline removed\n",
+                    1,
+                ),
+            ),
+            (
+                "asset upload omits its transfer deadline",
+                source.replacen(
+                    "              --max-time 900 \\\n",
+                    "              # transfer deadline removed\n",
                     1,
                 ),
             ),

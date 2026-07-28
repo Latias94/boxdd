@@ -40,6 +40,8 @@ use crate::{
     source_overlay::effective_source_identity,
 };
 
+use super::support::normalize_newlines;
+
 const AVAILABILITY: &[&str] = &[
     "always",
     "debug-profile",
@@ -5451,10 +5453,6 @@ fn is_c_identifier(value: &str) -> bool {
         .next()
         .is_some_and(|character| character == '_' || character.is_ascii_alphabetic())
         && chars.all(|character| character == '_' || character.is_ascii_alphanumeric())
-}
-
-fn normalize_newlines(value: &str) -> String {
-    value.replace("\r\n", "\n")
 }
 
 fn escape_table(value: &str) -> String {
