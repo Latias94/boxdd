@@ -1,0 +1,11 @@
+error[E0499]: cannot borrow `world` as mutable more than once at a time
+  --> tests/ui/recording_session_conflicts_with_pre_solve.rs:11:5
+   |
+ 8 |     let session = world
+   |                   ----- first mutable borrow occurs here
+...
+11 |     world
+   |     ^^^^^ second mutable borrow occurs here
+...
+14 |     drop(session);
+   |          ------- first borrow later used here

@@ -1,0 +1,56 @@
+--- include/box2d/box2d.h
++++ include/box2d/box2d.h
+@@ -238,9 +238,9 @@
+ /// save its bytes and destroy it. The buffer grows as the world records into it.
+ typedef struct b2Recording b2Recording;
+
+-/// Create a recording buffer. The buffer grows on demand. @p byteCapacity pre-sizes it to avoid
+-/// reallocations during a known-length session. Pass 0 for a small default.
+-/// @return A recording handle, freed with b2DestroyRecording
++/// Create a bounded recording buffer. @p byteCapacity is the hard total byte limit; memory is
++/// allocated incrementally as the recording grows. Pass 0 for the library maximum.
++/// @return A recording handle, freed with b2DestroyRecording, or NULL for an invalid limit
+ B2_API b2Recording* b2CreateRecording( int byteCapacity );
+
+ /// Destroy a recording buffer and free its memory.
+@@ -247,10 +247,11 @@
+ B2_API void b2DestroyRecording( b2Recording* recording );
+
+ /// Get a pointer to the recorded bytes, for saving to a file or transmitting. Valid until the
+-/// next recording call or b2DestroyRecording.
++/// next recording call or b2DestroyRecording. Returns NULL after a writer failure.
+ B2_API const uint8_t* b2Recording_GetData( const b2Recording* recording );
+
+-/// Get the number of recorded bytes.
++/// Get the number of recorded bytes. Returns -1 when the byte limit was exceeded, -2 when one
++/// operation exceeded the 24-bit payload format, or -3 for an invalid handle or writer state.
+ B2_API int b2Recording_GetSize( const b2Recording* recording );
+
+ /// Begin recording the world into @p recording. Serializes a snapshot of the current world as the
+@@ -304,7 +305,7 @@
+ /// @param image Destination buffer, or NULL to query the size
+ /// @param capacity Size of image in bytes, ignored when querying
+ /// @return The number of bytes the snapshot needs. If it exceeds capacity nothing is written.
+-///         Returns 0 if the world is mid-step.
++///         Returns 0 if the world is mid-step or serialization exceeds the reviewed byte limit.
+ B2_API int b2World_Snapshot( b2WorldId worldId, uint8_t* image, int capacity );
+
+ /// Restore a world's simulation state from a snapshot image, in place. The world keeps
+@@ -1511,7 +1512,7 @@
+ /// Tune the keyframe ring used to speed up backward seeking. A keyframe is a periodic snapshot the
+ /// player restores from instead of replaying from the start, trading memory for seek speed.
+ /// @param player the recording player
+-/// @param budgetBytes Memory cap for the kept snapshots. The spacing widens to stay under it.
++/// @param budgetBytes Memory cap for all retained keyframe allocations, clamped to the library recording limit.
+ /// @param minIntervalFrames Finest spacing between keyframes, in frames.
+ /// A zero budget or a non-positive interval keeps that value. Clears the existing ring, so call
+ /// b2RecPlayer_Restart afterward to repopulate it under the new policy.
+@@ -1527,7 +1528,7 @@
+ /// evicts to stay under budget, so it reflects the effective backward-seek granularity right now.
+ B2_API int b2RecPlayer_GetKeyframeInterval( const b2RecPlayer* player );
+
+-/// Get the memory currently held by keyframe snapshots, in bytes.
++/// Get all memory currently held by keyframes, including ring metadata, in bytes.
+ B2_API size_t b2RecPlayer_GetKeyframeBytes( const b2RecPlayer* player );
+
+ /// Close a player and free its replay world and file buffer.

@@ -16,4 +16,14 @@ boxdd-sys = { path = "../../boxdd-sys", default-features = false, features = ["b
 
 [build-dependencies]
 cc.workspace = true
-xtask = { path = "../../xtask" }
+ctest.workspace = true
+diffy.workspace = true
+sha2.workspace = true
+toml.workspace = true
+tempfile.workspace = true
+
+[[bin]]
+name = "abi-ctest"
+path = "src/bin/abi_ctest.rs"
+test = false
+doc = false

@@ -1,9 +1,5 @@
 use std::{ffi::OsString, path::Path};
 
-#[allow(dead_code)]
-pub(crate) const BUILD_POLICY_SOURCE_SHA256: &str =
-    "033af630fc2698cd90837ebf68e31db4c99fa17dc4c681b993c31d0dd44f8a60";
-
 pub(crate) const COSIGN_VERSION: &str = "v3.0.6";
 #[allow(dead_code)]
 pub(crate) const SIGSTORE_TRUSTED_ROOT_RELATIVE_PATH: &str = "security/sigstore/trusted_root.json";
@@ -14,6 +10,16 @@ pub(crate) const PUBLISHER_REPOSITORY: &str = "Latias94/boxdd";
 pub(crate) const PUBLISHER_WORKFLOW: &str = ".github/workflows/prebuilt-binaries.yml";
 pub(crate) const PUBLISHER_WORKFLOW_NAME: &str = "Build Prebuilt Binaries (boxdd-sys)";
 pub(crate) const GITHUB_OIDC_ISSUER: &str = "https://token.actions.githubusercontent.com";
+
+pub(crate) fn workspace_release_tag(version: &str) -> String {
+    format!("v{version}")
+}
+
+pub(crate) fn release_tag_matches_version(version: &str, tag: &str) -> bool {
+    !version.is_empty()
+        && (tag.strip_prefix('v') == Some(version)
+            || tag.strip_prefix("boxdd-sys-v") == Some(version))
+}
 
 pub(crate) struct PrebuiltProvenance<'a> {
     pub(crate) crate_version: &'a str,
@@ -35,9 +41,7 @@ pub(crate) fn cosign_verify_blob_args(
     {
         return Err("prebuilt source commit must be a lowercase Git SHA".to_owned());
     }
-    let short_tag = format!("v{}", provenance.crate_version);
-    let crate_tag = format!("boxdd-sys-v{}", provenance.crate_version);
-    if provenance.release_tag != short_tag && provenance.release_tag != crate_tag {
+    if !release_tag_matches_version(provenance.crate_version, provenance.release_tag) {
         return Err(format!(
             "prebuilt release tag `{}` does not match crate version {}",
             provenance.release_tag, provenance.crate_version

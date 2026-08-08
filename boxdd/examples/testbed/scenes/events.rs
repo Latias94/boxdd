@@ -6,64 +6,88 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
         .density(0.0)
         .sensor(true)
         .enable_sensor_events(true)
-        .build();
-    let _ = app.world.create_segment_shape_for(
-        ground,
-        &sensor_def,
-        &bd::shapes::segment([-5.0_f32, 1.0], [5.0, 1.0]),
-    );
+        .build()
+        .expect("valid testbed definition");
+    let _ = app
+        .world
+        .body(ground)
+        .expect("valid testbed operation")
+        .create_segment(
+            &sensor_def,
+            &bd::shapes::segment([-5.0_f32, 1.0], [5.0, 1.0])
+                .expect("event sensor segment must be valid"),
+        )
+        .expect("valid testbed operation");
     app.created_shapes += 1;
 
     let sdef = bd::ShapeDef::builder()
         .density(1.0)
         .enable_contact_events(true)
         .enable_hit_events(true)
-        .build();
-    let a = app.world.create_body_id(
-        bd::BodyBuilder::new()
-            .body_type(bd::BodyType::Dynamic)
-            .position([-0.5_f32, 4.0])
-            .build(),
-    );
+        .build()
+        .expect("valid testbed definition");
+    let a = app
+        .world
+        .create_body(
+            bd::BodyBuilder::from(app.foundation.body_def())
+                .body_type(bd::BodyType::Dynamic)
+                .position([-0.5_f32, 4.0])
+                .build()
+                .expect("valid testbed definition"),
+        )
+        .expect("valid testbed operation");
     app.created_bodies += 1;
-    let b = app.world.create_body_id(
-        bd::BodyBuilder::new()
-            .body_type(bd::BodyType::Dynamic)
-            .position([0.5_f32, 6.0])
-            .build(),
-    );
+    let b = app
+        .world
+        .create_body(
+            bd::BodyBuilder::from(app.foundation.body_def())
+                .body_type(bd::BodyType::Dynamic)
+                .position([0.5_f32, 6.0])
+                .build()
+                .expect("valid testbed definition"),
+        )
+        .expect("valid testbed operation");
     app.created_bodies += 1;
     let _ = app
         .world
-        .create_polygon_shape_for(a, &sdef, &bd::shapes::box_polygon(0.4, 0.4));
+        .body(a)
+        .expect("valid testbed operation")
+        .create_polygon(
+            &sdef,
+            &bd::shapes::box_polygon(0.4, 0.4).expect("valid polygon geometry"),
+        )
+        .expect("valid testbed operation");
     app.created_shapes += 1;
     let _ = app
         .world
-        .create_polygon_shape_for(b, &sdef, &bd::shapes::box_polygon(0.4, 0.4));
+        .body(b)
+        .expect("valid testbed operation")
+        .create_polygon(
+            &sdef,
+            &bd::shapes::box_polygon(0.4, 0.4).expect("valid polygon geometry"),
+        )
+        .expect("valid testbed operation");
     app.created_shapes += 1;
 
-    app.world.enable_continuous(true);
-    app.world.set_hit_event_threshold(app.events_threshold);
+    app.world
+        .enable_continuous(true)
+        .expect("valid testbed operation");
+    app.world
+        .set_hit_event_threshold(app.events_threshold)
+        .expect("valid testbed operation");
 }
 
-pub fn tick(app: &mut super::PhysicsApp) {
-    let world = &app.world;
-    let scratch = &mut app.scratch;
-
-    world.body_events_into(&mut scratch.body_events);
-    app.ev_moves += scratch.body_events.len();
-
-    world.sensor_events_into(&mut scratch.sensor_events);
-    app.ev_sens_beg += scratch.sensor_events.begin.len();
-    app.ev_sens_end += scratch.sensor_events.end.len();
-
-    world.contact_events_into(&mut scratch.contact_events);
-    app.ev_con_beg += scratch.contact_events.begin.len();
-    app.ev_con_end += scratch.contact_events.end.len();
-    app.ev_con_hit += scratch.contact_events.hit.len();
-
-    world.joint_events_into(&mut scratch.joint_events);
-    app.ev_joint += scratch.joint_events.len();
+pub fn tick(app: &mut super::PhysicsApp, events: Option<&bd::StepEventsSnapshot>) {
+    let Some(events) = events else {
+        return;
+    };
+    app.ev_moves += events.body.len();
+    app.ev_sens_beg += events.sensor.begin.len();
+    app.ev_sens_end += events.sensor.end.len();
+    app.ev_con_beg += events.contact.begin.len();
+    app.ev_con_end += events.contact.end.len();
+    app.ev_con_hit += events.contact.hit.len();
+    app.ev_joint += events.joint.len();
 }
 
 pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {

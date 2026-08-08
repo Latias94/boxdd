@@ -4,11 +4,13 @@ use std::ops::Range;
 use boxdd_sys::ffi;
 
 use crate::{
-    shapes::geometry::{MAX_POLYGON_VERTICES, polygon_semantics_are_valid},
+    shapes::geometry::{
+        MAX_POLYGON_VERTICES, points_have_minimum_pairwise_separation, polygon_semantics_are_valid,
+    },
     types::Vec2,
 };
 
-use super::{ArgumentTag, PreflightError, ReturnKind, TailKind, generated::OperationRule};
+use super::{ArgumentTag, NativeRecordingError, ReturnKind, TailKind, generated::OperationRule};
 
 const NORMALIZED_MIN: f32 = 0.9994;
 const NORMALIZED_MAX: f32 = 1.0006;
@@ -20,7 +22,7 @@ pub(super) fn validate_argument(
     double_precision: bool,
     length_scale: f32,
     opcode: u8,
-) -> Result<(), PreflightError> {
+) -> Result<(), NativeRecordingError> {
     let mut cursor = Cursor::new(bytes, double_precision, opcode);
     match tag {
         ArgumentTag::Aabb => cursor.aabb()?,
@@ -110,7 +112,7 @@ pub(super) fn validate_operation(
     arguments: &[Range<usize>],
     length_scale: f32,
     opcode: u8,
-) -> Result<(), PreflightError> {
+) -> Result<(), NativeRecordingError> {
     use OperationRule::*;
 
     let f32_arg = |index| argument_f32(payload, arguments, index, opcode);
@@ -160,16 +162,16 @@ pub(super) fn validate_operation(
             non_negative(f32_arg(2)?, opcode)?;
             non_negative(f32_arg(3)?, opcode)?;
         }
-        WorldSetMaximumLinearSpeed => positive(f32_arg(1)?, opcode)?,
+        WorldSetMaximumLinearSpeed => positive_with_finite_square(f32_arg(1)?, opcode)?,
         Step => {
             non_negative(f32_arg(1)?, opcode)?;
             if i32_arg(2)? <= 0 {
-                return Err(PreflightError::InvalidRange(opcode));
+                return Err(NativeRecordingError::InvalidRange(opcode));
             }
         }
         BodySetType => {
             if !(0..=2).contains(&i32_arg(1)?) {
-                return Err(PreflightError::InvalidEnum(opcode));
+                return Err(NativeRecordingError::InvalidEnum(opcode));
             }
         }
         BodySetTargetTransform => positive(f32_arg(2)?, opcode)?,
@@ -182,7 +184,7 @@ pub(super) fn validate_operation(
                 opcode,
             )?;
             if chain_id != -1 {
-                return Err(PreflightError::InvalidValue(opcode));
+                return Err(NativeRecordingError::InvalidValue(opcode));
             }
         }
         CreateCapsuleShape => {
@@ -199,14 +201,9 @@ pub(super) fn validate_operation(
                 opcode,
             )?;
         }
-        ShapeEnablePreSolveEvents => {
-            if argument(payload, arguments, 1, opcode)? != [0] {
-                return Err(PreflightError::InvalidValue(opcode));
-            }
-        }
         ChainSetSurfaceMaterial => {
             if i32_arg(2)? < 0 {
-                return Err(PreflightError::InvalidRange(opcode));
+                return Err(NativeRecordingError::InvalidRange(opcode));
             }
         }
         DistanceJointSetLength => positive(f32_arg(1)?, opcode)?,
@@ -223,7 +220,7 @@ pub(super) fn validate_operation(
             let upper = f32_arg(2)?;
             ordered(lower, upper, opcode)?;
             if lower < -REVOLUTE_LIMIT || upper > REVOLUTE_LIMIT {
-                return Err(PreflightError::InvalidRange(opcode));
+                return Err(NativeRecordingError::InvalidRange(opcode));
             }
         }
         QueryCastMover => {
@@ -231,7 +228,7 @@ pub(super) fn validate_operation(
             let radius =
                 pod_f32::<ffi::b2Capsule>(capsule, offset_of!(ffi::b2Capsule, radius), opcode)?;
             if radius <= 2.0 * 0.005 * length_scale {
-                return Err(PreflightError::InvalidRange(opcode));
+                return Err(NativeRecordingError::InvalidRange(opcode));
             }
         }
 
@@ -278,6 +275,7 @@ pub(super) fn validate_operation(
         | ShapeSetFilter
         | ShapeEnableSensorEvents
         | ShapeEnableContactEvents
+        | ShapeEnablePreSolveEvents
         | ShapeEnableHitEvents
         | ShapeSetCircle
         | ShapeSetSegment
@@ -337,13 +335,13 @@ pub(super) fn validate_tail(
     bytes: &[u8],
     double_precision: bool,
     opcode: u8,
-) -> Result<(), PreflightError> {
+) -> Result<(), NativeRecordingError> {
     let mut cursor = Cursor::new(bytes, double_precision, opcode);
     match tail {
         TailKind::None => {}
         TailKind::ReturnedId => {
             if return_kind == ReturnKind::None {
-                return Err(PreflightError::GeneratedContract);
+                return Err(NativeRecordingError::GeneratedContract);
             }
             cursor.skip(8)?;
         }
@@ -366,7 +364,7 @@ pub(super) fn validate_tail(
                 unit_or_zero(normal, fraction == 0.0, opcode)?;
                 in_unit_interval(fraction, opcode)?;
                 if response != -1.0 && response != 0.0 && !(0.0..=1.0).contains(&response) {
-                    return Err(PreflightError::InvalidRange(opcode));
+                    return Err(NativeRecordingError::InvalidRange(opcode));
                 }
             }
             tree_stats(&mut cursor)?;
@@ -394,12 +392,12 @@ pub(super) fn validate_tail(
             let leaf_visits = cursor.i32()?;
             let hit = cursor.boolean()?;
             if node_visits < 0 || leaf_visits < 0 || leaf_visits > node_visits {
-                return Err(PreflightError::InvalidRange(opcode));
+                return Err(NativeRecordingError::InvalidRange(opcode));
             }
             if hit {
                 normalized(normal, opcode)?;
                 if !(0.0..=1.0).contains(&fraction) {
-                    return Err(PreflightError::InvalidRange(opcode));
+                    return Err(NativeRecordingError::InvalidRange(opcode));
                 }
             }
         }
@@ -414,7 +412,7 @@ pub(super) fn validate_tail(
             let iterations = cursor.i32()?;
             let hit = cursor.boolean()?;
             if iterations < 0 {
-                return Err(PreflightError::InvalidRange(opcode));
+                return Err(NativeRecordingError::InvalidRange(opcode));
             }
             if hit {
                 unit_or_zero(normal, fraction == 0.0, opcode)?;
@@ -425,9 +423,9 @@ pub(super) fn validate_tail(
     cursor.finish()
 }
 
-fn body_def(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
+fn body_def(cursor: &mut Cursor<'_>) -> Result<(), NativeRecordingError> {
     if !(0..=2).contains(&cursor.i32()?) {
-        return Err(PreflightError::InvalidEnum(cursor.opcode));
+        return Err(NativeRecordingError::InvalidEnum(cursor.opcode));
     }
     cursor.position()?;
     cursor.rotation()?;
@@ -445,7 +443,7 @@ fn body_def(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
     Ok(())
 }
 
-fn shape_def(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
+fn shape_def(cursor: &mut Cursor<'_>) -> Result<(), NativeRecordingError> {
     cursor.skip(8)?;
     material(cursor)?;
     non_negative(cursor.f32()?, cursor.opcode)?;
@@ -459,50 +457,44 @@ fn shape_def(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
     cursor.boolean()?;
     cursor.boolean()?;
     if custom_filter || pre_solve {
-        return Err(PreflightError::InvalidValue(cursor.opcode));
+        return Err(NativeRecordingError::InvalidValue(cursor.opcode));
     }
     Ok(())
 }
 
-fn chain_def(cursor: &mut Cursor<'_>, length_scale: f32) -> Result<(), PreflightError> {
+fn chain_def(cursor: &mut Cursor<'_>, length_scale: f32) -> Result<(), NativeRecordingError> {
     cursor.skip(8)?;
     let point_count = cursor.count()?;
     if point_count < 4 {
-        return Err(PreflightError::InvalidCount(cursor.opcode));
+        return Err(NativeRecordingError::InvalidCount(cursor.opcode));
     }
-    let mut previous = None;
-    let mut first = None;
+    let mut points = Vec::new();
+    points
+        .try_reserve(point_count)
+        .map_err(|_| NativeRecordingError::InvalidCount(cursor.opcode))?;
     for _ in 0..point_count {
-        let point = cursor.vec2()?;
-        if let Some(previous) = previous {
-            separated(previous, point, length_scale, cursor.opcode)?;
-        } else {
-            first = Some(point);
-        }
-        previous = Some(point);
+        let (x, y) = cursor.vec2()?;
+        points.push(Vec2::new(x, y));
+    }
+    if !points_have_minimum_pairwise_separation(&points, length_scale)
+        .map_err(|_| NativeRecordingError::InvalidCount(cursor.opcode))?
+    {
+        return Err(NativeRecordingError::InvalidRange(cursor.opcode));
     }
     let material_count = cursor.count()?;
     if material_count != 1 && material_count != point_count {
-        return Err(PreflightError::InvalidCount(cursor.opcode));
+        return Err(NativeRecordingError::InvalidCount(cursor.opcode));
     }
     for _ in 0..material_count {
         material(cursor)?;
     }
     cursor.skip(20)?;
-    let is_loop = cursor.boolean()?;
     cursor.boolean()?;
-    if is_loop {
-        separated(
-            previous.expect("a chain has at least four points"),
-            first.expect("a chain has at least four points"),
-            length_scale,
-            cursor.opcode,
-        )?;
-    }
+    cursor.boolean()?;
     Ok(())
 }
 
-fn explosion_def(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
+fn explosion_def(cursor: &mut Cursor<'_>) -> Result<(), NativeRecordingError> {
     cursor.skip(8)?;
     let position = cursor.position()?;
     let radius = cursor.f32()?;
@@ -514,13 +506,13 @@ fn explosion_def(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
         || !crate::world_extras::explosion_query_axis_is_representable(position.0, extent)
         || !crate::world_extras::explosion_query_axis_is_representable(position.1, extent)
     {
-        return Err(PreflightError::InvalidValue(cursor.opcode));
+        return Err(NativeRecordingError::InvalidValue(cursor.opcode));
     }
     cursor.f32()?;
     Ok(())
 }
 
-fn material(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
+fn material(cursor: &mut Cursor<'_>) -> Result<(), NativeRecordingError> {
     for _ in 0..3 {
         non_negative(cursor.f32()?, cursor.opcode)?;
     }
@@ -528,13 +520,13 @@ fn material(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
     cursor.skip(12)
 }
 
-fn mass_data(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
+fn mass_data(cursor: &mut Cursor<'_>) -> Result<(), NativeRecordingError> {
     non_negative(cursor.f32()?, cursor.opcode)?;
     cursor.vec2()?;
     non_negative(cursor.f32()?, cursor.opcode)
 }
 
-fn joint_base(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
+fn joint_base(cursor: &mut Cursor<'_>) -> Result<(), NativeRecordingError> {
     cursor.skip(8)?;
     cursor.skip(8)?;
     cursor.skip(8)?;
@@ -549,7 +541,7 @@ fn joint_base(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
     Ok(())
 }
 
-fn distance_joint_def(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
+fn distance_joint_def(cursor: &mut Cursor<'_>) -> Result<(), NativeRecordingError> {
     joint_base(cursor)?;
     positive(cursor.f32()?, cursor.opcode)?;
     cursor.boolean()?;
@@ -570,7 +562,7 @@ fn distance_joint_def(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
     Ok(())
 }
 
-fn motor_joint_def(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
+fn motor_joint_def(cursor: &mut Cursor<'_>) -> Result<(), NativeRecordingError> {
     joint_base(cursor)?;
     cursor.vec2()?;
     for index in 0..9 {
@@ -582,7 +574,7 @@ fn motor_joint_def(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
     Ok(())
 }
 
-fn prismatic_joint_def(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
+fn prismatic_joint_def(cursor: &mut Cursor<'_>) -> Result<(), NativeRecordingError> {
     joint_base(cursor)?;
     cursor.boolean()?;
     non_negative(cursor.f32()?, cursor.opcode)?;
@@ -598,7 +590,7 @@ fn prismatic_joint_def(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
     Ok(())
 }
 
-fn revolute_joint_def(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
+fn revolute_joint_def(cursor: &mut Cursor<'_>) -> Result<(), NativeRecordingError> {
     joint_base(cursor)?;
     cursor.f32()?;
     cursor.boolean()?;
@@ -609,7 +601,7 @@ fn revolute_joint_def(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
     let upper = cursor.f32()?;
     ordered(lower, upper, cursor.opcode)?;
     if lower < -REVOLUTE_LIMIT || upper > REVOLUTE_LIMIT {
-        return Err(PreflightError::InvalidRange(cursor.opcode));
+        return Err(NativeRecordingError::InvalidRange(cursor.opcode));
     }
     cursor.boolean()?;
     non_negative(cursor.f32()?, cursor.opcode)?;
@@ -617,7 +609,7 @@ fn revolute_joint_def(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
     Ok(())
 }
 
-fn weld_joint_def(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
+fn weld_joint_def(cursor: &mut Cursor<'_>) -> Result<(), NativeRecordingError> {
     joint_base(cursor)?;
     for _ in 0..4 {
         non_negative(cursor.f32()?, cursor.opcode)?;
@@ -625,7 +617,7 @@ fn weld_joint_def(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
     Ok(())
 }
 
-fn wheel_joint_def(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
+fn wheel_joint_def(cursor: &mut Cursor<'_>) -> Result<(), NativeRecordingError> {
     joint_base(cursor)?;
     cursor.boolean()?;
     non_negative(cursor.f32()?, cursor.opcode)?;
@@ -640,10 +632,10 @@ fn wheel_joint_def(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
     Ok(())
 }
 
-fn shape_proxy(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
+fn shape_proxy(cursor: &mut Cursor<'_>) -> Result<(), NativeRecordingError> {
     let count = cursor.count()?;
     if !(1..=8).contains(&count) {
-        return Err(PreflightError::InvalidCount(cursor.opcode));
+        return Err(NativeRecordingError::InvalidCount(cursor.opcode));
     }
     for _ in 0..count {
         cursor.vec2()?;
@@ -651,7 +643,7 @@ fn shape_proxy(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
     non_negative(cursor.f32()?, cursor.opcode)
 }
 
-fn circle(bytes: &[u8], opcode: u8) -> Result<(), PreflightError> {
+fn circle(bytes: &[u8], opcode: u8) -> Result<(), NativeRecordingError> {
     pod_vec2::<ffi::b2Circle>(bytes, offset_of!(ffi::b2Circle, center), opcode)?;
     non_negative(
         pod_f32::<ffi::b2Circle>(bytes, offset_of!(ffi::b2Circle, radius), opcode)?,
@@ -659,7 +651,7 @@ fn circle(bytes: &[u8], opcode: u8) -> Result<(), PreflightError> {
     )
 }
 
-fn capsule(bytes: &[u8], opcode: u8) -> Result<(), PreflightError> {
+fn capsule(bytes: &[u8], opcode: u8) -> Result<(), NativeRecordingError> {
     pod_vec2::<ffi::b2Capsule>(bytes, offset_of!(ffi::b2Capsule, center1), opcode)?;
     pod_vec2::<ffi::b2Capsule>(bytes, offset_of!(ffi::b2Capsule, center2), opcode)?;
     non_negative(
@@ -672,19 +664,19 @@ fn validate_capsule_separation(
     bytes: &[u8],
     length_scale: f32,
     opcode: u8,
-) -> Result<(), PreflightError> {
+) -> Result<(), NativeRecordingError> {
     let center1 = pod_vec2::<ffi::b2Capsule>(bytes, offset_of!(ffi::b2Capsule, center1), opcode)?;
     let center2 = pod_vec2::<ffi::b2Capsule>(bytes, offset_of!(ffi::b2Capsule, center2), opcode)?;
     separated(center1, center2, length_scale, opcode)
 }
 
-fn segment(bytes: &[u8], length_scale: f32, opcode: u8) -> Result<(), PreflightError> {
+fn segment(bytes: &[u8], length_scale: f32, opcode: u8) -> Result<(), NativeRecordingError> {
     let point1 = pod_vec2::<ffi::b2Segment>(bytes, offset_of!(ffi::b2Segment, point1), opcode)?;
     let point2 = pod_vec2::<ffi::b2Segment>(bytes, offset_of!(ffi::b2Segment, point2), opcode)?;
     separated(point1, point2, length_scale, opcode)
 }
 
-fn chain_segment(bytes: &[u8], length_scale: f32, opcode: u8) -> Result<(), PreflightError> {
+fn chain_segment(bytes: &[u8], length_scale: f32, opcode: u8) -> Result<(), NativeRecordingError> {
     pod_vec2::<ffi::b2ChainSegment>(bytes, offset_of!(ffi::b2ChainSegment, ghost1), opcode)?;
     let point1 = pod_vec2::<ffi::b2ChainSegment>(
         bytes,
@@ -700,13 +692,13 @@ fn chain_segment(bytes: &[u8], length_scale: f32, opcode: u8) -> Result<(), Pref
     separated(point1, point2, length_scale, opcode)
 }
 
-fn polygon(bytes: &[u8], length_scale: f32, opcode: u8) -> Result<(), PreflightError> {
+fn polygon(bytes: &[u8], length_scale: f32, opcode: u8) -> Result<(), NativeRecordingError> {
     if bytes.len() != size_of::<ffi::b2Polygon>() {
-        return Err(PreflightError::InvalidValue(opcode));
+        return Err(NativeRecordingError::InvalidValue(opcode));
     }
     let count = pod_i32::<ffi::b2Polygon>(bytes, offset_of!(ffi::b2Polygon, count), opcode)?;
     if !(3..=MAX_POLYGON_VERTICES as i32).contains(&count) {
-        return Err(PreflightError::InvalidCount(opcode));
+        return Err(NativeRecordingError::InvalidCount(opcode));
     }
     let count = count as usize;
     let mut vertices = [Vec2::ZERO; MAX_POLYGON_VERTICES];
@@ -736,68 +728,72 @@ fn polygon(bytes: &[u8], length_scale: f32, opcode: u8) -> Result<(), PreflightE
         radius,
         minimum_edge_length * minimum_edge_length,
     ) {
-        return Err(PreflightError::InvalidValue(opcode));
+        return Err(NativeRecordingError::InvalidValue(opcode));
     }
     Ok(())
 }
 
-fn pod_vec2<T>(bytes: &[u8], offset: usize, opcode: u8) -> Result<(f32, f32), PreflightError> {
+fn pod_vec2<T>(
+    bytes: &[u8],
+    offset: usize,
+    opcode: u8,
+) -> Result<(f32, f32), NativeRecordingError> {
     if bytes.len() != size_of::<T>() {
-        return Err(PreflightError::InvalidValue(opcode));
+        return Err(NativeRecordingError::InvalidValue(opcode));
     }
     let x = raw_f32(bytes, offset, opcode)?;
     let y = raw_f32(bytes, offset + 4, opcode)?;
     if !x.is_finite() || !y.is_finite() {
-        return Err(PreflightError::InvalidValue(opcode));
+        return Err(NativeRecordingError::InvalidValue(opcode));
     }
     Ok((x, y))
 }
 
-fn pod_f32<T>(bytes: &[u8], offset: usize, opcode: u8) -> Result<f32, PreflightError> {
+fn pod_f32<T>(bytes: &[u8], offset: usize, opcode: u8) -> Result<f32, NativeRecordingError> {
     if bytes.len() != size_of::<T>() {
-        return Err(PreflightError::InvalidValue(opcode));
+        return Err(NativeRecordingError::InvalidValue(opcode));
     }
     let value = raw_f32(bytes, offset, opcode)?;
     if !value.is_finite() {
-        return Err(PreflightError::InvalidValue(opcode));
+        return Err(NativeRecordingError::InvalidValue(opcode));
     }
     Ok(value)
 }
 
-fn pod_i32<T>(bytes: &[u8], offset: usize, opcode: u8) -> Result<i32, PreflightError> {
+fn pod_i32<T>(bytes: &[u8], offset: usize, opcode: u8) -> Result<i32, NativeRecordingError> {
     if bytes.len() != size_of::<T>() {
-        return Err(PreflightError::InvalidValue(opcode));
+        return Err(NativeRecordingError::InvalidValue(opcode));
     }
     raw_i32(bytes, offset, opcode)
 }
 
-fn raw_f32(bytes: &[u8], offset: usize, opcode: u8) -> Result<f32, PreflightError> {
+fn raw_f32(bytes: &[u8], offset: usize, opcode: u8) -> Result<f32, NativeRecordingError> {
     let raw = bytes
         .get(
             offset
                 ..offset
                     .checked_add(4)
-                    .ok_or(PreflightError::InvalidValue(opcode))?,
+                    .ok_or(NativeRecordingError::InvalidValue(opcode))?,
         )
-        .ok_or(PreflightError::InvalidValue(opcode))?;
+        .ok_or(NativeRecordingError::InvalidValue(opcode))?;
     Ok(f32::from_le_bytes(
         raw.try_into()
-            .map_err(|_| PreflightError::InvalidValue(opcode))?,
+            .map_err(|_| NativeRecordingError::InvalidValue(opcode))?,
     ))
 }
 
-fn raw_i32(bytes: &[u8], offset: usize, opcode: u8) -> Result<i32, PreflightError> {
+fn raw_i32(bytes: &[u8], offset: usize, opcode: u8) -> Result<i32, NativeRecordingError> {
     let raw = bytes
         .get(
             offset
                 ..offset
                     .checked_add(4)
-                    .ok_or(PreflightError::InvalidValue(opcode))?,
+                    .ok_or(NativeRecordingError::InvalidValue(opcode))?,
         )
-        .ok_or(PreflightError::InvalidValue(opcode))?;
+        .ok_or(NativeRecordingError::InvalidValue(opcode))?;
     Ok(i32::from_le_bytes(
         raw.try_into()
-            .map_err(|_| PreflightError::InvalidValue(opcode))?,
+            .map_err(|_| NativeRecordingError::InvalidValue(opcode))?,
     ))
 }
 
@@ -806,15 +802,15 @@ fn argument<'a>(
     arguments: &[Range<usize>],
     index: usize,
     opcode: u8,
-) -> Result<&'a [u8], PreflightError> {
+) -> Result<&'a [u8], NativeRecordingError> {
     payload
         .get(
             arguments
                 .get(index)
-                .ok_or(PreflightError::GeneratedContract)?
+                .ok_or(NativeRecordingError::GeneratedContract)?
                 .clone(),
         )
-        .ok_or(PreflightError::InvalidValue(opcode))
+        .ok_or(NativeRecordingError::InvalidValue(opcode))
 }
 
 fn argument_f32(
@@ -822,14 +818,14 @@ fn argument_f32(
     arguments: &[Range<usize>],
     index: usize,
     opcode: u8,
-) -> Result<f32, PreflightError> {
+) -> Result<f32, NativeRecordingError> {
     let bytes = argument(payload, arguments, index, opcode)?;
     if bytes.len() != 4 {
-        return Err(PreflightError::GeneratedContract);
+        return Err(NativeRecordingError::GeneratedContract);
     }
     let value = raw_f32(bytes, 0, opcode)?;
     if !value.is_finite() {
-        return Err(PreflightError::InvalidValue(opcode));
+        return Err(NativeRecordingError::InvalidValue(opcode));
     }
     Ok(value)
 }
@@ -839,43 +835,51 @@ fn argument_i32(
     arguments: &[Range<usize>],
     index: usize,
     opcode: u8,
-) -> Result<i32, PreflightError> {
+) -> Result<i32, NativeRecordingError> {
     let bytes = argument(payload, arguments, index, opcode)?;
     if bytes.len() != 4 {
-        return Err(PreflightError::GeneratedContract);
+        return Err(NativeRecordingError::GeneratedContract);
     }
     raw_i32(bytes, 0, opcode)
 }
 
-fn positive(value: f32, opcode: u8) -> Result<(), PreflightError> {
+fn positive(value: f32, opcode: u8) -> Result<(), NativeRecordingError> {
     if value > 0.0 {
         Ok(())
     } else {
-        Err(PreflightError::InvalidRange(opcode))
+        Err(NativeRecordingError::InvalidRange(opcode))
     }
 }
 
-fn non_negative(value: f32, opcode: u8) -> Result<(), PreflightError> {
+fn positive_with_finite_square(value: f32, opcode: u8) -> Result<(), NativeRecordingError> {
+    if value > 0.0 && (value * value).is_finite() {
+        Ok(())
+    } else {
+        Err(NativeRecordingError::InvalidRange(opcode))
+    }
+}
+
+fn non_negative(value: f32, opcode: u8) -> Result<(), NativeRecordingError> {
     if value >= 0.0 {
         Ok(())
     } else {
-        Err(PreflightError::InvalidRange(opcode))
+        Err(NativeRecordingError::InvalidRange(opcode))
     }
 }
 
-fn ordered(lower: f32, upper: f32, opcode: u8) -> Result<(), PreflightError> {
+fn ordered(lower: f32, upper: f32, opcode: u8) -> Result<(), NativeRecordingError> {
     if lower <= upper {
         Ok(())
     } else {
-        Err(PreflightError::InvalidRange(opcode))
+        Err(NativeRecordingError::InvalidRange(opcode))
     }
 }
 
-fn in_unit_interval(value: f32, opcode: u8) -> Result<(), PreflightError> {
+fn in_unit_interval(value: f32, opcode: u8) -> Result<(), NativeRecordingError> {
     if (0.0..=1.0).contains(&value) {
         Ok(())
     } else {
-        Err(PreflightError::InvalidRange(opcode))
+        Err(NativeRecordingError::InvalidRange(opcode))
     }
 }
 
@@ -884,7 +888,7 @@ fn separated(
     right: (f32, f32),
     length_scale: f32,
     opcode: u8,
-) -> Result<(), PreflightError> {
+) -> Result<(), NativeRecordingError> {
     let dx = right.0 - left.0;
     let dy = right.1 - left.1;
     let distance_squared = dx.mul_add(dx, dy * dy);
@@ -892,20 +896,24 @@ fn separated(
     if distance_squared.is_finite() && distance_squared > slop * slop {
         Ok(())
     } else {
-        Err(PreflightError::InvalidRange(opcode))
+        Err(NativeRecordingError::InvalidRange(opcode))
     }
 }
 
-fn normalized(vector: (f32, f32), opcode: u8) -> Result<(), PreflightError> {
+fn normalized(vector: (f32, f32), opcode: u8) -> Result<(), NativeRecordingError> {
     let length_squared = vector.0.mul_add(vector.0, vector.1 * vector.1);
     if length_squared > NORMALIZED_MIN && length_squared < NORMALIZED_MAX {
         Ok(())
     } else {
-        Err(PreflightError::InvalidValue(opcode))
+        Err(NativeRecordingError::InvalidValue(opcode))
     }
 }
 
-fn unit_or_zero(vector: (f32, f32), allow_zero: bool, opcode: u8) -> Result<(), PreflightError> {
+fn unit_or_zero(
+    vector: (f32, f32),
+    allow_zero: bool,
+    opcode: u8,
+) -> Result<(), NativeRecordingError> {
     if allow_zero && vector == (0.0, 0.0) {
         Ok(())
     } else {
@@ -913,11 +921,11 @@ fn unit_or_zero(vector: (f32, f32), allow_zero: bool, opcode: u8) -> Result<(), 
     }
 }
 
-fn tree_stats(cursor: &mut Cursor<'_>) -> Result<(), PreflightError> {
+fn tree_stats(cursor: &mut Cursor<'_>) -> Result<(), NativeRecordingError> {
     let node_visits = cursor.i32()?;
     let leaf_visits = cursor.i32()?;
     if node_visits < 0 || leaf_visits < 0 || leaf_visits > node_visits {
-        return Err(PreflightError::InvalidRange(cursor.opcode));
+        return Err(NativeRecordingError::InvalidRange(cursor.opcode));
     }
     Ok(())
 }
@@ -939,64 +947,62 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    fn take(&mut self, width: usize) -> Result<&'a [u8], PreflightError> {
+    fn take(&mut self, width: usize) -> Result<&'a [u8], NativeRecordingError> {
         let end = self
             .offset
             .checked_add(width)
-            .ok_or(PreflightError::InvalidValue(self.opcode))?;
+            .ok_or(NativeRecordingError::InvalidValue(self.opcode))?;
         let value = self
             .bytes
             .get(self.offset..end)
-            .ok_or(PreflightError::InvalidValue(self.opcode))?;
+            .ok_or(NativeRecordingError::InvalidValue(self.opcode))?;
         self.offset = end;
         Ok(value)
     }
 
-    fn skip(&mut self, width: usize) -> Result<(), PreflightError> {
+    fn skip(&mut self, width: usize) -> Result<(), NativeRecordingError> {
         self.take(width).map(|_| ())
     }
 
-    fn f32(&mut self) -> Result<f32, PreflightError> {
+    fn f32(&mut self) -> Result<f32, NativeRecordingError> {
         let value = self.take(4)?;
         let value = f32::from_le_bytes(
             value
                 .try_into()
-                .map_err(|_| PreflightError::InvalidValue(self.opcode))?,
+                .map_err(|_| NativeRecordingError::InvalidValue(self.opcode))?,
         );
         if value.is_finite() {
             Ok(value)
         } else {
-            Err(PreflightError::InvalidValue(self.opcode))
+            Err(NativeRecordingError::InvalidValue(self.opcode))
         }
     }
 
-    fn i32(&mut self) -> Result<i32, PreflightError> {
+    fn i32(&mut self) -> Result<i32, NativeRecordingError> {
         let value = self.take(4)?;
-        Ok(i32::from_le_bytes(
-            value
-                .try_into()
-                .map_err(|_| PreflightError::InvalidValue(self.opcode))?,
-        ))
+        Ok(i32::from_le_bytes(value.try_into().map_err(|_| {
+            NativeRecordingError::InvalidValue(self.opcode)
+        })?))
     }
 
-    fn boolean(&mut self) -> Result<bool, PreflightError> {
+    fn boolean(&mut self) -> Result<bool, NativeRecordingError> {
         match self.take(1)?[0] {
             0 => Ok(false),
             1 => Ok(true),
-            _ => Err(PreflightError::InvalidBoolean(self.opcode)),
+            _ => Err(NativeRecordingError::InvalidBoolean(self.opcode)),
         }
     }
 
-    fn count(&mut self) -> Result<usize, PreflightError> {
+    fn count(&mut self) -> Result<usize, NativeRecordingError> {
         let count = self.i32()?;
-        usize::try_from(count).map_err(|_| PreflightError::InvalidCount(self.opcode))
+        usize::try_from(count).map_err(|_| NativeRecordingError::InvalidCount(self.opcode))
     }
 
-    fn vec2(&mut self) -> Result<(f32, f32), PreflightError> {
+    fn vec2(&mut self) -> Result<(f32, f32), NativeRecordingError> {
         Ok((self.f32()?, self.f32()?))
     }
 
-    fn position(&mut self) -> Result<(f64, f64), PreflightError> {
+    fn position(&mut self) -> Result<(f64, f64), NativeRecordingError> {
         if self.double_precision {
             let mut components = [0.0; 2];
             for component in &mut components {
@@ -1004,10 +1010,10 @@ impl<'a> Cursor<'a> {
                 let value = f64::from_le_bytes(
                     value
                         .try_into()
-                        .map_err(|_| PreflightError::InvalidValue(self.opcode))?,
+                        .map_err(|_| NativeRecordingError::InvalidValue(self.opcode))?,
                 );
                 if !value.is_finite() {
-                    return Err(PreflightError::InvalidValue(self.opcode));
+                    return Err(NativeRecordingError::InvalidValue(self.opcode));
                 }
                 *component = value;
             }
@@ -1018,20 +1024,20 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    fn rotation(&mut self) -> Result<(), PreflightError> {
+    fn rotation(&mut self) -> Result<(), NativeRecordingError> {
         normalized(self.vec2()?, self.opcode)
     }
 
-    fn aabb(&mut self) -> Result<(), PreflightError> {
+    fn aabb(&mut self) -> Result<(), NativeRecordingError> {
         let lower = self.vec2()?;
         let upper = self.vec2()?;
         if lower.0 > upper.0 || lower.1 > upper.1 {
-            return Err(PreflightError::InvalidRange(self.opcode));
+            return Err(NativeRecordingError::InvalidRange(self.opcode));
         }
         Ok(())
     }
 
-    fn string(&mut self) -> Result<(), PreflightError> {
+    fn string(&mut self) -> Result<(), NativeRecordingError> {
         let length = self.take(2)?;
         let length = u16::from_le_bytes([length[0], length[1]]);
         if length != u16::MAX {
@@ -1040,11 +1046,44 @@ impl<'a> Cursor<'a> {
         Ok(())
     }
 
-    fn finish(self) -> Result<(), PreflightError> {
+    fn finish(self) -> Result<(), NativeRecordingError> {
         if self.offset == self.bytes.len() {
             Ok(())
         } else {
-            Err(PreflightError::InvalidValue(self.opcode))
+            Err(NativeRecordingError::InvalidValue(self.opcode))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn push_f32(bytes: &mut Vec<u8>, value: f32) {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    #[test]
+    fn chain_def_rejects_close_nonadjacent_points() {
+        const OPCODE: u8 = 0x7f;
+        let mut bytes = vec![0; 8];
+        bytes.extend_from_slice(&4_i32.to_le_bytes());
+        for (x, y) in [(0.0, 0.0), (1.0, 0.0), (0.001, 0.0), (2.0, 0.0)] {
+            push_f32(&mut bytes, x);
+            push_f32(&mut bytes, y);
+        }
+        bytes.extend_from_slice(&1_i32.to_le_bytes());
+        for value in [0.6, 0.0, 0.0, 0.0] {
+            push_f32(&mut bytes, value);
+        }
+        bytes.extend_from_slice(&[0; 12]);
+        bytes.extend_from_slice(&[0; 20]);
+        bytes.extend_from_slice(&[0, 0]);
+
+        let mut cursor = Cursor::new(&bytes, false, OPCODE);
+        assert_eq!(
+            chain_def(&mut cursor, 1.0),
+            Err(NativeRecordingError::InvalidRange(OPCODE))
+        );
     }
 }

@@ -3,65 +3,25 @@ fn main() {}
 
 #[cfg(target_arch = "wasm32")]
 fn main() {
-    use boxdd::{Position, QueryFilter, RecordingCapacity, Vec2, World, WorldDef};
+    use boxdd::{Foundation, Position, QueryFilter, Vec2};
 
-    let mut world = World::new(WorldDef::default()).unwrap();
+    let foundation = Foundation::initialize_default().unwrap();
+    let world = foundation.create_world(foundation.world_def()).unwrap();
+    let query = world.query().unwrap();
     let filter = QueryFilter::default();
     let translation = Vec2::new(1.0, 0.0);
 
-    let _ = world.cast_ray_closest(Position::ZERO, translation, filter);
-    let _ = world.try_cast_ray_closest(Position::ZERO, translation, filter);
-    let _ = world.cast_mover(
-        Position::ZERO,
-        Vec2::ZERO,
-        Vec2::ZERO,
-        0.5,
-        translation,
-        filter,
-    );
-    let _ = world.try_cast_mover(
-        Position::ZERO,
-        Vec2::ZERO,
-        Vec2::ZERO,
-        0.5,
-        translation,
-        filter,
-    );
-
-    {
-        let handle = world.handle();
-        let _ = handle.cast_ray_closest(Position::ZERO, translation, filter);
-        let _ = handle.try_cast_ray_closest(Position::ZERO, translation, filter);
-        let _ = handle.cast_mover(
-            Position::ZERO,
-            Vec2::ZERO,
-            Vec2::ZERO,
-            0.5,
-            translation,
-            filter,
-        );
-        let _ = handle.try_cast_mover(
-            Position::ZERO,
-            Vec2::ZERO,
-            Vec2::ZERO,
-            0.5,
-            translation,
-            filter,
-        );
+    let compatibility_hit = query
+        .cast_ray_closest(Position::ZERO, translation, filter)
+        .unwrap();
+    if let Some(hit) = compatibility_hit {
+        let _ = (hit.hit, hit.fraction);
     }
-
-    let session = world.start_recording(RecordingCapacity::default());
-    let _ = session.cast_ray_closest(Position::ZERO, translation, filter);
-    let _ = session.try_cast_ray_closest(Position::ZERO, translation, filter);
-    let _ = session.cast_mover(
-        Position::ZERO,
-        Vec2::ZERO,
-        Vec2::ZERO,
-        0.5,
-        translation,
-        filter,
-    );
-    let _ = session.try_cast_mover(
+    let closest = query
+        .cast_ray_closest_with_stats(Position::ZERO, translation, filter)
+        .unwrap();
+    let _ = (closest.hit, closest.node_visits, closest.leaf_visits);
+    let _ = query.cast_mover(
         Position::ZERO,
         Vec2::ZERO,
         Vec2::ZERO,

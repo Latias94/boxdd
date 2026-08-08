@@ -1,55 +1,46 @@
 //! Transactional Box2D world snapshots.
 //!
-//! `Snapshot` is an in-process capability tied to its origin world. `SnapshotImage` is a
-//! validated byte envelope which may only create a fresh world.
+//! `Snapshot` is an opaque in-process capability tied to its origin world. Native snapshot bytes
+//! never cross the Safe Rust API boundary.
 
 use core::fmt;
 use core::marker::PhantomData;
-use core::ops::Range;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
 
 use boxdd_sys::adapter::{AdapterIdentity, SnapshotValidation};
 use boxdd_sys::ffi;
 
-use crate::core::world_core::{ActivityState, LifecycleState, WorldCore};
-use crate::error::{ApiError, ApiResult};
-use crate::id::{IdBrand, WorldToken};
+#[cfg(test)]
+use crate::core::world_core::{ActivityState, LifecycleState};
+use crate::core::world_core::{CallbackRegistrationGenerations, RestoreActivityLease, WorldCore};
+use crate::error::{Error, Result};
+use crate::id::{ContactEpoch, IdBrand};
 use crate::types::{BodyId, ChainId, JointId, ShapeId};
-use crate::world::{WorkerCount, World};
+use crate::world::World;
 
-const IMAGE_MAGIC: [u8; 8] = *b"BOXDDSNP";
-const IMAGE_SCHEMA: u32 = 3;
-const IMAGE_HEADER_LEN: usize = 425;
-const IMAGE_CHECKSUM: Range<usize> = 24..56;
-const IMAGE_EFFECTIVE_SOURCE_SHA256: Range<usize> = 295..360;
 const REQUIRE_FRICTION_MIXER: u32 = 1 << 0;
 const REQUIRE_RESTITUTION_MIXER: u32 = 1 << 1;
 const REQUIRE_CUSTOM_FILTER: u32 = 1 << 2;
 const REQUIRE_PRE_SOLVE: u32 = 1 << 3;
-const KNOWN_HOST_REQUIREMENTS: u32 =
-    REQUIRE_FRICTION_MIXER | REQUIRE_RESTITUTION_MIXER | REQUIRE_CUSTOM_FILTER | REQUIRE_PRE_SOLVE;
 
 /// An unforgeable, process-local snapshot capability.
 ///
 /// This type has no public constructor and is deliberately not serializable. Only a snapshot
-/// taken from the same live `World` can authorize in-place restore.
+/// taken from the same live `World` can authorize in-place restore. Every host callback captured
+/// by the snapshot must still be the same registration; clearing or replacing one invalidates
+/// that snapshot for in-place restore.
 pub struct Snapshot {
     origin: IdBrand,
-    image: SnapshotImage,
+    native_payload: Box<[u8]>,
+    identity: AdapterIdentity,
+    validation: SnapshotValidation,
+    host_requirements: SnapshotHostRequirements,
     identities: crate::core::identity_registry::IdentityManifest,
     user_data: crate::core::user_data::UserDataManifest,
+    mixer_identities: crate::MixerIdentities,
+    callback_registration_generations: CallbackRegistrationGenerations,
     _owner_thread: PhantomData<Rc<()>>,
-}
-
-impl Snapshot {
-    /// Return the ABI-bound external image.
-    ///
-    /// It cannot authorize in-place restore on any world and is not a cross-target or
-    /// cross-version persistence format.
-    pub fn image(&self) -> &SnapshotImage {
-        &self.image
-    }
 }
 
 impl fmt::Debug for Snapshot {
@@ -57,93 +48,6 @@ impl fmt::Debug for Snapshot {
         formatter
             .debug_struct("Snapshot")
             .field("origin", &"World(..)")
-            .field("native_bytes", &self.image.native_payload().len())
-            .finish_non_exhaustive()
-    }
-}
-
-/// A versioned, integrity-checked snapshot byte envelope.
-///
-/// Parsing bytes never grants authority to restore an existing world. Use `load` or
-/// `World::from_snapshot_image` to create a world with a fresh Rust identity domain. This format
-/// is bound to the exact target ABI, precision, upstream revision, effective C source identity,
-/// and adapter layout; it is not a portable cross-version persistence format.
-pub struct SnapshotImage {
-    bytes: Vec<u8>,
-    payload: Range<usize>,
-    identity: AdapterIdentity,
-    validation: SnapshotValidation,
-    host_requirements: SnapshotHostRequirements,
-}
-
-impl SnapshotImage {
-    /// Parse, checksum, ABI-check, and deeply validate an external image.
-    pub fn from_bytes(bytes: &[u8]) -> ApiResult<Self> {
-        let (parsed, validation) = validate_image(bytes)?;
-        let mut owned = Vec::new();
-        owned
-            .try_reserve_exact(bytes.len())
-            .map_err(|_| ApiError::SnapshotAllocationFailed)?;
-        owned.extend_from_slice(bytes);
-        Ok(Self::from_validated_bytes(owned, parsed, validation))
-    }
-
-    /// Return the complete envelope, including compatibility metadata and checksum.
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.bytes
-    }
-
-    /// Consume the image and return its complete envelope.
-    pub fn into_bytes(self) -> Vec<u8> {
-        self.bytes
-    }
-
-    /// Create a fresh world with a fresh token, nonces, and empty host registries.
-    pub fn load(&self, worker_count: WorkerCount) -> ApiResult<SnapshotLoad> {
-        World::from_snapshot_image(self, worker_count)
-    }
-
-    fn from_native(
-        payload: Vec<u8>,
-        identity: AdapterIdentity,
-        host_requirements: SnapshotHostRequirements,
-    ) -> ApiResult<Self> {
-        Self::from_owned_bytes(encode_image(&payload, &identity, host_requirements)?)
-    }
-
-    fn from_owned_bytes(bytes: Vec<u8>) -> ApiResult<Self> {
-        let (parsed, validation) = validate_image(&bytes)?;
-        Ok(Self::from_validated_bytes(bytes, parsed, validation))
-    }
-
-    fn from_validated_bytes(
-        bytes: Vec<u8>,
-        parsed: ParsedEnvelope,
-        validation: SnapshotValidation,
-    ) -> Self {
-        Self {
-            bytes,
-            payload: parsed.payload,
-            identity: parsed.identity,
-            validation,
-            host_requirements: parsed.host_requirements,
-        }
-    }
-
-    fn native_payload(&self) -> &[u8] {
-        &self.bytes[self.payload.clone()]
-    }
-}
-
-impl fmt::Debug for SnapshotImage {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("SnapshotImage")
-            .field("schema", &IMAGE_SCHEMA)
-            .field("envelope_bytes", &self.bytes.len())
-            .field("native_bytes", &self.native_payload().len())
-            .field("snapshot_layout_hash", &self.identity.snapshot_layout_hash)
-            .field("host_requirements", &self.host_requirements)
             .finish_non_exhaustive()
     }
 }
@@ -171,17 +75,6 @@ impl SnapshotHostRequirements {
         Self(flags)
     }
 
-    fn parse(flags: u32, reserved: u32) -> ApiResult<Self> {
-        if flags & !KNOWN_HOST_REQUIREMENTS != 0 || reserved != 0 {
-            return Err(ApiError::InvalidSnapshotImage);
-        }
-        Ok(Self(flags))
-    }
-
-    fn is_empty(self) -> bool {
-        self.0 == 0
-    }
-
     fn matches(self, core: &WorldCore) -> bool {
         self == Self::capture(core)
     }
@@ -196,6 +89,26 @@ pub struct SnapshotRestore {
 }
 
 impl SnapshotRestore {
+    /// Iterates over every body ID mapping from the captured snapshot to the restored world.
+    pub fn body_mappings(&self) -> impl ExactSizeIterator<Item = (BodyId, BodyId)> + '_ {
+        self.bodies.iter().copied()
+    }
+
+    /// Iterates over every shape ID mapping from the captured snapshot to the restored world.
+    pub fn shape_mappings(&self) -> impl ExactSizeIterator<Item = (ShapeId, ShapeId)> + '_ {
+        self.shapes.iter().copied()
+    }
+
+    /// Iterates over every joint ID mapping from the captured snapshot to the restored world.
+    pub fn joint_mappings(&self) -> impl ExactSizeIterator<Item = (JointId, JointId)> + '_ {
+        self.joints.iter().copied()
+    }
+
+    /// Iterates over every chain ID mapping from the captured snapshot to the restored world.
+    pub fn chain_mappings(&self) -> impl ExactSizeIterator<Item = (ChainId, ChainId)> + '_ {
+        self.chains.iter().copied()
+    }
+
     pub fn body_id(&self, snapshot_id: BodyId) -> Option<BodyId> {
         map_id(&self.bodies, snapshot_id)
     }
@@ -225,136 +138,212 @@ impl fmt::Debug for SnapshotRestore {
     }
 }
 
-/// A freshly loaded world and the Safe IDs minted in its new identity domain.
-pub struct SnapshotLoad {
-    world: World,
-    bodies: Vec<BodyId>,
-    shapes: Vec<ShapeId>,
-    joints: Vec<JointId>,
-    chains: Vec<ChainId>,
+/// A fully validated in-place restore which has not crossed the native commit boundary.
+///
+/// The mapping report is final and may be used to allocate and validate host-side state before
+/// [`Self::commit`] invokes Box2D. Dropping this value cancels the restore without changing the
+/// world. Once commit starts, any native or host-commit failure terminalizes the world because
+/// Box2D cannot roll a partially restored world back.
+#[must_use = "dropping a prepared restore cancels it before the native commit boundary"]
+pub struct PreparedSnapshotRestore<'world, 'snapshot> {
+    world: &'world mut World,
+    activity: RestoreActivityLease,
+    native_payload: &'snapshot [u8],
+    native_payload_len: i32,
+    identities: crate::core::identity_registry::PreparedIdentityRestore,
+    user_data: crate::core::user_data::PreparedUserDataRestore,
+    next_contact_epoch: ContactEpoch,
+    report: SnapshotRestore,
 }
 
-impl SnapshotLoad {
-    pub fn world(&self) -> &World {
-        &self.world
+impl PreparedSnapshotRestore<'_, '_> {
+    /// Returns the final process-local ID mappings without mutating the world.
+    pub fn mappings(&self) -> &SnapshotRestore {
+        &self.report
     }
 
-    pub fn world_mut(&mut self) -> &mut World {
-        &mut self.world
+    /// Commits the native and Rust restore state.
+    pub fn commit(self) -> Result<SnapshotRestore> {
+        self.commit_with(|_| Ok(()))
     }
 
-    pub fn into_world(self) -> World {
-        self.world
-    }
-
-    pub fn body_ids(&self) -> &[BodyId] {
-        &self.bodies
-    }
-
-    pub fn shape_ids(&self) -> &[ShapeId] {
-        &self.shapes
-    }
-
-    pub fn joint_ids(&self) -> &[JointId] {
-        &self.joints
-    }
-
-    pub fn chain_ids(&self) -> &[ChainId] {
-        &self.chains
-    }
-
-    fn new(world: World) -> ApiResult<Self> {
-        let manifest = world.core().identity_manifest()?;
-        Ok(Self {
-            bodies: collect_ids(manifest.body_ids())?,
-            shapes: collect_ids(manifest.shape_ids())?,
-            joints: collect_ids(manifest.joint_ids())?,
-            chains: collect_ids(manifest.chain_ids())?,
+    /// Commits the restore and runs one fallible host-state commit before publishing success.
+    ///
+    /// Callers must perform all validation and allocation before invoking this method. A panic in
+    /// `host_commit` or retired user-data cleanup is caught long enough to terminalize the native
+    /// world. It resumes at an ordinary Rust call boundary; if the thread is already unwinding, the
+    /// secondary panic is suppressed and this method returns [`Error::SnapshotCommitPanicked`] so
+    /// the original panic remains primary. A returned error also terminalizes the world because the
+    /// native restore has already committed.
+    pub fn commit_with(
+        self,
+        host_commit: impl FnOnce(&SnapshotRestore) -> Result<()>,
+    ) -> Result<SnapshotRestore> {
+        let host_commit = crate::core::callback_state::PendingUserValue::new(host_commit);
+        crate::core::callback_state::check_not_in_callback()?;
+        let Self {
             world,
-        })
+            mut activity,
+            native_payload,
+            native_payload_len,
+            identities,
+            user_data,
+            next_contact_epoch,
+            report,
+        } = self;
+
+        record_native_restore_call();
+        let native_ok = unsafe {
+            ffi::b2World_Restore(world.raw(), native_payload.as_ptr(), native_payload_len)
+        };
+        if !native_ok || restore_failpoint_is(RestoreFailpoint::Native) {
+            activity.disarm();
+            terminalize_after_restore(world.core());
+            return Err(Error::SnapshotNativeFailed);
+        }
+
+        let mut host_panic = crate::core::callback_state::PanicSlot::default();
+        let rust_commit = catch_unwind(AssertUnwindSafe(|| -> Result<()> {
+            if restore_failpoint_is(RestoreFailpoint::Commit) {
+                return Err(Error::SnapshotManifestMismatch);
+            }
+            world.core().commit_identity_restore(identities)?;
+            if restore_failpoint_is(RestoreFailpoint::AfterIdentityCommit) {
+                return Err(Error::SnapshotManifestMismatch);
+            }
+            let mut committed_user_data = world.core().commit_user_data_restore(user_data)?;
+            if restore_failpoint_is(RestoreFailpoint::AfterUserDataCommit) {
+                return Err(Error::SnapshotManifestMismatch);
+            }
+            world.core().commit_contact_epoch(next_contact_epoch)?;
+            if restore_failpoint_is(RestoreFailpoint::AfterContactEpochCommit) {
+                return Err(Error::SnapshotManifestMismatch);
+            }
+
+            reattach_user_data(world.raw(), committed_user_data.attachments());
+            world.invalidate_completed_step();
+            if let Err(payload) = committed_user_data.drop_retired() {
+                host_panic.capture(payload);
+            }
+            if !host_panic.has_panicked() {
+                let host_commit = host_commit.into_inner();
+                host_commit(&report)?;
+            }
+            Ok(())
+        }));
+        match rust_commit {
+            Ok(Ok(())) if !host_panic.has_panicked() => {}
+            Ok(Ok(())) => {
+                activity.disarm();
+                terminalize_after_panic(world.core(), host_panic);
+                return Err(Error::SnapshotCommitPanicked);
+            }
+            Ok(Err(error)) => {
+                activity.disarm();
+                terminalize_after_restore(world.core());
+                return Err(error);
+            }
+            Err(payload) => {
+                activity.disarm();
+                host_panic.capture(payload);
+                terminalize_after_panic(world.core(), host_panic);
+                return Err(Error::SnapshotCommitPanicked);
+            }
+        }
+        if let Err(error) = activity.finish() {
+            activity.disarm();
+            terminalize_after_restore(world.core());
+            return Err(error);
+        }
+        Ok(report)
     }
 }
 
-impl fmt::Debug for SnapshotLoad {
+impl fmt::Debug for PreparedSnapshotRestore<'_, '_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("SnapshotLoad")
-            .field("bodies", &self.bodies.len())
-            .field("shapes", &self.shapes.len())
-            .field("joints", &self.joints.len())
-            .field("chains", &self.chains.len())
+            .debug_struct("PreparedSnapshotRestore")
+            .field("mappings", &self.report)
             .finish_non_exhaustive()
     }
 }
 
 impl World {
     /// Capture an in-process snapshot capability.
-    #[track_caller]
-    pub fn snapshot(&self) -> Snapshot {
-        self.try_snapshot().expect("world snapshot capture failed")
-    }
-
-    /// Capture an in-process snapshot capability.
-    pub fn try_snapshot(&self) -> ApiResult<Snapshot> {
+    pub fn snapshot(&self) -> Result<Snapshot> {
         crate::core::callback_state::check_not_in_callback()?;
-        self.core().check_snapshot_preconditions()?;
-        let mut activity = RestoreActivity::begin(self.core())?;
+        crate::world::check_world_available(self)?;
+        let mut activity = self.core().begin_restore_activity()?;
         let identity = runtime_identity()?;
         let identities = self.core().identity_manifest_while_restoring()?;
         let user_data = self.core().user_data_manifest_while_restoring()?;
         let host_requirements = SnapshotHostRequirements::capture(self.core());
+        let mixer_identities = self.core().mixer_identities();
+        let callback_registration_generations = self.core().callback_registration_generations();
 
-        let native = capture_native(self.raw())?;
-        let image = SnapshotImage::from_native(native, identity, host_requirements)?;
-        identities.validate_snapshot_entries(&image.validation.entries)?;
+        let native_payload = capture_native(self.raw())?.into_boxed_slice();
+        let authorization = NativeValidationAuthorization::restoring(&identity, &activity);
+        let validation = validate_native(&native_payload, &authorization)?;
+        identities.validate_snapshot_entries(&validation.entries)?;
         activity.finish()?;
 
         Ok(Snapshot {
             origin: self.brand(),
-            image,
+            native_payload,
+            identity,
+            validation,
+            host_requirements,
             identities,
             user_data,
+            mixer_identities,
+            callback_registration_generations,
             _owner_thread: PhantomData,
         })
     }
 
     /// Restore a snapshot captured by this exact world instance.
-    #[track_caller]
-    pub fn restore(&mut self, snapshot: &Snapshot) -> SnapshotRestore {
-        self.try_restore(snapshot)
-            .expect("world snapshot restore failed")
+    pub fn restore(&mut self, snapshot: &Snapshot) -> Result<SnapshotRestore> {
+        self.prepare_restore(snapshot)?.commit()
     }
 
-    /// Restore a snapshot captured by this exact world instance.
-    pub fn try_restore(&mut self, snapshot: &Snapshot) -> ApiResult<SnapshotRestore> {
+    /// Validates and allocates every Rust-side restore artifact before native mutation.
+    pub fn prepare_restore<'world, 'snapshot>(
+        &'world mut self,
+        snapshot: &'snapshot Snapshot,
+    ) -> Result<PreparedSnapshotRestore<'world, 'snapshot>> {
         crate::core::callback_state::check_not_in_callback()?;
-        self.core().check_snapshot_preconditions()?;
+        crate::world::check_world_available(self)?;
         if snapshot.origin != self.brand() {
-            return Err(ApiError::ForeignSnapshot);
+            return Err(Error::ForeignSnapshot);
         }
         let current_identity = runtime_identity()?;
-        if !same_identity(&snapshot.image.identity, &current_identity) {
-            return Err(ApiError::SnapshotAbiMismatch);
+        if snapshot.identity != current_identity {
+            return Err(Error::SnapshotAbiMismatch);
         }
-        let native_payload = snapshot.image.native_payload();
+        let native_payload = &snapshot.native_payload;
         let native_payload_len = checked_native_payload_len(native_payload.len())?;
-        let mut activity = RestoreActivity::begin(self.core())?;
-        let validation = validate_native(native_payload)?;
+        let activity = self.core().begin_restore_activity()?;
+        let validation = &snapshot.validation;
         snapshot
             .identities
             .validate_snapshot_entries(&validation.entries)?;
-        if !snapshot.image.host_requirements.matches(self.core()) {
-            return Err(ApiError::SnapshotHostWiringMismatch);
+        if !snapshot.host_requirements.matches(self.core())
+            || snapshot.mixer_identities != self.core().mixer_identities()
+            || !snapshot
+                .callback_registration_generations
+                .matches(&self.core().callback_registration_generations())
+        {
+            return Err(Error::SnapshotHostWiringMismatch);
         }
         if !self.core().snapshot_callbacks_satisfy(
             validation.facts.requires_custom_filter != 0,
             validation.facts.requires_pre_solve != 0,
         ) {
-            return Err(ApiError::SnapshotCallbacksUnavailable);
+            return Err(Error::SnapshotCallbacksUnavailable);
         }
 
         if restore_failpoint_is(RestoreFailpoint::Prepare) {
-            return Err(ApiError::SnapshotManifestMismatch);
+            return Err(Error::SnapshotManifestMismatch);
         }
         restore_allocation_failpoint(RestoreFailpoint::IdentityAllocation)?;
         let prepared_identities = self.core().prepare_identity_restore(&snapshot.identities)?;
@@ -369,306 +358,71 @@ impl World {
         restore_allocation_failpoint(RestoreFailpoint::ContactEpochAllocation)?;
         let next_contact_epoch = self.core().prepare_contact_epoch()?;
 
-        record_native_restore_call();
-        let native_ok = unsafe {
-            ffi::b2World_Restore(self.raw(), native_payload.as_ptr(), native_payload_len)
-        };
-        if !native_ok || restore_failpoint_is(RestoreFailpoint::Native) {
-            activity.disarm();
-            terminalize_after_restore(self.core());
-            return Err(ApiError::SnapshotNativeFailed);
-        }
-        let mut host_panic = crate::core::callback_state::PanicSlot::default();
-        let host_commit = catch_unwind(AssertUnwindSafe(|| -> ApiResult<()> {
-            if restore_failpoint_is(RestoreFailpoint::Commit) {
-                return Err(ApiError::SnapshotManifestMismatch);
-            }
-            self.core().commit_identity_restore(prepared_identities)?;
-            if restore_failpoint_is(RestoreFailpoint::AfterIdentityCommit) {
-                return Err(ApiError::SnapshotManifestMismatch);
-            }
-            let committed_user_data = self.core().commit_user_data_restore(prepared_user_data)?;
-            if restore_failpoint_is(RestoreFailpoint::AfterUserDataCommit) {
-                return Err(ApiError::SnapshotManifestMismatch);
-            }
-            self.core().commit_contact_epoch(next_contact_epoch)?;
-            if restore_failpoint_is(RestoreFailpoint::AfterContactEpochCommit) {
-                return Err(ApiError::SnapshotManifestMismatch);
-            }
-
-            reattach_user_data(self.raw(), &committed_user_data.attachments);
-            self.event_cache().invalidate();
-            if let Err(payload) = drop_retired_user_data(committed_user_data.retired) {
-                host_panic.capture(payload);
-            }
-            Ok(())
-        }));
-        match host_commit {
-            Ok(Ok(())) if !host_panic.has_panicked() => {}
-            Ok(Ok(())) => {
-                activity.disarm();
-                terminalize_after_panic(self.core(), host_panic);
-                return Err(ApiError::WorldDestroyed);
-            }
-            Ok(Err(error)) => {
-                activity.disarm();
-                terminalize_after_restore(self.core());
-                return Err(error);
-            }
-            Err(payload) => {
-                activity.disarm();
-                host_panic.capture(payload);
-                terminalize_after_panic(self.core(), host_panic);
-                return Err(ApiError::WorldDestroyed);
-            }
-        }
-        if let Err(error) = activity.finish() {
-            activity.disarm();
-            terminalize_after_restore(self.core());
-            return Err(error);
-        }
-        Ok(report)
-    }
-
-    /// Create a fresh world from a validated external image.
-    pub fn from_snapshot_image(
-        image: &SnapshotImage,
-        worker_count: WorkerCount,
-    ) -> ApiResult<SnapshotLoad> {
-        crate::core::callback_state::check_not_in_callback()?;
-        let current_identity = runtime_identity()?;
-        if !same_identity(&image.identity, &current_identity) {
-            return Err(ApiError::SnapshotAbiMismatch);
-        }
-        if !image.host_requirements.is_empty() {
-            return Err(ApiError::SnapshotHostWiringMismatch);
-        }
-        let native_payload = image.native_payload();
-        let native_payload_len = checked_native_payload_len(native_payload.len())?;
-        let validation = validate_native(native_payload)?;
-        if validation.facts.requires_custom_filter != 0 || validation.facts.requires_pre_solve != 0
-        {
-            return Err(ApiError::SnapshotCallbacksUnavailable);
-        }
-
-        let token = WorldToken::allocate()?;
-        let foundation_lease = crate::core::foundation::acquire_ordinary_world_lease()?;
-        let world_slot_guard = crate::core::foundation::lock_world_slot_mutation();
-        let raw = unsafe {
-            ffi::b2CreateWorldFromSnapshot(
-                native_payload.as_ptr(),
-                native_payload_len,
-                worker_count.as_i32(),
-            )
-        };
-        if !unsafe { ffi::b2World_IsValid(raw) } {
-            drop(world_slot_guard);
-            return Err(ApiError::SnapshotNativeFailed);
-        }
-        let brand = match IdBrand::new(raw, token) {
-            Ok(brand) => brand,
-            Err(error) => {
-                unsafe { ffi::b2DestroyWorld(raw) };
-                drop(world_slot_guard);
-                return Err(error);
-            }
-        };
-        let core =
-            match WorldCore::new_from_snapshot(raw, brand, foundation_lease, &validation.entries) {
-                Ok(core) => core,
-                Err(error) => {
-                    unsafe { ffi::b2DestroyWorld(raw) };
-                    drop(world_slot_guard);
-                    return Err(error);
-                }
-            };
-        drop(world_slot_guard);
-        SnapshotLoad::new(Self::from_restored_core(core))
+        Ok(PreparedSnapshotRestore {
+            world: self,
+            activity,
+            native_payload,
+            native_payload_len,
+            identities: prepared_identities,
+            user_data: prepared_user_data,
+            next_contact_epoch,
+            report,
+        })
     }
 }
 
-struct ParsedEnvelope {
-    identity: AdapterIdentity,
-    host_requirements: SnapshotHostRequirements,
-    checksum: [u8; 32],
-    payload: Range<usize>,
+/// A private proof that native snapshot validation is covered by foundation activity.
+struct NativeValidationAuthorization<'a> {
+    _current_identity: &'a AdapterIdentity,
+    _lease: PhantomData<&'a ()>,
 }
 
-fn validate_image(bytes: &[u8]) -> ApiResult<(ParsedEnvelope, SnapshotValidation)> {
-    checked_image_len(bytes.len())?;
-    let parsed = parse_envelope(bytes)?;
-    let payload = bytes
-        .get(parsed.payload.clone())
-        .ok_or(ApiError::InvalidSnapshotImage)?;
-    checked_native_payload_len(payload.len())?;
-    if image_checksum(bytes) != parsed.checksum {
-        return Err(ApiError::SnapshotChecksumMismatch);
+impl<'a> NativeValidationAuthorization<'a> {
+    fn restoring(
+        current_identity: &'a AdapterIdentity,
+        activity: &'a RestoreActivityLease,
+    ) -> Self {
+        debug_assert!(activity.is_armed());
+        Self {
+            _current_identity: current_identity,
+            _lease: PhantomData,
+        }
     }
-    let current = runtime_identity()?;
-    if !same_identity(&parsed.identity, &current) {
-        return Err(ApiError::SnapshotAbiMismatch);
-    }
-    let validation = validate_native(payload)?;
-    Ok((parsed, validation))
 }
 
-fn encode_image(
+fn runtime_identity() -> Result<AdapterIdentity> {
+    boxdd_sys::adapter::verify_runtime_identity().map_err(|_| Error::SnapshotAbiMismatch)
+}
+
+fn validate_native(
     payload: &[u8],
-    identity: &AdapterIdentity,
-    host_requirements: SnapshotHostRequirements,
-) -> ApiResult<Vec<u8>> {
-    let total = IMAGE_HEADER_LEN
-        .checked_add(payload.len())
-        .ok_or(ApiError::SnapshotAllocationFailed)?;
-    let mut bytes = Vec::new();
-    bytes
-        .try_reserve_exact(total)
-        .map_err(|_| ApiError::SnapshotAllocationFailed)?;
-    bytes.extend_from_slice(&IMAGE_MAGIC);
-    push_u32(&mut bytes, IMAGE_SCHEMA);
-    push_u32(&mut bytes, IMAGE_HEADER_LEN as u32);
-    push_u64(
-        &mut bytes,
-        u64::try_from(payload.len()).map_err(|_| ApiError::SnapshotAllocationFailed)?,
-    );
-    bytes.extend_from_slice(&[0; 32]);
-    push_u32(&mut bytes, host_requirements.0);
-    push_u32(&mut bytes, 0);
-    encode_identity(&mut bytes, identity);
-    debug_assert_eq!(bytes.len(), IMAGE_HEADER_LEN);
-    bytes.extend_from_slice(payload);
-    let checksum = image_checksum(&bytes);
-    bytes[IMAGE_CHECKSUM].copy_from_slice(&checksum);
-    Ok(bytes)
-}
-
-fn image_checksum(bytes: &[u8]) -> [u8; 32] {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(&bytes[..IMAGE_CHECKSUM.start]);
-    hasher.update(&bytes[IMAGE_CHECKSUM.end..]);
-    *hasher.finalize().as_bytes()
-}
-
-fn parse_envelope(bytes: &[u8]) -> ApiResult<ParsedEnvelope> {
-    if bytes.len() < IMAGE_HEADER_LEN {
-        return Err(ApiError::InvalidSnapshotImage);
-    }
-    let mut cursor = Cursor::new(bytes);
-    if cursor.take_array::<8>()? != IMAGE_MAGIC
-        || cursor.u32()? != IMAGE_SCHEMA
-        || cursor.u32()? as usize != IMAGE_HEADER_LEN
-    {
-        return Err(ApiError::InvalidSnapshotImage);
-    }
-    let payload_len = usize::try_from(cursor.u64()?).map_err(|_| ApiError::InvalidSnapshotImage)?;
-    let checksum = cursor.take_array::<32>()?;
-    let host_requirements = SnapshotHostRequirements::parse(cursor.u32()?, cursor.u32()?)?;
-    let identity = decode_identity(&mut cursor)?;
-    if cursor.position() != IMAGE_HEADER_LEN {
-        return Err(ApiError::InvalidSnapshotImage);
-    }
-    let end = IMAGE_HEADER_LEN
-        .checked_add(payload_len)
-        .ok_or(ApiError::InvalidSnapshotImage)?;
-    if end != bytes.len() {
-        return Err(ApiError::InvalidSnapshotImage);
-    }
-    Ok(ParsedEnvelope {
-        identity,
-        host_requirements,
-        checksum,
-        payload: IMAGE_HEADER_LEN..end,
-    })
-}
-
-fn encode_identity(bytes: &mut Vec<u8>, identity: &AdapterIdentity) {
-    push_u32(bytes, identity.struct_size);
-    push_u32(bytes, identity.abi_version);
-    push_u32(bytes, identity.snapshot_version);
-    push_u32(bytes, identity.recording_version_major);
-    push_u32(bytes, identity.recording_version_minor);
-    push_u32(bytes, identity.snapshot_layout_hash);
-    bytes.extend_from_slice(&[
-        identity.pointer_width,
-        identity.little_endian,
-        identity.double_precision,
-        identity.validation_enabled,
-    ]);
-    bytes.extend_from_slice(&identity.private_abi_hash);
-    bytes.extend_from_slice(&identity.upstream_sha);
-    bytes.extend_from_slice(&identity.target_abi);
-    bytes.extend_from_slice(&identity.adapter_source_sha256);
-    debug_assert_eq!(bytes.len(), IMAGE_EFFECTIVE_SOURCE_SHA256.start);
-    bytes.extend_from_slice(&identity.effective_source_sha256);
-    debug_assert_eq!(bytes.len(), IMAGE_EFFECTIVE_SOURCE_SHA256.end);
-    bytes.extend_from_slice(&identity.recording_contract_blake3);
-}
-
-fn decode_identity(cursor: &mut Cursor<'_>) -> ApiResult<AdapterIdentity> {
-    Ok(AdapterIdentity {
-        struct_size: cursor.u32()?,
-        abi_version: cursor.u32()?,
-        snapshot_version: cursor.u32()?,
-        recording_version_major: cursor.u32()?,
-        recording_version_minor: cursor.u32()?,
-        snapshot_layout_hash: cursor.u32()?,
-        pointer_width: cursor.u8()?,
-        little_endian: cursor.u8()?,
-        double_precision: cursor.u8()?,
-        validation_enabled: cursor.u8()?,
-        private_abi_hash: cursor.take_array()?,
-        upstream_sha: cursor.take_array()?,
-        target_abi: cursor.take_array()?,
-        adapter_source_sha256: cursor.take_array()?,
-        effective_source_sha256: cursor.take_array()?,
-        recording_contract_blake3: cursor.take_array()?,
-    })
-}
-
-fn same_identity(left: &AdapterIdentity, right: &AdapterIdentity) -> bool {
-    left == right
-}
-
-fn runtime_identity() -> ApiResult<AdapterIdentity> {
-    boxdd_sys::adapter::verify_runtime_identity().map_err(|_| ApiError::SnapshotAbiMismatch)
-}
-
-fn validate_native(payload: &[u8]) -> ApiResult<SnapshotValidation> {
+    _authorization: &NativeValidationAuthorization<'_>,
+) -> Result<SnapshotValidation> {
     #[cfg(test)]
     NATIVE_VALIDATION_CALLS.with(|calls| calls.set(calls.get() + 1));
     boxdd_sys::adapter::validate_snapshot(payload, &boxdd_sys::adapter::SnapshotLimits::default())
         .map_err(map_snapshot_validation_error)
 }
 
-fn map_snapshot_validation_error(error: boxdd_sys::adapter::SnapshotValidationError) -> ApiError {
+fn map_snapshot_validation_error(error: boxdd_sys::adapter::SnapshotValidationError) -> Error {
     match error {
         boxdd_sys::adapter::SnapshotValidationError::AdapterIdentity(_) => {
-            ApiError::SnapshotAbiMismatch
+            Error::SnapshotAbiMismatch
         }
         boxdd_sys::adapter::SnapshotValidationError::Status(status)
             if status == boxdd_sys::adapter::SNAPSHOT_ABI_MISMATCH =>
         {
-            ApiError::SnapshotAbiMismatch
+            Error::SnapshotAbiMismatch
         }
-        _ => ApiError::InvalidSnapshotImage,
+        _ => Error::InvalidNativeSnapshot,
     }
 }
 
-fn checked_native_payload_len(length: usize) -> ApiResult<i32> {
+fn checked_native_payload_len(length: usize) -> Result<i32> {
     if length > max_native_snapshot_bytes() {
-        return Err(ApiError::InvalidSnapshotImage);
+        return Err(Error::InvalidNativeSnapshot);
     }
-    i32::try_from(length).map_err(|_| ApiError::InvalidSnapshotImage)
-}
-
-fn checked_image_len(length: usize) -> ApiResult<()> {
-    let max = IMAGE_HEADER_LEN
-        .checked_add(max_native_snapshot_bytes())
-        .ok_or(ApiError::InvalidSnapshotImage)?;
-    if length > max {
-        return Err(ApiError::InvalidSnapshotImage);
-    }
-    Ok(())
+    i32::try_from(length).map_err(|_| Error::InvalidNativeSnapshot)
 }
 
 fn max_native_snapshot_bytes() -> usize {
@@ -676,20 +430,33 @@ fn max_native_snapshot_bytes() -> usize {
         .unwrap_or(usize::MAX)
 }
 
-fn capture_native(world: ffi::b2WorldId) -> ApiResult<Vec<u8>> {
-    let required_i32 = unsafe { ffi::b2World_Snapshot(world, core::ptr::null_mut(), 0) };
-    if required_i32 <= 0 {
-        return Err(ApiError::SnapshotNativeFailed);
+fn capture_native(world: ffi::b2WorldId) -> Result<Vec<u8>> {
+    // SAFETY: `b2World_Snapshot` initializes the reported prefix when the supplied capacity is
+    // sufficient, and the helper publishes bytes only when the fill count matches that capacity.
+    unsafe {
+        capture_native_with(|output, capacity| ffi::b2World_Snapshot(world, output, capacity))
     }
-    let required = usize::try_from(required_i32).map_err(|_| ApiError::SnapshotNativeFailed)?;
+}
+
+/// # Safety
+///
+/// When `snapshot` returns the supplied positive capacity, it must have initialized exactly that
+/// many bytes at `output` without writing beyond the supplied capacity.
+unsafe fn capture_native_with(mut snapshot: impl FnMut(*mut u8, i32) -> i32) -> Result<Vec<u8>> {
+    let required_i32 = snapshot(core::ptr::null_mut(), 0);
+    if required_i32 <= 0 {
+        return Err(Error::SnapshotNativeFailed);
+    }
+    let required = usize::try_from(required_i32).map_err(|_| Error::SnapshotNativeFailed)?;
     checked_native_payload_len(required)?;
     let mut payload = Vec::new();
     payload
         .try_reserve_exact(required)
-        .map_err(|_| ApiError::SnapshotAllocationFailed)?;
-    let initialized = unsafe { ffi::b2World_Snapshot(world, payload.as_mut_ptr(), required_i32) };
+        .map_err(|_| Error::SnapshotAllocationFailed)?;
+    let output = payload.spare_capacity_mut().as_mut_ptr().cast::<u8>();
+    let initialized = snapshot(output, required_i32);
     if initialized != required_i32 {
-        return Err(ApiError::SnapshotNativeFailed);
+        return Err(Error::SnapshotNativeFailed);
     }
     // SAFETY: Box2D reported exactly the requested size after initializing the complete prefix.
     unsafe { payload.set_len(required) };
@@ -699,29 +466,29 @@ fn capture_native(world: ffi::b2WorldId) -> ApiResult<Vec<u8>> {
 fn build_restore_report(
     manifest: &crate::core::identity_registry::IdentityManifest,
     prepared: &crate::core::identity_registry::PreparedIdentityRestore,
-) -> ApiResult<SnapshotRestore> {
+) -> Result<SnapshotRestore> {
     let mut bodies = Vec::new();
     let mut shapes = Vec::new();
     let mut joints = Vec::new();
     let mut chains = Vec::new();
     bodies
         .try_reserve_exact(manifest.body_ids().count())
-        .map_err(|_| ApiError::SnapshotAllocationFailed)?;
+        .map_err(|_| Error::SnapshotAllocationFailed)?;
     shapes
         .try_reserve_exact(manifest.shape_ids().count())
-        .map_err(|_| ApiError::SnapshotAllocationFailed)?;
+        .map_err(|_| Error::SnapshotAllocationFailed)?;
     joints
         .try_reserve_exact(manifest.joint_ids().count())
-        .map_err(|_| ApiError::SnapshotAllocationFailed)?;
+        .map_err(|_| Error::SnapshotAllocationFailed)?;
     chains
         .try_reserve_exact(manifest.chain_ids().count())
-        .map_err(|_| ApiError::SnapshotAllocationFailed)?;
+        .map_err(|_| Error::SnapshotAllocationFailed)?;
     for snapshot_id in manifest.body_ids() {
         bodies.push((
             snapshot_id,
             prepared
                 .body_after_restore(manifest, snapshot_id)
-                .ok_or(ApiError::SnapshotManifestMismatch)?,
+                .ok_or(Error::SnapshotManifestMismatch)?,
         ));
     }
     for snapshot_id in manifest.shape_ids() {
@@ -729,7 +496,7 @@ fn build_restore_report(
             snapshot_id,
             prepared
                 .shape_after_restore(manifest, snapshot_id)
-                .ok_or(ApiError::SnapshotManifestMismatch)?,
+                .ok_or(Error::SnapshotManifestMismatch)?,
         ));
     }
     for snapshot_id in manifest.joint_ids() {
@@ -737,7 +504,7 @@ fn build_restore_report(
             snapshot_id,
             prepared
                 .joint_after_restore(manifest, snapshot_id)
-                .ok_or(ApiError::SnapshotManifestMismatch)?,
+                .ok_or(Error::SnapshotManifestMismatch)?,
         ));
     }
     for snapshot_id in manifest.chain_ids() {
@@ -745,7 +512,7 @@ fn build_restore_report(
             snapshot_id,
             prepared
                 .chain_after_restore(manifest, snapshot_id)
-                .ok_or(ApiError::SnapshotManifestMismatch)?,
+                .ok_or(Error::SnapshotManifestMismatch)?,
         ));
     }
     Ok(SnapshotRestore {
@@ -778,21 +545,6 @@ fn reattach_user_data(
     }
 }
 
-fn drop_retired_user_data(
-    retired: Vec<crate::core::user_data::UserDataEntryRef>,
-) -> std::thread::Result<()> {
-    let mut panic = crate::core::callback_state::PanicSlot::default();
-    for entry in retired {
-        panic.run_cleanup(|| {
-            let value = entry
-                .take_erased()
-                .expect("snapshot prepare checked user-data mutability");
-            drop(value);
-        });
-    }
-    panic.into_result(())
-}
-
 fn terminalize_after_restore(core: &WorldCore) {
     terminalize_after_panic(core, crate::core::callback_state::PanicSlot::default());
 }
@@ -809,98 +561,6 @@ fn map_id<Id: Copy + PartialEq>(mappings: &[(Id, Id)], snapshot_id: Id) -> Optio
     mappings
         .iter()
         .find_map(|&(before, after)| (before == snapshot_id).then_some(after))
-}
-
-fn collect_ids<Id>(ids: impl ExactSizeIterator<Item = Id>) -> ApiResult<Vec<Id>> {
-    let mut collected = Vec::new();
-    collected
-        .try_reserve_exact(ids.len())
-        .map_err(|_| ApiError::SnapshotAllocationFailed)?;
-    collected.extend(ids);
-    Ok(collected)
-}
-
-struct RestoreActivity<'a> {
-    core: &'a WorldCore,
-    armed: bool,
-}
-
-impl<'a> RestoreActivity<'a> {
-    fn begin(core: &'a WorldCore) -> ApiResult<Self> {
-        core.set_activity(ActivityState::Idle, ActivityState::Restoring)?;
-        Ok(Self { core, armed: true })
-    }
-
-    fn finish(&mut self) -> ApiResult<()> {
-        self.core.finish_restore_activity()?;
-        self.armed = false;
-        Ok(())
-    }
-
-    fn disarm(&mut self) {
-        self.armed = false;
-    }
-}
-
-impl Drop for RestoreActivity<'_> {
-    fn drop(&mut self) {
-        if self.armed
-            && self.core.lifecycle() == LifecycleState::Live
-            && self.core.activity() == ActivityState::Restoring
-        {
-            let _ = self.core.finish_restore_activity();
-        }
-    }
-}
-
-struct Cursor<'a> {
-    bytes: &'a [u8],
-    position: usize,
-}
-
-impl<'a> Cursor<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, position: 0 }
-    }
-
-    fn position(&self) -> usize {
-        self.position
-    }
-
-    fn take_array<const N: usize>(&mut self) -> ApiResult<[u8; N]> {
-        let end = self
-            .position
-            .checked_add(N)
-            .ok_or(ApiError::InvalidSnapshotImage)?;
-        let source = self
-            .bytes
-            .get(self.position..end)
-            .ok_or(ApiError::InvalidSnapshotImage)?;
-        self.position = end;
-        source
-            .try_into()
-            .map_err(|_| ApiError::InvalidSnapshotImage)
-    }
-
-    fn u8(&mut self) -> ApiResult<u8> {
-        Ok(self.take_array::<1>()?[0])
-    }
-
-    fn u32(&mut self) -> ApiResult<u32> {
-        Ok(u32::from_le_bytes(self.take_array()?))
-    }
-
-    fn u64(&mut self) -> ApiResult<u64> {
-        Ok(u64::from_le_bytes(self.take_array()?))
-    }
-}
-
-fn push_u32(bytes: &mut Vec<u8>, value: u32) {
-    bytes.extend_from_slice(&value.to_le_bytes());
-}
-
-fn push_u64(bytes: &mut Vec<u8>, value: u64) {
-    bytes.extend_from_slice(&value.to_le_bytes());
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -936,9 +596,9 @@ fn restore_failpoint_is(point: RestoreFailpoint) -> bool {
     }
 }
 
-fn restore_allocation_failpoint(point: RestoreFailpoint) -> ApiResult<()> {
+fn restore_allocation_failpoint(point: RestoreFailpoint) -> Result<()> {
     if restore_failpoint_is(point) {
-        Err(ApiError::SnapshotAllocationFailed)
+        Err(Error::SnapshotAllocationFailed)
     } else {
         Ok(())
     }
@@ -952,7 +612,19 @@ fn record_native_restore_call() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{BodyDef, DistanceJointDef, JointBase, ShapeDef, Vec2, WorldDef, shapes};
+    use crate::{DistanceJointDef, ShapeDef, Vec2, shapes};
+
+    #[cfg(not(target_arch = "wasm32"))]
+    struct InvokeOnDrop<F: FnOnce()>(Option<F>);
+
+    #[cfg(not(target_arch = "wasm32"))]
+    impl<F: FnOnce()> Drop for InvokeOnDrop<F> {
+        fn drop(&mut self) {
+            if let Some(invoke) = self.0.take() {
+                invoke();
+            }
+        }
+    }
 
     fn set_failpoint(point: Option<RestoreFailpoint>) {
         RESTORE_FAILPOINT.with(|current| current.set(point));
@@ -977,7 +649,6 @@ mod tests {
     #[test]
     fn native_payload_length_is_bounded_before_ffi_conversion() {
         let max = max_native_snapshot_bytes();
-        let max_envelope = IMAGE_HEADER_LEN.checked_add(max).unwrap();
 
         assert_eq!(
             checked_native_payload_len(max),
@@ -985,16 +656,77 @@ mod tests {
         );
         assert_eq!(
             checked_native_payload_len(max + 1),
-            Err(ApiError::InvalidSnapshotImage)
+            Err(Error::InvalidNativeSnapshot)
         );
         assert_eq!(
             checked_native_payload_len(i32::MAX as usize + 1),
-            Err(ApiError::InvalidSnapshotImage)
+            Err(Error::InvalidNativeSnapshot)
         );
-        assert_eq!(checked_image_len(max_envelope), Ok(()));
-        assert_eq!(
-            checked_image_len(max_envelope + 1),
-            Err(ApiError::InvalidSnapshotImage)
+    }
+
+    #[test]
+    fn native_payload_growth_between_query_and_fill_is_rejected() {
+        let mut calls = 0;
+        // SAFETY: The injected fill never reports the supplied capacity, so the helper cannot
+        // publish or read the deliberately uninitialized output buffer.
+        let error = unsafe {
+            capture_native_with(|output, capacity| {
+                calls += 1;
+                match calls {
+                    1 => {
+                        assert!(output.is_null());
+                        assert_eq!(capacity, 0);
+                        4
+                    }
+                    2 => {
+                        assert!(!output.is_null());
+                        assert_eq!(capacity, 4);
+                        5
+                    }
+                    _ => panic!("snapshot capture must call native exactly twice"),
+                }
+            })
+        }
+        .unwrap_err();
+
+        assert_eq!(error, Error::SnapshotNativeFailed);
+        assert_eq!(calls, 2);
+    }
+
+    #[test]
+    fn prepared_restore_rejects_callback_before_native_commit_and_releases_world() {
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        world
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_def(),
+            )
+            .unwrap();
+        let snapshot = world.snapshot().unwrap();
+        let prepared = world.prepare_restore(&snapshot).unwrap();
+        reset_native_calls();
+
+        let callback_guard = crate::core::callback_state::CallbackGuard::enter();
+        assert!(matches!(prepared.commit(), Err(Error::InCallback)));
+        assert_eq!(native_calls(), 0);
+        drop(callback_guard);
+
+        assert!(
+            world
+                .create_body(
+                    crate::Foundation::get()
+                        .expect("Foundation must be initialized before constructing a BodyDef")
+                        .body_def()
+                )
+                .is_ok()
         );
     }
 
@@ -1006,7 +738,7 @@ mod tests {
                     boxdd_sys::adapter::AdapterIdentityError::Unavailable,
                 ),
             ),
-            ApiError::SnapshotAbiMismatch
+            Error::SnapshotAbiMismatch
         );
         assert_eq!(
             map_snapshot_validation_error(
@@ -1016,48 +748,19 @@ mod tests {
                     ),
                 ),
             ),
-            ApiError::SnapshotAbiMismatch
+            Error::SnapshotAbiMismatch
         );
         assert_eq!(
             map_snapshot_validation_error(boxdd_sys::adapter::SnapshotValidationError::Status(
                 boxdd_sys::adapter::SNAPSHOT_ABI_MISMATCH,
             )),
-            ApiError::SnapshotAbiMismatch
+            Error::SnapshotAbiMismatch
         );
         assert_eq!(
             map_snapshot_validation_error(boxdd_sys::adapter::SnapshotValidationError::Status(
                 boxdd_sys::adapter::SNAPSHOT_BAD_HEADER,
             )),
-            ApiError::InvalidSnapshotImage
-        );
-    }
-
-    #[test]
-    fn effective_source_digest_mismatch_rejects_before_native_validation() {
-        let world = World::new(WorldDef::default()).unwrap();
-        let mut bytes = world.snapshot().image().as_bytes().to_vec();
-
-        reset_native_validation_calls();
-        SnapshotImage::from_bytes(&bytes).expect("the control image must reach native validation");
-        assert_eq!(
-            native_validation_calls(),
-            1,
-            "the native-validation counter must observe its control call"
-        );
-
-        bytes[IMAGE_EFFECTIVE_SOURCE_SHA256.start] ^= 1;
-        let checksum = image_checksum(&bytes);
-        bytes[IMAGE_CHECKSUM].copy_from_slice(&checksum);
-
-        reset_native_validation_calls();
-        assert!(matches!(
-            SnapshotImage::from_bytes(&bytes),
-            Err(ApiError::SnapshotAbiMismatch)
-        ));
-        assert_eq!(
-            native_validation_calls(),
-            0,
-            "effective-source mismatch must fail before native validation"
+            Error::InvalidNativeSnapshot
         );
     }
 
@@ -1067,30 +770,57 @@ mod tests {
             SNAPSHOT_ENTRY_BODY, SNAPSHOT_ENTRY_CHAIN, SNAPSHOT_ENTRY_JOINT, SNAPSHOT_ENTRY_SHAPE,
         };
 
-        let mut world = World::new(WorldDef::default()).unwrap();
-        let body_a = world.create_body_id(BodyDef::default());
-        let body_b = world.create_body_id(BodyDef::default());
-        world.create_circle_shape_for(
-            body_a,
-            &ShapeDef::default(),
-            &shapes::circle([0.0_f32, 0.0], 0.5),
-        );
-        world.create_distance_joint_id(
-            &DistanceJointDef::new(JointBase::new(body_a, body_b)).length(1.0),
-        );
-        world.create_chain_for_id(
-            body_a,
-            &shapes::chain::ChainDef::builder()
-                .points([
-                    Vec2::new(-2.0, 0.0),
-                    Vec2::new(-1.0, 0.0),
-                    Vec2::new(1.0, 0.0),
-                    Vec2::new(2.0, 0.0),
-                ])
-                .build(),
-        );
-        let snapshot = world.snapshot();
-        let entries = &snapshot.image.validation.entries;
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let body_a = world
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_def(),
+            )
+            .unwrap();
+        let body_b = world
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_def(),
+            )
+            .unwrap();
+        {
+            let mut body = world.body(body_a).unwrap();
+            body.create_circle(
+                &ShapeDef::default(),
+                &shapes::circle([0.0_f32, 0.0], 0.5).unwrap(),
+            )
+            .unwrap();
+            body.create_chain(
+                &shapes::chain::ChainDef::builder()
+                    .points([
+                        Vec2::new(-2.0, 0.0),
+                        Vec2::new(-1.0, 0.0),
+                        Vec2::new(1.0, 0.0),
+                        Vec2::new(2.0, 0.0),
+                    ])
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        }
+        world
+            .create_distance_joint(
+                &DistanceJointDef::new(world.joint_base(body_a, body_b).unwrap()).length(1.0),
+            )
+            .unwrap();
+        reset_native_validation_calls();
+        let snapshot = world.snapshot().unwrap();
+        assert_eq!(native_validation_calls(), 1);
+        let entries = &snapshot.validation.entries;
         assert!(
             snapshot
                 .identities
@@ -1106,7 +836,7 @@ mod tests {
         body.generation = body.generation.wrapping_add(1);
         assert_eq!(
             snapshot.identities.validate_snapshot_entries(&tampered),
-            Err(ApiError::SnapshotManifestMismatch)
+            Err(Error::SnapshotManifestMismatch)
         );
 
         let mut tampered = entries.clone();
@@ -1117,7 +847,7 @@ mod tests {
             .owner_b_order = i32::MAX;
         assert_eq!(
             snapshot.identities.validate_snapshot_entries(&tampered),
-            Err(ApiError::SnapshotManifestMismatch)
+            Err(Error::SnapshotManifestMismatch)
         );
 
         let mut tampered = entries.clone();
@@ -1128,7 +858,7 @@ mod tests {
             .owner_a = -1;
         assert_eq!(
             snapshot.identities.validate_snapshot_entries(&tampered),
-            Err(ApiError::SnapshotManifestMismatch)
+            Err(Error::SnapshotManifestMismatch)
         );
 
         let mut tampered = entries.clone();
@@ -1139,7 +869,7 @@ mod tests {
             .owner_b = -1;
         assert_eq!(
             snapshot.identities.validate_snapshot_entries(&tampered),
-            Err(ApiError::SnapshotManifestMismatch)
+            Err(Error::SnapshotManifestMismatch)
         );
 
         let mut tampered = entries.clone();
@@ -1150,7 +880,7 @@ mod tests {
             .subtype = u32::MAX;
         assert_eq!(
             snapshot.identities.validate_snapshot_entries(&tampered),
-            Err(ApiError::SnapshotManifestMismatch)
+            Err(Error::SnapshotManifestMismatch)
         );
 
         let mut tampered = entries.clone();
@@ -1161,51 +891,72 @@ mod tests {
             .owner_a = -1;
         assert_eq!(
             snapshot.identities.validate_snapshot_entries(&tampered),
-            Err(ApiError::SnapshotManifestMismatch)
+            Err(Error::SnapshotManifestMismatch)
         );
     }
 
     #[test]
     fn prepare_failure_preserves_the_live_world_without_native_restore() {
-        let mut world = World::new(WorldDef::default()).unwrap();
-        let body = world.create_body_id(BodyDef::default());
-        let handle = world.handle();
-        let snapshot = world.snapshot();
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let body = world
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_def(),
+            )
+            .unwrap();
+        let snapshot = world.snapshot().unwrap();
         reset_native_calls();
         set_failpoint(Some(RestoreFailpoint::Prepare));
 
         assert_eq!(
-            world.try_restore(&snapshot).unwrap_err(),
-            ApiError::SnapshotManifestMismatch
+            world.restore(&snapshot).unwrap_err(),
+            Error::SnapshotManifestMismatch
         );
 
         set_failpoint(None);
         assert_eq!(native_calls(), 0);
-        assert!(handle.try_body_position(body).is_ok());
+        assert!(world.body(body).and_then(|body| body.position()).is_ok());
         assert_eq!(world.core().lifecycle(), LifecycleState::Live);
         assert_eq!(world.core().activity(), ActivityState::Idle);
     }
 
     #[test]
     fn native_failure_terminalizes_after_exactly_one_restore_call() {
-        let mut world = World::new(WorldDef::default()).unwrap();
-        let body = world.create_body_id(BodyDef::default());
-        let handle = world.handle();
-        let snapshot = world.snapshot();
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let body = world
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_def(),
+            )
+            .unwrap();
+        let snapshot = world.snapshot().unwrap();
         reset_native_calls();
         set_failpoint(Some(RestoreFailpoint::Native));
 
         assert_eq!(
-            world.try_restore(&snapshot).unwrap_err(),
-            ApiError::SnapshotNativeFailed
+            world.restore(&snapshot).unwrap_err(),
+            Error::SnapshotNativeFailed
         );
 
         set_failpoint(None);
         assert_eq!(native_calls(), 1);
-        assert_eq!(
-            handle.try_body_position(body).unwrap_err(),
-            ApiError::WorldDestroyed
-        );
+        assert!(matches!(world.body(body), Err(Error::WorldDestroyed)));
         assert_eq!(world.core().lifecycle(), LifecycleState::Destroyed);
     }
 
@@ -1217,26 +968,68 @@ mod tests {
             RestoreFailpoint::AfterUserDataCommit,
             RestoreFailpoint::AfterContactEpochCommit,
         ] {
-            let mut world = World::new(WorldDef::default()).unwrap();
-            let body = world.create_body_id(BodyDef::default());
-            let handle = world.handle();
-            let snapshot = world.snapshot();
+            let mut world = crate::Foundation::initialize_default()
+                .unwrap()
+                .create_world(
+                    crate::Foundation::get()
+                        .expect("Foundation must be initialized before constructing a WorldDef")
+                        .world_def(),
+                )
+                .unwrap();
+            let body = world
+                .create_body(
+                    crate::Foundation::get()
+                        .expect("Foundation must be initialized before constructing a BodyDef")
+                        .body_def(),
+                )
+                .unwrap();
+            let snapshot = world.snapshot().unwrap();
             reset_native_calls();
             set_failpoint(Some(point));
 
             assert_eq!(
-                world.try_restore(&snapshot).unwrap_err(),
-                ApiError::SnapshotManifestMismatch
+                world.restore(&snapshot).unwrap_err(),
+                Error::SnapshotManifestMismatch
             );
 
             set_failpoint(None);
             assert_eq!(native_calls(), 1);
-            assert_eq!(
-                handle.try_body_position(body).unwrap_err(),
-                ApiError::WorldDestroyed
-            );
+            assert!(matches!(world.body(body), Err(Error::WorldDestroyed)));
             assert_eq!(world.core().lifecycle(), LifecycleState::Destroyed);
         }
+    }
+
+    #[test]
+    fn fallible_host_commit_error_terminalizes_after_native_restore() {
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let body = world
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_def(),
+            )
+            .unwrap();
+        let snapshot = world.snapshot().unwrap();
+        reset_native_calls();
+
+        let prepared = world.prepare_restore(&snapshot).unwrap();
+        assert_eq!(
+            prepared
+                .commit_with(|_| Err(Error::SnapshotManifestMismatch))
+                .unwrap_err(),
+            Error::SnapshotManifestMismatch
+        );
+
+        assert_eq!(native_calls(), 1);
+        assert!(matches!(world.body(body), Err(Error::WorldDestroyed)));
+        assert_eq!(world.core().lifecycle(), LifecycleState::Destroyed);
     }
 
     #[test]
@@ -1247,21 +1040,33 @@ mod tests {
             RestoreFailpoint::UserDataAllocation,
             RestoreFailpoint::ContactEpochAllocation,
         ] {
-            let mut world = World::new(WorldDef::default()).unwrap();
-            let body = world.create_body_id(BodyDef::default());
-            let handle = world.handle();
-            let snapshot = world.snapshot();
+            let mut world = crate::Foundation::initialize_default()
+                .unwrap()
+                .create_world(
+                    crate::Foundation::get()
+                        .expect("Foundation must be initialized before constructing a WorldDef")
+                        .world_def(),
+                )
+                .unwrap();
+            let body = world
+                .create_body(
+                    crate::Foundation::get()
+                        .expect("Foundation must be initialized before constructing a BodyDef")
+                        .body_def(),
+                )
+                .unwrap();
+            let snapshot = world.snapshot().unwrap();
             reset_native_calls();
             set_failpoint(Some(point));
 
             assert_eq!(
-                world.try_restore(&snapshot).unwrap_err(),
-                ApiError::SnapshotAllocationFailed
+                world.restore(&snapshot).unwrap_err(),
+                Error::SnapshotAllocationFailed
             );
 
             set_failpoint(None);
             assert_eq!(native_calls(), 0);
-            assert!(handle.try_body_position(body).is_ok());
+            assert!(world.body(body).and_then(|body| body.position()).is_ok());
             assert_eq!(world.core().lifecycle(), LifecycleState::Live);
             assert_eq!(world.core().activity(), ActivityState::Idle);
         }
@@ -1277,22 +1082,116 @@ mod tests {
             }
         }
 
-        let mut world = World::new(WorldDef::default()).unwrap();
-        let body = world.create_body_id(BodyDef::default());
-        let handle = world.handle();
-        let snapshot = world.snapshot();
-        world.body(body).unwrap().set_user_data(PanicOnDrop);
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let body = world
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_def(),
+            )
+            .unwrap();
+        let snapshot = world.snapshot().unwrap();
+        world
+            .body(body)
+            .unwrap()
+            .set_user_data(PanicOnDrop)
+            .unwrap();
         reset_native_calls();
 
-        let panic = catch_unwind(AssertUnwindSafe(|| world.try_restore(&snapshot)));
+        let panic = catch_unwind(AssertUnwindSafe(|| world.restore(&snapshot)));
 
         assert!(panic.is_err());
         assert_eq!(native_calls(), 1);
-        assert_eq!(
-            handle.try_body_position(body).unwrap_err(),
-            ApiError::WorldDestroyed
-        );
+        assert!(matches!(world.body(body), Err(Error::WorldDestroyed)));
         assert_eq!(world.core().lifecycle(), LifecycleState::Destroyed);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn multiple_retired_user_data_panics_after_native_commit_do_not_abort() {
+        const CHILD: &str = "BOXDD_SNAPSHOT_MULTI_RETIRED_PANIC";
+        const TEST_NAME: &str =
+            "snapshot::tests::multiple_retired_user_data_panics_after_native_commit_do_not_abort";
+
+        struct PanicOnDrop(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+        impl Drop for PanicOnDrop {
+            fn drop(&mut self) {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                panic!("intentional retired user-data panic");
+            }
+        }
+
+        if std::env::var_os(CHILD).is_some() {
+            let dropped = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let mut world = crate::Foundation::initialize_default()
+                .unwrap()
+                .create_world(
+                    crate::Foundation::get()
+                        .expect("Foundation must be initialized before constructing a WorldDef")
+                        .world_def(),
+                )
+                .unwrap();
+            let body_a = world
+                .create_body(
+                    crate::Foundation::get()
+                        .expect("Foundation must be initialized before constructing a BodyDef")
+                        .body_def(),
+                )
+                .unwrap();
+            let body_b = world
+                .create_body(
+                    crate::Foundation::get()
+                        .expect("Foundation must be initialized before constructing a BodyDef")
+                        .body_def(),
+                )
+                .unwrap();
+            let snapshot = world.snapshot().unwrap();
+            world
+                .body(body_a)
+                .unwrap()
+                .set_user_data(PanicOnDrop(std::sync::Arc::clone(&dropped)))
+                .unwrap();
+            world
+                .body(body_b)
+                .unwrap()
+                .set_user_data(PanicOnDrop(std::sync::Arc::clone(&dropped)))
+                .unwrap();
+            set_failpoint(Some(RestoreFailpoint::AfterUserDataCommit));
+
+            let panic = catch_unwind(AssertUnwindSafe(|| world.restore(&snapshot)));
+
+            assert!(panic.is_err());
+            assert_eq!(dropped.load(std::sync::atomic::Ordering::SeqCst), 2);
+            assert_eq!(world.core().lifecycle(), LifecycleState::Destroyed);
+            eprintln!("boxdd-snapshot-multi-retired-panic: completed");
+            return;
+        }
+
+        let output = std::process::Command::new(
+            std::env::current_exe().expect("test executable path must be available"),
+        )
+        .args(["--exact", TEST_NAME, "--nocapture"])
+        .env(CHILD, "1")
+        .output()
+        .expect("snapshot multi-panic child process must start");
+        assert!(
+            output.status.success(),
+            "snapshot multi-panic child aborted\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains("boxdd-snapshot-multi-retired-panic: completed")
+        );
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1311,32 +1210,29 @@ mod tests {
             }
         }
 
-        struct InvokeOnDrop(Option<Box<dyn FnOnce()>>);
-
-        impl Drop for InvokeOnDrop {
-            fn drop(&mut self) {
-                if let Some(invoke) = self.0.take() {
-                    invoke();
-                }
-            }
-        }
-
         if std::env::var_os(CHILD).is_some() {
+            let restore_result = std::rc::Rc::new(core::cell::Cell::new(None));
+            let restore_result_from_drop = std::rc::Rc::clone(&restore_result);
             let result = catch_unwind(AssertUnwindSafe(|| {
-                let mut world = World::new(WorldDef::default()).unwrap();
-                let snapshot = world.snapshot();
-                world.set_user_data(PanicOnDrop);
+                let mut world = crate::Foundation::initialize_default()
+                    .unwrap()
+                    .create_world(
+                        crate::Foundation::get()
+                            .expect("Foundation must be initialized before constructing a WorldDef")
+                            .world_def(),
+                    )
+                    .unwrap();
+                let snapshot = world.snapshot().unwrap();
+                world.set_user_data(PanicOnDrop).unwrap();
                 set_failpoint(Some(RestoreFailpoint::Native));
-                let _restore = InvokeOnDrop(Some(Box::new(move || {
-                    assert!(matches!(
-                        world.try_restore(&snapshot),
-                        Err(ApiError::SnapshotNativeFailed)
-                    ));
-                })));
+                let _restore = InvokeOnDrop(Some(move || {
+                    restore_result_from_drop.set(Some(world.restore(&snapshot).map(|_| ())));
+                }));
                 std::panic::panic_any(PRIMARY_PANIC);
             }));
             let payload = result.expect_err("the outer panic must keep unwinding");
             assert_eq!(payload.downcast_ref::<&'static str>(), Some(&PRIMARY_PANIC));
+            assert_eq!(restore_result.get(), Some(Err(Error::SnapshotNativeFailed)));
             eprintln!("boxdd-outer-unwind-snapshot-shutdown: completed");
             return;
         }
@@ -1358,6 +1254,147 @@ mod tests {
             String::from_utf8_lossy(&output.stderr)
                 .contains("boxdd-outer-unwind-snapshot-shutdown: completed"),
             "outer-unwind snapshot shutdown child did not complete\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn host_commit_panic_during_outer_unwind_returns_typed_fallback_without_abort() {
+        const CHILD: &str = "BOXDD_OUTER_UNWIND_SNAPSHOT_HOST_COMMIT";
+        const TEST_NAME: &str = "snapshot::tests::host_commit_panic_during_outer_unwind_returns_typed_fallback_without_abort";
+        const PRIMARY_PANIC: &str = "outer snapshot host-commit unwind remains primary";
+
+        if std::env::var_os(CHILD).is_some() {
+            let restore_result = std::rc::Rc::new(core::cell::Cell::new(None));
+            let restore_result_from_drop = std::rc::Rc::clone(&restore_result);
+            let result = catch_unwind(AssertUnwindSafe(|| {
+                let mut world = crate::Foundation::initialize_default()
+                    .unwrap()
+                    .create_world(
+                        crate::Foundation::get()
+                            .expect("Foundation must be initialized before constructing a WorldDef")
+                            .world_def(),
+                    )
+                    .unwrap();
+                let snapshot = world.snapshot().unwrap();
+                let _restore = InvokeOnDrop(Some(move || {
+                    let prepared = world.prepare_restore(&snapshot).unwrap();
+                    restore_result_from_drop.set(Some(
+                        prepared
+                            .commit_with(|_| -> Result<()> {
+                                panic!("secondary snapshot host-commit panic")
+                            })
+                            .map(|_| ()),
+                    ));
+                }));
+                std::panic::panic_any(PRIMARY_PANIC);
+            }));
+            let payload = result.expect_err("the outer panic must keep unwinding");
+            assert_eq!(payload.downcast_ref::<&'static str>(), Some(&PRIMARY_PANIC));
+            assert_eq!(
+                restore_result.get(),
+                Some(Err(Error::SnapshotCommitPanicked))
+            );
+            eprintln!("boxdd-outer-unwind-snapshot-host-commit: completed");
+            return;
+        }
+
+        let output = std::process::Command::new(
+            std::env::current_exe().expect("test executable path must be available"),
+        )
+        .args(["--exact", TEST_NAME, "--nocapture"])
+        .env(CHILD, "1")
+        .output()
+        .expect("outer-unwind snapshot host-commit child process must start");
+        assert!(
+            output.status.success(),
+            "outer-unwind snapshot host-commit child aborted\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains("boxdd-outer-unwind-snapshot-host-commit: completed"),
+            "outer-unwind snapshot host-commit child did not complete\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn rejected_host_commit_cleanup_during_outer_unwind_does_not_abort() {
+        const CHILD: &str = "BOXDD_OUTER_UNWIND_REJECTED_SNAPSHOT_HOST_COMMIT";
+        const TEST_NAME: &str =
+            "snapshot::tests::rejected_host_commit_cleanup_during_outer_unwind_does_not_abort";
+        const PRIMARY_PANIC: &str = "outer rejected snapshot host-commit unwind remains primary";
+
+        struct PanicOnDrop(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+        impl Drop for PanicOnDrop {
+            fn drop(&mut self) {
+                if self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                    panic!("secondary rejected snapshot host-commit cleanup panic");
+                }
+            }
+        }
+
+        if std::env::var_os(CHILD).is_some() {
+            let dropped = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let rejected = std::rc::Rc::new(core::cell::Cell::new(false));
+            let rejected_from_drop = std::rc::Rc::clone(&rejected);
+            let dropped_from_drop = std::sync::Arc::clone(&dropped);
+            let result = catch_unwind(AssertUnwindSafe(|| {
+                let mut world = crate::Foundation::initialize_default()
+                    .unwrap()
+                    .create_world(
+                        crate::Foundation::get()
+                            .expect("Foundation must be initialized before constructing a WorldDef")
+                            .world_def(),
+                    )
+                    .unwrap();
+                let snapshot = world.snapshot().unwrap();
+                let prepared = world.prepare_restore(&snapshot).unwrap();
+                let _restore = InvokeOnDrop(Some(move || {
+                    let _callback = crate::core::callback_state::CallbackGuard::enter();
+                    let marker = PanicOnDrop(dropped_from_drop);
+                    rejected_from_drop.set(matches!(
+                        prepared.commit_with(move |_| {
+                            let _ = &marker;
+                            Ok(())
+                        }),
+                        Err(Error::InCallback)
+                    ));
+                }));
+                std::panic::panic_any(PRIMARY_PANIC);
+            }));
+            let payload = result.expect_err("the outer panic must keep unwinding");
+            assert_eq!(payload.downcast_ref::<&'static str>(), Some(&PRIMARY_PANIC));
+            assert!(rejected.get());
+            assert_eq!(dropped.load(std::sync::atomic::Ordering::SeqCst), 1);
+            eprintln!("boxdd-outer-unwind-rejected-snapshot-host-commit: completed");
+            return;
+        }
+
+        let output = std::process::Command::new(
+            std::env::current_exe().expect("test executable path must be available"),
+        )
+        .args(["--exact", TEST_NAME, "--nocapture"])
+        .env(CHILD, "1")
+        .output()
+        .expect("outer-unwind rejected snapshot host-commit child process must start");
+        assert!(
+            output.status.success(),
+            "outer-unwind rejected snapshot host-commit child aborted\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains("boxdd-outer-unwind-rejected-snapshot-host-commit: completed"),
+            "outer-unwind rejected snapshot host-commit child did not complete\nstdout:\n{}\nstderr:\n{}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr),
         );

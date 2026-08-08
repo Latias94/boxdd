@@ -1,7 +1,7 @@
 use boxdd::{
     HASH_INIT, Plane, Rot, Transform, Vec2, allocated_byte_count, atan2, compute_cos_sin,
     hash_bytes, is_valid_float, milliseconds_and_reset, milliseconds_since,
-    rotation_between_unit_vectors, ticks, try_rotation_between_unit_vectors, version, yield_now,
+    rotation_between_unit_vectors, ticks, version, yield_now,
 };
 use boxdd_sys::ffi;
 
@@ -9,18 +9,24 @@ fn approx(a: f32, b: f32, tol: f32) -> bool {
     (a - b).abs() <= tol
 }
 
+fn initialize_foundation() {
+    boxdd::Foundation::initialize_default().expect("default foundation should initialize");
+}
+
 #[test]
 fn math_core_functions() {
+    initialize_foundation();
+
     // Test deterministic cosine/sine and atan2 helpers against std.
     let atan_tol = 0.00004_f32; // ~0.0023 degrees
     for t in (-100..100).map(|i| i as f32 * 0.1) {
         let angle = core::f32::consts::PI * t;
-        let cs = compute_cos_sin(angle);
+        let cs = compute_cos_sin(angle).unwrap();
         let (s, c) = angle.sin_cos();
         assert!(approx(cs.sine(), s, 0.002));
         assert!(approx(cs.cosine(), c, 0.002));
 
-        let a = atan2(s, c);
+        let a = atan2(s, c).unwrap();
         assert!(a.is_finite());
         let xn = (angle.sin()).atan2(angle.cos());
         let mut diff = (a - xn).abs();
@@ -35,7 +41,7 @@ fn math_core_functions() {
     while y <= 1.0 {
         let mut x = -1.0_f32;
         while x <= 1.0 {
-            let a1 = atan2(y, x);
+            let a1 = atan2(y, x).unwrap();
             let a2 = y.atan2(x);
             assert!(a1.is_finite());
             assert!((a1 - a2).abs() <= atan_tol);
@@ -45,8 +51,8 @@ fn math_core_functions() {
     }
 
     // Transform composition and inverse.
-    let t1 = Transform::from_pos_angle([-2.0, 3.0], 1.0);
-    let t2 = Transform::from_pos_angle([1.0, 0.0], -2.0);
+    let t1 = Transform::from_pos_angle([-2.0, 3.0], 1.0).unwrap();
+    let t2 = Transform::from_pos_angle([1.0, 0.0], -2.0).unwrap();
     let r1 = t1.rotation();
     let p1 = t1.position();
     let r2 = t2.rotation();
@@ -55,7 +61,7 @@ fn math_core_functions() {
         let rotated = r2.rotate_vec(p1);
         Vec2::new(rotated.x + p2.x, rotated.y + p2.y)
     };
-    let composed_r = Rot::from_radians(r2.angle() + r1.angle());
+    let composed_r = Rot::from_radians(r2.angle() + r1.angle()).unwrap();
 
     let two = Vec2 { x: 2.0, y: 2.0 };
     let v1 = t1.transform_point(two);
@@ -75,32 +81,38 @@ fn math_core_functions() {
 
 #[test]
 fn public_math_helpers_cover_validity_rotation_and_version() {
+    initialize_foundation();
+
     assert!(Vec2::new(1.0, 2.0).is_valid());
     assert!(!Vec2::new(f32::NAN, 2.0).is_valid());
 
-    let rot = compute_cos_sin(core::f32::consts::FRAC_PI_2);
+    let rot = compute_cos_sin(core::f32::consts::FRAC_PI_2).unwrap();
     assert!(rot.is_valid());
     assert!(approx(rot.rotate_vec(Vec2::new(1.0, 0.0)).x, 0.0, 0.002));
     assert!(approx(rot.rotate_vec(Vec2::new(1.0, 0.0)).y, 1.0, 0.002));
 
-    let between = rotation_between_unit_vectors([1.0, 0.0], [0.0, 1.0]);
+    let between = rotation_between_unit_vectors([1.0, 0.0], [0.0, 1.0]).unwrap();
     assert!(between.is_valid());
     let turned = between.rotate_vec(Vec2::new(1.0, 0.0));
     assert!(approx(turned.x, 0.0, 1e-5));
     assert!(approx(turned.y, 1.0, 1e-5));
 
-    let by_method = Rot::from_unit_vectors([0.0, 1.0], [-1.0, 0.0]);
+    let by_method = Rot::from_unit_vectors([0.0, 1.0], [-1.0, 0.0]).unwrap();
     let turned = by_method.rotate_vec(Vec2::new(0.0, 1.0));
     assert!(approx(turned.x, -1.0, 1e-5));
     assert!(approx(turned.y, 0.0, 1e-5));
 
-    assert!(Transform::from_pos_angle([0.0, 0.0], 0.25).is_valid());
-    assert!(!Transform::from_pos_angle([f32::NAN, 0.0], 0.25).is_valid());
+    assert!(
+        Transform::from_pos_angle([0.0, 0.0], 0.25)
+            .unwrap()
+            .is_valid()
+    );
+    assert!(Transform::from_pos_angle([f32::NAN, 0.0], 0.25).is_err());
 
-    assert!(Plane::new([0.0, 1.0], 0.5).is_valid());
-    assert!(!Plane::new([0.0, 2.0], 0.5).is_valid());
+    assert!(Plane::new([0.0, 1.0], 0.5).unwrap().is_valid());
+    assert!(Plane::new([0.0, 2.0], 0.5).is_err());
 
-    let v = version();
+    let v = version().unwrap();
     assert!(v.major >= 3);
 }
 
@@ -112,20 +124,23 @@ fn rotation_between_vectors_rejects_native_assert_inputs_in_rust() {
         Vec2::new(f32::NAN, 0.0),
         Vec2::new(f32::INFINITY, 0.0),
     ] {
-        assert!(matches!(
-            try_rotation_between_unit_vectors(invalid, Vec2::new(1.0, 0.0)),
-            Err(boxdd::ApiError::InvalidArgument)
-        ));
-        assert!(matches!(
-            Rot::try_from_unit_vectors(Vec2::new(1.0, 0.0), invalid),
-            Err(boxdd::ApiError::InvalidArgument)
-        ));
+        assert_eq!(
+            rotation_between_unit_vectors(invalid, Vec2::new(1.0, 0.0)).unwrap_err(),
+            boxdd::Error::invalid_argument(
+                "rotation_between_unit_vectors",
+                "v1",
+                "a finite unit vector within Box2D's length tolerance",
+            )
+        );
+        assert_eq!(
+            Rot::from_unit_vectors(Vec2::new(1.0, 0.0), invalid).unwrap_err(),
+            boxdd::Error::invalid_argument(
+                "rotation_between_unit_vectors",
+                "v2",
+                "a finite unit vector within Box2D's length tolerance",
+            )
+        );
     }
-
-    let panic = std::panic::catch_unwind(|| {
-        rotation_between_unit_vectors(Vec2::new(2.0, 0.0), Vec2::new(1.0, 0.0));
-    });
-    assert!(panic.is_err());
 }
 
 #[test]
@@ -136,17 +151,18 @@ fn core_math_types_use_explicit_raw_conversions() {
     assert_eq!(raw_vec.x, 1.25);
     assert_eq!(raw_vec.y, -2.5);
 
-    let rot = Rot::from_raw(ffi::b2Rot { c: 0.5, s: 0.75 });
-    assert!(approx(rot.cosine(), 0.5, 1e-6));
-    assert!(approx(rot.sine(), 0.75, 1e-6));
+    let rot = Rot::from_raw(ffi::b2Rot { c: 0.6, s: 0.8 }).unwrap();
+    assert!(approx(rot.cosine(), 0.6, 1e-6));
+    assert!(approx(rot.sine(), 0.8, 1e-6));
     let raw_rot = rot.into_raw();
-    assert!(approx(raw_rot.c, 0.5, 1e-6));
-    assert!(approx(raw_rot.s, 0.75, 1e-6));
+    assert!(approx(raw_rot.c, 0.6, 1e-6));
+    assert!(approx(raw_rot.s, 0.8, 1e-6));
 
     let transform = Transform::from_raw(ffi::b2Transform {
         p: ffi::b2Vec2 { x: -3.0, y: 4.5 },
         q: ffi::b2Rot { c: 0.0, s: 1.0 },
-    });
+    })
+    .unwrap();
     assert_eq!(transform.position(), Vec2::new(-3.0, 4.5));
     assert!(approx(transform.rotation().cosine(), 0.0, 1e-6));
     assert!(approx(transform.rotation().sine(), 1.0, 1e-6));
@@ -159,29 +175,32 @@ fn core_math_types_use_explicit_raw_conversions() {
 
 #[test]
 fn foundation_helpers_cover_alloc_timing_and_hash() {
+    initialize_foundation();
+
     assert!(is_valid_float(1.0));
     assert!(!is_valid_float(f32::NAN));
 
-    let bytes: i64 = allocated_byte_count();
+    let bytes: i64 = allocated_byte_count().unwrap();
     assert!(bytes >= 0);
 
-    let mut start = ticks();
-    yield_now();
-    let elapsed = milliseconds_since(start);
+    let mut start = ticks().unwrap();
+    yield_now().unwrap();
+    let elapsed = milliseconds_since(start).unwrap();
     assert!(elapsed.is_finite());
     assert!(elapsed >= 0.0);
 
-    let reset_elapsed = milliseconds_and_reset(&mut start);
+    let reset_elapsed = milliseconds_and_reset(&mut start).unwrap();
     assert!(reset_elapsed.is_finite());
     assert!(reset_elapsed >= 0.0);
 
-    let after_reset = milliseconds_since(start);
+    let after_reset = milliseconds_since(start).unwrap();
     assert!(after_reset.is_finite());
     assert!(after_reset >= 0.0);
 
-    assert_eq!(hash_bytes(HASH_INIT, b""), HASH_INIT);
+    assert_eq!(hash_bytes(HASH_INIT, b"").unwrap(), HASH_INIT);
+    let box_hash = hash_bytes(HASH_INIT, b"box").unwrap();
     assert_eq!(
-        hash_bytes(hash_bytes(HASH_INIT, b"box"), b"dd"),
-        hash_bytes(HASH_INIT, b"boxdd")
+        hash_bytes(box_hash, b"dd").unwrap(),
+        hash_bytes(HASH_INIT, b"boxdd").unwrap()
     );
 }

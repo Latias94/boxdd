@@ -1,6 +1,6 @@
-schema_version = 4
+schema_version = 5
 upstream_sha = "56edae79f2949d86142b03450d5d60f63bcf5a6f"
-reviewed_sources_aggregate_blake3 = "1c457b180dbafa91c3ad3448f38a7ac34d20c9f42c7c23f9de0efb6454be3d16"
+reviewed_sources_aggregate_blake3 = "3ed809d9a484bef48604216b873aeadad109c3955d705b55d334ccec2dbbd310"
 argument_tags = [
     "AABB",
     "BODYDEF",
@@ -1381,24 +1381,17 @@ opcode = 1
 name = "DestroyWorld"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "terminal"
 
 [[opcodes.arguments]]
 tag = "WORLDID"
 name = "world"
 
-[[opcodes.id_effects]]
-action = "destroy"
-id_kind = "world"
-source = "argument:world"
-
 [[opcodes]]
 opcode = 128
 name = "Step"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "step"
 
 [[opcodes.arguments]]
@@ -1413,17 +1406,11 @@ name = "dt"
 tag = "I32"
 name = "subStepCount"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
 [[opcodes]]
 opcode = 2
 name = "WorldEnableSleeping"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -1433,18 +1420,12 @@ name = "world"
 [[opcodes.arguments]]
 tag = "BOOL"
 name = "flag"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
 
 [[opcodes]]
 opcode = 3
 name = "WorldEnableContinuous"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -1455,17 +1436,11 @@ name = "world"
 tag = "BOOL"
 name = "flag"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
 [[opcodes]]
 opcode = 4
 name = "WorldSetRestitutionThreshold"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -1475,18 +1450,12 @@ name = "world"
 [[opcodes.arguments]]
 tag = "F32"
 name = "value"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
 
 [[opcodes]]
 opcode = 5
 name = "WorldSetHitEventThreshold"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -1497,17 +1466,11 @@ name = "world"
 tag = "F32"
 name = "value"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
 [[opcodes]]
 opcode = 6
 name = "WorldSetGravity"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -1518,17 +1481,11 @@ name = "world"
 tag = "VEC2"
 name = "gravity"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
 [[opcodes]]
 opcode = 7
 name = "WorldExplode"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -1539,17 +1496,11 @@ name = "world"
 tag = "EXPLOSIONDEF"
 name = "def"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
 [[opcodes]]
 opcode = 8
 name = "WorldSetContactTuning"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -1568,17 +1519,11 @@ name = "dampingRatio"
 tag = "F32"
 name = "pushSpeed"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
 [[opcodes]]
 opcode = 9
 name = "WorldSetContactRecycleDistance"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -1589,17 +1534,11 @@ name = "world"
 tag = "F32"
 name = "recycleDistance"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
 [[opcodes]]
 opcode = 10
 name = "WorldSetMaximumLinearSpeed"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -1610,17 +1549,11 @@ name = "world"
 tag = "F32"
 name = "maximumLinearSpeed"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
 [[opcodes]]
 opcode = 11
 name = "WorldEnableWarmStarting"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -1630,35 +1563,23 @@ name = "world"
 [[opcodes.arguments]]
 tag = "BOOL"
 name = "flag"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
 
 [[opcodes]]
 opcode = 12
 name = "WorldRebuildStaticTree"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
 tag = "WORLDID"
 name = "world"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
 [[opcodes]]
 opcode = 13
 name = "WorldEnableSpeculative"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -1669,17 +1590,11 @@ name = "world"
 tag = "BOOL"
 name = "flag"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
 [[opcodes]]
 opcode = 16
 name = "CreateBody"
 return_tag = "RET_BODYID"
 tail_program = "returned-id"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -1690,39 +1605,22 @@ name = "world"
 tag = "BODYDEF"
 name = "def"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
-[[opcodes.id_effects]]
-action = "create"
-id_kind = "body"
-source = "tail:returned-id"
-
 [[opcodes]]
 opcode = 17
 name = "DestroyBody"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
 tag = "BODYID"
 name = "body"
 
-[[opcodes.id_effects]]
-action = "destroy"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 32
 name = "BodySetTransform"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -1737,17 +1635,11 @@ name = "position"
 tag = "ROT"
 name = "rotation"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 33
 name = "BodySetLinearVelocity"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -1758,17 +1650,11 @@ name = "body"
 tag = "VEC2"
 name = "v"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 34
 name = "BodySetType"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -1779,17 +1665,11 @@ name = "body"
 tag = "I32"
 name = "type"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 35
 name = "BodySetName"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -1800,17 +1680,11 @@ name = "body"
 tag = "STR"
 name = "name"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 36
 name = "BodySetAngularVelocity"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -1821,17 +1695,11 @@ name = "body"
 tag = "F32"
 name = "w"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 37
 name = "BodySetTargetTransform"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -1850,17 +1718,11 @@ name = "timeStep"
 tag = "BOOL"
 name = "wake"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 38
 name = "BodyApplyForce"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -1879,17 +1741,11 @@ name = "point"
 tag = "BOOL"
 name = "wake"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 39
 name = "BodyApplyForceToCenter"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -1904,17 +1760,11 @@ name = "force"
 tag = "BOOL"
 name = "wake"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 40
 name = "BodyApplyTorque"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -1929,34 +1779,22 @@ name = "torque"
 tag = "BOOL"
 name = "wake"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 41
 name = "BodyClearForces"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
 tag = "BODYID"
 name = "body"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 42
 name = "BodyApplyLinearImpulse"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -1975,17 +1813,11 @@ name = "point"
 tag = "BOOL"
 name = "wake"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 43
 name = "BodyApplyLinearImpulseToCenter"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2000,17 +1832,11 @@ name = "impulse"
 tag = "BOOL"
 name = "wake"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 44
 name = "BodyApplyAngularImpulse"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2025,17 +1851,11 @@ name = "impulse"
 tag = "BOOL"
 name = "wake"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 45
 name = "BodySetMassData"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2046,34 +1866,22 @@ name = "body"
 tag = "MASSDATA"
 name = "massData"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 46
 name = "BodyApplyMassFromShapes"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
 tag = "BODYID"
 name = "body"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
 
 [[opcodes]]
 opcode = 47
 name = "BodySetLinearDamping"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2083,18 +1891,12 @@ name = "body"
 [[opcodes.arguments]]
 tag = "F32"
 name = "damping"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
 
 [[opcodes]]
 opcode = 48
 name = "BodySetAngularDamping"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2105,17 +1907,11 @@ name = "body"
 tag = "F32"
 name = "damping"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 49
 name = "BodySetGravityScale"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2126,17 +1922,11 @@ name = "body"
 tag = "F32"
 name = "scale"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 50
 name = "BodySetAwake"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2147,34 +1937,22 @@ name = "body"
 tag = "BOOL"
 name = "awake"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 51
 name = "BodyWakeTouching"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
 tag = "BODYID"
 name = "body"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 52
 name = "BodyEnableSleep"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2185,17 +1963,11 @@ name = "body"
 tag = "BOOL"
 name = "flag"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 53
 name = "BodySetSleepThreshold"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2206,51 +1978,33 @@ name = "body"
 tag = "F32"
 name = "threshold"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 54
 name = "BodyDisable"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
 tag = "BODYID"
 name = "body"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
 
 [[opcodes]]
 opcode = 55
 name = "BodyEnable"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
 tag = "BODYID"
 name = "body"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 56
 name = "BodySetMotionLocks"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2261,17 +2015,11 @@ name = "body"
 tag = "LOCKS"
 name = "locks"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 57
 name = "BodySetBullet"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2281,18 +2029,12 @@ name = "body"
 [[opcodes.arguments]]
 tag = "BOOL"
 name = "flag"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
 
 [[opcodes]]
 opcode = 58
 name = "BodyEnableContactRecycling"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2302,18 +2044,12 @@ name = "body"
 [[opcodes.arguments]]
 tag = "BOOL"
 name = "flag"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
 
 [[opcodes]]
 opcode = 59
 name = "BodyEnableContactEvents"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2323,18 +2059,12 @@ name = "body"
 [[opcodes.arguments]]
 tag = "BOOL"
 name = "flag"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
 
 [[opcodes]]
 opcode = 60
 name = "BodyEnableHitEvents"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2345,17 +2075,11 @@ name = "body"
 tag = "BOOL"
 name = "flag"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
 [[opcodes]]
 opcode = 64
 name = "CreateCircleShape"
 return_tag = "RET_SHAPEID"
 tail_program = "returned-id"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2370,22 +2094,11 @@ name = "def"
 tag = "CIRCLE"
 name = "circle"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
-[[opcodes.id_effects]]
-action = "create"
-id_kind = "shape"
-source = "tail:returned-id"
-
 [[opcodes]]
 opcode = 65
 name = "CreateCapsuleShape"
 return_tag = "RET_SHAPEID"
 tail_program = "returned-id"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2400,22 +2113,11 @@ name = "def"
 tag = "CAPSULE"
 name = "capsule"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
-[[opcodes.id_effects]]
-action = "create"
-id_kind = "shape"
-source = "tail:returned-id"
-
 [[opcodes]]
 opcode = 66
 name = "CreateSegmentShape"
 return_tag = "RET_SHAPEID"
 tail_program = "returned-id"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2430,22 +2132,11 @@ name = "def"
 tag = "SEGMENT"
 name = "segment"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
-[[opcodes.id_effects]]
-action = "create"
-id_kind = "shape"
-source = "tail:returned-id"
-
 [[opcodes]]
 opcode = 67
 name = "CreatePolygonShape"
 return_tag = "RET_SHAPEID"
 tail_program = "returned-id"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2460,22 +2151,11 @@ name = "def"
 tag = "POLYGON"
 name = "polygon"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
-[[opcodes.id_effects]]
-action = "create"
-id_kind = "shape"
-source = "tail:returned-id"
-
 [[opcodes]]
 opcode = 68
 name = "CreateChainSegmentShape"
 return_tag = "RET_SHAPEID"
 tail_program = "returned-id"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2490,22 +2170,11 @@ name = "def"
 tag = "CHAINSEG"
 name = "chainSegment"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
-[[opcodes.id_effects]]
-action = "create"
-id_kind = "shape"
-source = "tail:returned-id"
-
 [[opcodes]]
 opcode = 69
 name = "DestroyShape"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2516,17 +2185,11 @@ name = "shape"
 tag = "BOOL"
 name = "updateBodyMass"
 
-[[opcodes.id_effects]]
-action = "destroy"
-id_kind = "shape"
-source = "argument:shape"
-
 [[opcodes]]
 opcode = 80
 name = "ShapeSetDensity"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2541,17 +2204,11 @@ name = "density"
 tag = "BOOL"
 name = "updateBodyMass"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "argument:shape"
-
 [[opcodes]]
 opcode = 81
 name = "ShapeSetFriction"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2562,17 +2219,11 @@ name = "shape"
 tag = "F32"
 name = "friction"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "argument:shape"
-
 [[opcodes]]
 opcode = 82
 name = "ShapeSetRestitution"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2583,17 +2234,11 @@ name = "shape"
 tag = "F32"
 name = "restitution"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "argument:shape"
-
 [[opcodes]]
 opcode = 83
 name = "ShapeSetUserMaterial"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2604,17 +2249,11 @@ name = "shape"
 tag = "U64"
 name = "material"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "argument:shape"
-
 [[opcodes]]
 opcode = 84
 name = "ShapeSetSurfaceMaterial"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2625,17 +2264,11 @@ name = "shape"
 tag = "MATERIAL"
 name = "material"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "argument:shape"
-
 [[opcodes]]
 opcode = 85
 name = "ShapeSetFilter"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2646,17 +2279,11 @@ name = "shape"
 tag = "FILTER"
 name = "filter"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "argument:shape"
-
 [[opcodes]]
 opcode = 86
 name = "ShapeEnableSensorEvents"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2666,18 +2293,12 @@ name = "shape"
 [[opcodes.arguments]]
 tag = "BOOL"
 name = "flag"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "argument:shape"
 
 [[opcodes]]
 opcode = 87
 name = "ShapeEnableContactEvents"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2687,18 +2308,12 @@ name = "shape"
 [[opcodes.arguments]]
 tag = "BOOL"
 name = "flag"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "argument:shape"
 
 [[opcodes]]
 opcode = 88
 name = "ShapeEnablePreSolveEvents"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2708,18 +2323,12 @@ name = "shape"
 [[opcodes.arguments]]
 tag = "BOOL"
 name = "flag"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "argument:shape"
 
 [[opcodes]]
 opcode = 89
 name = "ShapeEnableHitEvents"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2730,17 +2339,11 @@ name = "shape"
 tag = "BOOL"
 name = "flag"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "argument:shape"
-
 [[opcodes]]
 opcode = 90
 name = "ShapeSetCircle"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2751,17 +2354,11 @@ name = "shape"
 tag = "CIRCLE"
 name = "circle"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "argument:shape"
-
 [[opcodes]]
 opcode = 91
 name = "ShapeSetCapsule"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2772,17 +2369,11 @@ name = "shape"
 tag = "CAPSULE"
 name = "capsule"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "argument:shape"
-
 [[opcodes]]
 opcode = 92
 name = "ShapeSetSegment"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2793,17 +2384,11 @@ name = "shape"
 tag = "SEGMENT"
 name = "segment"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "argument:shape"
-
 [[opcodes]]
 opcode = 93
 name = "ShapeSetPolygon"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2814,17 +2399,11 @@ name = "shape"
 tag = "POLYGON"
 name = "polygon"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "argument:shape"
-
 [[opcodes]]
 opcode = 94
 name = "ShapeSetChainSegment"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2835,17 +2414,11 @@ name = "shape"
 tag = "CHAINSEG"
 name = "chainSegment"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "argument:shape"
-
 [[opcodes]]
 opcode = 95
 name = "ShapeApplyWind"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2868,17 +2441,11 @@ name = "lift"
 tag = "BOOL"
 name = "wake"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "argument:shape"
-
 [[opcodes]]
 opcode = 112
 name = "CreateChain"
 return_tag = "RET_CHAINID"
 tail_program = "returned-id"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2889,39 +2456,22 @@ name = "body"
 tag = "CHAINDEF"
 name = "def"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:body"
-
-[[opcodes.id_effects]]
-action = "create"
-id_kind = "chain"
-source = "tail:returned-id"
-
 [[opcodes]]
 opcode = 113
 name = "DestroyChain"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
 tag = "CHAINID"
 name = "chain"
 
-[[opcodes.id_effects]]
-action = "destroy"
-id_kind = "chain"
-source = "argument:chain"
-
 [[opcodes]]
 opcode = 114
 name = "ChainSetSurfaceMaterial"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2936,17 +2486,11 @@ name = "material"
 tag = "I32"
 name = "materialIndex"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "chain"
-source = "argument:chain"
-
 [[opcodes]]
 opcode = 144
 name = "CreateDistanceJoint"
 return_tag = "RET_JOINTID"
 tail_program = "returned-id"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2957,32 +2501,11 @@ name = "world"
 tag = "DISTANCEJOINTDEF"
 name = "def"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:def.base.bodyIdA"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:def.base.bodyIdB"
-
-[[opcodes.id_effects]]
-action = "create"
-id_kind = "joint"
-source = "tail:returned-id"
-
 [[opcodes]]
 opcode = 145
 name = "CreateMotorJoint"
 return_tag = "RET_JOINTID"
 tail_program = "returned-id"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -2993,32 +2516,11 @@ name = "world"
 tag = "MOTORJOINTDEF"
 name = "def"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:def.base.bodyIdA"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:def.base.bodyIdB"
-
-[[opcodes.id_effects]]
-action = "create"
-id_kind = "joint"
-source = "tail:returned-id"
-
 [[opcodes]]
 opcode = 146
 name = "CreateFilterJoint"
 return_tag = "RET_JOINTID"
 tail_program = "returned-id"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3029,32 +2531,11 @@ name = "world"
 tag = "FILTERJOINTDEF"
 name = "def"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:def.base.bodyIdA"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:def.base.bodyIdB"
-
-[[opcodes.id_effects]]
-action = "create"
-id_kind = "joint"
-source = "tail:returned-id"
-
 [[opcodes]]
 opcode = 147
 name = "CreatePrismaticJoint"
 return_tag = "RET_JOINTID"
 tail_program = "returned-id"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3065,32 +2546,11 @@ name = "world"
 tag = "PRISMATICJOINTDEF"
 name = "def"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:def.base.bodyIdA"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:def.base.bodyIdB"
-
-[[opcodes.id_effects]]
-action = "create"
-id_kind = "joint"
-source = "tail:returned-id"
-
 [[opcodes]]
 opcode = 148
 name = "CreateRevoluteJoint"
 return_tag = "RET_JOINTID"
 tail_program = "returned-id"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3101,32 +2561,11 @@ name = "world"
 tag = "REVOLUTEJOINTDEF"
 name = "def"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:def.base.bodyIdA"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:def.base.bodyIdB"
-
-[[opcodes.id_effects]]
-action = "create"
-id_kind = "joint"
-source = "tail:returned-id"
-
 [[opcodes]]
 opcode = 149
 name = "CreateWeldJoint"
 return_tag = "RET_JOINTID"
 tail_program = "returned-id"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3137,32 +2576,11 @@ name = "world"
 tag = "WELDJOINTDEF"
 name = "def"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:def.base.bodyIdA"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:def.base.bodyIdB"
-
-[[opcodes.id_effects]]
-action = "create"
-id_kind = "joint"
-source = "tail:returned-id"
-
 [[opcodes]]
 opcode = 150
 name = "CreateWheelJoint"
 return_tag = "RET_JOINTID"
 tail_program = "returned-id"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3173,32 +2591,11 @@ name = "world"
 tag = "WHEELJOINTDEF"
 name = "def"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:def.base.bodyIdA"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "body"
-source = "argument:def.base.bodyIdB"
-
-[[opcodes.id_effects]]
-action = "create"
-id_kind = "joint"
-source = "tail:returned-id"
-
 [[opcodes]]
 opcode = 151
 name = "DestroyJoint"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3209,17 +2606,11 @@ name = "joint"
 tag = "BOOL"
 name = "wakeAttached"
 
-[[opcodes.id_effects]]
-action = "destroy"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 152
 name = "JointSetLocalFrameA"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3229,18 +2620,12 @@ name = "joint"
 [[opcodes.arguments]]
 tag = "XF"
 name = "localFrame"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
 
 [[opcodes]]
 opcode = 153
 name = "JointSetLocalFrameB"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3251,17 +2636,11 @@ name = "joint"
 tag = "XF"
 name = "localFrame"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 154
 name = "JointSetCollideConnected"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3272,34 +2651,22 @@ name = "joint"
 tag = "BOOL"
 name = "shouldCollide"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 155
 name = "JointWakeBodies"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
 tag = "JOINTID"
 name = "joint"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 156
 name = "JointSetConstraintTuning"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3314,17 +2681,11 @@ name = "hertz"
 tag = "F32"
 name = "dampingRatio"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 157
 name = "JointSetForceThreshold"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3334,18 +2695,12 @@ name = "joint"
 [[opcodes.arguments]]
 tag = "F32"
 name = "threshold"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
 
 [[opcodes]]
 opcode = 158
 name = "JointSetTorqueThreshold"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3356,17 +2711,11 @@ name = "joint"
 tag = "F32"
 name = "threshold"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 160
 name = "DistanceJointSetLength"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3377,17 +2726,11 @@ name = "joint"
 tag = "F32"
 name = "length"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 161
 name = "DistanceJointEnableSpring"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3398,17 +2741,11 @@ name = "joint"
 tag = "BOOL"
 name = "enableSpring"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 162
 name = "DistanceJointSetSpringForceRange"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3423,17 +2760,11 @@ name = "lowerForce"
 tag = "F32"
 name = "upperForce"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 163
 name = "DistanceJointSetSpringHertz"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3444,17 +2775,11 @@ name = "joint"
 tag = "F32"
 name = "hertz"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 164
 name = "DistanceJointSetSpringDampingRatio"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3465,17 +2790,11 @@ name = "joint"
 tag = "F32"
 name = "dampingRatio"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 165
 name = "DistanceJointEnableLimit"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3486,17 +2805,11 @@ name = "joint"
 tag = "BOOL"
 name = "enableLimit"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 166
 name = "DistanceJointSetLengthRange"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3511,17 +2824,11 @@ name = "minLength"
 tag = "F32"
 name = "maxLength"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 167
 name = "DistanceJointEnableMotor"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3532,17 +2839,11 @@ name = "joint"
 tag = "BOOL"
 name = "enableMotor"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 168
 name = "DistanceJointSetMotorSpeed"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3553,17 +2854,11 @@ name = "joint"
 tag = "F32"
 name = "motorSpeed"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 169
 name = "DistanceJointSetMaxMotorForce"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3574,17 +2869,11 @@ name = "joint"
 tag = "F32"
 name = "force"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 170
 name = "MotorJointSetLinearVelocity"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3595,17 +2884,11 @@ name = "joint"
 tag = "VEC2"
 name = "velocity"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 171
 name = "MotorJointSetAngularVelocity"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3616,17 +2899,11 @@ name = "joint"
 tag = "F32"
 name = "velocity"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 172
 name = "MotorJointSetMaxVelocityForce"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3636,18 +2913,12 @@ name = "joint"
 [[opcodes.arguments]]
 tag = "F32"
 name = "maxForce"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
 
 [[opcodes]]
 opcode = 173
 name = "MotorJointSetMaxVelocityTorque"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3658,17 +2929,11 @@ name = "joint"
 tag = "F32"
 name = "maxTorque"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 174
 name = "MotorJointSetLinearHertz"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3678,18 +2943,12 @@ name = "joint"
 [[opcodes.arguments]]
 tag = "F32"
 name = "hertz"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
 
 [[opcodes]]
 opcode = 175
 name = "MotorJointSetLinearDampingRatio"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3700,17 +2959,11 @@ name = "joint"
 tag = "F32"
 name = "damping"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 176
 name = "MotorJointSetAngularHertz"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3721,17 +2974,11 @@ name = "joint"
 tag = "F32"
 name = "hertz"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 177
 name = "MotorJointSetAngularDampingRatio"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3742,17 +2989,11 @@ name = "joint"
 tag = "F32"
 name = "damping"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 178
 name = "MotorJointSetMaxSpringForce"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3763,17 +3004,11 @@ name = "joint"
 tag = "F32"
 name = "maxForce"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 179
 name = "MotorJointSetMaxSpringTorque"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3784,17 +3019,11 @@ name = "joint"
 tag = "F32"
 name = "maxTorque"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 180
 name = "PrismaticJointEnableSpring"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3805,17 +3034,11 @@ name = "joint"
 tag = "BOOL"
 name = "enableSpring"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 181
 name = "PrismaticJointSetSpringHertz"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3826,17 +3049,11 @@ name = "joint"
 tag = "F32"
 name = "hertz"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 182
 name = "PrismaticJointSetSpringDampingRatio"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3847,17 +3064,11 @@ name = "joint"
 tag = "F32"
 name = "dampingRatio"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 183
 name = "PrismaticJointSetTargetTranslation"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3868,17 +3079,11 @@ name = "joint"
 tag = "F32"
 name = "translation"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 184
 name = "PrismaticJointEnableLimit"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3889,17 +3094,11 @@ name = "joint"
 tag = "BOOL"
 name = "enableLimit"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 185
 name = "PrismaticJointSetLimits"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3914,17 +3113,11 @@ name = "lower"
 tag = "F32"
 name = "upper"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 186
 name = "PrismaticJointEnableMotor"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3935,17 +3128,11 @@ name = "joint"
 tag = "BOOL"
 name = "enableMotor"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 187
 name = "PrismaticJointSetMotorSpeed"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3956,17 +3143,11 @@ name = "joint"
 tag = "F32"
 name = "motorSpeed"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 188
 name = "PrismaticJointSetMaxMotorForce"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3977,17 +3158,11 @@ name = "joint"
 tag = "F32"
 name = "force"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 189
 name = "RevoluteJointEnableSpring"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -3998,17 +3173,11 @@ name = "joint"
 tag = "BOOL"
 name = "enableSpring"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 190
 name = "RevoluteJointSetSpringHertz"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -4019,17 +3188,11 @@ name = "joint"
 tag = "F32"
 name = "hertz"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 191
 name = "RevoluteJointSetSpringDampingRatio"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -4040,17 +3203,11 @@ name = "joint"
 tag = "F32"
 name = "dampingRatio"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 192
 name = "RevoluteJointSetTargetAngle"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -4061,17 +3218,11 @@ name = "joint"
 tag = "F32"
 name = "angle"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 193
 name = "RevoluteJointEnableLimit"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -4082,17 +3233,11 @@ name = "joint"
 tag = "BOOL"
 name = "enableLimit"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 194
 name = "RevoluteJointSetLimits"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -4107,17 +3252,11 @@ name = "lower"
 tag = "F32"
 name = "upper"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 195
 name = "RevoluteJointEnableMotor"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -4128,17 +3267,11 @@ name = "joint"
 tag = "BOOL"
 name = "enableMotor"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 196
 name = "RevoluteJointSetMotorSpeed"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -4149,17 +3282,11 @@ name = "joint"
 tag = "F32"
 name = "motorSpeed"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 197
 name = "RevoluteJointSetMaxMotorTorque"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -4170,17 +3297,11 @@ name = "joint"
 tag = "F32"
 name = "torque"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 198
 name = "WeldJointSetLinearHertz"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -4190,18 +3311,12 @@ name = "joint"
 [[opcodes.arguments]]
 tag = "F32"
 name = "hertz"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
 
 [[opcodes]]
 opcode = 199
 name = "WeldJointSetLinearDampingRatio"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -4212,17 +3327,11 @@ name = "joint"
 tag = "F32"
 name = "dampingRatio"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 200
 name = "WeldJointSetAngularHertz"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -4233,17 +3342,11 @@ name = "joint"
 tag = "F32"
 name = "hertz"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 201
 name = "WeldJointSetAngularDampingRatio"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -4254,17 +3357,11 @@ name = "joint"
 tag = "F32"
 name = "dampingRatio"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 202
 name = "WheelJointEnableSpring"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -4275,17 +3372,11 @@ name = "joint"
 tag = "BOOL"
 name = "enableSpring"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 203
 name = "WheelJointSetSpringHertz"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -4296,17 +3387,11 @@ name = "joint"
 tag = "F32"
 name = "hertz"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 204
 name = "WheelJointSetSpringDampingRatio"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -4317,17 +3402,11 @@ name = "joint"
 tag = "F32"
 name = "dampingRatio"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 205
 name = "WheelJointEnableLimit"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -4338,17 +3417,11 @@ name = "joint"
 tag = "BOOL"
 name = "enableLimit"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 206
 name = "WheelJointSetLimits"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -4363,17 +3436,11 @@ name = "lower"
 tag = "F32"
 name = "upper"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 207
 name = "WheelJointEnableMotor"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -4384,17 +3451,11 @@ name = "joint"
 tag = "BOOL"
 name = "enableMotor"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 208
 name = "WheelJointSetMotorSpeed"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -4405,17 +3466,11 @@ name = "joint"
 tag = "F32"
 name = "motorSpeed"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 209
 name = "WheelJointSetMaxMotorTorque"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "mutation"
 
 [[opcodes.arguments]]
@@ -4426,17 +3481,11 @@ name = "joint"
 tag = "F32"
 name = "torque"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "joint"
-source = "argument:joint"
-
 [[opcodes]]
 opcode = 224
 name = "QueryOverlapAABB"
 return_tag = "RET_NONE"
 tail_program = "overlap-hits"
-payload_termination = "exact-eof"
 semantic_validator = "query"
 
 [[opcodes.arguments]]
@@ -4455,23 +3504,11 @@ name = "aabb"
 tag = "QUERYFILTER"
 name = "filter"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "tail:overlap-hits[].shapeId"
-repeated_by = "tail.count"
-
 [[opcodes]]
 opcode = 225
 name = "QueryOverlapShape"
 return_tag = "RET_NONE"
 tail_program = "overlap-hits"
-payload_termination = "exact-eof"
 semantic_validator = "query"
 
 [[opcodes.arguments]]
@@ -4489,24 +3526,12 @@ name = "proxy"
 [[opcodes.arguments]]
 tag = "QUERYFILTER"
 name = "filter"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "tail:overlap-hits[].shapeId"
-repeated_by = "tail.count"
 
 [[opcodes]]
 opcode = 226
 name = "QueryCastRay"
 return_tag = "RET_NONE"
 tail_program = "cast-hits"
-payload_termination = "exact-eof"
 semantic_validator = "query"
 
 [[opcodes.arguments]]
@@ -4525,23 +3550,11 @@ name = "translation"
 tag = "QUERYFILTER"
 name = "filter"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "tail:cast-hits[].shapeId"
-repeated_by = "tail.count"
-
 [[opcodes]]
 opcode = 227
 name = "QueryCastShape"
 return_tag = "RET_NONE"
 tail_program = "cast-hits"
-payload_termination = "exact-eof"
 semantic_validator = "query"
 
 [[opcodes.arguments]]
@@ -4564,23 +3577,11 @@ name = "translation"
 tag = "QUERYFILTER"
 name = "filter"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "tail:cast-hits[].shapeId"
-repeated_by = "tail.count"
-
 [[opcodes]]
 opcode = 228
 name = "QueryCollideMover"
 return_tag = "RET_NONE"
 tail_program = "plane-hits"
-payload_termination = "exact-eof"
 semantic_validator = "query"
 
 [[opcodes.arguments]]
@@ -4598,24 +3599,12 @@ name = "mover"
 [[opcodes.arguments]]
 tag = "QUERYFILTER"
 name = "filter"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "tail:plane-hits[].shapeId"
-repeated_by = "tail.count"
 
 [[opcodes]]
 opcode = 229
 name = "QueryCastRayClosest"
 return_tag = "RET_NONE"
 tail_program = "closest-ray-result"
-payload_termination = "exact-eof"
 semantic_validator = "query"
 
 [[opcodes.arguments]]
@@ -4634,23 +3623,11 @@ name = "translation"
 tag = "QUERYFILTER"
 name = "filter"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "tail:closest-ray-result.shapeId"
-condition = "tail.hit == 1"
-
 [[opcodes]]
 opcode = 230
 name = "QueryCastMover"
 return_tag = "RET_NONE"
 tail_program = "mover-result"
-payload_termination = "exact-eof"
 semantic_validator = "query"
 
 [[opcodes.arguments]]
@@ -4673,17 +3650,11 @@ name = "translation"
 tag = "QUERYFILTER"
 name = "filter"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
 [[opcodes]]
 opcode = 231
 name = "ShapeTestPoint"
 return_tag = "RET_NONE"
 tail_program = "bool-result"
-payload_termination = "exact-eof"
 semantic_validator = "query"
 
 [[opcodes.arguments]]
@@ -4694,17 +3665,11 @@ name = "shape"
 tag = "POSITION"
 name = "point"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "argument:shape"
-
 [[opcodes]]
 opcode = 232
 name = "ShapeRayCast"
 return_tag = "RET_NONE"
 tail_program = "shape-cast-result"
-payload_termination = "exact-eof"
 semantic_validator = "query"
 
 [[opcodes.arguments]]
@@ -4719,17 +3684,11 @@ name = "origin"
 tag = "VEC2"
 name = "translation"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "shape"
-source = "argument:shape"
-
 [[opcodes]]
 opcode = 241
 name = "StateHash"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "state-hash"
 
 [[opcodes.arguments]]
@@ -4740,19 +3699,12 @@ name = "world"
 tag = "U64"
 name = "hash"
 
-[[opcodes.id_effects]]
-action = "use"
-id_kind = "world"
-source = "argument:world"
-
 [[opcodes]]
 opcode = 242
 name = "RecordingBounds"
 return_tag = "RET_NONE"
 tail_program = "none"
-payload_termination = "exact-eof"
 semantic_validator = "metadata"
-id_effects = []
 
 [[opcodes.arguments]]
 tag = "AABB"

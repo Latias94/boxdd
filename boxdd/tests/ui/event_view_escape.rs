@@ -1,8 +1,12 @@
-use boxdd::{World, WorldDef};
+use boxdd::{ContactEventsView, Foundation, World};
+
+fn escape(world: &mut World) -> ContactEventsView<'_> {
+    let completed = world.step(0.0, 1).unwrap();
+    completed.contact_events().unwrap()
+}
 
 fn main() {
-    let world = World::new(WorldDef::default()).unwrap();
-    let escaped = world.with_body_events_view(|mut events| events.next());
-    drop(world);
-    let _ = escaped.map(|event| event.body_id());
+    let foundation = Foundation::initialize_default().unwrap();
+    let mut world = foundation.create_world(foundation.world_def()).unwrap();
+    let _ = escape(&mut world);
 }

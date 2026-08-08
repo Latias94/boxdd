@@ -1,221 +1,218 @@
 use super::*;
 
 #[inline]
-fn world_gravity_impl(world: ffi::b2WorldId) -> Vec2 {
-    Vec2::from_raw(unsafe { ffi::b2World_GetGravity(world) })
+fn check_native_world_vec2(
+    operation: &'static str,
+    output: &'static str,
+    value: Vec2,
+) -> crate::error::Result<Vec2> {
+    if value.is_valid() {
+        Ok(value)
+    } else {
+        Err(crate::error::Error::InvalidNativeOutput {
+            operation,
+            output,
+            constraint: "a finite vector",
+        })
+    }
 }
 
 #[inline]
-fn world_counters_impl(world: ffi::b2WorldId) -> Counters {
-    Counters::from_raw(unsafe { ffi::b2World_GetCounters(world) })
+fn check_native_world_non_negative(
+    operation: &'static str,
+    output: &'static str,
+    value: f32,
+) -> crate::error::Result<f32> {
+    if value.is_finite() && value >= 0.0 {
+        Ok(value)
+    } else {
+        Err(crate::error::Error::InvalidNativeOutput {
+            operation,
+            output,
+            constraint: "a finite non-negative value",
+        })
+    }
 }
 
 #[inline]
-fn world_profile_impl(world: ffi::b2WorldId) -> Profile {
-    Profile::from_raw(unsafe { ffi::b2World_GetProfile(world) })
+fn check_native_world_positive(
+    operation: &'static str,
+    output: &'static str,
+    value: f32,
+) -> crate::error::Result<f32> {
+    if value.is_finite() && value > 0.0 {
+        Ok(value)
+    } else {
+        Err(crate::error::Error::InvalidNativeOutput {
+            operation,
+            output,
+            constraint: "a finite positive value",
+        })
+    }
 }
 
 #[inline]
-fn world_awake_body_count_impl(world: ffi::b2WorldId) -> i32 {
-    unsafe { ffi::b2World_GetAwakeBodyCount(world) }
+fn check_native_world_count(
+    operation: &'static str,
+    output: &'static str,
+    value: i32,
+) -> crate::error::Result<i32> {
+    if value >= 0 {
+        Ok(value)
+    } else {
+        Err(crate::error::Error::InvalidNativeOutput {
+            operation,
+            output,
+            constraint: "a non-negative native int",
+        })
+    }
 }
 
 #[inline]
-fn world_is_sleeping_enabled_impl(world: ffi::b2WorldId) -> bool {
+pub(super) fn world_gravity_impl(world: ffi::b2WorldId) -> crate::error::Result<Vec2> {
+    check_native_world_vec2(
+        "World::gravity",
+        "gravity",
+        Vec2::from_raw(unsafe { ffi::b2World_GetGravity(world) }),
+    )
+}
+
+#[inline]
+pub(super) fn world_counters_impl(world: ffi::b2WorldId) -> crate::error::Result<Counters> {
+    Counters::from_native("World::counters", unsafe {
+        ffi::b2World_GetCounters(world)
+    })
+}
+
+#[inline]
+pub(super) fn world_profile_impl(world: ffi::b2WorldId) -> crate::error::Result<Profile> {
+    Profile::from_native("World::profile", unsafe { ffi::b2World_GetProfile(world) })
+}
+
+#[inline]
+pub(super) fn world_awake_body_count_impl(world: ffi::b2WorldId) -> crate::error::Result<i32> {
+    check_native_world_count("World::awake_body_count", "awake_body_count", unsafe {
+        ffi::b2World_GetAwakeBodyCount(world)
+    })
+}
+
+#[inline]
+pub(super) fn world_is_sleeping_enabled_impl(world: ffi::b2WorldId) -> bool {
     unsafe { ffi::b2World_IsSleepingEnabled(world) }
 }
 
 #[inline]
-fn world_is_continuous_enabled_impl(world: ffi::b2WorldId) -> bool {
+pub(super) fn world_is_continuous_enabled_impl(world: ffi::b2WorldId) -> bool {
     unsafe { ffi::b2World_IsContinuousEnabled(world) }
 }
 
 #[inline]
-fn world_is_warm_starting_enabled_impl(world: ffi::b2WorldId) -> bool {
+pub(super) fn world_is_warm_starting_enabled_impl(world: ffi::b2WorldId) -> bool {
     unsafe { ffi::b2World_IsWarmStartingEnabled(world) }
 }
 
 #[inline]
-fn world_restitution_threshold_impl(world: ffi::b2WorldId) -> f32 {
-    unsafe { ffi::b2World_GetRestitutionThreshold(world) }
+pub(super) fn world_restitution_threshold_impl(world: ffi::b2WorldId) -> crate::error::Result<f32> {
+    check_native_world_non_negative(
+        "World::restitution_threshold",
+        "restitution_threshold",
+        unsafe { ffi::b2World_GetRestitutionThreshold(world) },
+    )
 }
 
 #[inline]
-fn world_hit_event_threshold_impl(world: ffi::b2WorldId) -> f32 {
-    unsafe { ffi::b2World_GetHitEventThreshold(world) }
+pub(super) fn world_hit_event_threshold_impl(world: ffi::b2WorldId) -> crate::error::Result<f32> {
+    check_native_world_non_negative(
+        "World::hit_event_threshold",
+        "hit_event_threshold",
+        unsafe { ffi::b2World_GetHitEventThreshold(world) },
+    )
 }
 
 #[inline]
-fn world_maximum_linear_speed_impl(world: ffi::b2WorldId) -> f32 {
-    unsafe { ffi::b2World_GetMaximumLinearSpeed(world) }
+pub(super) fn world_maximum_linear_speed_impl(world: ffi::b2WorldId) -> crate::error::Result<f32> {
+    check_native_world_positive(
+        "World::maximum_linear_speed",
+        "maximum_linear_speed",
+        unsafe { ffi::b2World_GetMaximumLinearSpeed(world) },
+    )
 }
 
 #[inline]
-fn world_bounds_impl(world: ffi::b2WorldId) -> Aabb {
-    Aabb::from_raw(unsafe { ffi::b2World_GetBounds(world) })
+pub(super) fn world_bounds_impl(world: ffi::b2WorldId) -> crate::error::Result<Aabb> {
+    Aabb::from_raw(unsafe { ffi::b2World_GetBounds(world) }).map_err(|_| {
+        crate::error::Error::InvalidNativeOutput {
+            operation: "World::bounds",
+            output: "bounds",
+            constraint: "finite ordered lower and upper bounds",
+        }
+    })
 }
 
 #[inline]
-fn world_max_capacity_impl(world: ffi::b2WorldId) -> crate::error::ApiResult<WorldCapacity> {
-    WorldCapacity::try_from_raw(unsafe { ffi::b2World_GetMaxCapacity(world) })
+pub(super) fn world_max_capacity_impl(
+    world: ffi::b2WorldId,
+) -> crate::error::Result<WorldCapacity> {
+    WorldCapacity::from_raw(unsafe { ffi::b2World_GetMaxCapacity(world) })
 }
 
 #[inline]
-fn world_contact_recycle_distance_impl(world: ffi::b2WorldId) -> f32 {
-    unsafe { ffi::b2World_GetContactRecycleDistance(world) }
+pub(super) fn world_contact_recycle_distance_impl(
+    world: ffi::b2WorldId,
+) -> crate::error::Result<f32> {
+    check_native_world_non_negative(
+        "World::contact_recycle_distance",
+        "contact_recycle_distance",
+        unsafe { ffi::b2World_GetContactRecycleDistance(world) },
+    )
 }
 
 #[inline]
-fn world_worker_count_impl(world: ffi::b2WorldId) -> crate::error::ApiResult<WorkerCount> {
+pub(super) fn world_worker_count_impl(world: ffi::b2WorldId) -> crate::error::Result<WorkerCount> {
     WorkerCount::from_native(unsafe { ffi::b2World_GetWorkerCount(world) })
 }
 
-#[inline]
-fn checked_world_read_impl<R>(f: impl FnOnce() -> R) -> R {
-    crate::core::callback_state::assert_not_in_callback();
-    f()
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[inline]
-fn try_checked_world_read_impl<R>(f: impl FnOnce() -> R) -> crate::error::ApiResult<R> {
-    crate::core::callback_state::check_not_in_callback()?;
-    Ok(f())
-}
-
-pub(crate) fn world_gravity_checked_impl(world: ffi::b2WorldId) -> Vec2 {
-    checked_world_read_impl(|| world_gravity_impl(world))
-}
-
-pub(crate) fn try_world_gravity_impl(world: ffi::b2WorldId) -> crate::error::ApiResult<Vec2> {
-    try_checked_world_read_impl(|| world_gravity_impl(world))
-}
-
-pub(crate) fn world_counters_checked_impl(world: ffi::b2WorldId) -> Counters {
-    checked_world_read_impl(|| world_counters_impl(world))
-}
-
-pub(crate) fn try_world_counters_impl(world: ffi::b2WorldId) -> crate::error::ApiResult<Counters> {
-    try_checked_world_read_impl(|| world_counters_impl(world))
-}
-
-pub(crate) fn world_profile_checked_impl(world: ffi::b2WorldId) -> Profile {
-    checked_world_read_impl(|| world_profile_impl(world))
-}
-
-pub(crate) fn try_world_profile_impl(world: ffi::b2WorldId) -> crate::error::ApiResult<Profile> {
-    try_checked_world_read_impl(|| world_profile_impl(world))
-}
-
-pub(crate) fn world_awake_body_count_checked_impl(world: ffi::b2WorldId) -> i32 {
-    checked_world_read_impl(|| world_awake_body_count_impl(world))
-}
-
-pub(crate) fn try_world_awake_body_count_impl(
-    world: ffi::b2WorldId,
-) -> crate::error::ApiResult<i32> {
-    try_checked_world_read_impl(|| world_awake_body_count_impl(world))
-}
-
-pub(crate) fn world_is_sleeping_enabled_checked_impl(world: ffi::b2WorldId) -> bool {
-    checked_world_read_impl(|| world_is_sleeping_enabled_impl(world))
-}
-
-pub(crate) fn try_world_is_sleeping_enabled_impl(
-    world: ffi::b2WorldId,
-) -> crate::error::ApiResult<bool> {
-    try_checked_world_read_impl(|| world_is_sleeping_enabled_impl(world))
-}
-
-pub(crate) fn world_is_continuous_enabled_checked_impl(world: ffi::b2WorldId) -> bool {
-    checked_world_read_impl(|| world_is_continuous_enabled_impl(world))
-}
-
-pub(crate) fn try_world_is_continuous_enabled_impl(
-    world: ffi::b2WorldId,
-) -> crate::error::ApiResult<bool> {
-    try_checked_world_read_impl(|| world_is_continuous_enabled_impl(world))
-}
-
-pub(crate) fn world_is_warm_starting_enabled_checked_impl(world: ffi::b2WorldId) -> bool {
-    checked_world_read_impl(|| world_is_warm_starting_enabled_impl(world))
-}
-
-pub(crate) fn try_world_is_warm_starting_enabled_impl(
-    world: ffi::b2WorldId,
-) -> crate::error::ApiResult<bool> {
-    try_checked_world_read_impl(|| world_is_warm_starting_enabled_impl(world))
-}
-
-pub(crate) fn world_restitution_threshold_checked_impl(world: ffi::b2WorldId) -> f32 {
-    checked_world_read_impl(|| world_restitution_threshold_impl(world))
-}
-
-pub(crate) fn try_world_restitution_threshold_impl(
-    world: ffi::b2WorldId,
-) -> crate::error::ApiResult<f32> {
-    try_checked_world_read_impl(|| world_restitution_threshold_impl(world))
-}
-
-pub(crate) fn world_hit_event_threshold_checked_impl(world: ffi::b2WorldId) -> f32 {
-    checked_world_read_impl(|| world_hit_event_threshold_impl(world))
-}
-
-pub(crate) fn try_world_hit_event_threshold_impl(
-    world: ffi::b2WorldId,
-) -> crate::error::ApiResult<f32> {
-    try_checked_world_read_impl(|| world_hit_event_threshold_impl(world))
-}
-
-pub(crate) fn world_maximum_linear_speed_checked_impl(world: ffi::b2WorldId) -> f32 {
-    checked_world_read_impl(|| world_maximum_linear_speed_impl(world))
-}
-
-pub(crate) fn try_world_maximum_linear_speed_impl(
-    world: ffi::b2WorldId,
-) -> crate::error::ApiResult<f32> {
-    try_checked_world_read_impl(|| world_maximum_linear_speed_impl(world))
-}
-
-pub(crate) fn world_bounds_checked_impl(world: ffi::b2WorldId) -> Aabb {
-    checked_world_read_impl(|| world_bounds_impl(world))
-}
-
-pub(crate) fn try_world_bounds_impl(world: ffi::b2WorldId) -> crate::error::ApiResult<Aabb> {
-    try_checked_world_read_impl(|| world_bounds_impl(world))
-}
-
-pub(crate) fn world_max_capacity_checked_impl(world: ffi::b2WorldId) -> WorldCapacity {
-    checked_world_read_impl(|| {
-        world_max_capacity_impl(world).expect("Box2D returned an invalid world capacity")
-    })
-}
-
-pub(crate) fn try_world_max_capacity_impl(
-    world: ffi::b2WorldId,
-) -> crate::error::ApiResult<WorldCapacity> {
-    crate::core::callback_state::check_not_in_callback()?;
-    world_max_capacity_impl(world)
-}
-
-pub(crate) fn world_contact_recycle_distance_checked_impl(world: ffi::b2WorldId) -> f32 {
-    checked_world_read_impl(|| world_contact_recycle_distance_impl(world))
-}
-
-pub(crate) fn try_world_contact_recycle_distance_impl(
-    world: ffi::b2WorldId,
-) -> crate::error::ApiResult<f32> {
-    try_checked_world_read_impl(|| world_contact_recycle_distance_impl(world))
-}
-
-pub(crate) fn world_worker_count_checked_impl(world: ffi::b2WorldId) -> WorkerCount {
-    checked_world_read_impl(|| {
-        world_worker_count_impl(world).expect("Box2D returned an invalid worker count")
-    })
-}
-
-pub(crate) fn try_world_worker_count_impl(
-    world: ffi::b2WorldId,
-) -> crate::error::ApiResult<WorkerCount> {
-    crate::core::callback_state::check_not_in_callback()?;
-    world_worker_count_impl(world)
+    #[test]
+    fn native_world_scalar_vector_and_count_checks_fail_closed() {
+        assert_eq!(
+            check_native_world_vec2("World::gravity", "gravity", Vec2::new(f32::NAN, 0.0)),
+            Err(crate::Error::InvalidNativeOutput {
+                operation: "World::gravity",
+                output: "gravity",
+                constraint: "a finite vector",
+            })
+        );
+        assert_eq!(
+            check_native_world_non_negative(
+                "World::contact_recycle_distance",
+                "contact_recycle_distance",
+                -1.0,
+            ),
+            Err(crate::Error::InvalidNativeOutput {
+                operation: "World::contact_recycle_distance",
+                output: "contact_recycle_distance",
+                constraint: "a finite non-negative value",
+            })
+        );
+        assert_eq!(
+            check_native_world_positive("World::maximum_linear_speed", "maximum_linear_speed", 0.0,),
+            Err(crate::Error::InvalidNativeOutput {
+                operation: "World::maximum_linear_speed",
+                output: "maximum_linear_speed",
+                constraint: "a finite positive value",
+            })
+        );
+        assert_eq!(
+            check_native_world_count("World::awake_body_count", "awake_body_count", -1),
+            Err(crate::Error::InvalidNativeOutput {
+                operation: "World::awake_body_count",
+                output: "awake_body_count",
+                constraint: "a non-negative native int",
+            })
+        );
+    }
 }

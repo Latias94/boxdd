@@ -1,20 +1,27 @@
-#![allow(rustdoc::broken_intra_doc_links)]
-use crate::types::{Position, WorldTransform};
+use crate::types::{JointId, Position};
 use crate::world::World;
 use boxdd_sys::ffi;
 
-use super::{Joint, JointBase, OwnedJoint, raw_body_id};
-use crate::error::{ApiError, ApiResult};
+use super::JointBase;
+use crate::error::{Error, Result};
 
-fn checked_world_distance(a: Position, b: Position) -> ApiResult<f32> {
-    let delta = b
-        .checked_relative_to(a)
-        .map_err(|_| ApiError::InvalidArgument)?;
+fn checked_world_distance(a: Position, b: Position) -> Result<f32> {
+    let delta = b.checked_relative_to(a).map_err(|_| {
+        Error::invalid_argument(
+            "DistanceJointDef::length_from_world_points",
+            "a/b",
+            "points whose delta fits in f32 coordinates",
+        )
+    })?;
     let length = delta.x.hypot(delta.y);
     if length.is_finite() {
         Ok(length)
     } else {
-        Err(ApiError::InvalidArgument)
+        Err(Error::invalid_argument(
+            "DistanceJointDef::length_from_world_points",
+            "a/b",
+            "points that produce a finite distance",
+        ))
     }
 }
 
@@ -23,8 +30,7 @@ fn checked_world_distance(a: Position, b: Position) -> ApiResult<f32> {
 /// Distance joint definition (maps to `b2DistanceJointDef`).
 ///
 /// Controls distance limits, optional spring (stiffness/damping), and optional motor.
-/// Use with `World::create_distance_joint(_id)` or the world convenience
-/// builder `World::distance(...).build()`.
+/// Use with [`World::create_distance_joint`] or the [`World::distance`] convenience builder.
 pub struct DistanceJointDef {
     base: JointBase,
     length: f32,
@@ -43,8 +49,10 @@ pub struct DistanceJointDef {
 
 impl DistanceJointDef {
     pub fn new(base: JointBase) -> Self {
-        let _lease = crate::core::foundation::assert_transient_native_lease();
-        let default = unsafe { ffi::b2DefaultDistanceJointDef() };
+        let default: ffi::b2DistanceJointDef = crate::core::native_defaults::distance_joint_def(
+            base.to_raw(),
+            base.length_scale().units_per_meter(),
+        );
         Self {
             base,
             length: default.length,
@@ -133,8 +141,10 @@ impl DistanceJointDef {
     }
 
     pub(crate) fn to_raw(&self) -> ffi::b2DistanceJointDef {
-        let mut raw = unsafe { ffi::b2DefaultDistanceJointDef() };
-        raw.base = self.base.to_raw();
+        let mut raw: ffi::b2DistanceJointDef = crate::core::native_defaults::distance_joint_def(
+            self.base.to_raw(),
+            self.base.length_scale().units_per_meter(),
+        );
         raw.length = self.length;
         raw.enableSpring = self.enable_spring;
         raw.lowerSpringForce = self.lower_spring_force;
@@ -151,7 +161,7 @@ impl DistanceJointDef {
     }
 
     #[inline]
-    pub fn validate(&self) -> ApiResult<()> {
+    pub fn validate(&self) -> Result<()> {
         super::check_distance_joint_def_valid(self)
     }
 
@@ -216,27 +226,12 @@ impl DistanceJointDef {
         self
     }
 
-    /// Convenience: compute length from two absolute world points.
-    ///
-    /// # Panics
-    ///
-    /// Panics when the world-space delta cannot be represented as a local `f32` length. Use
-    /// [`Self::try_length_from_world_points`] for a recoverable error.
+    /// Compute length from two absolute world points.
     pub fn length_from_world_points<VA: Into<Position>, VB: Into<Position>>(
-        self,
-        a: VA,
-        b: VB,
-    ) -> Self {
-        self.try_length_from_world_points(a, b)
-            .expect("distance-joint world-point delta must fit in local f32 coordinates")
-    }
-
-    /// Fallible variant of [`Self::length_from_world_points`].
-    pub fn try_length_from_world_points<VA: Into<Position>, VB: Into<Position>>(
         mut self,
         a: VA,
         b: VB,
-    ) -> ApiResult<Self> {
+    ) -> Result<Self> {
         self.length = checked_world_distance(a.into(), b.into())?;
         Ok(self)
     }
@@ -267,27 +262,12 @@ impl<'w> DistanceJointBuilder<'w> {
         self
     }
     /// Compute desired distance from two world points.
-    ///
-    /// # Panics
-    ///
-    /// Panics when the world-space delta cannot be represented as a local `f32` length. Use
-    /// [`Self::try_length_from_world_points`] for a recoverable error.
     pub fn length_from_world_points<VA: Into<Position>, VB: Into<Position>>(
-        self,
-        a: VA,
-        b: VB,
-    ) -> Self {
-        self.try_length_from_world_points(a, b)
-            .expect("distance-joint world-point delta must fit in local f32 coordinates")
-    }
-
-    /// Fallible variant of [`Self::length_from_world_points`].
-    pub fn try_length_from_world_points<VA: Into<Position>, VB: Into<Position>>(
         mut self,
         a: VA,
         b: VB,
-    ) -> ApiResult<Self> {
-        self.def = self.def.try_length_from_world_points(a, b)?;
+    ) -> Result<Self> {
+        self.def = self.def.length_from_world_points(a, b)?;
         Ok(self)
     }
     /// Enable limits with minimum/maximum length (meters).
@@ -324,30 +304,56 @@ impl<'w> DistanceJointBuilder<'w> {
         self
     }
 
-    fn configure_local_frames(&mut self) -> ApiResult<()> {
+    fn configure_local_frames(&mut self) -> Result<()> {
         crate::core::callback_state::check_not_in_callback()?;
         super::creation::check_joint_target_identity(self.world, self.def.base())?;
         self.def.validate()?;
         if let Some(anchor) = self.anchor_a_world {
-            super::validation::check_joint_position(anchor)?;
+            super::validation::check_joint_position(
+                anchor,
+                "DistanceJointBuilder::build",
+                "anchor_a_world",
+            )?;
         }
         if let Some(anchor) = self.anchor_b_world {
-            super::validation::check_joint_position(anchor)?;
+            super::validation::check_joint_position(
+                anchor,
+                "DistanceJointBuilder::build",
+                "anchor_b_world",
+            )?;
         }
         super::creation::check_joint_target_native(self.world, self.def.base())?;
 
         let body_a = self.def.base().body_a_id();
         let body_b = self.def.base().body_b_id();
 
-        let ta = WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(body_a)) });
-        let tb = WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(body_b)) });
+        let ta = super::read_native_body_world_transform(
+            "DistanceJointBuilder::build",
+            "body_a_transform",
+            body_a,
+        )?;
+        let tb = super::read_native_body_world_transform(
+            "DistanceJointBuilder::build",
+            "body_b_transform",
+            body_b,
+        )?;
         let aw = self.anchor_a_world.unwrap_or_else(|| ta.position());
         let bw = self.anchor_b_world.unwrap_or_else(|| tb.position());
-        let la = super::base_def::checked_world_to_local_point(ta, aw)?;
-        let lb = super::base_def::checked_world_to_local_point(tb, bw)?;
+        let la = super::base_def::checked_world_to_local_point(
+            "DistanceJointBuilder::build",
+            "anchor_a_world",
+            ta,
+            aw,
+        )?;
+        let lb = super::base_def::checked_world_to_local_point(
+            "DistanceJointBuilder::build",
+            "anchor_b_world",
+            tb,
+            bw,
+        )?;
         self.def.base_mut().set_local_frames(
-            crate::Transform::from_pos_angle(la, 0.0),
-            crate::Transform::from_pos_angle(lb, 0.0),
+            crate::Transform::from_pos_angle(la, 0.0)?,
+            crate::Transform::from_pos_angle(lb, 0.0)?,
         );
         Ok(())
     }
@@ -423,27 +429,8 @@ impl<'w> DistanceJointBuilder<'w> {
         self
     }
 
-    #[must_use]
-    pub fn build(mut self) -> Joint<'w> {
-        self.configure_local_frames()
-            .expect("distance-joint world anchors must fit in local f32 frames");
+    pub fn build(mut self) -> Result<JointId> {
+        self.configure_local_frames()?;
         self.world.create_distance_joint(&self.def)
-    }
-
-    pub fn try_build(mut self) -> ApiResult<Joint<'w>> {
-        self.configure_local_frames()?;
-        self.world.try_create_distance_joint(&self.def)
-    }
-
-    #[must_use]
-    pub fn build_owned(mut self) -> OwnedJoint {
-        self.configure_local_frames()
-            .expect("distance-joint world anchors must fit in local f32 frames");
-        self.world.create_distance_joint_owned(&self.def)
-    }
-
-    pub fn try_build_owned(mut self) -> ApiResult<OwnedJoint> {
-        self.configure_local_frames()?;
-        self.world.try_create_distance_joint_owned(&self.def)
     }
 }

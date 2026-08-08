@@ -5,6 +5,10 @@ edition = "2024"
 publish = false
 
 [dependencies]
-bevy_boxdd = { version = "=0.0.0-BOXDD-VERSION", registry = "boxdd-local" }
+bevy_boxdd = { version = "0" }
+bevy_app = "=0.19.0"
+
+[features]
+double-precision = ["bevy_boxdd/double-precision"]
 
 [workspace]

@@ -6,10 +6,6 @@ use std::path::{Component, Path, PathBuf};
 
 use sha2::{Digest as _, Sha256};
 
-#[allow(dead_code)]
-pub(crate) const BUILD_POLICY_SOURCE_SHA256: &str =
-    "cbadd21ef687bd337e611400d162296f880b27388e716e89a9944ed333113050";
-
 pub const WASI_LIBC_VERSION: &str = "32";
 pub const WASI_LIBC_HEADERS_SHA256: &str =
     "0e80041ea13b42db5bcd5dc92d737da7c26e4e5a60b902413a41e09924f37687";

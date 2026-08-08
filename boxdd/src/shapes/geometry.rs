@@ -2,18 +2,18 @@ use crate::{
     collision::{CastOutput, ShapeCastInput},
     core::{
         foundation::{
-            TransientFoundationLease, assert_transient_native_lease, foundation,
-            transient_native_lease,
+            TransientFoundationLease, current_length_units_per_meter, transient_native_lease,
         },
         math::Transform,
     },
-    error::{ApiError, ApiResult},
+    error::{Error, Result},
     query::Aabb,
     types::{MassData, Vec2, WorldTransform},
 };
 use boxdd_sys::ffi;
 use core::fmt;
 use smallvec::SmallVec;
+use std::collections::HashMap;
 
 mod capsule;
 mod chain_segment;
@@ -36,8 +36,6 @@ const POLYGON_ONE_THIRD: f64 = 1.0 / 3.0;
 const _: () = {
     assert!(core::mem::size_of::<Vec2>() == core::mem::size_of::<ffi::b2Vec2>());
     assert!(core::mem::align_of::<Vec2>() == core::mem::align_of::<ffi::b2Vec2>());
-    assert!(core::mem::size_of::<ChainSegment>() == core::mem::size_of::<ffi::b2ChainSegment>());
-    assert!(core::mem::align_of::<ChainSegment>() == core::mem::align_of::<ffi::b2ChainSegment>());
 };
 
 #[inline]
@@ -50,17 +48,23 @@ fn materialize_ray_input<VO: Into<Vec2>, VT: Into<Vec2>>(
     raw_ray_input(origin, translation)
 }
 
-#[track_caller]
-fn assert_ray_input_valid(input: &ffi::b2RayCastInput) {
-    assert!(
-        raw_ray_input_is_valid(input),
-        "ray input must be valid Box2D ray data"
-    );
-}
-
 #[inline]
-fn check_ray_input_valid(input: &ffi::b2RayCastInput) -> ApiResult<()> {
-    geometry_is_valid_or_err(raw_ray_input_is_valid(input))
+fn check_ray_input_valid(operation: &'static str, input: &ffi::b2RayCastInput) -> Result<()> {
+    if !geometry_vec2_is_valid(Vec2::from_raw(input.origin)) {
+        return Err(Error::invalid_argument(
+            operation,
+            "origin",
+            "a finite vector",
+        ));
+    }
+    if !geometry_vec2_is_valid(Vec2::from_raw(input.translation)) {
+        return Err(Error::invalid_argument(
+            operation,
+            "translation",
+            "a finite vector",
+        ));
+    }
+    Ok(())
 }
 
 #[inline]
@@ -70,12 +74,6 @@ fn raw_ray_input(origin: Vec2, translation: Vec2) -> ffi::b2RayCastInput {
         translation: translation.into_raw(),
         maxFraction: 1.0,
     }
-}
-
-#[inline]
-fn raw_ray_input_is_valid(input: &ffi::b2RayCastInput) -> bool {
-    geometry_vec2_is_valid(Vec2::from_raw(input.origin))
-        && geometry_vec2_is_valid(Vec2::from_raw(input.translation))
 }
 
 #[inline]
@@ -112,11 +110,39 @@ fn polygon_points_are_valid(points: &[ffi::b2Vec2]) -> bool {
 
 #[inline]
 fn compute_hull_from_points(
+    operation: &'static str,
     points: &[ffi::b2Vec2],
     _lease: &TransientFoundationLease,
-) -> Option<ffi::b2Hull> {
+) -> Result<Option<ffi::b2Hull>> {
     let hull = unsafe { ffi::b2ComputeHull(points.as_ptr(), points.len() as i32) };
-    (hull.count > 0).then_some(hull)
+    validate_native_hull(operation, hull)
+}
+
+#[inline]
+fn validate_native_hull(operation: &'static str, hull: ffi::b2Hull) -> Result<Option<ffi::b2Hull>> {
+    if hull.count == 0 {
+        return Ok(None);
+    }
+    let count = usize::try_from(hull.count).map_err(|_| Error::InvalidNativeOutput {
+        operation,
+        output: "hull",
+        constraint: "an empty hull or three to Box2D's maximum finite convex hull points",
+    })?;
+    if !(3..=MAX_POLYGON_VERTICES).contains(&count)
+        || !hull.points[..count]
+            .iter()
+            .copied()
+            .map(Vec2::from_raw)
+            .all(Vec2::is_valid)
+        || !unsafe { ffi::b2ValidateHull(&hull) }
+    {
+        return Err(Error::InvalidNativeOutput {
+            operation,
+            output: "hull",
+            constraint: "an empty hull or three to Box2D's maximum finite convex hull points",
+        });
+    }
+    Ok(Some(hull))
 }
 
 #[inline]
@@ -140,106 +166,202 @@ fn geometry_density_is_valid(value: f32) -> bool {
 }
 
 #[inline]
-fn minimum_shape_segment_length_squared() -> f32 {
-    let linear_slop = 0.005 * foundation().config().length_units_per_meter();
-    linear_slop * linear_slop
+fn minimum_shape_segment_length_squared() -> Result<f32> {
+    let linear_slop = 0.005 * current_length_units_per_meter()?;
+    Ok(linear_slop * linear_slop)
 }
 
 #[inline]
-fn point_pair_has_minimum_separation(a: Vec2, b: Vec2) -> bool {
+fn point_pair_has_minimum_separation(a: Vec2, b: Vec2) -> Result<bool> {
     let dx = b.x - a.x;
     let dy = b.y - a.y;
-    dx * dx + dy * dy > minimum_shape_segment_length_squared()
+    let separation_squared = dx * dx + dy * dy;
+    let minimum_separation_squared = minimum_shape_segment_length_squared()?;
+    Ok(separation_squared.is_finite()
+        && minimum_separation_squared.is_finite()
+        && separation_squared > minimum_separation_squared)
+}
+
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+enum SeparationCell {
+    Grid(i64),
+    Exact(u32),
 }
 
 #[inline]
-fn geometry_is_valid_or_err(valid: bool) -> ApiResult<()> {
-    if valid {
-        Ok(())
+fn separation_cell(value: f32, cell_width: f32) -> SeparationCell {
+    if cell_width == 0.0 {
+        return SeparationCell::Exact(if value == 0.0 { 0 } else { value.to_bits() });
+    }
+
+    let scaled = f64::from(value) / f64::from(cell_width);
+    let lower = i64::MIN as f64 / 2.0;
+    let upper = i64::MAX as f64 / 2.0;
+    if (lower..=upper).contains(&scaled) {
+        SeparationCell::Grid(scaled.floor() as i64)
     } else {
-        Err(ApiError::InvalidArgument)
+        // At this magnitude adjacent finite f32 values are farther apart than the cell width, so
+        // only an exactly equal coordinate can be close enough to matter.
+        SeparationCell::Exact(value.to_bits())
     }
 }
 
-#[track_caller]
-fn assert_valid_geometry_vec2(name: &str, value: Vec2) {
-    assert!(
+#[inline]
+fn neighboring_separation_cells(cell: SeparationCell) -> [Option<SeparationCell>; 3] {
+    match cell {
+        SeparationCell::Grid(value) => [
+            Some(SeparationCell::Grid(value - 1)),
+            Some(cell),
+            Some(SeparationCell::Grid(value + 1)),
+        ],
+        SeparationCell::Exact(_) => [None, Some(cell), None],
+    }
+}
+
+/// Validate Box2D's chain-wide rule that every pair of points is farther apart than linear slop.
+pub(crate) fn points_have_minimum_pairwise_separation(
+    points: &[Vec2],
+    length_units_per_meter: f32,
+) -> core::result::Result<bool, std::collections::TryReserveError> {
+    if !crate::core::length_scale::is_safe_length_units_per_meter(length_units_per_meter) {
+        return Ok(false);
+    }
+
+    let cell_width = 0.005 * length_units_per_meter;
+    if !cell_width.is_finite() {
+        return Ok(false);
+    }
+
+    let mut cells: HashMap<(SeparationCell, SeparationCell), SmallVec<[Vec2; 4]>> = HashMap::new();
+    cells.try_reserve(points.len())?;
+
+    for &point in points {
+        if !point.is_valid() {
+            return Ok(false);
+        }
+
+        let x_cell = separation_cell(point.x, cell_width);
+        let y_cell = separation_cell(point.y, cell_width);
+        for neighbor_x in neighboring_separation_cells(x_cell).into_iter().flatten() {
+            for neighbor_y in neighboring_separation_cells(y_cell).into_iter().flatten() {
+                let Some(neighbors) = cells.get(&(neighbor_x, neighbor_y)) else {
+                    continue;
+                };
+                if neighbors.iter().any(|neighbor| {
+                    let dx = point.x - neighbor.x;
+                    let dy = point.y - neighbor.y;
+                    dx.hypot(dy) <= cell_width
+                }) {
+                    return Ok(false);
+                }
+            }
+        }
+
+        cells.entry((x_cell, y_cell)).or_default().push(point);
+    }
+
+    Ok(true)
+}
+
+#[inline]
+fn geometry_is_valid_or_err(
+    operation: &'static str,
+    argument: &'static str,
+    constraint: &'static str,
+    valid: bool,
+) -> Result<()> {
+    if valid {
+        Ok(())
+    } else {
+        Err(Error::invalid_argument(operation, argument, constraint))
+    }
+}
+
+#[inline]
+fn check_valid_geometry_vec2(
+    operation: &'static str,
+    argument: &'static str,
+    value: Vec2,
+) -> Result<()> {
+    geometry_is_valid_or_err(
+        operation,
+        argument,
+        "a finite vector",
         geometry_vec2_is_valid(value),
-        "{name} must be a valid Box2D vector, got {:?}",
-        value
-    );
+    )
 }
 
 #[inline]
-fn check_valid_geometry_vec2(value: Vec2) -> ApiResult<()> {
-    geometry_is_valid_or_err(geometry_vec2_is_valid(value))
-}
-
-#[track_caller]
-fn assert_non_negative_finite_density(density: f32) {
-    assert!(
+fn check_non_negative_finite_density(operation: &'static str, density: f32) -> Result<()> {
+    geometry_is_valid_or_err(
+        operation,
+        "density",
+        "a finite value greater than or equal to zero",
         geometry_density_is_valid(density),
-        "density must be finite and >= 0.0, got {density}"
-    );
+    )
 }
 
 #[inline]
-fn check_non_negative_finite_density(density: f32) -> ApiResult<()> {
-    geometry_is_valid_or_err(geometry_density_is_valid(density))
-}
-
-#[track_caller]
-fn assert_positive_finite_polygon_scalar(name: &str, value: f32) {
-    assert!(
+fn check_positive_finite_polygon_scalar(
+    operation: &'static str,
+    argument: &'static str,
+    value: f32,
+) -> Result<()> {
+    geometry_is_valid_or_err(
+        operation,
+        argument,
+        "a finite value greater than zero",
         geometry_float_is_valid(value) && value > 0.0,
-        "{name} must be finite and > 0.0, got {value}"
-    );
+    )
 }
 
 #[inline]
-fn check_positive_finite_polygon_scalar(value: f32) -> ApiResult<()> {
-    geometry_is_valid_or_err(geometry_float_is_valid(value) && value > 0.0)
-}
-
-#[track_caller]
-fn assert_non_negative_finite_polygon_scalar(name: &str, value: f32) {
-    assert!(
+fn check_non_negative_finite_polygon_scalar(
+    operation: &'static str,
+    argument: &'static str,
+    value: f32,
+) -> Result<()> {
+    geometry_is_valid_or_err(
+        operation,
+        argument,
+        "a finite value greater than or equal to zero",
         geometry_scalar_is_non_negative_finite(value),
-        "{name} must be finite and >= 0.0, got {value}"
-    );
+    )
 }
 
 #[inline]
-fn check_non_negative_finite_polygon_scalar(value: f32) -> ApiResult<()> {
-    geometry_is_valid_or_err(geometry_scalar_is_non_negative_finite(value))
-}
-
-#[track_caller]
-fn assert_transform_valid(transform: Transform) {
-    assert!(
+fn check_transform_valid(operation: &'static str, transform: Transform) -> Result<()> {
+    geometry_is_valid_or_err(
+        operation,
+        "transform",
+        "a finite rigid transform",
         transform.is_valid(),
-        "transform must be a valid Box2D transform, got {:?}",
-        transform
-    );
+    )
 }
 
 #[inline]
-fn check_transform_valid(transform: Transform) -> ApiResult<()> {
-    geometry_is_valid_or_err(transform.is_valid())
-}
-
-#[track_caller]
-fn assert_world_transform_valid(transform: WorldTransform) {
-    assert!(
+fn check_world_transform_valid(operation: &'static str, transform: WorldTransform) -> Result<()> {
+    geometry_is_valid_or_err(
+        operation,
+        "transform",
+        "a finite rigid world transform",
         transform.is_valid(),
-        "transform must be a valid Box2D world transform, got {:?}",
-        transform
-    );
+    )
 }
 
 #[inline]
-fn check_world_transform_valid(transform: WorldTransform) -> ApiResult<()> {
-    geometry_is_valid_or_err(transform.is_valid())
+fn check_native_geometry_aabb(operation: &'static str, raw: ffi::b2AABB) -> Result<Aabb> {
+    // SAFETY: this immediately validates the complete native output before publication.
+    let aabb = Aabb::from_raw_unvalidated(raw);
+    if aabb.is_valid() {
+        Ok(aabb)
+    } else {
+        Err(Error::InvalidNativeOutput {
+            operation,
+            output: "aabb",
+            constraint: "finite ordered lower and upper bounds",
+        })
+    }
 }
 
 #[inline]
@@ -247,18 +369,14 @@ fn circle_helper_geometry_is_valid(circle: Circle) -> bool {
     geometry_vec2_is_valid(circle.center) && geometry_scalar_is_non_negative_finite(circle.radius)
 }
 
-#[track_caller]
-fn assert_circle_helper_geometry_valid(circle: Circle) {
-    assert!(
-        circle_helper_geometry_is_valid(circle),
-        "circle must contain valid Box2D geometry, got {:?}",
-        circle
-    );
-}
-
 #[inline]
-fn check_circle_helper_geometry_valid(circle: Circle) -> ApiResult<()> {
-    geometry_is_valid_or_err(circle_helper_geometry_is_valid(circle))
+fn check_circle_helper_geometry_valid(operation: &'static str, circle: Circle) -> Result<()> {
+    geometry_is_valid_or_err(
+        operation,
+        "circle",
+        "finite center coordinates and a finite non-negative radius",
+        circle_helper_geometry_is_valid(circle),
+    )
 }
 
 #[inline]
@@ -269,7 +387,21 @@ fn segment_helper_geometry_is_valid(segment: Segment) -> bool {
 #[inline]
 fn segment_geometry_is_valid(segment: Segment) -> bool {
     segment_helper_geometry_is_valid(segment)
-        && point_pair_has_minimum_separation(segment.point1, segment.point2)
+        && point_pair_has_minimum_separation(segment.point1, segment.point2).unwrap_or(false)
+}
+
+#[inline]
+fn check_segment_geometry_valid_for_operation(
+    operation: &'static str,
+    segment: Segment,
+) -> Result<()> {
+    geometry_is_valid_or_err(
+        operation,
+        "segment",
+        "finite endpoints separated by Box2D's minimum segment length",
+        segment_helper_geometry_is_valid(segment)
+            && point_pair_has_minimum_separation(segment.point1, segment.point2)?,
+    )
 }
 
 #[inline]
@@ -279,18 +411,30 @@ fn chain_segment_geometry_is_valid(segment: ChainSegment) -> bool {
         && geometry_vec2_is_valid(segment.ghost2)
 }
 
-#[track_caller]
-fn assert_segment_helper_geometry_valid(segment: Segment) {
-    assert!(
-        segment_helper_geometry_is_valid(segment),
-        "segment must contain valid Box2D coordinates, got {:?}",
-        segment
-    );
+#[inline]
+fn check_chain_segment_geometry_valid_for_operation(
+    operation: &'static str,
+    segment: ChainSegment,
+) -> Result<()> {
+    geometry_is_valid_or_err(
+        operation,
+        "chain_segment",
+        "finite ghost points and segment endpoints separated by Box2D's minimum length",
+        geometry_vec2_is_valid(segment.ghost1)
+            && segment_helper_geometry_is_valid(segment.segment)
+            && point_pair_has_minimum_separation(segment.segment.point1, segment.segment.point2)?
+            && geometry_vec2_is_valid(segment.ghost2),
+    )
 }
 
 #[inline]
-fn check_segment_helper_geometry_valid(segment: Segment) -> ApiResult<()> {
-    geometry_is_valid_or_err(segment_helper_geometry_is_valid(segment))
+fn check_segment_helper_geometry_valid(operation: &'static str, segment: Segment) -> Result<()> {
+    geometry_is_valid_or_err(
+        operation,
+        "segment",
+        "finite endpoint coordinates",
+        segment_helper_geometry_is_valid(segment),
+    )
 }
 
 #[inline]
@@ -303,21 +447,31 @@ fn capsule_helper_geometry_is_valid(capsule: Capsule) -> bool {
 #[inline]
 fn capsule_geometry_is_valid(capsule: Capsule) -> bool {
     capsule_helper_geometry_is_valid(capsule)
-        && point_pair_has_minimum_separation(capsule.center1, capsule.center2)
-}
-
-#[track_caller]
-fn assert_capsule_helper_geometry_valid(capsule: Capsule) {
-    assert!(
-        capsule_helper_geometry_is_valid(capsule),
-        "capsule must contain valid Box2D geometry, got {:?}",
-        capsule
-    );
+        && point_pair_has_minimum_separation(capsule.center1, capsule.center2).unwrap_or(false)
 }
 
 #[inline]
-fn check_capsule_helper_geometry_valid(capsule: Capsule) -> ApiResult<()> {
-    geometry_is_valid_or_err(capsule_helper_geometry_is_valid(capsule))
+fn check_capsule_geometry_valid_for_operation(
+    operation: &'static str,
+    capsule: Capsule,
+) -> Result<()> {
+    geometry_is_valid_or_err(
+        operation,
+        "capsule",
+        "finite geometry with endpoints separated by Box2D's minimum length and a non-negative radius",
+        capsule_helper_geometry_is_valid(capsule)
+            && point_pair_has_minimum_separation(capsule.center1, capsule.center2)?,
+    )
+}
+
+#[inline]
+fn check_capsule_helper_geometry_valid(operation: &'static str, capsule: Capsule) -> Result<()> {
+    geometry_is_valid_or_err(
+        operation,
+        "capsule",
+        "finite endpoints and a finite non-negative radius",
+        capsule_helper_geometry_is_valid(capsule),
+    )
 }
 
 #[inline]
@@ -507,66 +661,64 @@ fn polygon_helper_geometry_is_valid(polygon: Polygon) -> bool {
     )
 }
 
-#[track_caller]
-fn assert_polygon_helper_geometry_valid(polygon: Polygon) {
-    assert!(
+#[inline]
+fn check_polygon_helper_geometry_valid(operation: &'static str, polygon: Polygon) -> Result<()> {
+    geometry_is_valid_or_err(
+        operation,
+        "polygon",
+        "a valid convex Box2D polygon",
         polygon_helper_geometry_is_valid(polygon),
-        "polygon must contain valid Box2D geometry, got {:?}",
-        polygon
-    );
+    )
 }
 
 #[inline]
-fn check_polygon_helper_geometry_valid(polygon: Polygon) -> ApiResult<()> {
-    geometry_is_valid_or_err(polygon_helper_geometry_is_valid(polygon))
-}
-
-#[inline]
-fn try_compute_hull_from_points(
+fn require_hull_from_points(
+    operation: &'static str,
     points: &[ffi::b2Vec2],
     lease: &TransientFoundationLease,
-) -> ApiResult<ffi::b2Hull> {
-    compute_hull_from_points(points, lease).ok_or(ApiError::InvalidArgument)
+) -> Result<ffi::b2Hull> {
+    compute_hull_from_points(operation, points, lease)?.ok_or(Error::invalid_argument(
+        operation,
+        "points",
+        "points that form a non-degenerate convex hull",
+    ))
 }
 
 /// Circle geometry in local shape space.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Circle {
-    pub center: Vec2,
-    pub radius: f32,
+    pub(crate) center: Vec2,
+    pub(crate) radius: f32,
 }
 
 /// Line segment geometry in local shape space.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Segment {
-    pub point1: Vec2,
-    pub point2: Vec2,
+    pub(crate) point1: Vec2,
+    pub(crate) point2: Vec2,
 }
 
 /// One-sided chain segment geometry with ghost vertices on both ends.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[repr(C)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Copy, Clone)]
 pub struct ChainSegment {
-    pub ghost1: Vec2,
-    pub segment: Segment,
-    pub ghost2: Vec2,
-    #[cfg_attr(feature = "serde", serde(skip, default))]
-    chain_id: i32,
+    pub(crate) ghost1: Vec2,
+    pub(crate) segment: Segment,
+    pub(crate) ghost2: Vec2,
 }
 
 /// Capsule geometry in local shape space.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Capsule {
-    pub center1: Vec2,
-    pub center2: Vec2,
-    pub radius: f32,
+    pub(crate) center1: Vec2,
+    pub(crate) center2: Vec2,
+    pub(crate) radius: f32,
 }
 
 /// Convex polygon geometry in local shape space.
@@ -582,19 +734,24 @@ pub struct Polygon {
 
 /// Circle helper.
 #[inline]
-pub fn circle<C: Into<Vec2>>(center: C, radius: f32) -> Circle {
+pub fn circle<C: Into<Vec2>>(center: C, radius: f32) -> Result<Circle> {
     Circle::new(center, radius)
 }
 
 /// Segment helper.
 #[inline]
-pub fn segment<P1: Into<Vec2>, P2: Into<Vec2>>(point1: P1, point2: P2) -> Segment {
+pub fn segment<P1: Into<Vec2>, P2: Into<Vec2>>(point1: P1, point2: P2) -> Result<Segment> {
     Segment::new(point1, point2)
 }
 
 /// Chain segment helper.
 #[inline]
-pub fn chain_segment<G1, P1, P2, G2>(ghost1: G1, point1: P1, point2: P2, ghost2: G2) -> ChainSegment
+pub fn chain_segment<G1, P1, P2, G2>(
+    ghost1: G1,
+    point1: P1,
+    point2: P2,
+    ghost2: G2,
+) -> Result<ChainSegment>
 where
     G1: Into<Vec2>,
     P1: Into<Vec2>,
@@ -606,64 +763,40 @@ where
 
 /// Capsule helper.
 #[inline]
-pub fn capsule<C1: Into<Vec2>, C2: Into<Vec2>>(center1: C1, center2: C2, radius: f32) -> Capsule {
+pub fn capsule<C1: Into<Vec2>, C2: Into<Vec2>>(
+    center1: C1,
+    center2: C2,
+    radius: f32,
+) -> Result<Capsule> {
     Capsule::new(center1, center2, radius)
 }
 
 /// Axis-aligned box polygon helper.
 #[inline]
-pub fn box_polygon(half_width: f32, half_height: f32) -> Polygon {
+pub fn box_polygon(half_width: f32, half_height: f32) -> Result<Polygon> {
     Polygon::box_polygon(half_width, half_height)
-}
-
-/// Recoverable axis-aligned box polygon helper.
-#[inline]
-pub fn try_box_polygon(half_width: f32, half_height: f32) -> ApiResult<Polygon> {
-    Polygon::try_box_polygon(half_width, half_height)
 }
 
 /// Axis-aligned square polygon helper.
 #[inline]
-pub fn square_polygon(half_width: f32) -> Polygon {
+pub fn square_polygon(half_width: f32) -> Result<Polygon> {
     Polygon::square_polygon(half_width)
-}
-
-/// Recoverable axis-aligned square polygon helper.
-#[inline]
-pub fn try_square_polygon(half_width: f32) -> ApiResult<Polygon> {
-    Polygon::try_square_polygon(half_width)
 }
 
 /// Axis-aligned rounded box polygon helper.
 #[inline]
-pub fn rounded_box_polygon(half_width: f32, half_height: f32, radius: f32) -> Polygon {
+pub fn rounded_box_polygon(half_width: f32, half_height: f32, radius: f32) -> Result<Polygon> {
     Polygon::rounded_box_polygon(half_width, half_height, radius)
-}
-
-/// Recoverable axis-aligned rounded box polygon helper.
-#[inline]
-pub fn try_rounded_box_polygon(
-    half_width: f32,
-    half_height: f32,
-    radius: f32,
-) -> ApiResult<Polygon> {
-    Polygon::try_rounded_box_polygon(half_width, half_height, radius)
 }
 
 /// Offset box polygon helper using the crate's `Transform` vocabulary.
 #[inline]
-pub fn offset_box_polygon(half_width: f32, half_height: f32, transform: Transform) -> Polygon {
-    Polygon::offset_box_polygon(half_width, half_height, transform)
-}
-
-/// Recoverable offset box polygon helper using the crate's `Transform` vocabulary.
-#[inline]
-pub fn try_offset_box_polygon(
+pub fn offset_box_polygon(
     half_width: f32,
     half_height: f32,
     transform: Transform,
-) -> ApiResult<Polygon> {
-    Polygon::try_offset_box_polygon(half_width, half_height, transform)
+) -> Result<Polygon> {
+    Polygon::offset_box_polygon(half_width, half_height, transform)
 }
 
 /// Offset rounded box polygon helper using the crate's `Transform` vocabulary.
@@ -673,39 +806,18 @@ pub fn offset_rounded_box_polygon(
     half_height: f32,
     radius: f32,
     transform: Transform,
-) -> Polygon {
+) -> Result<Polygon> {
     Polygon::offset_rounded_box_polygon(half_width, half_height, radius, transform)
-}
-
-/// Recoverable offset rounded box polygon helper using the crate's `Transform` vocabulary.
-#[inline]
-pub fn try_offset_rounded_box_polygon(
-    half_width: f32,
-    half_height: f32,
-    radius: f32,
-    transform: Transform,
-) -> ApiResult<Polygon> {
-    Polygon::try_offset_rounded_box_polygon(half_width, half_height, radius, transform)
 }
 
 /// Build a polygon from arbitrary points by computing a convex hull.
 #[inline]
-pub fn polygon_from_points<I, P>(points: I, radius: f32) -> Option<Polygon>
+pub fn polygon_from_points<I, P>(points: I, radius: f32) -> Result<Polygon>
 where
     I: IntoIterator<Item = P>,
     P: Into<Vec2>,
 {
     Polygon::from_points(points, radius)
-}
-
-/// Recoverably build a polygon from arbitrary points by computing a convex hull.
-#[inline]
-pub fn try_polygon_from_points<I, P>(points: I, radius: f32) -> ApiResult<Polygon>
-where
-    I: IntoIterator<Item = P>,
-    P: Into<Vec2>,
-{
-    Polygon::try_from_points(points, radius)
 }
 
 /// Build an offset polygon from arbitrary points by computing a convex hull first.
@@ -714,7 +826,7 @@ pub fn offset_polygon_from_points<I, P>(
     points: I,
     radius: f32,
     transform: Transform,
-) -> Option<Polygon>
+) -> Result<Polygon>
 where
     I: IntoIterator<Item = P>,
     P: Into<Vec2>,
@@ -722,39 +834,12 @@ where
     Polygon::offset_from_points(points, radius, transform)
 }
 
-/// Recoverably build an offset polygon from arbitrary points by computing a convex hull first.
-#[inline]
-pub fn try_offset_polygon_from_points<I, P>(
-    points: I,
-    radius: f32,
-    transform: Transform,
-) -> ApiResult<Polygon>
-where
-    I: IntoIterator<Item = P>,
-    P: Into<Vec2>,
-{
-    Polygon::try_offset_from_points(points, radius, transform)
-}
-
 /// Use native Box2D hull computation to check whether a point set produces a valid convex hull.
-///
-/// This panics when Box2D foundation activity is unavailable. Use
-/// [`try_polygon_hull_is_valid`] for a recoverable check.
 #[inline]
-pub fn polygon_hull_is_valid<I, P>(points: I) -> bool
+pub fn polygon_hull_is_valid<I, P>(points: I) -> Result<bool>
 where
     I: IntoIterator<Item = P>,
     P: Into<Vec2>,
 {
     Polygon::hull_is_valid(points)
-}
-
-/// Recoverable native Box2D hull computation and validation.
-#[inline]
-pub fn try_polygon_hull_is_valid<I, P>(points: I) -> ApiResult<bool>
-where
-    I: IntoIterator<Item = P>,
-    P: Into<Vec2>,
-{
-    Polygon::try_hull_is_valid(points)
 }

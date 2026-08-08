@@ -3,8 +3,8 @@
 use bevy_ecs::prelude::{Component, Entity};
 use bevy_math::Vec2 as BevyVec2;
 use boxdd::{
-    ApiError, ApiResult, BodyId, BodyType, Filter, JointId, MotionLocks, Position, ShapeDef,
-    ShapeId, SurfaceMaterial,
+    BodyId, BodyType, Error as BoxddError, Filter, JointId, MotionLocks, Position,
+    Result as BoxddResult, ShapeDef, ShapeId, SurfaceMaterial,
 };
 
 /// Maximum number of vertices accepted by [`Collider::ConvexPolygon`].
@@ -62,10 +62,11 @@ impl BodySettings {
     }
 
     /// Validates finite tuning values before applying them.
-    pub fn validate(self) -> ApiResult<()> {
-        validate_scalar(self.gravity_scale)?;
-        validate_nonnegative_scalar(self.linear_damping)?;
-        validate_nonnegative_scalar(self.angular_damping)
+    pub fn validate(self) -> BoxddResult<()> {
+        const OPERATION: &str = "BodySettings::validate";
+        validate_scalar(OPERATION, "gravity_scale", self.gravity_scale)?;
+        validate_nonnegative_scalar(OPERATION, "linear_damping", self.linear_damping)?;
+        validate_nonnegative_scalar(OPERATION, "angular_damping", self.angular_damping)
     }
 }
 
@@ -186,7 +187,7 @@ impl Collider {
     }
 
     /// Creates a convex polygon collider from local-space vertices.
-    pub fn convex_polygon<I>(points: I, radius: f32) -> ApiResult<Self>
+    pub fn convex_polygon<I>(points: I, radius: f32) -> BoxddResult<Self>
     where
         I: IntoIterator<Item = BevyVec2>,
     {
@@ -194,14 +195,22 @@ impl Collider {
         let mut count = 0usize;
         for point in points {
             if count == MAX_COLLIDER_POLYGON_VERTICES {
-                return Err(ApiError::InvalidArgument);
+                return Err(BoxddError::invalid_argument(
+                    "Collider::convex_polygon",
+                    "points",
+                    "between 1 and MAX_COLLIDER_POLYGON_VERTICES vertices",
+                ));
             }
             vertices[count] = point;
             count += 1;
         }
 
         if count == 0 || count > u8::MAX as usize {
-            return Err(ApiError::InvalidArgument);
+            return Err(BoxddError::invalid_argument(
+                "Collider::convex_polygon",
+                "points",
+                "between 1 and MAX_COLLIDER_POLYGON_VERTICES vertices",
+            ));
         }
 
         let collider = Self::ConvexPolygon {
@@ -214,34 +223,37 @@ impl Collider {
     }
 
     /// Validates finite, positive collider parameters before native shape creation.
-    pub fn validate(self) -> ApiResult<()> {
+    pub fn validate(self) -> BoxddResult<()> {
+        const OPERATION: &str = "Collider::validate";
         match self {
             Self::Circle { radius, center } => {
-                validate_vec2(center)?;
-                validate_positive_scalar(radius)
+                validate_vec2(OPERATION, "center", center)?;
+                validate_positive_scalar(OPERATION, "radius", radius)
             }
             Self::Capsule {
                 point1,
                 point2,
                 radius,
             } => {
-                validate_vec2(point1)?;
-                validate_vec2(point2)?;
-                validate_distinct_points(point1, point2)?;
-                validate_positive_scalar(radius)
+                validate_vec2(OPERATION, "point1", point1)?;
+                validate_vec2(OPERATION, "point2", point2)?;
+                validate_distinct_points(OPERATION, "point1/point2", point1, point2)?;
+                validate_positive_scalar(OPERATION, "radius", radius)
             }
             Self::Segment { point1, point2 } => {
-                validate_vec2(point1)?;
-                validate_vec2(point2)?;
-                validate_distinct_points(point1, point2)
+                validate_vec2(OPERATION, "point1", point1)?;
+                validate_vec2(OPERATION, "point2", point2)?;
+                validate_distinct_points(OPERATION, "point1/point2", point1, point2)
             }
-            Self::Rectangle { half_extents } => validate_positive_vec2(half_extents),
+            Self::Rectangle { half_extents } => {
+                validate_positive_vec2(OPERATION, "half_extents", half_extents)
+            }
             Self::RoundedRectangle {
                 half_extents,
                 radius,
             } => {
-                validate_positive_vec2(half_extents)?;
-                validate_nonnegative_scalar(radius)
+                validate_positive_vec2(OPERATION, "half_extents", half_extents)?;
+                validate_nonnegative_scalar(OPERATION, "radius", radius)
             }
             Self::ConvexPolygon {
                 vertices,
@@ -250,11 +262,15 @@ impl Collider {
             } => {
                 let count = count as usize;
                 if count == 0 || count > MAX_COLLIDER_POLYGON_VERTICES {
-                    return Err(ApiError::InvalidArgument);
+                    return Err(BoxddError::invalid_argument(
+                        OPERATION,
+                        "vertex_count",
+                        "between 1 and MAX_COLLIDER_POLYGON_VERTICES",
+                    ));
                 }
-                validate_nonnegative_scalar(radius)?;
+                validate_nonnegative_scalar(OPERATION, "radius", radius)?;
                 for point in &vertices[..count] {
-                    validate_vec2(*point)?;
+                    validate_vec2(OPERATION, "vertices", *point)?;
                 }
                 Ok(())
             }
@@ -293,12 +309,12 @@ pub struct PhysicsMaterial {
 
 impl PhysicsMaterial {
     /// Converts the component into the `boxdd` shape definition used by the plugin.
-    pub fn shape_def(self) -> ShapeDef {
+    pub fn shape_def(self) -> BoxddResult<ShapeDef> {
         let material = SurfaceMaterial::default()
-            .with_friction(self.friction)
-            .with_restitution(self.restitution)
-            .with_rolling_resistance(self.rolling_resistance)
-            .with_tangent_speed(self.tangent_speed)
+            .with_friction(self.friction)?
+            .with_restitution(self.restitution)?
+            .with_rolling_resistance(self.rolling_resistance)?
+            .with_tangent_speed(self.tangent_speed)?
             .with_user_material_id(self.user_material_id);
 
         ShapeDef::builder()
@@ -314,9 +330,9 @@ impl PhysicsMaterial {
     }
 
     /// Validates finite material fields before shape creation.
-    pub fn validate(self) -> ApiResult<()> {
-        validate_nonnegative_scalar(self.density)?;
-        self.shape_def().validate()
+    pub fn validate(self) -> BoxddResult<()> {
+        validate_nonnegative_scalar("PhysicsMaterial::validate", "density", self.density)?;
+        self.shape_def()?.validate()
     }
 }
 
@@ -339,24 +355,40 @@ impl Default for PhysicsMaterial {
     }
 }
 
-/// Native Box2D body id inserted after the plugin creates a body.
-#[derive(Component, Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct BoxddBody(pub BodyId);
+/// Read-only projection of a native body owned by [`crate::BoxddPhysicsContext`].
+///
+/// Moving this component does not transfer native ownership. The plugin restores the projection
+/// from its authoritative entity-to-body mapping before running physics systems.
+#[derive(Component, Debug, Eq, PartialEq, Hash)]
+#[component(immutable)]
+pub struct BoxddBody(BodyId);
 
 impl BoxddBody {
+    pub(crate) const fn new(id: BodyId) -> Self {
+        Self(id)
+    }
+
     /// Returns the native Box2D body id.
-    pub const fn id(self) -> BodyId {
+    pub const fn id(&self) -> BodyId {
         self.0
     }
 }
 
-/// Native Box2D shape id inserted after the plugin creates a shape.
-#[derive(Component, Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct BoxddShape(pub ShapeId);
+/// Read-only projection of a native shape owned by [`crate::BoxddPhysicsContext`].
+///
+/// Moving this component does not transfer native ownership. The plugin restores the projection
+/// from its authoritative entity-to-shape mapping before running physics systems.
+#[derive(Component, Debug, Eq, PartialEq, Hash)]
+#[component(immutable)]
+pub struct BoxddShape(ShapeId);
 
 impl BoxddShape {
+    pub(crate) const fn new(id: ShapeId) -> Self {
+        Self(id)
+    }
+
     /// Returns the native Box2D shape id.
-    pub const fn id(self) -> ShapeId {
+    pub const fn id(&self) -> ShapeId {
         self.0
     }
 }
@@ -460,15 +492,24 @@ impl JointDescriptor {
     }
 
     /// Validates finite descriptor values before native joint creation.
-    pub fn validate(self) -> ApiResult<()> {
+    pub fn validate(self) -> BoxddResult<()> {
         if self.entity_a == self.entity_b {
-            return Err(ApiError::InvalidArgument);
+            return Err(BoxddError::invalid_argument(
+                "JointDescriptor::validate",
+                "entity_a/entity_b",
+                "two distinct body entities",
+            ));
         }
-        validate_nonnegative_scalar(self.force_threshold)?;
-        validate_nonnegative_scalar(self.torque_threshold)?;
-        validate_positive_scalar(self.constraint_hertz)?;
-        validate_nonnegative_scalar(self.constraint_damping_ratio)?;
-        validate_positive_scalar(self.draw_scale)?;
+        const OPERATION: &str = "JointDescriptor::validate";
+        validate_nonnegative_scalar(OPERATION, "force_threshold", self.force_threshold)?;
+        validate_nonnegative_scalar(OPERATION, "torque_threshold", self.torque_threshold)?;
+        validate_positive_scalar(OPERATION, "constraint_hertz", self.constraint_hertz)?;
+        validate_nonnegative_scalar(
+            OPERATION,
+            "constraint_damping_ratio",
+            self.constraint_damping_ratio,
+        )?;
+        validate_positive_scalar(OPERATION, "draw_scale", self.draw_scale)?;
         self.kind.validate()
     }
 }
@@ -483,7 +524,7 @@ pub enum JointKind {
 }
 
 impl JointKind {
-    fn validate(self) -> ApiResult<()> {
+    fn validate(self) -> BoxddResult<()> {
         match self {
             Self::Distance(descriptor) => descriptor.validate(),
             Self::Revolute(descriptor) => descriptor.validate(),
@@ -509,11 +550,12 @@ impl DistanceJointDescriptor {
         self
     }
 
-    fn validate(self) -> ApiResult<()> {
-        validate_position(self.anchor_a)?;
-        validate_position(self.anchor_b)?;
+    fn validate(self) -> BoxddResult<()> {
+        const OPERATION: &str = "DistanceJointDescriptor::validate";
+        validate_position(OPERATION, "anchor_a", self.anchor_a)?;
+        validate_position(OPERATION, "anchor_b", self.anchor_b)?;
         if let Some(length) = self.length {
-            validate_positive_scalar(length)?;
+            validate_positive_scalar(OPERATION, "length", length)?;
         }
         Ok(())
     }
@@ -527,18 +569,26 @@ pub struct RevoluteJointDescriptor {
 }
 
 impl RevoluteJointDescriptor {
-    fn validate(self) -> ApiResult<()> {
-        validate_position(self.anchor)
+    fn validate(self) -> BoxddResult<()> {
+        validate_position("RevoluteJointDescriptor::validate", "anchor", self.anchor)
     }
 }
 
-/// Native Box2D joint id inserted after the plugin creates a joint.
-#[derive(Component, Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct BoxddJoint(pub JointId);
+/// Read-only projection of a native joint owned by [`crate::BoxddPhysicsContext`].
+///
+/// Moving this component does not transfer native ownership. The plugin restores the projection
+/// from its authoritative entity-to-joint mapping before running physics systems.
+#[derive(Component, Debug, Eq, PartialEq, Hash)]
+#[component(immutable)]
+pub struct BoxddJoint(JointId);
 
 impl BoxddJoint {
+    pub(crate) const fn new(id: JointId) -> Self {
+        Self(id)
+    }
+
     /// Returns the native Box2D joint id.
-    pub const fn id(self) -> JointId {
+    pub const fn id(&self) -> JointId {
         self.0
     }
 }
@@ -601,58 +651,111 @@ impl AngularImpulse {
     }
 }
 
-fn validate_vec2(value: BevyVec2) -> ApiResult<()> {
+fn validate_vec2(
+    operation: &'static str,
+    argument: &'static str,
+    value: BevyVec2,
+) -> BoxddResult<()> {
     if value.is_finite() {
         Ok(())
     } else {
-        Err(ApiError::InvalidArgument)
+        Err(BoxddError::invalid_argument(
+            operation,
+            argument,
+            "a finite vector",
+        ))
     }
 }
 
-fn validate_position(value: Position) -> ApiResult<()> {
+fn validate_position(
+    operation: &'static str,
+    argument: &'static str,
+    value: Position,
+) -> BoxddResult<()> {
     if value.is_valid() {
         Ok(())
     } else {
-        Err(ApiError::InvalidArgument)
+        Err(BoxddError::invalid_argument(
+            operation,
+            argument,
+            "a finite world position",
+        ))
     }
 }
 
-fn validate_scalar(value: f32) -> ApiResult<()> {
+fn validate_scalar(operation: &'static str, argument: &'static str, value: f32) -> BoxddResult<()> {
     if value.is_finite() {
         Ok(())
     } else {
-        Err(ApiError::InvalidArgument)
+        Err(BoxddError::invalid_argument(
+            operation,
+            argument,
+            "a finite value",
+        ))
     }
 }
 
-fn validate_positive_scalar(value: f32) -> ApiResult<()> {
+fn validate_positive_scalar(
+    operation: &'static str,
+    argument: &'static str,
+    value: f32,
+) -> BoxddResult<()> {
     if value.is_finite() && value > 0.0 {
         Ok(())
     } else {
-        Err(ApiError::InvalidArgument)
+        Err(BoxddError::invalid_argument(
+            operation,
+            argument,
+            "a finite value greater than zero",
+        ))
     }
 }
 
-fn validate_nonnegative_scalar(value: f32) -> ApiResult<()> {
+fn validate_nonnegative_scalar(
+    operation: &'static str,
+    argument: &'static str,
+    value: f32,
+) -> BoxddResult<()> {
     if value.is_finite() && value >= 0.0 {
         Ok(())
     } else {
-        Err(ApiError::InvalidArgument)
+        Err(BoxddError::invalid_argument(
+            operation,
+            argument,
+            "a finite value greater than or equal to zero",
+        ))
     }
 }
 
-fn validate_positive_vec2(value: BevyVec2) -> ApiResult<()> {
+fn validate_positive_vec2(
+    operation: &'static str,
+    argument: &'static str,
+    value: BevyVec2,
+) -> BoxddResult<()> {
     if value.is_finite() && value.x > 0.0 && value.y > 0.0 {
         Ok(())
     } else {
-        Err(ApiError::InvalidArgument)
+        Err(BoxddError::invalid_argument(
+            operation,
+            argument,
+            "a finite vector with both components greater than zero",
+        ))
     }
 }
 
-fn validate_distinct_points(a: BevyVec2, b: BevyVec2) -> ApiResult<()> {
+fn validate_distinct_points(
+    operation: &'static str,
+    argument: &'static str,
+    a: BevyVec2,
+    b: BevyVec2,
+) -> BoxddResult<()> {
     if a.distance_squared(b) > 0.0 {
         Ok(())
     } else {
-        Err(ApiError::InvalidArgument)
+        Err(BoxddError::invalid_argument(
+            operation,
+            argument,
+            "two distinct points",
+        ))
     }
 }

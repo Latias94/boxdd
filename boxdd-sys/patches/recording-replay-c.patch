@@ -1,0 +1,835 @@
+--- src/recording_replay.c
++++ src/recording_replay.c
+@@ -21,7 +21,7 @@
+ // doubles when adding the next keyframe would exceed the budget, so memory stays bounded and seek
+ // cost grows only once a recording outgrows the budget. The Replay sample exposes both as sliders.
+ #define B2_REC_KEYFRAME_INTERVAL_DEFAULT 16
+-#define B2_REC_KEYFRAME_BUDGET_DEFAULT ( 512 * 1024 * 1024 )
++#define B2_REC_KEYFRAME_BUDGET_DEFAULT ( (size_t)B2_REC_MAX_BUFFER_BYTES )
+
+ // Read primitives
+
+@@ -283,14 +283,11 @@
+ 	return locks;
+ }
+
+-// Returns a pointer into a rotating set of static buffers, valid until the next several
+-// STR reads. Only used to pass a name straight into a create/setter call during dispatch.
++// Returns reader-owned scratch valid until the next STR read on this reader. The caller passes
++// the name directly into a create call during dispatch, so no process-global storage is needed.
+ const char* b2RecR_STR( b2RecReader* rdr )
+ {
+-	static char s_bufs[4][B2_NAME_LENGTH + 1];
+-	static int s_next = 0;
+-	char* buf = s_bufs[s_next];
+-	s_next = ( s_next + 1 ) & 3;
++	char* buf = rdr->stringBuffer;
+
+ 	uint16_t len = b2RecR_U16( rdr );
+ 	if ( len == 0xFFFFu )
+@@ -618,56 +615,140 @@
+ 	return v;
+ }
+
+-// Reserve reader scratch for a count taken from an untrusted file. Every recorded element
+-// consumes at least one byte, so a valid count can never exceed the bytes left in the file.
+-// Reject anything larger (or negative, or that would overflow the byte size) by failing the read
+-// rather than allocating wildly. Contents are not preserved; callers overwrite before use.
++static bool b2RecGrow( void** data, int* capacity, int need, int keep, size_t elementSize );
++
++// Reserve reader scratch for a count taken from an untrusted file. Every recorded element consumes
++// at least one byte, so a valid count can never exceed the bytes left in the file. Contents are not
++// preserved, and allocation failure becomes a sticky reader failure.
+ static bool b2RecReserveScratch( b2RecReader* rdr, void** data, int* cap, int need, int elemSize )
+ {
+ 	int remaining = rdr->size - rdr->cursor;
+-	if ( need < 0 || remaining < 0 || need > remaining || need > INT_MAX / elemSize )
++	if ( elemSize <= 0 || need < 0 || remaining < 0 || need > remaining ||
++		 b2RecGrow( data, cap, need, 0, (size_t)elemSize ) == false )
+ 	{
+ 		rdr->ok = false;
+ 		return false;
+ 	}
+-	if ( need <= *cap )
++	return true;
++}
++
++// Plan array growth without signed overflow or a wrapped size_t byte count.
++static bool b2RecPlanGrowth( int capacity, int need, size_t elementSize, int* newCapacity, size_t* newBytes )
++{
++	if ( capacity < 0 || need < 0 || elementSize == 0 || newCapacity == NULL || newBytes == NULL )
++	{
++		return false;
++	}
++	size_t maximumElements = (size_t)B2_REC_MAX_BUFFER_BYTES / elementSize;
++	int maximumCapacity = maximumElements < (size_t)INT_MAX ? (int)maximumElements : INT_MAX;
++	if ( capacity > maximumCapacity || need > maximumCapacity )
++	{
++		return false;
++	}
++
++	int planned = capacity;
++	if ( need > capacity )
++	{
++		if ( capacity == 0 )
++		{
++			planned = need > 8 ? need : 8;
++		}
++		else
++		{
++			planned = capacity <= INT_MAX / 2 ? capacity * 2 : INT_MAX;
++			if ( planned < need )
++			{
++				planned = need;
++			}
++		}
++		if ( planned > maximumCapacity )
++		{
++			planned = maximumCapacity;
++		}
++	}
++	if ( (size_t)planned > SIZE_MAX / elementSize )
++	{
++		return false;
++	}
++	size_t bytes = (size_t)planned * elementSize;
++	if ( bytes > (size_t)B2_REC_MAX_BUFFER_BYTES )
++	{
++		return false;
++	}
++
++	*newCapacity = planned;
++	*newBytes = bytes;
++	return true;
++}
++
++// Free an array only when its pointer/capacity pair and byte width are self-consistent.
++static bool b2RecFreeArray( void* data, int capacity, size_t elementSize )
++{
++	if ( ( capacity == 0 ) != ( data == NULL ) )
++	{
++		return false;
++	}
++	int validatedCapacity = 0;
++	size_t bytes = 0;
++	if ( b2RecPlanGrowth( capacity, capacity, elementSize, &validatedCapacity, &bytes ) == false ||
++		 validatedCapacity != capacity )
+ 	{
+-		return true;
++		return false;
+ 	}
+-	int newCap = need <= INT_MAX / elemSize - 8 ? need + 8 : need;
+-	if ( *data != NULL )
++	if ( data != NULL )
+ 	{
+-		b2Free( *data, (size_t)*cap * (size_t)elemSize );
++		b2Free( data, bytes );
+ 	}
+-	*data = b2Alloc( (size_t)newCap * (size_t)elemSize );
+-	*cap = newCap;
+ 	return true;
+ }
+
+-// Overflow-safe growth for the player's accumulating draw arrays. Counts come from the replay
+-// itself, not the file, so this only guards the byte-size multiply. Preserves keep elements.
+-static void b2RecGrow( void** data, int* capacity, int need, int keep, int elemSize )
++// Grow one owned array transactionally. On failure the original pointer and capacity are unchanged.
++static bool b2RecGrow( void** data, int* capacity, int need, int keep, size_t elementSize )
+ {
++	if ( data == NULL || capacity == NULL )
++	{
++		return false;
++	}
++	if ( *capacity < 0 || need < 0 || keep < 0 || keep > need || keep > *capacity ||
++		 ( ( *capacity == 0 ) != ( *data == NULL ) ) )
++	{
++		return false;
++	}
++
++	int newCapacity = 0;
++	size_t newBytes = 0;
++	if ( b2RecPlanGrowth( *capacity, need, elementSize, &newCapacity, &newBytes ) == false )
++	{
++		return false;
++	}
+ 	if ( need <= *capacity )
+ 	{
+-		return;
++		return true;
+ 	}
+-	int newCap = *capacity == 0 ? 8 : 2 * *capacity;
+-	if ( newCap < need )
++
++	int oldCapacity = 0;
++	size_t oldBytes = 0;
++	if ( b2RecPlanGrowth( *capacity, *capacity, elementSize, &oldCapacity, &oldBytes ) == false ||
++		 oldCapacity != *capacity )
+ 	{
+-		newCap = need;
++		return false;
+ 	}
+-	void* grown = b2Alloc( (size_t)newCap * (size_t)elemSize );
++	void* grown = b2Alloc( newBytes );
++	if ( grown == NULL )
++	{
++		return false;
++	}
++	if ( keep > 0 )
++	{
++		memcpy( grown, *data, (size_t)keep * elementSize );
++	}
+ 	if ( *data != NULL )
+ 	{
+-		if ( keep > 0 )
+-		{
+-			memcpy( grown, *data, (size_t)keep * (size_t)elemSize );
+-		}
+-		b2Free( *data, (size_t)*capacity * (size_t)elemSize );
++		b2Free( *data, oldBytes );
+ 	}
+ 	*data = grown;
+-	*capacity = newCap;
++	*capacity = newCapacity;
++	return true;
+ }
+
+ void b2RecEnsureHits( b2RecReader* rdr, int n )
+@@ -826,8 +907,13 @@
+ // Append a created body to the outliner tracking list. Ordinals are creation order and never reused.
+ static void b2RecTrackBodyCreate( b2RecPlayer* player, b2BodyId id )
+ {
+-	b2RecGrow( (void**)&player->bodyIds, &player->bodyIdCap, player->bodyIdCount + 1, player->bodyIdCount,
+-			   (int)sizeof( b2BodyId ) );
++	if ( player->bodyIdCount < 0 || player->bodyIdCount == INT_MAX ||
++		 b2RecGrow( (void**)&player->bodyIds, &player->bodyIdCap, player->bodyIdCount + 1, player->bodyIdCount,
++					sizeof( b2BodyId ) ) == false )
++	{
++		player->rdr.ok = false;
++		return;
++	}
+ 	player->bodyIds[player->bodyIdCount] = id;
+ 	player->bodyIdCount += 1;
+ }
+@@ -859,6 +945,10 @@
+ 			continue; // free slot
+ 		}
+ 		b2RecTrackBodyCreate( player, b2MakeBodyId( world, i ) );
++		if ( player->rdr.ok == false )
++		{
++			return;
++		}
+ 	}
+ }
+
+@@ -1572,33 +1662,37 @@
+ // Per-frame query stash: push a draw record and copy its hits into frameHits.
+ // Ids in hits[] are already remapped to the replay world by the caller.
+
+-static void b2RecGrowFrameQueries( b2RecPlayer* player )
++static b2RecDrawQuery* b2RecStashQueryBegin( b2RecPlayer* player, int kind, const b2RecRecordedHit* hits, int hitCount )
+ {
+-	b2RecGrow( (void**)&player->frameQueries, &player->frameQueryCap, player->frameQueryCount + 1, player->frameQueryCount,
+-			   (int)sizeof( b2RecDrawQuery ) );
+-}
++	if ( player->frameQueryCount < 0 || player->frameQueryCount == INT_MAX || player->frameHitCount < 0 || hitCount < 0 ||
++		 hitCount > INT_MAX - player->frameHitCount || ( hitCount > 0 && hits == NULL ) )
++	{
++		player->rdr.ok = false;
++		return NULL;
++	}
+
+-static void b2RecGrowFrameHits( b2RecPlayer* player, int need )
+-{
+-	b2RecGrow( (void**)&player->frameHits, &player->frameHitCap, player->frameHitCount + need, player->frameHitCount,
+-			   (int)sizeof( b2RecRecordedHit ) );
+-}
++	int queryNeed = player->frameQueryCount + 1;
++	int hitNeed = player->frameHitCount + hitCount;
++	if ( b2RecGrow( (void**)&player->frameQueries, &player->frameQueryCap, queryNeed, player->frameQueryCount,
++					sizeof( b2RecDrawQuery ) ) == false ||
++		 b2RecGrow( (void**)&player->frameHits, &player->frameHitCap, hitNeed, player->frameHitCount,
++					sizeof( b2RecRecordedHit ) ) == false )
++	{
++		player->rdr.ok = false;
++		return NULL;
++	}
+
+-static b2RecDrawQuery* b2RecStashQueryBegin( b2RecPlayer* player, int kind, const b2RecRecordedHit* hits, int hitCount )
+-{
+-	b2RecGrowFrameQueries( player );
+ 	b2RecDrawQuery* q = &player->frameQueries[player->frameQueryCount];
+ 	memset( q, 0, sizeof( *q ) );
+ 	q->kind = kind;
+ 	q->hitStart = player->frameHitCount;
+ 	q->hitCount = hitCount;
+-	b2RecGrowFrameHits( player, hitCount );
+-	for ( int i = 0; i < hitCount; ++i )
++	if ( hitCount > 0 )
+ 	{
+-		player->frameHits[player->frameHitCount + i] = hits[i];
++		memcpy( player->frameHits + player->frameHitCount, hits, (size_t)hitCount * sizeof( b2RecRecordedHit ) );
+ 	}
+-	player->frameHitCount += hitCount;
+-	player->frameQueryCount++;
++	player->frameHitCount = hitNeed;
++	player->frameQueryCount = queryNeed;
+ 	return q;
+ }
+
+@@ -1653,6 +1747,10 @@
+ 	if ( rdr->owner )
+ 	{
+ 		b2RecDrawQuery* q = b2RecStashQueryBegin( rdr->owner, B2_RECQ_OVERLAP_AABB, rdr->hits, (int)n );
++		if ( q == NULL )
++		{
++			return;
++		}
+ 		q->filter = a->filter;
+ 		q->origin = a->origin;
+ 		q->aabb = a->aabb;
+@@ -1682,6 +1780,10 @@
+ 	if ( rdr->owner )
+ 	{
+ 		b2RecDrawQuery* q = b2RecStashQueryBegin( rdr->owner, B2_RECQ_OVERLAP_SHAPE, rdr->hits, (int)n );
++		if ( q == NULL )
++		{
++			return;
++		}
+ 		q->filter = a->filter;
+ 		q->origin = a->origin;
+ 		q->proxy = a->proxy;
+@@ -1736,6 +1838,10 @@
+ 	if ( rdr->owner )
+ 	{
+ 		b2RecDrawQuery* q = b2RecStashQueryBegin( rdr->owner, B2_RECQ_CAST_RAY, rdr->hits, (int)n );
++		if ( q == NULL )
++		{
++			return;
++		}
+ 		q->filter = a->filter;
+ 		q->origin = a->origin;
+ 		q->translation = a->translation;
+@@ -1768,6 +1874,10 @@
+ 	if ( rdr->owner )
+ 	{
+ 		b2RecDrawQuery* q = b2RecStashQueryBegin( rdr->owner, B2_RECQ_CAST_SHAPE, rdr->hits, (int)n );
++		if ( q == NULL )
++		{
++			return;
++		}
+ 		q->filter = a->filter;
+ 		q->origin = a->origin;
+ 		q->proxy = a->proxy;
+@@ -1820,6 +1930,10 @@
+ 	if ( rdr->owner )
+ 	{
+ 		b2RecDrawQuery* q = b2RecStashQueryBegin( rdr->owner, B2_RECQ_COLLIDE_MOVER, rdr->hits, (int)n );
++		if ( q == NULL )
++		{
++			return;
++		}
+ 		q->filter = a->filter;
+ 		q->origin = a->origin;
+ 		q->mover = a->mover;
+@@ -1850,6 +1964,10 @@
+ 		h.normal = rec.normal;
+ 		h.fraction = rec.fraction;
+ 		b2RecDrawQuery* q = b2RecStashQueryBegin( rdr->owner, B2_RECQ_CAST_RAY_CLOSEST, &h, rec.hit ? 1 : 0 );
++		if ( q == NULL )
++		{
++			return;
++		}
+ 		q->filter = a->filter;
+ 		q->origin = a->origin;
+ 		q->translation = a->translation;
+@@ -1869,6 +1987,10 @@
+ 	if ( rdr->owner )
+ 	{
+ 		b2RecDrawQuery* q = b2RecStashQueryBegin( rdr->owner, B2_RECQ_CAST_MOVER, NULL, 0 );
++		if ( q == NULL )
++		{
++			return;
++		}
+ 		q->filter = a->filter;
+ 		q->origin = a->origin;
+ 		q->mover = a->mover;
+@@ -1891,6 +2013,10 @@
+ 	if ( rdr->owner )
+ 	{
+ 		b2RecDrawQuery* q = b2RecStashQueryBegin( rdr->owner, B2_RECQ_SHAPE_TEST_POINT, NULL, 0 );
++		if ( q == NULL )
++		{
++			return;
++		}
+ 		q->shape = id;
+ 		q->origin = a->point;
+ 		q->boolResult = rec;
+@@ -1915,6 +2041,10 @@
+ 	if ( rdr->owner )
+ 	{
+ 		b2RecDrawQuery* q = b2RecStashQueryBegin( rdr->owner, B2_RECQ_SHAPE_RAY_CAST, NULL, 0 );
++		if ( q == NULL )
++		{
++			return;
++		}
+ 		q->shape = id;
+ 		// The ray starts at the origin
+ 		q->origin = a->origin;
+@@ -2171,27 +2301,43 @@
+ 	// The seed snapshot holds the bodies present when recording began; only post-snapshot creates
+ 	// reach the tracker, so seed the outliner list directly from the restored world
+ 	b2RecSeedBodyIds( player );
++	if ( player->rdr.ok == false || player->bodyIdCount < 0 ||
++		 (size_t)player->bodyIdCount > SIZE_MAX / sizeof( b2BodyId ) )
++	{
++		b2RecPlayer_Destroy( player );
++		return NULL;
++	}
+
+-	// Stash the frame-0 list so a restart or backward scrub rolls the outliner back to it
++	// Stash the frame-0 list so a restart or backward scrub rolls the outliner back to it.
+ 	player->frame0BodyIdCount = player->bodyIdCount;
+-	if ( player->bodyIdCount > 0 )
++	size_t frame0BodyBytes = (size_t)player->bodyIdCount * sizeof( b2BodyId );
++	if ( frame0BodyBytes > 0 )
+ 	{
+-		player->frame0BodyIds = b2Alloc( player->bodyIdCount * (int)sizeof( b2BodyId ) );
+-		memcpy( player->frame0BodyIds, player->bodyIds, player->bodyIdCount * (int)sizeof( b2BodyId ) );
++		player->frame0BodyIds = b2Alloc( frame0BodyBytes );
++		if ( player->frame0BodyIds == NULL )
++		{
++			b2RecPlayer_Destroy( player );
++			return NULL;
++		}
++		memcpy( player->frame0BodyIds, player->bodyIds, frame0BodyBytes );
+ 	}
+
+ 	return player;
+ }
+
+-// Free a keyframe's heap. image is freed at its allocation size, which over-allocates the logical
+-// image, so the free size matches the alloc.
++// Free a keyframe's owned snapshot and body-list allocations at their recorded allocation sizes.
+ static void b2FreeKeyframe( b2RecKeyframe* kf )
+ {
+-	b2Free( kf->image, kf->imageCapacity );
+-	if ( kf->bodyIds != NULL )
++	if ( kf->image != NULL && kf->imageCapacity >= 0 )
+ 	{
+-		b2Free( kf->bodyIds, kf->bodyIdCount * (int)sizeof( b2BodyId ) );
++		b2Free( kf->image, (size_t)kf->imageCapacity );
+ 	}
++	if ( kf->bodyIds != NULL && kf->bodyIdCount >= 0 &&
++		 (size_t)kf->bodyIdCount <= SIZE_MAX / sizeof( b2BodyId ) )
++	{
++		b2Free( kf->bodyIds, (size_t)kf->bodyIdCount * sizeof( b2BodyId ) );
++	}
++	*kf = (b2RecKeyframe){ 0 };
+ }
+
+ // Capture a restore point for the just-completed frame. rdr.cursor already sits at the next frame's
+@@ -2199,30 +2345,120 @@
+ // divergence state forward stepping would otherwise have to rebuild.
+ static void b2RecCaptureKeyframe( b2RecPlayer* player )
+ {
+-	// Serialize into a buffer the keyframe takes ownership of, so there is no second full-size alloc
+-	// and copy. The buffer over-allocates, so the budget and free track its capacity, not its size.
++	// Validate every owned array before using its count, capacity, or allocation size. Corrupted
++	// private state disables this optional optimization instead of becoming an out-of-bounds access.
+ 	b2World* world = b2GetWorldFromId( player->rdr.replayWorldId );
+ 	b2RecBuffer buf = { 0 };
+-	b2SerializeWorld( world, &buf );
++	if ( player->bodyIdCount < 0 || player->bodyIdCap < 0 || player->bodyIdCount > player->bodyIdCap ||
++		 ( ( player->bodyIdCap == 0 ) != ( player->bodyIds == NULL ) ) || player->keyframeCount < 0 ||
++		 player->keyframeCapacity < 0 || player->keyframeCount > player->keyframeCapacity ||
++		 ( ( player->keyframeCapacity == 0 ) != ( player->keyframes == NULL ) ) ||
++		 player->keyframeMinInterval <= 0 || player->keyframeInterval <= 0 )
++	{
++		return;
++	}
+
++	int currentMetadataCapacity = 0;
++	size_t metadataBytes = 0;
++	if ( b2RecPlanGrowth( player->keyframeCapacity, player->keyframeCapacity, sizeof( b2RecKeyframe ),
++						&currentMetadataCapacity, &metadataBytes ) == false ||
++		 currentMetadataCapacity != player->keyframeCapacity )
++	{
++		return;
++	}
++
++	size_t validatedBytes = metadataBytes;
++	for ( int i = 0; i < player->keyframeCount; ++i )
++	{
++		const b2RecKeyframe* kf = &player->keyframes[i];
++		if ( kf->imageSize <= 0 || kf->imageCapacity < kf->imageSize || kf->image == NULL || kf->bodyIdCount < 0 ||
++			 ( ( kf->bodyIdCount == 0 ) != ( kf->bodyIds == NULL ) ) ||
++			 (size_t)kf->bodyIdCount > SIZE_MAX / sizeof( b2BodyId ) )
++		{
++			return;
++		}
++		size_t retainedBodyBytes = (size_t)kf->bodyIdCount * sizeof( b2BodyId );
++		if ( retainedBodyBytes > SIZE_MAX - (size_t)kf->imageCapacity )
++		{
++			return;
++		}
++		size_t retainedBytes = (size_t)kf->imageCapacity + retainedBodyBytes;
++		if ( retainedBytes > SIZE_MAX - validatedBytes )
++		{
++			return;
++		}
++		validatedBytes += retainedBytes;
++	}
++	if ( validatedBytes != player->keyframeBytes )
++	{
++		return;
++	}
++
++	// Count first so an oversized optional keyframe never causes a large transient allocation. The
++	// retained ring, metadata, and each candidate share the recording writer's hard ceiling.
++	if ( (size_t)player->bodyIdCount > SIZE_MAX / sizeof( b2BodyId ) )
++	{
++		return;
++	}
+ 	size_t bodyBytes = (size_t)player->bodyIdCount * sizeof( b2BodyId );
+-	size_t newBytes = (size_t)buf.capacity + bodyBytes;
++	size_t hardBudget = player->keyframeBudget < (size_t)B2_REC_MAX_BUFFER_BYTES ?
++		player->keyframeBudget : (size_t)B2_REC_MAX_BUFFER_BYTES;
++	if ( validatedBytes > hardBudget || bodyBytes >= hardBudget )
++	{
++		return;
++	}
+
+-	// Make room under the budget: doubling the spacing drops the off-grid keyframes, roughly halving
+-	// the bytes, until the new keyframe fits or only it remains. The budget is soft in the corner
+-	// where a single snapshot already exceeds it.
+-	while ( player->keyframeCount > 0 && player->keyframeBytes + newBytes > player->keyframeBudget )
++	b2RecBuffer counter = { 0 };
++	counter.countOnly = true;
++	counter.limit = (int)( hardBudget - bodyBytes );
++	b2SerializeWorld( world, &counter );
++	if ( counter.status != B2_REC_BUFFER_OK || counter.size <= 0 )
+ 	{
++		return;
++	}
++	size_t newBytes = (size_t)counter.size + bodyBytes;
++
++	// Make room before allocating. The fit calculation includes any metadata-array growth, not just
++	// the snapshot and body list retained by the new entry.
++	int plannedMetadataCapacity = 0;
++	size_t plannedMetadataBytes = 0;
++	for ( ;; )
++	{
++		if ( player->keyframeCount == INT_MAX ||
++			 b2RecPlanGrowth( player->keyframeCapacity, player->keyframeCount + 1, sizeof( b2RecKeyframe ),
++							&plannedMetadataCapacity, &plannedMetadataBytes ) == false ||
++			 plannedMetadataBytes < metadataBytes )
++		{
++			return;
++		}
++
++		size_t metadataGrowth = plannedMetadataBytes - metadataBytes;
++		bool fits = player->keyframeBytes <= hardBudget && newBytes <= hardBudget - player->keyframeBytes &&
++					metadataGrowth <= hardBudget - player->keyframeBytes - newBytes;
++		if ( fits )
++		{
++			break;
++		}
++		if ( player->keyframeCount == 0 || player->keyframeInterval > INT_MAX / 2 )
++		{
++			return;
++		}
++
+ 		player->keyframeInterval *= 2;
+ 		int kept = 0;
+-		size_t keptBytes = 0;
++		size_t keptBytes = metadataBytes;
+ 		for ( int i = 0; i < player->keyframeCount; ++i )
+ 		{
+ 			b2RecKeyframe* kf = &player->keyframes[i];
+ 			if ( kf->frame % player->keyframeInterval == 0 )
+ 			{
++				size_t retainedBytes = (size_t)kf->imageCapacity + (size_t)kf->bodyIdCount * sizeof( b2BodyId );
++				if ( retainedBytes > SIZE_MAX - keptBytes )
++				{
++					return;
++				}
+ 				player->keyframes[kept] = *kf;
+-				keptBytes += (size_t)kf->imageCapacity + (size_t)kf->bodyIdCount * sizeof( b2BodyId );
++				keptBytes += retainedBytes;
+ 				kept += 1;
+ 			}
+ 			else
+@@ -2235,31 +2471,54 @@
+ 		player->keyframeBytes = keptBytes;
+ 		if ( progress == false )
+ 		{
+-			break;
++			return;
+ 		}
+ 	}
+
+-	b2RecGrow( (void**)&player->keyframes, &player->keyframeCapacity, player->keyframeCount + 1, player->keyframeCount,
+-			   (int)sizeof( b2RecKeyframe ) );
++	buf.limit = counter.size;
++	b2SerializeWorld( world, &buf );
++	if ( buf.status != B2_REC_BUFFER_OK || buf.size != counter.size || buf.capacity != counter.size )
++	{
++		b2RecBufFree( &buf );
++		return;
++	}
+
+-	b2RecKeyframe* kf = &player->keyframes[player->keyframeCount];
+-	// Hand the serialized buffer to the keyframe rather than copying it into an exact-size block
+-	kf->image = buf.data;
+-	kf->imageSize = buf.size;
+-	kf->imageCapacity = buf.capacity;
+-
+-	kf->frame = player->frame;
+-	kf->cursor = player->rdr.cursor;
+-	kf->divergeFrame = player->divergeFrame;
+-	kf->diverged = player->rdr.diverged;
+-	kf->bodyIdCount = player->bodyIdCount;
+-	kf->bodyIds = NULL;
++	b2BodyId* candidateBodyIds = NULL;
+ 	if ( bodyBytes > 0 )
+ 	{
+-		kf->bodyIds = b2Alloc( bodyBytes );
+-		memcpy( kf->bodyIds, player->bodyIds, (size_t)bodyBytes );
++		candidateBodyIds = b2Alloc( bodyBytes );
++		if ( candidateBodyIds == NULL )
++		{
++			b2RecBufFree( &buf );
++			return;
++		}
++		memcpy( candidateBodyIds, player->bodyIds, bodyBytes );
+ 	}
+
++	if ( b2RecGrow( (void**)&player->keyframes, &player->keyframeCapacity, player->keyframeCount + 1,
++				   player->keyframeCount, sizeof( b2RecKeyframe ) ) == false )
++	{
++		if ( candidateBodyIds != NULL )
++		{
++			b2Free( candidateBodyIds, bodyBytes );
++		}
++		b2RecBufFree( &buf );
++		return;
++	}
++
++	b2RecKeyframe candidate = { 0 };
++	candidate.image = buf.data;
++	candidate.imageSize = buf.size;
++	candidate.imageCapacity = buf.capacity;
++	candidate.frame = player->frame;
++	candidate.cursor = player->rdr.cursor;
++	candidate.divergeFrame = player->divergeFrame;
++	candidate.diverged = player->rdr.diverged;
++	candidate.bodyIdCount = player->bodyIdCount;
++	candidate.bodyIds = candidateBodyIds;
++	player->keyframes[player->keyframeCount] = candidate;
++
++	player->keyframeBytes += plannedMetadataBytes - metadataBytes;
+ 	player->keyframeBytes += newBytes;
+ 	player->keyframeCount += 1;
+ 	player->lastKeyframeFrame = player->frame;
+@@ -2270,11 +2529,29 @@
+ // so the replay world id stays stable.
+ static void b2RecPlayerRestoreKeyframe( b2RecPlayer* player, const b2RecKeyframe* kf )
+ {
++	if ( kf == NULL || kf->image == NULL || kf->imageSize <= 0 || kf->imageCapacity < kf->imageSize ||
++		 kf->bodyIdCount < 0 || ( ( kf->bodyIdCount == 0 ) != ( kf->bodyIds == NULL ) ) ||
++		 (size_t)kf->bodyIdCount > SIZE_MAX / sizeof( b2BodyId ) || kf->cursor < player->headerEnd ||
++		 kf->cursor > player->size || player->bodyIdCount < 0 )
++	{
++		player->rdr.ok = false;
++		return;
++	}
++
++	// Reserve before mutating the world and preserve the current list if restore itself fails.
++	int reserveNeed = kf->bodyIdCount > player->bodyIdCount ? kf->bodyIdCount : player->bodyIdCount;
++	if ( b2RecGrow( (void**)&player->bodyIds, &player->bodyIdCap, reserveNeed, player->bodyIdCount,
++				   sizeof( b2BodyId ) ) == false )
++	{
++		player->rdr.ok = false;
++		return;
++	}
+ 	if ( b2World_Restore( player->rdr.replayWorldId, kf->image, kf->imageSize ) == false )
+ 	{
+ 		player->rdr.ok = false;
+ 		return;
+ 	}
++
+ 	player->rdr.cursor = kf->cursor;
+ 	player->rdr.ok = true;
+ 	player->rdr.diverged = kf->diverged;
+@@ -2281,12 +2558,10 @@
+ 	player->frame = kf->frame;
+ 	player->divergeFrame = kf->divergeFrame;
+ 	player->atEnd = false;
+-
+-	b2RecGrow( (void**)&player->bodyIds, &player->bodyIdCap, kf->bodyIdCount, 0, (int)sizeof( b2BodyId ) );
+ 	player->bodyIdCount = kf->bodyIdCount;
+ 	if ( kf->bodyIdCount > 0 )
+ 	{
+-		memcpy( player->bodyIds, kf->bodyIds, kf->bodyIdCount * (int)sizeof( b2BodyId ) );
++		memcpy( player->bodyIds, kf->bodyIds, (size_t)kf->bodyIdCount * sizeof( b2BodyId ) );
+ 	}
+ }
+
+@@ -2347,9 +2622,17 @@
+ void b2RecPlayer_Restart( b2RecPlayer* player )
+ {
+ 	// Restore the frame-0 image in place so the replay world id stays stable across a restart or
+-	// backward scrub. Stepping resumes at the first Step, which rebuilds the body
+-	// list deterministically.
+-	if ( b2World_Restore( player->rdr.replayWorldId, player->frame0Image, player->frame0Size ) == false )
++	// backward scrub. Reserve the body list first so allocation failure leaves the world unchanged.
++	if ( player->frame0Image == NULL || player->frame0Size <= 0 || player->frame0BodyIdCount < 0 ||
++		 ( ( player->frame0BodyIdCount == 0 ) != ( player->frame0BodyIds == NULL ) ) || player->bodyIdCount < 0 )
++	{
++		player->rdr.ok = false;
++		return;
++	}
++	int reserveNeed = player->frame0BodyIdCount > player->bodyIdCount ? player->frame0BodyIdCount : player->bodyIdCount;
++	if ( b2RecGrow( (void**)&player->bodyIds, &player->bodyIdCap, reserveNeed, player->bodyIdCount,
++				   sizeof( b2BodyId ) ) == false ||
++		 b2World_Restore( player->rdr.replayWorldId, player->frame0Image, player->frame0Size ) == false )
+ 	{
+ 		player->rdr.ok = false;
+ 		return;
+@@ -2371,7 +2654,7 @@
+ 	player->bodyIdCount = player->frame0BodyIdCount;
+ 	if ( player->frame0BodyIdCount > 0 )
+ 	{
+-		memcpy( player->bodyIds, player->frame0BodyIds, player->frame0BodyIdCount * (int)sizeof( b2BodyId ) );
++		memcpy( player->bodyIds, player->frame0BodyIds, (size_t)player->frame0BodyIdCount * sizeof( b2BodyId ) );
+ 	}
+ }
+
+@@ -2470,9 +2753,24 @@
+ 	{
+ 		return;
+ 	}
++
++	int metadataCapacity = 0;
++	size_t metadataBytes = 0;
++	if ( player->keyframeCount < 0 || player->keyframeCapacity < 0 ||
++		 player->keyframeCount > player->keyframeCapacity ||
++		 ( ( player->keyframeCapacity == 0 ) != ( player->keyframes == NULL ) ) ||
++		 b2RecPlanGrowth( player->keyframeCapacity, player->keyframeCapacity, sizeof( b2RecKeyframe ),
++						 &metadataCapacity, &metadataBytes ) == false ||
++		 metadataCapacity != player->keyframeCapacity )
++	{
++		player->rdr.ok = false;
++		return;
++	}
++
+ 	if ( budgetBytes > 0 )
+ 	{
+-		player->keyframeBudget = budgetBytes;
++		player->keyframeBudget = budgetBytes < (size_t)B2_REC_MAX_BUFFER_BYTES ?
++			budgetBytes : (size_t)B2_REC_MAX_BUFFER_BYTES;
+ 	}
+ 	if ( minIntervalFrames > 0 )
+ 	{
+@@ -2479,12 +2777,18 @@
+ 		player->keyframeMinInterval = minIntervalFrames;
+ 	}
+
+-	// Drop the ring so it repopulates under the new policy on the next replay
++	// Drop every retained allocation so both the policy budget and reported usage include metadata.
+ 	for ( int i = 0; i < player->keyframeCount; ++i )
+ 	{
+ 		b2FreeKeyframe( &player->keyframes[i] );
+ 	}
++	if ( player->keyframes != NULL )
++	{
++		b2Free( player->keyframes, metadataBytes );
++	}
++	player->keyframes = NULL;
+ 	player->keyframeCount = 0;
++	player->keyframeCapacity = 0;
+ 	player->keyframeBytes = 0;
+ 	player->keyframeInterval = player->keyframeMinInterval;
+ 	player->lastKeyframeFrame = 0;
+@@ -2520,52 +2824,43 @@
+ 	{
+ 		b2DestroyWorld( player->rdr.replayWorldId );
+ 	}
+-	if ( player->data != NULL )
++	if ( player->data != NULL && player->size > 0 )
+ 	{
+-		b2Free( player->data, player->size );
++		b2Free( player->data, (size_t)player->size );
+ 	}
+-	if ( player->rdr.chainPoints != NULL )
++	b2RecFreeArray( player->rdr.chainPoints, player->rdr.chainPointCap, sizeof( b2Vec2 ) );
++	b2RecFreeArray( player->rdr.chainMaterials, player->rdr.chainMaterialCap, sizeof( b2SurfaceMaterial ) );
++	b2RecFreeArray( player->rdr.hits, player->rdr.hitCap, sizeof( b2RecRecordedHit ) );
++	b2RecFreeArray( player->frameQueries, player->frameQueryCap, sizeof( b2RecDrawQuery ) );
++	b2RecFreeArray( player->frameHits, player->frameHitCap, sizeof( b2RecRecordedHit ) );
++	b2RecFreeArray( player->bodyIds, player->bodyIdCap, sizeof( b2BodyId ) );
++	// frame0Image points into the owned data copy, freed above, so it is not freed here.
++	b2RecFreeArray( player->frame0BodyIds, player->frame0BodyIdCount, sizeof( b2BodyId ) );
++
++	int metadataCapacity = 0;
++	size_t metadataBytes = 0;
++	bool keyframeStorageValid = player->keyframeCount >= 0 && player->keyframeCapacity >= 0 &&
++		player->keyframeCount <= player->keyframeCapacity &&
++		( ( player->keyframeCapacity == 0 ) == ( player->keyframes == NULL ) ) &&
++		b2RecPlanGrowth( player->keyframeCapacity, player->keyframeCapacity, sizeof( b2RecKeyframe ),
++						 &metadataCapacity, &metadataBytes ) &&
++		metadataCapacity == player->keyframeCapacity;
++	if ( keyframeStorageValid )
+ 	{
+-		b2Free( player->rdr.chainPoints, player->rdr.chainPointCap * (int)sizeof( b2Vec2 ) );
++		for ( int i = 0; i < player->keyframeCount; ++i )
++		{
++			b2FreeKeyframe( &player->keyframes[i] );
++		}
++		if ( player->keyframes != NULL )
++		{
++			b2Free( player->keyframes, metadataBytes );
++		}
+ 	}
+-	if ( player->rdr.chainMaterials != NULL )
+-	{
+-		b2Free( player->rdr.chainMaterials, player->rdr.chainMaterialCap * (int)sizeof( b2SurfaceMaterial ) );
+-	}
+-	if ( player->rdr.hits != NULL )
+-	{
+-		b2Free( player->rdr.hits, player->rdr.hitCap * (int)sizeof( b2RecRecordedHit ) );
+-	}
+-	if ( player->frameQueries != NULL )
+-	{
+-		b2Free( player->frameQueries, player->frameQueryCap * (int)sizeof( b2RecDrawQuery ) );
+-	}
+-	if ( player->frameHits != NULL )
+-	{
+-		b2Free( player->frameHits, player->frameHitCap * (int)sizeof( b2RecRecordedHit ) );
+-	}
+-	if ( player->bodyIds != NULL )
+-	{
+-		b2Free( player->bodyIds, player->bodyIdCap * (int)sizeof( b2BodyId ) );
+-	}
+-	// frame0Image points into the owned data copy, freed above, so it is not freed here
+-	if ( player->frame0BodyIds != NULL )
+-	{
+-		b2Free( player->frame0BodyIds, player->frame0BodyIdCount * (int)sizeof( b2BodyId ) );
+-	}
+-	for ( int i = 0; i < player->keyframeCount; ++i )
+-	{
+-		b2FreeKeyframe( &player->keyframes[i] );
+-	}
+-	if ( player->keyframes != NULL )
+-	{
+-		b2Free( player->keyframes, (size_t)player->keyframeCapacity * sizeof( b2RecKeyframe ) );
+-	}
+
+ 	// Restore the global length scale.
+ 	b2SetLengthUnitsPerMeter( player->previousLengthScale );
+
+-	b2Free( player, (int)sizeof( b2RecPlayer ) );
++	b2Free( player, sizeof( b2RecPlayer ) );
+ }
+
+ // Highlight each reported overlap shape by its AABB. Skip any destroyed since the query,

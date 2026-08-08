@@ -1,0 +1,39 @@
+--- src/recording_replay.h
++++ src/recording_replay.h
+@@ -5,6 +5,8 @@
+
+ #include "recording.h"
+
++#include "box2d/constants.h"
++
+ #include <stdbool.h>
+ #include <stdint.h>
+
+@@ -63,6 +65,7 @@
+ 	int workerCount;		 // 0 = use recorded count
+ 	bool ok;				 // false on read overrun or id mismatch, a fatal stop
+ 	bool diverged;			 // a StateHash failed to reproduce, non-fatal so a viewer can keep playing
++	char stringBuffer[B2_NAME_LENGTH + 1]; // reader-owned scratch for one decoded name
+
+ 	// Scratch for variable-length defs (chain points/materials), grown on demand and
+ 	// freed with the player. Cloned by the create call so only valid during one dispatch.
+@@ -84,7 +87,7 @@
+ {
+ 	uint8_t* image; // serialized world at the end of this frame
+ 	int imageSize;
+-	int imageCapacity; // allocation size of image, which over-allocates, so the free size matches
++	int imageCapacity; // allocation size of image, tracked separately from its logical size
+ 	int frame;		   // frame this restores to, a post-step boundary
+ 	int cursor;		   // op-stream offset where the next frame resumes
+ 	b2BodyId* bodyIds; // outliner list as of this frame
+@@ -138,8 +141,8 @@
+ 	b2RecKeyframe* keyframes;
+ 	int keyframeCount;
+ 	int keyframeCapacity;
+-	size_t keyframeBudget;	 // memory cap in bytes for the kept snapshots
+-	size_t keyframeBytes;	 // running total of kept snapshot + body-list bytes
++	size_t keyframeBudget;	 // memory cap for snapshots, body lists, and ring metadata
++	size_t keyframeBytes;	 // running total of every allocation retained by the keyframe ring
+ 	int keyframeMinInterval; // finest spacing in frames
+ 	int keyframeInterval;	 // current spacing, a power-of-two multiple of the min, doubles on eviction
+ 	int lastKeyframeFrame;	 // highest frame captured, guards against re-capture while back-stepping

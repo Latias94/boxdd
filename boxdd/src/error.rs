@@ -1,10 +1,8 @@
-//! Fallible error types for `try_*` APIs.
+//! Common errors for the safe API.
 //!
-//! The default safe API surface prefers panics on misuse (invalid ids, calling from within a
-//! Box2D callback) to prevent Rust-level UB. If you want recoverable errors (e.g. in production),
-//! use the `try_*` APIs returning `ApiResult<T>`.
+//! Every fallible safe operation uses its canonical name and returns [`Result`].
 //!
-//! Common `ApiError` categories are:
+//! Common `Error` categories are:
 //! - stale ids after an object was destroyed or a native slot was recycled
 //! - identifiers used with a different world or standalone dynamic tree
 //! - calling Box2D while the world is locked inside a callback
@@ -16,11 +14,11 @@
 //! - invalid native output capacities/counts or output-buffer allocation failure
 //! - unknown enum discriminants returned by an incompatible or corrupted native provider
 
-pub type ApiResult<T> = core::result::Result<T, ApiError>;
+pub type Result<T> = core::result::Result<T, Error>;
 
 #[non_exhaustive]
 #[derive(Debug, thiserror::Error, Clone, Copy, PartialEq, Eq)]
-pub enum ApiError {
+pub enum Error {
     #[error("boxdd API called from a Box2D callback; Box2D world is locked")]
     InCallback,
 
@@ -33,14 +31,11 @@ pub enum ApiError {
     #[error("invalid or stale TreeProxyId")]
     InvalidTreeProxyId,
 
-    #[error("raw identifier has the wrong object kind")]
-    WrongIdKind,
-
-    #[error("raw identifier uses an unsupported representation")]
-    InvalidRawId,
-
     #[error("the process exhausted its Rust world identity space")]
     WorldIdentityExhausted,
+
+    #[error("Box2D failed to create a world")]
+    WorldCreationFailed,
 
     #[error("the process exhausted its Rust dynamic-tree identity space")]
     TreeIdentityExhausted,
@@ -63,11 +58,11 @@ pub enum ApiError {
     #[error("the native snapshot operation failed")]
     SnapshotNativeFailed,
 
-    #[error("snapshot bytes are malformed")]
-    InvalidSnapshotImage,
+    #[error("snapshot Rust-side commit panicked after native restore")]
+    SnapshotCommitPanicked,
 
-    #[error("snapshot envelope checksum mismatch")]
-    SnapshotChecksumMismatch,
+    #[error("the native snapshot payload is malformed")]
+    InvalidNativeSnapshot,
 
     #[error("snapshot ABI identity is incompatible with this build")]
     SnapshotAbiMismatch,
@@ -97,6 +92,9 @@ pub enum ApiError {
     WorldBusy,
 
     #[error(transparent)]
+    FoundationInitialization(#[from] crate::FoundationInitError),
+
+    #[error(transparent)]
     FoundationActivity(#[from] crate::FoundationActivityError),
 
     #[error("invalid BodyId")]
@@ -105,14 +103,28 @@ pub enum ApiError {
     InvalidShapeId,
     #[error("invalid JointId")]
     InvalidJointId,
-    #[error("invalid joint type for this API")]
-    InvalidJointType,
+    #[error("wrong joint type: expected {expected:?}, got {actual:?}")]
+    WrongJointType {
+        expected: crate::JointType,
+        actual: crate::JointType,
+    },
+    #[error("wrong shape type: expected {expected:?}, got {actual:?}")]
+    WrongShapeType {
+        expected: crate::ShapeType,
+        actual: crate::ShapeType,
+    },
     #[error("Box2D returned unknown native body type discriminant {raw}")]
     InvalidNativeBodyType { raw: u32 },
     #[error("Box2D returned unknown native shape type discriminant {raw}")]
     InvalidNativeShapeType { raw: u32 },
-    #[error("Box2D returned unknown native joint type discriminant {raw}")]
-    InvalidNativeJointType { raw: u32 },
+    #[error("Box2D returned a negative allocated byte count: {count}")]
+    NegativeAllocatedByteCount { count: i64 },
+    #[error("Box2D returned invalid elapsed milliseconds")]
+    InvalidNativeElapsedMilliseconds,
+    #[error("Box2D returned an invalid angle")]
+    InvalidNativeAngle,
+    #[error("Box2D returned an invalid rotation")]
+    InvalidNativeRotation,
     #[error("invalid ChainId")]
     InvalidChainId,
 
@@ -124,17 +136,58 @@ pub enum ApiError {
     #[error("invalid ChainDef")]
     InvalidChainDef,
 
-    #[error("index out of range for this API")]
-    IndexOutOfRange,
+    #[error(
+        "length-scale provenance mismatch during `{operation}` (expected bits {expected:#010x}, actual bits {actual:#010x})"
+    )]
+    LengthScaleMismatch {
+        operation: &'static str,
+        expected: u32,
+        actual: u32,
+    },
 
-    #[error("invalid argument for this API")]
-    InvalidArgument,
+    #[error("invalid argument `{argument}` for `{operation}`: expected {constraint}")]
+    InvalidArgument {
+        operation: &'static str,
+        argument: &'static str,
+        constraint: &'static str,
+    },
+
+    #[error("index {index} is out of range for `{operation}`; expected 0..{bound}")]
+    IndexOutOfRange {
+        operation: &'static str,
+        index: i64,
+        bound: usize,
+    },
+
+    #[error("Box2D returned invalid worker count {value}")]
+    InvalidNativeWorkerCount { value: i32 },
+
+    #[error("Box2D returned invalid world capacity `{field}`={value}: expected {constraint}")]
+    InvalidNativeWorldCapacity {
+        field: &'static str,
+        value: i64,
+        constraint: &'static str,
+    },
+
+    #[error(
+        "Box2D dynamic-tree state is invalid during `{operation}`: `{field}`={value}, expected {constraint}"
+    )]
+    InvalidNativeDynamicTreeState {
+        operation: &'static str,
+        field: &'static str,
+        value: i64,
+        constraint: &'static str,
+    },
+
+    #[error("Box2D returned invalid `{output}` from `{operation}`: expected {constraint}")]
+    InvalidNativeOutput {
+        operation: &'static str,
+        output: &'static str,
+        constraint: &'static str,
+    },
 
     #[error("worker count {requested} is not supported on this target")]
     UnsupportedWorkerCount { requested: u32 },
-
-    #[error("worker count is fixed by the world's raw task-system contract")]
-    RawTaskSystemWorkerCountFixed,
 
     #[error("custom-filter callbacks are not supported by Box2D recording")]
     RecordingCustomFilterUnsupported,
@@ -147,6 +200,47 @@ pub enum ApiError {
 
     #[error("Box2D returned an invalid recording buffer")]
     InvalidNativeRecording,
+
+    #[error("recording exceeded its configured byte limit")]
+    RecordingLimitExceeded,
+
+    #[error("one recorded operation exceeded the native 24-bit payload limit")]
+    RecordingOperationTooLarge,
+
+    #[error("native Box2D recording failed validation")]
+    RecordingOutputValidationFailed,
+
+    #[error("failed to allocate recording storage")]
+    RecordingStorageAllocationFailed,
+
+    #[error("replay mixer identities do not match the recording")]
+    ReplayMixerIdentityMismatch,
+
+    #[error("Box2D failed to create a replay player after successful preflight")]
+    ReplayNativeCreateFailed,
+
+    #[error("Box2D replay entered a terminal native failure state")]
+    ReplayNativeFailure,
+
+    #[error("Box2D returned invalid replay metadata")]
+    InvalidNativeReplayMetadata,
+
+    #[error("replay frame is outside the supported native range")]
+    ReplayFrameOutOfRange,
+
+    #[error("replay query index is outside the current frame")]
+    ReplayQueryOutOfRange,
+
+    #[error("invalid replay keyframe policy")]
+    InvalidReplayKeyframePolicy,
+
+    #[error("replay observation epoch exhausted")]
+    ReplayEpochExhausted,
+
+    #[error(
+        "Box2D replay did not restore length units per meter (expected bits {expected:#010x}, observed {observed:#010x})"
+    )]
+    ReplayLengthScaleNotRestored { expected: u32, observed: u32 },
 
     #[error("string contains an interior NUL byte")]
     NulByteInString,
@@ -168,4 +262,31 @@ pub enum ApiError {
 
     #[error("failed to allocate an FFI output buffer")]
     FfiOutputAllocationFailed,
+
+    #[error("Box2D returned an invalid transient event buffer")]
+    InvalidNativeEventBuffer,
+}
+
+impl Error {
+    #[inline]
+    pub const fn invalid_argument(
+        operation: &'static str,
+        argument: &'static str,
+        constraint: &'static str,
+    ) -> Self {
+        Self::InvalidArgument {
+            operation,
+            argument,
+            constraint,
+        }
+    }
+
+    #[inline]
+    pub const fn index_out_of_range(operation: &'static str, index: i64, bound: usize) -> Self {
+        Self::IndexOutOfRange {
+            operation,
+            index,
+            bound,
+        }
+    }
 }

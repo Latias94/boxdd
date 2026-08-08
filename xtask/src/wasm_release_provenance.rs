@@ -9,16 +9,18 @@ use std::{
     path::{Component, Path},
 };
 
-pub(crate) use crate::provider_manifest::sha256_bytes;
+use crate::emscripten_sdk::EMSCRIPTEN_VERSION;
+
+pub(crate) use crate::provenance_policy::PUBLISHER_WORKFLOW;
+use crate::provenance_policy::release_tag_matches_version;
+pub(crate) use crate::provider_manifest::{ADAPTER_ABI_VERSION, sha256_bytes};
 
 pub(crate) const SCHEMA_VERSION: u64 = 1;
 pub(crate) const SCHEMA_NAME: &str = "boxdd-wasm-release-provenance-v1";
-pub(crate) const PUBLISHER_WORKFLOW: &str = ".github/workflows/prebuilt-binaries.yml";
 pub(crate) const PACKAGE_TYPE: &str = "wasm-provider";
-pub(crate) const PROVIDER_ABI: &str = "box2d-sys-v1";
+pub(crate) use crate::wasm_provider_contract::PROVIDER_ABI;
 pub(crate) const TARGET: &str = "wasm32-unknown-unknown";
 pub(crate) const COMPILER_TARGET: &str = "wasm32-unknown-emscripten";
-pub(crate) const ADAPTER_ABI_VERSION: u64 = 2;
 pub(crate) const SIMD_MODE: &str = "disabled";
 pub(crate) const POINTER_WIDTH: u64 = 32;
 pub(crate) const ENDIANNESS: &str = "little";
@@ -56,7 +58,7 @@ const STATEMENT_FIELDS: &[&str] = &[
     "simd",
     "pointer_width",
     "endianness",
-    "emscripten_sdk_contract_sha256",
+    "emscripten_version",
     "wasm_provider_contract_sha256",
     "bindings_sha256",
     "private_abi_hash",
@@ -117,7 +119,7 @@ pub(crate) struct WasmReleaseProvenanceStatement {
     pub(crate) simd: String,
     pub(crate) pointer_width: u64,
     pub(crate) endianness: String,
-    pub(crate) emscripten_sdk_contract_sha256: String,
+    pub(crate) emscripten_version: String,
     pub(crate) wasm_provider_contract_sha256: String,
     pub(crate) bindings_sha256: String,
     pub(crate) private_abi_hash: String,
@@ -165,10 +167,7 @@ impl WasmReleaseProvenanceStatement {
             simd: required_string(table, "simd")?,
             pointer_width: required_integer(table, "pointer_width")?,
             endianness: required_string(table, "endianness")?,
-            emscripten_sdk_contract_sha256: required_string(
-                table,
-                "emscripten_sdk_contract_sha256",
-            )?,
+            emscripten_version: required_string(table, "emscripten_version")?,
             wasm_provider_contract_sha256: required_string(table, "wasm_provider_contract_sha256")?,
             bindings_sha256: required_string(table, "bindings_sha256")?,
             private_abi_hash: required_string(table, "private_abi_hash")?,
@@ -232,7 +231,7 @@ impl WasmReleaseProvenanceStatement {
                 "simd = {}\n",
                 "pointer_width = {}\n",
                 "endianness = {}\n",
-                "emscripten_sdk_contract_sha256 = {}\n",
+                "emscripten_version = {}\n",
                 "wasm_provider_contract_sha256 = {}\n",
                 "bindings_sha256 = {}\n",
                 "private_abi_hash = {}\n",
@@ -267,7 +266,7 @@ impl WasmReleaseProvenanceStatement {
             toml_string(&self.simd),
             self.pointer_width,
             toml_string(&self.endianness),
-            toml_string(&self.emscripten_sdk_contract_sha256),
+            toml_string(&self.emscripten_version),
             toml_string(&self.wasm_provider_contract_sha256),
             toml_string(&self.bindings_sha256),
             toml_string(&self.private_abi_hash),
@@ -370,10 +369,12 @@ impl WasmReleaseProvenanceStatement {
         validate_sha256("effective_source_sha256", &self.effective_source_sha256)?;
         validate_sha256("adapter_source_sha256", &self.adapter_source_sha256)?;
         validate_blake3("recording_contract_blake3", &self.recording_contract_blake3)?;
-        validate_sha256(
-            "emscripten_sdk_contract_sha256",
-            &self.emscripten_sdk_contract_sha256,
-        )?;
+        if self.emscripten_version != EMSCRIPTEN_VERSION {
+            return Err(format!(
+                "unsupported Emscripten version {:?}; expected {EMSCRIPTEN_VERSION}",
+                self.emscripten_version
+            ));
+        }
         validate_sha256(
             "wasm_provider_contract_sha256",
             &self.wasm_provider_contract_sha256,
@@ -629,9 +630,7 @@ fn validate_release_tag(crate_version: &str, release_tag: &str) -> Result<(), St
     if !is_canonical_semver(crate_version) {
         return Err("WASM release crate_version is not canonical".to_owned());
     }
-    let workspace_tag = format!("v{crate_version}");
-    let sys_tag = format!("boxdd-sys-v{crate_version}");
-    if release_tag == workspace_tag || release_tag == sys_tag {
+    if release_tag_matches_version(crate_version, release_tag) {
         Ok(())
     } else {
         Err(format!(
@@ -641,40 +640,7 @@ fn validate_release_tag(crate_version: &str, release_tag: &str) -> Result<(), St
 }
 
 pub(crate) fn is_canonical_semver(version: &str) -> bool {
-    let (without_build, build) = match version.split_once('+') {
-        Some((left, right)) if !right.contains('+') => (left, Some(right)),
-        Some(_) => return false,
-        None => (version, None),
-    };
-    let (core, prerelease) = match without_build.split_once('-') {
-        Some((left, right)) => (left, Some(right)),
-        None => (without_build, None),
-    };
-    let core = core.split('.').collect::<Vec<_>>();
-    if core.len() != 3
-        || !core.iter().all(|part| {
-            !part.is_empty()
-                && part.bytes().all(|byte| byte.is_ascii_digit())
-                && (*part == "0" || !part.starts_with('0'))
-        })
-    {
-        return false;
-    }
-    let identifiers_are_canonical = |value: &str, reject_numeric_leading_zero: bool| {
-        !value.is_empty()
-            && value.split('.').all(|identifier| {
-                !identifier.is_empty()
-                    && identifier
-                        .bytes()
-                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-                    && (!reject_numeric_leading_zero
-                        || !identifier.bytes().all(|byte| byte.is_ascii_digit())
-                        || identifier == "0"
-                        || !identifier.starts_with('0'))
-            })
-    };
-    prerelease.is_none_or(|value| identifiers_are_canonical(value, true))
-        && build.is_none_or(|value| identifiers_are_canonical(value, false))
+    semver::Version::parse(version).is_ok_and(|parsed| parsed.to_string() == version)
 }
 
 fn validate_repository(repository: &str) -> Result<(), String> {
@@ -866,7 +832,7 @@ mod tests {
             simd: SIMD_MODE.to_owned(),
             pointer_width: POINTER_WIDTH,
             endianness: ENDIANNESS.to_owned(),
-            emscripten_sdk_contract_sha256: "1".repeat(64),
+            emscripten_version: EMSCRIPTEN_VERSION.to_owned(),
             wasm_provider_contract_sha256: "2".repeat(64),
             bindings_sha256: "3".repeat(64),
             private_abi_hash: "4".repeat(64),
@@ -1054,7 +1020,7 @@ mod tests {
         cases.push(package_type);
 
         let mut provider_abi = statement.clone();
-        provider_abi.provider_abi = "box2d-sys-v2".to_owned();
+        provider_abi.provider_abi = "box2d-sys-v1".to_owned();
         cases.push(provider_abi);
 
         let mut target = statement.clone();

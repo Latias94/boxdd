@@ -1,66 +1,4 @@
 #![allow(clippy::approx_constant)]
-#![allow(rustdoc::bare_urls)]
-#![allow(rustdoc::broken_intra_doc_links)]
-
-#[cfg(all(
-    not(target_family = "wasm"),
-    not(feature = "double-precision"),
-    has_pregenerated,
-    not(force_bindgen)
-))]
-include!("bindings_pregenerated.rs");
-
-#[cfg(all(
-    not(target_family = "wasm"),
-    feature = "double-precision",
-    has_pregenerated,
-    not(force_bindgen)
-))]
-include!("bindings_double.rs");
-
-#[cfg(all(
-    target_arch = "wasm32",
-    target_family = "wasm",
-    target_os = "unknown",
-    target_env = "",
-    not(feature = "double-precision"),
-    has_pregenerated,
-    not(force_bindgen)
-))]
-include!("bindings_wasm32_unknown_unknown.rs");
-
-#[cfg(all(
-    target_arch = "wasm32",
-    target_family = "wasm",
-    target_os = "unknown",
-    target_env = "",
-    feature = "double-precision",
-    has_pregenerated,
-    not(force_bindgen)
-))]
-include!("bindings_wasm32_unknown_unknown_double.rs");
-
-#[cfg(all(
-    target_arch = "wasm32",
-    target_family = "wasm",
-    target_os = "wasi",
-    target_env = "p1",
-    not(feature = "double-precision"),
-    has_pregenerated,
-    not(force_bindgen)
-))]
-include!("bindings_wasm32_wasip1.rs");
-
-#[cfg(all(
-    target_arch = "wasm32",
-    target_family = "wasm",
-    target_os = "wasi",
-    target_env = "p1",
-    feature = "double-precision",
-    has_pregenerated,
-    not(force_bindgen)
-))]
-include!("bindings_wasm32_wasip1_double.rs");
 
 #[cfg(all(
     target_family = "wasm",
@@ -71,8 +9,18 @@ include!("bindings_wasm32_wasip1_double.rs");
 ))]
 compile_error!("boxdd-sys supports WASM targets only for wasm32-unknown-unknown and wasm32-wasip1");
 
-#[cfg(any(force_bindgen, not(has_pregenerated)))]
-include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+include!(env!("BOXDD_SYS_BINDINGS_FILE"));
+
+/// Default collision mask exported by Box2D's public C API.
+pub const B2_DEFAULT_MASK_BITS: u64 = u64::MAX;
+
+/// Whether the linked Box2D library was compiled with validation enabled.
+#[cfg(feature = "validate")]
+pub const B2_ENABLE_VALIDATION: u32 = 1;
+
+/// Whether the linked Box2D library was compiled with validation enabled.
+#[cfg(not(feature = "validate"))]
+pub const B2_ENABLE_VALIDATION: u32 = 0;
 
 #[cfg(feature = "double-precision")]
 pub use b2CreateWorldDoublePrecision as b2CreateWorld;

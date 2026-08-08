@@ -1,8 +1,9 @@
+use crate::JointId;
 use crate::world::World;
 use boxdd_sys::ffi;
 
-use super::{Joint, JointBase, OwnedJoint};
-use crate::error::ApiResult;
+use super::JointBase;
+use crate::error::Result;
 
 // Filter joint (no params beyond base)
 #[derive(Clone, Debug)]
@@ -10,16 +11,11 @@ use crate::error::ApiResult;
 /// used primarily for contact filtering scenarios.
 pub struct FilterJointDef {
     base: JointBase,
-    raw: ffi::b2FilterJointDef,
 }
 
 impl FilterJointDef {
     pub fn new(base: JointBase) -> Self {
-        let _lease = crate::core::foundation::assert_transient_native_lease();
-        Self {
-            base,
-            raw: unsafe { ffi::b2DefaultFilterJointDef() },
-        }
+        Self { base }
     }
 
     #[inline]
@@ -33,13 +29,11 @@ impl FilterJointDef {
     }
 
     pub(crate) fn to_raw(&self) -> ffi::b2FilterJointDef {
-        let mut raw = self.raw;
-        raw.base = self.base.to_raw();
-        raw
+        crate::core::native_defaults::filter_joint_def(self.base.to_raw())
     }
 
     #[inline]
-    pub fn validate(&self) -> ApiResult<()> {
+    pub fn validate(&self) -> Result<()> {
         super::check_filter_joint_def_valid(self)
     }
 }
@@ -58,21 +52,7 @@ impl<'w> FilterJointBuilder<'w> {
         *self.def.base_mut() = base.with_collide_connected(flag);
         self
     }
-    #[must_use]
-    pub fn build(self) -> Joint<'w> {
+    pub fn build(self) -> Result<JointId> {
         self.world.create_filter_joint(&self.def)
-    }
-
-    pub fn try_build(self) -> ApiResult<Joint<'w>> {
-        self.world.try_create_filter_joint(&self.def)
-    }
-
-    #[must_use]
-    pub fn build_owned(self) -> OwnedJoint {
-        self.world.create_filter_joint_owned(&self.def)
-    }
-
-    pub fn try_build_owned(self) -> ApiResult<OwnedJoint> {
-        self.world.try_create_filter_joint_owned(&self.def)
     }
 }

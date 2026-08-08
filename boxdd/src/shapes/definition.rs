@@ -1,5 +1,5 @@
 use crate::debug_draw::HexColor;
-use crate::error::ApiResult;
+use crate::error::Result;
 use crate::filter::Filter;
 use boxdd_sys::ffi;
 
@@ -21,8 +21,7 @@ const _: () = {
 
 impl Default for SurfaceMaterial {
     fn default() -> Self {
-        let _lease = crate::core::foundation::assert_transient_native_lease();
-        Self(unsafe { ffi::b2DefaultSurfaceMaterial() })
+        Self(crate::core::native_defaults::surface_material())
     }
 }
 
@@ -34,7 +33,14 @@ impl SurfaceMaterial {
     }
 
     #[inline]
-    pub const fn from_raw(raw: ffi::b2SurfaceMaterial) -> Self {
+    pub fn from_raw(raw: ffi::b2SurfaceMaterial) -> Result<Self> {
+        let material = Self::from_raw_unvalidated(raw);
+        check_surface_material_valid("SurfaceMaterial::from_raw", &material)?;
+        Ok(material)
+    }
+
+    #[inline]
+    pub(crate) const fn from_raw_unvalidated(raw: ffi::b2SurfaceMaterial) -> Self {
         Self(raw)
     }
 
@@ -73,21 +79,30 @@ impl SurfaceMaterial {
         HexColor::from_rgb_u32(self.0.customColor)
     }
 
-    pub fn with_friction(mut self, v: f32) -> Self {
+    #[inline]
+    pub(crate) const fn custom_color_is_valid(&self) -> bool {
+        self.0.customColor <= HexColor::MAX_RGB_U32
+    }
+
+    pub fn with_friction(mut self, v: f32) -> Result<Self> {
         self.0.friction = v;
-        self
+        check_surface_material_valid("SurfaceMaterial::with_friction", &self)?;
+        Ok(self)
     }
-    pub fn with_restitution(mut self, v: f32) -> Self {
+    pub fn with_restitution(mut self, v: f32) -> Result<Self> {
         self.0.restitution = v;
-        self
+        check_surface_material_valid("SurfaceMaterial::with_restitution", &self)?;
+        Ok(self)
     }
-    pub fn with_rolling_resistance(mut self, v: f32) -> Self {
+    pub fn with_rolling_resistance(mut self, v: f32) -> Result<Self> {
         self.0.rollingResistance = v;
-        self
+        check_surface_material_valid("SurfaceMaterial::with_rolling_resistance", &self)?;
+        Ok(self)
     }
-    pub fn with_tangent_speed(mut self, v: f32) -> Self {
+    pub fn with_tangent_speed(mut self, v: f32) -> Result<Self> {
         self.0.tangentSpeed = v;
-        self
+        check_surface_material_valid("SurfaceMaterial::with_tangent_speed", &self)?;
+        Ok(self)
     }
     pub fn with_user_material_id(mut self, v: u64) -> Self {
         self.0.userMaterialId = v;
@@ -99,8 +114,8 @@ impl SurfaceMaterial {
     }
 
     #[inline]
-    pub fn validate(&self) -> ApiResult<()> {
-        check_surface_material_valid(self)
+    pub fn validate(&self) -> Result<()> {
+        check_surface_material_valid("SurfaceMaterial::validate", self)
     }
 }
 
@@ -115,16 +130,40 @@ impl PartialEq for SurfaceMaterial {
     }
 }
 
-/// Shape definition with Builder pattern.
+/// Pure Rust shape definition with builder API.
 #[doc(alias = "shape_def")]
 #[doc(alias = "shapedef")]
 #[derive(Clone, Debug)]
-pub struct ShapeDef(pub(crate) ffi::b2ShapeDef);
+pub struct ShapeDef {
+    material: SurfaceMaterial,
+    density: f32,
+    filter: Filter,
+    enable_custom_filtering: bool,
+    sensor: bool,
+    enable_sensor_events: bool,
+    enable_contact_events: bool,
+    enable_hit_events: bool,
+    enable_pre_solve_events: bool,
+    invoke_contact_creation: bool,
+    update_body_mass: bool,
+}
 
 impl Default for ShapeDef {
     fn default() -> Self {
-        let _lease = crate::core::foundation::assert_transient_native_lease();
-        Self(unsafe { ffi::b2DefaultShapeDef() })
+        let raw: ffi::b2ShapeDef = crate::core::native_defaults::shape_def();
+        Self {
+            material: SurfaceMaterial::from_raw_unvalidated(raw.material),
+            density: raw.density,
+            filter: Filter::from_raw(raw.filter),
+            enable_custom_filtering: raw.enableCustomFiltering,
+            sensor: raw.isSensor,
+            enable_sensor_events: raw.enableSensorEvents,
+            enable_contact_events: raw.enableContactEvents,
+            enable_hit_events: raw.enableHitEvents,
+            enable_pre_solve_events: raw.enablePreSolveEvents,
+            invoke_contact_creation: raw.invokeContactCreation,
+            update_body_mass: raw.updateBodyMass,
+        }
     }
 }
 
@@ -136,93 +175,90 @@ impl ShapeDef {
         }
     }
 
-    /// Construct from a raw Box2D shape definition value.
-    ///
-    /// # Safety
-    /// `raw` must have been initialized by `b2DefaultShapeDef` from the same Box2D ABI as this
-    /// crate. Its `userData` pointer must remain valid for the full lifetime of every shape
-    /// created from this definition, and it must satisfy Box2D's ownership, aliasing, and
-    /// synchronization requirements. This constructor cannot validate those pointer
-    /// obligations.
-    #[inline]
-    pub unsafe fn from_raw(raw: ffi::b2ShapeDef) -> Self {
-        Self(raw)
-    }
-
     /// Surface material parameters used by the shape.
     #[inline]
     pub const fn material(&self) -> SurfaceMaterial {
-        SurfaceMaterial::from_raw(self.0.material)
+        self.material
     }
 
     /// Density in kg/m².
     #[inline]
     pub const fn density(&self) -> f32 {
-        self.0.density
+        self.density
     }
 
     /// Collision filter used by the shape.
     #[inline]
     pub const fn filter(&self) -> Filter {
-        Filter::from_raw(self.0.filter)
+        self.filter
     }
 
     /// Whether the shape is configured as a sensor.
     #[inline]
     pub const fn is_sensor(&self) -> bool {
-        self.0.isSensor
+        self.sensor
     }
 
     /// Whether world-level custom filtering is enabled for the shape.
     #[inline]
     pub const fn custom_filtering_enabled(&self) -> bool {
-        self.0.enableCustomFiltering
+        self.enable_custom_filtering
     }
 
     /// Whether sensor begin/end events are enabled for the shape.
     #[inline]
     pub const fn sensor_events_enabled(&self) -> bool {
-        self.0.enableSensorEvents
+        self.enable_sensor_events
     }
 
     /// Whether contact begin/end events are enabled for the shape.
     #[inline]
     pub const fn contact_events_enabled(&self) -> bool {
-        self.0.enableContactEvents
+        self.enable_contact_events
     }
 
     /// Whether hit events are enabled for the shape.
     #[inline]
     pub const fn hit_events_enabled(&self) -> bool {
-        self.0.enableHitEvents
+        self.enable_hit_events
     }
 
     /// Whether pre-solve events are enabled for the shape.
     #[inline]
     pub const fn pre_solve_events_enabled(&self) -> bool {
-        self.0.enablePreSolveEvents
+        self.enable_pre_solve_events
     }
 
     /// Whether contact-creation callbacks are invoked for the shape.
     #[inline]
     pub const fn invokes_contact_creation(&self) -> bool {
-        self.0.invokeContactCreation
+        self.invoke_contact_creation
     }
 
     /// Whether creating or destroying the shape updates the owning body's mass.
     #[inline]
     pub const fn updates_body_mass(&self) -> bool {
-        self.0.updateBodyMass
+        self.update_body_mass
     }
 
-    /// Convert into the raw Box2D shape definition value.
-    #[inline]
-    pub fn into_raw(self) -> ffi::b2ShapeDef {
-        self.0
+    pub(crate) fn prepare(&self) -> ffi::b2ShapeDef {
+        let mut raw: ffi::b2ShapeDef = crate::core::native_defaults::shape_def();
+        raw.material = self.material.into_raw();
+        raw.density = self.density;
+        raw.filter = self.filter.into_raw();
+        raw.enableCustomFiltering = self.enable_custom_filtering;
+        raw.isSensor = self.sensor;
+        raw.enableSensorEvents = self.enable_sensor_events;
+        raw.enableContactEvents = self.enable_contact_events;
+        raw.enableHitEvents = self.enable_hit_events;
+        raw.enablePreSolveEvents = self.enable_pre_solve_events;
+        raw.invokeContactCreation = self.invoke_contact_creation;
+        raw.updateBodyMass = self.update_body_mass;
+        raw
     }
 
     #[inline]
-    pub fn validate(&self) -> ApiResult<()> {
+    pub fn validate(&self) -> Result<()> {
         check_shape_def_valid(self)
     }
 }
@@ -237,73 +273,68 @@ pub struct ShapeDefBuilder {
 impl ShapeDefBuilder {
     /// Set the surface material (friction, restitution, etc.).
     pub fn material(mut self, mat: SurfaceMaterial) -> Self {
-        self.def.0.material = mat.0;
+        self.def.material = mat;
         self
     }
     /// Density in kg/m². Affects mass.
     pub fn density(mut self, v: f32) -> Self {
-        self.def.0.density = v;
+        self.def.density = v;
         self
     }
     /// Collision filter (category/mask/group).
     pub fn filter(mut self, f: Filter) -> Self {
-        self.def.0.filter = f.into_raw();
-        self
-    }
-    /// Raw Box2D filter escape hatch.
-    pub fn filter_raw(mut self, f: ffi::b2Filter) -> Self {
-        self.def.0.filter = f;
+        self.def.filter = f;
         self
     }
     /// Enable user-provided filtering callback.
     ///
-    /// Note: To receive custom filter calls you must also register a world-level
-    /// callback via `World::set_custom_filter` or `World::set_custom_filter_callback`.
+    /// Note: To receive custom filter calls you must also register a world-level callback via
+    /// [`crate::World::set_custom_filter`].
     pub fn enable_custom_filtering(mut self, flag: bool) -> Self {
-        self.def.0.enableCustomFiltering = flag;
+        self.def.enable_custom_filtering = flag;
         self
     }
     /// Mark as sensor (no collision response).
     pub fn sensor(mut self, flag: bool) -> Self {
-        self.def.0.isSensor = flag;
+        self.def.sensor = flag;
         self
     }
     /// Emit sensor begin/end touch events.
     pub fn enable_sensor_events(mut self, flag: bool) -> Self {
-        self.def.0.enableSensorEvents = flag;
+        self.def.enable_sensor_events = flag;
         self
     }
     /// Emit contact begin/end events.
     pub fn enable_contact_events(mut self, flag: bool) -> Self {
-        self.def.0.enableContactEvents = flag;
+        self.def.enable_contact_events = flag;
         self
     }
     /// Emit impact hit events when above threshold.
     pub fn enable_hit_events(mut self, flag: bool) -> Self {
-        self.def.0.enableHitEvents = flag;
+        self.def.enable_hit_events = flag;
         self
     }
     /// Emit pre-solve events (advanced).
     ///
-    /// Note: To receive pre-solve events you must also register a world-level
-    /// callback via `World::set_pre_solve` or `World::set_pre_solve_callback`.
+    /// Note: To receive pre-solve events you must also register a world-level callback via
+    /// [`crate::World::set_pre_solve`].
     pub fn enable_pre_solve_events(mut self, flag: bool) -> Self {
-        self.def.0.enablePreSolveEvents = flag;
+        self.def.enable_pre_solve_events = flag;
         self
     }
     /// Invoke user callback on contact creation.
     pub fn invoke_contact_creation(mut self, flag: bool) -> Self {
-        self.def.0.invokeContactCreation = flag;
+        self.def.invoke_contact_creation = flag;
         self
     }
     /// Recompute body mass when adding/removing this shape.
     pub fn update_body_mass(mut self, flag: bool) -> Self {
-        self.def.0.updateBodyMass = flag;
+        self.def.update_body_mass = flag;
         self
     }
-    #[must_use]
-    pub fn build(self) -> ShapeDef {
-        self.def
+    pub fn build(self) -> Result<ShapeDef> {
+        self.def.validate()?;
+        Ok(self.def)
     }
 }
 
@@ -316,7 +347,7 @@ impl From<ShapeDef> for ShapeDefBuilder {
 // serde for SurfaceMaterial and ShapeDef via lightweight representations
 #[cfg(feature = "serde")]
 impl serde::Serialize for SurfaceMaterial {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
@@ -343,41 +374,54 @@ impl serde::Serialize for SurfaceMaterial {
 
 #[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for SurfaceMaterial {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Repr {
-            #[serde(default)]
-            friction: f32,
-            #[serde(default)]
-            restitution: f32,
-            #[serde(default)]
-            rolling_resistance: f32,
-            #[serde(default)]
-            tangent_speed: f32,
-            #[serde(default)]
-            user_material_id: u64,
-            #[serde(default)]
-            custom_color: HexColor,
+            friction: Option<f32>,
+            restitution: Option<f32>,
+            rolling_resistance: Option<f32>,
+            tangent_speed: Option<f32>,
+            user_material_id: Option<u64>,
+            custom_color: Option<HexColor>,
         }
-        let r = Repr::deserialize(deserializer)?;
+        let r = <Repr as serde::Deserialize>::deserialize(deserializer)?;
         let mut sm = SurfaceMaterial::default();
-        sm = sm
-            .with_friction(r.friction)
-            .with_restitution(r.restitution)
-            .with_rolling_resistance(r.rolling_resistance)
-            .with_tangent_speed(r.tangent_speed)
-            .with_user_material_id(r.user_material_id)
-            .with_custom_color(r.custom_color);
+        if let Some(value) = r.friction {
+            sm = sm.with_friction(value).map_err(serde::de::Error::custom)?;
+        }
+        if let Some(value) = r.restitution {
+            sm = sm
+                .with_restitution(value)
+                .map_err(serde::de::Error::custom)?;
+        }
+        if let Some(value) = r.rolling_resistance {
+            sm = sm
+                .with_rolling_resistance(value)
+                .map_err(serde::de::Error::custom)?;
+        }
+        if let Some(value) = r.tangent_speed {
+            sm = sm
+                .with_tangent_speed(value)
+                .map_err(serde::de::Error::custom)?;
+        }
+        if let Some(value) = r.user_material_id {
+            sm = sm.with_user_material_id(value);
+        }
+        if let Some(value) = r.custom_color {
+            sm = sm.with_custom_color(value);
+        }
+        sm.validate().map_err(serde::de::Error::custom)?;
         Ok(sm)
     }
 }
 
 #[cfg(feature = "serde")]
 impl serde::Serialize for ShapeDef {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
@@ -396,17 +440,17 @@ impl serde::Serialize for ShapeDef {
             update_body_mass: bool,
         }
         let r = Repr {
-            material: SurfaceMaterial::from_raw(self.0.material),
-            density: self.0.density,
-            filter: Filter::from_raw(self.0.filter),
-            enable_custom_filtering: self.0.enableCustomFiltering,
-            is_sensor: self.0.isSensor,
-            enable_sensor_events: self.0.enableSensorEvents,
-            enable_contact_events: self.0.enableContactEvents,
-            enable_hit_events: self.0.enableHitEvents,
-            enable_pre_solve_events: self.0.enablePreSolveEvents,
-            invoke_contact_creation: self.0.invokeContactCreation,
-            update_body_mass: self.0.updateBodyMass,
+            material: self.material,
+            density: self.density,
+            filter: self.filter,
+            enable_custom_filtering: self.enable_custom_filtering,
+            is_sensor: self.sensor,
+            enable_sensor_events: self.enable_sensor_events,
+            enable_contact_events: self.enable_contact_events,
+            enable_hit_events: self.enable_hit_events,
+            enable_pre_solve_events: self.enable_pre_solve_events,
+            invoke_contact_creation: self.invoke_contact_creation,
+            update_body_mass: self.update_body_mass,
         };
         r.serialize(serializer)
     }
@@ -414,53 +458,79 @@ impl serde::Serialize for ShapeDef {
 
 #[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for ShapeDef {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Repr {
-            #[serde(default)]
             material: Option<SurfaceMaterial>,
-            #[serde(default)]
-            density: f32,
-            #[serde(default)]
+            density: Option<f32>,
             filter: Option<Filter>,
-            #[serde(default)]
-            enable_custom_filtering: bool,
-            #[serde(default)]
-            is_sensor: bool,
-            #[serde(default)]
-            enable_sensor_events: bool,
-            #[serde(default)]
-            enable_contact_events: bool,
-            #[serde(default)]
-            enable_hit_events: bool,
-            #[serde(default)]
-            enable_pre_solve_events: bool,
-            #[serde(default)]
-            invoke_contact_creation: bool,
-            #[serde(default)]
-            update_body_mass: bool,
+            enable_custom_filtering: Option<bool>,
+            is_sensor: Option<bool>,
+            enable_sensor_events: Option<bool>,
+            enable_contact_events: Option<bool>,
+            enable_hit_events: Option<bool>,
+            enable_pre_solve_events: Option<bool>,
+            invoke_contact_creation: Option<bool>,
+            update_body_mass: Option<bool>,
         }
-        let r = Repr::deserialize(deserializer)?;
-        let mut b = ShapeDef::builder();
-        if let Some(mat) = r.material {
-            b = b.material(mat);
+        let r = <Repr as serde::Deserialize>::deserialize(deserializer)?;
+        let mut def = ShapeDef::default();
+        if let Some(value) = r.material {
+            def.material = value;
         }
-        if let Some(f) = r.filter {
-            b = b.filter(f);
+        if let Some(value) = r.density {
+            def.density = value;
         }
-        b = b
-            .density(r.density)
-            .enable_custom_filtering(r.enable_custom_filtering)
-            .sensor(r.is_sensor)
-            .enable_sensor_events(r.enable_sensor_events)
-            .enable_contact_events(r.enable_contact_events)
-            .enable_hit_events(r.enable_hit_events)
-            .enable_pre_solve_events(r.enable_pre_solve_events)
-            .invoke_contact_creation(r.invoke_contact_creation)
-            .update_body_mass(r.update_body_mass);
-        Ok(b.build())
+        if let Some(value) = r.filter {
+            def.filter = value;
+        }
+        if let Some(value) = r.enable_custom_filtering {
+            def.enable_custom_filtering = value;
+        }
+        if let Some(value) = r.is_sensor {
+            def.sensor = value;
+        }
+        if let Some(value) = r.enable_sensor_events {
+            def.enable_sensor_events = value;
+        }
+        if let Some(value) = r.enable_contact_events {
+            def.enable_contact_events = value;
+        }
+        if let Some(value) = r.enable_hit_events {
+            def.enable_hit_events = value;
+        }
+        if let Some(value) = r.enable_pre_solve_events {
+            def.enable_pre_solve_events = value;
+        }
+        if let Some(value) = r.invoke_contact_creation {
+            def.invoke_contact_creation = value;
+        }
+        if let Some(value) = r.update_body_mass {
+            def.update_body_mass = value;
+        }
+        def.validate().map_err(serde::de::Error::custom)?;
+        Ok(def)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ShapeDef;
+    use crate::Error;
+
+    #[test]
+    fn shape_definition_builder_rejects_invalid_draft_at_build() {
+        assert_eq!(
+            ShapeDef::builder().density(-1.0).build().unwrap_err(),
+            Error::invalid_argument(
+                "ShapeDef::validate",
+                "density",
+                "a finite value greater than or equal to zero",
+            )
+        );
     }
 }

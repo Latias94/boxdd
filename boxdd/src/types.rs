@@ -46,6 +46,11 @@ impl Vec2 {
     }
 }
 
+#[inline]
+fn is_valid_unit_vec2(value: Vec2) -> bool {
+    value.is_valid() && (1.0 - (value.x * value.x + value.y * value.y)).abs() < 100.0 * f32::EPSILON
+}
+
 // Conversions from common 2D types to Vec2 for ergonomic APIs
 impl From<[f32; 2]> for Vec2 {
     #[inline]
@@ -452,10 +457,10 @@ fn world_transform_from_affine_components(
         c: checked_world_scalar_to_f32(x_axis_x)?,
         s: checked_world_scalar_to_f32(x_axis_y)?,
     };
-    Ok(WorldTransform::new(
-        Position::new(translation_x, translation_y),
-        rotation,
-    ))
+    Ok(WorldTransform {
+        p: Position::new(translation_x, translation_y),
+        q: rotation,
+    })
 }
 
 /// A rigid transform whose translation is an absolute world [`Position`].
@@ -475,16 +480,42 @@ impl WorldTransform {
     };
 
     #[inline]
-    pub const fn new(position: Position, rotation: Rot) -> Self {
-        Self {
+    pub fn new(position: Position, rotation: Rot) -> crate::Result<Self> {
+        let transform = Self {
             p: position,
             q: rotation,
+        };
+        if transform.is_valid() {
+            Ok(transform)
+        } else {
+            Err(crate::Error::invalid_argument(
+                "WorldTransform::new",
+                "position/rotation",
+                "a finite rigid world transform",
+            ))
         }
     }
 
     #[inline]
-    pub const fn from_raw(raw: ffi::b2WorldTransform) -> Self {
-        Self::new(Position::from_raw(raw.p), Rot::from_raw(raw.q))
+    pub fn from_raw(raw: ffi::b2WorldTransform) -> crate::Result<Self> {
+        let transform = Self::from_raw_unvalidated(raw);
+        if transform.is_valid() {
+            Ok(transform)
+        } else {
+            Err(crate::Error::invalid_argument(
+                "WorldTransform::from_raw",
+                "raw",
+                "a finite rigid world transform",
+            ))
+        }
+    }
+
+    #[inline]
+    pub(crate) const fn from_raw_unvalidated(raw: ffi::b2WorldTransform) -> Self {
+        Self {
+            p: Position::from_raw(raw.p),
+            q: Rot::from_raw_unvalidated(raw.q),
+        }
     }
 
     #[inline]
@@ -507,8 +538,11 @@ impl WorldTransform {
     }
 
     #[inline]
-    pub fn from_pos_angle<P: Into<Position>>(position: P, angle_radians: f32) -> Self {
-        Self::new(position.into(), Rot::from_radians(angle_radians))
+    pub fn from_pos_angle<P: Into<Position>>(
+        position: P,
+        angle_radians: f32,
+    ) -> crate::Result<Self> {
+        Self::new(position.into(), Rot::from_radians(angle_radians)?)
     }
 
     #[inline]
@@ -857,7 +891,7 @@ impl TryFrom<&glam::DAffine2> for WorldTransform {
 
 #[cfg(feature = "serde")]
 impl serde::Serialize for WorldTransform {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> core::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
@@ -877,7 +911,7 @@ impl serde::Serialize for WorldTransform {
 
 #[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for WorldTransform {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> core::result::Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
@@ -887,15 +921,10 @@ impl<'de> serde::Deserialize<'de> for WorldTransform {
             angle: f32,
         }
 
-        let repr = Repr::deserialize(deserializer)?;
-        Ok(Self::from_pos_angle(repr.position, repr.angle))
+        let repr = <Repr as serde::Deserialize>::deserialize(deserializer)?;
+        Self::from_pos_angle(repr.position, repr.angle).map_err(serde::de::Error::custom)
     }
 }
-
-#[cfg(feature = "bytemuck")]
-unsafe impl bytemuck::Zeroable for WorldTransform {}
-#[cfg(feature = "bytemuck")]
-unsafe impl bytemuck::Pod for WorldTransform {}
 
 #[cfg(feature = "bytemuck")]
 const _: () = {
@@ -944,7 +973,14 @@ impl WorldCastOutput {
     };
 
     #[inline]
-    pub const fn from_raw(raw: ffi::b2WorldCastOutput) -> Self {
+    pub fn from_raw(raw: ffi::b2WorldCastOutput) -> crate::Result<Self> {
+        let output = Self::from_raw_unvalidated(raw);
+        output.validate_for("WorldCastOutput::from_raw")?;
+        Ok(output)
+    }
+
+    #[inline]
+    fn from_raw_unvalidated(raw: ffi::b2WorldCastOutput) -> Self {
         Self {
             normal: Vec2::from_raw(raw.normal),
             point: Position::from_raw(raw.point),
@@ -952,6 +988,75 @@ impl WorldCastOutput {
             iterations: raw.iterations,
             hit: raw.hit,
         }
+    }
+
+    pub(crate) fn from_native(
+        operation: &'static str,
+        raw: ffi::b2WorldCastOutput,
+    ) -> crate::Result<Self> {
+        let output = Self::from_raw_unvalidated(raw);
+        output
+            .validate_for(operation)
+            .map_err(|_| crate::Error::InvalidNativeOutput {
+                operation,
+                output: "world_cast_output",
+                constraint: "finite cast data, a unit-interval fraction, and non-negative iterations",
+            })?;
+        Ok(output)
+    }
+
+    pub fn validate(&self) -> crate::Result<()> {
+        self.validate_for("WorldCastOutput::validate")
+    }
+
+    fn validate_for(&self, operation: &'static str) -> crate::Result<()> {
+        if !self.normal.is_valid() {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "normal",
+                "a finite vector",
+            ));
+        }
+        if !self.point.is_valid() {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "point",
+                "a finite world position",
+            ));
+        }
+        if !self.fraction.is_finite() || !(0.0..=1.0).contains(&self.fraction) {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "fraction",
+                "a finite value in 0.0..=1.0",
+            ));
+        }
+        if self.iterations < 0 {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "iterations",
+                "a non-negative native int",
+            ));
+        }
+        if self.hit && self.fraction > 0.0 && !is_valid_unit_vec2(self.normal) {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "normal",
+                "a finite unit vector for a non-overlap hit",
+            ));
+        }
+        if self.hit
+            && self.fraction == 0.0
+            && self.normal != Vec2::ZERO
+            && !is_valid_unit_vec2(self.normal)
+        {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "normal",
+                "a finite unit vector, or zero for an initial overlap",
+            ));
+        }
+        Ok(())
     }
 
     #[inline]
@@ -983,33 +1088,72 @@ impl WorldCastOutput {
 pub use crate::id::{BodyId, ChainId, ContactId, JointId, ShapeId};
 
 /// Mass properties (mass, center, inertia) used by Box2D.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct MassData {
-    pub mass: f32,
-    pub center: Vec2,
-    pub rotational_inertia: f32,
+    pub(crate) mass: f32,
+    pub(crate) center: Vec2,
+    pub(crate) rotational_inertia: f32,
 }
 
 impl MassData {
     #[inline]
-    pub const fn new(mass: f32, center: Vec2, rotational_inertia: f32) -> Self {
-        Self {
+    pub fn new(mass: f32, center: Vec2, rotational_inertia: f32) -> crate::Result<Self> {
+        let mass_data = Self {
             mass,
             center,
             rotational_inertia,
-        }
+        };
+        mass_data.validate("MassData::new")?;
+        Ok(mass_data)
     }
 
     #[inline]
-    /// Construct from the raw Box2D value.
-    pub fn from_raw(raw: ffi::b2MassData) -> Self {
+    /// Construct from a raw Box2D value after validating its invariants.
+    pub fn from_raw(raw: ffi::b2MassData) -> crate::Result<Self> {
+        let mass_data = Self::from_raw_unvalidated(raw);
+        mass_data.validate("MassData::from_raw")?;
+        Ok(mass_data)
+    }
+
+    #[inline]
+    pub(crate) fn from_raw_unvalidated(raw: ffi::b2MassData) -> Self {
         Self {
             mass: raw.mass,
             center: Vec2::from_raw(raw.center),
             rotational_inertia: raw.rotationalInertia,
         }
+    }
+
+    pub(crate) fn from_native(
+        operation: &'static str,
+        raw: ffi::b2MassData,
+    ) -> crate::Result<Self> {
+        let mass_data = Self::from_raw_unvalidated(raw);
+        mass_data
+            .validate(operation)
+            .map_err(|_| crate::Error::InvalidNativeOutput {
+                operation,
+                output: "mass_data",
+                constraint: "finite non-negative mass and inertia with a finite center",
+            })?;
+        Ok(mass_data)
+    }
+
+    #[inline]
+    pub const fn mass(self) -> f32 {
+        self.mass
+    }
+
+    #[inline]
+    pub const fn center(self) -> Vec2 {
+        self.center
+    }
+
+    #[inline]
+    pub const fn rotational_inertia(self) -> f32 {
+        self.rotational_inertia
     }
 
     #[inline]
@@ -1020,6 +1164,49 @@ impl MassData {
             center: self.center.into_raw(),
             rotationalInertia: self.rotational_inertia,
         }
+    }
+
+    fn validate(self, operation: &'static str) -> crate::Result<()> {
+        if !self.mass.is_finite() || self.mass < 0.0 {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "mass",
+                "a finite value greater than or equal to zero",
+            ));
+        }
+        if !self.center.is_valid() {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "center",
+                "a finite vector",
+            ));
+        }
+        if !self.rotational_inertia.is_finite() || self.rotational_inertia < 0.0 {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "rotational_inertia",
+                "a finite value greater than or equal to zero",
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for MassData {
+    fn deserialize<D>(deserializer: D) -> core::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct Repr {
+            mass: f32,
+            center: Vec2,
+            rotational_inertia: f32,
+        }
+
+        let repr = <Repr as serde::Deserialize>::deserialize(deserializer)?;
+        Self::new(repr.mass, repr.center, repr.rotational_inertia).map_err(serde::de::Error::custom)
     }
 }
 
@@ -1111,7 +1298,14 @@ impl ManifoldPoint {
     }
 
     #[inline]
-    pub fn from_raw(raw: ffi::b2ManifoldPoint) -> Self {
+    pub fn from_raw(raw: ffi::b2ManifoldPoint) -> crate::Result<Self> {
+        let point = Self::from_raw_unvalidated(raw);
+        point.validate_for("ManifoldPoint::from_raw")?;
+        Ok(point)
+    }
+
+    #[inline]
+    fn from_raw_unvalidated(raw: ffi::b2ManifoldPoint) -> Self {
         Self {
             anchor_a: Vec2::from_raw(raw.anchorA),
             anchor_b: Vec2::from_raw(raw.anchorB),
@@ -1124,6 +1318,44 @@ impl ManifoldPoint {
             id: raw.id,
             persisted: raw.persisted,
         }
+    }
+
+    pub fn validate(&self) -> crate::Result<()> {
+        self.validate_for("ManifoldPoint::validate")
+    }
+
+    fn validate_for(&self, operation: &'static str) -> crate::Result<()> {
+        if !self.anchor_a.is_valid() {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "anchor_a",
+                "a finite vector",
+            ));
+        }
+        if !self.anchor_b.is_valid() {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "anchor_b",
+                "a finite vector",
+            ));
+        }
+        for (argument, value) in [
+            ("separation", self.separation),
+            ("base_separation", self.base_separation),
+            ("normal_impulse", self.normal_impulse),
+            ("tangent_impulse", self.tangent_impulse),
+            ("total_normal_impulse", self.total_normal_impulse),
+            ("normal_velocity", self.normal_velocity),
+        ] {
+            if !value.is_finite() {
+                return Err(crate::Error::invalid_argument(
+                    operation,
+                    argument,
+                    "a finite value",
+                ));
+            }
+        }
+        Ok(())
     }
 
     #[inline]
@@ -1176,13 +1408,74 @@ impl Manifold {
     }
 
     #[inline]
-    pub fn from_raw(raw: ffi::b2Manifold) -> Self {
+    pub fn from_raw(raw: ffi::b2Manifold) -> crate::Result<Self> {
+        let manifold = Self::from_raw_unvalidated(raw);
+        manifold.validate_for("Manifold::from_raw")?;
+        Ok(manifold)
+    }
+
+    #[inline]
+    fn from_raw_unvalidated(raw: ffi::b2Manifold) -> Self {
         Self {
             normal: Vec2::from_raw(raw.normal),
             rolling_impulse: raw.rollingImpulse,
-            contact_points: raw.points.map(ManifoldPoint::from_raw),
-            point_count: raw.pointCount.clamp(0, MAX_MANIFOLD_POINTS as i32),
+            contact_points: raw.points.map(ManifoldPoint::from_raw_unvalidated),
+            point_count: raw.pointCount,
         }
+    }
+
+    pub(crate) fn from_native(
+        operation: &'static str,
+        raw: ffi::b2Manifold,
+    ) -> crate::Result<Self> {
+        let manifold = Self::from_raw_unvalidated(raw);
+        manifold
+            .validate_for(operation)
+            .map_err(|_| crate::Error::InvalidNativeOutput {
+                operation,
+                output: "manifold",
+                constraint: "zero to two finite contact points and a unit normal when non-empty",
+            })?;
+        Ok(manifold)
+    }
+
+    pub fn validate(&self) -> crate::Result<()> {
+        self.validate_for("Manifold::validate")
+    }
+
+    fn validate_for(&self, operation: &'static str) -> crate::Result<()> {
+        if !(0..=MAX_MANIFOLD_POINTS as i32).contains(&self.point_count) {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "point_count",
+                "a contact point count in 0..=2",
+            ));
+        }
+        if !self.normal.is_valid() {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "normal",
+                "a finite vector",
+            ));
+        }
+        if self.point_count > 0 && !is_valid_unit_vec2(self.normal) {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "normal",
+                "a finite unit vector when the manifold is non-empty",
+            ));
+        }
+        if !self.rolling_impulse.is_finite() {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "rolling_impulse",
+                "a finite value",
+            ));
+        }
+        for point in self.points() {
+            point.validate_for(operation)?;
+        }
+        Ok(())
     }
 
     #[inline]
@@ -1191,7 +1484,7 @@ impl Manifold {
             normal: self.normal.into_raw(),
             rollingImpulse: self.rolling_impulse,
             points: self.contact_points.map(ManifoldPoint::into_raw),
-            pointCount: self.point_count.clamp(0, MAX_MANIFOLD_POINTS as i32),
+            pointCount: self.point_count,
         }
     }
 }
@@ -1209,30 +1502,20 @@ pub struct ContactData {
 
 impl ContactData {
     #[inline]
-    pub(crate) fn try_from_raw_in(
-        brand: crate::id::IdBrand,
+    pub(crate) fn from_raw_in(
+        resolver: &crate::core::identity_registry::OutputIdentityResolver<'_>,
         contact_epoch: crate::id::ContactEpoch,
         raw: ffi::b2ContactData,
-    ) -> crate::error::ApiResult<Self> {
-        let contact_id = brand.try_contact(raw.contactId, contact_epoch)?;
-        let shape_id_a = brand.try_shape(raw.shapeIdA)?;
-        let shape_id_b = brand.try_shape(raw.shapeIdB)?;
+    ) -> crate::error::Result<Self> {
+        let contact_id = resolver.contact(raw.contactId, contact_epoch)?;
+        let shape_id_a = resolver.active_shape(raw.shapeIdA)?;
+        let shape_id_b = resolver.active_shape(raw.shapeIdB)?;
         Ok(Self {
             contact_id,
             shape_id_a,
             shape_id_b,
-            manifold: Manifold::from_raw(raw.manifold),
+            manifold: Manifold::from_native("ContactData::from_raw_in", raw.manifold)?,
         })
-    }
-
-    #[inline]
-    pub fn into_raw(self) -> ffi::b2ContactData {
-        ffi::b2ContactData {
-            contactId: self.contact_id.into_raw(),
-            shapeIdA: self.shape_id_a.into_raw(),
-            shapeIdB: self.shape_id_b.into_raw(),
-            manifold: self.manifold.into_raw(),
-        }
     }
 }
 
@@ -1294,22 +1577,49 @@ mod tests {
         let mut raw = contact_data_raw(brand);
         raw.contactId.index1 = 0;
         assert_eq!(
-            ContactData::try_from_raw_in(brand, crate::id::ContactEpoch::INITIAL, raw).unwrap_err(),
-            crate::ApiError::InvalidContactId
+            identities
+                .with_output_resolver(|resolver| {
+                    ContactData::from_raw_in(resolver, crate::id::ContactEpoch::INITIAL, raw)
+                })
+                .unwrap_err(),
+            crate::Error::InvalidContactId
         );
 
         let mut raw = contact_data_raw(brand);
         raw.shapeIdA.index1 = 0;
         assert_eq!(
-            ContactData::try_from_raw_in(brand, crate::id::ContactEpoch::INITIAL, raw).unwrap_err(),
-            crate::ApiError::InvalidShapeId
+            identities
+                .with_output_resolver(|resolver| {
+                    ContactData::from_raw_in(resolver, crate::id::ContactEpoch::INITIAL, raw)
+                })
+                .unwrap_err(),
+            crate::Error::InvalidShapeId
         );
 
         let mut raw = contact_data_raw(brand);
         raw.shapeIdB.world0 = brand.world0().wrapping_add(1);
         assert_eq!(
-            ContactData::try_from_raw_in(brand, crate::id::ContactEpoch::INITIAL, raw).unwrap_err(),
-            crate::ApiError::WrongWorld
+            identities
+                .with_output_resolver(|resolver| {
+                    ContactData::from_raw_in(resolver, crate::id::ContactEpoch::INITIAL, raw)
+                })
+                .unwrap_err(),
+            crate::Error::WrongWorld
+        );
+
+        let mut raw = contact_data_raw(brand);
+        raw.manifold.pointCount = 3;
+        assert_eq!(
+            identities
+                .with_output_resolver(|resolver| {
+                    ContactData::from_raw_in(resolver, crate::id::ContactEpoch::INITIAL, raw)
+                })
+                .unwrap_err(),
+            crate::Error::InvalidNativeOutput {
+                operation: "ContactData::from_raw_in",
+                output: "manifold",
+                constraint: "zero to two finite contact points and a unit normal when non-empty",
+            }
         );
     }
 
@@ -1353,8 +1663,8 @@ mod tests {
         let position_round_trip = Position::from_raw(position.into_raw());
         assert_eq!(position_round_trip, position);
 
-        let transform = WorldTransform::new(position, Rot::from_radians(0.375));
-        let transform_round_trip = WorldTransform::from_raw(transform.into_raw());
+        let transform = WorldTransform::new(position, Rot::from_radians(0.375).unwrap()).unwrap();
+        let transform_round_trip = WorldTransform::from_raw(transform.into_raw()).unwrap();
         assert_eq!(transform_round_trip.position(), position);
         assert_eq!(
             transform_round_trip.rotation().cosine(),
@@ -1409,7 +1719,15 @@ mod tests {
             hit: true,
         };
 
-        assert_eq!(WorldCastOutput::from_raw(output.into_raw()), output);
+        assert_eq!(WorldCastOutput::from_raw(output.into_raw()), Ok(output));
+
+        assert!(
+            WorldCastOutput::from_raw(ffi::b2WorldCastOutput {
+                normal: ffi::b2Vec2 { x: 2.0, y: 0.0 },
+                ..output.into_raw()
+            })
+            .is_err()
+        );
     }
 
     #[test]
@@ -1427,7 +1745,7 @@ mod tests {
             persisted: true,
         };
 
-        let point = ManifoldPoint::from_raw(raw);
+        let point = ManifoldPoint::from_raw(raw).unwrap();
         assert_eq!(point.anchor_a, Vec2::new(1.0, 2.0));
         assert_eq!(point.anchor_b, Vec2::new(3.0, 4.0));
         assert_eq!(point.separation, -0.25);
@@ -1447,7 +1765,7 @@ mod tests {
             Position::new(TEST_WORLD_X + 3.0, TEST_WORLD_X + 4.0)
         );
 
-        let round_trip = ManifoldPoint::from_raw(point.into_raw());
+        let round_trip = ManifoldPoint::from_raw(point.into_raw()).unwrap();
         assert_eq!(round_trip, point);
     }
 
@@ -1475,7 +1793,25 @@ mod tests {
         assert_eq!(manifold.point_count(), 1);
         assert_eq!(manifold.points(), &[point]);
         assert!(!manifold.is_empty());
-        assert_eq!(Manifold::from_raw(manifold.into_raw()), manifold);
+        assert_eq!(Manifold::from_raw(manifold.into_raw()), Ok(manifold));
+
+        let raw = ffi::b2Manifold {
+            pointCount: 3,
+            ..manifold.into_raw()
+        };
+        assert!(Manifold::from_raw(raw).is_err());
+
+        let raw = ffi::b2Manifold {
+            points: [
+                ffi::b2ManifoldPoint {
+                    separation: f32::NAN,
+                    ..point.into_raw()
+                },
+                ManifoldPoint::default().into_raw(),
+            ],
+            ..manifold.into_raw()
+        };
+        assert!(Manifold::from_raw(raw).is_err());
     }
 
     #[cfg(feature = "bytemuck")]
@@ -1484,10 +1820,6 @@ mod tests {
         assert_eq!(
             bytemuck::bytes_of(&Position::ZERO).len(),
             2 * core::mem::size_of::<WorldScalar>()
-        );
-        assert_eq!(
-            bytemuck::bytes_of(&WorldTransform::IDENTITY).len(),
-            core::mem::size_of::<WorldTransform>()
         );
     }
 
@@ -1500,7 +1832,6 @@ mod tests {
         assert!(Position::new(1.0, -2.0).is_valid());
         assert!(!Position::new(WorldScalar::NEG_INFINITY, 0.0).is_valid());
         assert!(WorldTransform::IDENTITY.is_valid());
-        let invalid = WorldTransform::new(Position::new(WorldScalar::NAN, 0.0), Rot::IDENTITY);
-        assert!(!invalid.is_valid());
+        assert!(WorldTransform::new(Position::new(WorldScalar::NAN, 0.0), Rot::IDENTITY).is_err());
     }
 }

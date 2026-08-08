@@ -9,87 +9,97 @@ use boxdd::prelude::*;
 
 // Headless port of the Bodies/Body Type sample.
 // Demonstrates switching body types and enabling/disabling while connected by joints.
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut world = World::new(WorldDef::builder().gravity([0.0, -10.0]).build())?;
+fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let foundation = boxdd::Foundation::initialize_default()?;
+    let mut world = foundation.create_world(
+        boxdd::WorldBuilder::from(foundation.world_def())
+            .gravity([0.0, -10.0])
+            .build()?,
+    )?;
 
     // Ground
-    let ground = world.create_body_id(BodyBuilder::new().build());
-    let _ = world.create_segment_shape_for(
-        ground,
-        &ShapeDef::builder().build(),
-        &shapes::segment([-20.0_f32, 0.0], [20.0, 0.0]),
-    );
+    let ground = world.create_body(BodyBuilder::from(foundation.body_def()).build()?)?;
+    let _ = world.body(ground)?.create_segment(
+        &ShapeDef::builder().build()?,
+        &shapes::segment([-20.0_f32, 0.0], [20.0, 0.0])?,
+    )?;
 
     // Attachments and platform
-    let attach1 = world.create_body_id(
-        BodyBuilder::new()
+    let attach1 = world.create_body(
+        BodyBuilder::from(foundation.body_def())
             .body_type(BodyType::Dynamic)
             .position([-2.0_f32, 3.0])
-            .build(),
-    );
-    let attach2 = world.create_body_id(
-        BodyBuilder::new()
+            .build()?,
+    )?;
+    let attach2 = world.create_body(
+        BodyBuilder::from(foundation.body_def())
             .body_type(BodyType::Dynamic)
             .position([3.0_f32, 3.0])
-            .build(),
-    );
-    let platform = world.create_body_id(
-        BodyBuilder::new()
+            .build()?,
+    )?;
+    let platform = world.create_body(
+        BodyBuilder::from(foundation.body_def())
             .body_type(BodyType::Dynamic)
             .position([-4.0_f32, 5.0])
-            .build(),
-    );
+            .build()?,
+    )?;
 
-    let sdef1 = ShapeDef::builder().density(1.0).build();
-    let sdef2 = ShapeDef::builder().density(2.0).build();
-    let box_tall = shapes::box_polygon(0.5, 2.0);
-    let box_long = shapes::box_polygon(0.5, 4.0);
-    let _ = world.create_polygon_shape_for(attach1, &sdef1, &box_tall);
-    let _ = world.create_polygon_shape_for(attach2, &sdef1, &box_tall);
-    let _ = world.create_polygon_shape_for(platform, &sdef2, &box_long);
+    let sdef1 = ShapeDef::builder().density(1.0).build()?;
+    let sdef2 = ShapeDef::builder().density(2.0).build()?;
+    let box_tall = shapes::box_polygon(0.5, 2.0).expect("valid polygon geometry");
+    let box_long = shapes::box_polygon(0.5, 4.0).expect("valid polygon geometry");
+    let _ = world.body(attach1)?.create_polygon(&sdef1, &box_tall)?;
+    let _ = world.body(attach2)?.create_polygon(&sdef1, &box_tall)?;
+    let _ = world.body(platform)?.create_polygon(&sdef2, &box_long)?;
 
     // For Debug stability, omit joints in this headless variant.
 
     // Payloads
-    let payload1 = world.create_body_id(
-        BodyBuilder::new()
+    let payload1 = world.create_body(
+        BodyBuilder::from(foundation.body_def())
             .body_type(BodyType::Dynamic)
             .position([-3.0_f32, 8.0])
-            .build(),
-    );
-    let _ = world.create_polygon_shape_for(payload1, &sdef1, &shapes::box_polygon(0.5, 0.5));
-    let payload2 = world.create_body_id(
-        BodyBuilder::new()
+            .build()?,
+    )?;
+    let _ = world.body(payload1)?.create_polygon(
+        &sdef1,
+        &shapes::box_polygon(0.5, 0.5).expect("valid polygon geometry"),
+    )?;
+    let payload2 = world.create_body(
+        BodyBuilder::from(foundation.body_def())
             .body_type(BodyType::Dynamic)
             .position([0.0_f32, 8.0])
-            .build(),
-    );
-    let _ = world.create_polygon_shape_for(payload2, &sdef1, &shapes::box_polygon(0.25, 0.25));
+            .build()?,
+    )?;
+    let _ = world.body(payload2)?.create_polygon(
+        &sdef1,
+        &shapes::box_polygon(0.25, 0.25).expect("valid polygon geometry"),
+    )?;
 
     // Phase 1: dynamic platform
     for _ in 0..120 {
-        world.step(1.0 / 60.0, 4);
+        drop(world.step(1.0 / 60.0, 4)?);
     }
-    let p_dyn = world.body_position(platform);
+    let p_dyn = world.body(platform)?.position()?;
 
     // No joints in this variant; directly switch body types below.
     // Phase 2: kinematic platform moves left-right
-    world.set_body_type(platform, BodyType::Kinematic);
-    world.set_body_linear_velocity(platform, [-3.0_f32, 0.0]);
+    world.body(platform)?.set_body_type(BodyType::Kinematic)?;
+    world.body(platform)?.set_linear_velocity([-3.0_f32, 0.0])?;
     for _ in 0..120 {
-        world.step(1.0 / 60.0, 4);
+        drop(world.step(1.0 / 60.0, 4)?);
     }
-    let p_kin = world.body_position(platform);
+    let p_kin = world.body(platform)?.position()?;
 
     // Phase 3: static platform (no motion)
-    world.set_body_type(platform, BodyType::Static);
-    world.set_body_linear_velocity(platform, [0.0_f32, 0.0]);
+    world.body(platform)?.set_body_type(BodyType::Static)?;
+    world.body(platform)?.set_linear_velocity([0.0_f32, 0.0])?;
     for _ in 0..60 {
-        world.step(1.0 / 60.0, 4);
+        drop(world.step(1.0 / 60.0, 4)?);
     }
-    let p_sta = world.body_position(platform);
+    let p_sta = world.body(platform)?.position()?;
 
-    let awake = world.awake_body_count();
+    let awake = world.awake_body_count()?;
     println!(
         "bodies: platform dyn=({:.2},{:.2}) kin=({:.2},{:.2}) sta=({:.2},{:.2}) awake={}",
         p_dyn.x, p_dyn.y, p_kin.x, p_kin.y, p_sta.x, p_sta.y, awake

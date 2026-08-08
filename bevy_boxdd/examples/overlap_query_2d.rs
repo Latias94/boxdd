@@ -14,12 +14,17 @@ struct Pickup;
 struct Probe;
 
 fn main() {
+    let foundation =
+        boxdd::Foundation::initialize_default().expect("Box2D foundation should initialize");
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(BoxddPhysicsPlugin::new(BoxddPhysicsSettings {
-            gravity: Vec2::ZERO,
-            ..Default::default()
-        }))
+        .add_plugins(BoxddPhysicsPlugin::new(
+            foundation,
+            BoxddPhysicsSettings {
+                gravity: Vec2::ZERO,
+                ..Default::default()
+            },
+        ))
         .add_systems(Startup, setup)
         .add_systems(Update, (move_probe, highlight_pickups).chain())
         .run();
@@ -69,14 +74,12 @@ fn highlight_pickups(
     let aabb = boxdd::Aabb::from_center_half_extents(
         boxdd::Vec2::ZERO,
         PROBE_HALF_EXTENTS.to_boxdd_vec2(),
-    );
+    )
+    .expect("probe half-extents are positive and finite");
 
-    if let Err(error) = context.try_overlap_aabb_entities_into(
-        origin,
-        aabb,
-        boxdd::QueryFilter::default(),
-        &mut hits,
-    ) {
+    if let Err(error) =
+        context.overlap_aabb_entities_into(origin, aabb, boxdd::QueryFilter::default(), &mut hits)
+    {
         warn!(?error, "overlap query failed");
         return;
     }

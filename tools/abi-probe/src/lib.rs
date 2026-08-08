@@ -14,59 +14,91 @@ use std::{
 
 use boxdd_sys::ffi;
 
-include!(concat!(env!("OUT_DIR"), "/abi_probe_cases.rs"));
-
 unsafe extern "C" {
-    fn boxdd_abi_probe_layout_value(index: u32) -> u64;
-    fn boxdd_abi_probe_link_all() -> u32;
-    fn boxdd_abi_probe_callback_type_count() -> u32;
     fn boxdd_abi_probe_get_version() -> ffi::b2Version;
     fn boxdd_abi_probe_precision_matches() -> bool;
     fn boxdd_abi_probe_mixed_precision_matches() -> bool;
-}
-
-pub fn layout_cases() -> &'static [(&'static str, u64)] {
-    ABI_PROBE_LAYOUT_CASES
-}
-
-pub const fn structure_count() -> usize {
-    ABI_PROBE_STRUCT_COUNT
-}
-
-pub const fn field_count() -> usize {
-    ABI_PROBE_FIELD_COUNT
-}
-
-pub const fn expected_symbol_count() -> u32 {
-    ABI_PROBE_SYMBOL_COUNT
-}
-
-pub const fn expected_callback_count() -> u32 {
-    ABI_PROBE_CALLBACK_COUNT
-}
-
-pub const fn expected_callable_callback_count() -> u32 {
-    ABI_PROBE_CALLABLE_CALLBACK_COUNT
+    fn boxdd_abi_probe_tree_node_size() -> usize;
+    fn boxdd_abi_probe_tree_node_alignment() -> usize;
+    fn boxdd_abi_probe_tree_node_aabb_offset() -> usize;
+    fn boxdd_abi_probe_tree_node_category_bits_offset() -> usize;
+    fn boxdd_abi_probe_tree_node_children_offset() -> usize;
+    fn boxdd_abi_probe_tree_node_user_data_offset() -> usize;
+    fn boxdd_abi_probe_tree_node_parent_offset() -> usize;
+    fn boxdd_abi_probe_tree_node_next_offset() -> usize;
+    fn boxdd_abi_probe_tree_node_height_offset() -> usize;
+    fn boxdd_abi_probe_tree_node_flags_offset() -> usize;
+    fn boxdd_abi_probe_invoke_alloc(callback: ffi::b2AllocFcn) -> bool;
+    fn boxdd_abi_probe_invoke_assert(callback: ffi::b2AssertFcn) -> i32;
+    fn boxdd_abi_probe_invoke_cast_result(
+        callback: ffi::b2CastResultFcn,
+        context: *mut c_void,
+    ) -> f32;
+    fn boxdd_abi_probe_invoke_custom_filter(
+        callback: ffi::b2CustomFilterFcn,
+        context: *mut c_void,
+    ) -> bool;
+    fn boxdd_abi_probe_invoke_enqueue_task(
+        callback: ffi::b2EnqueueTaskCallback,
+        context: *mut c_void,
+    ) -> u32;
+    fn boxdd_abi_probe_invoke_finish_task(
+        callback: ffi::b2FinishTaskCallback,
+        context: *mut c_void,
+    ) -> bool;
+    fn boxdd_abi_probe_invoke_free(callback: ffi::b2FreeFcn) -> bool;
+    fn boxdd_abi_probe_invoke_friction(callback: ffi::b2FrictionCallback) -> f32;
+    fn boxdd_abi_probe_invoke_log(callback: ffi::b2LogFcn) -> bool;
+    fn boxdd_abi_probe_invoke_overlap_result(
+        callback: ffi::b2OverlapResultFcn,
+        context: *mut c_void,
+    ) -> bool;
+    fn boxdd_abi_probe_invoke_plane_result(
+        callback: ffi::b2PlaneResultFcn,
+        context: *mut c_void,
+    ) -> bool;
+    fn boxdd_abi_probe_invoke_pre_solve(callback: ffi::b2PreSolveFcn, context: *mut c_void)
+    -> bool;
+    fn boxdd_abi_probe_invoke_restitution(callback: ffi::b2RestitutionCallback) -> f32;
+    fn boxdd_abi_probe_invoke_task(callback: ffi::b2TaskCallback, context: *mut c_void) -> bool;
+    fn boxdd_abi_probe_invoke_tree_box_cast(
+        callback: ffi::b2TreeBoxCastCallbackFcn,
+        context: *mut c_void,
+    ) -> f32;
+    fn boxdd_abi_probe_invoke_tree_query(
+        callback: ffi::b2TreeQueryCallbackFcn,
+        context: *mut c_void,
+    ) -> bool;
+    fn boxdd_abi_probe_invoke_tree_ray_cast(
+        callback: ffi::b2TreeRayCastCallbackFcn,
+        context: *mut c_void,
+    ) -> f32;
 }
 
 pub const fn callback_names() -> &'static [&'static str] {
-    ABI_PROBE_CALLBACK_NAMES
+    &[
+        "b2AllocFcn",
+        "b2AssertFcn",
+        "b2CastResultFcn",
+        "b2CustomFilterFcn",
+        "b2EnqueueTaskCallback",
+        "b2FinishTaskCallback",
+        "b2FreeFcn",
+        "b2FrictionCallback",
+        "b2LogFcn",
+        "b2OverlapResultFcn",
+        "b2PlaneResultFcn",
+        "b2PreSolveFcn",
+        "b2RestitutionCallback",
+        "b2TaskCallback",
+        "b2TreeBoxCastCallbackFcn",
+        "b2TreeQueryCallbackFcn",
+        "b2TreeRayCastCallbackFcn",
+    ]
 }
 
 pub const fn is_double_precision() -> bool {
-    ABI_PROBE_IS_DOUBLE
-}
-
-pub fn c_layout_value(index: u32) -> u64 {
-    unsafe { boxdd_abi_probe_layout_value(index) }
-}
-
-pub fn linked_symbol_count() -> u32 {
-    unsafe { boxdd_abi_probe_link_all() }
-}
-
-pub fn c_callback_type_count() -> u32 {
-    unsafe { boxdd_abi_probe_callback_type_count() }
+    cfg!(feature = "double-precision")
 }
 
 pub fn c_version() -> (i32, i32, i32) {
@@ -96,7 +128,25 @@ pub fn callback_probe_results() -> Vec<CallbackProbeResult> {
     let _guard = CALLBACK_PROBE_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    generated_callback_probe_results()
+    vec![
+        probe_alloc_callback(),
+        probe_assert_callback(),
+        probe_cast_result_callback(),
+        probe_custom_filter_callback(),
+        probe_enqueue_task_callback(),
+        probe_finish_task_callback(),
+        probe_free_callback(),
+        probe_friction_callback(),
+        probe_log_callback(),
+        probe_overlap_result_callback(),
+        probe_plane_result_callback(),
+        probe_pre_solve_callback(),
+        probe_restitution_callback(),
+        probe_task_callback(),
+        probe_tree_box_cast_callback(),
+        probe_tree_query_callback(),
+        probe_tree_ray_cast_callback(),
+    ]
 }
 
 pub fn precision_matches() -> bool {
@@ -105,6 +155,36 @@ pub fn precision_matches() -> bool {
 
 pub fn mixed_precision_matches() -> bool {
     unsafe { boxdd_abi_probe_mixed_precision_matches() }
+}
+
+pub fn tree_node_anonymous_union_layout_matches() -> bool {
+    let c_layout = unsafe {
+        [
+            boxdd_abi_probe_tree_node_size(),
+            boxdd_abi_probe_tree_node_alignment(),
+            boxdd_abi_probe_tree_node_aabb_offset(),
+            boxdd_abi_probe_tree_node_category_bits_offset(),
+            boxdd_abi_probe_tree_node_children_offset(),
+            boxdd_abi_probe_tree_node_user_data_offset(),
+            boxdd_abi_probe_tree_node_parent_offset(),
+            boxdd_abi_probe_tree_node_next_offset(),
+            boxdd_abi_probe_tree_node_height_offset(),
+            boxdd_abi_probe_tree_node_flags_offset(),
+        ]
+    };
+    let rust_layout = [
+        std::mem::size_of::<ffi::b2TreeNode>(),
+        std::mem::align_of::<ffi::b2TreeNode>(),
+        std::mem::offset_of!(ffi::b2TreeNode, aabb),
+        std::mem::offset_of!(ffi::b2TreeNode, categoryBits),
+        std::mem::offset_of!(ffi::b2TreeNode, __bindgen_anon_1),
+        std::mem::offset_of!(ffi::b2TreeNode, __bindgen_anon_1),
+        std::mem::offset_of!(ffi::b2TreeNode, __bindgen_anon_2),
+        std::mem::offset_of!(ffi::b2TreeNode, __bindgen_anon_2),
+        std::mem::offset_of!(ffi::b2TreeNode, height),
+        std::mem::offset_of!(ffi::b2TreeNode, flags),
+    ];
+    c_layout == rust_layout
 }
 
 #[derive(Default)]

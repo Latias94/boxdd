@@ -34,8 +34,9 @@ pub enum BoxddWorldOriginError {
 
 /// Active absolute origin for Bevy-local physics coordinates.
 ///
-/// Fields are private so callers cannot change the coordinate frame without the
-/// transactional rebase performed by [`crate::BoxddPhysicsPlugin`].
+/// Mutate the coordinate frame through [`Self::request_rebase`]. Removing or replacing this
+/// resource after [`crate::BoxddPhysicsPlugin`] creates its native context makes the physics
+/// pipeline fail closed until the committed resource state is restored.
 #[derive(Resource, Copy, Clone, Debug)]
 pub struct BoxddWorldOrigin {
     active: Position,
@@ -45,7 +46,7 @@ pub struct BoxddWorldOrigin {
 
 impl BoxddWorldOrigin {
     /// Creates a coordinate frame at an absolute Box2D world position.
-    pub fn try_new(active: Position) -> Result<Self, BoxddWorldOriginError> {
+    pub fn new(active: Position) -> Result<Self, BoxddWorldOriginError> {
         if !active.is_valid() {
             return Err(BoxddWorldOriginError::InvalidOrigin);
         }
@@ -135,7 +136,8 @@ impl BoxddWorldOrigin {
         }
 
         let position = self.checked_local_to_absolute(local.translation.truncate())?;
-        Ok(WorldTransform::from_pos_angle(position, angle))
+        WorldTransform::from_pos_angle(position, angle)
+            .map_err(|_| BoxddWorldOriginError::InvalidRotation)
     }
 
     /// Applies an absolute Box2D transform in the active Bevy-local frame.

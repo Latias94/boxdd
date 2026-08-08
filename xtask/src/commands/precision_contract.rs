@@ -5,7 +5,7 @@ use std::{
     process::{Command, Output},
 };
 
-use crate::{Error, Result};
+use crate::{Error, Result, subprocess_policy::run_output};
 
 const EXTERNAL_OVERRIDE_DIAGNOSTIC: &str = "external-precision-override.txt";
 const MIXED_DEPENDENCY_DIAGNOSTIC: &str = "mixed-dependency.txt";
@@ -146,12 +146,11 @@ fn run_cargo_check(root: &Path, manifest: &Path, case: VerificationCase) -> Resu
         command.env("CFLAGS", cflags);
     }
 
-    command.output().map_err(|source| {
-        Error::io(
-            format!("precision contract cargo check ({})", case.label),
-            source,
-        )
-    })
+    run_output(
+        &mut command,
+        &format!("precision contract cargo check ({})", case.label),
+    )
+    .map_err(Error::message)
 }
 
 fn read_expected_diagnostic(fixture: &Path, file_name: &str) -> Result<String> {

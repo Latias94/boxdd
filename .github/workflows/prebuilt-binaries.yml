@@ -25,14 +25,9 @@ jobs:
     name: Build ${{ matrix.platform.target }} ${{ matrix.precision }} ${{ matrix.platform.crt }}
     if: ${{ github.ref_protected == true }}
     runs-on: ${{ matrix.platform.os }}
+    timeout-minutes: 90
     permissions:
       contents: read
-    env:
-      BOXDD_SYS_PACKAGE_DIR: ${{ github.workspace }}/packages
-      BOXDD_SYS_PACKAGE_CRT: ${{ matrix.platform.crt }}
-      BOXDD_SYS_PACKAGE_SOURCE_COMMIT: ${{ github.sha }}
-      BOXDD_SYS_PACKAGE_RELEASE_TAG: ${{ github.ref_name }}
-      TARGET: ${{ matrix.platform.target }}
     strategy:
       fail-fast: false
       matrix:
@@ -84,42 +79,73 @@ jobs:
         shell: pwsh
         run: echo "RUSTFLAGS=-C target-feature=+crt-static" >> $env:GITHUB_ENV
 
-      - name: Build and package (single precision)
-        if: matrix.precision == 'single'
+      - name: Build one identity and package it with host xtask
+        shell: pwsh
+        env:
+          BOXDD_BUILD_PRECISION: ${{ matrix.precision }}
+          BOXDD_BUILD_TARGET: ${{ matrix.platform.target }}
         run: |
-          cargo build --locked -p boxdd-sys --release --target ${{ matrix.platform.target }}
-          cargo run --locked -p boxdd-sys --features package-bin --bin package --release --target ${{ matrix.platform.target }}
+          $ErrorActionPreference = 'Stop'
+          $target = $env:BOXDD_BUILD_TARGET
+          $targetDir = Join-Path $env:RUNNER_TEMP 'boxdd-native-build'
+          $buildArgs = @('build', '--locked', '-p', 'boxdd-sys', '--release', '--target', $target, '--target-dir', $targetDir)
+          if ($env:BOXDD_BUILD_PRECISION -eq 'double') {
+            $buildArgs += @('--features', 'double-precision')
+          }
+          cargo @buildArgs
+          if ($LASTEXITCODE -ne 0) { throw "boxdd-sys build failed with exit code $LASTEXITCODE" }
 
-      - name: Build and package (double precision)
-        if: matrix.precision == 'double'
-        run: |
-          cargo build --locked -p boxdd-sys --release --target ${{ matrix.platform.target }} --features double-precision
-          cargo run --locked -p boxdd-sys --features package-bin,double-precision --bin package --release --target ${{ matrix.platform.target }}
+          $identityRoot = Join-Path $targetDir "$target/release/build"
+          $identities = @(Get-ChildItem -LiteralPath $identityRoot -Filter 'boxdd-build-identity.toml' -File -Recurse)
+          if ($identities.Count -ne 1) {
+            throw "Expected exactly one boxdd build identity, found $($identities.Count)"
+          }
+          $identity = $identities[0].FullName
+          $sysOut = $identities[0].Directory.FullName
+          $packageArgs = @(
+            'run', '--locked', '-p', 'xtask', '--', 'native-package', 'build',
+            '--sys-out', $sysOut,
+            '--build-identity', $identity,
+            '--output', (Join-Path $env:GITHUB_WORKSPACE 'packages'),
+            '--source-commit', $env:GITHUB_SHA,
+            '--release-tag', $env:GITHUB_REF_NAME
+          )
+          cargo @packageArgs
+          if ($LASTEXITCODE -ne 0) { throw "native package build failed with exit code $LASTEXITCODE" }
 
       - name: Stage one immutable release input
         shell: pwsh
+        env:
+          BOXDD_BUILD_CRT: ${{ matrix.platform.crt }}
+          BOXDD_BUILD_PRECISION: ${{ matrix.precision }}
+          BOXDD_BUILD_TARGET: ${{ matrix.platform.target }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $packageFiles = @(Get-ChildItem -LiteralPath '${{ github.workspace }}/packages' -Filter '*.tar.gz' -File)
+          $packageFiles = @(Get-ChildItem -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'packages') -Filter '*.tar.gz' -File)
           if ($packageFiles.Count -ne 1) {
             $names = ($packageFiles | ForEach-Object { $_.Name }) -join ', '
             throw "Expected exactly one prebuilt package, found $($packageFiles.Count): $names"
           }
 
-          $targetTriple = '${{ matrix.platform.target }}'
-          $precision = '${{ matrix.precision }}'
-          $crt = '${{ matrix.platform.crt }}'
+          $targetTriple = $env:BOXDD_BUILD_TARGET
+          $precision = $env:BOXDD_BUILD_PRECISION
+          $crt = $env:BOXDD_BUILD_CRT
+          $versionOutput = @(cargo run --quiet --locked -p xtask -- release-contract --print-package-version)
+          if ($LASTEXITCODE -ne 0) { throw "release version query failed with exit code $LASTEXITCODE" }
+          if ($versionOutput.Count -ne 1) { throw "Expected one release version line, found $($versionOutput.Count)" }
+          $packageVersion = $versionOutput[0].Trim()
+          if ([string]::IsNullOrWhiteSpace($packageVersion)) { throw 'Workspace package version is empty' }
           if ($crt -eq 'none') {
-            $expectedName = "boxdd-prebuilt-0.6.0-$targetTriple-$precision-static.tar.gz"
+            $expectedName = "boxdd-prebuilt-$packageVersion-$targetTriple-$precision-static.tar.gz"
           } else {
-            $expectedName = "boxdd-prebuilt-0.6.0-$targetTriple-$precision-static-$crt.tar.gz"
+            $expectedName = "boxdd-prebuilt-$packageVersion-$targetTriple-$precision-static-$crt.tar.gz"
           }
           if ($packageFiles[0].Name -ne $expectedName) {
             throw "Unexpected package name '$($packageFiles[0].Name)'; expected '$expectedName'"
           }
 
-          $artifactName = "prebuilt-input-$targetTriple-$precision-$crt-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}"
-          $artifactRoot = Join-Path '${{ runner.temp }}' $artifactName
+          $artifactName = "prebuilt-input-$targetTriple-$precision-$crt-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT-$env:GITHUB_SHA"
+          $artifactRoot = Join-Path $env:RUNNER_TEMP $artifactName
           New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
           Copy-Item -LiteralPath $packageFiles[0].FullName -Destination (Join-Path $artifactRoot $expectedName)
           "ARTIFACT_NAME=$artifactName" >> $env:GITHUB_ENV
@@ -137,6 +163,7 @@ jobs:
     name: Build WASM provider ${{ matrix.precision }}
     if: ${{ github.ref_protected == true }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     permissions:
       contents: read
     strategy:
@@ -163,9 +190,32 @@ jobs:
         with:
           key: wasm-provider-${{ matrix.precision }}
 
-      - name: Provision pinned Emscripten SDK
+      - name: Install Emscripten
         shell: bash
-        run: cargo run --locked -p xtask -- provision-emsdk --root "${RUNNER_TEMP}/emsdk" --github-actions
+        env:
+          EMSCRIPTEN_VERSION: "6.0.4"
+          EMSDK_REVISION: 224ec5f9f2f72f09f9ce0e26d66bae7dbd8b692f
+        run: |
+          set -euo pipefail
+          sdk_root="${RUNNER_TEMP}/emsdk"
+          git init "${sdk_root}"
+          git -C "${sdk_root}" remote add origin https://github.com/emscripten-core/emsdk.git
+          git -C "${sdk_root}" fetch --depth 1 origin "${EMSDK_REVISION}"
+          git -C "${sdk_root}" checkout --detach FETCH_HEAD
+          "${sdk_root}/emsdk" install "${EMSCRIPTEN_VERSION}"
+          "${sdk_root}/emsdk" activate "${EMSCRIPTEN_VERSION}"
+          source "${sdk_root}/emsdk_env.sh"
+          {
+            printf 'EMSDK=%s\n' "${EMSDK}"
+            printf 'EM_CONFIG=%s\n' "${EM_CONFIG}"
+            printf 'EMSDK_NODE=%s\n' "${EMSDK_NODE}"
+          } >> "${GITHUB_ENV}"
+          {
+            dirname "$(command -v emcc)"
+            dirname "$(command -v node)"
+            dirname "$(command -v npm)"
+            dirname "$(command -v wasm-opt)"
+          } >> "${GITHUB_PATH}"
 
       - name: Build one immutable WASM release input
         shell: bash
@@ -178,7 +228,9 @@ jobs:
           cargo run --locked -p xtask -- build-wasm-provider-package \
             --precision "$precision" \
             --output "$artifact_root"
-          expected="boxdd-wasm-provider-0.6.0-wasm32-unknown-unknown-${precision}.tar.gz"
+          package_version="$(cargo run --quiet --locked -p xtask -- release-contract --print-package-version)"
+          test -n "$package_version"
+          expected="boxdd-wasm-provider-${package_version}-wasm32-unknown-unknown-${precision}.tar.gz"
           mapfile -d '' packages < <(find "$artifact_root" -maxdepth 1 -type f -name '*.tar.gz' -print0)
           test "${#packages[@]}" -eq 1
           test "$(basename "${packages[0]}")" = "$expected"
@@ -201,8 +253,13 @@ jobs:
       - build-prebuilt
       - build-wasm-provider
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
+      actions: read
       contents: read
+    outputs:
+      attestation-artifact-id: ${{ steps.upload-attestation.outputs.artifact-id }}
+      attestation-artifact-digest: ${{ steps.upload-attestation.outputs.artifact-digest }}
     steps:
       - name: Bind full qualification to exact release commit
         shell: bash
@@ -227,32 +284,118 @@ jobs:
         with:
           toolchain: 1.97.1
 
-      - name: Download exact run inputs
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          pattern: prebuilt-input-*-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
-          path: ${{ runner.temp }}/release-inputs
-          merge-multiple: false
+      - name: Select latest complete input cohort
+        id: select-inputs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          artifacts_json="${RUNNER_TEMP}/release-input-artifacts.json"
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
+            > "${artifacts_json}"
+          selection="$(jq -cer \
+            --arg run_id "${GITHUB_RUN_ID}" \
+            --arg sha "${GITHUB_SHA}" \
+            --argjson current_attempt "${GITHUB_RUN_ATTEMPT}" '
+              def expected_bases: [
+                "prebuilt-input-aarch64-apple-darwin-double-none",
+                "prebuilt-input-aarch64-apple-darwin-single-none",
+                "prebuilt-input-x86_64-apple-darwin-double-none",
+                "prebuilt-input-x86_64-apple-darwin-single-none",
+                "prebuilt-input-x86_64-pc-windows-msvc-double-md",
+                "prebuilt-input-x86_64-pc-windows-msvc-double-mt",
+                "prebuilt-input-x86_64-pc-windows-msvc-single-md",
+                "prebuilt-input-x86_64-pc-windows-msvc-single-mt",
+                "prebuilt-input-x86_64-unknown-linux-gnu-double-none",
+                "prebuilt-input-x86_64-unknown-linux-gnu-single-none",
+                "wasm-input-double",
+                "wasm-input-single"
+              ];
+              def artifact_name_pattern:
+                "^(?<base>.+)-(?<run_id>[0-9]+)-(?<attempt>[0-9]+)-(?<sha>[0-9a-f]{40})$";
+              [.[].artifacts[]
+                | select(
+                    (.name | startswith("prebuilt-input-"))
+                    or (.name | startswith("wasm-input-"))
+                  )
+                | . as $artifact
+                | if ($artifact.name | test(artifact_name_pattern) | not)
+                  then error("release input artifact name is malformed: \($artifact.name)")
+                  else ($artifact.name | capture(artifact_name_pattern)) as $identity
+                  | if (expected_bases | index($identity.base)) == null
+                    then error("release input artifact has an unexpected coordinate: \($artifact.name)")
+                    elif (
+                      $identity.run_id != $run_id
+                      or $identity.sha != $sha
+                      or ($identity.attempt | test("^[1-9][0-9]*$") | not)
+                    )
+                    then error("release input artifact belongs to another source identity: \($artifact.name)")
+                    else {
+                      id: $artifact.id,
+                      name: $artifact.name,
+                      base: $identity.base,
+                      attempt: ($identity.attempt | tonumber),
+                      valid: (
+                        ($identity.attempt | tonumber) <= $current_attempt
+                        and (($artifact.id | type) == "number")
+                        and $artifact.id > 0
+                        and $artifact.expired == false
+                        and (($artifact.size_in_bytes | type) == "number")
+                        and $artifact.size_in_bytes > 0
+                        and (($artifact.digest // "") | test("^sha256:[0-9a-f]{64}$"))
+                        and (($artifact.workflow_run.id | tostring) == $run_id)
+                        and $artifact.workflow_run.head_sha == $sha
+                      )
+                    }
+                    end
+                  end
+              ]
+              | map(select(.valid) | del(.valid))
+              | sort_by(.attempt, .name)
+              | group_by(.attempt)
+              | map(select(([.[].base] | sort) == (expected_bases | sort)))
+              | if length == 0
+                then error("no exact, complete 12-artifact release input cohort exists")
+                else max_by(.[0].attempt)
+                end
+              | {
+                  attempt: (.[0].attempt | tostring),
+                  artifact_ids: ([.[].id] | sort | map(tostring) | join(","))
+                }
+            ' "${artifacts_json}")"
+          printf 'artifact-ids=%s\n' "$(jq -r '.artifact_ids' <<< "${selection}")" >> "${GITHUB_OUTPUT}"
+          printf 'selected-attempt=%s\n' "$(jq -r '.attempt' <<< "${selection}")" >> "${GITHUB_OUTPUT}"
 
-      - name: Download exact WASM run inputs
+      - name: Download selected input cohort
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: wasm-input-*-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          artifact-ids: ${{ steps.select-inputs.outputs.artifact-ids }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
           path: ${{ runner.temp }}/release-inputs
           merge-multiple: false
+          digest-mismatch: error
 
       - name: Validate exact contents and export canonical provenance statements
+        env:
+          SELECTED_ATTEMPT: ${{ steps.select-inputs.outputs.selected-attempt }}
         run: |
+          set -euo pipefail
           inputs="${RUNNER_TEMP}/release-inputs"
           payloads="${RUNNER_TEMP}/signing-payloads"
           cargo run --locked -p xtask -- release-contract --write-checksums --artifacts "$inputs"
           mkdir "$payloads"
-          cargo run --locked -p xtask -- release-contract --check-content \
+          GITHUB_RUN_ATTEMPT="${SELECTED_ATTEMPT}" cargo run --locked -p xtask -- release-contract --check-content \
+            --run-attempt "${SELECTED_ATTEMPT}" \
             --artifacts "$inputs" \
             --payloads "$payloads"
           cp boxdd-sys/security/sigstore/trusted_root.json "$payloads/trusted_root.json"
 
       - name: Upload validated attestation input
+        id: upload-attestation
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: prebuilt-attestation-input-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
@@ -267,7 +410,9 @@ jobs:
     if: ${{ github.ref_protected == true }}
     needs: aggregate
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
+      actions: read
       contents: read
       id-token: write
     environment: release
@@ -275,37 +420,114 @@ jobs:
       - name: Download validated attestation input
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: prebuilt-attestation-input-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          artifact-ids: ${{ needs.aggregate.outputs.attestation-artifact-id }}
           path: ${{ runner.temp }}/attestation-input
+          merge-multiple: true
+          digest-mismatch: error
+
+      - name: Confirm immutable attestation input identity
+        shell: bash
+        env:
+          ATTESTATION_ARTIFACT_ID: ${{ needs.aggregate.outputs.attestation-artifact-id }}
+          ATTESTATION_ARTIFACT_DIGEST: ${{ needs.aggregate.outputs.attestation-artifact-digest }}
+        run: |
+          set -euo pipefail
+          [[ "${ATTESTATION_ARTIFACT_ID}" =~ ^[0-9]+$ ]]
+          [[ "${ATTESTATION_ARTIFACT_DIGEST}" =~ ^[0-9a-f]{64}$ ]]
 
       - name: Install exact Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: v3.0.6
 
-      - name: Download reusable signed aggregate
-        continue-on-error: true
+      - name: Select the newest reusable signed aggregate artifact
+        id: select-reusable-signed
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          artifacts_json="${RUNNER_TEMP}/reusable-signed-artifacts.json"
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
+            > "${artifacts_json}"
+          artifact_name_pattern="^prebuilt-signed-${GITHUB_RUN_ID}-(?<attempt>[1-9][0-9]*)-${GITHUB_SHA}$"
+          selection="$(jq -cer \
+            --arg pattern "${artifact_name_pattern}" \
+            --arg run_id "${GITHUB_RUN_ID}" \
+            --arg sha "${GITHUB_SHA}" \
+            --argjson current_attempt "${GITHUB_RUN_ATTEMPT}" '
+              [.[].artifacts[]
+                | select(.name | test($pattern))
+                | (.name | capture($pattern).attempt | tonumber) as $workflow_attempt
+                | select(
+                    $workflow_attempt <= $current_attempt
+                    and ((.id | type) == "number")
+                    and .id > 0
+                    and .expired == false
+                    and ((.size_in_bytes | type) == "number")
+                    and .size_in_bytes > 0
+                    and ((.digest // "") | test("^sha256:[0-9a-f]{64}$"))
+                    and ((.workflow_run.id | tostring) == $run_id)
+                    and .workflow_run.head_sha == $sha
+                  )
+                | {
+                    id: (.id | tostring),
+                    name: .name,
+                    digest: (.digest | sub("^sha256:"; "")),
+                    workflow_attempt: $workflow_attempt
+                  }
+              ]
+              | sort_by(.workflow_attempt)
+              | if length == 0 then
+                  {reuse: false}
+                elif (group_by(.workflow_attempt) | any(length > 1)) then
+                  error("multiple immutable signed aggregate artifacts share one workflow attempt")
+                else
+                  .[-1] + {reuse: true}
+                end
+            ' "${artifacts_json}")"
+          {
+            printf 'reuse=%s\n' "$(jq -r '.reuse' <<< "${selection}")"
+            if test "$(jq -r '.reuse' <<< "${selection}")" = "true"; then
+              printf 'artifact-id=%s\n' "$(jq -r '.id' <<< "${selection}")"
+              printf 'artifact-name=%s\n' "$(jq -r '.name' <<< "${selection}")"
+              printf 'artifact-digest=%s\n' "$(jq -r '.digest' <<< "${selection}")"
+              printf 'workflow-attempt=%s\n' "$(jq -r '.workflow_attempt' <<< "${selection}")"
+            fi
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Download the exact reusable signed aggregate
+        if: steps.select-reusable-signed.outputs.reuse == 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: prebuilt-signed-${{ github.run_id }}-*-${{ github.sha }}
+          artifact-ids: ${{ steps.select-reusable-signed.outputs.artifact-id }}
           path: ${{ runner.temp }}/reusable-signed
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
           merge-multiple: true
+          digest-mismatch: error
 
       - name: Select stable signed aggregate
         id: stable-signed
         shell: bash
+        env:
+          REUSE_CANDIDATE: ${{ steps.select-reusable-signed.outputs.reuse }}
         run: |
           set -euo pipefail
+          if test "${REUSE_CANDIDATE}" != "true"; then
+            printf 'reuse=false\n' >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
           signed_root="${RUNNER_TEMP}/reusable-signed"
           input_roots=()
-          if test -d "${signed_root}"; then
-            mapfile -d '' input_roots < <(
-              find "${signed_root}" -mindepth 1 -maxdepth 1 -type d \
-                \( -name "prebuilt-input-*-${GITHUB_RUN_ID}-*-${GITHUB_SHA}" \
-                -o -name "wasm-input-*-${GITHUB_RUN_ID}-*-${GITHUB_SHA}" \) \
-                -print0 | sort -z
-            )
-          fi
+          mapfile -d '' input_roots < <(
+            find "${signed_root}" -mindepth 1 -maxdepth 1 -type d \
+              \( -name "prebuilt-input-*-${GITHUB_RUN_ID}-*-${GITHUB_SHA}" \
+              -o -name "wasm-input-*-${GITHUB_RUN_ID}-*-${GITHUB_SHA}" \) \
+              -print0 | sort -z
+          )
           attempts=()
           for input_root in "${input_roots[@]}"; do
             input_name="$(basename "${input_root}")"
@@ -315,14 +537,10 @@ jobs:
             attempts+=("${attempt}")
           done
           mapfile -t unique_attempts < <(printf '%s\n' "${attempts[@]}" | sed '/^$/d' | sort -u)
-          if test "${#input_roots[@]}" -eq 12 && test "${#unique_attempts[@]}" -eq 1; then
-            test "${unique_attempts[0]}" -ge 1
-            printf 'reuse=true\n' >> "${GITHUB_OUTPUT}"
-          else
-            test "${#input_roots[@]}" -eq 0
-            test "${#unique_attempts[@]}" -eq 0
-            printf 'reuse=false\n' >> "${GITHUB_OUTPUT}"
-          fi
+          test "${#input_roots[@]}" -eq 12
+          test "${#unique_attempts[@]}" -eq 1
+          test "${unique_attempts[0]}" -ge 1
+          printf 'reuse=true\n' >> "${GITHUB_OUTPUT}"
 
       - name: Sign and immediately verify every validated payload
         if: steps.stable-signed.outputs.reuse != 'true'
@@ -370,8 +588,17 @@ jobs:
     name: Reverify signed aggregate
     if: ${{ github.ref_protected == true }}
     needs: attest
+    outputs:
+      verified-artifact-id: ${{ steps.select-signed-artifact.outputs.artifact-id }}
+      verified-artifact-digest: ${{ steps.select-signed-artifact.outputs.artifact-digest }}
+      verified-artifact-name: ${{ steps.select-signed-artifact.outputs.artifact-name }}
+      receipt-artifact-id: ${{ steps.seal-receipt.outputs.artifact-id }}
+      receipt-artifact-digest: ${{ steps.seal-receipt.outputs.artifact-digest }}
+      release-attempt: ${{ steps.select-signed.outputs.release-attempt }}
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
+      actions: read
       contents: read
     steps:
       - name: Checkout immutable tag commit
@@ -391,14 +618,72 @@ jobs:
         with:
           cosign-release: v3.0.6
 
-      - name: Download signed aggregate
+      - name: Select one immutable signed aggregate artifact
+        id: select-signed-artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          artifacts_json="${RUNNER_TEMP}/signed-release-artifacts.json"
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
+            > "${artifacts_json}"
+          artifact_name_pattern="^prebuilt-signed-${GITHUB_RUN_ID}-(?<attempt>[1-9][0-9]*)-${GITHUB_SHA}$"
+          selection="$(jq -cer \
+            --arg pattern "${artifact_name_pattern}" \
+            --arg run_id "${GITHUB_RUN_ID}" \
+            --arg sha "${GITHUB_SHA}" \
+            --argjson current_attempt "${GITHUB_RUN_ATTEMPT}" '
+              [.[].artifacts[]
+                | select(.name | test($pattern))
+                | (.name | capture($pattern).attempt | tonumber) as $workflow_attempt
+                | select(
+                    $workflow_attempt <= $current_attempt
+                    and ((.id | type) == "number")
+                    and .id > 0
+                    and .expired == false
+                    and ((.size_in_bytes | type) == "number")
+                    and .size_in_bytes > 0
+                    and ((.digest // "") | test("^sha256:[0-9a-f]{64}$"))
+                    and ((.workflow_run.id | tostring) == $run_id)
+                    and .workflow_run.head_sha == $sha
+                  )
+                | {
+                    id: (.id | tostring),
+                    name: .name,
+                    digest: (.digest | sub("^sha256:"; "")),
+                    workflow_attempt: $workflow_attempt
+                  }
+              ]
+              | sort_by(.workflow_attempt)
+              | if length == 0 then
+                  error("no immutable signed aggregate artifact matched this run and commit")
+                elif (group_by(.workflow_attempt) | any(length > 1)) then
+                  error("multiple immutable signed aggregate artifacts share one workflow attempt")
+                else
+                  .[-1]
+                end
+            ' "${artifacts_json}")"
+          {
+            printf 'artifact-id=%s\n' "$(jq -r '.id' <<< "${selection}")"
+            printf 'artifact-name=%s\n' "$(jq -r '.name' <<< "${selection}")"
+            printf 'artifact-digest=%s\n' "$(jq -r '.digest' <<< "${selection}")"
+            printf 'workflow-attempt=%s\n' "$(jq -r '.workflow_attempt | tostring' <<< "${selection}")"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Download the exact immutable signed aggregate
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: prebuilt-signed-${{ github.run_id }}-*-${{ github.sha }}
+          artifact-ids: ${{ steps.select-signed-artifact.outputs.artifact-id }}
           path: ${{ runner.temp }}/release-inputs
-          merge-multiple: true
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+          digest-mismatch: error
 
       - name: Select unique stable signed aggregate
+        id: select-signed
         shell: bash
         run: |
           set -euo pipefail
@@ -421,16 +706,113 @@ jobs:
           test "${#unique_attempts[@]}" -eq 1
           test "${unique_attempts[0]}" -ge 1
           printf 'BOXDD_RELEASE_ATTEMPT=%s\n' "${unique_attempts[0]}" >> "${GITHUB_ENV}"
+          printf 'release-attempt=%s\n' "${unique_attempts[0]}" >> "${GITHUB_OUTPUT}"
 
       - name: Reverify exact signed release contract
-        run: cargo run --locked -p xtask -- release-contract --check --run-attempt "${BOXDD_RELEASE_ATTEMPT}" --artifacts "${RUNNER_TEMP}/release-inputs"
+        run: GITHUB_RUN_ATTEMPT="${BOXDD_RELEASE_ATTEMPT}" cargo run --locked -p xtask -- release-contract --check --run-attempt "${BOXDD_RELEASE_ATTEMPT}" --artifacts "${RUNNER_TEMP}/release-inputs"
+
+      - name: Write canonical publication receipt for the immutable payload
+        shell: bash
+        env:
+          PAYLOAD_ARTIFACT_ID: ${{ steps.select-signed-artifact.outputs.artifact-id }}
+          PAYLOAD_ARTIFACT_NAME: ${{ steps.select-signed-artifact.outputs.artifact-name }}
+          PAYLOAD_ARTIFACT_DIGEST: ${{ steps.select-signed-artifact.outputs.artifact-digest }}
+        run: |
+          set -euo pipefail
+          [[ "${PAYLOAD_ARTIFACT_ID}" =~ ^[0-9]+$ ]]
+          [[ "${PAYLOAD_ARTIFACT_NAME}" =~ ^prebuilt-signed-${GITHUB_RUN_ID}-[1-9][0-9]*-${GITHUB_SHA}$ ]]
+          [[ "${PAYLOAD_ARTIFACT_DIGEST}" =~ ^[0-9a-f]{64}$ ]]
+          [[ "${BOXDD_RELEASE_ATTEMPT}" =~ ^[1-9][0-9]*$ ]]
+
+          payload_root="${RUNNER_TEMP}/release-inputs"
+          receipt_root="${RUNNER_TEMP}/publication-receipt"
+          receipt="${receipt_root}/boxdd-release-publication-receipt-v1.json"
+          inventory="${receipt_root}/assets.json"
+          inventory_lines="${inventory}.ndjson"
+          mkdir "${receipt_root}"
+
+          while IFS= read -r -d '' asset; do
+            relative_path="${asset#"${payload_root}/"}"
+            test "${relative_path}" != "${asset}"
+            asset_name="$(basename "${asset}")"
+            asset_size="$(wc -c < "${asset}" | tr -d '[:space:]')"
+            asset_sha256="$(sha256sum "${asset}" | cut -d ' ' -f 1)"
+            jq -nc \
+              --arg name "${asset_name}" \
+              --arg path "${relative_path}" \
+              --arg digest "sha256:${asset_sha256}" \
+              --argjson size "${asset_size}" \
+              '{name: $name, path: $path, size: $size, digest: $digest}'
+          done < <(find "${payload_root}" -type f -print0 | sort -z) > "${inventory_lines}"
+          jq -s 'sort_by(.name)' "${inventory_lines}" > "${inventory}"
+          jq -e '
+            length == 49
+            and ([.[].name] | unique | length) == length
+            and ([.[].path] | unique | length) == length
+            and all(.[];
+              (.name | type) == "string"
+              and (.name | test("^[A-Za-z0-9][A-Za-z0-9._+-]*$"))
+              and (.path | type) == "string"
+              and (.path | test("^[A-Za-z0-9][A-Za-z0-9._+/-]*$"))
+              and (.path | startswith("/") | not)
+              and (.path | contains("\\") | not)
+              and all(.path | split("/")[]; . != "" and . != "." and . != "..")
+              and (.path | split("/")[-1]) == .name
+              and (.size | type) == "number"
+              and .size > 0
+              and (.digest | test("^sha256:[0-9a-f]{64}$"))
+            )
+          ' "${inventory}" >/dev/null
+
+          jq -S -n \
+            --arg schema "boxdd-release-publication-receipt-v1" \
+            --arg repository "${GITHUB_REPOSITORY}" \
+            --arg workflow ".github/workflows/prebuilt-binaries.yml" \
+            --arg run_id "${GITHUB_RUN_ID}" \
+            --arg release_attempt "${BOXDD_RELEASE_ATTEMPT}" \
+            --arg source_sha "${GITHUB_SHA}" \
+            --arg release_tag "${GITHUB_REF_NAME}" \
+            --arg payload_id "${PAYLOAD_ARTIFACT_ID}" \
+            --arg payload_name "${PAYLOAD_ARTIFACT_NAME}" \
+            --arg payload_digest "sha256:${PAYLOAD_ARTIFACT_DIGEST}" \
+            --slurpfile assets "${inventory}" '
+              {
+                schema_version: 1,
+                schema: $schema,
+                repository: $repository,
+                workflow: $workflow,
+                run_id: $run_id,
+                release_attempt: $release_attempt,
+                source_sha: $source_sha,
+                release_tag: $release_tag,
+                payload_artifact: {
+                  id: $payload_id,
+                  name: $payload_name,
+                  digest: $payload_digest
+                },
+                assets: $assets[0]
+              }
+            ' > "${receipt}"
+          cmp -s "${receipt}" <(jq -S . "${receipt}")
+          rm "${inventory}" "${inventory_lines}"
+
+      - name: Seal canonical publication receipt
+        id: seal-receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: prebuilt-publication-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: ${{ runner.temp }}/publication-receipt/boxdd-release-publication-receipt-v1.json
+          if-no-files-found: error
+          retention-days: 30
 
   qualify-prebuilt:
     name: Qualify ${{ matrix.platform.target }} ${{ matrix.precision }} ${{ matrix.platform.crt }} Rust ${{ matrix.toolchain }}
     if: ${{ github.ref_protected == true }}
     needs: verify-signed-release
     runs-on: ${{ matrix.platform.os }}
+    timeout-minutes: 90
     permissions:
+      actions: read
       contents: read
     strategy:
       fail-fast: false
@@ -476,9 +858,9 @@ jobs:
       - name: Download signed aggregate
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: prebuilt-signed-${{ github.run_id }}-*-${{ github.sha }}
+          artifact-ids: ${{ needs.verify-signed-release.outputs.verified-artifact-id }}
           path: ${{ runner.temp }}/release-inputs
-          merge-multiple: true
+          digest-mismatch: error
 
       - name: Select unique stable signed aggregate
         shell: pwsh
@@ -514,7 +896,9 @@ jobs:
     if: ${{ github.ref_protected == true }}
     needs: verify-signed-release
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     permissions:
+      actions: read
       contents: read
     strategy:
       fail-fast: false
@@ -560,9 +944,9 @@ jobs:
       - name: Download signed aggregate
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: prebuilt-signed-${{ github.run_id }}-*-${{ github.sha }}
+          artifact-ids: ${{ needs.verify-signed-release.outputs.verified-artifact-id }}
           path: ${{ runner.temp }}/release-inputs
-          merge-multiple: true
+          digest-mismatch: error
 
       - name: Select unique stable signed aggregate
         shell: bash
@@ -595,28 +979,192 @@ jobs:
     name: Publish protected draft release
     if: ${{ github.ref_protected == true }}
     needs:
+      - verify-signed-release
       - qualify-prebuilt
       - qualify-wasm-provider
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     permissions:
+      actions: read
       contents: write
     steps:
       - name: Download qualified signed aggregate
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: prebuilt-signed-${{ github.run_id }}-*-${{ github.sha }}
+          artifact-ids: ${{ needs.verify-signed-release.outputs.verified-artifact-id }}
           path: ${{ runner.temp }}/release-inputs
-          merge-multiple: true
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+          digest-mismatch: error
 
-      - name: Create protected draft release
+      - name: Download canonical publication receipt
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.verify-signed-release.outputs.receipt-artifact-id }}
+          path: ${{ runner.temp }}/publication-receipt
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+          digest-mismatch: error
+
+      - name: Verify canonical receipt and publish protected draft release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          BOXDD_RELEASE_ATTEMPT: ${{ needs.verify-signed-release.outputs.release-attempt }}
+          BOXDD_VERIFIED_ARTIFACT_ID: ${{ needs.verify-signed-release.outputs.verified-artifact-id }}
+          BOXDD_VERIFIED_ARTIFACT_NAME: ${{ needs.verify-signed-release.outputs.verified-artifact-name }}
+          BOXDD_VERIFIED_ARTIFACT_DIGEST: ${{ needs.verify-signed-release.outputs.verified-artifact-digest }}
+          BOXDD_RECEIPT_ARTIFACT_ID: ${{ needs.verify-signed-release.outputs.receipt-artifact-id }}
+          BOXDD_RECEIPT_ARTIFACT_DIGEST: ${{ needs.verify-signed-release.outputs.receipt-artifact-digest }}
         run: |
           set -euo pipefail
           test "${GITHUB_REF_TYPE}" = "tag"
           test "${GITHUB_REF}" = "refs/tags/${GITHUB_REF_NAME}"
+          [[ "${BOXDD_RELEASE_ATTEMPT}" =~ ^[1-9][0-9]*$ ]]
+          [[ "${BOXDD_VERIFIED_ARTIFACT_ID}" =~ ^[0-9]+$ ]]
+          [[ "${BOXDD_VERIFIED_ARTIFACT_NAME}" =~ ^prebuilt-signed-${GITHUB_RUN_ID}-[1-9][0-9]*-${GITHUB_SHA}$ ]]
+          [[ "${BOXDD_VERIFIED_ARTIFACT_DIGEST}" =~ ^[0-9a-f]{64}$ ]]
+          [[ "${BOXDD_RECEIPT_ARTIFACT_ID}" =~ ^[0-9]+$ ]]
+          [[ "${BOXDD_RECEIPT_ARTIFACT_DIGEST}" =~ ^[0-9a-f]{64}$ ]]
+
+          payload_artifact_metadata="${RUNNER_TEMP}/payload-artifact-metadata.json"
+          receipt_artifact_metadata="${RUNNER_TEMP}/receipt-artifact-metadata.json"
+          gh api --method GET \
+            "repos/${GITHUB_REPOSITORY}/actions/artifacts/${BOXDD_VERIFIED_ARTIFACT_ID}" \
+            > "${payload_artifact_metadata}"
+          jq -e \
+            --argjson id "${BOXDD_VERIFIED_ARTIFACT_ID}" \
+            --arg name "${BOXDD_VERIFIED_ARTIFACT_NAME}" \
+            --arg digest "sha256:${BOXDD_VERIFIED_ARTIFACT_DIGEST}" \
+            --arg run_id "${GITHUB_RUN_ID}" \
+            --arg sha "${GITHUB_SHA}" '
+              .id == $id
+              and .name == $name
+              and .digest == $digest
+              and .expired == false
+              and ((.size_in_bytes | type) == "number")
+              and .size_in_bytes > 0
+              and ((.workflow_run.id | tostring) == $run_id)
+              and .workflow_run.head_sha == $sha
+            ' "${payload_artifact_metadata}" >/dev/null
+          gh api --method GET \
+            "repos/${GITHUB_REPOSITORY}/actions/artifacts/${BOXDD_RECEIPT_ARTIFACT_ID}" \
+            > "${receipt_artifact_metadata}"
+          receipt_name_pattern="^prebuilt-publication-receipt-${GITHUB_RUN_ID}-(?<attempt>[1-9][0-9]*)-${GITHUB_SHA}$"
+          jq -e \
+            --argjson id "${BOXDD_RECEIPT_ARTIFACT_ID}" \
+            --arg digest "sha256:${BOXDD_RECEIPT_ARTIFACT_DIGEST}" \
+            --arg pattern "${receipt_name_pattern}" \
+            --arg run_id "${GITHUB_RUN_ID}" \
+            --arg sha "${GITHUB_SHA}" \
+            --argjson current_attempt "${GITHUB_RUN_ATTEMPT}" '
+              .id == $id
+              and (.name | test($pattern))
+              and ((.name | capture($pattern).attempt | tonumber) <= $current_attempt)
+              and .digest == $digest
+              and .expired == false
+              and ((.size_in_bytes | type) == "number")
+              and .size_in_bytes > 0
+              and ((.workflow_run.id | tostring) == $run_id)
+              and .workflow_run.head_sha == $sha
+            ' "${receipt_artifact_metadata}" >/dev/null
+
+          release_inputs="${RUNNER_TEMP}/release-inputs"
+          receipt_root="${RUNNER_TEMP}/publication-receipt"
+          actual_inventory="${RUNNER_TEMP}/actual-release-assets.json"
+          actual_inventory_lines="${actual_inventory}.ndjson"
+          expected_inventory="${RUNNER_TEMP}/expected-release-assets.json"
+          upload_snapshot="${RUNNER_TEMP}/publication-upload-snapshot"
+
+          mapfile -d '' receipt_files < <(find "${receipt_root}" -type f -print0 | sort -z)
+          test "${#receipt_files[@]}" -eq 1
+          receipt="${receipt_files[0]}"
+          test "$(basename "${receipt}")" = "boxdd-release-publication-receipt-v1.json"
+          mapfile -d '' unsupported_receipt_entries < <(
+            find "${receipt_root}" -mindepth 1 \
+              \( -type l -o \( ! -type d -a ! -type f \) \) \
+              -print0
+          )
+          test "${#unsupported_receipt_entries[@]}" -eq 0
+          cmp -s "${receipt}" <(jq -S . "${receipt}")
+          jq -e \
+            --arg repository "${GITHUB_REPOSITORY}" \
+            --arg workflow ".github/workflows/prebuilt-binaries.yml" \
+            --arg run_id "${GITHUB_RUN_ID}" \
+            --arg release_attempt "${BOXDD_RELEASE_ATTEMPT}" \
+            --arg source_sha "${GITHUB_SHA}" \
+            --arg release_tag "${GITHUB_REF_NAME}" \
+            --arg payload_id "${BOXDD_VERIFIED_ARTIFACT_ID}" \
+            --arg payload_name "${BOXDD_VERIFIED_ARTIFACT_NAME}" \
+            --arg payload_digest "sha256:${BOXDD_VERIFIED_ARTIFACT_DIGEST}" '
+              (keys | sort) == [
+                "assets",
+                "payload_artifact",
+                "release_attempt",
+                "release_tag",
+                "repository",
+                "run_id",
+                "schema",
+                "schema_version",
+                "source_sha",
+                "workflow"
+              ]
+              and .schema_version == 1
+              and .schema == "boxdd-release-publication-receipt-v1"
+              and .repository == $repository
+              and .workflow == $workflow
+              and .run_id == $run_id
+              and .release_attempt == $release_attempt
+              and .source_sha == $source_sha
+              and .release_tag == $release_tag
+              and (.payload_artifact | keys | sort) == ["digest", "id", "name"]
+              and .payload_artifact.id == $payload_id
+              and .payload_artifact.name == $payload_name
+              and .payload_artifact.digest == $payload_digest
+              and (.assets | type) == "array"
+              and (.assets | length) == 49
+              and ([.assets[].name] | unique | length) == 49
+              and ([.assets[].path] | unique | length) == 49
+              and all(.assets[];
+                (keys | sort) == ["digest", "name", "path", "size"]
+                and (.name | type) == "string"
+                and (.name | test("^[A-Za-z0-9][A-Za-z0-9._+-]*$"))
+                and (.path | type) == "string"
+                and (.path | test("^[A-Za-z0-9][A-Za-z0-9._+/-]*$"))
+                and (.path | startswith("/") | not)
+                and (.path | contains("\\") | not)
+                and all(.path | split("/")[]; . != "" and . != "." and . != "..")
+                and (.path | split("/")[-1]) == .name
+                and (.size | type) == "number"
+                and .size > 0
+                and (.digest | test("^sha256:[0-9a-f]{64}$"))
+              )
+            ' "${receipt}" >/dev/null
+
+          mapfile -d '' unsupported_payload_entries < <(
+            find "${release_inputs}" -mindepth 1 \
+              \( -type l -o \( ! -type d -a ! -type f \) \) \
+              -print0
+          )
+          test "${#unsupported_payload_entries[@]}" -eq 0
+          while IFS= read -r -d '' asset; do
+            relative_path="${asset#"${release_inputs}/"}"
+            test "${relative_path}" != "${asset}"
+            asset_name="$(basename "${asset}")"
+            asset_size="$(wc -c < "${asset}" | tr -d '[:space:]')"
+            asset_sha256="$(sha256sum "${asset}" | cut -d ' ' -f 1)"
+            jq -nc \
+              --arg name "${asset_name}" \
+              --arg path "${relative_path}" \
+              --arg digest "sha256:${asset_sha256}" \
+              --argjson size "${asset_size}" \
+              '{name: $name, path: $path, size: $size, digest: $digest}'
+          done < <(find "${release_inputs}" -type f -print0 | sort -z) > "${actual_inventory_lines}"
+          jq -s 'sort_by(.name)' "${actual_inventory_lines}" > "${actual_inventory}"
+          jq -e --slurp '.[0].assets == .[1]' "${receipt}" "${actual_inventory}" >/dev/null
 
           mapfile -d '' input_roots < <(
             find "${RUNNER_TEMP}/release-inputs" -mindepth 1 -maxdepth 1 -type d \
@@ -635,57 +1183,109 @@ jobs:
           done
           mapfile -t unique_attempts < <(printf '%s\n' "${attempts[@]}" | sort -u)
           test "${#unique_attempts[@]}" -eq 1
-          test "${unique_attempts[0]}" -ge 1
+          test "${unique_attempts[0]}" = "${BOXDD_RELEASE_ATTEMPT}"
 
-          # Resolve the protected tag through the Git Data API immediately before publishing.
-          # The ref target is a commit for lightweight tags and a tag object for annotated tags.
-          tag_name_uri="$(jq -rn --arg value "${GITHUB_REF_NAME}" '$value | @uri')"
-          IFS=$'\t' read -r current_ref object_type object_sha < <(
-            gh api --method GET \
-              "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag_name_uri}" \
-              --jq '[.ref, .object.type, .object.sha] | @tsv'
+          # Copy only receipt-authorized bytes into a flat, read-only upload snapshot.
+          # Subsequent release writes never consume the downloaded tree directly.
+          mkdir "${upload_snapshot}"
+          while IFS=$'\t' read -r asset_name relative_path expected_size expected_digest; do
+            source_path="${release_inputs}/${relative_path}"
+            destination="${upload_snapshot}/${asset_name}"
+            test -f "${source_path}"
+            test ! -L "${source_path}"
+            install -m 0444 -- "${source_path}" "${destination}"
+            actual_size="$(wc -c < "${destination}" | tr -d '[:space:]')"
+            actual_digest="sha256:$(sha256sum "${destination}" | cut -d ' ' -f 1)"
+            test "${actual_size}" = "${expected_size}"
+            test "${actual_digest}" = "${expected_digest}"
+          done < <(jq -r '.assets[] | [.name, .path, (.size | tostring), .digest] | @tsv' "${receipt}")
+          mapfile -d '' upload_assets < <(
+            find "${upload_snapshot}" -mindepth 1 -maxdepth 1 -type f -print0 | sort -z
           )
-          test "${current_ref}" = "${GITHUB_REF}"
-          peel_depth=0
-          while test "${object_type}" = "tag"; do
-            peel_depth=$((peel_depth + 1))
-            test "${peel_depth}" -le 8
-            IFS=$'\t' read -r object_type object_sha < <(
-              gh api --method GET \
-                "repos/${GITHUB_REPOSITORY}/git/tags/${object_sha}" \
-                --jq '[.object.type, .object.sha] | @tsv'
-            )
-          done
-          test "${object_type}" = "commit"
-          test "${object_sha}" = "${GITHUB_SHA}"
+          test "${#upload_assets[@]}" -eq 49
+          chmod 0555 "${upload_snapshot}"
 
-          release_inputs="${RUNNER_TEMP}/release-inputs"
-          expected_inventory="${RUNNER_TEMP}/expected-release-assets.json"
-          expected_inventory_lines="${expected_inventory}.ndjson"
+          jq --arg snapshot "${upload_snapshot}" '
+            [.assets[] | {
+              name: .name,
+              path: ($snapshot + "/" + .name),
+              size: .size,
+              digest: .digest,
+              state: "uploaded"
+            }]
+            | sort_by(.name)
+          ' "${receipt}" > "${expected_inventory}"
+          jq -e '
+            length == 49
+            and ([.[].name] | unique | length) == length
+            and ([.[].path] | unique | length) == length
+            and all(.[];
+              (keys | sort) == ["digest", "name", "path", "size", "state"]
+              and (.name | type) == "string"
+              and (.path == ($snapshot + "/" + .name))
+              and (.size | type) == "number"
+              and .size > 0
+              and (.digest | test("^sha256:[0-9a-f]{64}$"))
+              and .state == "uploaded"
+            )
+          ' --arg snapshot "${upload_snapshot}" "${expected_inventory}" >/dev/null
+
+          tag_name_uri="$(jq -rn --arg value "${GITHUB_REF_NAME}" '$value | @uri')"
+          resolved_tag_commit=""
+          resolve_protected_tag_commit() {
+            local current_ref object_type object_sha peel_depth
+            IFS=$'\t' read -r current_ref object_type object_sha < <(
+              gh api --method GET \
+                "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag_name_uri}" \
+                --jq '[.ref, .object.type, .object.sha] | @tsv'
+            )
+            test "${current_ref}" = "${GITHUB_REF}"
+            peel_depth=0
+            while test "${object_type}" = "tag"; do
+              peel_depth=$((peel_depth + 1))
+              test "${peel_depth}" -le 8
+              IFS=$'\t' read -r object_type object_sha < <(
+                gh api --method GET \
+                  "repos/${GITHUB_REPOSITORY}/git/tags/${object_sha}" \
+                  --jq '[.object.type, .object.sha] | @tsv'
+              )
+            done
+            test "${object_type}" = "commit"
+            resolved_tag_commit="${object_sha}"
+          }
+
+          # Resolve and peel the protected tag immediately before publishing.
+          resolve_protected_tag_commit
+          test "${resolved_tag_commit}" = "${GITHUB_SHA}"
+
           remote_inventory="${RUNNER_TEMP}/remote-release-assets.json"
           remote_inventory_raw="${remote_inventory}.raw"
           release_payload="${RUNNER_TEMP}/draft-release-payload.json"
           owner_marker="<!-- boxdd-release-owner:v1 run=${GITHUB_RUN_ID} sha=${GITHUB_SHA} tag=${GITHUB_REF_NAME} -->"
 
-          # The expected inventory is the sole upload authority for this run. It binds
-          # every release asset to its exact name, byte length, and GitHub API digest.
-          while IFS= read -r -d '' asset; do
-            asset_name="$(basename "${asset}")"
-            asset_size="$(wc -c < "${asset}" | tr -d '[:space:]')"
-            asset_sha256="$(sha256sum "${asset}" | cut -d ' ' -f 1)"
-            jq -nc \
-              --arg name "${asset_name}" \
-              --arg path "${asset}" \
-              --arg digest "sha256:${asset_sha256}" \
-              --argjson size "${asset_size}" \
-              '{name: $name, path: $path, size: $size, digest: $digest, state: "uploaded"}'
-          done < <(find "${release_inputs}" -type f -print0 | sort -z) > "${expected_inventory_lines}"
-          jq -s 'sort_by(.name)' "${expected_inventory_lines}" > "${expected_inventory}"
-          jq -e '
-            length == 49
-            and ([.[].name] | unique | length) == length
-            and all(.[]; (.name | type) == "string" and (.path | type) == "string" and (.size | type) == "number" and (.digest | test("^sha256:[0-9a-f]{64}$")) and .state == "uploaded")
-          ' "${expected_inventory}" >/dev/null
+          # The canonical receipt and immutable payload jointly authorize every name,
+          # byte length, and digest. The privileged job only uploads its verified copy.
+          assert_local_asset_matches_inventory() {
+            local asset_path expected_size expected_digest actual_size actual_digest
+            asset_path="$1"
+            test -f "${asset_path}"
+            test ! -L "${asset_path}"
+            IFS=$'\t' read -r expected_size expected_digest < <(
+              jq -er --arg path "${asset_path}" '
+                map(select(.path == $path))
+                | if length == 1 then .[0] | [.size, .digest] | @tsv
+                  else error("asset path is not uniquely authorized")
+                  end
+              ' "${expected_inventory}"
+            )
+            actual_size="$(wc -c < "${asset_path}" | tr -d '[:space:]')"
+            actual_digest="sha256:$(sha256sum "${asset_path}" | cut -d ' ' -f 1)"
+            test "${actual_size}" = "${expected_size}"
+            test "${actual_digest}" = "${expected_digest}"
+          }
+          while IFS= read -r asset_path; do
+            assert_local_asset_matches_inventory "${asset_path}"
+          done < <(jq -r '.[].path' "${expected_inventory}")
 
           tag_name_uri="$(jq -rn --arg value "${GITHUB_REF_NAME}" '$value | @uri')"
           release_endpoint="repos/${GITHUB_REPOSITORY}/releases/tags/${tag_name_uri}"
@@ -710,8 +1310,28 @@ jobs:
             gh api --paginate --slurp \
               "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?per_page=100" \
               > "${remote_inventory_raw}"
-            jq '[.[][] | {name: .name, size: .size, digest: .digest, state: .state}] | sort_by(.name)' \
+            jq '[.[][] | {id: .id, name: .name, size: .size, digest: .digest, state: .state}] | sort_by(.name)' \
               "${remote_inventory_raw}" > "${remote_inventory}"
+          }
+          assert_remote_inventory_is_reconcilable() {
+            jq -e --slurp '
+              .[0] as $expected_with_paths
+              | [$expected_with_paths[] | del(.path)] as $expected
+              | .[1] as $actual
+              | ($actual | length) == ([ $actual[].id ] | unique | length)
+              and ($actual | length) == ([ $actual[].name ] | unique | length)
+              and all($actual[];
+                ((.id | type) == "number")
+                and (.id > 0)
+                and (. as $asset | any($expected[];
+                    .name == $asset.name
+                    and (
+                      (($asset | del(.id)) == .)
+                      or ($asset.state == "starter" and $asset.size == 0)
+                    )
+                  ))
+              )
+            ' "${expected_inventory}" "${remote_inventory}" >/dev/null
           }
           assert_remote_inventory_is_authorized() {
             jq -e --slurp '
@@ -719,7 +1339,7 @@ jobs:
               | [$expected_with_paths[] | del(.path)] as $expected
               | .[1] as $actual
               | ($actual | length) == ([ $actual[].name ] | unique | length)
-              and all($actual[]; . as $asset | any($expected[]; . == $asset))
+              and all($actual[]; . as $asset | any($expected[]; . == ($asset | del(.id))))
             ' "${expected_inventory}" "${remote_inventory}" >/dev/null
           }
           assert_remote_inventory_is_complete() {
@@ -729,7 +1349,7 @@ jobs:
               | [$expected_with_paths[] | del(.path)] as $expected
               | .[1] as $actual
               | ($actual | length) == 49
-              and ($actual == $expected)
+              and ([$actual[] | del(.id)] == $expected)
             ' "${expected_inventory}" "${remote_inventory}" >/dev/null
           }
 
@@ -751,15 +1371,63 @@ jobs:
           release_id="$(require_owned_release_id <<< "${release_json}")"
 
           read_remote_inventory
+          assert_remote_inventory_is_reconcilable
+          while IFS=$'\t' read -r starter_id starter_name; do
+            # GitHub can leave a zero-byte starter after an upload returns 502. Only
+            # that documented, name-authorized state is recoverable.
+            resolve_protected_tag_commit
+            test "${resolved_tag_commit}" = "${GITHUB_SHA}"
+            test "$(read_release_by_id | require_owned_release_id)" = "${release_id}"
+            read_remote_inventory
+            assert_remote_inventory_is_reconcilable
+            jq -e \
+              --argjson id "${starter_id}" \
+              --arg name "${starter_name}" \
+              'any(.[]; .id == $id and .name == $name and .state == "starter" and .size == 0)' \
+              "${remote_inventory}" >/dev/null
+            gh api --method GET \
+              "repos/${GITHUB_REPOSITORY}/releases/assets/${starter_id}" \
+              | jq -e \
+                  --argjson id "${starter_id}" \
+                  --arg name "${starter_name}" \
+                  '.id == $id and .name == $name and .state == "starter" and .size == 0' \
+                  >/dev/null
+            gh api --method DELETE \
+              "repos/${GITHUB_REPOSITORY}/releases/assets/${starter_id}"
+            read_remote_inventory
+            assert_remote_inventory_is_reconcilable
+          done < <(jq -r '.[] | select(.state == "starter") | [.id, .name] | @tsv' "${remote_inventory}")
+
           assert_remote_inventory_is_authorized
           test "$(read_release_by_id | require_owned_release_id)" = "${release_id}"
           while IFS= read -r asset_path; do
             # Resolve ownership again for every write, then upload to the immutable
             # numeric release ID. A duplicate name fails without replacing any asset.
             test "$(read_release_by_id | require_owned_release_id)" = "${release_id}"
+            exec 3<"${asset_path}"
+            exec 4<"${asset_path}"
+            test -f "/proc/self/fd/3"
+            test -f "/proc/self/fd/4"
+            test ! -L "${asset_path}"
+            asset_identity="$(stat -Lc '%d:%i' "${asset_path}")"
+            test "${asset_identity}" = "$(stat -Lc '%d:%i' /proc/self/fd/3)"
+            test "${asset_identity}" = "$(stat -Lc '%d:%i' /proc/self/fd/4)"
+            IFS=$'\t' read -r expected_size expected_digest < <(
+              jq -er --arg path "${asset_path}" '
+                map(select(.path == $path))
+                | if length == 1 then .[0] | [.size, .digest] | @tsv
+                  else error("asset path is not uniquely authorized")
+                  end
+              ' "${expected_inventory}"
+            )
+            actual_size="$(stat -Lc '%s' /proc/self/fd/3)"
+            actual_digest="sha256:$(sha256sum <&3 | cut -d ' ' -f 1)"
+            test "${actual_size}" = "${expected_size}"
+            test "${actual_digest}" = "${expected_digest}"
             asset_name_uri="$(jq -rn --arg value "$(basename "${asset_path}")" '$value | @uri')"
             # A rerun reconciles remote inventory before retrying this POST, which
-            # avoids duplicating an upload whose successful response was lost.
+            # avoids duplicating an upload whose successful response was lost. Curl
+            # consumes the already-verified open file, not a second path lookup.
             curl --fail-with-body --silent --show-error \
               --connect-timeout 30 \
               --max-time 900 \
@@ -768,9 +1436,12 @@ jobs:
               --header "Authorization: Bearer ${GH_TOKEN}" \
               --header "X-GitHub-Api-Version: 2022-11-28" \
               --header "Content-Type: application/octet-stream" \
-              --data-binary "@${asset_path}" \
+              --header "Content-Length: ${expected_size}" \
+              --data-binary @- \
               "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?name=${asset_name_uri}" \
-              >/dev/null
+              <&4 >/dev/null
+            exec 3<&-
+            exec 4<&-
           done < <(jq -r --slurp '
             .[0] as $expected
             | .[1] as $actual
@@ -780,5 +1451,8 @@ jobs:
           ' "${expected_inventory}" "${remote_inventory}")
 
           read_remote_inventory
-          test "$(read_release_by_id | require_owned_release_id)" = "${release_id}"
           assert_remote_inventory_is_complete
+          # Close the upload transaction against fresh tag and numeric release identities.
+          resolve_protected_tag_commit
+          test "${resolved_tag_commit}" = "${GITHUB_SHA}"
+          test "$(read_release_by_id | require_owned_release_id)" = "${release_id}"

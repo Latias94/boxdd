@@ -9,9 +9,13 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     let delta = 2.0_f32 * core::f32::consts::PI / (sides as f32);
     let seg_len = 2.0 * core::f32::consts::PI * radius / (sides as f32);
     let half = 0.5 * seg_len;
-    let capsule = bd::shapes::capsule([-half, 0.0], [half, 0.0], 0.2 * scale);
+    let capsule = bd::shapes::capsule([-half, 0.0], [half, 0.0], 0.2 * scale)
+        .expect("soft-body link capsule must be valid");
 
-    let sdef = bd::ShapeDef::builder().density(1.0).build();
+    let sdef = bd::ShapeDef::builder()
+        .density(1.0)
+        .build()
+        .expect("valid testbed definition");
 
     let mut bodies = Vec::with_capacity(sides);
     for i in 0..sides {
@@ -21,15 +25,22 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
         let pos = [radius * angle.cos(), 2.5 + radius * angle.sin()];
         let body = app
             .world
-            .create_body_id(
-                bd::BodyBuilder::new()
+            .create_body(
+                bd::BodyBuilder::from(app.foundation.body_def())
                     .body_type(bd::BodyType::Dynamic)
                     .position(pos)
                     .angle(tangent_angle)
-                    .build(),
-            );
+                    .build()
+                    .expect("valid testbed definition"),
+            )
+            .expect("valid testbed operation");
         app.created_bodies += 1;
-        let _ = app.world.create_capsule_shape_for(body, &sdef, &capsule);
+        let _ = app
+            .world
+            .body(body)
+            .expect("valid testbed operation")
+            .create_capsule(&sdef, &capsule)
+            .expect("valid testbed operation");
         app.created_shapes += 1;
         bodies.push(body);
     }
@@ -49,13 +60,14 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
             .weld(a, b)
             .anchor_world(anchor)
             .with_stiffness(0.0, 0.0, 5.0, 0.0)
-            .build();
+            .build()
+            .expect("valid testbed weld joint");
         app.created_joints += 1;
     }
 }
 
 #[allow(dead_code)]
-pub fn tick(_app: &mut super::PhysicsApp) {}
+pub fn tick(_app: &mut super::PhysicsApp, _events: Option<&bd::StepEventsSnapshot>) {}
 
 pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
     let mut s = app.soft_scale;

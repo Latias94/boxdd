@@ -27,7 +27,7 @@ fn run_foundation_initialization_contract() {
         .with_assert_hook(assert_hook)
         .with_log_hook(log_hook);
 
-    let foundation = boxdd::initialize_foundation(config)
+    let foundation = boxdd::Foundation::initialize(config)
         .expect("the first valid foundation configuration must initialize");
 
     assert_eq!(foundation.config().length_units_per_meter(), 2.5);
@@ -75,7 +75,7 @@ fn run_foundation_initialization_contract() {
 
 #[cfg(target_arch = "wasm32")]
 fn run_foundation_initialization_contract() {
-    let foundation = boxdd::initialize_foundation(boxdd::FoundationConfig::new(2.5))
+    let foundation = boxdd::Foundation::initialize(boxdd::FoundationConfig::new(2.5))
         .expect("the first valid foundation configuration must initialize");
 
     assert_eq!(foundation.config().length_units_per_meter(), 2.5);
@@ -93,7 +93,7 @@ fn foundation_native_hooks_child() {
     let log_hook: Arc<boxdd::FoundationLogHook> = Arc::new(|message| {
         eprintln!("{LOG_HOOK_MARKER}: {message}");
     });
-    boxdd::initialize_foundation(
+    boxdd::Foundation::initialize(
         boxdd::FoundationConfig::default()
             .with_assert_hook(assert_hook)
             .with_log_hook(log_hook),

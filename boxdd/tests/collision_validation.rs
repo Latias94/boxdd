@@ -1,65 +1,81 @@
 use boxdd::{
-    ApiError, DistanceInput, Polygon, Rot, ShapeCastPairInput, ShapeProxy, SimplexCache, Sweep,
-    ToiInput, Transform, collide_segment_and_polygon, shapes, try_collide_capsules,
-    try_collide_circles, try_collide_segment_and_polygon, try_segment_distance, try_shape_cast,
-    try_shape_distance, try_time_of_impact,
+    Error, Polygon, Rot, ShapeCastPairInput, ShapeProxy, Sweep, ToiInput, Transform,
+    segment_distance, shapes,
 };
+
+fn initialize_foundation() {
+    boxdd::Foundation::initialize_default().expect("default foundation should initialize");
+}
 
 #[test]
 fn shape_proxy_rejects_invalid_geometry_inputs() {
     assert_eq!(
-        ShapeProxy::try_new(core::iter::empty::<[f32; 2]>(), 0.0).unwrap_err(),
-        ApiError::InvalidArgument
+        ShapeProxy::new(core::iter::empty::<[f32; 2]>(), 0.0).unwrap_err(),
+        Error::invalid_argument("ShapeProxy::new", "points", "at least one point")
     );
     assert_eq!(
-        ShapeProxy::try_new([[f32::NAN, 0.0]], 0.0).unwrap_err(),
-        ApiError::InvalidArgument
+        ShapeProxy::new([[f32::NAN, 0.0]], 0.0).unwrap_err(),
+        Error::invalid_argument("ShapeProxy::new", "points", "a finite vector")
     );
     assert_eq!(
-        ShapeProxy::try_new([[0.0_f32, 0.0]], -1.0).unwrap_err(),
-        ApiError::InvalidArgument
+        ShapeProxy::new([[0.0_f32, 0.0]], -1.0).unwrap_err(),
+        Error::invalid_argument(
+            "ShapeProxy::new",
+            "radius",
+            "a finite value greater than or equal to zero",
+        )
     );
-    assert!(ShapeProxy::new([[f32::NAN, 0.0]], 0.0).is_none());
-    assert!(ShapeProxy::new([[0.0_f32, 0.0]], -1.0).is_none());
+
+    let overflow_transform = Transform::from_pos_angle([f32::MAX, 0.0], 0.0).unwrap();
+    assert_eq!(
+        ShapeProxy::offset_from_points([[f32::MAX, 0.0]], 0.0, overflow_transform).unwrap_err(),
+        Error::invalid_argument(
+            "ShapeProxy::offset_from_points",
+            "points/transform",
+            "a transform whose proxy points remain finite",
+        )
+    );
 }
 
 #[test]
-fn standalone_collision_try_apis_reject_invalid_inputs() {
+fn offset_shape_proxy_applies_the_transform_without_exposing_raw_storage() {
+    let transform =
+        Transform::from_pos_angle([2.0_f32, -1.0], core::f32::consts::FRAC_PI_2).unwrap();
+    let proxy =
+        ShapeProxy::offset_from_points([[1.0_f32, 0.0], [0.0, 2.0]], 0.25, transform).unwrap();
+
+    assert_eq!(proxy.count(), 2);
+    assert_eq!(proxy.radius(), 0.25);
+    assert!((proxy.points()[0].x - 2.0).abs() <= 1.0e-6);
+    assert!((proxy.points()[0].y - 0.0).abs() <= 1.0e-6);
+    assert!((proxy.points()[1].x - 0.0).abs() <= 1.0e-6);
+    assert!((proxy.points()[1].y + 1.0).abs() <= 1.0e-6);
+}
+
+#[test]
+fn standalone_collision_apis_reject_invalid_inputs() {
+    initialize_foundation();
+
     let proxy = ShapeProxy::new([[0.0_f32, 0.0]], 0.0).unwrap();
-    let invalid_transform = Transform::from_pos_angle([f32::NAN, 0.0], 0.0);
-    let mut cache = SimplexCache::default();
-
-    let invalid_distance = DistanceInput::new(proxy, proxy, invalid_transform);
     assert_eq!(
-        invalid_distance.validate().unwrap_err(),
-        ApiError::InvalidArgument
+        Transform::from_pos_angle([f32::NAN, 0.0], 0.0).unwrap_err(),
+        Error::invalid_argument("Transform::from_pos_angle", "position", "a finite vector",)
+    );
+    let valid_cast =
+        ShapeCastPairInput::new(proxy, proxy, Transform::IDENTITY, [1.0, 0.0]).unwrap();
+    let invalid_max_fraction = Error::invalid_argument(
+        "ShapeCastPairInput::with_max_fraction",
+        "max_fraction",
+        "a finite value in 0.0..=1.0",
     );
     assert_eq!(
-        try_shape_distance(invalid_distance, &mut cache).unwrap_err(),
-        ApiError::InvalidArgument
-    );
-
-    let invalid_cast = ShapeCastPairInput::new(proxy, proxy, Transform::IDENTITY, [1.0, 0.0])
-        .with_max_fraction(1.5);
-    assert_eq!(
-        invalid_cast.validate().unwrap_err(),
-        ApiError::InvalidArgument
-    );
-    assert_eq!(
-        try_shape_cast(invalid_cast).unwrap_err(),
-        ApiError::InvalidArgument
+        valid_cast.with_max_fraction(1.5).unwrap_err(),
+        invalid_max_fraction
     );
 
-    let invalid_sweep = Sweep::new(
-        [0.0_f32, 0.0],
-        [0.0, 0.0],
-        [1.0, 0.0],
-        Rot::from_raw(boxdd_sys::ffi::b2Rot { c: 2.0, s: 0.0 }),
-        Rot::IDENTITY,
-    );
     assert_eq!(
-        invalid_sweep.validate().unwrap_err(),
-        ApiError::InvalidArgument
+        Rot::from_raw(boxdd_sys::ffi::b2Rot { c: 2.0, s: 0.0 }).unwrap_err(),
+        Error::invalid_argument("Rot::from_raw", "raw", "a normalized finite rotation",)
     );
 
     let valid_sweep = Sweep::new(
@@ -68,61 +84,62 @@ fn standalone_collision_try_apis_reject_invalid_inputs() {
         [0.0, 0.0],
         Rot::IDENTITY,
         Rot::IDENTITY,
-    );
-    let invalid_toi =
-        ToiInput::new(proxy, proxy, invalid_sweep, valid_sweep).with_max_fraction(1.0);
+    )
+    .unwrap();
+    let toi = ToiInput::new(proxy, proxy, valid_sweep, valid_sweep).unwrap();
     assert_eq!(
-        invalid_toi.validate().unwrap_err(),
-        ApiError::InvalidArgument
-    );
-    assert_eq!(
-        try_time_of_impact(invalid_toi).unwrap_err(),
-        ApiError::InvalidArgument
+        toi.with_max_fraction(1.5).unwrap_err(),
+        Error::invalid_argument(
+            "ToiInput::with_max_fraction",
+            "max_fraction",
+            "a finite value in 0.0..=1.0",
+        )
     );
 
     assert_eq!(
-        try_segment_distance(
+        segment_distance(
             [f32::NAN, 0.0],
             [0.0_f32, 0.0],
             [0.0_f32, 0.0],
             [1.0_f32, 0.0]
         )
         .unwrap_err(),
-        ApiError::InvalidArgument
+        Error::invalid_argument("segment_distance", "p1", "a finite vector")
     );
 
-    let polygon = shapes::box_polygon(1.0, 1.0);
-    let invalid_segment = shapes::segment([0.0_f32, 0.0], [0.0_f32, 0.0]);
     assert_eq!(
-        try_collide_segment_and_polygon(invalid_segment, polygon, Transform::IDENTITY,)
-            .unwrap_err(),
-        ApiError::InvalidArgument
+        shapes::segment([0.0_f32, 0.0], [0.0_f32, 0.0]).unwrap_err(),
+        Error::invalid_argument(
+            "Segment::new",
+            "segment",
+            "finite endpoints separated by Box2D's minimum segment length",
+        )
     );
 
-    let invalid_capsule = shapes::capsule([0.0_f32, 0.0], [0.0_f32, 0.0], 0.25);
     assert_eq!(
-        try_collide_capsules(invalid_capsule, invalid_capsule, Transform::IDENTITY,).unwrap_err(),
-        ApiError::InvalidArgument
-    );
-
-    let circle = shapes::circle([0.0_f32, 0.0], 0.5);
-    assert_eq!(
-        try_collide_circles(circle, circle, invalid_transform).unwrap_err(),
-        ApiError::InvalidArgument
+        shapes::capsule([0.0_f32, 0.0], [0.0_f32, 0.0], 0.25).unwrap_err(),
+        Error::invalid_argument(
+            "Capsule::new",
+            "capsule",
+            "finite geometry with endpoints separated by Box2D's minimum length and a non-negative radius",
+        )
     );
 }
 
 #[test]
 fn sweep_transform_rejects_invalid_sweeps_and_times() {
+    initialize_foundation();
+
     let valid_sweep = Sweep::new(
         [0.0_f32, 0.0],
         [1.0_f32, 2.0],
         [3.0_f32, 4.0],
         Rot::IDENTITY,
         Rot::IDENTITY,
-    );
-    let start = Sweep::try_transform_at(valid_sweep, 0.0).unwrap();
-    let end = Sweep::try_transform_at(valid_sweep, 1.0).unwrap();
+    )
+    .unwrap();
+    let start = Sweep::transform_at(valid_sweep, 0.0).unwrap();
+    let end = Sweep::transform_at(valid_sweep, 1.0).unwrap();
 
     assert_eq!(start.position(), boxdd::Vec2::new(1.0, 2.0));
     assert_eq!(end.position(), boxdd::Vec2::new(3.0, 4.0));
@@ -135,79 +152,88 @@ fn sweep_transform_rejects_invalid_sweeps_and_times() {
         1.0 + f32::EPSILON,
     ] {
         assert_eq!(
-            Sweep::try_transform_at(valid_sweep, invalid_time).unwrap_err(),
-            ApiError::InvalidArgument
+            Sweep::transform_at(valid_sweep, invalid_time).unwrap_err(),
+            Error::invalid_argument("Sweep::transform_at", "time", "a finite value in 0.0..=1.0",)
         );
     }
 
-    let invalid_rotation = Rot::from_raw(boxdd_sys::ffi::b2Rot { c: 2.0, s: 0.0 });
-    let non_finite_rotation = Rot::from_raw(boxdd_sys::ffi::b2Rot {
-        c: f32::NAN,
-        s: 0.0,
-    });
-    for invalid_sweep in [
-        Sweep::new(
-            [f32::NAN, 0.0],
-            [1.0_f32, 2.0],
-            [3.0_f32, 4.0],
-            Rot::IDENTITY,
-            Rot::IDENTITY,
+    assert!(Rot::from_raw(boxdd_sys::ffi::b2Rot { c: 2.0, s: 0.0 }).is_err());
+    assert!(
+        Rot::from_raw(boxdd_sys::ffi::b2Rot {
+            c: f32::NAN,
+            s: 0.0,
+        })
+        .is_err()
+    );
+    for (invalid_sweep, argument, constraint) in [
+        (
+            Sweep::new(
+                [f32::NAN, 0.0],
+                [1.0_f32, 2.0],
+                [3.0_f32, 4.0],
+                Rot::IDENTITY,
+                Rot::IDENTITY,
+            ),
+            "local_center",
+            "a finite vector",
         ),
-        Sweep::new(
-            [0.0_f32, 0.0],
-            [f32::INFINITY, 2.0],
-            [3.0_f32, 4.0],
-            Rot::IDENTITY,
-            Rot::IDENTITY,
+        (
+            Sweep::new(
+                [0.0_f32, 0.0],
+                [f32::INFINITY, 2.0],
+                [3.0_f32, 4.0],
+                Rot::IDENTITY,
+                Rot::IDENTITY,
+            ),
+            "c1",
+            "a finite vector",
         ),
-        Sweep::new(
-            [0.0_f32, 0.0],
-            [1.0_f32, 2.0],
-            [3.0_f32, f32::NEG_INFINITY],
-            Rot::IDENTITY,
-            Rot::IDENTITY,
-        ),
-        Sweep::new(
-            [0.0_f32, 0.0],
-            [1.0_f32, 2.0],
-            [3.0_f32, 4.0],
-            invalid_rotation,
-            Rot::IDENTITY,
-        ),
-        Sweep::new(
-            [0.0_f32, 0.0],
-            [1.0_f32, 2.0],
-            [3.0_f32, 4.0],
-            Rot::IDENTITY,
-            non_finite_rotation,
+        (
+            Sweep::new(
+                [0.0_f32, 0.0],
+                [1.0_f32, 2.0],
+                [3.0_f32, f32::NEG_INFINITY],
+                Rot::IDENTITY,
+                Rot::IDENTITY,
+            ),
+            "c2",
+            "a finite vector",
         ),
     ] {
         assert_eq!(
-            Sweep::try_transform_at(invalid_sweep, 0.5).unwrap_err(),
-            ApiError::InvalidArgument
+            invalid_sweep.unwrap_err(),
+            Error::invalid_argument("Sweep::validate", argument, constraint)
         );
     }
-
-    assert!(std::panic::catch_unwind(|| valid_sweep.transform_at(f32::NAN)).is_err());
 }
 
 #[test]
-fn geometry_values_expose_validation_for_invalid_inputs() {
+fn geometry_constructors_reject_invalid_inputs() {
+    initialize_foundation();
+
     assert_eq!(
-        shapes::circle([f32::NAN, 0.0], 0.5).validate().unwrap_err(),
-        ApiError::InvalidArgument
+        shapes::circle([f32::NAN, 0.0], 0.5).unwrap_err(),
+        Error::invalid_argument(
+            "Circle::new",
+            "circle",
+            "finite center coordinates and a finite non-negative radius",
+        )
     );
     assert_eq!(
-        shapes::segment([0.0_f32, 0.0], [0.0_f32, 0.0])
-            .validate()
-            .unwrap_err(),
-        ApiError::InvalidArgument
+        shapes::segment([0.0_f32, 0.0], [0.0_f32, 0.0]).unwrap_err(),
+        Error::invalid_argument(
+            "Segment::new",
+            "segment",
+            "finite endpoints separated by Box2D's minimum segment length",
+        )
     );
     assert_eq!(
-        shapes::capsule([0.0_f32, 0.0], [0.0_f32, 0.0], 0.25)
-            .validate()
-            .unwrap_err(),
-        ApiError::InvalidArgument
+        shapes::capsule([0.0_f32, 0.0], [0.0_f32, 0.0], 0.25).unwrap_err(),
+        Error::invalid_argument(
+            "Capsule::new",
+            "capsule",
+            "finite geometry with endpoints separated by Box2D's minimum length and a non-negative radius",
+        )
     );
     assert_eq!(
         shapes::chain_segment(
@@ -216,31 +242,40 @@ fn geometry_values_expose_validation_for_invalid_inputs() {
             [0.0_f32, 0.0],
             [1.0_f32, 0.0]
         )
-        .validate()
         .unwrap_err(),
-        ApiError::InvalidArgument
+        Error::invalid_argument(
+            "ChainSegment::new",
+            "chain_segment",
+            "finite ghost points and segment endpoints separated by Box2D's minimum length",
+        )
     );
 
-    let mut raw_polygon = shapes::box_polygon(1.0, 1.0).into_raw();
+    let mut raw_polygon = shapes::box_polygon(1.0, 1.0).unwrap().into_raw();
     raw_polygon.radius = -1.0;
     assert_eq!(
-        // SAFETY: this intentionally violates the radius invariant to test validation.
-        unsafe { Polygon::from_raw(raw_polygon) }
-            .validate()
-            .unwrap_err(),
-        ApiError::InvalidArgument
+        Polygon::from_raw(raw_polygon).unwrap_err(),
+        Error::invalid_argument(
+            "Polygon::from_raw",
+            "polygon",
+            "a valid convex Box2D polygon",
+        )
     );
-    assert!(Polygon::from_points([[f32::NAN, 0.0], [1.0, 0.0], [0.0, 1.0]], 0.0).is_none());
+    assert_eq!(
+        Polygon::from_points([[f32::NAN, 0.0], [1.0, 0.0], [0.0, 1.0]], 0.0).unwrap_err(),
+        Error::invalid_argument("Polygon::from_points", "points", "finite point coordinates",)
+    );
 }
 
 #[test]
-fn safe_manifold_collision_helpers_panic_on_invalid_geometry() {
-    let result = std::panic::catch_unwind(|| {
-        collide_segment_and_polygon(
-            shapes::segment([0.0_f32, 0.0], [0.0_f32, 0.0]),
-            shapes::box_polygon(1.0, 1.0),
-            Transform::IDENTITY,
-        );
-    });
-    assert!(result.is_err());
+fn safe_manifold_geometry_is_rejected_before_collision() {
+    initialize_foundation();
+
+    assert_eq!(
+        shapes::segment([0.0_f32, 0.0], [0.0_f32, 0.0]).unwrap_err(),
+        Error::invalid_argument(
+            "Segment::new",
+            "segment",
+            "finite endpoints separated by Box2D's minimum segment length",
+        )
+    );
 }

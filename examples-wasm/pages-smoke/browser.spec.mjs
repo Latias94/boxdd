@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { lstat, open, realpath } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
 
 const fixtureRoot = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(fixtureRoot, '../..');
@@ -15,6 +16,15 @@ let canonicalPagesRoot;
 let origin;
 let server;
 let expectedRuntimeFetchPaths;
+let expectedRuntimeAssetHashes;
+let overflowResponse;
+let overflowAssetResponse;
+let tamperedAssetResponse;
+let stalledResponse;
+let slowResponse;
+let gzipManifestResponse;
+let loaderInactivityTimeoutOverrideMs;
+let loaderTotalTimeoutOverrideMs;
 
 class HttpError extends Error {
   constructor(status, message, options) {
@@ -161,6 +171,7 @@ async function requireGeneratedRuntime() {
     throw new Error('generated Pages runtime manifest does not list any assets');
   }
   expectedRuntimeFetchPaths = new Set([runtimeManifestPath]);
+  expectedRuntimeAssetHashes = new Map();
   for (const asset of manifest.assets) {
     if (
       !asset
@@ -176,13 +187,80 @@ async function requireGeneratedRuntime() {
       throw new Error(`generated Pages runtime asset is missing or unsafe: ${asset.path}`, { cause: error });
     }
     expectedRuntimeFetchPaths.add(`/${asset.path}`);
+    expectedRuntimeAssetHashes.set(`/${asset.path}`, asset.sha256);
   }
 
   const loader = await readOrdinaryPagesFile('/bevy-testbed/loader.js');
-  if (loader.includes('const runtimeTrust = null;')) {
+  if (loader.includes('const runtimeContract = null;')) {
     throw new Error(
-      `Pages loader has no runtime trust anchor; run \`${runtimeBuildCommand}\` before this test`,
+      `Pages loader has no runtime contract; run \`${runtimeBuildCommand}\` before this test`,
     );
+  }
+}
+
+function responseCacheControl(pathname) {
+  if (pathname === runtimeManifestPath) {
+    return 'no-store';
+  }
+  if (pathname.endsWith('.wasm')) {
+    return 'max-age=600';
+  }
+  if (pathname.endsWith('.js')) {
+    return 'max-age=14400';
+  }
+  return 'no-store';
+}
+
+async function streamOverflowFixture(response, fixture, type) {
+  response.on('close', () => {
+    fixture.closed = true;
+  });
+  response.writeHead(200, {
+    'Cache-Control': 'no-store',
+    'Content-Type': type,
+    'X-Content-Type-Options': 'nosniff',
+  });
+  const chunk = Buffer.alloc(16 * 1024, 0x20);
+  while (fixture.bytesSent < fixture.totalBytes && !response.destroyed) {
+    response.write(chunk);
+    fixture.bytesSent += chunk.byteLength;
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 2));
+  }
+  if (!response.destroyed) {
+    fixture.completed = true;
+    response.end();
+  }
+}
+
+function streamStalledFixture(response, fixture, type) {
+  fixture.response = response;
+  response.on('close', () => {
+    fixture.closed = true;
+  });
+  response.writeHead(200, {
+    'Cache-Control': 'no-store',
+    'Content-Type': type,
+    'X-Content-Type-Options': 'nosniff',
+  });
+  const prefix = Buffer.from('{');
+  response.write(prefix);
+  fixture.bytesSent += prefix.byteLength;
+}
+
+async function streamSlowFixture(response, fixture, type) {
+  fixture.response = response;
+  response.on('close', () => {
+    fixture.closed = true;
+  });
+  response.writeHead(200, {
+    'Cache-Control': 'no-store',
+    'Content-Type': type,
+    'X-Content-Type-Options': 'nosniff',
+  });
+  while (!response.destroyed) {
+    response.write(fixture.bytesSent === 0 ? Buffer.from('{') : Buffer.from(' '));
+    fixture.bytesSent += 1;
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, fixture.intervalMs));
   }
 }
 
@@ -194,10 +272,75 @@ async function startPagesServer() {
         return;
       }
       const pathname = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
-      const body = await readOrdinaryPagesFile(pathname);
+      if (request.method === 'GET' && pathname === runtimeManifestPath && slowResponse) {
+        await streamSlowFixture(response, slowResponse, 'application/json; charset=utf-8');
+        return;
+      }
+      if (request.method === 'GET' && pathname === runtimeManifestPath && stalledResponse) {
+        streamStalledFixture(response, stalledResponse, 'application/json; charset=utf-8');
+        return;
+      }
+      if (request.method === 'GET' && pathname === runtimeManifestPath && overflowResponse) {
+        await streamOverflowFixture(response, overflowResponse, 'application/json; charset=utf-8');
+        return;
+      }
+      if (
+        request.method === 'GET'
+        && overflowAssetResponse
+        && pathname === overflowAssetResponse.pathname
+      ) {
+        await streamOverflowFixture(response, overflowAssetResponse, contentType(pathname));
+        return;
+      }
+      let body = await readOrdinaryPagesFile(pathname);
+      if (
+        request.method === 'GET'
+        && tamperedAssetResponse
+        && pathname === tamperedAssetResponse.pathname
+      ) {
+        if (body.byteLength === 0) {
+          throw new Error('cannot tamper with an empty runtime asset');
+        }
+        body = Buffer.from(body);
+        body[0] ^= 0x01;
+        tamperedAssetResponse.served = true;
+      }
+      if (pathname === '/bevy-testbed/loader.js' && loaderInactivityTimeoutOverrideMs) {
+        const source = body.toString('utf8');
+        const replacement = `const RUNTIME_FETCH_INACTIVITY_TIMEOUT_MS = ${loaderInactivityTimeoutOverrideMs};`;
+        const overridden = source.replace(
+          'const RUNTIME_FETCH_INACTIVITY_TIMEOUT_MS = 30 * 1000;',
+          replacement,
+        );
+        if (overridden === source) {
+          throw new Error('Pages loader inactivity timeout declaration was not found');
+        }
+        body = Buffer.from(overridden);
+      }
+      if (pathname === '/bevy-testbed/loader.js' && loaderTotalTimeoutOverrideMs) {
+        const source = body.toString('utf8');
+        const replacement = `const RUNTIME_FETCH_TOTAL_TIMEOUT_MS = ${loaderTotalTimeoutOverrideMs};`;
+        const overridden = source.replace(
+          'const RUNTIME_FETCH_TOTAL_TIMEOUT_MS = 5 * 60 * 1000;',
+          replacement,
+        );
+        if (overridden === source) {
+          throw new Error('Pages loader total timeout declaration was not found');
+        }
+        body = Buffer.from(overridden);
+      }
+      let contentEncoding;
+      if (request.method === 'GET' && pathname === runtimeManifestPath && gzipManifestResponse) {
+        gzipManifestResponse.decodedByteLength = body.byteLength;
+        body = gzipSync(body);
+        gzipManifestResponse.compressedByteLength = body.byteLength;
+        gzipManifestResponse.served = true;
+        contentEncoding = 'gzip';
+      }
       const responsePath = pathname.endsWith('/') ? `${pathname}index.html` : pathname;
       response.writeHead(200, {
-        'Cache-Control': 'no-store',
+        'Cache-Control': responseCacheControl(responsePath),
+        ...(contentEncoding ? { 'Content-Encoding': contentEncoding } : {}),
         'Content-Length': body.byteLength,
         'Content-Type': contentType(responsePath),
         'X-Content-Type-Options': 'nosniff',
@@ -248,7 +391,7 @@ test.afterAll(async () => {
   }
 });
 
-test('published Bevy runtime survives shared-memory growth and keeps stepping physics', async ({ page }) => {
+test('published Bevy runtime survives Rust-owned memory growth and keeps stepping physics', async ({ page }) => {
   const consoleErrors = [];
   const pageErrors = [];
   const requestFailures = [];
@@ -292,6 +435,10 @@ test('published Bevy runtime survives shared-memory growth and keeps stepping ph
       && response.status() < 300
     ) {
       verifiedRuntimeFetches.add(url.pathname);
+      const expectedSha256 = expectedRuntimeAssetHashes.get(url.pathname);
+      if (expectedSha256 && url.searchParams.get('sha256') !== expectedSha256) {
+        unexpectedHttp.push(`runtime asset lacks its SHA-256 cache key: ${response.url()}`);
+      }
     }
     if (response.status() < 200 || response.status() >= 300) {
       unexpectedHttp.push(`HTTP ${response.status()}: ${response.url()}`);
@@ -330,12 +477,18 @@ test('published Bevy runtime survives shared-memory growth and keeps stepping ph
   expect(canvasDimensions.clientHeight).toBeGreaterThan(0);
 
   const evidence = await runtimeEvidence(page);
-  expect(Object.keys(evidence).sort()).toEqual(['memoryProof', 'providerCalls', 'stepCalls']);
+  expect(Object.keys(evidence).sort()).toEqual([
+    'memoryProof',
+    'providerCalls',
+    'stepCalls',
+  ]);
   expect(evidence.providerCalls).toBeGreaterThan(0);
   expect(evidence.stepCalls).toBeGreaterThan(0);
   expect(Object.keys(evidence.memoryProof).sort()).toEqual([
     'byteLengthAfterGrowth',
     'byteLengthBeforeGrowth',
+    'externalGrowth',
+    'growthObservedDuringApp',
     'memoryGrew',
     'postGrowthPhysicsStep',
     'providerHeapReadWrite',
@@ -350,9 +503,11 @@ test('published Bevy runtime survives shared-memory growth and keeps stepping ph
     postGrowthPhysicsStep: true,
     providerHeapReadWrite: true,
     providerHeapViewRefreshed: true,
+    externalGrowth: true,
     requested: true,
     staleBufferDetached: true,
   });
+  expect(typeof evidence.memoryProof.growthObservedDuringApp).toBe('boolean');
   expect(evidence.memoryProof.byteLengthBeforeGrowth).toBeGreaterThan(0);
   expect(evidence.memoryProof.byteLengthAfterGrowth)
     .toBeGreaterThan(evidence.memoryProof.byteLengthBeforeGrowth);
@@ -376,4 +531,226 @@ test('published Bevy runtime survives shared-memory growth and keeps stepping ph
   ).toEqual([]);
   expect(requestFailures).toEqual([]);
   expect(unexpectedHttp).toEqual([]);
+});
+
+test('loader accepts an automatically decoded gzip runtime manifest', async ({ page }) => {
+  const fixture = {
+    compressedByteLength: 0,
+    decodedByteLength: 0,
+    served: false,
+  };
+  gzipManifestResponse = fixture;
+
+  try {
+    await page.goto(`${origin}/bevy-testbed/?boxdd-runtime-proof=1`, {
+      waitUntil: 'domcontentloaded',
+    });
+    await expect.poll(
+      () => page.evaluate(() => ({
+        ready: window.BOXDD_BEVY_TESTBED_READY === true,
+        state: document.querySelector('#bevy-status')?.dataset.state ?? null,
+      })),
+      { timeout: 45_000, message: 'the gzip-backed runtime did not reach its running state' },
+    ).toMatchObject({ ready: true, state: 'running' });
+
+    expect(fixture.served).toBe(true);
+    expect(fixture.compressedByteLength).toBeGreaterThan(0);
+    expect(fixture.decodedByteLength).toBeGreaterThan(0);
+    expect(fixture.compressedByteLength).not.toBe(fixture.decodedByteLength);
+  } finally {
+    gzipManifestResponse = undefined;
+  }
+});
+
+test('loader cancels an oversized streaming manifest before buffering it completely', async ({ page }) => {
+  const fixture = {
+    bytesSent: 0,
+    closed: false,
+    completed: false,
+    totalBytes: 2 * 1024 * 1024,
+  };
+  overflowResponse = fixture;
+
+  try {
+    await page.goto(`${origin}/bevy-testbed/`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(
+      () => page.evaluate(() => ({
+        state: document.querySelector('#bevy-status')?.dataset.state ?? null,
+        status: document.querySelector('#bevy-status')?.textContent?.trim() ?? null,
+      })),
+      { timeout: 10_000, message: 'the loader did not reject the oversized manifest stream' },
+    ).toMatchObject({ state: 'error' });
+
+    const status = await page.locator('#bevy-status').textContent();
+    expect(status).toContain('runtime manifest exceeds its 1048576-byte limit');
+    await expect.poll(
+      () => fixture.closed,
+      { timeout: 5_000, message: 'the browser did not cancel the oversized response' },
+    ).toBe(true);
+    expect(fixture.completed).toBe(false);
+    expect(fixture.bytesSent).toBeLessThan(fixture.totalBytes);
+  } finally {
+    overflowResponse = undefined;
+  }
+});
+
+test('loader aborts a runtime manifest stream that stops making progress', async ({ page }) => {
+  const fixture = {
+    bytesSent: 0,
+    closed: false,
+    response: undefined,
+  };
+  stalledResponse = fixture;
+  loaderInactivityTimeoutOverrideMs = 100;
+
+  try {
+    await page.goto(`${origin}/bevy-testbed/`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(
+      () => page.evaluate(() => ({
+        state: document.querySelector('#bevy-status')?.dataset.state ?? null,
+        status: document.querySelector('#bevy-status')?.textContent?.trim() ?? null,
+      })),
+      { timeout: 5_000, message: 'the loader did not abort the stalled manifest stream' },
+    ).toMatchObject({ state: 'error' });
+
+    const status = await page.locator('#bevy-status').textContent();
+    expect(status).toContain('runtime manifest download stalled for 100ms');
+    await expect.poll(
+      () => fixture.closed,
+      { timeout: 5_000, message: 'the browser did not close the stalled response' },
+    ).toBe(true);
+    expect(fixture.bytesSent).toBe(1);
+  } finally {
+    stalledResponse = undefined;
+    loaderInactivityTimeoutOverrideMs = undefined;
+    fixture.response?.destroy();
+  }
+});
+
+test('loader aborts a runtime manifest that makes progress beyond the total deadline', async ({ page }) => {
+  const fixture = {
+    bytesSent: 0,
+    closed: false,
+    intervalMs: 20,
+    response: undefined,
+  };
+  slowResponse = fixture;
+  loaderInactivityTimeoutOverrideMs = 100;
+  loaderTotalTimeoutOverrideMs = 150;
+
+  try {
+    await page.goto(`${origin}/bevy-testbed/`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(
+      () => page.evaluate(() => ({
+        state: document.querySelector('#bevy-status')?.dataset.state ?? null,
+        status: document.querySelector('#bevy-status')?.textContent?.trim() ?? null,
+      })),
+      { timeout: 5_000, message: 'the loader did not enforce the total manifest deadline' },
+    ).toMatchObject({ state: 'error' });
+
+    const status = await page.locator('#bevy-status').textContent();
+    expect(status).toContain('runtime manifest download exceeded 150ms');
+    await expect.poll(
+      () => fixture.closed,
+      { timeout: 5_000, message: 'the browser did not close the slow response' },
+    ).toBe(true);
+    expect(fixture.bytesSent).toBeGreaterThan(1);
+  } finally {
+    slowResponse = undefined;
+    loaderInactivityTimeoutOverrideMs = undefined;
+    loaderTotalTimeoutOverrideMs = undefined;
+    fixture.response?.destroy();
+  }
+});
+
+test('loader cancels an asset that exceeds its manifest length before instantiation', async ({ page }) => {
+  const manifest = JSON.parse((await readOrdinaryPagesFile(runtimeManifestPath)).toString('utf8'));
+  const asset = manifest.assets[0];
+  const fixture = {
+    bytesSent: 0,
+    closed: false,
+    completed: false,
+    pathname: `/${asset.path}`,
+    totalBytes: asset.byte_length + 2 * 1024 * 1024,
+  };
+  overflowAssetResponse = fixture;
+  await page.addInitScript(() => {
+    globalThis.BOXDD_TEST_WASM_INSTANTIATIONS = 0;
+    for (const name of ['instantiate', 'instantiateStreaming']) {
+      const original = WebAssembly[name];
+      WebAssembly[name] = (...args) => {
+        globalThis.BOXDD_TEST_WASM_INSTANTIATIONS += 1;
+        return original(...args);
+      };
+    }
+  });
+
+  try {
+    await page.goto(`${origin}/bevy-testbed/`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(
+      () => page.evaluate(() => ({
+        state: document.querySelector('#bevy-status')?.dataset.state ?? null,
+        status: document.querySelector('#bevy-status')?.textContent?.trim() ?? null,
+      })),
+      { timeout: 10_000, message: 'the loader did not reject the oversized asset stream' },
+    ).toMatchObject({ state: 'error' });
+
+    const status = await page.locator('#bevy-status').textContent();
+    expect(status).toContain(`${asset.role} exceeds its ${asset.byte_length}-byte limit`);
+    await expect.poll(
+      () => fixture.closed,
+      { timeout: 5_000, message: 'the browser did not cancel the oversized asset response' },
+    ).toBe(true);
+    expect(fixture.completed).toBe(false);
+    expect(fixture.bytesSent).toBeLessThan(fixture.totalBytes);
+    expect(await page.evaluate(() => globalThis.BOXDD_TEST_WASM_INSTANTIATIONS)).toBe(0);
+  } finally {
+    overflowAssetResponse = undefined;
+  }
+});
+
+test('loader rejects a same-length tampered asset before importing runtime modules', async ({ page }) => {
+  const manifest = JSON.parse((await readOrdinaryPagesFile(runtimeManifestPath)).toString('utf8'));
+  const asset = manifest.assets[0];
+  const fixture = {
+    pathname: `/${asset.path}`,
+    served: false,
+  };
+  tamperedAssetResponse = fixture;
+  await page.addInitScript(() => {
+    globalThis.BOXDD_TEST_RUNTIME_OBJECT_URLS = 0;
+    globalThis.BOXDD_TEST_WASM_INSTANTIATIONS = 0;
+
+    const createObjectURL = URL.createObjectURL.bind(URL);
+    URL.createObjectURL = (...args) => {
+      globalThis.BOXDD_TEST_RUNTIME_OBJECT_URLS += 1;
+      return createObjectURL(...args);
+    };
+    for (const name of ['instantiate', 'instantiateStreaming']) {
+      const original = WebAssembly[name];
+      WebAssembly[name] = (...args) => {
+        globalThis.BOXDD_TEST_WASM_INSTANTIATIONS += 1;
+        return original(...args);
+      };
+    }
+  });
+
+  try {
+    await page.goto(`${origin}/bevy-testbed/`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(
+      () => page.evaluate(() => ({
+        state: document.querySelector('#bevy-status')?.dataset.state ?? null,
+        status: document.querySelector('#bevy-status')?.textContent?.trim() ?? null,
+      })),
+      { timeout: 10_000, message: 'the loader did not reject the tampered runtime asset' },
+    ).toMatchObject({ state: 'error' });
+
+    const status = await page.locator('#bevy-status').textContent();
+    expect(status).toContain(`${asset.role} SHA-256 mismatch`);
+    expect(fixture.served).toBe(true);
+    expect(await page.evaluate(() => globalThis.BOXDD_TEST_RUNTIME_OBJECT_URLS)).toBe(0);
+    expect(await page.evaluate(() => globalThis.BOXDD_TEST_WASM_INSTANTIATIONS)).toBe(0);
+  } finally {
+    tamperedAssetResponse = undefined;
+  }
 });

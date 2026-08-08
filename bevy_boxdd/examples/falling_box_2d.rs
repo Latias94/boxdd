@@ -2,9 +2,14 @@ use bevy::prelude::*;
 use bevy_boxdd::prelude::*;
 
 fn main() {
+    let foundation =
+        boxdd::Foundation::initialize_default().expect("Box2D foundation should initialize");
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(BoxddPhysicsPlugin::default())
+        .add_plugins(BoxddPhysicsPlugin::new(
+            foundation,
+            BoxddPhysicsSettings::default(),
+        ))
         .add_systems(Startup, setup)
         .run();
 }

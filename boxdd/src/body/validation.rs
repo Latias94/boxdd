@@ -1,107 +1,88 @@
 use crate::Rot;
-use crate::error::{ApiError, ApiResult};
+use crate::error::{Error, Result};
 use crate::types::{Position, Vec2, WorldTransform};
 use std::ffi::CString;
 
 #[inline]
-#[track_caller]
-pub(crate) fn assert_valid_body_name(name: &str) -> CString {
-    let name = CString::new(name).expect("body name contains an interior NUL byte");
-    assert!(
-        name.as_bytes().len() <= super::MAX_BODY_NAME_BYTES,
-        "body name must contain at most {} UTF-8 bytes",
-        super::MAX_BODY_NAME_BYTES
-    );
-    name
-}
-
-#[inline]
-pub(crate) fn check_valid_body_name(name: &str) -> ApiResult<CString> {
-    let name = CString::new(name).map_err(|_| ApiError::NulByteInString)?;
+pub(crate) fn check_valid_body_name(operation: &'static str, name: &str) -> Result<CString> {
+    let name = CString::new(name).map_err(|_| Error::NulByteInString)?;
     if name.as_bytes().len() <= super::MAX_BODY_NAME_BYTES {
         Ok(name)
     } else {
-        Err(ApiError::InvalidArgument)
+        Err(Error::invalid_argument(
+            operation,
+            "name",
+            "at most 10 UTF-8 bytes",
+        ))
     }
 }
 
 #[inline]
-#[track_caller]
-pub(crate) fn assert_valid_body_vec2(name: &str, value: Vec2) -> Vec2 {
-    assert!(
-        value.is_valid(),
-        "{name} must be a finite Box2D vector, got {value:?}"
-    );
-    value
-}
-
-#[inline]
-pub(crate) fn check_valid_body_vec2(value: Vec2) -> ApiResult<Vec2> {
+pub(crate) fn check_valid_body_vec2(
+    operation: &'static str,
+    argument: &'static str,
+    value: Vec2,
+) -> Result<Vec2> {
     if value.is_valid() {
         Ok(value)
     } else {
-        Err(ApiError::InvalidArgument)
+        Err(Error::invalid_argument(
+            operation,
+            argument,
+            "a finite vector",
+        ))
     }
 }
 
 #[inline]
-#[track_caller]
-pub(crate) fn assert_valid_body_position(name: &str, value: Position) -> Position {
-    assert!(
-        value.is_valid(),
-        "{name} must be a finite Box2D world position, got {value:?}"
-    );
-    value
-}
-
-#[inline]
-pub(crate) fn check_valid_body_position(value: Position) -> ApiResult<Position> {
+pub(crate) fn check_valid_body_position(
+    operation: &'static str,
+    argument: &'static str,
+    value: Position,
+) -> Result<Position> {
     if value.is_valid() {
         Ok(value)
     } else {
-        Err(ApiError::InvalidArgument)
+        Err(Error::invalid_argument(
+            operation,
+            argument,
+            "a finite world position",
+        ))
     }
 }
 
 #[inline]
-#[track_caller]
-pub(crate) fn assert_valid_body_float(name: &str, value: f32) -> f32 {
-    assert!(value.is_finite(), "{name} must be finite, got {value}");
-    value
-}
-
-#[inline]
-pub(crate) fn check_valid_body_float(value: f32) -> ApiResult<f32> {
+pub(crate) fn check_valid_body_float(
+    operation: &'static str,
+    argument: &'static str,
+    value: f32,
+) -> Result<f32> {
     if value.is_finite() {
         Ok(value)
     } else {
-        Err(ApiError::InvalidArgument)
+        Err(Error::invalid_argument(
+            operation,
+            argument,
+            "a finite value",
+        ))
     }
-}
-
-#[inline]
-#[track_caller]
-pub(crate) fn assert_body_world_point_in_local_range(
-    name: &str,
-    point: Position,
-    origin: Position,
-) -> Position {
-    assert!(
-        point.checked_relative_to(origin).is_ok(),
-        "{name} must be finite and its offset from the body must fit in a local f32 vector, got {point:?}"
-    );
-    point
 }
 
 #[inline]
 pub(crate) fn check_body_world_point_in_local_range(
+    operation: &'static str,
+    argument: &'static str,
     point: Position,
     origin: Position,
-) -> ApiResult<Position> {
+) -> Result<Position> {
     if point.checked_relative_to(origin).is_ok() {
         Ok(point)
     } else {
-        Err(ApiError::InvalidArgument)
+        Err(Error::invalid_argument(
+            operation,
+            argument,
+            "an offset from the body representable by a finite local vector",
+        ))
     }
 }
 
@@ -146,35 +127,13 @@ fn body_target_motion_is_valid(
 }
 
 #[inline]
-#[track_caller]
-pub(crate) fn assert_valid_body_target_motion(
-    target: WorldTransform,
-    time_step: f32,
-    current_center: Position,
-    current_rotation: Rot,
-    local_center: Vec2,
-) -> (WorldTransform, f32) {
-    assert!(
-        body_target_motion_is_valid(
-            target,
-            time_step,
-            current_center,
-            current_rotation,
-            local_center,
-        ),
-        "target and time_step must produce finite linear and angular velocities"
-    );
-    (target, time_step)
-}
-
-#[inline]
 pub(crate) fn check_valid_body_target_motion(
     target: WorldTransform,
     time_step: f32,
     current_center: Position,
     current_rotation: Rot,
     local_center: Vec2,
-) -> ApiResult<(WorldTransform, f32)> {
+) -> Result<(WorldTransform, f32)> {
     if body_target_motion_is_valid(
         target,
         time_step,
@@ -184,40 +143,79 @@ pub(crate) fn check_valid_body_target_motion(
     ) {
         Ok((target, time_step))
     } else {
-        Err(ApiError::InvalidArgument)
+        Err(Error::invalid_argument(
+            "Body::set_target_transform",
+            "target/time_step",
+            "values that produce finite linear and angular velocities with time_step > 0",
+        ))
+    }
+}
+
+#[inline]
+pub(crate) fn check_valid_native_body_vec2(
+    operation: &'static str,
+    output: &'static str,
+    value: Vec2,
+) -> Result<Vec2> {
+    if value.is_valid() {
+        Ok(value)
+    } else {
+        Err(Error::InvalidNativeOutput {
+            operation,
+            output,
+            constraint: "a finite vector",
+        })
+    }
+}
+
+#[inline]
+pub(crate) fn check_valid_native_body_position(
+    operation: &'static str,
+    output: &'static str,
+    value: Position,
+) -> Result<Position> {
+    if value.is_valid() {
+        Ok(value)
+    } else {
+        Err(Error::InvalidNativeOutput {
+            operation,
+            output,
+            constraint: "a finite world position",
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{assert_valid_body_name, check_valid_body_name};
-    use crate::error::ApiError;
+    use super::check_valid_body_name;
+    use crate::error::Error;
 
     #[test]
     fn body_names_are_bounded_by_utf8_bytes() {
-        assert!(check_valid_body_name("1234567890").is_ok());
+        const OPERATION: &str = "BodyBuilder::name";
+        let too_long = Error::invalid_argument(OPERATION, "name", "at most 10 UTF-8 bytes");
+        assert!(check_valid_body_name(OPERATION, "1234567890").is_ok());
         assert_eq!(
-            check_valid_body_name("12345678901").unwrap_err(),
-            ApiError::InvalidArgument
+            check_valid_body_name(OPERATION, "12345678901").unwrap_err(),
+            too_long
         );
         assert_eq!(
-            check_valid_body_name("eeeee")
+            check_valid_body_name(OPERATION, "eeeee")
                 .expect("ASCII name")
                 .as_bytes()
                 .len(),
             5
         );
         assert_eq!(
-            check_valid_body_name("\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}")
+            check_valid_body_name(OPERATION, "\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}")
                 .expect("five two-byte characters fit exactly")
                 .as_bytes()
                 .len(),
             10
         );
         assert_eq!(
-            check_valid_body_name("\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}").unwrap_err(),
-            ApiError::InvalidArgument
+            check_valid_body_name(OPERATION, "\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}").unwrap_err(),
+            too_long
         );
-        assert!(std::panic::catch_unwind(|| assert_valid_body_name("12345678901")).is_err());
     }
 }

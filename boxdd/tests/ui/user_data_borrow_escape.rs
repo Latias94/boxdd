@@ -1,8 +1,8 @@
-use boxdd::{World, WorldDef};
-
+use boxdd::Foundation;
 fn main() {
-    let world = World::new(WorldDef::default()).unwrap();
-    let escaped: Option<&String> = world.with_user_data::<String, _>(|value| value);
+    let foundation = Foundation::initialize_default().unwrap();
+    let world = foundation.create_world(foundation.world_def()).unwrap();
+    let escaped = world.with_user_data::<String, _>(|value| value).unwrap();
     drop(world);
     let _ = escaped;
 }

@@ -6,7 +6,8 @@ fn main() {
     struct Drawer;
     impl boxdd::DebugDraw for Drawer {}
 
-    let mut world = boxdd::World::new(boxdd::WorldDef::default()).unwrap();
-    world.debug_draw(&mut Drawer, boxdd::DebugDrawOptions::default());
+    let foundation = boxdd::Foundation::initialize_default().unwrap();
+    let mut world = foundation.create_world(foundation.world_def()).unwrap();
+    let _ = world.debug_draw(&mut Drawer, boxdd::DebugDrawOptions::default());
     let _ = world.debug_draw_collect(boxdd::DebugDrawOptions::default());
 }

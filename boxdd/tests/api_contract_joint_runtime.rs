@@ -5,38 +5,69 @@ fn approx_eq(actual: f32, expected: f32) -> bool {
 }
 
 fn create_dynamic_body(world: &mut World, position: [f32; 2]) -> BodyId {
-    let builder = boxdd::BodyBuilder::new();
+    let builder = boxdd::Foundation::get()
+        .expect("Foundation must be initialized before constructing a BodyDef")
+        .body_builder();
     let builder = boxdd::BodyBuilder::body_type(builder, boxdd::BodyType::Dynamic);
     let builder = boxdd::BodyBuilder::position(builder, position);
-    let body_def = boxdd::BodyBuilder::build(builder);
-    let body = boxdd::World::create_body_id(world, body_def);
-    let shape_builder = boxdd::ShapeDef::builder();
-    let shape_builder = boxdd::ShapeDefBuilder::density(shape_builder, 1.0);
-    let shape_def = boxdd::ShapeDefBuilder::build(shape_builder);
-    let polygon = boxdd::shapes::box_polygon(0.5_f32, 0.5);
-    boxdd::World::create_polygon_shape_for(world, body, &shape_def, &polygon);
-    body
+    let body_def = boxdd::BodyBuilder::build(builder).unwrap();
+    boxdd::World::create_body(world, body_def).expect("body creation should succeed")
 }
 
 fn world_with_two_bodies() -> (World, BodyId, BodyId) {
-    let mut world =
-        boxdd::World::new(boxdd::WorldDef::default()).expect("world creation should succeed");
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .expect("world creation should succeed");
     let body_a = create_dynamic_body(&mut world, [0.0_f32, 0.0]);
     let body_b = create_dynamic_body(&mut world, [2.0_f32, 0.0]);
     (world, body_a, body_b)
 }
 
-fn joint_base(body_a: BodyId, body_b: BodyId) -> JointBase {
-    let base = boxdd::JointBase::new(body_a, body_b);
-    let base = boxdd::JointBase::with_force_threshold(base, 20.0);
-    boxdd::JointBase::with_torque_threshold(base, 30.0)
+fn joint_base(world: &World, body_a: BodyId, body_b: BodyId) -> JointBase {
+    let base = boxdd::World::joint_base(world, body_a, body_b).unwrap();
+    let base = boxdd::JointBase::with_force_threshold(base, 20.0).unwrap();
+    boxdd::JointBase::with_torque_threshold(base, 30.0).unwrap()
+}
+
+#[test]
+fn joint_default_constructors_prove_ordinary_and_recording_issuance() {
+    let (mut world, body_a, body_b) = world_with_two_bodies();
+
+    let ordinary = boxdd::World::joint_base(&world, body_a, body_b).unwrap();
+    let _distance = boxdd::DistanceJointDef::new(ordinary);
+    let _filter = boxdd::FilterJointDef::new(ordinary);
+    let _motor = boxdd::MotorJointDef::new(ordinary);
+    let _prismatic = boxdd::PrismaticJointDef::new(ordinary);
+    let _revolute = boxdd::RevoluteJointDef::new(ordinary);
+    let _weld = boxdd::WeldJointDef::new(ordinary);
+    let _wheel = boxdd::WheelJointDef::new(ordinary);
+
+    let mut recording =
+        boxdd::World::start_recording(&mut world, boxdd::RecordingLimits::default()).unwrap();
+    let recorded = boxdd::RecordingSession::joint_base(&recording, body_a, body_b).unwrap();
+    let _distance = boxdd::DistanceJointDef::new(recorded);
+    let _filter = boxdd::FilterJointDef::new(recorded);
+    let _motor = boxdd::MotorJointDef::new(recorded);
+    let _prismatic = boxdd::PrismaticJointDef::new(recorded);
+    let _revolute = boxdd::RevoluteJointDef::new(recorded);
+    let _weld = boxdd::WeldJointDef::new(recorded);
+    let _wheel = boxdd::WheelJointDef::new(recorded);
+    std::mem::drop(
+        boxdd::RecordingSession::step(&mut recording, 0.0, 1)
+            .expect("recording step should succeed"),
+    );
+    std::mem::drop(recording);
 }
 
 #[test]
 fn distance_and_base_joint_runtime_paths_succeed() {
-    let (world, body_a, body_b) = world_with_two_bodies();
-    let mut world: World = world;
-    let def = boxdd::DistanceJointDef::new(joint_base(body_a, body_b));
+    let (mut world, body_a, body_b) = world_with_two_bodies();
+    let def = boxdd::DistanceJointDef::new(joint_base(&world, body_a, body_b));
     let def = boxdd::DistanceJointDef::length(def, 2.0);
     let def = boxdd::DistanceJointDef::enable_spring(def, true);
     let def = boxdd::DistanceJointDef::lower_spring_force(def, -3.0);
@@ -50,73 +81,83 @@ fn distance_and_base_joint_runtime_paths_succeed() {
     let def = boxdd::DistanceJointDef::max_motor_force(def, 9.0);
     let def = boxdd::DistanceJointDef::motor_speed(def, 1.25);
 
-    let joint_id = boxdd::World::create_distance_joint_id(&mut world, &def);
-    let mut joint: boxdd::Joint<'_> =
-        boxdd::World::try_joint(&mut world, joint_id).expect("joint should remain valid");
+    let joint_id = boxdd::World::create_distance_joint(&mut world, &def)
+        .expect("distance joint creation should succeed");
+    let mut joint = boxdd::World::joint(&mut world, joint_id)
+        .expect("joint capability acquisition should succeed");
 
-    let joint_type = boxdd::Joint::joint_type(&joint);
-    let is_valid = boxdd::Joint::is_valid(&joint);
+    let joint_type = boxdd::Joint::joint_type(&joint).expect("joint type should be cached");
 
-    boxdd::Joint::set_collide_connected(&mut joint, false);
-    boxdd::Joint::set_constraint_tuning(&mut joint, boxdd::ConstraintTuning::new(6.0, 0.6));
-    boxdd::Joint::set_force_threshold(&mut joint, 24.0);
-    boxdd::Joint::set_local_frame_a(&mut joint, boxdd::Transform::IDENTITY);
+    boxdd::Joint::set_collide_connected(&mut joint, false).unwrap();
+    boxdd::Joint::set_constraint_tuning(
+        &mut joint,
+        boxdd::ConstraintTuning::new(6.0, 0.6).unwrap(),
+    )
+    .unwrap();
+    boxdd::Joint::set_force_threshold(&mut joint, 24.0).unwrap();
+    boxdd::Joint::set_local_frame_a(&mut joint, boxdd::Transform::IDENTITY).unwrap();
     boxdd::Joint::set_local_frame_b(
         &mut joint,
-        boxdd::Transform::from_pos_angle([0.25_f32, 0.0], 0.1),
-    );
-    boxdd::Joint::set_torque_threshold(&mut joint, 34.0);
-    boxdd::Joint::wake_bodies(&mut joint);
+        boxdd::Transform::from_pos_angle([0.25_f32, 0.0], 0.1).unwrap(),
+    )
+    .unwrap();
+    boxdd::Joint::set_torque_threshold(&mut joint, 34.0).unwrap();
+    boxdd::Joint::wake_bodies(&mut joint).unwrap();
 
-    boxdd::Joint::distance_set_length(&mut joint, 2.25);
-    boxdd::Joint::distance_set_length_range(&mut joint, 1.25, 2.75);
-    boxdd::Joint::distance_set_max_motor_force(&mut joint, 12.0);
-    boxdd::Joint::distance_set_motor_speed(&mut joint, 0.75);
-    boxdd::Joint::distance_set_spring_force_range(&mut joint, -2.0, 8.0);
-    boxdd::Joint::distance_enable_spring(&mut joint, true);
-    boxdd::Joint::distance_set_spring_hertz(&mut joint, 4.0);
-    boxdd::Joint::distance_set_spring_damping_ratio(&mut joint, 0.4);
-    boxdd::Joint::distance_enable_limit(&mut joint, true);
-    boxdd::Joint::distance_enable_motor(&mut joint, true);
+    let joint_body_a = boxdd::Joint::body_a_id(&joint).unwrap();
+    let joint_body_b = boxdd::Joint::body_b_id(&joint).unwrap();
+    let collide_connected = boxdd::Joint::collide_connected(&joint).unwrap();
+    let constraint_tuning = boxdd::Joint::constraint_tuning(&joint).unwrap();
+    let local_frame_a = boxdd::Joint::local_frame_a(&joint).unwrap();
+    let local_frame_b = boxdd::Joint::local_frame_b(&joint).unwrap();
+    let linear_separation = boxdd::Joint::linear_separation(&joint).unwrap();
+    let angular_separation = boxdd::Joint::angular_separation(&joint).unwrap();
+    let constraint_force = boxdd::Joint::constraint_force(&joint).unwrap();
+    let constraint_torque = boxdd::Joint::constraint_torque(&joint).unwrap();
+    let force_threshold = boxdd::Joint::force_threshold(&joint).unwrap();
+    let torque_threshold = boxdd::Joint::torque_threshold(&joint).unwrap();
+    boxdd::Joint::set_user_data(&mut joint, 41_u32).unwrap();
+    let user_data = boxdd::Joint::user_data_ptr_raw(&joint).unwrap();
+    let cleared = boxdd::Joint::clear_user_data(&mut joint).unwrap();
 
-    let joint_body_a = boxdd::Joint::body_a_id(&joint);
-    let joint_body_b = boxdd::Joint::body_b_id(&joint);
-    let joint_world = boxdd::Joint::try_world_id_raw(&joint);
-    let collide_connected = boxdd::Joint::collide_connected(&joint);
-    let _constraint_tuning = boxdd::Joint::constraint_tuning(&joint);
-    let _local_frame_a = boxdd::Joint::local_frame_a(&joint);
-    let _local_frame_b = boxdd::Joint::local_frame_b(&joint);
+    let mut joint = boxdd::Joint::into_distance(joint).expect("distance kind should match");
+    boxdd::DistanceJoint::set_length(&mut joint, 2.25).unwrap();
+    boxdd::DistanceJoint::set_length_range(&mut joint, 1.25, 2.75).unwrap();
+    boxdd::DistanceJoint::set_max_motor_force(&mut joint, 12.0).unwrap();
+    boxdd::DistanceJoint::set_motor_speed(&mut joint, 0.75).unwrap();
+    boxdd::DistanceJoint::set_spring_force_range(&mut joint, -2.0, 8.0).unwrap();
+    boxdd::DistanceJoint::enable_spring(&mut joint, true).unwrap();
+    boxdd::DistanceJoint::set_spring_hertz(&mut joint, 4.0).unwrap();
+    boxdd::DistanceJoint::set_spring_damping_ratio(&mut joint, 0.4).unwrap();
+    boxdd::DistanceJoint::enable_limit(&mut joint, true).unwrap();
+    boxdd::DistanceJoint::enable_motor(&mut joint, true).unwrap();
+
     let (lower_spring_force, upper_spring_force) =
-        boxdd::Joint::distance_spring_force_range(&joint);
-    let configured_length = boxdd::Joint::distance_length(&joint);
-    let configured_min_length = boxdd::Joint::distance_min_length(&joint);
-    let configured_max_length = boxdd::Joint::distance_max_length(&joint);
-    let configured_motor_speed = boxdd::Joint::distance_motor_speed(&joint);
-    let configured_max_motor_force = boxdd::Joint::distance_max_motor_force(&joint);
-    let linear_separation = boxdd::Joint::linear_separation(&joint);
-    let angular_separation = boxdd::Joint::angular_separation(&joint);
-    let constraint_force = boxdd::Joint::constraint_force(&joint);
-    let constraint_torque = boxdd::Joint::constraint_torque(&joint);
-    let force_threshold = boxdd::Joint::force_threshold(&joint);
-    let torque_threshold = boxdd::Joint::torque_threshold(&joint);
-    let current_length = boxdd::Joint::distance_current_length(&joint);
-    let motor_force = boxdd::Joint::distance_motor_force(&joint);
-    let spring_damping_ratio = boxdd::Joint::distance_spring_damping_ratio(&joint);
-    let spring_hertz = boxdd::Joint::distance_spring_hertz(&joint);
-    let limit_enabled = boxdd::Joint::distance_limit_enabled(&joint);
-    let motor_enabled = boxdd::Joint::distance_motor_enabled(&joint);
-    let spring_enabled = boxdd::Joint::distance_spring_enabled(&joint);
-    boxdd::Joint::set_user_data(&mut joint, 41_u32);
-    let user_data = boxdd::Joint::try_user_data_ptr_raw(&joint);
-    let cleared = boxdd::Joint::clear_user_data(&mut joint);
-    boxdd::Joint::destroy(joint, true);
+        boxdd::DistanceJoint::spring_force_range(&joint).unwrap();
+    let configured_length = boxdd::DistanceJoint::length(&joint).unwrap();
+    let configured_min_length = boxdd::DistanceJoint::min_length(&joint).unwrap();
+    let configured_max_length = boxdd::DistanceJoint::max_length(&joint).unwrap();
+    let configured_motor_speed = boxdd::DistanceJoint::motor_speed(&joint).unwrap();
+    let configured_max_motor_force = boxdd::DistanceJoint::max_motor_force(&joint).unwrap();
+    let current_length = boxdd::DistanceJoint::current_length(&joint).unwrap();
+    let motor_force = boxdd::DistanceJoint::motor_force(&joint).unwrap();
+    let spring_damping_ratio = boxdd::DistanceJoint::spring_damping_ratio(&joint).unwrap();
+    let spring_hertz = boxdd::DistanceJoint::spring_hertz(&joint).unwrap();
+    let limit_enabled = boxdd::DistanceJoint::limit_enabled(&joint).unwrap();
+    let motor_enabled = boxdd::DistanceJoint::motor_enabled(&joint).unwrap();
+    let spring_enabled = boxdd::DistanceJoint::spring_enabled(&joint).unwrap();
 
     assert_eq!(joint_type, boxdd::JointType::Distance);
-    assert!(is_valid);
     assert_eq!(joint_body_a, body_a);
     assert_eq!(joint_body_b, body_b);
-    assert!(joint_world.is_ok());
     assert!(!collide_connected);
+    assert_eq!(
+        constraint_tuning,
+        boxdd::ConstraintTuning::new(6.0, 0.6).unwrap()
+    );
+    assert_eq!(local_frame_a.position(), boxdd::Vec2::ZERO);
+    assert!(local_frame_a.rotation().is_valid());
+    assert!(approx_eq(local_frame_b.position().x, 0.25));
     assert!(approx_eq(lower_spring_force, -2.0));
     assert!(approx_eq(upper_spring_force, 8.0));
     assert!(approx_eq(configured_length, 2.25));
@@ -137,15 +178,16 @@ fn distance_and_base_joint_runtime_paths_succeed() {
     assert!(limit_enabled);
     assert!(motor_enabled);
     assert!(spring_enabled);
-    assert!(!user_data.expect("user-data query should succeed").is_null());
+    assert!(!user_data.is_null());
     assert!(cleared);
+
+    boxdd::Joint::destroy(boxdd::DistanceJoint::into_joint(joint), true).unwrap();
 }
 
 #[test]
 fn prismatic_joint_runtime_paths_succeed() {
-    let (world, body_a, body_b) = world_with_two_bodies();
-    let mut world: World = world;
-    let def = boxdd::PrismaticJointDef::new(joint_base(body_a, body_b));
+    let (mut world, body_a, body_b) = world_with_two_bodies();
+    let def = boxdd::PrismaticJointDef::new(joint_base(&world, body_a, body_b));
     let def = boxdd::PrismaticJointDef::enable_spring(def, true);
     let def = boxdd::PrismaticJointDef::hertz(def, 5.0);
     let def = boxdd::PrismaticJointDef::damping_ratio(def, 0.3);
@@ -156,44 +198,43 @@ fn prismatic_joint_runtime_paths_succeed() {
     let def = boxdd::PrismaticJointDef::max_motor_force(def, 10.0);
     let def = boxdd::PrismaticJointDef::motor_speed(def, 1.5);
 
-    let mut joint = boxdd::World::create_prismatic_joint(&mut world, &def);
+    let joint_id = boxdd::World::create_prismatic_joint(&mut world, &def).unwrap();
+    let joint = boxdd::World::joint(&mut world, joint_id).unwrap();
+    let joint_type = boxdd::Joint::joint_type(&joint).unwrap();
+    let mut joint = boxdd::Joint::into_prismatic(joint).unwrap();
 
-    let joint_type = boxdd::Joint::joint_type(&joint);
-    let is_valid = boxdd::Joint::is_valid(&joint);
+    boxdd::PrismaticJoint::enable_limit(&mut joint, true).unwrap();
+    boxdd::PrismaticJoint::enable_spring(&mut joint, true).unwrap();
+    boxdd::PrismaticJoint::set_limits(&mut joint, -0.75, 0.75).unwrap();
+    boxdd::PrismaticJoint::set_max_motor_force(&mut joint, 12.0).unwrap();
+    boxdd::PrismaticJoint::set_spring_hertz(&mut joint, 5.0).unwrap();
+    boxdd::PrismaticJoint::set_spring_damping_ratio(&mut joint, 0.3).unwrap();
+    boxdd::PrismaticJoint::set_target_translation(&mut joint, 0.25).unwrap();
+    boxdd::PrismaticJoint::enable_motor(&mut joint, true).unwrap();
+    boxdd::PrismaticJoint::set_motor_speed(&mut joint, 1.5).unwrap();
 
-    boxdd::Joint::prismatic_enable_limit(&mut joint, true);
-    boxdd::Joint::prismatic_enable_spring(&mut joint, true);
-    boxdd::Joint::prismatic_set_limits(&mut joint, -0.75, 0.75);
-    boxdd::Joint::prismatic_set_max_motor_force(&mut joint, 12.0);
-    boxdd::Joint::prismatic_set_spring_hertz(&mut joint, 5.0);
-    boxdd::Joint::prismatic_set_spring_damping_ratio(&mut joint, 0.3);
-    boxdd::Joint::prismatic_set_target_translation(&mut joint, 0.25);
-    boxdd::Joint::prismatic_enable_motor(&mut joint, true);
-    boxdd::Joint::prismatic_set_motor_speed(&mut joint, 1.5);
-
-    let motor_force = boxdd::Joint::prismatic_motor_force(&joint);
-    let motor_speed = boxdd::Joint::prismatic_motor_speed(&joint);
-    let speed = boxdd::Joint::prismatic_speed(&joint);
-    let damping_ratio = boxdd::Joint::prismatic_spring_damping_ratio(&joint);
-    let hertz = boxdd::Joint::prismatic_spring_hertz(&joint);
-    let translation = boxdd::Joint::prismatic_translation(&joint);
-    let target_translation = boxdd::Joint::prismatic_target_translation(&joint);
-    let lower_limit = boxdd::Joint::prismatic_lower_limit(&joint);
-    let upper_limit = boxdd::Joint::prismatic_upper_limit(&joint);
-    let max_motor_force = boxdd::Joint::prismatic_max_motor_force(&joint);
-    let limit_enabled = boxdd::Joint::prismatic_limit_enabled(&joint);
-    let motor_enabled = boxdd::Joint::prismatic_motor_enabled(&joint);
-    let spring_enabled = boxdd::Joint::prismatic_spring_enabled(&joint);
+    let motor_force = boxdd::PrismaticJoint::motor_force(&joint).unwrap();
+    let motor_speed = boxdd::PrismaticJoint::motor_speed(&joint).unwrap();
+    let speed = boxdd::PrismaticJoint::speed(&joint).unwrap();
+    let damping_ratio = boxdd::PrismaticJoint::spring_damping_ratio(&joint).unwrap();
+    let hertz = boxdd::PrismaticJoint::spring_hertz(&joint).unwrap();
+    let translation = boxdd::PrismaticJoint::translation(&joint).unwrap();
+    let target_translation = boxdd::PrismaticJoint::target_translation(&joint).unwrap();
+    let lower_limit = boxdd::PrismaticJoint::lower_limit(&joint).unwrap();
+    let upper_limit = boxdd::PrismaticJoint::upper_limit(&joint).unwrap();
+    let max_motor_force = boxdd::PrismaticJoint::max_motor_force(&joint).unwrap();
+    let limit_enabled = boxdd::PrismaticJoint::limit_enabled(&joint).unwrap();
+    let motor_enabled = boxdd::PrismaticJoint::motor_enabled(&joint).unwrap();
+    let spring_enabled = boxdd::PrismaticJoint::spring_enabled(&joint).unwrap();
 
     assert_eq!(joint_type, boxdd::JointType::Prismatic);
-    assert!(is_valid);
     assert!(motor_force.is_finite());
     assert!(approx_eq(motor_speed, 1.5));
     assert!(speed.is_finite());
     assert!(approx_eq(damping_ratio, 0.3));
     assert!(approx_eq(hertz, 5.0));
     assert!(translation.is_finite());
-    assert!(target_translation.is_finite());
+    assert!(approx_eq(target_translation, 0.25));
     assert!(approx_eq(lower_limit, -0.75));
     assert!(approx_eq(upper_limit, 0.75));
     assert!(approx_eq(max_motor_force, 12.0));
@@ -204,9 +245,8 @@ fn prismatic_joint_runtime_paths_succeed() {
 
 #[test]
 fn revolute_joint_runtime_paths_succeed() {
-    let (world, body_a, body_b) = world_with_two_bodies();
-    let mut world: World = world;
-    let def = boxdd::RevoluteJointDef::new(joint_base(body_a, body_b));
+    let (mut world, body_a, body_b) = world_with_two_bodies();
+    let def = boxdd::RevoluteJointDef::new(joint_base(&world, body_a, body_b));
     let def = boxdd::RevoluteJointDef::target_angle(def, 0.1);
     let def = boxdd::RevoluteJointDef::enable_spring(def, true);
     let def = boxdd::RevoluteJointDef::hertz(def, 5.5);
@@ -218,36 +258,35 @@ fn revolute_joint_runtime_paths_succeed() {
     let def = boxdd::RevoluteJointDef::max_motor_torque(def, 11.0);
     let def = boxdd::RevoluteJointDef::motor_speed(def, 1.75);
 
-    let mut joint = boxdd::World::create_revolute_joint(&mut world, &def);
+    let joint_id = boxdd::World::create_revolute_joint(&mut world, &def).unwrap();
+    let joint = boxdd::World::joint(&mut world, joint_id).unwrap();
+    let joint_type = boxdd::Joint::joint_type(&joint).unwrap();
+    let mut joint = boxdd::Joint::into_revolute(joint).unwrap();
 
-    let joint_type = boxdd::Joint::joint_type(&joint);
-    let is_valid = boxdd::Joint::is_valid(&joint);
+    boxdd::RevoluteJoint::set_limits(&mut joint, -0.4, 0.6).unwrap();
+    boxdd::RevoluteJoint::set_max_motor_torque(&mut joint, 13.0).unwrap();
+    boxdd::RevoluteJoint::set_target_angle(&mut joint, 0.2).unwrap();
+    boxdd::RevoluteJoint::enable_spring(&mut joint, true).unwrap();
+    boxdd::RevoluteJoint::set_spring_hertz(&mut joint, 5.5).unwrap();
+    boxdd::RevoluteJoint::set_spring_damping_ratio(&mut joint, 0.35).unwrap();
+    boxdd::RevoluteJoint::enable_limit(&mut joint, true).unwrap();
+    boxdd::RevoluteJoint::enable_motor(&mut joint, true).unwrap();
+    boxdd::RevoluteJoint::set_motor_speed(&mut joint, 1.75).unwrap();
 
-    boxdd::Joint::revolute_set_limits(&mut joint, -0.4, 0.6);
-    boxdd::Joint::revolute_set_max_motor_torque(&mut joint, 13.0);
-    boxdd::Joint::revolute_set_target_angle(&mut joint, 0.2);
-    boxdd::Joint::revolute_enable_spring(&mut joint, true);
-    boxdd::Joint::revolute_set_spring_hertz(&mut joint, 5.5);
-    boxdd::Joint::revolute_set_spring_damping_ratio(&mut joint, 0.35);
-    boxdd::Joint::revolute_enable_limit(&mut joint, true);
-    boxdd::Joint::revolute_enable_motor(&mut joint, true);
-    boxdd::Joint::revolute_set_motor_speed(&mut joint, 1.75);
-
-    let angle = boxdd::Joint::revolute_angle(&joint);
-    let motor_speed = boxdd::Joint::revolute_motor_speed(&joint);
-    let motor_torque = boxdd::Joint::revolute_motor_torque(&joint);
-    let damping_ratio = boxdd::Joint::revolute_spring_damping_ratio(&joint);
-    let hertz = boxdd::Joint::revolute_spring_hertz(&joint);
-    let target_angle = boxdd::Joint::revolute_target_angle(&joint);
-    let lower_limit = boxdd::Joint::revolute_lower_limit(&joint);
-    let upper_limit = boxdd::Joint::revolute_upper_limit(&joint);
-    let max_motor_torque = boxdd::Joint::revolute_max_motor_torque(&joint);
-    let limit_enabled = boxdd::Joint::revolute_limit_enabled(&joint);
-    let motor_enabled = boxdd::Joint::revolute_motor_enabled(&joint);
-    let spring_enabled = boxdd::Joint::revolute_spring_enabled(&joint);
+    let angle = boxdd::RevoluteJoint::angle(&joint).unwrap();
+    let motor_speed = boxdd::RevoluteJoint::motor_speed(&joint).unwrap();
+    let motor_torque = boxdd::RevoluteJoint::motor_torque(&joint).unwrap();
+    let damping_ratio = boxdd::RevoluteJoint::spring_damping_ratio(&joint).unwrap();
+    let hertz = boxdd::RevoluteJoint::spring_hertz(&joint).unwrap();
+    let target_angle = boxdd::RevoluteJoint::target_angle(&joint).unwrap();
+    let lower_limit = boxdd::RevoluteJoint::lower_limit(&joint).unwrap();
+    let upper_limit = boxdd::RevoluteJoint::upper_limit(&joint).unwrap();
+    let max_motor_torque = boxdd::RevoluteJoint::max_motor_torque(&joint).unwrap();
+    let limit_enabled = boxdd::RevoluteJoint::limit_enabled(&joint).unwrap();
+    let motor_enabled = boxdd::RevoluteJoint::motor_enabled(&joint).unwrap();
+    let spring_enabled = boxdd::RevoluteJoint::spring_enabled(&joint).unwrap();
 
     assert_eq!(joint_type, boxdd::JointType::Revolute);
-    assert!(is_valid);
     assert!(angle.is_finite());
     assert!(approx_eq(motor_speed, 1.75));
     assert!(motor_torque.is_finite());
@@ -264,9 +303,8 @@ fn revolute_joint_runtime_paths_succeed() {
 
 #[test]
 fn motor_joint_runtime_paths_succeed() {
-    let (world, body_a, body_b) = world_with_two_bodies();
-    let mut world: World = world;
-    let def = boxdd::MotorJointDef::new(joint_base(body_a, body_b));
+    let (mut world, body_a, body_b) = world_with_two_bodies();
+    let def = boxdd::MotorJointDef::new(joint_base(&world, body_a, body_b));
     let def = boxdd::MotorJointDef::linear_velocity(def, [1.0_f32, -0.5]);
     let def = boxdd::MotorJointDef::max_velocity_force(def, 8.0);
     let def = boxdd::MotorJointDef::angular_velocity(def, 0.75);
@@ -278,35 +316,34 @@ fn motor_joint_runtime_paths_succeed() {
     let def = boxdd::MotorJointDef::angular_damping_ratio(def, 0.4);
     let def = boxdd::MotorJointDef::max_spring_torque(def, 11.0);
 
-    let mut joint = boxdd::World::create_motor_joint(&mut world, &def);
+    let joint_id = boxdd::World::create_motor_joint(&mut world, &def).unwrap();
+    let joint = boxdd::World::joint(&mut world, joint_id).unwrap();
+    let joint_type = boxdd::Joint::joint_type(&joint).unwrap();
+    let mut joint = boxdd::Joint::into_motor(joint).unwrap();
 
-    let joint_type = boxdd::Joint::joint_type(&joint);
-    let is_valid = boxdd::Joint::is_valid(&joint);
+    boxdd::MotorJoint::set_angular_velocity(&mut joint, 1.25).unwrap();
+    boxdd::MotorJoint::set_linear_hertz(&mut joint, 6.0).unwrap();
+    boxdd::MotorJoint::set_max_spring_force(&mut joint, 14.0).unwrap();
+    boxdd::MotorJoint::set_max_velocity_force(&mut joint, 15.0).unwrap();
+    boxdd::MotorJoint::set_linear_velocity(&mut joint, [1.0_f32, -0.5]).unwrap();
+    boxdd::MotorJoint::set_max_velocity_torque(&mut joint, 9.0).unwrap();
+    boxdd::MotorJoint::set_linear_damping_ratio(&mut joint, 0.3).unwrap();
+    boxdd::MotorJoint::set_angular_hertz(&mut joint, 4.0).unwrap();
+    boxdd::MotorJoint::set_angular_damping_ratio(&mut joint, 0.4).unwrap();
+    boxdd::MotorJoint::set_max_spring_torque(&mut joint, 11.0).unwrap();
 
-    boxdd::Joint::motor_set_angular_velocity(&mut joint, 1.25);
-    boxdd::Joint::motor_set_linear_hertz(&mut joint, 6.0);
-    boxdd::Joint::motor_set_max_spring_force(&mut joint, 14.0);
-    boxdd::Joint::motor_set_max_velocity_force(&mut joint, 15.0);
-    boxdd::Joint::motor_set_linear_velocity(&mut joint, [1.0_f32, -0.5]);
-    boxdd::Joint::motor_set_max_velocity_torque(&mut joint, 9.0);
-    boxdd::Joint::motor_set_linear_damping_ratio(&mut joint, 0.3);
-    boxdd::Joint::motor_set_angular_hertz(&mut joint, 4.0);
-    boxdd::Joint::motor_set_angular_damping_ratio(&mut joint, 0.4);
-    boxdd::Joint::motor_set_max_spring_torque(&mut joint, 11.0);
-
-    let angular_damping_ratio = boxdd::Joint::motor_angular_damping_ratio(&joint);
-    let angular_hertz = boxdd::Joint::motor_angular_hertz(&joint);
-    let linear_damping_ratio = boxdd::Joint::motor_linear_damping_ratio(&joint);
-    let linear_hertz = boxdd::Joint::motor_linear_hertz(&joint);
-    let angular_velocity = boxdd::Joint::motor_angular_velocity(&joint);
-    let linear_velocity = boxdd::Joint::motor_linear_velocity(&joint);
-    let max_spring_force = boxdd::Joint::motor_max_spring_force(&joint);
-    let max_spring_torque = boxdd::Joint::motor_max_spring_torque(&joint);
-    let max_velocity_force = boxdd::Joint::motor_max_velocity_force(&joint);
-    let max_velocity_torque = boxdd::Joint::motor_max_velocity_torque(&joint);
+    let angular_damping_ratio = boxdd::MotorJoint::angular_damping_ratio(&joint).unwrap();
+    let angular_hertz = boxdd::MotorJoint::angular_hertz(&joint).unwrap();
+    let linear_damping_ratio = boxdd::MotorJoint::linear_damping_ratio(&joint).unwrap();
+    let linear_hertz = boxdd::MotorJoint::linear_hertz(&joint).unwrap();
+    let angular_velocity = boxdd::MotorJoint::angular_velocity(&joint).unwrap();
+    let linear_velocity = boxdd::MotorJoint::linear_velocity(&joint).unwrap();
+    let max_spring_force = boxdd::MotorJoint::max_spring_force(&joint).unwrap();
+    let max_spring_torque = boxdd::MotorJoint::max_spring_torque(&joint).unwrap();
+    let max_velocity_force = boxdd::MotorJoint::max_velocity_force(&joint).unwrap();
+    let max_velocity_torque = boxdd::MotorJoint::max_velocity_torque(&joint).unwrap();
 
     assert_eq!(joint_type, boxdd::JointType::Motor);
-    assert!(is_valid);
     assert!(approx_eq(angular_damping_ratio, 0.4));
     assert!(approx_eq(angular_hertz, 4.0));
     assert!(approx_eq(linear_damping_ratio, 0.3));
@@ -322,57 +359,38 @@ fn motor_joint_runtime_paths_succeed() {
 
 #[test]
 fn weld_joint_runtime_paths_succeed() {
-    let (world, body_a, body_b) = world_with_two_bodies();
-    let mut world: World = world;
-    let def = boxdd::WeldJointDef::new(joint_base(body_a, body_b));
+    let (mut world, body_a, body_b) = world_with_two_bodies();
+    let def = boxdd::WeldJointDef::new(joint_base(&world, body_a, body_b));
     let def = boxdd::WeldJointDef::linear_hertz(def, 3.0);
     let def = boxdd::WeldJointDef::linear_damping_ratio(def, 0.2);
     let def = boxdd::WeldJointDef::angular_hertz(def, 4.0);
     let def = boxdd::WeldJointDef::angular_damping_ratio(def, 0.4);
 
-    let mut joint = boxdd::World::create_weld_joint(&mut world, &def);
+    let joint_id = boxdd::World::create_weld_joint(&mut world, &def).unwrap();
+    let joint = boxdd::World::joint(&mut world, joint_id).unwrap();
+    let joint_type = boxdd::Joint::joint_type(&joint).unwrap();
+    let mut joint = boxdd::Joint::into_weld(joint).unwrap();
 
-    let joint_type = boxdd::Joint::joint_type(&joint);
-    let is_valid = boxdd::Joint::is_valid(&joint);
-
-    let set_linear_hertz = boxdd::Joint::try_weld_set_linear_hertz(&mut joint, 6.0);
-    let set_linear_damping = boxdd::Joint::try_weld_set_linear_damping_ratio(&mut joint, 0.3);
-    let set_angular_hertz = boxdd::Joint::try_weld_set_angular_hertz(&mut joint, 7.0);
-    let set_angular_damping = boxdd::Joint::try_weld_set_angular_damping_ratio(&mut joint, 0.5);
-    let linear_hertz = boxdd::Joint::try_weld_linear_hertz(&joint);
-    let linear_damping = boxdd::Joint::try_weld_linear_damping_ratio(&joint);
-    let angular_hertz = boxdd::Joint::try_weld_angular_hertz(&joint);
-    let angular_damping = boxdd::Joint::try_weld_angular_damping_ratio(&joint);
+    boxdd::WeldJoint::set_linear_hertz(&mut joint, 6.0).unwrap();
+    boxdd::WeldJoint::set_linear_damping_ratio(&mut joint, 0.3).unwrap();
+    boxdd::WeldJoint::set_angular_hertz(&mut joint, 7.0).unwrap();
+    boxdd::WeldJoint::set_angular_damping_ratio(&mut joint, 0.5).unwrap();
+    let linear_hertz = boxdd::WeldJoint::linear_hertz(&joint).unwrap();
+    let linear_damping = boxdd::WeldJoint::linear_damping_ratio(&joint).unwrap();
+    let angular_hertz = boxdd::WeldJoint::angular_hertz(&joint).unwrap();
+    let angular_damping = boxdd::WeldJoint::angular_damping_ratio(&joint).unwrap();
 
     assert_eq!(joint_type, boxdd::JointType::Weld);
-    assert!(is_valid);
-    assert!(set_linear_hertz.is_ok());
-    assert!(set_linear_damping.is_ok());
-    assert!(set_angular_hertz.is_ok());
-    assert!(set_angular_damping.is_ok());
-    assert!(approx_eq(
-        linear_hertz.expect("linear hertz query should succeed"),
-        6.0
-    ));
-    assert!(approx_eq(
-        linear_damping.expect("linear damping query should succeed"),
-        0.3
-    ));
-    assert!(approx_eq(
-        angular_hertz.expect("angular hertz query should succeed"),
-        7.0
-    ));
-    assert!(approx_eq(
-        angular_damping.expect("angular damping query should succeed"),
-        0.5
-    ));
+    assert!(approx_eq(linear_hertz, 6.0));
+    assert!(approx_eq(linear_damping, 0.3));
+    assert!(approx_eq(angular_hertz, 7.0));
+    assert!(approx_eq(angular_damping, 0.5));
 }
 
 #[test]
 fn wheel_joint_runtime_paths_succeed() {
-    let (world, body_a, body_b) = world_with_two_bodies();
-    let mut world: World = world;
-    let def = boxdd::WheelJointDef::new(joint_base(body_a, body_b));
+    let (mut world, body_a, body_b) = world_with_two_bodies();
+    let def = boxdd::WheelJointDef::new(joint_base(&world, body_a, body_b));
     let def = boxdd::WheelJointDef::enable_spring(def, true);
     let def = boxdd::WheelJointDef::hertz(def, 4.0);
     let def = boxdd::WheelJointDef::damping_ratio(def, 0.25);
@@ -383,85 +401,53 @@ fn wheel_joint_runtime_paths_succeed() {
     let def = boxdd::WheelJointDef::max_motor_torque(def, 10.0);
     let def = boxdd::WheelJointDef::motor_speed(def, 1.5);
 
-    let mut joint = boxdd::World::create_wheel_joint(&mut world, &def);
+    let joint_id = boxdd::World::create_wheel_joint(&mut world, &def).unwrap();
+    let joint = boxdd::World::joint(&mut world, joint_id).unwrap();
+    let joint_type = boxdd::Joint::joint_type(&joint).unwrap();
+    let mut joint = boxdd::Joint::into_wheel(joint).unwrap();
 
-    let joint_type = boxdd::Joint::joint_type(&joint);
-    let is_valid = boxdd::Joint::is_valid(&joint);
-
-    let enable_limit = boxdd::Joint::try_wheel_enable_limit(&mut joint, true);
-    let enable_motor = boxdd::Joint::try_wheel_enable_motor(&mut joint, true);
-    let enable_spring = boxdd::Joint::try_wheel_enable_spring(&mut joint, true);
-    let set_limits = boxdd::Joint::try_wheel_set_limits(&mut joint, -0.75, 0.75);
-    let set_max_motor_torque = boxdd::Joint::try_wheel_set_max_motor_torque(&mut joint, 13.0);
-    let set_motor_speed = boxdd::Joint::try_wheel_set_motor_speed(&mut joint, 2.0);
-    let set_spring_damping = boxdd::Joint::try_wheel_set_spring_damping_ratio(&mut joint, 0.35);
-    let set_spring_hertz = boxdd::Joint::try_wheel_set_spring_hertz(&mut joint, 6.0);
-    let lower_limit = boxdd::Joint::try_wheel_lower_limit(&joint);
-    let max_motor_torque = boxdd::Joint::try_wheel_max_motor_torque(&joint);
-    let motor_speed = boxdd::Joint::try_wheel_motor_speed(&joint);
-    let motor_torque = boxdd::Joint::try_wheel_motor_torque(&joint);
-    let damping_ratio = boxdd::Joint::try_wheel_spring_damping_ratio(&joint);
-    let spring_hertz = boxdd::Joint::try_wheel_spring_hertz(&joint);
-    let upper_limit = boxdd::Joint::try_wheel_upper_limit(&joint);
-    let limit_enabled = boxdd::Joint::try_wheel_limit_enabled(&joint);
-    let motor_enabled = boxdd::Joint::try_wheel_motor_enabled(&joint);
-    let spring_enabled = boxdd::Joint::try_wheel_spring_enabled(&joint);
+    boxdd::WheelJoint::enable_limit(&mut joint, true).unwrap();
+    boxdd::WheelJoint::enable_motor(&mut joint, true).unwrap();
+    boxdd::WheelJoint::enable_spring(&mut joint, true).unwrap();
+    boxdd::WheelJoint::set_limits(&mut joint, -0.75, 0.75).unwrap();
+    boxdd::WheelJoint::set_max_motor_torque(&mut joint, 13.0).unwrap();
+    boxdd::WheelJoint::set_motor_speed(&mut joint, 2.0).unwrap();
+    boxdd::WheelJoint::set_spring_damping_ratio(&mut joint, 0.35).unwrap();
+    boxdd::WheelJoint::set_spring_hertz(&mut joint, 6.0).unwrap();
+    let lower_limit = boxdd::WheelJoint::lower_limit(&joint).unwrap();
+    let max_motor_torque = boxdd::WheelJoint::max_motor_torque(&joint).unwrap();
+    let motor_speed = boxdd::WheelJoint::motor_speed(&joint).unwrap();
+    let motor_torque = boxdd::WheelJoint::motor_torque(&joint).unwrap();
+    let damping_ratio = boxdd::WheelJoint::spring_damping_ratio(&joint).unwrap();
+    let spring_hertz = boxdd::WheelJoint::spring_hertz(&joint).unwrap();
+    let upper_limit = boxdd::WheelJoint::upper_limit(&joint).unwrap();
+    let limit_enabled = boxdd::WheelJoint::limit_enabled(&joint).unwrap();
+    let motor_enabled = boxdd::WheelJoint::motor_enabled(&joint).unwrap();
+    let spring_enabled = boxdd::WheelJoint::spring_enabled(&joint).unwrap();
 
     assert_eq!(joint_type, boxdd::JointType::Wheel);
-    assert!(is_valid);
-    assert!(enable_limit.is_ok());
-    assert!(enable_motor.is_ok());
-    assert!(enable_spring.is_ok());
-    assert!(set_limits.is_ok());
-    assert!(set_max_motor_torque.is_ok());
-    assert!(set_motor_speed.is_ok());
-    assert!(set_spring_damping.is_ok());
-    assert!(set_spring_hertz.is_ok());
-    assert!(approx_eq(
-        lower_limit.expect("lower-limit query should succeed"),
-        -0.75
-    ));
-    assert!(approx_eq(
-        max_motor_torque.expect("max-torque query should succeed"),
-        13.0
-    ));
-    assert!(approx_eq(
-        motor_speed.expect("motor-speed query should succeed"),
-        2.0
-    ));
-    assert!(
-        motor_torque
-            .expect("motor-torque query should succeed")
-            .is_finite()
-    );
-    assert!(approx_eq(
-        damping_ratio.expect("damping query should succeed"),
-        0.35
-    ));
-    assert!(approx_eq(
-        spring_hertz.expect("spring-hertz query should succeed"),
-        6.0
-    ));
-    assert!(approx_eq(
-        upper_limit.expect("upper-limit query should succeed"),
-        0.75
-    ));
-    assert!(limit_enabled.expect("limit-state query should succeed"));
-    assert!(motor_enabled.expect("motor-state query should succeed"));
-    assert!(spring_enabled.expect("spring-state query should succeed"));
+    assert!(approx_eq(lower_limit, -0.75));
+    assert!(approx_eq(max_motor_torque, 13.0));
+    assert!(approx_eq(motor_speed, 2.0));
+    assert!(motor_torque.is_finite());
+    assert!(approx_eq(damping_ratio, 0.35));
+    assert!(approx_eq(spring_hertz, 6.0));
+    assert!(approx_eq(upper_limit, 0.75));
+    assert!(limit_enabled);
+    assert!(motor_enabled);
+    assert!(spring_enabled);
 }
 
 #[test]
 fn filter_joint_creation_runtime_path_succeeds() {
-    let (world, body_a, body_b) = world_with_two_bodies();
-    let mut world: World = world;
-    let def = boxdd::FilterJointDef::new(joint_base(body_a, body_b));
+    let (mut world, body_a, body_b) = world_with_two_bodies();
+    let def = boxdd::FilterJointDef::new(joint_base(&world, body_a, body_b));
 
-    let joint = boxdd::World::create_filter_joint(&mut world, &def);
-
-    let joint_type = boxdd::Joint::joint_type(&joint);
-    let is_valid = boxdd::Joint::is_valid(&joint);
+    let joint_id = boxdd::World::create_filter_joint(&mut world, &def).unwrap();
+    let joint = boxdd::World::joint(&mut world, joint_id).unwrap();
+    let joint_type = boxdd::Joint::joint_type(&joint).unwrap();
+    let joint = boxdd::Joint::into_filter(joint).unwrap();
 
     assert_eq!(joint_type, boxdd::JointType::Filter);
-    assert!(is_valid);
+    assert_eq!(boxdd::Joint::id(&joint), joint_id);
 }

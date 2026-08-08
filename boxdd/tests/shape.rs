@@ -7,26 +7,46 @@ fn approx(a: f32, b: f32, tol: f32) -> bool {
     (a - b).abs() <= tol
 }
 
+fn initialize_foundation() {
+    boxdd::Foundation::initialize_default().expect("default foundation should initialize");
+}
+
 #[test]
 fn standalone_aabbs_use_absolute_world_transforms() {
-    let transform = WorldTransform::from_pos_angle([12.0_f32, -7.0], 0.5 * core::f32::consts::PI);
-    let circle_aabb = shapes::circle([1.0_f32, 0.0], 0.5).aabb(transform);
+    initialize_foundation();
+
+    let transform =
+        WorldTransform::from_pos_angle([12.0_f32, -7.0], 0.5 * core::f32::consts::PI).unwrap();
+    let circle_aabb = shapes::circle([1.0_f32, 0.0], 0.5)
+        .unwrap()
+        .aabb(transform)
+        .unwrap();
 
     const AABB_TOLERANCE: f32 = 2.0e-6;
-    assert!(approx(circle_aabb.lower.x, 11.5, AABB_TOLERANCE));
-    assert!(approx(circle_aabb.lower.y, -6.5, AABB_TOLERANCE));
-    assert!(approx(circle_aabb.upper.x, 12.5, AABB_TOLERANCE));
-    assert!(approx(circle_aabb.upper.y, -5.5, AABB_TOLERANCE));
+    assert!(approx(circle_aabb.lower().x, 11.5, AABB_TOLERANCE));
+    assert!(approx(circle_aabb.lower().y, -6.5, AABB_TOLERANCE));
+    assert!(approx(circle_aabb.upper().x, 12.5, AABB_TOLERANCE));
+    assert!(approx(circle_aabb.upper().y, -5.5, AABB_TOLERANCE));
 
     assert!(
         shapes::capsule([-0.5_f32, 0.0], [0.5, 0.0], 0.25)
+            .unwrap()
             .aabb(transform)
+            .unwrap()
             .is_valid()
     );
-    assert!(shapes::box_polygon(1.0, 0.5).aabb(transform).is_valid());
+    assert!(
+        shapes::box_polygon(1.0, 0.5)
+            .unwrap()
+            .aabb(transform)
+            .unwrap()
+            .is_valid()
+    );
     assert!(
         shapes::segment([-1.0_f32, 0.0], [1.0, 0.0])
+            .unwrap()
             .aabb(transform)
+            .unwrap()
             .is_valid()
     );
 }
@@ -34,40 +54,42 @@ fn standalone_aabbs_use_absolute_world_transforms() {
 #[cfg(feature = "double-precision")]
 fn assert_aabb_contains_disk(aabb: Aabb, center: Position, radius: f32) {
     let radius = f64::from(radius);
-    assert!(f64::from(aabb.lower.x) <= center.x - radius);
-    assert!(f64::from(aabb.lower.y) <= center.y - radius);
-    assert!(f64::from(aabb.upper.x) >= center.x + radius);
-    assert!(f64::from(aabb.upper.y) >= center.y + radius);
+    assert!(f64::from(aabb.lower().x) <= center.x - radius);
+    assert!(f64::from(aabb.lower().y) <= center.y - radius);
+    assert!(f64::from(aabb.upper().x) >= center.x + radius);
+    assert!(f64::from(aabb.upper().y) >= center.y + radius);
 }
 
 #[cfg(feature = "double-precision")]
 #[test]
 fn standalone_aabbs_round_outward_at_large_world_positions() {
+    initialize_foundation();
+
     let transform =
-        WorldTransform::from_pos_angle(Position::new(10_000_000.49, -10_000_000.49), 0.37);
+        WorldTransform::from_pos_angle(Position::new(10_000_000.49, -10_000_000.49), 0.37).unwrap();
 
-    let circle = shapes::circle([0.25_f32, -0.5], 0.4);
+    let circle = shapes::circle([0.25_f32, -0.5], 0.4).unwrap();
     assert_aabb_contains_disk(
-        circle.aabb(transform),
-        transform.transform_point(circle.center),
-        circle.radius,
+        circle.aabb(transform).unwrap(),
+        transform.transform_point(circle.center()),
+        circle.radius(),
     );
 
-    let capsule = shapes::capsule([-0.75_f32, -0.25], [0.8, 0.5], 0.3);
-    let capsule_aabb = capsule.aabb(transform);
-    assert_aabb_contains_disk(
-        capsule_aabb,
-        transform.transform_point(capsule.center1),
-        capsule.radius,
-    );
+    let capsule = shapes::capsule([-0.75_f32, -0.25], [0.8, 0.5], 0.3).unwrap();
+    let capsule_aabb = capsule.aabb(transform).unwrap();
     assert_aabb_contains_disk(
         capsule_aabb,
-        transform.transform_point(capsule.center2),
-        capsule.radius,
+        transform.transform_point(capsule.center1()),
+        capsule.radius(),
+    );
+    assert_aabb_contains_disk(
+        capsule_aabb,
+        transform.transform_point(capsule.center2()),
+        capsule.radius(),
     );
 
-    let polygon = shapes::rounded_box_polygon(0.8, 0.45, 0.15);
-    let polygon_aabb = polygon.aabb(transform);
+    let polygon = shapes::rounded_box_polygon(0.8, 0.45, 0.15).unwrap();
+    let polygon_aabb = polygon.aabb(transform).unwrap();
     for vertex in polygon.vertices() {
         assert_aabb_contains_disk(
             polygon_aabb,
@@ -76,102 +98,116 @@ fn standalone_aabbs_round_outward_at_large_world_positions() {
         );
     }
 
-    let segment = shapes::segment([-1.2_f32, 0.35], [0.9, -0.6]);
-    let segment_aabb = segment.aabb(transform);
-    assert_aabb_contains_disk(segment_aabb, transform.transform_point(segment.point1), 0.0);
-    assert_aabb_contains_disk(segment_aabb, transform.transform_point(segment.point2), 0.0);
+    let segment = shapes::segment([-1.2_f32, 0.35], [0.9, -0.6]).unwrap();
+    let segment_aabb = segment.aabb(transform).unwrap();
+    assert_aabb_contains_disk(
+        segment_aabb,
+        transform.transform_point(segment.point1()),
+        0.0,
+    );
+    assert_aabb_contains_disk(
+        segment_aabb,
+        transform.transform_point(segment.point2()),
+        0.0,
+    );
 }
 
 #[test]
 fn shape_mass_aabb_point_raycast() {
-    let circle = shapes::circle([1.0_f32, 0.0], 1.0);
-    let boxp = shapes::box_polygon(1.0, 1.0);
-    let segment = shapes::segment([0.0_f32, 1.0], [0.0, -1.0]);
+    initialize_foundation();
+
+    let circle = shapes::circle([1.0_f32, 0.0], 1.0).unwrap();
+    let boxp = shapes::box_polygon(1.0, 1.0).unwrap();
+    let segment = shapes::segment([0.0_f32, 1.0], [0.0, -1.0]).unwrap();
 
     // Mass: circle
-    let md = circle.mass_data(1.0);
-    assert!(approx(md.mass, core::f32::consts::PI, f32::EPSILON));
-    assert!(approx(md.center.x, 1.0, f32::EPSILON) && approx(md.center.y, 0.0, f32::EPSILON));
+    let md = circle.mass_data(1.0).unwrap();
+    assert!(approx(md.mass(), core::f32::consts::PI, f32::EPSILON));
+    assert!(approx(md.center().x, 1.0, f32::EPSILON) && approx(md.center().y, 0.0, f32::EPSILON));
     assert!(approx(
-        md.rotational_inertia,
+        md.rotational_inertia(),
         0.5 * core::f32::consts::PI,
         f32::EPSILON
     ));
 
     // Mass: capsule sandwich between hull and box bound
-    let capsule = shapes::capsule([-1.0_f32, 0.0], [1.0, 0.0], 1.0);
-    let m_cap = capsule.mass_data(1.0);
-    let dx = capsule.center2.x - capsule.center1.x;
-    let dy = capsule.center2.y - capsule.center1.y;
+    let capsule = shapes::capsule([-1.0_f32, 0.0], [1.0, 0.0], 1.0).unwrap();
+    let m_cap = capsule.mass_data(1.0).unwrap();
+    let dx = capsule.center2().x - capsule.center1().x;
+    let dy = capsule.center2().y - capsule.center1().y;
     let length = (dx * dx + dy * dy).sqrt();
-    let r = shapes::box_polygon(capsule.radius, capsule.radius + 0.5 * length);
-    let m_box = r.mass_data(1.0);
+    let r = shapes::box_polygon(capsule.radius(), capsule.radius() + 0.5 * length).unwrap();
+    let m_box = r.mass_data(1.0).unwrap();
 
     const N: usize = 4;
     let mut pts = [Vec2::ZERO; 2 * N];
     let mut angle = -0.5 * core::f32::consts::PI;
     let d = core::f32::consts::PI / (N as f32 - 1.0);
     for point in pts.iter_mut().take(N) {
-        point.x = 1.0 + capsule.radius * angle.cos();
-        point.y = capsule.radius * angle.sin();
+        point.x = 1.0 + capsule.radius() * angle.cos();
+        point.y = capsule.radius() * angle.sin();
         angle += d;
     }
     angle = 0.5 * core::f32::consts::PI;
     for point in pts.iter_mut().skip(N).take(N) {
-        point.x = -1.0 + capsule.radius * angle.cos();
-        point.y = capsule.radius * angle.sin();
+        point.x = -1.0 + capsule.radius() * angle.cos();
+        point.y = capsule.radius() * angle.sin();
         angle += d;
     }
     let ac = shapes::polygon_from_points(pts, 0.0).expect("valid capsule hull polygon");
-    let m_hull = ac.mass_data(1.0);
-    assert!(m_hull.mass < m_cap.mass && m_cap.mass < m_box.mass);
+    let m_hull = ac.mass_data(1.0).unwrap();
+    assert!(m_hull.mass() < m_cap.mass() && m_cap.mass() < m_box.mass());
     assert!(
-        m_hull.rotational_inertia < m_cap.rotational_inertia
-            && m_cap.rotational_inertia < m_box.rotational_inertia
+        m_hull.rotational_inertia() < m_cap.rotational_inertia()
+            && m_cap.rotational_inertia() < m_box.rotational_inertia()
     );
 
     // Mass: box
-    let m = boxp.mass_data(1.0);
-    assert!(approx(m.mass, 4.0, f32::EPSILON));
-    assert!(approx(m.center.x, 0.0, f32::EPSILON));
-    assert!(approx(m.center.y, 0.0, f32::EPSILON));
-    assert!(approx(m.rotational_inertia, 8.0 / 3.0, 2.0 * f32::EPSILON));
+    let m = boxp.mass_data(1.0).unwrap();
+    assert!(approx(m.mass(), 4.0, f32::EPSILON));
+    assert!(approx(m.center().x, 0.0, f32::EPSILON));
+    assert!(approx(m.center().y, 0.0, f32::EPSILON));
+    assert!(approx(
+        m.rotational_inertia(),
+        8.0 / 3.0,
+        2.0 * f32::EPSILON
+    ));
 
     // AABB
-    let a_circle = circle.aabb(WorldTransform::IDENTITY);
-    assert!(approx(a_circle.lower.x, 0.0, f32::EPSILON));
-    assert!(approx(a_circle.lower.y, -1.0, f32::EPSILON));
-    assert!(approx(a_circle.upper.x, 2.0, f32::EPSILON));
-    assert!(approx(a_circle.upper.y, 1.0, f32::EPSILON));
+    let a_circle = circle.aabb(WorldTransform::IDENTITY).unwrap();
+    assert!(approx(a_circle.lower().x, 0.0, f32::EPSILON));
+    assert!(approx(a_circle.lower().y, -1.0, f32::EPSILON));
+    assert!(approx(a_circle.upper().x, 2.0, f32::EPSILON));
+    assert!(approx(a_circle.upper().y, 1.0, f32::EPSILON));
 
-    let a_box = boxp.aabb(WorldTransform::IDENTITY);
-    assert!(approx(a_box.lower.x, -1.0, f32::EPSILON));
-    assert!(approx(a_box.lower.y, -1.0, f32::EPSILON));
-    assert!(approx(a_box.upper.x, 1.0, f32::EPSILON));
-    assert!(approx(a_box.upper.y, 1.0, f32::EPSILON));
+    let a_box = boxp.aabb(WorldTransform::IDENTITY).unwrap();
+    assert!(approx(a_box.lower().x, -1.0, f32::EPSILON));
+    assert!(approx(a_box.lower().y, -1.0, f32::EPSILON));
+    assert!(approx(a_box.upper().x, 1.0, f32::EPSILON));
+    assert!(approx(a_box.upper().y, 1.0, f32::EPSILON));
 
-    let a_seg = segment.aabb(WorldTransform::IDENTITY);
-    assert!(approx(a_seg.lower.x, 0.0, f32::EPSILON));
-    assert!(approx(a_seg.lower.y, -1.0, f32::EPSILON));
-    assert!(approx(a_seg.upper.x, 0.0, f32::EPSILON));
-    assert!(approx(a_seg.upper.y, 1.0, f32::EPSILON));
+    let a_seg = segment.aabb(WorldTransform::IDENTITY).unwrap();
+    assert!(approx(a_seg.lower().x, 0.0, f32::EPSILON));
+    assert!(approx(a_seg.lower().y, -1.0, f32::EPSILON));
+    assert!(approx(a_seg.upper().x, 0.0, f32::EPSILON));
+    assert!(approx(a_seg.upper().y, 1.0, f32::EPSILON));
 
     // Point in shape
     let p1 = [0.5_f32, 0.5];
     let p2 = [4.0_f32, -4.0];
-    assert!(circle.contains_point(p1));
-    assert!(!circle.contains_point(p2));
-    assert!(boxp.contains_point(p1));
-    assert!(!boxp.contains_point(p2));
+    assert!(circle.contains_point(p1).unwrap());
+    assert!(!circle.contains_point(p2).unwrap());
+    assert!(boxp.contains_point(p1).unwrap());
+    assert!(!boxp.contains_point(p2).unwrap());
 
     // Ray casts
-    let out_c = circle.ray_cast([-4.0_f32, 0.0], [8.0, 0.0]);
+    let out_c = circle.ray_cast([-4.0_f32, 0.0], [8.0, 0.0]).unwrap();
     assert!(out_c.hit);
     assert!(approx(out_c.normal.x, -1.0, f32::EPSILON));
     assert!(approx(out_c.normal.y, 0.0, f32::EPSILON));
     assert!(approx(out_c.fraction, 0.5, f32::EPSILON));
 
-    let out_p = boxp.ray_cast([-4.0_f32, 0.0], [8.0, 0.0]);
+    let out_p = boxp.ray_cast([-4.0_f32, 0.0], [8.0, 0.0]).unwrap();
     assert!(out_p.hit);
     assert!(approx(out_p.normal.x, -1.0, f32::EPSILON));
     assert!(approx(out_p.normal.y, 0.0, f32::EPSILON));

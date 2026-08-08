@@ -1,0 +1,161 @@
+--- src/world_snapshot.c
++++ src/world_snapshot.c
+@@ -147,11 +147,21 @@
+ 	b2RecBufAppend( buf, &v, 4 );
+ }
+
+-static void b2SnapW_Bytes( b2RecBuffer* buf, const void* src, int n )
++static void b2SnapW_Bytes( b2RecBuffer* buf, const void* src, size_t n )
+ {
+ 	b2RecBufAppend( buf, src, n );
+ }
+
++static void b2SnapW_ArrayBytes( b2RecBuffer* buf, const void* src, int64_t count, size_t elementSize )
++{
++	if ( count < 0 || ( elementSize > 0 && (uint64_t)count > (uint64_t)SIZE_MAX / elementSize ) )
++	{
++		buf->status = B2_REC_BUFFER_LIMIT_EXCEEDED;
++		return;
++	}
++	b2SnapW_Bytes( buf, src, (size_t)count * elementSize );
++}
++
+ // Reject a count read from the image before it reaches an allocation or memset. count must be non
+ // negative, its in-memory footprint must fit in int, and the stream must hold at least minStreamBytes
+ // per element. A corrupt or truncated image then fails.
+@@ -176,7 +186,7 @@
+ 		b2SnapW_I32( buf, ( arr ).count );                                                                                       \
+ 		if ( ( arr ).count > 0 )                                                                                                 \
+ 		{                                                                                                                        \
+-			b2SnapW_Bytes( buf, ( arr ).data, ( arr ).count * (int)sizeof( *( arr ).data ) );                                    \
++			b2SnapW_ArrayBytes( buf, ( arr ).data, ( arr ).count, sizeof( *( arr ).data ) );                                    \
+ 		}                                                                                                                        \
+ 	}                                                                                                                            \
+ 	while ( 0 )
+@@ -238,7 +248,7 @@
+ 	b2SnapW_U32( buf, bs->blockCount );
+ 	if ( bs->blockCount > 0 )
+ 	{
+-		b2SnapW_Bytes( buf, bs->bits, (int)( bs->blockCount * sizeof( uint64_t ) ) );
++		b2SnapW_ArrayBytes( buf, bs->bits, bs->blockCount, sizeof( uint64_t ) );
+ 	}
+ }
+
+@@ -275,7 +285,7 @@
+ 	b2SnapW_U32( buf, hs->count );
+ 	if ( hs->capacity > 0 )
+ 	{
+-		b2SnapW_Bytes( buf, hs->items, (int)( hs->capacity * sizeof( b2SetItem ) ) );
++		b2SnapW_ArrayBytes( buf, hs->items, hs->capacity, sizeof( b2SetItem ) );
+ 	}
+ }
+
+@@ -322,7 +332,7 @@
+ 	b2SnapW_I32( buf, tree->proxyCount );
+ 	if ( tree->nodeCapacity > 0 )
+ 	{
+-		b2SnapW_Bytes( buf, tree->nodes, tree->nodeCapacity * (int)sizeof( b2TreeNode ) );
++		b2SnapW_ArrayBytes( buf, tree->nodes, tree->nodeCapacity, sizeof( b2TreeNode ) );
+ 	}
+ }
+
+@@ -531,8 +541,8 @@
+ 		if ( chain->id != B2_NULL_INDEX )
+ 		{
+ 			// Live slot: write the two heap arrays
+-			b2SnapW_Bytes( buf, chain->shapeIndices, chain->count * (int)sizeof( int ) );
+-			b2SnapW_Bytes( buf, chain->materials, chain->materialCount * (int)sizeof( b2SurfaceMaterial ) );
++			b2SnapW_ArrayBytes( buf, chain->shapeIndices, chain->count, sizeof( int ) );
++			b2SnapW_ArrayBytes( buf, chain->materials, chain->materialCount, sizeof( b2SurfaceMaterial ) );
+ 		}
+ 	}
+
+@@ -689,7 +699,10 @@
+ 		{
+ 			b2Array_Resize( world->chainShapes, chainCount );
+ 			// Zero the whole array so free slots have NULL pointers
+-			memset( world->chainShapes.data, 0, chainCount * sizeof( b2ChainShape ) );
++			if ( chainCount > 0 )
++			{
++				memset( world->chainShapes.data, 0, chainCount * sizeof( b2ChainShape ) );
++			}
+ 		}
+
+ 		for ( int i = 0; i < chainCount && r->ok; ++i )
+@@ -741,7 +754,10 @@
+ 		{
+ 			b2Array_Resize( world->sensors, sensorCount );
+ 			// Zero so inner array headers start clean
+-			memset( world->sensors.data, 0, sensorCount * sizeof( b2Sensor ) );
++			if ( sensorCount > 0 )
++			{
++				memset( world->sensors.data, 0, sensorCount * sizeof( b2Sensor ) );
++			}
+ 		}
+
+ 		for ( int i = 0; i < sensorCount && r->ok; ++i )
+@@ -773,7 +789,10 @@
+ 		if ( r->ok )
+ 		{
+ 			b2Array_Resize( world->islands, islandCount );
+-			memset( world->islands.data, 0, islandCount * sizeof( b2Island ) );
++			if ( islandCount > 0 )
++			{
++				memset( world->islands.data, 0, islandCount * sizeof( b2Island ) );
++			}
+ 		}
+
+ 		for ( int i = 0; i < islandCount && r->ok; ++i )
+@@ -828,6 +847,20 @@
+ 		}
+ 	}
+
++	// Event buffers are transient and never serialized. An in-place restore reuses the live
++	// world's arrays, so end events queued by a between-step mutator (b2Body_Disable and friends)
++	// would survive the restore and surface after the first resimmed step. Reset to match a fresh
++	// world from snapshot. The double-buffer parity is restored, but the contents must start empty.
++	b2Array_Clear( world->bodyMoveEvents );
++	b2Array_Clear( world->sensorBeginEvents );
++	b2Array_Clear( world->sensorEndEvents[0] );
++	b2Array_Clear( world->sensorEndEvents[1] );
++	b2Array_Clear( world->contactBeginEvents );
++	b2Array_Clear( world->contactEndEvents[0] );
++	b2Array_Clear( world->contactEndEvents[1] );
++	b2Array_Clear( world->contactHitEvents );
++	b2Array_Clear( world->jointEvents );
++
+ 	return r->ok;
+ }
+
+@@ -964,13 +997,13 @@
+ 		return 0;
+ 	}
+
+-	// Size query: count the bytes without allocating or copying the whole image
++	// Size query: count the bytes without allocating or copying the whole image.
+ 	if ( image == NULL )
+ 	{
+ 		b2RecBuffer counter = { 0 };
+ 		counter.countOnly = true;
+ 		b2SerializeWorld( world, &counter );
+-		return counter.size;
++		return counter.status == B2_REC_BUFFER_OK ? counter.size : 0;
+ 	}
+
+ 	b2RecBuffer buf = { 0 };
+@@ -977,9 +1010,13 @@
+ 	b2SerializeWorld( world, &buf );
+ 	int size = buf.size;
+
+-	if ( size <= capacity )
++	if ( buf.status == B2_REC_BUFFER_OK && size <= capacity )
++	{
++		memcpy( image, buf.data, (size_t)size );
++	}
++	else if ( buf.status != B2_REC_BUFFER_OK )
+ 	{
+-		memcpy( image, buf.data, size );
++		size = 0;
+ 	}
+
+ 	b2RecBufFree( &buf );

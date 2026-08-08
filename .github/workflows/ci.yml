@@ -26,6 +26,7 @@ jobs:
   compiler-baseline:
     name: Compiler Baseline (Rust 1.95)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
@@ -49,15 +50,22 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
-      - name: Verify compiler policy
-        run: cargo +1.95.0 run --locked -p xtask -- verify-toolchains
-
       - name: Check workspace at MSRV
-        run: cargo +1.95.0 check --locked --workspace --all-targets
+        run: |
+          cargo +1.95.0 check --locked --workspace --all-targets
+          cargo +1.95.0 check --locked -p boxdd --all-targets --features "double-precision serde mint nalgebra glam bytemuck validate disable-simd"
+          cargo +1.95.0 check --locked -p bevy_boxdd --all-targets --features double-precision
+
+      - name: Check optional features independently at MSRV
+        run: |
+          for feature in serde mint nalgebra glam bytemuck; do
+            cargo +1.95.0 check --locked -p boxdd --all-targets --features "${feature}"
+          done
 
   system-provider:
     name: System Provider (Rust ${{ matrix.toolchain }}, ${{ matrix.precision }})
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: read
     strategy:
@@ -84,18 +92,21 @@ jobs:
           set -euo pipefail
           source_target="${RUNNER_TEMP}/system-source"
           CARGO_TARGET_DIR="$source_target" cargo +${{ matrix.toolchain }} build --locked -p boxdd-sys --features "${{ matrix.precision == 'double' && 'double-precision' || '' }}" --quiet
-          mapfile -t archives < <(find "$source_target/debug/build" -path '*/boxdd-sys-*/out/libbox2d.a' -type f -print)
-          test "${#archives[@]}" -eq 1
-          archive="${archives[0]}"
+          mapfile -t identities < <(find "$source_target/debug/build" -path '*/boxdd-sys-*/out/boxdd-build-identity.toml' -type f -print)
+          test "${#identities[@]}" -eq 1
+          identity="${identities[0]}"
+          archive="$(dirname "$identity")/libbox2d.a"
+          test -f "$archive"
+          mapfile -t effective_headers < <(find "$(dirname "$identity")/boxdd-effective-source" -path '*/include/box2d/box2d.h' -type f -print)
+          test "${#effective_headers[@]}" -eq 1
 
           SYS_DIR="${RUNNER_TEMP}/boxdd-system-artifact"
           mkdir "$SYS_DIR"
           cp "$archive" "$SYS_DIR/libbox2d.a"
-          cp boxdd-sys/third-party/box2d/include/box2d/box2d.h "$SYS_DIR/box2d.h"
+          cp "${effective_headers[0]}" "$SYS_DIR/box2d.h"
           bindings="${{ matrix.precision == 'double' && 'boxdd-sys/src/bindings_double.rs' || 'boxdd-sys/src/bindings_pregenerated.rs' }}"
           cp "$bindings" "$SYS_DIR/bindings.rs"
-          attest_target="${RUNNER_TEMP}/system-attest"
-          CARGO_TARGET_DIR="$attest_target" cargo +${{ matrix.toolchain }} run --locked -p boxdd-sys --features "${{ matrix.precision == 'double' && 'package-bin,double-precision' || 'package-bin' }}" --bin package -- attest-local-system "$SYS_DIR/libbox2d.a" "$SYS_DIR/box2d.h" "$SYS_DIR/bindings.rs" "$SYS_DIR/manifest.toml"
+          cargo +${{ matrix.toolchain }} run --locked -p xtask -- native-package attest-local-system "$identity" "$SYS_DIR/libbox2d.a" "$SYS_DIR/box2d.h" "$SYS_DIR/bindings.rs" "$SYS_DIR/manifest.toml"
 
       - name: Qualify the freshly packaged crate against the system artifact
         run: cargo +${{ matrix.toolchain }} run --locked -p xtask -- qualify-native-provider --provider system --toolchain ${{ matrix.toolchain }} --precision ${{ matrix.precision }} --target x86_64-unknown-linux-gnu --crt none --artifacts "${{ runner.temp }}/boxdd-system-artifact"
@@ -103,6 +114,7 @@ jobs:
   lint:
     name: Lint + Test (ubuntu-latest)
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     permissions:
       contents: read
     steps:
@@ -124,10 +136,11 @@ jobs:
           toolchain: 1.97.1
           components: rustfmt, clippy
 
-      - name: Install nextest
+      - name: Install test and workflow tools
         uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
         with:
-          tool: nextest
+          tool: nextest,actionlint@1.7.12
+          fallback: none
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -135,74 +148,76 @@ jobs:
       - name: rustfmt
         run: cargo fmt --all -- --check
 
+      - name: actionlint
+        run: actionlint
+
       - name: clippy
         run: |
-          cargo clippy --locked -p boxdd-sys --all-targets -- -D warnings
+          cargo clippy --locked -p boxdd-sys -p boxdd -p bevy_boxdd --all-targets -- -D warnings
           cargo clippy --locked -p boxdd-sys --all-targets --features "double-precision validate disable-simd" -- -D warnings
-          cargo clippy --locked -p boxdd-sys --features package-bin --bin package -- -D warnings
-          cargo clippy --locked -p boxdd-sys --features "package-bin,double-precision,validate,disable-simd" --bin package -- -D warnings
-          cargo clippy --locked -p boxdd-sys --features "package-bin,simd-avx2" --bin package -- -D warnings
-          cargo clippy --locked -p boxdd --all-targets --features "serde mint nalgebra glam bytemuck unchecked" -- -D warnings
-          cargo clippy --locked -p boxdd --all-targets --features "double-precision serde mint nalgebra glam bytemuck unchecked validate disable-simd" -- -D warnings
-          cargo clippy --locked -p bevy_boxdd --all-targets --no-default-features -- -D warnings
+          cargo clippy --locked -p boxdd --all-targets --features "double-precision serde mint nalgebra glam bytemuck validate disable-simd" -- -D warnings
           cargo clippy --locked -p bevy_boxdd --all-targets --features double-precision -- -D warnings
+          cargo clippy --locked -p xtask --all-targets -- -D warnings
+
+      - name: Native AVX2 compile contract (Linux)
+        run: |
+          cargo check --locked -p boxdd --all-targets --features simd-avx2
+          cargo check --locked -p boxdd --all-targets --features "double-precision simd-avx2"
 
       - name: upstream and architecture gates
         run: |
-          cargo run --locked -p xtask -- build-policy-sources --check
           cargo run --locked -p xtask -- verify-precision-contract
           cargo run --locked -p xtask -- upstream-sync --check
-          cargo run --locked -p xtask -- api-coverage --check
-          cargo run --locked -p xtask -- sample-parity --check
-          cargo run --locked -p xtask -- verify-feature-matrix
-          cargo run --locked -p xtask -- verify-compile-fail
+          cargo run --locked -p xtask -- recording-wire-codegen --check
+          cargo run --locked -p xtask -- api-inventory --check
           cargo run --locked -p xtask -- validate-pages
 
-      - name: Workspace integration
-        run: |
-          cargo check --locked --workspace --all-targets
-          cargo nextest run --locked --workspace
+      - name: Workspace tests
+        run: cargo nextest run --locked --workspace
 
-      - name: Package helper unit tests
+      - name: Optional features and double precision
         run: |
-          cargo test --locked -p boxdd-sys --features package-bin --bin package
-          cargo test --locked --target-dir target/package-helper-double -p boxdd-sys --features "package-bin,double-precision,validate,disable-simd" --bin package
-          cargo test --locked --target-dir target/package-helper-avx2 -p boxdd-sys --features "package-bin,simd-avx2" --bin package
-
-      - name: Core, downstream, and feature runtime tests
-        run: |
-          cargo nextest run --locked -p xtask
-          cargo nextest run --locked -p boxdd
-          cargo nextest run --locked -p boxdd-sys
-          cargo nextest run --locked -p boxdd -p boxdd-sys --features boxdd/double-precision
-          cargo nextest run --locked -p bevy_boxdd
+          cargo nextest run --locked -p boxdd --features "serde mint nalgebra glam bytemuck"
+          cargo nextest run --locked -p boxdd -p boxdd-sys --features "boxdd/double-precision boxdd/serde boxdd/mint boxdd/nalgebra boxdd/glam boxdd/bytemuck"
           cargo nextest run --locked -p bevy_boxdd --features double-precision
-          cargo nextest run --locked -p boxdd --features unchecked
-          cargo nextest run --locked -p boxdd --features mint
-          cargo nextest run --locked -p boxdd --features bytemuck
-          cargo nextest run --locked -p boxdd --features nalgebra
-          cargo nextest run --locked -p boxdd --features glam
-          cargo nextest run --locked -p boxdd --features "bytemuck glam"
-          cargo nextest run --locked -p boxdd --test serde_values --features serde
-          cargo nextest run --locked --target-dir target/serde-double -p boxdd --test serde_values --features "double-precision serde"
-          cargo nextest run --locked --target-dir target/interops-double -p boxdd --test mint_interop --test nalgebra_interop --test glam_interop --test bytemuck_api --features "double-precision mint nalgebra glam bytemuck"
 
-      - name: Examples and feature-gated targets
+      - name: ImGui testbed
         run: |
-          cargo check --locked -p boxdd --examples --features "double-precision mint"
-          cargo check --locked -p bevy_boxdd --examples --features double-precision
           cargo check --locked -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed
-          cargo run --locked -p boxdd --example dynamic_tree
+          cargo check --locked -p boxdd --example testbed_imgui_glow --features "imgui-glow-testbed double-precision"
+
+      - name: C ABI probes
+        run: |
+          cargo run --locked -p boxdd-abi-probe --bin abi-ctest --no-default-features
+          cargo test --locked -p boxdd-abi-probe --test abi --no-default-features
+          cargo run --locked -p boxdd-abi-probe --bin abi-ctest --no-default-features --features double-precision
+          cargo test --locked -p boxdd-abi-probe --test abi --no-default-features --features double-precision
+
+      - name: Docs
+        env:
+          RUSTDOCFLAGS: -D warnings --cfg docsrs
+        run: |
+          cargo test --locked -p boxdd --doc
+          cargo test --locked -p bevy_boxdd --doc
+          cargo doc --locked --no-deps --workspace
+          cargo doc --locked --no-deps -p boxdd --features double-precision
+          cargo doc --locked --no-deps -p bevy_boxdd --features double-precision
+
+      - name: boxdd-sys docs.rs mode
+        env:
+          DOCS_RS: "1"
+        run: cargo doc --locked -p boxdd-sys --no-deps
 
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [macos-latest, windows-latest]
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -210,12 +225,6 @@ jobs:
           ref: ${{ github.sha }}
           submodules: recursive
           persist-credentials: false
-
-      - name: Install Linux system dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
@@ -233,6 +242,12 @@ jobs:
       - name: Workspace target check
         run: cargo check --locked --workspace --all-targets
 
+      - name: Native AVX2 compile contract (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          cargo check --locked -p boxdd --all-targets --features simd-avx2
+          cargo check --locked -p boxdd --all-targets --features "double-precision simd-avx2"
+
       - name: Native source tests (single and double precision)
         run: |
           cargo nextest run --locked -p boxdd -p boxdd-sys
@@ -240,67 +255,15 @@ jobs:
 
       - name: C ABI probes (single and double precision)
         run: |
+          cargo run --locked -p boxdd-abi-probe --bin abi-ctest --no-default-features
           cargo test --locked -p boxdd-abi-probe --test abi --no-default-features
+          cargo run --locked --target-dir target/abi-probe-double -p boxdd-abi-probe --bin abi-ctest --no-default-features --features double-precision
           cargo test --locked --target-dir target/abi-probe-double -p boxdd-abi-probe --test abi --no-default-features --features double-precision
-
-      - name: Docs
-        if: runner.os == 'Linux'
-        env:
-          RUSTDOCFLAGS: -D warnings --cfg docsrs
-        run: cargo doc --locked --no-deps --workspace
-
-      - name: Docs (double precision)
-        if: runner.os == 'Linux'
-        env:
-          RUSTDOCFLAGS: -D warnings --cfg docsrs
-        run: |
-          cargo doc --locked --no-deps -p boxdd --features double-precision
-          cargo doc --locked --no-deps -p bevy_boxdd --features double-precision
-
-      - name: Docs (docs.rs offline mode)
-        if: runner.os == 'Linux'
-        env:
-          DOCS_RS: "1"
-        run: cargo doc --locked -p boxdd-sys --no-deps
-
-  features:
-    name: Feature Matrix (Rust ${{ matrix.toolchain }})
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        toolchain: ["1.95.0", "1.97.1"]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          ref: ${{ github.sha }}
-          submodules: recursive
-          persist-credentials: false
-
-      - name: Install Linux system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
-        with:
-          toolchain: ${{ matrix.toolchain }}
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-
-      - name: Verify supported feature coordinates
-        env:
-          BOXDD_VERIFY_TOOLCHAIN: ${{ matrix.toolchain }}
-        run: cargo +${{ matrix.toolchain }} run --locked -p xtask -- verify-feature-matrix
 
   wasm:
     name: WASM Compile Contracts (Rust ${{ matrix.toolchain }})
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: read
     strategy:
@@ -330,6 +293,7 @@ jobs:
   provider-runtime:
     name: WASM Provider Runtime (Node + Chromium, single + double)
     runs-on: ubuntu-24.04
+    timeout-minutes: 120
     permissions:
       contents: read
     env:
@@ -364,9 +328,32 @@ jobs:
           npm ci --ignore-scripts
           npx playwright install --with-deps chromium
 
-      - name: Provision Emscripten SDK
+      - name: Install Emscripten
         shell: bash
-        run: cargo run --locked -p xtask -- provision-emsdk --root "${RUNNER_TEMP}/emsdk" --github-actions
+        env:
+          EMSCRIPTEN_VERSION: "6.0.4"
+          EMSDK_REVISION: 224ec5f9f2f72f09f9ce0e26d66bae7dbd8b692f
+        run: |
+          set -euo pipefail
+          sdk_root="${RUNNER_TEMP}/emsdk"
+          git init "${sdk_root}"
+          git -C "${sdk_root}" remote add origin https://github.com/emscripten-core/emsdk.git
+          git -C "${sdk_root}" fetch --depth 1 origin "${EMSDK_REVISION}"
+          git -C "${sdk_root}" checkout --detach FETCH_HEAD
+          "${sdk_root}/emsdk" install "${EMSCRIPTEN_VERSION}"
+          "${sdk_root}/emsdk" activate "${EMSCRIPTEN_VERSION}"
+          source "${sdk_root}/emsdk_env.sh"
+          {
+            printf 'EMSDK=%s\n' "${EMSDK}"
+            printf 'EM_CONFIG=%s\n' "${EM_CONFIG}"
+            printf 'EMSDK_NODE=%s\n' "${EMSDK_NODE}"
+          } >> "${GITHUB_ENV}"
+          {
+            dirname "$(command -v emcc)"
+            dirname "$(command -v node)"
+            dirname "$(command -v npm)"
+            dirname "$(command -v wasm-opt)"
+          } >> "${GITHUB_PATH}"
 
       - name: Verify checked WASM provider identities
         run: cargo run --locked -p xtask -- wasm-provider-contract --check
@@ -374,9 +361,19 @@ jobs:
       - name: Run provider runtime contract
         run: cargo run --locked -p xtask -- verify-wasm --runtime
 
+      - name: Build Pages WASM assets
+        run: cargo run --locked -p xtask -- build-pages-wasm
+
+      - name: Prove Pages runtime in Chromium
+        run: npm run test:pages-browser
+
+      - name: Validate commit-bound Pages content and runtime manifest
+        run: cargo run --locked -p xtask -- validate-pages
+
   security:
     name: Supply-chain and release gates
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -387,11 +384,6 @@ jobs:
           fetch-depth: 0
           submodules: recursive
           persist-credentials: false
-
-      - name: Install Linux system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
@@ -409,20 +401,41 @@ jobs:
         run: cargo install cargo-semver-checks --version 0.48.0 --locked
 
       - name: Audit dependencies
-        run: cargo audit --file Cargo.lock
+        run: cargo audit --deny unsound --file Cargo.lock
 
-      - name: Verify isolated registry packaging
+      - name: Verify packaged-source consumers
         run: cargo run --locked -p xtask -- verify-packages
 
-      - name: Verify intentional public break
-        run: cargo run --locked -p xtask -- verify-semver
+      - name: Check public API compatibility
+        run: |
+          cargo semver-checks check-release --manifest-path boxdd-sys/Cargo.toml --baseline-rev a3d1e2a660abb2c930ecaad4afb46b22d062fa67 --color never
+          cargo semver-checks check-release --manifest-path boxdd/Cargo.toml --baseline-rev a3d1e2a660abb2c930ecaad4afb46b22d062fa67 --color never
+          cargo semver-checks check-release --manifest-path bevy_boxdd/Cargo.toml --baseline-rev a3d1e2a660abb2c930ecaad4afb46b22d062fa67 --color never
 
-      - name: Verify release contract and workflow policy
-        run: cargo run --locked -p xtask -- release-contract --check
+      - name: Reject the breaking API cohort as a patch release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for manifest in boxdd-sys/Cargo.toml boxdd/Cargo.toml bevy_boxdd/Cargo.toml; do
+            crate="$(basename "$(dirname "${manifest}")")"
+            log="${RUNNER_TEMP}/${crate}-semver-patch.log"
+            if cargo semver-checks check-release --manifest-path "${manifest}" --baseline-rev a3d1e2a660abb2c930ecaad4afb46b22d062fa67 --release-type patch --color never >"${log}" 2>&1; then
+              cat "${log}"
+              echo "${crate}: the 0.5-to-0.6 API break was incorrectly accepted as a patch release" >&2
+              exit 1
+            fi
+            if ! grep -Eq 'Summary semver requires new (major|minor) version: ([1-9][0-9]* major and [0-9]+ minor|[0-9]+ major and [1-9][0-9]* minor) checks failed' "${log}"; then
+              cat "${log}"
+              echo "${crate}: patch rejection did not contain a semantic-version violation summary" >&2
+              exit 1
+            fi
+            grep -E 'Summary semver requires new (major|minor) version:' "${log}"
+          done
 
   miri:
     name: Miri (pinned nightly)
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     permissions:
       contents: read
     steps:
@@ -445,6 +458,7 @@ jobs:
   sanitizers:
     name: ${{ matrix.sanitizer }} sanitizer
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     permissions:
       contents: read
     strategy:
@@ -481,13 +495,13 @@ jobs:
       - system-provider
       - lint
       - build
-      - features
       - wasm
       - provider-runtime
       - security
       - miri
       - sanitizers
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     outputs:

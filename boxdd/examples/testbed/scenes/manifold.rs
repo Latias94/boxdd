@@ -8,67 +8,96 @@ fn relative_transform(frame_a: bd::Transform, frame_b: bd::Transform) -> bd::Tra
         frame_a.inv_transform_point(frame_b.position()),
         frame_b.rotation().angle() - frame_a.rotation().angle(),
     )
+    .expect("relative testbed transforms should remain finite")
 }
 
 pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     let state = &app.manifold;
-    let kdef = bd::BodyBuilder::new()
+    let kdef = bd::BodyBuilder::from(app.foundation.body_def())
         .body_type(bd::BodyType::Kinematic)
-        .build();
+        .build()
+        .expect("valid testbed definition");
 
     let sdef = bd::ShapeDef::builder()
         .density(1.0)
         .enable_contact_events(true)
         .enable_hit_events(true)
-        .build();
+        .build()
+        .expect("valid testbed definition");
 
     // Body A
-    let a = app.world.create_body_id(
-        bd::BodyBuilder::from(kdef.clone())
-            .position([state.a_x, state.a_y])
-            .angle(state.a_angle)
-            .build(),
-    );
+    let a = app
+        .world
+        .create_body(
+            bd::BodyBuilder::from(kdef.clone())
+                .position([state.a_x, state.a_y])
+                .angle(state.a_angle)
+                .build()
+                .expect("valid testbed definition"),
+        )
+        .expect("valid testbed operation");
     app.created_bodies += 1;
-    app.world.create_polygon_shape_for(
-        a,
-        &sdef,
-        &bd::shapes::box_polygon(state.a_half_x, state.a_half_y),
-    );
+    app.world
+        .body(a)
+        .expect("valid testbed operation")
+        .create_polygon(
+            &sdef,
+            &bd::shapes::box_polygon(state.a_half_x, state.a_half_y)
+                .expect("manifold half extents are positive"),
+        )
+        .expect("valid testbed operation");
     app.created_shapes += 1;
 
     // Body B
-    let b = app.world.create_body_id(
-        bd::BodyBuilder::from(kdef)
-            .position([state.b_x, state.b_y])
-            .angle(state.b_angle)
-            .build(),
-    );
+    let b = app
+        .world
+        .create_body(
+            bd::BodyBuilder::from(kdef)
+                .position([state.b_x, state.b_y])
+                .angle(state.b_angle)
+                .build()
+                .expect("valid testbed definition"),
+        )
+        .expect("valid testbed operation");
     app.created_bodies += 1;
-    app.world.create_polygon_shape_for(
-        b,
-        &sdef,
-        &bd::shapes::box_polygon(state.b_half_x, state.b_half_y),
-    );
+    app.world
+        .body(b)
+        .expect("valid testbed operation")
+        .create_polygon(
+            &sdef,
+            &bd::shapes::box_polygon(state.b_half_x, state.b_half_y)
+                .expect("manifold half extents are positive"),
+        )
+        .expect("valid testbed operation");
     app.created_shapes += 1;
 }
 
-pub fn tick(app: &mut super::PhysicsApp) {
+pub fn tick(app: &mut super::PhysicsApp, _events: Option<&bd::StepEventsSnapshot>) {
     let state = &mut app.manifold;
-    let xf_a = bd::Transform::from_pos_angle([state.a_x, state.a_y], state.a_angle);
-    let xf_b = bd::Transform::from_pos_angle([state.b_x, state.b_y], state.b_angle);
+    let Ok(xf_a) = bd::Transform::from_pos_angle([state.a_x, state.a_y], state.a_angle) else {
+        return;
+    };
+    let Ok(xf_b) = bd::Transform::from_pos_angle([state.b_x, state.b_y], state.b_angle) else {
+        return;
+    };
 
-    let poly_a = bd::shapes::box_polygon(state.a_half_x, state.a_half_y);
-    let (m, frame_a) = match state.mode {
+    let Ok(poly_a) = bd::shapes::box_polygon(state.a_half_x, state.a_half_y) else {
+        return;
+    };
+    let (manifold, frame_a) = match state.mode {
         0 => {
-            let poly_b = bd::shapes::box_polygon(state.b_half_x, state.b_half_y);
+            let Ok(poly_b) = bd::shapes::box_polygon(state.b_half_x, state.b_half_y) else {
+                return;
+            };
             (
                 bd::collide_polygons(poly_a, poly_b, relative_transform(xf_a, xf_b)),
                 xf_a,
             )
         }
         1 => {
-            let circle_b = bd::shapes::circle([0.0, 0.0], state.b_radius);
+            let Ok(circle_b) = bd::shapes::circle([0.0, 0.0], state.b_radius) else {
+                return;
+            };
             (
                 bd::collide_polygon_and_circle(poly_a, circle_b, relative_transform(xf_a, xf_b)),
                 xf_a,
@@ -76,7 +105,10 @@ pub fn tick(app: &mut super::PhysicsApp) {
         }
         2 => {
             let half_len = state.b_half_x.max(0.1);
-            let cap_b = bd::shapes::capsule([-half_len, 0.0], [half_len, 0.0], state.b_radius);
+            let Ok(cap_b) = bd::shapes::capsule([-half_len, 0.0], [half_len, 0.0], state.b_radius)
+            else {
+                return;
+            };
             (
                 bd::collide_polygon_and_capsule(poly_a, cap_b, relative_transform(xf_a, xf_b)),
                 xf_a,
@@ -84,7 +116,9 @@ pub fn tick(app: &mut super::PhysicsApp) {
         }
         3 => {
             let seg_half = state.segment_half_len.max(0.1);
-            let seg = bd::shapes::segment([-seg_half, 0.0], [seg_half, 0.0]);
+            let Ok(seg) = bd::shapes::segment([-seg_half, 0.0], [seg_half, 0.0]) else {
+                return;
+            };
             (
                 bd::collide_segment_and_polygon(seg, poly_a, relative_transform(xf_b, xf_a)),
                 xf_b,
@@ -92,18 +126,25 @@ pub fn tick(app: &mut super::PhysicsApp) {
         }
         4 => {
             let seg_half = state.segment_half_len.max(0.1);
-            let seg = bd::shapes::segment([-seg_half, 0.0], [seg_half, 0.0]);
-            let cap = bd::shapes::capsule(
+            let Ok(seg) = bd::shapes::segment([-seg_half, 0.0], [seg_half, 0.0]) else {
+                return;
+            };
+            let Ok(cap) = bd::shapes::capsule(
                 [-state.b_half_x.max(0.1), 0.0],
                 [state.b_half_x.max(0.1), 0.0],
                 state.b_radius,
-            );
+            ) else {
+                return;
+            };
             (
                 bd::collide_segment_and_capsule(seg, cap, bd::Transform::IDENTITY),
                 xf_b,
             )
         }
-        _ => (bd::collision::LocalManifold::default(), xf_a),
+        _ => (Ok(bd::collision::LocalManifold::default()), xf_a),
+    };
+    let Ok(m) = manifold else {
+        return;
     };
 
     let points = m.points();

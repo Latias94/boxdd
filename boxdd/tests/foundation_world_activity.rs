@@ -1,53 +1,71 @@
 use boxdd::prelude::*;
-use std::collections::BTreeSet;
 use std::env;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::process::Command;
 use std::sync::{
     Arc, Barrier,
     atomic::{AtomicUsize, Ordering},
-    mpsc,
 };
 
 const MULTI_PANIC_CHILD: &str = "BOXDD_MULTI_USER_DATA_PANIC_CHILD";
 
 #[test]
-fn concurrent_worlds_hold_counted_foundation_access_and_unique_native_slots() {
+fn concurrent_worlds_hold_counted_foundation_access() {
     const WORLD_COUNT: usize = 24;
     let ready = Arc::new(Barrier::new(WORLD_COUNT + 1));
     let release = Arc::new(Barrier::new(WORLD_COUNT + 1));
-    let (ids_tx, ids_rx) = mpsc::channel();
     let mut threads = Vec::new();
 
     for _ in 0..WORLD_COUNT {
         let ready = Arc::clone(&ready);
         let release = Arc::clone(&release);
-        let ids_tx = ids_tx.clone();
         threads.push(std::thread::spawn(move || {
-            let world = World::new(WorldDef::default()).unwrap();
-            let raw = world.world_id_raw();
-            ids_tx.send((raw.index1, raw.generation)).unwrap();
+            let world = boxdd::Foundation::initialize_default()
+                .unwrap()
+                .create_world(
+                    boxdd::Foundation::get()
+                        .expect("Foundation must be initialized before constructing a WorldDef")
+                        .world_def(),
+                )
+                .unwrap();
             ready.wait();
             release.wait();
             drop(world);
         }));
     }
-    drop(ids_tx);
-
     ready.wait();
-    let ids = (0..WORLD_COUNT)
-        .map(|_| ids_rx.recv().unwrap())
-        .collect::<BTreeSet<_>>();
-    assert_eq!(ids.len(), WORLD_COUNT);
-    assert_eq!(foundation().activity().ordinary_worlds, WORLD_COUNT as u32);
-    assert_eq!(foundation().activity().transient_calls, 0);
-    assert!(!foundation().activity().replay_active);
+    assert_eq!(
+        Foundation::initialize_default()
+            .unwrap()
+            .activity()
+            .ordinary_worlds,
+        WORLD_COUNT as u32
+    );
+    assert_eq!(
+        Foundation::initialize_default()
+            .unwrap()
+            .activity()
+            .transient_calls,
+        0
+    );
+    assert!(
+        !Foundation::initialize_default()
+            .unwrap()
+            .activity()
+            .replay_active
+    );
 
     release.wait();
     for thread in threads {
         thread.join().unwrap();
     }
-    assert_eq!(foundation().activity().ordinary_worlds, 0);
+    assert_eq!(
+        Foundation::initialize_default()
+            .unwrap()
+            .activity()
+            .ordinary_worlds,
+        0
+    );
 
     struct PanicOnDrop;
     impl Drop for PanicOnDrop {
@@ -56,12 +74,23 @@ fn concurrent_worlds_hold_counted_foundation_access_and_unique_native_slots() {
         }
     }
 
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let raw = world.world_id_raw();
-    world.set_user_data(PanicOnDrop);
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    world.set_user_data(PanicOnDrop).unwrap();
     assert!(catch_unwind(AssertUnwindSafe(|| drop(world))).is_err());
-    assert!(!unsafe { boxdd_sys::ffi::b2World_IsValid(raw) });
-    assert_eq!(foundation().activity().ordinary_worlds, 0);
+    assert_eq!(
+        Foundation::initialize_default()
+            .unwrap()
+            .activity()
+            .ordinary_worlds,
+        0
+    );
 
     struct NamedPanicOnDrop(&'static str);
     impl Drop for NamedPanicOnDrop {
@@ -70,19 +99,31 @@ fn concurrent_worlds_hold_counted_foundation_access_and_unique_native_slots() {
         }
     }
 
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let raw = world.world_id_raw();
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
     let filter_drop = NamedPanicOnDrop("custom filter drop");
-    world.set_custom_filter(move |_, _| {
-        let _keep_capture_alive = &filter_drop;
-        true
-    });
+    world
+        .set_custom_filter(move |_, _| {
+            let _keep_capture_alive = &filter_drop;
+            true
+        })
+        .unwrap();
     let pre_solve_drop = NamedPanicOnDrop("pre-solve drop");
-    world.set_pre_solve(move |_, _, _, _| {
-        let _keep_capture_alive = &pre_solve_drop;
-        true
-    });
-    world.set_user_data(NamedPanicOnDrop("user data drop"));
+    world
+        .set_pre_solve(move |_, _, _, _| {
+            let _keep_capture_alive = &pre_solve_drop;
+            true
+        })
+        .unwrap();
+    world
+        .set_user_data(NamedPanicOnDrop("user data drop"))
+        .unwrap();
 
     let result = catch_unwind(AssertUnwindSafe(|| drop(world)));
     let payload = result.expect_err("the first cleanup panic must resume after teardown");
@@ -90,8 +131,13 @@ fn concurrent_worlds_hold_counted_foundation_access_and_unique_native_slots() {
         payload.downcast_ref::<&'static str>(),
         Some(&"custom filter drop")
     );
-    assert!(!unsafe { boxdd_sys::ffi::b2World_IsValid(raw) });
-    assert_eq!(foundation().activity().ordinary_worlds, 0);
+    assert_eq!(
+        Foundation::initialize_default()
+            .unwrap()
+            .activity()
+            .ordinary_worlds,
+        0
+    );
 }
 
 struct CountedDrop {
@@ -110,26 +156,51 @@ impl Drop for CountedDrop {
 
 fn run_multi_user_data_panic_child() {
     let drops = Arc::new(AtomicUsize::new(0));
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let raw = world.world_id_raw();
-    let mut body = world.create_body_owned(BodyBuilder::new().body_type(BodyType::Dynamic).build());
-    let mut shape = world.create_circle_shape_for_owned(
-        body.id(),
-        &ShapeDef::default(),
-        &shapes::circle([0.0_f32, 0.0], 0.5),
-    );
-    world.set_user_data(CountedDrop {
-        count: Arc::clone(&drops),
-        panic_message: Some("first user-data panic"),
-    });
-    body.set_user_data(CountedDrop {
-        count: Arc::clone(&drops),
-        panic_message: Some("second user-data panic"),
-    });
-    shape.set_user_data(CountedDrop {
-        count: Arc::clone(&drops),
-        panic_message: None,
-    });
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let body_id = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_builder()
+                .body_type(BodyType::Dynamic)
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    let shape_id = world
+        .body(body_id)
+        .unwrap()
+        .create_centered_circle(&ShapeDef::default(), 0.5)
+        .unwrap();
+    world
+        .set_user_data(CountedDrop {
+            count: Arc::clone(&drops),
+            panic_message: Some("first user-data panic"),
+        })
+        .unwrap();
+    world
+        .body(body_id)
+        .unwrap()
+        .set_user_data(CountedDrop {
+            count: Arc::clone(&drops),
+            panic_message: Some("second user-data panic"),
+        })
+        .unwrap();
+    world
+        .shape(shape_id)
+        .unwrap()
+        .set_user_data(CountedDrop {
+            count: Arc::clone(&drops),
+            panic_message: None,
+        })
+        .unwrap();
 
     let result = catch_unwind(AssertUnwindSafe(|| drop(world)));
     let payload = result.expect_err("the first user-data panic must resume after cleanup");
@@ -138,51 +209,89 @@ fn run_multi_user_data_panic_child() {
         Some(&"first user-data panic")
     );
     assert_eq!(drops.load(Ordering::SeqCst), 3);
-    assert!(!unsafe { boxdd_sys::ffi::b2World_IsValid(raw) });
-    assert_eq!(foundation().activity().ordinary_worlds, 0);
-
-    drop(shape);
-    drop(body);
+    assert_eq!(
+        Foundation::initialize_default()
+            .unwrap()
+            .activity()
+            .ordinary_worlds,
+        0
+    );
 
     let drops = Arc::new(AtomicUsize::new(0));
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let mut body = world.create_body_owned(BodyBuilder::new().body_type(BodyType::Dynamic).build());
-    let body_id = body.id();
-    let circle = shapes::circle([0.0_f32, 0.0], 0.5);
-    let mut first_shape =
-        world.create_circle_shape_for_owned(body_id, &ShapeDef::default(), &circle);
-    let mut second_shape =
-        world.create_circle_shape_for_owned(body_id, &ShapeDef::default(), &circle);
-    body.set_user_data(CountedDrop {
-        count: Arc::clone(&drops),
-        panic_message: Some("first object user-data panic"),
-    });
-    first_shape.set_user_data(CountedDrop {
-        count: Arc::clone(&drops),
-        panic_message: Some("second object user-data panic"),
-    });
-    second_shape.set_user_data(CountedDrop {
-        count: Arc::clone(&drops),
-        panic_message: None,
-    });
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let body_id = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_builder()
+                .body_type(BodyType::Dynamic)
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    let (first_shape, second_shape) = {
+        let mut body = world.body(body_id).unwrap();
+        body.set_user_data(CountedDrop {
+            count: Arc::clone(&drops),
+            panic_message: Some("first object user-data panic"),
+        })
+        .unwrap();
+        let first = body
+            .create_centered_circle(&ShapeDef::default(), 0.5)
+            .unwrap();
+        let second = body
+            .create_centered_circle(&ShapeDef::default(), 0.5)
+            .unwrap();
+        (first, second)
+    };
+    world
+        .shape(first_shape)
+        .unwrap()
+        .set_user_data(CountedDrop {
+            count: Arc::clone(&drops),
+            panic_message: Some("second object user-data panic"),
+        })
+        .unwrap();
+    world
+        .shape(second_shape)
+        .unwrap()
+        .set_user_data(CountedDrop {
+            count: Arc::clone(&drops),
+            panic_message: None,
+        })
+        .unwrap();
 
-    let result = catch_unwind(AssertUnwindSafe(|| body.destroy()));
+    let result = catch_unwind(AssertUnwindSafe(|| world.body(body_id).unwrap().destroy()));
     let payload = result.expect_err("the first object user-data panic must resume after cleanup");
     assert_eq!(
         payload.downcast_ref::<&'static str>(),
         Some(&"first object user-data panic")
     );
     assert_eq!(drops.load(Ordering::SeqCst), 3);
+    assert_eq!(world.body(body_id).err().unwrap(), Error::InvalidBodyId);
     assert_eq!(
-        world.try_body_position(body_id),
-        Err(ApiError::InvalidBodyId)
+        Foundation::initialize_default()
+            .unwrap()
+            .activity()
+            .ordinary_worlds,
+        1
     );
-    assert_eq!(foundation().activity().ordinary_worlds, 1);
 
-    drop(first_shape);
-    drop(second_shape);
     drop(world);
-    assert_eq!(foundation().activity().ordinary_worlds, 0);
+    assert_eq!(
+        Foundation::initialize_default()
+            .unwrap()
+            .activity()
+            .ordinary_worlds,
+        0
+    );
 }
 
 #[test]

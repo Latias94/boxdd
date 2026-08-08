@@ -5,6 +5,9 @@ edition = "2024"
 publish = false
 
 [dependencies]
-boxdd = { version = "=0.0.0-BOXDD-VERSION", registry = "boxdd-local" }
+boxdd = { version = "0" }
+
+[features]
+double-precision = ["boxdd/double-precision"]
 
 [workspace]

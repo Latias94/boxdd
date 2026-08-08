@@ -1,520 +1,728 @@
-//! Event snapshots and zero-copy visitors.
+//! Lazy, borrow-scoped event access for one completed simulation step.
 //!
-//! - Snapshot getters like `body_events`, `sensor_events`, `contact_events`, `joint_events`
-//!   clone the Rust-owned snapshot captured when the latest world step completed.
-//! - Reusable-buffer snapshot getters like `*_events_into` reuse caller-owned storage for the same
-//!   owned event data.
-//! - Safe zero-copy visitors borrow the Rust-owned completed-step snapshot for the duration of the
-//!   closure. They never dereference Box2D's transient event buffers after world mutation.
-//! - Owned snapshot getters are available on both [`crate::World`] and `WorldHandle`.
-//! - Borrowed zero-copy views and raw event-buffer access intentionally stay on [`crate::World`]:
-//!   the safe views preserve the world's deferred-destroy flush semantics, while unsafe raw access
-//!   remains tied directly to Box2D's transient buffers.
+//! `World::step` does not fetch any native event buffer. A [`CompletedStep`] fetches and binds one
+//! event family only when that family is requested, keeps the mapped storage borrowed while it is
+//! viewed, and reuses the same allocation on later steps.
 
-use crate::id::{ContactEpoch, IdBrand};
+use crate::core::world_core::WorldCore;
+use crate::error::{Error, Result};
+use crate::id::ContactEpoch;
+use crate::world::OwnerAdapter;
 use boxdd_sys::ffi;
-use std::cell::{Ref, RefCell};
-
-/// Run a closure over a native output array after validating its count/pointer pair.
-///
-/// Box2D's event APIs guarantee a non-negative count and a non-null pointer for non-empty
-/// arrays. Treating a broken pair as an empty array would hide an ABI violation and can turn
-/// a later ID conversion into misleading state, so the checked boundary fails immediately.
-#[inline]
-pub(super) unsafe fn with_ffi_slice<T, R>(
-    pointer: *const T,
-    count: i32,
-    f: impl FnOnce(&[T]) -> R,
-) -> R {
-    let len = checked_ffi_slice_len(
-        pointer.cast::<u8>(),
-        count,
-        core::mem::size_of::<T>(),
-        core::mem::align_of::<T>(),
-    );
-    if len == 0 {
-        return f(&[]);
-    }
-    // SAFETY: The caller is crossing the documented Box2D event-output boundary. The count and
-    // pointer invariants were checked above, and the closure cannot outlive this call. The caller
-    // remains responsible for the allocation, initialization, and aliasing guarantees that cannot
-    // be reconstructed from a C pointer/count pair.
-    let slice = unsafe { core::slice::from_raw_parts(pointer, len) };
-    f(slice)
-}
-
-#[inline]
-fn checked_ffi_slice_len(
-    pointer: *const u8,
-    count: i32,
-    element_size: usize,
-    element_align: usize,
-) -> usize {
-    assert!(count >= 0, "Box2D returned a negative event count");
-    let len = count as usize;
-    if len == 0 {
-        return 0;
-    }
-
-    assert!(!pointer.is_null(), "Box2D returned a null event pointer");
-    assert!(
-        pointer.addr().is_multiple_of(element_align),
-        "Box2D returned a misaligned event pointer"
-    );
-    let byte_span = len
-        .checked_mul(element_size)
-        .filter(|span| *span <= isize::MAX as usize)
-        .expect("Box2D returned an event array larger than Rust permits");
-    assert!(
-        pointer.addr().checked_add(byte_span).is_some(),
-        "Box2D returned an event array whose address range wraps"
-    );
-    len
-}
-
-#[inline]
-fn map_snapshot_into<TRaw, T>(out: &mut Vec<T>, slice: &[TRaw], map: impl FnMut(&TRaw) -> T) {
-    out.clear();
-    if out.capacity() < slice.len() {
-        out.reserve(slice.len());
-    }
-    out.extend(slice.iter().map(map));
-}
-
-/// Refill an owned event vector from one checked native pointer/count pair.
-///
-/// Taking and returning the vector makes the ownership transfer explicit to the typed event slot,
-/// while `map_snapshot_into` preserves its allocation across completed steps.
-#[inline]
-unsafe fn capture_ffi_vec<TRaw, T>(
-    mut out: Vec<T>,
-    pointer: *const TRaw,
-    count: i32,
-    map: impl FnMut(&TRaw) -> T,
-) -> Vec<T> {
-    // SAFETY: The caller provides one Box2D-owned event pointer/count pair and consumes every
-    // element before the next world mutation.
-    unsafe {
-        with_ffi_slice(pointer, count, |slice| {
-            map_snapshot_into(&mut out, slice, map);
-        });
-    }
-    out
-}
+use std::cell::{Cell, UnsafeCell};
 
 mod body;
 mod contact;
 mod joint;
 mod sensor;
 
-#[derive(Default)]
-struct EventSnapshot {
-    body: body::BodyEventSlot,
-    contact: contact::ContactEvents,
-    joint: joint::JointEventSlot,
-    sensor: sensor::SensorEvents,
+pub use body::{BodyEvents, BodyMoveEvent};
+pub use contact::{
+    ContactBeginTouchEvent, ContactEndTouchEvent, ContactEvents, ContactEventsView, ContactHitEvent,
+};
+pub use joint::{JointEvent, JointEvents};
+pub use sensor::{SensorBeginTouchEvent, SensorEndTouchEvent, SensorEvents, SensorEventsView};
+
+#[derive(Copy, Clone, Default)]
+enum Materialization {
+    #[default]
+    Unfetched,
+    Fetching,
+    Ready,
+    Failed(Error),
 }
 
-/// The four native event containers observed at one completed-step boundary.
-///
-/// The pointers remain transient; this value is consumed immediately by `EventSnapshot` before
-/// any deferred destruction can mutate the Box2D world.
-struct RawEventSnapshot {
-    body: ffi::b2BodyEvents,
-    contact: ffi::b2ContactEvents,
-    joint: ffi::b2JointEvents,
-    sensor: ffi::b2SensorEvents,
+struct LazyEventSlot<T> {
+    state: Cell<Materialization>,
+    value: UnsafeCell<T>,
 }
 
-impl RawEventSnapshot {
-    fn capture(world: ffi::b2WorldId) -> Self {
-        // SAFETY: `World::step` invokes this after `b2World_Step` and before any subsequent world
-        // mutation. Each returned container is copied by value and consumed synchronously.
-        unsafe {
-            Self {
-                body: ffi::b2World_GetBodyEvents(world),
-                contact: ffi::b2World_GetContactEvents(world),
-                joint: ffi::b2World_GetJointEvents(world),
-                sensor: ffi::b2World_GetSensorEvents(world),
-            }
+impl<T: Default> Default for LazyEventSlot<T> {
+    fn default() -> Self {
+        Self {
+            state: Cell::new(Materialization::Unfetched),
+            value: UnsafeCell::new(T::default()),
         }
     }
 }
 
-impl EventSnapshot {
-    fn capture_into(
-        mut self,
-        raw: RawEventSnapshot,
-        brand: IdBrand,
-        contact_epoch: ContactEpoch,
-    ) -> Self {
-        self.body = body::BodyEventSlot::capture_into(self.body, raw.body, brand);
-        self.contact =
-            contact::ContactEvents::capture_into(self.contact, raw.contact, brand, contact_epoch);
-        self.joint = joint::JointEventSlot::capture_into(self.joint, raw.joint, brand);
-        self.sensor = sensor::SensorEvents::capture_into(self.sensor, raw.sensor, brand);
-        self
+impl<T> LazyEventSlot<T> {
+    fn reset(&self) {
+        self.state.set(Materialization::Unfetched);
+    }
+
+    fn get_or_materialize(&self, fetch: impl FnOnce(&mut T) -> Result<()>) -> Result<&T> {
+        match self.state.get() {
+            Materialization::Ready => return Ok(self.value()),
+            Materialization::Failed(error) => return Err(error),
+            Materialization::Fetching => return Err(Error::ReentrantAccess),
+            Materialization::Unfetched => {}
+        }
+
+        self.state.set(Materialization::Fetching);
+        let mut reset_on_unwind = FetchReset {
+            state: &self.state,
+            armed: true,
+        };
+        // SAFETY: `Unfetched` proves this slot has issued no reference for the current step.
+        // `CompletedStep` exclusively borrows the owner, so another step cannot reset and mutate
+        // this storage while a returned view is live. Leaking a view and its capability makes the
+        // references inaccessible before Safe Rust can borrow the owner again.
+        let result = fetch(unsafe { &mut *self.value.get() });
+        match result {
+            Ok(()) => self.state.set(Materialization::Ready),
+            Err(error) => self.state.set(Materialization::Failed(error)),
+        }
+        reset_on_unwind.armed = false;
+        result?;
+        Ok(self.value())
+    }
+
+    fn value(&self) -> &T {
+        // SAFETY: Values are mutated only during `Fetching`, before `Ready` is published. See the
+        // exclusive completed-step invariant in `get_or_materialize`.
+        unsafe { &*self.value.get() }
     }
 }
 
-/// Shared cache of the event data from the latest completed world step.
-///
-/// Box2D owns its event arrays and may invalidate them as soon as the world is mutated. Keeping the
-/// copy at the `World` boundary lets both `World` and `WorldHandle` expose safe event APIs without
-/// extending the native buffers' lifetime.
-#[derive(Default)]
-pub(crate) struct EventCache {
-    state: RefCell<EventCacheState>,
+struct FetchReset<'a> {
+    state: &'a Cell<Materialization>,
+    armed: bool,
 }
 
-#[derive(Default)]
-struct EventCacheState {
-    current: EventSnapshot,
-    staging: EventSnapshot,
+impl Drop for FetchReset<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            self.state.set(Materialization::Unfetched);
+        }
+    }
 }
 
-impl EventCache {
+/// Reusable event storage owned by one world.
+#[derive(Default)]
+pub(crate) struct EventStorage {
+    body: LazyEventSlot<Vec<BodyMoveEvent>>,
+    contact: LazyEventSlot<ContactEvents>,
+    joint: LazyEventSlot<Vec<JointEvent>>,
+    sensor: LazyEventSlot<SensorEvents>,
+    #[cfg(test)]
+    getter_calls: [Cell<usize>; 4],
+}
+
+impl EventStorage {
+    pub(crate) fn begin_step(&self) {
+        self.body.reset();
+        self.contact.reset();
+        self.joint.reset();
+        self.sensor.reset();
+        #[cfg(test)]
+        for count in &self.getter_calls {
+            count.set(0);
+        }
+    }
+
     pub(crate) fn invalidate(&self) {
-        let mut state = self.state.borrow_mut();
-        state.current = EventSnapshot::default();
-        state.staging = EventSnapshot::default();
+        self.begin_step();
     }
 
-    fn snapshot(&self) -> Ref<'_, EventSnapshot> {
-        std::cell::Ref::map(self.state.borrow(), |state| &state.current)
+    fn body(&self, core: &WorldCore) -> Result<&Vec<BodyMoveEvent>> {
+        self.body.get_or_materialize(|out| {
+            // SAFETY: `CompletedStep` prevents another owner operation from invalidating Box2D's
+            // transient buffer until this call has copied it into reusable Rust storage.
+            let raw = self.get_body_events(core.id);
+            body::capture(out, raw, core)
+        })
     }
 
-    fn take_staging(&self) -> EventSnapshot {
-        core::mem::take(&mut self.state.borrow_mut().staging)
+    fn contact(&self, core: &WorldCore, contact_epoch: ContactEpoch) -> Result<&ContactEvents> {
+        self.contact.get_or_materialize(|out| {
+            // SAFETY: See `body`; all three arrays belong to this completed step.
+            let raw = self.get_contact_events(core.id);
+            contact::capture(out, raw, core, contact_epoch)
+        })
     }
 
-    fn publish(&self, mut next: EventSnapshot) {
-        let mut state = self.state.borrow_mut();
-        std::mem::swap(&mut state.current, &mut next);
-        state.staging = next;
+    fn joint(&self, core: &WorldCore) -> Result<&Vec<JointEvent>> {
+        self.joint.get_or_materialize(|out| {
+            // SAFETY: See `body`.
+            let raw = self.get_joint_events(core.id);
+            joint::capture(out, raw, core)
+        })
+    }
+
+    fn sensor(&self, core: &WorldCore) -> Result<&SensorEvents> {
+        self.sensor.get_or_materialize(|out| {
+            // SAFETY: See `body`; both arrays belong to this completed step.
+            let raw = self.get_sensor_events(core.id);
+            sensor::capture(out, raw, core)
+        })
+    }
+
+    #[inline]
+    fn get_body_events(&self, world: ffi::b2WorldId) -> ffi::b2BodyEvents {
+        self.record_getter(0);
+        unsafe { ffi::b2World_GetBodyEvents(world) }
+    }
+
+    #[inline]
+    fn get_contact_events(&self, world: ffi::b2WorldId) -> ffi::b2ContactEvents {
+        self.record_getter(1);
+        unsafe { ffi::b2World_GetContactEvents(world) }
+    }
+
+    #[inline]
+    fn get_joint_events(&self, world: ffi::b2WorldId) -> ffi::b2JointEvents {
+        self.record_getter(2);
+        unsafe { ffi::b2World_GetJointEvents(world) }
+    }
+
+    #[inline]
+    fn get_sensor_events(&self, world: ffi::b2WorldId) -> ffi::b2SensorEvents {
+        self.record_getter(3);
+        unsafe { ffi::b2World_GetSensorEvents(world) }
+    }
+
+    #[inline]
+    fn record_getter(&self, family: usize) {
+        #[cfg(test)]
+        self.getter_calls[family].set(
+            self.getter_calls[family]
+                .get()
+                .checked_add(1)
+                .expect("event getter test counter overflow"),
+        );
+        #[cfg(not(test))]
+        let _ = family;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn getter_calls_for_test(&self) -> [usize; 4] {
+        self.getter_calls.each_ref().map(Cell::get)
     }
 }
 
-pub(crate) fn capture_completed_step(
-    cache: &EventCache,
-    world: ffi::b2WorldId,
-    brand: IdBrand,
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+enum PublicationPhase {
+    Idle,
+    Pending,
+    Published,
+}
+
+/// World-owned state for one lazily materialized completed step.
+///
+/// Publication and retired output identities are one transaction: a pending publication rolls
+/// both back on unwind or recording postflight failure, while a published capability retires both
+/// on drop or at the next owner operation.
+pub(crate) struct CompletedStepState {
+    phase: Cell<PublicationPhase>,
+    storage: EventStorage,
+}
+
+impl Default for CompletedStepState {
+    fn default() -> Self {
+        Self {
+            phase: Cell::new(PublicationPhase::Idle),
+            storage: EventStorage::default(),
+        }
+    }
+}
+
+impl CompletedStepState {
+    pub(crate) fn begin_step(&self) {
+        debug_assert_eq!(self.phase.get(), PublicationPhase::Idle);
+        self.storage.begin_step();
+    }
+
+    pub(crate) fn publish_pending<'world>(
+        &'world self,
+        core: &'world WorldCore,
+        contact_epoch: ContactEpoch,
+    ) -> PendingStepPublication<'world> {
+        let previous = self.phase.replace(PublicationPhase::Pending);
+        debug_assert_eq!(previous, PublicationPhase::Idle);
+        PendingStepPublication {
+            state: self,
+            core,
+            contact_epoch,
+            armed: true,
+        }
+    }
+
+    pub(crate) fn retire(&self, core: &WorldCore) {
+        if self.phase.replace(PublicationPhase::Idle) == PublicationPhase::Idle {
+            return;
+        }
+        core.release_completed_step_outputs();
+    }
+
+    pub(crate) fn invalidate(&self, core: &WorldCore) {
+        self.retire(core);
+        self.storage.invalidate();
+    }
+
+    pub(crate) fn storage(&self) -> &EventStorage {
+        &self.storage
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_active_for_test(&self) -> bool {
+        self.phase.get() != PublicationPhase::Idle
+    }
+}
+
+/// A native step whose transient outputs are not yet visible through Safe Rust.
+///
+/// Recording keeps this guard alive through its native writer postflight check. Any early return
+/// or unwind retires the native outputs before a `CompletedStep` can be constructed.
+pub(crate) struct PendingStepPublication<'world> {
+    state: &'world CompletedStepState,
+    core: &'world WorldCore,
     contact_epoch: ContactEpoch,
-) {
-    // No Box2D mutation may occur between these reads. `World::step` calls this immediately
-    // after b2World_Step returns and before deferred destruction is flushed.
-    // Detaching staging first preserves capacity reuse. `publish` is reached only after every
-    // typed slot has completed, so validation/allocation panics cannot expose a mixed-step view.
-    cache.publish(EventSnapshot::capture_into(
-        cache.take_staging(),
-        RawEventSnapshot::capture(world),
-        brand,
-        contact_epoch,
-    ));
+    armed: bool,
 }
 
-pub use body::BodyMoveEvent;
-pub use contact::{ContactBeginTouchEvent, ContactEndTouchEvent, ContactEvents, ContactHitEvent};
-pub use joint::JointEvent;
-pub use sensor::{SensorBeginTouchEvent, SensorEndTouchEvent, SensorEvents};
+impl PendingStepPublication<'_> {
+    pub(crate) fn commit(mut self) -> ContactEpoch {
+        let previous = self.state.phase.replace(PublicationPhase::Published);
+        debug_assert_eq!(previous, PublicationPhase::Pending);
+        self.armed = false;
+        self.contact_epoch
+    }
+}
+
+impl Drop for PendingStepPublication<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            self.state.retire(self.core);
+        }
+    }
+}
+
+/// The event families produced by one world step that reached native simulation.
+///
+/// This capability owns a real exclusive borrow of the ordinary world or recording session which
+/// stepped it. It exposes no mutable world access, so Box2D's transient event buffers remain valid
+/// until the capability ends. Dropping the value retires that state immediately; forgetting it is
+/// still harmless because the next owner operation retires it explicitly.
+///
+/// [`Self::post_step_error`] reports a callback, task, or recording-writer failure discovered
+/// after Box2D advanced. An outer error from `World::step` or `RecordingSession::step` therefore
+/// always means native simulation was not called.
+#[must_use = "inspect the post-step error and event families, or explicitly drop the completed step"]
+pub struct CompletedStep<'owner> {
+    owner: &'owner mut dyn OwnerAdapter,
+    contact_epoch: ContactEpoch,
+    post_step_error: Option<crate::Error>,
+}
+
+impl core::fmt::Debug for CompletedStep<'_> {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("CompletedStep")
+            .field("post_step_error", &self.post_step_error)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Drop for CompletedStep<'_> {
+    fn drop(&mut self) {
+        self.owner
+            .capability_completed_step()
+            .retire(self.owner.capability_core());
+    }
+}
+
+impl<'owner> CompletedStep<'owner> {
+    pub(crate) fn after_validated_step(
+        owner: &'owner mut impl OwnerAdapter,
+        contact_epoch: ContactEpoch,
+        post_step_error: Option<crate::Error>,
+    ) -> Self {
+        Self {
+            owner,
+            contact_epoch,
+            post_step_error,
+        }
+    }
+
+    /// Returns a failure discovered after native simulation advanced.
+    ///
+    /// Event families remain available for ordinary worlds. A recording-writer failure is sticky,
+    /// so event materialization through that recording session also returns the writer error.
+    pub const fn post_step_error(&self) -> Option<crate::Error> {
+        self.post_step_error
+    }
+
+    /// Restores the traditional result-first projection.
+    ///
+    /// On error this drops the completed-step capability and retires its transient outputs. Use
+    /// [`Self::post_step_error`] when the caller must still publish events or synchronize state
+    /// after native advancement.
+    pub fn into_result(self) -> Result<Self> {
+        match self.post_step_error {
+            Some(error) => Err(error),
+            None => Ok(self),
+        }
+    }
+
+    fn check_owner_status(&self) -> Result<()> {
+        // The ordinary capability preflight is an owner boundary and would retire this completed
+        // step. For the two sealed owners, postflight is the non-retiring writer-status check.
+        // Native event getters and Rust-side mapping are read-only with respect to the owner, so
+        // one check before entering that path is sufficient.
+        crate::core::callback_state::check_not_in_callback()?;
+        self.owner.capability_postflight()
+    }
+
+    /// Borrow mapped body-move events, fetching this native family at most once.
+    pub fn body_events(&self) -> Result<BodyEvents<'_>> {
+        self.check_owner_status()?;
+        let events = self
+            .owner
+            .capability_completed_step()
+            .storage()
+            .body(self.owner.capability_core())?;
+        Ok(BodyEvents::new(events))
+    }
+
+    /// Borrow mapped contact events, fetching this native family at most once.
+    pub fn contact_events(&self) -> Result<ContactEventsView<'_>> {
+        self.check_owner_status()?;
+        let events = self
+            .owner
+            .capability_completed_step()
+            .storage()
+            .contact(self.owner.capability_core(), self.contact_epoch)?;
+        Ok(ContactEventsView::new(events))
+    }
+
+    /// Borrow mapped joint events, fetching this native family at most once.
+    pub fn joint_events(&self) -> Result<JointEvents<'_>> {
+        self.check_owner_status()?;
+        let events = self
+            .owner
+            .capability_completed_step()
+            .storage()
+            .joint(self.owner.capability_core())?;
+        Ok(JointEvents::new(events))
+    }
+
+    /// Borrow mapped sensor events, fetching this native family at most once.
+    pub fn sensor_events(&self) -> Result<SensorEventsView<'_>> {
+        self.check_owner_status()?;
+        let events = self
+            .owner
+            .capability_completed_step()
+            .storage()
+            .sensor(self.owner.capability_core())?;
+        Ok(SensorEventsView::new(events))
+    }
+
+    /// Materialize every family and detach an owned snapshot from the world borrow.
+    pub fn to_owned(&self) -> Result<StepEventsSnapshot> {
+        Ok(StepEventsSnapshot {
+            body: self.body_events()?.to_owned()?,
+            contact: self.contact_events()?.to_owned()?,
+            joint: self.joint_events()?.to_owned()?,
+            sensor: self.sensor_events()?.to_owned()?,
+        })
+    }
+}
+
+/// An owned event snapshot which remains valid after the world is mutated again.
+#[derive(Clone, Debug, Default)]
+pub struct StepEventsSnapshot {
+    pub body: Vec<BodyMoveEvent>,
+    pub contact: ContactEvents,
+    pub joint: Vec<JointEvent>,
+    pub sensor: SensorEvents,
+}
+
+/// Validate and borrow one transient native pointer/count pair.
+#[inline]
+unsafe fn ffi_slice<'a, T>(pointer: *const T, count: i32) -> Result<&'a [T]> {
+    if count < 0 {
+        return Err(Error::NegativeFfiOutputCount { count });
+    }
+    let len = count as usize;
+    if len == 0 {
+        return Ok(&[]);
+    }
+    if pointer.is_null()
+        || !pointer.addr().is_multiple_of(core::mem::align_of::<T>())
+        || len
+            .checked_mul(core::mem::size_of::<T>())
+            .filter(|bytes| *bytes <= isize::MAX as usize)
+            .and_then(|bytes| pointer.addr().checked_add(bytes))
+            .is_none()
+    {
+        return Err(Error::InvalidNativeEventBuffer);
+    }
+    // SAFETY: The checked pointer/count pair comes from Box2D's completed-step output and the
+    // caller consumes the returned slice before another native owner operation can run.
+    Ok(unsafe { core::slice::from_raw_parts(pointer, len) })
+}
+
+fn prepare_mapped<T>(out: &mut Vec<T>, len: usize) -> Result<()> {
+    out.clear();
+    out.try_reserve(len)
+        .map_err(|_| Error::FfiOutputAllocationFailed)
+}
+
+fn extend_mapped<TRaw, T>(
+    out: &mut Vec<T>,
+    raw: &[TRaw],
+    mut map: impl FnMut(&TRaw) -> Result<T>,
+) -> Result<()> {
+    debug_assert!(out.capacity() >= raw.len());
+    for value in raw {
+        match map(value) {
+            Ok(value) => out.push(value),
+            Err(error) => {
+                out.clear();
+                return Err(error);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn clone_into<T: Clone>(source: &[T], out: &mut Vec<T>) -> Result<()> {
+    out.clear();
+    out.try_reserve(source.len())
+        .map_err(|_| Error::FfiOutputAllocationFailed)?;
+    out.extend_from_slice(source);
+    Ok(())
+}
+
+fn to_owned<T: Clone>(source: &[T]) -> Result<Vec<T>> {
+    let mut out = Vec::new();
+    clone_into(source, &mut out)?;
+    Ok(out)
+}
 
 #[cfg(test)]
 mod tests {
-    use crate::{ApiError, ContactEvents, SensorEvents, World, WorldDef};
-
-    fn empty_raw_snapshot() -> super::RawEventSnapshot {
-        super::RawEventSnapshot {
-            body: super::ffi::b2BodyEvents {
-                moveEvents: core::ptr::null_mut(),
-                moveCount: 0,
-            },
-            contact: super::ffi::b2ContactEvents {
-                beginEvents: core::ptr::null_mut(),
-                endEvents: core::ptr::null_mut(),
-                hitEvents: core::ptr::null_mut(),
-                beginCount: 0,
-                endCount: 0,
-                hitCount: 0,
-            },
-            joint: super::ffi::b2JointEvents {
-                jointEvents: core::ptr::null_mut(),
-                count: 0,
-            },
-            sensor: super::ffi::b2SensorEvents {
-                beginEvents: core::ptr::null_mut(),
-                endEvents: core::ptr::null_mut(),
-                beginCount: 0,
-                endCount: 0,
-            },
-        }
-    }
+    use super::*;
 
     #[test]
-    fn snapshot_map_grows_from_existing_capacity_to_the_full_input() {
-        let input = [5_u8; 10];
-        let mut out = Vec::with_capacity(8);
-
-        super::map_snapshot_into(&mut out, &input, |value| u16::from(*value));
-
-        assert!(out.capacity() >= 10);
-        assert_eq!(out, vec![5_u16; 10]);
-    }
-
-    #[test]
-    fn ffi_slice_accepts_empty_null_and_rejects_broken_pairs() {
-        let empty =
-            unsafe { super::with_ffi_slice::<u32, _>(core::ptr::null(), 0, |slice| slice.len()) };
-        assert_eq!(empty, 0);
-
-        let values = [1_u32, 2, 3];
-        let sum = unsafe {
-            super::with_ffi_slice(values.as_ptr(), values.len() as i32, |slice| {
-                slice.iter().sum::<u32>()
-            })
-        };
-        assert_eq!(sum, 6);
-
-        let null_non_empty = std::panic::catch_unwind(|| unsafe {
-            super::with_ffi_slice::<u32, _>(core::ptr::null(), 1, |_| ())
-        });
-        assert!(null_non_empty.is_err());
-
-        let negative = std::panic::catch_unwind(|| unsafe {
-            super::with_ffi_slice::<u32, _>(core::ptr::NonNull::dangling().as_ptr(), -1, |_| ())
-        });
-        assert!(negative.is_err());
-
-        let aligned = core::ptr::NonNull::<u32>::dangling().as_ptr();
-        let misaligned = aligned.cast::<u8>().wrapping_add(1).cast::<u32>();
-        let misaligned_non_empty = std::panic::catch_unwind(|| unsafe {
-            super::with_ffi_slice::<u32, _>(misaligned, 1, |_| ())
-        });
-        assert!(misaligned_non_empty.is_err());
-
-        let oversized = std::panic::catch_unwind(|| {
-            super::checked_ffi_slice_len(
-                core::ptr::NonNull::<u64>::dangling().as_ptr().cast(),
-                2,
-                usize::MAX,
-                core::mem::align_of::<u64>(),
-            )
-        });
-        assert!(oversized.is_err());
-    }
-
-    #[test]
-    fn typed_event_capture_reuses_every_staging_allocation() {
-        let world = World::new(WorldDef::default()).unwrap();
-        let staging = super::EventSnapshot {
-            body: super::body::BodyEventSlot {
-                values: Vec::with_capacity(3),
-            },
-            contact: ContactEvents {
-                begin: Vec::with_capacity(5),
-                end: Vec::with_capacity(7),
-                hit: Vec::with_capacity(11),
-            },
-            joint: super::joint::JointEventSlot {
-                values: Vec::with_capacity(13),
-            },
-            sensor: SensorEvents {
-                begin: Vec::with_capacity(17),
-                end: Vec::with_capacity(19),
-            },
-        };
-        let pointers = (
-            staging.body.values.as_ptr(),
-            staging.contact.begin.as_ptr(),
-            staging.contact.end.as_ptr(),
-            staging.contact.hit.as_ptr(),
-            staging.joint.values.as_ptr(),
-            staging.sensor.begin.as_ptr(),
-            staging.sensor.end.as_ptr(),
+    fn empty_null_slice_is_valid_and_broken_pairs_are_rejected() {
+        let empty = unsafe { ffi_slice::<u32>(core::ptr::null(), 0) }.unwrap();
+        assert!(empty.is_empty());
+        assert_eq!(
+            unsafe { ffi_slice::<u32>(core::ptr::null(), 1) },
+            Err(Error::InvalidNativeEventBuffer)
         );
-
-        let captured = super::EventSnapshot::capture_into(
-            staging,
-            empty_raw_snapshot(),
-            world.brand(),
-            world.core().contact_epoch(),
+        assert_eq!(
+            unsafe { ffi_slice::<u32>(core::ptr::null(), -1) },
+            Err(Error::NegativeFfiOutputCount { count: -1 })
         );
-
-        assert_eq!(captured.body.values.as_ptr(), pointers.0);
-        assert_eq!(captured.contact.begin.as_ptr(), pointers.1);
-        assert_eq!(captured.contact.end.as_ptr(), pointers.2);
-        assert_eq!(captured.contact.hit.as_ptr(), pointers.3);
-        assert_eq!(captured.joint.values.as_ptr(), pointers.4);
-        assert_eq!(captured.sensor.begin.as_ptr(), pointers.5);
-        assert_eq!(captured.sensor.end.as_ptr(), pointers.6);
     }
 
     #[test]
-    fn failed_typed_event_capture_keeps_published_snapshot() {
-        let world = World::new(WorldDef::default()).unwrap();
-        let cache = super::EventCache::default();
-        {
-            let mut state = cache.state.borrow_mut();
-            state.current.contact.begin = Vec::with_capacity(5);
-            state.current.sensor.end = Vec::with_capacity(7);
-            state.staging.body.values = Vec::with_capacity(11);
-        }
-        let published = {
-            let state = cache.state.borrow();
-            (
-                state.current.contact.begin.as_ptr(),
-                state.current.contact.begin.capacity(),
-                state.current.sensor.end.as_ptr(),
-                state.current.sensor.end.capacity(),
-            )
-        };
-        let mut invalid = empty_raw_snapshot();
-        invalid.body.moveCount = 1;
+    fn failed_materialization_is_cached() {
+        let slot = LazyEventSlot::<Vec<BodyMoveEvent>>::default();
+        let calls = Cell::new(0);
 
-        let capture = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            cache.publish(super::EventSnapshot::capture_into(
-                cache.take_staging(),
-                invalid,
-                world.brand(),
-                world.core().contact_epoch(),
-            ));
+        let first = slot.get_or_materialize(|_| {
+            calls.set(calls.get() + 1);
+            Err(Error::InvalidNativeEventBuffer)
+        });
+        let second = slot.get_or_materialize(|_| panic!("a failed slot must not be fetched twice"));
+
+        assert_eq!(first.unwrap_err(), Error::InvalidNativeEventBuffer);
+        assert_eq!(second.unwrap_err(), Error::InvalidNativeEventBuffer);
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn panicked_materialization_can_be_retried() {
+        let slot = LazyEventSlot::<Vec<BodyMoveEvent>>::default();
+        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = slot.get_or_materialize(|_| -> Result<()> {
+                panic!("injected event materialization panic")
+            });
         }));
 
-        assert!(capture.is_err());
-        let state = cache.state.borrow();
-        assert_eq!(state.current.contact.begin.as_ptr(), published.0);
-        assert_eq!(state.current.contact.begin.capacity(), published.1);
-        assert_eq!(state.current.sensor.end.as_ptr(), published.2);
-        assert_eq!(state.current.sensor.end.capacity(), published.3);
+        assert!(panic.is_err());
+        assert!(slot.get_or_materialize(|_| Ok(())).unwrap().is_empty());
     }
 
     #[test]
-    fn try_event_snapshot_apis_return_in_callback() {
-        let world = World::new(WorldDef::default()).unwrap();
-        let handle = world.handle();
-        let mut body_events = Vec::new();
-        let mut joint_events = Vec::new();
-        let mut contact_events = ContactEvents::default();
-        let mut sensor_events = SensorEvents::default();
-        let _g = crate::core::callback_state::CallbackGuard::enter();
+    fn ignored_step_fetches_no_event_family() {
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
 
-        assert_eq!(world.try_body_events().unwrap_err(), ApiError::InCallback);
+        drop(world.step(0.0, 1).unwrap());
+
+        assert_eq!(world.event_storage().getter_calls_for_test(), [0; 4]);
+    }
+
+    #[test]
+    fn each_requested_family_is_fetched_once() {
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let completed = world.step(0.0, 1).unwrap();
+
+        assert!(completed.body_events().unwrap().is_empty());
+        assert!(completed.body_events().unwrap().is_empty());
+        assert!(completed.contact_events().unwrap().is_empty());
+        assert!(completed.contact_events().unwrap().is_empty());
+        assert!(completed.joint_events().unwrap().is_empty());
+        assert!(completed.joint_events().unwrap().is_empty());
+        assert!(completed.sensor_events().unwrap().is_empty());
+        assert!(completed.sensor_events().unwrap().is_empty());
+
         assert_eq!(
-            world.try_body_events_into(&mut body_events).unwrap_err(),
-            ApiError::InCallback
-        );
-        assert_eq!(
-            world.try_contact_events().unwrap_err(),
-            ApiError::InCallback
-        );
-        assert_eq!(
-            world
-                .try_contact_events_into(&mut contact_events)
-                .unwrap_err(),
-            ApiError::InCallback
-        );
-        assert_eq!(world.try_sensor_events().unwrap_err(), ApiError::InCallback);
-        assert_eq!(
-            world
-                .try_sensor_events_into(&mut sensor_events)
-                .unwrap_err(),
-            ApiError::InCallback
-        );
-        assert_eq!(world.try_joint_events().unwrap_err(), ApiError::InCallback);
-        assert_eq!(
-            world.try_joint_events_into(&mut joint_events).unwrap_err(),
-            ApiError::InCallback
-        );
-        assert_eq!(handle.try_body_events().unwrap_err(), ApiError::InCallback);
-        assert_eq!(
-            handle.try_body_events_into(&mut body_events).unwrap_err(),
-            ApiError::InCallback
-        );
-        assert_eq!(
-            handle.try_contact_events().unwrap_err(),
-            ApiError::InCallback
-        );
-        assert_eq!(
-            handle
-                .try_contact_events_into(&mut contact_events)
-                .unwrap_err(),
-            ApiError::InCallback
-        );
-        assert_eq!(
-            handle.try_sensor_events().unwrap_err(),
-            ApiError::InCallback
-        );
-        assert_eq!(
-            handle
-                .try_sensor_events_into(&mut sensor_events)
-                .unwrap_err(),
-            ApiError::InCallback
-        );
-        assert_eq!(handle.try_joint_events().unwrap_err(), ApiError::InCallback);
-        assert_eq!(
-            handle.try_joint_events_into(&mut joint_events).unwrap_err(),
-            ApiError::InCallback
+            completed
+                .owner
+                .capability_completed_step()
+                .storage()
+                .getter_calls_for_test(),
+            [1; 4]
         );
     }
 
     #[test]
-    fn try_event_view_apis_return_in_callback() {
-        let world = World::new(WorldDef::default()).unwrap();
-        let _g = crate::core::callback_state::CallbackGuard::enter();
+    fn event_materialization_is_rejected_inside_an_unrelated_callback() {
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let completed = world.step(0.0, 1).unwrap();
 
+        let result = {
+            let _callback = crate::core::callback_state::CallbackGuard::enter();
+            completed.body_events()
+        };
+
+        assert!(matches!(result, Err(Error::InCallback)));
         assert_eq!(
-            world
-                .try_with_body_events_view(|it| it.count())
-                .unwrap_err(),
-            ApiError::InCallback
-        );
-        assert_eq!(
-            world
-                .try_with_contact_events_view(|begin, end, hit| begin.count()
-                    + end.count()
-                    + hit.count())
-                .unwrap_err(),
-            ApiError::InCallback
-        );
-        assert_eq!(
-            world
-                .try_with_sensor_events_view(|begin, end| begin.count() + end.count())
-                .unwrap_err(),
-            ApiError::InCallback
-        );
-        assert_eq!(
-            world
-                .try_with_joint_events_view(|it| it.count())
-                .unwrap_err(),
-            ApiError::InCallback
+            completed
+                .owner
+                .capability_completed_step()
+                .storage()
+                .getter_calls_for_test(),
+            [0; 4]
         );
     }
 
     #[test]
-    fn try_event_raw_apis_return_in_callback() {
-        let world = World::new(WorldDef::default()).unwrap();
-        let _g = crate::core::callback_state::CallbackGuard::enter();
+    fn forgotten_completed_step_is_retired_by_the_next_owner_boundary() {
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let completed = world.step(0.0, 1).unwrap();
+        core::mem::forget(completed);
+        assert!(world.completed_step_active_for_test());
 
-        assert_eq!(
-            unsafe { world.try_with_body_events_raw(|events| events.len()) }.unwrap_err(),
-            ApiError::InCallback
+        drop(world.step(0.0, 1).unwrap());
+        assert!(!world.completed_step_active_for_test());
+    }
+
+    #[test]
+    fn dropped_completed_step_is_retired_immediately() {
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let completed = world.step(0.0, 1).unwrap();
+        assert!(
+            completed
+                .owner
+                .capability_completed_step()
+                .is_active_for_test()
         );
-        assert_eq!(
-            unsafe {
-                world.try_with_contact_events_raw(|begin, end, hit| {
-                    begin.len() + end.len() + hit.len()
-                })
-            }
-            .unwrap_err(),
-            ApiError::InCallback
-        );
-        assert_eq!(
-            unsafe { world.try_with_sensor_events_raw(|begin, end| begin.len() + end.len()) }
-                .unwrap_err(),
-            ApiError::InCallback
-        );
-        assert_eq!(
-            unsafe { world.try_with_joint_events_raw(|events| events.len()) }.unwrap_err(),
-            ApiError::InCallback
-        );
+
+        drop(completed);
+
+        assert!(!world.completed_step_active_for_test());
+    }
+
+    #[test]
+    fn owned_events_remain_detached_after_the_next_step() {
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let owned = world.step(0.0, 1).unwrap().to_owned().unwrap();
+
+        drop(world.step(0.0, 1).unwrap());
+
+        assert!(owned.body.is_empty());
+        assert!(owned.contact.begin.is_empty());
+        assert!(owned.joint.is_empty());
+        assert!(owned.sensor.begin.is_empty());
+    }
+
+    #[test]
+    fn borrowed_view_can_reuse_caller_owned_capacity() {
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let completed = world.step(0.0, 1).unwrap();
+        let events = completed.body_events().unwrap();
+        let mut owned = Vec::with_capacity(8);
+        let allocation = owned.as_ptr();
+
+        events.clone_into(&mut owned).unwrap();
+
+        assert_eq!(owned.as_ptr(), allocation);
+        assert!(owned.is_empty());
+    }
+
+    #[test]
+    fn mapped_and_cloned_buffers_grow_then_reuse_capacity() {
+        let source = (0_u32..10).collect::<Vec<_>>();
+
+        let mut mapped = Vec::with_capacity(8);
+        prepare_mapped(&mut mapped, source.len()).unwrap();
+        extend_mapped(&mut mapped, &source, |value| Ok(*value)).unwrap();
+        assert_eq!(mapped, source);
+        let mapped_allocation = mapped.as_ptr();
+        prepare_mapped(&mut mapped, source.len()).unwrap();
+        extend_mapped(&mut mapped, &source, |value| Ok(*value)).unwrap();
+        assert_eq!(mapped.as_ptr(), mapped_allocation);
+
+        let mut cloned = Vec::with_capacity(8);
+        clone_into(&source, &mut cloned).unwrap();
+        assert_eq!(cloned, source);
+        let cloned_allocation = cloned.as_ptr();
+        clone_into(&source, &mut cloned).unwrap();
+        assert_eq!(cloned.as_ptr(), cloned_allocation);
     }
 }

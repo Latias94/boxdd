@@ -4,7 +4,7 @@ use core::{fmt, mem};
 
 use crate::ffi::b2RecPlayer;
 
-pub const ADAPTER_ABI_VERSION: u32 = 2;
+pub use crate::adapter_contract::ADAPTER_ABI_VERSION;
 pub const SNAPSHOT_VERSION: u32 = 3;
 pub const RECORDING_VERSION_MAJOR: u32 = 3;
 pub const RECORDING_VERSION_MINOR: u32 = 2;
@@ -259,11 +259,11 @@ const fn size_u32<T>() -> u32 {
 
 #[cfg_attr(
     all(target_arch = "wasm32", not(feature = "double-precision")),
-    link(wasm_import_module = "box2d-sys-v1-single")
+    link(wasm_import_module = "box2d-sys-v2-single")
 )]
 #[cfg_attr(
     all(target_arch = "wasm32", feature = "double-precision"),
-    link(wasm_import_module = "box2d-sys-v1-double")
+    link(wasm_import_module = "box2d-sys-v2-double")
 )]
 unsafe extern "C" {
     pub fn boxddAdapter_AbiVersion() -> u32;
@@ -454,6 +454,9 @@ fn validate_snapshot_native(
     };
     if status != SNAPSHOT_OK {
         return Err(status);
+    }
+    if required != entries.len() || facts.required_entries != entries.len() as u64 {
+        return Err(SNAPSHOT_INVALID_VALUE);
     }
     Ok(SnapshotValidation { facts, entries })
 }

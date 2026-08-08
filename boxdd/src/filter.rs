@@ -10,8 +10,7 @@ pub struct Filter {
 
 impl Default for Filter {
     fn default() -> Self {
-        let _lease = crate::core::foundation::assert_transient_native_lease();
-        Self::from_raw(unsafe { ffi::b2DefaultFilter() })
+        Self::from_raw(crate::core::native_defaults::filter())
     }
 }
 

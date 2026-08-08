@@ -1,8 +1,0 @@
-error[E0599]: no associated function or constant named `from_ffi` found for struct `RawBodyId` in the current scope
-  --> tests/ui/raw_id_from_ffi.rs:14:24
-   |
-14 |     let _ = RawBodyId::from_ffi(raw, world);
-   |                        ^^^^^^^^ associated function or constant not found in `RawBodyId`
-   |
-help: there is an associated function `from` with a similar name
-  --> $RUST/core/src/convert/mod.rs

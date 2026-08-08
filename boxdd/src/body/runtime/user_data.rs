@@ -1,192 +1,69 @@
 use super::*;
-use crate::core::world_core::WorldCore;
-use crate::error::ApiResult;
+use crate::error::Result;
+use crate::world::BodyCall;
 use boxdd_sys::ffi;
 use std::os::raw::c_void;
 
-fn check_body(world_core: &WorldCore, id: BodyId) -> ApiResult<()> {
-    crate::core::callback_state::check_not_in_callback()?;
-    world_core.check_body(id)
-}
-
-unsafe fn body_set_user_data_ptr_impl(
-    world_core: &WorldCore,
-    id: BodyId,
+pub(crate) fn body_set_user_data_ptr_impl(
+    body: BodyCall<'_>,
     user_data: *mut c_void,
-) -> ApiResult<()> {
-    let retired = world_core.clear_body_user_data(id)?;
-    unsafe { ffi::b2Body_SetUserData(raw_body_id(id), user_data) };
-    drop(retired);
+) -> Result<()> {
+    let retired = body.clear_user_data()?;
+    unsafe { ffi::b2Body_SetUserData(raw_body_id(body.id()), user_data) };
+    retired.resume_drop_panic();
     Ok(())
 }
 
 #[inline]
-fn body_user_data_ptr_impl(id: BodyId) -> *mut c_void {
+pub(crate) fn body_user_data_ptr_impl(id: BodyId) -> *mut c_void {
     unsafe { ffi::b2Body_GetUserData(raw_body_id(id)) }
 }
 
-fn body_set_user_data_impl<T: 'static>(
-    world_core: &WorldCore,
-    id: BodyId,
-    value: T,
-) -> ApiResult<()> {
-    let update = world_core.set_body_user_data(id, value)?;
-    unsafe { ffi::b2Body_SetUserData(raw_body_id(id), update.pointer()) };
-    drop(update);
+pub(crate) fn body_set_user_data_impl<T: 'static>(
+    body: BodyCall<'_>,
+    value: crate::core::callback_state::PendingUserValue<T>,
+) -> Result<()> {
+    let update = body.set_user_data(value)?;
+    let (pointer, retired) = update.into_parts();
+    unsafe { ffi::b2Body_SetUserData(raw_body_id(body.id()), pointer) };
+    retired.resume_drop_panic();
     Ok(())
 }
 
-fn body_clear_user_data_impl(world_core: &WorldCore, id: BodyId) -> ApiResult<bool> {
-    let retired = world_core.clear_body_user_data(id)?;
-    let had = retired.is_some();
+pub(crate) fn body_clear_user_data_impl(body: BodyCall<'_>) -> Result<bool> {
+    let retired = body.clear_user_data()?;
+    let had = retired.is_some() || !body_user_data_ptr_impl(body.id()).is_null();
     if had {
-        unsafe { ffi::b2Body_SetUserData(raw_body_id(id), core::ptr::null_mut()) };
+        unsafe { ffi::b2Body_SetUserData(raw_body_id(body.id()), core::ptr::null_mut()) };
     }
-    drop(retired);
+    retired.resume_drop_panic();
     Ok(had)
 }
 
-fn body_with_user_data_impl<T: 'static, R>(
-    world_core: &WorldCore,
-    id: BodyId,
-    f: impl FnOnce(&T) -> R,
-) -> ApiResult<Option<R>> {
-    world_core.try_with_body_user_data(id, f)
+pub(crate) fn body_with_user_data_impl<T: 'static, R, F>(
+    body: BodyCall<'_>,
+    f: crate::core::callback_state::PendingUserValue<F>,
+) -> Result<Option<R>>
+where
+    F: FnOnce(&T) -> R,
+{
+    body.with_user_data(f)
 }
 
-fn body_with_user_data_mut_impl<T: 'static, R>(
-    world_core: &WorldCore,
-    id: BodyId,
-    f: impl FnOnce(&mut T) -> R,
-) -> ApiResult<Option<R>> {
-    world_core.try_with_body_user_data_mut(id, f)
+pub(crate) fn body_with_user_data_mut_impl<T: 'static, R, F>(
+    body: BodyCall<'_>,
+    f: crate::core::callback_state::PendingUserValue<F>,
+) -> Result<Option<R>>
+where
+    F: FnOnce(&mut T) -> R,
+{
+    body.with_user_data_mut(f)
 }
 
-fn body_take_user_data_impl<T: 'static>(
-    world_core: &WorldCore,
-    id: BodyId,
-) -> ApiResult<Option<T>> {
-    let value = world_core.take_body_user_data::<T>(id)?;
+pub(crate) fn body_take_user_data_impl<T: 'static>(body: BodyCall<'_>) -> Result<Option<T>> {
+    let value = body.take_user_data::<T>()?;
     if value.is_some() {
-        unsafe { ffi::b2Body_SetUserData(raw_body_id(id), core::ptr::null_mut()) };
+        unsafe { ffi::b2Body_SetUserData(raw_body_id(body.id()), core::ptr::null_mut()) };
     }
     Ok(value)
-}
-
-pub(crate) unsafe fn body_set_user_data_ptr_raw_checked_impl(
-    world_core: &WorldCore,
-    id: BodyId,
-    p: *mut c_void,
-) {
-    check_body(world_core, id).expect("invalid or foreign BodyId");
-    unsafe { body_set_user_data_ptr_impl(world_core, id, p) }
-        .expect("body user data is already borrowed");
-}
-
-pub(crate) unsafe fn try_body_set_user_data_ptr_raw_impl(
-    world_core: &WorldCore,
-    id: BodyId,
-    p: *mut c_void,
-) -> ApiResult<()> {
-    check_body(world_core, id)?;
-    unsafe { body_set_user_data_ptr_impl(world_core, id, p) }
-}
-
-pub(crate) fn body_user_data_ptr_raw_checked_impl(
-    world_core: &WorldCore,
-    id: BodyId,
-) -> *mut c_void {
-    check_body(world_core, id).expect("invalid or foreign BodyId");
-    body_user_data_ptr_impl(id)
-}
-
-pub(crate) fn try_body_user_data_ptr_raw_impl(
-    world_core: &WorldCore,
-    id: BodyId,
-) -> ApiResult<*mut c_void> {
-    check_body(world_core, id)?;
-    Ok(body_user_data_ptr_impl(id))
-}
-
-pub(crate) fn body_set_user_data_checked_impl<T: 'static>(
-    world_core: &WorldCore,
-    id: BodyId,
-    value: T,
-) {
-    check_body(world_core, id).expect("invalid or foreign BodyId");
-    body_set_user_data_impl(world_core, id, value).expect("body user data is already borrowed");
-}
-
-pub(crate) fn try_body_set_user_data_checked_impl<T: 'static>(
-    world_core: &WorldCore,
-    id: BodyId,
-    value: T,
-) -> ApiResult<()> {
-    check_body(world_core, id)?;
-    body_set_user_data_impl(world_core, id, value)
-}
-
-pub(crate) fn body_clear_user_data_checked_impl(world_core: &WorldCore, id: BodyId) -> bool {
-    check_body(world_core, id).expect("invalid or foreign BodyId");
-    body_clear_user_data_impl(world_core, id).expect("body user data is already borrowed")
-}
-
-pub(crate) fn try_body_clear_user_data_checked_impl(
-    world_core: &WorldCore,
-    id: BodyId,
-) -> ApiResult<bool> {
-    check_body(world_core, id)?;
-    body_clear_user_data_impl(world_core, id)
-}
-
-pub(crate) fn body_with_user_data_checked_impl<T: 'static, R>(
-    world_core: &WorldCore,
-    id: BodyId,
-    f: impl FnOnce(&T) -> R,
-) -> Option<R> {
-    check_body(world_core, id).expect("invalid or foreign BodyId");
-    body_with_user_data_impl(world_core, id, f).expect("body user data access failed")
-}
-
-pub(crate) fn try_body_with_user_data_checked_impl<T: 'static, R>(
-    world_core: &WorldCore,
-    id: BodyId,
-    f: impl FnOnce(&T) -> R,
-) -> ApiResult<Option<R>> {
-    check_body(world_core, id)?;
-    body_with_user_data_impl(world_core, id, f)
-}
-
-pub(crate) fn body_with_user_data_mut_checked_impl<T: 'static, R>(
-    world_core: &WorldCore,
-    id: BodyId,
-    f: impl FnOnce(&mut T) -> R,
-) -> Option<R> {
-    check_body(world_core, id).expect("invalid or foreign BodyId");
-    body_with_user_data_mut_impl(world_core, id, f).expect("body user data access failed")
-}
-
-pub(crate) fn try_body_with_user_data_mut_checked_impl<T: 'static, R>(
-    world_core: &WorldCore,
-    id: BodyId,
-    f: impl FnOnce(&mut T) -> R,
-) -> ApiResult<Option<R>> {
-    check_body(world_core, id)?;
-    body_with_user_data_mut_impl(world_core, id, f)
-}
-
-pub(crate) fn body_take_user_data_checked_impl<T: 'static>(
-    world_core: &WorldCore,
-    id: BodyId,
-) -> Option<T> {
-    check_body(world_core, id).expect("invalid or foreign BodyId");
-    body_take_user_data_impl(world_core, id).expect("body user data access failed")
-}
-
-pub(crate) fn try_body_take_user_data_checked_impl<T: 'static>(
-    world_core: &WorldCore,
-    id: BodyId,
-) -> ApiResult<Option<T>> {
-    check_body(world_core, id)?;
-    body_take_user_data_impl(world_core, id)
 }

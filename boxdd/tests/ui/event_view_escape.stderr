@@ -1,8 +1,8 @@
-error: lifetime may not live long enough
- --> tests/ui/event_view_escape.rs:5:60
+error[E0515]: cannot return value referencing local variable `completed`
+ --> tests/ui/event_view_escape.rs:5:5
   |
-5 |     let escaped = world.with_body_events_view(|mut events| events.next());
-  |                                                ----------- ^^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`
-  |                                                |         |
-  |                                                |         return type of closure is Option<events::body::BodyMove<'2>>
-  |                                                has type `events::body::BodyMoveIter<'1>`
+5 |     completed.contact_events().unwrap()
+  |     ---------^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |     |
+  |     returns a value referencing data owned by the current function
+  |     `completed` is borrowed here

@@ -16,6 +16,7 @@ jobs:
   build:
     name: Build and upload static site
     runs-on: ubuntu-24.04
+    timeout-minutes: 120
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -32,9 +33,32 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
-      - name: Provision Emscripten SDK
+      - name: Install Emscripten
         shell: bash
-        run: cargo run --locked -p xtask -- provision-emsdk --root "${RUNNER_TEMP}/emsdk" --github-actions
+        env:
+          EMSCRIPTEN_VERSION: "6.0.4"
+          EMSDK_REVISION: 224ec5f9f2f72f09f9ce0e26d66bae7dbd8b692f
+        run: |
+          set -euo pipefail
+          sdk_root="${RUNNER_TEMP}/emsdk"
+          git init "${sdk_root}"
+          git -C "${sdk_root}" remote add origin https://github.com/emscripten-core/emsdk.git
+          git -C "${sdk_root}" fetch --depth 1 origin "${EMSDK_REVISION}"
+          git -C "${sdk_root}" checkout --detach FETCH_HEAD
+          "${sdk_root}/emsdk" install "${EMSCRIPTEN_VERSION}"
+          "${sdk_root}/emsdk" activate "${EMSCRIPTEN_VERSION}"
+          source "${sdk_root}/emsdk_env.sh"
+          {
+            printf 'EMSDK=%s\n' "${EMSDK}"
+            printf 'EM_CONFIG=%s\n' "${EM_CONFIG}"
+            printf 'EMSDK_NODE=%s\n' "${EMSDK_NODE}"
+          } >> "${GITHUB_ENV}"
+          {
+            dirname "$(command -v emcc)"
+            dirname "$(command -v node)"
+            dirname "$(command -v npm)"
+            dirname "$(command -v wasm-opt)"
+          } >> "${GITHUB_PATH}"
 
       - name: Build Pages WASM assets
         run: cargo run --locked -p xtask -- build-pages-wasm
@@ -70,6 +94,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.ref_protected == true
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       pages: write

@@ -1,0 +1,19 @@
+error[E0499]: cannot borrow `world` as mutable more than once at a time
+  --> tests/ui/chain_capability_conflicts_with_world_mutation.rs:26:17
+   |
+25 |     let chain = world.chain(chain_id).unwrap();
+   |                 ----- first mutable borrow occurs here
+26 |     let _next = world.create_body(world.body_builder().build().unwrap());
+   |                 ^^^^^ second mutable borrow occurs here
+27 |     drop(chain);
+   |          ----- first borrow later used here
+
+error[E0502]: cannot borrow `world` as immutable because it is also borrowed as mutable
+  --> tests/ui/chain_capability_conflicts_with_world_mutation.rs:26:35
+   |
+25 |     let chain = world.chain(chain_id).unwrap();
+   |                 ----- mutable borrow occurs here
+26 |     let _next = world.create_body(world.body_builder().build().unwrap());
+   |                                   ^^^^^ immutable borrow occurs here
+27 |     drop(chain);
+   |          ----- mutable borrow later used here

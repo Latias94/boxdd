@@ -1,72 +1,112 @@
 use boxdd::{prelude::*, shapes};
 use std::sync::{Mutex, OnceLock};
 
+static WORLD_RECYCLE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
 #[test]
-fn create_then_destroy_all_bodies_and_recycle() {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    let _g = LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+fn destroyed_body_slots_can_be_reused_without_corrupting_the_world() {
+    let _guard = WORLD_RECYCLE_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap();
     const BODY_COUNT: usize = 10;
-    let mut world = World::new(WorldDef::builder().build()).unwrap();
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let shape_def = ShapeDef::builder().density(1.0).build().unwrap();
+    let polygon = shapes::box_polygon(0.5, 0.5).unwrap();
 
-    let mut ids: Vec<BodyId> = Vec::with_capacity(BODY_COUNT);
-    let sdef = ShapeDef::builder().density(1.0).build();
-
-    let mut creating = true;
-    for _ in 0..(2 * BODY_COUNT + 10) {
-        if creating {
-            if ids.len() < BODY_COUNT {
-                let b =
-                    world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
-                let _s = world.create_polygon_shape_for(b, &sdef, &shapes::box_polygon(0.5, 0.5));
-                ids.push(b);
-            } else {
-                creating = false;
-            }
-        } else if let Some(b) = ids.pop() {
-            world.destroy_body_id(b);
-        }
-
-        world.step(1.0 / 60.0, 3);
+    let mut ids = Vec::with_capacity(BODY_COUNT);
+    for _ in 0..BODY_COUNT {
+        let body = world
+            .create_body(
+                boxdd::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_builder()
+                    .body_type(BodyType::Dynamic)
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        world
+            .body(body)
+            .unwrap()
+            .create_polygon(&shape_def, &polygon)
+            .unwrap();
+        ids.push(body);
+        drop(world.step(1.0 / 60.0, 3).unwrap());
     }
 
-    let c = world.counters();
-    assert_eq!(c.body_count, 0);
+    for body in ids.drain(..) {
+        world.body(body).unwrap().destroy().unwrap();
+        drop(world.step(1.0 / 60.0, 3).unwrap());
+    }
+    assert_eq!(world.counters().unwrap().body_count, 0);
 
-    // Recreate a few bodies to ensure world remains usable after destruction
     for _ in 0..3 {
-        let b = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
-        let _s = world.create_polygon_shape_for(b, &sdef, &shapes::box_polygon(0.25, 0.25));
+        let body = world
+            .create_body(
+                boxdd::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_builder()
+                    .body_type(BodyType::Dynamic)
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        world
+            .body(body)
+            .unwrap()
+            .create_box(&shape_def, 0.25, 0.25)
+            .unwrap();
     }
-    world.step(1.0 / 60.0, 1);
-    let c2 = world.counters();
-    assert!(c2.body_count >= 3);
+    drop(world.step(1.0 / 60.0, 1).unwrap());
+    assert_eq!(world.counters().unwrap().body_count, 3);
 }
 
 #[test]
-fn recycle_many_worlds_smoke() {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    let _g = LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-    // Create and drop multiple worlds repeatedly with a trivial body and a few steps
+fn repeatedly_recycling_native_world_slots_is_stable() {
+    let _guard = WORLD_RECYCLE_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap();
     const WORLD_BATCH: usize = 8;
     const ROUNDS: usize = 5;
 
     for _ in 0..ROUNDS {
-        let mut worlds: Vec<World> = Vec::with_capacity(WORLD_BATCH);
+        let mut worlds = Vec::with_capacity(WORLD_BATCH);
         for _ in 0..WORLD_BATCH {
-            let mut w = World::new(WorldDef::builder().build()).unwrap();
-            let b = w.create_body_id(BodyBuilder::new().build());
-            let _s = w.create_polygon_shape_for(
-                b,
-                &ShapeDef::builder().density(0.0).build(),
-                &shapes::box_polygon(0.1, 0.1),
-            );
-            worlds.push(w);
+            let mut world = boxdd::Foundation::initialize_default()
+                .unwrap()
+                .create_world(
+                    boxdd::Foundation::get()
+                        .expect("Foundation must be initialized before constructing a WorldDef")
+                        .world_def(),
+                )
+                .unwrap();
+            let body = world
+                .create_body(
+                    boxdd::Foundation::get()
+                        .expect("Foundation must be initialized before constructing a BodyDef")
+                        .body_def(),
+                )
+                .unwrap();
+            world
+                .body(body)
+                .unwrap()
+                .create_box(&ShapeDef::default(), 0.1, 0.1)
+                .unwrap();
+            worlds.push(world);
         }
-        for w in &mut worlds {
+        for world in &mut worlds {
             for _ in 0..10 {
-                w.step(1.0 / 60.0, 1);
+                drop(world.step(1.0 / 60.0, 1).unwrap());
             }
         }
-        drop(worlds);
     }
 }

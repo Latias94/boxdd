@@ -7,159 +7,385 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
     match app.cl_mode {
         // Bullet
         0 => {
-            app.world.enable_continuous(true);
-            app.world.set_hit_event_threshold(app.bullet_threshold);
-            let wall = app.world.create_body_id(bd::BodyBuilder::new().position([5.0, 0.0]).build());
+            app.world
+                .enable_continuous(true)
+                .expect("valid testbed operation");
+            app.world
+                .set_hit_event_threshold(app.bullet_threshold)
+                .expect("valid testbed operation");
+            let wall = app
+                .world
+                .create_body(
+                    bd::BodyBuilder::from(app.foundation.body_def())
+                        .position([5.0, 0.0])
+                        .build()
+                        .expect("valid testbed definition"),
+                )
+                .expect("valid testbed operation");
             app.created_bodies += 1;
-            app.world.create_polygon_shape_for(
-                wall,
-                &bd::ShapeDef::builder()
-                    .density(0.0)
-                    .enable_contact_events(true)
-                    .enable_hit_events(true)
-                    .build(),
-                &bd::shapes::box_polygon(0.5, 3.0),
-            );
+            app.world
+                .body(wall)
+                .expect("valid testbed operation")
+                .create_polygon(
+                    &bd::ShapeDef::builder()
+                        .density(0.0)
+                        .enable_contact_events(true)
+                        .enable_hit_events(true)
+                        .build()
+                        .expect("valid testbed definition"),
+                    &bd::shapes::box_polygon(0.5, 3.0).expect("valid polygon geometry"),
+                )
+                .expect("valid testbed operation");
             app.created_shapes += 1;
             let bullet = app
                 .world
-                .create_body_id(
-                    bd::BodyBuilder::new()
+                .create_body(
+                    bd::BodyBuilder::from(app.foundation.body_def())
                         .body_type(bd::BodyType::Dynamic)
                         .position([0.0, 0.0])
                         .bullet(true)
-                        .build(),
-                );
+                        .build()
+                        .expect("valid testbed definition"),
+                )
+                .expect("valid testbed operation");
             app.created_bodies += 1;
-            app.world.create_circle_shape_for(
-                bullet,
-                &bd::ShapeDef::builder()
-                    .density(1.0)
-                    .enable_contact_events(true)
-                    .enable_hit_events(true)
-                    .build(),
-                &bd::shapes::circle([0.0, 0.0], app.bullet_radius),
-            );
+            app.world
+                .body(bullet)
+                .expect("valid testbed operation")
+                .create_circle(
+                    &bd::ShapeDef::builder()
+                        .density(1.0)
+                        .enable_contact_events(true)
+                        .enable_hit_events(true)
+                        .build()
+                        .expect("valid testbed definition"),
+                    &bd::shapes::circle([0.0, 0.0], app.bullet_radius)
+                        .expect("bullet radius must remain positive"),
+                )
+                .expect("valid testbed operation");
             app.created_shapes += 1;
-            app.world.set_body_linear_velocity(bullet, [app.bullet_speed, 0.0]);
+            app.world
+                .body(bullet)
+                .expect("valid testbed operation")
+                .set_linear_velocity([app.bullet_speed, 0.0])
+                .expect("valid testbed operation");
         }
         // Ghost Bumps
         1 => {
-            app.world.enable_continuous(true);
-            app.world.set_hit_event_threshold(0.05);
+            app.world
+                .enable_continuous(true)
+                .expect("valid testbed operation");
+            app.world
+                .set_hit_event_threshold(0.05)
+                .expect("valid testbed operation");
             let h = app.gb_bump_h.max(0.0);
             let step = 0.5_f32;
             let count = 40_i32;
-            let sdef = bd::ShapeDef::builder().density(0.0).build();
+            let sdef = bd::ShapeDef::builder()
+                .density(0.0)
+                .build()
+                .expect("valid testbed definition");
             for i in -count..=count {
                 let x0 = (i as f32) * step;
                 let x1 = (i as f32 + 1.0) * step;
                 let y0 = if i % 2 == 0 { 0.0 } else { h };
                 let y1 = if (i + 1) % 2 == 0 { 0.0 } else { h };
-                app.world.create_segment_shape_for(ground, &sdef, &bd::shapes::segment([x0, y0], [x1, y1]));
+                app.world
+                    .body(ground)
+                    .expect("valid testbed operation")
+                    .create_segment(
+                        &sdef,
+                        &bd::shapes::segment([x0, y0], [x1, y1])
+                            .expect("ghost-bump segment must be valid"),
+                    )
+                    .expect("valid testbed operation");
                 app.created_shapes += 1;
             }
             let mover = app
                 .world
-                .create_body_id(
-                    bd::BodyBuilder::new()
+                .create_body(
+                    bd::BodyBuilder::from(app.foundation.body_def())
                         .body_type(bd::BodyType::Dynamic)
                         .position([-10.0, 1.5])
                         .bullet(true)
-                        .build(),
-                );
+                        .build()
+                        .expect("valid testbed definition"),
+                )
+                .expect("valid testbed operation");
             app.created_bodies += 1;
-            app.world.create_circle_shape_for(
-                mover,
-                &bd::ShapeDef::builder().density(1.0).build(),
-                &bd::shapes::circle([0.0, 0.0], 0.3),
-            );
+            app.world
+                .body(mover)
+                .expect("valid testbed operation")
+                .create_circle(
+                    &bd::ShapeDef::builder()
+                        .density(1.0)
+                        .build()
+                        .expect("valid testbed definition"),
+                    &bd::shapes::circle([0.0, 0.0], 0.3)
+                        .expect("ghost-bump mover circle must be valid"),
+                )
+                .expect("valid testbed operation");
             app.created_shapes += 1;
-            app.world.set_body_linear_velocity(mover, [app.gb_speed, 0.0]);
+            app.world
+                .body(mover)
+                .expect("valid testbed operation")
+                .set_linear_velocity([app.gb_speed, 0.0])
+                .expect("valid testbed operation");
         }
         // Restitution Threshold
         2 => {
-            app.world.enable_continuous(true);
-            app.world.set_restitution_threshold(app.cr_threshold);
+            app.world
+                .enable_continuous(true)
+                .expect("valid testbed operation");
+            app.world
+                .set_restitution_threshold(app.cr_threshold)
+                .expect("valid testbed operation");
             // The ground was created by caller; spawn a ball
             let ball = app
                 .world
-                .create_body_id(
-                    bd::BodyBuilder::new()
+                .create_body(
+                    bd::BodyBuilder::from(app.foundation.body_def())
                         .body_type(bd::BodyType::Dynamic)
                         .position([0.0, app.cr_drop_y])
-                        .build(),
-                );
+                        .build()
+                        .expect("valid testbed definition"),
+                )
+                .expect("valid testbed operation");
             app.created_bodies += 1;
             let sdef = bd::ShapeDef::builder()
                 .density(1.0)
-                .material(bd::SurfaceMaterial::default().with_restitution(app.cr_restitution))
-                .build();
-            app.world.create_circle_shape_for(ball, &sdef, &bd::shapes::circle([0.0, 0.0], 0.5));
+                .material(
+                    bd::SurfaceMaterial::default()
+                        .with_restitution(app.cr_restitution)
+                        .expect("restitution slider must remain valid"),
+                )
+                .build()
+                .expect("valid testbed definition");
+            app.world
+                .body(ball)
+                .expect("valid testbed operation")
+                .create_circle(
+                    &sdef,
+                    &bd::shapes::circle([0.0, 0.0], 0.5)
+                        .expect("restitution ball circle must be valid"),
+                )
+                .expect("valid testbed operation");
             app.created_shapes += 1;
         }
         // Pinball
         3 => {
             // Walls and floor
-            let sdef = bd::ShapeDef::builder().density(0.0).build();
-            app.world.create_segment_shape_for(ground, &sdef, &bd::shapes::segment([-8.0, 0.0], [-8.0, 14.0]));
+            let sdef = bd::ShapeDef::builder()
+                .density(0.0)
+                .build()
+                .expect("valid testbed definition");
+            app.world
+                .body(ground)
+                .expect("valid testbed operation")
+                .create_segment(
+                    &sdef,
+                    &bd::shapes::segment([-8.0, 0.0], [-8.0, 14.0])
+                        .expect("pinball wall segment must be valid"),
+                )
+                .expect("valid testbed operation");
             app.created_shapes += 1;
-            app.world.create_segment_shape_for(ground, &sdef, &bd::shapes::segment([8.0, 0.0], [8.0, 14.0]));
+            app.world
+                .body(ground)
+                .expect("valid testbed operation")
+                .create_segment(
+                    &sdef,
+                    &bd::shapes::segment([8.0, 0.0], [8.0, 14.0])
+                        .expect("pinball wall segment must be valid"),
+                )
+                .expect("valid testbed operation");
             app.created_shapes += 1;
-            app.world.create_segment_shape_for(ground, &sdef, &bd::shapes::segment([-8.0, 0.0], [0.0, -2.0]));
+            app.world
+                .body(ground)
+                .expect("valid testbed operation")
+                .create_segment(
+                    &sdef,
+                    &bd::shapes::segment([-8.0, 0.0], [0.0, -2.0])
+                        .expect("pinball floor segment must be valid"),
+                )
+                .expect("valid testbed operation");
             app.created_shapes += 1;
-            app.world.create_segment_shape_for(ground, &sdef, &bd::shapes::segment([8.0, 0.0], [0.0, -2.0]));
+            app.world
+                .body(ground)
+                .expect("valid testbed operation")
+                .create_segment(
+                    &sdef,
+                    &bd::shapes::segment([8.0, 0.0], [0.0, -2.0])
+                        .expect("pinball floor segment must be valid"),
+                )
+                .expect("valid testbed operation");
             app.created_shapes += 1;
-            app.world.create_segment_shape_for(ground, &sdef, &bd::shapes::segment([-8.0, -2.0], [8.0, -2.0]));
+            app.world
+                .body(ground)
+                .expect("valid testbed operation")
+                .create_segment(
+                    &sdef,
+                    &bd::shapes::segment([-8.0, -2.0], [8.0, -2.0])
+                        .expect("pinball floor segment must be valid"),
+                )
+                .expect("valid testbed operation");
             app.created_shapes += 1;
             // Bumpers
             let mat = bd::shapes::SurfaceMaterial::default()
                 .with_restitution(1.2)
-                .with_friction(0.2);
-            let bdef = bd::ShapeDef::builder().material(mat).density(0.0).build();
+                .expect("pinball restitution must be valid")
+                .with_friction(0.2)
+                .expect("pinball friction must be valid");
+            let bdef = bd::ShapeDef::builder()
+                .material(mat)
+                .density(0.0)
+                .build()
+                .expect("valid testbed definition");
             for &c in &[[-4.0, 6.0], [0.0, 8.0], [4.0, 6.0]] {
-                app.world.create_circle_shape_for(ground, &bdef, &bd::shapes::circle(c, 0.8));
+                app.world
+                    .body(ground)
+                    .expect("valid testbed operation")
+                    .create_circle(
+                        &bdef,
+                        &bd::shapes::circle(c, 0.8).expect("pinball bumper circle must be valid"),
+                    )
+                    .expect("valid testbed operation");
                 app.created_shapes += 1;
             }
             // Optional flippers (motors)
             if app.pb_flippers {
                 let l = app
                     .world
-                    .create_body_id(bd::BodyBuilder::new().body_type(bd::BodyType::Dynamic).position([-5.5, -1.2]).build());
+                    .create_body(
+                        bd::BodyBuilder::from(app.foundation.body_def())
+                            .body_type(bd::BodyType::Dynamic)
+                            .position([-5.5, -1.2])
+                            .build()
+                            .expect("valid testbed definition"),
+                    )
+                    .expect("valid testbed operation");
                 app.created_bodies += 1;
-                app.world.create_polygon_shape_for(l, &bd::ShapeDef::builder().density(1.0).build(), &bd::shapes::box_polygon(1.4, 0.15));
-                app.created_shapes += 1;
-                let lj = app.world.create_revolute_joint_world_id(ground, l, [-5.5, -1.2]);
-                app.world.revolute_enable_limit(lj, true);
-                let to_rad = std::f32::consts::PI / 180.0;
-                app.world.revolute_set_limits(
-                    lj,
-                    app.pb_left_lower_deg * to_rad,
-                    app.pb_left_upper_deg * to_rad,
-                );
-                app.world.revolute_enable_motor(lj, true);
-                app.world.revolute_set_motor_speed(lj, 0.0);
                 app.world
-                    .revolute_set_max_motor_torque(lj, app.pb_flipper_torque);
+                    .body(l)
+                    .expect("valid testbed operation")
+                    .create_polygon(
+                        &bd::ShapeDef::builder()
+                            .density(1.0)
+                            .build()
+                            .expect("valid testbed definition"),
+                        &bd::shapes::box_polygon(1.4, 0.15).expect("valid polygon geometry"),
+                    )
+                    .expect("valid testbed operation");
+                app.created_shapes += 1;
+                let lj = app
+                    .world
+                    .create_revolute_joint_world(ground, l, [-5.5, -1.2])
+                    .expect("valid testbed operation");
+                app.world
+                    .joint(lj)
+                    .expect("valid testbed operation")
+                    .into_revolute()
+                    .expect("valid testbed operation")
+                    .enable_limit(true)
+                    .expect("valid testbed operation");
+                let to_rad = std::f32::consts::PI / 180.0;
+                app.world
+                    .joint(lj)
+                    .expect("valid testbed operation")
+                    .into_revolute()
+                    .expect("valid testbed operation")
+                    .set_limits(
+                        app.pb_left_lower_deg * to_rad,
+                        app.pb_left_upper_deg * to_rad,
+                    )
+                    .expect("valid testbed operation");
+                app.world
+                    .joint(lj)
+                    .expect("valid testbed operation")
+                    .into_revolute()
+                    .expect("valid testbed operation")
+                    .enable_motor(true)
+                    .expect("valid testbed operation");
+                app.world
+                    .joint(lj)
+                    .expect("valid testbed operation")
+                    .into_revolute()
+                    .expect("valid testbed operation")
+                    .set_motor_speed(0.0)
+                    .expect("valid testbed operation");
+                app.world
+                    .joint(lj)
+                    .expect("valid testbed operation")
+                    .into_revolute()
+                    .expect("valid testbed operation")
+                    .set_max_motor_torque(app.pb_flipper_torque)
+                    .expect("valid testbed operation");
                 app.pb_left_joint = Some(lj);
                 let r = app
                     .world
-                    .create_body_id(bd::BodyBuilder::new().body_type(bd::BodyType::Dynamic).position([5.0 + 0.5, -1.2]).build());
+                    .create_body(
+                        bd::BodyBuilder::from(app.foundation.body_def())
+                            .body_type(bd::BodyType::Dynamic)
+                            .position([5.0 + 0.5, -1.2])
+                            .build()
+                            .expect("valid testbed definition"),
+                    )
+                    .expect("valid testbed operation");
                 app.created_bodies += 1;
-                app.world.create_polygon_shape_for(r, &bd::ShapeDef::builder().density(1.0).build(), &bd::shapes::box_polygon(1.4, 0.15));
-                app.created_shapes += 1;
-                let rj = app.world.create_revolute_joint_world_id(ground, r, [5.5, -1.2]);
-                app.world.revolute_enable_limit(rj, true);
-                let to_rad = std::f32::consts::PI / 180.0;
-                app.world.revolute_set_limits(
-                    rj,
-                    app.pb_right_lower_deg * to_rad,
-                    app.pb_right_upper_deg * to_rad,
-                );
-                app.world.revolute_enable_motor(rj, true);
-                app.world.revolute_set_motor_speed(rj, 0.0);
                 app.world
-                    .revolute_set_max_motor_torque(rj, app.pb_flipper_torque);
+                    .body(r)
+                    .expect("valid testbed operation")
+                    .create_polygon(
+                        &bd::ShapeDef::builder()
+                            .density(1.0)
+                            .build()
+                            .expect("valid testbed definition"),
+                        &bd::shapes::box_polygon(1.4, 0.15).expect("valid polygon geometry"),
+                    )
+                    .expect("valid testbed operation");
+                app.created_shapes += 1;
+                let rj = app
+                    .world
+                    .create_revolute_joint_world(ground, r, [5.5, -1.2])
+                    .expect("valid testbed operation");
+                app.world
+                    .joint(rj)
+                    .expect("valid testbed operation")
+                    .into_revolute()
+                    .expect("valid testbed operation")
+                    .enable_limit(true)
+                    .expect("valid testbed operation");
+                let to_rad = std::f32::consts::PI / 180.0;
+                app.world
+                    .joint(rj)
+                    .expect("valid testbed operation")
+                    .into_revolute()
+                    .expect("valid testbed operation")
+                    .set_limits(
+                        app.pb_right_lower_deg * to_rad,
+                        app.pb_right_upper_deg * to_rad,
+                    )
+                    .expect("valid testbed operation");
+                app.world
+                    .joint(rj)
+                    .expect("valid testbed operation")
+                    .into_revolute()
+                    .expect("valid testbed operation")
+                    .enable_motor(true)
+                    .expect("valid testbed operation");
+                app.world
+                    .joint(rj)
+                    .expect("valid testbed operation")
+                    .into_revolute()
+                    .expect("valid testbed operation")
+                    .set_motor_speed(0.0)
+                    .expect("valid testbed operation");
+                app.world
+                    .joint(rj)
+                    .expect("valid testbed operation")
+                    .into_revolute()
+                    .expect("valid testbed operation")
+                    .set_max_motor_torque(app.pb_flipper_torque)
+                    .expect("valid testbed operation");
                 app.pb_right_joint = Some(rj);
                 app.pb_left_flipper = Some(l);
                 app.pb_right_flipper = Some(r);
@@ -173,8 +399,18 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
             let dy = 0.5 * len * ang.sin();
             let p1 = [-dx, 0.0 + dy];
             let p2 = [dx, 0.0 - dy];
-            let sdef = bd::ShapeDef::builder().density(0.0).build();
-            app.world.create_segment_shape_for(ground, &sdef, &bd::shapes::segment(p1, p2));
+            let sdef = bd::ShapeDef::builder()
+                .density(0.0)
+                .build()
+                .expect("valid testbed definition");
+            app.world
+                .body(ground)
+                .expect("valid testbed operation")
+                .create_segment(
+                    &sdef,
+                    &bd::shapes::segment(p1, p2).expect("segment-slide slope must be valid"),
+                )
+                .expect("valid testbed operation");
             app.created_shapes += 1;
             let dxv = p2[0] - p1[0];
             let dyv = p2[1] - p1[1];
@@ -184,33 +420,45 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
             let start = bd::Vec2::new(-dirx * 5.0, -diry * 5.0 + 4.0);
             let b = app
                 .world
-                .create_body_id(
-                    bd::BodyBuilder::new()
+                .create_body(
+                    bd::BodyBuilder::from(app.foundation.body_def())
                         .body_type(bd::BodyType::Dynamic)
                         .position([start.x, start.y])
                         .bullet(true)
-                        .build(),
-                );
+                        .build()
+                        .expect("valid testbed definition"),
+                )
+                .expect("valid testbed operation");
             app.created_bodies += 1;
-            let sdef_dyn = bd::ShapeDef::builder().density(1.0).build();
-            let cap = bd::shapes::capsule([-1.2, 0.0], [1.2, 0.0], 0.08);
-            app.world.create_capsule_shape_for(b, &sdef_dyn, &cap);
+            let sdef_dyn = bd::ShapeDef::builder()
+                .density(1.0)
+                .build()
+                .expect("valid testbed definition");
+            let cap = bd::shapes::capsule([-1.2, 0.0], [1.2, 0.0], 0.08)
+                .expect("segment-slide capsule must be valid");
+            app.world
+                .body(b)
+                .expect("valid testbed operation")
+                .create_capsule(&sdef_dyn, &cap)
+                .expect("valid testbed operation");
             app.created_shapes += 1;
             app.world
-                .set_body_linear_velocity(b, [dirx * app.ss_speed, diry * app.ss_speed]);
+                .body(b)
+                .expect("valid testbed operation")
+                .set_linear_velocity([dirx * app.ss_speed, diry * app.ss_speed])
+                .expect("valid testbed operation");
         }
         _ => {}
     }
 }
 
-pub fn tick(app: &mut super::PhysicsApp) {
+pub fn tick(app: &mut super::PhysicsApp, events: Option<&bd::StepEventsSnapshot>) {
     match app.cl_mode {
         1 => {
             // ghost bumps: accumulate hits
-            let world = &app.world;
-            let scratch = &mut app.scratch;
-            world.contact_events_into(&mut scratch.contact_events);
-            app.gb_hits += scratch.contact_events.hit.len();
+            if let Some(events) = events {
+                app.gb_hits += events.contact.hit.len();
+            }
         }
         3 => {
             // pinball flipper hold control
@@ -218,10 +466,22 @@ pub fn tick(app: &mut super::PhysicsApp) {
             let ls = if app.pb_hold_left { speed_rad } else { 0.0 };
             let rs = if app.pb_hold_right { -speed_rad } else { 0.0 };
             if let Some(j) = app.pb_left_joint {
-                app.world.revolute_set_motor_speed(j, ls);
+                app.world
+                    .joint(j)
+                    .expect("valid testbed operation")
+                    .into_revolute()
+                    .expect("valid testbed operation")
+                    .set_motor_speed(ls)
+                    .expect("valid testbed operation");
             }
             if let Some(j) = app.pb_right_joint {
-                app.world.revolute_set_motor_speed(j, rs);
+                app.world
+                    .joint(j)
+                    .expect("valid testbed operation")
+                    .into_revolute()
+                    .expect("valid testbed operation")
+                    .set_motor_speed(rs)
+                    .expect("valid testbed operation");
             }
         }
         _ => {}
@@ -310,11 +570,36 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
                 || ui.slider("Flip Impulse", 0.0, 10.0, &mut impulse)
                 || ui.checkbox("Hold L", &mut app.pb_hold_left)
                 || ui.checkbox("Hold R", &mut app.pb_hold_right)
-                || ui.slider("Flipper Speed (deg/s)", 0.0, 720.0, &mut app.pb_flip_speed_deg)
-                || ui.slider("Left Limit Lower (deg)", -120.0, 0.0, &mut app.pb_left_lower_deg)
-                || ui.slider("Left Limit Upper (deg)", 0.0, 120.0, &mut app.pb_left_upper_deg)
-                || ui.slider("Right Limit Lower (deg)", -120.0, 0.0, &mut app.pb_right_lower_deg)
-                || ui.slider("Right Limit Upper (deg)", 0.0, 120.0, &mut app.pb_right_upper_deg);
+                || ui.slider(
+                    "Flipper Speed (deg/s)",
+                    0.0,
+                    720.0,
+                    &mut app.pb_flip_speed_deg,
+                )
+                || ui.slider(
+                    "Left Limit Lower (deg)",
+                    -120.0,
+                    0.0,
+                    &mut app.pb_left_lower_deg,
+                )
+                || ui.slider(
+                    "Left Limit Upper (deg)",
+                    0.0,
+                    120.0,
+                    &mut app.pb_left_upper_deg,
+                )
+                || ui.slider(
+                    "Right Limit Lower (deg)",
+                    -120.0,
+                    0.0,
+                    &mut app.pb_right_lower_deg,
+                )
+                || ui.slider(
+                    "Right Limit Upper (deg)",
+                    0.0,
+                    120.0,
+                    &mut app.pb_right_upper_deg,
+                );
             if changed {
                 app.pb_restitution = r;
                 app.pb_ball_radius = rad;
@@ -325,47 +610,89 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
                 } else if (torque - app.pb_flipper_torque).abs() > f32::EPSILON {
                     app.pb_flipper_torque = torque;
                     if let Some(j) = app.pb_left_joint {
-                        app.world.revolute_set_max_motor_torque(j, torque);
+                        app.world
+                            .joint(j)
+                            .expect("valid testbed operation")
+                            .into_revolute()
+                            .expect("valid testbed operation")
+                            .set_max_motor_torque(torque)
+                            .expect("valid testbed operation");
                     }
                     if let Some(j) = app.pb_right_joint {
-                        app.world.revolute_set_max_motor_torque(j, torque);
+                        app.world
+                            .joint(j)
+                            .expect("valid testbed operation")
+                            .into_revolute()
+                            .expect("valid testbed operation")
+                            .set_max_motor_torque(torque)
+                            .expect("valid testbed operation");
                     }
                 }
                 let to_rad = std::f32::consts::PI / 180.0;
                 if let Some(j) = app.pb_left_joint {
-                    app.world.revolute_set_limits(
-                        j,
-                        app.pb_left_lower_deg * to_rad,
-                        app.pb_left_upper_deg * to_rad,
-                    );
+                    app.world
+                        .joint(j)
+                        .expect("valid testbed operation")
+                        .into_revolute()
+                        .expect("valid testbed operation")
+                        .set_limits(
+                            app.pb_left_lower_deg * to_rad,
+                            app.pb_left_upper_deg * to_rad,
+                        )
+                        .expect("valid testbed operation");
                 }
                 if let Some(j) = app.pb_right_joint {
-                    app.world.revolute_set_limits(
-                        j,
-                        app.pb_right_lower_deg * to_rad,
-                        app.pb_right_upper_deg * to_rad,
-                    );
+                    app.world
+                        .joint(j)
+                        .expect("valid testbed operation")
+                        .into_revolute()
+                        .expect("valid testbed operation")
+                        .set_limits(
+                            app.pb_right_lower_deg * to_rad,
+                            app.pb_right_upper_deg * to_rad,
+                        )
+                        .expect("valid testbed operation");
                 }
             }
             if ui.button("Spawn Ball") {
                 // spawn ball
                 let b = app
                     .world
-                    .create_body_id(
-                        bd::BodyBuilder::new()
+                    .create_body(
+                        bd::BodyBuilder::from(app.foundation.body_def())
                             .body_type(bd::BodyType::Dynamic)
                             .position([0.0, 12.0])
                             .bullet(true)
-                            .build(),
-                    );
+                            .build()
+                            .expect("valid testbed definition"),
+                    )
+                    .expect("valid testbed operation");
                 app.created_bodies += 1;
                 let mat = bd::shapes::SurfaceMaterial::default()
                     .with_restitution(app.pb_restitution)
-                    .with_friction(0.2);
-                let sdef = bd::ShapeDef::builder().material(mat).density(1.0).build();
-                app.world.create_circle_shape_for(b, &sdef, &bd::shapes::circle([0.0, 0.0], app.pb_ball_radius));
+                    .expect("pinball restitution must be valid")
+                    .with_friction(0.2)
+                    .expect("pinball friction must be valid");
+                let sdef = bd::ShapeDef::builder()
+                    .material(mat)
+                    .density(1.0)
+                    .build()
+                    .expect("valid testbed definition");
+                app.world
+                    .body(b)
+                    .expect("valid testbed operation")
+                    .create_circle(
+                        &sdef,
+                        &bd::shapes::circle([0.0, 0.0], app.pb_ball_radius)
+                            .expect("pinball radius must remain positive"),
+                    )
+                    .expect("valid testbed operation");
                 app.created_shapes += 1;
-                app.world.set_body_linear_velocity(b, [6.0, -2.0]);
+                app.world
+                    .body(b)
+                    .expect("valid testbed operation")
+                    .set_linear_velocity([6.0, -2.0])
+                    .expect("valid testbed operation");
                 app.pb_ball_count += 1;
             }
         }

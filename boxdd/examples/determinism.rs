@@ -2,11 +2,12 @@ use boxdd::prelude::*;
 use std::time::Instant;
 
 // Determinism headless sample: run the same seeded scenario twice and compare aggregates.
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let foundation = Foundation::initialize_default()?;
     let seed: u64 = 0xDEADBEEFCAFEBABE;
     let steps = 240usize;
-    let (sum1, dur1) = run_once(seed, steps)?;
-    let (sum2, dur2) = run_once(seed, steps)?;
+    let (sum1, dur1) = run_once(foundation, seed, steps)?;
+    let (sum2, dur2) = run_once(foundation, seed, steps)?;
     let equal = (sum1.0.to_bits(), sum1.1.to_bits()) == (sum2.0.to_bits(), sum2.1.to_bits());
     println!(
         "determinism: equal={} pos_sum={:.6} vel_sum={:.6} time_ms=({:.3},{:.3})",
@@ -20,50 +21,50 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn run_once(
+    foundation: &'static Foundation,
     seed: u64,
     steps: usize,
-) -> Result<((WorldScalar, f32), std::time::Duration), Box<dyn std::error::Error>> {
+) -> std::result::Result<((WorldScalar, f32), std::time::Duration), Box<dyn std::error::Error>> {
     let mut rng = Lcg64::new(seed);
-    let mut world = World::new(
-        WorldDef::builder()
+    let mut world = foundation.create_world(
+        WorldBuilder::from(foundation.world_def())
             .gravity([0.0_f32, -10.0])
             .enable_continuous(true)
-            .build(),
+            .build()?,
     )?;
     // Ground
-    let ground = world.create_body_id(BodyBuilder::new().build());
-    let _ = world.create_segment_shape_for(
-        ground,
-        &ShapeDef::builder().build(),
-        &shapes::segment([-50.0_f32, 0.0], [50.0, 0.0]),
-    );
+    let ground = world.create_body(BodyBuilder::from(foundation.body_def()).build()?)?;
+    let _ = world.body(ground)?.create_segment(
+        &ShapeDef::builder().build()?,
+        &shapes::segment([-50.0_f32, 0.0], [50.0, 0.0])?,
+    )?;
 
     // Spawn a deterministic field of dynamic boxes and circles
-    let sdef = ShapeDef::builder().density(1.0).build();
-    let box_poly = shapes::box_polygon(0.25, 0.25);
-    let circ = shapes::circle([0.0_f32, 0.0], 0.25);
+    let sdef = ShapeDef::builder().density(1.0).build()?;
+    let box_poly = shapes::box_polygon(0.25, 0.25).expect("valid polygon geometry");
+    let circ = shapes::circle([0.0_f32, 0.0], 0.25)?;
     let mut bodies = Vec::with_capacity(200);
     for _ in 0..200 {
         let x = (rng.next_f32() - 0.5) * 20.0;
         let y = 1.0 + rng.next_f32() * 10.0;
         let t = rng.next_u32() % 2;
-        let id = world.create_body_id(
-            BodyBuilder::new()
+        let id = world.create_body(
+            BodyBuilder::from(foundation.body_def())
                 .body_type(BodyType::Dynamic)
                 .position([x, y])
-                .build(),
-        );
+                .build()?,
+        )?;
         if t == 0 {
-            let _ = world.create_polygon_shape_for(id, &sdef, &box_poly);
+            let _ = world.body(id)?.create_polygon(&sdef, &box_poly)?;
         } else {
-            let _ = world.create_circle_shape_for(id, &sdef, &circ);
+            let _ = world.body(id)?.create_circle(&sdef, &circ)?;
         }
         bodies.push(id);
     }
 
     let start = Instant::now();
     for _ in 0..steps {
-        world.step(1.0 / 60.0, 8);
+        drop(world.step(1.0 / 60.0, 8)?);
     }
     let dur = start.elapsed();
 
@@ -71,8 +72,8 @@ fn run_once(
     let mut pos_sum = WorldScalar::from(0.0_f32);
     let mut vel_sum = 0.0f32;
     for &b in &bodies {
-        let p = world.body_position(b);
-        let v = world.body_linear_velocity(b);
+        let p = world.body(b)?.position()?;
+        let v = world.body(b)?.linear_velocity()?;
         pos_sum += p.x + p.y;
         vel_sum += v.x + v.y;
     }

@@ -1,35 +1,35 @@
 pub use crate::{
-    ApiError, ApiResult, Body, BodyBuilder, BodyDef, BodyType, Filter, Foundation,
-    FoundationActivity, FoundationActivityError, FoundationAdapterIdentityField, FoundationConfig,
+    Body, BodyBuilder, BodyDef, BodyType, Error, Filter, Foundation, FoundationActivity,
+    FoundationActivityError, FoundationAdapterIdentityField, FoundationConfig,
     FoundationDiagnostics, FoundationInitError, LocalManifold, LocalManifoldPoint,
-    MAX_BODY_NAME_BYTES, MaterialMixInput, MixerRequirements, OwnedBody, OwnedHandleCounts,
-    RawBodyDef, Recording, RecordingCapacity, RecordingSession, ReplayBodyView, ReplayConfig,
-    ReplayEpoch, ReplayError, ReplayInfo, ReplayKeyframePolicy, ReplayKeyframeState,
-    ReplayMalformedError, ReplayPlayer, ReplayQueryHitView, ReplayQueryKind, ReplayQueryView,
-    ReplayStatus, ReplayView, ShapeCastInput, Snapshot, SnapshotImage, SnapshotLoad,
-    SnapshotRestore, World, WorldBuilder, WorldDef, WorldHandle,
+    MAX_BODY_NAME_BYTES, MaterialMixInput, MixerId, MixerIdentities, PreparedSnapshotRestore,
+    Recording, RecordingLimits, RecordingSession, ReplayBodyView, ReplayConfig, ReplayEpoch,
+    ReplayInfo, ReplayKeyframePolicy, ReplayKeyframeState, ReplayPlayer, ReplayQueryHitView,
+    ReplayQueryKind, ReplayQueryView, ReplayStatus, ReplayView, Result, ShapeCastInput, ShapeProxy,
+    Snapshot, SnapshotRestore, World, WorldBuilder, WorldDef,
     debug_draw::{DebugDrawCmd, DebugDrawOptions, HexColor},
     dynamic_tree::{
         DynamicTree, TreeBoxCastInput, TreeCastControl, TreeProxyId, TreeRayCastInput, TreeStats,
     },
     events::{
-        BodyMoveEvent, ContactBeginTouchEvent, ContactEndTouchEvent, ContactEvents,
-        ContactHitEvent, JointEvent, SensorBeginTouchEvent, SensorEndTouchEvent, SensorEvents,
+        BodyEvents, BodyMoveEvent, CompletedStep, ContactBeginTouchEvent, ContactEndTouchEvent,
+        ContactEvents, ContactEventsView, ContactHitEvent, JointEvent, JointEvents,
+        SensorBeginTouchEvent, SensorEndTouchEvent, SensorEvents, SensorEventsView,
+        StepEventsSnapshot,
     },
-    foundation, initialize_foundation,
     joints::{
-        ConstraintTuning, DistanceJointDef, FilterJointDef, Joint, JointBase, JointType,
-        MotorJointDef, OwnedJoint, PrismaticJointDef, RevoluteJointDef, WeldJointDef,
-        WheelJointDef,
+        ConstraintTuning, DistanceJoint, DistanceJointDef, FilterJoint, FilterJointDef, Joint,
+        JointBase, JointType, MotorJoint, MotorJointDef, PrismaticJoint, PrismaticJointDef,
+        RevoluteJoint, RevoluteJointDef, WeldJoint, WeldJointDef, WheelJoint, WheelJointDef,
     },
     query::{
         Aabb, ClosestRayCastResult, CollisionPlane, MoverPlaneResult, Plane, PlaneSolverResult,
-        QueryFilter, RayResult, clip_vector, solve_planes, try_clip_vector, try_solve_planes,
+        Query, QueryFilter, RayResult, clip_vector, solve_planes,
     },
     shapes::{
-        self, Capsule, ChainSegment, Circle, MAX_POLYGON_VERTICES, OwnedShape, Polygon, Segment,
-        Shape, ShapeDef, ShapeDefBuilder, ShapeType, SurfaceMaterial,
-        chain::{Chain, ChainDef, ChainDefBuilder, ChainDefMaterialLayout, OwnedChain},
+        self, Capsule, ChainSegment, Circle, MAX_POLYGON_VERTICES, Polygon, Segment, Shape,
+        ShapeDef, ShapeDefBuilder, ShapeType, SurfaceMaterial,
+        chain::{Chain, ChainDef, ChainDefBuilder, ChainDefMaterialLayout},
     },
     types::{
         BodyId, ChainId, ContactData, ContactId, JointId, MAX_MANIFOLD_POINTS, Manifold,
@@ -42,10 +42,10 @@ pub use crate::{
 };
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use crate::{FoundationAssertHook, FoundationLogHook, debug_draw::DebugDraw};
+pub use crate::query::{MoverQueryBuffer, RayQueryBuffer, ShapeQueryBuffer};
 
-#[cfg(feature = "unchecked")]
-pub use crate::unchecked::*;
+#[cfg(not(target_arch = "wasm32"))]
+pub use crate::{FoundationAssertHook, FoundationLogHook, debug_draw::DebugDraw};
 
 #[cfg(feature = "glam")]
 pub use crate::RotFromGlamError;

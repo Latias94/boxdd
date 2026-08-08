@@ -9,25 +9,12 @@ use crate::{
     Error, Result,
     config::RECORDING_WIRE_SCHEMA,
     recording_ops::{
-        ARGUMENT_TAGS, RETURN_TAGS, RecordingArgument, RecordingOp, validate_operations,
+        ARGUMENT_TAGS, RECORDING_OPS_PATH, RETURN_TAGS, RecordingArgument, RecordingOp,
+        validate_operations,
     },
 };
 
 const MAX_SEQUENCE_ELEMENTS: usize = 1_000_000;
-const NATIVE_POD_TAGS: [(&str, &str); 5] = [
-    ("CIRCLE", "b2Circle"),
-    ("CAPSULE", "b2Capsule"),
-    ("SEGMENT", "b2Segment"),
-    ("POLYGON", "b2Polygon"),
-    ("CHAINSEG", "b2ChainSegment"),
-];
-const DESTROY_OPERATIONS: &[(u8, &str)] = &[
-    (0x01, "DestroyWorld"),
-    (0x11, "DestroyBody"),
-    (0x45, "DestroyShape"),
-    (0x71, "DestroyChain"),
-    (0x97, "DestroyJoint"),
-];
 const QUERY_OPERATIONS: &[&str] = &[
     "QueryOverlapAABB",
     "QueryOverlapShape",
@@ -41,33 +28,19 @@ const QUERY_OPERATIONS: &[&str] = &[
 ];
 const REVIEWED_SOURCE_AGGREGATE_DOMAIN: &[u8] = b"boxdd.recording-wire.reviewed-sources\0";
 
-/// Exact, canonical source set whose Git blob identities authorize a wire-contract schema.
+/// Exact, canonical source set whose Git blob identities authorize the wire schema and replay.
+///
+/// Producer callsites are checked separately across the complete effective C-source inventory;
+/// keeping that check separate avoids duplicating every producer file in this schema identity.
 pub const REVIEWED_RECORDING_INPUT_PATHS: &[&str] = &[
     "src/recording.c",
     "src/recording.h",
-    "src/recording_ops.inl",
+    RECORDING_OPS_PATH,
     "src/recording_replay.c",
     "src/recording_replay.h",
     "src/world_snapshot.c",
     "src/world_snapshot.h",
 ];
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum RecordingPrecision {
-    Single,
-    Double,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct RecordingAbi {
-    pub precision: RecordingPrecision,
-    pub pointer_width: u8,
-    pub validation_enabled: bool,
-    pub snapshot_layout_hash: u32,
-    pub native_pod_sizes: BTreeMap<String, usize>,
-}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -198,24 +171,6 @@ pub enum ReplaySemanticClass {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum IdAction {
-    Create,
-    Destroy,
-    Use,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct IdEffect {
-    pub action: IdAction,
-    pub id_kind: String,
-    pub source: String,
-    pub repeated_by: Option<String>,
-    pub condition: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct WireOpcode {
     pub opcode: u8,
@@ -223,9 +178,7 @@ pub struct WireOpcode {
     pub return_tag: String,
     pub arguments: Vec<RecordingArgument>,
     pub tail_program: String,
-    pub payload_termination: String,
     pub semantic_validator: ReplaySemanticClass,
-    pub id_effects: Vec<IdEffect>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -251,14 +204,6 @@ pub struct RecordingWireContract {
     pub tag_codecs: Vec<TagCodec>,
     pub tail_codecs: Vec<TailCodec>,
     pub opcodes: Vec<WireOpcode>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct StructuralPreflight {
-    pub records: usize,
-    pub snapshot_offset: usize,
-    pub snapshot_bytes: usize,
-    pub snapshot_requires_semantic_validation: bool,
 }
 
 pub fn generate_wire_contract(
@@ -373,8 +318,7 @@ pub fn validate_wire_contract(
     }
     if contract.opcodes != expected.opcodes {
         errors.push(
-            "recording opcode arguments, tail program, ID effects, or semantic validator drifted"
-                .to_owned(),
+            "recording opcode arguments, tail program, or semantic validator drifted".to_owned(),
         );
     }
 
@@ -383,104 +327,6 @@ pub fn validate_wire_contract(
     } else {
         Err(Error::message(errors.join("\n")))
     }
-}
-
-/// Validates wire framing and codec boundaries only.
-///
-/// The returned value is deliberately not a replay authorization token. U8 must still validate
-/// the native snapshot structure, live IDs, enum/value invariants, and replay semantics before any
-/// input can be dispatched to Box2D.
-pub fn preflight_structure(
-    bytes: &[u8],
-    contract: &RecordingWireContract,
-    abi: &RecordingAbi,
-) -> Result<StructuralPreflight> {
-    validate_abi(abi)?;
-    validate_contract_shape(contract)?;
-    let snapshot_bytes = validate_header_and_snapshot(bytes, contract, abi)?;
-    let snapshot_offset = contract.framing.header_bytes;
-    let mut cursor = snapshot_offset
-        .checked_add(snapshot_bytes)
-        .ok_or_else(|| Error::message("recording snapshot offset overflow"))?;
-    let opcodes = contract
-        .opcodes
-        .iter()
-        .map(|operation| (operation.opcode, operation))
-        .collect::<BTreeMap<_, _>>();
-    let tags = contract
-        .tag_codecs
-        .iter()
-        .map(|codec| (codec.tag.as_str(), &codec.codec))
-        .collect::<BTreeMap<_, _>>();
-    let tails = contract
-        .tail_codecs
-        .iter()
-        .map(|codec| (codec.name.as_str(), &codec.codec))
-        .collect::<BTreeMap<_, _>>();
-    let mut records = 0;
-    let mut operation_names = Vec::new();
-
-    while cursor < bytes.len() {
-        let frame_header = contract.framing.opcode_bytes + contract.framing.payload_size_bytes;
-        if bytes.len() - cursor < frame_header {
-            return Err(Error::message("recording has a truncated opcode/u24 frame"));
-        }
-        let opcode = bytes[cursor];
-        let operation = opcodes.get(&opcode).ok_or_else(|| {
-            Error::message(format!("recording contains unknown opcode 0x{opcode:02X}"))
-        })?;
-        let payload_size = usize::from(bytes[cursor + 1])
-            | (usize::from(bytes[cursor + 2]) << 8)
-            | (usize::from(bytes[cursor + 3]) << 16);
-        if payload_size >= contract.framing.max_payload_exclusive {
-            return Err(Error::message("recording payload exceeds the u24 contract"));
-        }
-        let payload_start = cursor
-            .checked_add(frame_header)
-            .ok_or_else(|| Error::message("recording frame offset overflow"))?;
-        let payload_end = payload_start
-            .checked_add(payload_size)
-            .ok_or_else(|| Error::message("recording payload offset overflow"))?;
-        if payload_end > bytes.len() {
-            return Err(Error::message("recording payload extends beyond input"));
-        }
-        let payload = &bytes[payload_start..payload_end];
-        let mut interpreter = Interpreter::new(payload, abi, &tags);
-        for argument in &operation.arguments {
-            interpreter.consume_tag(&argument.tag)?;
-        }
-        let tail = tails.get(operation.tail_program.as_str()).ok_or_else(|| {
-            Error::message(format!(
-                "opcode `{}` references missing tail program `{}`",
-                operation.name, operation.tail_program
-            ))
-        })?;
-        interpreter.consume(tail)?;
-        if interpreter.cursor != payload.len() {
-            return Err(Error::message(format!(
-                "opcode 0x{opcode:02X} `{}` consumed {} of {} payload bytes; exact payload EOF is required",
-                operation.name,
-                interpreter.cursor,
-                payload.len()
-            )));
-        }
-        cursor = payload_end;
-        records += 1;
-        operation_names.push(operation.name.as_str());
-    }
-
-    if cursor != bytes.len() {
-        return Err(Error::message(
-            "recording stream did not terminate at exact EOF",
-        ));
-    }
-    validate_stream_grammar(&operation_names, &contract.stream_grammar)?;
-    Ok(StructuralPreflight {
-        records,
-        snapshot_offset,
-        snapshot_bytes,
-        snapshot_requires_semantic_validation: true,
-    })
 }
 
 /// Renders the allocation-free runtime codec table consumed by Safe Rust replay preflight.
@@ -517,7 +363,7 @@ pub fn render_runtime_parser(
     let mut output = String::new();
     writeln!(
         output,
-        "// @generated by cargo run -p xtask -- api-coverage --write; do not edit."
+        "// @generated by cargo run -p xtask -- recording-wire-codegen --write; do not edit."
     )
     .expect("writing to a String cannot fail");
     writeln!(
@@ -539,6 +385,21 @@ pub fn render_runtime_parser(
     writeln!(
         output,
         "pub(super) const EFFECTIVE_SOURCE_SHA256: &str = {effective_source_sha256:?};\n"
+    )
+    .expect("writing to a String cannot fail");
+    writeln!(
+        output,
+        "pub(super) const PROGRAM_TAKE: u8 = {RUNTIME_TAKE};\n\
+         pub(super) const PROGRAM_BOOL: u8 = {RUNTIME_BOOL};\n\
+         pub(super) const PROGRAM_PRECISION: u8 = {RUNTIME_PRECISION};\n\
+         pub(super) const PROGRAM_STRING: u8 = {RUNTIME_STRING};\n\
+         pub(super) const PROGRAM_NATIVE_POD: u8 = {RUNTIME_NATIVE_POD};\n\
+         pub(super) const PROGRAM_COUNTED: u8 = {RUNTIME_COUNTED};\n\
+         pub(super) const NATIVE_POD_CIRCLE: u8 = {RUNTIME_POD_CIRCLE};\n\
+         pub(super) const NATIVE_POD_CAPSULE: u8 = {RUNTIME_POD_CAPSULE};\n\
+         pub(super) const NATIVE_POD_SEGMENT: u8 = {RUNTIME_POD_SEGMENT};\n\
+         pub(super) const NATIVE_POD_POLYGON: u8 = {RUNTIME_POD_POLYGON};\n\
+         pub(super) const NATIVE_POD_CHAIN_SEGMENT: u8 = {RUNTIME_POD_CHAIN_SEGMENT};\n"
     )
     .expect("writing to a String cannot fail");
     writeln!(
@@ -721,6 +582,11 @@ const RUNTIME_PRECISION: u8 = 3;
 const RUNTIME_STRING: u8 = 4;
 const RUNTIME_NATIVE_POD: u8 = 5;
 const RUNTIME_COUNTED: u8 = 6;
+const RUNTIME_POD_CIRCLE: u8 = 1;
+const RUNTIME_POD_CAPSULE: u8 = 2;
+const RUNTIME_POD_SEGMENT: u8 = 3;
+const RUNTIME_POD_POLYGON: u8 = 4;
+const RUNTIME_POD_CHAIN_SEGMENT: u8 = 5;
 
 fn encode_runtime_codec(
     codec: &Codec,
@@ -762,11 +628,11 @@ fn encode_runtime_codec(
         }
         Codec::NativePod { abi_type, .. } => {
             let pod = match abi_type.as_str() {
-                "b2Circle" => 1,
-                "b2Capsule" => 2,
-                "b2Segment" => 3,
-                "b2Polygon" => 4,
-                "b2ChainSegment" => 5,
+                "b2Circle" => RUNTIME_POD_CIRCLE,
+                "b2Capsule" => RUNTIME_POD_CAPSULE,
+                "b2Segment" => RUNTIME_POD_SEGMENT,
+                "b2Polygon" => RUNTIME_POD_POLYGON,
+                "b2ChainSegment" => RUNTIME_POD_CHAIN_SEGMENT,
                 _ => {
                     return Err(Error::message(format!(
                         "unsupported runtime native POD {abi_type}"
@@ -1348,9 +1214,7 @@ fn wire_opcode(operation: &RecordingOp) -> Result<WireOpcode> {
         return_tag: operation.return_tag.clone(),
         arguments: operation.arguments.clone(),
         tail_program: tail_program.to_owned(),
-        payload_termination: "exact-eof".to_owned(),
         semantic_validator: semantic_class(operation)?,
-        id_effects: id_effects(operation, tail_program),
     })
 }
 
@@ -1392,108 +1256,6 @@ fn semantic_class(operation: &RecordingOp) -> Result<ReplaySemanticClass> {
         )));
     }
     Ok(class)
-}
-
-fn id_effects(operation: &RecordingOp, tail_program: &str) -> Vec<IdEffect> {
-    let destroying = DESTROY_OPERATIONS.contains(&(operation.opcode, operation.name.as_str()));
-    let mut effects = operation
-        .arguments
-        .iter()
-        .filter_map(|argument| id_kind(&argument.tag).map(|kind| (argument, kind)))
-        .map(|(argument, kind)| IdEffect {
-            action: if destroying && operation.arguments.first() == Some(argument) {
-                IdAction::Destroy
-            } else {
-                IdAction::Use
-            },
-            id_kind: kind.to_owned(),
-            source: format!("argument:{}", argument.name),
-            repeated_by: None,
-            condition: None,
-        })
-        .collect::<Vec<_>>();
-    for argument in &operation.arguments {
-        if argument.tag.ends_with("JOINTDEF") {
-            for field in ["bodyIdA", "bodyIdB"] {
-                effects.push(IdEffect {
-                    action: IdAction::Use,
-                    id_kind: "body".to_owned(),
-                    source: format!("argument:{}.base.{field}", argument.name),
-                    repeated_by: None,
-                    condition: None,
-                });
-            }
-        }
-    }
-    if operation.return_tag != "RET_NONE" {
-        effects.push(IdEffect {
-            action: IdAction::Create,
-            id_kind: return_id_kind(&operation.return_tag)
-                .expect("validated return ID tag")
-                .to_owned(),
-            source: "tail:returned-id".to_owned(),
-            repeated_by: None,
-            condition: None,
-        });
-    }
-    match operation.opcode {
-        0xE0..=0xE4 => effects.push(IdEffect {
-            action: IdAction::Use,
-            id_kind: "shape".to_owned(),
-            source: format!("tail:{tail_program}[].shapeId"),
-            repeated_by: Some("tail.count".to_owned()),
-            condition: None,
-        }),
-        0xE5 => effects.push(IdEffect {
-            action: IdAction::Use,
-            id_kind: "shape".to_owned(),
-            source: "tail:closest-ray-result.shapeId".to_owned(),
-            repeated_by: None,
-            condition: Some("tail.hit == 1".to_owned()),
-        }),
-        _ => {}
-    }
-    effects
-}
-
-fn return_id_kind(tag_name: &str) -> Option<&'static str> {
-    match tag_name {
-        "RET_BODYID" => Some("body"),
-        "RET_SHAPEID" => Some("shape"),
-        "RET_CHAINID" => Some("chain"),
-        "RET_JOINTID" => Some("joint"),
-        _ => None,
-    }
-}
-
-fn id_kind(tag_name: &str) -> Option<&'static str> {
-    match tag_name {
-        "WORLDID" => Some("world"),
-        "BODYID" => Some("body"),
-        "SHAPEID" => Some("shape"),
-        "CHAINID" => Some("chain"),
-        "JOINTID" => Some("joint"),
-        _ => None,
-    }
-}
-
-fn validate_abi(abi: &RecordingAbi) -> Result<()> {
-    let mut errors = Vec::new();
-    if !matches!(abi.pointer_width, 4 | 8) {
-        errors.push("recording ABI pointer width must be 4 or 8".to_owned());
-    }
-    for (_, abi_type) in NATIVE_POD_TAGS {
-        if abi.native_pod_sizes.get(abi_type).copied().unwrap_or(0) == 0 {
-            errors.push(format!(
-                "recording ABI is missing generated native POD size for {abi_type}"
-            ));
-        }
-    }
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(Error::message(errors.join("\n")))
-    }
 }
 
 fn validate_contract_shape(contract: &RecordingWireContract) -> Result<()> {
@@ -1606,371 +1368,6 @@ fn validate_contract_shape(contract: &RecordingWireContract) -> Result<()> {
     }
 }
 
-fn validate_stream_grammar(
-    operation_names: &[&str],
-    grammar: &RecordingStreamGrammar,
-) -> Result<()> {
-    if operation_names.len() < 3 {
-        return Err(Error::message(
-            "recording stream must contain its initial state hash, final bounds, and terminal record",
-        ));
-    }
-    if operation_names.first().copied() != Some(grammar.initial_operation.as_str()) {
-        return Err(Error::message(format!(
-            "recording stream must begin with `{}`",
-            grammar.initial_operation
-        )));
-    }
-    if operation_names.get(operation_names.len() - 2).copied()
-        != Some(grammar.final_metadata_operation.as_str())
-    {
-        return Err(Error::message(format!(
-            "recording stream must end metadata with `{}`",
-            grammar.final_metadata_operation
-        )));
-    }
-    if operation_names.last().copied() != Some(grammar.terminal_operation.as_str()) {
-        return Err(Error::message(format!(
-            "recording stream must terminate with `{}`",
-            grammar.terminal_operation
-        )));
-    }
-    if grammar.terminal_must_be_last
-        && operation_names
-            .iter()
-            .filter(|name| **name == grammar.terminal_operation)
-            .count()
-            != 1
-    {
-        return Err(Error::message(format!(
-            "recording terminal `{}` must appear exactly once and last",
-            grammar.terminal_operation
-        )));
-    }
-    if operation_names
-        .iter()
-        .filter(|name| **name == grammar.final_metadata_operation)
-        .count()
-        != 1
-    {
-        return Err(Error::message(format!(
-            "recording final metadata `{}` must appear exactly once",
-            grammar.final_metadata_operation
-        )));
-    }
-    Ok(())
-}
-
-fn validate_header_and_snapshot(
-    bytes: &[u8],
-    contract: &RecordingWireContract,
-    abi: &RecordingAbi,
-) -> Result<usize> {
-    let framing = &contract.framing;
-    let header = &contract.header;
-    if bytes.len() < framing.header_bytes {
-        return Err(Error::message("recording is shorter than its fixed header"));
-    }
-    if read_u32(bytes, header.magic_offset)? != header.magic
-        || read_u16(bytes, header.version_major_offset)? != header.version_major
-        || read_u16(bytes, header.version_minor_offset)? != header.version_minor
-    {
-        return Err(Error::message("recording header magic or version mismatch"));
-    }
-    if read_u32(bytes, header.reserved2_offset)? != 0
-        || bytes[header.reserved3_offset] != 0
-        || read_u32(bytes, header.reserved1_offset)? != 0
-    {
-        return Err(Error::message(
-            "recording header reserved fields must be zero",
-        ));
-    }
-    let scale = f32::from_bits(read_u32(bytes, header.length_scale_offset)?);
-    if !scale.is_finite() || scale <= 0.0 {
-        return Err(Error::message(
-            "recording length scale must be finite and positive",
-        ));
-    }
-    if bytes[header.pointer_width_offset] != abi.pointer_width {
-        return Err(Error::message("recording pointer-width ABI mismatch"));
-    }
-    if bytes[header.big_endian_offset] != 0 {
-        return Err(Error::message("big-endian recordings are unsupported"));
-    }
-    let validation = bytes[header.validation_enabled_offset];
-    if validation > 1 || (validation != 0) != abi.validation_enabled {
-        return Err(Error::message("recording validation-mode ABI mismatch"));
-    }
-    let snapshot_u64 = read_u64(bytes, header.snapshot_size_offset)?;
-    let snapshot_bytes = usize::try_from(snapshot_u64)
-        .map_err(|_| Error::message("recording snapshot size does not fit this host"))?;
-    if snapshot_bytes < contract.snapshot.minimum_bytes {
-        return Err(Error::message(
-            "recording snapshot is shorter than its identity header",
-        ));
-    }
-    let snapshot_end = framing
-        .header_bytes
-        .checked_add(snapshot_bytes)
-        .ok_or_else(|| Error::message("recording snapshot offset overflow"))?;
-    if snapshot_end > bytes.len() {
-        return Err(Error::message("recording snapshot extends beyond input"));
-    }
-    let snapshot = &bytes[framing.header_bytes..snapshot_end];
-    let identity = &contract.snapshot;
-    if read_u32(snapshot, identity.magic_offset)? != identity.magic
-        || read_u32(snapshot, identity.version_offset)? != identity.version
-    {
-        return Err(Error::message("snapshot magic or version mismatch"));
-    }
-    if read_u32(snapshot, identity.layout_hash_offset)? != abi.snapshot_layout_hash {
-        return Err(Error::message("snapshot private-layout identity mismatch"));
-    }
-    let flags = read_u32(snapshot, identity.flags_offset)?;
-    if flags & !identity.known_flags_mask != 0 {
-        return Err(Error::message("snapshot contains unknown flags"));
-    }
-    let expected_flags = if abi.validation_enabled {
-        identity.validation_flag
-    } else {
-        0
-    } | if abi.precision == RecordingPrecision::Double {
-        identity.double_precision_flag
-    } else {
-        0
-    };
-    if flags != expected_flags {
-        return Err(Error::message(
-            "snapshot precision or validation flags do not match the selected ABI",
-        ));
-    }
-    Ok(snapshot_bytes)
-}
-
-fn read_u16(bytes: &[u8], offset: usize) -> Result<u16> {
-    let end = offset
-        .checked_add(2)
-        .ok_or_else(|| Error::message("u16 offset overflow"))?;
-    let value = bytes
-        .get(offset..end)
-        .ok_or_else(|| Error::message("truncated u16 field"))?;
-    Ok(u16::from_le_bytes([value[0], value[1]]))
-}
-
-fn read_u32(bytes: &[u8], offset: usize) -> Result<u32> {
-    let end = offset
-        .checked_add(4)
-        .ok_or_else(|| Error::message("u32 offset overflow"))?;
-    let value = bytes
-        .get(offset..end)
-        .ok_or_else(|| Error::message("truncated u32 field"))?;
-    Ok(u32::from_le_bytes([value[0], value[1], value[2], value[3]]))
-}
-
-fn read_u64(bytes: &[u8], offset: usize) -> Result<u64> {
-    let end = offset
-        .checked_add(8)
-        .ok_or_else(|| Error::message("u64 offset overflow"))?;
-    let value = bytes
-        .get(offset..end)
-        .ok_or_else(|| Error::message("truncated u64 field"))?;
-    Ok(u64::from_le_bytes(
-        value
-            .try_into()
-            .map_err(|_| Error::message("invalid u64 field width"))?,
-    ))
-}
-
-struct Interpreter<'a> {
-    bytes: &'a [u8],
-    cursor: usize,
-    abi: &'a RecordingAbi,
-    tags: &'a BTreeMap<&'a str, &'a Codec>,
-    stack: Vec<String>,
-}
-
-impl<'a> Interpreter<'a> {
-    fn new(bytes: &'a [u8], abi: &'a RecordingAbi, tags: &'a BTreeMap<&'a str, &'a Codec>) -> Self {
-        Self {
-            bytes,
-            cursor: 0,
-            abi,
-            tags,
-            stack: Vec::new(),
-        }
-    }
-
-    fn consume_tag(&mut self, tag_name: &str) -> Result<()> {
-        if self.stack.iter().any(|entry| entry == tag_name) {
-            return Err(Error::message(format!(
-                "recursive recording codec tag `{tag_name}`"
-            )));
-        }
-        let codec = self.tags.get(tag_name).copied().ok_or_else(|| {
-            Error::message(format!("recording codec is missing tag `{tag_name}`"))
-        })?;
-        self.stack.push(tag_name.to_owned());
-        let result = self.consume(codec);
-        self.stack.pop();
-        result
-    }
-
-    fn consume(&mut self, codec: &Codec) -> Result<()> {
-        match codec {
-            Codec::Fixed { bytes, boolean } => {
-                let slice = self.take(*bytes)?;
-                if *boolean && slice != [0] && slice != [1] {
-                    return Err(Error::message("recording BOOL must be encoded as 0 or 1"));
-                }
-                Ok(())
-            }
-            Codec::Precision {
-                single_bytes,
-                double_bytes,
-            } => self
-                .take(match self.abi.precision {
-                    RecordingPrecision::Single => *single_bytes,
-                    RecordingPrecision::Double => *double_bytes,
-                })
-                .map(|_| ()),
-            Codec::String {
-                length_bytes,
-                null_sentinel,
-                max_bytes,
-            } => {
-                if *length_bytes != 2 {
-                    return Err(Error::message("unsupported recording string length width"));
-                }
-                let length = u64::from(read_u16(self.bytes, self.cursor)?);
-                self.cursor += 2;
-                if length == *null_sentinel {
-                    return Ok(());
-                }
-                let length = usize::try_from(length)
-                    .map_err(|_| Error::message("recording string length does not fit host"))?;
-                if length > *max_bytes {
-                    return Err(Error::message("recording string exceeds codec limit"));
-                }
-                self.take(length).map(|_| ())
-            }
-            Codec::NativePod { abi_type, .. } => {
-                let size = self
-                    .abi
-                    .native_pod_sizes
-                    .get(abi_type)
-                    .copied()
-                    .ok_or_else(|| {
-                        Error::message(format!("missing native POD size for {abi_type}"))
-                    })?;
-                self.take(size).map(|_| ())
-            }
-            Codec::Tag { tag } => self.consume_tag(tag),
-            Codec::Sequence { steps } => {
-                for step in steps {
-                    self.consume(step)?;
-                }
-                Ok(())
-            }
-            Codec::Counted { count, element } => {
-                if count.bytes != 4 || !count.remaining_bytes_bound || !count.checked_multiply {
-                    return Err(Error::message("unsupported or unbounded count codec"));
-                }
-                let raw = read_u32(self.bytes, self.cursor)?;
-                self.cursor += 4;
-                if count.signed && (raw as i32) < 0 {
-                    return Err(Error::message("recording count must not be negative"));
-                }
-                if raw > i32::MAX as u32 {
-                    return Err(Error::message("recording count exceeds i32::MAX"));
-                }
-                let count_value = usize::try_from(raw)
-                    .map_err(|_| Error::message("recording count does not fit host"))?;
-                if count_value > count.max_count {
-                    return Err(Error::message(format!(
-                        "recording count {count_value} exceeds configured limit {}",
-                        count.max_count
-                    )));
-                }
-                let minimum = minimum_width(element, self.abi, self.tags, &mut BTreeSet::new())?;
-                let required = count_value
-                    .checked_mul(minimum)
-                    .ok_or_else(|| Error::message("recording count byte-size overflow"))?;
-                if required > self.remaining() {
-                    return Err(Error::message(
-                        "recording counted sequence exceeds remaining payload",
-                    ));
-                }
-                for _ in 0..count_value {
-                    self.consume(element)?;
-                }
-                Ok(())
-            }
-        }
-    }
-
-    fn take(&mut self, bytes: usize) -> Result<&'a [u8]> {
-        let end = self
-            .cursor
-            .checked_add(bytes)
-            .ok_or_else(|| Error::message("recording codec cursor overflow"))?;
-        let slice = self
-            .bytes
-            .get(self.cursor..end)
-            .ok_or_else(|| Error::message("recording payload is shorter than its codec"))?;
-        self.cursor = end;
-        Ok(slice)
-    }
-
-    fn remaining(&self) -> usize {
-        self.bytes.len().saturating_sub(self.cursor)
-    }
-}
-
-fn minimum_width(
-    codec: &Codec,
-    abi: &RecordingAbi,
-    tags: &BTreeMap<&str, &Codec>,
-    stack: &mut BTreeSet<String>,
-) -> Result<usize> {
-    match codec {
-        Codec::Fixed { bytes, .. } => Ok(*bytes),
-        Codec::Precision {
-            single_bytes,
-            double_bytes,
-        } => Ok(match abi.precision {
-            RecordingPrecision::Single => *single_bytes,
-            RecordingPrecision::Double => *double_bytes,
-        }),
-        Codec::String { length_bytes, .. } => Ok(*length_bytes),
-        Codec::NativePod { abi_type, .. } => abi
-            .native_pod_sizes
-            .get(abi_type)
-            .copied()
-            .ok_or_else(|| Error::message(format!("missing native POD size for {abi_type}"))),
-        Codec::Tag { tag } => {
-            if !stack.insert(tag.clone()) {
-                return Err(Error::message(format!("recursive codec tag `{tag}`")));
-            }
-            let result = minimum_width(
-                tags.get(tag.as_str())
-                    .copied()
-                    .ok_or_else(|| Error::message(format!("missing codec tag `{tag}`")))?,
-                abi,
-                tags,
-                stack,
-            );
-            stack.remove(tag);
-            result
-        }
-        Codec::Sequence { steps } => steps.iter().try_fold(0_usize, |total, step| {
-            total
-                .checked_add(minimum_width(step, abi, tags, stack)?)
-                .ok_or_else(|| Error::message("recording codec minimum-width overflow"))
-        }),
-        Codec::Counted { count, .. } => Ok(count.bytes),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2032,59 +1429,6 @@ mod tests {
             "#,
         )
         .expect("fixture operations")
-    }
-
-    fn abi(precision: RecordingPrecision) -> RecordingAbi {
-        RecordingAbi {
-            precision,
-            pointer_width: 8,
-            validation_enabled: false,
-            snapshot_layout_hash: 0x1234_5678,
-            native_pod_sizes: [
-                ("b2Circle".to_owned(), 12),
-                ("b2Capsule".to_owned(), 20),
-                ("b2Segment".to_owned(), 16),
-                ("b2Polygon".to_owned(), 144),
-                ("b2ChainSegment".to_owned(), 36),
-            ]
-            .into_iter()
-            .collect(),
-        }
-    }
-
-    fn recording(abi: &RecordingAbi) -> Vec<u8> {
-        let mut bytes = vec![0; 32];
-        bytes[0..4].copy_from_slice(&0x4352_3242_u32.to_le_bytes());
-        bytes[4..6].copy_from_slice(&3_u16.to_le_bytes());
-        bytes[6..8].copy_from_slice(&2_u16.to_le_bytes());
-        bytes[12..16].copy_from_slice(&1.0_f32.to_bits().to_le_bytes());
-        bytes[17] = abi.pointer_width;
-        bytes[19] = u8::from(abi.validation_enabled);
-        bytes[24..32].copy_from_slice(&16_u64.to_le_bytes());
-        bytes.extend_from_slice(&0x3253_4E42_u32.to_le_bytes());
-        bytes.extend_from_slice(&3_u32.to_le_bytes());
-        bytes.extend_from_slice(&abi.snapshot_layout_hash.to_le_bytes());
-        let flags = u32::from(abi.validation_enabled)
-            | if abi.precision == RecordingPrecision::Double {
-                2
-            } else {
-                0
-            };
-        bytes.extend_from_slice(&flags.to_le_bytes());
-        push_frame(&mut bytes, 0xF1, &[0; 12]);
-        bytes
-    }
-
-    fn finish_recording(bytes: &mut Vec<u8>) {
-        push_frame(bytes, 0xF2, &[0; 16]);
-        push_frame(bytes, 0x01, &[0; 4]);
-    }
-
-    fn push_frame(bytes: &mut Vec<u8>, opcode: u8, payload: &[u8]) {
-        bytes.push(opcode);
-        let size = payload.len();
-        bytes.extend_from_slice(&[size as u8, (size >> 8) as u8, (size >> 16) as u8]);
-        bytes.extend_from_slice(payload);
     }
 
     #[test]
@@ -2303,72 +1647,6 @@ mod tests {
     }
 
     #[test]
-    fn id_effects_cover_nested_joint_ids_return_ids_and_query_tail_ids() {
-        let contract = wire_contract(&operations());
-        let create = contract
-            .opcodes
-            .iter()
-            .find(|opcode| opcode.opcode == 0x90)
-            .expect("joint create opcode");
-        assert!(create.id_effects.iter().any(|effect| {
-            effect.action == IdAction::Use
-                && effect.id_kind == "body"
-                && effect.source == "argument:def.base.bodyIdA"
-        }));
-        assert!(
-            create
-                .id_effects
-                .iter()
-                .any(|effect| { effect.action == IdAction::Create && effect.id_kind == "joint" })
-        );
-
-        let overlap = contract
-            .opcodes
-            .iter()
-            .find(|opcode| opcode.opcode == 0xE0)
-            .expect("overlap opcode");
-        assert!(overlap.id_effects.iter().any(|effect| {
-            effect.id_kind == "shape" && effect.repeated_by.as_deref() == Some("tail.count")
-        }));
-        let closest = contract
-            .opcodes
-            .iter()
-            .find(|opcode| opcode.opcode == 0xE5)
-            .expect("closest query opcode");
-        assert!(closest.id_effects.iter().any(|effect| {
-            effect.id_kind == "shape" && effect.condition.as_deref() == Some("tail.hit == 1")
-        }));
-    }
-
-    #[test]
-    fn destroy_id_effects_follow_the_reviewed_upstream_opcodes() {
-        let operations = parse(
-            r#"
-                B2_REC_OP(0x45, DestroyShape, RET_NONE, ARG(SHAPEID, shape) ARG(BOOL, updateBodyMass))
-                B2_REC_OP(0x97, DestroyJoint, RET_NONE, ARG(JOINTID, joint) ARG(BOOL, wakeAttached))
-            "#,
-        )
-        .expect("destroy operations");
-        let contract = wire_contract(&operations);
-        for (name, id_kind) in [("DestroyShape", "shape"), ("DestroyJoint", "joint")] {
-            let opcode = contract
-                .opcodes
-                .iter()
-                .find(|opcode| opcode.name == name)
-                .expect("destroy opcode");
-            assert_eq!(
-                opcode
-                    .id_effects
-                    .iter()
-                    .filter(|effect| effect.action == IdAction::Destroy)
-                    .map(|effect| effect.id_kind.as_str())
-                    .collect::<Vec<_>>(),
-                vec![id_kind]
-            );
-        }
-    }
-
-    #[test]
     fn unreviewed_query_opcodes_fail_closed_instead_of_inheriting_mutation_defaults() {
         let operations = vec![RecordingOp {
             opcode: 0xE9,
@@ -2381,196 +1659,5 @@ mod tests {
         let error = generate_wire_contract(SHA, &operations, &sources, &aggregate)
             .expect_err("unreviewed query opcode must fail closed");
         assert!(error.to_string().contains("no reviewed tail program"));
-    }
-
-    #[test]
-    fn exact_payload_rejects_cross_frame_short_read_and_trailing_bytes() {
-        let operations = operations();
-        let contract = wire_contract(&operations);
-        let abi = abi(RecordingPrecision::Single);
-
-        let mut valid = recording(&abi);
-        push_frame(&mut valid, 0x80, &[0; 12]);
-        finish_recording(&mut valid);
-        assert_eq!(
-            preflight_structure(&valid, &contract, &abi)
-                .unwrap()
-                .records,
-            4
-        );
-
-        let mut short = recording(&abi);
-        push_frame(&mut short, 0x80, &[]);
-        push_frame(&mut short, 0x80, &[0; 12]);
-        assert!(
-            preflight_structure(&short, &contract, &abi)
-                .unwrap_err()
-                .to_string()
-                .contains("shorter than its codec")
-        );
-
-        let mut trailing = recording(&abi);
-        push_frame(&mut trailing, 0x80, &[0; 13]);
-        assert!(
-            preflight_structure(&trailing, &contract, &abi)
-                .unwrap_err()
-                .to_string()
-                .contains("exact payload EOF")
-        );
-    }
-
-    #[test]
-    fn rejects_unknown_opcode_partial_frame_and_invalid_bool() {
-        let operations = operations();
-        let contract = wire_contract(&operations);
-        let abi = abi(RecordingPrecision::Single);
-
-        let mut unknown = recording(&abi);
-        push_frame(&mut unknown, 0xFF, &[]);
-        assert!(preflight_structure(&unknown, &contract, &abi).is_err());
-
-        let mut partial = recording(&abi);
-        partial.extend_from_slice(&[0x80, 0, 0]);
-        assert!(preflight_structure(&partial, &contract, &abi).is_err());
-
-        let mut invalid_bool = recording(&abi);
-        push_frame(&mut invalid_bool, 0x02, &[0, 0, 0, 0, 2]);
-        assert!(
-            preflight_structure(&invalid_bool, &contract, &abi)
-                .unwrap_err()
-                .to_string()
-                .contains("BOOL")
-        );
-    }
-
-    #[test]
-    fn rejects_string_count_and_tail_mismatches() {
-        let operations = operations();
-        let contract = wire_contract(&operations);
-        let abi = abi(RecordingPrecision::Single);
-
-        let mut body_payload = vec![0; 4 + 4 + 8 + 8 + 8 + 20];
-        body_payload.extend_from_slice(&10_u16.to_le_bytes());
-        let mut body = recording(&abi);
-        push_frame(&mut body, 0x10, &body_payload);
-        assert!(preflight_structure(&body, &contract, &abi).is_err());
-
-        let mut chain_payload = vec![0; 8 + 8];
-        chain_payload.extend_from_slice(&u32::MAX.to_le_bytes());
-        let mut chain = recording(&abi);
-        push_frame(&mut chain, 0x70, &chain_payload);
-        assert!(
-            preflight_structure(&chain, &contract, &abi)
-                .unwrap_err()
-                .to_string()
-                .contains("count")
-        );
-
-        let mut query_payload = vec![0; 4 + 8 + 16 + 16];
-        query_payload.extend_from_slice(&1_u32.to_le_bytes());
-        let mut query = recording(&abi);
-        push_frame(&mut query, 0xE0, &query_payload);
-        assert!(
-            preflight_structure(&query, &contract, &abi)
-                .unwrap_err()
-                .to_string()
-                .contains("counted sequence")
-        );
-    }
-
-    #[test]
-    fn rejects_shape_proxy_limit_and_precision_width_mismatch() {
-        let operations = operations();
-        let contract = wire_contract(&operations);
-        let single = abi(RecordingPrecision::Single);
-
-        let mut proxy_payload = vec![0; 4 + 8];
-        proxy_payload.extend_from_slice(&9_u32.to_le_bytes());
-        let mut proxy = recording(&single);
-        push_frame(&mut proxy, 0xE1, &proxy_payload);
-        assert!(
-            preflight_structure(&proxy, &contract, &single)
-                .unwrap_err()
-                .to_string()
-                .contains("configured limit")
-        );
-
-        let double = abi(RecordingPrecision::Double);
-        let mut wrong_width = recording(&double);
-        push_frame(&mut wrong_width, 0x20, &[0; 24]);
-        assert!(preflight_structure(&wrong_width, &contract, &double).is_err());
-    }
-
-    #[test]
-    fn validates_header_and_snapshot_identity_without_claiming_snapshot_safety() {
-        let operations = operations();
-        let contract = wire_contract(&operations);
-        let abi = abi(RecordingPrecision::Single);
-        let mut valid = recording(&abi);
-        finish_recording(&mut valid);
-        let summary =
-            preflight_structure(&valid, &contract, &abi).expect("structural-only preflight");
-        assert!(summary.snapshot_requires_semantic_validation);
-
-        let mut invalid_scale = valid.clone();
-        invalid_scale[12..16].copy_from_slice(&f32::NAN.to_bits().to_le_bytes());
-        assert!(preflight_structure(&invalid_scale, &contract, &abi).is_err());
-
-        for mutate in [17_usize, 18, 19, 32, 36, 40, 44] {
-            let mut invalid = valid.clone();
-            invalid[mutate] ^= 0xFF;
-            assert!(
-                preflight_structure(&invalid, &contract, &abi).is_err(),
-                "offset {mutate}"
-            );
-        }
-        let mut empty_snapshot = valid.clone();
-        empty_snapshot[24..32].copy_from_slice(&0_u64.to_le_bytes());
-        assert!(preflight_structure(&empty_snapshot, &contract, &abi).is_err());
-    }
-
-    #[test]
-    fn structural_preflight_requires_producer_stream_grammar() {
-        let operations = operations();
-        let contract = wire_contract(&operations);
-        let abi = abi(RecordingPrecision::Single);
-
-        let missing_terminal = recording(&abi);
-        let error = preflight_structure(&missing_terminal, &contract, &abi)
-            .expect_err("unterminated stream must fail");
-        assert!(error.to_string().contains("final bounds, and terminal"));
-
-        let mut terminal_then_data = recording(&abi);
-        push_frame(&mut terminal_then_data, 0xF2, &[0; 16]);
-        push_frame(&mut terminal_then_data, 0x01, &[0; 4]);
-        push_frame(&mut terminal_then_data, 0x80, &[0; 12]);
-        let error = preflight_structure(&terminal_then_data, &contract, &abi)
-            .expect_err("records after terminal must fail");
-        assert!(error.to_string().contains("end metadata"));
-
-        let mut duplicate_terminal = recording(&abi);
-        push_frame(&mut duplicate_terminal, 0x01, &[0; 4]);
-        finish_recording(&mut duplicate_terminal);
-        let error = preflight_structure(&duplicate_terminal, &contract, &abi)
-            .expect_err("duplicate terminal must fail");
-        assert!(error.to_string().contains("exactly once and last"));
-    }
-
-    #[test]
-    fn structural_preflight_rejects_forged_contract_before_indexing_offsets() {
-        let operations = operations();
-        let mut contract = wire_contract(&operations);
-        contract.header.magic_offset = usize::MAX;
-        let abi = abi(RecordingPrecision::Single);
-        let mut valid = recording(&abi);
-        finish_recording(&mut valid);
-
-        let error = preflight_structure(&valid, &contract, &abi)
-            .expect_err("forged offsets must fail as contract drift");
-        assert!(
-            error
-                .to_string()
-                .contains("framing or identity layout drifted")
-        );
     }
 }

@@ -13,22 +13,31 @@ fn relative_transform(frame_a: bd::Transform, frame_b: bd::Transform) -> bd::Tra
         frame_a.inv_transform_point(frame_b.position()),
         frame_b.rotation().angle() - frame_a.rotation().angle(),
     )
+    .expect("relative testbed transforms should remain finite")
 }
 
 #[allow(dead_code)]
-pub fn tick(app: &mut super::PhysicsApp) {
+pub fn tick(app: &mut super::PhysicsApp, _events: Option<&bd::StepEventsSnapshot>) {
     let proxy_a = bd::ShapeProxy::new(rect_points(app.sd_a_hx, app.sd_a_hy), app.sd_a_radius)
         .expect("rect proxy must stay within the Box2D shape-proxy point limit");
     let proxy_b = bd::ShapeProxy::new(rect_points(app.sd_b_hx, app.sd_b_hy), app.sd_b_radius)
         .expect("rect proxy must stay within the Box2D shape-proxy point limit");
-    let frame_a = bd::Transform::from_pos_angle([app.sd_a_x, app.sd_a_y], app.sd_a_angle);
-    let frame_b = bd::Transform::from_pos_angle([app.sd_b_x, app.sd_b_y], app.sd_b_angle);
+    let Ok(frame_a) = bd::Transform::from_pos_angle([app.sd_a_x, app.sd_a_y], app.sd_a_angle)
+    else {
+        return;
+    };
+    let Ok(frame_b) = bd::Transform::from_pos_angle([app.sd_b_x, app.sd_b_y], app.sd_b_angle)
+    else {
+        return;
+    };
     let mut cache = bd::SimplexCache::default();
-    let out = bd::shape_distance(
-        bd::DistanceInput::new(proxy_a, proxy_b, relative_transform(frame_a, frame_b))
-            .with_radii(true),
-        &mut cache,
-    );
+    let Ok(input) = bd::DistanceInput::new(proxy_a, proxy_b, relative_transform(frame_a, frame_b))
+    else {
+        return;
+    };
+    let Ok(out) = bd::shape_distance(input.with_radii(true), &mut cache) else {
+        return;
+    };
     let point_a = frame_a.transform_point(out.point_a);
     let point_b = frame_a.transform_point(out.point_b);
     app.sd_distance = out.distance;

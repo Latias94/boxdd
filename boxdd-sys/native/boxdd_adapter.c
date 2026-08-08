@@ -20,7 +20,9 @@
 #include "box2d/collision.h"
 #include "box2d/types.h"
 
+#include <errno.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifndef BOXDD_UPSTREAM_SHA
@@ -40,7 +42,7 @@
 #endif
 
 #ifndef BOXDD_RECORDING_CONTRACT_BLAKE3
-#define BOXDD_RECORDING_CONTRACT_BLAKE3 "26e9ed79e7e4d7ac00d927be5e9c184f2058c585c7369c589ced11da14ddefe2"
+#error "BOXDD_RECORDING_CONTRACT_BLAKE3 must be supplied by the verified provider build"
 #endif
 
 #define BOXDD_SNAPSHOT_VERSION 3u
@@ -130,3 +132,85 @@ bool boxddAdapter_GetIdentity( boxddAdapterIdentity* out, size_t outSize )
 			 sizeof( out->recordingContractBlake3 ) - 1 );
 	return true;
 }
+
+#if defined( __EMSCRIPTEN__ )
+#ifndef BOXDD_WASM_PROVIDER_HEAP_LIMIT
+#error "BOXDD_WASM_PROVIDER_HEAP_LIMIT must be supplied by the WASM provider build"
+#endif
+
+extern unsigned char __heap_base;
+
+_Static_assert( ( _Alignof( max_align_t ) & ( _Alignof( max_align_t ) - 1 ) ) == 0,
+				 "max_align_t alignment must be a power of two" );
+_Static_assert( BOXDD_WASM_PROVIDER_HEAP_LIMIT > 0, "provider heap limit must be positive" );
+_Static_assert( sizeof( uintptr_t ) <= sizeof( int64_t ), "provider heap coordinates must fit in sbrk64" );
+
+static uintptr_t boxddWasmProgramBreak = (uintptr_t)&__heap_base;
+
+// Emscripten's emmalloc normally expands to the full imported memory. The Rust module shares that
+// memory and owns the upper partition, so provider sbrk must stop at the fixed partition boundary.
+void* _sbrk64( int64_t increment )
+{
+	const uintptr_t alignment = _Alignof( max_align_t );
+	const uintptr_t alignmentMask = alignment - 1;
+	const uintptr_t heapBase = (uintptr_t)&__heap_base;
+	const uintptr_t oldBreak = boxddWasmProgramBreak;
+
+	if ( increment >= 0 )
+	{
+		const uint64_t requested = (uint64_t)increment;
+		if ( requested > UINTPTR_MAX - alignmentMask )
+		{
+			errno = ENOMEM;
+			return (void*)-1;
+		}
+		const uintptr_t rounded = ( (uintptr_t)requested + alignmentMask ) & ~alignmentMask;
+		if ( oldBreak > BOXDD_WASM_PROVIDER_HEAP_LIMIT ||
+			 rounded > BOXDD_WASM_PROVIDER_HEAP_LIMIT - oldBreak )
+		{
+			errno = ENOMEM;
+			return (void*)-1;
+		}
+		boxddWasmProgramBreak = oldBreak + rounded;
+		return (void*)oldBreak;
+	}
+
+	const uint64_t magnitude = (uint64_t)( -( increment + 1 ) ) + 1;
+	const uintptr_t rounded = (uintptr_t)magnitude & ~alignmentMask;
+	if ( magnitude > UINTPTR_MAX || oldBreak < heapBase || rounded > oldBreak - heapBase )
+	{
+		errno = ENOMEM;
+		return (void*)-1;
+	}
+	boxddWasmProgramBreak = oldBreak - rounded;
+	return (void*)oldBreak;
+}
+
+// Qualification-only export. It is intentionally absent from the public adapter header and Rust
+// bindings; runtime smoke tests use it to prove that provider allocation cannot enter Rust memory.
+uint32_t providerHeapBoundaryProbe( uintptr_t expectedLimit )
+{
+	const uintptr_t heapBase = (uintptr_t)&__heap_base;
+	const uintptr_t initialBreak = boxddWasmProgramBreak;
+	if ( expectedLimit != BOXDD_WASM_PROVIDER_HEAP_LIMIT || initialBreak < heapBase || initialBreak >= expectedLimit )
+	{
+		return 1;
+	}
+
+	const uintptr_t available = expectedLimit - initialBreak;
+	if ( _sbrk64( (int64_t)available ) != (void*)initialBreak || boxddWasmProgramBreak != expectedLimit )
+	{
+		return 2;
+	}
+
+	errno = 0;
+	void* overflow = _sbrk64( 1 );
+	const int overflowErrno = errno;
+	void* restored = _sbrk64( -(int64_t)available );
+	if ( restored != (void*)expectedLimit || boxddWasmProgramBreak != initialBreak )
+	{
+		return 3;
+	}
+	return overflow == (void*)-1 && overflowErrno == ENOMEM ? 0 : 4;
+}
+#endif

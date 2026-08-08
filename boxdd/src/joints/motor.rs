@@ -1,8 +1,9 @@
+use crate::JointId;
 use crate::world::World;
 use boxdd_sys::ffi;
 
-use super::{Joint, JointBase, OwnedJoint};
-use crate::error::ApiResult;
+use super::JointBase;
+use crate::error::Result;
 
 // Motor joint
 #[derive(Clone, Debug)]
@@ -25,8 +26,8 @@ pub struct MotorJointDef {
 
 impl MotorJointDef {
     pub fn new(base: JointBase) -> Self {
-        let _lease = crate::core::foundation::assert_transient_native_lease();
-        let raw = unsafe { ffi::b2DefaultMotorJointDef() };
+        let raw: ffi::b2MotorJointDef =
+            crate::core::native_defaults::motor_joint_def(base.to_raw());
         Self {
             base,
             linear_velocity: crate::types::Vec2::from_raw(raw.linearVelocity),
@@ -54,8 +55,8 @@ impl MotorJointDef {
 
     #[inline]
     pub(crate) fn to_raw(&self) -> ffi::b2MotorJointDef {
-        let mut raw = unsafe { ffi::b2DefaultMotorJointDef() };
-        raw.base = self.base.to_raw();
+        let mut raw: ffi::b2MotorJointDef =
+            crate::core::native_defaults::motor_joint_def(self.base.to_raw());
         raw.linearVelocity = self.linear_velocity.into_raw();
         raw.maxVelocityForce = self.max_velocity_force;
         raw.angularVelocity = self.angular_velocity;
@@ -120,7 +121,7 @@ impl MotorJointDef {
     }
 
     #[inline]
-    pub fn validate(&self) -> ApiResult<()> {
+    pub fn validate(&self) -> Result<()> {
         super::check_motor_joint_def_valid(self)
     }
 
@@ -221,21 +222,7 @@ impl<'w> MotorJointBuilder<'w> {
         self
     }
 
-    #[must_use]
-    pub fn build(self) -> Joint<'w> {
+    pub fn build(self) -> Result<JointId> {
         self.world.create_motor_joint(&self.def)
-    }
-
-    pub fn try_build(self) -> ApiResult<Joint<'w>> {
-        self.world.try_create_motor_joint(&self.def)
-    }
-
-    #[must_use]
-    pub fn build_owned(self) -> OwnedJoint {
-        self.world.create_motor_joint_owned(&self.def)
-    }
-
-    pub fn try_build_owned(self) -> ApiResult<OwnedJoint> {
-        self.world.try_create_motor_joint_owned(&self.def)
     }
 }

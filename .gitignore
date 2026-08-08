@@ -4,7 +4,8 @@
 repo-ref/
 /boxdd-sys/Cargo.lock
 /docs/pages/wasm/generated
-/docs/pages/bevy-testbed/generated
+/docs/pages/bevy-testbed/generated-v2
+/docs/knowledge/engineering/
 /.playwright-cli/
 /node_modules/
 /playwright-report/

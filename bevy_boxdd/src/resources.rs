@@ -1,18 +1,41 @@
 //! Bevy resources that own the native physics world and plugin settings.
 
-use crate::components::{Collider, JointDescriptor, PhysicsMaterial};
+mod identity;
+mod native_creation;
+mod queries;
+mod snapshot;
+
 use crate::math::to_boxdd_vec2;
-use bevy_ecs::prelude::{Entity, Resource};
-use bevy_math::Vec2 as BevyVec2;
-#[cfg(not(target_arch = "wasm32"))]
-use boxdd::{Aabb, DebugDrawCmd, DebugDrawOptions};
-use boxdd::{
-    ApiResult, BodyId, JointId, Position, QueryFilter, RayResult, ShapeId, World, WorldDef,
+use crate::messages::{BoxddContextDisabledReason, BoxddPluginError};
+use crate::origin::BoxddWorldOrigin;
+use bevy_ecs::{
+    prelude::{Resource, World as EcsWorld},
+    world::WorldId,
 };
-use std::collections::HashMap;
+use bevy_math::Vec2 as BevyVec2;
+use boxdd::{
+    CompletedStep, Error as BoxddError, Foundation, Position, Result as BoxddResult, World,
+    WorldBuilder,
+};
+#[cfg(not(target_arch = "wasm32"))]
+use boxdd::{RayQueryBuffer, ShapeQueryBuffer};
+use identity::{EventEntityLookup, IdentityGraph};
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+use std::sync::Arc;
+
+pub(crate) use identity::BodyDependents;
+pub(crate) use native_creation::{BodyDescriptor, ShapeDescriptor, ShapeLocalTransform};
+pub use queries::{BoxddClosestRayCastResult, BoxddRayHit, BoxddShapeHit};
+pub use snapshot::BoxddPhysicsSnapshot;
+pub(crate) use snapshot::apply_pending_snapshot_restore;
+
+pub(crate) struct StepEventErrors {
+    pub(crate) step: Option<BoxddError>,
+    pub(crate) read_events: Option<BoxddError>,
+}
 
 /// How the plugin reports recoverable errors from fixed-update systems.
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Resource, Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub enum BoxddErrorPolicy {
     /// Emit [`crate::BoxddErrorMessage`] only.
     #[default]
@@ -23,17 +46,121 @@ pub enum BoxddErrorPolicy {
     Panic,
 }
 
-/// Runtime settings used by [`crate::BoxddPhysicsPlugin`].
-#[derive(Resource, Clone, Debug)]
+/// Runtime settings for the fixed Box2D step.
+///
+/// This resource is separate from [`BoxddPhysicsSettings`] because the Bevy fixed clock is startup
+/// configuration, while sub-step count is intentionally mutable at runtime. Gravity is used to
+/// create the native world and can later be changed through [`BoxddPhysicsContext::set_gravity`].
+#[derive(Resource, Copy, Clone, Debug, PartialEq)]
+pub struct BoxddStepSettings {
+    /// Box2D sub-step count used for each fixed step.
+    pub sub_step_count: i32,
+    /// Fallback step duration used when Bevy's fixed clock has not advanced yet.
+    pub fallback_timestep_seconds: f32,
+}
+
+impl Default for BoxddStepSettings {
+    fn default() -> Self {
+        Self {
+            sub_step_count: 4,
+            fallback_timestep_seconds: 1.0 / 60.0,
+        }
+    }
+}
+
+/// Event families materialized and published by the Bevy integration.
+///
+/// The default has no interests, so an ordinary fixed step does not call any native event getter.
+/// Applications opt in only to the message families they consume.
+#[derive(Resource, Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub struct BoxddEventInterests {
+    /// Publish [`crate::BoxddBodyMoveMessage`] values.
+    pub body_moves: bool,
+    /// Publish contact begin, end, and hit messages.
+    pub contacts: bool,
+    /// Publish [`crate::BoxddJointEventMessage`] values.
+    pub joints: bool,
+    /// Publish sensor begin and end messages.
+    pub sensors: bool,
+}
+
+impl BoxddEventInterests {
+    /// No event families are materialized.
+    pub const NONE: Self = Self {
+        body_moves: false,
+        contacts: false,
+        joints: false,
+        sensors: false,
+    };
+
+    /// Every event family is materialized and published.
+    pub const ALL: Self = Self {
+        body_moves: true,
+        contacts: true,
+        joints: true,
+        sensors: true,
+    };
+
+    /// Enables or disables body-move messages.
+    pub const fn with_body_moves(mut self, enabled: bool) -> Self {
+        self.body_moves = enabled;
+        self
+    }
+
+    /// Enables or disables contact messages.
+    pub const fn with_contacts(mut self, enabled: bool) -> Self {
+        self.contacts = enabled;
+        self
+    }
+
+    /// Enables or disables joint messages.
+    pub const fn with_joints(mut self, enabled: bool) -> Self {
+        self.joints = enabled;
+        self
+    }
+
+    /// Enables or disables sensor messages.
+    pub const fn with_sensors(mut self, enabled: bool) -> Self {
+        self.sensors = enabled;
+        self
+    }
+}
+
+/// Startup configuration used by [`crate::BoxddPhysicsPlugin`].
+///
+/// The plugin consumes this value and installs separate runtime resources for step settings,
+/// event interests, and error policy. `gravity` is the initial native-world value; use
+/// [`BoxddPhysicsContext::set_gravity`] to change it at runtime. The fixed-clock field is consumed
+/// only during plugin construction.
+#[derive(Clone, Debug)]
 pub struct BoxddPhysicsSettings {
     /// Gravity used when creating the native Box2D world.
     pub gravity: BevyVec2,
     /// Box2D sub-step count used for each fixed step.
     pub sub_step_count: i32,
     /// Optional Bevy fixed timestep override in seconds.
+    ///
+    /// `None` preserves an existing [`bevy_time::Time`] resource specialized for
+    /// [`bevy_time::Fixed`], or installs Bevy's default fixed clock when the app has none.
     pub fixed_timestep_seconds: Option<f64>,
     /// Error reporting policy for plugin systems.
     pub error_policy: BoxddErrorPolicy,
+    /// Event families that the plugin should materialize after a successful step.
+    pub event_interests: BoxddEventInterests,
+}
+
+/// Cached per-App binding validated at the head of each fixed-update pipeline.
+///
+/// Bevy run conditions must be send, so they compare the public origin against this snapshot.
+/// Each physics system separately compares its live non-send context to the same snapshot, closing
+/// replacement races between scheduled systems without accessing non-send state from a condition.
+#[derive(Resource, Clone, Debug, Default)]
+pub(crate) struct BoxddEcsWorldBindingState {
+    valid: bool,
+    owner_world: Option<WorldId>,
+    committed_world_origin: Position,
+    world_origin_revision: u64,
+    context_identity: Option<Arc<()>>,
 }
 
 impl Default for BoxddPhysicsSettings {
@@ -43,127 +170,127 @@ impl Default for BoxddPhysicsSettings {
             sub_step_count: 4,
             fixed_timestep_seconds: Some(1.0 / 60.0),
             error_policy: BoxddErrorPolicy::MessageOnly,
+            event_interests: BoxddEventInterests::NONE,
         }
     }
 }
 
 /// Non-send resource that owns the native Box2D world and ECS id mappings.
 ///
-/// `boxdd::World` is intentionally `!Send`/`!Sync`; Bevy apps should access
-/// this resource from main-thread systems and move plain snapshots across
-/// threads when needed.
+/// `boxdd::World` is intentionally `!Send`/`!Sync`; Bevy apps must access this resource from
+/// main-thread systems. The bidirectional maps are the sole native ownership authority; runtime
+/// ID components are read-only ECS projections.
 pub struct BoxddPhysicsContext {
+    context_identity: Arc<()>,
+    owner_world: WorldId,
+    committed_world_origin: Position,
+    world_origin_revision: u64,
+    foundation: Option<&'static Foundation>,
     world: Option<World>,
-    pub(crate) entity_to_body: HashMap<Entity, BodyId>,
-    pub(crate) body_to_entity: HashMap<BodyId, Entity>,
-    pub(crate) entity_to_shape: HashMap<Entity, ShapeId>,
-    pub(crate) shape_to_entity: HashMap<ShapeId, Entity>,
-    pub(crate) shape_to_body_entity: HashMap<Entity, Entity>,
-    pub(crate) shape_descriptors: HashMap<Entity, ShapeDescriptor>,
-    pub(crate) entity_to_joint: HashMap<Entity, JointId>,
-    pub(crate) joint_to_entity: HashMap<JointId, Entity>,
-    pub(crate) joint_descriptors: HashMap<Entity, JointDescriptor>,
+    graph: IdentityGraph,
     #[cfg(not(target_arch = "wasm32"))]
-    ray_hits: Vec<RayResult>,
+    ray_hits: RayQueryBuffer,
     #[cfg(not(target_arch = "wasm32"))]
-    shape_hits: Vec<ShapeId>,
+    shape_hits: ShapeQueryBuffer,
+    pending_snapshot_restore: Option<snapshot::PendingSnapshotRestore>,
+    next_snapshot_restore_ticket: u64,
     pub(crate) last_step_failed: bool,
-}
-
-/// Ray-cast hit enriched with the Bevy entity mapped to the native shape.
-#[derive(Copy, Clone, Debug)]
-pub struct BoxddRayHit {
-    /// Native Box2D ray result.
-    pub hit: RayResult,
-    /// Bevy entity mapped to `hit.shape_id`, if the shape is owned by this plugin.
-    pub entity: Option<Entity>,
-}
-
-/// Closest ray-cast result enriched with Bevy entity mapping and traversal statistics.
-#[derive(Copy, Clone, Debug)]
-pub struct BoxddClosestRayCastResult {
-    /// Closest hit with its mapped entity, or `None` when no shape was hit.
-    pub hit: Option<BoxddRayHit>,
-    /// Number of broad-phase tree nodes visited by Box2D.
-    pub node_visits: i32,
-    /// Number of broad-phase leaves visited by Box2D.
-    pub leaf_visits: i32,
-}
-
-/// AABB overlap hit enriched with the Bevy entity mapped to the native shape.
-#[derive(Copy, Clone, Debug)]
-pub struct BoxddShapeHit {
-    /// Native Box2D shape id returned by the overlap query.
-    pub shape_id: ShapeId,
-    /// Bevy entity mapped to `shape_id`, if the shape is owned by this plugin.
-    pub entity: Option<Entity>,
+    disabled_reason: Option<BoxddContextDisabledReason>,
 }
 
 impl std::fmt::Debug for BoxddPhysicsContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BoxddPhysicsContext")
+            .field("owner_world", &self.owner_world)
+            .field("committed_world_origin", &self.committed_world_origin)
+            .field("world_origin_revision", &self.world_origin_revision)
+            .field("foundation_initialized", &self.foundation.is_some())
             .field("world_enabled", &self.world.is_some())
-            .field("body_count", &self.entity_to_body.len())
-            .field("shape_count", &self.entity_to_shape.len())
-            .field("joint_count", &self.entity_to_joint.len())
+            .field("body_count", &self.graph.entity_to_body.len())
+            .field("shape_count", &self.graph.entity_to_shape.len())
+            .field("joint_count", &self.graph.entity_to_joint.len())
+            .field(
+                "retired_shape_count",
+                &self.graph.retired_shape_to_entity.len(),
+            )
+            .field(
+                "pending_snapshot_restore",
+                &self.pending_snapshot_restore.is_some(),
+            )
             .field("last_step_failed", &self.last_step_failed)
+            .field("disabled_reason", &self.disabled_reason)
             .finish()
     }
 }
 
 impl BoxddPhysicsContext {
-    /// Creates a context and native Box2D world from plugin settings.
-    pub fn new(settings: &BoxddPhysicsSettings) -> Result<Self, boxdd::world::Error> {
-        let world = World::new(
-            WorldDef::builder()
+    /// Creates a context bound to `ecs_world` and a native Box2D world from plugin settings.
+    pub fn new(
+        ecs_world: &EcsWorld,
+        foundation: &'static Foundation,
+        settings: &BoxddPhysicsSettings,
+    ) -> BoxddResult<Self> {
+        let origin = ecs_world
+            .get_resource::<BoxddWorldOrigin>()
+            .copied()
+            .unwrap_or_default();
+        let world = foundation.create_world(
+            WorldBuilder::from(foundation.world_def())
                 .gravity(to_boxdd_vec2(settings.gravity))
-                .build(),
+                .build()?,
         )?;
-        Ok(Self::from_world(world))
+        Ok(Self {
+            context_identity: Arc::new(()),
+            owner_world: ecs_world.id(),
+            committed_world_origin: origin.active(),
+            world_origin_revision: origin.revision(),
+            foundation: Some(foundation),
+            world: Some(world),
+            graph: IdentityGraph::default(),
+            #[cfg(not(target_arch = "wasm32"))]
+            ray_hits: RayQueryBuffer::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            shape_hits: ShapeQueryBuffer::new(),
+            pending_snapshot_restore: None,
+            next_snapshot_restore_ticket: 0,
+            last_step_failed: false,
+            disabled_reason: None,
+        })
     }
 
     /// Creates a context without a native world.
     ///
     /// This is used after startup world creation fails so the app can keep
     /// running while reporting the failure through the configured error policy.
-    pub fn disabled() -> Self {
-        Self {
-            world: None,
-            entity_to_body: HashMap::new(),
-            body_to_entity: HashMap::new(),
-            entity_to_shape: HashMap::new(),
-            shape_to_entity: HashMap::new(),
-            shape_to_body_entity: HashMap::new(),
-            shape_descriptors: HashMap::new(),
-            entity_to_joint: HashMap::new(),
-            joint_to_entity: HashMap::new(),
-            joint_descriptors: HashMap::new(),
-            #[cfg(not(target_arch = "wasm32"))]
-            ray_hits: Vec::new(),
-            #[cfg(not(target_arch = "wasm32"))]
-            shape_hits: Vec::new(),
-            last_step_failed: true,
-        }
+    pub fn disabled(ecs_world: &EcsWorld) -> Self {
+        Self::disabled_with_reason(ecs_world, None, BoxddContextDisabledReason::Explicit)
     }
 
-    /// Creates a context from an existing native world.
-    pub fn from_world(world: World) -> Self {
+    pub(crate) fn disabled_with_reason(
+        ecs_world: &EcsWorld,
+        foundation: Option<&'static Foundation>,
+        reason: BoxddContextDisabledReason,
+    ) -> Self {
+        let origin = ecs_world
+            .get_resource::<BoxddWorldOrigin>()
+            .copied()
+            .unwrap_or_default();
         Self {
-            world: Some(world),
-            entity_to_body: HashMap::new(),
-            body_to_entity: HashMap::new(),
-            entity_to_shape: HashMap::new(),
-            shape_to_entity: HashMap::new(),
-            shape_to_body_entity: HashMap::new(),
-            shape_descriptors: HashMap::new(),
-            entity_to_joint: HashMap::new(),
-            joint_to_entity: HashMap::new(),
-            joint_descriptors: HashMap::new(),
+            context_identity: Arc::new(()),
+            owner_world: ecs_world.id(),
+            committed_world_origin: origin.active(),
+            world_origin_revision: origin.revision(),
+            foundation,
+            world: None,
+            graph: IdentityGraph::default(),
             #[cfg(not(target_arch = "wasm32"))]
-            ray_hits: Vec::new(),
+            ray_hits: RayQueryBuffer::new(),
             #[cfg(not(target_arch = "wasm32"))]
-            shape_hits: Vec::new(),
-            last_step_failed: false,
+            shape_hits: ShapeQueryBuffer::new(),
+            pending_snapshot_restore: None,
+            next_snapshot_restore_ticket: 0,
+            last_step_failed: true,
+            disabled_reason: Some(reason),
         }
     }
 
@@ -172,302 +299,251 @@ impl BoxddPhysicsContext {
         self.world.as_ref()
     }
 
-    /// Returns the native world mutably, if startup succeeded.
-    pub fn world_mut(&mut self) -> Option<&mut World> {
-        self.world.as_mut()
+    /// Returns the explicit Box2D foundation root, if initialization succeeded.
+    pub const fn foundation(&self) -> Option<&'static Foundation> {
+        self.foundation
     }
 
-    /// Returns the Bevy entity mapped to a native body id.
-    pub fn body_entity(&self, body_id: BodyId) -> Option<Entity> {
-        self.body_to_entity.get(&body_id).copied()
+    /// Returns why this context has no live native world.
+    pub const fn disabled_reason(&self) -> Option<BoxddContextDisabledReason> {
+        self.disabled_reason
     }
 
-    /// Returns the Bevy entity mapped to a native shape id.
-    pub fn shape_entity(&self, shape_id: ShapeId) -> Option<Entity> {
-        self.shape_to_entity.get(&shape_id).copied()
+    pub(crate) const fn is_enabled(&self) -> bool {
+        self.world.is_some() && self.disabled_reason.is_none()
     }
 
-    /// Returns the Bevy entity mapped to a native joint id.
-    pub fn joint_entity(&self, joint_id: JointId) -> Option<Entity> {
-        self.joint_to_entity.get(&joint_id).copied()
+    pub(crate) const fn owner_world(&self) -> WorldId {
+        self.owner_world
     }
 
-    /// Casts from an absolute world `origin` by a local `translation` and returns
-    /// the closest hit with the mapped Bevy shape entity.
-    pub fn try_cast_ray_closest_entity(
-        &self,
-        origin: Position,
-        translation: BevyVec2,
-        filter: QueryFilter,
-    ) -> ApiResult<Option<BoxddRayHit>> {
-        self.try_cast_ray_closest_entity_with_stats(origin, translation, filter)
-            .map(|result| result.hit)
+    pub(crate) const fn identity_token(&self) -> &Arc<()> {
+        &self.context_identity
     }
 
-    /// Casts a ray and returns its mapped closest hit together with traversal statistics.
-    ///
-    /// Statistics remain available when the ray misses every shape.
-    pub fn try_cast_ray_closest_entity_with_stats(
-        &self,
-        origin: Position,
-        translation: BevyVec2,
-        filter: QueryFilter,
-    ) -> ApiResult<BoxddClosestRayCastResult> {
-        let Some(world) = self.world() else {
-            return Ok(BoxddClosestRayCastResult {
-                hit: None,
-                node_visits: 0,
-                leaf_visits: 0,
-            });
-        };
-        let result =
-            world.try_cast_ray_closest_with_stats(origin, to_boxdd_vec2(translation), filter)?;
-        Ok(BoxddClosestRayCastResult {
-            hit: result.hit.map(|hit| self.ray_hit_with_entity(hit)),
-            node_visits: result.node_visits,
-            leaf_visits: result.leaf_visits,
-        })
+    pub(crate) fn world_origin_matches(&self, origin: &BoxddWorldOrigin) -> bool {
+        self.committed_world_origin == origin.active()
+            && self.world_origin_revision == origin.revision()
     }
 
-    /// Casts from an absolute world `origin` by a local `translation` and writes
-    /// all hits with mapped Bevy shape entities into `out`.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn try_cast_ray_all_entities_into(
-        &mut self,
-        origin: Position,
-        translation: BevyVec2,
-        filter: QueryFilter,
-        out: &mut Vec<BoxddRayHit>,
-    ) -> ApiResult<()> {
-        let Some(world) = self.world.as_ref() else {
-            self.ray_hits.clear();
-            out.clear();
-            return Ok(());
-        };
-        world.try_cast_ray_all_into(
-            origin,
-            to_boxdd_vec2(translation),
-            filter,
-            &mut self.ray_hits,
-        )?;
-        out.clear();
-        out.reserve(self.ray_hits.len());
-        out.extend(
-            self.ray_hits
-                .iter()
-                .copied()
-                .map(|hit| self.ray_hit_with_entity(hit)),
-        );
+    pub(crate) fn commit_world_origin(&mut self, origin: Position, revision: u64) {
+        self.committed_world_origin = origin;
+        self.world_origin_revision = revision;
+    }
+
+    /// Updates native gravity without exposing mutable access to the owned world.
+    pub fn set_gravity(&mut self, gravity: BevyVec2) -> Result<(), BoxddPluginError> {
+        self.plugin_world_mut()?
+            .set_gravity(to_boxdd_vec2(gravity))?;
         Ok(())
     }
 
-    /// Casts from an absolute world `origin` by a local `translation` and returns
-    /// all hits with mapped Bevy shape entities.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn try_cast_ray_all_entities(
-        &mut self,
-        origin: Position,
-        translation: BevyVec2,
-        filter: QueryFilter,
-    ) -> ApiResult<Vec<BoxddRayHit>> {
-        let mut out = Vec::new();
-        self.try_cast_ray_all_entities_into(origin, translation, filter, &mut out)?;
-        Ok(out)
-    }
-
-    /// Queries AABB bounds local to the absolute world `origin` and writes all
-    /// hits with mapped Bevy shape entities into `out`.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn try_overlap_aabb_entities_into(
-        &mut self,
-        origin: Position,
-        aabb: Aabb,
-        filter: QueryFilter,
-        out: &mut Vec<BoxddShapeHit>,
-    ) -> ApiResult<()> {
-        let Some(world) = self.world.as_ref() else {
-            self.shape_hits.clear();
-            out.clear();
-            return Ok(());
-        };
-        world.try_overlap_aabb_into(origin, aabb, filter, &mut self.shape_hits)?;
-        out.clear();
-        out.reserve(self.shape_hits.len());
-        out.extend(
-            self.shape_hits
-                .iter()
-                .copied()
-                .map(|shape_id| self.shape_hit_with_entity(shape_id)),
-        );
+    /// Enables or disables native body sleeping.
+    pub fn enable_sleeping(&mut self, enabled: bool) -> Result<(), BoxddPluginError> {
+        self.plugin_world_mut()?.enable_sleeping(enabled)?;
         Ok(())
     }
 
-    /// Queries AABB bounds local to the absolute world `origin` and returns all
-    /// hits with mapped Bevy shape entities.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn try_overlap_aabb_entities(
+    /// Enables or disables native warm starting.
+    pub fn enable_warm_starting(&mut self, enabled: bool) -> Result<(), BoxddPluginError> {
+        self.plugin_world_mut()?.enable_warm_starting(enabled)?;
+        Ok(())
+    }
+
+    /// Enables or disables native continuous collision detection.
+    pub fn enable_continuous(&mut self, enabled: bool) -> Result<(), BoxddPluginError> {
+        self.plugin_world_mut()?.enable_continuous(enabled)?;
+        Ok(())
+    }
+
+    pub(crate) fn step_with_events(
         &mut self,
-        origin: Position,
-        aabb: Aabb,
-        filter: QueryFilter,
-    ) -> ApiResult<Vec<BoxddShapeHit>> {
-        let mut out = Vec::new();
-        self.try_overlap_aabb_entities_into(origin, aabb, filter, &mut out)?;
-        Ok(out)
-    }
-
-    /// Collects Box2D debug-draw commands into a caller-owned buffer.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn try_debug_draw_collect_into(
-        &mut self,
-        out: &mut Vec<DebugDrawCmd>,
-        options: DebugDrawOptions,
-    ) -> ApiResult<()> {
-        let Some(world) = self.world_mut() else {
-            out.clear();
-            return Ok(());
-        };
-        world.try_debug_draw_collect_into(out, options)
-    }
-
-    /// Collects Box2D debug-draw commands into a new vector.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn try_debug_draw_collect(
-        &mut self,
-        options: DebugDrawOptions,
-    ) -> ApiResult<Vec<DebugDrawCmd>> {
-        let mut out = Vec::new();
-        self.try_debug_draw_collect_into(&mut out, options)?;
-        Ok(out)
-    }
-
-    fn ray_hit_with_entity(&self, hit: RayResult) -> BoxddRayHit {
-        BoxddRayHit {
-            hit,
-            entity: self.shape_entity(hit.shape_id),
-        }
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    fn shape_hit_with_entity(&self, shape_id: ShapeId) -> BoxddShapeHit {
-        BoxddShapeHit {
-            shape_id,
-            entity: self.shape_entity(shape_id),
-        }
-    }
-
-    pub(crate) fn insert_body(&mut self, entity: Entity, body_id: BodyId) {
-        self.entity_to_body.insert(entity, body_id);
-        self.body_to_entity.insert(body_id, entity);
-    }
-
-    pub(crate) fn remove_body(&mut self, entity: Entity, body_id: BodyId) {
-        self.entity_to_body.remove(&entity);
-        self.body_to_entity.remove(&body_id);
-
-        let shapes = self
-            .shape_to_body_entity
-            .iter()
-            .filter_map(|(shape_entity, body_entity)| {
-                (*body_entity == entity).then_some(*shape_entity)
-            })
-            .collect::<Vec<_>>();
-        for shape_entity in shapes {
-            if let Some(shape_id) = self.entity_to_shape.get(&shape_entity).copied() {
-                self.remove_shape(shape_entity, shape_id);
+        time_step: f32,
+        sub_step_count: i32,
+        publish: impl FnOnce(&CompletedStep<'_>, EventEntityLookup<'_>) -> BoxddResult<()>,
+    ) -> Option<StepEventErrors> {
+        let (world, graph, last_step_failed) =
+            (&mut self.world, &mut self.graph, &mut self.last_step_failed);
+        let world = world.as_mut()?;
+        let completed = match world.step(time_step, sub_step_count) {
+            Ok(completed) => completed,
+            Err(error) => {
+                *last_step_failed = true;
+                graph.release_retired_event_identities();
+                return Some(StepEventErrors {
+                    step: Some(error),
+                    read_events: None,
+                });
             }
+        };
+        *last_step_failed = false;
+        let post_step_error = completed.post_step_error();
+
+        let published = catch_unwind(AssertUnwindSafe(|| {
+            publish(&completed, graph.event_lookup())
+        }));
+        drop(completed);
+        graph.release_retired_event_identities();
+
+        match published {
+            Ok(result) => Some(StepEventErrors {
+                step: post_step_error,
+                read_events: result.err(),
+            }),
+            Err(payload) => resume_unwind(payload),
         }
     }
 
-    pub(crate) fn insert_shape(
+    fn live_world_mut(&mut self) -> BoxddResult<&mut World> {
+        self.world.as_mut().ok_or(BoxddError::WorldDestroyed)
+    }
+
+    pub(super) fn plugin_world(&self) -> Result<&World, BoxddPluginError> {
+        self.world.as_ref().ok_or(self.disabled_error())
+    }
+
+    pub(super) fn plugin_world_mut(&mut self) -> Result<&mut World, BoxddPluginError> {
+        let reason = self
+            .disabled_reason
+            .unwrap_or(BoxddContextDisabledReason::Explicit);
+        self.world
+            .as_mut()
+            .ok_or(BoxddPluginError::ContextDisabled { reason })
+    }
+
+    fn disabled_error(&self) -> BoxddPluginError {
+        BoxddPluginError::ContextDisabled {
+            reason: self
+                .disabled_reason
+                .unwrap_or(BoxddContextDisabledReason::Explicit),
+        }
+    }
+}
+
+impl BoxddEcsWorldBindingState {
+    pub(crate) fn invalidate(&mut self) {
+        self.valid = false;
+        self.owner_world = None;
+        self.context_identity = None;
+    }
+
+    pub(crate) fn validate(
         &mut self,
-        entity: Entity,
-        body_entity: Entity,
-        descriptor: ShapeDescriptor,
-        shape_id: ShapeId,
+        actual_world: WorldId,
+        origin: &BoxddWorldOrigin,
+        context: &BoxddPhysicsContext,
     ) {
-        self.entity_to_shape.insert(entity, shape_id);
-        self.shape_to_entity.insert(shape_id, entity);
-        self.shape_to_body_entity.insert(entity, body_entity);
-        self.shape_descriptors.insert(entity, descriptor);
+        self.valid = true;
+        self.owner_world = Some(actual_world);
+        self.committed_world_origin = origin.active();
+        self.world_origin_revision = origin.revision();
+        self.context_identity = Some(Arc::clone(&context.context_identity));
     }
 
-    pub(crate) fn remove_shape(&mut self, entity: Entity, shape_id: ShapeId) {
-        self.entity_to_shape.remove(&entity);
-        self.shape_to_entity.remove(&shape_id);
-        self.shape_to_body_entity.remove(&entity);
-        self.shape_descriptors.remove(&entity);
-    }
-
-    pub(crate) fn shape_body_entity(&self, shape_entity: Entity) -> Option<Entity> {
-        self.shape_to_body_entity.get(&shape_entity).copied()
-    }
-
-    pub(crate) fn shape_descriptor(&self, shape_entity: Entity) -> Option<ShapeDescriptor> {
-        self.shape_descriptors.get(&shape_entity).copied()
-    }
-
-    pub(crate) fn insert_joint(
-        &mut self,
-        entity: Entity,
-        descriptor: JointDescriptor,
-        joint_id: JointId,
-    ) {
-        self.entity_to_joint.insert(entity, joint_id);
-        self.joint_to_entity.insert(joint_id, entity);
-        self.joint_descriptors.insert(entity, descriptor);
-    }
-
-    pub(crate) fn remove_joint(&mut self, entity: Entity, joint_id: JointId) {
-        self.entity_to_joint.remove(&entity);
-        self.joint_to_entity.remove(&joint_id);
-        self.joint_descriptors.remove(&entity);
-    }
-
-    pub(crate) fn joint_descriptor(&self, entity: Entity) -> Option<JointDescriptor> {
-        self.joint_descriptors.get(&entity).copied()
-    }
-
-    pub(crate) fn joints_connected_to_body(&self, body_entity: Entity) -> Vec<(Entity, JointId)> {
-        self.joint_descriptors
-            .iter()
-            .filter_map(|(joint_entity, descriptor)| {
-                (descriptor.entity_a == body_entity || descriptor.entity_b == body_entity)
-                    .then(|| {
-                        self.entity_to_joint
-                            .get(joint_entity)
-                            .copied()
-                            .map(|joint_id| (*joint_entity, joint_id))
-                    })
-                    .flatten()
+    pub(crate) fn allows_origin(
+        &self,
+        actual_world: WorldId,
+        origin: Option<&BoxddWorldOrigin>,
+    ) -> bool {
+        self.valid
+            && self.owner_world == Some(actual_world)
+            && origin.is_some_and(|origin| {
+                self.committed_world_origin == origin.active()
+                    && self.world_origin_revision == origin.revision()
             })
-            .collect()
+    }
+
+    pub(crate) fn allows_context(
+        &self,
+        actual_world: WorldId,
+        context: &BoxddPhysicsContext,
+    ) -> bool {
+        self.valid
+            && self.owner_world == Some(actual_world)
+            && self
+                .context_identity
+                .as_ref()
+                .is_some_and(|identity| Arc::ptr_eq(identity, &context.context_identity))
+            && context.owner_world == actual_world
+            && context.committed_world_origin == self.committed_world_origin
+            && context.world_origin_revision == self.world_origin_revision
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub(crate) struct ShapeDescriptor {
-    pub collider: Collider,
-    pub material: PhysicsMaterial,
-    pub local_transform: ShapeLocalTransform,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub(crate) struct ShapeLocalTransform {
-    pub translation: BevyVec2,
-    pub angle: f32,
-}
+    #[test]
+    fn failed_step_releases_retired_event_identity_mappings() {
+        let mut ecs_world = EcsWorld::new();
+        let entity = ecs_world.spawn_empty().id();
+        let foundation = Foundation::initialize_default().expect("foundation should initialize");
+        let mut context =
+            BoxddPhysicsContext::new(&ecs_world, foundation, &BoxddPhysicsSettings::default())
+                .expect("native world creation should succeed");
+        assert!(std::ptr::eq(
+            context
+                .foundation()
+                .expect("live context should retain root"),
+            foundation,
+        ));
+        let body_id = context
+            .world
+            .as_mut()
+            .expect("context should own its native world")
+            .create_body(foundation.body_def())
+            .expect("native body creation should succeed");
+        context.graph.retired_body_to_entity.insert(body_id, entity);
 
-impl ShapeLocalTransform {
-    pub const IDENTITY: Self = Self {
-        translation: BevyVec2::ZERO,
-        angle: 0.0,
-    };
+        let result = context.step_with_events(f32::NAN, 1, |_, _| Ok(()));
 
-    pub fn from_transform(transform: Option<&bevy_transform::components::Transform>) -> Self {
-        transform.map_or(Self::IDENTITY, |transform| Self {
-            translation: BevyVec2::new(transform.translation.x, transform.translation.y),
-            angle: crate::math::to_boxdd_angle(transform.rotation),
-        })
+        let errors = result.expect("a live context reports the rejected step");
+        assert!(errors.step.is_some());
+        assert!(errors.read_events.is_none());
+        assert!(context.graph.retired_body_to_entity.is_empty());
+    }
+
+    #[test]
+    fn publish_panic_releases_retired_event_identities_and_preserves_context() {
+        let mut ecs_world = EcsWorld::new();
+        let entity = ecs_world.spawn_empty().id();
+        let foundation = Foundation::initialize_default().expect("foundation should initialize");
+        let mut context =
+            BoxddPhysicsContext::new(&ecs_world, foundation, &BoxddPhysicsSettings::default())
+                .expect("native world creation should succeed");
+        let body_id = context
+            .world
+            .as_mut()
+            .expect("context should own its native world")
+            .create_body(foundation.body_def())
+            .expect("native body creation should succeed");
+        context.graph.retired_body_to_entity.insert(body_id, entity);
+
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            context.step_with_events(1.0 / 60.0, 1, |_, lookup| -> BoxddResult<()> {
+                assert_eq!(lookup.body(body_id), Some(entity));
+                panic!("intentional event publication panic");
+            })
+        }));
+
+        let payload = match result {
+            Ok(_) => panic!("event publication panic should resume after cleanup"),
+            Err(payload) => payload,
+        };
+        assert_eq!(
+            payload.downcast_ref::<&'static str>(),
+            Some(&"intentional event publication panic")
+        );
+        assert!(context.graph.retired_body_to_entity.is_empty());
+
+        let errors = context
+            .step_with_events(1.0 / 60.0, 1, |_, lookup| {
+                assert_eq!(lookup.body(body_id), None);
+                Ok(())
+            })
+            .expect("the context should remain live after publication panic cleanup");
+        assert!(errors.step.is_none());
+        assert!(errors.read_events.is_none());
     }
 }

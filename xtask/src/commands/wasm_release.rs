@@ -2,7 +2,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     env,
     ffi::OsStr,
-    fs::{self, File, OpenOptions},
+    fs::{self, OpenOptions},
     io::{self, Cursor, Read, Write},
     path::{Path, PathBuf},
     process::Command,
@@ -13,34 +13,37 @@ use tar::{Archive, Builder, EntryType, Header};
 
 use crate::{
     Error, Result,
-    emscripten_sdk::{SDK_CONTRACT_RELATIVE_PATH, SdkContract},
+    build_support::{VerifiedFileSnapshot, snapshot_file_create_new},
+    emscripten_sdk::{EMSCRIPTEN_VERSION, NODE_VERSION},
+    isolated_git::{isolated_git_command, remove_process_injection_environment},
     provenance_policy::{
         self, COSIGN_VERSION, PUBLISHER_REPOSITORY, PUBLISHER_WORKFLOW,
         SIGSTORE_TRUSTED_ROOT_RELATIVE_PATH, SIGSTORE_TRUSTED_ROOT_SHA256,
     },
     provider_manifest::{self, ADAPTER_ABI_VERSION, RECORDING_CONTRACT_BLAKE3},
-    qualified_git::{qualified_git_command, remove_process_injection_environment},
     source_overlay::{adapter_source_sha256, effective_source_identity},
+    subprocess_policy::run_output,
     wasm_provider_contract::{
         COMPILER_TARGET, ENDIANNESS, POINTER_WIDTH, PROVIDER_ABI, SIMD_MODE,
         WasmProviderExpectation, WasmProviderIdentity, contract_relative_path,
     },
     wasm_release_provenance::{
-        SCHEMA_NAME as PROVENANCE_SCHEMA, SCHEMA_VERSION as PROVENANCE_SCHEMA_VERSION,
-        WasmReleaseContext, WasmReleaseProvenanceStatement, canonical_inner_checksums_bytes,
-        is_canonical_semver, is_lower_hex, is_portable_normalized_relative_path,
-        members_from_files, sha256_bytes,
+        PACKAGE_TYPE, SCHEMA_NAME as PROVENANCE_SCHEMA,
+        SCHEMA_VERSION as PROVENANCE_SCHEMA_VERSION, WasmReleaseContext,
+        WasmReleaseProvenanceStatement, canonical_inner_checksums_bytes, is_canonical_semver,
+        is_lower_hex, is_portable_normalized_relative_path, members_from_files, sha256_bytes,
     },
 };
 
 use super::{
     provider::{self, ProviderPrecision},
-    set_once, verification,
+    set_once,
+    support::cosign_command,
+    verification,
 };
 
 const MANIFEST_SCHEMA_VERSION: u64 = 1;
 const MANIFEST_SCHEMA: &str = "boxdd-wasm-provider-runtime-v1";
-const PACKAGE_TYPE: &str = "wasm-provider";
 const TARGET: &str = "wasm32-unknown-unknown";
 const MAX_PACKAGE_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_MEMBER_BYTES: u64 = 128 * 1024 * 1024;
@@ -49,7 +52,6 @@ const MAX_MEMBERS: usize = 64;
 const MAX_PROVENANCE_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_BUNDLE_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_TRUSTED_ROOT_BYTES: u64 = 4 * 1024 * 1024;
-const RELEASE_WORKFLOW_NAME: &str = "Build Prebuilt Binaries (boxdd-sys)";
 
 const PROJECT_MIT: &str = "licenses/PROJECT-LICENSE-MIT";
 const PROJECT_APACHE: &str = "licenses/PROJECT-LICENSE-APACHE";
@@ -85,7 +87,7 @@ struct WasmRuntimeManifest {
     simd: String,
     pointer_width: u64,
     endianness: String,
-    emscripten_sdk_contract_sha256: String,
+    emscripten_version: String,
     wasm_provider_contract_sha256: String,
     bindings_sha256: String,
     private_abi_hash: String,
@@ -100,7 +102,7 @@ struct RepositoryRuntimeIdentity {
     source_tree: String,
     effective_source_sha256: String,
     adapter_source_sha256: String,
-    emscripten_sdk_contract_sha256: String,
+    emscripten_version: String,
     wasm_provider_contract_sha256: String,
     bindings_sha256: String,
     private_abi_hash: String,
@@ -160,16 +162,15 @@ pub(crate) fn build(root: &Path, args: &[String]) -> Result<()> {
 
     let source_commit = qualified_checkout_commit(root)?;
     let release_tag = release_tag(&version)?;
-    validate_build_github_context(&source_commit, &release_tag)?;
     validate_tag_points_at_head(root, &release_tag, &source_commit)?;
     require_clean_checkout(root)?;
 
     // This path compiles the official bytes but deliberately never runs either module.
     let (smoke, sdk) = provider::build_provider_smoke_only(root, options.precision)?;
     let identity = repository_runtime_identity(root, options.precision)?;
-    if sdk.contract_sha256() != identity.emscripten_sdk_contract_sha256 {
+    if sdk.version() != identity.emscripten_version {
         return Err(Error::message(
-            "qualified Emscripten SDK does not match the repository SDK contract",
+            "Emscripten version does not match the repository runtime identity",
         ));
     }
     let files = package_files(
@@ -317,7 +318,7 @@ impl WasmRuntimeManifest {
             "compiler_target",
             "crate_version",
             "effective_source_sha256",
-            "emscripten_sdk_contract_sha256",
+            "emscripten_version",
             "endianness",
             "precision",
             "private_abi_hash",
@@ -365,10 +366,7 @@ impl WasmRuntimeManifest {
             simd: required_string(table, "simd")?,
             pointer_width: required_integer(table, "pointer_width")?,
             endianness: required_string(table, "endianness")?,
-            emscripten_sdk_contract_sha256: required_string(
-                table,
-                "emscripten_sdk_contract_sha256",
-            )?,
+            emscripten_version: required_string(table, "emscripten_version")?,
             wasm_provider_contract_sha256: required_string(table, "wasm_provider_contract_sha256")?,
             bindings_sha256: required_string(table, "bindings_sha256")?,
             private_abi_hash: required_string(table, "private_abi_hash")?,
@@ -408,10 +406,6 @@ impl WasmRuntimeManifest {
             ),
             ("adapter_source_sha256", self.adapter_source_sha256.as_str()),
             (
-                "emscripten_sdk_contract_sha256",
-                self.emscripten_sdk_contract_sha256.as_str(),
-            ),
-            (
                 "wasm_provider_contract_sha256",
                 self.wasm_provider_contract_sha256.as_str(),
             ),
@@ -430,6 +424,7 @@ impl WasmRuntimeManifest {
             || self.simd != SIMD_MODE
             || self.pointer_width != POINTER_WIDTH
             || self.endianness != ENDIANNESS
+            || self.emscripten_version != EMSCRIPTEN_VERSION
             || self.snapshot_layout_hash == 0
         {
             return Err(Error::message(
@@ -471,7 +466,7 @@ impl WasmRuntimeManifest {
                 "simd = {:?}\n",
                 "pointer_width = {}\n",
                 "endianness = {:?}\n",
-                "emscripten_sdk_contract_sha256 = {:?}\n",
+                "emscripten_version = {:?}\n",
                 "wasm_provider_contract_sha256 = {:?}\n",
                 "bindings_sha256 = {:?}\n",
                 "private_abi_hash = {:?}\n",
@@ -504,7 +499,7 @@ impl WasmRuntimeManifest {
             self.simd,
             self.pointer_width,
             self.endianness,
-            self.emscripten_sdk_contract_sha256,
+            self.emscripten_version,
             self.wasm_provider_contract_sha256,
             self.bindings_sha256,
             self.private_abi_hash,
@@ -617,7 +612,7 @@ fn package_files(root: &Path, inputs: PackageInputs<'_>) -> Result<BTreeMap<Stri
         simd: SIMD_MODE.to_owned(),
         pointer_width: POINTER_WIDTH,
         endianness: ENDIANNESS.to_owned(),
-        emscripten_sdk_contract_sha256: inputs.identity.emscripten_sdk_contract_sha256.clone(),
+        emscripten_version: inputs.identity.emscripten_version.clone(),
         wasm_provider_contract_sha256: inputs.identity.wasm_provider_contract_sha256.clone(),
         bindings_sha256: inputs.identity.bindings_sha256.clone(),
         private_abi_hash: inputs.identity.private_abi_hash.clone(),
@@ -720,7 +715,7 @@ fn workspace_version(root: &Path) -> Result<String> {
 }
 
 fn validate_release_tag(tag: &str, version: &str) -> Result<()> {
-    if tag == format!("v{version}") || tag == format!("boxdd-sys-v{version}") {
+    if provenance_policy::release_tag_matches_version(version, tag) {
         Ok(())
     } else {
         Err(Error::message(format!(
@@ -730,7 +725,8 @@ fn validate_release_tag(tag: &str, version: &str) -> Result<()> {
 }
 
 fn release_tag(version: &str) -> Result<String> {
-    let tag = env::var("GITHUB_REF_NAME").unwrap_or_else(|_| format!("v{version}"));
+    let tag = env::var("GITHUB_REF_NAME")
+        .unwrap_or_else(|_| provenance_policy::workspace_release_tag(version));
     validate_release_tag(&tag, version)?;
     Ok(tag)
 }
@@ -742,13 +738,9 @@ fn qualified_checkout_commit(root: &Path) -> Result<String> {
 }
 
 fn git_output(root: &Path, args: &[&str], label: &str) -> Result<String> {
-    let output = qualified_git_command()
-        .map_err(Error::message)?
-        .arg("-C")
-        .arg(root)
-        .args(args)
-        .output()
-        .map_err(|error| Error::io(label, error))?;
+    let mut command = isolated_git_command().map_err(Error::message)?;
+    command.arg("-C").arg(root).args(args);
+    let output = run_output(&mut command, label).map_err(Error::message)?;
     if !output.status.success() {
         return Err(Error::message(format!(
             "{label} failed with {}: {}",
@@ -790,59 +782,6 @@ fn validate_tag_points_at_head(root: &Path, tag: &str, commit: &str) -> Result<(
             "WASM release tag {tag:?} resolves to {tagged}, not checkout HEAD {commit}"
         )))
     }
-}
-
-fn validate_build_github_context(commit: &str, tag: &str) -> Result<()> {
-    let Some(actions) = env::var_os("GITHUB_ACTIONS") else {
-        return Ok(());
-    };
-    if actions != "true" {
-        return Err(Error::message(
-            "GITHUB_ACTIONS must be exactly `true` when GitHub context is present",
-        ));
-    }
-    require_env_equal("GITHUB_SHA", commit)?;
-    require_env_equal("GITHUB_REF_TYPE", "tag")?;
-    require_env_equal("GITHUB_REF", &format!("refs/tags/{tag}"))?;
-    require_env_equal("GITHUB_REF_NAME", tag)?;
-    require_env_equal("GITHUB_REF_PROTECTED", "true")?;
-    require_env_equal("GITHUB_EVENT_NAME", "push")?;
-    require_env_equal("GITHUB_REPOSITORY", PUBLISHER_REPOSITORY)?;
-    require_env_equal("GITHUB_WORKFLOW", RELEASE_WORKFLOW_NAME)?;
-    require_env_equal(
-        "GITHUB_WORKFLOW_REF",
-        &format!("{PUBLISHER_REPOSITORY}/{PUBLISHER_WORKFLOW}@refs/tags/{tag}"),
-    )?;
-    validate_positive_decimal_env("GITHUB_RUN_ID")?;
-    validate_positive_decimal_env("GITHUB_RUN_ATTEMPT")
-}
-
-fn require_env_equal(key: &str, expected: &str) -> Result<()> {
-    let actual = env::var(key)
-        .map_err(|_| Error::message(format!("WASM release requires {key}={expected:?}")))?;
-    if actual == expected {
-        Ok(())
-    } else {
-        Err(Error::message(format!(
-            "WASM release {key}={actual:?} does not match {expected:?}"
-        )))
-    }
-}
-
-fn validate_positive_decimal_env(key: &str) -> Result<()> {
-    let value =
-        env::var(key).map_err(|_| Error::message(format!("WASM release requires {key}")))?;
-    if is_positive_decimal(&value) {
-        Ok(())
-    } else {
-        Err(Error::message(format!(
-            "WASM release {key} must be a positive canonical decimal"
-        )))
-    }
-}
-
-fn is_positive_decimal(value: &str) -> bool {
-    !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) && !value.starts_with('0')
 }
 
 fn prepare_output_directory(path: &Path) -> Result<PathBuf> {
@@ -931,20 +870,12 @@ fn repository_runtime_identity(
         WasmProviderIdentity::load_with_source_bytes(&sys_root, Path::new(contract), &expectation)
             .map_err(Error::message)?;
 
-    let sdk_path = root.join("xtask").join(SDK_CONTRACT_RELATIVE_PATH);
-    let sdk_bytes =
-        read_bounded_regular_file(&sdk_path, MAX_MEMBER_BYTES, "Emscripten SDK contract")?;
-    let sdk_source = std::str::from_utf8(&sdk_bytes).map_err(|error| {
-        Error::message(format!("Emscripten SDK contract is not UTF-8: {error}"))
-    })?;
-    SdkContract::parse(sdk_source).map_err(Error::message)?;
-
     Ok(RepositoryRuntimeIdentity {
         upstream_sha: effective.upstream_sha,
         source_tree: effective.source_tree,
         effective_source_sha256: effective.effective_source_sha256,
         adapter_source_sha256,
-        emscripten_sdk_contract_sha256: sha256_bytes(&sdk_bytes),
+        emscripten_version: EMSCRIPTEN_VERSION.to_owned(),
         wasm_provider_contract_sha256: sha256_bytes(&provider_contract_bytes),
         bindings_sha256,
         private_abi_hash: hex_bytes(&provider.private_abi_hash),
@@ -1143,7 +1074,7 @@ fn validate_package_files(
         || manifest.source_tree != identity.source_tree
         || manifest.effective_source_sha256 != identity.effective_source_sha256
         || manifest.adapter_source_sha256 != identity.adapter_source_sha256
-        || manifest.emscripten_sdk_contract_sha256 != identity.emscripten_sdk_contract_sha256
+        || manifest.emscripten_version != identity.emscripten_version
         || manifest.wasm_provider_contract_sha256 != identity.wasm_provider_contract_sha256
         || manifest.bindings_sha256 != identity.bindings_sha256
         || manifest.private_abi_hash != identity.private_abi_hash
@@ -1233,7 +1164,7 @@ fn release_statement_from_verified_package(
         simd: manifest.simd.clone(),
         pointer_width: manifest.pointer_width,
         endianness: manifest.endianness.clone(),
-        emscripten_sdk_contract_sha256: manifest.emscripten_sdk_contract_sha256.clone(),
+        emscripten_version: manifest.emscripten_version.clone(),
         wasm_provider_contract_sha256: manifest.wasm_provider_contract_sha256.clone(),
         bindings_sha256: manifest.bindings_sha256.clone(),
         private_abi_hash: manifest.private_abi_hash.clone(),
@@ -1286,49 +1217,22 @@ fn validate_relative_path(path: &str) -> Result<()> {
 }
 
 fn read_bounded_regular_file(path: &Path, maximum_bytes: u64, label: &str) -> Result<Vec<u8>> {
-    let metadata = fs::symlink_metadata(path).map_err(|error| Error::io(path, error))?;
-    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+    Ok(read_bounded_regular_snapshot(path, maximum_bytes, label)?.into_bytes())
+}
+
+fn read_bounded_regular_snapshot(
+    path: &Path,
+    maximum_bytes: u64,
+    label: &str,
+) -> Result<VerifiedFileSnapshot> {
+    let snapshot =
+        VerifiedFileSnapshot::read(path, maximum_bytes, label).map_err(Error::message)?;
+    if snapshot.is_empty() {
         return Err(Error::message(format!(
-            "{label} must be a regular non-symlink file: {}",
-            path.display()
+            "{label} size is outside the accepted 1..={maximum_bytes} byte range"
         )));
     }
-    if metadata.len() == 0 || metadata.len() > maximum_bytes {
-        return Err(Error::message(format!(
-            "{label} size {} is outside the accepted 1..={maximum_bytes} byte range",
-            metadata.len()
-        )));
-    }
-    let mut file = File::open(path).map_err(|error| Error::io(path, error))?;
-    let opened = file.metadata().map_err(|error| Error::io(path, error))?;
-    if !opened.is_file() || opened.len() != metadata.len() {
-        return Err(Error::message(format!(
-            "{label} changed while it was being opened: {}",
-            path.display()
-        )));
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt as _;
-        if opened.dev() != metadata.dev() || opened.ino() != metadata.ino() {
-            return Err(Error::message(format!(
-                "{label} changed while it was being opened: {}",
-                path.display()
-            )));
-        }
-    }
-    let mut bytes = Vec::with_capacity(metadata.len() as usize);
-    Read::by_ref(&mut file)
-        .take(maximum_bytes + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|error| Error::io(path, error))?;
-    if bytes.len() as u64 != metadata.len() {
-        return Err(Error::message(format!(
-            "{label} changed while it was being read: {}",
-            path.display()
-        )));
-    }
-    Ok(bytes)
+    Ok(snapshot)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1417,78 +1321,55 @@ fn qualify_authenticated(root: &Path, options: &QualifyOptions) -> Result<()> {
         "WASM provider package",
     )?;
     let statement_name = format!("{package_name}.provenance.toml");
-    let statement_path = snapshot_bounded_regular_file(
+    let statement_snapshot = snapshot_bounded_regular_file(
         &statement_source,
         &inputs.join(&statement_name),
         MAX_PROVENANCE_BYTES,
         "WASM release provenance statement",
     )?;
     let bundle_name = format!("{package_name}.provenance.sigstore.json");
-    let bundle = snapshot_bounded_regular_file(
+    let bundle_snapshot = snapshot_bounded_regular_file(
         &bundle_source,
         &inputs.join(&bundle_name),
         MAX_BUNDLE_BYTES,
         "WASM release Sigstore bundle",
     )?;
-    let trusted_root = snapshot_bounded_regular_file(
+    let trusted_root_snapshot = snapshot_bounded_regular_file(
         &trusted_root_source,
         &inputs.join("trusted_root.json"),
         MAX_TRUSTED_ROOT_BYTES,
         "repository Sigstore trusted root",
     )?;
 
-    let statement_bytes = read_bounded_regular_file(
-        &statement_path,
-        MAX_PROVENANCE_BYTES,
-        "snapshotted WASM release provenance statement",
-    )?;
-    let bundle_bytes = read_bounded_regular_file(
-        &bundle,
-        MAX_BUNDLE_BYTES,
-        "snapshotted WASM release Sigstore bundle",
-    )?;
-    let trusted_root_bytes = read_bounded_regular_file(
-        &trusted_root,
-        MAX_TRUSTED_ROOT_BYTES,
-        "snapshotted repository Sigstore trusted root",
-    )?;
-    validate_trusted_root_bytes(&trusted_root_bytes)?;
+    validate_trusted_root_bytes(trusted_root_snapshot.bytes())?;
 
     let cosign = resolve_executable(&options.cosign, "Cosign")?;
     verify_cosign_version(&cosign)?;
-    verify_signature(&cosign, &statement_path, &bundle, &trusted_root, &context)?;
-    revalidate_snapshot(
-        &statement_path,
-        &statement_bytes,
-        MAX_PROVENANCE_BYTES,
-        "WASM release provenance statement",
+    verify_signature(
+        &cosign,
+        statement_snapshot.path(),
+        bundle_snapshot.path(),
+        trusted_root_snapshot.path(),
+        &context,
     )?;
-    revalidate_snapshot(
-        &bundle,
-        &bundle_bytes,
-        MAX_BUNDLE_BYTES,
-        "WASM release Sigstore bundle",
-    )?;
-    revalidate_snapshot(
-        &trusted_root,
-        &trusted_root_bytes,
-        MAX_TRUSTED_ROOT_BYTES,
-        "repository Sigstore trusted root",
-    )?;
+    statement_snapshot
+        .revalidate("authenticated WASM release provenance statement")
+        .map_err(Error::message)?;
+    bundle_snapshot
+        .revalidate("authenticated WASM release Sigstore bundle")
+        .map_err(Error::message)?;
+    trusted_root_snapshot
+        .revalidate("authenticated repository Sigstore trusted root")
+        .map_err(Error::message)?;
 
     // Authentication is the boundary after which package bytes may be interpreted.
-    let package = read_bounded_regular_file(
-        &archive,
-        MAX_PACKAGE_BYTES,
-        "snapshotted WASM provider package",
-    )?;
     let statement = WasmReleaseProvenanceStatement::parse_canonical_for_package(
-        &statement_bytes,
+        statement_snapshot.bytes(),
         context.signed(options.precision),
-        &package,
+        archive.bytes(),
     )
     .map_err(|error| Error::message(format!("invalid signed WASM release provenance: {error}")))?;
-    let files = verify_authenticated_archive(&statement, &package)?;
+    let files = verify_authenticated_archive(&statement, archive.bytes())?;
     let manifest = validate_package_files(
         root,
         &files,
@@ -1499,7 +1380,7 @@ fn qualify_authenticated(root: &Path, options: &QualifyOptions) -> Result<()> {
     )?;
     let expected = release_statement_from_verified_package(
         package_name.clone(),
-        &package,
+        archive.bytes(),
         &files,
         &manifest,
         context.unsigned(),
@@ -1520,9 +1401,8 @@ fn qualify_authenticated(root: &Path, options: &QualifyOptions) -> Result<()> {
         &provider_wasm,
     )?;
 
-    let contract = provider::provider_toolchain_contract()?;
     let node = resolve_executable(Path::new("node"), "Node.js")?;
-    verify_node_version(&node, &contract.node_version)?;
+    verify_node_version(&node, NODE_VERSION)?;
     let npm = resolve_executable(Path::new("npm"), "npm")?;
     provider::run_existing_provider_node_smoke(runtime_command(&node), &smoke)?;
     verification::run_existing_provider_browser_smoke(
@@ -1565,8 +1445,6 @@ fn qualification_context(
     source_commit: &str,
     release_tag: &str,
 ) -> Result<QualificationContext> {
-    require_env_equal("GITHUB_ACTIONS", "true")?;
-    validate_build_github_context(source_commit, release_tag)?;
     let repository = env::var("GITHUB_REPOSITORY")
         .map_err(|_| Error::message("WASM qualification requires GITHUB_REPOSITORY"))?;
     let workflow_ref = env::var("GITHUB_WORKFLOW_REF")
@@ -1628,23 +1506,6 @@ fn validate_trusted_root_bytes(bytes: &[u8]) -> Result<()> {
     } else {
         Err(Error::message(format!(
             "repository Sigstore trusted root digest {actual} does not match {SIGSTORE_TRUSTED_ROOT_SHA256}"
-        )))
-    }
-}
-
-fn revalidate_snapshot(
-    path: &Path,
-    expected: &[u8],
-    maximum_bytes: u64,
-    label: &str,
-) -> Result<()> {
-    let current = read_bounded_regular_file(path, maximum_bytes, label)?;
-    if current == expected {
-        Ok(())
-    } else {
-        Err(Error::message(format!(
-            "private {label} snapshot changed while it was authenticated: {}",
-            path.display()
         )))
     }
 }
@@ -1760,76 +1621,8 @@ fn snapshot_bounded_regular_file(
     destination: &Path,
     maximum_bytes: u64,
     label: &str,
-) -> Result<PathBuf> {
-    let source_metadata = fs::symlink_metadata(source).map_err(|error| Error::io(source, error))?;
-    if !source_metadata.file_type().is_file() || source_metadata.file_type().is_symlink() {
-        return Err(Error::message(format!(
-            "{label} must be a regular non-symlink file: {}",
-            source.display()
-        )));
-    }
-    if source_metadata.len() == 0 || source_metadata.len() > maximum_bytes {
-        return Err(Error::message(format!(
-            "{label} size {} is outside the accepted 1..={maximum_bytes} byte range",
-            source_metadata.len()
-        )));
-    }
-    let mut input = File::open(source).map_err(|error| Error::io(source, error))?;
-    let opened_metadata = input.metadata().map_err(|error| Error::io(source, error))?;
-    if !opened_metadata.is_file() || opened_metadata.len() != source_metadata.len() {
-        return Err(Error::message(format!(
-            "{label} changed while it was opened for snapshotting: {}",
-            source.display()
-        )));
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt as _;
-        if opened_metadata.dev() != source_metadata.dev()
-            || opened_metadata.ino() != source_metadata.ino()
-        {
-            return Err(Error::message(format!(
-                "{label} changed while it was opened for snapshotting: {}",
-                source.display()
-            )));
-        }
-    }
-    let mut output = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(destination)
-        .map_err(|error| Error::io(destination, error))?;
-    let copied = io::copy(
-        &mut Read::by_ref(&mut input).take(maximum_bytes + 1),
-        &mut output,
-    )
-    .map_err(|error| Error::io(destination, error))?;
-    if copied != source_metadata.len() {
-        return Err(Error::message(format!(
-            "{label} changed while its bytes were snapshotted: {}",
-            source.display()
-        )));
-    }
-    output
-        .flush()
-        .map_err(|error| Error::io(destination, error))?;
-    output
-        .sync_all()
-        .map_err(|error| Error::io(destination, error))?;
-    let destination =
-        fs::canonicalize(destination).map_err(|error| Error::io(destination, error))?;
-    let metadata =
-        fs::symlink_metadata(&destination).map_err(|error| Error::io(&destination, error))?;
-    if !metadata.file_type().is_file()
-        || metadata.file_type().is_symlink()
-        || metadata.len() != copied
-    {
-        return Err(Error::message(format!(
-            "private {label} snapshot is not the exact regular file written: {}",
-            destination.display()
-        )));
-    }
-    Ok(destination)
+) -> Result<VerifiedFileSnapshot> {
+    snapshot_file_create_new(source, destination, maximum_bytes, label).map_err(Error::message)
 }
 
 fn resolve_executable(requested: &Path, label: &str) -> Result<PathBuf> {
@@ -1902,12 +1695,10 @@ fn is_executable(path: &Path) -> Result<bool> {
 }
 
 fn verify_cosign_version(cosign: &Path) -> Result<()> {
-    let mut command = Command::new(cosign);
-    remove_process_injection_environment(&mut command);
-    let output = command
-        .arg("version")
-        .output()
-        .map_err(|error| Error::io(cosign, error))?;
+    let mut command = cosign_command(cosign);
+    command.arg("version");
+    let output =
+        run_output(&mut command, "WASM Cosign version qualification").map_err(Error::message)?;
     if !output.status.success() {
         return Err(Error::message(format!(
             "WASM qualification requires Cosign {COSIGN_VERSION}; version command failed with {}: {}",
@@ -1949,12 +1740,10 @@ fn verify_signature(
         trusted_root,
     })
     .map_err(|error| Error::message(format!("invalid WASM Sigstore policy input: {error}")))?;
-    let mut command = Command::new(cosign);
-    remove_process_injection_environment(&mut command);
-    let output = command
-        .args(args)
-        .output()
-        .map_err(|error| Error::io("verify WASM provenance signature", error))?;
+    let mut command = cosign_command(cosign);
+    command.args(args);
+    let output =
+        run_output(&mut command, "verify WASM provenance signature").map_err(Error::message)?;
     if output.status.success() {
         Ok(())
     } else {
@@ -1984,10 +1773,10 @@ fn materialize_verified_provider(
 }
 
 fn verify_node_version(node: &Path, expected: &str) -> Result<()> {
-    let output = runtime_command(node)
-        .arg("--version")
-        .output()
-        .map_err(|error| Error::io(node, error))?;
+    let mut command = runtime_command(node);
+    command.arg("--version");
+    let output = run_output(&mut command, "authenticated Node.js version qualification")
+        .map_err(Error::message)?;
     if !output.status.success() {
         return Err(Error::message(format!(
             "Node.js version command failed with {}: {}",
@@ -2058,7 +1847,7 @@ mod tests {
             simd: SIMD_MODE.to_owned(),
             pointer_width: POINTER_WIDTH,
             endianness: ENDIANNESS.to_owned(),
-            emscripten_sdk_contract_sha256: "1".repeat(64),
+            emscripten_version: EMSCRIPTEN_VERSION.to_owned(),
             wasm_provider_contract_sha256: "2".repeat(64),
             bindings_sha256: "3".repeat(64),
             private_abi_hash: "4".repeat(64),
@@ -2133,7 +1922,7 @@ mod tests {
             simd: SIMD_MODE.to_owned(),
             pointer_width: POINTER_WIDTH,
             endianness: ENDIANNESS.to_owned(),
-            emscripten_sdk_contract_sha256: "1".repeat(64),
+            emscripten_version: EMSCRIPTEN_VERSION.to_owned(),
             wasm_provider_contract_sha256: "2".repeat(64),
             bindings_sha256: "3".repeat(64),
             private_abi_hash: "4".repeat(64),
@@ -2292,48 +2081,6 @@ mod tests {
     }
 
     #[test]
-    fn qualification_authenticates_before_interpreting_or_executing_package_bytes() {
-        let source = include_str!("wasm_release.rs");
-        let start = source.find("fn qualify_authenticated(").unwrap();
-        let end = source[start..].find("\nfn qualification_context(").unwrap() + start;
-        let body = &source[start..end];
-        let position = |needle: &str| {
-            body.find(needle)
-                .unwrap_or_else(|| panic!("qualification source is missing {needle:?}"))
-        };
-
-        let signature = position("verify_signature(&cosign");
-        let snapshot_revalidation = position("revalidate_snapshot(");
-        let statement = position("parse_canonical_for_package(");
-        let archive = position("verify_authenticated_archive(");
-        let materialization = position("materialize_verified_provider(");
-        let rust_consumer = position("prepare_existing_provider_smoke(");
-        let node = position("run_existing_provider_node_smoke(");
-        let browser = position("run_existing_provider_browser_smoke(");
-        let terminal_revalidation = position("let revalidated = validate_package_files(");
-        let session_release = position("drop(smoke);");
-        assert!(signature < snapshot_revalidation);
-        assert!(snapshot_revalidation < statement);
-        assert!(statement < archive);
-        assert!(archive < materialization);
-        assert!(materialization < rust_consumer);
-        assert!(rust_consumer < node);
-        assert!(node < browser);
-        assert!(browser < terminal_revalidation);
-        assert!(terminal_revalidation < session_release);
-        for forbidden in [
-            "build_provider_smoke_only",
-            "qualified_provider_sdk",
-            "EMSDK",
-        ] {
-            assert!(
-                !body.contains(forbidden),
-                "authenticated qualification may not use {forbidden}"
-            );
-        }
-    }
-
-    #[test]
     fn signed_member_inventory_rejects_byte_and_path_additions() {
         let mut files = package_fixture(ProviderPrecision::Single);
         let package = render_archive(&files).unwrap();
@@ -2354,11 +2101,10 @@ mod tests {
         fs::write(&source, b"immutable input").unwrap();
         let destination = temporary.path().join("snapshot");
         let snapshot = snapshot_bounded_regular_file(&source, &destination, 32, "test").unwrap();
-        let expected = fs::read(&snapshot).unwrap();
-        assert_eq!(expected, b"immutable input");
-        revalidate_snapshot(&snapshot, &expected, 32, "test").unwrap();
-        fs::write(&snapshot, b"modified input!").unwrap();
-        assert!(revalidate_snapshot(&snapshot, &expected, 32, "test").is_err());
+        assert_eq!(snapshot.bytes(), b"immutable input");
+        snapshot.revalidate("test").unwrap();
+        fs::write(snapshot.path(), b"modified input!").unwrap();
+        assert!(snapshot.revalidate("test").is_err());
         assert!(snapshot_bounded_regular_file(&source, &destination, 32, "test").is_err());
         assert!(
             snapshot_bounded_regular_file(&source, &temporary.path().join("too-small"), 2, "test",)

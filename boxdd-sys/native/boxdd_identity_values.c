@@ -35,6 +35,7 @@ const uint64_t boxddPrivateAbiValues[] = {
 #undef BOXDD_ABI_VALUE
 };
 const uint64_t boxddPrivateAbiValueCount = sizeof( boxddPrivateAbiValues ) / sizeof( boxddPrivateAbiValues[0] );
+const uint64_t boxddDefinitionCookie = B2_SECRET_COOKIE;
 
 const uint64_t boxddSnapshotLayoutValues[] = {
 #define BOXDD_LAYOUT_VALUE( value ) (uint64_t)( value ),

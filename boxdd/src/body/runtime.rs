@@ -1,19 +1,20 @@
-use std::ffi::CStr;
-
-use crate::error::ApiResult;
-use crate::query::Aabb;
-use crate::types::{
-    BodyId, JointId, MassData, MotionLocks, Position, ShapeId, Vec2, WorldTransform,
-};
+use crate::error::{Error, Result};
+use crate::types::BodyId;
+use crate::world::BodyProof;
 use boxdd_sys::ffi;
 
-use super::definition::BodyType;
+use super::scoped::Body;
 
 mod attachments;
-mod handle;
+mod dynamics;
+mod mass;
+mod metadata;
+mod relations;
+mod state;
+mod transform;
 mod user_data;
 
-pub(crate) use handle::BodyRuntimeHandle;
+pub(crate) use transform::body_position_impl;
 
 #[inline]
 pub(crate) fn raw_body_id(id: BodyId) -> ffi::b2BodyId {
@@ -21,539 +22,110 @@ pub(crate) fn raw_body_id(id: BodyId) -> ffi::b2BodyId {
 }
 
 #[inline]
-fn body_world_id_impl(id: BodyId) -> ffi::b2WorldId {
-    unsafe { ffi::b2Body_GetWorld(raw_body_id(id)) }
-}
-
-#[inline]
-pub(crate) fn body_position_impl(id: BodyId) -> Position {
-    Position::from_raw(unsafe { ffi::b2Body_GetPosition(raw_body_id(id)) })
-}
-
-#[inline]
-pub(crate) fn body_linear_velocity_impl(id: BodyId) -> Vec2 {
-    Vec2::from_raw(unsafe { ffi::b2Body_GetLinearVelocity(raw_body_id(id)) })
-}
-
-#[inline]
-pub(crate) fn body_angular_velocity_impl(id: BodyId) -> f32 {
-    unsafe { ffi::b2Body_GetAngularVelocity(raw_body_id(id)) }
-}
-
-#[inline]
-pub(crate) fn body_rotation_raw_impl(id: BodyId) -> ffi::b2Rot {
-    unsafe { ffi::b2Body_GetRotation(raw_body_id(id)) }
-}
-
-#[inline]
-pub(crate) fn body_rotation_impl(id: BodyId) -> crate::Rot {
-    crate::Rot::from_raw(body_rotation_raw_impl(id))
-}
-
-#[inline]
-fn body_transform_raw_impl(id: BodyId) -> ffi::b2WorldTransform {
-    unsafe { ffi::b2Body_GetTransform(raw_body_id(id)) }
-}
-
-#[inline]
-pub(crate) fn body_transform_impl(id: BodyId) -> WorldTransform {
-    WorldTransform::from_raw(body_transform_raw_impl(id))
-}
-
-#[inline]
-pub(crate) fn body_aabb_impl(id: BodyId) -> Aabb {
-    Aabb::from_raw(unsafe { ffi::b2Body_ComputeAABB(raw_body_id(id)) })
-}
-
-#[inline]
-pub(crate) fn body_local_point_impl<V: Into<Position>>(id: BodyId, world_point: V) -> Vec2 {
-    let point: ffi::b2Pos = world_point.into().into_raw();
-    Vec2::from_raw(unsafe { ffi::b2Body_GetLocalPoint(raw_body_id(id), point) })
-}
-
-#[inline]
-pub(crate) fn body_world_point_impl<V: Into<Vec2>>(id: BodyId, local_point: V) -> Position {
-    let point: ffi::b2Vec2 = local_point.into().into_raw();
-    Position::from_raw(unsafe { ffi::b2Body_GetWorldPoint(raw_body_id(id), point) })
-}
-
-#[inline]
-pub(crate) fn body_local_vector_impl<V: Into<Vec2>>(id: BodyId, world_vector: V) -> Vec2 {
-    let vector: ffi::b2Vec2 = world_vector.into().into_raw();
-    Vec2::from_raw(unsafe { ffi::b2Body_GetLocalVector(raw_body_id(id), vector) })
-}
-
-#[inline]
-pub(crate) fn body_world_vector_impl<V: Into<Vec2>>(id: BodyId, local_vector: V) -> Vec2 {
-    let vector: ffi::b2Vec2 = local_vector.into().into_raw();
-    Vec2::from_raw(unsafe { ffi::b2Body_GetWorldVector(raw_body_id(id), vector) })
-}
-
-#[inline]
-pub(crate) fn body_local_point_velocity_impl<V: Into<Vec2>>(id: BodyId, local_point: V) -> Vec2 {
-    let point: ffi::b2Vec2 = local_point.into().into_raw();
-    Vec2::from_raw(unsafe { ffi::b2Body_GetLocalPointVelocity(raw_body_id(id), point) })
-}
-
-#[inline]
-pub(crate) fn body_world_point_velocity_impl<V: Into<Position>>(
-    id: BodyId,
-    world_point: V,
-) -> Vec2 {
-    let point: ffi::b2Pos = world_point.into().into_raw();
-    Vec2::from_raw(unsafe { ffi::b2Body_GetWorldPointVelocity(raw_body_id(id), point) })
-}
-
-#[inline]
-fn body_set_position_and_rotation_impl<V: Into<Position>>(
-    id: BodyId,
-    position: V,
-    angle_radians: f32,
-) {
-    let (s, c) = angle_radians.sin_cos();
-    let rotation = ffi::b2Rot { c, s };
-    let position: ffi::b2Pos = position.into().into_raw();
-    unsafe { ffi::b2Body_SetTransform(raw_body_id(id), position, rotation) };
-}
-
-#[inline]
-fn body_set_linear_velocity_impl<V: Into<Vec2>>(id: BodyId, velocity: V) {
-    let velocity: ffi::b2Vec2 = velocity.into().into_raw();
-    unsafe { ffi::b2Body_SetLinearVelocity(raw_body_id(id), velocity) }
-}
-
-#[inline]
-fn body_set_angular_velocity_impl(id: BodyId, angular_velocity: f32) {
-    unsafe { ffi::b2Body_SetAngularVelocity(raw_body_id(id), angular_velocity) }
-}
-
-#[inline]
-fn body_set_target_transform_impl(id: BodyId, target: WorldTransform, time_step: f32, wake: bool) {
-    unsafe { ffi::b2Body_SetTargetTransform(raw_body_id(id), target.into_raw(), time_step, wake) };
-}
-
-#[inline]
-fn body_apply_force_impl<F: Into<Vec2>, P: Into<Position>>(
-    id: BodyId,
-    force: F,
-    point: P,
-    wake: bool,
-) {
-    let force: ffi::b2Vec2 = force.into().into_raw();
-    let point: ffi::b2Pos = point.into().into_raw();
-    unsafe { ffi::b2Body_ApplyForce(raw_body_id(id), force, point, wake) };
-}
-
-#[inline]
-fn body_apply_force_to_center_impl<V: Into<Vec2>>(id: BodyId, force: V, wake: bool) {
-    let force: ffi::b2Vec2 = force.into().into_raw();
-    unsafe { ffi::b2Body_ApplyForceToCenter(raw_body_id(id), force, wake) };
-}
-
-#[inline]
-fn body_apply_torque_impl(id: BodyId, torque: f32, wake: bool) {
-    unsafe { ffi::b2Body_ApplyTorque(raw_body_id(id), torque, wake) }
-}
-
-#[inline]
-fn body_clear_forces_impl(id: BodyId) {
-    unsafe { ffi::b2Body_ClearForces(raw_body_id(id)) };
-}
-
-#[inline]
-fn body_apply_linear_impulse_impl<F: Into<Vec2>, P: Into<Position>>(
-    id: BodyId,
-    impulse: F,
-    point: P,
-    wake: bool,
-) {
-    let impulse: ffi::b2Vec2 = impulse.into().into_raw();
-    let point: ffi::b2Pos = point.into().into_raw();
-    unsafe { ffi::b2Body_ApplyLinearImpulse(raw_body_id(id), impulse, point, wake) };
-}
-
-#[inline]
-fn body_apply_linear_impulse_to_center_impl<V: Into<Vec2>>(id: BodyId, impulse: V, wake: bool) {
-    let impulse: ffi::b2Vec2 = impulse.into().into_raw();
-    unsafe { ffi::b2Body_ApplyLinearImpulseToCenter(raw_body_id(id), impulse, wake) };
-}
-
-#[inline]
-fn body_apply_angular_impulse_impl(id: BodyId, impulse: f32, wake: bool) {
-    unsafe { ffi::b2Body_ApplyAngularImpulse(raw_body_id(id), impulse, wake) }
-}
-
-#[inline]
-pub(crate) fn body_mass_impl(id: BodyId) -> f32 {
-    unsafe { ffi::b2Body_GetMass(raw_body_id(id)) }
-}
-
-#[inline]
-pub(crate) fn body_rotational_inertia_impl(id: BodyId) -> f32 {
-    unsafe { ffi::b2Body_GetRotationalInertia(raw_body_id(id)) }
-}
-
-#[inline]
-pub(crate) fn body_local_center_of_mass_impl(id: BodyId) -> Vec2 {
-    Vec2::from_raw(unsafe { ffi::b2Body_GetLocalCenter(raw_body_id(id)) })
-}
-
-#[inline]
-pub(crate) fn body_world_center_of_mass_impl(id: BodyId) -> Position {
-    Position::from_raw(unsafe { ffi::b2Body_GetWorldCenter(raw_body_id(id)) })
-}
-
-#[inline]
-pub(crate) fn body_mass_data_impl(id: BodyId) -> MassData {
-    MassData::from_raw(unsafe { ffi::b2Body_GetMassData(raw_body_id(id)) })
-}
-
-#[inline]
-pub(crate) fn body_motion_locks_impl(id: BodyId) -> MotionLocks {
-    MotionLocks::from_raw(unsafe { ffi::b2Body_GetMotionLocks(raw_body_id(id)) })
-}
-
-#[inline]
-fn body_set_mass_data_impl(id: BodyId, mass_data: MassData) {
-    unsafe { ffi::b2Body_SetMassData(raw_body_id(id), mass_data.into_raw()) };
-}
-
-#[inline]
-fn body_apply_mass_from_shapes_impl(id: BodyId) {
-    unsafe { ffi::b2Body_ApplyMassFromShapes(raw_body_id(id)) };
-}
-
-#[inline]
-pub(crate) fn body_shape_count_impl(id: BodyId) -> i32 {
-    unsafe { ffi::b2Body_GetShapeCount(raw_body_id(id)) }
-}
-
-#[inline]
-pub(crate) fn body_shapes_into_in_impl(
-    brand: crate::id::IdBrand,
-    id: BodyId,
-    out: &mut Vec<ShapeId>,
-) -> ApiResult<()> {
-    let cap = body_shape_count_impl(id);
-    let id = raw_body_id(id);
-    unsafe {
-        crate::core::ffi_vec::try_fill_mapped_from_ffi(
-            out,
-            cap,
-            |ptr, cap| ffi::b2Body_GetShapes(id, ptr, cap),
-            |raw| brand.try_shape(raw),
-        )
-    }
-}
-
-#[inline]
-pub(crate) fn body_shapes_in_impl(
-    brand: crate::id::IdBrand,
-    id: BodyId,
-) -> ApiResult<Vec<ShapeId>> {
-    let cap = body_shape_count_impl(id);
-    let id = raw_body_id(id);
-    unsafe {
-        crate::core::ffi_vec::try_read_mapped_from_ffi(
-            cap,
-            |ptr, cap| ffi::b2Body_GetShapes(id, ptr, cap),
-            |raw| brand.try_shape(raw),
-        )
-    }
-}
-
-#[inline]
-pub(crate) fn body_joint_count_impl(id: BodyId) -> i32 {
-    unsafe { ffi::b2Body_GetJointCount(raw_body_id(id)) }
-}
-
-#[inline]
-pub(crate) fn body_joints_into_in_impl(
-    brand: crate::id::IdBrand,
-    id: BodyId,
-    out: &mut Vec<JointId>,
-) -> ApiResult<()> {
-    let cap = body_joint_count_impl(id);
-    let id = raw_body_id(id);
-    unsafe {
-        crate::core::ffi_vec::try_fill_mapped_from_ffi(
-            out,
-            cap,
-            |ptr, cap| ffi::b2Body_GetJoints(id, ptr, cap),
-            |raw| brand.try_joint(raw),
-        )
-    }
-}
-
-#[inline]
-pub(crate) fn body_joints_in_impl(
-    brand: crate::id::IdBrand,
-    id: BodyId,
-) -> ApiResult<Vec<JointId>> {
-    let cap = body_joint_count_impl(id);
-    let id = raw_body_id(id);
-    unsafe {
-        crate::core::ffi_vec::try_read_mapped_from_ffi(
-            cap,
-            |ptr, cap| ffi::b2Body_GetJoints(id, ptr, cap),
-            |raw| brand.try_joint(raw),
-        )
-    }
-}
-
-#[inline]
-fn body_type_raw_impl(id: BodyId) -> ffi::b2BodyType {
-    #[cfg(test)]
-    {
-        BODY_GET_TYPE_CALLS.with(|calls| calls.set(calls.get().saturating_add(1)));
-        if let Some(raw) = BODY_GET_TYPE_OVERRIDE.with(core::cell::Cell::get) {
-            return raw;
-        }
-    }
-    unsafe { ffi::b2Body_GetType(raw_body_id(id)) }
-}
-
-#[cfg(test)]
-thread_local! {
-    static BODY_GET_TYPE_OVERRIDE: core::cell::Cell<Option<ffi::b2BodyType>> = const {
-        core::cell::Cell::new(None)
-    };
-    static BODY_GET_TYPE_CALLS: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
-}
-
-#[inline]
-pub(crate) fn resolve_body_type_output(
-    core: &crate::core::world_core::WorldCore,
-    raw: ffi::b2BodyType,
-) -> ApiResult<BodyType> {
-    BodyType::decode_native(raw).inspect_err(|_| core.poison())
-}
-
-#[inline]
-pub(crate) fn try_body_type_impl(
-    core: &crate::core::world_core::WorldCore,
-    id: BodyId,
-) -> ApiResult<BodyType> {
-    resolve_body_type_output(core, body_type_raw_impl(id))
-}
-
-#[inline]
-fn body_set_type_impl(id: BodyId, body_type: BodyType) {
-    unsafe { ffi::b2Body_SetType(raw_body_id(id), body_type.into_raw()) }
-}
-
-#[inline]
-pub(crate) fn body_gravity_scale_impl(id: BodyId) -> f32 {
-    unsafe { ffi::b2Body_GetGravityScale(raw_body_id(id)) }
-}
-
-#[inline]
-pub(crate) fn body_set_gravity_scale_impl(id: BodyId, gravity_scale: f32) {
-    unsafe { ffi::b2Body_SetGravityScale(raw_body_id(id), gravity_scale) }
-}
-
-#[inline]
-pub(crate) fn body_linear_damping_impl(id: BodyId) -> f32 {
-    unsafe { ffi::b2Body_GetLinearDamping(raw_body_id(id)) }
-}
-
-#[inline]
-pub(crate) fn body_set_linear_damping_impl(id: BodyId, linear_damping: f32) {
-    unsafe { ffi::b2Body_SetLinearDamping(raw_body_id(id), linear_damping) }
-}
-
-#[inline]
-pub(crate) fn body_angular_damping_impl(id: BodyId) -> f32 {
-    unsafe { ffi::b2Body_GetAngularDamping(raw_body_id(id)) }
-}
-
-#[inline]
-pub(crate) fn body_set_angular_damping_impl(id: BodyId, angular_damping: f32) {
-    unsafe { ffi::b2Body_SetAngularDamping(raw_body_id(id), angular_damping) }
-}
-
-#[inline]
-pub(crate) fn body_enable_sleep_impl(id: BodyId, enable_sleep: bool) {
-    unsafe { ffi::b2Body_EnableSleep(raw_body_id(id), enable_sleep) }
-}
-
-#[inline]
-pub(crate) fn body_is_sleep_enabled_impl(id: BodyId) -> bool {
-    unsafe { ffi::b2Body_IsSleepEnabled(raw_body_id(id)) }
-}
-
-#[inline]
-pub(crate) fn body_set_sleep_threshold_impl(id: BodyId, sleep_threshold: f32) {
-    unsafe { ffi::b2Body_SetSleepThreshold(raw_body_id(id), sleep_threshold) }
-}
-
-#[inline]
-pub(crate) fn body_sleep_threshold_impl(id: BodyId) -> f32 {
-    unsafe { ffi::b2Body_GetSleepThreshold(raw_body_id(id)) }
-}
-
-#[inline]
-pub(crate) fn body_is_awake_impl(id: BodyId) -> bool {
-    unsafe { ffi::b2Body_IsAwake(raw_body_id(id)) }
-}
-
-#[inline]
-pub(crate) fn body_set_awake_impl(id: BodyId, awake: bool) {
-    unsafe { ffi::b2Body_SetAwake(raw_body_id(id), awake) }
-}
-
-#[inline]
-pub(crate) fn body_is_enabled_impl(id: BodyId) -> bool {
-    unsafe { ffi::b2Body_IsEnabled(raw_body_id(id)) }
-}
-
-#[inline]
-pub(crate) fn body_enable_impl(id: BodyId) {
-    unsafe { ffi::b2Body_Enable(raw_body_id(id)) }
-}
-
-#[inline]
-pub(crate) fn body_disable_impl(id: BodyId) {
-    unsafe { ffi::b2Body_Disable(raw_body_id(id)) }
-}
-
-#[inline]
-pub(crate) fn body_is_bullet_impl(id: BodyId) -> bool {
-    unsafe { ffi::b2Body_IsBullet(raw_body_id(id)) }
-}
-
-#[inline]
-pub(crate) fn body_set_bullet_impl(id: BodyId, bullet: bool) {
-    unsafe { ffi::b2Body_SetBullet(raw_body_id(id), bullet) }
-}
-
-#[inline]
-pub(crate) fn body_enable_contact_recycling_impl(id: BodyId, flag: bool) {
-    unsafe { ffi::b2Body_EnableContactRecycling(raw_body_id(id), flag) }
-}
-
-#[inline]
-pub(crate) fn body_is_contact_recycling_enabled_impl(id: BodyId) -> bool {
-    unsafe { ffi::b2Body_IsContactRecyclingEnabled(raw_body_id(id)) }
-}
-
-#[inline]
-pub(crate) fn body_enable_contact_events_impl(id: BodyId, flag: bool) {
-    unsafe { ffi::b2Body_EnableContactEvents(raw_body_id(id), flag) }
-}
-
-#[inline]
-pub(crate) fn body_enable_hit_events_impl(id: BodyId, flag: bool) {
-    unsafe { ffi::b2Body_EnableHitEvents(raw_body_id(id), flag) }
-}
-
-#[inline]
-pub(crate) fn body_set_name_impl(id: BodyId, name: &CStr) {
-    unsafe { ffi::b2Body_SetName(raw_body_id(id), name.as_ptr()) }
-}
-
-#[inline]
-pub(crate) fn body_name_impl(id: BodyId) -> Option<String> {
-    let name_ptr = unsafe { ffi::b2Body_GetName(raw_body_id(id)) };
-    if name_ptr.is_null() {
-        None
+pub(crate) fn check_native_body_finite(
+    operation: &'static str,
+    output: &'static str,
+    value: f32,
+) -> Result<f32> {
+    if value.is_finite() {
+        Ok(value)
     } else {
-        Some(
-            unsafe { CStr::from_ptr(name_ptr) }
-                .to_string_lossy()
-                .into_owned(),
-        )
+        Err(Error::InvalidNativeOutput {
+            operation,
+            output,
+            constraint: "a finite value",
+        })
+    }
+}
+
+#[inline]
+pub(crate) fn check_native_body_non_negative(
+    operation: &'static str,
+    output: &'static str,
+    value: f32,
+) -> Result<f32> {
+    if value.is_finite() && value >= 0.0 {
+        Ok(value)
+    } else {
+        Err(Error::InvalidNativeOutput {
+            operation,
+            output,
+            constraint: "a finite non-negative value",
+        })
+    }
+}
+
+#[inline]
+pub(crate) fn check_native_body_count(
+    operation: &'static str,
+    output: &'static str,
+    value: i32,
+) -> Result<i32> {
+    if value >= 0 {
+        Ok(value)
+    } else {
+        Err(Error::InvalidNativeOutput {
+            operation,
+            output,
+            constraint: "a non-negative native int",
+        })
+    }
+}
+
+impl Body<'_> {
+    #[inline]
+    fn body_id(&self) -> BodyId {
+        self.proof.id()
+    }
+
+    #[inline]
+    fn body_access(&self) -> &BodyProof<'_> {
+        &self.proof
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ApiError, BodyBuilder, World, WorldDef};
-    use std::panic::{AssertUnwindSafe, catch_unwind};
-
-    struct BodyGetTypeOverride;
-
-    impl BodyGetTypeOverride {
-        fn install(raw: ffi::b2BodyType) -> Self {
-            BODY_GET_TYPE_OVERRIDE.with(|current| {
-                assert_eq!(current.replace(Some(raw)), None);
-            });
-            BODY_GET_TYPE_CALLS.with(|calls| calls.set(0));
-            Self
-        }
-
-        fn calls(&self) -> usize {
-            BODY_GET_TYPE_CALLS.with(core::cell::Cell::get)
-        }
-    }
-
-    impl Drop for BodyGetTypeOverride {
-        fn drop(&mut self) {
-            BODY_GET_TYPE_OVERRIDE.with(|current| current.set(None));
-            BODY_GET_TYPE_CALLS.with(|calls| calls.set(0));
-        }
-    }
 
     #[test]
-    fn all_public_body_type_getters_report_unknown_once_then_stop_before_get_type() {
-        let raw = ffi::b2BodyType_b2_bodyTypeCount;
+    fn native_body_scalar_and_count_checks_fail_closed() {
+        assert_eq!(
+            check_native_body_finite("Body::angular_velocity", "angular_velocity", f32::NAN),
+            Err(Error::InvalidNativeOutput {
+                operation: "Body::angular_velocity",
+                output: "angular_velocity",
+                constraint: "a finite value",
+            })
+        );
+        assert_eq!(
+            check_native_body_non_negative("Body::mass", "mass", -1.0),
+            Err(Error::InvalidNativeOutput {
+                operation: "Body::mass",
+                output: "mass",
+                constraint: "a finite non-negative value",
+            })
+        );
+        assert_eq!(
+            check_native_body_count("Body::shape_count", "shape_count", -1),
+            Err(Error::InvalidNativeOutput {
+                operation: "Body::shape_count",
+                output: "shape_count",
+                constraint: "a non-negative native int",
+            })
+        );
 
-        {
-            let mut world = World::new(WorldDef::default()).unwrap();
-            let body = world.create_body_owned(BodyBuilder::new().build());
-            let get_type = BodyGetTypeOverride::install(raw);
-
-            assert_eq!(
-                body.try_body_type(),
-                Err(ApiError::InvalidNativeBodyType { raw })
-            );
-            assert_eq!(get_type.calls(), 1);
-            assert_eq!(body.try_body_type(), Err(ApiError::WorldPoisoned));
-            assert_eq!(get_type.calls(), 1);
-        }
-
-        {
-            let mut world = World::new(WorldDef::default()).unwrap();
-            let body = world.create_body_id(BodyBuilder::new().build());
-            let handle = world.handle();
-            let get_type = BodyGetTypeOverride::install(raw);
-
-            assert_eq!(
-                handle.try_body_type(body),
-                Err(ApiError::InvalidNativeBodyType { raw })
-            );
-            assert_eq!(get_type.calls(), 1);
-            assert_eq!(handle.try_body_type(body), Err(ApiError::WorldPoisoned));
-            assert_eq!(get_type.calls(), 1);
-        }
-
-        {
-            let mut world = World::new(WorldDef::default()).unwrap();
-            let body = world.create_body_id(BodyBuilder::new().build());
-            let body = world.body(body).unwrap();
-            let get_type = BodyGetTypeOverride::install(raw);
-
-            assert_eq!(
-                body.try_body_type(),
-                Err(ApiError::InvalidNativeBodyType { raw })
-            );
-            assert_eq!(get_type.calls(), 1);
-            assert_eq!(body.try_body_type(), Err(ApiError::WorldPoisoned));
-            assert_eq!(get_type.calls(), 1);
-        }
-    }
-
-    #[test]
-    fn infallible_body_type_poisoning_precedes_its_unknown_native_panic() {
-        let mut world = World::new(WorldDef::default()).unwrap();
-        let body = world.create_body_owned(BodyBuilder::new().build());
-        let raw = ffi::b2BodyType_b2_bodyTypeCount;
-        let get_type = BodyGetTypeOverride::install(raw);
-
-        assert!(catch_unwind(AssertUnwindSafe(|| body.body_type())).is_err());
-        assert_eq!(get_type.calls(), 1);
-        assert_eq!(body.try_body_type(), Err(ApiError::WorldPoisoned));
-        assert_eq!(get_type.calls(), 1);
+        assert_eq!(
+            check_native_body_finite("Body::gravity_scale", "gravity_scale", -2.0),
+            Ok(-2.0)
+        );
+        assert_eq!(
+            check_native_body_non_negative("Body::mass", "mass", f32::INFINITY),
+            Err(Error::InvalidNativeOutput {
+                operation: "Body::mass",
+                output: "mass",
+                constraint: "a finite non-negative value",
+            })
+        );
     }
 }

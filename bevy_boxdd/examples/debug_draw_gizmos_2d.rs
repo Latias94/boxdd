@@ -4,9 +4,14 @@ use bevy::prelude::*;
 use bevy_boxdd::prelude::*;
 
 fn main() {
+    let foundation =
+        boxdd::Foundation::initialize_default().expect("Box2D foundation should initialize");
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(BoxddPhysicsPlugin::default())
+        .add_plugins(BoxddPhysicsPlugin::new(
+            foundation,
+            BoxddPhysicsSettings::default(),
+        ))
         .add_systems(Startup, setup)
         .add_systems(Update, draw_boxdd_gizmos)
         .run();
@@ -61,7 +66,7 @@ fn draw_boxdd_gizmos(
     mut gizmos: Gizmos,
 ) {
     if let Err(error) =
-        context.try_debug_draw_collect_into(&mut commands, boxdd::DebugDrawOptions::default())
+        context.debug_draw_collect_into(&mut commands, boxdd::DebugDrawOptions::default())
     {
         warn!(?error, "debug draw collection failed");
         return;
@@ -225,10 +230,10 @@ fn absolute_bounds_to_local_corners(
     bounds: boxdd::Aabb,
 ) -> Result<[Vec2; 4], BoxddWorldOriginError> {
     let world_corners = [
-        bounds.lower,
-        boxdd::Vec2::new(bounds.upper.x, bounds.lower.y),
-        bounds.upper,
-        boxdd::Vec2::new(bounds.lower.x, bounds.upper.y),
+        bounds.lower(),
+        boxdd::Vec2::new(bounds.upper().x, bounds.lower().y),
+        bounds.upper(),
+        boxdd::Vec2::new(bounds.lower().x, bounds.upper().y),
     ];
 
     Ok([
@@ -270,9 +275,9 @@ mod tests {
     #[test]
     fn debug_bounds_are_mapped_into_a_nonzero_local_origin() {
         let origin =
-            BoxddWorldOrigin::try_new(boxdd::Position::from([1_000_000.0_f32, -2_000_000.0]))
-                .unwrap();
-        let bounds = boxdd::Aabb::new([1_000_002.0_f32, -1_999_997.0], [1_000_006.0, -1_999_992.0]);
+            BoxddWorldOrigin::new(boxdd::Position::from([1_000_000.0_f32, -2_000_000.0])).unwrap();
+        let bounds =
+            boxdd::Aabb::new([1_000_002.0_f32, -1_999_997.0], [1_000_006.0, -1_999_992.0]).unwrap();
 
         assert_eq!(
             absolute_bounds_to_local_corners(&origin, bounds).unwrap(),

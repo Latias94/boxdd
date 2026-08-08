@@ -1,52 +1,56 @@
 //! Demonstrates zero-copy event views without exposing raw FFI types.
 use boxdd::prelude::*;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut world = World::new(
-        WorldDef::builder()
+fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let foundation = boxdd::Foundation::initialize_default()?;
+    let mut world = foundation.create_world(
+        boxdd::WorldBuilder::from(foundation.world_def())
             .gravity([0.0_f32, -10.0])
             .enable_continuous(true)
             .hit_event_threshold(0.2)
-            .build(),
+            .build()?,
     )?;
 
     // Ground + sensor
-    let ground = world.create_body_id(BodyBuilder::new().build());
-    let _ = world.create_segment_shape_for(
-        ground,
+    let ground = world.create_body(BodyBuilder::from(foundation.body_def()).build()?)?;
+    let _ = world.body(ground)?.create_segment(
         &ShapeDef::default(),
-        &shapes::segment([-20.0_f32, 0.0], [20.0, 0.0]),
-    );
+        &shapes::segment([-20.0_f32, 0.0], [20.0, 0.0])?,
+    )?;
     let sensor_def = ShapeDef::builder()
         .sensor(true)
         .enable_sensor_events(true)
-        .build();
-    let _sensor = world.create_segment_shape_for(
-        ground,
-        &sensor_def,
-        &shapes::segment([-5.0_f32, 1.0], [5.0, 1.0]),
-    );
+        .build()?;
+    let _sensor = world
+        .body(ground)?
+        .create_segment(&sensor_def, &shapes::segment([-5.0_f32, 1.0], [5.0, 1.0])?)?;
 
     // Dynamic bodies to generate contact/hit events
     let dyn_def = ShapeDef::builder()
         .density(1.0)
         .enable_contact_events(true)
         .enable_hit_events(true)
-        .build();
-    let a = world.create_body_id(
-        BodyBuilder::new()
+        .build()?;
+    let a = world.create_body(
+        BodyBuilder::from(foundation.body_def())
             .body_type(BodyType::Dynamic)
             .position([-0.5, 3.0])
-            .build(),
-    );
-    let b = world.create_body_id(
-        BodyBuilder::new()
+            .build()?,
+    )?;
+    let b = world.create_body(
+        BodyBuilder::from(foundation.body_def())
             .body_type(BodyType::Dynamic)
             .position([0.5, 4.2])
-            .build(),
-    );
-    let _ = world.create_polygon_shape_for(a, &dyn_def, &shapes::box_polygon(0.4, 0.4));
-    let _ = world.create_polygon_shape_for(b, &dyn_def, &shapes::box_polygon(0.4, 0.4));
+            .build()?,
+    )?;
+    let _ = world.body(a)?.create_polygon(
+        &dyn_def,
+        &shapes::box_polygon(0.4, 0.4).expect("valid event shape"),
+    )?;
+    let _ = world.body(b)?.create_polygon(
+        &dyn_def,
+        &shapes::box_polygon(0.4, 0.4).expect("valid event shape"),
+    )?;
 
     let mut move_count = 0usize;
     let mut sleep_transitions = 0usize;
@@ -58,28 +62,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut joint_count = 0usize;
 
     for _ in 0..60 {
-        world.step(1.0 / 60.0, 8);
+        let completed = world.step(1.0 / 60.0, 8)?;
 
-        // Zero-copy views (borrows internal Box2D buffers)
-        world.with_body_events_view(|moves| {
-            for m in moves {
-                let _ = m.body_id();
-                move_count += 1;
-                sleep_transitions += usize::from(m.fell_asleep());
-            }
-        });
-        world.with_sensor_events_view(|beg, end| {
-            sensor_begin += beg.count();
-            sensor_end += end.count();
-        });
-        world.with_contact_events_view(|b, e, h| {
-            contact_begin += b.count();
-            contact_end += e.count();
-            contact_hit += h.count();
-        });
-        world.with_joint_events_view(|j| {
-            joint_count += j.count();
-        });
+        let moves = completed.body_events()?;
+        for event in &moves {
+            let _ = event.body_id;
+            move_count += 1;
+            sleep_transitions += usize::from(event.fell_asleep);
+        }
+        let sensors = completed.sensor_events()?;
+        sensor_begin += sensors.begin().len();
+        sensor_end += sensors.end().len();
+        let contacts = completed.contact_events()?;
+        contact_begin += contacts.begin().len();
+        contact_end += contacts.end().len();
+        contact_hit += contacts.hit().len();
+        joint_count += completed.joint_events()?.len();
     }
     println!(
         "events_view: move={} asleep={} sensor(b={},e={}) contact(b={},e={},hit={}) joints={}",

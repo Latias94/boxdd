@@ -1,45 +1,228 @@
 use boxdd::{prelude::*, shapes};
 
-fn approx_eq(a: f32, b: f32, eps: f32) -> bool {
-    (a - b).abs() <= eps
+fn approx_eq(a: f32, b: f32, epsilon: f32) -> bool {
+    (a - b).abs() <= epsilon
 }
 
-fn approx_world_eq(a: WorldScalar, b: WorldScalar, eps: WorldScalar) -> bool {
-    (a - b).abs() <= eps
+fn create_circle(world: &mut World, position: Position, radius: f32) -> ShapeId {
+    let body = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_builder()
+                .position(position)
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    world
+        .body(body)
+        .unwrap()
+        .create_circle(
+            &ShapeDef::default(),
+            &shapes::circle(Vec2::ZERO, radius).unwrap(),
+        )
+        .unwrap()
 }
 
-fn shape_id_fields(id: ShapeId) -> (i32, u16, u16) {
-    let raw = id.unbind().into_ffi();
-    (raw.index1, raw.world0, raw.generation)
+fn create_box(world: &mut World, position: Position, half_width: f32, half_height: f32) -> ShapeId {
+    let body = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_builder()
+                .position(position)
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    world
+        .body(body)
+        .unwrap()
+        .create_polygon(
+            &ShapeDef::default(),
+            &shapes::box_polygon(half_width, half_height).unwrap(),
+        )
+        .unwrap()
+}
+
+#[cfg(feature = "double-precision")]
+#[test]
+fn large_world_paths_preserve_a_millimeter_separation() {
+    const METERS: f64 = 10_000_000.0;
+    const MILLIMETER: f64 = 0.001;
+    const EXPECTED_ADVANCE: f64 = 0.125;
+
+    let foundation = boxdd::Foundation::initialize_default().unwrap();
+    let mut world = foundation
+        .create_world(
+            foundation
+                .world_builder()
+                .gravity(Vec2::ZERO)
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    let initial_a = Position::new(METERS, -METERS);
+    let initial_b = Position::new(METERS + MILLIMETER, -METERS);
+
+    let mut create_body = |position| {
+        let body = world
+            .create_body(
+                foundation
+                    .body_builder()
+                    .body_type(BodyType::Kinematic)
+                    .position(position)
+                    .linear_velocity([0.25_f32, 0.0])
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        let shape = world
+            .body(body)
+            .unwrap()
+            .create_centered_circle(&ShapeDef::default(), 0.0002)
+            .unwrap();
+        (body, shape)
+    };
+    let (body_a, shape_a) = create_body(initial_a);
+    let (body_b, shape_b) = create_body(initial_b);
+
+    let completed = world.step(0.5, 1).unwrap();
+    let body_events = completed.body_events().unwrap().to_owned().unwrap();
+    drop(completed);
+
+    let position_a = world.body(body_a).unwrap().position().unwrap();
+    let position_b = world.body(body_b).unwrap().position().unwrap();
+    let expected_delta = initial_b.x - initial_a.x;
+    assert!((expected_delta - MILLIMETER).abs() < 5.0e-10);
+    assert_eq!(position_a.x - initial_a.x, EXPECTED_ADVANCE);
+    assert_eq!(position_b.x - initial_b.x, EXPECTED_ADVANCE);
+    assert_eq!(position_b.x - position_a.x, expected_delta);
+    assert_eq!(position_a.y, initial_a.y);
+    assert_eq!(position_b.y, initial_b.y);
+
+    let event_position = |body| {
+        body_events
+            .iter()
+            .find(|event| event.body_id == body)
+            .expect("each moving kinematic body must publish an event")
+            .transform
+            .position()
+    };
+    let event_position_a = event_position(body_a);
+    let event_position_b = event_position(body_b);
+    assert_eq!(event_position_a, position_a);
+    assert_eq!(event_position_b, position_b);
+    assert_eq!(event_position_b.x - event_position_a.x, expected_delta);
+
+    let local_delta = position_b.checked_relative_to(position_a).unwrap();
+    assert!((local_delta.x - MILLIMETER as f32).abs() <= f32::EPSILON);
+    assert_eq!(local_delta.y, 0.0);
+
+    {
+        let query = world.query().unwrap();
+        let ray_hit = |position: Position| {
+            query
+                .cast_ray_closest(
+                    position.offset(Vec2::new(0.0, 0.01)),
+                    [0.0_f32, -0.02],
+                    QueryFilter::default(),
+                )
+                .unwrap()
+                .expect("each narrow ray must hit its corresponding sub-millimeter circle")
+        };
+        let hit_a = ray_hit(position_a);
+        let hit_b = ray_hit(position_b);
+        assert_eq!(hit_a.shape_id, shape_a);
+        assert_eq!(hit_b.shape_id, shape_b);
+        assert_eq!(hit_b.point.x - hit_a.point.x, expected_delta);
+        assert_eq!(hit_a.point.checked_relative_to(position_a).unwrap().x, 0.0);
+        assert_eq!(hit_b.point.checked_relative_to(position_b).unwrap().x, 0.0);
+    }
+
+    let shape = world.shape(shape_a).unwrap();
+    assert!(shape.test_point(position_a).unwrap());
+    assert!(
+        !shape
+            .test_point(position_a.offset(Vec2::new(0.0003, 0.0)))
+            .unwrap()
+    );
+
+    let shape_ray = shape
+        .ray_cast(position_a.offset(Vec2::new(-0.01, 0.0)), [0.02_f32, 0.0])
+        .unwrap();
+    assert!(shape_ray.hit);
+    let local_shape_hit = shape_ray.point.checked_relative_to(position_a).unwrap();
+    assert!(approx_eq(local_shape_hit.x, -0.0002, 1.0e-6));
+    assert!(approx_eq(local_shape_hit.y, 0.0, 1.0e-6));
+
+    let mut drawn_positions = world
+        .debug_draw_collect(DebugDrawOptions::default())
+        .unwrap()
+        .into_iter()
+        .filter_map(|command| match command {
+            DebugDrawCmd::SolidCircle { transform, .. } => Some(transform.position()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    drawn_positions.sort_by(|left, right| left.x.total_cmp(&right.x));
+    assert_eq!(drawn_positions.len(), 2);
+    assert_eq!(drawn_positions[0], position_a);
+    assert_eq!(drawn_positions[1], position_b);
+    assert_eq!(drawn_positions[1].x - drawn_positions[0].x, expected_delta);
 }
 
 #[test]
 fn closest_ray_stats_preserve_hit_and_miss_traversal_results() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let body = world.create_body_id(BodyBuilder::new().build());
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let body = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_def(),
+        )
+        .unwrap();
     let triangle =
-        shapes::polygon_from_points([[0.0_f32, 0.0], [2.0_f32, 0.0], [0.0_f32, 2.0]], 0.0).unwrap();
-    let shape = world.create_polygon_shape_for(body, &ShapeDef::default(), &triangle);
-    let handle = world.handle();
+        shapes::polygon_from_points([[0.0_f32, 0.0], [2.0, 0.0], [0.0, 2.0]], 0.0).unwrap();
+    let shape = world
+        .body(body)
+        .unwrap()
+        .create_polygon(&ShapeDef::default(), &triangle)
+        .unwrap();
+    let query = world.query().unwrap();
 
-    let hit = world.cast_ray_closest_with_stats(
-        Position::new(-1.0, 0.25),
-        [4.0_f32, 0.0],
-        QueryFilter::default(),
-    );
+    let hit = query
+        .cast_ray_closest_with_stats(
+            Position::new(-1.0, 0.25),
+            [4.0_f32, 0.0],
+            QueryFilter::default(),
+        )
+        .unwrap();
     assert_eq!(hit.hit.map(|result| result.shape_id), Some(shape));
     assert!(hit.node_visits > 0);
     assert!(hit.leaf_visits > 0);
-
-    let legacy_hit = world.cast_ray_closest(
-        Position::new(-1.0, 0.25),
-        [4.0_f32, 0.0],
-        QueryFilter::default(),
+    assert_eq!(
+        query
+            .cast_ray_closest(
+                Position::new(-1.0, 0.25),
+                [4.0_f32, 0.0],
+                QueryFilter::default(),
+            )
+            .unwrap()
+            .map(|result| result.shape_id),
+        Some(shape)
     );
-    assert_eq!(legacy_hit.map(|result| result.shape_id), Some(shape));
 
-    let miss = handle
-        .try_cast_ray_closest_with_stats(
+    let miss = query
+        .cast_ray_closest_with_stats(
             Position::new(1.7, 1.7),
             [0.2_f32, 0.0],
             QueryFilter::default(),
@@ -48,111 +231,83 @@ fn closest_ray_stats_preserve_hit_and_miss_traversal_results() {
     assert!(miss.hit.is_none());
     assert!(miss.node_visits > 0);
     assert!(miss.leaf_visits > 0);
-    assert!(
-        handle
-            .try_cast_ray_closest(
-                Position::new(1.7, 1.7),
-                [0.2_f32, 0.0],
-                QueryFilter::default(),
-            )
-            .unwrap()
-            .is_none()
-    );
 }
 
 #[test]
-fn world_queries_preserve_local_geometry_around_explicit_origin() {
+fn queries_preserve_local_geometry_around_explicit_origin() {
     #[cfg(feature = "double-precision")]
     let origin = Position::new(1.0e7, -1.0e7);
     #[cfg(not(feature = "double-precision"))]
     let origin = Position::new(10_000.0, -10_000.0);
 
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let body = world.create_body_id(BodyBuilder::new().position(origin).build());
-    let shape =
-        world.create_circle_shape_for(body, &ShapeDef::default(), &shapes::circle(Vec2::ZERO, 0.5));
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let shape = create_circle(&mut world, origin, 0.5);
+    create_box(&mut world, origin.offset(Vec2::new(0.0, -0.01)), 20.0, 0.5);
+    create_box(&mut world, origin.offset(Vec2::new(3.0, 1.0)), 0.25, 1.0);
+    let query = world.query().unwrap();
 
-    let handle = world.handle();
+    let overlaps = query
+        .overlap_aabb(
+            origin,
+            Aabb::new([-1.0_f32, -1.0], [1.0, 1.0]).unwrap(),
+            QueryFilter::default(),
+        )
+        .unwrap();
+    assert!(overlaps.contains(&shape));
 
-    let overlaps = world.overlap_aabb(
-        origin,
-        Aabb::new([-1.0_f32, -1.0], [1.0, 1.0]),
-        QueryFilter::default(),
-    );
+    let proxy = ShapeProxy::new(
+        [
+            Vec2::new(-0.25, -0.25),
+            Vec2::new(0.25, -0.25),
+            Vec2::new(0.25, 0.25),
+            Vec2::new(-0.25, 0.25),
+        ],
+        0.0,
+    )
+    .unwrap();
     assert!(
-        overlaps
-            .iter()
-            .any(|candidate| shape_id_fields(*candidate) == shape_id_fields(shape))
-    );
-    let handle_overlaps = handle.overlap_aabb(
-        origin,
-        Aabb::new([-1.0_f32, -1.0], [1.0, 1.0]),
-        QueryFilter::default(),
-    );
-    assert!(
-        handle_overlaps
-            .iter()
-            .any(|candidate| shape_id_fields(*candidate) == shape_id_fields(shape))
+        query
+            .overlap_shape(origin, proxy, QueryFilter::default())
+            .unwrap()
+            .contains(&shape)
     );
 
-    let overlap_proxy = [
-        Vec2::new(-0.25, -0.25),
-        Vec2::new(0.25, -0.25),
-        Vec2::new(0.25, 0.25),
-        Vec2::new(-0.25, 0.25),
-    ];
-    let shape_overlaps =
-        world.overlap_polygon_points(origin, overlap_proxy, 0.0, QueryFilter::default());
-    assert!(
-        shape_overlaps
-            .iter()
-            .any(|candidate| shape_id_fields(*candidate) == shape_id_fields(shape))
-    );
-    let handle_shape_overlaps =
-        handle.overlap_polygon_points(origin, overlap_proxy, 0.0, QueryFilter::default());
-    assert_eq!(handle_shape_overlaps.len(), shape_overlaps.len());
-
-    let ray = world
+    let ray = query
         .cast_ray_closest(
             origin.offset(Vec2::new(0.0, 2.0)),
             [0.0_f32, -4.0],
             QueryFilter::default(),
         )
-        .expect("world ray should hit the circle at the explicit origin");
-    assert!(ray.hit);
-    assert_eq!(shape_id_fields(ray.shape_id), shape_id_fields(shape));
+        .unwrap()
+        .expect("ray should hit the circle at the explicit origin");
+    assert_eq!(ray.shape_id, shape);
     let local_hit = ray.point.checked_relative_to(origin).unwrap();
     assert!(approx_eq(local_hit.x, 0.0, 1.0e-4));
     assert!(approx_eq(local_hit.y, 0.5, 1.0e-3));
 
-    let handle_ray = handle
-        .cast_ray_closest(
-            origin.offset(Vec2::new(0.0, 2.0)),
-            [0.0_f32, -4.0],
-            QueryFilter::default(),
-        )
-        .expect("handle ray should hit the circle at the explicit origin");
-    assert!(handle_ray.hit);
-    assert_eq!(shape_id_fields(handle_ray.shape_id), shape_id_fields(shape));
-    assert!(approx_world_eq(handle_ray.point.x, ray.point.x, 1.0e-6));
-    assert!(approx_world_eq(handle_ray.point.y, ray.point.y, 1.0e-6));
-
-    let cast_proxy = [
-        Vec2::new(-0.1, 1.9),
-        Vec2::new(0.1, 1.9),
-        Vec2::new(0.1, 2.1),
-        Vec2::new(-0.1, 2.1),
-    ];
-    let cast_hits = world.cast_shape_points(
-        origin,
-        cast_proxy,
+    let cast_proxy = ShapeProxy::new(
+        [
+            Vec2::new(-0.1, 1.9),
+            Vec2::new(0.1, 1.9),
+            Vec2::new(0.1, 2.1),
+            Vec2::new(-0.1, 2.1),
+        ],
         0.0,
-        [0.0_f32, -4.0],
-        QueryFilter::default(),
-    );
+    )
+    .unwrap();
+    let cast_hits = query
+        .cast_shape(origin, cast_proxy, [0.0_f32, -4.0], QueryFilter::default())
+        .unwrap();
     let cast_hit = cast_hits
         .iter()
-        .find(|hit| shape_id_fields(hit.shape_id) == shape_id_fields(shape))
+        .find(|hit| hit.shape_id == shape)
         .expect("shape cast should hit the circle at the explicit origin");
     assert!(cast_hit.hit);
     let local_cast_hit = cast_hit.point.checked_relative_to(origin).unwrap();
@@ -160,779 +315,258 @@ fn world_queries_preserve_local_geometry_around_explicit_origin() {
     assert!(local_cast_hit.x.abs() < 1.0);
     assert!(local_cast_hit.y.abs() < 1.0);
 
-    let handle_cast_hits = handle.cast_shape_points(
-        origin,
-        cast_proxy,
-        0.0,
-        [0.0_f32, -4.0],
-        QueryFilter::default(),
-    );
-    let handle_cast_hit = handle_cast_hits
-        .iter()
-        .find(|hit| shape_id_fields(hit.shape_id) == shape_id_fields(shape))
-        .expect("handle shape cast should hit the same circle");
-    assert!(approx_eq(
-        handle_cast_hit.fraction,
-        cast_hit.fraction,
-        1.0e-6
-    ));
-    assert!(approx_world_eq(
-        handle_cast_hit.point.x,
-        cast_hit.point.x,
-        1.0e-6
-    ));
-    assert!(approx_world_eq(
-        handle_cast_hit.point.y,
-        cast_hit.point.y,
-        1.0e-6
-    ));
-
-    let shape_ray =
-        world.shape_ray_cast(shape, origin.offset(Vec2::new(0.0, 2.0)), [0.0_f32, -4.0]);
-    assert!(shape_ray.hit);
-    let local_shape_ray = shape_ray.point.checked_relative_to(origin).unwrap();
-    assert!(approx_eq(local_shape_ray.x, 0.0, 1.0e-4));
-    assert!(approx_eq(local_shape_ray.y, 0.5, 1.0e-3));
-
-    let handle_shape_ray =
-        handle.shape_ray_cast(shape, origin.offset(Vec2::new(0.0, 2.0)), [0.0_f32, -4.0]);
-    assert_eq!(handle_shape_ray.hit, shape_ray.hit);
-    assert!(approx_world_eq(
-        handle_shape_ray.point.x,
-        shape_ray.point.x,
-        1.0e-6
-    ));
-    assert!(approx_world_eq(
-        handle_shape_ray.point.y,
-        shape_ray.point.y,
-        1.0e-6
-    ));
-
-    assert!(world.shape_test_point(shape, origin));
-    let closest = world.shape_closest_point(shape, origin.offset(Vec2::new(2.0, 0.0)));
-    let local_closest = closest.checked_relative_to(origin).unwrap();
-    assert!(approx_eq(local_closest.x, 0.5, 1.0e-3));
-    assert!(approx_eq(local_closest.y, 0.0, 1.0e-4));
-
-    let ground = world.create_body_id(BodyBuilder::new().position(origin).build());
-    world.create_polygon_shape_for(
-        ground,
-        &ShapeDef::default(),
-        &shapes::box_polygon(20.0, 0.5),
-    );
-    let wall = world.create_body_id(
-        BodyBuilder::new()
-            .position(origin.offset(Vec2::new(3.0, 1.0)))
-            .build(),
-    );
-    world.create_polygon_shape_for(wall, &ShapeDef::default(), &shapes::box_polygon(0.25, 1.0));
-    let mover_handle = world.handle();
-
     let c1 = Vec2::new(2.0, 0.7);
     let c2 = Vec2::new(2.0, 1.5);
-    let mover_fraction =
-        world.cast_mover(origin, c1, c2, 0.25, [2.0_f32, 0.0], QueryFilter::default());
+    let mover_fraction = query
+        .cast_mover(origin, c1, c2, 0.25, [2.0_f32, 0.0], QueryFilter::default())
+        .unwrap();
     assert!((0.0..1.0).contains(&mover_fraction));
-    let handle_mover_fraction =
-        mover_handle.cast_mover(origin, c1, c2, 0.25, [2.0_f32, 0.0], QueryFilter::default());
-    assert!(approx_eq(handle_mover_fraction, mover_fraction, 1.0e-6));
 
-    let mover_planes = world.collide_mover(origin, c1, c2, 0.25, QueryFilter::default());
+    let mover_planes = query
+        .collide_mover(origin, c1, c2, 0.25, QueryFilter::default())
+        .unwrap();
     assert!(mover_planes.iter().any(|result| result.hit));
     assert!(
         mover_planes
             .iter()
             .filter(|result| result.hit)
-            .all(|result| {
-                result.point.is_valid()
-                    && result.point.x.abs() < 10.0
-                    && result.point.y.abs() < 10.0
-            })
+            .all(|result| result.point.is_valid()
+                && result.point.x.abs() < 10.0
+                && result.point.y.abs() < 10.0)
     );
-    let handle_mover_planes =
-        mover_handle.collide_mover(origin, c1, c2, 0.25, QueryFilter::default());
-    assert_eq!(handle_mover_planes.len(), mover_planes.len());
-}
-
-#[cfg(feature = "double-precision")]
-#[test]
-fn millimeter_delta_survives_the_double_precision_runtime_pipeline() {
-    const BASE: f64 = 10_000_000.0;
-    const TOLERANCE: f64 = 1.0e-5;
-
-    let reference_initial = Position::new(BASE, -BASE);
-    let initial = Position::new(BASE + 0.001, -BASE + 0.001);
-    let mut world = World::new(WorldDef::builder().gravity(Vec2::ZERO).build()).unwrap();
-    let reference = world.create_body_id(
-        BodyBuilder::new()
-            .body_type(BodyType::Kinematic)
-            .position(reference_initial)
-            .linear_velocity([0.06_f32, 0.0])
-            .enable_sleep(false)
-            .build(),
-    );
-    let body = world.create_body_id(
-        BodyBuilder::new()
-            .body_type(BodyType::Kinematic)
-            .position(initial)
-            .linear_velocity([0.06_f32, 0.0])
-            .enable_sleep(false)
-            .build(),
-    );
-    let shape = world.create_circle_shape_for(
-        body,
-        &ShapeDef::builder().density(1.0).build(),
-        &shapes::circle(Vec2::ZERO, 0.5),
-    );
-
-    assert!((world.body_position(body).x - BASE - 0.001).abs() < TOLERANCE);
-    let initial_separation = world
-        .body_position(body)
-        .checked_relative_to(world.body_position(reference))
-        .expect("millimeter body separation must fit in local coordinates");
-    assert!((f64::from(initial_separation.x) - 0.001).abs() < TOLERANCE);
-    assert!((f64::from(initial_separation.y) - 0.001).abs() < TOLERANCE);
-    world.step(1.0 / 60.0, 4);
-
-    let moved = world.body_position(body);
-    let moved_reference = world.body_position(reference);
-    let step_delta = moved
-        .checked_relative_to(initial)
-        .expect("one simulation step must remain a local f32 delta");
-    assert!((f64::from(step_delta.x) - 0.001).abs() < TOLERANCE);
-    let stepped_separation = moved
-        .checked_relative_to(moved_reference)
-        .expect("stepping must retain the two-body millimeter separation");
-    assert!((f64::from(stepped_separation.x) - 0.001).abs() < TOLERANCE);
-    assert!((f64::from(stepped_separation.y) - 0.001).abs() < TOLERANCE);
-
-    let ray = world
-        .cast_ray_closest(
-            moved.offset(Vec2::new(-2.0, 0.0)),
-            Vec2::new(4.0, 0.0),
-            QueryFilter::default(),
-        )
-        .expect("ray should hit the far-origin circle");
-    assert!(ray.hit);
-    assert_eq!(shape_id_fields(ray.shape_id), shape_id_fields(shape));
-    assert!((ray.point.x - (moved.x - 0.5)).abs() < TOLERANCE);
-    assert!((ray.point.y - moved.y).abs() < TOLERANCE);
-
-    let move_event = world
-        .body_events()
-        .into_iter()
-        .find(|event| event.body_id == body)
-        .expect("the moving body must produce a body-move event");
-    assert!((move_event.transform.position().x - moved.x).abs() < TOLERANCE);
-    assert!((move_event.transform.position().y - moved.y).abs() < TOLERANCE);
-
-    let commands = world.debug_draw_collect(DebugDrawOptions::default());
-    let drawn_transform = commands
-        .iter()
-        .find_map(|command| match command {
-            DebugDrawCmd::SolidCircle { transform, .. } => Some(*transform),
-            _ => None,
-        })
-        .expect("the circle must produce a safe debug-draw command");
-    assert!((drawn_transform.position().x - moved.x).abs() < TOLERANCE);
-    assert!((drawn_transform.position().y - moved.y).abs() < TOLERANCE);
 }
 
 #[test]
-fn world_basics_and_queries() {
-    let mut world = World::new(
-        WorldDef::builder()
-            .gravity([0.0_f32, -10.0])
-            .enable_continuous(true)
-            .build(),
-    )
-    .unwrap();
-
-    // Ground
-    let ground = world.create_body_id(BodyBuilder::new().build());
-    let _gs = world.create_polygon_shape_for(
-        ground,
-        &ShapeDef::builder().density(0.0).build(),
-        &shapes::box_polygon(20.0, 0.5),
-    );
-
-    // Dynamic body above ground
-    let b = world.create_body_id(
-        BodyBuilder::new()
-            .body_type(BodyType::Dynamic)
-            .position([0.0_f32, 5.0])
-            .build(),
-    );
-    let _s = world.create_polygon_shape_for(
-        b,
-        &ShapeDef::builder().density(1.0).build(),
-        &shapes::box_polygon(0.5, 0.5),
-    );
-
-    // Step and ensure body moved downward due to gravity
-    let y0 = world.body_position(b).y;
-    for _ in 0..30 {
-        world.step(1.0 / 60.0, 4);
-    }
-    let y1 = world.body_position(b).y;
-    assert!(y1 < y0, "body should fall: y0={} y1={}", y0, y1);
-
-    // AABB overlap near origin should at least find ground
-    let ids = world.overlap_aabb(
-        Position::ZERO,
-        Aabb::new([-2.0, -2.0], [2.0, 2.0]),
-        QueryFilter::default(),
-    );
-    assert!(!ids.is_empty());
-
-    let mut reused_ids = Vec::with_capacity(16);
-    let reused_ids_ptr = reused_ids.as_ptr();
-    world.overlap_aabb_into(
-        Position::ZERO,
-        Aabb::new([-2.0, -2.0], [2.0, 2.0]),
-        QueryFilter::default(),
-        &mut reused_ids,
-    );
-    assert!(!reused_ids.is_empty());
-    assert_eq!(reused_ids.as_ptr(), reused_ids_ptr);
-
-    world.overlap_aabb_into(
-        Position::ZERO,
-        Aabb::new([50.0, 50.0], [51.0, 51.0]),
-        QueryFilter::default(),
-        &mut reused_ids,
-    );
-    assert!(reused_ids.is_empty());
-    assert_eq!(reused_ids.as_ptr(), reused_ids_ptr);
-
-    let handle = world.handle();
-    let mut handle_ids = Vec::with_capacity(16);
-    handle.overlap_aabb_into(
-        Position::ZERO,
-        Aabb::new([-2.0, -2.0], [2.0, 2.0]),
-        QueryFilter::default(),
-        &mut handle_ids,
-    );
-    assert_eq!(handle_ids.len(), ids.len());
-
-    let mut visited_ids = Vec::new();
-    let visited_complete = world.visit_overlap_aabb(
-        Position::ZERO,
-        Aabb::new([-2.0, -2.0], [2.0, 2.0]),
-        QueryFilter::default(),
-        |shape_id| {
-            visited_ids.push(shape_id);
-            true
-        },
-    );
-    assert!(visited_complete);
-    assert_eq!(
-        visited_ids
-            .iter()
-            .copied()
-            .map(shape_id_fields)
-            .collect::<Vec<_>>(),
-        ids.iter().copied().map(shape_id_fields).collect::<Vec<_>>()
-    );
-
-    let mut stopped_ids = Vec::new();
-    let visited_complete = world.visit_overlap_aabb(
-        Position::ZERO,
-        Aabb::new([-2.0, -2.0], [2.0, 2.0]),
-        QueryFilter::default(),
-        |shape_id| {
-            stopped_ids.push(shape_id);
-            false
-        },
-    );
-    assert!(!visited_complete);
-    assert_eq!(stopped_ids.len(), 1);
-
-    let mut empty_visit_count = 0;
-    let visited_complete = world.visit_overlap_aabb(
-        Position::ZERO,
-        Aabb::new([50.0, 50.0], [51.0, 51.0]),
-        QueryFilter::default(),
-        |_| {
-            empty_visit_count += 1;
-            true
-        },
-    );
-    assert!(visited_complete);
-    assert_eq!(empty_visit_count, 0);
-
-    let mut handle_visit_count = 0;
-    let visited_complete = handle.visit_overlap_aabb(
-        Position::ZERO,
-        Aabb::new([-2.0, -2.0], [2.0, 2.0]),
-        QueryFilter::default(),
-        |_| {
-            handle_visit_count += 1;
-            true
-        },
-    );
-    assert!(visited_complete);
-    assert_eq!(handle_visit_count, ids.len());
-
-    let mut try_handle_visit_count = 0;
-    let visited_complete = handle
-        .try_visit_overlap_aabb(
-            Position::ZERO,
-            Aabb::new([-2.0, -2.0], [2.0, 2.0]),
-            QueryFilter::default(),
-            |_| {
-                try_handle_visit_count += 1;
-                true
-            },
+fn reusable_buffers_cover_hits_misses_and_visitor_short_circuit() {
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
         )
         .unwrap();
-    assert!(visited_complete);
-    assert_eq!(try_handle_visit_count, ids.len());
+    let shape = create_box(&mut world, Position::ZERO, 0.5, 0.5);
+    let query = world.query().unwrap();
+    let hit_bounds = Aabb::new([-1.0_f32, -1.0], [1.0, 1.0]).unwrap();
+    let miss_bounds = Aabb::new([50.0_f32, 50.0], [51.0, 51.0]).unwrap();
 
-    // Raycast downward from above body should hit something
-    let hit = world
-        .cast_ray_closest(
-            Position::new(0.0, 10.0),
-            [0.0, -100.0],
-            QueryFilter::default(),
-        )
-        .expect("downward world ray should hit");
-    assert!(hit.hit);
-    assert!(hit.fraction >= 0.0 && hit.fraction <= 1.0);
-    assert!(approx_eq(hit.normal.y.abs(), 1.0, 1e-3) || approx_eq(hit.normal.x.abs(), 1.0, 1e-3));
-
-    let mut ray_hits = Vec::with_capacity(16);
-    let ray_hits_ptr = ray_hits.as_ptr();
-    world.cast_ray_all_into(
-        Position::new(0.0, 10.0),
-        [0.0, -100.0],
-        QueryFilter::default(),
-        &mut ray_hits,
-    );
-    assert!(!ray_hits.is_empty());
-    assert_eq!(ray_hits.as_ptr(), ray_hits_ptr);
-    let world_ray_hit_count = ray_hits.len();
-
-    world.cast_ray_all_into(
-        Position::new(50.0, 50.0),
-        [1.0, 0.0],
-        QueryFilter::default(),
-        &mut ray_hits,
-    );
-    assert!(ray_hits.is_empty());
-    assert_eq!(ray_hits.as_ptr(), ray_hits_ptr);
-
-    let handle_hit = handle
-        .cast_ray_closest(
-            Position::new(0.0, 10.0),
-            [0.0, -100.0],
-            QueryFilter::default(),
-        )
-        .expect("downward handle ray should hit");
-    assert_eq!(handle_hit.hit, hit.hit);
-    assert!(approx_eq(handle_hit.fraction, hit.fraction, 1e-6));
-
-    let handle_all = handle.cast_ray_all(
-        Position::new(0.0, 10.0),
-        [0.0, -100.0],
-        QueryFilter::default(),
-    );
-    assert_eq!(handle_all.len(), world_ray_hit_count);
-}
-
-#[test]
-fn world_handle_queries_match_world_queries() {
-    let mut world = World::new(WorldDef::builder().gravity([0.0_f32, -10.0]).build()).unwrap();
-
-    let ground = world.create_body_id(BodyBuilder::new().build());
-    let _ground_shape = world.create_polygon_shape_for(
-        ground,
-        &ShapeDef::builder().density(0.0).build(),
-        &shapes::box_polygon(20.0, 0.5),
-    );
-
-    let wall = world.create_body_id(BodyBuilder::new().position([1.0_f32, 1.0]).build());
-    let _wall_shape = world.create_polygon_shape_for(
-        wall,
-        &ShapeDef::builder().density(0.0).build(),
-        &shapes::box_polygon(0.25, 1.0),
-    );
-
-    let handle = world.handle();
-    world.enable_sleeping(false);
-    world.enable_continuous(false);
-    world.enable_warm_starting(false);
-    world.set_restitution_threshold(0.75);
-    world.set_hit_event_threshold(1.25);
-    world.set_maximum_linear_speed(18.0);
-    world.step(1.0 / 60.0, 4);
-
-    assert_eq!(handle.gravity(), world.gravity());
-    assert_eq!(handle.try_gravity().unwrap(), world.gravity());
-
-    let world_counters = world.counters();
-    let handle_counters = handle.counters();
-    let try_handle_counters = handle.try_counters().unwrap();
-    assert_eq!(handle_counters.body_count, world_counters.body_count);
-    assert_eq!(handle_counters.shape_count, world_counters.shape_count);
-    assert_eq!(handle_counters.contact_count, world_counters.contact_count);
-    assert_eq!(handle_counters.joint_count, world_counters.joint_count);
-    assert_eq!(handle_counters.task_count, world_counters.task_count);
-    assert_eq!(try_handle_counters.body_count, handle_counters.body_count);
-    assert_eq!(try_handle_counters.shape_count, handle_counters.shape_count);
-
-    let world_profile = world.profile();
-    assert_eq!(handle.profile(), world_profile);
-    assert_eq!(handle.try_profile().unwrap(), world_profile);
-    assert_eq!(handle.awake_body_count(), world.awake_body_count());
-    assert_eq!(
-        handle.try_awake_body_count().unwrap(),
-        world.try_awake_body_count().unwrap()
-    );
-    assert_eq!(handle.is_sleeping_enabled(), world.is_sleeping_enabled());
-    assert_eq!(
-        handle.try_is_sleeping_enabled().unwrap(),
-        world.try_is_sleeping_enabled().unwrap()
-    );
-    assert_eq!(
-        handle.is_continuous_enabled(),
-        world.is_continuous_enabled()
-    );
-    assert_eq!(
-        handle.try_is_continuous_enabled().unwrap(),
-        world.try_is_continuous_enabled().unwrap()
-    );
-    assert_eq!(
-        handle.is_warm_starting_enabled(),
-        world.is_warm_starting_enabled()
-    );
-    assert_eq!(
-        handle.try_is_warm_starting_enabled().unwrap(),
-        world.try_is_warm_starting_enabled().unwrap()
-    );
-    assert!(approx_eq(
-        handle.restitution_threshold(),
-        world.restitution_threshold(),
-        1e-6
-    ));
-    assert!(approx_eq(
-        handle.try_restitution_threshold().unwrap(),
-        world.try_restitution_threshold().unwrap(),
-        1e-6
-    ));
-    assert!(approx_eq(
-        handle.hit_event_threshold(),
-        world.hit_event_threshold(),
-        1e-6
-    ));
-    assert!(approx_eq(
-        handle.try_hit_event_threshold().unwrap(),
-        world.try_hit_event_threshold().unwrap(),
-        1e-6
-    ));
-    assert!(approx_eq(
-        handle.maximum_linear_speed(),
-        world.maximum_linear_speed(),
-        1e-6
-    ));
-    assert!(approx_eq(
-        handle.try_maximum_linear_speed().unwrap(),
-        world.try_maximum_linear_speed().unwrap(),
-        1e-6
-    ));
-
-    let world_overlap = world.overlap_polygon_points_with_offset(
-        Position::ZERO,
-        [
-            Vec2::new(-0.25, -0.25),
-            Vec2::new(0.25, -0.25),
-            Vec2::new(0.25, 0.25),
-            Vec2::new(-0.25, 0.25),
-        ],
-        0.0,
-        [0.0_f32, 0.2],
-        0.0_f32,
-        QueryFilter::default(),
-    );
-    assert!(!world_overlap.is_empty());
-    let handle_overlap = handle.overlap_polygon_points_with_offset(
-        Position::ZERO,
-        [
-            Vec2::new(-0.25, -0.25),
-            Vec2::new(0.25, -0.25),
-            Vec2::new(0.25, 0.25),
-            Vec2::new(-0.25, 0.25),
-        ],
-        0.0,
-        [0.0_f32, 0.2],
-        0.0_f32,
-        QueryFilter::default(),
-    );
-    assert_eq!(handle_overlap.len(), world_overlap.len());
-    for (handle_shape, world_shape) in handle_overlap.iter().zip(world_overlap.iter()) {
-        assert_eq!(handle_shape, world_shape);
-    }
-
-    let world_plain_overlap = world.overlap_polygon_points(
-        Position::ZERO,
-        [
-            Vec2::new(-0.25, -0.25),
-            Vec2::new(0.25, -0.25),
-            Vec2::new(0.25, 0.25),
-            Vec2::new(-0.25, 0.25),
-        ],
-        0.0,
-        QueryFilter::default(),
-    );
-    let mut visited_plain_overlap = Vec::new();
-    let visited_complete = world.visit_overlap_polygon_points(
-        Position::ZERO,
-        [
-            Vec2::new(-0.25, -0.25),
-            Vec2::new(0.25, -0.25),
-            Vec2::new(0.25, 0.25),
-            Vec2::new(-0.25, 0.25),
-        ],
-        0.0,
-        QueryFilter::default(),
-        |shape_id| {
-            visited_plain_overlap.push(shape_id);
-            true
-        },
-    );
-    assert!(visited_complete);
-    assert_eq!(
-        visited_plain_overlap
-            .iter()
-            .copied()
-            .map(shape_id_fields)
-            .collect::<Vec<_>>(),
-        world_plain_overlap
-            .iter()
-            .copied()
-            .map(shape_id_fields)
-            .collect::<Vec<_>>()
-    );
-
-    let mut visited_offset_overlap = Vec::new();
-    let visited_complete = world.visit_overlap_polygon_points_with_offset(
-        Position::ZERO,
-        [
-            Vec2::new(-0.25, -0.25),
-            Vec2::new(0.25, -0.25),
-            Vec2::new(0.25, 0.25),
-            Vec2::new(-0.25, 0.25),
-        ],
-        0.0,
-        [0.0_f32, 0.2],
-        0.0_f32,
-        QueryFilter::default(),
-        |shape_id| {
-            visited_offset_overlap.push(shape_id);
-            true
-        },
-    );
-    assert!(visited_complete);
-    assert_eq!(
-        visited_offset_overlap
-            .iter()
-            .copied()
-            .map(shape_id_fields)
-            .collect::<Vec<_>>(),
-        world_overlap
-            .iter()
-            .copied()
-            .map(shape_id_fields)
-            .collect::<Vec<_>>()
-    );
-
-    let mut handle_offset_stop_count = 0;
-    let visited_complete = handle.visit_overlap_polygon_points_with_offset(
-        Position::ZERO,
-        [
-            Vec2::new(-0.25, -0.25),
-            Vec2::new(0.25, -0.25),
-            Vec2::new(0.25, 0.25),
-            Vec2::new(-0.25, 0.25),
-        ],
-        0.0,
-        [0.0_f32, 0.2],
-        0.0_f32,
-        QueryFilter::default(),
-        |_| {
-            handle_offset_stop_count += 1;
-            false
-        },
-    );
-    assert!(!visited_complete);
-    assert_eq!(handle_offset_stop_count, 1);
-
-    let mut world_cast_hits = Vec::with_capacity(8);
-    world.cast_shape_points_with_offset_into(
-        Position::ZERO,
-        [
-            Vec2::new(-0.25, -0.25),
-            Vec2::new(0.25, -0.25),
-            Vec2::new(0.25, 0.25),
-            Vec2::new(-0.25, 0.25),
-        ],
-        0.0,
-        [0.0_f32, 1.5],
-        0.0_f32,
-        [0.0_f32, -2.0],
-        QueryFilter::default(),
-        &mut world_cast_hits,
-    );
-    let mut handle_cast_hits = Vec::with_capacity(8);
-    handle.cast_shape_points_with_offset_into(
-        Position::ZERO,
-        [
-            Vec2::new(-0.25, -0.25),
-            Vec2::new(0.25, -0.25),
-            Vec2::new(0.25, 0.25),
-            Vec2::new(-0.25, 0.25),
-        ],
-        0.0,
-        [0.0_f32, 1.5],
-        0.0_f32,
-        [0.0_f32, -2.0],
-        QueryFilter::default(),
-        &mut handle_cast_hits,
-    );
-    assert_eq!(handle_cast_hits.len(), world_cast_hits.len());
-    for (world_hit, handle_hit) in world_cast_hits.iter().zip(handle_cast_hits.iter()) {
-        assert_eq!(handle_hit.hit, world_hit.hit);
-        assert_eq!(handle_hit.shape_id, world_hit.shape_id);
-        assert!(approx_eq(handle_hit.fraction, world_hit.fraction, 1e-6));
-        assert!(approx_world_eq(handle_hit.point.x, world_hit.point.x, 1e-6));
-        assert!(approx_world_eq(handle_hit.point.y, world_hit.point.y, 1e-6));
-        assert!(approx_eq(handle_hit.normal.x, world_hit.normal.x, 1e-6));
-        assert!(approx_eq(handle_hit.normal.y, world_hit.normal.y, 1e-6));
-    }
-
-    let c1 = Vec2::new(0.0, 0.7);
-    let c2 = Vec2::new(0.0, 1.5);
-    let mut world_planes = Vec::with_capacity(8);
-    world.collide_mover_into(
-        Position::ZERO,
-        c1,
-        c2,
-        0.25,
-        QueryFilter::default(),
-        &mut world_planes,
-    );
-    let mut handle_planes = Vec::with_capacity(8);
-    handle.collide_mover_into(
-        Position::ZERO,
-        c1,
-        c2,
-        0.25,
-        QueryFilter::default(),
-        &mut handle_planes,
-    );
-    assert_eq!(handle_planes.len(), world_planes.len());
-    for (world_plane, handle_plane) in world_planes.iter().zip(handle_planes.iter()) {
-        assert_eq!(handle_plane.hit, world_plane.hit);
-        assert_eq!(handle_plane.shape_id, world_plane.shape_id);
-        assert!(approx_eq(
-            handle_plane.plane.normal.x,
-            world_plane.plane.normal.x,
-            1e-6
-        ));
-        assert!(approx_eq(
-            handle_plane.plane.normal.y,
-            world_plane.plane.normal.y,
-            1e-6
-        ));
-        assert!(approx_eq(
-            handle_plane.plane.offset,
-            world_plane.plane.offset,
-            1e-6
-        ));
-        assert!(approx_eq(handle_plane.point.x, world_plane.point.x, 1e-6));
-        assert!(approx_eq(handle_plane.point.y, world_plane.point.y, 1e-6));
-    }
-}
-
-#[test]
-fn overlap_query_callback_panic_is_caught_and_resumed() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-
-    let body = world.create_body_id(BodyBuilder::new().build());
-    let shape_def = ShapeDef::builder().density(0.0).build();
-    let _shape = world.create_polygon_shape_for(body, &shape_def, &shapes::box_polygon(0.5, 0.5));
-
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        world.visit_overlap_aabb(
+    let mut shapes = ShapeQueryBuffer::with_capacity(8).unwrap();
+    let shape_capacity = shapes.capacity();
+    query
+        .overlap_aabb_into(
             Position::ZERO,
-            Aabb::new([-1.0_f32, -1.0], [1.0, 1.0]),
+            hit_bounds,
             QueryFilter::default(),
-            |_| -> bool {
-                panic!("boom in overlap query");
-            },
-        );
-    }));
-    assert!(result.is_err());
+            &mut shapes,
+        )
+        .unwrap();
+    assert_eq!(shapes.as_slice(), &[shape]);
+    assert_eq!(shapes.capacity(), shape_capacity);
 
-    let mut visited = 0;
-    let completed = world.visit_overlap_aabb(
-        Position::ZERO,
-        Aabb::new([-1.0_f32, -1.0], [1.0, 1.0]),
-        QueryFilter::default(),
-        |_| {
-            visited += 1;
-            true
-        },
+    query
+        .overlap_aabb_into(
+            Position::ZERO,
+            miss_bounds,
+            QueryFilter::default(),
+            &mut shapes,
+        )
+        .unwrap();
+    assert!(shapes.is_empty());
+    assert_eq!(shapes.capacity(), shape_capacity);
+
+    let mut rays = RayQueryBuffer::with_capacity(8).unwrap();
+    let ray_capacity = rays.capacity();
+    query
+        .cast_ray_all_into(
+            Position::new(0.0, 2.0),
+            [0.0_f32, -4.0],
+            QueryFilter::default(),
+            &mut rays,
+        )
+        .unwrap();
+    assert!(rays.iter().any(|hit| hit.shape_id == shape));
+    assert_eq!(rays.capacity(), ray_capacity);
+    query
+        .cast_ray_all_into(
+            Position::new(50.0, 50.0),
+            [1.0_f32, 0.0],
+            QueryFilter::default(),
+            &mut rays,
+        )
+        .unwrap();
+    assert!(rays.is_empty());
+    assert_eq!(rays.capacity(), ray_capacity);
+
+    let mut visited = Vec::new();
+    assert!(
+        query
+            .visit_overlap_aabb(
+                Position::ZERO,
+                hit_bounds,
+                QueryFilter::default(),
+                |shape_id| {
+                    visited.push(shape_id);
+                    true
+                },
+            )
+            .unwrap()
     );
-    assert!(completed);
-    assert_eq!(visited, 1);
+    assert_eq!(visited, [shape]);
+
+    let mut stopped = 0;
+    assert!(
+        !query
+            .visit_overlap_aabb(Position::ZERO, hit_bounds, QueryFilter::default(), |_| {
+                stopped += 1;
+                false
+            },)
+            .unwrap()
+    );
+    assert_eq!(stopped, 1);
+
+    let mut empty_visits = 0;
+    assert!(
+        query
+            .visit_overlap_aabb(Position::ZERO, miss_bounds, QueryFilter::default(), |_| {
+                empty_visits += 1;
+                true
+            },)
+            .unwrap()
+    );
+    assert_eq!(empty_visits, 0);
 }
 
 #[test]
-fn handle_try_overlap_query_callback_panic_is_caught_and_resumed() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-
-    let body = world.create_body_id(BodyBuilder::new().build());
-    let shape_def = ShapeDef::builder().density(0.0).build();
-    let _shape = world.create_polygon_shape_for(body, &shape_def, &shapes::box_polygon(0.5, 0.5));
-    let handle = world.handle();
+fn offset_proxy_queries_share_the_same_capability_and_buffers() {
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let ground = create_box(&mut world, Position::ZERO, 20.0, 0.5);
+    let query = world.query().unwrap();
     let points = [
         Vec2::new(-0.25, -0.25),
         Vec2::new(0.25, -0.25),
         Vec2::new(0.25, 0.25),
         Vec2::new(-0.25, 0.25),
     ];
+    let overlap_proxy = ShapeProxy::offset_from_points(
+        points,
+        0.0,
+        Transform::from_pos_angle([0.0_f32, 0.2], 0.0).unwrap(),
+    )
+    .unwrap();
+
+    let overlap = query
+        .overlap_shape(Position::ZERO, overlap_proxy, QueryFilter::default())
+        .unwrap();
+    assert!(overlap.contains(&ground));
+
+    let mut visited = Vec::new();
+    assert!(
+        query
+            .visit_overlap_shape(
+                Position::ZERO,
+                overlap_proxy,
+                QueryFilter::default(),
+                |shape_id| {
+                    visited.push(shape_id);
+                    true
+                },
+            )
+            .unwrap()
+    );
+    assert_eq!(visited, overlap);
+
+    let cast_proxy = ShapeProxy::offset_from_points(
+        points,
+        0.0,
+        Transform::from_pos_angle([0.0_f32, 1.5], 0.0).unwrap(),
+    )
+    .unwrap();
+    let mut casts = RayQueryBuffer::with_capacity(8).unwrap();
+    query
+        .cast_shape_into(
+            Position::ZERO,
+            cast_proxy,
+            [0.0_f32, -2.0],
+            QueryFilter::default(),
+            &mut casts,
+        )
+        .unwrap();
+    assert!(casts.iter().any(|hit| hit.shape_id == ground));
+}
+
+#[test]
+fn visitor_panic_resumes_after_query_cleanup_and_later_queries_still_work() {
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    create_box(&mut world, Position::ZERO, 0.5, 0.5);
+    let query = world.query().unwrap();
+    let bounds = Aabb::new([-1.0_f32, -1.0], [1.0, 1.0]).unwrap();
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = handle.try_visit_overlap_polygon_points_with_offset(
+        let _ = query.visit_overlap_aabb(
             Position::ZERO,
-            points,
-            0.0,
-            [0.0_f32, 0.0],
-            0.0_f32,
+            bounds,
             QueryFilter::default(),
-            |_| -> bool {
-                panic!("boom in handle overlap query");
-            },
+            |_| -> bool { panic!("query visitor panic") },
         );
     }));
     assert!(result.is_err());
 
     let mut visited = 0;
-    let completed = handle
-        .try_visit_overlap_polygon_points_with_offset(
-            Position::ZERO,
-            points,
-            0.0,
-            [0.0_f32, 0.0],
-            0.0_f32,
-            QueryFilter::default(),
-            |_| {
+    assert!(
+        query
+            .visit_overlap_aabb(Position::ZERO, bounds, QueryFilter::default(), |_| {
                 visited += 1;
                 true
-            },
+            },)
+            .unwrap()
+    );
+    assert_eq!(visited, 1);
+}
+
+#[test]
+fn post_native_query_visitor_can_use_an_independent_dynamic_tree() {
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
         )
         .unwrap();
-    assert!(completed);
-    assert_eq!(visited, 1);
+    create_box(&mut world, Position::ZERO, 0.5, 0.5);
+    let query = world.query().unwrap();
+    let bounds = Aabb::new([-1.0_f32, -1.0], [1.0, 1.0]).unwrap();
+    let mut tree = boxdd::DynamicTree::new().unwrap();
+    tree.create_proxy(bounds, u64::MAX, 7).unwrap();
+    let mut tree_hits = 0;
+
+    assert!(
+        query
+            .visit_overlap_aabb(Position::ZERO, bounds, QueryFilter::default(), |_| {
+                tree.query_all(bounds, &mut |_, user_data| {
+                    assert_eq!(user_data, 7);
+                    tree_hits += 1;
+                    true
+                })
+                .unwrap();
+                true
+            })
+            .unwrap()
+    );
+    assert_eq!(tree_hits, 1);
 }

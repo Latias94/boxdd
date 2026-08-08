@@ -3,22 +3,34 @@ use boxdd as bd;
 pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     let columns = app.pyramid_cols.max(1) as usize;
     let rows = app.pyramid_rows.max(1) as usize;
-    let box_poly = bd::shapes::box_polygon(0.5, 0.5);
-    let sdef = bd::ShapeDef::builder().density(1.0).build();
+    let box_poly = bd::shapes::box_polygon(0.5, 0.5).expect("valid polygon geometry");
+    let sdef = bd::ShapeDef::builder()
+        .density(1.0)
+        .build()
+        .expect("valid testbed definition");
     for i in 0..rows {
         // Use saturating_sub to avoid usize underflow if rows > columns
         let width = columns.saturating_sub(i);
         for j in 0..width {
             let x = (j as f32) * 1.1 - (width as f32) * 0.55;
             let y = 0.5 + (i as f32) * 1.05 + 2.0;
-            let b = app.world.create_body_id(
-                bd::BodyBuilder::new()
-                    .body_type(bd::BodyType::Dynamic)
-                    .position([x, y])
-                    .build(),
-            );
+            let b = app
+                .world
+                .create_body(
+                    bd::BodyBuilder::from(app.foundation.body_def())
+                        .body_type(bd::BodyType::Dynamic)
+                        .position([x, y])
+                        .build()
+                        .expect("valid testbed definition"),
+                )
+                .expect("valid testbed operation");
             app.created_bodies += 1;
-            let _ = app.world.create_polygon_shape_for(b, &sdef, &box_poly);
+            let _ = app
+                .world
+                .body(b)
+                .expect("valid testbed operation")
+                .create_polygon(&sdef, &box_poly)
+                .expect("valid testbed operation");
             app.created_shapes += 1;
         }
     }

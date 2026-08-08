@@ -1,27 +1,35 @@
 //! Checked WASM provider ABI identities consumed by the sys build script.
 
+use crate::build_support::VerifiedFileSnapshot;
+use crate::wasm_provider_memory::{
+    CONSUMER_GLOBAL_BASE_BYTES, INITIAL_MEMORY_BYTES, MAXIMUM_MEMORY_BYTES, MEMORY_MODEL,
+    PROVIDER_HEAP_LIMIT_BYTES, PROVIDER_STATIC_BASE_BYTES, SharedMemoryLayout,
+};
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-#[allow(dead_code)]
-pub(crate) const BUILD_POLICY_SOURCE_SHA256: &str =
-    "196d2dd3fbfcb0e0e196589b1857a846f2c6164ca93e3bf11288491f43065431";
-
-pub(crate) const SCHEMA_VERSION: u64 = 1;
-pub(crate) const SCHEMA_NAME: &str = "boxdd-wasm-provider-identity-v1";
-pub(crate) const PROVIDER_ABI: &str = "box2d-sys-v1";
+pub(crate) const SCHEMA_VERSION: u64 = 4;
+pub(crate) const SCHEMA_NAME: &str = "boxdd-wasm-provider-identity-v4";
+pub(crate) const PROVIDER_ABI: &str = "box2d-sys-v2";
 #[allow(dead_code)] // Used by xtask's shared copy; build.rs receives Cargo's target dynamically.
 pub(crate) const CONSUMER_TARGET: &str = "wasm32-unknown-unknown";
 pub(crate) const COMPILER_TARGET: &str = "wasm32-unknown-emscripten";
 pub(crate) const SIMD_MODE: &str = "disabled";
 pub(crate) const POINTER_WIDTH: u64 = 32;
 pub(crate) const ENDIANNESS: &str = "little";
+const MAX_WASM_PROVIDER_CONTRACT_BYTES: u64 = 1024 * 1024;
 
 const FIELDS: &[&str] = &[
     "schema_version",
     "schema",
     "provider_abi",
+    "memory_model",
+    "provider_static_base_bytes",
+    "provider_heap_limit_bytes",
+    "consumer_global_base_bytes",
+    "initial_memory_bytes",
+    "maximum_memory_bytes",
     "target",
     "compiler_target",
     "precision",
@@ -38,11 +46,18 @@ const FIELDS: &[&str] = &[
     "bindings_sha256",
     "private_abi_hash",
     "snapshot_layout_hash",
+    "definition_cookie",
 ];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct WasmProviderIdentity {
     pub(crate) provider_abi: String,
+    pub(crate) memory_model: String,
+    pub(crate) provider_static_base_bytes: u64,
+    pub(crate) provider_heap_limit_bytes: u64,
+    pub(crate) consumer_global_base_bytes: u64,
+    pub(crate) initial_memory_bytes: u64,
+    pub(crate) maximum_memory_bytes: u64,
     pub(crate) target: String,
     pub(crate) compiler_target: String,
     pub(crate) precision: String,
@@ -59,6 +74,7 @@ pub(crate) struct WasmProviderIdentity {
     pub(crate) bindings_sha256: String,
     pub(crate) private_abi_hash: [u8; 32],
     pub(crate) snapshot_layout_hash: u32,
+    pub(crate) definition_cookie: i32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -86,6 +102,7 @@ impl WasmProviderIdentity {
         expected: &WasmProviderExpectation<'_>,
         private_abi_hash: [u8; 32],
         snapshot_layout_hash: u32,
+        definition_cookie: i32,
     ) -> Result<Self, String> {
         if private_abi_hash.iter().all(|byte| *byte == 0) {
             return Err("private_abi_hash must be non-zero".to_owned());
@@ -93,8 +110,17 @@ impl WasmProviderIdentity {
         if snapshot_layout_hash == 0 {
             return Err("snapshot_layout_hash must be non-zero".to_owned());
         }
+        if definition_cookie == 0 {
+            return Err("definition_cookie must be non-zero".to_owned());
+        }
         let identity = Self {
             provider_abi: expected.provider_abi.to_owned(),
+            memory_model: MEMORY_MODEL.to_owned(),
+            provider_static_base_bytes: PROVIDER_STATIC_BASE_BYTES,
+            provider_heap_limit_bytes: PROVIDER_HEAP_LIMIT_BYTES,
+            consumer_global_base_bytes: CONSUMER_GLOBAL_BASE_BYTES,
+            initial_memory_bytes: INITIAL_MEMORY_BYTES,
+            maximum_memory_bytes: MAXIMUM_MEMORY_BYTES,
             target: expected.target.to_owned(),
             compiler_target: expected.compiler_target.to_owned(),
             precision: expected.precision.to_owned(),
@@ -111,6 +137,7 @@ impl WasmProviderIdentity {
             bindings_sha256: expected.bindings_sha256.to_owned(),
             private_abi_hash,
             snapshot_layout_hash,
+            definition_cookie,
         };
         identity.validate(expected)?;
         let reparsed = Self::parse(&identity.render())?;
@@ -136,21 +163,28 @@ impl WasmProviderIdentity {
         expected: &WasmProviderExpectation<'_>,
     ) -> Result<(Self, Vec<u8>), String> {
         let path = regular_file_within(root, relative)?;
-        let source = fs::read_to_string(&path).map_err(|error| {
+        let snapshot = VerifiedFileSnapshot::read(
+            &path,
+            MAX_WASM_PROVIDER_CONTRACT_BYTES,
+            "WASM provider identity contract",
+        )?;
+        let source = std::str::from_utf8(snapshot.bytes()).map_err(|error| {
             format!(
-                "failed to read WASM provider identity contract {}: {error}",
+                "WASM provider identity contract {} is not UTF-8: {error}",
                 path.display()
             )
         })?;
-        let identity = Self::parse(&source)?;
-        if source != identity.render() {
+        let identity = Self::parse(source)?;
+        if source.as_bytes() != identity.render().as_bytes() {
             return Err(format!(
                 "WASM provider identity contract is not in canonical form: {}",
                 path.display()
             ));
         }
         identity.validate(expected)?;
-        Ok((identity, source.into_bytes()))
+        regular_file_within(root, relative)?;
+        snapshot.revalidate("parsed WASM provider identity contract")?;
+        Ok((identity, snapshot.into_bytes()))
     }
 
     pub(crate) fn parse(source: &str) -> Result<Self, String> {
@@ -179,6 +213,11 @@ impl WasmProviderIdentity {
         if snapshot_layout_hash == 0 {
             return Err("snapshot_layout_hash must be non-zero".to_owned());
         }
+        let definition_cookie = i32::try_from(required_integer(table, "definition_cookie")?)
+            .map_err(|_| "definition_cookie exceeds i32".to_owned())?;
+        if definition_cookie == 0 {
+            return Err("definition_cookie must be non-zero".to_owned());
+        }
         let private_abi_hash = parse_sha256(
             "private_abi_hash",
             &required_string(table, "private_abi_hash")?,
@@ -188,6 +227,12 @@ impl WasmProviderIdentity {
         }
         Ok(Self {
             provider_abi: required_string(table, "provider_abi")?,
+            memory_model: required_string(table, "memory_model")?,
+            provider_static_base_bytes: required_integer(table, "provider_static_base_bytes")?,
+            provider_heap_limit_bytes: required_integer(table, "provider_heap_limit_bytes")?,
+            consumer_global_base_bytes: required_integer(table, "consumer_global_base_bytes")?,
+            initial_memory_bytes: required_integer(table, "initial_memory_bytes")?,
+            maximum_memory_bytes: required_integer(table, "maximum_memory_bytes")?,
             target: required_string(table, "target")?,
             compiler_target: required_string(table, "compiler_target")?,
             precision: required_string(table, "precision")?,
@@ -204,6 +249,7 @@ impl WasmProviderIdentity {
             bindings_sha256: required_string(table, "bindings_sha256")?,
             private_abi_hash,
             snapshot_layout_hash,
+            definition_cookie,
         })
     }
 
@@ -213,6 +259,30 @@ impl WasmProviderIdentity {
             &self.provider_abi,
             expected.provider_abi,
         )?;
+        require_equal(
+            "WASM provider memory model",
+            &self.memory_model,
+            MEMORY_MODEL,
+        )?;
+        SharedMemoryLayout {
+            provider_static_base_bytes: self.provider_static_base_bytes,
+            provider_heap_limit_bytes: self.provider_heap_limit_bytes,
+            consumer_global_base_bytes: self.consumer_global_base_bytes,
+            initial_memory_bytes: self.initial_memory_bytes,
+            maximum_memory_bytes: self.maximum_memory_bytes,
+        }
+        .validate()
+        .map_err(str::to_owned)?;
+        if self.provider_static_base_bytes != PROVIDER_STATIC_BASE_BYTES
+            || self.provider_heap_limit_bytes != PROVIDER_HEAP_LIMIT_BYTES
+            || self.consumer_global_base_bytes != CONSUMER_GLOBAL_BASE_BYTES
+            || self.initial_memory_bytes != INITIAL_MEMORY_BYTES
+            || self.maximum_memory_bytes != MAXIMUM_MEMORY_BYTES
+        {
+            return Err(
+                "WASM provider memory layout does not match the closed contract".to_owned(),
+            );
+        }
         require_equal("WASM provider target", &self.target, expected.target)?;
         require_equal(
             "WASM provider compiler target",
@@ -306,6 +376,12 @@ impl WasmProviderIdentity {
             "schema_version = {SCHEMA_VERSION}\n\
 schema = {}\n\
 provider_abi = {}\n\
+memory_model = {}\n\
+provider_static_base_bytes = {}\n\
+provider_heap_limit_bytes = {}\n\
+consumer_global_base_bytes = {}\n\
+initial_memory_bytes = {}\n\
+maximum_memory_bytes = {}\n\
 target = {}\n\
 compiler_target = {}\n\
 precision = {}\n\
@@ -321,9 +397,16 @@ pointer_width = {}\n\
 endianness = {}\n\
 bindings_sha256 = {}\n\
 private_abi_hash = {}\n\
-snapshot_layout_hash = {}\n",
+snapshot_layout_hash = {}\n\
+definition_cookie = {}\n",
             toml_string(SCHEMA_NAME),
             toml_string(&self.provider_abi),
+            toml_string(&self.memory_model),
+            self.provider_static_base_bytes,
+            self.provider_heap_limit_bytes,
+            self.consumer_global_base_bytes,
+            self.initial_memory_bytes,
+            self.maximum_memory_bytes,
             toml_string(&self.target),
             toml_string(&self.compiler_target),
             toml_string(&self.precision),
@@ -340,6 +423,7 @@ snapshot_layout_hash = {}\n",
             toml_string(&self.bindings_sha256),
             toml_string(&hex_digest(&self.private_abi_hash)),
             self.snapshot_layout_hash,
+            self.definition_cookie,
         )
     }
 }
@@ -559,6 +643,7 @@ mod tests {
             fs::write(&path, source).unwrap();
             assert_ne!(identity.private_abi_hash, [0; 32]);
             assert_ne!(identity.snapshot_layout_hash, 0);
+            assert_ne!(identity.definition_cookie, 0);
             assert!(WasmProviderIdentity::parse(&format!("{source}\nunknown = true\n")).is_err());
             let other = if precision == "single" {
                 "double"
@@ -568,6 +653,67 @@ mod tests {
             assert!(identity.validate(&expectation_for(other, &parsed)).is_err());
         }
         assert!(contract_relative_path("extended").is_err());
+    }
+
+    #[test]
+    fn memory_identity_mutations_are_rejected() {
+        let identity =
+            WasmProviderIdentity::parse(include_str!("../abi/wasm32-unknown-unknown-single.toml"))
+                .unwrap();
+        let expected = expectation_for("single", &identity);
+        let mut mutations = Vec::new();
+
+        let mut mutation = identity.clone();
+        mutation.provider_abi = "box2d-sys-v1".to_owned();
+        mutations.push(mutation);
+        let mut mutation = identity.clone();
+        mutation.memory_model.push_str("-mutated");
+        mutations.push(mutation);
+        let mut mutation = identity.clone();
+        mutation.provider_static_base_bytes = 1000;
+        mutations.push(mutation);
+        let mut mutation = identity.clone();
+        mutation.provider_heap_limit_bytes += crate::wasm_provider_memory::WASM_PAGE_BYTES;
+        mutations.push(mutation);
+        let mut mutation = identity.clone();
+        mutation.consumer_global_base_bytes += crate::wasm_provider_memory::WASM_PAGE_BYTES;
+        mutations.push(mutation);
+        let mut mutation = identity.clone();
+        mutation.initial_memory_bytes = mutation.consumer_global_base_bytes;
+        mutations.push(mutation);
+        let mut mutation = identity.clone();
+        mutation.maximum_memory_bytes = mutation.initial_memory_bytes;
+        mutations.push(mutation);
+
+        for mutation in mutations {
+            assert_ne!(mutation, identity);
+            assert!(
+                mutation.validate(&expected).is_err(),
+                "accepted identity mutation: {mutation:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn contract_loader_rejects_oversized_inputs_before_parsing() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("provider-contract.toml");
+        fs::write(
+            &path,
+            vec![b'x'; usize::try_from(MAX_WASM_PROVIDER_CONTRACT_BYTES + 1).unwrap()],
+        )
+        .unwrap();
+        let checked =
+            WasmProviderIdentity::parse(include_str!("../abi/wasm32-unknown-unknown-single.toml"))
+                .unwrap();
+
+        let error = WasmProviderIdentity::load(
+            temp.path(),
+            Path::new("provider-contract.toml"),
+            &expectation_for("single", &checked),
+        )
+        .expect_err("an oversized contract must fail closed");
+        assert!(error.contains("byte limit"), "{error}");
     }
 
     #[cfg(unix)]

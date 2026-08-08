@@ -8,7 +8,7 @@ fixed-step systems, transform synchronization, ECS-authored joints, entity-mappe
 debug draw command collection, and physics messages.
 
 The 0.6 adapter makes the engine/world coordinate boundary explicit. Read the
-[0.5 to 0.6 migration guide](../docs/migration-0.5-to-0.6.md) before upgrading an existing app.
+[0.5 to 0.6 migration guide](MIGRATION.md) before upgrading an existing app.
 
 ## Quick Start
 
@@ -17,9 +17,14 @@ use bevy::prelude::*;
 use bevy_boxdd::prelude::*;
 
 fn main() {
+    let foundation = boxdd::Foundation::initialize_default()
+        .expect("Box2D foundation should initialize");
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(BoxddPhysicsPlugin::default())
+        .add_plugins(BoxddPhysicsPlugin::new(
+            foundation,
+            BoxddPhysicsSettings::default(),
+        ))
         .add_systems(Startup, setup)
         .run();
 }
@@ -42,26 +47,49 @@ fn setup(mut commands: Commands) {
 
 ## Notes
 
+- Initialize `boxdd::Foundation` once before installing the plugin and pass that exact root to
+  `BoxddPhysicsPlugin::new`; the Bevy adapter has no implicit/default Foundation constructor.
 - Bevy `Transform` translation is local to `BoxddWorldOrigin`; `boxdd::Position` is always an
   absolute world position. Use the resource's checked conversion methods at this boundary.
 - Enable `double-precision` to forward `boxdd/double-precision` while keeping Bevy-local vectors
   and transforms as `f32`.
 - Call `BoxddWorldOrigin::request_rebase` to move the local frame atomically. A rebase that cannot
   be staged remains pending and pauses physics until it is replaced, cancelled, or becomes
-  representable.
+  representable. Removing or replacing the resource after plugin initialization also pauses the
+  pipeline; restore the committed resource state instead of bypassing the rebase transaction.
 - `boxdd::World` is `!Send`/`!Sync`; the plugin stores it as a non-send Bevy resource.
 - `TransformSyncMode::BevyToPhysics` and `PhysicsToBevy` both pass through the active origin. There
   is no implicit `Transform <-> boxdd::WorldTransform` conversion.
-- Contact and sensor messages are only emitted for shapes whose `PhysicsMaterial` enables the
-  matching Box2D event flags.
+- Event publication is opt-in through `BoxddEventInterests`; the default does not materialize any
+  native event family. Contact and sensor messages additionally require the matching
+  `PhysicsMaterial` Box2D event flags. Joint threshold events use `BoxddJointEventMessage`.
+- `RigidBody` must be a world-root entity. `ChildOf` is supported for collider-only entities, but
+  is rejected on rigid-body entities because Bevy-local parent transforms are not a Box2D body
+  ownership model.
+- Runtime tuning is split into `BoxddStepSettings`, `BoxddEventInterests`, and `BoxddErrorPolicy`.
+  `BoxddPhysicsSettings` supplies initial gravity and fixed-clock configuration; change gravity at
+  runtime through `BoxddPhysicsContext::set_gravity`. Use `BoxddPhysicsSet` to order application
+  systems around pipeline stages.
 - `JointDescriptor` supports ECS-authored distance and revolute joints and inserts `BoxddJoint`
   after the native joint is created.
-- `BoxddPhysicsContext` exposes the native `boxdd::World` plus body/shape/joint-to-entity mappings.
+- `BoxddPhysicsContext` owns one `boxdd::World` and is the checked ECS gateway to its world-bound
+  IDs and borrow-scoped capabilities. Native mutation stays behind context-owned controls so each
+  mutation boundary keeps the Box2D world, identity graph, and ECS projections coherent. Plugin
+  snapshots restore all three as one transaction and are bound to the originating Bevy `WorldId`;
+  cross-world restore requires explicit application remapping rather than coincidentally equal
+  `Entity` values. Queue a one-shot restore with `BoxddPhysicsContext::queue_snapshot_restore`
+  and read `BoxddSnapshotRestoreMessage` for its result; it commits in `BoxddPhysicsSet::Restore`,
+  before cleanup and stepping can expose a restored object to stale authored ECS state. If a
+  transient same-world origin or binding keeps the request pending, `cancel_snapshot_restore`
+  returns the owned snapshot and frees the slot without emitting a completion message. The fixed
+  update pipeline also rejects a context moved into another Bevy world before rebasing,
+  reconciling, or stepping state.
   Closest-ray helpers are portable; callback-backed all-hit rays, AABB overlap helpers, and reusable
   debug-draw command collection are native-only until the WASM provider proves Rust callback
   transport.
-- Recoverable plugin failures are emitted as `BoxddErrorMessage` by default, including invalid
-  collider, material, or joint inputs that fail before native creation.
+- The core wrapper has one `Result` API. Systems surface recoverable failures as
+  `BoxddErrorMessage` by default, including invalid collider, material, or joint inputs rejected
+  before native creation.
 
 ## World Origin
 
@@ -72,9 +100,14 @@ Insert a non-zero origin before adding the plugin when the simulation starts far
 # use bevy_boxdd::prelude::*;
 # fn main() -> Result<(), BoxddWorldOriginError> {
 let mut app = App::new();
-let origin = BoxddWorldOrigin::try_new(boxdd::Position::new(10_000_000.0, 0.0))?;
+let foundation = boxdd::Foundation::initialize_default()
+    .expect("Box2D foundation should initialize");
+let origin = BoxddWorldOrigin::new(boxdd::Position::new(10_000_000.0, 0.0))?;
 app.insert_resource(origin)
-    .add_plugins(BoxddPhysicsPlugin::default());
+    .add_plugins(BoxddPhysicsPlugin::new(
+        foundation,
+        BoxddPhysicsSettings::default(),
+    ));
 # Ok(())
 # }
 ```

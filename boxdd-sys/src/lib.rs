@@ -2,16 +2,34 @@
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 
+mod adapter_contract;
 mod precision;
+mod wasm_provider_memory;
 
+#[doc(hidden)]
 mod expected_adapter_identity {
     include!(concat!(env!("OUT_DIR"), "/adapter_identity.rs"));
+}
+
+mod expected_definition_cookie {
+    include!(concat!(env!("OUT_DIR"), "/definition_cookie.rs"));
 }
 
 pub mod adapter;
 
 #[cfg(test)]
 mod build_support;
+
+#[cfg(test)]
+mod provenance_policy;
+
+#[cfg(test)]
+#[allow(dead_code)]
+// Shared policy methods are consumed by build.rs and xtask, not every test crate.
+mod provider_catalog;
+
+#[cfg(test)]
+mod source_overlay;
 
 #[cfg(test)]
 mod wasm_provider_contract;
@@ -28,6 +46,9 @@ pub const PRIVATE_ABI_HASH: [u8; 32] = expected_adapter_identity::PRIVATE_ABI_HA
 
 /// Exact private snapshot layout identity computed by the target compiler.
 pub const SNAPSHOT_LAYOUT_HASH: u32 = expected_adapter_identity::SNAPSHOT_LAYOUT_HASH;
+
+/// Box2D definition cookie extracted from the target compiler's private ABI probe.
+pub const DEFINITION_COOKIE: i32 = expected_definition_cookie::DEFINITION_COOKIE;
 
 /// Exact upstream Box2D revision described by the build manifest.
 pub const UPSTREAM_SHA: &str = env!("BOXDD_SYS_UPSTREAM_SHA");

@@ -1,7 +1,3 @@
-#[allow(dead_code)]
-pub(crate) const BUILD_POLICY_SOURCE_SHA256: &str =
-    "1b4bc2a980bebe0fa0ad4ed2f25c8b5f79d60de7f51c7f966f03916a322169bc";
-
 /// The native Box2D world-coordinate precision selected for this crate build.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Precision {
@@ -43,8 +39,8 @@ impl Precision {
     /// Return the stable WASM provider import module for this ABI.
     pub const fn wasm_import_module(self) -> &'static str {
         match self {
-            Self::Single => "box2d-sys-v1-single",
-            Self::Double => "box2d-sys-v1-double",
+            Self::Single => "box2d-sys-v2-single",
+            Self::Double => "box2d-sys-v2-double",
         }
     }
 }

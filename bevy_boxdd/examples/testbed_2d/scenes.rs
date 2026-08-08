@@ -1,6 +1,8 @@
 use bevy::prelude::*;
 use bevy_boxdd::prelude::*;
 
+pub use crate::scene_catalog::{SCENE_REGISTRY, TestbedScene, TestbedSceneMetadata};
+
 #[derive(Component, Copy, Clone, Debug, Eq, PartialEq)]
 pub struct TestbedEntity;
 
@@ -16,301 +18,35 @@ pub struct Spinner {
     speed: f32,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum TestbedScene {
-    SingleBox,
-    TiltedStack,
-    CircleStack,
-    Pyramid,
-    BodyType,
-    KinematicPlatform,
-    ContinuousBullet,
-    Restitution,
-    Friction,
-    ShapeFilter,
-    SensorFunnel,
-    ContactEvents,
-    DistanceBridge,
-    RevolutePendulum,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum ParityMode {
-    TeachingAdaptation,
-}
-
-impl ParityMode {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::TeachingAdaptation => "TeachingAdaptation",
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub struct UpstreamSampleRef {
-    pub category: &'static str,
-    pub name: &'static str,
-    pub mode: ParityMode,
-}
-
-#[derive(Copy, Clone)]
-pub struct TestbedSceneMetadata {
-    pub scene: TestbedScene,
-    pub id: &'static str,
-    pub category: &'static str,
-    pub name: &'static str,
-    pub description: &'static str,
-    pub upstream: &'static [UpstreamSampleRef],
-    spawn: fn(&mut Commands, &mut Assets<Mesh>, &mut Assets<ColorMaterial>, &BoxddWorldOrigin),
-}
-
-impl TestbedSceneMetadata {
-    pub const fn source_label(self) -> &'static str {
-        "official Box2D sample"
-    }
-}
-
-impl TestbedScene {
-    pub fn metadata(self) -> &'static TestbedSceneMetadata {
-        SCENE_REGISTRY
-            .iter()
-            .find(|metadata| metadata.scene == self)
-            .expect("testbed scene metadata missing")
-    }
-
-    pub fn from_id(id: &str) -> Option<Self> {
-        SCENE_REGISTRY
-            .iter()
-            .find(|metadata| metadata.id == id)
-            .map(|metadata| metadata.scene)
-    }
-
-    pub fn index(self) -> usize {
-        ALL_SCENES
-            .iter()
-            .position(|scene| *scene == self)
-            .expect("testbed scene missing from ALL_SCENES")
-    }
-}
-
-pub const ALL_SCENES: [TestbedScene; 14] = [
-    TestbedScene::SingleBox,
-    TestbedScene::TiltedStack,
-    TestbedScene::CircleStack,
-    TestbedScene::Pyramid,
-    TestbedScene::BodyType,
-    TestbedScene::KinematicPlatform,
-    TestbedScene::ContinuousBullet,
-    TestbedScene::Restitution,
-    TestbedScene::Friction,
-    TestbedScene::ShapeFilter,
-    TestbedScene::SensorFunnel,
-    TestbedScene::ContactEvents,
-    TestbedScene::DistanceBridge,
-    TestbedScene::RevolutePendulum,
-];
-
-pub const SCENE_REGISTRY: [TestbedSceneMetadata; 14] = [
-    TestbedSceneMetadata {
-        scene: TestbedScene::SingleBox,
-        id: "single-box",
-        category: "Stacking",
-        name: "Single Box",
-        description: "A dynamic box starts with horizontal velocity and settles on a long static segment.",
-        upstream: &[UpstreamSampleRef {
-            category: "Stacking",
-            name: "Single Box",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_single_box,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::TiltedStack,
-        id: "tilted-stack",
-        category: "Stacking",
-        name: "Tilted Stack",
-        description: "Offset columns of rounded boxes show solver stability under uneven stacking pressure.",
-        upstream: &[UpstreamSampleRef {
-            category: "Stacking",
-            name: "Tilted Stack",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_tilted_stack,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::CircleStack,
-        id: "circle-stack",
-        category: "Stacking",
-        name: "Circle Stack",
-        description: "Dynamic circles stack and roll through the same contact solver path as the official sample.",
-        upstream: &[UpstreamSampleRef {
-            category: "Stacking",
-            name: "Circle Stack",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_circle_stack,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::Pyramid,
-        id: "pyramid",
-        category: "Benchmark",
-        name: "Large Pyramid",
-        description: "A browser-sized version of the classic Box2D pyramid solver stress sample.",
-        upstream: &[UpstreamSampleRef {
-            category: "Benchmark",
-            name: "Large Pyramid",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_pyramid,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::BodyType,
-        id: "body-type",
-        category: "Bodies",
-        name: "Body Type",
-        description: "Static, kinematic, and dynamic bodies share one scene so body behavior is visible.",
-        upstream: &[UpstreamSampleRef {
-            category: "Bodies",
-            name: "Body Type",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_body_type,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::KinematicPlatform,
-        id: "kinematic-platform",
-        category: "Bodies",
-        name: "Kinematic",
-        description: "An app-controlled platform drives dynamic boxes through Bevy-to-Box2D transform sync.",
-        upstream: &[UpstreamSampleRef {
-            category: "Bodies",
-            name: "Kinematic",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_kinematic_platform,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::ContinuousBullet,
-        id: "continuous-bullet",
-        category: "Continuous",
-        name: "Skinny Box",
-        description: "A fast bullet body targets a thin wall with continuous collision enabled.",
-        upstream: &[UpstreamSampleRef {
-            category: "Continuous",
-            name: "Skinny Box",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_continuous_bullet,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::Restitution,
-        id: "restitution",
-        category: "Shapes",
-        name: "Restitution",
-        description: "Identical circles fall onto pads with increasing restitution values.",
-        upstream: &[UpstreamSampleRef {
-            category: "Shapes",
-            name: "Restitution",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_restitution,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::Friction,
-        id: "friction",
-        category: "Shapes",
-        name: "Friction",
-        description: "Boxes slide across ramps and floors with different friction coefficients.",
-        upstream: &[UpstreamSampleRef {
-            category: "Shapes",
-            name: "Friction",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_friction,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::ShapeFilter,
-        id: "shape-filter",
-        category: "Shapes",
-        name: "Filter",
-        description: "Category and mask bits split bodies into groups that collide or pass through each other.",
-        upstream: &[UpstreamSampleRef {
-            category: "Shapes",
-            name: "Filter",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_shape_filter,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::SensorFunnel,
-        id: "sensor-funnel",
-        category: "Events",
-        name: "Sensor Funnel",
-        description: "Falling visitors pass through a transparent sensor and update the egui counters.",
-        upstream: &[UpstreamSampleRef {
-            category: "Events",
-            name: "Sensor Funnel",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_sensor_funnel,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::ContactEvents,
-        id: "contact-event",
-        category: "Events",
-        name: "Contact",
-        description: "Contact begin, end, and hit events are enabled on dynamic bodies and reflected in the panel.",
-        upstream: &[UpstreamSampleRef {
-            category: "Events",
-            name: "Contact",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_contact_events,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::DistanceBridge,
-        id: "bridge",
-        category: "Joints",
-        name: "Bridge",
-        description: "Distance joints connect planks into a bridge and a dropped weight disturbs the chain.",
-        upstream: &[
-            UpstreamSampleRef {
-                category: "Joints",
-                name: "Distance Joint",
-                mode: ParityMode::TeachingAdaptation,
-            },
-            UpstreamSampleRef {
-                category: "Joints",
-                name: "Bridge",
-                mode: ParityMode::TeachingAdaptation,
-            },
-        ],
-        spawn: spawn_distance_bridge,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::RevolutePendulum,
-        id: "revolute",
-        category: "Joints",
-        name: "Revolute",
-        description: "A revolute joint creates a pendulum that strikes a small stack.",
-        upstream: &[UpstreamSampleRef {
-            category: "Joints",
-            name: "Revolute",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_revolute_pendulum,
-    },
-];
-
 pub fn spawn_scene(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
     origin: &BoxddWorldOrigin,
-    scene: TestbedScene,
+    metadata: &TestbedSceneMetadata,
 ) {
-    (scene.metadata().spawn)(commands, meshes, materials, origin);
+    match metadata.scene {
+        TestbedScene::SingleBox => spawn_single_box(commands, meshes, materials, origin),
+        TestbedScene::TiltedStack => spawn_tilted_stack(commands, meshes, materials, origin),
+        TestbedScene::CircleStack => spawn_circle_stack(commands, meshes, materials, origin),
+        TestbedScene::Pyramid => spawn_pyramid(commands, meshes, materials, origin),
+        TestbedScene::BodyType => spawn_body_type(commands, meshes, materials, origin),
+        TestbedScene::KinematicPlatform => {
+            spawn_kinematic_platform(commands, meshes, materials, origin);
+        }
+        TestbedScene::ContinuousBullet => {
+            spawn_continuous_bullet(commands, meshes, materials, origin);
+        }
+        TestbedScene::Restitution => spawn_restitution(commands, meshes, materials, origin),
+        TestbedScene::Friction => spawn_friction(commands, meshes, materials, origin),
+        TestbedScene::ShapeFilter => spawn_shape_filter(commands, meshes, materials, origin),
+        TestbedScene::SensorFunnel => spawn_sensor_funnel(commands, meshes, materials, origin),
+        TestbedScene::ContactEvents => spawn_contact_events(commands, meshes, materials, origin),
+        TestbedScene::DistanceBridge => spawn_distance_bridge(commands, meshes, materials, origin),
+        TestbedScene::RevolutePendulum => {
+            spawn_revolute_pendulum(commands, meshes, materials, origin);
+        }
+    }
 }
 
 pub fn animate_kinematic_platforms(

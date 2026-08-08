@@ -225,6 +225,72 @@ static bool boxddCanonicalBool( boxddSnapshotCursor* cursor, const uint8_t* byte
 	return true;
 }
 
+static bool boxddValidateContactSimBools( boxddSnapshotCursor* cursor, const uint8_t* sim )
+{
+	size_t pointsOffset = offsetof( b2ContactSim, manifold ) + offsetof( b2Manifold, points );
+	for ( size_t point = 0; point < 2; ++point )
+	{
+		size_t persistedOffset = pointsOffset + point * sizeof( b2ManifoldPoint ) + offsetof( b2ManifoldPoint, persisted );
+		if ( !boxddCanonicalBool( cursor, sim, persistedOffset ) )
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+static bool boxddValidateJointSimBools( boxddSnapshotCursor* cursor, const uint8_t* sim )
+{
+	uint32_t type = boxddRawU32( sim, offsetof( b2JointSim, type ) );
+	size_t baseOffset;
+	size_t springOffset;
+	size_t limitOffset;
+	size_t motorOffset;
+	switch ( type )
+	{
+		case b2_distanceJoint:
+			baseOffset = offsetof( b2JointSim, distanceJoint );
+			springOffset = offsetof( b2DistanceJoint, enableSpring );
+			limitOffset = offsetof( b2DistanceJoint, enableLimit );
+			motorOffset = offsetof( b2DistanceJoint, enableMotor );
+			break;
+
+		case b2_prismaticJoint:
+			baseOffset = offsetof( b2JointSim, prismaticJoint );
+			springOffset = offsetof( b2PrismaticJoint, enableSpring );
+			limitOffset = offsetof( b2PrismaticJoint, enableLimit );
+			motorOffset = offsetof( b2PrismaticJoint, enableMotor );
+			break;
+
+		case b2_revoluteJoint:
+			baseOffset = offsetof( b2JointSim, revoluteJoint );
+			springOffset = offsetof( b2RevoluteJoint, enableSpring );
+			limitOffset = offsetof( b2RevoluteJoint, enableLimit );
+			motorOffset = offsetof( b2RevoluteJoint, enableMotor );
+			break;
+
+		case b2_wheelJoint:
+			baseOffset = offsetof( b2JointSim, wheelJoint );
+			springOffset = offsetof( b2WheelJoint, enableSpring );
+			limitOffset = offsetof( b2WheelJoint, enableLimit );
+			motorOffset = offsetof( b2WheelJoint, enableMotor );
+			break;
+
+		case b2_filterJoint:
+		case b2_motorJoint:
+		case b2_weldJoint:
+			return true;
+
+		default:
+			boxddFail( cursor, BOXDD_SNAPSHOT_INVALID_VALUE );
+			return false;
+	}
+
+	return boxddCanonicalBool( cursor, sim, baseOffset + springOffset ) &&
+		   boxddCanonicalBool( cursor, sim, baseOffset + limitOffset ) &&
+		   boxddCanonicalBool( cursor, sim, baseOffset + motorOffset );
+}
+
 static bool boxddValidIndex( int32_t index, int32_t count )
 {
 	return index == BOXDD_NULL_INDEX || ( index >= 0 && index < count );
@@ -250,7 +316,8 @@ static bool boxddEntryIsLive( boxddSnapshotContext* context, uint32_t kind, int3
 	return entry != NULL && ( entry->flags & BOXDD_SNAPSHOT_ENTRY_LIVE ) != 0;
 }
 
-static bool boxddValidateReference( boxddSnapshotContext* context, uint32_t kind, int32_t index, bool nullable )
+static bool boxddValidateReferenceAt( boxddSnapshotContext* context, boxddSnapshotCursor* cursor, uint32_t kind, int32_t index,
+									 bool nullable )
 {
 	if ( nullable && index == BOXDD_NULL_INDEX )
 	{
@@ -259,7 +326,7 @@ static bool boxddValidateReference( boxddSnapshotContext* context, uint32_t kind
 	if ( kind < BOXDD_SNAPSHOT_ENTRY_BODY || kind > BOXDD_SNAPSHOT_ENTRY_SOLVER_SET || index < 0 ||
 		 (uint32_t)index >= context->facts.poolNext[kind - 1u] )
 	{
-		boxddFail( &context->cursor, BOXDD_SNAPSHOT_INVALID_REFERENCE );
+		boxddFail( cursor, BOXDD_SNAPSHOT_INVALID_REFERENCE );
 		return false;
 	}
 	if ( context->entries == NULL )
@@ -268,7 +335,93 @@ static bool boxddValidateReference( boxddSnapshotContext* context, uint32_t kind
 	}
 	if ( !boxddEntryIsLive( context, kind, index ) )
 	{
-		boxddFail( &context->cursor, BOXDD_SNAPSHOT_INVALID_REFERENCE );
+		boxddFail( cursor, BOXDD_SNAPSHOT_INVALID_REFERENCE );
+		return false;
+	}
+	return true;
+}
+
+static bool boxddValidateReference( boxddSnapshotContext* context, uint32_t kind, int32_t index, bool nullable )
+{
+	return boxddValidateReferenceAt( context, &context->cursor, kind, index, nullable );
+}
+
+static boxddSnapshotEntry* boxddValidateSimLocation( boxddSnapshotContext* context, boxddSnapshotCursor* cursor, uint32_t kind,
+												 int32_t id, int32_t setIndex, int32_t colorIndex, int32_t localIndex,
+												 bool* valid )
+{
+	*valid = false;
+	if ( !boxddValidateReferenceAt( context, cursor, kind, id, false ) )
+	{
+		return NULL;
+	}
+	if ( context->entries == NULL )
+	{
+		*valid = true;
+		return NULL;
+	}
+
+	boxddSnapshotEntry* entry = boxddEntry( context, kind, id );
+	if ( entry == NULL || entry->setIndex != setIndex || entry->colorIndex != colorIndex || entry->localIndex != localIndex )
+	{
+		boxddFail( cursor, BOXDD_SNAPSHOT_INVALID_REFERENCE );
+		return NULL;
+	}
+
+	*valid = true;
+	return entry;
+}
+
+static bool boxddValidateContactSimRelation( boxddSnapshotContext* context, boxddSnapshotCursor* cursor, const uint8_t* sim,
+												 int32_t setIndex, int32_t colorIndex, int32_t localIndex )
+{
+	int32_t contactId = boxddRawI32( sim, offsetof( b2ContactSim, contactId ) );
+	int32_t shapeIdA = boxddRawI32( sim, offsetof( b2ContactSim, shapeIdA ) );
+	int32_t shapeIdB = boxddRawI32( sim, offsetof( b2ContactSim, shapeIdB ) );
+	if ( !boxddValidateReferenceAt( context, cursor, BOXDD_SNAPSHOT_ENTRY_SHAPE, shapeIdA, false ) ||
+		 !boxddValidateReferenceAt( context, cursor, BOXDD_SNAPSHOT_ENTRY_SHAPE, shapeIdB, false ) )
+	{
+		return false;
+	}
+
+	bool valid = false;
+	boxddSnapshotEntry* contact = boxddValidateSimLocation( context, cursor, BOXDD_SNAPSHOT_ENTRY_CONTACT, contactId, setIndex,
+															 colorIndex, localIndex, &valid );
+	if ( !valid )
+	{
+		return false;
+	}
+	if ( contact != NULL && ( contact->ownerA != shapeIdA || contact->ownerB != shapeIdB ) )
+	{
+		boxddFail( cursor, BOXDD_SNAPSHOT_INVALID_REFERENCE );
+		return false;
+	}
+	return true;
+}
+
+static bool boxddValidateJointSimRelation( boxddSnapshotContext* context, boxddSnapshotCursor* cursor, const uint8_t* sim,
+											  int32_t setIndex, int32_t colorIndex, int32_t localIndex )
+{
+	int32_t jointId = boxddRawI32( sim, offsetof( b2JointSim, jointId ) );
+	int32_t bodyIdA = boxddRawI32( sim, offsetof( b2JointSim, bodyIdA ) );
+	int32_t bodyIdB = boxddRawI32( sim, offsetof( b2JointSim, bodyIdB ) );
+	uint32_t type = boxddRawU32( sim, offsetof( b2JointSim, type ) );
+	if ( !boxddValidateReferenceAt( context, cursor, BOXDD_SNAPSHOT_ENTRY_BODY, bodyIdA, false ) ||
+		 !boxddValidateReferenceAt( context, cursor, BOXDD_SNAPSHOT_ENTRY_BODY, bodyIdB, false ) )
+	{
+		return false;
+	}
+
+	bool valid = false;
+	boxddSnapshotEntry* joint = boxddValidateSimLocation( context, cursor, BOXDD_SNAPSHOT_ENTRY_JOINT, jointId, setIndex, colorIndex,
+														 localIndex, &valid );
+	if ( !valid )
+	{
+		return false;
+	}
+	if ( joint != NULL && ( joint->ownerA != bodyIdA || joint->ownerB != bodyIdB || joint->subtype != type ) )
+	{
+		boxddFail( cursor, BOXDD_SNAPSHOT_INVALID_REFERENCE );
 		return false;
 	}
 	return true;
@@ -511,6 +664,22 @@ static void boxddParseSolverSets( boxddSnapshotContext* context, boxddSnapshotCu
 			boxddFail( cursor, BOXDD_SNAPSHOT_INVALID_VALUE );
 			return;
 		}
+		for ( int32_t i = 0; i < jointSimCount; ++i )
+		{
+			const uint8_t* sim = jointSims + (size_t)i * sizeof( b2JointSim );
+			if ( !boxddValidateJointSimBools( cursor, sim ) )
+			{
+				return;
+			}
+		}
+		for ( int32_t i = 0; i < contactSimCount; ++i )
+		{
+			const uint8_t* sim = contactSims + (size_t)i * sizeof( b2ContactSim );
+			if ( !boxddValidateContactSimBools( cursor, sim ) )
+			{
+				return;
+			}
+		}
 		if ( !validateReferences )
 		{
 			continue;
@@ -529,27 +698,22 @@ static void boxddParseSolverSets( boxddSnapshotContext* context, boxddSnapshotCu
 		for ( int32_t i = 0; i < jointSimCount; ++i )
 		{
 			const uint8_t* sim = jointSims + (size_t)i * sizeof( b2JointSim );
-			int32_t jointId = boxddRawI32( sim, offsetof( b2JointSim, jointId ) );
-			boxddSnapshotEntry* joint = boxddEntry( context, BOXDD_SNAPSHOT_ENTRY_JOINT, jointId );
-			if ( joint == NULL || ( joint->flags & BOXDD_SNAPSHOT_ENTRY_LIVE ) == 0 || joint->setIndex != setIndex || joint->localIndex != i ||
-				 joint->ownerA != boxddRawI32( sim, offsetof( b2JointSim, bodyIdA ) ) ||
-				 joint->ownerB != boxddRawI32( sim, offsetof( b2JointSim, bodyIdB ) ) ||
-				 joint->subtype != boxddRawU32( sim, offsetof( b2JointSim, type ) ) )
+			if ( !boxddValidateJointSimRelation( context, cursor, sim, setIndex, BOXDD_NULL_INDEX, i ) )
 			{
-				boxddFail( cursor, BOXDD_SNAPSHOT_INVALID_REFERENCE );
 				return;
 			}
 		}
 		for ( int32_t i = 0; i < contactSimCount; ++i )
 		{
 			const uint8_t* sim = contactSims + (size_t)i * sizeof( b2ContactSim );
-			int32_t contactId = boxddRawI32( sim, offsetof( b2ContactSim, contactId ) );
-			boxddSnapshotEntry* contact = boxddEntry( context, BOXDD_SNAPSHOT_ENTRY_CONTACT, contactId );
-			int32_t pointCount = boxddRawI32( sim, offsetof( b2ContactSim, manifold ) + offsetof( b2Manifold, pointCount ) );
-			if ( contact == NULL || ( contact->flags & BOXDD_SNAPSHOT_ENTRY_LIVE ) == 0 || contact->setIndex != setIndex ||
-				 contact->localIndex != i || pointCount < 0 || pointCount > 2 )
+			if ( !boxddValidateContactSimRelation( context, cursor, sim, setIndex, BOXDD_NULL_INDEX, i ) )
 			{
-				boxddFail( cursor, BOXDD_SNAPSHOT_INVALID_REFERENCE );
+				return;
+			}
+			int32_t pointCount = boxddRawI32( sim, offsetof( b2ContactSim, manifold ) + offsetof( b2Manifold, pointCount ) );
+			if ( pointCount < 0 || pointCount > 2 )
+			{
+				boxddFail( cursor, BOXDD_SNAPSHOT_INVALID_VALUE );
 				return;
 			}
 		}
@@ -620,6 +784,12 @@ static bool boxddValidAabbBytes( const uint8_t* raw )
 	float ux = boxddRawF32( raw, 8 );
 	float uy = boxddRawF32( raw, 12 );
 	return isfinite( lx ) && isfinite( ly ) && isfinite( ux ) && isfinite( uy ) && lx <= ux && ly <= uy;
+}
+
+static bool boxddAabbContainsBytes( const uint8_t* outer, const uint8_t* inner )
+{
+	return boxddRawF32( outer, 0 ) <= boxddRawF32( inner, 0 ) && boxddRawF32( outer, 4 ) <= boxddRawF32( inner, 4 ) &&
+		   boxddRawF32( inner, 8 ) <= boxddRawF32( outer, 8 ) && boxddRawF32( inner, 12 ) <= boxddRawF32( outer, 12 );
 }
 
 static void boxddParseShapes( boxddSnapshotContext* context )
@@ -1057,6 +1227,11 @@ static bool boxddValidateTree( boxddSnapshotContext* context, int treeIndex )
 		}
 		if ( ( flags & b2_allocatedNode ) == 0 )
 		{
+			if ( flags != 0 )
+			{
+				boxddFail( cursor, BOXDD_SNAPSHOT_INVALID_VALUE );
+				return false;
+			}
 			int32_t next = boxddRawI32( node, offsetof( b2TreeNode, next ) );
 			if ( !boxddValidIndex( next, capacity ) )
 			{
@@ -1072,15 +1247,41 @@ static bool boxddValidateTree( boxddSnapshotContext* context, int treeIndex )
 			return false;
 		}
 		int32_t parent = boxddRawI32( node, offsetof( b2TreeNode, parent ) );
-		if ( ( i == root && parent != BOXDD_NULL_INDEX ) || ( i != root && !boxddValidIndex( parent, capacity ) ) )
+		if ( ( i == root && parent != BOXDD_NULL_INDEX ) || ( i != root && ( parent < 0 || parent >= capacity ) ) )
 		{
 			boxddFail( cursor, BOXDD_SNAPSHOT_INVALID_REFERENCE );
 			return false;
 		}
+		if ( i != root )
+		{
+			const uint8_t* parentNode = nodes + (size_t)parent * sizeof( b2TreeNode );
+			uint16_t parentFlags = boxddRawU16( parentNode, offsetof( b2TreeNode, flags ) );
+			int32_t parentChild1 =
+				boxddRawI32( parentNode, offsetof( b2TreeNode, children ) + offsetof( b2TreeNodeChildren, child1 ) );
+			int32_t parentChild2 =
+				boxddRawI32( parentNode, offsetof( b2TreeNode, children ) + offsetof( b2TreeNodeChildren, child2 ) );
+			if ( ( parentFlags & b2_allocatedNode ) == 0 || ( parentFlags & b2_leafNode ) != 0 ||
+				 ( parentChild1 != i && parentChild2 != i ) )
+			{
+				boxddFail( cursor, BOXDD_SNAPSHOT_INVALID_REFERENCE );
+				return false;
+			}
+		}
 		if ( ( flags & b2_leafNode ) != 0 )
 		{
+			if ( boxddRawU16( node, offsetof( b2TreeNode, height ) ) != 0 )
+			{
+				boxddFail( cursor, BOXDD_SNAPSHOT_INVALID_VALUE );
+				return false;
+			}
 			leaves += 1;
-			int32_t shapeId = (int32_t)boxddRawU64( node, offsetof( b2TreeNode, userData ) );
+			uint64_t userData = boxddRawU64( node, offsetof( b2TreeNode, userData ) );
+			if ( userData > INT32_MAX )
+			{
+				boxddFail( cursor, BOXDD_SNAPSHOT_INVALID_REFERENCE );
+				return false;
+			}
+			int32_t shapeId = (int32_t)userData;
 			if ( !boxddValidateReference( context, BOXDD_SNAPSHOT_ENTRY_SHAPE, shapeId, false ) )
 			{
 				return false;
@@ -1100,14 +1301,47 @@ static bool boxddValidateTree( boxddSnapshotContext* context, int treeIndex )
 		{
 			int32_t child1 = boxddRawI32( node, offsetof( b2TreeNode, children ) + offsetof( b2TreeNodeChildren, child1 ) );
 			int32_t child2 = boxddRawI32( node, offsetof( b2TreeNode, children ) + offsetof( b2TreeNodeChildren, child2 ) );
-			if ( child1 == child2 || child1 < 0 || child1 >= capacity || child2 < 0 || child2 >= capacity )
+			if ( child1 == child2 || child1 == i || child2 == i || child1 < 0 || child1 >= capacity || child2 < 0 ||
+				 child2 >= capacity )
 			{
 				boxddFail( cursor, BOXDD_SNAPSHOT_INVALID_REFERENCE );
+				return false;
+			}
+			const uint8_t* childNode1 = nodes + (size_t)child1 * sizeof( b2TreeNode );
+			const uint8_t* childNode2 = nodes + (size_t)child2 * sizeof( b2TreeNode );
+			if ( ( boxddRawU16( childNode1, offsetof( b2TreeNode, flags ) ) & b2_allocatedNode ) == 0 ||
+				 ( boxddRawU16( childNode2, offsetof( b2TreeNode, flags ) ) & b2_allocatedNode ) == 0 ||
+				 boxddRawI32( childNode1, offsetof( b2TreeNode, parent ) ) != i ||
+				 boxddRawI32( childNode2, offsetof( b2TreeNode, parent ) ) != i )
+			{
+				boxddFail( cursor, BOXDD_SNAPSHOT_INVALID_REFERENCE );
+				return false;
+			}
+			uint16_t childHeight1 = boxddRawU16( childNode1, offsetof( b2TreeNode, height ) );
+			uint16_t childHeight2 = boxddRawU16( childNode2, offsetof( b2TreeNode, height ) );
+			uint32_t expectedHeight = 1u + ( childHeight1 > childHeight2 ? childHeight1 : childHeight2 );
+			uint16_t childFlags = boxddRawU16( childNode1, offsetof( b2TreeNode, flags ) ) |
+								  boxddRawU16( childNode2, offsetof( b2TreeNode, flags ) );
+			if ( expectedHeight > UINT16_MAX || boxddRawU16( node, offsetof( b2TreeNode, height ) ) != expectedHeight ||
+				 ( ( childFlags & b2_enlargedNode ) != 0 && ( flags & b2_enlargedNode ) == 0 ) ||
+				 boxddRawU64( node, offsetof( b2TreeNode, categoryBits ) ) !=
+					 ( boxddRawU64( childNode1, offsetof( b2TreeNode, categoryBits ) ) |
+					   boxddRawU64( childNode2, offsetof( b2TreeNode, categoryBits ) ) ) ||
+				 !boxddAabbContainsBytes( node + offsetof( b2TreeNode, aabb ), childNode1 + offsetof( b2TreeNode, aabb ) ) ||
+				 !boxddAabbContainsBytes( node + offsetof( b2TreeNode, aabb ), childNode2 + offsetof( b2TreeNode, aabb ) ) )
+			{
+				boxddFail( cursor, BOXDD_SNAPSHOT_INVALID_VALUE );
 				return false;
 			}
 		}
 	}
 	if ( allocated != nodeCount || leaves != proxyCount || ( nodeCount == 0 ) != ( root == BOXDD_NULL_INDEX ) )
+	{
+		boxddFail( cursor, BOXDD_SNAPSHOT_INVALID_REFERENCE );
+		return false;
+	}
+	if ( root != BOXDD_NULL_INDEX &&
+		 ( boxddRawU16( nodes + (size_t)root * sizeof( b2TreeNode ), offsetof( b2TreeNode, flags ) ) & b2_allocatedNode ) == 0 )
 	{
 		boxddFail( cursor, BOXDD_SNAPSHOT_INVALID_REFERENCE );
 		return false;
@@ -1278,6 +1512,10 @@ static void boxddParseBroadPhase( boxddSnapshotContext* context )
 		return;
 	}
 	const uint8_t* items = boxddTake( cursor, bytes );
+	if ( items == NULL )
+	{
+		return;
+	}
 	uint32_t occupied = 0;
 	for ( uint32_t i = 0; i < capacity; ++i )
 	{
@@ -1325,18 +1563,6 @@ static void boxddParseBroadPhase( boxddSnapshotContext* context )
 	}
 }
 
-static void boxddValidateConstraintSim( boxddSnapshotContext* context, boxddSnapshotCursor* cursor, uint32_t kind, int color,
-									   int32_t localIndex, const uint8_t* raw, size_t idOffset )
-{
-	int32_t id = boxddRawI32( raw, idOffset );
-	boxddSnapshotEntry* entry = boxddEntry( context, kind, id );
-	if ( !boxddValidateReference( context, kind, id, false ) ||
-		 ( entry != NULL && ( entry->setIndex != b2_awakeSet || entry->colorIndex != color || entry->localIndex != localIndex ) ) )
-	{
-		boxddFail( cursor, BOXDD_SNAPSHOT_INVALID_REFERENCE );
-	}
-}
-
 static void boxddParseConstraintGraph( boxddSnapshotContext* context )
 {
 	boxddSnapshotCursor* cursor = &context->cursor;
@@ -1353,8 +1579,14 @@ static void boxddParseConstraintGraph( boxddSnapshotContext* context )
 		for ( int32_t i = 0; i < contactCount && cursor->status == BOXDD_SNAPSHOT_OK; ++i )
 		{
 			const uint8_t* sim = contacts + (size_t)i * sizeof( b2ContactSim );
-			boxddValidateConstraintSim( context, cursor, BOXDD_SNAPSHOT_ENTRY_CONTACT, color, i, sim,
-									 offsetof( b2ContactSim, contactId ) );
+			if ( !boxddValidateContactSimRelation( context, cursor, sim, b2_awakeSet, color, i ) )
+			{
+				return;
+			}
+			if ( !boxddValidateContactSimBools( cursor, sim ) )
+			{
+				return;
+			}
 			int32_t pointCount = boxddRawI32( sim, offsetof( b2ContactSim, manifold ) + offsetof( b2Manifold, pointCount ) );
 			if ( pointCount < 0 || pointCount > 2 )
 			{
@@ -1364,8 +1596,14 @@ static void boxddParseConstraintGraph( boxddSnapshotContext* context )
 		for ( int32_t i = 0; i < jointCount && cursor->status == BOXDD_SNAPSHOT_OK; ++i )
 		{
 			const uint8_t* sim = joints + (size_t)i * sizeof( b2JointSim );
-			boxddValidateConstraintSim( context, cursor, BOXDD_SNAPSHOT_ENTRY_JOINT, color, i, sim,
-									 offsetof( b2JointSim, jointId ) );
+			if ( !boxddValidateJointSimRelation( context, cursor, sim, b2_awakeSet, color, i ) )
+			{
+				return;
+			}
+			if ( !boxddValidateJointSimBools( cursor, sim ) )
+			{
+				return;
+			}
 		}
 	}
 }

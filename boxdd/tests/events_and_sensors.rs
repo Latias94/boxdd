@@ -1,345 +1,56 @@
 use boxdd::{prelude::*, shapes};
-use boxdd_sys::ffi;
 
-fn shape_key(id: ShapeId) -> (i32, u16, u16) {
-    let raw = id.unbind();
-    (raw.index1, raw.world0, raw.generation)
-}
-
-#[test]
-fn contact_and_sensor_events_smoke() {
-    let mut world = World::new(WorldDef::builder().gravity([0.0_f32, -10.0]).build()).unwrap();
-
-    // Two dynamic boxes head-on to ensure a contact event regardless of gravity
-    let b1 = world.create_body_id(
-        BodyBuilder::new()
-            .body_type(BodyType::Dynamic)
-            .position([0.0_f32, 2.0])
-            .build(),
-    );
-    let b2 = world.create_body_id(
-        BodyBuilder::new()
-            .body_type(BodyType::Dynamic)
-            .position([0.0_f32, 3.5])
-            .build(),
-    );
-    let sdef = ShapeDef::builder()
-        .density(1.0)
-        .enable_contact_events(true)
-        .enable_hit_events(true)
-        .build();
-    let _s1 = world.create_polygon_shape_for(b1, &sdef, &shapes::box_polygon(0.5, 0.5));
-    let _s2 = world.create_polygon_shape_for(b2, &sdef, &shapes::box_polygon(0.5, 0.5));
-    world.set_body_linear_velocity(b1, [0.0_f32, 2.0]);
-    world.set_body_linear_velocity(b2, [0.0_f32, -2.0]);
-
-    // Sensor segment sweeping through
-    let sensor_body = world.create_body_id(BodyBuilder::new().build());
-    let sensor_seg = shapes::segment([-1.0_f32, 1.5], [1.0, 1.5]);
-    let _ss = world.create_segment_shape_for(
-        sensor_body,
-        &ShapeDef::builder()
-            .sensor(true)
-            .enable_sensor_events(true)
-            .build(),
-        &sensor_seg,
-    );
-
-    // Step and accumulate events
-    let mut begin_sum = 0;
-    let mut _end_sum = 0;
-    for _ in 0..180 {
-        world.step(1.0 / 60.0, 4);
-        let ev = world.contact_events();
-        begin_sum += ev.begin.len();
-        _end_sum += ev.end.len();
-    }
-    // We should have seen at least one contact begin
-    assert!(begin_sum > 0, "expected some contact begin events");
-
-    // Sensor overlaps: capacity can be zero if no overlaps; test does not assert, just exercises API
-}
-
-#[test]
-fn contact_event_view_matches_owned_snapshot() {
-    let mut world = World::new(WorldDef::builder().gravity([0.0_f32, -10.0]).build()).unwrap();
-    world.set_hit_event_threshold(0.0);
-
-    let b1 = world.create_body_id(
-        BodyBuilder::new()
-            .body_type(BodyType::Dynamic)
-            .position([0.0_f32, 2.0])
-            .build(),
-    );
-    let b2 = world.create_body_id(
-        BodyBuilder::new()
-            .body_type(BodyType::Dynamic)
-            .position([0.0_f32, 3.5])
-            .build(),
-    );
-    let sdef = ShapeDef::builder()
-        .density(1.0)
-        .enable_contact_events(true)
-        .enable_hit_events(true)
-        .build();
-    let _s1 = world.create_polygon_shape_for(b1, &sdef, &shapes::box_polygon(0.5, 0.5));
-    let _s2 = world.create_polygon_shape_for(b2, &sdef, &shapes::box_polygon(0.5, 0.5));
-    world.set_body_linear_velocity(b1, [0.0_f32, 2.0]);
-    world.set_body_linear_velocity(b2, [0.0_f32, -2.0]);
-
-    let begin_owned = step_until_contact_begin(&mut world);
-    assert!(
-        !begin_owned.hit.is_empty(),
-        "expected the head-on collision to emit a hit event"
-    );
-    let begin_view = world.with_contact_events_view(|begin, end, hit| {
-        (
-            begin
-                .map(|event| {
-                    (
-                        shape_key(event.shape_a()),
-                        shape_key(event.shape_b()),
-                        event.contact_id(),
-                    )
-                })
-                .collect::<Vec<_>>(),
-            end.count(),
-            hit.map(|event| {
-                (
-                    shape_key(event.shape_a()),
-                    shape_key(event.shape_b()),
-                    event.contact_id(),
-                    event.point(),
-                    event.normal(),
-                    event.approach_speed(),
-                )
-            })
-            .collect::<Vec<_>>(),
+fn create_head_on_pair(world: &mut World) -> (BodyId, BodyId, ShapeId, ShapeId) {
+    let body_a = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_builder()
+                .body_type(BodyType::Dynamic)
+                .position([-1.0_f32, 0.0])
+                .linear_velocity([2.0_f32, 0.0])
+                .build()
+                .unwrap(),
         )
-    });
-    let owned_begin = begin_owned
-        .begin
-        .iter()
-        .map(|event| {
-            (
-                shape_key(event.shape_a),
-                shape_key(event.shape_b),
-                event.contact_id,
-            )
-        })
-        .collect::<Vec<_>>();
-    let owned_hit = begin_owned
-        .hit
-        .iter()
-        .map(|event| {
-            (
-                shape_key(event.shape_a),
-                shape_key(event.shape_b),
-                event.contact_id,
-                event.point,
-                event.normal,
-                event.approach_speed,
-            )
-        })
-        .collect::<Vec<_>>();
-
-    assert_eq!(begin_view.0, owned_begin);
-    assert_eq!(begin_view.1, begin_owned.end.len());
-    assert_eq!(begin_view.2, owned_hit);
-    assert!(begin_owned.hit.iter().all(|event| {
-        event.point.x.is_finite()
-            && event.point.y.is_finite()
-            && event.normal.x.is_finite()
-            && event.normal.y.is_finite()
-            && event.approach_speed.is_finite()
-            && event.approach_speed >= 0.0
-    }));
-
-    let stored = begin_owned.clone();
-    world.set_body_position_and_rotation(b2, [0.0_f32, 20.0], 0.0);
-    let end_owned = step_until_contact_end(&mut world);
-    let end_view = world.with_contact_events_view(|_, end, _| {
-        end.map(|event| {
-            (
-                shape_key(event.shape_a()),
-                shape_key(event.shape_b()),
-                event.contact_id(),
-            )
-        })
-        .collect::<Vec<_>>()
-    });
-    let owned_end = end_owned
-        .end
-        .iter()
-        .map(|event| {
-            (
-                shape_key(event.shape_a),
-                shape_key(event.shape_b),
-                event.contact_id,
-            )
-        })
-        .collect::<Vec<_>>();
-
-    assert!(!owned_end.is_empty());
-    assert_eq!(end_view, owned_end);
-    assert_eq!(stored.begin.len(), owned_begin.len());
-    assert_eq!(stored.hit.len(), owned_hit.len());
-}
-
-#[test]
-fn sensor_event_view_matches_owned_snapshot() {
-    let mut world = World::new(WorldDef::builder().build()).unwrap();
-
-    let wall = world.create_body_id(
-        BodyBuilder::new()
-            .body_type(BodyType::Static)
-            .position([1.5_f32, 11.0])
-            .build(),
-    );
-    let wall_shape_def = ShapeDef::builder().enable_sensor_events(true).build();
-    let _wall_shape =
-        world.create_polygon_shape_for(wall, &wall_shape_def, &shapes::box_polygon(0.5, 10.0));
-
-    let bullet = world.create_body_id(
-        BodyBuilder::new()
-            .body_type(BodyType::Dynamic)
-            .bullet(true)
-            .gravity_scale(0.0)
-            .position([7.39814_f32, 4.0])
-            .linear_velocity([-20.0_f32, 0.0])
-            .build(),
-    );
-    let bullet_shape_def = ShapeDef::builder()
-        .sensor(true)
-        .enable_sensor_events(true)
-        .build();
-    let circle = shapes::circle([0.0_f32, 0.0], 0.1);
-    let _bullet_shape = world.create_circle_shape_for(bullet, &bullet_shape_def, &circle);
-
-    for _ in 0..600 {
-        world.step(1.0 / 60.0, 4);
-        let owned = world.sensor_events();
-        if owned.begin.is_empty() {
-            continue;
-        }
-
-        let view = world.with_sensor_events_view(|begin, end| {
-            (
-                begin
-                    .map(|event| {
-                        (
-                            shape_key(event.sensor_shape()),
-                            shape_key(event.visitor_shape()),
-                        )
-                    })
-                    .collect::<Vec<_>>(),
-                end.count(),
-            )
-        });
-        let owned_begin = owned
-            .begin
-            .iter()
-            .map(|event| {
-                (
-                    shape_key(event.sensor_shape),
-                    shape_key(event.visitor_shape),
-                )
-            })
-            .collect::<Vec<_>>();
-
-        assert_eq!(view.0, owned_begin);
-        assert_eq!(view.1, owned.end.len());
-
-        let stored = owned.clone();
-        world.step(1.0 / 60.0, 4);
-        assert_eq!(stored.begin.len(), owned_begin.len());
-        return;
-    }
-
-    panic!("expected at least one sensor begin event");
-}
-
-#[test]
-fn dropping_owned_body_inside_event_view_defers_destroy_until_view_exits() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let body = world.create_body_owned(BodyBuilder::new().body_type(BodyType::Dynamic).build());
-    let body_id = body.id();
-    let mut body = Some(body);
-
-    let _move_event_count = world.with_body_events_view(|moves| {
-        let count = moves.count();
-        drop(body.take());
-        assert!(unsafe { ffi::b2Body_IsValid(body_id.unbind().into_ffi()) });
-        count
-    });
-
-    assert!(body.is_none());
-    assert_eq!(
-        world.try_body_position(body_id).unwrap_err(),
-        ApiError::InvalidBodyId
-    );
-}
-
-#[test]
-fn sensor_bullet_through_wall_precise() {
-    let mut world = World::new(WorldDef::builder().build()).unwrap();
-
-    // Wall from x = 1 to x = 2 at y around 11, matching upstream
-    let wall = world.create_body_id(
-        BodyBuilder::new()
-            .body_type(BodyType::Static)
-            .position([1.5_f32, 11.0])
-            .build(),
-    );
-    let wall_shape_def = ShapeDef::builder().enable_sensor_events(true).build();
-    let _wall_shape =
-        world.create_polygon_shape_for(wall, &wall_shape_def, &shapes::box_polygon(0.5, 10.0));
-
-    // Bullet fired towards the wall
-    let bullet = world.create_body_id(
-        BodyBuilder::new()
-            .body_type(BodyType::Dynamic)
-            .bullet(true)
-            .gravity_scale(0.0)
-            .position([7.39814_f32, 4.0])
-            .linear_velocity([-20.0_f32, 0.0])
-            .build(),
-    );
-    let bullet_shape_def = ShapeDef::builder()
-        .sensor(true)
-        .enable_sensor_events(true)
-        .build();
-    let circle = shapes::circle([0.0_f32, 0.0], 0.1);
-    let _bullet_shape = world.create_circle_shape_for(bullet, &bullet_shape_def, &circle);
-
-    let mut begin_count = 0;
-    let mut end_count = 0;
-
-    loop {
-        world.step(1.0 / 60.0, 4);
-
-        let p = world.body_position(bullet);
-        let ev = world.sensor_events();
-        if !ev.begin.is_empty() {
-            begin_count += 1;
-        }
-        if !ev.end.is_empty() {
-            end_count += 1;
-        }
-        if p.x < -1.0 {
-            break;
-        }
-    }
-
-    assert_eq!(begin_count, 1);
-    assert_eq!(end_count, 1);
+        .unwrap();
+    let body_b = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_builder()
+                .body_type(BodyType::Dynamic)
+                .position([1.0_f32, 0.0])
+                .linear_velocity([-2.0_f32, 0.0])
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    let shape_def = ShapeDef::builder()
+        .density(1.0)
+        .enable_contact_events(true)
+        .enable_hit_events(true)
+        .build()
+        .unwrap();
+    let polygon = shapes::box_polygon(0.5, 0.5).unwrap();
+    let shape_a = world
+        .body(body_a)
+        .unwrap()
+        .create_polygon(&shape_def, &polygon)
+        .unwrap();
+    let shape_b = world
+        .body(body_b)
+        .unwrap()
+        .create_polygon(&shape_def, &polygon)
+        .unwrap();
+    (body_a, body_b, shape_a, shape_b)
 }
 
 fn step_until_contact_begin(world: &mut World) -> ContactEvents {
     for _ in 0..180 {
-        world.step(1.0 / 60.0, 4);
-        let events = world.contact_events();
-        if !events.begin.is_empty() {
+        let completed = world.step(1.0 / 60.0, 4).unwrap();
+        let view = completed.contact_events().unwrap();
+        let events = view.to_owned().unwrap();
+        if !view.begin().is_empty() {
             return events;
         }
     }
@@ -348,11 +59,144 @@ fn step_until_contact_begin(world: &mut World) -> ContactEvents {
 
 fn step_until_contact_end(world: &mut World) -> ContactEvents {
     for _ in 0..10 {
-        world.step(1.0 / 60.0, 4);
-        let events = world.contact_events();
-        if !events.end.is_empty() {
+        let completed = world.step(1.0 / 60.0, 4).unwrap();
+        let view = completed.contact_events().unwrap();
+        let events = view.to_owned().unwrap();
+        if !view.end().is_empty() {
             return events;
         }
     }
     panic!("expected at least one contact end event");
+}
+
+#[test]
+fn completed_step_contact_views_materialize_stable_owned_snapshots() {
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_builder()
+                .gravity([0.0_f32, 0.0])
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    world.set_hit_event_threshold(0.0).unwrap();
+    let (_body_a, body_b, shape_a, shape_b) = create_head_on_pair(&mut world);
+
+    let begin = step_until_contact_begin(&mut world);
+    assert!(begin.begin.iter().any(|event| {
+        let shapes = [event.shape_a, event.shape_b];
+        shapes.contains(&shape_a) && shapes.contains(&shape_b)
+    }));
+    assert!(begin.hit.iter().all(|event| {
+        event.point.x.is_finite()
+            && event.point.y.is_finite()
+            && event.normal.is_valid()
+            && event.approach_speed.is_finite()
+            && event.approach_speed >= 0.0
+    }));
+
+    let stored = begin.clone();
+    world
+        .body(body_b)
+        .unwrap()
+        .set_position_and_rotation([10.0_f32, 0.0], 0.0)
+        .unwrap();
+    let end = step_until_contact_end(&mut world);
+    assert!(!end.end.is_empty());
+    assert_eq!(stored.begin.len(), begin.begin.len());
+    assert_eq!(stored.hit.len(), begin.hit.len());
+}
+
+#[test]
+fn fast_sensor_emits_one_begin_and_one_end_event() {
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let wall = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_builder()
+                .body_type(BodyType::Static)
+                .position([1.5_f32, 11.0])
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    let wall_shape = world
+        .body(wall)
+        .unwrap()
+        .create_box(
+            &ShapeDef::builder()
+                .enable_sensor_events(true)
+                .build()
+                .unwrap(),
+            0.5,
+            10.0,
+        )
+        .unwrap();
+
+    let bullet = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_builder()
+                .body_type(BodyType::Dynamic)
+                .bullet(true)
+                .gravity_scale(0.0)
+                .position([7.39814_f32, 4.0])
+                .linear_velocity([-20.0_f32, 0.0])
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    let sensor_shape = world
+        .body(bullet)
+        .unwrap()
+        .create_centered_circle(
+            &ShapeDef::builder()
+                .sensor(true)
+                .enable_sensor_events(true)
+                .build()
+                .unwrap(),
+            0.1,
+        )
+        .unwrap();
+
+    let mut begin_count = 0;
+    let mut end_count = 0;
+    loop {
+        let events = world
+            .step(1.0 / 60.0, 4)
+            .unwrap()
+            .sensor_events()
+            .unwrap()
+            .to_owned()
+            .unwrap();
+        begin_count += events
+            .begin
+            .iter()
+            .filter(|event| event.sensor_shape == sensor_shape && event.visitor_shape == wall_shape)
+            .count();
+        end_count += events
+            .end
+            .iter()
+            .filter(|event| event.sensor_shape == sensor_shape && event.visitor_shape == wall_shape)
+            .count();
+
+        if world.body(bullet).unwrap().position().unwrap().x < -1.0 {
+            break;
+        }
+    }
+
+    assert_eq!(begin_count, 1);
+    assert_eq!(end_count, 1);
 }

@@ -4,16 +4,14 @@
 
 `boxdd` exposes several hot-path APIs that return freshly allocated `Vec`s:
 
-- `World::overlap_aabb`
-- `World::cast_ray_all`
-- `World::overlap_polygon_points`
-- `World::cast_shape_points`
-- Offset query variants on `World` and `WorldHandle`
-- `Body::contact_data` / `OwnedBody::contact_data`
-- `Shape::contact_data` / `OwnedShape::contact_data`
-- `Shape::sensor_overlaps` / `OwnedShape::sensor_overlaps`
-- `World::shape_sensor_overlaps`
-- `Chain::segments` / `OwnedChain::segments`
+- `Query::overlap_aabb`
+- `Query::cast_ray_all`
+- `Query::overlap_shape`
+- `Query::cast_shape`
+- `Body::contact_data`
+- `Shape::contact_data`
+- `Shape::sensor_overlaps`
+- `Chain::segments`
 
 These APIs are ergonomic for one-off queries, but they force a fresh allocation strategy on hot paths that typically run every frame.
 
@@ -29,11 +27,10 @@ The FFI callback layer already collects results incrementally, so the Rust API c
 
 ## Goals
 
-- Keep the existing convenience APIs that return owned `Vec`s.
+- Keep convenience APIs that return owned `Vec`s.
 - Add allocation-friendly APIs that reuse caller-owned buffers.
-- Make the new API shape consistent across `World` and `WorldHandle`.
-- Reduce duplicated callback collection logic inside `query.rs`.
-- Keep the refactor source-compatible for existing users.
+- Keep one capability-based query surface.
+- Reduce duplicated callback collection logic inside `query`.
 
 ## Non-Goals
 
@@ -43,12 +40,10 @@ The FFI callback layer already collects results incrementally, so the Rust API c
 
 ## API Design
 
-Each hot-path API gains a pair of additive methods:
+Each hot-path API has one owned and one reusable-buffer method:
 
 - `foo(...) -> Vec<T>`
-- `foo_into(..., out: &mut Vec<T>)`
-- `try_foo(...) -> ApiResult<Vec<T>>`
-- `try_foo_into(..., out: &mut Vec<T>) -> ApiResult<()>`
+- `foo_into(..., buffer: &mut Buffer<T>) -> Result<()>`
 
 `*_into` semantics:
 
@@ -58,11 +53,11 @@ Each hot-path API gains a pair of additive methods:
 
 ## Internal Design
 
-Phase 1 refactors `boxdd/src/query.rs` around shared collection helpers:
+Phase 1 refactors `boxdd/src/query` around shared collection helpers:
 
 - a shared callback collection context for `ShapeId` and `RayResult`
-- dedicated `*_into_impl` helpers used by both owned-returning and reusable-buffer APIs
-- `SmallVec<[b2Vec2; 8]>` for temporary proxy points because Box2D proxy vertices are capped at `B2_MAX_POLYGON_VERTICES`
+- dedicated buffers used by both owned-returning and reusable-buffer APIs
+- one validated `ShapeProxy` input for overlap and cast geometry
 
 Phase 2 extends the same strategy to body/shape/chain/world extraction APIs:
 
@@ -70,11 +65,13 @@ Phase 2 extends the same strategy to body/shape/chain/world extraction APIs:
 - `*_into` APIs for contact data, sensor overlaps, and chain segments
 - in-place valid filtering for sensor overlap buffers
 
-This keeps behavior aligned while reducing duplication across owned/scoped/id-style handles.
+This keeps behavior aligned while reducing duplication across capability methods.
 
 ## Compatibility
 
-This is an additive API change. Existing code using `Vec`-returning query APIs continues to compile unchanged.
+The 0.6 capability refactor is intentionally breaking. It keeps the owned-returning convenience
+methods while removing duplicate panic/`try_*`, handle, point-list, and offset-query matrices.
+Callers construct translated or rotated query geometry with `ShapeProxy::offset_from_points`.
 
 ## Follow-Up Candidates
 
@@ -89,4 +86,4 @@ Remaining follow-up candidates after 0.3:
 
 - debug draw command collection
 - serialize helpers that still repeat raw `Vec` fill patterns
-- broader `World` / `WorldHandle` duplication cleanup
+- additional buffer-backed capability methods where profiling shows allocation pressure

@@ -1,9 +1,9 @@
-use crate::types::{Position, WorldTransform};
+use crate::types::{JointId, Position};
 use crate::world::World;
 use boxdd_sys::ffi;
 
-use super::{Joint, JointBase, OwnedJoint, raw_body_id};
-use crate::error::ApiResult;
+use super::JointBase;
+use crate::error::Result;
 
 // Weld joint
 #[derive(Clone, Debug)]
@@ -19,8 +19,7 @@ pub struct WeldJointDef {
 
 impl WeldJointDef {
     pub fn new(base: JointBase) -> Self {
-        let _lease = crate::core::foundation::assert_transient_native_lease();
-        let raw = unsafe { ffi::b2DefaultWeldJointDef() };
+        let raw: ffi::b2WeldJointDef = crate::core::native_defaults::weld_joint_def(base.to_raw());
         Self {
             base,
             linear_hertz: raw.linearHertz,
@@ -42,8 +41,8 @@ impl WeldJointDef {
 
     #[inline]
     pub(crate) fn to_raw(&self) -> ffi::b2WeldJointDef {
-        let mut raw = unsafe { ffi::b2DefaultWeldJointDef() };
-        raw.base = self.base.to_raw();
+        let mut raw: ffi::b2WeldJointDef =
+            crate::core::native_defaults::weld_joint_def(self.base.to_raw());
         raw.linearHertz = self.linear_hertz;
         raw.angularHertz = self.angular_hertz;
         raw.linearDampingRatio = self.linear_damping_ratio;
@@ -72,7 +71,7 @@ impl WeldJointDef {
     }
 
     #[inline]
-    pub fn validate(&self) -> ApiResult<()> {
+    pub fn validate(&self) -> Result<()> {
         super::check_weld_joint_def_valid(self)
     }
 
@@ -143,51 +142,54 @@ impl<'w> WeldJointBuilder<'w> {
         self
     }
 
-    fn configure_local_frames(&mut self) -> ApiResult<()> {
+    fn configure_local_frames(&mut self) -> Result<()> {
         crate::core::callback_state::check_not_in_callback()?;
         super::creation::check_joint_target_identity(self.world, self.def.base())?;
         self.def.validate()?;
         if let Some(anchor) = self.anchor_world {
-            super::validation::check_joint_position(anchor)?;
+            super::validation::check_joint_position(
+                anchor,
+                "WeldJointBuilder::build",
+                "anchor_world",
+            )?;
         }
         super::creation::check_joint_target_native(self.world, self.def.base())?;
 
         let body_a = self.def.base().body_a_id();
         let body_b = self.def.base().body_b_id();
 
-        let ta = WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(body_a)) });
-        let tb = WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(body_b)) });
+        let ta = super::read_native_body_world_transform(
+            "WeldJointBuilder::build",
+            "body_a_transform",
+            body_a,
+        )?;
+        let tb = super::read_native_body_world_transform(
+            "WeldJointBuilder::build",
+            "body_b_transform",
+            body_b,
+        )?;
         let anchor = self.anchor_world.unwrap_or_else(|| ta.position());
-        let la = super::base_def::checked_world_to_local_point(ta, anchor)?;
-        let lb = super::base_def::checked_world_to_local_point(tb, anchor)?;
+        let la = super::base_def::checked_world_to_local_point(
+            "WeldJointBuilder::build",
+            "anchor_world",
+            ta,
+            anchor,
+        )?;
+        let lb = super::base_def::checked_world_to_local_point(
+            "WeldJointBuilder::build",
+            "anchor_world",
+            tb,
+            anchor,
+        )?;
         self.def.base_mut().set_local_frames(
-            crate::Transform::from_pos_angle(la, 0.0),
-            crate::Transform::from_pos_angle(lb, 0.0),
+            crate::Transform::from_pos_angle(la, 0.0)?,
+            crate::Transform::from_pos_angle(lb, 0.0)?,
         );
         Ok(())
     }
 
-    #[must_use]
-    pub fn build(mut self) -> Joint<'w> {
-        self.configure_local_frames()
-            .expect("weld-joint bodies must belong to the world and anchor must fit local frames");
+    pub fn build(mut self) -> Result<JointId> {
+        self.configure_local_frames()?;
         self.world.create_weld_joint(&self.def)
-    }
-
-    pub fn try_build(mut self) -> ApiResult<Joint<'w>> {
-        self.configure_local_frames()?;
-        self.world.try_create_weld_joint(&self.def)
-    }
-
-    #[must_use]
-    pub fn build_owned(mut self) -> OwnedJoint {
-        self.configure_local_frames()
-            .expect("weld-joint bodies must belong to the world and anchor must fit local frames");
-        self.world.create_weld_joint_owned(&self.def)
-    }
-
-    pub fn try_build_owned(mut self) -> ApiResult<OwnedJoint> {
-        self.configure_local_frames()?;
-        self.world.try_create_weld_joint_owned(&self.def)
     }
 }

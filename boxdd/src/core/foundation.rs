@@ -32,8 +32,9 @@ pub type FoundationLogHook = dyn Fn(&str) + Send + Sync + 'static;
 
 /// Immutable process-global Box2D configuration.
 ///
-/// The first safe Box2D use freezes this configuration. Cloning a configuration preserves the
-/// identity of its hook `Arc`s, so initializing with either clone is idempotent.
+/// The first successful [`Foundation::initialize`] call freezes this configuration. Cloning a
+/// configuration preserves the identity of its hook `Arc`s, so initializing with either clone is
+/// idempotent.
 #[derive(Clone)]
 pub struct FoundationConfig {
     length_units_per_meter: f32,
@@ -43,10 +44,30 @@ pub struct FoundationConfig {
     log_hook: Option<Arc<FoundationLogHook>>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn retire_foundation_hook<T: ?Sized>(hook: Option<Arc<T>>) {
+    let mut panic = crate::core::callback_state::PanicSlot::default();
+    panic.run_cleanup(|| drop(hook));
+    panic.resume_or_forget();
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Drop for FoundationConfig {
+    fn drop(&mut self) {
+        let mut panic = crate::core::callback_state::PanicSlot::default();
+        let assert_hook = self.assert_hook.take();
+        let log_hook = self.log_hook.take();
+        panic.run_cleanup(|| drop(assert_hook));
+        panic.run_cleanup(|| drop(log_hook));
+        panic.resume_or_forget();
+    }
+}
+
 impl FoundationConfig {
     /// Construct a configuration with the requested length scale and default hooks.
     ///
-    /// The scale is validated by [`initialize_foundation`].
+    /// [`Foundation::initialize`] validates the scale and every scale-derived native calculation
+    /// used by the safe API before changing Box2D's process-global state.
     #[must_use]
     pub fn new(length_units_per_meter: f32) -> Self {
         Self {
@@ -59,6 +80,8 @@ impl FoundationConfig {
     }
 
     /// Set the number of application length units represented by one meter.
+    ///
+    /// [`Foundation::initialize`] validates the scale and its derived native calculations.
     #[must_use]
     pub fn with_length_units_per_meter(mut self, length_units_per_meter: f32) -> Self {
         self.length_units_per_meter = length_units_per_meter;
@@ -72,7 +95,8 @@ impl FoundationConfig {
     #[must_use]
     #[cfg(not(target_arch = "wasm32"))]
     pub fn with_assert_hook(mut self, hook: Arc<FoundationAssertHook>) -> Self {
-        self.assert_hook = Some(hook);
+        let retired = self.assert_hook.replace(hook);
+        retire_foundation_hook(retired);
         self
     }
 
@@ -83,7 +107,8 @@ impl FoundationConfig {
     #[must_use]
     #[cfg(not(target_arch = "wasm32"))]
     pub fn with_log_hook(mut self, hook: Arc<FoundationLogHook>) -> Self {
-        self.log_hook = Some(hook);
+        let retired = self.log_hook.replace(hook);
+        retire_foundation_hook(retired);
         self
     }
 
@@ -108,7 +133,7 @@ impl FoundationConfig {
     }
 
     fn validate(&self) -> Result<(), FoundationInitError> {
-        if self.length_units_per_meter.is_finite() && self.length_units_per_meter > 0.0 {
+        if crate::core::length_scale::is_safe_length_units_per_meter(self.length_units_per_meter) {
             Ok(())
         } else {
             Err(FoundationInitError::InvalidLengthUnitsPerMeter)
@@ -231,8 +256,8 @@ impl fmt::Display for FoundationAdapterIdentityField {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[non_exhaustive]
 pub enum FoundationInitError {
-    /// Box2D requires a finite, strictly positive length scale.
-    #[error("length units per meter must be finite and greater than zero")]
+    /// Safe Box2D operations require a scale with representable ray and shape tolerances.
+    #[error("length units per meter must preserve finite Box2D ray and shape tolerances")]
     InvalidLengthUnitsPerMeter,
 
     /// The linked native adapter did not provide its required identity handshake.
@@ -264,6 +289,10 @@ pub struct FoundationActivity {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[non_exhaustive]
 pub enum FoundationActivityError {
+    /// Native activity requires the process-global foundation to be initialized explicitly.
+    #[error("the Box2D foundation has not been initialized")]
+    NotInitialized,
+
     /// Shared activity cannot begin while replay has exclusive access.
     #[error("a replay player currently owns exclusive Box2D foundation access")]
     ReplayActive,
@@ -446,7 +475,73 @@ impl Foundation {
         }
     }
 
-    /// Return the immutable configuration frozen by the first safe Box2D use.
+    /// Freeze the process-global Box2D configuration and return its explicit root capability.
+    ///
+    /// Repeating this call with clones of the same configuration is idempotent. A different
+    /// configuration is rejected before mutating Box2D globals.
+    pub fn initialize(config: FoundationConfig) -> crate::Result<&'static Self> {
+        initialize_foundation_impl(config).map_err(Into::into)
+    }
+
+    /// Initialize Box2D with the default one-unit-per-meter configuration.
+    pub fn initialize_default() -> crate::Result<&'static Self> {
+        Self::initialize(FoundationConfig::default())
+    }
+
+    /// Return the initialized process-global root without creating one implicitly.
+    #[must_use]
+    pub fn get() -> Option<&'static Self> {
+        FOUNDATION.get()
+    }
+
+    /// Create a world whose native activity is owned by this foundation.
+    pub fn create_world(&'static self, def: crate::WorldDef) -> crate::error::Result<crate::World> {
+        crate::World::create(self, def)
+    }
+
+    /// Construct scale-aware Box2D world defaults without invoking native code.
+    #[must_use]
+    pub fn world_def(&self) -> crate::WorldDef {
+        crate::WorldDef::with_length_scale(self.length_scale())
+    }
+
+    /// Start a scale-aware world definition builder without invoking native code.
+    #[must_use]
+    pub fn world_builder(&self) -> crate::WorldBuilder {
+        self.world_def().into()
+    }
+
+    /// Construct scale-aware Box2D body defaults without invoking native code.
+    #[must_use]
+    pub fn body_def(&self) -> crate::BodyDef {
+        crate::BodyDef::with_length_scale(self.length_scale())
+    }
+
+    /// Start a scale-aware body definition builder without invoking native code.
+    #[must_use]
+    pub fn body_builder(&self) -> crate::BodyBuilder {
+        self.body_def().into()
+    }
+
+    #[inline]
+    pub(crate) fn length_scale(&self) -> crate::core::length_scale::LengthScale {
+        crate::core::length_scale::LengthScale::try_new(self.config.length_units_per_meter)
+            .expect("Foundation stores a validated length scale")
+    }
+
+    pub(crate) fn acquire_ordinary_world_lease(
+        &'static self,
+    ) -> Result<OrdinaryWorldLease, FoundationActivityError> {
+        self.activity.acquire_ordinary()
+    }
+
+    pub(crate) fn acquire_replay_lease(
+        &'static self,
+    ) -> Result<ReplayLease, FoundationActivityError> {
+        self.activity.acquire_replay()
+    }
+
+    /// Return the immutable configuration frozen by explicit initialization.
     #[must_use]
     pub fn config(&self) -> &FoundationConfig {
         &self.config
@@ -482,10 +577,10 @@ static WORLD_SLOT_MUTATION_LOCK: Mutex<()> = Mutex::new(());
 
 /// Freeze the process-global Box2D foundation configuration.
 ///
-/// Calling this function repeatedly with clones of the same configuration is idempotent. Once any
-/// safe API has lazily selected the default configuration, a different explicit configuration is
-/// rejected before mutating Box2D globals.
-pub fn initialize_foundation(
+/// Calling this function repeatedly with clones of the same configuration is idempotent. After
+/// explicit initialization succeeds, a different configuration is rejected before mutating Box2D
+/// globals.
+fn initialize_foundation_impl(
     config: FoundationConfig,
 ) -> Result<&'static Foundation, FoundationInitError> {
     config.validate()?;
@@ -555,43 +650,20 @@ pub fn initialize_foundation(
     result
 }
 
-/// Return the process-global foundation, lazily freezing the default configuration if needed.
-#[must_use]
-pub fn foundation() -> &'static Foundation {
-    if let Some(foundation) = FOUNDATION.get() {
-        return foundation;
-    }
-
-    match initialize_foundation(FoundationConfig::default()) {
-        Ok(foundation) => foundation,
-        Err(FoundationInitError::ConfigurationConflict) => FOUNDATION
-            .get()
-            .expect("a conflicting initialization must leave its foundation visible"),
-        Err(FoundationInitError::InvalidLengthUnitsPerMeter) => {
-            unreachable!("the default foundation length scale is valid")
-        }
-        Err(FoundationInitError::AdapterIdentityUnavailable) => {
-            panic!("the linked Box2D adapter identity handshake is unavailable")
-        }
-        Err(FoundationInitError::AdapterIdentityMismatch(field)) => {
-            panic!("the linked Box2D adapter has a mismatched {field}")
-        }
-    }
-}
-
-/// Lease shared process-global access for one Rust-owned Box2D world.
-pub(crate) fn acquire_ordinary_world_lease() -> Result<OrdinaryWorldLease, FoundationActivityError>
-{
-    foundation().activity.acquire_ordinary()
-}
-
 /// Lease shared process-global access for one worldless native operation.
 pub(crate) fn acquire_transient_lease() -> Result<TransientFoundationLease, FoundationActivityError>
 {
-    let lease = foundation().activity.acquire_transient()?;
+    let foundation = Foundation::get().ok_or(FoundationActivityError::NotInitialized)?;
+    let lease = foundation.activity.acquire_transient()?;
     #[cfg(test)]
     notify_transient_lease_test_hook();
     Ok(lease)
+}
+
+pub(crate) fn current_length_units_per_meter() -> Result<f32, FoundationActivityError> {
+    Foundation::get()
+        .map(|foundation| foundation.config.length_units_per_meter)
+        .ok_or(FoundationActivityError::NotInitialized)
 }
 
 #[cfg(test)]
@@ -634,24 +706,9 @@ fn notify_transient_lease_test_hook() {
 }
 
 /// Check callback availability and lease one fallible worldless native call.
-pub(crate) fn transient_native_lease() -> crate::error::ApiResult<TransientFoundationLease> {
+pub(crate) fn transient_native_lease() -> crate::error::Result<TransientFoundationLease> {
     crate::core::callback_state::check_not_in_callback()?;
-    acquire_transient_lease().map_err(crate::error::ApiError::from)
-}
-
-/// Assert callback availability and lease one infallible worldless native call.
-#[track_caller]
-pub(crate) fn assert_transient_native_lease() -> TransientFoundationLease {
-    crate::core::callback_state::assert_not_in_callback();
-    match acquire_transient_lease() {
-        Ok(lease) => lease,
-        Err(error) => panic!("Box2D foundation rejected a worldless native call: {error}"),
-    }
-}
-
-/// Lease exclusive process-global access for a replay player.
-pub(crate) fn acquire_replay_lease() -> Result<ReplayLease, FoundationActivityError> {
-    foundation().activity.acquire_replay()
+    acquire_transient_lease().map_err(crate::error::Error::from)
 }
 
 /// Keeps one Rust-owned native world counted as shared foundation activity.
@@ -909,7 +966,28 @@ mod tests {
 
     #[test]
     fn invalid_scales_are_rejected_before_native_initialization() {
-        for scale in [0.0, -1.0, f32::INFINITY, f32::NEG_INFINITY, f32::NAN] {
+        let below_ray_limit = {
+            #[cfg(feature = "double-precision")]
+            {
+                0.5e-9
+            }
+            #[cfg(not(feature = "double-precision"))]
+            {
+                0.5e-5
+            }
+        };
+        for scale in [
+            0.0,
+            -1.0,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+            f32::from_bits(1),
+            below_ray_limit,
+            1.0e13_f32,
+            1.0e22_f32,
+            f32::MAX,
+        ] {
             assert_eq!(
                 FoundationConfig::new(scale).validate(),
                 Err(FoundationInitError::InvalidLengthUnitsPerMeter)
@@ -1047,7 +1125,7 @@ mod tests {
 
     #[derive(Clone, Copy, Debug)]
     enum SafeWorldlessNativeCall {
-        Default,
+        MathHelper,
         GeometryConstructor,
         CollisionHelper,
     }
@@ -1055,19 +1133,22 @@ mod tests {
     impl SafeWorldlessNativeCall {
         fn invoke(self) {
             match self {
-                Self::Default => {
-                    core::hint::black_box(crate::Filter::default());
+                Self::MathHelper => {
+                    core::hint::black_box(crate::version().unwrap());
                 }
                 Self::GeometryConstructor => {
-                    core::hint::black_box(crate::shapes::box_polygon(0.5, 0.25));
+                    core::hint::black_box(crate::shapes::box_polygon(0.5, 0.25).unwrap());
                 }
                 Self::CollisionHelper => {
-                    core::hint::black_box(crate::segment_distance(
-                        [0.0_f32, 0.0],
-                        [1.0_f32, 0.0],
-                        [0.0_f32, 1.0],
-                        [1.0_f32, 1.0],
-                    ));
+                    core::hint::black_box(
+                        crate::segment_distance(
+                            [0.0_f32, 0.0],
+                            [1.0_f32, 0.0],
+                            [0.0_f32, 1.0],
+                            [1.0_f32, 1.0],
+                        )
+                        .unwrap(),
+                    );
                 }
             }
         }
@@ -1082,15 +1163,29 @@ mod tests {
     }
 
     fn one_step_recording() -> crate::Recording {
-        let mut world = crate::World::new(crate::WorldDef::default()).unwrap();
-        world.create_body_id(
-            crate::BodyBuilder::new()
-                .body_type(crate::BodyType::Dynamic)
-                .build(),
-        );
-        let mut session = world.start_recording(crate::RecordingCapacity::default());
-        session.step(1.0 / 60.0, 1);
-        let recording = session.finish();
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        world
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_builder()
+                    .body_type(crate::BodyType::Dynamic)
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        let mut session = world
+            .start_recording(crate::RecordingLimits::default())
+            .unwrap();
+        drop(session.step(1.0 / 60.0, 1).unwrap());
+        let recording = session.finish().unwrap();
         drop(world);
         recording
     }
@@ -1121,28 +1216,53 @@ mod tests {
             transient_calls: 1,
             replay_active: false,
         };
-        assert_eq!(foundation().activity(), expected_activity, "{call:?}");
+        assert_eq!(
+            Foundation::get().unwrap().activity(),
+            expected_activity,
+            "{call:?}"
+        );
 
-        let error = crate::ReplayPlayer::open_recording(recording, crate::ReplayConfig::default())
-            .expect_err("replay must not overlap a transient safe native call");
+        let error = crate::ReplayPlayer::open(
+            crate::Foundation::initialize_default().unwrap(),
+            recording,
+            crate::ReplayConfig::default(),
+        )
+        .expect_err("replay must not overlap a transient safe native call");
         assert_eq!(
             error,
-            crate::ReplayError::Foundation(FoundationActivityError::ReplayUnavailable {
+            crate::Error::FoundationActivity(FoundationActivityError::ReplayUnavailable {
                 activity: expected_activity,
             }),
             "{call:?}",
         );
-        assert_eq!(foundation().activity(), expected_activity, "{call:?}");
+        assert_eq!(
+            Foundation::get().unwrap().activity(),
+            expected_activity,
+            "{call:?}"
+        );
 
         drop(release);
         worker.join().unwrap();
-        assert_eq!(foundation().activity(), FoundationActivity::default());
+        assert_eq!(
+            Foundation::get().unwrap().activity(),
+            FoundationActivity::default()
+        );
 
-        let player = crate::ReplayPlayer::open_recording(recording, crate::ReplayConfig::default())
-            .expect("replay must begin after the transient safe native call drains");
-        assert!(foundation().activity().replay_active, "{call:?}");
+        let player = crate::ReplayPlayer::open(
+            crate::Foundation::initialize_default().unwrap(),
+            recording,
+            crate::ReplayConfig::default(),
+        )
+        .expect("replay must begin after the transient safe native call drains");
+        assert!(
+            Foundation::get().unwrap().activity().replay_active,
+            "{call:?}"
+        );
         drop(player);
-        assert_eq!(foundation().activity(), FoundationActivity::default());
+        assert_eq!(
+            Foundation::get().unwrap().activity(),
+            FoundationActivity::default()
+        );
     }
 
     #[test]
@@ -1150,7 +1270,7 @@ mod tests {
         let recording = one_step_recording();
 
         for call in [
-            SafeWorldlessNativeCall::Default,
+            SafeWorldlessNativeCall::MathHelper,
             SafeWorldlessNativeCall::GeometryConstructor,
             SafeWorldlessNativeCall::CollisionHelper,
         ] {
@@ -1318,8 +1438,16 @@ mod tests {
             eprintln!("boxdd-foundation-test: assert-hook-entered");
             panic!("assert-hook panic must be contained before Box2D traps");
         });
-        initialize_foundation(FoundationConfig::default().with_assert_hook(assert_hook)).unwrap();
-        let world = crate::World::new(crate::WorldDef::default()).unwrap();
+        let foundation =
+            Foundation::initialize(FoundationConfig::default().with_assert_hook(assert_hook))
+                .unwrap();
+        let world = foundation
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
 
         // SAFETY: the world id is live. The invalid sub-step count intentionally exercises the
         // native B2_ASSERT chain in this process-isolated termination probe.
@@ -1359,7 +1487,7 @@ mod tests {
             }
         });
 
-        let foundation = initialize_foundation(
+        let foundation = Foundation::initialize(
             FoundationConfig::default()
                 .with_assert_hook(assert_hook)
                 .with_log_hook(log_hook),

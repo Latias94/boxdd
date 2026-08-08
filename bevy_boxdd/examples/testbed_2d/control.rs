@@ -77,11 +77,13 @@ pub struct EventStats {
     pub contact_begin_total: u64,
     pub contact_end_total: u64,
     pub contact_hit_total: u64,
+    pub joint_total: u64,
     pub sensor_begin_total: u64,
     pub sensor_end_total: u64,
     pub contact_begin_frame: u32,
     pub contact_end_frame: u32,
     pub contact_hit_frame: u32,
+    pub joint_frame: u32,
     pub sensor_begin_frame: u32,
     pub sensor_end_frame: u32,
 }

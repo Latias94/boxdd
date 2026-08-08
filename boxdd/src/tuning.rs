@@ -21,7 +21,8 @@
 //! - Graph color count (`B2_GRAPH_COLOR_COUNT`): internal constraint-coloring
 //!   size. Not exposed.
 //! - Max workers (`B2_MAX_WORKERS`): internal upper bound; configure desired
-//!   worker count via `WorldDef::builder().worker_count(WorkerCount::new(n)?)`. Values above one use
+//!   worker count via `foundation.world_builder().worker_count(WorkerCount::new(n)?)`, where
+//!   `foundation` is the initialized [`crate::Foundation`]. Values above one use
 //!   Box2D's built-in scheduler unless raw task callbacks replace it.
 //!
 //! Safe API controls related to tuning:

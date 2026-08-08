@@ -1,0 +1,61 @@
+--- src/recording.h
++++ src/recording.h
+@@ -65,13 +65,29 @@
+
+ _Static_assert( sizeof( b2RecHeader ) == 32, "recording header must be 32 bytes" );
+
+-// Growable append-only byte buffer. Doubles on demand. In countOnly mode it tallies size without
+-// allocating, so a serialize can be sized cheaply before a second pass fills a real buffer.
++// All producers share one hard ceiling so size arithmetic remains representable by the public
++// signed-int ABI. Per-recording limits may lower this ceiling but can never raise it.
++#define B2_REC_MAX_BUFFER_BYTES ( 256 * 1024 * 1024 )
++#define B2_REC_MAX_RECORD_PAYLOAD ( ( 1 << 24 ) - 1 )
++
++typedef uint32_t b2RecBufferStatus;
++#define B2_REC_BUFFER_OK 0u
++#define B2_REC_BUFFER_LIMIT_EXCEEDED 1u
++#define B2_REC_BUFFER_RECORD_TOO_LARGE 2u
++#define B2_REC_BUFFER_INVALID 3u
++#define B2_REC_SIZE_LIMIT_EXCEEDED -1
++#define B2_REC_SIZE_RECORD_TOO_LARGE -2
++#define B2_REC_SIZE_INVALID -3
++
++// Growable append-only byte buffer. A zero limit selects B2_REC_MAX_BUFFER_BYTES. Failure is sticky:
++// producers may finish their native operation, but no partial byte stream is ever authorized.
+ typedef struct b2RecBuffer
+ {
+ 	uint8_t* data;
+ 	int capacity;
+ 	int size;
++	int limit;
++	b2RecBufferStatus status;
+ 	bool countOnly;
+ } b2RecBuffer;
+
+@@ -80,7 +96,7 @@
+ typedef struct b2Recording
+ {
+ 	b2RecBuffer buffer;
+-	int recordStart; // offset of the 3-byte size field for u24 backpatch
++	int recordStart; // offset of the complete record for atomic rollback and u24 backpatch
+ 	b2Mutex* lock;	 // serializes query record commits across concurrent query threads
+
+ 	// Union of world bounds over every recorded step, written out at stop so a replay can frame
+@@ -156,7 +172,7 @@
+ #undef ARG
+
+ // Low level buffer helpers
+-void b2RecBufAppend( b2RecBuffer* buf, const void* data, int size );
++void b2RecBufAppend( b2RecBuffer* buf, const void* data, size_t size );
+ void b2RecBufFree( b2RecBuffer* buf );
+
+ // Write primitives
+@@ -269,7 +285,7 @@
+ void b2RecPatchU32( b2RecBuffer* buf, int offset, uint32_t v );
+
+ // Commit a finished query record under the lock. The local buffer is still owned by the caller.
+-void b2RecCommitRecord( b2Recording* rec, uint8_t opcode, const uint8_t* payload, int payloadSize );
++void b2RecCommitRecord( b2Recording* rec, uint8_t opcode, const uint8_t* payload, size_t payloadSize );
+
+ // Per-query writer context: holds user fcn+ctx, the local payload buffer, and the hit counter
+ typedef struct b2RecQueryWriter

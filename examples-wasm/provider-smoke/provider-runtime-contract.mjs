@@ -27,6 +27,31 @@ function providerModule(identity) {
   return `box2d-sys-v${identity.abiVersion}-${identity.precision}`;
 }
 
+function providerExport(provider, name) {
+  const exported = provider[`_${name}`] ?? provider[name];
+  if (typeof exported !== 'function') {
+    throw new Error(`provider export ${name} is not a function`);
+  }
+  return exported;
+}
+
+function proveProviderHeapBoundary(provider, providerHeapLimitBytes) {
+  const limitBytes = safeInteger(providerHeapLimitBytes, 'provider heap limit');
+  if (limitBytes === 0 || limitBytes > 0xffff_ffff) {
+    throw new Error(`provider heap limit does not fit wasm32 uintptr_t: ${String(limitBytes)}`);
+  }
+  const code = providerExport(provider, 'providerHeapBoundaryProbe')(
+    limitBytes,
+  );
+  if (code !== 0) {
+    throw new Error(`provider heap boundary probe failed with code ${code}`);
+  }
+  return {
+    limitBytes,
+    overflowRejected: true,
+  };
+}
+
 export function inspectProviderContract(appModule, expectedModule) {
   const expected = parseProviderModule(expectedModule);
   const imports = WebAssembly.Module.imports(appModule).filter(
@@ -65,10 +90,7 @@ export function resolveProviderFunctions(provider, names) {
 
   const functions = Object.create(null);
   for (const name of names) {
-    const exported = provider[`_${name}`] ?? provider[name];
-    if (typeof exported !== 'function') {
-      throw new Error(`provider export ${name} is not a function`);
-    }
+    const exported = providerExport(provider, name);
     functions[name] = (...args) => {
       refreshMemoryViews();
       return exported(...args);
@@ -82,26 +104,6 @@ export function createProviderImportObject(memory, moduleName, functions) {
     env: { memory },
     [moduleName]: { ...functions },
   };
-}
-
-async function createIncompatibleWasmFunction() {
-  // (module (func (export "wrong") (param externref) (result externref) local.get 0))
-  // Box2D's C ABI imports use only numeric Wasm value types, so this callable can never match.
-  const module = await WebAssembly.compile(
-    Uint8Array.of(
-      0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
-      0x01, 0x06, 0x01, 0x60, 0x01, 0x6f, 0x01, 0x6f,
-      0x03, 0x02, 0x01, 0x00,
-      0x07, 0x09, 0x01, 0x05, 0x77, 0x72, 0x6f, 0x6e, 0x67, 0x00, 0x00,
-      0x0a, 0x06, 0x01, 0x04, 0x00, 0x20, 0x00, 0x0b,
-    ),
-  );
-  const instance = await WebAssembly.instantiate(module);
-  const incompatible = instance.exports.wrong;
-  if (typeof incompatible !== 'function') {
-    throw new Error('failed to construct a callable Wasm function with an incompatible signature');
-  }
-  return incompatible;
 }
 
 async function expectLinkFailure(
@@ -169,19 +171,9 @@ export async function proveProviderLinkFailures(appModule, memory, contract, fun
     true,
   );
 
-  const wrongFunctions = { ...watchedFunctions };
-  wrongFunctions[contract.names[0]] = await createIncompatibleWasmFunction();
-  const wrongFunctionType = await expectLinkFailure(
-    'wrong provider Wasm function signature',
-    appModule,
-    createProviderImportObject(memory, contract.module, wrongFunctions),
-    providerCallCount,
-  );
-
   return {
     oldProviderAbi,
     wrongPrecision,
-    wrongFunctionType,
     providerCallsBeforePhysics: providerCalls,
   };
 }
@@ -201,46 +193,51 @@ export class RefreshableMemoryViews {
   }
 }
 
-export function growAndProveMemoryViews(memory, views, provider) {
-  const staleBuffer = views.buffer;
-  const staleBytes = views.bytes;
-  const staleData = views.data;
-  const staleProviderHeap = provider.boxddRefreshMemoryViews();
-  if (staleProviderHeap.buffer !== memory.buffer || staleProviderHeap !== provider.HEAPU8) {
+export function captureMemoryViewsBeforeGrowth(memory, views, provider) {
+  const providerHeap = provider.boxddRefreshMemoryViews();
+  if (providerHeap.buffer !== memory.buffer || providerHeap !== provider.HEAPU8) {
     throw new Error('provider HEAPU8 does not initially bind the shared WebAssembly.Memory');
   }
-  const oldByteLength = staleBuffer.byteLength;
+  return {
+    buffer: views.buffer,
+    bytes: views.bytes,
+    data: views.data,
+    providerHeap,
+    byteLength: views.buffer.byteLength,
+  };
+}
 
-  memory.grow(1);
-  if (staleBuffer === memory.buffer || memory.buffer.byteLength <= oldByteLength) {
-    throw new Error('shared WebAssembly.Memory did not replace and grow its buffer');
+export function proveMemoryViewsAfterRustGrowth(memory, views, provider, stale) {
+  if (stale.buffer === memory.buffer || memory.buffer.byteLength <= stale.byteLength) {
+    throw new Error('Rust allocator did not replace and grow the shared memory buffer');
   }
 
   let staleTypedArrayRejected = false;
   try {
-    staleBytes.set([1], 0);
+    stale.bytes.set([1], 0);
   } catch (error) {
     staleTypedArrayRejected = error instanceof TypeError;
   }
   let staleDataViewRejected = false;
   try {
-    staleData.getUint8(0);
+    stale.data.getUint8(0);
   } catch (error) {
     staleDataViewRejected = error instanceof TypeError;
   }
   if (
-    staleBuffer.byteLength !== 0 ||
-    staleBytes.byteLength !== 0 ||
-    staleBytes[0] !== undefined ||
-    staleProviderHeap.byteLength !== 0 ||
+    stale.buffer.byteLength !== 0 ||
+    stale.bytes.byteLength !== 0 ||
+    stale.bytes[0] !== undefined ||
+    stale.providerHeap.byteLength !== 0 ||
     !staleTypedArrayRejected ||
     !staleDataViewRejected
   ) {
-    throw new Error('pre-growth typed memory views remained usable after memory.grow');
+    throw new Error('pre-growth typed memory views remained usable after Rust heap growth');
   }
 
-  if (!views.refresh() || views.buffer !== memory.buffer) {
-    throw new Error('typed memory views were not rebound after memory.grow');
+  views.refresh();
+  if (views.buffer !== memory.buffer) {
+    throw new Error('typed memory views were not rebound after Rust allocator growth');
   }
   if (!(views.bytes instanceof Uint8Array) || !(views.data instanceof DataView)) {
     throw new Error('refreshed memory views have the wrong JavaScript types');
@@ -251,10 +248,10 @@ export function growAndProveMemoryViews(memory, views, provider) {
     refreshedProviderHeap === provider.HEAPU8 &&
     refreshedProviderHeap.buffer === memory.buffer;
   if (!providerHeapViewRefreshed) {
-    throw new Error('Emscripten HEAPU8 was not rebound after external memory.grow');
+    throw new Error('Emscripten HEAPU8 was not rebound after Rust allocator growth');
   }
 
-  const probeOffset = oldByteLength;
+  const probeOffset = stale.byteLength;
   const original = views.data.getUint32(probeOffset, true);
   views.data.setUint32(probeOffset, 0x78563412, true);
   const refreshedViewsReadWrite =
@@ -293,7 +290,23 @@ function callAppExport(instance, views, name, ...args) {
   return value;
 }
 
-export async function runProviderPhysicsScenario({ appModule, memory, provider, contract, functions }) {
+function safeInteger(value, label) {
+  const number = typeof value === 'bigint' ? Number(value) : value;
+  if (!Number.isSafeInteger(number) || number < 0) {
+    throw new Error(label + ' is not a non-negative safe integer: ' + String(value));
+  }
+  return number;
+}
+
+export async function runProviderPhysicsScenario({
+  appModule,
+  memory,
+  provider,
+  providerHeapLimitBytes,
+  contract,
+  functions,
+}) {
+  const providerHeapBoundary = proveProviderHeapBoundary(provider, providerHeapLimitBytes);
   const linkFailures = await proveProviderLinkFailures(appModule, memory, contract, functions);
   let memoryGrew = false;
   let providerGlueCallsAfterGrowth = 0;
@@ -313,25 +326,118 @@ export async function runProviderPhysicsScenario({ appModule, memory, provider, 
   requiredExport(instance, 'boxdd_provider_smoke');
 
   const memoryViews = new RefreshableMemoryViews(memory);
-  const memoryProof = growAndProveMemoryViews(memory, memoryViews, provider);
-  memoryGrew = true;
+  const smoke = callAppExport(instance, memoryViews, 'boxdd_provider_smoke');
+  if (smoke !== 0) {
+    throw new Error('boxdd provider smoke failed with code ' + smoke);
+  }
+  for (const reset of ['boxdd_allocator_probe_reset', 'boxdd_runtime_reset']) {
+    if (callAppExport(instance, memoryViews, reset) !== 0) {
+      throw new Error(reset + ' failed before allocator pressure');
+    }
+  }
+
+  const idleBox2dBytes = safeInteger(
+    callAppExport(instance, memoryViews, 'boxdd_provider_box2d_byte_count'),
+    'idle Box2D bytes',
+  );
+  const runtimeInit = callAppExport(instance, memoryViews, 'boxdd_runtime_init');
+  if (runtimeInit !== 0) {
+    throw new Error('boxdd runtime init failed with code ' + runtimeInit);
+  }
+  const activeBox2dBytes = safeInteger(
+    callAppExport(instance, memoryViews, 'boxdd_provider_box2d_byte_count'),
+    'active Box2D bytes',
+  );
+  if (activeBox2dBytes <= idleBox2dBytes) {
+    throw new Error('retained Box2D world did not increase the C-side byte count');
+  }
+
+  const staleViews = captureMemoryViewsBeforeGrowth(memory, memoryViews, provider);
+  const alignedAllocationBytes = 1024 * 1024;
+  const alignedAllocationAlignment = 64 * 1024;
+  const alignedPush = callAppExport(
+    instance,
+    memoryViews,
+    'boxdd_allocator_aligned_probe_push',
+    alignedAllocationBytes,
+    alignedAllocationAlignment,
+    0xa7,
+  );
+  if (
+    alignedPush !== 0 ||
+    callAppExport(instance, memoryViews, 'boxdd_allocator_aligned_probe_validate') !== 1
+  ) {
+    throw new Error('Rust allocator failed the explicit 64 KiB alignment probe');
+  }
+  const pressureChunks = 5;
+  const pressureChunkBytes = 16 * 1024 * 1024;
+  for (let index = 0; index < pressureChunks; index += 1) {
+    const pattern = 0x31 + index;
+    const pushed = callAppExport(
+      instance,
+      memoryViews,
+      'boxdd_allocator_probe_push',
+      pressureChunkBytes,
+      pattern,
+    );
+    if (pushed !== 0) {
+      throw new Error(
+        'Rust allocator pressure chunk ' + index + ' failed with code ' + pushed,
+      );
+    }
+    if (memory.buffer.byteLength > staleViews.byteLength) memoryGrew = true;
+    const step = callAppExport(instance, memoryViews, 'boxdd_runtime_step');
+    if (step < 0) {
+      throw new Error('interleaved Box2D runtime step failed with code ' + step);
+    }
+    const validated = callAppExport(instance, memoryViews, 'boxdd_allocator_probe_validate');
+    const alignedValidated = callAppExport(
+      instance,
+      memoryViews,
+      'boxdd_allocator_aligned_probe_validate',
+    );
+    if (validated !== index + 1 || alignedValidated !== 1) {
+      throw new Error('Rust allocation contents failed after interleaved step ' + index);
+    }
+  }
+  if (!memoryGrew) {
+    throw new Error('Rust allocator pressure did not grow shared WebAssembly.Memory');
+  }
+
+  const pressureBytes = pressureChunks * pressureChunkBytes + alignedAllocationBytes;
+  const pressureAllocations = pressureChunks + 1;
+  const memoryProof = proveMemoryViewsAfterRustGrowth(
+    memory,
+    memoryViews,
+    provider,
+    staleViews,
+  );
   const postGrowthMetric = callAppExport(
     instance,
     memoryViews,
     'boxdd_provider_ray_hit_millimeters',
   );
   if (postGrowthMetric < 0) {
-    throw new Error(`provider failed after memory growth with code ${postGrowthMetric}`);
+    throw new Error('provider failed after memory growth with code ' + postGrowthMetric);
   }
   if (providerGlueCallsAfterGrowth === 0) {
     throw new Error('post-growth physics did not traverse the Emscripten provider exports');
   }
   memoryProof.providerGlueCallsAfterGrowth = providerGlueCallsAfterGrowth;
 
-  const smoke = callAppExport(instance, memoryViews, 'boxdd_provider_smoke');
-  if (smoke !== 0) {
-    throw new Error(`boxdd provider smoke failed with code ${smoke}`);
+  if (callAppExport(instance, memoryViews, 'boxdd_allocator_probe_reset') !== 0) {
+    throw new Error('Rust allocator pressure reset failed');
   }
+  const allocatorProof = {
+    pressureAllocations,
+    pressureBytes,
+    released: true,
+    alignmentVerified: true,
+    alignedAllocationBytes,
+    alignedAllocationAlignment,
+    idleBox2dBytes,
+    activeBox2dBytes,
+  };
 
   const metricExports = {
     dropMillimeters: 'boxdd_provider_drop_millimeters',
@@ -348,10 +454,6 @@ export async function runProviderPhysicsScenario({ appModule, memory, provider, 
     metrics[label] = value;
   }
 
-  const runtimeInit = callAppExport(instance, memoryViews, 'boxdd_runtime_init');
-  if (runtimeInit !== 0) {
-    throw new Error(`boxdd runtime init failed with code ${runtimeInit}`);
-  }
   for (let frame = 0; frame < 30; frame += 1) {
     const code = callAppExport(instance, memoryViews, 'boxdd_runtime_step');
     if (code < 0) throw new Error(`boxdd runtime step failed with code ${code}`);
@@ -423,6 +525,20 @@ export async function runProviderPhysicsScenario({ appModule, memory, provider, 
     }
     runtimeState.push(body);
   }
+  if (callAppExport(instance, memoryViews, 'boxdd_runtime_reset') !== 0) {
+    throw new Error('boxdd runtime reset failed');
+  }
+  const releasedBox2dBytes = safeInteger(
+    callAppExport(instance, memoryViews, 'boxdd_provider_box2d_byte_count'),
+    'released Box2D bytes',
+  );
+  if (releasedBox2dBytes !== idleBox2dBytes) {
+    throw new Error(
+      'Box2D C-side byte count did not return to baseline: ' +
+        JSON.stringify({ idleBox2dBytes, activeBox2dBytes, releasedBox2dBytes }),
+    );
+  }
+  allocatorProof.releasedBox2dBytes = releasedBox2dBytes;
 
   return {
     providerImports: contract.names.length,
@@ -431,5 +547,7 @@ export async function runProviderPhysicsScenario({ appModule, memory, provider, 
     metrics,
     runtimeBodies,
     runtimeState,
+    allocatorProof,
+    providerHeapBoundary,
   };
 }

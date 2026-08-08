@@ -1,21 +1,19 @@
 #![cfg(feature = "serde")]
 
 use boxdd::{
-    Aabb, ApiError, BodyBuilder, BodyDef, BodyId, BodyType, ChainId, ContactId, DistanceJointDef,
-    JointBase, JointId, Position, QueryFilter, RawBodyId, RawChainId, RawContactId, RawJointId,
-    RawShapeId, Rot, ShapeDef, ShapeId, Vec2, WorkerCount, World, WorldCapacity, WorldDef,
-    WorldScalar, WorldTransform,
-    shapes::{self, chain::ChainDef},
+    Aabb, BodyDef, BodyId, Capsule, ChainId, ChainSegment, Circle, CollisionPlane,
+    ConstraintTuning, ContactId, Foundation, FoundationConfig, JointId, MassData, Plane,
+    PlaneSolverResult, Position, QueryFilter, Rot, Segment, ShapeDef, ShapeId, SurfaceMaterial,
+    Transform, Vec2, WorkerCount, WorldCapacity, WorldDef, WorldScalar, WorldTransform,
 };
-use boxdd_sys::ffi;
 use serde::{Serialize, de::DeserializeOwned};
 use static_assertions::assert_not_impl_any;
 
-assert_not_impl_any!(BodyId: Serialize);
-assert_not_impl_any!(ShapeId: Serialize);
-assert_not_impl_any!(JointId: Serialize);
-assert_not_impl_any!(ChainId: Serialize);
-assert_not_impl_any!(ContactId: Serialize);
+assert_not_impl_any!(BodyId: Serialize, DeserializeOwned);
+assert_not_impl_any!(ShapeId: Serialize, DeserializeOwned);
+assert_not_impl_any!(JointId: Serialize, DeserializeOwned);
+assert_not_impl_any!(ChainId: Serialize, DeserializeOwned);
+assert_not_impl_any!(ContactId: Serialize, DeserializeOwned);
 
 #[cfg(not(feature = "double-precision"))]
 const TEST_WORLD_X: WorldScalar = 10_000.125;
@@ -29,19 +27,172 @@ where
     serde_json::from_str(&serde_json::to_string(&value).unwrap()).unwrap()
 }
 
-fn assert_wrong_world<T>(result: boxdd::ApiResult<T>) {
-    match result {
-        Err(error) => assert_eq!(error, ApiError::WrongWorld),
-        Ok(_) => panic!("expected WrongWorld, got Ok"),
-    }
-}
-
 #[test]
 fn aabb_serde_roundtrip() {
-    let a = Aabb::new(Vec2::new(-1.0, -2.0), Vec2::new(3.0, 4.0));
+    let a = Aabb::new(Vec2::new(-1.0, -2.0), Vec2::new(3.0, 4.0)).unwrap();
     let s = serde_json::to_string(&a).unwrap();
     let b: Aabb = serde_json::from_str(&s).unwrap();
     assert_eq!(a, b);
+}
+
+#[test]
+fn invariant_bearing_values_reject_invalid_serde_payloads() {
+    assert!(serde_json::from_value::<Rot>(serde_json::json!(1.0e100)).is_err());
+    assert!(
+        serde_json::from_value::<Transform>(serde_json::json!({
+            "pos": { "x": 0.0, "y": 0.0 },
+            "angle": 1.0e100
+        }))
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<WorldTransform>(serde_json::json!({
+            "position": { "x": 0.0, "y": 0.0 },
+            "angle": 1.0e100
+        }))
+        .is_err()
+    );
+
+    assert!(
+        serde_json::from_value::<Circle>(serde_json::json!({
+            "center": { "x": 0.0, "y": 0.0 },
+            "radius": -1.0
+        }))
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<Segment>(serde_json::json!({
+            "point1": { "x": 0.0, "y": 0.0 },
+            "point2": { "x": 0.0, "y": 0.0 }
+        }))
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<Capsule>(serde_json::json!({
+            "center1": { "x": 0.0, "y": 0.0 },
+            "center2": { "x": 0.0, "y": 0.0 },
+            "radius": 1.0
+        }))
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<ChainSegment>(serde_json::json!({
+            "ghost1": { "x": -1.0, "y": 0.0 },
+            "segment": {
+                "point1": { "x": 0.0, "y": 0.0 },
+                "point2": { "x": 0.0, "y": 0.0 }
+            },
+            "ghost2": { "x": 1.0, "y": 0.0 }
+        }))
+        .is_err()
+    );
+
+    assert!(
+        serde_json::from_value::<Aabb>(serde_json::json!({
+            "lower": { "x": 1.0, "y": 0.0 },
+            "upper": { "x": 0.0, "y": 1.0 }
+        }))
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<Plane>(serde_json::json!({
+            "normal": { "x": 2.0, "y": 0.0 },
+            "offset": 0.0
+        }))
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<CollisionPlane>(serde_json::json!({
+            "plane": {
+                "normal": { "x": 1.0, "y": 0.0 },
+                "offset": 0.0
+            },
+            "push_limit": -1.0,
+            "push": 0.0,
+            "clip_velocity": true
+        }))
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<MassData>(serde_json::json!({
+            "mass": -1.0,
+            "center": { "x": 0.0, "y": 0.0 },
+            "rotational_inertia": 0.0
+        }))
+        .is_err()
+    );
+}
+
+#[test]
+fn checked_joint_and_solver_values_reject_invalid_serde_payloads() {
+    let tuning = ConstraintTuning::new(4.0, 0.5).unwrap();
+    assert_eq!(roundtrip(tuning), tuning);
+
+    for payload in [
+        serde_json::json!({ "hertz": -1.0, "damping_ratio": 0.5 }),
+        serde_json::json!({ "hertz": 4.0, "damping_ratio": -1.0 }),
+        serde_json::json!({ "hertz": 1.0e100, "damping_ratio": 0.5 }),
+        serde_json::json!({ "hertz": 4.0, "damping_ratio": 1.0e100 }),
+    ] {
+        assert!(
+            serde_json::from_value::<ConstraintTuning>(payload.clone()).is_err(),
+            "ConstraintTuning accepted invalid payload {payload}"
+        );
+    }
+
+    assert!(
+        serde_json::from_value::<PlaneSolverResult>(serde_json::json!({
+            "translation": { "x": 0.0, "y": 0.0 },
+            "iteration_count": -1
+        }))
+        .is_err()
+    );
+}
+
+#[test]
+fn shape_definition_serde_uses_native_defaults_and_rejects_invalid_values() {
+    let material: SurfaceMaterial = serde_json::from_str("{}").unwrap();
+    assert_eq!(material.friction(), 0.6);
+
+    let definition: ShapeDef = serde_json::from_str("{}").unwrap();
+    assert_eq!(definition.density(), 1.0);
+    assert!(definition.invokes_contact_creation());
+    assert!(definition.updates_body_mass());
+
+    assert!(
+        serde_json::from_value::<SurfaceMaterial>(serde_json::json!({ "friction": -1.0 })).is_err()
+    );
+    assert!(serde_json::from_value::<ShapeDef>(serde_json::json!({ "density": -1.0 })).is_err());
+}
+
+#[test]
+fn definition_serde_rejects_unknown_configuration_fields() {
+    assert!(
+        serde_json::from_value::<WorldDef>(serde_json::json!({
+            "length_units_per_meter": 1.0,
+            "enable_continous": true
+        }))
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<BodyDef>(serde_json::json!({
+            "length_units_per_meter": 1.0,
+            "gravity_scal": 0.5
+        }))
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<SurfaceMaterial>(serde_json::json!({
+            "rolling_resistence": 0.1
+        }))
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<ShapeDef>(serde_json::json!({
+            "enable_contact_event": true
+        }))
+        .is_err()
+    );
 }
 
 #[test]
@@ -49,7 +200,7 @@ fn world_precision_values_serde_roundtrip_without_narrowing() {
     let position = Position::new(TEST_WORLD_X, -TEST_WORLD_X);
     assert_eq!(roundtrip(position), position);
 
-    let transform = WorldTransform::new(position, Rot::from_radians(0.375));
+    let transform = WorldTransform::new(position, Rot::from_radians(0.375).unwrap()).unwrap();
     let round_trip = roundtrip(transform);
     assert_eq!(round_trip.position(), position);
     assert!((round_trip.rotation().angle() - transform.rotation().angle()).abs() < 1.0e-6);
@@ -71,16 +222,20 @@ fn query_filter_serde_roundtrip() {
 }
 
 #[test]
-fn body_definition_serde_preserves_name_and_sleep_threshold_with_legacy_defaults() {
-    let definition = BodyBuilder::new()
+fn body_definition_serde_preserves_optional_fields_with_explicit_scale() {
+    let foundation = Foundation::initialize(FoundationConfig::new(2.5)).unwrap();
+    let definition = foundation
+        .body_builder()
         .name("serialized")
+        .unwrap()
         .sleep_threshold(0.375)
-        .build();
+        .build()
+        .unwrap();
     let decoded = roundtrip(definition);
     assert_eq!(decoded.name(), Some(c"serialized"));
     assert_eq!(decoded.sleep_threshold(), 0.375);
 
-    let default = BodyDef::default();
+    let default = foundation.body_def();
     let mut legacy = serde_json::to_value(&default).unwrap();
     let object = legacy.as_object_mut().unwrap();
     object.remove("name");
@@ -91,28 +246,118 @@ fn body_definition_serde_preserves_name_and_sleep_threshold_with_legacy_defaults
 }
 
 #[test]
-fn body_definition_serde_rejects_unknown_raw_type() {
-    let mut raw = unsafe { ffi::b2DefaultBodyDef() };
-    raw.type_ = ffi::b2BodyType_b2_bodyTypeCount;
-    // SAFETY: the default definition has no name pointer; this deliberately changes only the
-    // type discriminant to verify that serialization does not substitute a known body type.
-    let definition = unsafe { BodyDef::from_raw(raw) };
+fn definition_serde_requires_length_scale_provenance() {
+    assert!(serde_json::from_str::<BodyDef>("{}").is_err());
+    assert!(serde_json::from_str::<WorldDef>("{}").is_err());
 
-    let error = serde_json::to_string(&definition).unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("unknown Box2D body type discriminant")
+    let foundation = Foundation::initialize(FoundationConfig::new(2.5)).unwrap();
+    let mut body = serde_json::to_value(foundation.body_def()).unwrap();
+    body.as_object_mut()
+        .unwrap()
+        .remove("length_units_per_meter");
+    assert!(serde_json::from_value::<BodyDef>(body).is_err());
+
+    let mut world = serde_json::to_value(foundation.world_def()).unwrap();
+    world
+        .as_object_mut()
+        .unwrap()
+        .remove("length_units_per_meter");
+    assert!(serde_json::from_value::<WorldDef>(world).is_err());
+}
+
+#[test]
+fn body_and_world_definition_serde_reject_invalid_length_scales() {
+    let ray_limit = if cfg!(feature = "double-precision") {
+        0.5 / 1.0e9_f32
+    } else {
+        0.5 / 1.0e5_f32
+    };
+    for value in [
+        serde_json::json!(0.0),
+        serde_json::json!(-1.0),
+        serde_json::json!(f32::from_bits(1)),
+        serde_json::json!(ray_limit),
+        serde_json::json!(1.0e13_f32),
+        serde_json::json!(f32::MAX),
+        serde_json::json!(1.0e100),
+        serde_json::json!(-1.0e100),
+    ] {
+        let payload = serde_json::json!({ "length_units_per_meter": value });
+        assert!(
+            serde_json::from_value::<BodyDef>(payload.clone()).is_err(),
+            "BodyDef accepted invalid length scale {payload}"
+        );
+        assert!(
+            serde_json::from_value::<WorldDef>(payload.clone()).is_err(),
+            "WorldDef accepted invalid length scale {payload}"
+        );
+    }
+
+    // JSON has no non-finite numeric literals, so these must fail at the parser boundary.
+    for token in ["NaN", "Infinity", "-Infinity"] {
+        let payload = format!(r#"{{"length_units_per_meter":{token}}}"#);
+        assert!(serde_json::from_str::<BodyDef>(&payload).is_err());
+        assert!(serde_json::from_str::<WorldDef>(&payload).is_err());
+    }
+}
+
+#[test]
+fn scaled_foundation_definition_roundtrips_preserve_length_scale_provenance() {
+    const LENGTH_UNITS_PER_METER: f32 = 2.5;
+
+    let foundation = Foundation::initialize(FoundationConfig::new(LENGTH_UNITS_PER_METER))
+        .expect("custom-scale foundation should initialize");
+
+    let world_value = serde_json::to_value(foundation.world_def()).unwrap();
+    assert_eq!(
+        world_value["length_units_per_meter"],
+        serde_json::json!(LENGTH_UNITS_PER_METER)
     );
+    let world_def: WorldDef = serde_json::from_value(world_value).unwrap();
+
+    let body_value = serde_json::to_value(foundation.body_def()).unwrap();
+    assert_eq!(
+        body_value["length_units_per_meter"],
+        serde_json::json!(LENGTH_UNITS_PER_METER)
+    );
+    let body_def: BodyDef = serde_json::from_value(body_value).unwrap();
+
+    let mut world = foundation
+        .create_world(world_def)
+        .expect("roundtripped world definition should retain the foundation scale");
+    world
+        .create_body(body_def)
+        .expect("roundtripped body definition should retain the foundation scale");
+}
+
+#[test]
+fn body_and_world_definition_serde_reject_invalid_operational_values() {
+    let foundation = Foundation::initialize(FoundationConfig::new(2.5)).unwrap();
+    let mut body = serde_json::to_value(foundation.body_def()).unwrap();
+    assert_eq!(body["length_units_per_meter"], serde_json::json!(2.5));
+    body["linear_damping"] = serde_json::json!(-1.0);
+    assert!(serde_json::from_value::<BodyDef>(body).is_err());
+
+    let mut world = serde_json::to_value(foundation.world_def()).unwrap();
+    assert_eq!(world["length_units_per_meter"], serde_json::json!(2.5));
+    world["maximum_linear_speed"] = serde_json::json!(0.0);
+    assert!(serde_json::from_value::<WorldDef>(world).is_err());
+
+    let mut world = serde_json::to_value(foundation.world_def()).unwrap();
+    world["maximum_linear_speed"] = serde_json::json!(f32::MAX);
+    assert!(serde_json::from_value::<WorldDef>(world).is_err());
 }
 
 #[test]
 fn world_operational_values_serde_preserves_validation() {
+    let foundation = Foundation::initialize(FoundationConfig::new(2.5)).unwrap();
     let capacity = WorldCapacity::new(1, 2, 3, 4, 5).unwrap();
-    let def = WorldDef::builder()
+    let def = foundation
+        .world_builder()
         .worker_count(WorkerCount::new(2).unwrap())
         .capacity(capacity)
-        .build();
+        .build()
+        .unwrap();
     let decoded: WorldDef = roundtrip(def);
     assert_eq!(decoded.worker_count().get(), 2);
     assert_eq!(decoded.capacity(), capacity);
@@ -129,120 +374,4 @@ fn world_operational_values_serde_preserves_validation() {
         }))
         .is_err()
     );
-}
-
-#[test]
-fn raw_id_surrogates_roundtrip_and_require_target_world_binding() {
-    let mut source = World::new(WorldDef::builder().gravity([0.0_f32, 0.0]).build()).unwrap();
-    let body_a = source.create_body_id(
-        BodyBuilder::new()
-            .body_type(BodyType::Dynamic)
-            .position([-1.0_f32, 0.0])
-            .build(),
-    );
-    let body_b = source.create_body_id(
-        BodyBuilder::new()
-            .body_type(BodyType::Dynamic)
-            .position([1.0_f32, 0.0])
-            .build(),
-    );
-    let shape_def = ShapeDef::builder()
-        .density(1.0)
-        .enable_contact_events(true)
-        .build();
-    let shape_a =
-        source.create_polygon_shape_for(body_a, &shape_def, &shapes::box_polygon(0.5_f32, 0.5));
-    let _shape_b =
-        source.create_polygon_shape_for(body_b, &shape_def, &shapes::box_polygon(0.5_f32, 0.5));
-    let joint_body_a = source.create_body_id(
-        BodyBuilder::new()
-            .body_type(BodyType::Dynamic)
-            .position([-1.0_f32, 10.0])
-            .build(),
-    );
-    let joint_body_b = source.create_body_id(
-        BodyBuilder::new()
-            .body_type(BodyType::Static)
-            .position([1.0_f32, 10.0])
-            .build(),
-    );
-    let joint = source.create_distance_joint_id(&DistanceJointDef::new(JointBase::new(
-        joint_body_a,
-        joint_body_b,
-    )));
-    let chain_body = source.create_body_id(BodyBuilder::new().build());
-    let chain = source.create_chain_for_id(
-        chain_body,
-        &ChainDef::builder()
-            .points([[-2.0_f32, -10.0], [-1.0, -10.0], [1.0, -10.0], [2.0, -10.0]])
-            .build(),
-    );
-    source.set_body_linear_velocity(body_a, [2.0_f32, 0.0]);
-    source.set_body_linear_velocity(body_b, [-2.0_f32, 0.0]);
-
-    let mut contact = None;
-    for _ in 0..180 {
-        source.step(1.0 / 60.0, 4);
-        if let Some(event) = source.contact_events().begin.first() {
-            contact = Some(event.contact_id);
-            break;
-        }
-    }
-    let contact = contact.expect("expected a live contact id");
-
-    let raw_body: RawBodyId = roundtrip(body_a.unbind());
-    let raw_shape: RawShapeId = roundtrip(shape_a.unbind());
-    let raw_joint: RawJointId = roundtrip(joint.unbind());
-    let raw_chain: RawChainId = roundtrip(chain.unbind());
-    let raw_contact: RawContactId = roundtrip(contact.unbind());
-
-    assert_eq!(source.bind_body_id(raw_body).unwrap(), body_a);
-    assert_eq!(source.bind_shape_id(raw_shape).unwrap(), shape_a);
-    assert_eq!(source.bind_joint_id(raw_joint).unwrap(), joint);
-    assert_eq!(source.bind_chain_id(raw_chain).unwrap(), chain);
-    assert_eq!(source.bind_contact_id(raw_contact).unwrap(), contact);
-
-    let foreign = World::new(WorldDef::default()).unwrap();
-    assert_wrong_world(foreign.bind_body_id(raw_body));
-    assert_wrong_world(foreign.bind_shape_id(raw_shape));
-    assert_wrong_world(foreign.bind_joint_id(raw_joint));
-    assert_wrong_world(foreign.bind_chain_id(raw_chain));
-    assert_wrong_world(foreign.bind_contact_id(raw_contact));
-}
-
-#[test]
-fn tampering_with_any_serialized_raw_id_field_invalidates_authentication() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let body = world.create_body_id(BodyBuilder::new().build());
-    let raw = body.unbind();
-    let encoded = serde_json::to_value(raw).unwrap();
-    let token = encoded["token"].as_u64().unwrap();
-    let registration_nonce = encoded["registration_nonce"].as_u64().unwrap();
-    let auth = encoded["auth"].as_u64().unwrap();
-
-    for (field, replacement) in [
-        ("version", serde_json::json!(99)),
-        ("kind", serde_json::json!("Shape")),
-        ("index1", serde_json::json!(raw.index1.wrapping_add(1))),
-        ("world0", serde_json::json!(raw.world0.wrapping_add(1))),
-        (
-            "generation",
-            serde_json::json!(raw.generation.wrapping_add(1)),
-        ),
-        (
-            "world_generation",
-            serde_json::json!(raw.world_generation.wrapping_add(1)),
-        ),
-        ("token", serde_json::json!(token + 1)),
-        (
-            "registration_nonce",
-            serde_json::json!(registration_nonce + 1),
-        ),
-        ("auth", serde_json::json!(auth ^ 1)),
-    ] {
-        let mut tampered = encoded.clone();
-        tampered[field] = replacement;
-        let tampered: RawBodyId = serde_json::from_value(tampered).unwrap();
-        assert_eq!(world.bind_body_id(tampered), Err(ApiError::InvalidRawId));
-    }
 }

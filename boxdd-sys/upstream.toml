@@ -1,113 +1,49 @@
-schema_version = 4
+schema_version = 6
 repository = "https://github.com/erincatto/box2d.git"
 active_revision = "56edae79f2949d86142b03450d5d60f63bcf5a6f"
 recording_revision = "56edae79f2949d86142b03450d5d60f63bcf5a6f"
-artifact_digests_initialized = true
-
-[[binding_routes]]
-mode = "single"
-provider = "source"
-artifact = "bindings-single"
-rust_target = "x86_64-unknown-linux-gnu"
-rust_features = []
-
-[[binding_routes]]
-mode = "single"
-provider = "system-static"
-artifact = "bindings-single"
-rust_target = "x86_64-unknown-linux-gnu"
-rust_features = []
-
-[[binding_routes]]
-mode = "single"
-provider = "prebuilt-static"
-artifact = "bindings-single"
-rust_target = "x86_64-unknown-linux-gnu"
-rust_features = []
-
-[[binding_routes]]
-mode = "single"
-provider = "wasm-runtime"
-artifact = "bindings-wasm32-unknown-unknown-single"
-rust_target = "wasm32-unknown-unknown"
-rust_features = []
-
-[[binding_routes]]
-mode = "single"
-provider = "wasm-compile-only"
-artifact = "bindings-wasm32-wasip1-single"
-rust_target = "wasm32-wasip1"
-rust_features = []
-
-[[binding_routes]]
-mode = "double"
-provider = "source"
-artifact = "bindings-double"
-rust_target = "x86_64-unknown-linux-gnu"
-rust_features = ["double-precision"]
-
-[[binding_routes]]
-mode = "double"
-provider = "system-static"
-artifact = "bindings-double"
-rust_target = "x86_64-unknown-linux-gnu"
-rust_features = ["double-precision"]
-
-[[binding_routes]]
-mode = "double"
-provider = "prebuilt-static"
-artifact = "bindings-double"
-rust_target = "x86_64-unknown-linux-gnu"
-rust_features = ["double-precision"]
-
-[[binding_routes]]
-mode = "double"
-provider = "wasm-runtime"
-artifact = "bindings-wasm32-unknown-unknown-double"
-rust_target = "wasm32-unknown-unknown"
-rust_features = ["double-precision"]
-
-[[binding_routes]]
-mode = "double"
-provider = "wasm-compile-only"
-artifact = "bindings-wasm32-wasip1-double"
-rust_target = "wasm32-wasip1"
-rust_features = ["double-precision"]
 
 [[recording_inputs]]
 path = "src/recording.c"
 git_blob = "477f8606e70afb90b4ec36a954d158bc0f286911"
 blake3 = "0fa67e86ccd24c60eb04a89e321fd20da09195e2e88c687cef2dad994921833b"
+effective_sha256 = "b0effb8c3ee482e8773dd33e802cfa9af1c18a2ed79ca476408cf2e4be55ea31"
 
 [[recording_inputs]]
 path = "src/recording.h"
 git_blob = "3a1594468d0b4865c4967e6af905db61356b74f9"
 blake3 = "e33cfb9999ea434c08b19c82112aaeb3345b7673bbbe207ab170cbbff921dcfa"
+effective_sha256 = "82148a3473df498883a85aa2d5d785612c16b4784e073ece8f6b20d7320cb131"
 
 [[recording_inputs]]
 path = "src/recording_ops.inl"
 git_blob = "24af2210d2eccb60668d18889ea65b197a768f89"
 blake3 = "95eb715f0478784531428893ee6de62057ec8ba1db0a850faec0878514878646"
+effective_sha256 = "7deb8405501ddfa1beb922e6064176d433d59a03969dcce8344c2b33a4506251"
 
 [[recording_inputs]]
 path = "src/recording_replay.c"
 git_blob = "8f3c99a50a70e4a3fbe1c2276d18575cf3d85117"
 blake3 = "639197a780d6433bf767e4f24569171ea334d0cec64939b07fb079681dd55dc9"
+effective_sha256 = "083851d556eb9c1e391536e85aa6b8d0b03dec8064cf8161b53c040489168152"
 
 [[recording_inputs]]
 path = "src/recording_replay.h"
 git_blob = "dee78c54c16848f4751ff2d3e81948c0a4d29686"
 blake3 = "240024837543432dd7a22e3a1d632aeefa2605970176753df55b872c36d7f7ab"
+effective_sha256 = "90f6e99a982201775ac22c63dd479a88d45bba4f321402587f813ebcbe3dab15"
 
 [[recording_inputs]]
 path = "src/world_snapshot.c"
 git_blob = "e3932ba355f70c210219741849dcce754867c65c"
 blake3 = "164fbc0e53f9103f37d4f6ccd598ca3b25486cdf0bcbe5505dfabfb0f3e9a620"
+effective_sha256 = "047aceff311e793b6a2e9ebd0744c132684b384e58a5c0fcc80955a4ed6791fd"
 
 [[recording_inputs]]
 path = "src/world_snapshot.h"
 git_blob = "bbeddec26c1e0f19a5497a8ef6947158a6ea10b2"
 blake3 = "04d3abc85d3cff17f802e6a07f8d22c74987f98d1e6663c676011ec73d45fcf8"
+effective_sha256 = "71d8c9fe04ff36be1b7f83226eb1be864e9444da3ffec5615ab1428f3361c183"
 
 [[artifacts]]
 name = "bindings-single"
@@ -117,7 +53,7 @@ precision = "single"
 target = "universal"
 provider = "universal"
 producer = "bindgen"
-content_blake3 = "8979c95e6048d1f1b1b014871fd3f79e5683446b96b43224dd0dd477aefdeaba"
+content_blake3 = "eeaedd34bbc116170bb315c3c516a8fde3048814c67fe5853d5a3960828da920"
 
 [[artifacts]]
 name = "bindings-wasm32-unknown-unknown-single"
@@ -127,7 +63,7 @@ precision = "single"
 target = "wasm32-unknown-unknown"
 provider = "universal"
 producer = "bindgen"
-content_blake3 = "a28f8ce120032dc4e178042cb2c20739582b632ae7d980f2c41ca921649b6473"
+content_blake3 = "a5daa08d1a629e28e6f1367cd472c07bfc2cb7a2e58400ba1c846c1e05bc34e7"
 
 [[artifacts]]
 name = "bindings-wasm32-wasip1-single"
@@ -137,7 +73,7 @@ precision = "single"
 target = "wasm32-wasip1"
 provider = "universal"
 producer = "bindgen"
-content_blake3 = "be399e348d7a53f98d2370d4e7ca5d0ee0f8b76cceaf876ff2b16997537fcdcd"
+content_blake3 = "2eabc0cb43db76e27cb5a4c12da5ffd57b1e8455a1a3d30eaad58050fe06fc68"
 
 [[artifacts]]
 name = "bindings-double"
@@ -147,7 +83,7 @@ precision = "double"
 target = "universal"
 provider = "universal"
 producer = "bindgen"
-content_blake3 = "04027c458a30427b1c8f905080d42cdfaa3aff64f101d1a52f80a49145ddee05"
+content_blake3 = "015377efca53140ecef9b2184c0b387bb4b9669671b91998e4689ac4e7946d93"
 
 [[artifacts]]
 name = "bindings-wasm32-unknown-unknown-double"
@@ -157,7 +93,7 @@ precision = "double"
 target = "wasm32-unknown-unknown"
 provider = "universal"
 producer = "bindgen"
-content_blake3 = "0cf8c49d13c91e28c347c5c60b90fcf3d38e5d87e3ed347503e638e250576c28"
+content_blake3 = "f9b5e80b3bcc95347898cf0516bcc1b55958c292188fcfb53fed279ad076d429"
 
 [[artifacts]]
 name = "bindings-wasm32-wasip1-double"
@@ -167,16 +103,7 @@ precision = "double"
 target = "wasm32-wasip1"
 provider = "universal"
 producer = "bindgen"
-content_blake3 = "0235a0a5dbb7eb4203122501e987a2ac1d757d0701372bff65e4ecbc4f593d7b"
-
-[[artifacts]]
-name = "api-contract"
-kind = "api-contract"
-path = "boxdd/tests/fixtures/api_contract.toml"
-target = "universal"
-provider = "universal"
-producer = "reviewed"
-content_blake3 = "39566982e339a9a8dc1305d5fd14b4a02d7d23b7d29311ea00f6f0e013222c0e"
+content_blake3 = "b09ac4f4d377d6fed8428fb9e3279d1b9748e9b8521ffcdd701cffa37071cde0"
 
 [[artifacts]]
 name = "recording-wire"
@@ -184,37 +111,8 @@ kind = "recording-wire"
 path = "xtask/tests/fixtures/recording_wire_contract.toml"
 target = "universal"
 provider = "universal"
-producer = "api-coverage"
-content_blake3 = "26e9ed79e7e4d7ac00d927be5e9c184f2058c585c7369c589ced11da14ddefe2"
-
-[[artifacts]]
-name = "api-coverage-report"
-kind = "api-coverage-report"
-path = "docs/api-coverage.md"
-target = "universal"
-provider = "universal"
-producer = "api-coverage"
-content_blake3 = "c72cd21a6592609d52f0ccab001f13b2a379426c6269d6d4b902e7fb6a2780e7"
-
-[[artifacts]]
-name = "abi-source-single"
-kind = "abi-metadata"
-path = "boxdd-sys/abi/metadata/source-single.toml"
-precision = "single"
-target = "native"
-provider = "source"
-producer = "abi-probe"
-content_blake3 = "72a1cb248efab6c640dd4907020e46f0ae3a4181b4c715fae6de7f8d4b57d910"
-
-[[artifacts]]
-name = "abi-source-double"
-kind = "abi-metadata"
-path = "boxdd-sys/abi/metadata/source-double.toml"
-precision = "double"
-target = "native"
-provider = "source"
-producer = "abi-probe"
-content_blake3 = "361333cdc10649ee0f06c4e53de881fe9a2a19551ec57630c276012636c52f88"
+producer = "recording-codegen"
+content_blake3 = "0b17edca6df8d03b6bfa4d4ebf3cb6a30ccf547b9ea1d389b8dd468e1a921a24"
 
 [[artifacts]]
 name = "wasm-provider-identity-single"
@@ -224,7 +122,7 @@ precision = "single"
 target = "wasm32-unknown-unknown"
 provider = "wasm-runtime"
 producer = "provider-attestation"
-content_blake3 = "1a38389354cea658336b59e46b2e51fb980fde21979a74f2e1f932cc8840e5bc"
+content_blake3 = "34696230cbfea1aef95f1817477f842312466cb22de932f1a3b4b33f9b71f887"
 
 [[artifacts]]
 name = "wasm-provider-identity-double"
@@ -234,7 +132,7 @@ precision = "double"
 target = "wasm32-unknown-unknown"
 provider = "wasm-runtime"
 producer = "provider-attestation"
-content_blake3 = "f7eaa4648af05a8a5af07903812b7122248f07182244738d9b1b166901871134"
+content_blake3 = "6d49179484c49a0b210c54ee88293bcbc9955ac2e5fe94990deff39dab36f7ec"
 
 [source_inventory]
 tree = "63a1ab02e3d2bf7c4d86b257b78976842b8c5ddb"

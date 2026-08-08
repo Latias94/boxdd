@@ -17,7 +17,7 @@ development snapshot at commit
 Box2D 3.2 checkout. The source revision, precision, private ABI, snapshot layout, recording
 format, target, and provider identity are qualified together.
 
-Read the [0.5 to 0.6 migration guide](docs/migration-0.5-to-0.6.md) before upgrading.
+Read the [0.5 to 0.6 migration guide](bevy_boxdd/MIGRATION.md) before upgrading.
 
 ## Crates
 
@@ -28,55 +28,69 @@ Read the [0.5 to 0.6 migration guide](docs/migration-0.5-to-0.6.md) before upgra
 
 ## 0.6 Highlights
 
-- Live `BodyId`, `ShapeId`, `JointId`, `ChainId`, and `ContactId` values are bound to one Rust
-  world registration. Cross-world, stale, recycled, wrong-kind, and forged identifiers are
-  rejected before native mutation.
+- `World` is the sole owner of a simulation. Creation returns world-bound IDs for storage;
+  `World::body`, `shape`, `joint`, `chain`, and `query` acquire borrow-scoped capabilities for
+  access. Destruction is explicit.
+- The Safe Rust surface has one fallible contract. Operations that can fail return `Result`; there
+  is no parallel panic/`try_*` API family.
+- Live `BodyId`, `ShapeId`, `JointId`, `ChainId`, and `ContactId` values cannot be detached,
+  rebound, reconstructed from raw Box2D IDs, or serialized. Cross-world, stale, recycled,
+  wrong-kind, and forged identifiers are rejected before native mutation.
 - Absolute coordinates use `Position` and `WorldTransform`; local offsets, directions, extents,
   and rotations use `Vec2`, `Transform`, and `f32`. The `double-precision` feature changes
   `WorldScalar` and the native ABI together.
 - World queries take an explicit absolute `Position` origin. Standalone collision helpers return
   `LocalManifold`; runtime contact manifolds retain local `f32` anchors with explicit world-point
   reconstruction.
-- `initialize_foundation` freezes process-global length units and hooks before the first safe
-  native use. Ordinary worlds, worldless native calls, and exclusive replay share one activity
-  protocol.
+- `Foundation::initialize` freezes process-global length units and hooks before the first safe
+  native use and returns the explicit root for worlds, scale-aware definitions, worldless native
+  calls, and exclusive replay.
 - Native targets can use Box2D's built-in scheduler through validated `WorkerCount` values.
-  `World` and its handles remain `!Send` and `!Sync`; worker callbacks receive only thread-safe
-  identifiers and values, never an owning world context.
+  `World` and its borrow-scoped capabilities remain `!Send` and `!Sync`; worker callbacks receive
+  only thread-safe identifiers and values, never an owning world context. Raw task-system
+  callbacks are outside the Safe Rust layer.
 - `Snapshot`, `RecordingSession`, and `ReplayPlayer` encode distinct ownership models for
-  in-place restore, external image loading, operation recording, and exclusive replay.
-- The conformance contract accounts for exactly 478 exported functions plus ABI-bearing fields
-  and callback capabilities using resolvable Rust and behavioral evidence paths.
+  same-world restore, operation recording, and exclusive process-local replay. Native snapshot and
+  recording bytes are not a Safe Rust persistence format.
+- Every pinned exported C function has an explicit reviewed disposition. Compiler-backed C/Rust
+  probes check ABI compatibility, while Rust tests exercise Safe API behavior and callback
+  boundaries; the inventory does not attempt to infer Rust call graphs.
 - Vendored source is the default provider. System and prebuilt native providers are static-only,
   exact-manifest adapters; WASM runtime support uses a versioned Emscripten provider.
 
 ## Quick Start
 
 ```rust
-use boxdd::{BodyBuilder, BodyType, Position, ShapeDef, Vec2, World, WorldDef, shapes};
+use boxdd::{BodyBuilder, BodyType, Foundation, Position, ShapeDef, Vec2, WorldBuilder, shapes};
 
-let mut world = World::new(
-    WorldDef::builder()
-        .gravity(Vec2::new(0.0, -9.8))
-        .build(),
-)?;
-let body = world.create_body_id(
-    BodyBuilder::new()
-        .body_type(BodyType::Dynamic)
-        .position(Position::new(0.0, 2.0))
-        .build(),
-);
-world.create_polygon_shape_for(
-    body,
-    &ShapeDef::builder().density(1.0).build(),
-    &shapes::box_polygon(0.5, 0.5),
-);
-world.try_step(1.0 / 60.0, 4)?;
-# Ok::<(), Box<dyn std::error::Error>>(())
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let foundation = Foundation::initialize_default()?;
+    let mut world = foundation.create_world(
+        WorldBuilder::from(foundation.world_def())
+            .gravity(Vec2::new(0.0, -9.8))
+            .build()?,
+    )?;
+    let body_id = world.create_body(
+        BodyBuilder::from(foundation.body_def())
+            .body_type(BodyType::Dynamic)
+            .position(Position::new(0.0, 2.0))
+            .build()?,
+    )?;
+    world.body(body_id)?.create_polygon(
+        &ShapeDef::builder().density(1.0).build()?,
+        &shapes::box_polygon(0.5, 0.5)?,
+    )?;
+
+    let completed = world.step(1.0 / 60.0, 4)?;
+    let contact_events = completed.contact_events()?.to_owned()?;
+    println!("{} contacts began", contact_events.begin.len());
+    Ok(())
+}
 ```
 
-The panic-style methods are convenient for controlled setup code. Prefer `try_*` methods at
-runtime, editor, plugin, and data-loading boundaries.
+Keep IDs in application state and acquire a `Body`, `Shape`, `Joint`, or `Chain` capability only
+for the duration of an operation. A capability prevents overlapping mutable access to its world;
+dropping it releases the borrow and never implicitly destroys the object.
 
 ## Spatial Model
 
@@ -92,62 +106,72 @@ runtime, editor, plugin, and data-loading boundaries.
 
 ## Ownership and Callbacks
 
-`World`, `WorldHandle`, owned handles, snapshots, recording sessions, and replay players are
-owner-thread objects. A dedicated physics thread plus channels is the supported way to integrate
-with a multi-threaded or async application.
+`World`, its borrow-scoped object/query capabilities, snapshots, recording sessions, and replay
+players are owner-thread objects. A dedicated physics thread plus channels is the supported way to
+integrate with a multi-threaded or async application.
 
 On native targets, worker-capable callbacks (`set_custom_filter`, `set_pre_solve`, friction mixing,
 and restitution mixing) require `Send + Sync + 'static` closures and must not call world APIs.
 Query, dynamic-tree, event-view, and debug-draw callbacks are closure-scoped. Every C-to-Rust
-callback contains panics; the first panic resumes only after native control returns to a Rust-owned
-boundary.
+callback contains any unwinding panic; the first panic resumes only after native control returns to
+a Rust-owned boundary.
 
 WASM adapters currently do not prove cross-module Rust function-pointer transport. Callback-backed
 world, query, dynamic-tree, foundation, replay, and debug-draw APIs are therefore absent at compile
 time on `wasm32`; callback-free queries such as closest ray casts and mover casts remain available.
 
-Live IDs may be temporarily converted to authenticated process-local `Raw*Id` values with
-`unbind`, then rebound through `World::bind_*_id`. These values are not portable persistence IDs.
-Use `boxdd-sys` directly when an application deliberately accepts the raw FFI contract.
+Safe Rust does not expose raw live-object IDs or bind/unbind seams. Use application-owned stable
+keys for ECS and persistence mappings. Use `boxdd-sys` directly when an application deliberately
+accepts the raw FFI contract.
 
 ## Foundation and Scheduling
 
 Configure global length units before any other safe Box2D call:
 
 ```rust
-use boxdd::{FoundationConfig, WorkerCount, World, WorldDef, initialize_foundation};
+use boxdd::{Foundation, FoundationConfig, WorkerCount, WorldBuilder};
 
-initialize_foundation(FoundationConfig::new(1.0))?;
-let workers = WorkerCount::new(4)?;
-let world = World::new(WorldDef::builder().worker_count(workers).build())?;
-# drop(world);
-# Ok::<(), Box<dyn std::error::Error>>(())
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let foundation = Foundation::initialize(FoundationConfig::new(1.0))?;
+    let workers = WorkerCount::new(4)?;
+    let world = foundation.create_world(
+        WorldBuilder::from(foundation.world_def())
+            .worker_count(workers)
+            .build()?,
+    )?;
+    drop(world);
+    Ok(())
+}
 ```
 
 Initialization is idempotent only for the same configuration. A conflicting configuration is an
-error. Native targets qualify Box2D's built-in scheduler; current WASM adapters accept exactly one
-worker. Raw task callbacks remain an explicitly unsafe native-only alternative and fix the world's
-scheduler contract at creation time. Safe WASM world construction rejects raw task or material
-callback pointers supplied through `WorldDef::from_raw`.
+error. Derive scale-sensitive defaults through `foundation.world_def()` and
+`foundation.body_def()`. Derive a joint base from its active owner with
+`world.joint_base(...)` or `recording_session.joint_base(...)`; the owner authenticates both body
+IDs and preserves the same frozen length-unit contract. Native targets qualify Box2D's built-in
+scheduler; current WASM adapters accept exactly one worker. `WorldDef` contains only Safe Rust
+configuration and cannot install native task or material callback pointers.
 
-## Persistence and Replay
+## Snapshots, Recording, and Replay
 
 - `World::snapshot` returns an unforgeable capability for restoring the same world. Successful
   restore returns a `SnapshotRestore` mapping. Registrations in the unchanged snapshot/current
   identity intersection preserve their Safe IDs; destroyed, replaced, or post-snapshot objects are
   invalidated and remapped as needed. Rejection before the native restore call leaves the world
   live; a failure after that call makes the world terminal.
-- `SnapshotImage` is an integrity-checked byte envelope that can only create a fresh world.
-  External images are accepted only when the complete adapter and snapshot ABI identity matches.
+- Snapshot native bytes are deliberately opaque. Safe Rust supports only same-world, same-process
+  restore; durable saves require an application-owned schema that rebuilds a new world.
 - `RecordingSession` owns the native recording allocation and is the only world access surface
-  while recording. `finish` copies the stream into an owned `Recording`.
-- `ReplayPlayer` preflights the complete stream, copies its input, holds exclusive process-global
-  foundation access, and exposes closure-scoped, epoch-bound read views. Drop or `close` restores
-  the previous global state.
+  while recording. `finish` validates the writer output and produces an opaque process-local
+  `Recording`.
+- `ReplayPlayer::open(foundation, &recording, config)` accepts only that opaque `Recording`, copies
+  its private stream, acquires exclusive process-global access through the same explicit Foundation
+  root, and exposes closure-scoped, epoch-bound read views. Drop or `close` restores the previous
+  global state.
 
-Snapshot images and native recording streams are compatibility-bound artifacts, not stable save
-formats. Persist application-level state separately when long-term or cross-build compatibility is
-required. See `boxdd/examples/persistence.rs` for the happy path.
+The Safe Rust layer does not import or export snapshot or recording bytes. Persist application-level
+state separately when long-term or cross-build compatibility is required. See
+`boxdd/examples/snapshot_replay.rs` for the in-process checkpoint and replay workflow.
 
 ## Providers and Compatibility
 
@@ -157,7 +181,7 @@ required. See `boxdd/examples/persistence.rs` for the happy path.
 | Local system | `BOXDD_SYS_PROVIDER=system` | Caller-supplied static archive, header, bindings, and exact local attestation manifest. |
 | Official prebuilt | `BOXDD_SYS_PROVIDER=prebuilt` | Exact static manifest plus a signed whole-package provenance statement and Sigstore bundle. |
 | WASM compile-only | `BOXDD_SYS_PROVIDER=wasm-compile-only` | Type/build qualification only; no runtime claim. |
-| WASM runtime | `BOXDD_SYS_PROVIDER=wasm-provider` | Versioned precision-specific imports; official runtime packages carry signed whole-package provenance. |
+| WASM runtime | Repository `xtask` provider/Pages entry points | Controlled final link with versioned precision-specific imports; bare `BOXDD_SYS_PROVIDER=wasm-provider` builds fail closed, and official runtime packages carry signed whole-package provenance. |
 
 System and prebuilt adapters never download, extract, cache, discover by name, dynamically link, or
 fall back to vendored source. Official prebuilt qualification authenticates the canonical
@@ -167,8 +191,9 @@ reporting only `b2GetVersion() == 3.2.0` is insufficient. Single and double prec
 manifests, bindings, and dependent crate features cannot be mixed.
 
 The official WASM package is a runtime distribution, not a `boxdd-sys` build input. Repository-level
-`xtask` and CI commands pin Emscripten, build the provider, authenticate the complete package before
-extraction, and qualify the extracted JavaScript/WASM under Node and Chromium. Building
+`xtask` builds with an activated Emscripten installation. CI installs the fixed supported version,
+builds the provider, authenticates the complete package before extraction, and qualifies the
+extracted JavaScript/WASM under Node and Chromium. Building
 `boxdd-sys` never discovers, downloads, or executes an Emscripten SDK.
 
 See [`boxdd-sys/README.md`](boxdd-sys/README.md) for manifest inputs and
@@ -177,13 +202,12 @@ See [`boxdd-sys/README.md`](boxdd-sys/README.md) for manifest inputs and
 ## Cargo Features
 
 - `double-precision`: use `f64` absolute world coordinates and the matching Box2D ABI.
-- `serde`: serialize safe value/configuration types and authenticated process-local raw IDs. It
-  does not serialize a `World`.
+- `serde`: serialize safe value and configuration types. It does not serialize a `World`, live
+  object IDs, snapshots, or recordings.
 - `mint`, `nalgebra`, `glam`: scalar-correct math interop. World-space conversions use
   `WorldScalar`; local vector conversions remain `f32`.
 - `bytemuck`: `Pod`/`Zeroable` for layout-qualified value types.
 - `simd-avx2`, `disable-simd`, `validate`: forward an explicit native provider identity choice.
-- `unchecked`: additional unsafe APIs for caller-proven hot paths.
 
 There is no `serialize` feature in 0.6. Snapshot, recording, and replay APIs are available through
 the normal safe crate surface.
@@ -198,9 +222,9 @@ cargo nextest run -p boxdd -p boxdd-sys --features boxdd/double-precision
 cargo nextest run -p bevy_boxdd
 cargo check -p boxdd --examples
 cargo check -p boxdd --examples --features double-precision
-cargo run -p xtask -- build-policy-sources --check
 cargo run -p xtask -- upstream-sync --check
-cargo run -p xtask -- api-coverage --check
+cargo run -p xtask -- api-inventory --check
+cargo run -p xtask -- recording-wire-codegen --check
 ```
 
 The repository pins Rust 1.95 as MSRV and Rust 1.97 as its development toolchain. Provider,
@@ -209,7 +233,7 @@ package, sanitizer, Miri, WASM, Pages, and release gates are exposed through `xt
 ## Examples
 
 - [`boxdd/examples/README.md`](boxdd/examples/README.md) groups the headless core examples by
-  workflow. Start with `world_basics`, `foundation_scheduler`, `queries`, and `persistence`.
+  workflow. Start with `world_basics`, `foundation_scheduler`, `queries`, and `snapshot_replay`.
 - [`bevy_boxdd/README.md`](bevy_boxdd/README.md) documents the ECS adapter and explicit
   `BoxddWorldOrigin` bridge.
 - <https://frankorz.com/boxdd/> hosts the generated single-precision Bevy + egui development
@@ -217,7 +241,7 @@ package, sanitizer, Miri, WASM, Pages, and release gates are exposed through `xt
 
 ## Documentation
 
-- [0.5 to 0.6 migration](docs/migration-0.5-to-0.6.md)
+- [0.5 to 0.6 migration](bevy_boxdd/MIGRATION.md)
 - [FFI lifetime audit](docs/development/ffi-lifetime-audit.md)
 - [Rustdoc alignment](docs/development/rustdoc-alignment.md)
 - [WASM status](docs/platforms/wasm.md)

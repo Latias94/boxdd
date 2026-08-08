@@ -13,18 +13,28 @@ use flate2::read::GzDecoder;
 
 use crate::{
     Error, Result,
+    build_support::{VerifiedFileSnapshot, snapshot_file_create_new},
+    isolated_git::{isolated_git_command, remove_process_injection_environment},
     prebuilt_provenance::{MAX_PACKAGE_BYTES, PrebuiltProvenanceStatement},
     provenance_policy::{
         self, COSIGN_VERSION, PUBLISHER_REPOSITORY, PUBLISHER_WORKFLOW,
         SIGSTORE_TRUSTED_ROOT_RELATIVE_PATH, SIGSTORE_TRUSTED_ROOT_SHA256,
     },
     provider_archive::{ArchiveExpectation, verify_provider_archive},
+    provider_catalog::ProviderCapability,
     provider_manifest,
-    qualified_git::qualified_git_command,
-    source_overlay::{adapter_source_sha256, effective_source_identity},
+    source_overlay::adapter_source_sha256,
+    subprocess_policy::{run_output, run_status},
 };
 
-use super::set_once;
+use super::{
+    effective_source_snapshot::EffectiveHeaderSnapshot,
+    set_once,
+    support::{BoundedReader, CargoEnvironment, cosign_command},
+};
+
+#[cfg(test)]
+use super::support::is_cargo_injection_environment_key;
 
 const QUALIFIED_TOOLCHAINS: &[&str] = &["1.95.0", "1.97.1"];
 const MAX_ARCHIVE_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
@@ -37,66 +47,25 @@ const MAX_ARCHIVE_STREAM_BYTES: u64 = MAX_ARCHIVE_TOTAL_BYTES
 const MAX_PROVENANCE_STATEMENT_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_SIGSTORE_BUNDLE_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_TRUSTED_ROOT_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_EFFECTIVE_SOURCE_MANIFEST_BYTES: u64 = 16 * 1024 * 1024;
 const CONSUMER_NAME: &str = "boxdd-native-provider-consumer";
 
-struct BoundedReader<R> {
-    inner: R,
-    remaining: u64,
-}
+type Provider = ProviderCapability;
 
-impl<R> BoundedReader<R> {
-    const fn new(inner: R, limit: u64) -> Self {
-        Self {
-            inner,
-            remaining: limit,
-        }
-    }
-}
-
-impl<R: Read> Read for BoundedReader<R> {
-    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        if buffer.is_empty() {
-            return Ok(0);
-        }
-        if self.remaining == 0 {
-            let mut extra = [0_u8; 1];
-            return match self.inner.read(&mut extra)? {
-                0 => Ok(0),
-                _ => Err(io::Error::other(
-                    "decompressed archive exceeds the qualification stream limit",
-                )),
-            };
-        }
-        let maximum = usize::try_from(self.remaining.min(buffer.len() as u64))
-            .expect("bounded read length always fits usize");
-        let read = self.inner.read(&mut buffer[..maximum])?;
-        self.remaining -= read as u64;
-        Ok(read)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Provider {
-    System,
-    Prebuilt,
-}
-
-impl Provider {
-    fn parse(value: &str) -> Result<Self> {
-        match value {
-            "system" => Ok(Self::System),
-            "prebuilt" => Ok(Self::Prebuilt),
-            _ => Err(Error::message(format!(
-                "unsupported native provider {value:?}; expected system or prebuilt"
-            ))),
-        }
-    }
-
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::System => "system",
-            Self::Prebuilt => "prebuilt",
-        }
+fn parse_native_provider(value: &str) -> Result<Provider> {
+    let provider = Provider::parse_build_name(value).map_err(Error::message)?;
+    if provider.supports_native_qualification() {
+        Ok(provider)
+    } else {
+        Err(Error::message(format!(
+            "provider {value:?} does not support native qualification; expected {}",
+            Provider::ALL
+                .into_iter()
+                .filter(|provider| provider.supports_native_qualification())
+                .map(Provider::as_str)
+                .collect::<Vec<_>>()
+                .join(" or ")
+        )))
     }
 }
 
@@ -164,7 +133,7 @@ impl Options {
                 ))
             })?;
             match flag {
-                "--provider" => set_once(&mut provider, Provider::parse(value)?, flag)?,
+                "--provider" => set_once(&mut provider, parse_native_provider(value)?, flag)?,
                 "--toolchain" => set_once(&mut toolchain, value.clone(), flag)?,
                 "--precision" => set_once(&mut precision, Precision::parse(value)?, flag)?,
                 "--target" => set_once(&mut target, value.clone(), flag)?,
@@ -224,6 +193,9 @@ impl Options {
             (Provider::Prebuilt, false) => {
                 Err(Error::message("prebuilt qualification requires --cosign"))
             }
+            (Provider::Vendored | Provider::WasmCompileOnly | Provider::WasmProvider, _) => Err(
+                Error::message("selected provider does not support native qualification"),
+            ),
         }
     }
 }
@@ -251,117 +223,6 @@ fn cargo_arguments<S: AsRef<OsStr>>(toolchain: &str, arguments: &[S]) -> Result<
 pub fn run(root: &Path, args: &[String]) -> Result<()> {
     let options = Options::parse(args)?;
     qualify(root, &options)
-}
-
-#[derive(Default)]
-struct CommandEnvironment {
-    remove: BTreeSet<OsString>,
-    values: Vec<(OsString, OsString)>,
-}
-
-impl CommandEnvironment {
-    fn fail_closed(cargo_home: &Path) -> Self {
-        let mut environment = Self::default();
-        for (key, _) in env::vars_os() {
-            if is_qualification_sensitive_env(&key) {
-                environment.remove.insert(key);
-            }
-        }
-        for key in [
-            "BOXDD_SYS_PROVIDER",
-            "BOX2D_LIB_DIR",
-            "BOXDD_SYS_SYSTEM_MANIFEST",
-            "BOXDD_SYS_PREBUILT_MANIFEST",
-            "BOXDD_SYS_PREBUILT_PROVENANCE",
-            "BOXDD_SYS_PREBUILT_BUNDLE",
-            "BOXDD_SYS_PREBUILT_TRUSTED_ROOT",
-            "BOXDD_SYS_COSIGN",
-            "BOXDD_SYS_LINK_KIND",
-            "BOXDD_SYS_SKIP_CC",
-            "BOXDD_SYS_FORCE_BINDGEN",
-            "BOXDD_SYS_BINDGEN_TARGET",
-            "BOXDD_SYS_PACKAGE_CRT",
-            "BOXDD_SYS_PACKAGE_DIR",
-            "BOXDD_SYS_PACKAGE_OUT_DIR",
-            "BOXDD_SYS_PACKAGE_RELEASE_TAG",
-            "BOXDD_SYS_PACKAGE_SOURCE_COMMIT",
-            "BOXDD_NATIVE_QUALIFICATION_PROVIDER",
-            "BOXDD_NATIVE_QUALIFICATION_MANIFEST_SHA256",
-            "BOXDD_NATIVE_QUALIFICATION_ARCHIVE_SHA256",
-            "BOXDD_NATIVE_QUALIFICATION_PROVENANCE_SHA256",
-            "BOXDD_NATIVE_QUALIFICATION_TRUSTED_ROOT_SHA256",
-            "BOXDD_NATIVE_QUALIFICATION_NONCE",
-            "BOXDD_NATIVE_QUALIFICATION_RECEIPT",
-            "RUSTFLAGS",
-            "RUSTC",
-            "RUSTC_BOOTSTRAP",
-            "RUSTC_WRAPPER",
-            "RUSTC_WORKSPACE_WRAPPER",
-            "CARGO_ENCODED_RUSTFLAGS",
-            "CARGO_BUILD_RUSTFLAGS",
-            "CARGO_BUILD_TARGET",
-            "CARGO_BUILD_RUSTC",
-            "CARGO_BUILD_RUSTC_WRAPPER",
-            "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER",
-            "CARGO_BUILD_RUNNER",
-            "CARGO_HOME",
-            "CARGO_TARGET_DIR",
-            "CFLAGS",
-            "CPPFLAGS",
-            "CC",
-            "CXX",
-            "AR",
-            "LD",
-            "CL",
-            "RANLIB",
-            "BINDGEN_EXTRA_CLANG_ARGS",
-            "DOCS_RS",
-            "CARGO_CFG_DOCSRS",
-            "EMSDK",
-        ] {
-            environment.remove.insert(OsString::from(key));
-        }
-        environment.set("CARGO_HOME", cargo_home.as_os_str());
-        environment
-    }
-
-    fn set(&mut self, key: impl Into<OsString>, value: impl Into<OsString>) {
-        self.values.push((key.into(), value.into()));
-    }
-
-    fn apply(&self, command: &mut Command) {
-        for key in &self.remove {
-            command.env_remove(key);
-        }
-        for (key, value) in &self.values {
-            command.env(key, value);
-        }
-    }
-}
-
-fn is_qualification_sensitive_env(key: &OsStr) -> bool {
-    let key = key.to_string_lossy().to_ascii_uppercase();
-    key.starts_with("BOXDD_SYS_")
-        || key.starts_with("BOX2D_")
-        || key.starts_with("BOXDD_NATIVE_QUALIFICATION_")
-        || key.starts_with("CARGO_UNSTABLE_")
-        || key.starts_with("CARGO_BUILD_")
-        || key.starts_with("CFLAGS_")
-        || key.starts_with("CPPFLAGS_")
-        || key.starts_with("CC_")
-        || key.starts_with("CXX_")
-        || key.starts_with("AR_")
-        || key.starts_with("LD_")
-        || key.starts_with("RANLIB_")
-        || key.starts_with("BINDGEN_EXTRA_CLANG_ARGS_")
-        || key.starts_with("CARGO_TARGET_")
-        || key.ends_with("_CFLAGS")
-        || key.ends_with("_CPPFLAGS")
-        || key.ends_with("_CC")
-        || key.ends_with("_CXX")
-        || key.ends_with("_AR")
-        || key.ends_with("_LD")
-        || key.ends_with("_RANLIB")
 }
 
 fn qualify(root: &Path, options: &Options) -> Result<()> {
@@ -518,7 +379,7 @@ fn qualify(root: &Path, options: &Options) -> Result<()> {
     )?;
     let receipt = scratch_root.join("consumer-executed.receipt");
     let nonce = qualification_nonce(&scratch_root)?;
-    let runtime_environment = prepared.runtime_environment(&cargo_home, &receipt, &nonce);
+    let runtime_environment = prepared.runtime_environment(&receipt, &nonce);
     run_consumer_executable(&executable, &consumer_root, &runtime_environment)?;
     validate_execution_receipt(&receipt, &nonce, &scratch_root)?;
 
@@ -549,13 +410,13 @@ fn workspace_version(root: &Path) -> Result<String> {
 }
 
 fn qualified_checkout_commit(root: &Path) -> Result<String> {
-    let mut command = qualified_git_command().map_err(Error::message)?;
-    let output = command
+    let mut command = isolated_git_command().map_err(Error::message)?;
+    command
         .arg("-C")
         .arg(root)
-        .args(["rev-parse", "--verify", "HEAD^{commit}"])
-        .output()
-        .map_err(|error| Error::io("resolve native qualification checkout commit", error))?;
+        .args(["rev-parse", "--verify", "HEAD^{commit}"]);
+    let output = run_output(&mut command, "resolve native qualification checkout commit")
+        .map_err(Error::message)?;
     if !output.status.success() {
         return Err(Error::message(format!(
             "failed to resolve native qualification checkout commit: {}",
@@ -605,7 +466,7 @@ fn package_boxdd_sys(
         scratch,
         &options.toolchain,
         &args,
-        &CommandEnvironment::fail_closed(cargo_home),
+        &CargoEnvironment::fail_closed(cargo_home),
         "package boxdd-sys for fresh consumption",
     )?;
 
@@ -665,7 +526,11 @@ fn extract_archive_reader<R: Read>(
     required_root: Option<&str>,
 ) -> Result<()> {
     let decoder = GzDecoder::new(compressed);
-    let mut archive = tar::Archive::new(BoundedReader::new(decoder, MAX_ARCHIVE_STREAM_BYTES));
+    let mut archive = tar::Archive::new(BoundedReader::new(
+        decoder,
+        MAX_ARCHIVE_STREAM_BYTES,
+        "decompressed archive exceeds the qualification stream limit",
+    ));
     let entries = archive.entries().map_err(|error| {
         Error::message(format!(
             "failed to read archive {}: {error}",
@@ -1089,8 +954,8 @@ impl PreparedProvider {
         options: &Options,
         target_dir: &Path,
         cargo_home: &Path,
-    ) -> CommandEnvironment {
-        let mut environment = CommandEnvironment::fail_closed(cargo_home);
+    ) -> CargoEnvironment {
+        let mut environment = CargoEnvironment::fail_closed(cargo_home);
         environment.set("BOXDD_SYS_PROVIDER", self.provider.as_str());
         environment.set("BOXDD_SYS_LINK_KIND", "static");
         environment.set("CARGO_TARGET_DIR", target_dir.as_os_str());
@@ -1123,6 +988,9 @@ impl PreparedProvider {
                         .as_os_str(),
                 );
             }
+            Provider::Vendored | Provider::WasmCompileOnly | Provider::WasmProvider => {
+                unreachable!("native qualification accepts only catalog-qualified providers")
+            }
         }
         if options.crt == "mt" {
             environment.set("RUSTFLAGS", "-C target-feature=+crt-static");
@@ -1130,36 +998,56 @@ impl PreparedProvider {
         environment
     }
 
-    fn runtime_environment(
-        &self,
-        cargo_home: &Path,
-        receipt: &Path,
-        nonce: &str,
-    ) -> CommandEnvironment {
-        let mut environment = CommandEnvironment::fail_closed(cargo_home);
-        environment.set(
-            "BOXDD_NATIVE_QUALIFICATION_PROVIDER",
-            self.provider.as_str(),
-        );
-        environment.set(
-            "BOXDD_NATIVE_QUALIFICATION_MANIFEST_SHA256",
-            self.manifest_sha256.as_str(),
-        );
-        environment.set(
-            "BOXDD_NATIVE_QUALIFICATION_ARCHIVE_SHA256",
-            self.archive_sha256.as_str(),
-        );
-        environment.set(
-            "BOXDD_NATIVE_QUALIFICATION_PROVENANCE_SHA256",
-            self.provenance_sha256.as_str(),
-        );
-        environment.set(
-            "BOXDD_NATIVE_QUALIFICATION_TRUSTED_ROOT_SHA256",
-            self.trusted_root_sha256.as_str(),
-        );
-        environment.set("BOXDD_NATIVE_QUALIFICATION_NONCE", nonce);
-        environment.set("BOXDD_NATIVE_QUALIFICATION_RECEIPT", receipt.as_os_str());
-        environment
+    fn runtime_environment<'a>(
+        &'a self,
+        receipt: &'a Path,
+        nonce: &'a str,
+    ) -> ConsumerReceiptEnvironment<'a> {
+        ConsumerReceiptEnvironment {
+            provider: self.provider.as_str(),
+            manifest_sha256: self.manifest_sha256.as_str(),
+            archive_sha256: self.archive_sha256.as_str(),
+            provenance_sha256: self.provenance_sha256.as_str(),
+            trusted_root_sha256: self.trusted_root_sha256.as_str(),
+            nonce,
+            receipt,
+        }
+    }
+}
+
+struct ConsumerReceiptEnvironment<'a> {
+    provider: &'a str,
+    manifest_sha256: &'a str,
+    archive_sha256: &'a str,
+    provenance_sha256: &'a str,
+    trusted_root_sha256: &'a str,
+    nonce: &'a str,
+    receipt: &'a Path,
+}
+
+impl ConsumerReceiptEnvironment<'_> {
+    fn apply(&self, command: &mut Command) {
+        remove_process_injection_environment(command);
+        command
+            .env("BOXDD_NATIVE_QUALIFICATION_PROVIDER", self.provider)
+            .env(
+                "BOXDD_NATIVE_QUALIFICATION_MANIFEST_SHA256",
+                self.manifest_sha256,
+            )
+            .env(
+                "BOXDD_NATIVE_QUALIFICATION_ARCHIVE_SHA256",
+                self.archive_sha256,
+            )
+            .env(
+                "BOXDD_NATIVE_QUALIFICATION_PROVENANCE_SHA256",
+                self.provenance_sha256,
+            )
+            .env(
+                "BOXDD_NATIVE_QUALIFICATION_TRUSTED_ROOT_SHA256",
+                self.trusted_root_sha256,
+            )
+            .env("BOXDD_NATIVE_QUALIFICATION_NONCE", self.nonce)
+            .env("BOXDD_NATIVE_QUALIFICATION_RECEIPT", self.receipt);
     }
 }
 
@@ -1286,29 +1174,34 @@ fn prepare_prebuilt_provider(
         checkout,
         "private prebuilt input directory",
     )?;
-    let archive = snapshot_bounded_regular_file(
+    let archive_snapshot = snapshot_file_create_new(
         &archive_source,
         &private_inputs.join(&archive_name),
         MAX_PACKAGE_BYTES,
         "prebuilt package",
-    )?;
+    )
+    .map_err(Error::message)?;
+    let archive = archive_snapshot.path().to_path_buf();
     let provenance_name = format!("{archive_name}.provenance.toml");
-    let provenance = snapshot_bounded_regular_file(
+    let provenance_snapshot = snapshot_file_create_new(
         &provenance_source,
         &private_inputs.join(provenance_name),
         MAX_PROVENANCE_STATEMENT_BYTES,
         "prebuilt provenance statement",
-    )?;
+    )
+    .map_err(Error::message)?;
+    let provenance = provenance_snapshot.path().to_path_buf();
     let bundle_name = format!("{archive_name}.provenance.sigstore.json");
-    let bundle = snapshot_bounded_regular_file(
+    let bundle_snapshot = snapshot_file_create_new(
         &bundle_source,
         &private_inputs.join(bundle_name),
         MAX_SIGSTORE_BUNDLE_BYTES,
         "prebuilt Sigstore bundle",
-    )?;
-
+    )
+    .map_err(Error::message)?;
+    let bundle = bundle_snapshot.path().to_path_buf();
     let statement =
-        read_and_validate_prebuilt_statement(&provenance, options, version, checkout_commit)?;
+        validate_prebuilt_statement(&provenance_snapshot, options, version, checkout_commit)?;
     let cosign = resolve_executable(
         options
             .cosign
@@ -1316,21 +1209,27 @@ fn prepare_prebuilt_provider(
             .expect("validated prebuilt options must include Cosign"),
     )?;
     verify_cosign_version(&cosign)?;
-    let (checkout_trusted_root, trusted_root_sha256) = snapshot_crate_trusted_root(
+    let (trusted_root_snapshot, trusted_root_sha256) = snapshot_crate_trusted_root(
         checkout_crate_root,
         &private_inputs.join("trusted-root.checkout.json"),
         "checkout crate-owned Sigstore trusted root",
     )?;
     verify_prebuilt_signature(
         &cosign,
-        &provenance,
-        &bundle,
-        &checkout_trusted_root,
+        provenance_snapshot.path(),
+        bundle_snapshot.path(),
+        trusted_root_snapshot.path(),
         &statement,
+    )?;
+    revalidate_sigstore_inputs(
+        &provenance_snapshot,
+        &bundle_snapshot,
+        &trusted_root_snapshot,
+        "checkout prebuilt",
     )?;
 
     let extraction = scratch.join("prebuilt-artifact");
-    extract_authenticated_prebuilt(&statement, &archive, &extraction)?;
+    extract_authenticated_prebuilt(&statement, &archive_snapshot, &extraction)?;
     let extraction = canonicalize(&extraction, "prebuilt artifact extraction root")?;
     require_contained(&extraction, scratch, "prebuilt artifact extraction root")?;
     require_outside(&extraction, checkout, "prebuilt artifact extraction root")?;
@@ -1344,7 +1243,7 @@ fn prepare_prebuilt_provider(
         checkout_crate_root,
         checkout,
     )?;
-    let provenance_sha256 = provider_manifest::sha256_file(&provenance).map_err(Error::message)?;
+    let provenance_sha256 = provenance_snapshot.sha256().to_owned();
 
     Ok(PreparedProvider {
         provider: Provider::Prebuilt,
@@ -1375,7 +1274,6 @@ fn revalidate_prebuilt_provider(
             "packaged prebuilt revalidation requires a prebuilt provider",
         ));
     }
-    validate_packaged_prebuilt_policy(packaged_crate_root, checkout)?;
     let provenance = prepared
         .provenance
         .as_deref()
@@ -1386,8 +1284,14 @@ fn revalidate_prebuilt_provider(
             "checkout HEAD changed during prebuilt qualification: expected {checkout_commit}, found {current_checkout_commit}"
         )));
     }
+    let provenance_snapshot = VerifiedFileSnapshot::read(
+        provenance,
+        MAX_PROVENANCE_STATEMENT_BYTES,
+        "packaged qualification prebuilt provenance statement",
+    )
+    .map_err(Error::message)?;
     let statement =
-        read_and_validate_prebuilt_statement(provenance, options, version, checkout_commit)?;
+        validate_prebuilt_statement(&provenance_snapshot, options, version, checkout_commit)?;
     let archive = prepared
         .archive
         .as_deref()
@@ -1396,6 +1300,12 @@ fn revalidate_prebuilt_provider(
         .bundle
         .as_deref()
         .ok_or_else(|| Error::message("prebuilt preparation omitted its Sigstore bundle"))?;
+    let bundle_snapshot = VerifiedFileSnapshot::read(
+        bundle,
+        MAX_SIGSTORE_BUNDLE_BYTES,
+        "packaged qualification prebuilt Sigstore bundle",
+    )
+    .map_err(Error::message)?;
     let cosign = prepared
         .cosign
         .as_deref()
@@ -1404,7 +1314,7 @@ fn revalidate_prebuilt_provider(
     let packaged_trusted_root_destination = scratch
         .join("prebuilt-inputs")
         .join("trusted-root.packaged.json");
-    let (packaged_trusted_root, trusted_root_sha256) = snapshot_crate_trusted_root(
+    let (trusted_root_snapshot, trusted_root_sha256) = snapshot_crate_trusted_root(
         packaged_crate_root,
         &packaged_trusted_root_destination,
         "packaged crate-owned Sigstore trusted root",
@@ -1416,10 +1326,16 @@ fn revalidate_prebuilt_provider(
     }
     verify_prebuilt_signature(
         cosign,
-        provenance,
-        bundle,
-        &packaged_trusted_root,
+        provenance_snapshot.path(),
+        bundle_snapshot.path(),
+        trusted_root_snapshot.path(),
         &statement,
+    )?;
+    revalidate_sigstore_inputs(
+        &provenance_snapshot,
+        &bundle_snapshot,
+        &trusted_root_snapshot,
+        "packaged prebuilt",
     )?;
     statement.verify_outer_package(archive).map_err(|error| {
         Error::message(format!(
@@ -1445,105 +1361,22 @@ fn revalidate_prebuilt_provider(
     Ok(())
 }
 
-fn snapshot_bounded_regular_file(
-    source: &Path,
-    destination: &Path,
-    maximum_bytes: u64,
-    label: &str,
-) -> Result<PathBuf> {
-    let source_metadata = fs::symlink_metadata(source).map_err(|error| Error::io(source, error))?;
-    if !source_metadata.file_type().is_file() || source_metadata.file_type().is_symlink() {
-        return Err(Error::message(format!(
-            "{label} must be a regular non-symlink file: {}",
-            source.display()
-        )));
-    }
-    if source_metadata.len() == 0 || source_metadata.len() > maximum_bytes {
-        return Err(Error::message(format!(
-            "{label} size {} is outside the accepted 1..={maximum_bytes} byte range",
-            source_metadata.len()
-        )));
-    }
-    let mut input = File::open(source).map_err(|error| Error::io(source, error))?;
-    let opened_metadata = input.metadata().map_err(|error| Error::io(source, error))?;
-    if !opened_metadata.is_file() || opened_metadata.len() != source_metadata.len() {
-        return Err(Error::message(format!(
-            "{label} changed while it was being opened for snapshotting: {}",
-            source.display()
-        )));
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt as _;
-        if opened_metadata.dev() != source_metadata.dev()
-            || opened_metadata.ino() != source_metadata.ino()
-        {
-            return Err(Error::message(format!(
-                "{label} changed while it was being opened for snapshotting: {}",
-                source.display()
-            )));
-        }
-    }
-    let mut output = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(destination)
-        .map_err(|error| Error::io(destination, error))?;
-    let copied = io::copy(
-        &mut Read::by_ref(&mut input).take(maximum_bytes + 1),
-        &mut output,
-    )
-    .map_err(|error| Error::io(destination, error))?;
-    if copied != source_metadata.len() {
-        return Err(Error::message(format!(
-            "{label} changed while its exact bytes were being snapshotted: {}",
-            source.display()
-        )));
-    }
-    output
-        .flush()
-        .map_err(|error| Error::io(destination, error))?;
-    let destination = canonicalize(destination, &format!("private {label} snapshot"))?;
-    let destination_metadata =
-        fs::symlink_metadata(&destination).map_err(|error| Error::io(&destination, error))?;
-    if !destination_metadata.file_type().is_file()
-        || destination_metadata.file_type().is_symlink()
-        || destination_metadata.len() != copied
-    {
-        return Err(Error::message(format!(
-            "private {label} snapshot is not the exact regular file written: {}",
-            destination.display()
-        )));
-    }
-    Ok(destination)
-}
-
-fn read_and_validate_prebuilt_statement(
-    path: &Path,
+fn validate_prebuilt_statement(
+    snapshot: &VerifiedFileSnapshot,
     options: &Options,
     version: &str,
     checkout_commit: &str,
 ) -> Result<PrebuiltProvenanceStatement> {
-    let metadata = fs::symlink_metadata(path).map_err(|error| Error::io(path, error))?;
-    if !metadata.file_type().is_file()
-        || metadata.file_type().is_symlink()
-        || metadata.len() == 0
-        || metadata.len() > MAX_PROVENANCE_STATEMENT_BYTES
-    {
+    if snapshot.is_empty() {
         return Err(Error::message(format!(
             "prebuilt provenance statement must be a bounded regular non-symlink file: {}",
-            path.display()
+            snapshot.path().display()
         )));
     }
-    let bytes = fs::read(path).map_err(|error| Error::io(path, error))?;
-    if bytes.len() as u64 != metadata.len() {
-        return Err(Error::message(
-            "prebuilt provenance statement changed while it was being read",
-        ));
-    }
-    let statement = PrebuiltProvenanceStatement::parse_canonical(&bytes).map_err(|error| {
-        Error::message(format!("invalid prebuilt provenance statement: {error}"))
-    })?;
+    let statement =
+        PrebuiltProvenanceStatement::parse_canonical(snapshot.bytes()).map_err(|error| {
+            Error::message(format!("invalid prebuilt provenance statement: {error}"))
+        })?;
     statement
         .validate_publisher(PUBLISHER_REPOSITORY, PUBLISHER_WORKFLOW)
         .map_err(|error| {
@@ -1574,11 +1407,32 @@ fn read_and_validate_prebuilt_statement(
     Ok(statement)
 }
 
+fn revalidate_sigstore_inputs(
+    statement: &VerifiedFileSnapshot,
+    bundle: &VerifiedFileSnapshot,
+    trusted_root: &VerifiedFileSnapshot,
+    qualification: &str,
+) -> Result<()> {
+    statement
+        .revalidate(&format!(
+            "authenticated {qualification} provenance statement"
+        ))
+        .map_err(Error::message)?;
+    bundle
+        .revalidate(&format!("authenticated {qualification} Sigstore bundle"))
+        .map_err(Error::message)?;
+    trusted_root
+        .revalidate(&format!(
+            "authenticated {qualification} Sigstore trusted root"
+        ))
+        .map_err(Error::message)
+}
+
 fn snapshot_crate_trusted_root(
     crate_root: &Path,
     destination: &Path,
     label: &str,
-) -> Result<(PathBuf, String)> {
+) -> Result<(VerifiedFileSnapshot, String)> {
     let crate_root = canonicalize(crate_root, "crate root for Sigstore policy")?;
     let source = crate_root.join(SIGSTORE_TRUSTED_ROOT_RELATIVE_PATH);
     let metadata = fs::symlink_metadata(&source).map_err(|error| Error::io(&source, error))?;
@@ -1590,9 +1444,9 @@ fn snapshot_crate_trusted_root(
     }
     let source = canonicalize(&source, label)?;
     require_contained(&source, &crate_root, label)?;
-    let snapshot =
-        snapshot_bounded_regular_file(&source, destination, MAX_TRUSTED_ROOT_BYTES, label)?;
-    let digest = provider_manifest::sha256_file(&snapshot).map_err(Error::message)?;
+    let snapshot = snapshot_file_create_new(&source, destination, MAX_TRUSTED_ROOT_BYTES, label)
+        .map_err(Error::message)?;
+    let digest = snapshot.sha256().to_owned();
     if digest != SIGSTORE_TRUSTED_ROOT_SHA256 {
         return Err(Error::message(format!(
             "{label} digest {digest} does not match the qualified crate-owned trust anchor {SIGSTORE_TRUSTED_ROOT_SHA256}"
@@ -1602,10 +1456,10 @@ fn snapshot_crate_trusted_root(
 }
 
 fn verify_cosign_version(cosign: &Path) -> Result<()> {
-    let output = Command::new(cosign)
-        .arg("version")
-        .output()
-        .map_err(|error| Error::io(cosign, error))?;
+    let mut command = cosign_command(cosign);
+    command.arg("version");
+    let output = run_output(&mut command, "native provider Cosign version qualification")
+        .map_err(Error::message)?;
     if !output.status.success() {
         return Err(Error::message(format!(
             "prebuilt qualification requires Cosign {COSIGN_VERSION}; version command failed with {}: {}",
@@ -1647,10 +1501,10 @@ fn verify_prebuilt_signature(
         trusted_root,
     })
     .map_err(|error| Error::message(format!("invalid prebuilt Sigstore policy input: {error}")))?;
-    let output = Command::new(cosign)
-        .args(args)
-        .output()
-        .map_err(|error| Error::io("verify prebuilt provenance signature", error))?;
+    let mut command = cosign_command(cosign);
+    command.args(args);
+    let output =
+        run_output(&mut command, "verify prebuilt provenance signature").map_err(Error::message)?;
     if output.status.success() {
         Ok(())
     } else {
@@ -1664,16 +1518,31 @@ fn verify_prebuilt_signature(
 
 fn extract_authenticated_prebuilt(
     statement: &PrebuiltProvenanceStatement,
-    archive: &Path,
+    archive: &VerifiedFileSnapshot,
     extraction: &Path,
 ) -> Result<()> {
-    let package_bytes = statement.verify_outer_package(archive).map_err(|error| {
-        Error::message(format!(
-            "prebuilt package does not match signed provenance: {error}"
-        ))
-    })?;
+    if archive.path().file_name().and_then(|name| name.to_str())
+        != Some(statement.package_name.as_str())
+    {
+        return Err(Error::message(format!(
+            "prebuilt package filename does not match signed statement: {}",
+            archive.path().display()
+        )));
+    }
+    statement
+        .verify_package_bytes(archive.bytes())
+        .map_err(|error| {
+            Error::message(format!(
+                "prebuilt package does not match signed provenance: {error}"
+            ))
+        })?;
     fs::create_dir(extraction).map_err(|error| Error::io(extraction, error))?;
-    extract_archive_reader(io::Cursor::new(package_bytes), archive, extraction, None)
+    extract_archive_reader(
+        io::Cursor::new(archive.bytes()),
+        archive.path(),
+        extraction,
+        None,
+    )
 }
 
 fn validate_signed_provider_tree(
@@ -1686,59 +1555,20 @@ fn validate_signed_provider_tree(
         ))
     })?;
     let manifest_path = root.join("manifest.toml");
-    let manifest_bytes =
-        fs::read(&manifest_path).map_err(|error| Error::io(&manifest_path, error))?;
+    let manifest_snapshot = VerifiedFileSnapshot::read(
+        &manifest_path,
+        provider_manifest::MAX_PROVIDER_MANIFEST_BYTES,
+        "signed prebuilt provider manifest",
+    )
+    .map_err(Error::message)?;
     statement
-        .validate_provider_manifest(&manifest_bytes)
+        .validate_provider_manifest(manifest_snapshot.bytes())
         .map_err(|error| {
             Error::message(format!(
                 "prebuilt provider manifest does not match signed provenance: {error}"
             ))
         })?;
     Ok(())
-}
-
-fn validate_packaged_prebuilt_policy(packaged_crate_root: &Path, checkout: &Path) -> Result<()> {
-    let checkout_crate_root = canonicalize(&checkout.join("boxdd-sys"), "checkout boxdd-sys")?;
-    let packaged_crate_root = canonicalize(packaged_crate_root, "packaged boxdd-sys")?;
-    for relative in [
-        "build.rs",
-        "src/build_support.rs",
-        "src/prebuilt_provenance.rs",
-        "src/provenance_policy.rs",
-        "src/provider_archive.rs",
-        "src/provider_manifest.rs",
-        "src/source_overlay.rs",
-    ] {
-        let checkout_path = checkout_crate_root.join(relative);
-        let packaged_path = packaged_crate_root.join(relative);
-        let checkout_bytes = read_regular_file(&checkout_path, "checkout prebuilt policy input")?;
-        let packaged_bytes = read_regular_file(&packaged_path, "packaged prebuilt policy input")?;
-        if packaged_bytes != checkout_bytes {
-            return Err(Error::message(format!(
-                "packaged prebuilt policy {relative} does not match the qualified checkout"
-            )));
-        }
-    }
-    Ok(())
-}
-
-fn read_regular_file(path: &Path, label: &str) -> Result<Vec<u8>> {
-    let metadata = fs::symlink_metadata(path).map_err(|error| Error::io(path, error))?;
-    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
-        return Err(Error::message(format!(
-            "{label} must be a regular non-symlink file: {}",
-            path.display()
-        )));
-    }
-    let bytes = fs::read(path).map_err(|error| Error::io(path, error))?;
-    if bytes.len() as u64 != metadata.len() {
-        return Err(Error::message(format!(
-            "{label} changed while it was being read: {}",
-            path.display()
-        )));
-    }
-    Ok(bytes)
 }
 
 struct ProviderIdentity {
@@ -1754,14 +1584,12 @@ fn validate_provider_manifest(
     crate_root: &Path,
     checkout: &Path,
 ) -> Result<ProviderIdentity> {
-    let metadata =
-        fs::symlink_metadata(manifest_path).map_err(|error| Error::io(manifest_path, error))?;
-    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
-        return Err(Error::message(format!(
-            "provider manifest must be a regular non-symlink file: {}",
-            manifest_path.display()
-        )));
-    }
+    let manifest_snapshot = VerifiedFileSnapshot::read(
+        manifest_path,
+        provider_manifest::MAX_PROVIDER_MANIFEST_BYTES,
+        "provider manifest",
+    )
+    .map_err(Error::message)?;
     let root = canonicalize(root, "provider artifact root")?;
     let manifest_path = canonicalize(manifest_path, "provider manifest")?;
     if manifest_path != root.join("manifest.toml") {
@@ -1770,32 +1598,41 @@ fn validate_provider_manifest(
             root.display()
         )));
     }
-    let bytes = fs::read(&manifest_path).map_err(|error| Error::io(&manifest_path, error))?;
-    let manifest = provider_manifest::ArtifactManifest::parse(&bytes).map_err(Error::message)?;
-    if manifest.render() != bytes {
+    let manifest = provider_manifest::ArtifactManifest::parse(manifest_snapshot.bytes())
+        .map_err(Error::message)?;
+    if manifest.render() != manifest_snapshot.bytes() {
         return Err(Error::message(
             "provider manifest must use its canonical byte representation",
         ));
     }
     let repository_sys = checkout.join("boxdd-sys");
-    let effective_source = effective_source_identity(&repository_sys).map_err(|error| {
-        Error::message(format!(
-            "cannot recompute the qualification effective-source identity: {error}"
-        ))
-    })?;
-    let repository_effective_manifest = fs::read(repository_sys.join("effective-source.toml"))
-        .map_err(|error| Error::io(repository_sys.join("effective-source.toml"), error))?;
-    let packaged_effective_manifest = fs::read(crate_root.join("effective-source.toml"))
-        .map_err(|error| Error::io(crate_root.join("effective-source.toml"), error))?;
-    if packaged_effective_manifest != repository_effective_manifest {
+    let effective_header = EffectiveHeaderSnapshot::capture(crate_root, "packaged qualification")?;
+    let effective_source = effective_header.identity();
+    let repository_effective_manifest = VerifiedFileSnapshot::read(
+        &repository_sys.join("effective-source.toml"),
+        MAX_EFFECTIVE_SOURCE_MANIFEST_BYTES,
+        "checkout effective source manifest",
+    )
+    .map_err(Error::message)?;
+    let packaged_effective_manifest = VerifiedFileSnapshot::read(
+        &crate_root.join("effective-source.toml"),
+        MAX_EFFECTIVE_SOURCE_MANIFEST_BYTES,
+        "packaged effective source manifest",
+    )
+    .map_err(Error::message)?;
+    if packaged_effective_manifest.bytes() != repository_effective_manifest.bytes() {
         return Err(Error::message(
             "packaged boxdd-sys effective-source.toml does not match the checkout",
         ));
     }
     if options.provider == Provider::Prebuilt {
-        let artifact_effective_manifest = fs::read(root.join("metadata/effective-source.toml"))
-            .map_err(|error| Error::io(root.join("metadata/effective-source.toml"), error))?;
-        if artifact_effective_manifest != repository_effective_manifest {
+        let artifact_effective_manifest = VerifiedFileSnapshot::read(
+            &root.join("metadata/effective-source.toml"),
+            MAX_EFFECTIVE_SOURCE_MANIFEST_BYTES,
+            "prebuilt effective source manifest",
+        )
+        .map_err(Error::message)?;
+        if artifact_effective_manifest.bytes() != repository_effective_manifest.bytes() {
             return Err(Error::message(
                 "prebuilt metadata/effective-source.toml does not match the checkout",
             ));
@@ -1805,7 +1642,6 @@ fn validate_provider_manifest(
     let snapshot_layout_hash = u32::try_from(manifest.snapshot_layout_hash).map_err(|_| {
         Error::message("provider snapshot layout hash does not fit the native u32 contract")
     })?;
-    let header = crate_root.join("third-party/box2d/include/box2d/box2d.h");
     let bindings = crate_root
         .join("src")
         .join(if options.precision == Precision::Double {
@@ -1830,13 +1666,14 @@ fn validate_provider_manifest(
                 private_abi_hash: &manifest.private_abi_hash,
                 snapshot_layout_hash,
             },
-            header_path: &header,
+            header_path: effective_header.header_path(),
             bindings_path: &bindings,
         },
     )
     .map_err(|error| Error::message(format!("provider artifact validation failed: {error}")))?;
+    effective_header.revalidate("packaged qualification")?;
     let verified_archive = verify_provider_archive(
-        &verified.archive_path,
+        &verified.archive_snapshot,
         &ArchiveExpectation {
             target: &options.target,
             required_symbols: provider_manifest::REQUIRED_ADAPTER_SYMBOLS,
@@ -1846,21 +1683,21 @@ fn validate_provider_manifest(
         },
     )
     .map_err(|error| Error::message(format!("provider archive proof failed: {error}")))?;
-    if verified_archive.archive_sha256 != verified.archive_sha256 {
+    if verified_archive.archive_sha256 != verified.manifest.archive_sha256 {
         return Err(Error::message(
             "provider archive changed between manifest and structural verification",
         ));
     }
     if options.provider == Provider::System
-        && verified.archive_path.parent() != Some(root.as_path())
+        && verified.archive_snapshot.path().parent() != Some(root.as_path())
     {
         return Err(Error::message(
             "system provider archive must be an immediate child of BOX2D_LIB_DIR",
         ));
     }
     Ok(ProviderIdentity {
-        manifest_sha256: verified.manifest_sha256,
-        archive_sha256: verified.archive_sha256,
+        manifest_sha256: verified.manifest_snapshot.sha256().to_owned(),
+        archive_sha256: verified.archive_snapshot.sha256().to_owned(),
     })
 }
 
@@ -2066,12 +1903,11 @@ fn consumer_executable_from_cargo_messages(
 fn run_consumer_executable(
     executable: &Path,
     current_dir: &Path,
-    environment: &CommandEnvironment,
+    environment: &ConsumerReceiptEnvironment<'_>,
 ) -> Result<()> {
     let mut command = consumer_command(executable, current_dir, environment);
-    let status = command
-        .status()
-        .map_err(|error| Error::io("run fresh native provider consumer directly", error))?;
+    let status = run_status(&mut command, "run fresh native provider consumer directly")
+        .map_err(Error::message)?;
     if status.success() {
         Ok(())
     } else {
@@ -2084,7 +1920,7 @@ fn run_consumer_executable(
 fn consumer_command(
     executable: &Path,
     current_dir: &Path,
-    environment: &CommandEnvironment,
+    environment: &ConsumerReceiptEnvironment<'_>,
 ) -> Command {
     let mut command = Command::new(executable);
     command.current_dir(current_dir);
@@ -2096,11 +1932,11 @@ fn run_cargo(
     current_dir: &Path,
     toolchain: &str,
     args: &[OsString],
-    environment: &CommandEnvironment,
+    environment: &CargoEnvironment,
     label: &str,
 ) -> Result<()> {
     let mut command = cargo_command(current_dir, toolchain, args, environment)?;
-    let status = command.status().map_err(|error| Error::io(label, error))?;
+    let status = run_status(&mut command, label).map_err(Error::message)?;
     if status.success() {
         Ok(())
     } else {
@@ -2114,12 +1950,11 @@ fn output_cargo(
     current_dir: &Path,
     toolchain: &str,
     args: &[OsString],
-    environment: &CommandEnvironment,
+    environment: &CargoEnvironment,
     label: &str,
 ) -> Result<Output> {
-    let output = cargo_command(current_dir, toolchain, args, environment)?
-        .output()
-        .map_err(|error| Error::io(label, error))?;
+    let mut command = cargo_command(current_dir, toolchain, args, environment)?;
+    let output = run_output(&mut command, label).map_err(Error::message)?;
     if output.status.success() {
         Ok(output)
     } else {
@@ -2135,7 +1970,7 @@ fn cargo_command(
     current_dir: &Path,
     toolchain: &str,
     args: &[OsString],
-    environment: &CommandEnvironment,
+    environment: &CargoEnvironment,
 ) -> Result<Command> {
     let args = cargo_arguments(toolchain, args)?;
     let mut command = Command::new("cargo");
@@ -2309,8 +2144,8 @@ mod tests {
     fn prebuilt_statement(package_name: &str, package_bytes: &[u8]) -> PrebuiltProvenanceStatement {
         use crate::prebuilt_provenance::{
             MemberDigest, SCHEMA_NAME, SCHEMA_VERSION, canonical_inner_checksums_bytes,
-            sha256_bytes,
         };
+        use crate::provider_manifest::sha256_bytes;
 
         let manifest = b"canonical provider manifest";
         let mut members = vec![
@@ -2433,14 +2268,14 @@ mod tests {
 
     #[test]
     fn fail_closed_environment_removes_runners_and_compiler_replacements() {
-        assert!(is_qualification_sensitive_env(OsStr::new(
+        assert!(is_cargo_injection_environment_key(OsStr::new(
             "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER"
         )));
-        assert!(is_qualification_sensitive_env(OsStr::new(
+        assert!(is_cargo_injection_environment_key(OsStr::new(
             "CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS"
         )));
         let temp = tempfile::tempdir().unwrap();
-        let environment = CommandEnvironment::fail_closed(temp.path());
+        let environment = CargoEnvironment::fail_closed(temp.path());
         for key in [
             "RUSTC",
             "RUSTC_BOOTSTRAP",
@@ -2453,10 +2288,10 @@ mod tests {
         ] {
             assert!(environment.remove.contains(OsStr::new(key)), "{key}");
         }
-        assert!(is_qualification_sensitive_env(OsStr::new(
+        assert!(is_cargo_injection_environment_key(OsStr::new(
             "CARGO_UNSTABLE_BYPASS_PRELUDE"
         )));
-        assert!(is_qualification_sensitive_env(OsStr::new(
+        assert!(is_cargo_injection_environment_key(OsStr::new(
             "CARGO_BUILD_RUSTFLAGS"
         )));
         assert_eq!(
@@ -2512,12 +2347,11 @@ mod tests {
         let source = temp.path().join("source");
         let destination = temp.path().join("snapshot");
         fs::write(&source, b"exact bytes").unwrap();
-        let snapshot =
-            snapshot_bounded_regular_file(&source, &destination, 32, "test input").unwrap();
-        assert_eq!(fs::read(snapshot).unwrap(), b"exact bytes");
-        assert!(snapshot_bounded_regular_file(&source, &destination, 32, "test input").is_err());
+        let snapshot = snapshot_file_create_new(&source, &destination, 32, "test input").unwrap();
+        assert_eq!(snapshot.bytes(), b"exact bytes");
+        assert!(snapshot_file_create_new(&source, &destination, 32, "test input").is_err());
         assert!(
-            snapshot_bounded_regular_file(&source, &temp.path().join("too-small"), 4, "test input")
+            snapshot_file_create_new(&source, &temp.path().join("too-small"), 4, "test input")
                 .is_err()
         );
 
@@ -2525,7 +2359,7 @@ mod tests {
         {
             std::os::unix::fs::symlink(&source, temp.path().join("source-link")).unwrap();
             assert!(
-                snapshot_bounded_regular_file(
+                snapshot_file_create_new(
                     &temp.path().join("source-link"),
                     &temp.path().join("link-snapshot"),
                     32,
@@ -2550,12 +2384,15 @@ mod tests {
             "none",
         ))
         .unwrap();
+        let snapshot = VerifiedFileSnapshot::read(
+            &path,
+            MAX_PROVENANCE_STATEMENT_BYTES,
+            "fixture provenance statement",
+        )
+        .unwrap();
+        assert!(validate_prebuilt_statement(&snapshot, &options, "0.6.0", &"a".repeat(40)).is_ok());
         assert!(
-            read_and_validate_prebuilt_statement(&path, &options, "0.6.0", &"a".repeat(40)).is_ok()
-        );
-        assert!(
-            read_and_validate_prebuilt_statement(&path, &options, "0.6.0", &"f".repeat(40))
-                .is_err()
+            validate_prebuilt_statement(&snapshot, &options, "0.6.0", &"f".repeat(40)).is_err()
         );
         let other_target = Options::parse(&arguments(
             "prebuilt",
@@ -2565,7 +2402,7 @@ mod tests {
         ))
         .unwrap();
         assert!(
-            read_and_validate_prebuilt_statement(&path, &other_target, "0.6.0", &"a".repeat(40))
+            validate_prebuilt_statement(&snapshot, &other_target, "0.6.0", &"a".repeat(40))
                 .is_err()
         );
     }
@@ -2584,8 +2421,12 @@ mod tests {
             .unwrap()
             .write_all(b"tampered")
             .unwrap();
+        let archive_snapshot =
+            VerifiedFileSnapshot::read(&archive, MAX_PACKAGE_BYTES, "tampered package").unwrap();
         let extraction = temp.path().join("must-not-exist");
-        assert!(extract_authenticated_prebuilt(&statement, &archive, &extraction).is_err());
+        assert!(
+            extract_authenticated_prebuilt(&statement, &archive_snapshot, &extraction).is_err()
+        );
         assert!(!extraction.exists());
     }
 
@@ -2702,11 +2543,6 @@ mod tests {
         let error = extract_archive(&archive_path, &output, Some("boxdd-sys-0.6.0"))
             .expect_err("entry-count bomb must be rejected");
         assert!(error.to_string().contains("entry limit"), "{error}");
-
-        let mut bounded = BoundedReader::new(std::io::Cursor::new([1_u8, 2, 3]), 2);
-        let mut bytes = Vec::new();
-        assert!(bounded.read_to_end(&mut bytes).is_err());
-        assert_eq!(bytes, [1, 2]);
     }
 
     #[test]
@@ -2756,7 +2592,9 @@ mod tests {
         }));
 
         let receipt = temp.path().join("receipt");
-        let runtime = prepared.runtime_environment(&cargo_home, &receipt, "nonce");
+        let runtime = prepared.runtime_environment(&receipt, "nonce");
+        let executable = temp.path().join("qualified-consumer");
+        let command = consumer_command(&executable, temp.path(), &runtime);
         for key in [
             "BOXDD_NATIVE_QUALIFICATION_PROVIDER",
             "BOXDD_NATIVE_QUALIFICATION_MANIFEST_SHA256",
@@ -2767,21 +2605,30 @@ mod tests {
             "BOXDD_NATIVE_QUALIFICATION_RECEIPT",
         ] {
             assert!(
-                runtime
-                    .values
-                    .iter()
-                    .any(|(actual, _)| actual == OsStr::new(key))
+                command
+                    .get_envs()
+                    .any(|(actual, value)| actual == OsStr::new(key) && value.is_some()),
+                "missing {key}"
             );
         }
-        assert!(
-            runtime
-                .values
-                .iter()
-                .all(|(key, _)| !key.to_string_lossy().starts_with("BOXDD_SYS_"))
-        );
-        let executable = temp.path().join("qualified-consumer");
-        let command = consumer_command(&executable, temp.path(), &runtime);
         assert_eq!(command.get_program(), executable.as_os_str());
+
+        let mut ambient = Command::new(&executable);
+        ambient.env("LD_PRELOAD", "injected");
+        ambient.env("BOXDD_SYS_PROVIDER", "ambient");
+        runtime.apply(&mut ambient);
+        assert!(
+            ambient
+                .get_envs()
+                .any(|(key, value)| { key == OsStr::new("LD_PRELOAD") && value.is_none() })
+        );
+        assert!(ambient.get_envs().any(|(key, value)| {
+            key == OsStr::new("BOXDD_SYS_PROVIDER") && value == Some(OsStr::new("ambient"))
+        }));
+        assert!(ambient.get_envs().any(|(key, value)| {
+            key == OsStr::new("BOXDD_NATIVE_QUALIFICATION_RECEIPT")
+                && value == Some(receipt.as_os_str())
+        }));
     }
 
     #[test]

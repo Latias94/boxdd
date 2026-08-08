@@ -15,3 +15,35 @@ fn hex_color_helpers_round_trip_rgb_values() {
     assert_eq!(HexColor::BOX2D_BLUE.rgb_u32(), 0x30AEBF);
     assert_eq!(HexColor::BOX2D_YELLOW.rgb_u32(), 0xFFEE8C);
 }
+
+#[cfg(feature = "serde")]
+#[test]
+fn hex_color_serde_preserves_the_24_bit_rgb_invariant() {
+    let max = HexColor::from_rgb_u32(0x00ff_ffff);
+    assert_eq!(
+        serde_json::to_value(max).unwrap(),
+        serde_json::json!(0x00ff_ffff)
+    );
+    assert_eq!(
+        serde_json::from_value::<HexColor>(serde_json::json!(0)).unwrap(),
+        HexColor::BLACK
+    );
+    assert_eq!(
+        serde_json::from_value::<HexColor>(serde_json::json!(0x00ff_ffff)).unwrap(),
+        max
+    );
+
+    for invalid in [0x0100_0000_u32, u32::MAX] {
+        assert!(
+            serde_json::from_value::<HexColor>(serde_json::json!(invalid)).is_err(),
+            "HexColor accepted an out-of-range RGB value: {invalid:#010x}"
+        );
+    }
+
+    assert!(
+        serde_json::from_value::<boxdd::SurfaceMaterial>(serde_json::json!({
+            "custom_color": u32::MAX
+        }))
+        .is_err()
+    );
+}

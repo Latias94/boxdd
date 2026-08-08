@@ -1,102 +1,65 @@
-use super::{Aabb, QueryFilter};
-use crate::core::world_core::ActivityState;
-use crate::error::ApiError;
-use crate::{Position, World, WorldDef};
+use crate::World;
+use crate::error::Error;
 
-fn test_aabb() -> Aabb {
-    Aabb::from_center_half_extents([0.0, 0.0], [1.0, 1.0])
+fn query_error(world: &World) -> Error {
+    match world.query() {
+        Ok(_) => panic!("query capability acquisition unexpectedly succeeded"),
+        Err(error) => error,
+    }
 }
 
 #[test]
-fn query_entry_points_reject_busy_worlds_before_native_queries() {
-    let world = World::new(WorldDef::default()).unwrap();
-    let handle = world.handle();
+fn query_acquisition_rejects_busy_worlds() {
+    let world = crate::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            crate::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let core = world.core();
 
-    world
-        .core()
-        .set_activity(ActivityState::Idle, ActivityState::Recording)
-        .unwrap();
+    let recording = core.begin_recording_activity().unwrap();
+    assert_eq!(query_error(&world), Error::WorldBusy);
+    drop(recording);
 
-    assert_eq!(
-        world
-            .try_overlap_aabb(Position::ZERO, test_aabb(), QueryFilter::default())
-            .unwrap_err(),
-        ApiError::WorldBusy
-    );
-    assert_eq!(
-        handle
-            .try_overlap_aabb(Position::ZERO, test_aabb(), QueryFilter::default())
-            .unwrap_err(),
-        ApiError::WorldBusy
-    );
-    assert!(
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            world.overlap_aabb(Position::ZERO, test_aabb(), QueryFilter::default())
-        }))
-        .is_err()
-    );
-
-    world
-        .core()
-        .set_activity(ActivityState::Recording, ActivityState::Idle)
-        .unwrap();
-    world
-        .core()
-        .set_activity(ActivityState::Idle, ActivityState::Restoring)
-        .unwrap();
-    assert_eq!(
-        world
-            .try_overlap_aabb(Position::ZERO, test_aabb(), QueryFilter::default())
-            .unwrap_err(),
-        ApiError::WorldBusy
-    );
-    world
-        .core()
-        .set_activity(ActivityState::Restoring, ActivityState::Idle)
-        .unwrap();
+    let restoring = core.begin_restore_activity().unwrap();
+    assert_eq!(query_error(&world), Error::WorldBusy);
+    drop(restoring);
 }
 
 #[test]
-fn query_entry_points_reject_poisoned_worlds() {
-    let world = World::new(WorldDef::default()).unwrap();
-    let handle = world.handle();
+fn query_acquisition_rejects_poisoned_worlds() {
+    let world = crate::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            crate::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
     world.core().poison();
-
-    assert_eq!(
-        world
-            .try_overlap_aabb(Position::ZERO, test_aabb(), QueryFilter::default())
-            .unwrap_err(),
-        ApiError::WorldPoisoned
-    );
-    assert_eq!(
-        handle
-            .try_overlap_aabb(Position::ZERO, test_aabb(), QueryFilter::default())
-            .unwrap_err(),
-        ApiError::WorldPoisoned
-    );
+    assert_eq!(query_error(&world), Error::WorldPoisoned);
 }
 
 #[test]
 fn callback_error_takes_precedence_over_world_activity() {
-    let world = World::new(WorldDef::default()).unwrap();
-    let filter = QueryFilter::default();
-    world
-        .core()
-        .set_activity(ActivityState::Idle, ActivityState::Recording)
+    let world = crate::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            crate::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
         .unwrap();
+    let core = world.core();
+    let recording = core.begin_recording_activity().unwrap();
 
     {
         let _guard = crate::core::callback_state::CallbackGuard::enter();
-        assert_eq!(
-            world
-                .try_overlap_aabb(Position::ZERO, test_aabb(), filter)
-                .unwrap_err(),
-            ApiError::InCallback
-        );
+        assert_eq!(query_error(&world), Error::InCallback);
     }
 
-    world
-        .core()
-        .set_activity(ActivityState::Recording, ActivityState::Idle)
-        .unwrap();
+    drop(recording);
 }

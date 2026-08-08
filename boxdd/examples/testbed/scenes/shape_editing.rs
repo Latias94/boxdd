@@ -7,11 +7,26 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     // Create a single dynamic body in the center and attach an initial box shape.
     let b = app
         .world
-        .create_body_id(bd::BodyBuilder::new().body_type(bd::BodyType::Dynamic).position([0.0, 4.0]).build());
+        .create_body(
+            bd::BodyBuilder::from(app.foundation.body_def())
+                .body_type(bd::BodyType::Dynamic)
+                .position([0.0, 4.0])
+                .build()
+                .expect("valid testbed definition"),
+        )
+        .expect("valid testbed operation");
     app.created_bodies += 1;
-    let sdef = bd::ShapeDef::builder().density(1.0).build();
-    let poly = bd::shapes::box_polygon(app.se_hx, app.se_hy);
-    let sid = app.world.create_polygon_shape_for(b, &sdef, &poly);
+    let sdef = bd::ShapeDef::builder()
+        .density(1.0)
+        .build()
+        .expect("valid testbed definition");
+    let poly = bd::shapes::box_polygon(app.se_hx, app.se_hy).expect("valid polygon geometry");
+    let sid = app
+        .world
+        .body(b)
+        .expect("valid testbed operation")
+        .create_polygon(&sdef, &poly)
+        .expect("valid testbed operation");
     app.created_shapes += 1;
 
     // Store for later editing
@@ -35,17 +50,33 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
         app.se_radius = r;
         // Replace shape in place
         if let (Some(bid), Some(sid)) = (app.se_body, app.se_shape) {
-            app.world.destroy_shape_id(sid, true);
-            let sdef = bd::ShapeDef::builder().density(1.0).build();
+            app.world
+                .shape(sid)
+                .expect("valid testbed operation")
+                .destroy(true)
+                .expect("valid testbed operation");
+            let sdef = bd::ShapeDef::builder()
+                .density(1.0)
+                .build()
+                .expect("valid testbed definition");
             let new_sid = if app.se_mode == 0 {
-                let poly = bd::shapes::box_polygon(app.se_hx, app.se_hy);
-                app.world.create_polygon_shape_for(bid, &sdef, &poly)
+                let poly =
+                    bd::shapes::box_polygon(app.se_hx, app.se_hy).expect("valid polygon geometry");
+                app.world
+                    .body(bid)
+                    .expect("valid testbed operation")
+                    .create_polygon(&sdef, &poly)
+                    .expect("valid testbed operation")
             } else {
-                let poly = bd::shapes::rounded_box_polygon(app.se_hx, app.se_hy, app.se_radius);
-                app.world.create_polygon_shape_for(bid, &sdef, &poly)
+                let poly = bd::shapes::rounded_box_polygon(app.se_hx, app.se_hy, app.se_radius)
+                    .expect("valid polygon geometry");
+                app.world
+                    .body(bid)
+                    .expect("valid testbed operation")
+                    .create_polygon(&sdef, &poly)
+                    .expect("valid testbed operation")
             };
             app.se_shape = Some(new_sid);
         }
     }
 }
-

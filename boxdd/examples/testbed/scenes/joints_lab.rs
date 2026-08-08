@@ -7,16 +7,47 @@ use dear_imgui_rs as imgui;
 fn build_distance(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     let a = app
         .world
-        .create_body_id(bd::BodyBuilder::new().body_type(bd::BodyType::Dynamic).position([-2.0, 4.0]).build());
+        .create_body(
+            bd::BodyBuilder::from(app.foundation.body_def())
+                .body_type(bd::BodyType::Dynamic)
+                .position([-2.0, 4.0])
+                .build()
+                .expect("valid testbed definition"),
+        )
+        .expect("valid testbed operation");
     app.created_bodies += 1;
     let b = app
         .world
-        .create_body_id(bd::BodyBuilder::new().body_type(bd::BodyType::Dynamic).position([2.0, 4.0]).build());
+        .create_body(
+            bd::BodyBuilder::from(app.foundation.body_def())
+                .body_type(bd::BodyType::Dynamic)
+                .position([2.0, 4.0])
+                .build()
+                .expect("valid testbed definition"),
+        )
+        .expect("valid testbed operation");
     app.created_bodies += 1;
-    let sdef = bd::ShapeDef::builder().density(1.0).build();
-    app.world.create_polygon_shape_for(a, &sdef, &bd::shapes::box_polygon(0.4, 0.4));
+    let sdef = bd::ShapeDef::builder()
+        .density(1.0)
+        .build()
+        .expect("valid testbed definition");
+    app.world
+        .body(a)
+        .expect("valid testbed operation")
+        .create_polygon(
+            &sdef,
+            &bd::shapes::box_polygon(0.4, 0.4).expect("valid polygon geometry"),
+        )
+        .expect("valid testbed operation");
     app.created_shapes += 1;
-    app.world.create_polygon_shape_for(b, &sdef, &bd::shapes::box_polygon(0.4, 0.4));
+    app.world
+        .body(b)
+        .expect("valid testbed operation")
+        .create_polygon(
+            &sdef,
+            &bd::shapes::box_polygon(0.4, 0.4).expect("valid polygon geometry"),
+        )
+        .expect("valid testbed operation");
     app.created_shapes += 1;
     let _j = app
         .world
@@ -24,7 +55,8 @@ fn build_distance(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
         .anchors_world([-2.0, 4.0], [2.0, 4.0])
         .length(app.dist_length)
         .spring(app.dist_hz, app.dist_dr)
-        .build();
+        .build()
+        .expect("valid testbed distance joint");
     app.created_joints += 1;
 }
 fn ui_distance(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
@@ -49,13 +81,26 @@ fn ui_distance(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
 fn build_motor(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
     let body = app
         .world
-        .create_body_id(bd::BodyBuilder::new().body_type(bd::BodyType::Dynamic).position([0.0, 2.5]).build());
+        .create_body(
+            bd::BodyBuilder::from(app.foundation.body_def())
+                .body_type(bd::BodyType::Dynamic)
+                .position([0.0, 2.5])
+                .build()
+                .expect("valid testbed definition"),
+        )
+        .expect("valid testbed operation");
     app.created_bodies += 1;
-    app.world.create_polygon_shape_for(
-        body,
-        &bd::ShapeDef::builder().density(1.0).build(),
-        &bd::shapes::box_polygon(0.5, 0.3),
-    );
+    app.world
+        .body(body)
+        .expect("valid testbed operation")
+        .create_polygon(
+            &bd::ShapeDef::builder()
+                .density(1.0)
+                .build()
+                .expect("valid testbed definition"),
+            &bd::shapes::box_polygon(0.5, 0.3).expect("valid polygon geometry"),
+        )
+        .expect("valid testbed operation");
     app.created_shapes += 1;
     let _j = app
         .world
@@ -66,7 +111,8 @@ fn build_motor(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
         .max_velocity_torque(app.motor_max_torque)
         .linear_spring(app.motor_lin_hz, app.motor_lin_dr)
         .angular_spring(app.motor_ang_hz, app.motor_ang_dr)
-        .build();
+        .build()
+        .expect("valid testbed motor joint");
     app.created_joints += 1;
 }
 fn ui_motor(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
@@ -106,23 +152,49 @@ fn ui_motor(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
 fn build_wheel(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
     let chassis = app
         .world
-        .create_body_id(bd::BodyBuilder::new().body_type(bd::BodyType::Dynamic).position([0.0, 3.0]).build());
+        .create_body(
+            bd::BodyBuilder::from(app.foundation.body_def())
+                .body_type(bd::BodyType::Dynamic)
+                .position([0.0, 3.0])
+                .build()
+                .expect("valid testbed definition"),
+        )
+        .expect("valid testbed operation");
     app.created_bodies += 1;
-    app.world.create_polygon_shape_for(
-        chassis,
-        &bd::ShapeDef::builder().density(1.0).build(),
-        &bd::shapes::box_polygon(1.2, 0.25),
-    );
+    app.world
+        .body(chassis)
+        .expect("valid testbed operation")
+        .create_polygon(
+            &bd::ShapeDef::builder()
+                .density(1.0)
+                .build()
+                .expect("valid testbed definition"),
+            &bd::shapes::box_polygon(1.2, 0.25).expect("valid polygon geometry"),
+        )
+        .expect("valid testbed operation");
     app.created_shapes += 1;
     let wheel = app
         .world
-        .create_body_id(bd::BodyBuilder::new().body_type(bd::BodyType::Dynamic).position([-0.8, 2.0]).build());
+        .create_body(
+            bd::BodyBuilder::from(app.foundation.body_def())
+                .body_type(bd::BodyType::Dynamic)
+                .position([-0.8, 2.0])
+                .build()
+                .expect("valid testbed definition"),
+        )
+        .expect("valid testbed operation");
     app.created_bodies += 1;
-    app.world.create_circle_shape_for(
-        wheel,
-        &bd::ShapeDef::builder().density(1.0).build(),
-        &bd::shapes::circle([0.0, 0.0], 0.5),
-    );
+    app.world
+        .body(wheel)
+        .expect("valid testbed operation")
+        .create_circle(
+            &bd::ShapeDef::builder()
+                .density(1.0)
+                .build()
+                .expect("valid testbed definition"),
+            &bd::shapes::circle([0.0, 0.0], 0.5).expect("wheel joint circle must be valid"),
+        )
+        .expect("valid testbed operation");
     app.created_shapes += 1;
     let mut builder = app
         .world
@@ -139,7 +211,7 @@ fn build_wheel(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
         builder = builder.spring(app.wheel_hz, app.wheel_dr);
     }
     {
-        let _j = builder.build();
+        let _j = builder.build().expect("valid testbed wheel joint");
         app.created_joints += 1;
     }
     let _ = app
@@ -148,7 +220,8 @@ fn build_wheel(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
         .anchors_world([0.0, 3.0], [0.0, 3.0])
         .axis_world([1.0, 0.0])
         .limit(-10.0, 10.0)
-        .build();
+        .build()
+        .expect("valid testbed prismatic joint");
     app.created_joints += 1;
 }
 fn ui_wheel(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
@@ -188,23 +261,40 @@ fn ui_wheel(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
 fn build_revolute(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
     let rotor = app
         .world
-        .create_body_id(bd::BodyBuilder::new().body_type(bd::BodyType::Dynamic).position([0.0, 2.0]).build());
+        .create_body(
+            bd::BodyBuilder::from(app.foundation.body_def())
+                .body_type(bd::BodyType::Dynamic)
+                .position([0.0, 2.0])
+                .build()
+                .expect("valid testbed definition"),
+        )
+        .expect("valid testbed operation");
     app.created_bodies += 1;
-    app.world.create_polygon_shape_for(
-        rotor,
-        &bd::ShapeDef::builder().density(1.0).build(),
-        &bd::shapes::box_polygon(1.0, 0.1),
-    );
+    app.world
+        .body(rotor)
+        .expect("valid testbed operation")
+        .create_polygon(
+            &bd::ShapeDef::builder()
+                .density(1.0)
+                .build()
+                .expect("valid testbed definition"),
+            &bd::shapes::box_polygon(1.0, 0.1).expect("valid polygon geometry"),
+        )
+        .expect("valid testbed operation");
     app.created_shapes += 1;
     let base = app
         .world
-        .joint_base_from_world_points(ground, rotor, [0.0, 2.0], [0.0, 2.0]);
+        .joint_base_from_world_points(ground, rotor, [0.0, 2.0], [0.0, 2.0])
+        .expect("valid testbed operation");
     let rdef = bd::RevoluteJointDef::new(base)
         .limit_deg(app.revolute_lower_deg, app.revolute_upper_deg)
         .enable_motor(true)
         .max_motor_torque(app.revolute_torque)
         .motor_speed(app.revolute_speed);
-    let _ = app.world.create_revolute_joint_id(&rdef);
+    let _ = app
+        .world
+        .create_revolute_joint(&rdef)
+        .expect("valid testbed operation");
     app.created_joints += 1;
 }
 fn ui_revolute(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
@@ -234,19 +324,33 @@ fn ui_revolute(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
 fn build_prismatic(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
     let platform = app
         .world
-        .create_body_id(bd::BodyBuilder::new().body_type(bd::BodyType::Dynamic).position([0.0, 1.0]).build());
+        .create_body(
+            bd::BodyBuilder::from(app.foundation.body_def())
+                .body_type(bd::BodyType::Dynamic)
+                .position([0.0, 1.0])
+                .build()
+                .expect("valid testbed definition"),
+        )
+        .expect("valid testbed operation");
     app.created_bodies += 1;
-    app.world.create_polygon_shape_for(
-        platform,
-        &bd::ShapeDef::builder().density(1.0).build(),
-        &bd::shapes::box_polygon(1.0, 0.2),
-    );
+    app.world
+        .body(platform)
+        .expect("valid testbed operation")
+        .create_polygon(
+            &bd::ShapeDef::builder()
+                .density(1.0)
+                .build()
+                .expect("valid testbed definition"),
+            &bd::shapes::box_polygon(1.0, 0.2).expect("valid polygon geometry"),
+        )
+        .expect("valid testbed operation");
     app.created_shapes += 1;
     let axis = [0.0, 1.0];
     let anchor = [0.0, 1.0];
     let base = app
         .world
-        .joint_base_from_world_with_axis(ground, platform, anchor, anchor, axis);
+        .joint_base_from_world_with_axis(ground, platform, anchor, anchor, axis)
+        .expect("valid testbed operation");
     let pdef = bd::PrismaticJointDef::new(base)
         .enable_limit(true)
         .lower_translation(app.prism_lower)
@@ -254,7 +358,10 @@ fn build_prismatic(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
         .enable_motor(true)
         .max_motor_force(app.prism_force)
         .motor_speed(app.prism_speed);
-    let _ = app.world.create_prismatic_joint_id(&pdef);
+    let _ = app
+        .world
+        .create_prismatic_joint(&pdef)
+        .expect("valid testbed operation");
     app.created_joints += 1;
 }
 fn ui_prismatic(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
@@ -282,35 +389,74 @@ fn ui_prismatic(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
 
 // Weld joint
 fn build_weld(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
-    let sdef = bd::ShapeDef::builder().density(1.0).build();
+    let sdef = bd::ShapeDef::builder()
+        .density(1.0)
+        .build()
+        .expect("valid testbed definition");
     let a = app
         .world
-        .create_body_id(bd::BodyBuilder::new().body_type(bd::BodyType::Dynamic).position([-0.8, 4.0]).build());
+        .create_body(
+            bd::BodyBuilder::from(app.foundation.body_def())
+                .body_type(bd::BodyType::Dynamic)
+                .position([-0.8, 4.0])
+                .build()
+                .expect("valid testbed definition"),
+        )
+        .expect("valid testbed operation");
     app.created_bodies += 1;
-    app.world.create_polygon_shape_for(a, &sdef, &bd::shapes::box_polygon(0.6, 0.4));
+    app.world
+        .body(a)
+        .expect("valid testbed operation")
+        .create_polygon(
+            &sdef,
+            &bd::shapes::box_polygon(0.6, 0.4).expect("valid polygon geometry"),
+        )
+        .expect("valid testbed operation");
     app.created_shapes += 1;
     let b = app
         .world
-        .create_body_id(bd::BodyBuilder::new().body_type(bd::BodyType::Dynamic).position([0.8, 4.0]).build());
+        .create_body(
+            bd::BodyBuilder::from(app.foundation.body_def())
+                .body_type(bd::BodyType::Dynamic)
+                .position([0.8, 4.0])
+                .build()
+                .expect("valid testbed definition"),
+        )
+        .expect("valid testbed operation");
     app.created_bodies += 1;
-    app.world.create_polygon_shape_for(b, &sdef, &bd::shapes::box_polygon(0.6, 0.4));
+    app.world
+        .body(b)
+        .expect("valid testbed operation")
+        .create_polygon(
+            &sdef,
+            &bd::shapes::box_polygon(0.6, 0.4).expect("valid polygon geometry"),
+        )
+        .expect("valid testbed operation");
     app.created_shapes += 1;
     let _j = app
         .world
         .weld(a, b)
         .anchor_world([0.0, 4.0])
         .with_stiffness(app.wj_hz, app.wj_dr, app.wj_hz, app.wj_dr)
-        .build();
+        .build()
+        .expect("valid testbed weld joint");
     app.created_joints += 1;
     app.world
-        .body_apply_linear_impulse_to_center(a, [-10.0, 0.0], true);
+        .body(a)
+        .expect("valid testbed operation")
+        .apply_linear_impulse_to_center([-10.0, 0.0], true)
+        .expect("valid testbed operation");
     app.world
-        .body_apply_linear_impulse_to_center(b, [10.0, 0.0], true);
+        .body(b)
+        .expect("valid testbed operation")
+        .apply_linear_impulse_to_center([10.0, 0.0], true)
+        .expect("valid testbed operation");
 }
 fn ui_weld(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
     let mut hz = app.wj_hz;
     let mut dr = app.wj_dr;
-    let changed = ui.slider("Hertz", 0.0, 30.0, &mut hz) || ui.slider("Damping Ratio", 0.0, 1.0, &mut dr);
+    let changed =
+        ui.slider("Hertz", 0.0, 30.0, &mut hz) || ui.slider("Damping Ratio", 0.0, 1.0, &mut dr);
     if changed {
         app.wj_hz = hz;
         app.wj_dr = dr;
@@ -324,21 +470,55 @@ fn build_filter(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
         .density(1.0)
         .enable_contact_events(true)
         .enable_hit_events(true)
-        .build();
+        .build()
+        .expect("valid testbed definition");
     let a = app
         .world
-        .create_body_id(bd::BodyBuilder::new().body_type(bd::BodyType::Dynamic).position([-0.5, 6.0]).build());
+        .create_body(
+            bd::BodyBuilder::from(app.foundation.body_def())
+                .body_type(bd::BodyType::Dynamic)
+                .position([-0.5, 6.0])
+                .build()
+                .expect("valid testbed definition"),
+        )
+        .expect("valid testbed operation");
     app.created_bodies += 1;
     let b = app
         .world
-        .create_body_id(bd::BodyBuilder::new().body_type(bd::BodyType::Dynamic).position([0.5, 8.0]).build());
+        .create_body(
+            bd::BodyBuilder::from(app.foundation.body_def())
+                .body_type(bd::BodyType::Dynamic)
+                .position([0.5, 8.0])
+                .build()
+                .expect("valid testbed definition"),
+        )
+        .expect("valid testbed operation");
     app.created_bodies += 1;
-    app.world.create_polygon_shape_for(a, &sdef, &bd::shapes::box_polygon(0.4, 0.4));
+    app.world
+        .body(a)
+        .expect("valid testbed operation")
+        .create_polygon(
+            &sdef,
+            &bd::shapes::box_polygon(0.4, 0.4).expect("valid polygon geometry"),
+        )
+        .expect("valid testbed operation");
     app.created_shapes += 1;
-    app.world.create_polygon_shape_for(b, &sdef, &bd::shapes::box_polygon(0.4, 0.4));
+    app.world
+        .body(b)
+        .expect("valid testbed operation")
+        .create_polygon(
+            &sdef,
+            &bd::shapes::box_polygon(0.4, 0.4).expect("valid polygon geometry"),
+        )
+        .expect("valid testbed operation");
     app.created_shapes += 1;
     if app.fj_disable_collide {
-        let _ = app.world.filter_joint(a, b).collide_connected(false).build();
+        let _ = app
+            .world
+            .filter_joint(a, b)
+            .collide_connected(false)
+            .build()
+            .expect("valid testbed filter joint");
         app.created_joints += 1;
     }
 }
@@ -402,12 +582,10 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
     }
 }
 
-pub fn tick(app: &mut super::PhysicsApp) {
+pub fn tick(app: &mut super::PhysicsApp, events: Option<&bd::StepEventsSnapshot>) {
     if app.jl_mode == 6 {
-        // filter joint scene uses contact hit accumulation
-        let world = &app.world;
-        let scratch = &mut app.scratch;
-        world.contact_events_into(&mut scratch.contact_events);
-        app.fj_hits += scratch.contact_events.hit.len();
+        if let Some(events) = events {
+            app.fj_hits += events.contact.hit.len();
+        }
     }
 }

@@ -1,47 +1,83 @@
-use boxdd::{prelude::*, shapes};
+use boxdd::prelude::*;
 
 #[test]
 fn revolute_and_prismatic_limits_smoke() {
-    let mut world = World::new(WorldDef::builder().gravity([0.0_f32, -10.0]).build()).unwrap();
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_builder()
+                .gravity([0.0_f32, -10.0])
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    let body_a = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_builder()
+                .body_type(BodyType::Dynamic)
+                .position([0.0_f32, 2.0])
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    let body_b = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_builder()
+                .body_type(BodyType::Dynamic)
+                .position([1.0_f32, 2.0])
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
 
-    // Bodies
-    let a = world.create_body_id(BodyBuilder::new().position([0.0_f32, 2.0]).build());
-    let b = world.create_body_id(BodyBuilder::new().position([1.0_f32, 2.0]).build());
-    let sdef = ShapeDef::builder().density(1.0).build();
-    let _sa = world.create_polygon_shape_for(a, &sdef, &shapes::box_polygon(0.5, 0.5));
-    let _sb = world.create_polygon_shape_for(b, &sdef, &shapes::box_polygon(0.5, 0.5));
+    let revolute = world
+        .create_revolute_joint(
+            &RevoluteJointDef::new(world.joint_base(body_a, body_b).unwrap())
+                .limit_deg(-15.0, 15.0),
+        )
+        .unwrap();
+    let prismatic = world
+        .create_prismatic_joint(
+            &PrismaticJointDef::new(world.joint_base(body_a, body_b).unwrap())
+                .enable_limit(true)
+                .lower_translation(-0.5)
+                .upper_translation(0.5),
+        )
+        .unwrap();
 
-    // Revolute joint with limits
-    let base =
-        world.joint_base_from_world_points(a, b, world.body_position(a), world.body_position(a));
-    let rdef = RevoluteJointDef::new(base).limit_deg(-15.0, 15.0);
-    let rjid = world.create_revolute_joint_id(&rdef);
-
-    // Prismatic joint along x with limits
-    let base2 = world.joint_base_from_world_with_axis(
-        a,
-        b,
-        world.body_position(a),
-        world.body_position(b),
-        Vec2::new(1.0, 0.0),
-    );
-    let pdef = PrismaticJointDef::new(base2)
-        .enable_limit(true)
-        .lower_translation(-0.5)
-        .upper_translation(0.5);
-    let pjid = world.create_prismatic_joint_id(&pdef);
-    // Drive target translation to 0.0 for stability
-    world.prismatic_set_target_translation(pjid, 0.0);
+    world
+        .joint(prismatic)
+        .unwrap()
+        .into_prismatic()
+        .unwrap()
+        .set_target_translation(0.0)
+        .unwrap();
 
     for _ in 0..120 {
-        world.step(1.0 / 60.0, 4);
+        let _ = world.step(1.0 / 60.0, 4).unwrap();
     }
 
-    // Check revolute angle within limits via safe getter.
-    let ang = world.revolute_angle(rjid);
-    assert!(ang <= 15.0_f32.to_radians() + 1e-3 && ang >= -15.0_f32.to_radians() - 1e-3);
+    let angle = world
+        .joint(revolute)
+        .unwrap()
+        .into_revolute()
+        .unwrap()
+        .angle()
+        .unwrap();
+    assert!(angle <= 15.0_f32.to_radians() + 1.0e-3 && angle >= -15.0_f32.to_radians() - 1.0e-3);
 
-    // Check prismatic translation within limits via safe getter.
-    let trans = world.prismatic_translation(pjid);
-    assert!(trans.is_finite());
+    let translation = world
+        .joint(prismatic)
+        .unwrap()
+        .into_prismatic()
+        .unwrap()
+        .translation()
+        .unwrap();
+    assert!(translation.is_finite());
 }

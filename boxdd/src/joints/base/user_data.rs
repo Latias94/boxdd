@@ -1,190 +1,68 @@
 use super::*;
-use crate::error::ApiResult;
+use crate::error::Result;
+use crate::world::JointCall;
 use std::os::raw::c_void;
 
-fn check_joint(world_core: &WorldCore, id: JointId) -> ApiResult<()> {
-    crate::core::callback_state::check_not_in_callback()?;
-    world_core.check_joint(id)
-}
-
-unsafe fn joint_set_user_data_ptr_impl(
-    world_core: &WorldCore,
-    id: JointId,
+pub(crate) fn joint_set_user_data_ptr_impl(
+    joint: JointCall<'_>,
     user_data: *mut c_void,
-) -> ApiResult<()> {
-    let retired = world_core.clear_joint_user_data(id)?;
-    unsafe { ffi::b2Joint_SetUserData(raw_joint_id(id), user_data) };
-    drop(retired);
+) -> Result<()> {
+    let retired = joint.clear_user_data()?;
+    unsafe { ffi::b2Joint_SetUserData(raw_joint_id(joint.id()), user_data) };
+    retired.resume_drop_panic();
     Ok(())
 }
 
 #[inline]
-fn joint_user_data_ptr_impl(id: JointId) -> *mut c_void {
+pub(crate) fn joint_user_data_ptr_impl(id: JointId) -> *mut c_void {
     unsafe { ffi::b2Joint_GetUserData(raw_joint_id(id)) }
 }
 
-fn joint_set_user_data_impl<T: 'static>(
-    world_core: &WorldCore,
-    id: JointId,
-    value: T,
-) -> ApiResult<()> {
-    let update = world_core.set_joint_user_data(id, value)?;
-    unsafe { ffi::b2Joint_SetUserData(raw_joint_id(id), update.pointer()) };
-    drop(update);
+pub(crate) fn joint_set_user_data_impl<T: 'static>(
+    joint: JointCall<'_>,
+    value: crate::core::callback_state::PendingUserValue<T>,
+) -> Result<()> {
+    let update = joint.set_user_data(value)?;
+    let (pointer, retired) = update.into_parts();
+    unsafe { ffi::b2Joint_SetUserData(raw_joint_id(joint.id()), pointer) };
+    retired.resume_drop_panic();
     Ok(())
 }
 
-fn joint_clear_user_data_impl(world_core: &WorldCore, id: JointId) -> ApiResult<bool> {
-    let retired = world_core.clear_joint_user_data(id)?;
-    let had = retired.is_some();
+pub(crate) fn joint_clear_user_data_impl(joint: JointCall<'_>) -> Result<bool> {
+    let retired = joint.clear_user_data()?;
+    let had = retired.is_some() || !joint_user_data_ptr_impl(joint.id()).is_null();
     if had {
-        unsafe { ffi::b2Joint_SetUserData(raw_joint_id(id), core::ptr::null_mut()) };
+        unsafe { ffi::b2Joint_SetUserData(raw_joint_id(joint.id()), core::ptr::null_mut()) };
     }
-    drop(retired);
+    retired.resume_drop_panic();
     Ok(had)
 }
 
-fn joint_with_user_data_impl<T: 'static, R>(
-    world_core: &WorldCore,
-    id: JointId,
-    f: impl FnOnce(&T) -> R,
-) -> ApiResult<Option<R>> {
-    world_core.try_with_joint_user_data(id, f)
+pub(crate) fn joint_with_user_data_impl<T: 'static, R, F>(
+    joint: JointCall<'_>,
+    f: crate::core::callback_state::PendingUserValue<F>,
+) -> Result<Option<R>>
+where
+    F: FnOnce(&T) -> R,
+{
+    joint.with_user_data(f)
 }
 
-fn joint_with_user_data_mut_impl<T: 'static, R>(
-    world_core: &WorldCore,
-    id: JointId,
-    f: impl FnOnce(&mut T) -> R,
-) -> ApiResult<Option<R>> {
-    world_core.try_with_joint_user_data_mut(id, f)
+pub(crate) fn joint_with_user_data_mut_impl<T: 'static, R, F>(
+    joint: JointCall<'_>,
+    f: crate::core::callback_state::PendingUserValue<F>,
+) -> Result<Option<R>>
+where
+    F: FnOnce(&mut T) -> R,
+{
+    joint.with_user_data_mut(f)
 }
 
-fn joint_take_user_data_impl<T: 'static>(
-    world_core: &WorldCore,
-    id: JointId,
-) -> ApiResult<Option<T>> {
-    let value = world_core.take_joint_user_data::<T>(id)?;
+pub(crate) fn joint_take_user_data_impl<T: 'static>(joint: JointCall<'_>) -> Result<Option<T>> {
+    let value = joint.take_user_data::<T>()?;
     if value.is_some() {
-        unsafe { ffi::b2Joint_SetUserData(raw_joint_id(id), core::ptr::null_mut()) };
+        unsafe { ffi::b2Joint_SetUserData(raw_joint_id(joint.id()), core::ptr::null_mut()) };
     }
     Ok(value)
-}
-
-pub(crate) unsafe fn joint_set_user_data_ptr_raw_checked_impl(
-    world_core: &WorldCore,
-    id: JointId,
-    p: *mut c_void,
-) {
-    check_joint(world_core, id).expect("invalid or foreign JointId");
-    unsafe { joint_set_user_data_ptr_impl(world_core, id, p) }
-        .expect("joint user data is already borrowed");
-}
-
-pub(crate) unsafe fn try_joint_set_user_data_ptr_raw_impl(
-    world_core: &WorldCore,
-    id: JointId,
-    p: *mut c_void,
-) -> ApiResult<()> {
-    check_joint(world_core, id)?;
-    unsafe { joint_set_user_data_ptr_impl(world_core, id, p) }
-}
-
-pub(crate) fn joint_user_data_ptr_raw_checked_impl(
-    world_core: &WorldCore,
-    id: JointId,
-) -> *mut c_void {
-    check_joint(world_core, id).expect("invalid or foreign JointId");
-    joint_user_data_ptr_impl(id)
-}
-
-pub(crate) fn try_joint_user_data_ptr_raw_impl(
-    world_core: &WorldCore,
-    id: JointId,
-) -> ApiResult<*mut c_void> {
-    check_joint(world_core, id)?;
-    Ok(joint_user_data_ptr_impl(id))
-}
-
-pub(crate) fn joint_set_user_data_checked_impl<T: 'static>(
-    world_core: &WorldCore,
-    id: JointId,
-    value: T,
-) {
-    check_joint(world_core, id).expect("invalid or foreign JointId");
-    joint_set_user_data_impl(world_core, id, value).expect("joint user data is already borrowed");
-}
-
-pub(crate) fn try_joint_set_user_data_checked_impl<T: 'static>(
-    world_core: &WorldCore,
-    id: JointId,
-    value: T,
-) -> ApiResult<()> {
-    check_joint(world_core, id)?;
-    joint_set_user_data_impl(world_core, id, value)
-}
-
-pub(crate) fn joint_clear_user_data_checked_impl(world_core: &WorldCore, id: JointId) -> bool {
-    check_joint(world_core, id).expect("invalid or foreign JointId");
-    joint_clear_user_data_impl(world_core, id).expect("joint user data is already borrowed")
-}
-
-pub(crate) fn try_joint_clear_user_data_checked_impl(
-    world_core: &WorldCore,
-    id: JointId,
-) -> ApiResult<bool> {
-    check_joint(world_core, id)?;
-    joint_clear_user_data_impl(world_core, id)
-}
-
-pub(crate) fn joint_with_user_data_checked_impl<T: 'static, R>(
-    world_core: &WorldCore,
-    id: JointId,
-    f: impl FnOnce(&T) -> R,
-) -> Option<R> {
-    check_joint(world_core, id).expect("invalid or foreign JointId");
-    joint_with_user_data_impl(world_core, id, f).expect("joint user data access failed")
-}
-
-pub(crate) fn try_joint_with_user_data_checked_impl<T: 'static, R>(
-    world_core: &WorldCore,
-    id: JointId,
-    f: impl FnOnce(&T) -> R,
-) -> ApiResult<Option<R>> {
-    check_joint(world_core, id)?;
-    joint_with_user_data_impl(world_core, id, f)
-}
-
-pub(crate) fn joint_with_user_data_mut_checked_impl<T: 'static, R>(
-    world_core: &WorldCore,
-    id: JointId,
-    f: impl FnOnce(&mut T) -> R,
-) -> Option<R> {
-    check_joint(world_core, id).expect("invalid or foreign JointId");
-    joint_with_user_data_mut_impl(world_core, id, f).expect("joint user data access failed")
-}
-
-pub(crate) fn try_joint_with_user_data_mut_checked_impl<T: 'static, R>(
-    world_core: &WorldCore,
-    id: JointId,
-    f: impl FnOnce(&mut T) -> R,
-) -> ApiResult<Option<R>> {
-    check_joint(world_core, id)?;
-    joint_with_user_data_mut_impl(world_core, id, f)
-}
-
-pub(crate) fn joint_take_user_data_checked_impl<T: 'static>(
-    world_core: &WorldCore,
-    id: JointId,
-) -> Option<T> {
-    check_joint(world_core, id).expect("invalid or foreign JointId");
-    joint_take_user_data_impl(world_core, id).expect("joint user data access failed")
-}
-
-pub(crate) fn try_joint_take_user_data_checked_impl<T: 'static>(
-    world_core: &WorldCore,
-    id: JointId,
-) -> ApiResult<Option<T>> {
-    check_joint(world_core, id)?;
-    joint_take_user_data_impl(world_core, id)
 }

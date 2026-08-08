@@ -10,12 +10,12 @@ use std::{
     path::{Component, Path},
 };
 
-use crate::provider_manifest::ArtifactManifest;
-use sha2::{Digest, Sha256};
-
-#[allow(dead_code)]
-pub(crate) const BUILD_POLICY_SOURCE_SHA256: &str =
-    "115e0c5000ea1fa8127f9c989b7a609a7cc8eb9741eb993a5de46bad6e00540d";
+use crate::build_support::VerifiedFileSnapshot;
+use crate::{
+    provenance_policy::release_tag_matches_version,
+    provider_catalog::ProviderCapability,
+    provider_manifest::{ArtifactManifest, sha256_bytes},
+};
 
 pub const SCHEMA_VERSION: u64 = 1;
 pub const SCHEMA_NAME: &str = "boxdd-sys-prebuilt-provenance-v1";
@@ -232,7 +232,7 @@ impl PrebuiltProvenanceStatement {
                 self.workflow_ref, expected_workflow_ref
             ));
         }
-        if self.provider != "prebuilt"
+        if self.provider != ProviderCapability::Prebuilt.as_str()
             || self.link != "static"
             || self.simd != "default"
             || self.validate
@@ -360,39 +360,16 @@ impl PrebuiltProvenanceStatement {
     }
 
     pub fn verify_outer_package(&self, path: &Path) -> Result<Vec<u8>, String> {
-        let metadata = fs::symlink_metadata(path).map_err(|error| {
-            format!(
-                "failed to inspect prebuilt package {}: {error}",
-                path.display()
-            )
-        })?;
-        if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
-            return Err(format!(
-                "prebuilt package must be a regular non-symlink file: {}",
-                path.display()
-            ));
-        }
+        self.validate_intrinsic()?;
         if path.file_name().and_then(|name| name.to_str()) != Some(self.package_name.as_str()) {
             return Err(format!(
                 "prebuilt package filename does not match signed statement: {}",
                 path.display()
             ));
         }
-        if metadata.len() != self.package_size {
-            return Err(format!(
-                "prebuilt package metadata size mismatch: statement={} actual={}",
-                self.package_size,
-                metadata.len()
-            ));
-        }
-        let bytes = fs::read(path).map_err(|error| {
-            format!(
-                "failed to read prebuilt package {}: {error}",
-                path.display()
-            )
-        })?;
-        self.verify_package_bytes(&bytes)?;
-        Ok(bytes)
+        let snapshot = VerifiedFileSnapshot::read(path, self.package_size, "prebuilt package")?;
+        self.verify_package_bytes(snapshot.bytes())?;
+        Ok(snapshot.into_bytes())
     }
 
     pub fn verify_extracted_root(&self, root: &Path) -> Result<(), String> {
@@ -469,14 +446,13 @@ impl PrebuiltProvenanceStatement {
                         ));
                     }
                     let expected = self.member(&relative)?;
-                    let bytes = fs::read(&path).map_err(|error| {
-                        format!(
-                            "failed to read extracted provider file {}: {error}",
-                            path.display()
-                        )
-                    })?;
-                    if bytes.len() as u64 != expected.size
-                        || sha256_bytes(&bytes) != expected.sha256
+                    let snapshot = VerifiedFileSnapshot::read(
+                        &path,
+                        expected.size,
+                        "extracted provider member",
+                    )?;
+                    if snapshot.len() as u64 != expected.size
+                        || snapshot.sha256() != expected.sha256
                     {
                         return Err(format!(
                             "extracted provider member {relative:?} does not match signed provenance"
@@ -608,12 +584,6 @@ pub fn canonical_inner_checksums_bytes(members: &[MemberDigest]) -> Result<Vec<u
     Ok(rendered.into_bytes())
 }
 
-pub fn sha256_bytes(bytes: &[u8]) -> String {
-    let mut digest = Sha256::new();
-    digest.update(bytes);
-    hex_digest(digest.finalize())
-}
-
 fn required_members(
     table: &toml::map::Map<String, toml::Value>,
 ) -> Result<Vec<MemberDigest>, String> {
@@ -722,9 +692,7 @@ fn validate_release_tag(crate_version: &str, release_tag: &str) -> Result<(), St
     {
         return Err("prebuilt provenance crate_version is not canonical".to_owned());
     }
-    let short = format!("v{crate_version}");
-    let crate_tag = format!("boxdd-sys-v{crate_version}");
-    if release_tag == short || release_tag == crate_tag {
+    if release_tag_matches_version(crate_version, release_tag) {
         Ok(())
     } else {
         Err(format!(
@@ -847,17 +815,6 @@ fn expected_parent_directories(members: &[MemberDigest]) -> BTreeSet<&str> {
         }
     }
     directories
-}
-
-fn hex_digest(bytes: impl AsRef<[u8]>) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let bytes = bytes.as_ref();
-    let mut output = String::with_capacity(bytes.len() * 2);
-    for &byte in bytes {
-        output.push(HEX[(byte >> 4) as usize] as char);
-        output.push(HEX[(byte & 0x0f) as usize] as char);
-    }
-    output
 }
 
 #[cfg(test)]
@@ -990,6 +947,22 @@ mod tests {
         let mut wrong_run = statement.clone();
         wrong_run.run_attempt = "0".to_owned();
         assert!(wrong_run.validate_intrinsic().is_err());
+    }
+
+    #[test]
+    fn outer_package_snapshot_is_bounded_by_the_signed_exact_size() {
+        let (statement, _) = fixture();
+        let directory = tempfile::tempdir().unwrap();
+        let package = directory.path().join(&statement.package_name);
+        fs::write(&package, b"canonical-package").unwrap();
+        let verified = statement.verify_outer_package(&package).unwrap();
+        assert_eq!(verified.as_slice(), b"canonical-package");
+
+        fs::write(&package, b"canonical-package with trailing bytes").unwrap();
+        let error = statement
+            .verify_outer_package(&package)
+            .expect_err("bytes beyond the signed size must fail before acceptance");
+        assert!(error.contains("byte limit"), "{error}");
     }
 
     #[test]

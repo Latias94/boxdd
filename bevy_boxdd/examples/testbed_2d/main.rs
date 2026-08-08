@@ -1,6 +1,6 @@
 mod control;
+mod scene_catalog;
 mod scenes;
-#[path = "../support/mod.rs"]
 mod support;
 mod ui;
 
@@ -13,7 +13,7 @@ use bevy::time::Fixed;
 use bevy_boxdd::prelude::*;
 use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
 use control::{EventStats, TestbedState};
-use scenes::{ALL_SCENES, TestbedEntity, TestbedScene, spawn_scene};
+use scenes::{SCENE_REGISTRY, TestbedEntity, TestbedScene, TestbedSceneMetadata, spawn_scene};
 
 #[derive(Component, Debug)]
 pub(crate) struct TestbedCamera;
@@ -34,12 +34,16 @@ impl Default for TestbedLaunch {
 }
 
 impl TestbedState {
-    fn scene(&self) -> TestbedScene {
-        ALL_SCENES[self.scene_index]
+    fn scene_metadata(&self) -> &'static TestbedSceneMetadata {
+        SCENE_REGISTRY
+            .get(self.scene_index)
+            .expect("testbed scene index must refer to SCENE_REGISTRY")
     }
 }
 
 fn main() {
+    let foundation =
+        boxdd::Foundation::initialize_default().expect("Box2D foundation should initialize");
     let launch = TestbedLaunch::from_environment();
     App::new()
         .insert_resource(ClearColor(Color::srgb(0.03, 0.045, 0.055)))
@@ -50,7 +54,13 @@ fn main() {
         .insert_resource(EventStats::default())
         .add_plugins(support::teaching_default_plugins("boxdd Bevy Testbed"))
         .add_plugins(EguiPlugin::default())
-        .add_plugins(BoxddPhysicsPlugin::new(BoxddPhysicsSettings::default()))
+        .add_plugins(BoxddPhysicsPlugin::new(
+            foundation,
+            BoxddPhysicsSettings {
+                event_interests: BoxddEventInterests::ALL,
+                ..Default::default()
+            },
+        ))
         .add_systems(First, prepare_time_control)
         .add_systems(Startup, (setup_view, spawn_initial_scene).chain())
         .add_systems(EguiPrimaryContextPass, ui::draw_testbed_ui)
@@ -181,13 +191,14 @@ fn spawn_initial_scene(
     state: Res<TestbedState>,
     origin: Res<BoxddWorldOrigin>,
 ) {
-    log_scene_selection(state.scene());
+    let metadata = state.scene_metadata();
+    log_scene_selection(metadata);
     spawn_scene(
         &mut commands,
         &mut meshes,
         &mut materials,
         &origin,
-        state.scene(),
+        metadata,
     );
 }
 
@@ -275,18 +286,18 @@ pub(crate) fn switch_scene(
     for entity in entities {
         commands.entity(entity).despawn();
     }
-    state.scene_index = scene_index.min(ALL_SCENES.len() - 1);
+    state.scene_index = scene_index.min(SCENE_REGISTRY.len() - 1);
     *stats = EventStats::default();
-    log_scene_selection(state.scene());
-    spawn_scene(commands, meshes, materials, origin, state.scene());
+    let metadata = state.scene_metadata();
+    log_scene_selection(metadata);
+    spawn_scene(commands, meshes, materials, origin, metadata);
 }
 
-fn log_scene_selection(scene: TestbedScene) {
+fn log_scene_selection(metadata: &TestbedSceneMetadata) {
     if !log::log_enabled!(log::Level::Info) {
         return;
     }
 
-    let metadata = scene.metadata();
     let mut upstream = String::new();
     for (index, sample) in metadata.upstream.iter().enumerate() {
         if index > 0 {
@@ -297,7 +308,7 @@ fn log_scene_selection(scene: TestbedScene) {
             "{}/{}:{}",
             sample.category,
             sample.name,
-            sample.mode.as_str()
+            sample.style.as_str()
         )
         .expect("writing to String cannot fail");
     }
@@ -337,7 +348,7 @@ fn finish_single_step(mut state: ResMut<TestbedState>, mut time: ResMut<Time<Vir
 
 fn apply_testbed_settings(
     mut state: ResMut<TestbedState>,
-    mut physics_settings: ResMut<BoxddPhysicsSettings>,
+    mut step_settings: ResMut<BoxddStepSettings>,
     mut fixed_time: ResMut<Time<Fixed>>,
     mut context: NonSendMut<BoxddPhysicsContext>,
 ) {
@@ -348,17 +359,14 @@ fn apply_testbed_settings(
     } else {
         Vec2::ZERO
     };
-    physics_settings.gravity = gravity;
-    physics_settings.sub_step_count = state.sub_step_count;
-    physics_settings.fixed_timestep_seconds = Some(state.fixed_timestep_seconds());
+    step_settings.sub_step_count = state.sub_step_count;
+    step_settings.fallback_timestep_seconds = state.fixed_timestep_seconds() as f32;
     fixed_time.set_timestep_hz(state.hertz);
 
-    if let Some(world) = context.world_mut() {
-        let _ = world.try_set_gravity(gravity.to_boxdd_vec2());
-        let _ = world.try_enable_sleeping(state.sleeping_enabled);
-        let _ = world.try_enable_warm_starting(state.warm_starting_enabled);
-        let _ = world.try_enable_continuous(state.continuous_enabled);
-    }
+    let _ = context.set_gravity(gravity);
+    let _ = context.enable_sleeping(state.sleeping_enabled);
+    let _ = context.enable_warm_starting(state.warm_starting_enabled);
+    let _ = context.enable_continuous(state.continuous_enabled);
 }
 
 fn update_event_counters(
@@ -366,17 +374,20 @@ fn update_event_counters(
     mut contact_begin: MessageReader<BoxddContactBeginMessage>,
     mut contact_end: MessageReader<BoxddContactEndMessage>,
     mut contact_hit: MessageReader<BoxddContactHitMessage>,
+    mut joint_events: MessageReader<BoxddJointEventMessage>,
     mut sensor_begin: MessageReader<BoxddSensorBeginMessage>,
     mut sensor_end: MessageReader<BoxddSensorEndMessage>,
 ) {
     stats.contact_begin_frame = contact_begin.read().count() as u32;
     stats.contact_end_frame = contact_end.read().count() as u32;
     stats.contact_hit_frame = contact_hit.read().count() as u32;
+    stats.joint_frame = joint_events.read().count() as u32;
     stats.sensor_begin_frame = sensor_begin.read().count() as u32;
     stats.sensor_end_frame = sensor_end.read().count() as u32;
     stats.contact_begin_total += u64::from(stats.contact_begin_frame);
     stats.contact_end_total += u64::from(stats.contact_end_frame);
     stats.contact_hit_total += u64::from(stats.contact_hit_frame);
+    stats.joint_total += u64::from(stats.joint_frame);
     stats.sensor_begin_total += u64::from(stats.sensor_begin_frame);
     stats.sensor_end_total += u64::from(stats.sensor_end_frame);
 }

@@ -1,16 +1,10 @@
-#[path = "support/c_call_graph.rs"]
-mod c_call_graph;
-
-use std::collections::BTreeSet;
-use std::fs;
-use std::mem::{size_of, size_of_val};
-use std::path::PathBuf;
+use std::mem::{offset_of, size_of, size_of_val};
 
 use boxdd_sys::adapter::{
     self, SNAPSHOT_ABI_MISMATCH, SNAPSHOT_BAD_HEADER, SNAPSHOT_BUFFER_TOO_SMALL,
-    SNAPSHOT_ENTRY_BODY, SNAPSHOT_ENTRY_LIVE, SNAPSHOT_ENTRY_SHAPE, SNAPSHOT_LIMIT_EXCEEDED,
-    SNAPSHOT_OK, SNAPSHOT_TRAILING_BYTES, SNAPSHOT_TRUNCATED, SnapshotEntry, SnapshotFacts,
-    SnapshotLimits, SnapshotValidationError,
+    SNAPSHOT_ENTRY_BODY, SNAPSHOT_ENTRY_LIVE, SNAPSHOT_ENTRY_SHAPE, SNAPSHOT_INVALID_REFERENCE,
+    SNAPSHOT_INVALID_VALUE, SNAPSHOT_LIMIT_EXCEEDED, SNAPSHOT_OK, SNAPSHOT_TRAILING_BYTES,
+    SNAPSHOT_TRUNCATED, SnapshotEntry, SnapshotFacts, SnapshotLimits, SnapshotValidationError,
 };
 use boxdd_sys::ffi;
 
@@ -31,9 +25,10 @@ fn c_string(bytes: &[u8]) -> &str {
     std::str::from_utf8(&bytes[..end]).expect("adapter identities are ASCII")
 }
 
-fn populated_snapshot() -> (Vec<u8>, i32, i32) {
-    // SAFETY: definitions are initialized by Box2D and all pointed-to values remain alive for
-    // each call. The world is destroyed by the guard after the snapshot bytes are copied.
+fn populated_snapshot_with_shapes(shape_count: usize) -> (Vec<u8>, i32, Vec<i32>) {
+    assert!(shape_count > 0);
+    // SAFETY: each definition is initialized by Box2D, all created ids belong to this local world,
+    // and the guard destroys that world only after its snapshot bytes have been copied.
     unsafe {
         let mut world_def = ffi::b2DefaultWorldDef();
         world_def.gravity = ffi::b2Vec2 { x: 0.0, y: -10.0 };
@@ -47,11 +42,18 @@ fn populated_snapshot() -> (Vec<u8>, i32, i32) {
         ffi::b2DestroyBody(discarded);
 
         let shape_def = ffi::b2DefaultShapeDef();
-        let circle = ffi::b2Circle {
-            center: ffi::b2Vec2 { x: 0.0, y: 0.0 },
-            radius: 0.5,
-        };
-        let shape = ffi::b2CreateCircleShape(body, &shape_def, &circle);
+        let shapes = (0..shape_count)
+            .map(|index| {
+                let circle = ffi::b2Circle {
+                    center: ffi::b2Vec2 {
+                        x: index as f32 * 2.0,
+                        y: 0.0,
+                    },
+                    radius: 0.5,
+                };
+                ffi::b2CreateCircleShape(body, &shape_def, &circle).index1 - 1
+            })
+            .collect();
         ffi::b2World_Step(world.0, 1.0 / 60.0, 4);
 
         let required = ffi::b2World_Snapshot(world.0, std::ptr::null_mut(), 0);
@@ -61,164 +63,121 @@ fn populated_snapshot() -> (Vec<u8>, i32, i32) {
             ffi::b2World_Snapshot(world.0, bytes.as_mut_ptr(), required),
             required
         );
-        (bytes, body.index1 - 1, shape.index1 - 1)
+        (bytes, body.index1 - 1, shapes)
     }
 }
 
-#[test]
-fn snapshot_byte_preflight_has_a_pure_native_call_closure() {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let adapter_path = "native/boxdd_adapter.c";
-    let validator_path = "native/boxdd_snapshot_validate.c";
-    let adapter_source =
-        fs::read_to_string(manifest_dir.join(adapter_path)).expect("read adapter source");
-    let validator_source =
-        fs::read_to_string(manifest_dir.join(validator_path)).expect("read validator source");
-
-    let report = c_call_graph::audit_pure_call_closure(
-        &[
-            (adapter_path, adapter_source.as_str()),
-            (validator_path, validator_source.as_str()),
-        ],
-        &["boxddAdapter_GetIdentity", "boxddSnapshot_Validate"],
-        &["b2IsDoublePrecision"],
-        &["isfinite", "memcpy", "memset", "strncpy"],
-        &[
-            "BOXDD_ABI_FIELD",
-            "BOXDD_ABI_TYPE",
-            "BOXDD_ABI_VALUE",
-            "BOXDD_LAYOUT_VALUE",
-        ],
-    )
-    .expect("snapshot byte preflight must remain independent of mutable Box2D state");
-
-    assert_eq!(
-        report.native_calls,
-        BTreeSet::from(["b2IsDoublePrecision".to_owned()])
-    );
-    assert_eq!(
-        report.library_calls,
-        BTreeSet::from([
-            "isfinite".to_owned(),
-            "memcpy".to_owned(),
-            "memset".to_owned(),
-            "strncpy".to_owned(),
-        ])
-    );
-    assert!(
-        report
-            .reachable_functions
-            .contains("boxddAdapter_GetSnapshotLayoutHash")
-    );
-    assert!(report.reachable_functions.contains("boxddParseImage"));
+fn populated_snapshot() -> (Vec<u8>, i32, i32) {
+    let (bytes, body, shapes) = populated_snapshot_with_shapes(1);
+    (bytes, body, shapes[0])
 }
 
-#[test]
-fn adapter_abi_inputs_are_constant_only_macro_invocations() {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let adapter_path = "native/boxdd_adapter.c";
-    let validator_path = "native/boxdd_snapshot_validate.c";
-    let adapter_source =
-        fs::read_to_string(manifest_dir.join(adapter_path)).expect("read adapter source");
-    let validator_source =
-        fs::read_to_string(manifest_dir.join(validator_path)).expect("read validator source");
-    let include_report = c_call_graph::audit_include_inventory(
-        &[
-            (adapter_path, adapter_source.as_str()),
-            (validator_path, validator_source.as_str()),
-        ],
-        &[
-            (adapter_path, "boxdd_adapter.h"),
-            (adapter_path, "bitset.h"),
-            (adapter_path, "body.h"),
-            (adapter_path, "broad_phase.h"),
-            (adapter_path, "constraint_graph.h"),
-            (adapter_path, "contact.h"),
-            (adapter_path, "id_pool.h"),
-            (adapter_path, "island.h"),
-            (adapter_path, "joint.h"),
-            (adapter_path, "recording.h"),
-            (adapter_path, "sensor.h"),
-            (adapter_path, "shape.h"),
-            (adapter_path, "solver_set.h"),
-            (adapter_path, "table.h"),
-            (adapter_path, "box2d/box2d.h"),
-            (adapter_path, "box2d/collision.h"),
-            (adapter_path, "box2d/types.h"),
-            (validator_path, "boxdd_adapter.h"),
-            (validator_path, "body.h"),
-            (validator_path, "broad_phase.h"),
-            (validator_path, "constraint_graph.h"),
-            (validator_path, "contact.h"),
-            (validator_path, "island.h"),
-            (validator_path, "joint.h"),
-            (validator_path, "sensor.h"),
-            (validator_path, "shape.h"),
-            (validator_path, "solver_set.h"),
-            (validator_path, "table.h"),
-            (validator_path, "box2d/collision.h"),
-            (validator_path, "box2d/types.h"),
-        ],
-        &[
-            (adapter_path, "stddef.h"),
-            (adapter_path, "string.h"),
-            (validator_path, "limits.h"),
-            (validator_path, "math.h"),
-            (validator_path, "stddef.h"),
-            (validator_path, "string.h"),
-        ],
-        &[
-            (adapter_path, "boxdd_private_abi.inl"),
-            (adapter_path, "boxdd_snapshot_layout.inl"),
-        ],
-    )
-    .expect("adapter include inventory must be exact");
-    assert_eq!(
-        include_report.body_quoted,
-        BTreeSet::from([
-            (adapter_path.to_owned(), "boxdd_private_abi.inl".to_owned()),
-            (
-                adapter_path.to_owned(),
-                "boxdd_snapshot_layout.inl".to_owned(),
-            ),
-        ])
-    );
+#[derive(Clone, Copy, Debug)]
+struct SerializedTree {
+    header: usize,
+    root: i32,
+    node_count: i32,
+    capacity: i32,
+    free_list: i32,
+    proxy_count: i32,
+}
 
-    for (source, target) in include_report.body_quoted {
-        assert_eq!(source, adapter_path);
-        let relative_path = format!("native/{target}");
-        let contents = fs::read_to_string(manifest_dir.join(&relative_path))
-            .unwrap_or_else(|error| panic!("read audited include {relative_path}: {error}"));
-        let report = match target.as_str() {
-            "boxdd_private_abi.inl" => c_call_graph::audit_constant_macro_invocations(
-                &relative_path,
-                &contents,
-                &["BOXDD_ABI_TYPE", "BOXDD_ABI_FIELD", "BOXDD_ABI_VALUE"],
-                &["sizeof", "_Alignof", "offsetof"],
-            ),
-            "boxdd_snapshot_layout.inl" => c_call_graph::audit_constant_macro_invocations(
-                &relative_path,
-                &contents,
-                &["BOXDD_LAYOUT_VALUE"],
-                &["sizeof", "_Alignof", "offsetof"],
-            ),
-            _ => unreachable!("include inventory admitted an unaudited function-body include"),
-        }
-        .unwrap_or_else(|error| {
-            panic!("audited include {relative_path} is not constant-only: {error}")
-        });
+fn read_i32(bytes: &[u8], offset: usize) -> i32 {
+    i32::from_ne_bytes(bytes[offset..offset + size_of::<i32>()].try_into().unwrap())
+}
 
-        let expected_macros = match target.as_str() {
-            "boxdd_private_abi.inl" => BTreeSet::from([
-                "BOXDD_ABI_FIELD".to_owned(),
-                "BOXDD_ABI_TYPE".to_owned(),
-                "BOXDD_ABI_VALUE".to_owned(),
-            ]),
-            "boxdd_snapshot_layout.inl" => BTreeSet::from(["BOXDD_LAYOUT_VALUE".to_owned()]),
-            _ => unreachable!(),
+fn write_i32(bytes: &mut [u8], offset: usize, value: i32) {
+    bytes[offset..offset + size_of::<i32>()].copy_from_slice(&value.to_ne_bytes());
+}
+
+fn read_u16(bytes: &[u8], offset: usize) -> u16 {
+    u16::from_ne_bytes(bytes[offset..offset + size_of::<u16>()].try_into().unwrap())
+}
+
+fn write_u16(bytes: &mut [u8], offset: usize, value: u16) {
+    bytes[offset..offset + size_of::<u16>()].copy_from_slice(&value.to_ne_bytes());
+}
+
+fn serialized_trees(bytes: &[u8]) -> [SerializedTree; 3] {
+    let locating_limits = SnapshotLimits {
+        max_tree_nodes: 1,
+        ..SnapshotLimits::default()
+    };
+    let mut facts = SnapshotFacts::default();
+    let mut ignored_entries = 0usize;
+    // SAFETY: the input image and output facts are live for the call. Rejecting the first tree by
+    // capacity leaves consumed_bytes immediately after its five serialized scalar fields.
+    let status = unsafe {
+        adapter::boxddSnapshot_Validate(
+            bytes.as_ptr(),
+            bytes.len(),
+            &locating_limits,
+            &mut facts,
+            std::ptr::null_mut(),
+            0,
+            &mut ignored_entries,
+        )
+    };
+    assert_eq!(status, SNAPSHOT_INVALID_VALUE);
+
+    let scalar_bytes = 5 * size_of::<i32>();
+    let first_header = usize::try_from(facts.consumed_bytes)
+        .unwrap()
+        .checked_sub(scalar_bytes)
+        .expect("tree header precedes the consumed cursor");
+    let mut next_header = first_header;
+    std::array::from_fn(|_| {
+        let tree = SerializedTree {
+            header: next_header,
+            root: read_i32(bytes, next_header),
+            node_count: read_i32(bytes, next_header + size_of::<i32>()),
+            capacity: read_i32(bytes, next_header + 2 * size_of::<i32>()),
+            free_list: read_i32(bytes, next_header + 3 * size_of::<i32>()),
+            proxy_count: read_i32(bytes, next_header + 4 * size_of::<i32>()),
         };
-        assert_eq!(report.macros, expected_macros);
-    }
+        assert!(tree.capacity >= 0);
+        next_header += scalar_bytes + tree.capacity as usize * size_of::<ffi::b2TreeNode>();
+        tree
+    })
+}
+
+fn tree_node_offset(tree: SerializedTree, node: i32) -> usize {
+    assert!((0..tree.capacity).contains(&node));
+    tree.header + 5 * size_of::<i32>() + node as usize * size_of::<ffi::b2TreeNode>()
+}
+
+fn tree_flags(bytes: &[u8], tree: SerializedTree, node: i32) -> u16 {
+    read_u16(
+        bytes,
+        tree_node_offset(tree, node) + offset_of!(ffi::b2TreeNode, flags),
+    )
+}
+
+fn tree_children(bytes: &[u8], tree: SerializedTree, node: i32) -> (i32, i32) {
+    let children = tree_node_offset(tree, node) + offset_of!(ffi::b2TreeNode, __bindgen_anon_1);
+    (
+        read_i32(bytes, children),
+        read_i32(bytes, children + size_of::<i32>()),
+    )
+}
+
+fn write_tree_child(bytes: &mut [u8], tree: SerializedTree, node: i32, child: usize, value: i32) {
+    assert!(child < 2);
+    let children = tree_node_offset(tree, node) + offset_of!(ffi::b2TreeNode, __bindgen_anon_1);
+    write_i32(bytes, children + child * size_of::<i32>(), value);
+}
+
+fn write_tree_parent(bytes: &mut [u8], tree: SerializedTree, node: i32, parent: i32) {
+    let offset = tree_node_offset(tree, node) + offset_of!(ffi::b2TreeNode, __bindgen_anon_2);
+    write_i32(bytes, offset, parent);
+}
+
+fn assert_invalid_tree_snapshot(bytes: &[u8], mutation: &str) {
+    assert_eq!(
+        adapter::validate_snapshot(bytes, &SnapshotLimits::default()).unwrap_err(),
+        SnapshotValidationError::Status(SNAPSHOT_INVALID_REFERENCE),
+        "mutation unexpectedly passed: {mutation}"
+    );
 }
 
 #[test]
@@ -360,6 +319,82 @@ fn validator_fails_closed_for_boundaries_and_corruption() {
 }
 
 #[test]
+fn validator_rejects_malformed_dynamic_tree_topology() {
+    let (bytes, _, _) = populated_snapshot_with_shapes(3);
+    let trees = serialized_trees(&bytes);
+    let tree = *trees
+        .iter()
+        .find(|tree| tree.proxy_count == 3)
+        .expect("dynamic tree with three proxies");
+    assert_eq!(tree.node_count, 5);
+    assert!((0..tree.capacity).contains(&tree.root));
+    assert!((0..tree.capacity).contains(&tree.free_list));
+
+    let allocated = ffi::b2TreeNodeFlags_b2_allocatedNode as u16;
+    let leaf = ffi::b2TreeNodeFlags_b2_leafNode as u16;
+    assert_ne!(tree_flags(&bytes, tree, tree.root) & allocated, 0);
+    assert_eq!(tree_flags(&bytes, tree, tree.free_list) & allocated, 0);
+
+    let root_children = tree_children(&bytes, tree, tree.root);
+    let (branch, root_leaf, root_leaf_slot) = match (
+        tree_flags(&bytes, tree, root_children.0) & leaf != 0,
+        tree_flags(&bytes, tree, root_children.1) & leaf != 0,
+    ) {
+        (false, true) => (root_children.0, root_children.1, 1),
+        (true, false) => (root_children.1, root_children.0, 0),
+        topology => panic!("unexpected three-proxy root topology: {topology:?}"),
+    };
+    let branch_child = tree_children(&bytes, tree, branch).0;
+
+    let mut free_root = bytes.clone();
+    write_i32(&mut free_root, tree.header, tree.free_list);
+    write_tree_parent(&mut free_root, tree, tree.root, tree.free_list);
+    assert_invalid_tree_snapshot(&free_root, "free root");
+
+    let mut free_child = bytes.clone();
+    write_tree_child(
+        &mut free_child,
+        tree,
+        tree.root,
+        root_leaf_slot,
+        tree.free_list,
+    );
+    assert_invalid_tree_snapshot(&free_child, "free child");
+
+    let mut self_child = bytes.clone();
+    write_tree_child(&mut self_child, tree, tree.root, root_leaf_slot, tree.root);
+    assert_invalid_tree_snapshot(&self_child, "self child");
+
+    let mut mismatched_parent = bytes.clone();
+    write_tree_parent(&mut mismatched_parent, tree, root_leaf, branch);
+    assert_invalid_tree_snapshot(&mismatched_parent, "parent does not own child");
+
+    let mut duplicate_and_unreachable = bytes.clone();
+    write_tree_child(
+        &mut duplicate_and_unreachable,
+        tree,
+        tree.root,
+        root_leaf_slot,
+        branch_child,
+    );
+    assert_invalid_tree_snapshot(
+        &duplicate_and_unreachable,
+        "duplicate child leaves an allocated node unreachable",
+    );
+
+    for (node, mutation) in [(root_leaf, "leaf height"), (tree.root, "internal height")] {
+        let mut invalid_height = bytes.clone();
+        let height = tree_node_offset(tree, node) + offset_of!(ffi::b2TreeNode, height);
+        write_u16(&mut invalid_height, height, u16::from(node == root_leaf));
+        assert_eq!(
+            adapter::validate_snapshot(&invalid_height, &SnapshotLimits::default()).unwrap_err(),
+            SnapshotValidationError::Status(SNAPSHOT_INVALID_VALUE),
+            "mutation unexpectedly passed: {mutation}"
+        );
+    }
+}
+
+#[test]
 fn validator_rejects_an_undersized_entry_buffer_without_writing_past_it() {
     let (bytes, _, _) = populated_snapshot();
     let limits = SnapshotLimits::default();
@@ -386,4 +421,67 @@ fn validator_rejects_an_undersized_entry_buffer_without_writing_past_it() {
     assert!(required_entries > 1);
     assert_eq!(sentinel.flags, 0xfeed_beef);
     assert_ne!(status, SNAPSHOT_OK);
+}
+
+#[test]
+fn validator_rejects_a_truncated_pair_set_without_reading_past_the_image() {
+    let (bytes, _, _) = populated_snapshot();
+    let locating_limits = SnapshotLimits {
+        max_hash_capacity: 1,
+        ..SnapshotLimits::default()
+    };
+    let mut pair_set_facts = SnapshotFacts::default();
+    let mut ignored_entries = 0usize;
+    // SAFETY: the input image and output facts are live for the call. A null entries pointer is
+    // the documented sizing form and lets the restrictive limit locate the pair-set payload.
+    let locating_status = unsafe {
+        adapter::boxddSnapshot_Validate(
+            bytes.as_ptr(),
+            bytes.len(),
+            &locating_limits,
+            &mut pair_set_facts,
+            std::ptr::null_mut(),
+            0,
+            &mut ignored_entries,
+        )
+    };
+    assert_eq!(locating_status, SNAPSHOT_INVALID_VALUE);
+    let pair_set_payload_offset = usize::try_from(pair_set_facts.consumed_bytes).unwrap();
+    assert!(pair_set_payload_offset < bytes.len());
+    let truncated = &bytes[..pair_set_payload_offset];
+
+    let limits = SnapshotLimits::default();
+    let mut facts = SnapshotFacts::default();
+    let mut required_entries = 0usize;
+    // SAFETY: all pointers describe live caller-owned storage. The truncated slice ends exactly
+    // before the pair-set payload whose declared capacity remains in the image.
+    let sizing_status = unsafe {
+        adapter::boxddSnapshot_Validate(
+            truncated.as_ptr(),
+            truncated.len(),
+            &limits,
+            &mut facts,
+            std::ptr::null_mut(),
+            0,
+            &mut required_entries,
+        )
+    };
+    assert_eq!(sizing_status, SNAPSHOT_TRUNCATED);
+
+    let valid = adapter::validate_snapshot(&bytes, &limits).unwrap();
+    let mut entries = vec![SnapshotEntry::default(); valid.entries.len()];
+    // SAFETY: the output slice is writable and accurately described by its capacity. Validation
+    // must stop at the truncated pair-set payload before reading or populating later state.
+    let populated_status = unsafe {
+        adapter::boxddSnapshot_Validate(
+            truncated.as_ptr(),
+            truncated.len(),
+            &limits,
+            &mut facts,
+            entries.as_mut_ptr(),
+            entries.len(),
+            &mut required_entries,
+        )
+    };
+    assert_eq!(populated_status, SNAPSHOT_TRUNCATED);
 }

@@ -1,0 +1,344 @@
+--- src/recording.c
++++ src/recording.c
+@@ -18,26 +18,48 @@
+
+ // Buffer helpers
+
+-void b2RecBufAppend( b2RecBuffer* buf, const void* data, int size )
++static int b2RecBufGetLimit( const b2RecBuffer* buf )
++{
++	return buf->limit > 0 && buf->limit <= B2_REC_MAX_BUFFER_BYTES ? buf->limit : B2_REC_MAX_BUFFER_BYTES;
++}
++
++void b2RecBufAppend( b2RecBuffer* buf, const void* data, size_t size )
+ {
+-	if ( size <= 0 )
++	if ( size == 0 || buf->status != B2_REC_BUFFER_OK )
++	{
++		return;
++	}
++
++	int limit = b2RecBufGetLimit( buf );
++	if ( buf->capacity < 0 ||
++		 ( buf->countOnly == false &&
++		   ( buf->size > buf->capacity || ( buf->capacity > 0 && buf->data == NULL ) ) ) ||
++		 size > (size_t)limit || buf->size < 0 || buf->size > limit - (int)size )
+ 	{
++		buf->status = B2_REC_BUFFER_LIMIT_EXCEEDED;
+ 		return;
+ 	}
++	int required = buf->size + (int)size;
+
+-	// Sizing pass: tally bytes without allocating or copying
++	// Sizing pass: tally bytes without allocating or copying.
+ 	if ( buf->countOnly )
+ 	{
+-		buf->size += size;
++		buf->size = required;
+ 		return;
+ 	}
+
+-	if ( buf->size + size > buf->capacity )
++	if ( required > buf->capacity )
+ 	{
+-		int newCap = buf->capacity * 2;
+-		if ( newCap < buf->size + size + 64 )
++		int doubled = 0;
++		if ( buf->capacity > 0 )
++		{
++			doubled = buf->capacity <= limit / 2 ? buf->capacity * 2 : limit;
++		}
++		int padded = required <= limit - 64 ? required + 64 : required;
++		int newCap = doubled > padded ? doubled : padded;
++		if ( newCap > limit )
+ 		{
+-			newCap = buf->size + size + 64;
++			newCap = limit;
+ 		}
+ 		if ( buf->data == NULL )
+ 		{
+@@ -50,8 +72,8 @@
+ 		buf->capacity = newCap;
+ 	}
+
+-	memcpy( buf->data + buf->size, data, (size_t)size );
+-	buf->size += size;
++	memcpy( buf->data + buf->size, data, size );
++	buf->size = required;
+ }
+
+ void b2RecBufFree( b2RecBuffer* buf )
+@@ -59,10 +81,8 @@
+ 	if ( buf->data != NULL )
+ 	{
+ 		b2Free( buf->data, buf->capacity );
+-		buf->data = NULL;
+-		buf->capacity = 0;
+-		buf->size = 0;
+ 	}
++	*buf = (b2RecBuffer){ 0 };
+ }
+
+ // Write primitives
+@@ -505,12 +525,15 @@
+ 	int offset = buf->size;
+ 	uint8_t zero[4] = { 0, 0, 0, 0 };
+ 	b2RecBufAppend( buf, zero, 4 );
+-	return offset;
++	return buf->status == B2_REC_BUFFER_OK ? offset : -1;
+ }
+
+ void b2RecPatchU32( b2RecBuffer* buf, int offset, uint32_t v )
+ {
+-	B2_ASSERT( offset >= 0 && offset + 4 <= buf->size );
++	if ( buf->status != B2_REC_BUFFER_OK || offset < 0 || offset > buf->size - 4 )
++	{
++		return;
++	}
+ 	uint8_t* p = buf->data + offset;
+ 	p[0] = (uint8_t)v;
+ 	p[1] = (uint8_t)( v >> 8 );
+@@ -518,15 +541,30 @@
+ 	p[3] = (uint8_t)( v >> 24 );
+ }
+
+-// Concurrent query commits are serialized so records never interleave in the shared buffer
+-void b2RecCommitRecord( b2Recording* rec, uint8_t opcode, const uint8_t* payload, int payloadSize )
++// Concurrent query commits are serialized and appended atomically. A failed query never leaves an
++// opcode or size prefix that could make the otherwise valid stream ambiguous.
++void b2RecCommitRecord( b2Recording* rec, uint8_t opcode, const uint8_t* payload, size_t payloadSize )
+ {
+-	B2_ASSERT( payloadSize >= 0 && payloadSize < ( 1 << 24 ) );
+ 	b2LockMutex( rec->lock );
++	if ( payloadSize > B2_REC_MAX_RECORD_PAYLOAD )
++	{
++		if ( rec->buffer.status == B2_REC_BUFFER_OK )
++		{
++			rec->buffer.status = B2_REC_BUFFER_RECORD_TOO_LARGE;
++		}
++		b2UnlockMutex( rec->lock );
++		return;
++	}
++
++	int start = rec->buffer.size;
+ 	b2RecW_U8( &rec->buffer, opcode );
+ 	uint8_t sz[3] = { (uint8_t)payloadSize, (uint8_t)( payloadSize >> 8 ), (uint8_t)( payloadSize >> 16 ) };
+ 	b2RecBufAppend( &rec->buffer, sz, 3 );
+ 	b2RecBufAppend( &rec->buffer, payload, payloadSize );
++	if ( rec->buffer.status != B2_REC_BUFFER_OK )
++	{
++		rec->buffer.size = start;
++	}
+ 	b2UnlockMutex( rec->lock );
+ }
+
+@@ -533,6 +571,7 @@
+ void b2RecQueryBegin( b2RecQueryWriter* w, void* context )
+ {
+ 	w->buf = (b2RecBuffer){ 0 };
++	w->buf.limit = B2_REC_MAX_RECORD_PAYLOAD;
+ 	w->userFcn.overlapFcn = NULL;
+ 	w->userContext = context;
+ 	w->hitCount = 0;
+@@ -541,7 +580,19 @@
+
+ void b2RecQueryCommit( b2Recording* rec, uint8_t opcode, b2RecQueryWriter* w )
+ {
+-	b2RecCommitRecord( rec, opcode, w->buf.data, w->buf.size );
++	if ( w->buf.status == B2_REC_BUFFER_OK )
++	{
++		b2RecCommitRecord( rec, opcode, w->buf.data, (size_t)w->buf.size );
++	}
++	else
++	{
++		b2LockMutex( rec->lock );
++		if ( rec->buffer.status == B2_REC_BUFFER_OK )
++		{
++			rec->buffer.status = B2_REC_BUFFER_RECORD_TOO_LARGE;
++		}
++		b2UnlockMutex( rec->lock );
++	}
+ 	b2RecBufFree( &w->buf );
+ }
+
+@@ -583,9 +634,9 @@
+
+ void b2RecBeginRecord( b2Recording* rec, uint8_t opcode )
+ {
+-	b2RecW_U8( &rec->buffer, opcode );
++	// Store the complete record start so any later failure can roll back the opcode and prefix.
+ 	rec->recordStart = rec->buffer.size;
+-	// Make space to hold a 24-bit payload size, which isn't known until b2RecEndRecord is called.
++	b2RecW_U8( &rec->buffer, opcode );
+ 	uint8_t zero[3] = { 0, 0, 0 };
+ 	b2RecBufAppend( &rec->buffer, zero, 3 );
+ }
+@@ -592,10 +643,20 @@
+
+ void b2RecEndRecord( b2Recording* rec )
+ {
+-	// Compute the final payload size and record it in the 24-bit space reserved right after the opcode.
+-	int payloadSize = rec->buffer.size - rec->recordStart - 3;
+-	B2_ASSERT( payloadSize >= 0 && payloadSize < ( 1 << 24 ) );
+-	uint8_t* p = rec->buffer.data + rec->recordStart;
++	if ( rec->buffer.status != B2_REC_BUFFER_OK )
++	{
++		rec->buffer.size = rec->recordStart;
++		return;
++	}
++
++	int payloadSize = rec->buffer.size - rec->recordStart - 4;
++	if ( payloadSize < 0 || payloadSize > B2_REC_MAX_RECORD_PAYLOAD )
++	{
++		rec->buffer.size = rec->recordStart;
++		rec->buffer.status = B2_REC_BUFFER_RECORD_TOO_LARGE;
++		return;
++	}
++	uint8_t* p = rec->buffer.data + rec->recordStart + 1;
+ 	p[0] = (uint8_t)payloadSize;
+ 	p[1] = (uint8_t)( payloadSize >> 8 );
+ 	p[2] = (uint8_t)( payloadSize >> 16 );
+@@ -681,15 +742,22 @@
+
+ b2Recording* b2CreateRecording( int byteCapacity )
+ {
++	if ( byteCapacity < 0 || byteCapacity > B2_REC_MAX_BUFFER_BYTES )
++	{
++		return NULL;
++	}
++
+ 	b2Recording* rec = b2Alloc( (int)sizeof( b2Recording ) );
+ 	*rec = (b2Recording){ 0 };
+
+-	// Pre-size to taste; the buffer still doubles on demand. A few hundred KiB is plenty for a
+-	// short session and avoids early reallocations.
+-	int initCap = byteCapacity > 0 ? byteCapacity : 65536;
++	// The argument is a total writer limit. Allocate only a small prefix and grow on demand.
++	int limit = byteCapacity > 0 ? byteCapacity : B2_REC_MAX_BUFFER_BYTES;
++	int initCap = limit < 65536 ? limit : 65536;
+ 	rec->buffer.data = b2Alloc( initCap );
+ 	rec->buffer.capacity = initCap;
+ 	rec->buffer.size = 0;
++	rec->buffer.limit = limit;
++	rec->buffer.status = B2_REC_BUFFER_OK;
+ 	rec->lock = b2CreateMutex();
+ 	return rec;
+ }
+@@ -708,12 +776,28 @@
+
+ const uint8_t* b2Recording_GetData( const b2Recording* recording )
+ {
++	if ( recording == NULL || recording->buffer.status != B2_REC_BUFFER_OK || recording->buffer.size < 0 )
++	{
++		return NULL;
++	}
+ 	return recording->buffer.data;
+ }
+
+ int b2Recording_GetSize( const b2Recording* recording )
+ {
+-	return recording->buffer.size;
++	if ( recording == NULL )
++	{
++		return B2_REC_SIZE_INVALID;
++	}
++	if ( recording->buffer.status == B2_REC_BUFFER_LIMIT_EXCEEDED )
++	{
++		return B2_REC_SIZE_LIMIT_EXCEEDED;
++	}
++	if ( recording->buffer.status == B2_REC_BUFFER_RECORD_TOO_LARGE )
++	{
++		return B2_REC_SIZE_RECORD_TOO_LARGE;
++	}
++	return recording->buffer.status == B2_REC_BUFFER_OK ? recording->buffer.size : B2_REC_SIZE_INVALID;
+ }
+
+ void b2RecAccumulateBounds( b2Recording* rec, b2AABB bounds )
+@@ -724,15 +808,12 @@
+
+ void b2StartRecordingIntoBuffer( b2World* world, b2Recording* recording )
+ {
+-	// Reset so a recording handle can be reused for a fresh session
++	// Reset the sticky producer state so a recording handle can be reused for a fresh session.
+ 	recording->buffer.size = 0;
++	recording->buffer.status = B2_REC_BUFFER_OK;
+ 	recording->recordStart = 0;
+ 	recording->haveBounds = false;
+
+-	// Serialize the live world into a blob that follows the header and seeds replay.
+-	b2RecBuffer blob = { 0 };
+-	b2SerializeWorld( world, &blob );
+-
+ 	b2RecHeader hdr = { 0 };
+ 	hdr.magic = B2_REC_MAGIC;
+ 	hdr.versionMajor = B2_REC_VERSION_MAJOR;
+@@ -741,11 +822,28 @@
+ 	hdr.pointerWidth = (uint8_t)sizeof( void* );
+ 	hdr.bigEndian = 0;
+ 	hdr.validationEnabled = B2_ENABLE_VALIDATION ? 1u : 0u;
+-	hdr.snapshotSize = (uint64_t)blob.size;
+-	b2RecBufAppend( &recording->buffer, &hdr, (int)sizeof( hdr ) );
+-	b2RecBufAppend( &recording->buffer, blob.data, blob.size );
+-	b2RecBufFree( &blob );
+
++	// Reserve the header, serialize the seed directly into its final buffer, then backpatch the
++	// snapshot width. This avoids retaining a second full snapshot during recording startup.
++	b2RecBufAppend( &recording->buffer, &hdr, sizeof( hdr ) );
++	if ( recording->buffer.status != B2_REC_BUFFER_OK )
++	{
++		return;
++	}
++	int snapshotStart = recording->buffer.size;
++	b2SerializeWorld( world, &recording->buffer );
++	if ( recording->buffer.status != B2_REC_BUFFER_OK )
++	{
++		return;
++	}
++	if ( recording->buffer.size <= snapshotStart )
++	{
++		recording->buffer.status = B2_REC_BUFFER_INVALID;
++		return;
++	}
++	hdr.snapshotSize = (uint64_t)( recording->buffer.size - snapshotStart );
++	memcpy( recording->buffer.data, &hdr, sizeof( hdr ) );
++
+ 	world->recording = recording;
+
+ 	// Seed the bounds with the snapshot state so frame 0 is framed even if nothing moves
+@@ -792,7 +890,9 @@
+
+ bool b2SaveRecordingToFile( const b2Recording* recording, const char* path )
+ {
+-	if ( recording == NULL || path == NULL )
++	if ( recording == NULL || path == NULL || recording->buffer.status != B2_REC_BUFFER_OK ||
++		 recording->buffer.size < 0 ||
++		 ( recording->buffer.size > 0 && recording->buffer.data == NULL ) )
+ 	{
+ 		return false;
+ 	}
+@@ -830,7 +930,7 @@
+ 	long fileSize = ftell( f );
+ 	// Anything smaller than the fixed header can't be a recording, so reject it here rather than
+ 	// hand back a malformed buffer that only fails later
+-	if ( fileSize < (long)sizeof( b2RecHeader ) || fileSize > INT_MAX )
++	if ( fileSize < (long)sizeof( b2RecHeader ) || fileSize > B2_REC_MAX_BUFFER_BYTES )
+ 	{
+ 		fclose( f );
+ 		return NULL;
+@@ -838,6 +938,16 @@
+ 	fseek( f, 0, SEEK_SET );
+
+ 	b2Recording* rec = b2CreateRecording( (int)fileSize );
++	if ( rec == NULL )
++	{
++		fclose( f );
++		return NULL;
++	}
++	if ( rec->buffer.capacity < (int)fileSize )
++	{
++		rec->buffer.data = b2GrowAlloc( rec->buffer.data, rec->buffer.capacity, (int)fileSize );
++		rec->buffer.capacity = (int)fileSize;
++	}
+ 	size_t readSize = fread( rec->buffer.data, 1, (size_t)fileSize, f );
+ 	fclose( f );
+

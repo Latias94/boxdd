@@ -1,6 +1,7 @@
 use bevy_app::{App, FixedUpdate};
 use bevy_boxdd::prelude::*;
 use bevy_ecs::message::{Message, Messages};
+use bevy_ecs::prelude::Resource;
 use bevy_math::{Quat, Vec2, Vec3};
 use bevy_transform::components::Transform;
 
@@ -8,12 +9,46 @@ fn step_fixed(app: &mut App) {
     app.world_mut().run_schedule(FixedUpdate);
 }
 
+fn body_transform(app: &mut App, body: boxdd::BodyId) -> boxdd::WorldTransform {
+    app.world_mut()
+        .non_send_mut::<BoxddPhysicsContext>()
+        .body_transform(body)
+        .unwrap()
+}
+
+fn assert_world_transform_eq(actual: boxdd::WorldTransform, expected: boxdd::WorldTransform) {
+    assert_eq!(actual.position(), expected.position());
+    assert_eq!(actual.rotation().angle(), expected.rotation().angle());
+}
+
+#[derive(Resource)]
+struct ReplaceOriginOnJointRemoval(bool);
+
+fn native_counts(app: &App) -> (i32, i32, i32) {
+    let counters = app
+        .world()
+        .non_send::<BoxddPhysicsContext>()
+        .world()
+        .unwrap()
+        .counters()
+        .unwrap();
+    (
+        counters.body_count,
+        counters.shape_count,
+        counters.joint_count,
+    )
+}
+
 fn physics_app() -> App {
+    let foundation = boxdd::Foundation::initialize_default().unwrap();
     let mut app = App::new();
-    app.add_plugins(BoxddPhysicsPlugin::new(BoxddPhysicsSettings {
-        gravity: Vec2::ZERO,
-        ..Default::default()
-    }));
+    app.add_plugins(BoxddPhysicsPlugin::new(
+        foundation,
+        BoxddPhysicsSettings {
+            gravity: Vec2::ZERO,
+            ..Default::default()
+        },
+    ));
     app
 }
 
@@ -36,7 +71,7 @@ fn authored_transform(x: f32, y: f32, z: f32, angle: f32, scale: Vec3) -> Transf
 #[test]
 fn checked_conversions_round_trip_near_origin_in_single_precision() {
     let absolute_origin = boxdd::Position::from([1_024.0_f32, -2_048.0]);
-    let origin = BoxddWorldOrigin::try_new(absolute_origin).unwrap();
+    let origin = BoxddWorldOrigin::new(absolute_origin).unwrap();
     let local = Vec2::new(12.5, -0.125);
 
     let absolute = origin.checked_local_to_absolute(local).unwrap();
@@ -51,7 +86,7 @@ fn checked_conversions_round_trip_near_origin_in_single_precision() {
 #[test]
 fn double_precision_preserves_millimeter_offsets_at_ten_megameters() {
     let absolute_origin = boxdd::Position::new(10_000_000.0, -10_000_000.0);
-    let origin = BoxddWorldOrigin::try_new(absolute_origin).unwrap();
+    let origin = BoxddWorldOrigin::new(absolute_origin).unwrap();
     let local = Vec2::new(0.001, -0.001);
     let absolute = origin.checked_local_to_absolute(local).unwrap();
 
@@ -63,10 +98,14 @@ fn double_precision_preserves_millimeter_offsets_at_ten_megameters() {
 
     let mut app = App::new();
     app.insert_resource(origin);
-    app.add_plugins(BoxddPhysicsPlugin::new(BoxddPhysicsSettings {
-        gravity: Vec2::ZERO,
-        ..Default::default()
-    }));
+    let foundation = boxdd::Foundation::initialize_default().unwrap();
+    app.add_plugins(BoxddPhysicsPlugin::new(
+        foundation,
+        BoxddPhysicsSettings {
+            gravity: Vec2::ZERO,
+            ..Default::default()
+        },
+    ));
     let entity = app
         .world_mut()
         .spawn((
@@ -79,14 +118,7 @@ fn double_precision_preserves_millimeter_offsets_at_ten_megameters() {
     step_fixed(&mut app);
 
     let body = app.world().entity(entity).get::<BoxddBody>().unwrap().id();
-    let native_position = app
-        .world()
-        .non_send::<BoxddPhysicsContext>()
-        .world()
-        .unwrap()
-        .try_body_transform(body)
-        .unwrap()
-        .position();
+    let native_position = body_transform(&mut app, body).position();
     let native_local = native_position
         .checked_relative_to(absolute_origin)
         .unwrap();
@@ -106,14 +138,7 @@ fn double_precision_preserves_millimeter_offsets_at_ten_megameters() {
     let transform = app.world().entity(entity).get::<Transform>().unwrap();
     assert!((transform.translation.x - (local.x - 1.0)).abs() <= f32::EPSILON);
     assert!((transform.translation.y - (local.y + 1.0)).abs() <= f32::EPSILON);
-    let native_after_rebase = app
-        .world()
-        .non_send::<BoxddPhysicsContext>()
-        .world()
-        .unwrap()
-        .try_body_transform(body)
-        .unwrap()
-        .position();
+    let native_after_rebase = body_transform(&mut app, body).position();
     assert_eq!(native_after_rebase, native_position);
 }
 
@@ -149,14 +174,7 @@ fn successful_rebase_is_atomic_across_sync_modes_and_uncreated_bodies() {
     let existing = [physics_to_bevy, bevy_to_physics, no_sync];
     let native_before = existing.map(|entity| {
         let body = app.world().entity(entity).get::<BoxddBody>().unwrap().id();
-        let position = app
-            .world()
-            .non_send::<BoxddPhysicsContext>()
-            .world()
-            .unwrap()
-            .try_body_transform(body)
-            .unwrap()
-            .position();
+        let position = body_transform(&mut app, body).position();
         (body, position)
     });
 
@@ -193,14 +211,7 @@ fn successful_rebase_is_atomic_across_sync_modes_and_uncreated_bodies() {
     }
 
     for (body, position_before) in native_before {
-        let position_after = app
-            .world()
-            .non_send::<BoxddPhysicsContext>()
-            .world()
-            .unwrap()
-            .try_body_transform(body)
-            .unwrap()
-            .position();
+        let position_after = body_transform(&mut app, body).position();
         assert_eq!(position_after, position_before);
     }
     let new_body = app
@@ -209,14 +220,7 @@ fn successful_rebase_is_atomic_across_sync_modes_and_uncreated_bodies() {
         .get::<BoxddBody>()
         .expect("body creation must run after a successful rebase")
         .id();
-    let new_position = app
-        .world()
-        .non_send::<BoxddPhysicsContext>()
-        .world()
-        .unwrap()
-        .try_body_transform(new_body)
-        .unwrap()
-        .position();
+    let new_position = body_transform(&mut app, new_body).position();
     assert_eq!(new_position, boxdd::Position::from([11.0_f32, 12.0]));
 
     let events = read_messages::<WorldOriginRebased>(&app);
@@ -245,13 +249,7 @@ fn failed_rebase_leaves_ecs_and_native_world_unchanged() {
         .get::<BoxddBody>()
         .unwrap()
         .id();
-    let native_before = app
-        .world()
-        .non_send::<BoxddPhysicsContext>()
-        .world()
-        .unwrap()
-        .try_body_transform(body)
-        .unwrap();
+    let native_before = body_transform(&mut app, body);
     let valid_uncreated = app
         .world_mut()
         .spawn((RigidBody::Static, Transform::from_xyz(5.0, 6.0, 7.0)))
@@ -281,13 +279,7 @@ fn failed_rebase_leaves_ecs_and_native_world_unchanged() {
             &before
         );
     }
-    let native_after = app
-        .world()
-        .non_send::<BoxddPhysicsContext>()
-        .world()
-        .unwrap()
-        .try_body_transform(body)
-        .unwrap();
+    let native_after = body_transform(&mut app, body);
     assert_eq!(native_after.position(), native_before.position());
     assert_eq!(
         native_after.rotation().angle(),
@@ -342,4 +334,147 @@ fn invalid_physics_rotation_prevents_rebase_before_body_creation() {
                         == BoxddPluginError::WorldOrigin(BoxddWorldOriginError::InvalidRotation)
             })
     );
+}
+
+#[test]
+fn replacing_or_removing_world_origin_stops_the_physics_pipeline() {
+    let mut app = physics_app();
+    let existing = app
+        .world_mut()
+        .spawn((
+            RigidBody::Dynamic,
+            LinearVelocity(Vec2::new(3.0, 0.0)),
+            Transform::default(),
+        ))
+        .id();
+    step_fixed(&mut app);
+
+    let body = app
+        .world()
+        .entity(existing)
+        .get::<BoxddBody>()
+        .unwrap()
+        .id();
+    let native_before = body_transform(&mut app, body);
+    let transform_before = *app.world().entity(existing).get::<Transform>().unwrap();
+    let pending = app
+        .world_mut()
+        .spawn((RigidBody::Static, Transform::from_xyz(5.0, 6.0, 0.0)))
+        .id();
+
+    app.insert_resource(BoxddWorldOrigin::new(boxdd::Position::from([100.0_f32, -50.0])).unwrap());
+    step_fixed(&mut app);
+    step_fixed(&mut app);
+
+    assert_world_transform_eq(body_transform(&mut app, body), native_before);
+    assert_eq!(
+        app.world().entity(existing).get::<Transform>().unwrap(),
+        &transform_before
+    );
+    assert!(!app.world().entity(pending).contains::<BoxddBody>());
+    let errors = read_messages::<BoxddErrorMessage>(&app);
+    assert_eq!(
+        errors
+            .iter()
+            .filter(|message| {
+                message.operation == BoxddOperation::ValidateWorldBinding
+                    && message.error == BoxddPluginError::WorldOriginStateMismatch
+            })
+            .count(),
+        1
+    );
+
+    app.insert_resource(BoxddWorldOrigin::default());
+    step_fixed(&mut app);
+    assert!(app.world().entity(pending).contains::<BoxddBody>());
+
+    app.world_mut().remove_resource::<BoxddWorldOrigin>();
+    let native_before_removal = body_transform(&mut app, body);
+    step_fixed(&mut app);
+    assert_world_transform_eq(body_transform(&mut app, body), native_before_removal);
+    assert!(
+        read_messages::<BoxddErrorMessage>(&app)
+            .iter()
+            .any(|message| {
+                message.operation == BoxddOperation::ValidateWorldBinding
+                    && message.error == BoxddPluginError::WorldOriginUnavailable
+            })
+    );
+}
+
+#[test]
+fn origin_replacement_from_a_deferred_hook_stops_the_remaining_chain() {
+    let mut app = App::new();
+    app.insert_resource(ReplaceOriginOnJointRemoval(true));
+    app.world_mut()
+        .register_component_hooks::<BoxddJoint>()
+        .on_remove(|mut world, _| {
+            let should_replace = {
+                let mut state = world.resource_mut::<ReplaceOriginOnJointRemoval>();
+                std::mem::take(&mut state.0)
+            };
+            if should_replace {
+                *world.resource_mut::<BoxddWorldOrigin>() =
+                    BoxddWorldOrigin::new(boxdd::Position::from([100.0_f32, 0.0])).unwrap();
+            }
+        });
+    let foundation = boxdd::Foundation::initialize_default().unwrap();
+    app.add_plugins(BoxddPhysicsPlugin::new(
+        foundation,
+        BoxddPhysicsSettings {
+            gravity: Vec2::ZERO,
+            ..Default::default()
+        },
+    ));
+
+    let body_a = app
+        .world_mut()
+        .spawn((RigidBody::Static, Transform::default()))
+        .id();
+    let body_b = app
+        .world_mut()
+        .spawn((
+            RigidBody::Dynamic,
+            Collider::circle(0.5),
+            Transform::from_xyz(1.0, 0.0, 0.0),
+        ))
+        .id();
+    let joint = app
+        .world_mut()
+        .spawn(JointDescriptor::distance(
+            body_a,
+            body_b,
+            boxdd::Position::ZERO,
+            boxdd::Position::from([1.0_f32, 0.0]),
+        ))
+        .id();
+    step_fixed(&mut app);
+    assert_eq!(native_counts(&app), (2, 1, 1));
+
+    app.world_mut()
+        .entity_mut(joint)
+        .remove::<JointDescriptor>();
+    app.world_mut().entity_mut(body_b).remove::<Collider>();
+    app.world_mut().entity_mut(body_b).remove::<RigidBody>();
+    step_fixed(&mut app);
+
+    assert_eq!(native_counts(&app), (2, 1, 0));
+    assert_eq!(
+        app.world().resource::<BoxddWorldOrigin>().active(),
+        boxdd::Position::from([100.0_f32, 0.0])
+    );
+    step_fixed(&mut app);
+    assert_eq!(native_counts(&app), (2, 1, 0));
+    assert!(
+        read_messages::<BoxddErrorMessage>(&app)
+            .iter()
+            .any(|message| {
+                message.operation == BoxddOperation::ValidateWorldBinding
+                    && message.error == BoxddPluginError::WorldOriginStateMismatch
+            })
+    );
+
+    app.insert_resource(BoxddWorldOrigin::default());
+    step_fixed(&mut app);
+    assert_eq!(native_counts(&app), (1, 0, 0));
 }

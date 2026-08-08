@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Error, Result};
 
+pub const RECORDING_OPS_PATH: &str = "src/recording_ops.inl";
+
 pub const ARGUMENT_TAGS: &[&str] = &[
     "AABB",
     "BODYDEF",
@@ -69,6 +71,17 @@ pub struct RecordingOp {
     pub arguments: Vec<RecordingArgument>,
 }
 
+fn parse_opcode_literal(value: &str) -> Option<u8> {
+    let value = value.trim();
+    value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+        .map_or_else(
+            || value.parse().ok(),
+            |hex| u8::from_str_radix(hex, 16).ok(),
+        )
+}
+
 pub fn parse(source: &str) -> Result<Vec<RecordingOp>> {
     let source = strip_comments(source)?;
     let mut operations = Vec::new();
@@ -106,14 +119,8 @@ fn parse_operation(arguments: &str) -> Result<RecordingOp> {
         )));
     }
     let opcode_text = fields[0].trim();
-    let opcode = if let Some(hex) = opcode_text.strip_prefix("0x") {
-        u8::from_str_radix(hex.trim(), 16)
-    } else {
-        opcode_text.parse()
-    }
-    .map_err(|error| {
-        Error::message(format!("invalid recording opcode `{opcode_text}`: {error}"))
-    })?;
+    let opcode = parse_opcode_literal(opcode_text)
+        .ok_or_else(|| Error::message(format!("invalid recording opcode `{opcode_text}`")))?;
     let name = identifier(fields[1].trim(), "operation name")?;
     let return_tag = identifier(fields[2].trim(), "return tag")?;
     let tail_source = fields[3..].join(",");
@@ -283,9 +290,7 @@ fn strip_comments(source: &str) -> Result<String> {
                 index += 1;
             }
             if !closed {
-                return Err(Error::message(
-                    "unterminated block comment in recording manifest",
-                ));
+                return Err(Error::message("unterminated C block comment"));
             }
         } else {
             output.push(char::from(bytes[index]));
@@ -305,8 +310,8 @@ mod tests {
                 // B2_REC_OP(0x01, CommentOnly, RET_NONE)
                 B2_REC_OP(0x10, CreateBody, RET_BODYID,
                     ARG(WORLDID, world) ARG(BODYDEF, def))
-                B2_REC_OP(0x80, Step, RET_NONE,
-                    ARG(WORLDID, world) ARG(F32, dt) ARG(I32, subSteps))
+                B2_REC_OP(0x0C, WorldRebuildStaticTree, RET_NONE,
+                    ARG(WORLDID, world))
             "#,
         )
         .expect("fixture should parse")

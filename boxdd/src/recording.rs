@@ -1,18 +1,16 @@
-//! Owned Box2D recording sessions and recording byte buffers.
+//! Owned Box2D recording sessions and opaque process-local recordings.
 
-use crate::core::world_core::{ActivityState, WorldCore};
-#[cfg(not(target_arch = "wasm32"))]
-use crate::{Aabb, MoverPlaneResult};
+#[cfg(test)]
+use crate::core::world_core::ActivityState;
+use crate::core::world_core::{RecordingActivityLease, WorldCore};
 use crate::{
-    ApiError, ApiResult, BodyDef, BodyId, BodyType, Counters, Filter, Position, QueryFilter,
-    RayResult, ShapeDef, ShapeId, Vec2, World, WorldCastOutput,
+    BodyBuilder, BodyDef, BodyId, ChainId, Counters, Error, JointId, Result, ShapeId, Vec2, World,
 };
 use boxdd_sys::ffi;
+use core::fmt;
 use core::ptr::NonNull;
-use std::rc::Rc;
 
 mod session_joints;
-mod session_shapes_chains;
 mod session_world_body;
 
 #[cfg(test)]
@@ -20,37 +18,63 @@ use std::{
     cell::Cell,
     sync::{
         Arc,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
 
 #[cfg(test)]
 thread_local! {
     static FAIL_NEXT_SIZE_CHECK: Cell<bool> = const { Cell::new(false) };
+    static FAIL_STATUS_AFTER_SUCCESSFUL_CHECKS: Cell<Option<usize>> = const { Cell::new(None) };
+    static RECORDING_GET_SIZE_CALLS: Cell<usize> = const { Cell::new(0) };
 }
 
-/// Validated initial capacity for a native recording buffer.
+fn check_native_recording_gravity(gravity: Vec2) -> Result<Vec2> {
+    if gravity.is_valid() {
+        Ok(gravity)
+    } else {
+        Err(Error::InvalidNativeOutput {
+            operation: "RecordingSession::gravity",
+            output: "gravity",
+            constraint: "a finite vector",
+        })
+    }
+}
+
+/// Hard total-byte limit for one native recording session.
 ///
-/// Zero selects Box2D's default capacity. Positive values only preallocate;
-/// the native append-only buffer can still grow while recording.
+/// The native writer preallocates only a small prefix and grows on demand up to this limit. The
+/// repository-wide safety policy caps every producer at 256 MiB.
 #[repr(transparent)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct RecordingCapacity(i32);
+pub struct RecordingLimits(i32);
 
-impl RecordingCapacity {
-    /// Use Box2D's default initial capacity.
-    pub const DEFAULT: Self = Self(0);
-    /// Largest initial capacity representable by the pinned Box2D ABI.
-    pub const MAX_BYTES: u32 = i32::MAX as u32;
+impl RecordingLimits {
+    /// Hard upper bound enforced by the reviewed native writer.
+    pub const MAX_BYTES: u32 = 256 * 1024 * 1024;
+    /// Default limits for ordinary recordings.
+    pub const DEFAULT: Self = Self(Self::MAX_BYTES as i32);
 
-    /// Construct a capacity after checking the native signed-int boundary.
-    pub fn new(byte_capacity: u64) -> ApiResult<Self> {
-        let byte_capacity = i32::try_from(byte_capacity).map_err(|_| ApiError::InvalidArgument)?;
-        Ok(Self(byte_capacity))
+    /// Construct a hard byte limit after validating the native writer policy.
+    pub fn new(max_bytes: u64) -> Result<Self> {
+        if max_bytes == 0 || max_bytes > u64::from(Self::MAX_BYTES) {
+            return Err(Error::invalid_argument(
+                "RecordingLimits::new",
+                "max_bytes",
+                "an integer in 1..=268435456",
+            ));
+        }
+        Ok(Self(i32::try_from(max_bytes).map_err(|_| {
+            Error::invalid_argument(
+                "RecordingLimits::new",
+                "max_bytes",
+                "an integer representable by a positive native int",
+            )
+        })?))
     }
 
-    /// Return the requested initial capacity in bytes.
-    pub const fn bytes(self) -> u32 {
+    /// Return the hard total native-stream limit in bytes.
+    pub const fn max_bytes(self) -> u32 {
         self.0 as u32
     }
 
@@ -60,123 +84,131 @@ impl RecordingCapacity {
     }
 }
 
-impl Default for RecordingCapacity {
+impl Default for RecordingLimits {
     fn default() -> Self {
         Self::DEFAULT
     }
 }
 
-impl TryFrom<u64> for RecordingCapacity {
-    type Error = ApiError;
-
-    fn try_from(value: u64) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl TryFrom<usize> for RecordingCapacity {
-    type Error = ApiError;
-
-    fn try_from(value: usize) -> Result<Self, Self::Error> {
-        Self::new(u64::try_from(value).map_err(|_| ApiError::InvalidArgument)?)
-    }
-}
-
-/// Material-mixer callbacks that replay must reinstall before its first step.
+/// Stable application-defined identity for one material-mixing behavior version.
 ///
-/// Box2D records neither friction nor restitution mixer results. This metadata
-/// intentionally records requirements, not callback pointers or host state.
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
-pub struct MixerRequirements {
-    friction: bool,
-    restitution: bool,
+/// The identity describes behavior, not a callback address or Rust type. Change it whenever the
+/// deterministic mixing rule or any data it depends on changes.
+#[repr(transparent)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MixerId([u8; 32]);
+
+impl MixerId {
+    /// Construct a caller-declared behavior identity from application-owned stable bytes.
+    ///
+    /// The wrapper checks exact equality across recording and replay. It does not inspect callback
+    /// code or cryptographically prove that two callbacks with the same identifier behave alike.
+    pub const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    /// Return the stable identity bytes.
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
 }
 
-impl MixerRequirements {
-    /// Describe the mixer sidecar that accompanies externally persisted recording bytes.
-    ///
-    /// The native Box2D recording stream does not encode this wrapper metadata. Persist these
-    /// flags with the bytes and provide the same values to [`crate::ReplayPlayer::open_bytes`].
-    pub const fn new(friction: bool, restitution: bool) -> Self {
+impl From<[u8; 32]> for MixerId {
+    fn from(value: [u8; 32]) -> Self {
+        Self::from_bytes(value)
+    }
+}
+
+/// Caller-declared identities of the optional friction and restitution mixers.
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub struct MixerIdentities {
+    friction: Option<MixerId>,
+    restitution: Option<MixerId>,
+}
+
+impl MixerIdentities {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) const fn new(friction: Option<MixerId>, restitution: Option<MixerId>) -> Self {
         Self {
             friction,
             restitution,
         }
     }
 
-    #[inline]
-    fn capture(core: &WorldCore) -> Self {
-        let (friction, restitution) = core.mixer_presence();
-        Self {
-            friction,
-            restitution,
-        }
-    }
-
-    /// Whether replay must install a friction mixer.
-    pub const fn requires_friction(self) -> bool {
+    /// Return the friction mixer identity, if one is installed.
+    pub const fn friction(self) -> Option<MixerId> {
         self.friction
     }
 
-    /// Whether replay must install a restitution mixer.
-    pub const fn requires_restitution(self) -> bool {
+    /// Return the restitution mixer identity, if one is installed.
+    pub const fn restitution(self) -> Option<MixerId> {
         self.restitution
     }
 
-    /// Whether replay can use both default Box2D mixing rules.
+    /// Whether both Box2D default mixing rules are in use.
     pub const fn is_empty(self) -> bool {
-        !self.friction && !self.restitution
+        self.friction.is_none() && self.restitution.is_none()
+    }
+
+    fn capture(core: &WorldCore) -> Self {
+        core.mixer_identities()
     }
 }
 
-/// An owned recording byte stream and its replay requirements.
+/// An opaque, process-local Box2D recording accepted by [`crate::ReplayPlayer`].
 ///
-/// The bytes are copied out of Box2D before its native recording allocation is
-/// destroyed, so they remain valid independently of the source world.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// Box2D recording format version 3 contains raw native object representations and is not a
+/// portable or stable serialization format. Safe Rust therefore neither imports nor exports its
+/// bytes. A recording can only be produced by [`crate::RecordingSession::finish`] and replayed by
+/// this build in the current process.
 pub struct Recording {
-    bytes: Box<[u8]>,
-    mixer_requirements: MixerRequirements,
+    native: Box<[u8]>,
+    mixer_identities: MixerIdentities,
+    preflight: crate::replay::preflight::PreflightInfo,
 }
 
 impl Recording {
-    /// Borrow the complete native recording stream.
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.bytes
+    /// Return the exact material-mixer behavior identities required for replay.
+    pub const fn mixer_identities(&self) -> MixerIdentities {
+        self.mixer_identities
     }
 
-    pub fn len(&self) -> usize {
-        self.bytes.len()
+    pub(crate) fn native_stream(&self) -> &[u8] {
+        &self.native
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.bytes.is_empty()
+    pub(crate) const fn preflight_info(&self) -> crate::replay::preflight::PreflightInfo {
+        self.preflight
     }
 
-    /// Return the mixer set that a future replay configuration must provide.
-    pub const fn mixer_requirements(&self) -> MixerRequirements {
-        self.mixer_requirements
-    }
-
-    /// Consume the recording and return its owned bytes.
-    pub fn into_bytes(self) -> Vec<u8> {
-        self.bytes.into_vec()
-    }
-
-    /// Consume the recording into its independently owned replay inputs.
-    pub fn into_parts(self) -> (Vec<u8>, MixerRequirements) {
-        (self.bytes.into_vec(), self.mixer_requirements)
+    fn from_native(native: &[u8], mixer_identities: MixerIdentities) -> Result<Self> {
+        let preflight = crate::replay::preflight::validate_recording(native)
+            .map_err(|_| Error::RecordingOutputValidationFailed)?;
+        let mut owned = Vec::new();
+        owned
+            .try_reserve_exact(native.len())
+            .map_err(|_| Error::RecordingStorageAllocationFailed)?;
+        owned.extend_from_slice(native);
+        Ok(Self {
+            native: owned.into_boxed_slice(),
+            mixer_identities,
+            preflight,
+        })
     }
 }
 
-impl AsRef<[u8]> for Recording {
-    fn as_ref(&self) -> &[u8] {
-        self.as_bytes()
+impl fmt::Debug for Recording {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Recording")
+            .field("mixer_identities", &self.mixer_identities)
+            .finish_non_exhaustive()
     }
 }
 
 struct NativeRecording {
     raw: NonNull<ffi::b2Recording>,
+    max_bytes: usize,
     #[cfg(test)]
     lifecycle_probe: Option<Arc<RecordingLifecycleProbe>>,
 }
@@ -189,15 +221,15 @@ struct RecordingLifecycleProbe {
 }
 
 impl NativeRecording {
-    fn new(capacity: RecordingCapacity) -> ApiResult<Self> {
-        let raw = unsafe { ffi::b2CreateRecording(capacity.as_i32()) };
-        NonNull::new(raw)
-            .map(|raw| Self {
-                raw,
-                #[cfg(test)]
-                lifecycle_probe: None,
-            })
-            .ok_or(ApiError::RecordingAllocationFailed)
+    fn new(limits: RecordingLimits) -> Result<Self> {
+        let raw = unsafe { ffi::b2CreateRecording(limits.as_i32()) };
+        let raw = NonNull::new(raw).ok_or(Error::RecordingAllocationFailed)?;
+        Ok(Self {
+            raw,
+            max_bytes: limits.max_bytes() as usize,
+            #[cfg(test)]
+            lifecycle_probe: None,
+        })
     }
 
     #[inline]
@@ -212,39 +244,72 @@ impl NativeRecording {
         }
     }
 
-    fn checked_size(&self) -> ApiResult<usize> {
+    fn checked_size(&self) -> Result<usize> {
         #[cfg(test)]
         if FAIL_NEXT_SIZE_CHECK.with(|fail| fail.replace(false)) {
-            return Err(ApiError::InvalidNativeRecording);
+            return Err(Error::InvalidNativeRecording);
         }
 
-        let raw_size = unsafe { ffi::b2Recording_GetSize(self.as_ptr()) };
-        let size = usize::try_from(raw_size)
-            .map_err(|_| ApiError::NegativeFfiOutputCount { count: raw_size })?;
-        if size == 0 {
-            return Err(ApiError::InvalidNativeRecording);
+        let size = self.read_size()?;
+        if size == 0 || size > self.max_bytes {
+            return Err(Error::InvalidNativeRecording);
         }
         Ok(size)
     }
 
-    fn copy_bytes(&self) -> ApiResult<Box<[u8]>> {
+    fn check_status(&self) -> Result<()> {
+        self.read_size().map(|_| ())
+    }
+
+    fn read_size(&self) -> Result<usize> {
+        #[cfg(test)]
+        if FAIL_STATUS_AFTER_SUCCESSFUL_CHECKS.with(|fail| match fail.get() {
+            Some(0) => {
+                fail.set(None);
+                true
+            }
+            Some(remaining) => {
+                fail.set(Some(remaining - 1));
+                false
+            }
+            None => false,
+        }) {
+            return Err(Error::RecordingLimitExceeded);
+        }
+
+        #[cfg(test)]
+        RECORDING_GET_SIZE_CALLS.with(|calls| {
+            calls.set(
+                calls
+                    .get()
+                    .checked_add(1)
+                    .expect("recording size-read test counter overflow"),
+            );
+        });
+        let raw_size = unsafe { ffi::b2Recording_GetSize(self.as_ptr()) };
+        match raw_size {
+            -1 => Err(Error::RecordingLimitExceeded),
+            -2 => Err(Error::RecordingOperationTooLarge),
+            -3 => Err(Error::InvalidNativeRecording),
+            value if value < 0 => Err(Error::NegativeFfiOutputCount { count: value }),
+            value => {
+                usize::try_from(value).map_err(|_| Error::NegativeFfiOutputCount { count: value })
+            }
+        }
+    }
+
+    fn bytes(&self) -> Result<&[u8]> {
         let size = self.checked_size()?;
 
         let data = unsafe { ffi::b2Recording_GetData(self.as_ptr()) };
-        if data.is_null() {
-            return Err(ApiError::InvalidNativeRecording);
+        if data.is_null() || data.addr().checked_add(size).is_none() {
+            return Err(Error::InvalidNativeRecording);
         }
 
-        let mut bytes = Vec::new();
-        bytes
-            .try_reserve_exact(size)
-            .map_err(|_| ApiError::FfiOutputAllocationFailed)?;
         // SAFETY: Box2D reports `size` initialized bytes at a non-null pointer.
         // Recording has stopped, and `self` keeps the native allocation alive
-        // for the duration of this copy.
-        let source = unsafe { core::slice::from_raw_parts(data, size) };
-        bytes.extend_from_slice(source);
-        Ok(bytes.into_boxed_slice())
+        // for the duration of this borrow.
+        Ok(unsafe { core::slice::from_raw_parts(data, size) })
     }
 }
 
@@ -258,77 +323,43 @@ impl Drop for NativeRecording {
     }
 }
 
-struct RecordingActivity {
-    core: Rc<WorldCore>,
-    active: bool,
-}
-
-impl RecordingActivity {
-    fn begin(core: Rc<WorldCore>) -> ApiResult<Self> {
-        core.set_activity(ActivityState::Idle, ActivityState::Recording)?;
-        Ok(Self { core, active: true })
-    }
-
-    fn finish(&mut self) -> ApiResult<()> {
-        if !self.active {
-            return Ok(());
-        }
-        self.core.finish_recording_activity()?;
-        self.active = false;
-        Ok(())
-    }
-}
-
-impl Drop for RecordingActivity {
-    fn drop(&mut self) {
-        let _ = self.finish();
-    }
-}
-
 /// An active recording that exclusively borrows its wrapper-owned world.
 ///
-/// Existing handles remain valid Rust values, but their operations observe the
-/// central world activity gate and return [`ApiError::WorldBusy`]. Use the
-/// methods on this session for the recording-safe, session-owned surface.
+/// Object operations are available only through capabilities borrowed from this session. The
+/// capability types are identical to those returned by [`World`], while their sealed access
+/// proof authorizes recording activity and checks the native writer after every operation.
+///
+/// A native writer failure is detected at the operation boundary and permanently seals the
+/// session: the triggering call and every later session operation return the sticky error. Box2D
+/// may already have applied the triggering operation to the world; this boundary is fail-closed
+/// for the recording stream, not a transactional rollback of world state.
 #[must_use = "dropping the session stops recording and discards its bytes"]
 pub struct RecordingSession<'world> {
     world: &'world mut World,
     native: Option<NativeRecording>,
-    activity: Option<RecordingActivity>,
-    mixer_requirements: MixerRequirements,
+    activity: Option<RecordingActivityLease>,
+    mixer_identities: MixerIdentities,
     stop_pending: bool,
 }
 
 impl World {
-    /// Start recording at a step boundary.
-    ///
-    /// Panics on invalid world activity or unsupported callback wiring. Use
-    /// [`World::try_start_recording`] for a recoverable error.
-    pub fn start_recording(&mut self, capacity: RecordingCapacity) -> RecordingSession<'_> {
-        self.try_start_recording(capacity)
-            .expect("world cannot start a Box2D recording")
-    }
-
     /// Start an owned recording session at a step boundary.
     ///
     /// Box2D cannot record custom-filter or pre-solve callback decisions, so
     /// either installed callback is rejected before allocating or mutating
     /// native recording state.
-    pub fn try_start_recording(
-        &mut self,
-        capacity: RecordingCapacity,
-    ) -> ApiResult<RecordingSession<'_>> {
-        crate::world::check_world_available(self.core())?;
+    pub fn start_recording(&mut self, limits: RecordingLimits) -> Result<RecordingSession<'_>> {
+        crate::world::check_world_available(self)?;
         ensure_supported_callbacks(self.core())?;
 
-        let mixer_requirements = MixerRequirements::capture(self.core());
-        let native = NativeRecording::new(capacity)?;
-        let activity = RecordingActivity::begin(self.core_rc())?;
+        let mixer_identities = MixerIdentities::capture(self.core());
+        let native = NativeRecording::new(limits)?;
+        let activity = self.core().begin_recording_activity()?;
         let session = RecordingSession {
             world: self,
             native: Some(native),
             activity: Some(activity),
-            mixer_requirements,
+            mixer_identities,
             stop_pending: true,
         };
 
@@ -353,40 +384,39 @@ impl RecordingSession<'_> {
             .expect("an active recording session owns its native buffer")
     }
 
-    fn activity_mut(&mut self) -> &mut RecordingActivity {
+    fn activity_mut(&mut self) -> &mut RecordingActivityLease {
         self.activity
             .as_mut()
             .expect("an active recording session owns its activity guard")
     }
 
-    fn check_access(&self) -> ApiResult<()> {
-        crate::world::check_recording_world_available(self.world.core())
+    fn check_access(&self) -> Result<()> {
+        crate::world::check_recording_world_available(self.world)?;
+        self.native().check_status()
     }
 
-    fn query_target(&self) -> crate::query::QueryTarget {
-        crate::query::QueryTarget::recording(self.world.core_rc())
-    }
-
-    fn stop_native(&mut self) -> ApiResult<()> {
+    fn stop_native(&mut self) -> Result<()> {
         crate::core::callback_state::check_not_in_callback()?;
+        self.world.retire_completed_step();
         if !self.stop_pending {
             return Ok(());
         }
+        let status_before_stop = self.native().check_status();
         self.stop_pending = false;
         unsafe { ffi::b2World_StopRecording(self.world.raw()) };
         #[cfg(test)]
         self.native().record_stop();
-        self.activity_mut().finish()?;
-        // Owned handles may be dropped while ordinary aliases are gated. Their
-        // native destruction must not leak past the session boundary and affect
-        // a later step after recording has already stopped.
-        self.world.core().process_deferred_destroys();
-        Ok(())
+        let status_after_stop = self.native().check_status();
+        let activity_result = self.activity_mut().finish();
+        status_before_stop?;
+        status_after_stop?;
+        activity_result
     }
 
     fn defer_native_cleanup(&mut self) {
         let stop_pending = core::mem::replace(&mut self.stop_pending, false);
         let raw_world = self.world.raw();
+        self.world.retire_completed_step();
         let native = self
             .native
             .take()
@@ -395,928 +425,144 @@ impl RecordingSession<'_> {
             .activity
             .take()
             .expect("a recording session owns its activity guard until cleanup");
-        crate::core::callback_state::defer_callback_cleanup_or_forget(move || {
+        let owner =
+            crate::core::callback_state::CallbackOwnerToken::world(self.world.core().brand.token());
+        // Owner frames run every detach action before any callback-transferred world owner.
+        crate::core::callback_state::defer_callback_cleanup_or_forget(owner, move || {
             if stop_pending {
                 unsafe { ffi::b2World_StopRecording(raw_world) };
                 #[cfg(test)]
                 native.record_stop();
             }
             let _ = activity.finish();
-            activity.core.process_deferred_destroys();
             drop(native);
         });
     }
 
-    /// Return the mixer requirements captured atomically at session start.
-    pub const fn mixer_requirements(&self) -> MixerRequirements {
-        self.mixer_requirements
+    /// Return the mixer behavior identities captured atomically at session start.
+    pub const fn mixer_identities(&self) -> MixerIdentities {
+        self.mixer_identities
     }
 
-    /// Step the recorded world.
-    pub fn step(&mut self, time_step: f32, sub_steps: i32) {
-        self.try_step(time_step, sub_steps)
-            .expect("recording session could not step its world");
+    /// Acquire a body capability after validating the id under recording activity.
+    pub fn body(&mut self, id: BodyId) -> Result<crate::Body<'_>> {
+        Ok(crate::Body::new(crate::world::BodyProof::acquire(
+            self, id,
+        )?))
     }
 
-    /// Try to step the recorded world.
-    pub fn try_step(&mut self, time_step: f32, sub_steps: i32) -> ApiResult<()> {
-        World::try_step_while_recording(self.world, time_step, sub_steps)
+    /// Acquire a shape capability after validating the id under recording activity.
+    pub fn shape(&mut self, id: ShapeId) -> Result<crate::Shape<'_>> {
+        Ok(crate::Shape::new(crate::world::ShapeProof::acquire(
+            self, id,
+        )?))
     }
 
-    /// Return the recorded world's current gravity.
-    pub fn gravity(&self) -> Vec2 {
-        self.try_gravity()
-            .expect("recording session could not read world gravity")
+    /// Acquire an untyped joint capability after validating the id under recording activity.
+    pub fn joint(&mut self, id: JointId) -> Result<crate::Joint<'_>> {
+        Ok(crate::Joint::new(crate::world::JointProof::acquire(
+            self, id,
+        )?))
     }
 
-    pub fn try_gravity(&self) -> ApiResult<Vec2> {
-        self.check_access()?;
-        Ok(Vec2::from_raw(unsafe {
-            ffi::b2World_GetGravity(self.world.raw())
-        }))
+    /// Acquire a chain capability after validating the id under recording activity.
+    pub fn chain(&mut self, id: ChainId) -> Result<crate::Chain<'_>> {
+        Ok(crate::Chain::new(crate::world::ChainProof::acquire(
+            self, id,
+        )?))
     }
 
-    /// Set gravity and append the mutation to the recording.
-    pub fn set_gravity<V: Into<Vec2>>(&mut self, gravity: V) {
-        self.try_set_gravity(gravity)
-            .expect("recording session received invalid gravity")
-    }
-
-    pub fn try_set_gravity<V: Into<Vec2>>(&mut self, gravity: V) -> ApiResult<()> {
-        crate::world::try_world_set_gravity_with_access(
-            self.world,
-            gravity,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Return a counters snapshot while keeping ordinary aliases gated.
-    pub fn counters(&self) -> Counters {
-        self.try_counters()
-            .expect("recording session could not read world counters")
-    }
-
-    pub fn try_counters(&self) -> ApiResult<Counters> {
-        self.check_access()?;
-        Ok(Counters::from_raw(unsafe {
-            ffi::b2World_GetCounters(self.world.raw())
-        }))
-    }
-
-    /// Create a body and return its world-branded value identifier.
-    pub fn create_body(&mut self, def: BodyDef) -> BodyId {
-        self.try_create_body(def)
-            .expect("recording session could not create a body")
-    }
-
-    pub fn try_create_body(&mut self, def: BodyDef) -> ApiResult<BodyId> {
-        crate::core::callback_state::check_not_in_callback()?;
-        crate::body::check_body_def_valid(&def)?;
-        crate::world::try_create_body_id_with_access(
-            self.world,
-            def,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Destroy a body after validating its world identity and live generation.
-    pub fn destroy_body(&mut self, body: BodyId) {
-        self.try_destroy_body(body)
-            .expect("recording session received an invalid BodyId")
-    }
-
-    pub fn try_destroy_body(&mut self, body: BodyId) -> ApiResult<()> {
-        WorldCore::destroy_body_now_with_access(
-            self.world.core(),
-            body,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Set a body's absolute position and rotation and record the mutation.
-    pub fn set_body_position_and_rotation(
-        &mut self,
-        body: BodyId,
-        position: Position,
-        angle_radians: f32,
-    ) {
-        self.try_set_body_position_and_rotation(body, position, angle_radians)
-            .expect("recording session received an invalid body transform")
-    }
-
-    pub fn try_set_body_position_and_rotation(
-        &mut self,
-        body: BodyId,
-        position: Position,
-        angle_radians: f32,
-    ) -> ApiResult<()> {
-        crate::world::try_set_body_position_and_rotation_with_access(
-            self.world.core(),
-            body,
-            position,
-            angle_radians,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Set a body's linear velocity and record the mutation.
-    pub fn set_body_linear_velocity<V: Into<Vec2>>(&mut self, body: BodyId, velocity: V) {
-        self.try_set_body_linear_velocity(body, velocity)
-            .expect("recording session received an invalid linear velocity")
-    }
-
-    pub fn try_set_body_linear_velocity<V: Into<Vec2>>(
-        &mut self,
-        body: BodyId,
-        velocity: V,
-    ) -> ApiResult<()> {
-        crate::world::try_set_body_linear_velocity_with_access(
-            self.world.core(),
-            body,
-            velocity,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Set a body's angular velocity and record the mutation.
-    pub fn set_body_angular_velocity(&mut self, body: BodyId, angular_velocity: f32) {
-        self.try_set_body_angular_velocity(body, angular_velocity)
-            .expect("recording session received an invalid angular velocity")
-    }
-
-    pub fn try_set_body_angular_velocity(
-        &mut self,
-        body: BodyId,
-        angular_velocity: f32,
-    ) -> ApiResult<()> {
-        crate::world::try_set_body_angular_velocity_with_access(
-            self.world.core(),
-            body,
-            angular_velocity,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Apply a linear impulse at the center of mass and record the mutation.
-    pub fn body_apply_linear_impulse_to_center<V: Into<Vec2>>(
-        &mut self,
-        body: BodyId,
-        impulse: V,
-        wake: bool,
-    ) {
-        self.try_body_apply_linear_impulse_to_center(body, impulse, wake)
-            .expect("recording session received an invalid linear impulse")
-    }
-
-    pub fn try_body_apply_linear_impulse_to_center<V: Into<Vec2>>(
-        &mut self,
-        body: BodyId,
-        impulse: V,
-        wake: bool,
-    ) -> ApiResult<()> {
-        crate::world::try_body_apply_linear_impulse_to_center_with_access(
-            self.world.core(),
-            body,
-            impulse,
-            wake,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Apply an angular impulse and record the mutation.
-    pub fn body_apply_angular_impulse(&mut self, body: BodyId, impulse: f32, wake: bool) {
-        self.try_body_apply_angular_impulse(body, impulse, wake)
-            .expect("recording session received an invalid angular impulse")
-    }
-
-    pub fn try_body_apply_angular_impulse(
-        &mut self,
-        body: BodyId,
-        impulse: f32,
-        wake: bool,
-    ) -> ApiResult<()> {
-        crate::world::try_body_apply_angular_impulse_with_access(
-            self.world.core(),
-            body,
-            impulse,
-            wake,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Clear accumulated forces and record the mutation.
-    pub fn body_clear_forces(&mut self, body: BodyId) {
-        self.try_body_clear_forces(body)
-            .expect("recording session received an invalid BodyId")
-    }
-
-    pub fn try_body_clear_forces(&mut self, body: BodyId) -> ApiResult<()> {
-        crate::world::try_body_clear_forces_with_access(
-            self.world.core(),
-            body,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Change a body's motion type and record the mutation.
-    pub fn set_body_type(&mut self, body: BodyId, body_type: BodyType) {
-        self.try_set_body_type(body, body_type)
-            .expect("recording session received an invalid BodyId")
-    }
-
-    pub fn try_set_body_type(&mut self, body: BodyId, body_type: BodyType) -> ApiResult<()> {
-        crate::world::try_set_body_type_with_access(
-            self.world.core(),
-            body,
-            body_type,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Create a circle shape attached to a recorded body.
-    pub fn create_circle_shape(
-        &mut self,
-        body: BodyId,
-        def: &ShapeDef,
-        circle: &crate::shapes::Circle,
-    ) -> ShapeId {
-        self.try_create_circle_shape(body, def, circle)
-            .expect("recording session could not create a circle shape")
-    }
-
-    pub fn try_create_circle_shape(
-        &mut self,
-        body: BodyId,
-        def: &ShapeDef,
-        circle: &crate::shapes::Circle,
-    ) -> ApiResult<ShapeId> {
-        crate::shapes::try_create_circle_shape_for_body_with_access(
-            self.world.core(),
-            body,
-            def,
-            circle,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Create a segment shape attached to a recorded body.
-    pub fn create_segment_shape(
-        &mut self,
-        body: BodyId,
-        def: &ShapeDef,
-        segment: &crate::shapes::Segment,
-    ) -> ShapeId {
-        self.try_create_segment_shape(body, def, segment)
-            .expect("recording session could not create a segment shape")
-    }
-
-    pub fn try_create_segment_shape(
-        &mut self,
-        body: BodyId,
-        def: &ShapeDef,
-        segment: &crate::shapes::Segment,
-    ) -> ApiResult<ShapeId> {
-        crate::shapes::try_create_segment_shape_for_body_with_access(
-            self.world.core(),
-            body,
-            def,
-            segment,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Create an orphan chain-segment shape attached directly to a body.
-    pub fn create_chain_segment_shape(
-        &mut self,
-        body: BodyId,
-        def: &ShapeDef,
-        chain_segment: &crate::shapes::ChainSegment,
-    ) -> ShapeId {
-        self.try_create_chain_segment_shape(body, def, chain_segment)
-            .expect("recording session could not create a chain-segment shape")
-    }
-
-    pub fn try_create_chain_segment_shape(
-        &mut self,
-        body: BodyId,
-        def: &ShapeDef,
-        chain_segment: &crate::shapes::ChainSegment,
-    ) -> ApiResult<ShapeId> {
-        crate::shapes::try_create_chain_segment_shape_for_body_with_access(
-            self.world.core(),
-            body,
-            def,
-            chain_segment,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Create a capsule shape attached to a recorded body.
-    pub fn create_capsule_shape(
-        &mut self,
-        body: BodyId,
-        def: &ShapeDef,
-        capsule: &crate::shapes::Capsule,
-    ) -> ShapeId {
-        self.try_create_capsule_shape(body, def, capsule)
-            .expect("recording session could not create a capsule shape")
-    }
-
-    pub fn try_create_capsule_shape(
-        &mut self,
-        body: BodyId,
-        def: &ShapeDef,
-        capsule: &crate::shapes::Capsule,
-    ) -> ApiResult<ShapeId> {
-        crate::shapes::try_create_capsule_shape_for_body_with_access(
-            self.world.core(),
-            body,
-            def,
-            capsule,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Create a polygon shape attached to a recorded body.
-    pub fn create_polygon_shape(
-        &mut self,
-        body: BodyId,
-        def: &ShapeDef,
-        polygon: &crate::shapes::Polygon,
-    ) -> ShapeId {
-        self.try_create_polygon_shape(body, def, polygon)
-            .expect("recording session could not create a polygon shape")
-    }
-
-    pub fn try_create_polygon_shape(
-        &mut self,
-        body: BodyId,
-        def: &ShapeDef,
-        polygon: &crate::shapes::Polygon,
-    ) -> ApiResult<ShapeId> {
-        crate::shapes::try_create_polygon_shape_for_body_with_access(
-            self.world.core(),
-            body,
-            def,
-            polygon,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Destroy an orphan shape after validating its identity and parent status.
-    pub fn destroy_shape(&mut self, shape: ShapeId, update_body_mass: bool) {
-        self.try_destroy_shape(shape, update_body_mass)
-            .expect("recording session received an invalid ShapeId")
-    }
-
-    pub fn try_destroy_shape(&mut self, shape: ShapeId, update_body_mass: bool) -> ApiResult<()> {
-        WorldCore::destroy_shape_now_with_access(
-            self.world.core(),
-            shape,
-            update_body_mass,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Replace an orphan shape's geometry with a circle and record the mutation.
-    pub fn shape_set_circle(&mut self, shape: ShapeId, circle: &crate::shapes::Circle) {
-        self.try_shape_set_circle(shape, circle)
-            .expect("recording session received invalid circle geometry")
-    }
-
-    pub fn try_shape_set_circle(
-        &mut self,
-        shape: ShapeId,
-        circle: &crate::shapes::Circle,
-    ) -> ApiResult<()> {
-        crate::world::try_world_shape_set_circle_with_access(
-            self.world.core(),
-            shape,
-            circle,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Replace an orphan shape's geometry with a segment and record the mutation.
-    pub fn shape_set_segment(&mut self, shape: ShapeId, segment: &crate::shapes::Segment) {
-        self.try_shape_set_segment(shape, segment)
-            .expect("recording session received invalid segment geometry")
-    }
-
-    pub fn try_shape_set_segment(
-        &mut self,
-        shape: ShapeId,
-        segment: &crate::shapes::Segment,
-    ) -> ApiResult<()> {
-        crate::world::try_world_shape_set_segment_with_access(
-            self.world.core(),
-            shape,
-            segment,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Replace an orphan shape's geometry with a chain segment and record the mutation.
-    pub fn shape_set_chain_segment(
-        &mut self,
-        shape: ShapeId,
-        chain_segment: &crate::shapes::ChainSegment,
-    ) {
-        self.try_shape_set_chain_segment(shape, chain_segment)
-            .expect("recording session received invalid chain-segment geometry")
-    }
-
-    pub fn try_shape_set_chain_segment(
-        &mut self,
-        shape: ShapeId,
-        chain_segment: &crate::shapes::ChainSegment,
-    ) -> ApiResult<()> {
-        crate::shapes::try_shape_set_chain_segment_checked_with_access(
-            self.world.core(),
-            shape,
-            chain_segment,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Replace an orphan shape's geometry with a capsule and record the mutation.
-    pub fn shape_set_capsule(&mut self, shape: ShapeId, capsule: &crate::shapes::Capsule) {
-        self.try_shape_set_capsule(shape, capsule)
-            .expect("recording session received invalid capsule geometry")
-    }
-
-    pub fn try_shape_set_capsule(
-        &mut self,
-        shape: ShapeId,
-        capsule: &crate::shapes::Capsule,
-    ) -> ApiResult<()> {
-        crate::world::try_world_shape_set_capsule_with_access(
-            self.world.core(),
-            shape,
-            capsule,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Replace an orphan shape's geometry with a polygon and record the mutation.
-    pub fn shape_set_polygon(&mut self, shape: ShapeId, polygon: &crate::shapes::Polygon) {
-        self.try_shape_set_polygon(shape, polygon)
-            .expect("recording session received invalid polygon geometry")
-    }
-
-    pub fn try_shape_set_polygon(
-        &mut self,
-        shape: ShapeId,
-        polygon: &crate::shapes::Polygon,
-    ) -> ApiResult<()> {
-        crate::world::try_world_shape_set_polygon_with_access(
-            self.world.core(),
-            shape,
-            polygon,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Replace a shape's surface material and record the mutation.
-    pub fn shape_set_surface_material(
-        &mut self,
-        shape: ShapeId,
-        material: &crate::SurfaceMaterial,
-    ) {
-        self.try_shape_set_surface_material(shape, material)
-            .expect("recording session received invalid surface material")
-    }
-
-    pub fn try_shape_set_surface_material(
-        &mut self,
-        shape: ShapeId,
-        material: &crate::SurfaceMaterial,
-    ) -> ApiResult<()> {
-        crate::world::try_world_shape_set_surface_material_with_access(
-            self.world.core(),
-            shape,
-            material,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Set a shape's collision filter and record the mutation.
-    pub fn shape_set_filter(&mut self, shape: ShapeId, filter: Filter) {
-        self.try_shape_set_filter(shape, filter)
-            .expect("recording session received an invalid ShapeId")
-    }
-
-    pub fn try_shape_set_filter(&mut self, shape: ShapeId, filter: Filter) -> ApiResult<()> {
-        crate::shapes::try_shape_set_filter_with_access(
-            self.world.core(),
-            shape,
-            filter,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Set shape density and record the mutation.
-    pub fn shape_set_density(&mut self, shape: ShapeId, density: f32, update_body_mass: bool) {
-        self.try_shape_set_density(shape, density, update_body_mass)
-            .expect("recording session received invalid shape density")
-    }
-
-    pub fn try_shape_set_density(
-        &mut self,
-        shape: ShapeId,
-        density: f32,
-        update_body_mass: bool,
-    ) -> ApiResult<()> {
-        crate::shapes::try_shape_set_density_with_access(
-            self.world.core(),
-            shape,
-            density,
-            update_body_mass,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Set shape friction and record the mutation.
-    pub fn shape_set_friction(&mut self, shape: ShapeId, friction: f32) {
-        self.try_shape_set_friction(shape, friction)
-            .expect("recording session received invalid shape friction")
-    }
-
-    pub fn try_shape_set_friction(&mut self, shape: ShapeId, friction: f32) -> ApiResult<()> {
-        crate::shapes::try_shape_set_friction_with_access(
-            self.world.core(),
-            shape,
-            friction,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Set shape restitution and record the mutation.
-    pub fn shape_set_restitution(&mut self, shape: ShapeId, restitution: f32) {
-        self.try_shape_set_restitution(shape, restitution)
-            .expect("recording session received invalid shape restitution")
-    }
-
-    pub fn try_shape_set_restitution(&mut self, shape: ShapeId, restitution: f32) -> ApiResult<()> {
-        crate::shapes::try_shape_set_restitution_with_access(
-            self.world.core(),
-            shape,
-            restitution,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Set the application material identifier and record the mutation.
-    pub fn shape_set_user_material(&mut self, shape: ShapeId, material: u64) {
-        self.try_shape_set_user_material(shape, material)
-            .expect("recording session received an invalid ShapeId")
-    }
-
-    pub fn try_shape_set_user_material(&mut self, shape: ShapeId, material: u64) -> ApiResult<()> {
-        crate::shapes::try_shape_set_user_material_with_access(
-            self.world.core(),
-            shape,
-            material,
-            crate::core::world_core::WorldAccess::Recording,
-        )
-    }
-
-    /// Collect shapes overlapping an AABB and append the query to the recording.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn overlap_aabb(&self, origin: Position, aabb: Aabb, filter: QueryFilter) -> Vec<ShapeId> {
-        crate::query::overlap_aabb_checked_impl(self.query_target(), origin, aabb, filter)
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn try_overlap_aabb(
-        &self,
-        origin: Position,
-        aabb: Aabb,
-        filter: QueryFilter,
-    ) -> ApiResult<Vec<ShapeId>> {
-        crate::query::try_overlap_aabb_impl(self.query_target(), origin, aabb, filter)
-    }
-
-    /// Collect shapes overlapping a proxy and append the query to the recording.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn overlap_polygon_points<I, P>(
-        &self,
-        origin: Position,
-        points: I,
-        radius: f32,
-        filter: QueryFilter,
-    ) -> Vec<ShapeId>
-    where
-        I: IntoIterator<Item = P>,
-        P: Into<Vec2>,
-    {
-        crate::query::overlap_polygon_points_checked_impl(
-            self.query_target(),
-            origin,
-            points,
-            radius,
-            filter,
-        )
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn try_overlap_polygon_points<I, P>(
-        &self,
-        origin: Position,
-        points: I,
-        radius: f32,
-        filter: QueryFilter,
-    ) -> ApiResult<Vec<ShapeId>>
-    where
-        I: IntoIterator<Item = P>,
-        P: Into<Vec2>,
-    {
-        crate::query::try_overlap_polygon_points_impl(
-            self.query_target(),
-            origin,
-            points,
-            radius,
-            filter,
-        )
-    }
-
-    /// Cast a ray and collect every hit while recording the query and results.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn cast_ray_all<VT: Into<Vec2>>(
-        &self,
-        origin: Position,
-        translation: VT,
-        filter: QueryFilter,
-    ) -> Vec<RayResult> {
-        crate::query::cast_ray_all_checked_impl(self.query_target(), origin, translation, filter)
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn try_cast_ray_all<VT: Into<Vec2>>(
-        &self,
-        origin: Position,
-        translation: VT,
-        filter: QueryFilter,
-    ) -> ApiResult<Vec<RayResult>> {
-        crate::query::try_cast_ray_all_impl(self.query_target(), origin, translation, filter)
-    }
-
-    /// Cast a ray and return its closest hit while recording the query and result.
-    pub fn cast_ray_closest<VT: Into<Vec2>>(
-        &self,
-        origin: Position,
-        translation: VT,
-        filter: QueryFilter,
-    ) -> Option<RayResult> {
-        self.cast_ray_closest_with_stats(origin, translation, filter)
-            .hit
-    }
-
-    pub fn try_cast_ray_closest<VT: Into<Vec2>>(
-        &self,
-        origin: Position,
-        translation: VT,
-        filter: QueryFilter,
-    ) -> ApiResult<Option<RayResult>> {
-        self.try_cast_ray_closest_with_stats(origin, translation, filter)
-            .map(|result| result.hit)
-    }
-
-    /// Cast a ray and record its complete closest-hit result, including traversal statistics.
-    pub fn cast_ray_closest_with_stats<VT: Into<Vec2>>(
-        &self,
-        origin: Position,
-        translation: VT,
-        filter: QueryFilter,
-    ) -> crate::ClosestRayCastResult {
-        crate::query::cast_ray_closest_with_stats_checked_impl(
-            self.query_target(),
-            origin,
-            translation,
-            filter,
-        )
-    }
-
-    pub fn try_cast_ray_closest_with_stats<VT: Into<Vec2>>(
-        &self,
-        origin: Position,
-        translation: VT,
-        filter: QueryFilter,
-    ) -> ApiResult<crate::ClosestRayCastResult> {
-        crate::query::try_cast_ray_closest_with_stats_impl(
-            self.query_target(),
-            origin,
-            translation,
-            filter,
-        )
-    }
-
-    /// Cast a convex proxy and record the query and all hit results.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn cast_shape_points<I, P, VT>(
-        &self,
-        origin: Position,
-        points: I,
-        radius: f32,
-        translation: VT,
-        filter: QueryFilter,
-    ) -> Vec<RayResult>
-    where
-        I: IntoIterator<Item = P>,
-        P: Into<Vec2>,
-        VT: Into<Vec2>,
-    {
-        crate::query::cast_shape_points_checked_impl(
-            self.query_target(),
-            origin,
-            points,
-            radius,
-            translation,
-            filter,
-        )
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn try_cast_shape_points<I, P, VT>(
-        &self,
-        origin: Position,
-        points: I,
-        radius: f32,
-        translation: VT,
-        filter: QueryFilter,
-    ) -> ApiResult<Vec<RayResult>>
-    where
-        I: IntoIterator<Item = P>,
-        P: Into<Vec2>,
-        VT: Into<Vec2>,
-    {
-        crate::query::try_cast_shape_points_impl(
-            self.query_target(),
-            origin,
-            points,
-            radius,
-            translation,
-            filter,
-        )
-    }
-
-    /// Collide a capsule mover and record its resulting planes.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn collide_mover<V1: Into<Vec2>, V2: Into<Vec2>>(
-        &self,
-        origin: Position,
-        c1: V1,
-        c2: V2,
-        radius: f32,
-        filter: QueryFilter,
-    ) -> Vec<MoverPlaneResult> {
-        crate::query::collide_mover_checked_impl(
-            self.query_target(),
-            origin,
-            c1,
-            c2,
-            radius,
-            filter,
-        )
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn try_collide_mover<V1: Into<Vec2>, V2: Into<Vec2>>(
-        &self,
-        origin: Position,
-        c1: V1,
-        c2: V2,
-        radius: f32,
-        filter: QueryFilter,
-    ) -> ApiResult<Vec<MoverPlaneResult>> {
-        crate::query::try_collide_mover_impl(self.query_target(), origin, c1, c2, radius, filter)
-    }
-
-    /// Cast a capsule mover and record its limiting fraction.
-    #[allow(clippy::too_many_arguments)]
-    pub fn cast_mover<V1: Into<Vec2>, V2: Into<Vec2>, VT: Into<Vec2>>(
-        &self,
-        origin: Position,
-        c1: V1,
-        c2: V2,
-        radius: f32,
-        translation: VT,
-        filter: QueryFilter,
-    ) -> f32 {
-        crate::query::cast_mover_checked_impl(
-            self.query_target(),
-            origin,
-            c1,
-            c2,
-            radius,
-            translation,
-            filter,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn try_cast_mover<V1: Into<Vec2>, V2: Into<Vec2>, VT: Into<Vec2>>(
-        &self,
-        origin: Position,
-        c1: V1,
-        c2: V2,
-        radius: f32,
-        translation: VT,
-        filter: QueryFilter,
-    ) -> ApiResult<f32> {
-        crate::query::try_cast_mover_impl(
-            self.query_target(),
-            origin,
-            c1,
-            c2,
-            radius,
-            translation,
-            filter,
-        )
-    }
-
-    /// Test a point against one shape and record the query result.
-    pub fn shape_test_point(&self, shape: ShapeId, point: Position) -> bool {
-        self.try_shape_test_point(shape, point)
-            .expect("recording session received an invalid shape point query")
-    }
-
-    pub fn try_shape_test_point(&self, shape: ShapeId, point: Position) -> ApiResult<bool> {
-        crate::core::callback_state::check_not_in_callback()?;
-        self.world
-            .core()
-            .check_shape_with_access(shape, crate::core::world_core::WorldAccess::Recording)?;
-        crate::shapes::try_shape_test_point_checked_impl(shape, point)
-    }
-
-    /// Cast a ray against one shape and record the query result.
-    pub fn shape_ray_cast<VT: Into<Vec2>>(
-        &self,
-        shape: ShapeId,
-        origin: Position,
-        translation: VT,
-    ) -> WorldCastOutput {
-        self.try_shape_ray_cast(shape, origin, translation)
-            .expect("recording session received an invalid shape ray query")
-    }
-
-    pub fn try_shape_ray_cast<VT: Into<Vec2>>(
-        &self,
-        shape: ShapeId,
-        origin: Position,
-        translation: VT,
-    ) -> ApiResult<WorldCastOutput> {
-        crate::core::callback_state::check_not_in_callback()?;
-        self.world
-            .core()
-            .check_shape_with_access(shape, crate::core::world_core::WorldAccess::Recording)?;
-        let translation = translation.into();
-        let origin = crate::body::check_valid_body_position(origin)?;
-        crate::shapes::check_shape_vec2_valid(translation)?;
-        self.world
-            .core()
-            .check_shape_with_access(shape, crate::core::world_core::WorldAccess::Recording)?;
-        crate::shapes::try_shape_ray_cast_checked_impl(shape, origin, translation)
-    }
-
-    /// Explicitly reject custom-filter installation while recording.
-    pub fn try_set_custom_filter<F>(&mut self, _filter: F) -> ApiResult<()>
-    where
-        F: Fn(crate::ShapeId, crate::ShapeId) -> bool + Send + Sync + 'static,
-    {
-        self.check_access()?;
-        Err(ApiError::RecordingCustomFilterUnsupported)
-    }
-
-    /// Explicitly reject pre-solve installation while recording.
-    pub fn try_set_pre_solve<F>(&mut self, _pre_solve: F) -> ApiResult<()>
-    where
-        F: Fn(crate::ShapeId, crate::ShapeId, crate::Position, crate::Vec2) -> bool
-            + Send
-            + Sync
-            + 'static,
-    {
-        self.check_access()?;
-        Err(ApiError::RecordingPreSolveUnsupported)
-    }
-
-    /// Stop recording and copy the complete native stream into owned Rust bytes.
-    pub fn finish(self) -> Recording {
-        self.try_finish()
-            .expect("Box2D returned an invalid recording buffer")
-    }
-
-    /// Try to stop recording and copy out the complete native stream.
+    /// Step the recorded world and return its lazily materialized event capability.
     ///
-    /// Returns [`ApiError::InCallback`] if called from a Box2D callback. The consumed session is
-    /// then cleaned up after the outermost native owner boundary returns to Rust.
-    pub fn try_finish(mut self) -> ApiResult<Recording> {
-        self.stop_native()?;
-        let bytes = self.native().copy_bytes()?;
-        Ok(Recording {
-            bytes,
-            mixer_requirements: self.mixer_requirements,
+    /// A recording-writer failure discovered after Box2D advances is retained by
+    /// [`crate::CompletedStep::post_step_error`]. An outer error means native simulation was not
+    /// called.
+    pub fn step(&mut self, time_step: f32, sub_steps: i32) -> Result<crate::CompletedStep<'_>> {
+        self.check_access()?;
+        let native = self
+            .native
+            .as_ref()
+            .expect("an active recording session owns its native buffer");
+        let (pending, worker_error) =
+            World::step_while_recording_after_preflight(self.world, time_step, sub_steps)?;
+        let post_step_error = worker_error.or_else(|| native.check_status().err());
+        let contact_epoch = pending.commit();
+        core::result::Result::Ok(crate::CompletedStep::after_validated_step(
+            self,
+            contact_epoch,
+            post_step_error,
+        ))
+    }
+
+    pub fn gravity(&self) -> Result<Vec2> {
+        crate::world::run_owner_call(self, |world| {
+            check_native_recording_gravity(Vec2::from_raw(unsafe {
+                ffi::b2World_GetGravity(world.raw_world())
+            }))
         })
+    }
+
+    pub fn set_gravity<V: Into<Vec2>>(&mut self, gravity: V) -> Result<()> {
+        crate::world::run_owner_call(self, |world| {
+            crate::world::world_set_gravity(world, gravity)
+        })
+    }
+
+    pub fn counters(&self) -> Result<Counters> {
+        crate::world::run_owner_call(self, |world| {
+            Counters::from_native("RecordingSession::counters", unsafe {
+                ffi::b2World_GetCounters(world.raw_world())
+            })
+        })
+    }
+
+    pub fn create_body(&mut self, def: BodyDef) -> Result<BodyId> {
+        crate::world::create_body_id(self, def)
+    }
+
+    /// Construct body defaults carrying the recorded world's length-scale provenance.
+    #[must_use]
+    pub fn body_def(&self) -> BodyDef {
+        BodyDef::with_length_scale(self.world.core().length_scale())
+    }
+
+    /// Start a body builder carrying the recorded world's length-scale provenance.
+    #[must_use]
+    pub fn body_builder(&self) -> BodyBuilder {
+        self.body_def().into()
+    }
+
+    /// Construct a joint base after proving that both body ids belong to this active recording.
+    pub fn joint_base(&self, body_a: BodyId, body_b: BodyId) -> Result<crate::JointBase> {
+        crate::world::joint_base_for_owner(self, body_a, body_b)
+    }
+
+    /// Stop recording and copy the private native stream into an opaque recording.
+    ///
+    /// Returns [`Error::InCallback`] when called from a Box2D callback. The consumed session is
+    /// then cleaned up after the outermost native owner boundary returns to Rust.
+    pub fn finish(mut self) -> Result<Recording> {
+        self.stop_native()?;
+        let mixer_identities = self.mixer_identities;
+        Recording::from_native(self.native().bytes()?, mixer_identities)
+    }
+}
+
+impl crate::world::OwnerAdapter for RecordingSession<'_> {
+    fn capability_core(&self) -> &WorldCore {
+        self.world.core()
+    }
+
+    fn capability_completed_step(&self) -> &crate::events::CompletedStepState {
+        self.world.completed_step_state()
+    }
+
+    fn capability_preflight(&self) -> Result<()> {
+        self.check_access()
+    }
+
+    fn capability_postflight(&self) -> Result<()> {
+        self.native().check_status()
     }
 }
 
@@ -1332,7 +578,7 @@ impl Drop for RecordingSession<'_> {
     }
 }
 
-fn ensure_supported_callbacks(core: &WorldCore) -> ApiResult<()> {
+fn ensure_supported_callbacks(core: &WorldCore) -> Result<()> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         if core
@@ -1341,7 +587,7 @@ fn ensure_supported_callbacks(core: &WorldCore) -> ApiResult<()> {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .is_some()
         {
-            return Err(ApiError::RecordingCustomFilterUnsupported);
+            return Err(Error::RecordingCustomFilterUnsupported);
         }
         if core
             .pre_solve
@@ -1349,7 +595,7 @@ fn ensure_supported_callbacks(core: &WorldCore) -> ApiResult<()> {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .is_some()
         {
-            return Err(ApiError::RecordingPreSolveUnsupported);
+            return Err(Error::RecordingPreSolveUnsupported);
         }
     }
     #[cfg(target_arch = "wasm32")]
@@ -1360,13 +606,110 @@ fn ensure_supported_callbacks(core: &WorldCore) -> ApiResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Body, BodyDef, QueryFilter, ShapeDef, shapes};
+    use crate::{
+        Aabb, ChainDef, DistanceJointDef, DynamicTree, Position, QueryFilter, ShapeDef, shapes,
+    };
+
+    #[test]
+    fn recording_gravity_rejects_invalid_native_vectors() {
+        assert_eq!(
+            check_native_recording_gravity(Vec2::new(f32::NAN, 0.0)),
+            Err(Error::InvalidNativeOutput {
+                operation: "RecordingSession::gravity",
+                output: "gravity",
+                constraint: "a finite vector",
+            })
+        );
+        assert_eq!(
+            check_native_recording_gravity(Vec2::new(-9.8, 0.0)),
+            Ok(Vec2::new(-9.8, 0.0))
+        );
+    }
+
+    struct WorldShutdownProbe {
+        recording: Arc<RecordingLifecycleProbe>,
+        recording_finished_first: Arc<AtomicBool>,
+        drops: Arc<AtomicUsize>,
+    }
+
+    impl Drop for WorldShutdownProbe {
+        fn drop(&mut self) {
+            let recording_finished = self.recording.stops.load(Ordering::SeqCst) == 1
+                && self.recording.destroys.load(Ordering::SeqCst) == 1;
+            self.recording_finished_first
+                .store(recording_finished, Ordering::SeqCst);
+            self.drops.fetch_add(1, Ordering::SeqCst);
+        }
+    }
 
     fn query_world_with_shape() -> World {
-        let mut world = World::new(crate::WorldDef::default()).unwrap();
-        let body = world.create_body_id(BodyDef::default());
-        world.create_circle_shape_for(body, &ShapeDef::default(), &shapes::circle(Vec2::ZERO, 0.5));
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let body = world
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_def(),
+            )
+            .unwrap();
         world
+            .body(body)
+            .unwrap()
+            .create_circle(
+                &ShapeDef::default(),
+                &shapes::circle(Vec2::ZERO, 0.5).unwrap(),
+            )
+            .unwrap();
+        world
+    }
+
+    fn minimum_empty_world_recording_limit() -> u32 {
+        const SEARCH_CEILING_BYTES: u32 = 1024 * 1024;
+
+        let mut lower = 1;
+        let mut upper = SEARCH_CEILING_BYTES;
+        {
+            let mut world = crate::Foundation::initialize_default()
+                .unwrap()
+                .create_world(
+                    crate::Foundation::get()
+                        .expect("Foundation must be initialized before constructing a WorldDef")
+                        .world_def(),
+                )
+                .unwrap();
+            let session = world
+                .start_recording(RecordingLimits::new(u64::from(upper)).unwrap())
+                .expect("an empty-world recording must fit within the search ceiling");
+            drop(session);
+        }
+        while lower < upper {
+            let midpoint = lower + (upper - lower) / 2;
+            let mut world = crate::Foundation::initialize_default()
+                .unwrap()
+                .create_world(
+                    crate::Foundation::get()
+                        .expect("Foundation must be initialized before constructing a WorldDef")
+                        .world_def(),
+                )
+                .unwrap();
+            match world.start_recording(RecordingLimits::new(u64::from(midpoint)).unwrap()) {
+                Ok(session) => {
+                    drop(session);
+                    upper = midpoint;
+                }
+                Err(Error::RecordingLimitExceeded) => lower = midpoint + 1,
+                Err(error) => {
+                    panic!("unexpected recording-start error at {midpoint} bytes: {error}")
+                }
+            }
+        }
+        lower
     }
 
     fn assert_probe_counts(probe: &RecordingLifecycleProbe, stops: usize, destroys: usize) {
@@ -1375,108 +718,538 @@ mod tests {
     }
 
     #[test]
-    fn try_finish_from_another_world_query_defers_stop_and_destroy() {
+    fn finish_from_post_native_query_visitor_cleans_up_immediately() {
         let query_world = query_world_with_shape();
-        let mut recorded_world = World::new(crate::WorldDef::default()).unwrap();
+        let mut recorded_world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
         let probe = Arc::new(RecordingLifecycleProbe::default());
-        let mut session = recorded_world.start_recording(RecordingCapacity::default());
+        let mut session = recorded_world
+            .start_recording(RecordingLimits::default())
+            .unwrap();
         session.native.as_mut().unwrap().lifecycle_probe = Some(Arc::clone(&probe));
         let mut session = Some(session);
         let mut finish_error = None;
-        let bounds = Aabb::from_center_half_extents(Vec2::ZERO, Vec2::new(1.0, 1.0));
+        let bounds = Aabb::from_center_half_extents(Vec2::ZERO, Vec2::new(1.0, 1.0)).unwrap();
         let filter = QueryFilter::default();
 
-        let completed = query_world.visit_overlap_aabb(Position::ZERO, bounds, filter, |_| {
-            finish_error = session.take().unwrap().try_finish().err();
-            assert_eq!(finish_error, Some(ApiError::InCallback));
-            assert_probe_counts(&probe, 0, 0);
-            false
-        });
+        let completed = query_world
+            .query()
+            .unwrap()
+            .visit_overlap_aabb(Position::ZERO, bounds, filter, |_| {
+                finish_error = session.take().unwrap().finish().err();
+                assert!(finish_error.is_none());
+                assert_probe_counts(&probe, 1, 1);
+                false
+            })
+            .unwrap();
 
         assert!(!completed);
-        assert_eq!(finish_error, Some(ApiError::InCallback));
+        assert!(finish_error.is_none());
         assert_probe_counts(&probe, 1, 1);
     }
 
     #[test]
-    fn drop_from_another_world_query_defers_stop_and_destroy() {
+    fn drop_from_post_native_query_visitor_cleans_up_immediately() {
         let query_world = query_world_with_shape();
-        let mut recorded_world = World::new(crate::WorldDef::default()).unwrap();
+        let mut recorded_world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
         let probe = Arc::new(RecordingLifecycleProbe::default());
-        let mut session = recorded_world.start_recording(RecordingCapacity::default());
+        let mut session = recorded_world
+            .start_recording(RecordingLimits::default())
+            .unwrap();
         session.native.as_mut().unwrap().lifecycle_probe = Some(Arc::clone(&probe));
         let mut session = Some(session);
-        let bounds = Aabb::from_center_half_extents(Vec2::ZERO, Vec2::new(1.0, 1.0));
+        let bounds = Aabb::from_center_half_extents(Vec2::ZERO, Vec2::new(1.0, 1.0)).unwrap();
         let filter = QueryFilter::default();
 
-        let completed = query_world.visit_overlap_aabb(Position::ZERO, bounds, filter, |_| {
-            drop(session.take());
-            assert_probe_counts(&probe, 0, 0);
-            false
-        });
+        let completed = query_world
+            .query()
+            .unwrap()
+            .visit_overlap_aabb(Position::ZERO, bounds, filter, |_| {
+                drop(session.take());
+                assert_probe_counts(&probe, 1, 1);
+                false
+            })
+            .unwrap();
 
         assert!(!completed);
         assert_probe_counts(&probe, 1, 1);
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn dynamic_tree_callback_cleans_recording_before_world_teardown_and_resumes_primary_panic() {
+        let query_world = query_world_with_shape();
+        let mut recorded_world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let recording_probe = Arc::new(RecordingLifecycleProbe::default());
+        let mut session = recorded_world
+            .start_recording(RecordingLimits::default())
+            .unwrap();
+        session.native.as_mut().unwrap().lifecycle_probe = Some(Arc::clone(&recording_probe));
+        let mut session = Some(session);
+
+        let recording_finished_first = Arc::new(AtomicBool::new(false));
+        let world_payload_drops = Arc::new(AtomicUsize::new(0));
+        let mut doomed_world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        doomed_world
+            .set_user_data(WorldShutdownProbe {
+                recording: Arc::clone(&recording_probe),
+                recording_finished_first: Arc::clone(&recording_finished_first),
+                drops: Arc::clone(&world_payload_drops),
+            })
+            .unwrap();
+        let doomed_raw = doomed_world.raw();
+        let mut doomed_world = Some(doomed_world);
+
+        let bounds = Aabb::from_center_half_extents(Vec2::ZERO, Vec2::new(1.0, 1.0)).unwrap();
+        let mut tree = DynamicTree::new().unwrap();
+        tree.create_proxy(bounds, u64::MAX, 7).unwrap();
+
+        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            query_world
+                .query()
+                .unwrap()
+                .visit_overlap_aabb(Position::ZERO, bounds, QueryFilter::default(), |_| {
+                    tree.query_all(bounds, &mut |_, _| {
+                        drop(session.take());
+                        drop(doomed_world.take());
+                        assert_probe_counts(&recording_probe, 0, 0);
+                        assert!(unsafe { ffi::b2World_IsValid(doomed_raw) });
+                        panic!("dynamic tree recording cleanup panic");
+                    })
+                    .unwrap();
+                    false
+                })
+                .unwrap();
+        }));
+
+        drop(session);
+        let payload = panic.expect_err("the callback panic must resume after owner cleanup");
+        assert_eq!(
+            payload.downcast_ref::<&str>(),
+            Some(&"dynamic tree recording cleanup panic")
+        );
+        assert_probe_counts(&recording_probe, 1, 1);
+        assert!(recording_finished_first.load(Ordering::SeqCst));
+        assert_eq!(world_payload_drops.load(Ordering::SeqCst), 1);
+        assert!(!unsafe { ffi::b2World_IsValid(doomed_raw) });
+        assert_eq!(recorded_world.core().activity(), ActivityState::Idle);
+        assert!(recorded_world.counters().is_ok());
     }
 
     #[test]
     fn attached_recording_header_failure_is_raii_recoverable() {
-        let mut world = World::new(crate::WorldDef::default()).unwrap();
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
         FAIL_NEXT_SIZE_CHECK.with(|fail| fail.set(true));
 
         assert!(matches!(
-            world.try_start_recording(RecordingCapacity::default()),
-            Err(ApiError::InvalidNativeRecording)
+            world.start_recording(RecordingLimits::default()),
+            Err(Error::InvalidNativeRecording)
         ));
         assert_eq!(world.core().activity(), ActivityState::Idle);
-        assert!(world.try_counters().is_ok());
+        assert!(world.counters().is_ok());
 
-        let recording = world.start_recording(RecordingCapacity::default()).finish();
-        assert!(!recording.is_empty());
+        world
+            .start_recording(RecordingLimits::default())
+            .unwrap()
+            .finish()
+            .unwrap();
     }
 
     #[test]
-    fn recording_activity_finish_failure_can_be_retried() {
-        let world = World::new(crate::WorldDef::default()).unwrap();
-        let core = world.core_rc();
-        let mut activity = RecordingActivity {
-            core: Rc::clone(&core),
-            active: true,
-        };
-
-        assert_eq!(activity.finish(), Err(ApiError::WorldBusy));
-        assert!(activity.active);
-        core.set_activity(ActivityState::Idle, ActivityState::Recording)
+    fn recording_activity_lease_finishes_idempotently() {
+        let world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
             .unwrap();
+        let core = world.core();
+        let mut activity = core.begin_recording_activity().unwrap();
+
+        assert_eq!(core.activity(), ActivityState::Recording);
         assert_eq!(activity.finish(), Ok(()));
-        assert!(!activity.active);
+        assert_eq!(activity.finish(), Ok(()));
         assert_eq!(core.activity(), ActivityState::Idle);
     }
 
     #[test]
-    fn recording_capacity_checks_native_signed_boundary() {
-        assert_eq!(RecordingCapacity::new(0).unwrap().bytes(), 0);
+    fn recording_limits_check_native_writer_boundaries() {
+        let default = RecordingLimits::default();
+        assert_eq!(default.max_bytes(), RecordingLimits::MAX_BYTES);
+
+        let exact = RecordingLimits::new(u64::from(RecordingLimits::MAX_BYTES)).unwrap();
+        assert_eq!(exact.max_bytes(), RecordingLimits::MAX_BYTES);
+        assert!(matches!(
+            RecordingLimits::new(0),
+            Err(Error::InvalidArgument { .. })
+        ));
+        assert!(matches!(
+            RecordingLimits::new(u64::from(RecordingLimits::MAX_BYTES) + 1),
+            Err(Error::InvalidArgument { .. })
+        ));
+    }
+
+    #[test]
+    fn recording_session_issues_the_common_object_capabilities() {
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let mut session = world.start_recording(RecordingLimits::default()).unwrap();
+        let body_a = session
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_def(),
+            )
+            .unwrap();
+        let body_b = session
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_def(),
+            )
+            .unwrap();
+        let shape = {
+            let mut body: crate::Body<'_> = session.body(body_a).unwrap();
+            body.create_circle(
+                &ShapeDef::default(),
+                &shapes::circle(crate::Vec2::ZERO, 0.5).unwrap(),
+            )
+            .unwrap()
+        };
+        let chain = {
+            let def = ChainDef::builder()
+                .points([
+                    [-2.0_f32, 0.0],
+                    [-1.0_f32, 0.0],
+                    [1.0_f32, 0.0],
+                    [2.0_f32, 0.0],
+                ])
+                .build()
+                .unwrap();
+            let mut body: crate::Body<'_> = session.body(body_a).unwrap();
+            body.create_chain(&def).unwrap()
+        };
+        let joint = session
+            .create_distance_joint(&DistanceJointDef::new(
+                session.joint_base(body_a, body_b).unwrap(),
+            ))
+            .unwrap();
+
+        let body: crate::Body<'_> = session.body(body_a).unwrap();
+        assert_eq!(body.id(), body_a);
+        let shape_handle: crate::Shape<'_> = session.shape(shape).unwrap();
+        assert_eq!(shape_handle.id(), shape);
+
+        let chain_handle: crate::Chain<'_> = session.chain(chain).unwrap();
+        assert_eq!(chain_handle.id(), chain);
+
+        let joint_handle: crate::Joint<'_> = session.joint(joint).unwrap();
+        assert_eq!(joint_handle.id(), joint);
+        let typed: crate::DistanceJoint<'_> = joint_handle.into_distance().unwrap();
+        assert_eq!(typed.id(), joint);
+    }
+
+    #[test]
+    fn creation_postflight_failures_compensate_before_identity_publication() {
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let mut session = world.start_recording(RecordingLimits::default()).unwrap();
+        let body_a = session
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_def(),
+            )
+            .unwrap();
+        let body_b = session
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_def(),
+            )
+            .unwrap();
+
+        let before = session.counters().unwrap();
+        let compensations = session.world.core().creation_compensation_count_for_test();
+        FAIL_STATUS_AFTER_SUCCESSFUL_CHECKS.with(|fail| fail.set(Some(1)));
         assert_eq!(
-            RecordingCapacity::new(u64::from(RecordingCapacity::MAX_BYTES))
-                .unwrap()
-                .bytes(),
-            RecordingCapacity::MAX_BYTES
+            session.create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_def()
+            ),
+            Err(Error::RecordingLimitExceeded)
+        );
+        assert_eq!(session.counters().unwrap().body_count, before.body_count);
+
+        let mut body = session.body(body_a).unwrap();
+        FAIL_STATUS_AFTER_SUCCESSFUL_CHECKS.with(|fail| fail.set(Some(1)));
+        assert_eq!(
+            body.create_circle(
+                &ShapeDef::default(),
+                &shapes::circle(crate::Vec2::ZERO, 0.5).unwrap(),
+            ),
+            Err(Error::RecordingLimitExceeded)
+        );
+        assert_eq!(session.counters().unwrap().shape_count, before.shape_count);
+
+        let chain_def = ChainDef::builder()
+            .points([
+                [-2.0_f32, 0.0],
+                [-1.0_f32, 0.0],
+                [1.0_f32, 0.0],
+                [2.0_f32, 0.0],
+            ])
+            .build()
+            .unwrap();
+        let mut body = session.body(body_a).unwrap();
+        FAIL_STATUS_AFTER_SUCCESSFUL_CHECKS.with(|fail| fail.set(Some(1)));
+        assert_eq!(
+            body.create_chain(&chain_def),
+            Err(Error::RecordingLimitExceeded)
+        );
+        let after_chain = session.counters().unwrap();
+        assert_eq!(after_chain.shape_count, before.shape_count);
+
+        let joint_def = DistanceJointDef::new(session.joint_base(body_a, body_b).unwrap());
+        FAIL_STATUS_AFTER_SUCCESSFUL_CHECKS.with(|fail| fail.set(Some(1)));
+        assert_eq!(
+            session.create_distance_joint(&joint_def),
+            Err(Error::RecordingLimitExceeded)
+        );
+        assert_eq!(session.counters().unwrap().joint_count, before.joint_count);
+        assert_eq!(
+            session.world.core().creation_compensation_count_for_test(),
+            compensations + 4
         );
         assert_eq!(
-            RecordingCapacity::new(u64::from(RecordingCapacity::MAX_BYTES) + 1),
-            Err(ApiError::InvalidArgument)
+            session.world.core().lifecycle(),
+            crate::core::world_core::LifecycleState::Live
         );
     }
 
     #[test]
-    fn preexisting_scoped_handle_observes_recording_activity_gate() {
-        let mut world = World::new(crate::WorldDef::default()).unwrap();
-        let id = world.create_body_id(BodyDef::default());
-        let scoped = Body::new(world.core_rc(), id);
+    fn shape_kind_tracks_a_native_setter_when_recording_postflight_fails() {
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let body_id = world
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_def(),
+            )
+            .unwrap();
+        let shape_id = world
+            .body(body_id)
+            .unwrap()
+            .create_circle(
+                &ShapeDef::default(),
+                &shapes::circle(crate::Vec2::ZERO, 0.5).unwrap(),
+            )
+            .unwrap();
+        let mut session = world.start_recording(RecordingLimits::default()).unwrap();
+        let mut shape = session.shape(shape_id).unwrap();
+        let polygon = shapes::square_polygon(0.75).unwrap();
 
-        let session = world.start_recording(RecordingCapacity::default());
-        assert_eq!(scoped.try_position(), Err(ApiError::WorldBusy));
+        FAIL_STATUS_AFTER_SUCCESSFUL_CHECKS.with(|fail| fail.set(Some(1)));
+        assert_eq!(
+            shape.set_polygon(&polygon),
+            Err(Error::RecordingLimitExceeded)
+        );
+
+        assert_eq!(shape.shape_type(), Ok(crate::ShapeType::Polygon));
+        let actual_polygon = shape.polygon().unwrap();
+        assert_eq!(actual_polygon.vertices(), polygon.vertices());
+        assert_eq!(actual_polygon.normals(), polygon.normals());
+        assert_eq!(actual_polygon.centroid(), polygon.centroid());
+        assert_eq!(actual_polygon.radius(), polygon.radius());
+    }
+
+    #[test]
+    fn failed_creation_compensation_poisons_the_world() {
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let mut session = world.start_recording(RecordingLimits::default()).unwrap();
+        session
+            .world
+            .core()
+            .fail_next_creation_compensation_for_test();
+        FAIL_STATUS_AFTER_SUCCESSFUL_CHECKS.with(|fail| fail.set(Some(1)));
+
+        assert_eq!(
+            session.create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_def()
+            ),
+            Err(Error::RecordingLimitExceeded)
+        );
+        assert_eq!(
+            session.world.core().lifecycle(),
+            crate::core::world_core::LifecycleState::Poisoned
+        );
+    }
+
+    #[test]
+    fn recording_step_returns_the_common_lazy_event_capability() {
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let mut session = world.start_recording(RecordingLimits::default()).unwrap();
+
+        let completed: crate::CompletedStep<'_> = session.step(0.0, 1).unwrap();
+        assert_eq!(completed.post_step_error(), None);
+        drop(completed);
+
+        assert_eq!(
+            session.world.event_storage().getter_calls_for_test(),
+            [0; 4]
+        );
+    }
+
+    #[test]
+    fn event_access_checks_the_native_recording_size_once() {
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let mut session = world.start_recording(RecordingLimits::default()).unwrap();
+        let completed = session.step(0.0, 1).unwrap();
+
+        let before_materialization = RECORDING_GET_SIZE_CALLS.with(Cell::get);
+        assert!(completed.body_events().unwrap().is_empty());
+        assert_eq!(
+            RECORDING_GET_SIZE_CALLS.with(Cell::get),
+            before_materialization + 1
+        );
+
+        let before_cached_access = RECORDING_GET_SIZE_CALLS.with(Cell::get);
+        assert!(completed.body_events().unwrap().is_empty());
+        assert_eq!(
+            RECORDING_GET_SIZE_CALLS.with(Cell::get),
+            before_cached_access + 1
+        );
+    }
+
+    #[test]
+    fn recording_step_postflight_error_preserves_native_advancement_and_event_lifetime() {
+        let limit = minimum_empty_world_recording_limit();
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let mut session = world
+            .start_recording(RecordingLimits::new(u64::from(limit)).unwrap())
+            .unwrap();
+
+        let completed = session.step(0.0, 1).unwrap();
+        assert!(matches!(
+            completed.post_step_error(),
+            Some(Error::RecordingLimitExceeded | Error::RecordingOperationTooLarge)
+        ));
+        drop(completed);
+        assert!(!session.world.completed_step_active_for_test());
+
         drop(session);
-        assert!(scoped.try_position().is_ok());
+        assert!(world.counters().is_ok());
+    }
+
+    #[test]
+    fn finish_and_drop_retire_a_forgotten_recording_step() {
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+
+        let mut session = world.start_recording(RecordingLimits::default()).unwrap();
+        core::mem::forget(session.step(0.0, 1).unwrap());
+        assert!(session.world.completed_step_active_for_test());
+        session.finish().unwrap();
+        assert!(!world.completed_step_active_for_test());
+        assert!(world.counters().is_ok());
+
+        let mut session = world.start_recording(RecordingLimits::default()).unwrap();
+        core::mem::forget(session.step(0.0, 1).unwrap());
+        assert!(session.world.completed_step_active_for_test());
+        drop(session);
+        assert!(!world.completed_step_active_for_test());
+        assert!(world.counters().is_ok());
     }
 }

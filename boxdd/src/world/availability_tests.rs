@@ -1,9 +1,8 @@
-use super::{World, WorldDef};
-use crate::core::world_core::ActivityState;
-use crate::error::ApiError;
-use crate::{DebugDraw, DebugDrawCmd, DebugDrawOptions, ExplosionDef, HexColor, Position, Vec2};
+use crate::Vec2;
+use crate::error::Error;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::{DebugDraw, DebugDrawCmd, DebugDrawOptions, ExplosionDef, HexColor, Position};
 use std::cell::Cell;
-use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
 
 struct GravityConversionProbe {
@@ -17,17 +16,20 @@ impl From<GravityConversionProbe> for Vec2 {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Default)]
 struct CountingDebugDraw {
     calls: usize,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl DebugDraw for CountingDebugDraw {
     fn draw_point(&mut self, _p: Position, _size: f32, _color: HexColor) {
         self.calls += 1;
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn debug_draw_sentinel() -> DebugDrawCmd {
     DebugDrawCmd::Point {
         p: Position::ZERO,
@@ -38,400 +40,356 @@ fn debug_draw_sentinel() -> DebugDrawCmd {
 
 #[test]
 fn world_entries_reject_busy_worlds_before_access_or_mutation() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let handle = world.handle();
-    world.set_user_data(String::from("original"));
-
-    world
-        .core()
-        .set_activity(ActivityState::Idle, ActivityState::Recording)
+    let mut world = crate::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            crate::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
         .unwrap();
+    world.set_user_data(String::from("original")).unwrap();
 
-    assert_eq!(world.try_is_valid().unwrap_err(), ApiError::WorldBusy);
-    assert_eq!(handle.try_gravity().unwrap_err(), ApiError::WorldBusy);
+    let recording = world.core().begin_recording_activity().unwrap();
+
+    assert_eq!(world.gravity().unwrap_err(), Error::WorldBusy);
     assert_eq!(
         world
-            .try_set_user_data(String::from("replacement"))
+            .set_user_data(String::from("replacement"))
             .unwrap_err(),
-        ApiError::WorldBusy
+        Error::WorldBusy
     );
+    assert_eq!(world.clear_user_data().unwrap_err(), Error::WorldBusy);
     assert_eq!(
-        world.try_clear_user_data().unwrap_err(),
-        ApiError::WorldBusy
-    );
-    assert_eq!(
-        world.try_take_user_data::<String>().unwrap_err(),
-        ApiError::WorldBusy
+        world.take_user_data::<String>().unwrap_err(),
+        Error::WorldBusy
     );
 
-    assert!(catch_unwind(AssertUnwindSafe(|| world.world_id_raw())).is_err());
-    assert!(catch_unwind(AssertUnwindSafe(|| handle.world_id_raw())).is_err());
-    assert!(catch_unwind(AssertUnwindSafe(|| world.is_valid())).is_err());
-    assert!(catch_unwind(AssertUnwindSafe(|| handle.gravity())).is_err());
-    assert!(
-        catch_unwind(AssertUnwindSafe(|| {
-            world.set_user_data(String::from("replacement"));
-        }))
-        .is_err()
-    );
-    assert!(catch_unwind(AssertUnwindSafe(|| world.handle())).is_err());
-    assert!(catch_unwind(AssertUnwindSafe(|| world.owned_handle_counts())).is_err());
-
-    world
-        .core()
-        .set_activity(ActivityState::Recording, ActivityState::Idle)
-        .unwrap();
+    drop(recording);
     assert_eq!(
-        world.with_user_data::<String, _>(Clone::clone).as_deref(),
+        world
+            .with_user_data::<String, _>(Clone::clone)
+            .unwrap()
+            .as_deref(),
         Some("original")
     );
 
-    world
-        .core()
-        .set_activity(ActivityState::Idle, ActivityState::Restoring)
-        .unwrap();
-    assert_eq!(world.try_is_valid().unwrap_err(), ApiError::WorldBusy);
-    assert_eq!(handle.try_gravity().unwrap_err(), ApiError::WorldBusy);
-    world
-        .core()
-        .set_activity(ActivityState::Restoring, ActivityState::Idle)
-        .unwrap();
+    let restoring = world.core().begin_restore_activity().unwrap();
+    assert_eq!(world.gravity().unwrap_err(), Error::WorldBusy);
+    drop(restoring);
 }
 
 #[test]
-fn body_contact_recycling_gates_activity_before_brand_and_stale_checks() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let handle = world.handle();
-    let mut owned = world.create_body_owned(crate::BodyDef::default());
-    let stale = world.create_body_id(crate::BodyDef::default());
-    world.destroy_body_id(stale);
+fn object_capability_acquisition_gates_activity_before_identity_checks() {
+    let mut world = crate::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            crate::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let live = world
+        .create_body(
+            crate::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_def(),
+        )
+        .unwrap();
+    let stale = world
+        .create_body(
+            crate::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_def(),
+        )
+        .unwrap();
+    world.body(stale).unwrap().destroy().unwrap();
 
-    let mut foreign_world = World::new(WorldDef::default()).unwrap();
-    let foreign = foreign_world.create_body_id(crate::BodyDef::default());
-
-    world
-        .core()
-        .set_activity(ActivityState::Idle, ActivityState::Recording)
+    let mut foreign_world = crate::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            crate::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let foreign = foreign_world
+        .create_body(
+            crate::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_def(),
+        )
         .unwrap();
 
-    assert_eq!(
-        world
-            .try_body_is_contact_recycling_enabled(stale)
-            .unwrap_err(),
-        ApiError::WorldBusy
-    );
-    assert_eq!(
-        world
-            .try_body_enable_contact_recycling(foreign, false)
-            .unwrap_err(),
-        ApiError::WorldBusy
-    );
-    assert_eq!(
-        handle
-            .try_body_is_contact_recycling_enabled(foreign)
-            .unwrap_err(),
-        ApiError::WorldBusy
-    );
-    assert_eq!(
-        owned.try_is_contact_recycling_enabled().unwrap_err(),
-        ApiError::WorldBusy
-    );
-    assert_eq!(
-        owned.try_enable_contact_recycling(false).unwrap_err(),
-        ApiError::WorldBusy
-    );
+    let recording = world.core().begin_recording_activity().unwrap();
+    assert_eq!(world.body(stale).err().unwrap(), Error::WorldBusy);
+    assert_eq!(world.body(foreign).err().unwrap(), Error::WorldBusy);
+    drop(recording);
 
-    world
-        .core()
-        .set_activity(ActivityState::Recording, ActivityState::Idle)
-        .unwrap();
-    assert!(owned.try_is_contact_recycling_enabled().unwrap());
+    assert!(
+        world
+            .body(live)
+            .unwrap()
+            .is_contact_recycling_enabled()
+            .unwrap()
+    );
 
     world.core().poison();
-    assert_eq!(
-        world
-            .try_body_is_contact_recycling_enabled(stale)
-            .unwrap_err(),
-        ApiError::WorldPoisoned
-    );
-    assert_eq!(
-        world
-            .try_body_enable_contact_recycling(foreign, false)
-            .unwrap_err(),
-        ApiError::WorldPoisoned
-    );
-    assert_eq!(
-        handle
-            .try_body_is_contact_recycling_enabled(foreign)
-            .unwrap_err(),
-        ApiError::WorldPoisoned
-    );
-    assert_eq!(
-        owned.try_enable_contact_recycling(false).unwrap_err(),
-        ApiError::WorldPoisoned
-    );
+    assert_eq!(world.body(stale).err().unwrap(), Error::WorldPoisoned);
+    assert_eq!(world.body(foreign).err().unwrap(), Error::WorldPoisoned);
 }
 
 #[test]
 fn runtime_control_entries_gate_before_validation_and_conversion() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let original_gravity = world.gravity();
+    let mut world = crate::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            crate::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let original_gravity = world.gravity().unwrap();
     let converted = Rc::new(Cell::new(false));
 
-    world
-        .core()
-        .set_activity(ActivityState::Idle, ActivityState::Recording)
-        .unwrap();
+    let recording = world.core().begin_recording_activity().unwrap();
 
-    assert_eq!(
-        world.try_step(f32::NAN, 0).unwrap_err(),
-        ApiError::WorldBusy
-    );
-    assert_eq!(
-        world.try_flush_deferred_destroys().unwrap_err(),
-        ApiError::WorldBusy
-    );
+    assert_eq!(world.step(f32::NAN, 0).unwrap_err(), Error::WorldBusy);
     assert_eq!(
         world
-            .try_set_gravity(GravityConversionProbe {
+            .set_gravity(GravityConversionProbe {
                 converted: Rc::clone(&converted),
             })
             .unwrap_err(),
-        ApiError::WorldBusy
+        Error::WorldBusy
     );
     assert!(!converted.get());
-    assert_eq!(world.try_gravity().unwrap_err(), ApiError::WorldBusy);
-    assert_eq!(world.try_counters().unwrap_err(), ApiError::WorldBusy);
-    assert_eq!(
-        world.try_enable_sleeping(false).unwrap_err(),
-        ApiError::WorldBusy
-    );
+    assert_eq!(world.gravity().unwrap_err(), Error::WorldBusy);
+    assert_eq!(world.counters().unwrap_err(), Error::WorldBusy);
+    assert_eq!(world.enable_sleeping(false).unwrap_err(), Error::WorldBusy);
     assert_eq!(
         world
-            .try_set_contact_tuning(f32::NAN, f32::NAN, f32::NAN)
+            .set_contact_tuning(f32::NAN, f32::NAN, f32::NAN)
             .unwrap_err(),
-        ApiError::WorldBusy
+        Error::WorldBusy
     );
-    assert_eq!(
-        world.try_is_continuous_enabled().unwrap_err(),
-        ApiError::WorldBusy
-    );
+    assert_eq!(world.is_continuous_enabled().unwrap_err(), Error::WorldBusy);
 
-    let infallible_converted = Rc::new(Cell::new(false));
-    assert!(
-        catch_unwind(AssertUnwindSafe(|| {
-            world.set_gravity(GravityConversionProbe {
-                converted: Rc::clone(&infallible_converted),
-            });
-        }))
-        .is_err()
-    );
-    assert!(!infallible_converted.get());
-    assert!(catch_unwind(AssertUnwindSafe(|| world.step(f32::NAN, 0))).is_err());
-
-    world
-        .core()
-        .set_activity(ActivityState::Recording, ActivityState::Idle)
-        .unwrap();
-    assert_eq!(world.gravity(), original_gravity);
+    drop(recording);
+    assert_eq!(world.gravity().unwrap(), original_gravity);
 }
 
 #[test]
 fn callback_entries_leave_host_and_material_registries_unchanged_when_busy() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    world
-        .core()
-        .set_activity(ActivityState::Idle, ActivityState::Recording)
+    let mut world = crate::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            crate::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
         .unwrap();
+    let recording = world.core().begin_recording_activity().unwrap();
 
     assert_eq!(
-        world.try_set_custom_filter(|_, _| true).unwrap_err(),
-        ApiError::WorldBusy
+        world.set_custom_filter(|_, _| true).unwrap_err(),
+        Error::WorldBusy
     );
     assert!(world.core().custom_filter.lock().unwrap().is_none());
     assert_eq!(
         world
-            .try_set_friction_callback(|a, b| a.coefficient.max(b.coefficient))
+            .set_friction_callback(crate::MixerId::from_bytes([0x51; 32]), |a, b| {
+                a.coefficient.max(b.coefficient)
+            })
             .unwrap_err(),
-        ApiError::WorldBusy
+        Error::WorldBusy
     );
-    assert!(world.core().material_mix_slot.lock().unwrap().is_none());
+    assert!(
+        world
+            .core()
+            .material_mix
+            .lock()
+            .unwrap()
+            .slot_for_test()
+            .is_none()
+    );
 
+    drop(recording);
     world
-        .core()
-        .set_activity(ActivityState::Recording, ActivityState::Idle)
+        .set_friction_callback(crate::MixerId::from_bytes([0x51; 32]), |a, b| {
+            a.coefficient.max(b.coefficient)
+        })
         .unwrap();
-    world
-        .try_set_friction_callback(|a, b| a.coefficient.max(b.coefficient))
-        .unwrap();
-    let slot = world.core().material_mix_slot.lock().unwrap().unwrap();
-    assert!(crate::core::material_mix_registry::has_any_callback(slot));
-
-    world
+    let slot = world
         .core()
-        .set_activity(ActivityState::Idle, ActivityState::Restoring)
+        .material_mix
+        .lock()
+        .unwrap()
+        .slot_for_test()
         .unwrap();
     assert_eq!(
-        world.try_clear_friction_callback().unwrap_err(),
-        ApiError::WorldBusy
+        world.core().material_mix.lock().unwrap().presence(),
+        (true, false)
     );
-    assert_eq!(*world.core().material_mix_slot.lock().unwrap(), Some(slot));
-    assert!(crate::core::material_mix_registry::has_any_callback(slot));
 
-    world
-        .core()
-        .set_activity(ActivityState::Restoring, ActivityState::Idle)
-        .unwrap();
-    world.try_clear_friction_callback().unwrap();
-    assert!(world.core().material_mix_slot.lock().unwrap().is_none());
+    let restoring = world.core().begin_restore_activity().unwrap();
+    assert_eq!(
+        world.clear_friction_callback().unwrap_err(),
+        Error::WorldBusy
+    );
+    assert_eq!(
+        world.core().material_mix.lock().unwrap().slot_for_test(),
+        Some(slot)
+    );
+    assert_eq!(
+        world.core().material_mix.lock().unwrap().presence(),
+        (true, false)
+    );
+
+    drop(restoring);
+    world.clear_friction_callback().unwrap();
+    assert!(
+        world
+            .core()
+            .material_mix
+            .lock()
+            .unwrap()
+            .slot_for_test()
+            .is_none()
+    );
 }
 
 #[test]
-fn debug_draw_and_explosion_entries_gate_before_outputs_or_user_code() {
-    let mut world = World::new(WorldDef::default()).unwrap();
+#[cfg(not(target_arch = "wasm32"))]
+fn debug_draw_and_explosion_leave_outputs_untouched_when_busy() {
+    let mut world = crate::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            crate::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
     let mut commands = vec![debug_draw_sentinel()];
     let mut drawer = CountingDebugDraw::default();
     let explosion = ExplosionDef::new();
 
-    world
-        .core()
-        .set_activity(ActivityState::Idle, ActivityState::Recording)
-        .unwrap();
+    let recording = world.core().begin_recording_activity().unwrap();
 
     assert_eq!(
         world
-            .try_debug_draw_collect_into(&mut commands, DebugDrawOptions::default())
+            .debug_draw_collect_into(&mut commands, DebugDrawOptions::default())
             .unwrap_err(),
-        ApiError::WorldBusy
+        Error::WorldBusy
     );
-    assert_eq!(commands.len(), 1);
     assert!(matches!(
-        commands[0],
-        DebugDrawCmd::Point { size: 17.0, .. }
+        commands.as_slice(),
+        [DebugDrawCmd::Point { size: 17.0, .. }]
     ));
     assert_eq!(
         world
-            .try_debug_draw(&mut drawer, DebugDrawOptions::default())
+            .debug_draw(&mut drawer, DebugDrawOptions::default())
             .unwrap_err(),
-        ApiError::WorldBusy
+        Error::WorldBusy
     );
     assert_eq!(drawer.calls, 0);
-    assert_eq!(
-        world.try_explode(&explosion).unwrap_err(),
-        ApiError::WorldBusy
-    );
+    assert_eq!(world.explode(&explosion).unwrap_err(), Error::WorldBusy);
 
-    assert!(
-        catch_unwind(AssertUnwindSafe(|| {
-            world.debug_draw_collect_into(&mut commands, DebugDrawOptions::default());
-        }))
-        .is_err()
-    );
-    assert_eq!(commands.len(), 1);
-    assert!(catch_unwind(AssertUnwindSafe(|| world.explode(&explosion))).is_err());
-
-    world
-        .core()
-        .set_activity(ActivityState::Recording, ActivityState::Idle)
-        .unwrap();
+    drop(recording);
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn world_entries_reject_poisoned_worlds() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let handle = world.handle();
+    let mut world = crate::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            crate::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
     let mut drawer = CountingDebugDraw::default();
     let explosion = ExplosionDef::new();
     world.core().poison();
 
-    assert_eq!(world.try_is_valid().unwrap_err(), ApiError::WorldPoisoned);
+    assert_eq!(world.has_user_data().unwrap_err(), Error::WorldPoisoned);
+    assert_eq!(world.gravity().unwrap_err(), Error::WorldPoisoned);
+    assert_eq!(world.step(1.0 / 60.0, 1).unwrap_err(), Error::WorldPoisoned);
     assert_eq!(
-        world.try_has_user_data().unwrap_err(),
-        ApiError::WorldPoisoned
-    );
-    assert_eq!(handle.try_gravity().unwrap_err(), ApiError::WorldPoisoned);
-    assert_eq!(
-        world.try_step(1.0 / 60.0, 1).unwrap_err(),
-        ApiError::WorldPoisoned
-    );
-    assert_eq!(
-        world.try_set_custom_filter(|_, _| true).unwrap_err(),
-        ApiError::WorldPoisoned
+        world.set_custom_filter(|_, _| true).unwrap_err(),
+        Error::WorldPoisoned
     );
     assert_eq!(
         world
-            .try_debug_draw(&mut drawer, DebugDrawOptions::default())
+            .debug_draw(&mut drawer, DebugDrawOptions::default())
             .unwrap_err(),
-        ApiError::WorldPoisoned
+        Error::WorldPoisoned
     );
-    assert_eq!(
-        world.try_explode(&explosion).unwrap_err(),
-        ApiError::WorldPoisoned
-    );
-    assert!(catch_unwind(AssertUnwindSafe(|| world.world_id_raw())).is_err());
-    assert!(catch_unwind(AssertUnwindSafe(|| handle.gravity())).is_err());
+    assert_eq!(world.explode(&explosion).unwrap_err(), Error::WorldPoisoned);
 }
 
 #[test]
-fn callback_error_precedes_world_activity_errors() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let handle = world.handle();
+#[cfg(not(target_arch = "wasm32"))]
+fn callback_error_precedes_world_activity_and_argument_errors() {
+    let mut world = crate::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            crate::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
     let converted = Rc::new(Cell::new(false));
     let mut commands = vec![debug_draw_sentinel()];
     let explosion = ExplosionDef::new();
-    world
-        .core()
-        .set_activity(ActivityState::Idle, ActivityState::Recording)
-        .unwrap();
+    let recording = world.core().begin_recording_activity().unwrap();
 
     {
         let _guard = crate::core::callback_state::CallbackGuard::enter();
-        assert_eq!(world.try_is_valid().unwrap_err(), ApiError::InCallback);
-        assert_eq!(handle.try_gravity().unwrap_err(), ApiError::InCallback);
-        assert_eq!(
-            world.try_step(f32::NAN, 0).unwrap_err(),
-            ApiError::InCallback
-        );
+        assert_eq!(world.gravity().unwrap_err(), Error::InCallback);
+        assert_eq!(world.step(f32::NAN, 0).unwrap_err(), Error::InCallback);
         assert_eq!(
             world
-                .try_set_gravity(GravityConversionProbe {
+                .set_gravity(GravityConversionProbe {
                     converted: Rc::clone(&converted),
                 })
                 .unwrap_err(),
-            ApiError::InCallback
+            Error::InCallback
         );
         assert!(!converted.get());
         assert_eq!(
-            world
-                .try_set_user_data(String::from("blocked"))
-                .unwrap_err(),
-            ApiError::InCallback
+            world.set_user_data(String::from("blocked")).unwrap_err(),
+            Error::InCallback
         );
         assert_eq!(
-            world.try_set_custom_filter(|_, _| true).unwrap_err(),
-            ApiError::InCallback
+            world.set_custom_filter(|_, _| true).unwrap_err(),
+            Error::InCallback
         );
         assert_eq!(
             world
-                .try_debug_draw_collect_into(&mut commands, DebugDrawOptions::default())
+                .debug_draw_collect_into(&mut commands, DebugDrawOptions::default())
                 .unwrap_err(),
-            ApiError::InCallback
+            Error::InCallback
         );
         assert_eq!(commands.len(), 1);
-        assert_eq!(
-            world.try_explode(&explosion).unwrap_err(),
-            ApiError::InCallback
-        );
+        assert_eq!(world.explode(&explosion).unwrap_err(), Error::InCallback);
     }
 
-    world
-        .core()
-        .set_activity(ActivityState::Recording, ActivityState::Idle)
-        .unwrap();
+    drop(recording);
 }
 
 #[test]
-fn creating_a_world_from_a_callback_panics_before_native_creation() {
+fn creating_a_world_from_a_callback_returns_before_native_creation() {
     let _guard = crate::core::callback_state::CallbackGuard::enter();
-    assert!(catch_unwind(AssertUnwindSafe(|| World::new(WorldDef::default()))).is_err());
+    assert!(matches!(
+        crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def()
+            ),
+        Err(Error::InCallback)
+    ));
 }

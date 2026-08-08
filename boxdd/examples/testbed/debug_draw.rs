@@ -156,8 +156,8 @@ impl bd::DebugDraw for ImguiDebugDraw<'_> {
 
     fn draw_bounds(&mut self, bounds: bd::Aabb, color: bd::HexColor) {
         let dl = self.ui.get_foreground_draw_list();
-        let lower = self.world_to_screen(bounds.lower.into());
-        let upper = self.world_to_screen(bounds.upper.into());
+        let lower = self.world_to_screen(bounds.lower().into());
+        let upper = self.world_to_screen(bounds.upper().into());
         let min = [lower[0].min(upper[0]), lower[1].min(upper[1])];
         let max = [lower[0].max(upper[0]), lower[1].max(upper[1])];
         dl.add_rect(min, max, imgui_color(color, 0xff)).build();

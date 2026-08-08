@@ -1,6 +1,6 @@
 //! Additional world runtime helpers and value types that sit beside the core world API.
 
-use crate::{error::ApiResult, types::Position, world::World};
+use crate::{error::Result, types::Position, world::World};
 use boxdd_sys::ffi;
 
 #[inline]
@@ -17,7 +17,7 @@ pub(crate) fn explosion_query_axis_is_representable(position: f64, extent: f32) 
 }
 
 #[inline]
-fn check_explosion_def_valid(def: &ExplosionDef) -> ApiResult<()> {
+fn check_explosion_def_valid(def: &ExplosionDef) -> Result<()> {
     let position = def.center();
     let radius = def.blast_radius();
     let falloff = def.falloff_distance();
@@ -32,31 +32,50 @@ fn check_explosion_def_valid(def: &ExplosionDef) -> ApiResult<()> {
     #[cfg(feature = "double-precision")]
     let position_y = position.y;
 
-    if position.is_valid()
-        && radius.is_finite()
-        && radius >= 0.0
-        && falloff.is_finite()
-        && falloff >= 0.0
-        && impulse.is_finite()
-        && extent.is_finite()
-        && explosion_query_axis_is_representable(position_x, extent)
-        && explosion_query_axis_is_representable(position_y, extent)
-    {
-        Ok(())
-    } else {
-        Err(crate::error::ApiError::InvalidArgument)
+    if !position.is_valid() {
+        return Err(crate::error::Error::invalid_argument(
+            "World::explode",
+            "position",
+            "a finite world position",
+        ));
     }
+    if !radius.is_finite() || radius < 0.0 {
+        return Err(crate::error::Error::invalid_argument(
+            "World::explode",
+            "radius",
+            "a finite value greater than or equal to zero",
+        ));
+    }
+    if !falloff.is_finite() || falloff < 0.0 {
+        return Err(crate::error::Error::invalid_argument(
+            "World::explode",
+            "falloff",
+            "a finite value greater than or equal to zero",
+        ));
+    }
+    if !impulse.is_finite() {
+        return Err(crate::error::Error::invalid_argument(
+            "World::explode",
+            "impulse_per_length",
+            "a finite value",
+        ));
+    }
+    if !extent.is_finite()
+        || !explosion_query_axis_is_representable(position_x, extent)
+        || !explosion_query_axis_is_representable(position_y, extent)
+    {
+        return Err(crate::error::Error::invalid_argument(
+            "World::explode",
+            "position/radius/falloff",
+            "a query extent representable by finite local f32 bounds",
+        ));
+    }
+    Ok(())
 }
 
-pub(crate) fn try_world_explode_with_access(
-    world: &World,
-    def: &ExplosionDef,
-    access: crate::core::world_core::WorldAccess,
-) -> ApiResult<()> {
+pub(crate) fn world_explode(world: crate::world::WorldCall<'_>, def: &ExplosionDef) -> Result<()> {
     check_explosion_def_valid(def)?;
-    crate::core::callback_state::check_not_in_callback()?;
-    world.core().check_access(access)?;
-    unsafe { ffi::b2World_Explode(world.raw(), &def.0) };
+    unsafe { ffi::b2World_Explode(world.raw_world(), &def.0) };
     Ok(())
 }
 
@@ -66,8 +85,7 @@ pub struct ExplosionDef(pub(crate) ffi::b2ExplosionDef);
 
 impl Default for ExplosionDef {
     fn default() -> Self {
-        let _lease = crate::core::foundation::assert_transient_native_lease();
-        Self(unsafe { ffi::b2DefaultExplosionDef() })
+        Self(crate::core::native_defaults::explosion_def())
     }
 }
 
@@ -144,15 +162,9 @@ impl ExplosionDef {
 }
 
 impl World {
-    /// Trigger an explosion in the world using the provided definition.
-    pub fn explode(&mut self, def: &ExplosionDef) {
-        self.try_explode(def)
-            .expect("explosion definition and world access must be valid")
-    }
-
     /// Trigger an explosion after validating the definition and world access.
-    pub fn try_explode(&mut self, def: &ExplosionDef) -> ApiResult<()> {
-        try_world_explode_with_access(self, def, crate::core::world_core::WorldAccess::Idle)
+    pub fn explode(&mut self, def: &ExplosionDef) -> Result<()> {
+        crate::world::run_owner_call(self, |world| world_explode(world, def))
     }
 }
 
@@ -161,14 +173,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn invalid_definition_is_rejected_before_callback_access_checks() {
-        let mut world = World::new(crate::WorldDef::default()).unwrap();
+    fn callback_access_error_precedes_invalid_definition() {
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
         let invalid = ExplosionDef::new().radius(f32::NAN);
         let _guard = crate::core::callback_state::CallbackGuard::enter();
 
-        assert_eq!(
-            world.try_explode(&invalid),
-            Err(crate::ApiError::InvalidArgument)
-        );
+        assert_eq!(world.explode(&invalid), Err(crate::Error::InCallback));
     }
 }

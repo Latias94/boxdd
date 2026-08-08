@@ -4,20 +4,15 @@
 //! normal static archive for the requested target and contains exactly the native adapter identity
 //! expected by the caller. It deliberately has no manifest, network, extraction, or linker duties.
 
+use crate::build_support::VerifiedFileSnapshot;
+use crate::provider_manifest::MAX_PROVIDER_ARCHIVE_BYTES;
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs,
     path::Path,
 };
 
 use object::{Object, ObjectSection, ObjectSymbol};
-use sha2::{Digest, Sha256};
 
-#[allow(dead_code)]
-pub(crate) const BUILD_POLICY_SOURCE_SHA256: &str =
-    "0dd67a0054767ec23748739fad710a02c14e1b87e2a583bfbfc7e6946f4bf05b";
-
-const MAX_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_ARCHIVE_MEMBERS: usize = 16_384;
 const MAX_ARCHIVE_SYMBOLS: usize = 262_144;
 const MAX_IDENTITY_VALUES: usize = 4_096;
@@ -43,7 +38,6 @@ pub struct VerifiedArchiveIdentity {
     pub snapshot_layout_hash: u32,
     pub object_count: usize,
     pub archive_sha256: String,
-    pub archive_bytes: Vec<u8>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -102,45 +96,22 @@ fn require_target_platform(file: &object::File<'_>, target: &str) -> Result<(), 
 }
 
 pub fn verify_provider_archive(
-    archive_path: &Path,
+    archive_snapshot: &VerifiedFileSnapshot,
     expected: &ArchiveExpectation<'_>,
 ) -> Result<VerifiedArchiveIdentity, String> {
     validate_expectation(expected)?;
     let expected_object = ExpectedObject::for_target(expected.target)?;
-    let metadata = fs::symlink_metadata(archive_path).map_err(|error| {
-        format!(
-            "failed to inspect provider archive {}: {error}",
-            archive_path.display()
-        )
-    })?;
-    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
-        return Err(format!(
-            "provider archive must be a regular non-symlink file: {}",
-            archive_path.display()
-        ));
-    }
-    if metadata.len() > MAX_ARCHIVE_BYTES {
+    let archive_path = archive_snapshot.path();
+    if archive_snapshot.len() as u64 > MAX_PROVIDER_ARCHIVE_BYTES {
         return Err(format!(
             "provider archive {} exceeds the {} byte verification limit",
             archive_path.display(),
-            MAX_ARCHIVE_BYTES
+            MAX_PROVIDER_ARCHIVE_BYTES
         ));
     }
-    let bytes = fs::read(archive_path).map_err(|error| {
-        format!(
-            "failed to read provider archive {}: {error}",
-            archive_path.display()
-        )
-    })?;
-    if bytes.len() as u64 > MAX_ARCHIVE_BYTES {
-        return Err(format!(
-            "provider archive {} grew beyond the {} byte verification limit while being read",
-            archive_path.display(),
-            MAX_ARCHIVE_BYTES
-        ));
-    }
-    let archive_sha256 = hex_sha256(&bytes);
-    let archive = object::read::archive::ArchiveFile::parse(bytes.as_slice()).map_err(|error| {
+    let bytes = archive_snapshot.bytes();
+    let archive_sha256 = archive_snapshot.sha256().to_owned();
+    let archive = object::read::archive::ArchiveFile::parse(bytes).map_err(|error| {
         format!(
             "provider library {} is not a supported static archive: {error}",
             archive_path.display()
@@ -178,7 +149,7 @@ pub fn verify_provider_archive(
                 archive_path.display()
             )
         })?;
-        let data = member.data(bytes.as_slice()).map_err(|error| {
+        let data = member.data(bytes).map_err(|error| {
             format!(
                 "failed to read static archive member data in {}: {error}",
                 archive_path.display()
@@ -274,15 +245,7 @@ pub fn verify_provider_archive(
         snapshot_layout_hash,
         object_count: object_bytes.len(),
         archive_sha256,
-        archive_bytes: bytes,
     })
-}
-
-fn hex_sha256(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
 }
 
 fn validate_expectation(expected: &ArchiveExpectation<'_>) -> Result<(), String> {
@@ -662,7 +625,7 @@ mod tests {
         macho::{PLATFORM_IOS, PLATFORM_MACOS},
         write::{MachOBuildVersion, Relocation as WritableRelocation},
     };
-    use std::io::Write;
+    use std::{fs, io::Write};
     use tempfile::tempdir;
 
     const EFFECTIVE: &str = "9948291f4ea6e14b01304d19473e4539f47313133b4c2e7c6f3ae312d4f2c112";
@@ -946,7 +909,12 @@ mod tests {
         let directory = tempdir().unwrap();
         let path = directory.path().join("libbox2d.a");
         fs::write(&path, archive(members)).unwrap();
-        verify_provider_archive(&path, &fixture.expectation()).map(|_| ())
+        verify_provider_archive(&archive_snapshot(&path), &fixture.expectation()).map(|_| ())
+    }
+
+    fn archive_snapshot(path: &Path) -> VerifiedFileSnapshot {
+        VerifiedFileSnapshot::read(path, MAX_PROVIDER_ARCHIVE_BYTES, "test provider archive")
+            .unwrap()
     }
 
     #[test]
@@ -983,9 +951,10 @@ mod tests {
         let directory = tempdir().unwrap();
         let path = directory.path().join("snapshot.a");
         fs::write(&path, &bytes).unwrap();
-        let verified = verify_provider_archive(&path, &fixture.expectation()).unwrap();
-        assert_eq!(verified.archive_bytes, bytes);
-        assert_eq!(verified.archive_sha256, hex_sha256(&verified.archive_bytes));
+        let snapshot = archive_snapshot(&path);
+        let verified = verify_provider_archive(&snapshot, &fixture.expectation()).unwrap();
+        assert_eq!(snapshot.bytes(), bytes);
+        assert_eq!(verified.archive_sha256, snapshot.sha256());
         assert_eq!(verified.object_count, 1);
     }
 
@@ -995,10 +964,11 @@ mod tests {
         let directory = tempdir().unwrap();
         let path = directory.path().join("library.a");
         fs::write(&path, b"not an archive").unwrap();
-        assert!(verify_provider_archive(&path, &fixture.expectation()).is_err());
+        assert!(verify_provider_archive(&archive_snapshot(&path), &fixture.expectation()).is_err());
 
         fs::write(&path, b"!<thin>\n").unwrap();
-        let error = verify_provider_archive(&path, &fixture.expectation()).unwrap_err();
+        let error =
+            verify_provider_archive(&archive_snapshot(&path), &fixture.expectation()).unwrap_err();
         assert!(error.contains("thin archive"), "{error}");
 
         let wrong = Fixture {
@@ -1061,7 +1031,8 @@ mod tests {
             archive_without_index(&[("identity.o", object.clone())]),
         )
         .unwrap();
-        let error = verify_provider_archive(&path, &fixture.expectation()).unwrap_err();
+        let error =
+            verify_provider_archive(&archive_snapshot(&path), &fixture.expectation()).unwrap_err();
         assert!(error.contains("linker symbol index"), "{error}");
 
         let mut bytes = archive(&[("identity.o", object)]);
@@ -1072,7 +1043,8 @@ mod tests {
             bytes[offset..offset + 4].copy_from_slice(&8_u32.to_be_bytes());
         }
         fs::write(&path, bytes).unwrap();
-        let error = verify_provider_archive(&path, &fixture.expectation()).unwrap_err();
+        let error =
+            verify_provider_archive(&archive_snapshot(&path), &fixture.expectation()).unwrap_err();
         assert!(error.contains("points to an invalid member"), "{error}");
     }
 
@@ -1157,7 +1129,7 @@ mod tests {
         let directory = tempdir().unwrap();
         let path = directory.path().join("drift.a");
         fs::write(&path, archive(&[("drift.o", fixture.object())])).unwrap();
-        let error = verify_provider_archive(&path, &expected).unwrap_err();
+        let error = verify_provider_archive(&archive_snapshot(&path), &expected).unwrap_err();
         assert!(error.contains("does not match"), "{error}");
     }
 
@@ -1183,12 +1155,12 @@ mod tests {
         let mut expected = fixture.expectation();
         expected.private_abi_hash =
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        let error = verify_provider_archive(&path, &expected).unwrap_err();
+        let error = verify_provider_archive(&archive_snapshot(&path), &expected).unwrap_err();
         assert!(error.contains("private ABI hash"), "{error}");
 
         let mut expected = fixture.expectation();
         expected.snapshot_layout_hash ^= 1;
-        let error = verify_provider_archive(&path, &expected).unwrap_err();
+        let error = verify_provider_archive(&archive_snapshot(&path), &expected).unwrap_err();
         assert!(error.contains("snapshot layout hash"), "{error}");
     }
 }

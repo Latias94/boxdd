@@ -5,6 +5,6 @@ edition = "2024"
 publish = false
 
 [dependencies]
-boxdd-sys = { version = "=0.0.0-BOXDD-VERSION", registry = "boxdd-local" }
+boxdd-sys = { version = "0" }
 
 [workspace]

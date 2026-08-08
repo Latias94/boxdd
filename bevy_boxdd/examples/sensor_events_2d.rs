@@ -4,12 +4,18 @@ use bevy::prelude::*;
 use bevy_boxdd::prelude::*;
 
 fn main() {
+    let foundation =
+        boxdd::Foundation::initialize_default().expect("Box2D foundation should initialize");
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(BoxddPhysicsPlugin::new(BoxddPhysicsSettings {
-            gravity: Vec2::ZERO,
-            ..Default::default()
-        }))
+        .add_plugins(BoxddPhysicsPlugin::new(
+            foundation,
+            BoxddPhysicsSettings {
+                gravity: Vec2::ZERO,
+                event_interests: BoxddEventInterests::NONE.with_sensors(true),
+                ..Default::default()
+            },
+        ))
         .add_systems(Startup, setup)
         .add_systems(Update, log_sensor_events)
         .run();

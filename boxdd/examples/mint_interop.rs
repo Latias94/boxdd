@@ -1,10 +1,11 @@
 use boxdd::{
-    Aabb, BodyBuilder, BodyType, Position, QueryFilter, Rot, ShapeDef, Transform, World, WorldDef,
+    Aabb, BodyBuilder, BodyType, Position, QueryFilter, Rot, ShapeDef, ShapeQueryBuffer, Transform,
     WorldScalar, shapes,
 };
 use mint::{Point2, RowMatrix2, RowMatrix3x2, Vector2};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let foundation = boxdd::Foundation::initialize_default()?;
     let gravity = Vector2 {
         x: 0.0_f32,
         y: -9.8,
@@ -14,40 +15,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         y: WorldScalar::from(3.0_f32),
     };
 
-    let mut world = World::new(WorldDef::builder().gravity(gravity).build())?;
+    let mut world = foundation.create_world(
+        boxdd::WorldBuilder::from(foundation.world_def())
+            .gravity(gravity)
+            .build()?,
+    )?;
 
-    let ground = world.create_body_id(BodyBuilder::new().build());
-    let _ = world.create_polygon_shape_for(
-        ground,
-        &ShapeDef::default(),
-        &shapes::box_polygon(10.0, 0.5),
-    );
+    let ground = world.create_body(BodyBuilder::from(foundation.body_def()).build()?)?;
+    let _ = world
+        .body(ground)?
+        .create_polygon(&ShapeDef::default(), &shapes::box_polygon(10.0, 0.5)?)?;
 
-    let body = world.create_body_id(
-        BodyBuilder::new()
+    let body = world.create_body(
+        BodyBuilder::from(foundation.body_def())
             .body_type(BodyType::Dynamic)
             .position(spawn)
-            .build(),
-    );
-    let _ = world.create_polygon_shape_for(
-        body,
-        &ShapeDef::builder().density(1.0).build(),
-        &shapes::box_polygon(0.5, 0.5),
-    );
+            .build()?,
+    )?;
+    let _ = world.body(body)?.create_polygon(
+        &ShapeDef::builder().density(1.0).build()?,
+        &shapes::box_polygon(0.5, 0.5)?,
+    )?;
 
     for _ in 0..10 {
-        world.step(1.0 / 60.0, 4);
+        drop(world.step(1.0 / 60.0, 4)?);
     }
 
-    let mut overlap_hits = Vec::with_capacity(8);
-    world.overlap_aabb_into(
+    let mut overlap_hits = ShapeQueryBuffer::with_capacity(8)?;
+    world.query()?.overlap_aabb_into(
         Position::ZERO,
-        Aabb::from_center_half_extents(Point2 { x: 1.0_f32, y: 2.5 }, Vector2 { x: 1.5, y: 1.5 }),
+        Aabb::from_center_half_extents(Point2 { x: 1.0_f32, y: 2.5 }, Vector2 { x: 1.5, y: 1.5 })?,
         QueryFilter::default(),
         &mut overlap_hits,
-    );
+    )?;
 
-    let position: Point2<WorldScalar> = world.body_position(body).into();
+    let position: Point2<WorldScalar> = world.body(body)?.position()?.into();
 
     let quarter_turn = Rot::try_from(RowMatrix2 {
         x: Vector2 { x: 0.0, y: -1.0 },
@@ -56,7 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let quarter_turn_matrix: RowMatrix2<f32> = quarter_turn.into();
 
     let local_translation = Point2 { x: 1.0_f32, y: 3.0 };
-    let transform = Transform::from_pos_angle(local_translation, std::f32::consts::FRAC_PI_4);
+    let transform = Transform::from_pos_angle(local_translation, std::f32::consts::FRAC_PI_4)?;
     let mint_transform: RowMatrix3x2<f32> = transform.into();
     let recovered_transform = Transform::try_from(mint_transform)?;
     let recovered_position: Point2<f32> = recovered_transform.position().into();

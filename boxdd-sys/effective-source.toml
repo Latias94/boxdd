@@ -1,36 +1,54 @@
-schema_version = 1
-schema = "boxdd-effective-source-v1"
+schema_version = 2
+schema = "boxdd-effective-source-v2"
 upstream_sha = "56edae79f2949d86142b03450d5d60f63bcf5a6f"
 source_tree = "63a1ab02e3d2bf7c4d86b257b78976842b8c5ddb"
-effective_source_sha256 = "9948291f4ea6e14b01304d19473e4539f47313133b4c2e7c6f3ae312d4f2c112"
+effective_source_sha256 = "f6cf3bb1ca240888879a5c26ad468f98e98d5275018717505b2b0becfacd7497"
 
-[[transforms]]
-id = "world-snapshot-chain-shapes-zero-memset"
-path = "src/world_snapshot.c"
-classification = "local-soundness"
-preimage_sha256 = "baa5458c205a7f300801fdf3889eaeff6f934c910f81b3b7c1bd382b057002d1"
-replacement_sha256 = "9f579a3ae1af913d392147d9e71985bec7a1dcf3a8f4f3c279bb639ccfa7f5a4"
+[[patches]]
+path = "include/box2d/box2d.h"
+patch = "patches/box2d-h.patch"
+upstream_sha256 = "69d31651f1fb9022350eda36933562f55adffab38ff9f9609b393f27261bc2e7"
+effective_sha256 = "a64867025a6b97dd3e4fd03f7a86bb68e9ddde1e3b93a89d1ab39981b830644d"
 
-[[transforms]]
-id = "world-snapshot-sensors-zero-memset"
-path = "src/world_snapshot.c"
-classification = "local-soundness"
-preimage_sha256 = "3c117ed2f640db182475a0bc785541064d90b82b5f7a5c5ca5de9e8139e1871d"
-replacement_sha256 = "d3545cb2bf982be383ae535eded65f9ff076b94d9ecef2b51bb32b4099b3cc43"
+[[patches]]
+path = "src/core.c"
+patch = "patches/core-c.patch"
+upstream_sha256 = "8c6f0ffd76874c3d5012f41b2531ea408dadd4966cea218783309b7beef219b9"
+effective_sha256 = "734807e1a715892078cf2ee6e0c3bcbe778c4f31632bc6699c1e79a8bdac11f5"
 
-[[transforms]]
-id = "world-snapshot-islands-zero-memset"
-path = "src/world_snapshot.c"
-classification = "local-soundness"
-preimage_sha256 = "5b10226fdfa10ec134a538cca2247c3b5d78c2a9aac4f33c0376c21fb4a6b38f"
-replacement_sha256 = "1ed1bfc2852c189d5731c0753522052a6860dbb88532ec6fae48ee318c99db87"
+[[patches]]
+path = "src/recording.c"
+patch = "patches/recording-c.patch"
+upstream_sha256 = "29b6b8b2bddab198235b93f0bbf26aa0b461432c250f7bda8cc5b7f6303fa352"
+effective_sha256 = "b0effb8c3ee482e8773dd33e802cfa9af1c18a2ed79ca476408cf2e4be55ea31"
 
-[[transforms]]
-id = "world-snapshot-clear-transient-events"
+[[patches]]
+path = "src/recording.h"
+patch = "patches/recording-h.patch"
+upstream_sha256 = "2ea505bb811f5c4140a001d64534aa811441da8997f16b098fffdafdea3a0432"
+effective_sha256 = "82148a3473df498883a85aa2d5d785612c16b4784e073ece8f6b20d7320cb131"
+
+[[patches]]
+path = "src/recording_replay.c"
+patch = "patches/recording-replay-c.patch"
+upstream_sha256 = "a56005a88ff69b25e8825456a36289f420f070711049a95b4168ccc9b3d5efff"
+effective_sha256 = "083851d556eb9c1e391536e85aa6b8d0b03dec8064cf8161b53c040489168152"
+
+[[patches]]
+path = "src/recording_replay.h"
+patch = "patches/recording-replay-h.patch"
+upstream_sha256 = "11d904b7de7070eb0843d0362d1a22711b8d31b04f5466aa295c852f40d479c0"
+effective_sha256 = "90f6e99a982201775ac22c63dd479a88d45bba4f321402587f813ebcbe3dab15"
+
+[[patches]]
+path = "src/timer.c"
+patch = "patches/timer-c.patch"
+upstream_sha256 = "00465309d487e93ead480c873a0c7c75232f35447fc3e17db8df57ea92121aaf"
+effective_sha256 = "61987716bb26601d72750ad33c061f1e6789f646589d2bb974b9e1279b78ebbf"
+
+# Includes the reviewed transient-event restore backport from Box2D c7a044a08d8e25511b7bce8d554cf5392a783497.
+[[patches]]
 path = "src/world_snapshot.c"
-classification = "upstream-backport"
-preimage_sha256 = "97b8fd3f5a53c680777397d773e65f3bd3690455351dcd42c127f9c906a1658b"
-replacement_sha256 = "28b7c03451a43db020e3d58037b03bd05d6d2f699a22cc2c4d7dbef7555c670c"
-origin_repository = "https://github.com/erincatto/box2d.git"
-origin_commit = "c7a044a08d8e25511b7bce8d554cf5392a783497"
-origin_path = "src/world_snapshot.c"
+patch = "patches/world-snapshot-c.patch"
+upstream_sha256 = "ac976c5ce01b76040d310d2f741daf90de2d18829d56a3f8e4c5b62ba3ce9f87"
+effective_sha256 = "047aceff311e793b6a2e9ebd0744c132684b384e58a5c0fcc80955a4ed6791fd"

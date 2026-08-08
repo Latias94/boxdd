@@ -1,460 +1,334 @@
-use boxdd::{ApiError, ApiResult, prelude::*};
 use std::collections::BTreeMap;
 
+use boxdd::{Error, Result, prelude::*};
+
 fn world_and_base() -> (World, JointBase) {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let body_a = world.create_body_id(
-        BodyBuilder::new()
-            .body_type(BodyType::Dynamic)
-            .position([-1.0_f32, 0.0])
-            .build(),
-    );
-    let body_b = world.create_body_id(
-        BodyBuilder::new()
-            .body_type(BodyType::Dynamic)
-            .position([1.0_f32, 0.0])
-            .build(),
-    );
-    (world, JointBase::new(body_a, body_b))
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let body_a = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_builder()
+                .body_type(BodyType::Dynamic)
+                .position([-1.0_f32, 0.0])
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    let body_b = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_builder()
+                .body_type(BodyType::Dynamic)
+                .position([1.0_f32, 0.0])
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    let base = world.joint_base(body_a, body_b).unwrap();
+    (world, base)
 }
 
-fn assert_invalid(result: ApiResult<()>) {
-    assert_eq!(result, Err(ApiError::InvalidArgument));
+fn assert_invalid(result: Result<()>, expected: Error) {
+    assert_eq!(result, Err(expected));
 }
 
 #[test]
-fn six_joint_families_have_explicit_receiver_parity() {
+fn cached_kinds_dispatch_every_typed_joint_capability() {
     let (mut world, base) = world_and_base();
-    let mut distance = world.create_distance_joint_owned(&DistanceJointDef::new(base).length(1.0));
-    let mut motor = world.create_motor_joint_owned(&MotorJointDef::new(base));
-    let mut prismatic = world.create_prismatic_joint_owned(&PrismaticJointDef::new(base));
-    let mut revolute = world.create_revolute_joint_owned(&RevoluteJointDef::new(base));
-    let mut weld = world.create_weld_joint_owned(&WeldJointDef::new(base));
-    let mut wheel = world.create_wheel_joint_owned(&WheelJointDef::new(base));
-    let handle = world.handle();
-
-    assert_eq!(
-        JointType::from_raw(handle.joint_type_raw(distance.id())),
-        Some(JointType::Distance)
-    );
-    assert_eq!(
-        JointType::from_raw(handle.try_joint_type_raw(distance.id()).unwrap()),
-        Some(JointType::Distance)
-    );
-
-    world.try_distance_set_length(distance.id(), 2.0).unwrap();
-    assert_eq!(handle.try_distance_length(distance.id()).unwrap(), 2.0);
-    assert_eq!(distance.try_distance_length().unwrap(), 2.0);
-    {
-        let scoped = world.joint(distance.id()).unwrap();
-        assert_eq!(scoped.try_distance_length().unwrap(), 2.0);
-    }
-    distance.try_distance_set_length(2.5).unwrap();
-    assert_eq!(world.try_distance_length(distance.id()).unwrap(), 2.5);
-    {
-        let mut scoped = world.joint(distance.id()).unwrap();
-        scoped.try_distance_set_length(3.0).unwrap();
-    }
-    assert_eq!(handle.try_distance_length(distance.id()).unwrap(), 3.0);
-
-    world.try_motor_set_linear_hertz(motor.id(), 2.0).unwrap();
-    assert_eq!(handle.try_motor_linear_hertz(motor.id()).unwrap(), 2.0);
-    assert_eq!(motor.try_motor_linear_hertz().unwrap(), 2.0);
-    {
-        let scoped = world.joint(motor.id()).unwrap();
-        assert_eq!(scoped.try_motor_linear_hertz().unwrap(), 2.0);
-    }
-    motor.try_motor_set_linear_hertz(2.5).unwrap();
-    {
-        let mut scoped = world.joint(motor.id()).unwrap();
-        scoped.try_motor_set_linear_hertz(3.0).unwrap();
-    }
-    assert_eq!(world.try_motor_linear_hertz(motor.id()).unwrap(), 3.0);
-
-    world
-        .try_prismatic_set_target_translation(prismatic.id(), 0.25)
+    let distance = world
+        .create_distance_joint(&DistanceJointDef::new(base).length(2.0))
         .unwrap();
-    assert_eq!(
-        handle
-            .try_prismatic_target_translation(prismatic.id())
-            .unwrap(),
-        0.25
-    );
-    assert_eq!(prismatic.try_prismatic_target_translation().unwrap(), 0.25);
-    {
-        let scoped = world.joint(prismatic.id()).unwrap();
-        assert_eq!(scoped.try_prismatic_target_translation().unwrap(), 0.25);
-    }
-    prismatic.try_prismatic_set_target_translation(0.5).unwrap();
-    {
-        let mut scoped = world.joint(prismatic.id()).unwrap();
-        scoped.try_prismatic_set_target_translation(0.75).unwrap();
-    }
-    assert_eq!(
-        world
-            .try_prismatic_target_translation(prismatic.id())
-            .unwrap(),
-        0.75
-    );
-
-    world
-        .try_revolute_set_target_angle(revolute.id(), 0.1)
+    let motor = world.create_motor_joint(&MotorJointDef::new(base)).unwrap();
+    let filter = world
+        .create_filter_joint(&FilterJointDef::new(base))
         .unwrap();
-    assert_eq!(
-        handle.try_revolute_target_angle(revolute.id()).unwrap(),
-        0.1
-    );
-    assert_eq!(revolute.try_revolute_target_angle().unwrap(), 0.1);
-    {
-        let scoped = world.joint(revolute.id()).unwrap();
-        assert_eq!(scoped.try_revolute_target_angle().unwrap(), 0.1);
-    }
-    revolute.try_revolute_set_target_angle(0.2).unwrap();
-    {
-        let mut scoped = world.joint(revolute.id()).unwrap();
-        scoped.try_revolute_set_target_angle(0.3).unwrap();
-    }
-    assert_eq!(world.try_revolute_target_angle(revolute.id()).unwrap(), 0.3);
+    let prismatic = world
+        .create_prismatic_joint(&PrismaticJointDef::new(base))
+        .unwrap();
+    let revolute = world
+        .create_revolute_joint(&RevoluteJointDef::new(base))
+        .unwrap();
+    let weld = world.create_weld_joint(&WeldJointDef::new(base)).unwrap();
+    let wheel = world.create_wheel_joint(&WheelJointDef::new(base)).unwrap();
 
-    world.try_weld_set_linear_hertz(weld.id(), 2.0).unwrap();
-    assert_eq!(handle.try_weld_linear_hertz(weld.id()).unwrap(), 2.0);
-    assert_eq!(weld.try_weld_linear_hertz().unwrap(), 2.0);
     {
-        let scoped = world.joint(weld.id()).unwrap();
-        assert_eq!(scoped.try_weld_linear_hertz().unwrap(), 2.0);
-    }
-    weld.try_weld_set_linear_hertz(2.5).unwrap();
-    {
-        let mut scoped = world.joint(weld.id()).unwrap();
-        scoped.try_weld_set_linear_hertz(3.0).unwrap();
-    }
-    assert_eq!(world.try_weld_linear_hertz(weld.id()).unwrap(), 3.0);
+        let mut joint = world.joint(distance).unwrap();
+        assert_eq!(joint.joint_type().unwrap(), JointType::Distance);
+        assert_eq!(joint.id(), distance);
+        joint.set_collide_connected(true).unwrap();
+        joint
+            .set_constraint_tuning(ConstraintTuning::new(4.0, 0.5).unwrap())
+            .unwrap();
+        joint.set_force_threshold(3.0).unwrap();
+        joint.set_torque_threshold(5.0).unwrap();
+        assert!(joint.collide_connected().unwrap());
+        assert_eq!(joint.constraint_tuning().unwrap().hertz(), 4.0);
+        assert_eq!(joint.force_threshold().unwrap(), 3.0);
+        assert_eq!(joint.torque_threshold().unwrap(), 5.0);
 
-    world.try_wheel_set_motor_speed(wheel.id(), -1.0).unwrap();
-    assert_eq!(handle.try_wheel_motor_speed(wheel.id()).unwrap(), -1.0);
-    assert_eq!(wheel.try_wheel_motor_speed().unwrap(), -1.0);
-    {
-        let scoped = world.joint(wheel.id()).unwrap();
-        assert_eq!(scoped.try_wheel_motor_speed().unwrap(), -1.0);
+        let mut joint = joint.into_distance().unwrap();
+        joint.set_length(2.5).unwrap();
+        joint.enable_spring(true).unwrap();
+        joint.set_spring_force_range(-1.0, 6.0).unwrap();
+        joint.set_spring_hertz(3.0).unwrap();
+        joint.set_spring_damping_ratio(0.25).unwrap();
+        joint.enable_limit(true).unwrap();
+        joint.set_length_range(0.5, 4.0).unwrap();
+        joint.enable_motor(true).unwrap();
+        joint.set_motor_speed(-2.0).unwrap();
+        joint.set_max_motor_force(8.0).unwrap();
+
+        assert_eq!(joint.length().unwrap(), 2.5);
+        assert!(joint.spring_enabled().unwrap());
+        assert_eq!(joint.spring_force_range().unwrap(), (-1.0, 6.0));
+        assert_eq!(joint.spring_hertz().unwrap(), 3.0);
+        assert_eq!(joint.spring_damping_ratio().unwrap(), 0.25);
+        assert!(joint.limit_enabled().unwrap());
+        assert_eq!(joint.min_length().unwrap(), 0.5);
+        assert_eq!(joint.max_length().unwrap(), 4.0);
+        assert!(joint.motor_enabled().unwrap());
+        assert_eq!(joint.motor_speed().unwrap(), -2.0);
+        assert_eq!(joint.max_motor_force().unwrap(), 8.0);
     }
-    wheel.try_wheel_set_motor_speed(-2.0).unwrap();
+
     {
-        let mut scoped = world.joint(wheel.id()).unwrap();
-        scoped.try_wheel_set_motor_speed(-3.0).unwrap();
+        let mut joint = world.joint(motor).unwrap().into_motor().unwrap();
+        assert_eq!(joint.joint_type().unwrap(), JointType::Motor);
+        joint.set_linear_velocity([1.5_f32, -0.5]).unwrap();
+        joint.set_angular_velocity(-0.75).unwrap();
+        joint.set_max_velocity_force(3.0).unwrap();
+        joint.set_max_velocity_torque(4.0).unwrap();
+        joint.set_linear_hertz(2.0).unwrap();
+        joint.set_linear_damping_ratio(0.2).unwrap();
+        joint.set_angular_hertz(5.0).unwrap();
+        joint.set_angular_damping_ratio(0.4).unwrap();
+        joint.set_max_spring_force(6.0).unwrap();
+        joint.set_max_spring_torque(7.0).unwrap();
+
+        assert_eq!(joint.linear_velocity().unwrap(), Vec2::new(1.5, -0.5));
+        assert_eq!(joint.angular_velocity().unwrap(), -0.75);
+        assert_eq!(joint.max_velocity_force().unwrap(), 3.0);
+        assert_eq!(joint.max_velocity_torque().unwrap(), 4.0);
+        assert_eq!(joint.linear_hertz().unwrap(), 2.0);
+        assert_eq!(joint.linear_damping_ratio().unwrap(), 0.2);
+        assert_eq!(joint.angular_hertz().unwrap(), 5.0);
+        assert_eq!(joint.angular_damping_ratio().unwrap(), 0.4);
+        assert_eq!(joint.max_spring_force().unwrap(), 6.0);
+        assert_eq!(joint.max_spring_torque().unwrap(), 7.0);
     }
-    assert_eq!(world.try_wheel_motor_speed(wheel.id()).unwrap(), -3.0);
+
+    {
+        let joint = world.joint(filter).unwrap().into_filter().unwrap();
+        assert_eq!(joint.joint_type().unwrap(), JointType::Filter);
+        assert_eq!(joint.id(), filter);
+    }
+
+    {
+        let mut joint = world.joint(prismatic).unwrap().into_prismatic().unwrap();
+        assert_eq!(joint.joint_type().unwrap(), JointType::Prismatic);
+        joint.enable_spring(true).unwrap();
+        joint.set_spring_hertz(3.0).unwrap();
+        joint.set_spring_damping_ratio(0.3).unwrap();
+        joint.set_target_translation(0.75).unwrap();
+        joint.enable_limit(true).unwrap();
+        joint.set_limits(-1.0, 1.0).unwrap();
+        joint.enable_motor(true).unwrap();
+        joint.set_motor_speed(-1.5).unwrap();
+        joint.set_max_motor_force(9.0).unwrap();
+
+        assert!(joint.spring_enabled().unwrap());
+        assert_eq!(joint.spring_hertz().unwrap(), 3.0);
+        assert_eq!(joint.spring_damping_ratio().unwrap(), 0.3);
+        assert_eq!(joint.target_translation().unwrap(), 0.75);
+        assert!(joint.limit_enabled().unwrap());
+        assert_eq!(joint.lower_limit().unwrap(), -1.0);
+        assert_eq!(joint.upper_limit().unwrap(), 1.0);
+        assert!(joint.motor_enabled().unwrap());
+        assert_eq!(joint.motor_speed().unwrap(), -1.5);
+        assert_eq!(joint.max_motor_force().unwrap(), 9.0);
+    }
+
+    {
+        let mut joint = world.joint(revolute).unwrap().into_revolute().unwrap();
+        assert_eq!(joint.joint_type().unwrap(), JointType::Revolute);
+        joint.enable_spring(true).unwrap();
+        joint.set_spring_hertz(4.0).unwrap();
+        joint.set_spring_damping_ratio(0.4).unwrap();
+        joint.set_target_angle(0.25).unwrap();
+        joint.enable_limit(true).unwrap();
+        joint.set_limits(-0.5, 0.5).unwrap();
+        joint.enable_motor(true).unwrap();
+        joint.set_motor_speed(1.25).unwrap();
+        joint.set_max_motor_torque(10.0).unwrap();
+
+        assert!(joint.spring_enabled().unwrap());
+        assert_eq!(joint.spring_hertz().unwrap(), 4.0);
+        assert_eq!(joint.spring_damping_ratio().unwrap(), 0.4);
+        assert_eq!(joint.target_angle().unwrap(), 0.25);
+        assert!(joint.limit_enabled().unwrap());
+        assert_eq!(joint.lower_limit().unwrap(), -0.5);
+        assert_eq!(joint.upper_limit().unwrap(), 0.5);
+        assert!(joint.motor_enabled().unwrap());
+        assert_eq!(joint.motor_speed().unwrap(), 1.25);
+        assert_eq!(joint.max_motor_torque().unwrap(), 10.0);
+    }
+
+    {
+        let mut joint = world.joint(weld).unwrap().into_weld().unwrap();
+        assert_eq!(joint.joint_type().unwrap(), JointType::Weld);
+        joint.set_linear_hertz(2.0).unwrap();
+        joint.set_linear_damping_ratio(0.2).unwrap();
+        joint.set_angular_hertz(3.0).unwrap();
+        joint.set_angular_damping_ratio(0.3).unwrap();
+
+        assert_eq!(joint.linear_hertz().unwrap(), 2.0);
+        assert_eq!(joint.linear_damping_ratio().unwrap(), 0.2);
+        assert_eq!(joint.angular_hertz().unwrap(), 3.0);
+        assert_eq!(joint.angular_damping_ratio().unwrap(), 0.3);
+    }
+
+    {
+        let mut joint = world.joint(wheel).unwrap().into_wheel().unwrap();
+        assert_eq!(joint.joint_type().unwrap(), JointType::Wheel);
+        joint.enable_spring(true).unwrap();
+        joint.set_spring_hertz(5.0).unwrap();
+        joint.set_spring_damping_ratio(0.5).unwrap();
+        joint.enable_limit(true).unwrap();
+        joint.set_limits(-0.75, 0.75).unwrap();
+        joint.enable_motor(true).unwrap();
+        joint.set_motor_speed(-2.5).unwrap();
+        joint.set_max_motor_torque(11.0).unwrap();
+
+        assert!(joint.spring_enabled().unwrap());
+        assert_eq!(joint.spring_hertz().unwrap(), 5.0);
+        assert_eq!(joint.spring_damping_ratio().unwrap(), 0.5);
+        assert!(joint.limit_enabled().unwrap());
+        assert_eq!(joint.lower_limit().unwrap(), -0.75);
+        assert_eq!(joint.upper_limit().unwrap(), 0.75);
+        assert!(joint.motor_enabled().unwrap());
+        assert_eq!(joint.motor_speed().unwrap(), -2.5);
+        assert_eq!(joint.max_motor_torque().unwrap(), 11.0);
+    }
 }
 
 #[test]
-fn every_numeric_joint_operation_rejects_invalid_values_before_native_mutation() {
+fn invalid_joint_writes_do_not_mutate_native_state() {
     let (mut world, base) = world_and_base();
-    let mut distance = world.create_distance_joint_owned(&DistanceJointDef::new(base).length(1.0));
-    let mut motor = world.create_motor_joint_owned(&MotorJointDef::new(base));
-    let mut prismatic = world.create_prismatic_joint_owned(&PrismaticJointDef::new(base));
-    let mut revolute = world.create_revolute_joint_owned(&RevoluteJointDef::new(base));
-    let mut weld = world.create_weld_joint_owned(&WeldJointDef::new(base));
-    let mut wheel = world.create_wheel_joint_owned(&WheelJointDef::new(base));
-
-    assert_invalid(distance.try_set_constraint_tuning(ConstraintTuning::new(f32::NAN, 0.0)));
-    assert_invalid(distance.try_set_constraint_tuning(ConstraintTuning::new(0.0, -1.0)));
-    assert_invalid(distance.try_set_force_threshold(f32::INFINITY));
-    assert_invalid(distance.try_set_torque_threshold(-1.0));
-    assert_invalid(distance.try_set_local_frame_a(Transform::from_pos_angle([f32::NAN, 0.0], 0.0)));
-
-    let original_length = distance.distance_length();
-    assert_invalid(distance.try_distance_set_length(f32::NAN));
-    assert_invalid(distance.try_distance_set_length(f32::INFINITY));
-    assert_invalid(distance.try_distance_set_length(0.0));
-    assert_invalid(distance.try_distance_set_spring_force_range(f32::NAN, 1.0));
-    assert_invalid(distance.try_distance_set_spring_force_range(2.0, 1.0));
-    assert_invalid(distance.try_distance_set_spring_hertz(-1.0));
-    assert_invalid(distance.try_distance_set_spring_hertz(f32::INFINITY));
-    assert_invalid(distance.try_distance_set_spring_damping_ratio(f32::NAN));
-    assert_invalid(distance.try_distance_set_spring_damping_ratio(-1.0));
-    assert_invalid(distance.try_distance_set_length_range(-1.0, 1.0));
-    assert_invalid(distance.try_distance_set_length_range(2.0, 1.0));
-    assert_invalid(distance.try_distance_set_length_range(0.0, f32::INFINITY));
-    assert_invalid(distance.try_distance_set_motor_speed(f32::NAN));
-    assert_invalid(distance.try_distance_set_motor_speed(f32::INFINITY));
-    assert_invalid(distance.try_distance_set_max_motor_force(-1.0));
-    assert_invalid(distance.try_distance_set_max_motor_force(f32::INFINITY));
-    assert_eq!(distance.distance_length(), original_length);
-
-    assert_invalid(motor.try_motor_set_linear_velocity([f32::NAN, 0.0]));
-    assert_invalid(motor.try_motor_set_linear_velocity([f32::INFINITY, 0.0]));
-    assert_invalid(motor.try_motor_set_angular_velocity(f32::NAN));
-    assert_invalid(motor.try_motor_set_angular_velocity(f32::INFINITY));
-    assert_invalid(motor.try_motor_set_max_velocity_force(-1.0));
-    assert_invalid(motor.try_motor_set_max_velocity_torque(f32::INFINITY));
-    assert_invalid(motor.try_motor_set_linear_hertz(-1.0));
-    assert_invalid(motor.try_motor_set_linear_damping_ratio(f32::NAN));
-    assert_invalid(motor.try_motor_set_angular_hertz(f32::INFINITY));
-    assert_invalid(motor.try_motor_set_angular_damping_ratio(-1.0));
-    assert_invalid(motor.try_motor_set_max_spring_force(f32::NAN));
-    assert_invalid(motor.try_motor_set_max_spring_torque(-1.0));
-
-    assert_invalid(prismatic.try_prismatic_set_spring_hertz(f32::NAN));
-    assert_invalid(prismatic.try_prismatic_set_spring_damping_ratio(-1.0));
-    assert_invalid(prismatic.try_prismatic_set_target_translation(f32::INFINITY));
-    assert_invalid(prismatic.try_prismatic_set_limits(f32::NAN, 1.0));
-    assert_invalid(prismatic.try_prismatic_set_limits(2.0, 1.0));
-    assert_invalid(prismatic.try_prismatic_set_motor_speed(f32::NAN));
-    assert_invalid(prismatic.try_prismatic_set_max_motor_force(-1.0));
-
-    assert_invalid(revolute.try_revolute_set_spring_hertz(-1.0));
-    assert_invalid(revolute.try_revolute_set_spring_damping_ratio(f32::NAN));
-    assert_invalid(revolute.try_revolute_set_target_angle(f32::INFINITY));
-    assert_invalid(revolute.try_revolute_set_limits(f32::NAN, 0.0));
-    assert_invalid(revolute.try_revolute_set_limits(1.0, -1.0));
-    assert_invalid(revolute.try_revolute_set_limits(-4.0, 0.0));
-    assert_invalid(revolute.try_revolute_set_motor_speed(f32::NAN));
-    assert_invalid(revolute.try_revolute_set_max_motor_torque(-1.0));
-
-    assert_invalid(weld.try_weld_set_linear_hertz(f32::NAN));
-    assert_invalid(weld.try_weld_set_linear_damping_ratio(-1.0));
-    assert_invalid(weld.try_weld_set_angular_hertz(f32::INFINITY));
-    assert_invalid(weld.try_weld_set_angular_damping_ratio(-1.0));
-
-    assert_invalid(wheel.try_wheel_set_spring_hertz(f32::NAN));
-    assert_invalid(wheel.try_wheel_set_spring_damping_ratio(-1.0));
-    assert_invalid(wheel.try_wheel_set_limits(f32::NAN, 1.0));
-    assert_invalid(wheel.try_wheel_set_limits(1.0, -1.0));
-    assert_invalid(wheel.try_wheel_set_motor_speed(f32::INFINITY));
-    assert_invalid(wheel.try_wheel_set_max_motor_torque(-1.0));
-}
-
-#[test]
-fn valid_numeric_boundaries_reach_native() {
-    let (mut world, base) = world_and_base();
-    let mut distance = world.create_distance_joint_owned(&DistanceJointDef::new(base).length(1.0));
-    let mut motor = world.create_motor_joint_owned(&MotorJointDef::new(base));
-    let mut prismatic = world.create_prismatic_joint_owned(&PrismaticJointDef::new(base));
-    let mut revolute = world.create_revolute_joint_owned(&RevoluteJointDef::new(base));
-    let mut weld = world.create_weld_joint_owned(&WeldJointDef::new(base));
-    let mut wheel = world.create_wheel_joint_owned(&WheelJointDef::new(base));
-
-    distance
-        .try_set_constraint_tuning(ConstraintTuning::new(0.0, 0.0))
+    let distance = world
+        .create_distance_joint(&DistanceJointDef::new(base).length(2.0))
         .unwrap();
-    distance.try_set_force_threshold(0.0).unwrap();
-    distance.try_set_torque_threshold(0.0).unwrap();
-    distance
-        .try_distance_set_spring_force_range(0.0, 0.0)
+    let motor = world.create_motor_joint(&MotorJointDef::new(base)).unwrap();
+    let revolute = world
+        .create_revolute_joint(&RevoluteJointDef::new(base))
         .unwrap();
-    distance.try_distance_set_spring_hertz(0.0).unwrap();
-    distance.try_distance_set_spring_damping_ratio(0.0).unwrap();
-    distance.try_distance_set_length_range(0.0, 0.0).unwrap();
-    distance.try_distance_set_motor_speed(-1.0).unwrap();
-    distance.try_distance_set_max_motor_force(0.0).unwrap();
 
-    motor.try_motor_set_linear_velocity([0.0, 0.0]).unwrap();
-    motor.try_motor_set_angular_velocity(-1.0).unwrap();
-    motor.try_motor_set_max_velocity_force(0.0).unwrap();
-    motor.try_motor_set_max_velocity_torque(0.0).unwrap();
-    motor.try_motor_set_linear_hertz(0.0).unwrap();
-    motor.try_motor_set_linear_damping_ratio(0.0).unwrap();
-    motor.try_motor_set_angular_hertz(0.0).unwrap();
-    motor.try_motor_set_angular_damping_ratio(0.0).unwrap();
-    motor.try_motor_set_max_spring_force(0.0).unwrap();
-    motor.try_motor_set_max_spring_torque(0.0).unwrap();
-
-    prismatic.try_prismatic_set_spring_hertz(0.0).unwrap();
-    prismatic
-        .try_prismatic_set_spring_damping_ratio(0.0)
-        .unwrap();
-    prismatic
-        .try_prismatic_set_target_translation(-1.0)
-        .unwrap();
-    prismatic.try_prismatic_set_limits(0.0, 0.0).unwrap();
-    prismatic.try_prismatic_set_motor_speed(-1.0).unwrap();
-    prismatic.try_prismatic_set_max_motor_force(0.0).unwrap();
-
-    revolute.try_revolute_set_spring_hertz(0.0).unwrap();
-    revolute.try_revolute_set_spring_damping_ratio(0.0).unwrap();
-    revolute.try_revolute_set_target_angle(-1.0).unwrap();
-    revolute.try_revolute_set_limits(0.0, 0.0).unwrap();
-    revolute.try_revolute_set_motor_speed(-1.0).unwrap();
-    revolute.try_revolute_set_max_motor_torque(0.0).unwrap();
-
-    weld.try_weld_set_linear_hertz(0.0).unwrap();
-    weld.try_weld_set_linear_damping_ratio(0.0).unwrap();
-    weld.try_weld_set_angular_hertz(0.0).unwrap();
-    weld.try_weld_set_angular_damping_ratio(0.0).unwrap();
-
-    wheel.try_wheel_set_spring_hertz(0.0).unwrap();
-    wheel.try_wheel_set_spring_damping_ratio(0.0).unwrap();
-    wheel.try_wheel_set_limits(0.0, 0.0).unwrap();
-    wheel.try_wheel_set_motor_speed(-1.0).unwrap();
-    wheel.try_wheel_set_max_motor_torque(0.0).unwrap();
-
-    assert_eq!(distance.distance_spring_hertz(), 0.0);
-    assert_eq!(motor.motor_max_spring_torque(), 0.0);
-    assert_eq!(prismatic.prismatic_target_translation(), -1.0);
-    assert_eq!(revolute.revolute_target_angle(), -1.0);
-    assert_eq!(weld.weld_angular_hertz(), 0.0);
-    assert_eq!(wheel.wheel_motor_speed(), -1.0);
-}
-
-#[test]
-fn infallible_joint_mutations_panic_before_native_state_changes() {
-    let (mut world, base) = world_and_base();
-    let mut distance = world.create_distance_joint_owned(&DistanceJointDef::new(base).length(1.0));
-    let original_length = distance.distance_length();
-    let original_threshold = distance.force_threshold();
-
-    let bad_length = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        distance.distance_set_length(f32::NAN);
-    }));
-    assert!(bad_length.is_err());
-    assert_eq!(distance.distance_length(), original_length);
-
-    let bad_threshold = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        world.set_joint_force_threshold(distance.id(), -1.0);
-    }));
-    assert!(bad_threshold.is_err());
-    assert_eq!(distance.force_threshold(), original_threshold);
-}
-
-#[test]
-fn typed_joint_identity_errors_are_consistent_before_kind_dispatch() {
-    let (mut source, base) = world_and_base();
-    let mut distance = source.create_distance_joint_owned(&DistanceJointDef::new(base).length(1.0));
-    let motor = source.create_motor_joint_owned(&MotorJointDef::new(base));
-    let prismatic = source.create_prismatic_joint_owned(&PrismaticJointDef::new(base));
-    let revolute = source.create_revolute_joint_owned(&RevoluteJointDef::new(base));
-    let weld = source.create_weld_joint_owned(&WeldJointDef::new(base));
-    let wheel = source.create_wheel_joint_owned(&WheelJointDef::new(base));
-    let source_handle = source.handle();
-    let (mut target, _) = world_and_base();
-    let target_handle = target.handle();
-
-    assert_eq!(
-        target.try_distance_length(distance.id()),
-        Err(ApiError::WrongWorld)
-    );
-    assert_eq!(
-        target_handle.try_distance_length(distance.id()),
-        Err(ApiError::WrongWorld)
-    );
-    assert_eq!(
-        target.try_distance_set_length(distance.id(), f32::NAN),
-        Err(ApiError::WrongWorld)
-    );
-    assert_eq!(
-        target.try_motor_linear_velocity(motor.id()),
-        Err(ApiError::WrongWorld)
-    );
-    assert_eq!(
-        target_handle.try_motor_linear_velocity(motor.id()),
-        Err(ApiError::WrongWorld)
-    );
-    assert_eq!(
-        target.try_prismatic_spring_enabled(prismatic.id()),
-        Err(ApiError::WrongWorld)
-    );
-    assert_eq!(
-        target_handle.try_prismatic_spring_enabled(prismatic.id()),
-        Err(ApiError::WrongWorld)
-    );
-    assert_eq!(
-        target.try_revolute_angle(revolute.id()),
-        Err(ApiError::WrongWorld)
-    );
-    assert_eq!(
-        target_handle.try_revolute_angle(revolute.id()),
-        Err(ApiError::WrongWorld)
-    );
-    assert_eq!(
-        target.try_weld_linear_hertz(weld.id()),
-        Err(ApiError::WrongWorld)
-    );
-    assert_eq!(
-        target_handle.try_weld_linear_hertz(weld.id()),
-        Err(ApiError::WrongWorld)
-    );
-    assert_eq!(
-        target.try_wheel_spring_enabled(wheel.id()),
-        Err(ApiError::WrongWorld)
-    );
-    assert_eq!(
-        target_handle.try_wheel_spring_enabled(wheel.id()),
-        Err(ApiError::WrongWorld)
-    );
-
-    assert_eq!(
-        source.try_distance_length(motor.id()),
-        Err(ApiError::InvalidJointType)
-    );
-    assert_eq!(
-        source_handle.try_distance_length(motor.id()),
-        Err(ApiError::InvalidJointType)
-    );
-    assert_eq!(motor.try_distance_length(), Err(ApiError::InvalidJointType));
-    let mut motor = motor;
-    assert_eq!(
-        motor.try_distance_set_length(f32::NAN),
-        Err(ApiError::InvalidJointType)
-    );
-    assert_eq!(
-        distance.try_motor_linear_velocity(),
-        Err(ApiError::InvalidJointType)
-    );
-    assert_eq!(
-        distance.try_prismatic_spring_enabled(),
-        Err(ApiError::InvalidJointType)
-    );
-    assert_eq!(
-        distance.try_revolute_angle(),
-        Err(ApiError::InvalidJointType)
-    );
-    assert_eq!(
-        distance.try_weld_linear_hertz(),
-        Err(ApiError::InvalidJointType)
-    );
-    assert_eq!(
-        distance.try_wheel_spring_enabled(),
-        Err(ApiError::InvalidJointType)
-    );
     {
-        let scoped = source.joint(motor.id()).unwrap();
+        let mut joint = world.joint(distance).unwrap().into_distance().unwrap();
+        let original_length = joint.length().unwrap();
+        let invalid_length = Error::invalid_argument(
+            "DistanceJoint::set_length",
+            "length",
+            "a finite positive value",
+        );
+        assert_invalid(joint.set_length(f32::NAN), invalid_length);
+        assert_invalid(joint.set_length(0.0), invalid_length);
+        assert_invalid(
+            joint.set_spring_hertz(-1.0),
+            Error::invalid_argument(
+                "DistanceJoint::set_spring_hertz",
+                "hertz",
+                "a finite non-negative value",
+            ),
+        );
+        assert_invalid(
+            joint.set_length_range(2.0, 1.0),
+            Error::invalid_argument(
+                "DistanceJoint::set_length_range",
+                "min/max",
+                "finite values ordered 0 <= lower <= upper",
+            ),
+        );
+        assert_eq!(joint.length().unwrap(), original_length);
+    }
+
+    {
+        let mut joint = world.joint(motor).unwrap().into_motor().unwrap();
+        let original_velocity = joint.linear_velocity().unwrap();
+        assert_invalid(
+            joint.set_linear_velocity([f32::NAN, 0.0]),
+            Error::invalid_argument(
+                "MotorJoint::set_linear_velocity",
+                "velocity",
+                "finite vector components",
+            ),
+        );
+        assert_invalid(
+            joint.set_max_velocity_force(-1.0),
+            Error::invalid_argument(
+                "MotorJoint::set_max_velocity_force",
+                "force",
+                "a finite non-negative value",
+            ),
+        );
+        assert_eq!(joint.linear_velocity().unwrap(), original_velocity);
+    }
+
+    {
+        let mut joint = world.joint(revolute).unwrap().into_revolute().unwrap();
+        let original_limits = (joint.lower_limit().unwrap(), joint.upper_limit().unwrap());
+        let invalid_limits = Error::invalid_argument(
+            "RevoluteJoint::set_limits",
+            "lower/upper",
+            "finite ordered angles within the supported revolute limit",
+        );
+        assert_invalid(joint.set_limits(1.0, -1.0), invalid_limits);
+        assert_invalid(joint.set_limits(-4.0, 0.0), invalid_limits);
         assert_eq!(
-            scoped.try_distance_length(),
-            Err(ApiError::InvalidJointType)
+            (joint.lower_limit().unwrap(), joint.upper_limit().unwrap()),
+            original_limits
         );
     }
-
-    let stale = distance.id();
-    source.destroy_joint_id(stale, true);
-    assert_eq!(
-        source.try_distance_length(stale),
-        Err(ApiError::InvalidJointId)
-    );
-    assert_eq!(
-        source_handle.try_distance_length(stale),
-        Err(ApiError::InvalidJointId)
-    );
-    assert_eq!(
-        distance.try_distance_length(),
-        Err(ApiError::InvalidJointId)
-    );
-    assert!(source.joint(stale).is_none());
-    assert_eq!(
-        distance.try_distance_set_length(f32::NAN),
-        Err(ApiError::InvalidJointId)
-    );
 }
 
 #[test]
-fn each_typed_joint_ffi_operation_has_one_private_implementation() {
+fn acquisition_and_typed_conversion_report_identity_errors() {
+    let (mut source, base) = world_and_base();
+    let distance = source
+        .create_distance_joint(&DistanceJointDef::new(base).length(1.0))
+        .unwrap();
+    let motor = source
+        .create_motor_joint(&MotorJointDef::new(base))
+        .unwrap();
+    let (mut target, _) = world_and_base();
+
+    assert_eq!(target.joint(distance).err(), Some(Error::WrongWorld));
+    assert_eq!(
+        source.joint(motor).unwrap().into_distance().err(),
+        Some(Error::WrongJointType {
+            expected: JointType::Distance,
+            actual: JointType::Motor,
+        })
+    );
+
+    source.joint(distance).unwrap().destroy(true).unwrap();
+    assert_eq!(source.joint(distance).err(), Some(Error::InvalidJointId));
+}
+
+#[test]
+fn each_joint_runtime_ffi_operation_has_one_private_implementation() {
     let sources = [
         include_str!("../src/joints/base.rs"),
         include_str!("../src/joints/runtime.rs"),
-        include_str!("../src/joints/runtime_typed_distance.rs"),
-        include_str!("../src/joints/runtime_typed_motor.rs"),
-        include_str!("../src/joints/runtime_typed_prismatic.rs"),
-        include_str!("../src/joints/runtime_typed_revolute.rs"),
-        include_str!("../src/joints/runtime_typed_weld.rs"),
-        include_str!("../src/joints/runtime_typed_wheel.rs"),
+        include_str!("../src/joints/typed.rs"),
     ];
     let mut occurrences = BTreeMap::<&str, usize>::new();
 
@@ -472,9 +346,6 @@ fn each_typed_joint_ffi_operation_has_one_private_implementation() {
 
     assert!(!occurrences.is_empty());
     for (symbol, count) in occurrences {
-        assert_eq!(
-            count, 1,
-            "{symbol} must have one private FFI implementation"
-        );
+        assert_eq!(count, 1, "{symbol} must have one private implementation");
     }
 }

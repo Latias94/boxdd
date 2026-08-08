@@ -1,19 +1,36 @@
 use std::env;
+use std::ffi::OsString;
 use std::fs;
-use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use object::{Object, ObjectSection, ObjectSymbol};
 
-#[path = "src/build_support.rs"]
+#[allow(dead_code)]
+#[path = "src/build_support/mod.rs"]
 mod build_support;
+
+// The producer only renders this shared protocol; repository tooling owns parsing.
+#[allow(dead_code)]
+#[path = "src/build_identity.rs"]
+mod build_identity;
+
+#[path = "src/adapter_contract.rs"]
+mod adapter_contract;
 
 #[path = "src/bindgen_contract.rs"]
 mod bindgen_contract;
 
+#[allow(dead_code)]
 #[path = "src/provider_manifest.rs"]
 mod provider_manifest;
+
+#[path = "src/provenance_policy.rs"]
+mod provenance_policy;
+
+#[allow(dead_code)]
+#[path = "src/provider_catalog.rs"]
+mod provider_catalog;
 
 #[allow(dead_code)]
 #[path = "src/prebuilt_provenance.rs"]
@@ -28,6 +45,8 @@ mod source_overlay;
 
 #[path = "src/wasm_provider_contract.rs"]
 mod wasm_provider_contract;
+#[path = "src/wasm_provider_memory.rs"]
+mod wasm_provider_memory;
 
 #[allow(dead_code)]
 #[path = "src/precision.rs"]
@@ -38,12 +57,18 @@ use bindgen_contract::{
     resolve_unknown_unknown_headers, resolve_wasi_sysroot, validate_ambient_header_environment,
     validate_bindgen_target_override,
 };
+use build_identity::BuildIdentity;
+use build_support::atomic_publish::publish_verified_file;
+use build_support::provider_selection::{
+    ProviderInputs, parse_optional_bool, parse_optional_unicode, select_provider,
+    validate_force_bindgen_policy, validate_skip_cc_policy,
+};
+use build_support::target::{BindingTargetFamily, classify_binding_target, simd_identity};
+use build_support::verified_snapshot::VerifiedFileSnapshot;
 use build_support::{
-    BindingTargetFamily, COSIGN_VERSION, PROVENANCE_POLICY_BUILD_POLICY_SOURCE_SHA256,
-    PUBLISHER_REPOSITORY, PUBLISHER_WORKFLOW, PrebuiltProvenance, ProviderAdapter, ProviderInputs,
-    SIGSTORE_TRUSTED_ROOT_RELATIVE_PATH, SIGSTORE_TRUSTED_ROOT_SHA256, classify_binding_target,
-    cosign_verify_blob_args, cosign_version_is_qualified, select_provider, simd_identity,
-    validate_skip_cc_policy,
+    COSIGN_VERSION, PUBLISHER_REPOSITORY, PUBLISHER_WORKFLOW, PrebuiltProvenance,
+    SIGSTORE_TRUSTED_ROOT_RELATIVE_PATH, SIGSTORE_TRUSTED_ROOT_SHA256, cosign_verify_blob_args,
+    cosign_version_is_qualified,
 };
 use prebuilt_provenance::PrebuiltProvenanceStatement;
 use precision::Precision;
@@ -51,82 +76,17 @@ use provider_archive::{
     ArchiveExpectation, private_abi_hash, private_abi_hash_hex, snapshot_layout_hash,
     verify_provider_archive,
 };
+use provider_catalog::ProviderCapability as ProviderAdapter;
 use provider_manifest::{
-    ArtifactExpectation, ArtifactIdentityExpectation, RECORDING_CONTRACT_BLAKE3,
-    REQUIRED_ADAPTER_SYMBOLS, VENDORED_SOURCE_IDENTITY_SHA256, VerifiedArtifact, sha256_file,
-    verify_artifact,
+    ArtifactExpectation, ArtifactIdentityExpectation, MAX_PROVIDER_ARCHIVE_BYTES,
+    MAX_PROVIDER_BINDINGS_BYTES, RECORDING_CONTRACT_BLAKE3, REQUIRED_ADAPTER_SYMBOLS,
+    VENDORED_SOURCE_IDENTITY_SHA256, VerifiedArtifact, verify_artifact,
 };
-use source_overlay::{
-    CompiledBuildPolicySource, EffectiveSourceIdentity, MaterializedBuildInputs,
-    materialize_build_inputs, validate_compiled_build_policy_sources,
-};
+use source_overlay::{MaterializedBuildInputs, materialize_build_inputs};
 use wasm_provider_contract::{
     COMPILER_TARGET, ENDIANNESS, POINTER_WIDTH, PROVIDER_ABI, SIMD_MODE, WasmProviderExpectation,
     WasmProviderIdentity, contract_relative_path,
 };
-
-#[allow(dead_code)]
-pub(crate) const BUILD_POLICY_SOURCE_SHA256: &str =
-    "9287025360d5a87d9a245ed4ce039c184a8c92df7215ab460f15caffb781fde4";
-
-const COMPILED_BUILD_POLICY_SOURCES: &[CompiledBuildPolicySource<'static>] = &[
-    CompiledBuildPolicySource::data("Cargo.toml", include_bytes!("Cargo.toml")),
-    CompiledBuildPolicySource::rust(
-        "build.rs",
-        include_bytes!("build.rs"),
-        BUILD_POLICY_SOURCE_SHA256,
-    ),
-    CompiledBuildPolicySource::data(
-        "effective-source.toml",
-        include_bytes!("effective-source.toml"),
-    ),
-    CompiledBuildPolicySource::rust(
-        "src/bindgen_contract.rs",
-        include_bytes!("src/bindgen_contract.rs"),
-        bindgen_contract::BUILD_POLICY_SOURCE_SHA256,
-    ),
-    CompiledBuildPolicySource::rust(
-        "src/build_support.rs",
-        include_bytes!("src/build_support.rs"),
-        build_support::BUILD_POLICY_SOURCE_SHA256,
-    ),
-    CompiledBuildPolicySource::rust(
-        "src/prebuilt_provenance.rs",
-        include_bytes!("src/prebuilt_provenance.rs"),
-        prebuilt_provenance::BUILD_POLICY_SOURCE_SHA256,
-    ),
-    CompiledBuildPolicySource::rust(
-        "src/precision.rs",
-        include_bytes!("src/precision.rs"),
-        precision::BUILD_POLICY_SOURCE_SHA256,
-    ),
-    CompiledBuildPolicySource::rust(
-        "src/provenance_policy.rs",
-        include_bytes!("src/provenance_policy.rs"),
-        PROVENANCE_POLICY_BUILD_POLICY_SOURCE_SHA256,
-    ),
-    CompiledBuildPolicySource::rust(
-        "src/provider_archive.rs",
-        include_bytes!("src/provider_archive.rs"),
-        provider_archive::BUILD_POLICY_SOURCE_SHA256,
-    ),
-    CompiledBuildPolicySource::rust(
-        "src/provider_manifest.rs",
-        include_bytes!("src/provider_manifest.rs"),
-        provider_manifest::BUILD_POLICY_SOURCE_SHA256,
-    ),
-    CompiledBuildPolicySource::rust(
-        "src/source_overlay.rs",
-        include_bytes!("src/source_overlay.rs"),
-        source_overlay::BUILD_POLICY_SOURCE_SHA256,
-    ),
-    CompiledBuildPolicySource::rust(
-        "src/wasm_provider_contract.rs",
-        include_bytes!("src/wasm_provider_contract.rs"),
-        wasm_provider_contract::BUILD_POLICY_SOURCE_SHA256,
-    ),
-    CompiledBuildPolicySource::data("upstream.toml", include_bytes!("upstream.toml")),
-];
 
 #[derive(Debug)]
 struct BuildConfig {
@@ -143,19 +103,30 @@ struct BuildConfig {
     is_docsrs: bool,
     skip_cc: bool,
     force_bindgen: bool,
+    wasm_provider_final_link_opt_in: Option<OsString>,
     wasi_bindgen_sysroot: Option<ValidatedWasiSysroot>,
     freestanding_bindgen_headers: Option<ValidatedFreestandingHeaders>,
     provider: ProviderAdapter,
     precision: Precision,
 }
 
+fn run_output(command: &mut Command, label: &str) -> Result<std::process::Output, String> {
+    command
+        .output()
+        .map_err(|error| format!("failed to run {label}: {error}"))
+}
+
 #[derive(Debug)]
 struct PreparedExternal {
     artifact: VerifiedArtifact,
-    archive_bytes: Vec<u8>,
     native_abi_identity: NativeAbiIdentity,
     provenance_sha256: Option<String>,
     trusted_root_sha256: Option<String>,
+}
+
+#[derive(Debug)]
+struct PreparedRustBindings {
+    sha256: String,
 }
 
 #[derive(Debug)]
@@ -169,6 +140,7 @@ struct AuthenticatedPrebuiltProvenance {
 struct NativeAbiIdentity {
     private_abi_hash: [u8; 32],
     snapshot_layout_hash: u32,
+    definition_cookie: i32,
 }
 
 #[derive(Clone, Debug)]
@@ -198,14 +170,28 @@ impl BuildConfig {
             &target_env,
         )
         .unwrap_or_else(|error| panic!("invalid checked-in binding target: {error}"));
-        let is_docsrs = env::var("DOCS_RS").is_ok() || env::var("CARGO_CFG_DOCSRS").is_ok();
-        let skip_cc = parse_bool_env("BOXDD_SYS_SKIP_CC");
-        let force_bindgen = parse_bool_env("BOXDD_SYS_FORCE_BINDGEN");
+        let docs_rs = parse_optional_bool("DOCS_RS", env::var_os("DOCS_RS").as_deref())
+            .unwrap_or_else(|error| panic!("invalid optional build setting: {error}"));
+        let cargo_cfg_docsrs = parse_optional_bool(
+            "CARGO_CFG_DOCSRS",
+            env::var_os("CARGO_CFG_DOCSRS").as_deref(),
+        )
+        .unwrap_or_else(|error| panic!("invalid optional build setting: {error}"));
+        let is_docsrs = docs_rs || cargo_cfg_docsrs;
+        let skip_cc = parse_optional_bool(
+            "BOXDD_SYS_SKIP_CC",
+            env::var_os("BOXDD_SYS_SKIP_CC").as_deref(),
+        )
+        .unwrap_or_else(|error| panic!("invalid optional build setting: {error}"));
+        let force_bindgen = parse_optional_bool(
+            "BOXDD_SYS_FORCE_BINDGEN",
+            env::var_os("BOXDD_SYS_FORCE_BINDGEN").as_deref(),
+        )
+        .unwrap_or_else(|error| panic!("invalid optional build setting: {error}"));
+        let wasm_provider_final_link_opt_in =
+            env::var_os(wasm_provider_memory::FINAL_LINK_OPT_IN_ENV);
         let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-        let checked_bindings = manifest_dir
-            .join("src")
-            .join(binding_target.pregenerated_bindings_file(Precision::ACTIVE.is_double()));
-        let binding_generation_required = force_bindgen || !checked_bindings.is_file();
+        let binding_generation_required = force_bindgen;
         validate_wasm_bindgen_header_environment(&target, binding_generation_required);
         let configured_wasi_sysroot = env::var_os("BOXDD_SYS_WASI_SYSROOT").map(PathBuf::from);
         let wasi_bindgen_sysroot = resolve_wasi_sysroot(
@@ -217,12 +203,17 @@ impl BuildConfig {
         let freestanding_bindgen_headers =
             resolve_unknown_unknown_headers(&manifest_dir, &target, binding_generation_required)
                 .unwrap_or_else(|error| panic!("invalid freestanding bindgen headers: {error}"));
-        let explicit_provider = env::var("BOXDD_SYS_PROVIDER").ok();
-        let link_kind = env::var("BOXDD_SYS_LINK_KIND").ok();
+        let explicit_provider_value = env::var_os("BOXDD_SYS_PROVIDER");
+        let explicit_provider =
+            parse_optional_unicode("BOXDD_SYS_PROVIDER", explicit_provider_value.as_deref())
+                .unwrap_or_else(|error| panic!("invalid Box2D provider configuration: {error}"));
+        let link_kind_value = env::var_os("BOXDD_SYS_LINK_KIND");
+        let link_kind = parse_optional_unicode("BOXDD_SYS_LINK_KIND", link_kind_value.as_deref())
+            .unwrap_or_else(|error| panic!("invalid Box2D provider configuration: {error}"));
         let provider = select_provider(ProviderInputs {
             target_arch: &target_arch,
             target_os: &target_os,
-            explicit_provider: explicit_provider.as_deref(),
+            explicit_provider,
             has_system_dir: env::var_os("BOX2D_LIB_DIR").is_some(),
             has_system_manifest: env::var_os("BOXDD_SYS_SYSTEM_MANIFEST").is_some(),
             has_prebuilt_manifest: env::var_os("BOXDD_SYS_PREBUILT_MANIFEST").is_some(),
@@ -232,7 +223,7 @@ impl BuildConfig {
             // docs.rs still needs the vendored adapter for binding/type checking, but its
             // dedicated branch below skips the native compiler invocation.
             build_from_source_enabled: cfg!(feature = "build-from-source") || is_docsrs,
-            link_kind: link_kind.as_deref(),
+            link_kind,
         })
         .unwrap_or_else(|error| panic!("invalid Box2D provider configuration: {error}"));
 
@@ -249,6 +240,7 @@ impl BuildConfig {
             is_docsrs,
             skip_cc,
             force_bindgen,
+            wasm_provider_final_link_opt_in,
             wasi_bindgen_sysroot,
             freestanding_bindgen_headers,
             provider,
@@ -265,16 +257,6 @@ impl BuildConfig {
             self.binding_target
                 .pregenerated_bindings_file(self.precision.is_double()),
         )
-    }
-}
-
-fn parse_bool_env(key: &str) -> bool {
-    match env::var(key) {
-        Ok(v) => matches!(
-            v.as_str(),
-            "1" | "true" | "yes" | "on" | "TRUE" | "YES" | "ON"
-        ),
-        Err(_) => false,
     }
 }
 
@@ -304,19 +286,33 @@ fn validate_wasm_bindgen_header_environment(target: &str, binding_generation_req
     }
 }
 
-fn main() {
-    validate_compiled_build_policy_sources(
-        Path::new(env!("CARGO_MANIFEST_DIR")),
-        COMPILED_BUILD_POLICY_SOURCES,
-    )
-    .unwrap_or_else(|error| panic!("invalid executing Box2D build policy: {error}"));
+fn validate_adapter_abi_header(manifest_dir: &Path) {
+    const MACRO_NAME: &str = "BOXDD_ADAPTER_ABI_VERSION";
 
-    println!("cargo:rustc-check-cfg=cfg(has_pregenerated)");
-    println!("cargo:rustc-check-cfg=cfg(force_bindgen)");
+    let path = manifest_dir.join("native/boxdd_adapter.h");
+    let header = fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+    let definitions = header
+        .lines()
+        .filter(|line| line.split_whitespace().nth(1) == Some(MACRO_NAME))
+        .collect::<Vec<_>>();
+    let expected = format!(
+        "#define {MACRO_NAME} {}u",
+        adapter_contract::ADAPTER_ABI_VERSION
+    );
+    assert_eq!(
+        definitions,
+        [expected.as_str()],
+        "{} must contain exactly one canonical {MACRO_NAME} definition derived from the Rust adapter contract",
+        path.display()
+    );
+}
+
+fn main() {
     println!("cargo:rustc-check-cfg=cfg(boxdd_sys_wasm_provider)");
-    for source in COMPILED_BUILD_POLICY_SOURCES {
-        println!("cargo:rerun-if-changed={}", source.relative_path());
-    }
+    println!("cargo:rerun-if-changed=effective-source.toml");
+    println!("cargo:rerun-if-changed=patches");
+    println!("cargo:rerun-if-changed=upstream.toml");
     println!("cargo:rerun-if-changed=abi/wasm32-unknown-unknown-single.toml");
     println!("cargo:rerun-if-changed=abi/wasm32-unknown-unknown-double.toml");
     println!("cargo:rerun-if-changed=src/bindings_pregenerated.rs");
@@ -333,6 +329,10 @@ fn main() {
     println!("cargo:rerun-if-changed={SIGSTORE_TRUSTED_ROOT_RELATIVE_PATH}");
     println!("cargo:rerun-if-env-changed=BOXDD_SYS_SKIP_CC");
     println!("cargo:rerun-if-env-changed=BOXDD_SYS_PROVIDER");
+    println!(
+        "cargo:rerun-if-env-changed={}",
+        wasm_provider_memory::FINAL_LINK_OPT_IN_ENV
+    );
     println!("cargo:rerun-if-env-changed=BOX2D_LIB_DIR");
     println!("cargo:rerun-if-env-changed=BOXDD_SYS_SYSTEM_MANIFEST");
     println!("cargo:rerun-if-env-changed=BOXDD_SYS_PREBUILT_MANIFEST");
@@ -348,6 +348,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=CARGO_CFG_DOCSRS");
 
     let config = BuildConfig::from_env();
+    validate_adapter_abi_header(&config.manifest_dir);
     validate_build_config(&config);
     if let Some(wasi_sysroot) = &config.wasi_bindgen_sysroot {
         println!(
@@ -367,118 +368,72 @@ fn main() {
         );
     }
     reject_precision_macro_overrides(&config.target);
-    let build_inputs = materialize_build_inputs(
-        &config.manifest_dir,
-        &config.out_dir,
-        COMPILED_BUILD_POLICY_SOURCES,
-    )
-    .unwrap_or_else(|error| panic!("failed to capture Box2D build inputs: {error}"));
-    build_inputs
-        .revalidate()
-        .unwrap_or_else(|error| panic!("captured Box2D build inputs are not stable: {error}"));
+    let build_inputs = materialize_build_inputs(&config.manifest_dir, &config.out_dir)
+        .unwrap_or_else(|error| panic!("failed to capture Box2D build inputs: {error}"));
     assert_eq!(
         build_inputs.vendored_source_sha256, VENDORED_SOURCE_IDENTITY_SHA256,
         "vendored Box2D source content/inventory does not match the reviewed identity"
     );
-    validate_vendored_checkout(&config.manifest_dir, &build_inputs.effective.identity);
     let effective_source = &build_inputs.effective.identity;
     let adapter_source_sha256 = &build_inputs.adapter.adapter_source_sha256;
-    let pregenerated = config.pregenerated_bindings();
-    let has_pregenerated = pregenerated.is_file();
-
     let external = prepare_external_provider(&config, &build_inputs);
-
-    let wasm_import_module = config.precision.wasm_import_module();
-    emit_build_identity(
-        &config,
-        &effective_source.upstream_sha,
-        &effective_source.effective_source_sha256,
-        adapter_source_sha256,
-        wasm_import_module,
-        external.as_ref(),
-        &build_inputs.effective.public_include,
-    );
-    write_expected_adapter_identity(
-        &config.out_dir,
-        NativeAbiIdentity {
-            private_abi_hash: [0; 32],
-            snapshot_layout_hash: 0,
-        },
-    );
-
-    if config.force_bindgen {
-        println!("cargo:rustc-cfg=force_bindgen");
-    } else if has_pregenerated {
-        println!("cargo:rustc-cfg=has_pregenerated");
-    }
+    let rust_bindings = prepare_rust_bindings(&config, &build_inputs, external.as_ref());
 
     if config.provider == ProviderAdapter::WasmProvider {
         println!("cargo:rustc-cfg=boxdd_sys_wasm_provider");
-        if !has_pregenerated && !config.force_bindgen {
-            panic!("BOXDD_SYS_PROVIDER=wasm-provider requires checked-in pregenerated bindings");
-        }
     }
 
-    if config.force_bindgen || (!has_pregenerated && !config.is_docsrs) {
-        #[cfg(feature = "bindgen")]
-        generate_bindings(
-            &build_inputs.effective.public_include,
-            &config.out_dir,
-            &config.target,
-            config.precision,
-            config
-                .wasi_bindgen_sysroot
-                .as_ref()
-                .map(|sysroot| sysroot.canonical_path.as_path()),
-            config
-                .freestanding_bindgen_headers
-                .as_ref()
-                .map(|headers| headers.canonical_path.as_path()),
-        );
-        #[cfg(not(feature = "bindgen"))]
-        {
-            if config.force_bindgen {
-                panic!("BOXDD_SYS_FORCE_BINDGEN=1 requires the `bindgen` feature");
-            }
-            panic!(
-                "pregenerated Box2D bindings are missing; enable `bindgen` or refresh checked-in bindings"
-            );
-        }
-    }
-
-    if config.is_docsrs {
+    let unavailable_identity = NativeAbiIdentity {
+        private_abi_hash: [0; 32],
+        snapshot_layout_hash: 0,
+        definition_cookie: 0,
+    };
+    let native_abi_identity = if config.is_docsrs {
         println!("cargo:warning=DOCS_RS detected: skipping native Box2D C build");
+        unavailable_identity
     } else if config.skip_cc {
         println!("cargo:warning=Skipping native Box2D C build due to BOXDD_SYS_SKIP_CC");
+        unavailable_identity
     } else {
         match config.provider {
-            ProviderAdapter::WasmCompileOnly => println!(
-                "cargo:warning=boxdd-sys is using compile-only WASM mode; no Box2D runtime is linked"
-            ),
+            ProviderAdapter::WasmCompileOnly => {
+                println!(
+                    "cargo:warning=boxdd-sys is using compile-only WASM mode; no Box2D runtime is linked"
+                );
+                unavailable_identity
+            }
             ProviderAdapter::WasmProvider => {
                 println!(
                     "cargo:warning=boxdd-sys WASM provider mode is active; runtime identity must be verified before instantiation"
                 );
-                let identity = load_wasm_provider_identity_contract(
+                load_wasm_provider_identity_contract(
                     &config,
                     &effective_source.upstream_sha,
                     &effective_source.source_tree,
                     &effective_source.effective_source_sha256,
                     adapter_source_sha256,
-                );
-                write_expected_adapter_identity(&config.out_dir, identity);
+                    &rust_bindings.sha256,
+                )
             }
-            ProviderAdapter::Vendored => {
-                let identity = build_box2d_from_source(&config, &build_inputs);
-                write_expected_adapter_identity(&config.out_dir, identity);
-            }
+            ProviderAdapter::Vendored => build_box2d_from_source(&config, &build_inputs),
             ProviderAdapter::System | ProviderAdapter::Prebuilt => {
-                let prepared = external.expect("external provider was prepared");
-                write_expected_adapter_identity(&config.out_dir, prepared.native_abi_identity);
-                link_verified_artifact(&config, prepared.artifact, &prepared.archive_bytes);
+                let prepared = external.as_ref().expect("external provider was prepared");
+                link_verified_artifact(&config, &prepared.artifact);
+                prepared.native_abi_identity
             }
         }
-    }
+    };
+    write_expected_adapter_identity(&config.out_dir, native_abi_identity);
+
+    let wasm_import_module = config.precision.wasm_import_module();
+    emit_build_identity(
+        &config,
+        &build_inputs,
+        &rust_bindings.sha256,
+        native_abi_identity,
+        wasm_import_module,
+        external.as_ref(),
+    );
 
     build_inputs
         .revalidate()
@@ -500,70 +455,125 @@ fn validate_build_config(config: &BuildConfig) {
         config.provider,
     )
     .unwrap_or_else(|error| panic!("invalid BOXDD_SYS_SKIP_CC configuration: {error}"));
-    if config.provider == ProviderAdapter::WasmProvider && config.force_bindgen {
-        panic!(
-            "BOXDD_SYS_PROVIDER=wasm-provider requires the checked pregenerated bindings identity"
-        );
-    }
+    validate_force_bindgen_policy(config.force_bindgen, config.provider)
+        .unwrap_or_else(|error| panic!("invalid BOXDD_SYS_FORCE_BINDGEN configuration: {error}"));
     if config.provider == ProviderAdapter::WasmProvider && cfg!(feature = "validate") {
         panic!(
             "BOXDD_SYS_PROVIDER=wasm-provider does not have a checked validation-enabled ABI route"
         );
     }
+    wasm_provider_memory::validate_final_link_opt_in(
+        config.provider == ProviderAdapter::WasmProvider,
+        config.wasm_provider_final_link_opt_in.as_deref(),
+    )
+    .unwrap_or_else(|error| panic!("invalid WASM provider final-link configuration: {error}"));
 }
 
-fn validate_vendored_checkout(manifest_dir: &Path, upstream: &EffectiveSourceIdentity) {
-    let source_root = manifest_dir.join("third-party/box2d");
-    if !source_root.join(".git").exists() {
-        return;
+fn prepare_rust_bindings(
+    config: &BuildConfig,
+    build_inputs: &MaterializedBuildInputs,
+    external: Option<&PreparedExternal>,
+) -> PreparedRustBindings {
+    if config.force_bindgen {
+        #[cfg(feature = "bindgen")]
+        {
+            let bytes = generate_bindings(
+                &build_inputs.effective.public_include,
+                &config.target,
+                config.precision,
+                config
+                    .wasi_bindgen_sysroot
+                    .as_ref()
+                    .map(|sysroot| sysroot.canonical_path.as_path()),
+                config
+                    .freestanding_bindgen_headers
+                    .as_ref()
+                    .map(|headers| headers.canonical_path.as_path()),
+            );
+            let sha256 = provider_manifest::sha256_bytes(&bytes);
+            return publish_rust_bindings(&config.out_dir, &bytes, &sha256);
+        }
+        #[cfg(not(feature = "bindgen"))]
+        {
+            let _ = build_inputs;
+            panic!("BOXDD_SYS_FORCE_BINDGEN=1 requires the `bindgen` feature");
+        }
     }
-    let git_value = |args: &[&str], label: &str| {
-        let output = Command::new("git")
-            .args(["-C", &source_root.to_string_lossy()])
-            .args(args)
-            .output()
-            .unwrap_or_else(|error| panic!("failed to execute git {label}: {error}"));
-        assert!(
-            output.status.success(),
-            "git {label} failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-        String::from_utf8_lossy(&output.stdout).trim().to_owned()
-    };
-    assert_eq!(
-        git_value(&["rev-parse", "HEAD"], "rev-parse HEAD"),
-        upstream.upstream_sha,
-        "vendored Box2D submodule HEAD does not match upstream.toml"
-    );
-    assert_eq!(
-        git_value(&["rev-parse", "HEAD^{tree}"], "rev-parse HEAD^{tree}"),
-        upstream.source_tree,
-        "vendored Box2D submodule tree does not match upstream.toml"
-    );
-    let status = git_value(
-        &[
-            "status",
-            "--porcelain=v1",
-            "--untracked-files=all",
-            "--ignored",
-        ],
-        "status",
-    );
+
+    if let Some(prepared) = external {
+        let snapshot = &prepared.artifact.bindings_snapshot;
+        return publish_rust_bindings(&config.out_dir, snapshot.bytes(), snapshot.sha256());
+    }
+
+    let snapshot = VerifiedFileSnapshot::read(
+        &config.pregenerated_bindings(),
+        MAX_PROVIDER_BINDINGS_BYTES,
+        "checked Rust FFI bindings",
+    )
+    .unwrap_or_else(|error| {
+        panic!("checked Rust FFI bindings are required unless BOXDD_SYS_FORCE_BINDGEN=1: {error}")
+    });
+    publish_rust_bindings(&config.out_dir, snapshot.bytes(), snapshot.sha256())
+}
+
+fn publish_rust_bindings(out_dir: &Path, bytes: &[u8], sha256: &str) -> PreparedRustBindings {
+    let byte_count = u64::try_from(bytes.len())
+        .unwrap_or_else(|_| panic!("Rust FFI bindings length does not fit in u64"));
     assert!(
-        status.is_empty(),
-        "vendored Box2D submodule is dirty or contains ignored files: {status}"
+        byte_count <= MAX_PROVIDER_BINDINGS_BYTES,
+        "Rust FFI bindings exceed the {MAX_PROVIDER_BINDINGS_BYTES} byte limit"
     );
+    let path = out_dir.join(format!("boxdd-bindings-{sha256}.rs"));
+    publish_verified_file(&path, sha256, bytes, "Rust FFI bindings")
+        .unwrap_or_else(|error| panic!("failed to publish Rust FFI bindings snapshot: {error}"));
+    println!("cargo:rustc-env=BOXDD_SYS_BINDINGS_FILE={}", path.display());
+    println!("cargo:bindings_sha256={sha256}");
+    PreparedRustBindings {
+        sha256: sha256.to_owned(),
+    }
 }
 
 fn emit_build_identity(
     config: &BuildConfig,
-    upstream_sha: &str,
-    effective_source_sha256: &str,
-    adapter_source_sha256: &str,
+    build_inputs: &MaterializedBuildInputs,
+    bindings_sha256: &str,
+    native_abi_identity: NativeAbiIdentity,
     wasm_import_module: &str,
     external: Option<&PreparedExternal>,
-    effective_public_include: &Path,
 ) {
+    let effective_source = &build_inputs.effective.identity;
+    let upstream_sha = &effective_source.upstream_sha;
+    let effective_source_sha256 = &effective_source.effective_source_sha256;
+    let adapter_source_sha256 = &build_inputs.adapter.adapter_source_sha256;
+    let vendored_archive = if config.provider == ProviderAdapter::Vendored
+        && native_abi_identity.private_abi_hash != [0; 32]
+        && native_abi_identity.snapshot_layout_hash != 0
+    {
+        let archive = config.out_dir.join(if config.target_env == "msvc" {
+            "box2d.lib"
+        } else {
+            "libbox2d.a"
+        });
+        Some(
+            VerifiedFileSnapshot::read(
+                &archive,
+                MAX_PROVIDER_ARCHIVE_BYTES,
+                "vendored build archive identity",
+            )
+            .unwrap_or_else(|error| {
+                panic!(
+                    "failed to capture vendored build archive {}: {error}",
+                    archive.display()
+                )
+            }),
+        )
+    } else {
+        None
+    };
+    let archive_sha256 = external
+        .map(|prepared| prepared.artifact.archive_snapshot.sha256())
+        .or_else(|| vendored_archive.as_ref().map(VerifiedFileSnapshot::sha256))
+        .unwrap_or("");
     println!("cargo:rustc-env=BOXDD_SYS_UPSTREAM_SHA={upstream_sha}");
     println!("cargo:rustc-env=BOXDD_SYS_EFFECTIVE_SOURCE_SHA256={effective_source_sha256}");
     println!("cargo:rustc-env=BOXDD_SYS_ADAPTER_SOURCE_SHA256={adapter_source_sha256}");
@@ -577,13 +587,13 @@ fn emit_build_identity(
     println!(
         "cargo:rustc-env=BOXDD_SYS_PROVIDER_MANIFEST_SHA256={}",
         external
-            .map(|prepared| prepared.artifact.manifest_sha256.as_str())
+            .map(|prepared| prepared.artifact.manifest_snapshot.sha256())
             .unwrap_or("")
     );
     println!(
         "cargo:rustc-env=BOXDD_SYS_PROVIDER_ARCHIVE_SHA256={}",
         external
-            .map(|prepared| prepared.artifact.archive_sha256.as_str())
+            .map(|prepared| prepared.artifact.archive_snapshot.sha256())
             .unwrap_or("")
     );
     println!(
@@ -602,39 +612,48 @@ fn emit_build_identity(
     println!("cargo:upstream_sha={upstream_sha}");
     println!("cargo:effective_source_sha256={effective_source_sha256}");
     println!("cargo:provider={}", config.provider.as_str());
-    println!("cargo:include={}", effective_public_include.display());
     println!("cargo:wasm_import_module={wasm_import_module}");
 
-    // The package helper consumes this local marker instead of guessing which Cargo fingerprint
-    // belongs to the requested target.  It contains no secrets and is intentionally deterministic.
-    let identity = format!(
-        "schema_version = 2\nprovider = {:?}\ncrate_version = {:?}\nupstream_sha = {:?}\neffective_source_sha256 = {:?}\nprecision = {:?}\ntarget = {:?}\ncrt = {:?}\nsimd = {:?}\nvalidate = {}\nadapter_source_sha256 = {:?}\nrecording_contract_blake3 = {:?}\nmanifest_sha256 = {:?}\narchive_sha256 = {:?}\nprovenance_sha256 = {:?}\ntrusted_root_sha256 = {:?}\n",
-        config.provider.as_str(),
-        env!("CARGO_PKG_VERSION"),
-        upstream_sha,
-        effective_source_sha256,
-        config.precision.as_str(),
-        config.target,
-        expected_crt_identity(config),
-        expected_simd_identity(config),
-        cfg!(feature = "validate"),
-        adapter_source_sha256,
-        RECORDING_CONTRACT_BLAKE3,
-        external
-            .map(|prepared| prepared.artifact.manifest_sha256.as_str())
-            .unwrap_or(""),
-        external
-            .map(|prepared| prepared.artifact.archive_sha256.as_str())
-            .unwrap_or(""),
-        external
-            .and_then(|prepared| prepared.provenance_sha256.as_deref())
-            .unwrap_or(""),
-        external
-            .and_then(|prepared| prepared.trusted_root_sha256.as_deref())
-            .unwrap_or(""),
-    );
-    fs::write(config.out_dir.join("boxdd-build-identity.toml"), identity)
-        .expect("failed to write boxdd build identity marker");
+    // Repository tooling consumes this local marker instead of inferring target ABI state from its
+    // own compilation. It contains no secrets and is intentionally deterministic.
+    let private_abi_hash = private_abi_hash_hex(native_abi_identity.private_abi_hash);
+    let identity = BuildIdentity {
+        provider: config.provider,
+        crate_version: env!("CARGO_PKG_VERSION").to_owned(),
+        upstream_sha: upstream_sha.to_owned(),
+        effective_source_sha256: effective_source_sha256.to_owned(),
+        precision: config.precision.as_str().to_owned(),
+        target: config.target.clone(),
+        crt: expected_crt_identity(config).to_owned(),
+        simd: expected_simd_identity(config).to_owned(),
+        validate: cfg!(feature = "validate"),
+        adapter_source_sha256: adapter_source_sha256.to_owned(),
+        private_abi_hash,
+        snapshot_layout_hash: native_abi_identity.snapshot_layout_hash,
+        bindings_sha256: bindings_sha256.to_owned(),
+        manifest_sha256: external
+            .map(|prepared| prepared.artifact.manifest_snapshot.sha256().to_owned())
+            .unwrap_or_default(),
+        archive_sha256: archive_sha256.to_owned(),
+        provenance_sha256: external
+            .and_then(|prepared| prepared.provenance_sha256.clone())
+            .unwrap_or_default(),
+        trusted_root_sha256: external
+            .and_then(|prepared| prepared.trusted_root_sha256.clone())
+            .unwrap_or_default(),
+    }
+    .render()
+    .unwrap_or_else(|error| panic!("failed to render boxdd build identity marker: {error}"));
+    fs::write(
+        config.out_dir.join(build_identity::BUILD_IDENTITY_FILE),
+        identity,
+    )
+    .expect("failed to write boxdd build identity marker");
+    if let Some(archive) = vendored_archive {
+        archive
+            .revalidate("vendored build archive identity cohort")
+            .unwrap_or_else(|error| panic!("vendored build archive changed: {error}"));
+    }
 }
 
 fn prepare_external_provider(
@@ -642,8 +661,14 @@ fn prepare_external_provider(
     build_inputs: &MaterializedBuildInputs,
 ) -> Option<PreparedExternal> {
     let (provider, manifest_key) = match config.provider {
-        ProviderAdapter::System => ("system", "BOXDD_SYS_SYSTEM_MANIFEST"),
-        ProviderAdapter::Prebuilt => ("prebuilt", "BOXDD_SYS_PREBUILT_MANIFEST"),
+        ProviderAdapter::System => (
+            ProviderAdapter::System.as_str(),
+            "BOXDD_SYS_SYSTEM_MANIFEST",
+        ),
+        ProviderAdapter::Prebuilt => (
+            ProviderAdapter::Prebuilt.as_str(),
+            "BOXDD_SYS_PREBUILT_MANIFEST",
+        ),
         _ => return None,
     };
     let effective_sources = &build_inputs.effective;
@@ -687,7 +712,7 @@ fn prepare_external_provider(
         )
     });
     let verified_archive = verify_provider_archive(
-        &verified.archive_path,
+        &verified.archive_snapshot,
         &ArchiveExpectation {
             target: &config.target,
             required_symbols: REQUIRED_ADAPTER_SYMBOLS,
@@ -699,11 +724,11 @@ fn prepare_external_provider(
     .unwrap_or_else(|error| {
         panic!(
             "failed to prove {provider} provider archive {}: {error}",
-            verified.archive_path.display()
+            verified.archive_snapshot.path().display()
         )
     });
     assert_eq!(
-        verified_archive.archive_sha256, verified.archive_sha256,
+        verified_archive.archive_sha256, verified.manifest.archive_sha256,
         "provider archive changed between manifest and structural verification"
     );
 
@@ -719,7 +744,8 @@ fn prepare_external_provider(
         });
         let archive_dir = fs::canonicalize(
             verified
-                .archive_path
+                .archive_snapshot
+                .path()
                 .parent()
                 .expect("verified archive must have a parent"),
         )
@@ -731,11 +757,17 @@ fn prepare_external_provider(
     }
 
     println!("cargo:rerun-if-changed={}", manifest_path.display());
-    println!("cargo:rerun-if-changed={}", verified.archive_path.display());
-    println!("cargo:rerun-if-changed={}", verified.header_path.display());
     println!(
         "cargo:rerun-if-changed={}",
-        verified.bindings_path.display()
+        verified.archive_snapshot.path().display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        verified.header_snapshot.path().display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        verified.bindings_snapshot.path().display()
     );
     let (provenance_sha256, trusted_root_sha256) =
         if let Some(authenticated) = authenticated_prebuilt {
@@ -749,7 +781,6 @@ fn prepare_external_provider(
         };
     Some(PreparedExternal {
         artifact: verified,
-        archive_bytes: verified_archive.archive_bytes,
         native_abi_identity,
         provenance_sha256,
         trusted_root_sha256,
@@ -757,36 +788,36 @@ fn prepare_external_provider(
 }
 
 fn authenticate_prebuilt_provenance(config: &BuildConfig) -> AuthenticatedPrebuiltProvenance {
-    let (statement_path, statement_bytes) = snapshot_prebuilt_input(
+    let statement_snapshot = snapshot_prebuilt_input(
         config,
         "BOXDD_SYS_PREBUILT_PROVENANCE",
         "statement",
         "toml",
         4 * 1024 * 1024,
     );
-    let statement = PrebuiltProvenanceStatement::parse_canonical(&statement_bytes)
+    let statement = PrebuiltProvenanceStatement::parse_canonical(statement_snapshot.bytes())
         .unwrap_or_else(|error| panic!("invalid prebuilt provenance statement: {error}"));
     statement
         .validate_publisher(PUBLISHER_REPOSITORY, PUBLISHER_WORKFLOW)
         .unwrap_or_else(|error| panic!("untrusted prebuilt provenance statement: {error}"));
-    let (bundle, _) = snapshot_prebuilt_input(
+    let bundle_snapshot = snapshot_prebuilt_input(
         config,
         "BOXDD_SYS_PREBUILT_BUNDLE",
         "bundle",
         "json",
         16 * 1024 * 1024,
     );
-    let (trusted_root, trusted_root_sha256) = trusted_root_file(config);
+    let (trusted_root_snapshot, trusted_root_sha256) = trusted_root_file(config);
     let cosign = env::var_os("BOXDD_SYS_COSIGN").unwrap_or_else(|| "cosign".into());
-    let version_output = Command::new(&cosign)
-        .arg("version")
-        .output()
-        .unwrap_or_else(|error| {
-            panic!(
-                "prebuilt provider requires Cosign {COSIGN_VERSION}; failed to execute {:?}: {error}",
-                cosign
-            )
-        });
+    let mut version_command = Command::new(&cosign);
+    version_command.arg("version");
+    let version_output = run_output(&mut version_command, "Cosign version qualification")
+    .unwrap_or_else(|error| {
+        panic!(
+            "prebuilt provider requires Cosign {COSIGN_VERSION}; failed to execute {:?}: {error}",
+            cosign
+        )
+    });
     assert!(
         version_output.status.success(),
         "prebuilt provider requires Cosign {COSIGN_VERSION}; version command failed: {}",
@@ -810,15 +841,15 @@ fn authenticate_prebuilt_provenance(config: &BuildConfig) -> AuthenticatedPrebui
         crate_version: env!("CARGO_PKG_VERSION"),
         source_commit: &statement.source_commit,
         release_tag: &statement.release_tag,
-        payload: &statement_path,
-        bundle: &bundle,
-        trusted_root: &trusted_root,
+        payload: statement_snapshot.path(),
+        bundle: bundle_snapshot.path(),
+        trusted_root: trusted_root_snapshot.path(),
     })
     .expect("validated prebuilt manifest must produce a provenance policy");
-    let output = Command::new(&cosign)
-        .args(args)
-        .output()
-        .unwrap_or_else(|error| {
+    let mut verification = Command::new(&cosign);
+    verification.args(args);
+    let output =
+        run_output(&mut verification, "Cosign provenance verification").unwrap_or_else(|error| {
             panic!("failed to execute Cosign provenance verification: {error}")
         });
     assert!(
@@ -826,9 +857,18 @@ fn authenticate_prebuilt_provenance(config: &BuildConfig) -> AuthenticatedPrebui
         "prebuilt provider provenance verification failed before linking: {}",
         String::from_utf8_lossy(&output.stderr).trim()
     );
+    statement_snapshot
+        .revalidate("authenticated prebuilt provenance statement")
+        .unwrap_or_else(|error| panic!("Cosign input changed during verification: {error}"));
+    bundle_snapshot
+        .revalidate("authenticated prebuilt Sigstore bundle")
+        .unwrap_or_else(|error| panic!("Cosign input changed during verification: {error}"));
+    trusted_root_snapshot
+        .revalidate("authenticated prebuilt Sigstore trusted root")
+        .unwrap_or_else(|error| panic!("Cosign input changed during verification: {error}"));
     AuthenticatedPrebuiltProvenance {
         statement,
-        statement_sha256: prebuilt_provenance::sha256_bytes(&statement_bytes),
+        statement_sha256: statement_snapshot.sha256().to_owned(),
         trusted_root_sha256,
     }
 }
@@ -837,17 +877,17 @@ fn validate_authenticated_prebuilt_provenance(
     authenticated: &AuthenticatedPrebuiltProvenance,
     artifact: &VerifiedArtifact,
 ) {
-    let manifest_bytes = artifact.manifest.render();
     let statement_manifest = authenticated
         .statement
-        .validate_provider_manifest(&manifest_bytes)
+        .validate_provider_manifest(artifact.manifest_snapshot.bytes())
         .unwrap_or_else(|error| panic!("prebuilt provenance manifest mismatch: {error}"));
     assert_eq!(
         statement_manifest, artifact.manifest,
         "prebuilt provenance did not authenticate the verified provider manifest"
     );
     let provider_root = artifact
-        .manifest_path
+        .manifest_snapshot
+        .path()
         .parent()
         .expect("verified prebuilt manifest must have a parent directory");
     authenticated
@@ -862,7 +902,7 @@ fn snapshot_prebuilt_input(
     label: &str,
     extension: &str,
     maximum_bytes: u64,
-) -> (PathBuf, Vec<u8>) {
+) -> VerifiedFileSnapshot {
     let source = PathBuf::from(
         env::var_os(key).unwrap_or_else(|| panic!("{key} is required for the prebuilt provider")),
     );
@@ -876,105 +916,43 @@ fn snapshot_prebuilt_file(
     label: &str,
     extension: &str,
     maximum_bytes: u64,
-) -> (PathBuf, Vec<u8>) {
-    let metadata = fs::symlink_metadata(source).unwrap_or_else(|error| {
-        panic!(
-            "failed to inspect {source_description} {}: {error}",
-            source.display()
-        )
-    });
+) -> VerifiedFileSnapshot {
+    let snapshot = VerifiedFileSnapshot::read(source, maximum_bytes, source_description)
+        .unwrap_or_else(|error| panic!("failed to snapshot {source_description}: {error}"));
     assert!(
-        metadata.file_type().is_file() && !metadata.file_type().is_symlink(),
-        "{source_description} must identify a regular non-symlink file: {}",
+        !snapshot.is_empty(),
+        "{source_description} must not be empty: {}",
         source.display()
     );
-    assert!(
-        metadata.len() > 0 && metadata.len() <= maximum_bytes,
-        "{source_description} size {} is outside the accepted 1..={maximum_bytes} byte range",
-        metadata.len()
-    );
-    let input = fs::File::open(source).unwrap_or_else(|error| {
-        panic!(
-            "failed to open {source_description} {}: {error}",
-            source.display()
+    let digest = snapshot.sha256().to_owned();
+    let destination = config
+        .out_dir
+        .join(format!("boxdd-prebuilt-{label}-{}.{}", digest, extension));
+    publish_verified_file(
+        &destination,
+        &digest,
+        snapshot.bytes(),
+        &format!("prebuilt {label} snapshot"),
+    )
+    .unwrap_or_else(|error| panic!("failed to publish prebuilt {label} snapshot: {error}"));
+    let published = VerifiedFileSnapshot::read(
+        &destination,
+        u64::try_from(snapshot.len()).expect("prebuilt snapshot length must fit u64"),
+        &format!("published prebuilt {label} snapshot"),
+    )
+    .unwrap_or_else(|error| panic!("failed to retain prebuilt {label} snapshot: {error}"));
+    published
+        .verify_exact(
+            snapshot.bytes(),
+            snapshot.sha256(),
+            &format!("published prebuilt {label} snapshot"),
         )
-    });
-    let opened_metadata = input.metadata().unwrap_or_else(|error| {
-        panic!(
-            "failed to inspect opened {source_description} {}: {error}",
-            source.display()
-        )
-    });
-    assert!(
-        opened_metadata.is_file() && opened_metadata.len() == metadata.len(),
-        "{source_description} changed while it was being opened for snapshotting"
-    );
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt as _;
-        assert!(
-            opened_metadata.dev() == metadata.dev() && opened_metadata.ino() == metadata.ino(),
-            "{source_description} changed while it was being opened for snapshotting"
-        );
-    }
-    let mut bytes = Vec::with_capacity(metadata.len() as usize);
-    use std::io::Read as _;
-    input
-        .take(maximum_bytes + 1)
-        .read_to_end(&mut bytes)
-        .unwrap_or_else(|error| {
-            panic!(
-                "failed to read {source_description} {}: {error}",
-                source.display()
-            )
-        });
-    assert_eq!(
-        bytes.len() as u64,
-        metadata.len(),
-        "{source_description} changed while its exact bytes were being snapshotted"
-    );
-    let digest = prebuilt_provenance::sha256_bytes(&bytes);
-    let destination = config.out_dir.join(format!(
-        "boxdd-prebuilt-{label}-{}.{}",
-        &digest[..16],
-        extension
-    ));
-    match fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&destination)
-    {
-        Ok(mut output) => {
-            use std::io::Write as _;
-            output.write_all(&bytes).unwrap_or_else(|error| {
-                panic!(
-                    "failed to write prebuilt {label} snapshot {}: {error}",
-                    destination.display()
-                )
-            });
-        }
-        Err(error) if error.kind() == ErrorKind::AlreadyExists => {
-            let existing = fs::read(&destination).unwrap_or_else(|read_error| {
-                panic!(
-                    "failed to read existing prebuilt {label} snapshot {}: {read_error}",
-                    destination.display()
-                )
-            });
-            assert_eq!(
-                existing, bytes,
-                "existing prebuilt {label} snapshot does not contain the expected exact bytes"
-            );
-        }
-        Err(error) => panic!(
-            "failed to create prebuilt {label} snapshot {}: {error}",
-            destination.display()
-        ),
-    }
+        .unwrap_or_else(|error| panic!("prebuilt {label} snapshot changed: {error}"));
     println!("cargo:rerun-if-changed={}", source.display());
-    (destination, bytes)
+    published
 }
 
-fn trusted_root_file(config: &BuildConfig) -> (PathBuf, String) {
+fn trusted_root_file(config: &BuildConfig) -> (VerifiedFileSnapshot, String) {
     let (description, path) = match env::var_os("BOXDD_SYS_PREBUILT_TRUSTED_ROOT") {
         Some(path) => ("BOXDD_SYS_PREBUILT_TRUSTED_ROOT", PathBuf::from(path)),
         None => (
@@ -984,7 +962,7 @@ fn trusted_root_file(config: &BuildConfig) -> (PathBuf, String) {
                 .join(SIGSTORE_TRUSTED_ROOT_RELATIVE_PATH),
         ),
     };
-    let (snapshot, bytes) = snapshot_prebuilt_file(
+    let snapshot = snapshot_prebuilt_file(
         config,
         &path,
         description,
@@ -992,7 +970,7 @@ fn trusted_root_file(config: &BuildConfig) -> (PathBuf, String) {
         "json",
         4 * 1024 * 1024,
     );
-    let digest = prebuilt_provenance::sha256_bytes(&bytes);
+    let digest = snapshot.sha256().to_owned();
     assert_eq!(
         digest, SIGSTORE_TRUSTED_ROOT_SHA256,
         "{description} does not match the crate-owned authenticated Sigstore trusted root"
@@ -1000,26 +978,22 @@ fn trusted_root_file(config: &BuildConfig) -> (PathBuf, String) {
     (snapshot, digest)
 }
 
-fn link_verified_artifact(config: &BuildConfig, artifact: VerifiedArtifact, archive_bytes: &[u8]) {
-    let digest_prefix = &artifact.archive_sha256[..16];
-    let link_name = format!("box2d_{digest_prefix}");
+fn link_verified_artifact(config: &BuildConfig, artifact: &VerifiedArtifact) {
+    let archive_sha256 = artifact.archive_snapshot.sha256();
+    let link_name = format!("box2d_{archive_sha256}");
     let file_name = if config.target_env == "msvc" {
         format!("{link_name}.lib")
     } else {
         format!("lib{link_name}.a")
     };
     let linked_archive = config.out_dir.join(file_name);
-    fs::write(&linked_archive, archive_bytes).unwrap_or_else(|error| {
-        panic!(
-            "failed to write the verified archive snapshot to {}: {error}",
-            linked_archive.display()
-        )
-    });
-    let copied_sha = sha256_file(&linked_archive).expect("failed to hash copied link archive");
-    assert_eq!(
-        copied_sha, artifact.archive_sha256,
-        "verified archive changed while preparing the linker input"
-    );
+    publish_verified_file(
+        &linked_archive,
+        archive_sha256,
+        artifact.archive_snapshot.bytes(),
+        "prebuilt link archive",
+    )
+    .unwrap_or_else(|error| panic!("failed to publish verified link archive: {error}"));
     println!(
         "cargo:rustc-link-search=native={}",
         config.out_dir.display()
@@ -1095,18 +1069,65 @@ fn reject_precision_macro_overrides(target: &str) {
 }
 
 #[cfg(feature = "bindgen")]
+#[derive(Debug)]
+struct BoxddBindgenCallbacks;
+
+#[cfg(feature = "bindgen")]
+impl bindgen::callbacks::ParseCallbacks for BoxddBindgenCallbacks {
+    fn header_file(&self, filename: &str) {
+        println!("cargo:rerun-if-changed={filename}");
+    }
+
+    fn include_file(&self, filename: &str) {
+        println!("cargo:rerun-if-changed={filename}");
+    }
+
+    fn read_env_var(&self, key: &str) {
+        println!("cargo:rerun-if-env-changed={key}");
+    }
+
+    fn process_comment(&self, comment: &str) -> Option<String> {
+        Some(
+            comment
+                .replace("[0,tMax]", r"\[0,tMax\]")
+                .replace("[0,1]", r"\[0,1\]")
+                .replace("https://semver.org/", "<https://semver.org/>")
+                .replace(
+                    "https://en.wikipedia.org/wiki/Coefficient_of_restitution",
+                    "<https://en.wikipedia.org/wiki/Coefficient_of_restitution>",
+                )
+                .replace(
+                    "https://en.wikipedia.org/wiki/Polygonal_chain",
+                    "<https://en.wikipedia.org/wiki/Polygonal_chain>",
+                )
+                .replace(
+                    "https://www.rapidtables.com/web/color/index.html",
+                    "<https://www.rapidtables.com/web/color/index.html>",
+                )
+                .replace(
+                    "https://johndecember.com/html/spec/colorsvg.html",
+                    "<https://johndecember.com/html/spec/colorsvg.html>",
+                )
+                .replace(
+                    "https://upload.wikimedia.org/wikipedia/commons/2/2b/SVG_Recognized_color_keyword_names.svg",
+                    "<https://upload.wikimedia.org/wikipedia/commons/2/2b/SVG_Recognized_color_keyword_names.svg>",
+                ),
+        )
+    }
+}
+
+#[cfg(feature = "bindgen")]
 fn generate_bindings(
     effective_public_include: &Path,
-    out_dir: &Path,
     target: &str,
     precision: Precision,
     wasi_sysroot: Option<&Path>,
     freestanding_headers: Option<&Path>,
-) {
+) -> Vec<u8> {
     let header = effective_public_include.join("box2d").join("box2d.h");
     let builder = bindgen::Builder::default()
         .header(header.to_string_lossy())
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+        .parse_callbacks(Box::new(BoxddBindgenCallbacks))
         .clang_args(["-x", "c", "-std=c17"])
         .clang_arg(format!("--target={target}"))
         .clang_args(
@@ -1119,6 +1140,8 @@ fn generate_bindings(
         .allowlist_function("b2.*")
         .allowlist_type("b2.*")
         .allowlist_var("B2_.*")
+        .blocklist_var("^B2_DEFAULT_MASK_BITS$")
+        .blocklist_var("^B2_ENABLE_VALIDATION$")
         .layout_tests(false);
     let builder = if matches!(target, "wasm32-unknown-unknown" | "wasm32-wasip1") {
         builder.clang_arg("-Dbox2d_EXPORTS=1")
@@ -1136,10 +1159,7 @@ fn generate_bindings(
     let bindings = configure_bindgen_host_headers(builder, target)
         .generate()
         .expect("failed to generate Box2D bindings");
-
-    bindings
-        .write_to_file(out_dir.join("bindings.rs"))
-        .expect("failed to write Box2D bindings");
+    bindings.to_string().into_bytes()
 }
 
 #[cfg(feature = "bindgen")]
@@ -1150,9 +1170,9 @@ fn configure_bindgen_host_headers(builder: bindgen::Builder, target: &str) -> bi
 
     // Apple Clang has no Linux libc sysroot. The Box2D public API only needs ISO C headers here;
     // Xcode supplies those headers while `--target` above remains the manifest's Linux ABI.
-    let output = std::process::Command::new("xcrun")
-        .args(["--sdk", "macosx", "--show-sdk-path"])
-        .output()
+    let mut command = std::process::Command::new("/usr/bin/xcrun");
+    command.args(["--sdk", "macosx", "--show-sdk-path"]);
+    let output = run_output(&mut command, "xcrun macOS SDK lookup")
         .expect("xcrun is required to locate ISO C headers for Linux-target bindgen on macOS");
     assert!(
         output.status.success(),
@@ -1171,12 +1191,11 @@ fn configure_bindgen_host_headers(builder: bindgen::Builder, target: &str) -> bi
 #[allow(dead_code)]
 fn generate_bindings(
     _effective_public_include: &Path,
-    _out_dir: &Path,
     _target: &str,
     _precision: Precision,
     _wasi_sysroot: Option<&Path>,
     _freestanding_headers: Option<&Path>,
-) {
+) -> Vec<u8> {
     unreachable!("generate_bindings is only available with the `bindgen` feature enabled");
 }
 
@@ -1354,22 +1373,16 @@ fn load_wasm_provider_identity_contract(
     source_tree: &str,
     effective_source_sha256: &str,
     adapter_source_sha256: &str,
+    bindings_sha256: &str,
 ) -> NativeAbiIdentity {
     if cfg!(feature = "validate") {
         panic!(
             "BOXDD_SYS_PROVIDER=wasm-provider does not have a checked validation-enabled ABI route"
         );
     }
-    if config.force_bindgen {
-        panic!(
-            "BOXDD_SYS_PROVIDER=wasm-provider requires the checked pregenerated bindings identity"
-        );
-    }
     let relative = contract_relative_path(config.precision.as_str())
         .unwrap_or_else(|error| panic!("invalid WASM provider identity route: {error}"));
     let path = config.manifest_dir.join(relative);
-    let bindings_sha256 = sha256_file(&config.pregenerated_bindings())
-        .unwrap_or_else(|error| panic!("failed to identify WASM provider bindings: {error}"));
     let identity = WasmProviderIdentity::load(
         &config.manifest_dir,
         Path::new(relative),
@@ -1388,7 +1401,7 @@ fn load_wasm_provider_identity_contract(
             simd: SIMD_MODE,
             pointer_width: POINTER_WIDTH,
             endianness: ENDIANNESS,
-            bindings_sha256: &bindings_sha256,
+            bindings_sha256,
         },
     )
     .unwrap_or_else(|error| {
@@ -1400,6 +1413,7 @@ fn load_wasm_provider_identity_contract(
     NativeAbiIdentity {
         private_abi_hash: identity.private_abi_hash,
         snapshot_layout_hash: identity.snapshot_layout_hash,
+        definition_cookie: identity.definition_cookie,
     }
 }
 
@@ -1422,9 +1436,13 @@ fn define_effective_source_identity(build: &mut cc::Build, effective_source_sha2
 }
 
 fn read_compiled_adapter_identity_file(object_path: &Path) -> NativeAbiIdentity {
-    let bytes = fs::read(object_path)
-        .unwrap_or_else(|error| panic!("failed to read {}: {error}", object_path.display()));
-    let file = object::File::parse(bytes.as_slice())
+    let snapshot = VerifiedFileSnapshot::read(
+        object_path,
+        64 * 1024 * 1024,
+        "compiled adapter identity object",
+    )
+    .unwrap_or_else(|error| panic!("failed to read adapter identity object: {error}"));
+    let file = object::File::parse(snapshot.bytes())
         .unwrap_or_else(|error| panic!("failed to parse {}: {error}", object_path.display()));
     let little_endian = file.is_little_endian();
     let private_count = read_identity_scalar(&file, "boxddPrivateAbiValueCount", little_endian);
@@ -1437,9 +1455,16 @@ fn read_compiled_adapter_identity_file(object_path: &Path) -> NativeAbiIdentity 
         layout_count,
         little_endian,
     );
+    let definition_cookie = i32::try_from(read_identity_scalar(
+        &file,
+        "boxddDefinitionCookie",
+        little_endian,
+    ))
+    .expect("native definition cookie exceeds i32");
     NativeAbiIdentity {
         private_abi_hash: private_abi_hash(&private_values, little_endian),
         snapshot_layout_hash: snapshot_layout_hash(&layout_values),
+        definition_cookie,
     }
 }
 
@@ -1526,4 +1551,12 @@ fn write_expected_adapter_identity(out_dir: &Path, identity: NativeAbiIdentity) 
     );
     fs::write(out_dir.join("adapter_identity.rs"), source)
         .expect("failed to write target adapter identity constants");
+    fs::write(
+        out_dir.join("definition_cookie.rs"),
+        format!(
+            "pub const DEFINITION_COOKIE: i32 = {};\n",
+            identity.definition_cookie
+        ),
+    )
+    .expect("failed to write target definition cookie");
 }

@@ -1,4 +1,4 @@
-use crate::error::{ApiError, ApiResult};
+use crate::error::{Error, Result};
 use crate::types::{MassData, MotionLocks, Position, Vec2};
 use boxdd_sys::ffi;
 use std::ffi::{CStr, CString};
@@ -34,8 +34,8 @@ impl BodyType {
     }
 
     #[inline]
-    pub(crate) fn decode_native(raw: ffi::b2BodyType) -> ApiResult<Self> {
-        Self::from_raw(raw).ok_or(ApiError::InvalidNativeBodyType { raw })
+    pub(crate) fn decode_native(raw: ffi::b2BodyType) -> Result<Self> {
+        Self::from_raw(raw).ok_or(Error::InvalidNativeBodyType { raw })
     }
 }
 
@@ -43,230 +43,218 @@ impl TryFrom<ffi::b2BodyType> for BodyType {
     type Error = ffi::b2BodyType;
 
     #[inline]
-    fn try_from(value: ffi::b2BodyType) -> Result<Self, Self::Error> {
+    fn try_from(value: ffi::b2BodyType) -> std::result::Result<Self, Self::Error> {
         Self::from_raw(value).ok_or(value)
     }
 }
 
 #[inline]
-fn body_type_is_known(raw: ffi::b2BodyType) -> bool {
-    BodyType::from_raw(raw).is_some()
-}
-
-#[inline]
-pub(crate) fn assert_non_negative_finite_body_scalar(name: &str, value: f32) {
-    assert!(
-        value.is_finite() && value >= 0.0,
-        "{name} must be finite and >= 0.0, got {value}"
-    );
-}
-
-#[inline]
-pub(crate) fn check_non_negative_finite_body_scalar(value: f32) -> ApiResult<()> {
+pub(crate) fn check_non_negative_finite_body_scalar(
+    operation: &'static str,
+    argument: &'static str,
+    value: f32,
+) -> Result<()> {
     if value.is_finite() && value >= 0.0 {
         Ok(())
     } else {
-        Err(ApiError::InvalidArgument)
+        Err(Error::invalid_argument(
+            operation,
+            argument,
+            "a finite value greater than or equal to zero",
+        ))
     }
 }
 
 #[inline]
-pub(crate) fn assert_mass_data_valid(mass_data: MassData) {
-    assert_non_negative_finite_body_scalar("mass", mass_data.mass);
-    assert_non_negative_finite_body_scalar("rotational_inertia", mass_data.rotational_inertia);
-    assert!(
-        mass_data.center.is_valid(),
-        "mass_data.center must be a valid Box2D vector, got {:?}",
-        mass_data.center
-    );
-}
-
-#[inline]
-pub(crate) fn check_mass_data_valid(mass_data: MassData) -> ApiResult<()> {
-    check_non_negative_finite_body_scalar(mass_data.mass)?;
-    check_non_negative_finite_body_scalar(mass_data.rotational_inertia)?;
+pub(crate) fn check_mass_data_valid(mass_data: MassData) -> Result<()> {
+    check_non_negative_finite_body_scalar("Body::set_mass_data", "mass", mass_data.mass)?;
+    check_non_negative_finite_body_scalar(
+        "Body::set_mass_data",
+        "rotational_inertia",
+        mass_data.rotational_inertia,
+    )?;
     if mass_data.center.is_valid() {
         Ok(())
     } else {
-        Err(ApiError::InvalidArgument)
+        Err(Error::invalid_argument(
+            "Body::set_mass_data",
+            "center",
+            "a finite vector",
+        ))
     }
 }
 
-pub(crate) fn assert_body_def_valid(def: &BodyDef) {
-    assert!(
-        def.name()
-            .is_none_or(|name| name.to_bytes().len() <= super::MAX_BODY_NAME_BYTES),
-        "invalid BodyDef: name must contain at most {} bytes",
-        super::MAX_BODY_NAME_BYTES
-    );
-    assert!(
-        body_type_is_known(def.0.type_),
-        "invalid BodyDef: unknown body type value {}",
-        def.0.type_
-    );
-    assert!(
-        Position::from_raw(def.0.position).is_valid(),
-        "invalid BodyDef: position must be a valid Box2D world position"
-    );
-    assert!(
-        crate::Rot::from_raw(def.0.rotation).is_valid(),
-        "invalid BodyDef: rotation must be a valid Box2D rotation"
-    );
-    assert!(
-        Vec2::from_raw(def.0.linearVelocity).is_valid(),
-        "invalid BodyDef: linearVelocity must be a valid Box2D vector"
-    );
-    assert!(
-        crate::is_valid_float(def.0.angularVelocity),
-        "invalid BodyDef: angularVelocity must be finite"
-    );
-    assert_non_negative_finite_body_scalar("linearDamping", def.0.linearDamping);
-    assert_non_negative_finite_body_scalar("angularDamping", def.0.angularDamping);
-    assert_non_negative_finite_body_scalar("sleepThreshold", def.0.sleepThreshold);
-    assert!(
-        crate::is_valid_float(def.0.gravityScale),
-        "invalid BodyDef: gravityScale must be finite"
-    );
-    let _lease = crate::core::foundation::assert_transient_native_lease();
-    assert!(
-        def.0.internalValue == unsafe { ffi::b2DefaultBodyDef() }.internalValue,
-        "invalid BodyDef: not initialized from b2DefaultBodyDef"
-    );
-}
-
-pub(crate) fn check_body_def_valid(def: &BodyDef) -> ApiResult<()> {
+pub(crate) fn check_body_def_valid(def: &BodyDef) -> Result<()> {
+    const OPERATION: &str = "BodyDef::validate";
     if def
         .name()
         .is_some_and(|name| name.to_bytes().len() > super::MAX_BODY_NAME_BYTES)
-        || !body_type_is_known(def.0.type_)
-        || !Position::from_raw(def.0.position).is_valid()
-        || !crate::Rot::from_raw(def.0.rotation).is_valid()
-        || !Vec2::from_raw(def.0.linearVelocity).is_valid()
-        || !crate::is_valid_float(def.0.angularVelocity)
-        || check_non_negative_finite_body_scalar(def.0.linearDamping).is_err()
-        || check_non_negative_finite_body_scalar(def.0.angularDamping).is_err()
-        || check_non_negative_finite_body_scalar(def.0.sleepThreshold).is_err()
-        || !crate::is_valid_float(def.0.gravityScale)
     {
-        return Err(ApiError::InvalidArgument);
+        return Err(Error::invalid_argument(
+            OPERATION,
+            "name",
+            "at most 10 UTF-8 bytes",
+        ));
     }
-    let _lease = crate::core::foundation::transient_native_lease()?;
-    if def.0.internalValue == unsafe { ffi::b2DefaultBodyDef() }.internalValue {
-        Ok(())
-    } else {
-        Err(ApiError::InvalidArgument)
+    if !def.position.is_valid() {
+        return Err(Error::invalid_argument(
+            OPERATION,
+            "position",
+            "a finite world position",
+        ));
     }
+    if !def.rotation.is_valid() {
+        return Err(Error::invalid_argument(
+            OPERATION,
+            "rotation",
+            "a normalized finite rotation",
+        ));
+    }
+    if !def.linear_velocity.is_valid() {
+        return Err(Error::invalid_argument(
+            OPERATION,
+            "linear_velocity",
+            "a finite vector",
+        ));
+    }
+    if !crate::is_valid_float(def.angular_velocity) {
+        return Err(Error::invalid_argument(
+            OPERATION,
+            "angular_velocity",
+            "a finite value",
+        ));
+    }
+    check_non_negative_finite_body_scalar(OPERATION, "linear_damping", def.linear_damping)?;
+    check_non_negative_finite_body_scalar(OPERATION, "angular_damping", def.angular_damping)?;
+    check_non_negative_finite_body_scalar(OPERATION, "sleep_threshold", def.sleep_threshold)?;
+    if !crate::is_valid_float(def.gravity_scale) {
+        return Err(Error::invalid_argument(
+            OPERATION,
+            "gravity_scale",
+            "a finite value",
+        ));
+    }
+    Ok(())
 }
 
-/// Body definition wrapper with builder API.
+/// A scale-provenanced Rust body definition.
 ///
-/// The wrapper owns the optional body name and keeps the raw `name` pointer bound to that owned
-/// allocation. Use [`BodyDef::into_raw_guard`] when passing the definition to an unsafe API.
+/// Obtain one from [`crate::Foundation::body_def`], [`crate::World::body_def`], or
+/// [`crate::RecordingSession::body_def`]. A body definition has no context-free default because
+/// native body defaults depend on the selected world length scale.
 #[derive(Debug)]
-pub struct BodyDef(pub(crate) ffi::b2BodyDef, Option<CString>);
+pub struct BodyDef {
+    name: Option<CString>,
+    body_type: BodyType,
+    position: Position,
+    rotation: crate::Rot,
+    linear_velocity: Vec2,
+    angular_velocity: f32,
+    linear_damping: f32,
+    angular_damping: f32,
+    gravity_scale: f32,
+    sleep_threshold: f32,
+    motion_locks: MotionLocks,
+    enable_sleep: bool,
+    awake: bool,
+    bullet: bool,
+    enabled: bool,
+    allow_fast_rotation: bool,
+    enable_contact_recycling: bool,
+    length_scale: crate::core::length_scale::LengthScale,
+}
 
 impl Clone for BodyDef {
     fn clone(&self) -> Self {
-        Self::from_parts(self.0, self.1.clone())
+        Self {
+            name: self.name.clone(),
+            body_type: self.body_type,
+            position: self.position,
+            rotation: self.rotation,
+            linear_velocity: self.linear_velocity,
+            angular_velocity: self.angular_velocity,
+            linear_damping: self.linear_damping,
+            angular_damping: self.angular_damping,
+            gravity_scale: self.gravity_scale,
+            sleep_threshold: self.sleep_threshold,
+            motion_locks: self.motion_locks,
+            enable_sleep: self.enable_sleep,
+            awake: self.awake,
+            bullet: self.bullet,
+            enabled: self.enabled,
+            allow_fast_rotation: self.allow_fast_rotation,
+            enable_contact_recycling: self.enable_contact_recycling,
+            length_scale: self.length_scale,
+        }
     }
 }
 
-/// An owned raw body definition whose pointer-bearing fields remain valid.
-///
-/// Keep this guard alive for the complete duration of any unsafe FFI call that reads the returned
-/// raw definition or pointer.
-#[derive(Debug)]
-pub struct RawBodyDef {
+pub(crate) struct PreparedBodyDef {
     raw: ffi::b2BodyDef,
     _name: Option<CString>,
 }
 
-impl RawBodyDef {
-    /// Borrow the raw Box2D body definition.
+impl PreparedBodyDef {
     #[inline]
-    pub fn as_raw(&self) -> &ffi::b2BodyDef {
+    pub(crate) fn as_raw(&self) -> &ffi::b2BodyDef {
         &self.raw
-    }
-
-    /// Return a pointer to the raw definition stored inside this guard.
-    ///
-    /// The pointer is invalidated if the guard is moved or dropped. Callers must finish using the
-    /// pointer before either operation; prefer [`Self::as_raw`] when a borrowed definition is
-    /// accepted.
-    #[inline]
-    pub fn as_ptr(&self) -> *const ffi::b2BodyDef {
-        &self.raw
-    }
-}
-
-impl Default for BodyDef {
-    fn default() -> Self {
-        let _lease = crate::core::foundation::assert_transient_native_lease();
-        let def = unsafe { ffi::b2DefaultBodyDef() };
-        Self::from_parts(def, None)
     }
 }
 
 impl BodyDef {
     #[inline]
-    fn from_parts(mut raw: ffi::b2BodyDef, name: Option<CString>) -> Self {
-        raw.name = name.as_ref().map_or(std::ptr::null(), |name| name.as_ptr());
-        Self(raw, name)
+    pub(crate) fn with_length_scale(length_scale: crate::core::length_scale::LengthScale) -> Self {
+        let raw: ffi::b2BodyDef =
+            crate::core::native_defaults::body_def(length_scale.units_per_meter());
+        Self {
+            name: None,
+            body_type: BodyType::Static,
+            position: Position::from_raw(raw.position),
+            rotation: crate::Rot::from_raw_unvalidated(raw.rotation),
+            linear_velocity: Vec2::from_raw(raw.linearVelocity),
+            angular_velocity: raw.angularVelocity,
+            linear_damping: raw.linearDamping,
+            angular_damping: raw.angularDamping,
+            gravity_scale: raw.gravityScale,
+            sleep_threshold: raw.sleepThreshold,
+            motion_locks: MotionLocks::from_raw(raw.motionLocks),
+            enable_sleep: raw.enableSleep,
+            awake: raw.isAwake,
+            bullet: raw.isBullet,
+            enabled: raw.isEnabled,
+            allow_fast_rotation: raw.allowFastRotation,
+            enable_contact_recycling: raw.enableContactRecycling,
+            length_scale,
+        }
     }
 
     #[inline]
     fn set_name(&mut self, name: Option<CString>) {
-        self.1 = name;
-        self.0.name = self
-            .1
-            .as_ref()
-            .map_or(std::ptr::null(), |name| name.as_ptr());
-    }
-
-    /// Start building a new `BodyDef` from defaults.
-    pub fn builder() -> BodyBuilder {
-        BodyBuilder::new()
-    }
-
-    /// Construct from the raw Box2D body definition value.
-    ///
-    /// # Safety
-    /// If `raw.name` is non-null, it must point to a readable NUL-terminated string for the
-    /// duration of this call. The string is copied before this function returns.
-    #[inline]
-    pub unsafe fn from_raw(raw: ffi::b2BodyDef) -> Self {
-        let name = if raw.name.is_null() {
-            None
-        } else {
-            // SAFETY: The caller guarantees that `raw.name` points to a readable C string for
-            // this call. `to_owned` copies it before the borrowed view can escape.
-            Some(unsafe { CStr::from_ptr(raw.name) }.to_owned())
-        };
-        Self::from_parts(raw, name)
+        self.name = name;
     }
 
     /// Optional name assigned when the body is created.
     #[inline]
     pub fn name(&self) -> Option<&CStr> {
-        self.1.as_deref()
+        self.name.as_deref()
     }
 
     /// Body type used when the body is created.
     #[inline]
-    pub fn body_type(&self) -> Option<BodyType> {
-        BodyType::from_raw(self.0.type_)
+    pub fn body_type(&self) -> BodyType {
+        self.body_type
     }
 
     /// Initial world-space position.
     #[inline]
     pub fn position(&self) -> Position {
-        Position::from_raw(self.0.position)
+        self.position
     }
 
     /// Initial rotation value.
     #[inline]
     pub fn rotation(&self) -> crate::Rot {
-        crate::Rot::from_raw(self.0.rotation)
+        self.rotation
     }
 
     /// Initial angle in radians.
@@ -278,99 +266,117 @@ impl BodyDef {
     /// Initial linear velocity in m/s.
     #[inline]
     pub fn linear_velocity(&self) -> Vec2 {
-        Vec2::from_raw(self.0.linearVelocity)
+        self.linear_velocity
     }
 
     /// Initial angular velocity in rad/s.
     #[inline]
     pub fn angular_velocity(&self) -> f32 {
-        self.0.angularVelocity
+        self.angular_velocity
     }
 
     /// Linear damping.
     #[inline]
     pub fn linear_damping(&self) -> f32 {
-        self.0.linearDamping
+        self.linear_damping
     }
 
     /// Angular damping.
     #[inline]
     pub fn angular_damping(&self) -> f32 {
-        self.0.angularDamping
+        self.angular_damping
     }
 
     /// Linear speed below which the body may transition to sleep.
     #[inline]
     pub fn sleep_threshold(&self) -> f32 {
-        self.0.sleepThreshold
+        self.sleep_threshold
     }
 
     /// Per-body gravity scale.
     #[inline]
     pub fn gravity_scale(&self) -> f32 {
-        self.0.gravityScale
+        self.gravity_scale
     }
 
     /// Whether sleeping is enabled at creation.
     #[inline]
     pub fn is_sleep_enabled(&self) -> bool {
-        self.0.enableSleep
+        self.enable_sleep
     }
 
     /// Whether the body starts awake.
     #[inline]
     pub fn is_awake(&self) -> bool {
-        self.0.isAwake
+        self.awake
     }
 
     /// Whether the body starts as a bullet.
     #[inline]
     pub fn is_bullet(&self) -> bool {
-        self.0.isBullet
+        self.bullet
     }
 
     /// Whether the body allows fast rotation without Box2D's default clamp.
     #[inline]
     pub fn is_fast_rotation_allowed(&self) -> bool {
-        self.0.allowFastRotation
+        self.allow_fast_rotation
     }
 
     /// Per-axis motion locks applied when the body is created.
     #[inline]
     pub fn motion_locks(&self) -> MotionLocks {
-        MotionLocks {
-            linear_x: self.0.motionLocks.linearX,
-            linear_y: self.0.motionLocks.linearY,
-            angular_z: self.0.motionLocks.angularZ,
-        }
+        self.motion_locks
     }
 
     /// Whether newly created contacts may recycle this body's previous manifolds.
     #[inline]
     pub fn is_contact_recycling_enabled(&self) -> bool {
-        self.0.enableContactRecycling
+        self.enable_contact_recycling
     }
 
     /// Whether the body starts enabled for simulation.
     #[inline]
     pub fn is_enabled(&self) -> bool {
-        self.0.isEnabled
+        self.enabled
     }
 
-    /// Convert into an owned raw guard that preserves pointer-bearing fields.
-    #[inline]
-    pub fn into_raw_guard(self) -> RawBodyDef {
-        let Self(raw, name) = self;
-        let mut guard = RawBodyDef { raw, _name: name };
-        guard.raw.name = guard
+    pub(crate) fn length_scale(&self) -> crate::core::length_scale::LengthScale {
+        self.length_scale
+    }
+
+    pub(crate) fn prepare(self) -> PreparedBodyDef {
+        let mut raw: ffi::b2BodyDef =
+            crate::core::native_defaults::body_def(self.length_scale.units_per_meter());
+        raw.type_ = self.body_type.into_raw();
+        raw.position = self.position.into_raw();
+        raw.rotation = self.rotation.into_raw();
+        raw.linearVelocity = self.linear_velocity.into_raw();
+        raw.angularVelocity = self.angular_velocity;
+        raw.linearDamping = self.linear_damping;
+        raw.angularDamping = self.angular_damping;
+        raw.gravityScale = self.gravity_scale;
+        raw.sleepThreshold = self.sleep_threshold;
+        raw.motionLocks = self.motion_locks.into_raw();
+        raw.enableSleep = self.enable_sleep;
+        raw.isAwake = self.awake;
+        raw.isBullet = self.bullet;
+        raw.isEnabled = self.enabled;
+        raw.allowFastRotation = self.allow_fast_rotation;
+        raw.enableContactRecycling = self.enable_contact_recycling;
+        let mut prepared = PreparedBodyDef {
+            raw,
+            _name: self.name,
+        };
+        prepared.raw.name = prepared
             ._name
             .as_ref()
             .map_or(std::ptr::null(), |name| name.as_ptr());
-        guard
+        prepared
     }
 
     #[inline]
-    pub fn validate(&self) -> ApiResult<()> {
+    pub fn validate(&self) -> Result<()> {
         check_body_def_valid(self)
     }
 }
@@ -379,39 +385,25 @@ impl BodyDef {
 #[doc(alias = "body_builder")]
 #[doc(alias = "bodybuilder")]
 ///
-/// Chain methods to configure a body and finish with `build()`. This maps
-/// to the upstream `b2BodyDef` fields.
+/// Obtain this builder from `Foundation`, `World`, or `RecordingSession`, chain methods to
+/// configure a body, and finish with `build()`. This maps to the upstream `b2BodyDef` fields.
 #[derive(Clone, Debug)]
 pub struct BodyBuilder {
     def: BodyDef,
 }
 
 impl BodyBuilder {
-    /// Start a new builder with default `BodyDef`.
-    pub fn new() -> Self {
-        Self {
-            def: BodyDef::default(),
-        }
-    }
     /// Set the body type (static, kinematic, dynamic).
     pub fn body_type(mut self, t: BodyType) -> Self {
-        self.def.0.type_ = t.into_raw();
-        self
-    }
-    /// Set the optional body name.
-    #[track_caller]
-    pub fn name(mut self, name: &str) -> Self {
-        self.def.1 = Some(super::assert_valid_body_name(name));
-        self.def.0.name = self
-            .def
-            .1
-            .as_ref()
-            .map_or(std::ptr::null(), |name| name.as_ptr());
+        self.def.body_type = t;
         self
     }
     /// Set the optional body name, returning an error for an interior NUL or an oversized name.
-    pub fn try_name(mut self, name: &str) -> ApiResult<Self> {
-        self.def.set_name(Some(super::check_valid_body_name(name)?));
+    pub fn name(mut self, name: &str) -> Result<Self> {
+        self.def.set_name(Some(super::check_valid_body_name(
+            "BodyBuilder::name",
+            name,
+        )?));
         Ok(self)
     }
     /// Remove a previously configured body name.
@@ -421,85 +413,84 @@ impl BodyBuilder {
     }
     /// Initial world-space position.
     pub fn position<P: Into<Position>>(mut self, p: P) -> Self {
-        self.def.0.position = p.into().into_raw();
+        self.def.position = p.into();
         self
     }
     /// Initial rotation in radians.
     pub fn angle(mut self, radians: f32) -> Self {
         // Build a rotation from angle
-        let (s, c) = radians.sin_cos();
-        self.def.0.rotation = ffi::b2Rot { c, s };
+        self.def.rotation = crate::Rot::from_radians_unvalidated(radians);
         self
     }
     /// Initial linear velocity (m/s).
     pub fn linear_velocity<V: Into<Vec2>>(mut self, v: V) -> Self {
-        self.def.0.linearVelocity = v.into().into_raw();
+        self.def.linear_velocity = v.into();
         self
     }
     /// Initial angular velocity (rad/s).
     pub fn angular_velocity(mut self, v: f32) -> Self {
-        self.def.0.angularVelocity = v;
+        self.def.angular_velocity = v;
         self
     }
     /// Linear damping (drag-like term).
     pub fn linear_damping(mut self, v: f32) -> Self {
-        self.def.0.linearDamping = v;
+        self.def.linear_damping = v;
         self
     }
     /// Angular damping.
     pub fn angular_damping(mut self, v: f32) -> Self {
-        self.def.0.angularDamping = v;
+        self.def.angular_damping = v;
         self
     }
     /// Linear speed below which the body may transition to sleep.
     pub fn sleep_threshold(mut self, v: f32) -> Self {
-        self.def.0.sleepThreshold = v;
+        self.def.sleep_threshold = v;
         self
     }
     /// Per-body gravity scale (1 = normal gravity).
     pub fn gravity_scale(mut self, v: f32) -> Self {
-        self.def.0.gravityScale = v;
+        self.def.gravity_scale = v;
         self
     }
     /// Allow body to go to sleep.
     pub fn enable_sleep(mut self, flag: bool) -> Self {
-        self.def.0.enableSleep = flag;
+        self.def.enable_sleep = flag;
         self
     }
     /// Awake/asleep flag at creation.
     pub fn awake(mut self, flag: bool) -> Self {
-        self.def.0.isAwake = flag;
+        self.def.awake = flag;
         self
     }
     /// Treat as bullet (CCD).
     pub fn bullet(mut self, flag: bool) -> Self {
-        self.def.0.isBullet = flag;
+        self.def.bullet = flag;
         self
     }
     /// Allow high angular speed without Box2D's default clamp.
     pub fn allow_fast_rotation(mut self, flag: bool) -> Self {
-        self.def.0.allowFastRotation = flag;
+        self.def.allow_fast_rotation = flag;
         self
     }
     /// Lock selected translation and rotation axes at creation.
     pub fn motion_locks(mut self, locks: MotionLocks) -> Self {
-        self.def.0.motionLocks = locks.into_raw();
+        self.def.motion_locks = locks;
         self
     }
     /// Enable contact-manifold recycling for contacts created after this body is created.
     pub fn enable_contact_recycling(mut self, flag: bool) -> Self {
-        self.def.0.enableContactRecycling = flag;
+        self.def.enable_contact_recycling = flag;
         self
     }
     /// Enable/disable simulation for this body.
     pub fn enabled(mut self, flag: bool) -> Self {
-        self.def.0.isEnabled = flag;
+        self.def.enabled = flag;
         self
     }
 
-    #[must_use]
-    pub fn build(self) -> BodyDef {
-        self.def
+    pub fn build(self) -> Result<BodyDef> {
+        self.def.validate()?;
+        Ok(self.def)
     }
 }
 
@@ -512,7 +503,7 @@ impl From<BodyDef> for BodyBuilder {
 // serde support for BodyDef via a transparent config struct
 #[cfg(feature = "serde")]
 impl serde::Serialize for BodyDef {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
@@ -535,36 +526,32 @@ impl serde::Serialize for BodyDef {
             motion_locks: MotionLocks,
             enable_contact_recycling: bool,
             enabled: bool,
+            length_units_per_meter: f32,
         }
         let name = self
             .name()
             .map(CStr::to_str)
             .transpose()
             .map_err(serde::ser::Error::custom)?;
-        let angle = self.0.rotation.s.atan2(self.0.rotation.c);
         let r = Repr {
             name,
-            body_type: BodyType::from_raw(self.0.type_).ok_or_else(|| {
-                serde::ser::Error::custom(format!(
-                    "unknown Box2D body type discriminant {}",
-                    self.0.type_
-                ))
-            })?,
-            position: crate::types::Position::from_raw(self.0.position),
-            angle,
-            linear_velocity: crate::types::Vec2::from_raw(self.0.linearVelocity),
-            angular_velocity: self.0.angularVelocity,
-            linear_damping: self.0.linearDamping,
-            angular_damping: self.0.angularDamping,
-            sleep_threshold: self.0.sleepThreshold,
-            gravity_scale: self.0.gravityScale,
-            enable_sleep: self.0.enableSleep,
-            awake: self.0.isAwake,
-            bullet: self.0.isBullet,
-            allow_fast_rotation: self.0.allowFastRotation,
-            motion_locks: MotionLocks::from_raw(self.0.motionLocks),
-            enable_contact_recycling: self.0.enableContactRecycling,
-            enabled: self.0.isEnabled,
+            body_type: self.body_type,
+            position: self.position,
+            angle: self.rotation.angle(),
+            linear_velocity: self.linear_velocity,
+            angular_velocity: self.angular_velocity,
+            linear_damping: self.linear_damping,
+            angular_damping: self.angular_damping,
+            sleep_threshold: self.sleep_threshold,
+            gravity_scale: self.gravity_scale,
+            enable_sleep: self.enable_sleep,
+            awake: self.awake,
+            bullet: self.bullet,
+            allow_fast_rotation: self.allow_fast_rotation,
+            motion_locks: self.motion_locks,
+            enable_contact_recycling: self.enable_contact_recycling,
+            enabled: self.enabled,
+            length_units_per_meter: self.length_scale.units_per_meter(),
         };
         r.serialize(serializer)
     }
@@ -572,90 +559,109 @@ impl serde::Serialize for BodyDef {
 
 #[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for BodyDef {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct Repr {
-            #[serde(default)]
             name: Option<String>,
-            body_type: BodyType,
-            position: crate::types::Position,
-            angle: f32,
-            linear_velocity: crate::types::Vec2,
-            angular_velocity: f32,
-            linear_damping: f32,
-            angular_damping: f32,
-            #[serde(default = "default_sleep_threshold")]
-            sleep_threshold: f32,
-            gravity_scale: f32,
-            enable_sleep: bool,
-            awake: bool,
-            bullet: bool,
-            allow_fast_rotation: bool,
-            #[serde(default)]
-            motion_locks: MotionLocks,
-            #[serde(default = "default_contact_recycling")]
-            enable_contact_recycling: bool,
-            enabled: bool,
+            body_type: Option<BodyType>,
+            position: Option<crate::types::Position>,
+            angle: Option<f32>,
+            linear_velocity: Option<crate::types::Vec2>,
+            angular_velocity: Option<f32>,
+            linear_damping: Option<f32>,
+            angular_damping: Option<f32>,
+            sleep_threshold: Option<f32>,
+            gravity_scale: Option<f32>,
+            enable_sleep: Option<bool>,
+            awake: Option<bool>,
+            bullet: Option<bool>,
+            allow_fast_rotation: Option<bool>,
+            motion_locks: Option<MotionLocks>,
+            enable_contact_recycling: Option<bool>,
+            enabled: Option<bool>,
+            length_units_per_meter: f32,
         }
-        fn default_contact_recycling() -> bool {
-            true
-        }
-        fn default_sleep_threshold() -> f32 {
-            BodyDef::default().sleep_threshold()
-        }
-        let r = Repr::deserialize(deserializer)?;
-        let mut b = BodyBuilder::new()
-            .body_type(r.body_type)
-            .position(r.position)
-            .angle(r.angle)
-            .linear_velocity(r.linear_velocity)
-            .angular_velocity(r.angular_velocity)
-            .linear_damping(r.linear_damping)
-            .angular_damping(r.angular_damping)
-            .sleep_threshold(r.sleep_threshold)
-            .gravity_scale(r.gravity_scale)
-            .enable_sleep(r.enable_sleep)
-            .awake(r.awake)
-            .bullet(r.bullet)
-            .allow_fast_rotation(r.allow_fast_rotation)
-            .motion_locks(r.motion_locks)
-            .enable_contact_recycling(r.enable_contact_recycling)
-            .enabled(r.enabled);
+        let r = <Repr as serde::Deserialize>::deserialize(deserializer)?;
+        let length_scale = crate::core::length_scale::LengthScale::try_new(
+            r.length_units_per_meter,
+        )
+        .ok_or_else(|| {
+            serde::de::Error::custom(
+                "length_units_per_meter must preserve safe Box2D ray and shape tolerances",
+            )
+        })?;
+        let mut b = BodyDef::with_length_scale(length_scale);
         if let Some(name) = r.name {
-            b = b.try_name(&name).map_err(serde::de::Error::custom)?;
+            b.set_name(Some(
+                super::check_valid_body_name("BodyDef::deserialize", &name)
+                    .map_err(serde::de::Error::custom)?,
+            ));
         }
-        Ok(b.build())
-    }
-}
-
-impl Default for BodyBuilder {
-    fn default() -> Self {
-        Self::new()
+        if let Some(value) = r.body_type {
+            b.body_type = value;
+        }
+        if let Some(value) = r.position {
+            b.position = value;
+        }
+        if let Some(value) = r.angle {
+            b.rotation = crate::Rot::from_radians(value).map_err(serde::de::Error::custom)?;
+        }
+        if let Some(value) = r.linear_velocity {
+            b.linear_velocity = value;
+        }
+        if let Some(value) = r.angular_velocity {
+            b.angular_velocity = value;
+        }
+        if let Some(value) = r.linear_damping {
+            b.linear_damping = value;
+        }
+        if let Some(value) = r.angular_damping {
+            b.angular_damping = value;
+        }
+        if let Some(value) = r.sleep_threshold {
+            b.sleep_threshold = value;
+        }
+        if let Some(value) = r.gravity_scale {
+            b.gravity_scale = value;
+        }
+        if let Some(value) = r.enable_sleep {
+            b.enable_sleep = value;
+        }
+        if let Some(value) = r.awake {
+            b.awake = value;
+        }
+        if let Some(value) = r.bullet {
+            b.bullet = value;
+        }
+        if let Some(value) = r.allow_fast_rotation {
+            b.allow_fast_rotation = value;
+        }
+        if let Some(value) = r.motion_locks {
+            b.motion_locks = value;
+        }
+        if let Some(value) = r.enable_contact_recycling {
+            b.enable_contact_recycling = value;
+        }
+        if let Some(value) = r.enabled {
+            b.enabled = value;
+        }
+        b.validate().map_err(serde::de::Error::custom)?;
+        Ok(b)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{BodyBuilder, BodyDef, BodyType};
-    use crate::{ApiError, MotionLocks};
+    use super::BodyType;
+    use crate::{Error, Foundation, MotionLocks};
     use boxdd_sys::ffi;
 
-    #[test]
-    fn body_type_rejects_unknown_ffi_discriminants() {
-        let unknown = ffi::b2BodyType_b2_bodyTypeCount;
-
-        assert_eq!(BodyType::from_raw(unknown), None);
-        assert_eq!(BodyType::try_from(unknown), Err(unknown));
-
-        let mut raw = unsafe { ffi::b2DefaultBodyDef() };
-        raw.type_ = unknown;
-        // SAFETY: the default raw definition has no name pointer, and this test only changes the
-        // body-type discriminant to exercise the checked conversion.
-        let definition = unsafe { BodyDef::from_raw(raw) };
-        assert_eq!(definition.body_type(), None);
+    fn foundation() -> &'static Foundation {
+        Foundation::get().unwrap_or_else(|| Foundation::initialize_default().unwrap())
     }
 
     #[test]
@@ -667,45 +673,79 @@ mod tests {
         let raw = ffi::b2BodyType_b2_bodyTypeCount;
         assert_eq!(
             BodyType::decode_native(raw),
-            Err(ApiError::InvalidNativeBodyType { raw })
+            Err(Error::InvalidNativeBodyType { raw })
         );
     }
 
     #[test]
-    fn body_builder_allow_fast_rotation_sets_raw_field() {
-        assert!(!BodyBuilder::new().build().0.allowFastRotation);
+    fn body_builder_configures_fast_rotation() {
         assert!(
-            BodyBuilder::new()
+            !foundation()
+                .body_builder()
+                .build()
+                .unwrap()
+                .is_fast_rotation_allowed()
+        );
+        assert!(
+            foundation()
+                .body_builder()
                 .allow_fast_rotation(true)
                 .build()
-                .0
-                .allowFastRotation
+                .unwrap()
+                .is_fast_rotation_allowed()
         );
     }
 
     #[test]
     fn body_builder_contact_recycling_defaults_on_and_can_disable() {
-        let default = BodyBuilder::new().build();
+        let default = foundation().body_builder().build().unwrap();
         assert!(default.is_contact_recycling_enabled());
 
-        let disabled = BodyBuilder::new().enable_contact_recycling(false).build();
+        let disabled = foundation()
+            .body_builder()
+            .enable_contact_recycling(false)
+            .build()
+            .unwrap();
         assert!(!disabled.is_contact_recycling_enabled());
-        assert!(!disabled.0.enableContactRecycling);
     }
 
     #[test]
     fn body_builder_motion_locks_round_trip() {
         let locks = MotionLocks::new(true, false, true);
-        let definition = BodyBuilder::new().motion_locks(locks).build();
+        let definition = foundation()
+            .body_builder()
+            .motion_locks(locks)
+            .build()
+            .unwrap();
 
         assert_eq!(definition.motion_locks(), locks);
+    }
+
+    #[test]
+    fn body_builder_rejects_invalid_draft_at_build() {
+        assert_eq!(
+            foundation()
+                .body_builder()
+                .linear_damping(-1.0)
+                .build()
+                .unwrap_err(),
+            Error::invalid_argument(
+                "BodyDef::validate",
+                "linear_damping",
+                "a finite value greater than or equal to zero",
+            )
+        );
     }
 
     #[cfg(feature = "serde")]
     #[test]
     fn body_definition_serde_preserves_motion_locks() {
         let locks = MotionLocks::new(true, false, true);
-        let definition = BodyBuilder::new().motion_locks(locks).build();
+        let definition = foundation()
+            .body_builder()
+            .motion_locks(locks)
+            .build()
+            .unwrap();
         let encoded = serde_json::to_string(&definition).unwrap();
         let decoded: super::BodyDef = serde_json::from_str(&encoded).unwrap();
 

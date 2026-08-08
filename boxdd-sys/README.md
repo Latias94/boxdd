@@ -49,7 +49,7 @@ extracted directory, re-verifies the statement, manifest, and complete member in
 the exact verified static archive bytes. It never discovers a library by name. Missing or
 inconsistent provenance fails closed. `PROVIDER_PROVENANCE_SHA256` reports the SHA-256 of the
 verified signed statement, not the Sigstore bundle. A caller who explicitly trusts a local package
-can run the package helper's `trust-local-system` command and select the `system` adapter; that
+can run `xtask`'s `native-package trust-local-system` command and select the `system` adapter; that
 manifest deliberately carries no authenticated provenance claim.
 
 The Sigstore trust anchor is shipped in the crate and pinned by SHA-256. The optional
@@ -60,37 +60,47 @@ Generate a caller-trusted manifest directly from a compatible local archive, hea
 file with:
 
 ```text
-cargo run -p boxdd-sys --features package-bin --bin package -- \
-  attest-local-system \
+cargo run -p xtask -- native-package attest-local-system \
+  /boxdd-sys-out/boxdd-build-identity.toml \
   /provider-root/lib/libbox2d.a \
   /provider-root/include/box2d/box2d.h \
   /provider-root/bindings/bindings_pregenerated.rs \
   /provider-root/manifest.toml
 ```
 
-All three inputs must be regular files below the output manifest's directory. The command creates
-the manifest without overwriting an existing file. It proves exact compatibility with this crate;
-it does not authenticate who produced the archive. `trust-local-system` performs the same explicit
-trust conversion for an already verified prebuilt package manifest.
+The build identity must be the explicit schema-v3 marker emitted by `boxdd-sys/build.rs`, and its
+adjacent adapter identity must match. Native markers bind the full static-archive SHA-256, so the
+attestation command rejects a different archive even when its embedded ABI identity is compatible.
+All three provider inputs must be regular files below the output manifest's directory. The command
+creates the manifest without overwriting an existing file. It proves exact compatibility with this
+crate; it does not authenticate who produced the archive. `trust-local-system` performs the same
+explicit trust conversion for an already verified prebuilt package manifest.
 
-Release packaging requires `BOXDD_SYS_PACKAGE_SOURCE_COMMIT` and
-`BOXDD_SYS_PACKAGE_RELEASE_TAG` (the corresponding GitHub Actions variables are accepted). Package
-names include target, precision, static link kind, and applicable CRT identity.
+Release packaging is repository tooling, not part of the published FFI crate. It requires explicit
+`--sys-out`, `--build-identity`, `--output`, `--source-commit`, and `--release-tag` arguments to
+`cargo run -p xtask -- native-package build`. Package names include target, precision, static link
+kind, and applicable CRT identity. Package headers come from the reviewed materialized effective
+source, including public-header transformations, rather than from the unmodified submodule tree.
 
 ## WASM (experimental)
 - Targets
-  - `wasm32-unknown-unknown`: compile-only by default, or use `BOXDD_SYS_PROVIDER=wasm-provider` to import Box2D symbols from a browser/Emscripten provider module.
+  - `wasm32-unknown-unknown`: compile-only by default; repository `xtask` runtime and Pages entry points can build the controlled provider route that imports Box2D symbols from a browser/Emscripten provider module.
   - `wasm32-wasip1`: compile-only qualification only; no WASI runtime is claimed.
 - Modes
   - `BOXDD_SYS_PROVIDER=wasm-compile-only`: generate/check bindings and skip native C linkage.
-  - `BOXDD_SYS_PROVIDER=wasm-provider`: import symbols from the precision-specific `box2d-sys-v1-single` or `box2d-sys-v1-double` module on `wasm32-unknown-unknown` only; `wasm32-wasip1` and Emscripten-target Rust builds are rejected. Official provider bytes are built with the pinned Emscripten 6.0.3 SDK, but consuming them does not require that SDK.
+  - `wasm-provider`: import symbols from the precision-specific `box2d-sys-v2-single` or `box2d-sys-v2-double` module on `wasm32-unknown-unknown` only; `wasm32-wasip1` and Emscripten-target Rust builds are rejected. This is a controlled final-binary route: setting only `BOXDD_SYS_PROVIDER=wasm-provider` is deliberately rejected because dependency build scripts cannot configure an arbitrary downstream final link. Use the repository `xtask` provider, runtime, Pages, or package-consumer entry points, which inject the versioned opt-in and complete linker arguments together and validate the final Wasm. Official provider bytes are built with the pinned Emscripten 6.0.4 SDK, but consuming them does not require that SDK.
 - Notes
   - There is no WASM prebuilt adapter consumed while building `boxdd-sys`. Official
     precision-specific JavaScript/WASM runtime packages are built, authenticated, extracted, and
     qualified by repository-level `xtask` commands and CI.
   - Emscripten builds the standalone C provider only. Rust applications target `wasm32-unknown-unknown`; `wasm32-unknown-emscripten` Rust builds are not supported.
-  - `wasm-provider` consumes the precision-specific checked-in contract under `abi/`; building this crate never discovers, downloads, extracts, caches, or executes Emscripten. Repository source-provider builds, runtime smoke tests, and Pages builds use the SDK pinned by `xtask/toolchains/emscripten-sdk.toml`; signed-package qualification consumes existing JavaScript/WASM bytes and does not use the SDK.
-  - Maintainers validate both checked contracts with `cargo run -p xtask -- wasm-provider-contract --check` and atomically refresh the pair with `--write`; ordinary consumers do neither.
+  - Provider ABI v2 uses fixed, non-overlapping memory partitions. Emscripten static data, stack,
+    and `emmalloc` stay below 64 MiB; Rust data, stack, and `System` allocation start at 64 MiB.
+    The provider cannot grow memory or cross the partition boundary. Production allocation-driven
+    growth belongs to Rust, up to the shared 512 MiB maximum. Final-Wasm validation checks both
+    layouts, exact memory limits, data segments, provider growth instructions, and the Rust heap end.
+  - `wasm-provider` consumes the precision-specific checked-in contract under `abi/`; building this crate never discovers, downloads, extracts, caches, or executes Emscripten. Repository source-provider builds, runtime smoke tests, and Pages builds use an activated Emscripten 6.0.4 toolchain; signed-package qualification consumes existing JavaScript/WASM bytes and does not use Emscripten.
+  - Maintainers validate both checked contracts with `cargo run -p xtask -- wasm-provider-contract --check` and refresh both with `--write`; each output is installed atomically, while Git remains the recovery mechanism if a run stops between files. Ordinary consumers do neither.
   - Node and Chromium provider smoke tests verify the runtime adapter identity and all required adapter symbols in both precision modes. GitHub Pages currently qualifies single precision only and rejects `BOXDD_WASM_PRECISION=double`.
   - The high-level `boxdd` crate removes Rust callback-table entry points on `wasm32`. The current provider does not qualify cross-module function pointers for world callbacks, callback-backed queries/tree traversal, raw task callbacks, replay mixers, or debug draw.
   - Bindgen requires libclang.
@@ -110,18 +120,17 @@ regular, non-symlink file, whose SHA-256 is
 is pinned to SHA-256
 `0e80041ea13b42db5bcd5dc92d737da7c26e4e5a60b902413a41e09924f37687`.
 
-Maintainers refreshing generated routes must provide that exact sysroot:
+Maintainers refreshing checked-in bindings must provide that exact sysroot:
 
 ```text
 BOXDD_SYS_WASI_SYSROOT=/path/to/wasi-libc-32/sysroot \
-  cargo run -p xtask -- upstream-sync --refresh-routes
+  cargo run -p xtask -- upstream-sync --write
 ```
 
 ## Features
 - `simd-avx2`: enable AVX2 on x86_64.
 - `disable-simd`: disable all SIMD; overrides `simd-avx2`.
 - `validate`: enable internal validation checks.
-- `package-bin`: enable the internal `bin/package` helper used by CI to package prebuilt artifacts.
 
 ## Notes
 - Requires a C toolchain. Bindgen requires `libclang` only when forced (`BOXDD_SYS_FORCE_BINDGEN=1`).

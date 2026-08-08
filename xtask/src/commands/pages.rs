@@ -7,24 +7,37 @@ use std::{
 };
 use wasm_bindgen_cli_support::Bindgen;
 
+// The generated Pages index and the interactive example must consume the same scene catalog.
+// Keeping it example-owned avoids adding testbed metadata to the published Bevy library surface.
+#[allow(dead_code)]
+#[path = "../../../bevy_boxdd/examples/testbed_2d/scene_catalog.rs"]
+mod testbed_scene_catalog;
+
 use crate::{
     Error, Result,
+    build_support::VerifiedFileSnapshot,
     config::{write_atomic, write_atomic_bytes},
-    emscripten_sdk::{QualifiedEmscriptenSdk, SDK_CONTRACT_RELATIVE_PATH, SdkContract},
+    emscripten_sdk::{EMSCRIPTEN_VERSION, EmscriptenTools},
+    isolated_git::isolated_git_command,
     provenance_policy::PUBLISHER_REPOSITORY,
-    provider_manifest::{self, ADAPTER_ABI_VERSION, RECORDING_CONTRACT_BLAKE3},
-    qualified_git::qualified_git_command,
+    provider_catalog::ProviderCapability,
+    provider_manifest::{
+        self, ADAPTER_ABI_VERSION, MAX_PROVIDER_BINDINGS_BYTES, RECORDING_CONTRACT_BLAKE3,
+    },
     source_overlay::{adapter_source_sha256, effective_source_identity},
+    subprocess_policy::run_output,
     wasm_provider_contract::{
         COMPILER_TARGET, ENDIANNESS, POINTER_WIDTH, PROVIDER_ABI, SIMD_MODE,
         WasmProviderExpectation, WasmProviderIdentity, contract_relative_path,
     },
+    wasm_provider_gate,
+    wasm_provider_memory::{INITIAL_MEMORY_PAGES, MAXIMUM_MEMORY_PAGES},
 };
 
 use super::{
     provider::{
         ProviderPrecision, build_box2d_provider, collect_provider_imports, provider_smoke_dir,
-        provider_toolchain_contract, qualified_provider_sdk, write_exports_json,
+        qualified_provider_sdk, write_exports_json,
     },
     support::{
         BuildProfile, QualifiedCargo, WASM_TARGET, add_wasm_app_link_args, copy_file, ensure_file,
@@ -36,8 +49,8 @@ use super::{
 const PAGES_WASM_OPT_ENV: &str = "BOXDD_PAGES_WASM_OPT";
 const PAGES_WASM_DIR: &str = "wasm/generated";
 const BEVY_EXAMPLES_DIR: &str = "examples";
-const BEVY_WEB_EXAMPLE: &str = "testbed_2d";
-const BEVY_WEB_OUT_DIR: &str = "bevy-testbed/generated";
+pub(super) const BEVY_WEB_EXAMPLE: &str = "testbed_2d";
+const BEVY_WEB_OUT_DIR: &str = "bevy-testbed/generated-v2";
 const BEVY_WEB_OUT_NAME: &str = "bevy_boxdd_testbed";
 const BEVY_WEB_JS: &str = "bevy_boxdd_testbed.js";
 const BEVY_WEB_WASM: &str = "bevy_boxdd_testbed_bg.wasm";
@@ -46,7 +59,9 @@ const PAGES_RUNTIME_MANIFEST: &str = "wasm/generated/boxdd-pages-runtime-v2.json
 const PAGES_RUNTIME_SCHEMA: &str = "boxdd-pages-runtime-v2";
 const PAGES_RUNTIME_SCHEMA_VERSION: u64 = 2;
 const PAGES_PUBLISHER_WORKFLOW: &str = ".github/workflows/pages.yml";
-const JAVASCRIPT_MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+const MAX_PAGES_RUNTIME_MANIFEST_BYTES: u64 = 1024 * 1024;
+const MAX_PAGES_RUNTIME_ASSET_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_PAGES_RUNTIME_TOTAL_ASSET_BYTES: u64 = 512 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct PagesAssetSpec {
@@ -57,26 +72,25 @@ struct PagesAssetSpec {
 const PAGES_RUNTIME_ASSETS: [PagesAssetSpec; 5] = [
     PagesAssetSpec {
         role: "provider_js",
-        path: "wasm/generated/box2d-sys-v1-single.js",
+        path: "wasm/generated/box2d-sys-v2-single.js",
     },
     PagesAssetSpec {
         role: "provider_wasm",
-        path: "wasm/generated/box2d-sys-v1-single.wasm",
+        path: "wasm/generated/box2d-sys-v2-single.wasm",
     },
     PagesAssetSpec {
         role: "app_js",
-        path: "bevy-testbed/generated/bevy_boxdd_testbed.js",
+        path: "bevy-testbed/generated-v2/bevy_boxdd_testbed.js",
     },
     PagesAssetSpec {
         role: "app_wasm",
-        path: "bevy-testbed/generated/bevy_boxdd_testbed_bg.wasm",
+        path: "bevy-testbed/generated-v2/bevy_boxdd_testbed_bg.wasm",
     },
     PagesAssetSpec {
         role: "provider_shim_js",
-        path: "bevy-testbed/generated/box2d-provider-shim.js",
+        path: "bevy-testbed/generated-v2/box2d-provider-shim.js",
     },
 ];
-
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 struct PagesRuntimeManifest {
@@ -93,7 +107,7 @@ struct PagesRuntimeManifest {
     source_tree: String,
     effective_source_sha256: String,
     adapter_source_sha256: String,
-    emscripten_sdk_contract_sha256: String,
+    emscripten_version: String,
     wasm_provider_contract_sha256: String,
     recording_contract_blake3: String,
     precision: String,
@@ -117,29 +131,17 @@ struct PagesRuntimeIdentity {
     source_tree: String,
     effective_source_sha256: String,
     adapter_source_sha256: String,
-    emscripten_sdk_contract_sha256: String,
+    emscripten_version: String,
     wasm_provider_contract_sha256: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct PagesLoaderTrust {
-    manifest_sha256: String,
+struct PagesLoaderContract {
     schema_version: u64,
     schema: String,
-    publisher_repository: String,
-    publisher_workflow: String,
     provider: String,
     provider_abi: String,
     adapter_abi_version: u64,
-    crate_version: String,
-    source_commit: String,
-    upstream_sha: String,
-    source_tree: String,
-    effective_source_sha256: String,
-    adapter_source_sha256: String,
-    emscripten_sdk_contract_sha256: String,
-    wasm_provider_contract_sha256: String,
-    recording_contract_blake3: String,
     precision: String,
     target: String,
 }
@@ -156,23 +158,7 @@ struct RegistrySample {
 struct RegistryUpstreamSample {
     category: String,
     name: String,
-    mode: String,
-}
-
-#[derive(Debug, Default)]
-struct PageSampleBuilder {
-    id: Option<String>,
-    category: Option<String>,
-    name: Option<String>,
-    description: Option<String>,
-    upstream: Vec<RegistryUpstreamSample>,
-}
-
-#[derive(Debug, Default)]
-struct UpstreamSampleBuilder {
-    category: Option<String>,
-    name: Option<String>,
-    mode: Option<String>,
+    style: testbed_scene_catalog::PortStyle,
 }
 
 struct BevyWebArtifacts {
@@ -195,21 +181,45 @@ pub(crate) fn build_pages_wasm(root: &Path) -> Result<()> {
     validate_pages_precision(precision)?;
     let sdk = qualified_provider_sdk()?;
     let identity = pages_runtime_identity(root, precision)?;
-    if identity.emscripten_sdk_contract_sha256 != sdk.contract_sha256() {
+    if identity.emscripten_version != sdk.version() {
         return Err(Error::Message(
-            "qualified Emscripten SDK contract does not match the Pages source identity".to_owned(),
+            "Emscripten version does not match the Pages source identity".to_owned(),
         ));
     }
-    provider_toolchain_contract()?;
     generate_pages(root)?;
     let bevy_artifacts = build_bevy_web_app(root, &target_dir, &cargo, &sdk, precision)?;
     let out_dir = provider_smoke_dir(&target_dir);
-    let exports = write_exports_json(&out_dir, &bevy_artifacts.imports)?;
+    let exports = write_exports_json(root, &out_dir, &bevy_artifacts.imports, precision)?;
     let provider = build_box2d_provider(root, &out_dir, &exports, &sdk, precision)?;
     let provider_wasm = provider.with_extension("wasm");
     ensure_file(&provider, "Box2D provider module")?;
     ensure_file(&provider_wasm, "Box2D provider wasm")?;
     optimize_wasm_if_available(&sdk, &provider_wasm, "Box2D provider wasm")?;
+    let optimized_provider =
+        fs::read(&provider_wasm).map_err(|source| Error::io(&provider_wasm, source))?;
+    let expected_exports = super::provider::read_exports_json(&exports)?;
+    wasm_provider_gate::validate_provider(&optimized_provider, &expected_exports).map_err(
+        |error| {
+            Error::Message(format!(
+                "optimized Pages provider Wasm memory/export contract failed for {}: {error}",
+                provider_wasm.display()
+            ))
+        },
+    )?;
+    let bevy_wasm = bevy_artifacts.out_dir.join(BEVY_WEB_WASM);
+    let consumer_bytes = fs::read(&bevy_wasm).map_err(|source| Error::io(&bevy_wasm, source))?;
+    wasm_provider_gate::validate_consumer_provider_signatures(
+        &consumer_bytes,
+        &optimized_provider,
+        precision.module(),
+    )
+    .map_err(|error| {
+        Error::Message(format!(
+            "Pages consumer/provider function contract failed for {} and {}: {error}",
+            bevy_wasm.display(),
+            provider_wasm.display()
+        ))
+    })?;
 
     let generated = pages_wasm_generated_dir(root);
     replace_dir_under(&generated, &root.join("docs/pages"))?;
@@ -224,9 +234,9 @@ pub(crate) fn build_pages_wasm(root: &Path) -> Result<()> {
     copy_bevy_web_artifacts(root, &bevy_artifacts)?;
     ensure_pages_source_state(root, precision, &identity)?;
     sdk.revalidate().map_err(Error::Message)?;
-    let (manifest, manifest_sha256) = write_pages_runtime_manifest(root, precision, &identity)?;
-    let trust = PagesLoaderTrust::from_manifest(&manifest, manifest_sha256);
-    write_bevy_testbed_loader(root, Some(&trust))?;
+    let manifest = write_pages_runtime_manifest(root, precision, &identity)?;
+    let contract = PagesLoaderContract::from_manifest(&manifest);
+    write_bevy_testbed_loader(root, Some(&contract))?;
     ensure_pages_source_state(root, precision, &identity)?;
 
     println!(
@@ -264,26 +274,14 @@ impl PagesRuntimeManifest {
     }
 }
 
-impl PagesLoaderTrust {
-    fn from_manifest(manifest: &PagesRuntimeManifest, manifest_sha256: String) -> Self {
+impl PagesLoaderContract {
+    fn from_manifest(manifest: &PagesRuntimeManifest) -> Self {
         Self {
-            manifest_sha256,
             schema_version: manifest.schema_version,
             schema: manifest.schema.clone(),
-            publisher_repository: manifest.publisher_repository.clone(),
-            publisher_workflow: manifest.publisher_workflow.clone(),
             provider: manifest.provider.clone(),
             provider_abi: manifest.provider_abi.clone(),
             adapter_abi_version: manifest.adapter_abi_version,
-            crate_version: manifest.crate_version.clone(),
-            source_commit: manifest.source_commit.clone(),
-            upstream_sha: manifest.upstream_sha.clone(),
-            source_tree: manifest.source_tree.clone(),
-            effective_source_sha256: manifest.effective_source_sha256.clone(),
-            adapter_source_sha256: manifest.adapter_source_sha256.clone(),
-            emscripten_sdk_contract_sha256: manifest.emscripten_sdk_contract_sha256.clone(),
-            wasm_provider_contract_sha256: manifest.wasm_provider_contract_sha256.clone(),
-            recording_contract_blake3: manifest.recording_contract_blake3.clone(),
             precision: manifest.precision.clone(),
             target: manifest.target.clone(),
         }
@@ -323,7 +321,7 @@ fn pages_runtime_identity(
         source_tree: effective.source_tree,
         effective_source_sha256: effective.effective_source_sha256,
         adapter_source_sha256,
-        emscripten_sdk_contract_sha256: pages_sdk_contract_sha256(root)?,
+        emscripten_version: EMSCRIPTEN_VERSION.to_owned(),
         wasm_provider_contract_sha256,
     })
 }
@@ -340,7 +338,14 @@ fn pages_provider_contract_sha256(
     let bindings = root
         .join("boxdd-sys/src")
         .join(precision.wasm_bindings_file());
-    let bindings_sha256 = provider_manifest::sha256_file(&bindings).map_err(Error::Message)?;
+    let bindings_sha256 = VerifiedFileSnapshot::read(
+        &bindings,
+        MAX_PROVIDER_BINDINGS_BYTES,
+        "Pages WASM bindings",
+    )
+    .map_err(Error::Message)?
+    .sha256()
+    .to_owned();
     let (_, source) = WasmProviderIdentity::load_with_source_bytes(
         &root.join("boxdd-sys"),
         Path::new(relative),
@@ -366,27 +371,6 @@ fn pages_provider_contract_sha256(
     Ok(provider_manifest::sha256_bytes(&source))
 }
 
-fn pages_sdk_contract_sha256(root: &Path) -> Result<String> {
-    let path = root.join("xtask").join(SDK_CONTRACT_RELATIVE_PATH);
-    let metadata = fs::symlink_metadata(&path).map_err(|source| Error::io(&path, source))?;
-    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
-        return Err(Error::Message(format!(
-            "Pages Emscripten SDK contract must be a regular non-symlink file: {}",
-            path.display()
-        )));
-    }
-    let bytes = fs::read(&path).map_err(|source| Error::io(&path, source))?;
-    let source = std::str::from_utf8(&bytes).map_err(|error| {
-        Error::Message(format!(
-            "Pages Emscripten SDK contract is not UTF-8: {error}"
-        ))
-    })?;
-    SdkContract::parse(source).map_err(|error| {
-        Error::Message(format!("Pages Emscripten SDK contract is invalid: {error}"))
-    })?;
-    Ok(provider_manifest::sha256_bytes(&bytes))
-}
-
 fn pages_source_commit(root: &Path) -> Result<String> {
     let commit = git_stdout(
         root,
@@ -395,21 +379,8 @@ fn pages_source_commit(root: &Path) -> Result<String> {
     )?;
     validate_lower_hex("Pages source commit", &commit, 40)?;
     if env::var("GITHUB_ACTIONS").ok().as_deref() == Some("true") {
-        let github_repository = required_environment("GITHUB_REPOSITORY")?;
-        if github_repository != PUBLISHER_REPOSITORY {
-            return Err(Error::Message(format!(
-                "Pages publisher repository {github_repository:?} does not match {PUBLISHER_REPOSITORY:?}"
-            )));
-        }
-        let workflow_ref = required_environment("GITHUB_WORKFLOW_REF")?;
-        let expected_workflow_ref =
-            format!("{PUBLISHER_REPOSITORY}/{PAGES_PUBLISHER_WORKFLOW}@refs/heads/main");
-        if workflow_ref != expected_workflow_ref {
-            return Err(Error::Message(format!(
-                "Pages workflow identity {workflow_ref:?} does not match {expected_workflow_ref:?}"
-            )));
-        }
-        let github_sha = required_environment("GITHUB_SHA")?;
+        let github_sha = env::var("GITHUB_SHA")
+            .map_err(|_| Error::Message("GitHub Pages requires GITHUB_SHA".to_owned()))?;
         validate_lower_hex("GITHUB_SHA", &github_sha, 40)?;
         if github_sha != commit {
             return Err(Error::Message(format!(
@@ -418,20 +389,6 @@ fn pages_source_commit(root: &Path) -> Result<String> {
         }
     }
     Ok(commit)
-}
-
-fn required_environment(name: &str) -> Result<String> {
-    env::var(name)
-        .map_err(|_| Error::Message(format!("GitHub Pages requires non-empty {name}")))
-        .and_then(|value| {
-            if value.is_empty() {
-                Err(Error::Message(format!(
-                    "GitHub Pages requires non-empty {name}"
-                )))
-            } else {
-                Ok(value)
-            }
-        })
 }
 
 fn ensure_pages_build_inputs_clean(root: &Path) -> Result<()> {
@@ -474,13 +431,9 @@ fn ensure_pages_source_state(
 }
 
 fn git_stdout(root: &Path, args: &[&str], label: &str) -> Result<String> {
-    let mut command = qualified_git_command().map_err(Error::Message)?;
-    let output = command
-        .arg("-C")
-        .arg(root)
-        .args(args)
-        .output()
-        .map_err(|error| Error::Message(format!("failed to {label}: {error}")))?;
+    let mut command = isolated_git_command().map_err(Error::Message)?;
+    command.arg("-C").arg(root).args(args);
+    let output = run_output(&mut command, label).map_err(Error::Message)?;
     if !output.status.success() {
         return Err(Error::Message(format!(
             "failed to {label}: {}",
@@ -496,7 +449,7 @@ fn write_pages_runtime_manifest(
     root: &Path,
     precision: ProviderPrecision,
     identity: &PagesRuntimeIdentity,
-) -> Result<(PagesRuntimeManifest, String)> {
+) -> Result<PagesRuntimeManifest> {
     let pages_dir = root.join("docs/pages");
     let assets = PAGES_RUNTIME_ASSETS
         .iter()
@@ -516,7 +469,7 @@ fn write_pages_runtime_manifest(
         source_tree: identity.source_tree.clone(),
         effective_source_sha256: identity.effective_source_sha256.clone(),
         adapter_source_sha256: identity.adapter_source_sha256.clone(),
-        emscripten_sdk_contract_sha256: identity.emscripten_sdk_contract_sha256.clone(),
+        emscripten_version: identity.emscripten_version.clone(),
         wasm_provider_contract_sha256: identity.wasm_provider_contract_sha256.clone(),
         recording_contract_blake3: RECORDING_CONTRACT_BLAKE3.to_owned(),
         precision: precision.as_str().to_owned(),
@@ -528,33 +481,47 @@ fn write_pages_runtime_manifest(
     let path = pages_runtime_manifest_path(root);
     ensure_pages_output_parent(root, &path)?;
     write_atomic_bytes(&path, &bytes)?;
-    Ok((manifest, provider_manifest::sha256_bytes(&bytes)))
+    Ok(manifest)
 }
 
 fn pages_runtime_asset(pages_dir: &Path, spec: PagesAssetSpec) -> Result<PagesRuntimeAsset> {
     let path = pages_dir.join(spec.path);
-    let metadata = fs::symlink_metadata(&path).map_err(|source| Error::io(&path, source))?;
-    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
-        return Err(Error::Message(format!(
-            "Pages runtime asset must be a regular non-symlink file: {}",
-            path.display()
-        )));
-    }
-    validate_pages_asset_byte_length(&path, metadata.len())?;
+    let snapshot =
+        VerifiedFileSnapshot::read(&path, MAX_PAGES_RUNTIME_ASSET_BYTES, "Pages runtime asset")
+            .map_err(Error::Message)?;
+    let byte_length = u64::try_from(snapshot.len())
+        .map_err(|_| Error::Message("Pages runtime asset length does not fit in u64".to_owned()))?;
+    validate_pages_asset_byte_length(&path, byte_length)?;
     Ok(PagesRuntimeAsset {
         role: spec.role.to_owned(),
         path: spec.path.to_owned(),
-        byte_length: metadata.len(),
-        sha256: provider_manifest::sha256_file(&path).map_err(Error::Message)?,
+        byte_length,
+        sha256: snapshot.sha256().to_owned(),
     })
 }
 
 fn validate_pages_asset_byte_length(path: &Path, byte_length: u64) -> Result<()> {
-    if byte_length == 0 || byte_length > JAVASCRIPT_MAX_SAFE_INTEGER {
+    if byte_length == 0 || byte_length > MAX_PAGES_RUNTIME_ASSET_BYTES {
         return Err(Error::Message(format!(
-            "Pages runtime asset byte length must be within 1..={JAVASCRIPT_MAX_SAFE_INTEGER}: {}",
+            "Pages runtime asset byte length must be within 1..={MAX_PAGES_RUNTIME_ASSET_BYTES}: {}",
             path.display()
         )));
+    }
+    Ok(())
+}
+
+fn validate_pages_runtime_asset_budget(assets: &[PagesRuntimeAsset]) -> Result<()> {
+    let mut total = 0_u64;
+    for asset in assets {
+        validate_pages_asset_byte_length(Path::new(&asset.path), asset.byte_length)?;
+        total = total.checked_add(asset.byte_length).ok_or_else(|| {
+            Error::Message("Pages runtime asset cohort byte length overflow".to_owned())
+        })?;
+        if total > MAX_PAGES_RUNTIME_TOTAL_ASSET_BYTES {
+            return Err(Error::Message(format!(
+                "Pages runtime asset cohort exceeds the {MAX_PAGES_RUNTIME_TOTAL_ASSET_BYTES}-byte limit"
+            )));
+        }
     }
     Ok(())
 }
@@ -563,6 +530,7 @@ fn validate_pages_runtime_manifest_identity(
     manifest: &PagesRuntimeManifest,
     identity: &PagesRuntimeIdentity,
 ) -> Result<()> {
+    validate_pages_runtime_asset_budget(&manifest.assets)?;
     if manifest.schema_version != PAGES_RUNTIME_SCHEMA_VERSION
         || manifest.schema != PAGES_RUNTIME_SCHEMA
     {
@@ -618,12 +586,6 @@ fn validate_pages_runtime_manifest_identity(
             64,
         ),
         (
-            "emscripten_sdk_contract_sha256",
-            manifest.emscripten_sdk_contract_sha256.as_str(),
-            identity.emscripten_sdk_contract_sha256.as_str(),
-            64,
-        ),
-        (
             "wasm_provider_contract_sha256",
             manifest.wasm_provider_contract_sha256.as_str(),
             identity.wasm_provider_contract_sha256.as_str(),
@@ -636,6 +598,14 @@ fn validate_pages_runtime_manifest_identity(
                 "Pages runtime manifest {label} {actual} does not match {expected}"
             )));
         }
+    }
+    if manifest.emscripten_version != EMSCRIPTEN_VERSION
+        || manifest.emscripten_version != identity.emscripten_version
+    {
+        return Err(Error::Message(format!(
+            "Pages runtime manifest Emscripten version {:?} does not match {:?}",
+            manifest.emscripten_version, identity.emscripten_version
+        )));
     }
     Ok(())
 }
@@ -681,14 +651,14 @@ fn build_bevy_web_app(
     root: &Path,
     target_dir: &Path,
     cargo: &QualifiedCargo,
-    sdk: &QualifiedEmscriptenSdk,
+    sdk: &EmscriptenTools,
     precision: ProviderPrecision,
 ) -> Result<BevyWebArtifacts> {
     let out_dir = target_dir.join("boxdd-bevy-testbed-web");
     replace_dir_under(&out_dir, target_dir)?;
 
     let profile = BuildProfile::for_pages()?;
-    let mut command = cargo.command(root)?;
+    let mut command = cargo.wasm_command(root)?;
     command
         .arg("rustc")
         .arg("--locked")
@@ -700,7 +670,10 @@ fn build_bevy_web_app(
         .arg(WASM_TARGET)
         .args(profile.cargo_args())
         .current_dir(root)
-        .env("BOXDD_SYS_PROVIDER", "wasm-provider");
+        .env(
+            "BOXDD_SYS_PROVIDER",
+            ProviderCapability::WasmProvider.as_str(),
+        );
     if let Some(feature) = precision.cargo_feature() {
         command
             .arg("--features")
@@ -717,117 +690,41 @@ fn build_bevy_web_app(
         .join(profile.target_dir())
         .join("examples")
         .join(format!("{BEVY_WEB_EXAMPLE}.wasm"));
-    ensure_file(&wasm, "Bevy testbed wasm")?;
+    let bytes = fs::read(&wasm).map_err(|source| Error::io(&wasm, source))?;
+    wasm_provider_gate::validate_consumer(&bytes, precision.module(), "env").map_err(|error| {
+        Error::Message(format!(
+            "Bevy testbed Wasm memory contract failed for {}: {error}",
+            wasm.display()
+        ))
+    })?;
 
     let mut bindgen = Bindgen::new();
     bindgen
         .input_path(&wasm)
         .out_name(BEVY_WEB_OUT_NAME)
+        // wasm-bindgen otherwise strips the LLD layout globals required by the final gate.
+        .keep_lld_exports(true)
         .typescript(true)
         .web(true)
         .map_err(|error| Error::Message(format!("configure wasm-bindgen: {error}")))?
         .generate(&out_dir)
         .map_err(|error| Error::Message(format!("run wasm-bindgen for Bevy testbed: {error}")))?;
 
-    patch_bevy_bindgen_imports(&out_dir.join(BEVY_WEB_JS), precision.module())?;
     let bevy_wasm = out_dir.join(BEVY_WEB_WASM);
     optimize_wasm_if_available(sdk, &bevy_wasm, "Bevy testbed wasm")?;
+    let bytes = fs::read(&bevy_wasm).map_err(|source| Error::io(&bevy_wasm, source))?;
+    let bindgen_memory_module = format!("./{BEVY_WEB_OUT_NAME}_bg.js");
+    wasm_provider_gate::validate_consumer(&bytes, precision.module(), &bindgen_memory_module)
+        .map_err(|error| {
+            Error::Message(format!(
+                "wasm-bindgen Bevy testbed memory contract failed for {}: {error}",
+                bevy_wasm.display()
+            ))
+        })?;
     let imports = collect_provider_imports(&bevy_wasm, precision.module())?;
     write_browser_provider_shim(&out_dir, &imports)?;
 
     Ok(BevyWebArtifacts { out_dir, imports })
-}
-
-fn patch_bevy_bindgen_imports(js: &Path, provider_module: &str) -> Result<()> {
-    let source = fs::read_to_string(js).map_err(|source| Error::io(js, source))?;
-    let patched_imports = rewrite_bevy_bindgen_provider_imports(&source, provider_module)
-        .map_err(|error| Error::Message(format!("{error}: {}", js.display())))?;
-    let patched = patched_imports.replace(
-        "    wasm = instance.exports;\n",
-        "    wasm = instance.exports;\n    if (typeof import1.setBoxddAppExports === \"function\") {\n        import1.setBoxddAppExports(wasm);\n    }\n",
-    );
-    if patched == patched_imports {
-        return Err(Error::Message(format!(
-            "wasm-bindgen output does not assign instance exports: {}",
-            js.display()
-        )));
-    }
-    let decode_patched = patched.replace(
-        "cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len))",
-        "cachedTextDecoder.decode(getUint8ArrayMemory0().slice(ptr, ptr + len))",
-    );
-    if decode_patched == patched {
-        return Err(Error::Message(format!(
-            "wasm-bindgen output does not decode strings from wasm memory: {}",
-            js.display()
-        )));
-    }
-    write_atomic(js, &decode_patched)
-}
-
-fn rewrite_bevy_bindgen_provider_imports(source: &str, provider_module: &str) -> Result<String> {
-    let provider_import = format!("from \"{provider_module}\"");
-    let provider_suffix = format!(" {provider_import}");
-    let mut import_lines = Vec::new();
-    let mut import_bindings = BTreeSet::new();
-
-    for (line_number, source_line) in source.lines().enumerate() {
-        if !source_line.contains(&provider_import) {
-            continue;
-        }
-
-        let line = source_line.strip_suffix('\r').unwrap_or(source_line);
-        let line = line.strip_suffix(';').unwrap_or(line);
-        let Some(numeric_suffix) = line
-            .strip_prefix("import * as import")
-            .and_then(|line| line.strip_suffix(&provider_suffix))
-        else {
-            return Err(Error::Message(format!(
-                "wasm-bindgen output has an unsupported provider import at line {}; expected `import * as importN {provider_import}`",
-                line_number + 1
-            )));
-        };
-        if numeric_suffix.is_empty() || !numeric_suffix.as_bytes().iter().all(u8::is_ascii_digit) {
-            return Err(Error::Message(format!(
-                "wasm-bindgen output has an unsupported provider namespace at line {}; expected `importN`",
-                line_number + 1
-            )));
-        }
-
-        let binding = format!("import{numeric_suffix}");
-        if !import_bindings.insert(binding) {
-            return Err(Error::Message(format!(
-                "wasm-bindgen output repeats a provider namespace at line {}",
-                line_number + 1
-            )));
-        }
-        import_lines.push(line_number);
-    }
-
-    if import_lines.is_empty() {
-        return Err(Error::Message(format!(
-            "wasm-bindgen output does not import {provider_module}"
-        )));
-    }
-    if import_lines
-        .iter()
-        .enumerate()
-        .any(|(offset, line_number)| *line_number != import_lines[0] + offset)
-    {
-        return Err(Error::Message(format!(
-            "wasm-bindgen provider imports for {provider_module} must form one contiguous namespace declaration block"
-        )));
-    }
-    if !import_bindings.contains("import1") {
-        return Err(Error::Message(format!(
-            "wasm-bindgen provider imports for {provider_module} must include import1 for the application export handoff"
-        )));
-    }
-
-    Ok(source.replace(
-        &provider_import,
-        &format!("from \"./{BEVY_PROVIDER_SHIM}\""),
-    ))
 }
 
 fn write_browser_provider_shim(out_dir: &Path, imports: &[String]) -> Result<PathBuf> {
@@ -853,13 +750,6 @@ export function setBox2dProvider(nextProvider) {{
     throw new Error("Box2D provider does not expose its canonical Emscripten HEAPU8 view");
   }}
   provider = nextProvider;
-}}
-
-export function setBoxddAppExports(exports) {{
-  if (!provider) {{
-    throw new Error("Box2D provider is not initialized");
-  }}
-  provider.boxddAppExports = exports;
 }}
 
 function resolveProviderExport(name) {{
@@ -905,11 +795,7 @@ fn copy_bevy_web_artifacts(root: &Path, artifacts: &BevyWebArtifacts) -> Result<
     Ok(())
 }
 
-fn optimize_wasm_if_available(
-    sdk: &QualifiedEmscriptenSdk,
-    wasm: &Path,
-    label: &str,
-) -> Result<()> {
+fn optimize_wasm_if_available(sdk: &EmscriptenTools, wasm: &Path, label: &str) -> Result<()> {
     if !pages_wasm_opt_enabled() {
         println!("wasm-opt skipped for {label}: disabled by {PAGES_WASM_OPT_ENV}");
         return Ok(());
@@ -917,7 +803,7 @@ fn optimize_wasm_if_available(
 
     let before = file_size(wasm)?;
     let tmp = wasm.with_extension("wasm-opt.tmp");
-    remove_optimized_wasm_temp(&tmp)?;
+    remove_file_if_exists(&tmp)?;
     let mut command = sdk.wasm_opt_command().map_err(Error::Message)?;
     command
         .arg("-Oz")
@@ -937,14 +823,14 @@ fn optimize_wasm_if_available(
         Ok(())
     })();
     if let Err(error) = optimization {
-        if let Err(cleanup) = remove_optimized_wasm_temp(&tmp) {
+        if let Err(cleanup) = remove_file_if_exists(&tmp) {
             return Err(Error::Message(format!(
                 "{error}; failed to remove wasm-opt temporary output: {cleanup}"
             )));
         }
         return Err(error);
     }
-    remove_optimized_wasm_temp(&tmp)?;
+    remove_file_if_exists(&tmp)?;
 
     let after = file_size(wasm)?;
     let saved = before.saturating_sub(after);
@@ -959,14 +845,6 @@ fn optimize_wasm_if_available(
         format_bytes(after)
     );
     Ok(())
-}
-
-fn remove_optimized_wasm_temp(path: &Path) -> Result<()> {
-    match fs::remove_file(path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(Error::io(path, error)),
-    }
 }
 
 fn pages_wasm_opt_enabled() -> bool {
@@ -995,7 +873,7 @@ fn format_bytes(bytes: u64) -> String {
     }
 }
 pub(crate) fn generate_pages(root: &Path) -> Result<()> {
-    let samples = read_testbed_registry(root)?;
+    let samples = read_testbed_registry()?;
     let pages = expected_bevy_pages(root, &samples);
     let pages_dir = root.join("docs/pages");
     let examples_dir = pages_dir.join("examples");
@@ -1065,10 +943,10 @@ fn remove_file_if_exists(path: &Path) -> Result<()> {
     }
 }
 
-fn write_bevy_testbed_loader(root: &Path, trust: Option<&PagesLoaderTrust>) -> Result<()> {
+fn write_bevy_testbed_loader(root: &Path, contract: Option<&PagesLoaderContract>) -> Result<()> {
     let path = pages_bevy_testbed_dir(root).join("loader.js");
     ensure_pages_output_parent(root, &path)?;
-    write_atomic(&path, &bevy_testbed_loader_js(trust))
+    write_atomic(&path, &bevy_testbed_loader_js(contract))
 }
 
 fn ensure_pages_output_parent(root: &Path, path: &Path) -> Result<()> {
@@ -1154,137 +1032,27 @@ fn require_real_directory(path: &Path, label: &str) -> Result<()> {
     }
 }
 
-fn read_testbed_registry(root: &Path) -> Result<Vec<RegistrySample>> {
-    let scenes = root
-        .join("bevy_boxdd")
-        .join("examples")
-        .join("testbed_2d")
-        .join("scenes.rs");
-    let source = fs::read_to_string(&scenes).map_err(|source| Error::io(&scenes, source))?;
-    let mut samples = Vec::new();
-    let mut current: Option<PageSampleBuilder> = None;
-    let mut current_upstream: Option<UpstreamSampleBuilder> = None;
-    let mut in_registry = false;
-
-    for line in source.lines() {
-        if line.contains("pub const SCENE_REGISTRY") {
-            in_registry = true;
-            continue;
-        }
-        if !in_registry {
-            continue;
-        }
-
-        let trimmed = line.trim();
-        if let Some(upstream) = current_upstream.as_mut() {
-            read_upstream_fields(upstream, trimmed);
-            if trimmed == "}," || trimmed.ends_with("},") || trimmed.ends_with("}],") {
-                let upstream = current_upstream
-                    .take()
-                    .expect("upstream builder should be present");
-                current
-                    .as_mut()
-                    .ok_or_else(|| {
-                        Error::Message(format!(
-                            "upstream sample outside registry entry in {}",
-                            scenes.display()
-                        ))
-                    })?
-                    .upstream
-                    .push(upstream.build()?);
-            }
-            continue;
-        }
-        if trimmed == "];" {
-            break;
-        }
-        if trimmed.starts_with("TestbedSceneMetadata {") {
-            current = Some(PageSampleBuilder::default());
-            continue;
-        }
-        if trimmed == "}," {
-            let builder = current.take().ok_or_else(|| {
-                Error::Message(format!(
-                    "unexpected registry entry terminator in {}",
-                    scenes.display()
-                ))
-            })?;
-            samples.push(builder.build()?);
-            continue;
-        }
-
-        let Some(builder) = current.as_mut() else {
-            continue;
-        };
-        if trimmed.contains("UpstreamSampleRef {") {
-            let mut upstream = UpstreamSampleBuilder::default();
-            read_upstream_fields(&mut upstream, trimmed);
-            if trimmed.ends_with("},") || trimmed.ends_with("}],") {
-                builder.upstream.push(upstream.build()?);
-            } else {
-                current_upstream = Some(upstream);
-            }
-        } else if let Some(value) = extract_string_field(trimmed, "id") {
-            builder.id = Some(value);
-        } else if let Some(value) = extract_string_field(trimmed, "category") {
-            builder.category = Some(value);
-        } else if let Some(value) = extract_string_field(trimmed, "name") {
-            builder.name = Some(value);
-        } else if let Some(value) = extract_string_field(trimmed, "description") {
-            builder.description = Some(value);
-        }
-    }
-
+fn read_testbed_registry() -> Result<Vec<RegistrySample>> {
+    let samples = testbed_scene_catalog::SCENE_REGISTRY
+        .iter()
+        .map(|sample| RegistrySample {
+            id: sample.id.to_owned(),
+            category: sample.category.to_owned(),
+            name: sample.name.to_owned(),
+            description: sample.description.to_owned(),
+            upstream: sample
+                .upstream
+                .iter()
+                .map(|upstream| RegistryUpstreamSample {
+                    category: upstream.category.to_owned(),
+                    name: upstream.name.to_owned(),
+                    style: upstream.style,
+                })
+                .collect(),
+        })
+        .collect::<Vec<_>>();
     validate_registry_catalog(&samples)?;
     Ok(samples)
-}
-
-impl PageSampleBuilder {
-    fn build(self) -> Result<RegistrySample> {
-        Ok(RegistrySample {
-            id: required_registry_field(self.id, "id")?,
-            category: required_registry_field(self.category, "category")?,
-            name: required_registry_field(self.name, "name")?,
-            description: required_registry_field(self.description, "description")?,
-            upstream: self.upstream,
-        })
-    }
-}
-
-impl UpstreamSampleBuilder {
-    fn build(self) -> Result<RegistryUpstreamSample> {
-        Ok(RegistryUpstreamSample {
-            category: required_registry_field(self.category, "upstream.category")?,
-            name: required_registry_field(self.name, "upstream.name")?,
-            mode: required_registry_field(self.mode, "upstream.mode")?,
-        })
-    }
-}
-
-fn required_registry_field(value: Option<String>, field: &str) -> Result<String> {
-    value.ok_or_else(|| Error::Message(format!("SCENE_REGISTRY entry is missing `{field}`")))
-}
-
-fn read_upstream_fields(builder: &mut UpstreamSampleBuilder, line: &str) {
-    if let Some(value) = extract_string_field(line, "category") {
-        builder.category = Some(value);
-    }
-    if let Some(value) = extract_string_field(line, "name") {
-        builder.name = Some(value);
-    }
-    if let Some(value) = extract_parity_mode_field(line) {
-        builder.mode = Some(value);
-    }
-}
-
-fn extract_parity_mode_field(line: &str) -> Option<String> {
-    let needle = "mode: ParityMode::";
-    let start = line.find(needle)? + needle.len();
-    let tail = &line[start..];
-    let end = tail
-        .find(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
-        .unwrap_or(tail.len());
-    Some(tail[..end].to_owned())
 }
 
 fn validate_registry_catalog(samples: &[RegistrySample]) -> Result<()> {
@@ -1323,16 +1091,6 @@ fn validate_registry_catalog(samples: &[RegistrySample]) -> Result<()> {
         for upstream in &sample.upstream {
             validate_registry_field(sample, "upstream.category", &upstream.category)?;
             validate_registry_field(sample, "upstream.name", &upstream.name)?;
-            validate_registry_field(sample, "upstream.mode", &upstream.mode)?;
-            if !matches!(
-                upstream.mode.as_str(),
-                "FaithfulPort" | "TeachingAdaptation"
-            ) {
-                return Err(Error::Message(format!(
-                    "testbed registry sample `{}` uses unsupported upstream parity mode `{}`",
-                    sample.id, upstream.mode
-                )));
-            }
             if !upstream_seen.insert((upstream.category.as_str(), upstream.name.as_str())) {
                 return Err(Error::Message(format!(
                     "testbed registry sample `{}` duplicates upstream ref `{}` / `{}`",
@@ -1537,40 +1295,40 @@ fn source_list_html(sample: &RegistrySample) -> String {
             "<span>{category} / {name} · {mode}</span>",
             category = escape_html(&upstream.category),
             name = escape_html(&upstream.name),
-            mode = escape_html(&parity_mode_label(&upstream.mode))
+            mode = escape_html(port_style_label(upstream.style))
         )
         .expect("writing to String cannot fail");
     }
     format!(r#"<div class="upstream-list">{items}</div>"#)
 }
 
-fn parity_mode_label(mode: &str) -> String {
-    let mut label = String::new();
-    for (index, ch) in mode.chars().enumerate() {
-        if index > 0 && ch.is_ascii_uppercase() {
-            label.push(' ');
-        }
-        label.push(ch.to_ascii_lowercase());
+const fn port_style_label(style: testbed_scene_catalog::PortStyle) -> &'static str {
+    match style {
+        testbed_scene_catalog::PortStyle::TeachingAdaptation => "teaching adaptation",
     }
-    label
 }
 
-fn bevy_testbed_loader_js(trust: Option<&PagesLoaderTrust>) -> String {
-    r##"const runtimeTrust = __BOXDD_RUNTIME_TRUST__;
+fn bevy_testbed_loader_js(contract: Option<&PagesLoaderContract>) -> String {
+    r##"const runtimeContract = __BOXDD_RUNTIME_CONTRACT__;
 const runtimeManifestUrl = new URL("../wasm/generated/boxdd-pages-runtime-v2.json", import.meta.url);
+const MAX_RUNTIME_MANIFEST_BYTES = 1024 * 1024;
+const MAX_RUNTIME_ASSET_BYTES = __BOXDD_MAX_RUNTIME_ASSET_BYTES__;
+const MAX_RUNTIME_TOTAL_ASSET_BYTES = __BOXDD_MAX_RUNTIME_TOTAL_ASSET_BYTES__;
+const RUNTIME_FETCH_INACTIVITY_TIMEOUT_MS = 30 * 1000;
+const RUNTIME_FETCH_TOTAL_TIMEOUT_MS = 5 * 60 * 1000;
 const expectedAssets = Object.freeze([
-  Object.freeze({ role: "provider_js", path: "wasm/generated/box2d-sys-v1-single.js" }),
-  Object.freeze({ role: "provider_wasm", path: "wasm/generated/box2d-sys-v1-single.wasm" }),
-  Object.freeze({ role: "app_js", path: "bevy-testbed/generated/bevy_boxdd_testbed.js" }),
-  Object.freeze({ role: "app_wasm", path: "bevy-testbed/generated/bevy_boxdd_testbed_bg.wasm" }),
-  Object.freeze({ role: "provider_shim_js", path: "bevy-testbed/generated/box2d-provider-shim.js" }),
+  Object.freeze({ role: "provider_js", path: "wasm/generated/box2d-sys-v2-single.js" }),
+  Object.freeze({ role: "provider_wasm", path: "wasm/generated/box2d-sys-v2-single.wasm" }),
+  Object.freeze({ role: "app_js", path: "bevy-testbed/generated-v2/bevy_boxdd_testbed.js" }),
+  Object.freeze({ role: "app_wasm", path: "bevy-testbed/generated-v2/bevy_boxdd_testbed_bg.wasm" }),
+  Object.freeze({ role: "provider_shim_js", path: "bevy-testbed/generated-v2/box2d-provider-shim.js" }),
 ]);
 const manifestKeys = Object.freeze([
   "adapter_abi_version",
   "adapter_source_sha256",
   "assets",
   "crate_version",
-  "emscripten_sdk_contract_sha256",
+  "emscripten_version",
   "effective_source_sha256",
   "precision",
   "provider",
@@ -1586,7 +1344,15 @@ const manifestKeys = Object.freeze([
   "upstream_sha",
   "wasm_provider_contract_sha256",
 ]);
-const identityKeys = Object.freeze(manifestKeys.filter((key) => key !== "assets"));
+const contractKeys = Object.freeze([
+  "adapter_abi_version",
+  "precision",
+  "provider",
+  "provider_abi",
+  "schema",
+  "schema_version",
+  "target",
+]);
 const assetKeys = Object.freeze(["byte_length", "path", "role", "sha256"]);
 
 const statusPanel = document.querySelector("#bevy-status");
@@ -1624,6 +1390,12 @@ function pageAssetUrl(path) {
   return new URL(`../${path}`, import.meta.url);
 }
 
+function runtimeAssetUrl(asset) {
+  const url = pageAssetUrl(asset.path);
+  url.searchParams.set("sha256", asset.sha256);
+  return url;
+}
+
 function progressTextFor(loaded, total) {
   if (total) {
     const percent = Math.min(100, Math.round((loaded / total) * 100));
@@ -1646,44 +1418,125 @@ function formatBytes(bytes) {
   return unit === 0 ? `${value} ${units[unit]}` : `${value.toFixed(2)} ${units[unit]}`;
 }
 
-async function fetchArrayBufferWithProgress(url, label) {
+async function fetchArrayBufferWithProgress(url, label, maxBytes, cache = "default") {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
+    throw new Error(`${label} byte limit is invalid`);
+  }
   setStatus("loading", `Downloading ${label}`, "Starting download.", { loaded: 0, total: 0 });
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`${label} download failed with HTTP ${response.status}`);
-  }
+  const controller = new AbortController();
+  let inactivityTimeout;
+  let inactivityExpired = false;
+  let totalTimeout;
+  let totalExpired = false;
+  const armInactivityTimeout = () => {
+    clearTimeout(inactivityTimeout);
+    inactivityTimeout = setTimeout(() => {
+      inactivityExpired = true;
+      controller.abort();
+    }, RUNTIME_FETCH_INACTIVITY_TIMEOUT_MS);
+  };
+  const disarmInactivityTimeout = () => clearTimeout(inactivityTimeout);
+  const disarmTotalTimeout = () => clearTimeout(totalTimeout);
 
-  const total = Number(response.headers.get("Content-Length")) || 0;
-  if (!response.body) {
-    const buffer = await response.arrayBuffer();
-    setStatus("loading", `Downloading ${label}`, "Download complete.", {
-      loaded: buffer.byteLength,
-      total: total || buffer.byteLength,
-    });
-    return buffer;
-  }
-
-  const reader = response.body.getReader();
-  const chunks = [];
-  let loaded = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
+  try {
+    totalTimeout = setTimeout(() => {
+      totalExpired = true;
+      controller.abort();
+    }, RUNTIME_FETCH_TOTAL_TIMEOUT_MS);
+    armInactivityTimeout();
+    const response = await fetch(url, { cache, signal: controller.signal });
+    disarmInactivityTimeout();
+    if (!response.ok) {
+      throw new Error(`${label} download failed with HTTP ${response.status}`);
     }
-    chunks.push(value);
-    loaded += value.byteLength;
-    setStatus("loading", `Downloading ${label}`, "Downloading runtime asset.", { loaded, total });
-  }
 
-  const bytes = new Uint8Array(loaded);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
+    const contentEncoding = response.headers.get("Content-Encoding");
+    const identityEncoded = contentEncoding === null
+      || contentEncoding.trim().toLowerCase() === "identity";
+    const contentLength = identityEncoded ? response.headers.get("Content-Length") : null;
+    let contentLengthKnown = false;
+    let total = 0;
+    if (contentLength !== null) {
+      contentLengthKnown = true;
+      if (!/^(0|[1-9][0-9]*)$/.test(contentLength)) {
+        await response.body?.cancel();
+        throw new Error(`${label} Content-Length is invalid`);
+      }
+      total = Number(contentLength);
+      if (!Number.isSafeInteger(total)) {
+        await response.body?.cancel();
+        throw new Error(`${label} Content-Length exceeds the browser integer limit`);
+      }
+      if (total > maxBytes) {
+        await response.body?.cancel();
+        throw new Error(`${label} exceeds its ${maxBytes}-byte limit`);
+      }
+    }
+    if (!response.body) {
+      throw new Error(`${label} response does not expose a readable stream`);
+    }
+
+    const reader = response.body.getReader();
+    const bytes = contentLengthKnown ? new Uint8Array(total) : null;
+    const chunks = bytes ? null : [];
+    let loaded = 0;
+    for (;;) {
+      armInactivityTimeout();
+      const { done, value } = await reader.read();
+      disarmInactivityTimeout();
+      if (done) {
+        break;
+      }
+      const nextLoaded = loaded + value.byteLength;
+      if (nextLoaded > maxBytes) {
+        await reader.cancel();
+        throw new Error(`${label} exceeds its ${maxBytes}-byte limit`);
+      }
+      if (contentLengthKnown && nextLoaded > total) {
+        await reader.cancel();
+        throw new Error(`${label} exceeds its declared Content-Length`);
+      }
+      if (bytes) {
+        bytes.set(value, loaded);
+      } else {
+        chunks.push(value);
+      }
+      loaded = nextLoaded;
+      setStatus("loading", `Downloading ${label}`, "Downloading runtime asset.", { loaded, total });
+    }
+
+    if (contentLengthKnown && loaded !== total) {
+      throw new Error(`${label} ended after ${loaded} bytes; expected ${total}`);
+    }
+    let complete = bytes;
+    if (!complete) {
+      complete = new Uint8Array(loaded);
+      let offset = 0;
+      for (const chunk of chunks) {
+        complete.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+    }
+    setStatus("loading", `Downloading ${label}`, "Download complete.", { loaded, total: total || loaded });
+    return complete.buffer;
+  } catch (error) {
+    if (totalExpired) {
+      throw new Error(
+        `${label} download exceeded ${RUNTIME_FETCH_TOTAL_TIMEOUT_MS}ms`,
+        { cause: error },
+      );
+    }
+    if (inactivityExpired) {
+      throw new Error(
+        `${label} download stalled for ${RUNTIME_FETCH_INACTIVITY_TIMEOUT_MS}ms`,
+        { cause: error },
+      );
+    }
+    throw error;
+  } finally {
+    disarmInactivityTimeout();
+    disarmTotalTimeout();
   }
-  setStatus("loading", `Downloading ${label}`, "Download complete.", { loaded, total: total || loaded });
-  return bytes.buffer;
 }
 
 function assertExactObjectKeys(value, expected, label) {
@@ -1724,11 +1577,15 @@ async function verifySha256(bytes, expected, label) {
 }
 
 async function loadRuntimeManifest() {
-  if (!runtimeTrust) {
-    throw new Error("Pages runtime trust anchor is absent; publish assets with build-pages-wasm");
+  if (!runtimeContract) {
+    throw new Error("Pages runtime contract is absent; publish assets with build-pages-wasm");
   }
-  const bytes = await fetchArrayBufferWithProgress(runtimeManifestUrl, "runtime manifest");
-  await verifySha256(bytes, runtimeTrust.manifest_sha256, "runtime manifest");
+  const bytes = await fetchArrayBufferWithProgress(
+    runtimeManifestUrl,
+    "runtime manifest",
+    MAX_RUNTIME_MANIFEST_BYTES,
+    "no-store",
+  );
 
   let manifest;
   try {
@@ -1737,25 +1594,52 @@ async function loadRuntimeManifest() {
     throw new Error("runtime manifest is not valid JSON", { cause: error });
   }
   assertExactObjectKeys(manifest, manifestKeys, "runtime manifest");
-  for (const key of identityKeys) {
-    if (manifest[key] !== runtimeTrust[key]) {
-      throw new Error(`runtime manifest identity ${key} does not match the loader trust anchor`);
+  for (const key of contractKeys) {
+    if (manifest[key] !== runtimeContract[key]) {
+      throw new Error(`runtime manifest ${key} does not match the loader contract`);
+    }
+  }
+  for (const [key, digits] of [
+    ["source_commit", 40],
+    ["source_tree", 40],
+    ["upstream_sha", 40],
+    ["adapter_source_sha256", 64],
+    ["effective_source_sha256", 64],
+    ["recording_contract_blake3", 64],
+    ["wasm_provider_contract_sha256", 64],
+  ]) {
+    if (typeof manifest[key] !== "string" || !new RegExp(`^[0-9a-f]{${digits}}$`).test(manifest[key])) {
+      throw new Error(`runtime manifest ${key} is malformed`);
+    }
+  }
+  for (const key of ["crate_version", "emscripten_version", "publisher_repository", "publisher_workflow"]) {
+    if (typeof manifest[key] !== "string" || manifest[key].length === 0) {
+      throw new Error(`runtime manifest ${key} must be a non-empty string`);
     }
   }
   if (!Array.isArray(manifest.assets) || manifest.assets.length !== expectedAssets.length) {
     throw new Error("runtime manifest must contain the exact qualified asset set");
   }
+  let totalAssetBytes = 0;
   manifest.assets.forEach((asset, index) => {
     assertExactObjectKeys(asset, assetKeys, `runtime asset ${index}`);
     const expected = expectedAssets[index];
     if (asset.role !== expected.role || asset.path !== expected.path) {
       throw new Error(`runtime asset ${index} does not match the canonical role and path`);
     }
-    if (!Number.isSafeInteger(asset.byte_length) || asset.byte_length <= 0) {
+    if (
+      !Number.isSafeInteger(asset.byte_length)
+      || asset.byte_length <= 0
+      || asset.byte_length > MAX_RUNTIME_ASSET_BYTES
+    ) {
       throw new Error(`runtime asset ${asset.role} has an invalid byte length`);
     }
     if (!/^[0-9a-f]{64}$/.test(asset.sha256)) {
       throw new Error(`runtime asset ${asset.role} has an invalid SHA-256`);
+    }
+    totalAssetBytes += asset.byte_length;
+    if (!Number.isSafeInteger(totalAssetBytes) || totalAssetBytes > MAX_RUNTIME_TOTAL_ASSET_BYTES) {
+      throw new Error("runtime assets exceed the qualified cohort byte limit");
     }
   });
   return manifest;
@@ -1764,7 +1648,7 @@ async function loadRuntimeManifest() {
 async function loadVerifiedRuntimeAssets(manifest) {
   const verified = new Map();
   for (const asset of manifest.assets) {
-    const bytes = await fetchArrayBufferWithProgress(pageAssetUrl(asset.path), asset.role);
+    const bytes = await fetchArrayBufferWithProgress(runtimeAssetUrl(asset), asset.role, asset.byte_length);
     if (bytes.byteLength !== asset.byte_length) {
       throw new Error(
         `${asset.role} byte length mismatch: expected ${asset.byte_length}, got ${bytes.byteLength}`,
@@ -1776,34 +1660,6 @@ async function loadVerifiedRuntimeAssets(manifest) {
   return verified;
 }
 
-function replaceShimImport(appBytes, shimModuleUrl) {
-  const source = decodeUtf8(appBytes, "Bevy app JavaScript");
-  const shimModuleName = "box2d-provider-shim.js";
-  const specifier = '"./box2d-provider-shim.js"';
-  const shimImportPattern = /^import \* as (import[0-9]+) from "\.\/box2d-provider-shim\.js";?$/;
-  const importLines = [];
-  const importBindings = new Set();
-  for (const [lineNumber, line] of source.split(/\r?\n/).entries()) {
-    if (!line.includes(shimModuleName)) {
-      continue;
-    }
-    const match = shimImportPattern.exec(line);
-    if (!match || importBindings.has(match[1])) {
-      throw new Error("Bevy app JavaScript contains an unsupported wasm-bindgen provider shim import");
-    }
-    importBindings.add(match[1]);
-    importLines.push(lineNumber);
-  }
-  if (
-    importLines.length === 0 ||
-    importLines.some((lineNumber, offset) => lineNumber !== importLines[0] + offset) ||
-    !importBindings.has("import1")
-  ) {
-    throw new Error("Bevy app JavaScript must contain one contiguous block of qualified wasm-bindgen provider shim imports");
-  }
-  return source.replaceAll(specifier, JSON.stringify(shimModuleUrl));
-}
-
 async function importVerifiedRuntimeModules(assets) {
   const shimUrl = URL.createObjectURL(
     new Blob([assets.get("provider_shim_js")], { type: "text/javascript" }),
@@ -1811,11 +1667,26 @@ async function importVerifiedRuntimeModules(assets) {
   const providerUrl = URL.createObjectURL(
     new Blob([assets.get("provider_js")], { type: "text/javascript" }),
   );
-  const appSource = replaceShimImport(assets.get("app_js"), shimUrl);
-  const appUrl = URL.createObjectURL(new Blob([appSource], { type: "text/javascript" }));
+  const appUrl = URL.createObjectURL(
+    new Blob([assets.get("app_js")], { type: "text/javascript" }),
+  );
 
   try {
-    return await Promise.all([import(providerUrl), import(appUrl), import(shimUrl)]);
+    if (!HTMLScriptElement.supports?.("importmap")) {
+      throw new Error("This browser does not support import maps");
+    }
+    const [providerModule, shimModule] = await Promise.all([
+      import(providerUrl),
+      import(shimUrl),
+    ]);
+    const importMap = document.createElement("script");
+    importMap.type = "importmap";
+    importMap.textContent = JSON.stringify({
+      imports: { "box2d-sys-v2-single": shimUrl },
+    });
+    document.head.append(importMap);
+    const appModule = await import(appUrl);
+    return [providerModule, appModule, shimModule];
   } finally {
     URL.revokeObjectURL(appUrl);
     URL.revokeObjectURL(providerUrl);
@@ -1850,17 +1721,21 @@ async function main() {
   const [
     { default: createProvider },
     { default: initBevyTestbed },
-    { boxddProviderRuntimeEvidence, setBox2dProvider, setBoxddAppExports },
+    { boxddProviderRuntimeEvidence, setBox2dProvider },
   ] = await importVerifiedRuntimeModules(assets);
-  const memory = new WebAssembly.Memory({ initial: 4096, maximum: 8192 });
+  const memory = new WebAssembly.Memory({
+    initial: __BOXDD_INITIAL_MEMORY_PAGES__,
+    maximum: __BOXDD_MAXIMUM_MEMORY_PAGES__,
+  });
+  const byteLengthBeforeApp = memory.buffer.byteLength;
 
   setStatus("loading", "Starting Box2D provider", `Instantiating the shared Box2D C provider for ${sceneName}.`);
   const provider = await createProvider({
     wasmMemory: memory,
     wasmBinary: assets.get("provider_wasm"),
     locateFile: (path) => pageAssetUrl(`wasm/generated/${path}`).href,
-    print: (text) => console.log(`[box2d-sys-v1-single] ${text}`),
-    printErr: (text) => console.warn(`[box2d-sys-v1-single] ${text}`),
+    print: (text) => console.log(`[box2d-sys-v2-single] ${text}`),
+    printErr: (text) => console.warn(`[box2d-sys-v2-single] ${text}`),
   });
 
   if (provider.wasmMemory && provider.wasmMemory !== memory) {
@@ -1870,25 +1745,26 @@ async function main() {
   if (typeof adapterAbiVersion !== "function" || adapterAbiVersion() !== manifest.adapter_abi_version) {
     throw new Error("Box2D provider runtime adapter ABI does not match the verified manifest");
   }
+  const proofRequested = new URLSearchParams(window.location.search).get("boxdd-runtime-proof") === "1";
 
   setBox2dProvider(provider);
   setStatus("loading", `Starting ${sceneName}`, "Instantiating the Rust Bevy + egui wasm module.");
 
-  const bevyExports = await initBevyTestbed({
+  await initBevyTestbed({
     module_or_path: assets.get("app_wasm"),
     memory,
   });
-  setBoxddAppExports(bevyExports);
 
   const initialEvidence = await waitForProviderStep(
     boxddProviderRuntimeEvidence,
     0,
     "initial runtime proof",
   );
-  const proofRequested = new URLSearchParams(window.location.search).get("boxdd-runtime-proof") === "1";
   const memoryProof = {
     requested: proofRequested,
     memoryGrew: false,
+    growthObservedDuringApp: memory.buffer.byteLength > byteLengthBeforeApp,
+    externalGrowth: false,
     staleBufferDetached: false,
     providerHeapViewRefreshed: false,
     providerHeapReadWrite: false,
@@ -1905,35 +1781,37 @@ async function main() {
       throw new Error("Box2D provider HEAPU8 does not bind the shared WebAssembly.Memory");
     }
     memory.grow(1);
+    memoryProof.externalGrowth = true;
     memoryProof.memoryGrew = memory.buffer !== staleBuffer;
-    memoryProof.staleBufferDetached = staleBuffer.byteLength === 0;
+    memoryProof.staleBufferDetached =
+      staleBuffer.byteLength === 0 && staleProviderHeap.byteLength === 0;
     memoryProof.byteLengthAfterGrowth = memory.buffer.byteLength;
     if (
       !memoryProof.memoryGrew ||
       !memoryProof.staleBufferDetached ||
-      staleProviderHeap.byteLength !== 0 ||
       memoryProof.byteLengthAfterGrowth <= memoryProof.byteLengthBeforeGrowth
     ) {
       throw new Error("shared WebAssembly.Memory did not detach and grow its buffer");
     }
+
     const refreshedProviderHeap = provider.boxddRefreshMemoryViews();
     memoryProof.providerHeapViewRefreshed =
       refreshedProviderHeap instanceof Uint8Array &&
       refreshedProviderHeap === provider.HEAPU8 &&
       refreshedProviderHeap.buffer === memory.buffer;
     if (!memoryProof.providerHeapViewRefreshed) {
-      throw new Error("Emscripten HEAPU8 was not rebound after external memory.grow");
+      throw new Error("Emscripten HEAPU8 was not rebound after external memory growth");
     }
     const probeOffset = memoryProof.byteLengthBeforeGrowth;
     const refreshedData = new DataView(memory.buffer);
-    const original = refreshedData.getUint32(probeOffset, true);
-    refreshedProviderHeap.set([0x12, 0x34, 0x56, 0x78], probeOffset);
+    refreshedData.setUint32(probeOffset, 0x78563412, true);
     memoryProof.providerHeapReadWrite =
-      refreshedData.getUint32(probeOffset, true) === 0x78563412;
-    refreshedData.setUint32(probeOffset, original, true);
+      refreshedProviderHeap[probeOffset] === 0x12 &&
+      refreshedProviderHeap[probeOffset + 3] === 0x78;
     if (!memoryProof.providerHeapReadWrite) {
-      throw new Error("refreshed Emscripten HEAPU8 is not readable and writable");
+      throw new Error("Emscripten HEAPU8 and DataView do not share the grown memory");
     }
+
     const postGrowthEvidence = await waitForProviderStep(
       boxddProviderRuntimeEvidence,
       memoryProof.stepCallsBeforeGrowth,
@@ -1970,33 +1848,40 @@ main().catch((error) => {
   setStatus("error", `${sceneName} failed`, message);
 });
 "##
-        .replace("__BOXDD_RUNTIME_TRUST__", &pages_loader_trust_js(trust))
+        .replace(
+            "__BOXDD_RUNTIME_CONTRACT__",
+            &pages_loader_contract_js(contract),
+        )
+        .replace(
+            "__BOXDD_MAX_RUNTIME_ASSET_BYTES__",
+            &MAX_PAGES_RUNTIME_ASSET_BYTES.to_string(),
+        )
+        .replace(
+            "__BOXDD_MAX_RUNTIME_TOTAL_ASSET_BYTES__",
+            &MAX_PAGES_RUNTIME_TOTAL_ASSET_BYTES.to_string(),
+        )
+        .replace(
+            "__BOXDD_INITIAL_MEMORY_PAGES__",
+            &INITIAL_MEMORY_PAGES.to_string(),
+        )
+        .replace(
+            "__BOXDD_MAXIMUM_MEMORY_PAGES__",
+            &MAXIMUM_MEMORY_PAGES.to_string(),
+        )
 }
 
-fn pages_loader_trust_js(trust: Option<&PagesLoaderTrust>) -> String {
-    let Some(trust) = trust else {
+fn pages_loader_contract_js(contract: Option<&PagesLoaderContract>) -> String {
+    let Some(contract) = contract else {
         return "null".to_owned();
     };
     let value = serde_json::json!({
-        "manifest_sha256": trust.manifest_sha256,
-        "schema_version": trust.schema_version,
-        "schema": trust.schema,
-        "publisher_repository": trust.publisher_repository,
-        "publisher_workflow": trust.publisher_workflow,
-        "provider": trust.provider,
-        "provider_abi": trust.provider_abi,
-        "adapter_abi_version": trust.adapter_abi_version,
-        "crate_version": trust.crate_version,
-        "source_commit": trust.source_commit,
-        "upstream_sha": trust.upstream_sha,
-        "source_tree": trust.source_tree,
-        "effective_source_sha256": trust.effective_source_sha256,
-        "adapter_source_sha256": trust.adapter_source_sha256,
-        "emscripten_sdk_contract_sha256": trust.emscripten_sdk_contract_sha256,
-        "wasm_provider_contract_sha256": trust.wasm_provider_contract_sha256,
-        "recording_contract_blake3": trust.recording_contract_blake3,
-        "precision": trust.precision,
-        "target": trust.target,
+        "schema_version": contract.schema_version,
+        "schema": contract.schema,
+        "provider": contract.provider,
+        "provider_abi": contract.provider_abi,
+        "adapter_abi_version": contract.adapter_abi_version,
+        "precision": contract.precision,
+        "target": contract.target,
     });
     format!("Object.freeze({value})")
 }
@@ -2063,19 +1948,6 @@ a:hover { text-decoration: underline; text-underline-offset: 4px; }
 "#
 }
 
-fn extract_string_field(line: &str, field: &str) -> Option<String> {
-    let prefix = format!("{field}: ");
-    let rest = line.strip_prefix(&prefix)?;
-    extract_quoted_string(rest)
-}
-
-fn extract_quoted_string(value: &str) -> Option<String> {
-    let start = value.find('"')?;
-    let rest = &value[start + 1..];
-    let end = rest.find('"')?;
-    Some(rest[..end].to_owned())
-}
-
 fn escape_html(value: &str) -> String {
     value
         .replace('&', "&amp;")
@@ -2084,7 +1956,7 @@ fn escape_html(value: &str) -> String {
         .replace('"', "&quot;")
 }
 
-fn validate_pages_runtime(root: &Path) -> Result<Option<PagesLoaderTrust>> {
+fn validate_pages_runtime(root: &Path) -> Result<Option<PagesLoaderContract>> {
     let wasm_generated = pages_wasm_generated_dir(root);
     let bevy_generated = pages_bevy_generated_dir(root);
     let wasm_metadata = optional_symlink_metadata(&wasm_generated)?;
@@ -2113,8 +1985,8 @@ fn validate_pages_runtime(root: &Path) -> Result<Option<PagesLoaderTrust>> {
     validate_pages_runtime_directory(
         &wasm_generated,
         &[
-            "box2d-sys-v1-single.js",
-            "box2d-sys-v1-single.wasm",
+            "box2d-sys-v2-single.js",
+            "box2d-sys-v2-single.wasm",
             "boxdd-pages-runtime-v2.json",
         ],
     )?;
@@ -2124,24 +1996,18 @@ fn validate_pages_runtime(root: &Path) -> Result<Option<PagesLoaderTrust>> {
     )?;
 
     let manifest_path = pages_runtime_manifest_path(root);
-    let metadata =
-        fs::symlink_metadata(&manifest_path).map_err(|source| Error::io(&manifest_path, source))?;
-    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
-        return Err(Error::Message(format!(
-            "Pages runtime manifest must be a regular non-symlink file: {}",
-            manifest_path.display()
-        )));
-    }
-    let bytes = fs::read(&manifest_path).map_err(|source| Error::io(&manifest_path, source))?;
-    let manifest = PagesRuntimeManifest::parse(&bytes)?;
+    let manifest_snapshot = VerifiedFileSnapshot::read(
+        &manifest_path,
+        MAX_PAGES_RUNTIME_MANIFEST_BYTES,
+        "Pages runtime manifest",
+    )
+    .map_err(Error::Message)?;
+    let manifest = PagesRuntimeManifest::parse(manifest_snapshot.bytes())?;
     validate_pages_runtime_manifest_identity(&manifest, &identity)?;
     validate_pages_runtime_asset_records(&root.join("docs/pages"), &manifest)?;
     ensure_pages_source_state(root, precision, &identity)?;
 
-    Ok(Some(PagesLoaderTrust::from_manifest(
-        &manifest,
-        provider_manifest::sha256_bytes(&bytes),
-    )))
+    Ok(Some(PagesLoaderContract::from_manifest(&manifest)))
 }
 
 fn optional_symlink_metadata(path: &Path) -> Result<Option<fs::Metadata>> {
@@ -2216,7 +2082,7 @@ fn validate_pages_runtime_directory(dir: &Path, expected_names: &[&str]) -> Resu
             "Pages runtime generated directory {} contains {:?}, expected exactly {:?}",
             dir.display(),
             actual_refs,
-            expected
+            expected,
         )));
     }
     Ok(())
@@ -2225,7 +2091,7 @@ fn validate_pages_runtime_directory(dir: &Path, expected_names: &[&str]) -> Resu
 pub(crate) fn validate_pages(root: &Path) -> Result<()> {
     let pages_dir = root.join("docs/pages");
     require_real_directory(&pages_dir, "Pages output root")?;
-    let samples = read_testbed_registry(root)?;
+    let samples = read_testbed_registry()?;
     let expected_pages = expected_bevy_pages(root, &samples);
     let html_files = collect_html_files(&pages_dir)?;
     if html_files.is_empty() {
@@ -2315,13 +2181,12 @@ pub(crate) fn validate_pages(root: &Path) -> Result<()> {
                 );
             }
             for required in [
-                "runtimeTrust",
+                "runtimeContract",
                 "crypto.subtle.digest",
                 "verifySha256",
                 "box2d-provider-shim.js",
                 "setBox2dProvider",
-                "setBoxddAppExports",
-                "bevyExports",
+                "boxddProviderRuntimeEvidence",
             ] {
                 if !actual.contains(required) {
                     errors.push(format!(
@@ -2404,17 +2269,17 @@ mod tests {
     use std::fs;
 
     use super::{
-        ADAPTER_ABI_VERSION, JAVASCRIPT_MAX_SAFE_INTEGER, PAGES_PUBLISHER_WORKFLOW,
-        PAGES_RUNTIME_ASSETS, PAGES_RUNTIME_SCHEMA, PAGES_RUNTIME_SCHEMA_VERSION, PROVIDER_ABI,
-        PUBLISHER_REPOSITORY, PagesLoaderTrust, PagesRuntimeAsset, PagesRuntimeIdentity,
-        PagesRuntimeManifest, ProviderPrecision, RECORDING_CONTRACT_BLAKE3, WASM_TARGET,
-        bevy_testbed_loader_js, clear_pages_runtime_assets, collect_html_files,
-        ensure_pages_output_parent, format_bytes, pages_bevy_generated_dir, pages_runtime_asset,
-        pages_wasm_generated_dir, rewrite_bevy_bindgen_provider_imports,
+        ADAPTER_ABI_VERSION, EMSCRIPTEN_VERSION, MAX_PAGES_RUNTIME_ASSET_BYTES,
+        MAX_PAGES_RUNTIME_TOTAL_ASSET_BYTES, PAGES_PUBLISHER_WORKFLOW, PAGES_RUNTIME_ASSETS,
+        PAGES_RUNTIME_SCHEMA, PAGES_RUNTIME_SCHEMA_VERSION, PROVIDER_ABI, PUBLISHER_REPOSITORY,
+        PagesLoaderContract, PagesRuntimeAsset, PagesRuntimeIdentity, PagesRuntimeManifest,
+        ProviderPrecision, RECORDING_CONTRACT_BLAKE3, WASM_TARGET, bevy_testbed_loader_js,
+        clear_pages_runtime_assets, collect_html_files, ensure_pages_output_parent, format_bytes,
+        pages_bevy_generated_dir, pages_runtime_asset, pages_wasm_generated_dir,
         validate_pages_asset_byte_length, validate_pages_precision,
-        validate_pages_runtime_asset_records, validate_pages_runtime_manifest_identity,
+        validate_pages_runtime_asset_budget, validate_pages_runtime_asset_records,
+        validate_pages_runtime_directory, validate_pages_runtime_manifest_identity,
     };
-    use crate::qualified_git::qualified_git_command;
 
     fn manifest() -> PagesRuntimeManifest {
         PagesRuntimeManifest {
@@ -2431,7 +2296,7 @@ mod tests {
             source_tree: "3".repeat(40),
             effective_source_sha256: "4".repeat(64),
             adapter_source_sha256: "5".repeat(64),
-            emscripten_sdk_contract_sha256: "6".repeat(64),
+            emscripten_version: EMSCRIPTEN_VERSION.to_owned(),
             wasm_provider_contract_sha256: "8".repeat(64),
             recording_contract_blake3: RECORDING_CONTRACT_BLAKE3.to_owned(),
             precision: ProviderPrecision::Single.as_str().to_owned(),
@@ -2456,7 +2321,7 @@ mod tests {
             source_tree: manifest.source_tree.clone(),
             effective_source_sha256: manifest.effective_source_sha256.clone(),
             adapter_source_sha256: manifest.adapter_source_sha256.clone(),
-            emscripten_sdk_contract_sha256: manifest.emscripten_sdk_contract_sha256.clone(),
+            emscripten_version: manifest.emscripten_version.clone(),
             wasm_provider_contract_sha256: manifest.wasm_provider_contract_sha256.clone(),
         }
     }
@@ -2475,18 +2340,24 @@ mod tests {
     }
 
     #[test]
-    fn pages_assets_must_fit_the_browser_integer_contract() {
+    fn pages_assets_have_an_explicit_operational_byte_limit() {
         let path = std::path::Path::new("asset.wasm");
         assert!(validate_pages_asset_byte_length(path, 1).is_ok());
-        assert!(validate_pages_asset_byte_length(path, JAVASCRIPT_MAX_SAFE_INTEGER).is_ok());
+        assert!(validate_pages_asset_byte_length(path, MAX_PAGES_RUNTIME_ASSET_BYTES).is_ok());
         assert!(validate_pages_asset_byte_length(path, 0).is_err());
-        assert!(validate_pages_asset_byte_length(path, JAVASCRIPT_MAX_SAFE_INTEGER + 1).is_err());
+        assert!(validate_pages_asset_byte_length(path, MAX_PAGES_RUNTIME_ASSET_BYTES + 1).is_err());
     }
 
     #[test]
-    fn pages_git_commands_use_a_qualified_absolute_program() {
-        let command = qualified_git_command().unwrap();
-        assert!(std::path::Path::new(command.get_program()).is_absolute());
+    fn pages_runtime_asset_cohort_has_one_total_byte_budget() {
+        let mut assets = manifest().assets;
+        for asset in &mut assets {
+            asset.byte_length = 1;
+        }
+        validate_pages_runtime_asset_budget(&assets).unwrap();
+
+        assets[0].byte_length = MAX_PAGES_RUNTIME_TOTAL_ASSET_BYTES;
+        assert!(validate_pages_runtime_asset_budget(&assets).is_err());
     }
 
     #[cfg(unix)]
@@ -2523,7 +2394,7 @@ mod tests {
     }
 
     #[test]
-    fn null_trust_generation_removes_runtime_asset_directories() {
+    fn null_contract_generation_removes_current_runtime_generations() {
         let fixture = tempfile::tempdir().unwrap();
         let pages = fixture.path().join("docs/pages");
         let wasm = pages_wasm_generated_dir(fixture.path());
@@ -2538,6 +2409,19 @@ mod tests {
         assert!(pages.is_dir());
         assert!(!wasm.exists());
         assert!(!bevy.exists());
+    }
+
+    #[test]
+    fn runtime_directory_rejects_legacy_files() {
+        let fixture = tempfile::tempdir().unwrap();
+        let expected = ["current.js", "current.wasm"];
+        for name in expected {
+            fs::write(fixture.path().join(name), b"current").unwrap();
+        }
+        assert!(validate_pages_runtime_directory(fixture.path(), &expected).is_ok());
+
+        fs::write(fixture.path().join("box2d-sys-v0.js"), b"legacy").unwrap();
+        assert!(validate_pages_runtime_directory(fixture.path(), &expected).is_err());
     }
 
     #[test]
@@ -2579,8 +2463,8 @@ mod tests {
     #[test]
     fn loader_verifies_all_assets_before_importing_or_instantiating() {
         let manifest = manifest();
-        let trust = PagesLoaderTrust::from_manifest(&manifest, "7".repeat(64));
-        let loader = bevy_testbed_loader_js(Some(&trust));
+        let contract = PagesLoaderContract::from_manifest(&manifest);
+        let loader = bevy_testbed_loader_js(Some(&contract));
         let verify = loader
             .find("const assets = await loadVerifiedRuntimeAssets(manifest);")
             .unwrap();
@@ -2588,83 +2472,94 @@ mod tests {
             .find("] = await importVerifiedRuntimeModules(assets);")
             .unwrap();
         let instantiate = loader.find("await createProvider({").unwrap();
+        let app_instantiate = loader.find("await initBevyTestbed({").unwrap();
 
         assert!(loader.contains("crypto.subtle.digest(\"SHA-256\", bytes)"));
-        assert!(loader.contains("manifest_sha256"));
-        assert!(loader.contains("emscripten_sdk_contract_sha256"));
+        assert!(!loader.contains("manifest_sha256"));
+        assert!(loader.contains("emscripten_version"));
         assert!(loader.contains("wasm_provider_contract_sha256"));
         assert!(loader.contains("boxddProviderRuntimeEvidence"));
+        assert!(loader.contains("initial: 2048"));
+        assert!(loader.contains("maximum: 8192"));
+        assert!(!loader.contains("__BOXDD_"));
         assert!(loader.contains("memory.grow(1)"));
+        assert!(loader.contains("externalGrowth"));
         assert!(loader.contains("staleBufferDetached"));
         assert!(loader.contains("boxddRefreshMemoryViews"));
         assert!(loader.contains("providerHeapViewRefreshed"));
         assert!(loader.contains("postGrowthPhysicsStep"));
         assert!(loader.contains("BOXDD_BEVY_RUNTIME_EVIDENCE"));
-        assert!(loader.contains("const shimImportPattern = /^import \\* as (import[0-9]+)"));
-        assert!(loader.contains("importLines.some"));
-        assert!(loader.contains("source.replaceAll(specifier, JSON.stringify(shimModuleUrl))"));
+        assert!(loader.contains("HTMLScriptElement.supports?.(\"importmap\")"));
+        assert!(loader.contains("importMap.type = \"importmap\";"));
+        assert!(loader.contains("\"box2d-sys-v2-single\": shimUrl"));
+        assert!(!loader.contains("replaceShimImport"));
+        assert!(!loader.contains("setBoxddAppExports"));
         assert!(verify < import);
         assert!(import < instantiate);
-        assert!(bevy_testbed_loader_js(None).contains("const runtimeTrust = null;"));
+        assert!(instantiate < app_instantiate);
+        assert!(bevy_testbed_loader_js(None).contains("const runtimeContract = null;"));
     }
 
     #[test]
-    fn bindgen_provider_import_rewrite_requires_one_contiguous_namespace_block() {
-        let source = concat!(
-            "/* wasm-bindgen output */\n",
-            "import * as import1 from \"box2d-sys-v1-single\"\n",
-            "import * as import2 from \"box2d-sys-v1-single\";\n",
-            "export const ready = true;\n",
-        );
-        let patched = rewrite_bevy_bindgen_provider_imports(source, "box2d-sys-v1-single").unwrap();
-        assert_eq!(
-            patched.matches("from \"./box2d-provider-shim.js\"").count(),
-            2
-        );
+    fn loader_does_not_pin_release_specific_runtime_identity() {
+        let first = manifest();
+        let source_commit = first.source_commit.clone();
+        let first_contract = PagesLoaderContract::from_manifest(&first);
+        let first_loader = bevy_testbed_loader_js(Some(&first_contract));
 
-        let interleaved = concat!(
-            "import * as import1 from \"box2d-sys-v1-single\"\n",
-            "const unrelated = true;\n",
-            "import * as import2 from \"box2d-sys-v1-single\"\n",
-        );
-        assert!(rewrite_bevy_bindgen_provider_imports(interleaved, "box2d-sys-v1-single").is_err());
+        let mut second = first;
+        second.source_commit = "a".repeat(40);
+        second.source_tree = "b".repeat(40);
+        second.effective_source_sha256 = "c".repeat(64);
+        second.assets[0].sha256 = "d".repeat(64);
+        let second_contract = PagesLoaderContract::from_manifest(&second);
+        let second_loader = bevy_testbed_loader_js(Some(&second_contract));
+
+        assert_eq!(first_loader, second_loader);
+        assert!(!first_loader.contains("manifest_sha256"));
+        assert!(!first_loader.contains(&source_commit));
+        assert!(first_loader.contains("fetch(url, { cache, signal: controller.signal })"));
+        assert!(first_loader.contains("url.searchParams.set(\"sha256\", asset.sha256)"));
+        assert!(first_loader.contains("MAX_RUNTIME_MANIFEST_BYTES,\n    \"no-store\","));
     }
 
     #[test]
-    fn bindgen_provider_import_rewrite_preserves_metadata_and_rejects_non_import_replacements() {
-        let metadata = concat!(
-            "import * as import1 from \"box2d-sys-v1-single\"\n",
-            "const imports = { \"box2d-sys-v1-single\": import1 };\n",
-        );
-        let patched =
-            rewrite_bevy_bindgen_provider_imports(metadata, "box2d-sys-v1-single").unwrap();
-        assert!(patched.contains("\"box2d-sys-v1-single\": import1"));
+    fn loader_bounds_streams_before_buffering_runtime_bytes() {
+        let contract = PagesLoaderContract::from_manifest(&manifest());
+        let loader = bevy_testbed_loader_js(Some(&contract));
 
-        let unsupported = concat!(
-            "import * as import1 from \"box2d-sys-v1-single\"\n",
-            "const unexpected = 'from \"box2d-sys-v1-single\"';\n",
-        );
-        assert!(rewrite_bevy_bindgen_provider_imports(unsupported, "box2d-sys-v1-single").is_err());
-
-        let missing_handoff = "import * as import2 from \"box2d-sys-v1-single\"\n";
+        assert!(loader.contains("const MAX_RUNTIME_MANIFEST_BYTES = 1024 * 1024;"));
+        assert!(loader.contains("const MAX_RUNTIME_ASSET_BYTES = 536870912;"));
+        assert!(loader.contains("const MAX_RUNTIME_TOTAL_ASSET_BYTES = 536870912;"));
+        assert!(loader.contains("const RUNTIME_FETCH_INACTIVITY_TIMEOUT_MS = 30 * 1000;"));
+        assert!(loader.contains("const RUNTIME_FETCH_TOTAL_TIMEOUT_MS = 5 * 60 * 1000;"));
+        assert!(loader.contains("asset.byte_length > MAX_RUNTIME_ASSET_BYTES"));
+        assert!(loader.contains("totalAssetBytes > MAX_RUNTIME_TOTAL_ASSET_BYTES"));
+        assert!(loader.contains(
+            "async function fetchArrayBufferWithProgress(url, label, maxBytes, cache = \"default\")"
+        ));
+        assert!(loader.contains("if (total > maxBytes)"));
+        assert!(loader.contains("if (nextLoaded > maxBytes)"));
         assert!(
-            rewrite_bevy_bindgen_provider_imports(missing_handoff, "box2d-sys-v1-single").is_err()
+            loader.contains("const contentEncoding = response.headers.get(\"Content-Encoding\");")
         );
-
-        let duplicate_namespace = concat!(
-            "import * as import1 from \"box2d-sys-v1-single\"\n",
-            "import * as import1 from \"box2d-sys-v1-single\"\n",
-        );
+        assert!(loader.contains(
+            "const contentLength = identityEncoded ? response.headers.get(\"Content-Length\") : null;"
+        ));
+        assert!(loader.contains("await reader.cancel()"));
+        assert!(loader.contains("const controller = new AbortController();"));
+        assert!(loader.contains("controller.abort();"));
+        assert!(loader.contains("download stalled for ${RUNTIME_FETCH_INACTIVITY_TIMEOUT_MS}ms"));
+        assert!(loader.contains("download exceeded ${RUNTIME_FETCH_TOTAL_TIMEOUT_MS}ms"));
         assert!(
-            rewrite_bevy_bindgen_provider_imports(duplicate_namespace, "box2d-sys-v1-single")
-                .is_err()
+            loader.contains("const bytes = contentLengthKnown ? new Uint8Array(total) : null;")
         );
-
-        let indented_namespace = " import * as import1 from \"box2d-sys-v1-single\"\n";
-        assert!(
-            rewrite_bevy_bindgen_provider_imports(indented_namespace, "box2d-sys-v1-single")
-                .is_err()
-        );
+        assert!(loader.contains(
+            "fetchArrayBufferWithProgress(\n    runtimeManifestUrl,\n    \"runtime manifest\",\n    MAX_RUNTIME_MANIFEST_BYTES,\n    \"no-store\",\n  )"
+        ));
+        assert!(loader.contains(
+            "fetchArrayBufferWithProgress(runtimeAssetUrl(asset), asset.role, asset.byte_length)"
+        ));
     }
 
     #[test]

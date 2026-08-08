@@ -1,18 +1,17 @@
-#![allow(rustdoc::broken_intra_doc_links)]
-use crate::types::{Position, Vec2, WorldTransform};
+use crate::types::{JointId, Position, Vec2};
 use crate::world::World;
 use boxdd_sys::ffi;
 
-use super::{Joint, JointBase, OwnedJoint, raw_body_id};
-use crate::error::ApiResult;
+use super::JointBase;
+use crate::error::Result;
 
 // Prismatic joint
 #[derive(Clone, Debug)]
 /// Prismatic (slider) joint definition (maps to `b2PrismaticJointDef`).
 ///
 /// Constrains two bodies to slide along an axis with optional limits, motor,
-/// and spring (stiffness/damping). Use with `World::create_prismatic_joint(_id)`
-/// or `World::prismatic(...).build()`.
+/// and spring (stiffness/damping). Use with [`World::create_prismatic_joint`]
+/// or [`World::prismatic`].
 pub struct PrismaticJointDef {
     base: JointBase,
     enable_spring: bool,
@@ -29,8 +28,8 @@ pub struct PrismaticJointDef {
 
 impl PrismaticJointDef {
     pub fn new(base: JointBase) -> Self {
-        let _lease = crate::core::foundation::assert_transient_native_lease();
-        let raw = unsafe { ffi::b2DefaultPrismaticJointDef() };
+        let raw: ffi::b2PrismaticJointDef =
+            crate::core::native_defaults::prismatic_joint_def(base.to_raw());
         Self {
             base,
             enable_spring: raw.enableSpring,
@@ -107,8 +106,8 @@ impl PrismaticJointDef {
     }
 
     pub(crate) fn to_raw(&self) -> ffi::b2PrismaticJointDef {
-        let mut raw = unsafe { ffi::b2DefaultPrismaticJointDef() };
-        raw.base = self.base.to_raw();
+        let mut raw: ffi::b2PrismaticJointDef =
+            crate::core::native_defaults::prismatic_joint_def(self.base.to_raw());
         raw.enableSpring = self.enable_spring;
         raw.hertz = self.hertz;
         raw.dampingRatio = self.damping_ratio;
@@ -123,7 +122,7 @@ impl PrismaticJointDef {
     }
 
     #[inline]
-    pub fn validate(&self) -> ApiResult<()> {
+    pub fn validate(&self) -> Result<()> {
         super::check_prismatic_joint_def_valid(self)
     }
 
@@ -233,60 +232,76 @@ impl<'w> PrismaticJointBuilder<'w> {
         self.def.base = self.def.base.with_collide_connected(flag);
         self
     }
-    fn configure_local_frames(&mut self) -> ApiResult<()> {
+    fn configure_local_frames(&mut self) -> Result<()> {
         crate::core::callback_state::check_not_in_callback()?;
         super::creation::check_joint_target_identity(self.world, self.def.base())?;
         self.def.validate()?;
         if let Some(anchor) = self.anchor_a_world {
-            super::validation::check_joint_position(anchor)?;
+            super::validation::check_joint_position(
+                anchor,
+                "PrismaticJointBuilder::build",
+                "anchor_a_world",
+            )?;
         }
         if let Some(anchor) = self.anchor_b_world {
-            super::validation::check_joint_position(anchor)?;
+            super::validation::check_joint_position(
+                anchor,
+                "PrismaticJointBuilder::build",
+                "anchor_b_world",
+            )?;
         }
         let axis = self.axis_world.unwrap_or(Vec2::new(1.0, 0.0));
-        super::validation::check_joint_axis(axis)?;
+        super::validation::check_joint_axis(axis, "PrismaticJointBuilder::build", "axis_world")?;
         super::creation::check_joint_target_native(self.world, self.def.base())?;
 
         let body_a = self.def.base().body_a_id();
         let body_b = self.def.base().body_b_id();
 
-        let ta = WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(body_a)) });
-        let tb = WorldTransform::from_raw(unsafe { ffi::b2Body_GetTransform(raw_body_id(body_b)) });
+        let ta = super::read_native_body_world_transform(
+            "PrismaticJointBuilder::build",
+            "body_a_transform",
+            body_a,
+        )?;
+        let tb = super::read_native_body_world_transform(
+            "PrismaticJointBuilder::build",
+            "body_b_transform",
+            body_b,
+        )?;
         let aw = self.anchor_a_world.unwrap_or_else(|| ta.position());
         let bw = self.anchor_b_world.unwrap_or_else(|| tb.position());
-        let la = super::base_def::checked_world_to_local_point(ta, aw)?;
-        let lb = super::base_def::checked_world_to_local_point(tb, bw)?;
-        let ra = super::base_def::checked_world_axis_to_local_rotation(ta, axis)?;
-        let rb = super::base_def::checked_world_axis_to_local_rotation(tb, axis)?;
+        let la = super::base_def::checked_world_to_local_point(
+            "PrismaticJointBuilder::build",
+            "anchor_a_world",
+            ta,
+            aw,
+        )?;
+        let lb = super::base_def::checked_world_to_local_point(
+            "PrismaticJointBuilder::build",
+            "anchor_b_world",
+            tb,
+            bw,
+        )?;
+        let ra = super::base_def::checked_world_axis_to_local_rotation(
+            "PrismaticJointBuilder::build",
+            "axis_world",
+            ta,
+            axis,
+        )?;
+        let rb = super::base_def::checked_world_axis_to_local_rotation(
+            "PrismaticJointBuilder::build",
+            "axis_world",
+            tb,
+            axis,
+        )?;
         self.def.base_mut().set_local_frames(
-            crate::Transform::from_pos_angle(la, ra.angle()),
-            crate::Transform::from_pos_angle(lb, rb.angle()),
+            crate::Transform::from_pos_angle(la, ra.angle())?,
+            crate::Transform::from_pos_angle(lb, rb.angle())?,
         );
         Ok(())
     }
 
-    #[must_use]
-    pub fn build(mut self) -> Joint<'w> {
-        self.configure_local_frames()
-            .expect("prismatic-joint bodies and world-space frame must be valid for this world");
+    pub fn build(mut self) -> Result<JointId> {
+        self.configure_local_frames()?;
         self.world.create_prismatic_joint(&self.def)
-    }
-
-    pub fn try_build(mut self) -> ApiResult<Joint<'w>> {
-        self.configure_local_frames()?;
-        self.world.try_create_prismatic_joint(&self.def)
-    }
-
-    #[must_use]
-    pub fn build_owned(mut self) -> OwnedJoint {
-        // Defaults: anchors = body positions, axis = x
-        self.configure_local_frames()
-            .expect("prismatic-joint bodies and world-space frame must be valid for this world");
-        self.world.create_prismatic_joint_owned(&self.def)
-    }
-
-    pub fn try_build_owned(mut self) -> ApiResult<OwnedJoint> {
-        self.configure_local_frames()?;
-        self.world.try_create_prismatic_joint_owned(&self.def)
     }
 }

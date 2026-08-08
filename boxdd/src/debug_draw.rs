@@ -6,7 +6,7 @@
 //!
 //! Example
 //! ```no_run
-//! use boxdd::{DebugDraw, DebugDrawOptions, HexColor, Vec2, World, WorldDef, WorldTransform};
+//! use boxdd::{DebugDraw, DebugDrawOptions, Foundation, HexColor, Vec2, WorldTransform};
 //! struct Printer;
 //! impl DebugDraw for Printer {
 //!     fn draw_polygon(
@@ -18,10 +18,13 @@
 //!         println!("poly {} color={:#x}", vertices.len(), color.rgb_u32());
 //!     }
 //! }
-//! # let def = WorldDef::builder().build();
-//! # let mut world = World::new(def).unwrap();
+//! # let foundation = Foundation::initialize_default().unwrap();
+//! # let def = foundation.world_builder().build().unwrap();
+//! # let mut world = foundation.create_world(def).unwrap();
 //! let mut cmds = Vec::new();
-//! world.debug_draw_collect_into(&mut cmds, DebugDrawOptions::default());
+//! world
+//!     .debug_draw_collect_into(&mut cmds, DebugDrawOptions::default())
+//!     .unwrap();
 //! let mut drawer = Printer;
 //! for cmd in cmds {
 //!     let _ = cmd;
@@ -30,7 +33,7 @@
 use crate::Aabb;
 use crate::types::{Position, Vec2, WorldTransform};
 #[cfg(not(target_arch = "wasm32"))]
-use crate::world::{World, assert_world_available, check_world_available};
+use crate::world::{World, check_world_available};
 use boxdd_sys::ffi;
 #[cfg(not(target_arch = "wasm32"))]
 use smallvec::SmallVec;
@@ -38,12 +41,16 @@ use smallvec::SmallVec;
 use std::ffi::CStr;
 
 /// Packed Box2D debug-draw RGB color (`0xRRGGBB`).
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+///
+/// Serde rejects integers outside the 24-bit RGB range rather than truncating them.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[repr(transparent)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct HexColor(u32);
 
 impl HexColor {
+    pub(crate) const MAX_RGB_U32: u32 = 0x00ff_ffff;
+
     pub const BLACK: Self = Self::from_rgb_u32(0x000000);
     pub const WHITE: Self = Self::from_rgb_u32(0xFFFFFF);
     pub const RED: Self = Self::from_rgb_u32(0xFF0000);
@@ -61,7 +68,7 @@ impl HexColor {
 
     #[inline]
     pub const fn from_rgb_u32(rgb: u32) -> Self {
-        Self(rgb & 0x00ff_ffff)
+        Self(rgb & Self::MAX_RGB_U32)
     }
 
     #[inline]
@@ -82,6 +89,23 @@ impl HexColor {
     #[inline]
     pub const fn with_alpha(self, alpha: u8) -> u32 {
         ((alpha as u32) << 24) | self.0
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for HexColor {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let rgb = <u32 as serde::Deserialize>::deserialize(deserializer)?;
+        if rgb > Self::MAX_RGB_U32 {
+            return Err(serde::de::Error::invalid_value(
+                serde::de::Unexpected::Unsigned(u64::from(rgb)),
+                &"an RGB color in the inclusive range 0x000000..=0xFFFFFF",
+            ));
+        }
+        Ok(Self::from_rgb_u32(rgb))
     }
 }
 
@@ -197,7 +221,8 @@ pub struct DebugDrawOptions {
 impl Default for DebugDrawOptions {
     fn default() -> Self {
         Self {
-            drawing_bounds: Aabb::new([-1.0e9, -1.0e9], [1.0e9, 1.0e9]),
+            drawing_bounds: Aabb::new([-1.0e9, -1.0e9], [1.0e9, 1.0e9])
+                .expect("hard-coded debug drawing bounds are valid"),
             force_scale: 1.0,
             joint_scale: 1.0,
             draw_contacts: false,
@@ -221,29 +246,33 @@ impl Default for DebugDrawOptions {
 
 impl DebugDrawOptions {
     /// Validate every numeric option before it crosses the Box2D ABI boundary.
-    pub fn validate(&self) -> crate::error::ApiResult<()> {
-        if self.drawing_bounds.is_valid()
-            && self.force_scale.is_finite()
-            && self.joint_scale.is_finite()
-        {
-            Ok(())
-        } else {
-            Err(crate::error::ApiError::InvalidArgument)
+    pub fn validate(&self) -> crate::error::Result<()> {
+        if !self.drawing_bounds.is_valid() {
+            return Err(crate::error::Error::invalid_argument(
+                "DebugDrawOptions::validate",
+                "drawing_bounds",
+                "finite ordered lower and upper bounds",
+            ));
         }
+        if !self.force_scale.is_finite() {
+            return Err(crate::error::Error::invalid_argument(
+                "DebugDrawOptions::validate",
+                "force_scale",
+                "a finite value",
+            ));
+        }
+        if !self.joint_scale.is_finite() {
+            return Err(crate::error::Error::invalid_argument(
+                "DebugDrawOptions::validate",
+                "joint_scale",
+                "a finite value",
+            ));
+        }
+        Ok(())
     }
 
-    #[track_caller]
     #[cfg(not(target_arch = "wasm32"))]
-    fn assert_valid(self) -> ValidatedDebugDrawOptions {
-        assert!(
-            self.validate().is_ok(),
-            "debug draw options require valid drawing bounds and finite scale values"
-        );
-        ValidatedDebugDrawOptions(self)
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    fn checked(self) -> crate::error::ApiResult<ValidatedDebugDrawOptions> {
+    fn checked(self) -> crate::error::Result<ValidatedDebugDrawOptions> {
         self.validate()?;
         Ok(ValidatedDebugDrawOptions(self))
     }
@@ -265,25 +294,33 @@ unsafe fn with_ffi_debug_draw_vertices(
     vertices: *const ffi::b2Vec2,
     count: i32,
     visit: impl FnOnce(&[ffi::b2Vec2]),
-) {
+) -> bool {
     let Ok(len) = usize::try_from(count) else {
-        return;
+        return false;
     };
     if len == 0 {
         visit(&[]);
-        return;
+        return true;
     }
     if vertices.is_null()
         || !vertices.is_aligned()
+        || len > ffi::B2_MAX_POLYGON_VERTICES as usize
         || len > (isize::MAX as usize) / core::mem::size_of::<ffi::b2Vec2>()
+        || vertices
+            .addr()
+            .checked_add(len * core::mem::size_of::<ffi::b2Vec2>())
+            .is_none()
     {
-        return;
+        return false;
     }
     visit(unsafe { core::slice::from_raw_parts(vertices, len) });
+    true
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 trait NativeDebugDraw {
+    fn invalid_output(&mut self, output: &'static str, constraint: &'static str);
+
     fn draw_polygon(
         &mut self,
         transform: ffi::b2WorldTransform,
@@ -316,23 +353,125 @@ trait NativeDebugDraw {
 #[cfg(not(target_arch = "wasm32"))]
 struct SafeDebugDrawAdapter<'a> {
     drawer: &'a mut dyn DebugDraw,
+    operation: &'static str,
+    error: Option<crate::Error>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl SafeDebugDrawAdapter<'_> {
+    fn reject(&mut self, output: &'static str, constraint: &'static str) {
+        self.error.get_or_insert(crate::Error::InvalidNativeOutput {
+            operation: self.operation,
+            output,
+            constraint,
+        });
+    }
+
+    fn transform(
+        &mut self,
+        raw: ffi::b2WorldTransform,
+        output: &'static str,
+    ) -> Option<WorldTransform> {
+        if self.error.is_some() {
+            return None;
+        }
+        match WorldTransform::from_raw(raw) {
+            Ok(value) => Some(value),
+            Err(_) => {
+                self.reject(output, "a finite rigid world transform");
+                None
+            }
+        }
+    }
+
+    fn position(&mut self, raw: ffi::b2Pos, output: &'static str) -> Option<Position> {
+        if self.error.is_some() {
+            return None;
+        }
+        let value = Position::from_raw(raw);
+        if value.is_valid() {
+            Some(value)
+        } else {
+            self.reject(output, "a finite world position");
+            None
+        }
+    }
+
+    fn vector(&mut self, raw: ffi::b2Vec2, output: &'static str) -> Option<Vec2> {
+        if self.error.is_some() {
+            return None;
+        }
+        let value = Vec2::from_raw(raw);
+        if value.is_valid() {
+            Some(value)
+        } else {
+            self.reject(output, "a finite vector");
+            None
+        }
+    }
+
+    fn non_negative(&mut self, value: f32, output: &'static str) -> Option<f32> {
+        if self.error.is_some() {
+            return None;
+        }
+        if value.is_finite() && value >= 0.0 {
+            Some(value)
+        } else {
+            self.reject(output, "a finite non-negative value");
+            None
+        }
+    }
+
+    fn vertices(&mut self, raw: &[ffi::b2Vec2]) -> Option<SmallVec<[Vec2; 8]>> {
+        if self.error.is_some() {
+            return None;
+        }
+        let vertices = raw
+            .iter()
+            .copied()
+            .map(Vec2::from_raw)
+            .collect::<SmallVec<[Vec2; 8]>>();
+        if vertices.iter().copied().all(Vec2::is_valid) {
+            Some(vertices)
+        } else {
+            self.reject("vertices", "finite vertex coordinates");
+            None
+        }
+    }
+
+    fn bounds(&mut self, raw: ffi::b2AABB) -> Option<Aabb> {
+        if self.error.is_some() {
+            return None;
+        }
+        match Aabb::from_raw(raw) {
+            Ok(value) => Some(value),
+            Err(_) => {
+                self.reject("bounds", "finite ordered lower and upper bounds");
+                None
+            }
+        }
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl NativeDebugDraw for SafeDebugDrawAdapter<'_> {
+    fn invalid_output(&mut self, output: &'static str, constraint: &'static str) {
+        self.reject(output, constraint);
+    }
+
     fn draw_polygon(
         &mut self,
         transform: ffi::b2WorldTransform,
         vertices: &[ffi::b2Vec2],
         color: HexColor,
     ) {
-        let vertices = vertices
-            .iter()
-            .copied()
-            .map(Vec2::from_raw)
-            .collect::<SmallVec<[Vec2; 8]>>();
-        self.drawer
-            .draw_polygon(WorldTransform::from_raw(transform), &vertices, color);
+        let Some(transform) = self.transform(transform, "transform") else {
+            return;
+        };
+        let Some(vertices) = self.vertices(vertices) else {
+            return;
+        };
+        self.drawer.draw_polygon(transform, &vertices, color);
     }
 
     fn draw_solid_polygon(
@@ -342,22 +481,27 @@ impl NativeDebugDraw for SafeDebugDrawAdapter<'_> {
         radius: f32,
         color: HexColor,
     ) {
-        let vertices = vertices
-            .iter()
-            .copied()
-            .map(Vec2::from_raw)
-            .collect::<SmallVec<[Vec2; 8]>>();
-        self.drawer.draw_solid_polygon(
-            WorldTransform::from_raw(transform),
-            &vertices,
-            radius,
-            color,
-        );
+        let Some(transform) = self.transform(transform, "transform") else {
+            return;
+        };
+        let Some(vertices) = self.vertices(vertices) else {
+            return;
+        };
+        let Some(radius) = self.non_negative(radius, "radius") else {
+            return;
+        };
+        self.drawer
+            .draw_solid_polygon(transform, &vertices, radius, color);
     }
 
     fn draw_circle(&mut self, center: ffi::b2Pos, radius: f32, color: HexColor) {
-        self.drawer
-            .draw_circle(Position::from_raw(center), radius, color);
+        let Some(center) = self.position(center, "center") else {
+            return;
+        };
+        let Some(radius) = self.non_negative(radius, "radius") else {
+            return;
+        };
+        self.drawer.draw_circle(center, radius, color);
     }
 
     fn draw_solid_circle(
@@ -367,44 +511,71 @@ impl NativeDebugDraw for SafeDebugDrawAdapter<'_> {
         radius: f32,
         color: HexColor,
     ) {
-        self.drawer.draw_solid_circle(
-            WorldTransform::from_raw(transform),
-            Vec2::from_raw(center),
-            radius,
-            color,
-        );
+        let Some(transform) = self.transform(transform, "transform") else {
+            return;
+        };
+        let Some(center) = self.vector(center, "center") else {
+            return;
+        };
+        let Some(radius) = self.non_negative(radius, "radius") else {
+            return;
+        };
+        self.drawer
+            .draw_solid_circle(transform, center, radius, color);
     }
 
     fn draw_solid_capsule(&mut self, p1: ffi::b2Pos, p2: ffi::b2Pos, radius: f32, color: HexColor) {
-        self.drawer.draw_solid_capsule(
-            Position::from_raw(p1),
-            Position::from_raw(p2),
-            radius,
-            color,
-        );
+        let Some(p1) = self.position(p1, "p1") else {
+            return;
+        };
+        let Some(p2) = self.position(p2, "p2") else {
+            return;
+        };
+        let Some(radius) = self.non_negative(radius, "radius") else {
+            return;
+        };
+        self.drawer.draw_solid_capsule(p1, p2, radius, color);
     }
 
     fn draw_segment(&mut self, p1: ffi::b2Pos, p2: ffi::b2Pos, color: HexColor) {
-        self.drawer
-            .draw_segment(Position::from_raw(p1), Position::from_raw(p2), color);
+        let Some(p1) = self.position(p1, "p1") else {
+            return;
+        };
+        let Some(p2) = self.position(p2, "p2") else {
+            return;
+        };
+        self.drawer.draw_segment(p1, p2, color);
     }
 
     fn draw_transform(&mut self, transform: ffi::b2WorldTransform) {
-        self.drawer
-            .draw_transform(WorldTransform::from_raw(transform));
+        let Some(transform) = self.transform(transform, "transform") else {
+            return;
+        };
+        self.drawer.draw_transform(transform);
     }
 
     fn draw_point(&mut self, p: ffi::b2Pos, size: f32, color: HexColor) {
-        self.drawer.draw_point(Position::from_raw(p), size, color);
+        let Some(p) = self.position(p, "point") else {
+            return;
+        };
+        let Some(size) = self.non_negative(size, "size") else {
+            return;
+        };
+        self.drawer.draw_point(p, size, color);
     }
 
     fn draw_string(&mut self, p: ffi::b2Pos, s: &CStr, color: HexColor) {
-        self.drawer
-            .draw_string(Position::from_raw(p), &s.to_string_lossy(), color);
+        let Some(p) = self.position(p, "point") else {
+            return;
+        };
+        self.drawer.draw_string(p, &s.to_string_lossy(), color);
     }
 
     fn draw_bounds(&mut self, bounds: ffi::b2AABB, color: HexColor) {
-        self.drawer.draw_bounds(Aabb::from_raw(bounds), color);
+        let Some(bounds) = self.bounds(bounds) else {
+            return;
+        };
+        self.drawer.draw_bounds(bounds, color);
     }
 }
 
@@ -418,7 +589,12 @@ impl NativeDebugDraw for SafeDebugDrawAdapter<'_> {
 unsafe fn native_debug_draw_context<'a>(
     context: *mut core::ffi::c_void,
 ) -> Option<&'a mut DebugDrawCtx<'a>> {
-    unsafe { (context as *mut DebugDrawCtx<'a>).as_mut() }
+    let context = context.cast::<DebugDrawCtx<'a>>();
+    if context.is_null() || !context.is_aligned() {
+        None
+    } else {
+        Some(unsafe { &mut *context })
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -444,9 +620,15 @@ unsafe extern "C" fn draw_polygon_cb(
 ) {
     unsafe {
         run_native_debug_draw_callback(context, |drawer| {
-            with_ffi_debug_draw_vertices(vertices, count, |vertices| {
+            let valid = with_ffi_debug_draw_vertices(vertices, count, |vertices| {
                 drawer.draw_polygon(transform, vertices, HexColor::from_raw(color));
             });
+            if !valid {
+                drawer.invalid_output(
+                    "vertices",
+                    "a non-negative bounded count and a non-null aligned pointer when non-empty",
+                );
+            }
         });
     }
 }
@@ -462,9 +644,15 @@ unsafe extern "C" fn draw_solid_polygon_cb(
 ) {
     unsafe {
         run_native_debug_draw_callback(context, |drawer| {
-            with_ffi_debug_draw_vertices(vertices, count, |vertices| {
+            let valid = with_ffi_debug_draw_vertices(vertices, count, |vertices| {
                 drawer.draw_solid_polygon(transform, vertices, radius, HexColor::from_raw(color));
             });
+            if !valid {
+                drawer.invalid_output(
+                    "vertices",
+                    "a non-negative bounded count and a non-null aligned pointer when non-empty",
+                );
+            }
         });
     }
 }
@@ -560,10 +748,12 @@ unsafe extern "C" fn draw_string_cb(
 ) {
     unsafe {
         run_native_debug_draw_callback(context, |drawer| {
-            if !s.is_null() {
-                let s = CStr::from_ptr(s);
-                drawer.draw_string(p, s, HexColor::from_raw(color));
+            if s.is_null() {
+                drawer.invalid_output("string", "a non-null NUL-terminated string pointer");
+                return;
             }
+            let s = CStr::from_ptr(s);
+            drawer.draw_string(p, s, HexColor::from_raw(color));
         });
     }
 }
@@ -630,11 +820,15 @@ pub(crate) fn draw_replay_player(
     drawer: &mut impl DebugDraw,
     options: DebugDrawOptions,
     query_index: i32,
-) -> crate::error::ApiResult<crate::core::callback_state::PanicSlot> {
+) -> crate::error::Result<crate::core::callback_state::PanicSlot> {
     crate::core::callback_state::check_not_in_callback()?;
     let options = options.checked()?;
     let drawer: &mut dyn DebugDraw = drawer;
-    let mut adapter = SafeDebugDrawAdapter { drawer };
+    let mut adapter = SafeDebugDrawAdapter {
+        drawer,
+        operation: "ReplayPlayer::debug_draw",
+        error: None,
+    };
     let mut panic = crate::core::callback_state::PanicSlot::default();
     {
         let adapter: &mut dyn NativeDebugDraw = &mut adapter;
@@ -651,6 +845,9 @@ pub(crate) fn draw_replay_player(
         if !panic.has_panicked() {
             unsafe { ffi::b2RecPlayer_DrawFrameQueries(player, &mut draw, query_index) };
         }
+    }
+    if let Some(error) = adapter.error {
+        return Err(error);
     }
     Ok(panic)
 }
@@ -809,58 +1006,44 @@ impl World {
     /// Collect debug draw commands into a vector (fully safe).
     ///
     /// This calls into Box2D debug draw but does not invoke user code during the draw.
-    pub fn debug_draw_collect(&mut self, opts: DebugDrawOptions) -> Vec<DebugDrawCmd> {
-        assert_world_available(self.core());
-        let opts = opts.assert_valid();
-        let mut cmds = Vec::new();
-        self.debug_draw_collect_into_validated(&mut cmds, opts);
-        cmds
-    }
-
-    /// Collect debug draw commands into a vector (fully safe).
-    ///
-    /// Returns `ApiError::InCallback` if called while Box2D is already executing a callback.
-    pub fn try_debug_draw_collect(
+    pub fn debug_draw_collect(
         &mut self,
         opts: DebugDrawOptions,
-    ) -> crate::error::ApiResult<Vec<DebugDrawCmd>> {
-        check_world_available(self.core())?;
+    ) -> crate::error::Result<Vec<DebugDrawCmd>> {
+        check_world_available(self)?;
         let opts = opts.checked()?;
         let mut cmds = Vec::new();
-        self.debug_draw_collect_into_validated(&mut cmds, opts);
+        self.debug_draw_collect_into_validated(&mut cmds, opts)?;
         Ok(cmds)
-    }
-
-    /// Collect debug draw commands into a caller-owned buffer.
-    ///
-    /// This reuses the outer command buffer and, when the command sequence stays
-    /// stable, also reuses nested polygon vertex and string storage.
-    pub fn debug_draw_collect_into(&mut self, out: &mut Vec<DebugDrawCmd>, opts: DebugDrawOptions) {
-        assert_world_available(self.core());
-        self.debug_draw_collect_into_validated(out, opts.assert_valid());
     }
 
     fn debug_draw_collect_into_validated(
         &mut self,
         out: &mut Vec<DebugDrawCmd>,
         opts: ValidatedDebugDrawOptions,
-    ) {
+    ) -> crate::error::Result<()> {
         let mut collector = CollectDebugDraw::new(out);
-        self.debug_draw_validated(&mut collector, opts);
+        let result =
+            self.debug_draw_validated(&mut collector, opts, "World::debug_draw_collect_into");
         collector.finish();
+        if result.is_err() {
+            out.clear();
+        }
+        result
     }
 
     /// Collect debug draw commands into a caller-owned buffer.
     ///
-    /// Returns `ApiError::InCallback` if called while Box2D is already executing a callback.
-    pub fn try_debug_draw_collect_into(
+    /// This reuses the outer command buffer and, when the command sequence stays stable, also
+    /// reuses nested polygon vertex and string storage. Returns `Error::InCallback` if called
+    /// while Box2D is already executing a callback.
+    pub fn debug_draw_collect_into(
         &mut self,
         out: &mut Vec<DebugDrawCmd>,
         opts: DebugDrawOptions,
-    ) -> crate::error::ApiResult<()> {
-        check_world_available(self.core())?;
-        self.debug_draw_collect_into_validated(out, opts.checked()?);
-        Ok(())
+    ) -> crate::error::Result<()> {
+        check_world_available(self)?;
+        self.debug_draw_collect_into_validated(out, opts.checked()?)
     }
 
     fn draw_with_adapter(
@@ -868,55 +1051,59 @@ impl World {
         adapter: &mut dyn NativeDebugDraw,
         opts: ValidatedDebugDrawOptions,
     ) {
-        assert_world_available(self.core());
-        let owner_scope = crate::core::callback_state::OwnerCallScope::enter();
-        let mut panic = crate::core::callback_state::PanicSlot::default();
-        {
-            let mut ctx = DebugDrawCtx {
-                drawer: adapter,
-                panic: &mut panic,
-            };
-            let context = core::ptr::from_mut(&mut ctx).cast::<core::ffi::c_void>();
-            let mut dd = unsafe { ffi::b2DefaultDebugDraw() };
-            install_debug_draw_callbacks(&mut dd);
-            apply_debug_draw_options(&mut dd, opts.0, context);
+        crate::core::callback_state::run_debug_draw_boundary(
+            crate::core::callback_state::CallbackOwnerToken::world(self.core().brand.token()),
+            || {
+                let mut callback_panic = crate::core::callback_state::PanicSlot::default();
+                {
+                    let mut ctx = DebugDrawCtx {
+                        drawer: adapter,
+                        panic: &mut callback_panic,
+                    };
+                    let context = core::ptr::from_mut(&mut ctx).cast::<core::ffi::c_void>();
+                    let mut dd = unsafe { ffi::b2DefaultDebugDraw() };
+                    install_debug_draw_callbacks(&mut dd);
+                    apply_debug_draw_options(&mut dd, opts.0, context);
 
-            unsafe { ffi::b2World_Draw(self.raw(), &mut dd) };
-        }
-        owner_scope.finish_captured(Some(()), panic, [self.core_rc()]);
-    }
-
-    /// Draw the world through the safe, precision-aware callback interface.
-    ///
-    /// Box2D invokes the draw callbacks while traversing internal world state. During this call,
-    /// any attempt to call into the Box2D world through `boxdd` will panic, since the world is
-    /// considered locked by Box2D.
-    pub fn debug_draw(&mut self, drawer: &mut impl DebugDraw, opts: DebugDrawOptions) {
-        assert_world_available(self.core());
-        self.debug_draw_validated(drawer, opts.assert_valid());
+                    unsafe { ffi::b2World_Draw(self.raw(), &mut dd) };
+                }
+                callback_panic
+            },
+            |callback_panic, panic| {
+                callback_panic.map(|callback_panic| {
+                    panic.absorb(callback_panic);
+                })
+            },
+        );
     }
 
     fn debug_draw_validated(
         &mut self,
         drawer: &mut impl DebugDraw,
         opts: ValidatedDebugDrawOptions,
-    ) {
+        operation: &'static str,
+    ) -> crate::error::Result<()> {
         let drawer: &mut dyn DebugDraw = drawer;
-        let mut adapter = SafeDebugDrawAdapter { drawer };
+        let mut adapter = SafeDebugDrawAdapter {
+            drawer,
+            operation,
+            error: None,
+        };
         self.draw_with_adapter(&mut adapter, opts);
+        adapter.error.map_or(Ok(()), Err)
     }
 
-    /// Safe debug draw bridge with recoverable callback-lock checking.
+    /// Draw the world through the safe, precision-aware callback interface.
     ///
-    /// Returns `ApiError::InCallback` if called while Box2D is already executing a callback.
-    pub fn try_debug_draw(
+    /// Box2D invokes the draw callbacks while traversing internal world state. During this call,
+    /// any attempt to call into the Box2D world through `boxdd` returns `Error::InCallback`.
+    pub fn debug_draw(
         &mut self,
         drawer: &mut impl DebugDraw,
         opts: DebugDrawOptions,
-    ) -> crate::error::ApiResult<()> {
-        check_world_available(self.core())?;
-        self.debug_draw_validated(drawer, opts.checked()?);
-        Ok(())
+    ) -> crate::error::Result<()> {
+        check_world_available(self)?;
+        self.debug_draw_validated(drawer, opts.checked()?, "World::debug_draw")
     }
 }
 
@@ -954,7 +1141,10 @@ mod tests {
         impl DebugDraw for NoopDrawer {}
 
         let invalid_bounds = DebugDrawOptions {
-            drawing_bounds: Aabb::new([f32::NAN, 0.0], [1.0, 1.0]),
+            drawing_bounds: Aabb {
+                lower: [f32::NAN, 0.0].into(),
+                upper: [1.0, 1.0].into(),
+            },
             ..DebugDrawOptions::default()
         };
         let invalid_scale = DebugDrawOptions {
@@ -963,37 +1153,96 @@ mod tests {
         };
         assert_eq!(
             invalid_bounds.validate().unwrap_err(),
-            crate::ApiError::InvalidArgument
+            crate::Error::invalid_argument(
+                "DebugDrawOptions::validate",
+                "drawing_bounds",
+                "finite ordered lower and upper bounds",
+            )
         );
         assert_eq!(
             invalid_scale.validate().unwrap_err(),
-            crate::ApiError::InvalidArgument
+            crate::Error::invalid_argument(
+                "DebugDrawOptions::validate",
+                "force_scale",
+                "a finite value",
+            )
         );
 
-        let mut world = World::new(crate::WorldDef::default()).unwrap();
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
         let mut out = Vec::new();
         let mut drawer = NoopDrawer;
         assert_eq!(
-            world.try_debug_draw_collect(invalid_bounds).unwrap_err(),
-            crate::ApiError::InvalidArgument
+            world.debug_draw_collect(invalid_bounds).unwrap_err(),
+            crate::Error::invalid_argument(
+                "DebugDrawOptions::validate",
+                "drawing_bounds",
+                "finite ordered lower and upper bounds",
+            )
         );
         assert_eq!(
             world
-                .try_debug_draw_collect_into(&mut out, invalid_bounds)
+                .debug_draw_collect_into(&mut out, invalid_bounds)
                 .unwrap_err(),
-            crate::ApiError::InvalidArgument
+            crate::Error::invalid_argument(
+                "DebugDrawOptions::validate",
+                "drawing_bounds",
+                "finite ordered lower and upper bounds",
+            )
         );
         assert_eq!(
-            world
-                .try_debug_draw(&mut drawer, invalid_scale)
-                .unwrap_err(),
-            crate::ApiError::InvalidArgument
+            world.debug_draw(&mut drawer, invalid_scale).unwrap_err(),
+            crate::Error::invalid_argument(
+                "DebugDrawOptions::validate",
+                "force_scale",
+                "a finite value",
+            )
         );
-        assert!(
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                world.debug_draw_collect(invalid_bounds)
-            }))
-            .is_err()
+    }
+
+    #[test]
+    fn safe_adapter_rejects_invalid_native_values_before_user_dispatch() {
+        #[derive(Default)]
+        struct CountDraws(usize);
+
+        impl DebugDraw for CountDraws {
+            fn draw_transform(&mut self, _transform: WorldTransform) {
+                self.0 += 1;
+            }
+
+            fn draw_point(&mut self, _p: Position, _size: f32, _color: HexColor) {
+                self.0 += 1;
+            }
+        }
+
+        let mut drawer = CountDraws::default();
+        let error = {
+            let mut adapter = SafeDebugDrawAdapter {
+                drawer: &mut drawer,
+                operation: "test_debug_draw",
+                error: None,
+            };
+            let mut invalid = WorldTransform::IDENTITY.into_raw();
+            invalid.q.c = f32::NAN;
+
+            adapter.draw_transform(invalid);
+            adapter.draw_point(Position::ZERO.into_raw(), 1.0, HexColor::WHITE);
+            adapter.error
+        };
+        assert_eq!(drawer.0, 0);
+        assert_eq!(
+            error,
+            Some(crate::Error::InvalidNativeOutput {
+                operation: "test_debug_draw",
+                output: "transform",
+                constraint: "a finite rigid world transform",
+            })
         );
     }
 
@@ -1004,14 +1253,14 @@ mod tests {
         #[cfg(not(feature = "double-precision"))]
         let far = 1_000_000.25;
 
-        let transform = WorldTransform::from_pos_angle(test_position(far, -far), 0.25);
+        let transform = WorldTransform::from_pos_angle(test_position(far, -far), 0.25).unwrap();
         let circle_center = test_position(far + 10.5, -far - 20.25);
         let p1 = test_position(far + 1.0, -far - 2.0);
         let p2 = test_position(far + 3.0, -far - 4.0);
         let vertices = [Vec2::new(-1.0, -2.0), Vec2::new(3.0, 4.0)];
         let raw_vertices = vertices.map(Vec2::into_raw);
         let local_center = Vec2::new(0.5, -0.75);
-        let bounds = Aabb::new([-5.0, -6.0], [7.0, 8.0]);
+        let bounds = Aabb::new([-5.0, -6.0], [7.0, 8.0]).unwrap();
         let color = HexColor::from_rgb(0x12, 0x34, 0x56);
         let mut commands = Vec::new();
         let mut panic = crate::core::callback_state::PanicSlot::default();
@@ -1020,7 +1269,11 @@ mod tests {
             let mut collector = CollectDebugDraw::new(&mut commands);
             {
                 let drawer: &mut dyn DebugDraw = &mut collector;
-                let mut adapter = SafeDebugDrawAdapter { drawer };
+                let mut adapter = SafeDebugDrawAdapter {
+                    drawer,
+                    operation: "test",
+                    error: None,
+                };
                 let adapter: &mut dyn NativeDebugDraw = &mut adapter;
                 let mut ctx = test_context(adapter, &mut panic);
                 let context = core::ptr::from_mut(&mut ctx).cast::<core::ffi::c_void>();
@@ -1209,7 +1462,7 @@ mod tests {
         let mut dd = unsafe { ffi::b2DefaultDebugDraw() };
         install_debug_draw_callbacks(&mut dd);
         let context = core::ptr::NonNull::<u8>::dangling().as_ptr().cast();
-        let bounds = Aabb::new([-11.0, -12.0], [13.0, 14.0]);
+        let bounds = Aabb::new([-11.0, -12.0], [13.0, 14.0]).unwrap();
         let opts = DebugDrawOptions {
             drawing_bounds: bounds,
             force_scale: 2.25,
@@ -1242,7 +1495,7 @@ mod tests {
         assert!(dd.DrawPointFcn.is_some());
         assert!(dd.DrawStringFcn.is_some());
         assert!(dd.DrawBoundsFcn.is_some());
-        assert_eq!(Aabb::from_raw(dd.drawingBounds), bounds);
+        assert_eq!(Aabb::from_raw(dd.drawingBounds).unwrap(), bounds);
         assert_eq!(dd.forceScale, 2.25);
         assert_eq!(dd.jointScale, 3.5);
         assert!(dd.drawContacts);
@@ -1278,53 +1531,160 @@ mod tests {
     }
 
     #[test]
-    fn polygon_callback_rejects_invalid_buffers_without_forging_a_slice() {
+    fn polygon_callback_fails_closed_on_an_invalid_native_buffer() {
         let mut lengths = PolygonLengths::default();
         let mut panic = crate::core::callback_state::PanicSlot::default();
-        {
+        let error = {
             let drawer: &mut dyn DebugDraw = &mut lengths;
-            let mut adapter = SafeDebugDrawAdapter { drawer };
-            let adapter: &mut dyn NativeDebugDraw = &mut adapter;
-            let mut ctx = test_context(adapter, &mut panic);
-            let context = core::ptr::from_mut(&mut ctx).cast::<core::ffi::c_void>();
-            let mut dd = unsafe { ffi::b2DefaultDebugDraw() };
-            install_debug_draw_callbacks(&mut dd);
-            let vertex = Vec2::new(1.0, 2.0).into_raw();
+            let mut adapter = SafeDebugDrawAdapter {
+                drawer,
+                operation: "test",
+                error: None,
+            };
+            {
+                let adapter: &mut dyn NativeDebugDraw = &mut adapter;
+                let mut ctx = test_context(adapter, &mut panic);
+                let context = core::ptr::from_mut(&mut ctx).cast::<core::ffi::c_void>();
+                let mut dd = unsafe { ffi::b2DefaultDebugDraw() };
+                install_debug_draw_callbacks(&mut dd);
+                let vertex = Vec2::new(1.0, 2.0).into_raw();
 
-            unsafe {
-                dd.DrawPolygonFcn.unwrap()(
-                    WorldTransform::IDENTITY.into_raw(),
-                    core::ptr::null(),
-                    -1,
-                    HexColor::WHITE.into_raw(),
-                    context,
-                );
-                dd.DrawPolygonFcn.unwrap()(
-                    WorldTransform::IDENTITY.into_raw(),
-                    core::ptr::null(),
-                    1,
-                    HexColor::WHITE.into_raw(),
-                    context,
-                );
-                dd.DrawPolygonFcn.unwrap()(
-                    WorldTransform::IDENTITY.into_raw(),
-                    core::ptr::null(),
-                    0,
-                    HexColor::WHITE.into_raw(),
-                    context,
-                );
-                dd.DrawPolygonFcn.unwrap()(
-                    WorldTransform::IDENTITY.into_raw(),
-                    &vertex,
-                    1,
-                    HexColor::WHITE.into_raw(),
-                    context,
-                );
+                unsafe {
+                    dd.DrawPolygonFcn.unwrap()(
+                        WorldTransform::IDENTITY.into_raw(),
+                        core::ptr::null(),
+                        -1,
+                        HexColor::WHITE.into_raw(),
+                        context,
+                    );
+                    dd.DrawPolygonFcn.unwrap()(
+                        WorldTransform::IDENTITY.into_raw(),
+                        core::ptr::null(),
+                        0,
+                        HexColor::WHITE.into_raw(),
+                        context,
+                    );
+                    dd.DrawPolygonFcn.unwrap()(
+                        WorldTransform::IDENTITY.into_raw(),
+                        &vertex,
+                        1,
+                        HexColor::WHITE.into_raw(),
+                        context,
+                    );
+                }
+            }
+            adapter.error
+        };
+
+        assert!(!panic.has_panicked());
+        assert!(lengths.0.is_empty());
+        assert_eq!(
+            error,
+            Some(crate::Error::InvalidNativeOutput {
+                operation: "test",
+                output: "vertices",
+                constraint: "a non-negative bounded count and a non-null aligned pointer when non-empty",
+            })
+        );
+    }
+
+    #[test]
+    fn polygon_vertex_buffer_rejects_counts_above_the_box2d_limit() {
+        let mut visited = false;
+        let valid = unsafe {
+            with_ffi_debug_draw_vertices(
+                core::ptr::NonNull::<ffi::b2Vec2>::dangling().as_ptr(),
+                ffi::B2_MAX_POLYGON_VERTICES as i32 + 1,
+                |_| visited = true,
+            )
+        };
+
+        assert!(!valid);
+        assert!(!visited);
+    }
+
+    #[test]
+    fn debug_draw_context_rejects_null_and_misaligned_native_pointers() {
+        assert!(unsafe { native_debug_draw_context(core::ptr::null_mut()) }.is_none());
+        let misaligned =
+            core::ptr::without_provenance_mut::<core::ffi::c_void>(1).cast::<core::ffi::c_void>();
+        assert!(unsafe { native_debug_draw_context(misaligned) }.is_none());
+    }
+
+    #[test]
+    fn polygon_vertex_buffer_rejects_an_overflowing_address_range() {
+        let align_mask = core::mem::align_of::<ffi::b2Vec2>() - 1;
+        let pointer = core::ptr::without_provenance::<ffi::b2Vec2>(usize::MAX & !align_mask);
+        let mut visited = false;
+        let valid = unsafe {
+            with_ffi_debug_draw_vertices(pointer, 1, |_| {
+                visited = true;
+            })
+        };
+
+        assert!(!valid);
+        assert!(!visited);
+    }
+
+    #[test]
+    fn string_callback_fails_closed_on_a_null_native_pointer() {
+        #[derive(Default)]
+        struct CountDraws(usize);
+
+        impl DebugDraw for CountDraws {
+            fn draw_string(&mut self, _p: Position, _s: &str, _color: HexColor) {
+                self.0 += 1;
+            }
+
+            fn draw_point(&mut self, _p: Position, _size: f32, _color: HexColor) {
+                self.0 += 1;
             }
         }
 
+        let mut draws = CountDraws::default();
+        let mut panic = crate::core::callback_state::PanicSlot::default();
+        let error = {
+            let drawer: &mut dyn DebugDraw = &mut draws;
+            let mut adapter = SafeDebugDrawAdapter {
+                drawer,
+                operation: "test",
+                error: None,
+            };
+            {
+                let adapter: &mut dyn NativeDebugDraw = &mut adapter;
+                let mut ctx = test_context(adapter, &mut panic);
+                let context = core::ptr::from_mut(&mut ctx).cast::<core::ffi::c_void>();
+                let mut dd = unsafe { ffi::b2DefaultDebugDraw() };
+                install_debug_draw_callbacks(&mut dd);
+
+                unsafe {
+                    dd.DrawStringFcn.unwrap()(
+                        Position::ZERO.into_raw(),
+                        core::ptr::null(),
+                        HexColor::WHITE.into_raw(),
+                        context,
+                    );
+                    dd.DrawPointFcn.unwrap()(
+                        Position::ZERO.into_raw(),
+                        1.0,
+                        HexColor::WHITE.into_raw(),
+                        context,
+                    );
+                }
+            }
+            adapter.error
+        };
+
         assert!(!panic.has_panicked());
-        assert_eq!(lengths.0, [0, 1]);
+        assert_eq!(draws.0, 0);
+        assert_eq!(
+            error,
+            Some(crate::Error::InvalidNativeOutput {
+                operation: "test",
+                output: "string",
+                constraint: "a non-null NUL-terminated string pointer",
+            })
+        );
     }
 
     #[derive(Default)]
@@ -1350,6 +1710,8 @@ mod tests {
             let safe_drawer: &mut dyn DebugDraw = &mut drawer;
             let mut adapter = SafeDebugDrawAdapter {
                 drawer: safe_drawer,
+                operation: "test",
+                error: None,
             };
             let adapter: &mut dyn NativeDebugDraw = &mut adapter;
             let mut ctx = test_context(adapter, &mut panic);

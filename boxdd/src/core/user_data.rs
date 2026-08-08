@@ -5,7 +5,7 @@ use std::ffi::c_void;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
-use crate::error::{ApiError, ApiResult};
+use crate::error::{Error, Result};
 use crate::types::{BodyId, JointId, ShapeId};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -64,7 +64,7 @@ impl ErasedUserData {
         Some(f(r))
     }
 
-    pub(crate) fn try_into_value<T: 'static>(self) -> Result<T, Self> {
+    pub(crate) fn try_into_value<T: 'static>(self) -> std::result::Result<T, Self> {
         if self.type_id != TypeId::of::<T>() {
             return Err(self);
         }
@@ -81,9 +81,10 @@ impl Drop for ErasedUserData {
     }
 }
 
+#[must_use = "user-data updates must install the native pointer and retire the previous value"]
 pub(crate) struct UserDataUpdate {
     pointer: *mut c_void,
-    _retired: Option<ErasedUserData>,
+    retired: RetiredUserData,
 }
 
 impl UserDataUpdate {
@@ -91,13 +92,54 @@ impl UserDataUpdate {
     pub(crate) fn inserted(pointer: *mut c_void) -> Self {
         Self {
             pointer,
-            _retired: None,
+            retired: RetiredUserData::default(),
         }
     }
 
     #[inline]
-    pub(crate) fn pointer(&self) -> *mut c_void {
-        self.pointer
+    pub(crate) fn into_parts(self) -> (*mut c_void, RetiredUserData) {
+        (self.pointer, self.retired)
+    }
+}
+
+#[derive(Default)]
+#[must_use = "retired user data must be released after updating the native pointer"]
+pub(crate) struct RetiredUserData(Option<ErasedUserData>);
+
+impl RetiredUserData {
+    #[inline]
+    pub(crate) fn new(value: Option<ErasedUserData>) -> Self {
+        Self(value)
+    }
+
+    #[inline]
+    pub(crate) fn is_some(&self) -> bool {
+        self.0.is_some()
+    }
+
+    #[inline]
+    pub(crate) fn into_erased(mut self) -> Option<ErasedUserData> {
+        self.0.take()
+    }
+
+    fn drain_panic(&mut self, panic: &mut crate::core::callback_state::PanicSlot) {
+        if let Some(value) = self.0.take() {
+            panic.run_cleanup(|| drop(value));
+        }
+    }
+
+    pub(crate) fn resume_drop_panic(mut self) {
+        let mut panic = crate::core::callback_state::PanicSlot::default();
+        self.drain_panic(&mut panic);
+        panic.resume_or_forget();
+    }
+}
+
+impl Drop for RetiredUserData {
+    fn drop(&mut self) {
+        let mut panic = crate::core::callback_state::PanicSlot::default();
+        self.drain_panic(&mut panic);
+        panic.resume_or_forget();
     }
 }
 
@@ -126,104 +168,113 @@ impl UserDataEntry {
 
     pub(crate) fn replace<T: 'static>(
         &self,
-        value: T,
+        value: crate::core::callback_state::PendingUserValue<T>,
         version: UserDataVersion,
-    ) -> ApiResult<UserDataUpdate> {
-        let value = ErasedUserData::new(value);
-        let pointer = value.as_ptr();
+    ) -> Result<UserDataUpdate> {
         let mut slot = self
             .value
             .try_borrow_mut()
-            .map_err(|_| ApiError::ReentrantAccess)?;
+            .map_err(|_| Error::ReentrantAccess)?;
+        let value = ErasedUserData::new(value.into_inner());
+        let pointer = value.as_ptr();
         let retired = slot.replace(value);
         drop(slot);
         self.version.set(version);
         Ok(UserDataUpdate {
             pointer,
-            _retired: retired,
+            retired: RetiredUserData::new(retired),
         })
     }
 
-    pub(crate) fn version_if_present(&self) -> ApiResult<Option<UserDataVersion>> {
+    pub(crate) fn version_if_present(&self) -> Result<Option<UserDataVersion>> {
         let slot = self
             .value
             .try_borrow()
-            .map_err(|_| ApiError::ReentrantAccess)?;
+            .map_err(|_| Error::ReentrantAccess)?;
         Ok(slot.as_ref().map(|_| self.version.get()))
     }
 
     pub(crate) fn pointer_if_version(
         &self,
         version: UserDataVersion,
-    ) -> ApiResult<Option<*mut c_void>> {
+    ) -> Result<Option<*mut c_void>> {
         let slot = self
             .value
             .try_borrow()
-            .map_err(|_| ApiError::ReentrantAccess)?;
+            .map_err(|_| Error::ReentrantAccess)?;
         Ok(match slot.as_ref() {
             Some(value) if self.version.get() == version => Some(value.as_ptr()),
             _ => None,
         })
     }
 
-    pub(crate) fn check_mutable(&self) -> ApiResult<()> {
+    pub(crate) fn check_mutable(&self) -> Result<()> {
         let borrow = self
             .value
             .try_borrow_mut()
-            .map_err(|_| ApiError::ReentrantAccess)?;
+            .map_err(|_| Error::ReentrantAccess)?;
         drop(borrow);
         Ok(())
     }
 
-    pub(crate) fn take_erased(&self) -> ApiResult<Option<ErasedUserData>> {
+    pub(crate) fn take_erased(&self) -> Result<Option<ErasedUserData>> {
         let mut slot = self
             .value
             .try_borrow_mut()
-            .map_err(|_| ApiError::ReentrantAccess)?;
+            .map_err(|_| Error::ReentrantAccess)?;
         Ok(slot.take())
     }
 
-    pub(crate) fn try_with<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> ApiResult<Option<R>> {
+    pub(crate) fn try_with<T: 'static, R, F>(
+        &self,
+        f: crate::core::callback_state::PendingUserValue<F>,
+    ) -> Result<Option<R>>
+    where
+        F: FnOnce(&T) -> R,
+    {
         let slot = self
             .value
             .try_borrow()
-            .map_err(|_| ApiError::ReentrantAccess)?;
+            .map_err(|_| Error::ReentrantAccess)?;
         let Some(value) = slot.as_ref() else {
             return Ok(None);
         };
         if !value.matches::<T>() {
-            return Err(ApiError::UserDataTypeMismatch);
+            return Err(Error::UserDataTypeMismatch);
         }
-        Ok(Some(value.with_ref(f).expect("type checked")))
+        Ok(Some(value.with_ref(f.into_inner()).expect("type checked")))
     }
 
-    pub(crate) fn try_with_mut<T: 'static, R>(
+    pub(crate) fn try_with_mut<T: 'static, R, F>(
         &self,
-        f: impl FnOnce(&mut T) -> R,
-    ) -> ApiResult<Option<R>> {
+        f: crate::core::callback_state::PendingUserValue<F>,
+    ) -> Result<Option<R>>
+    where
+        F: FnOnce(&mut T) -> R,
+    {
         let mut slot = self
             .value
             .try_borrow_mut()
-            .map_err(|_| ApiError::ReentrantAccess)?;
+            .map_err(|_| Error::ReentrantAccess)?;
         let Some(value) = slot.as_mut() else {
             return Ok(None);
         };
         if !value.matches::<T>() {
-            return Err(ApiError::UserDataTypeMismatch);
+            return Err(Error::UserDataTypeMismatch);
         }
-        Ok(Some(value.with_mut(f).expect("type checked")))
+        Ok(Some(value.with_mut(f.into_inner()).expect("type checked")))
     }
 
-    pub(crate) fn take<T: 'static>(&self) -> ApiResult<Option<T>> {
+    pub(crate) fn take<T: 'static>(&self) -> Result<Option<T>> {
         let mut slot = self
             .value
             .try_borrow_mut()
-            .map_err(|_| ApiError::ReentrantAccess)?;
+            .map_err(|_| Error::ReentrantAccess)?;
         let Some(value) = slot.as_ref() else {
             return Ok(None);
         };
         if !value.matches::<T>() {
-            return Err(ApiError::UserDataTypeMismatch);
+            return Err(Error::UserDataTypeMismatch);
         }
         let value = slot.take().expect("value checked");
         drop(slot);
@@ -245,11 +296,11 @@ pub(crate) struct UserDataStore {
 }
 
 impl UserDataStore {
-    pub(crate) fn next_version(&mut self) -> ApiResult<UserDataVersion> {
+    pub(crate) fn next_version(&mut self) -> Result<UserDataVersion> {
         self.last_version = self
             .last_version
             .checked_add(1)
-            .ok_or(ApiError::UserDataVersionExhausted)?;
+            .ok_or(Error::UserDataVersionExhausted)?;
         self.revision = self.revision.wrapping_add(1);
         Ok(UserDataVersion(self.last_version))
     }
@@ -258,7 +309,7 @@ impl UserDataStore {
         self.revision = self.revision.wrapping_add(1);
     }
 
-    pub(crate) fn snapshot_manifest(&self) -> ApiResult<UserDataManifest> {
+    pub(crate) fn snapshot_manifest(&self) -> Result<UserDataManifest> {
         let world = match self.world.as_ref() {
             Some(entry) => entry.version_if_present()?,
             None => None,
@@ -279,7 +330,7 @@ impl UserDataStore {
         manifest: &UserDataManifest,
         identity_manifest: &crate::core::identity_registry::IdentityManifest,
         identities: &crate::core::identity_registry::PreparedIdentityRestore,
-    ) -> ApiResult<PreparedUserDataRestore> {
+    ) -> Result<PreparedUserDataRestore> {
         let mut target = Self {
             last_version: self.last_version,
             revision: self.revision.wrapping_add(1),
@@ -288,25 +339,25 @@ impl UserDataStore {
         target
             .bodies
             .try_reserve(manifest.bodies.len())
-            .map_err(|_| ApiError::SnapshotAllocationFailed)?;
+            .map_err(|_| Error::SnapshotAllocationFailed)?;
         target
             .shapes
             .try_reserve(manifest.shapes.len())
-            .map_err(|_| ApiError::SnapshotAllocationFailed)?;
+            .map_err(|_| Error::SnapshotAllocationFailed)?;
         target
             .joints
             .try_reserve(manifest.joints.len())
-            .map_err(|_| ApiError::SnapshotAllocationFailed)?;
+            .map_err(|_| Error::SnapshotAllocationFailed)?;
 
         let mut attachments = Vec::new();
         let attachment_capacity = usize::from(manifest.world.is_some())
             .checked_add(manifest.bodies.len())
             .and_then(|count| count.checked_add(manifest.shapes.len()))
             .and_then(|count| count.checked_add(manifest.joints.len()))
-            .ok_or(ApiError::SnapshotAllocationFailed)?;
+            .ok_or(Error::SnapshotAllocationFailed)?;
         attachments
             .try_reserve_exact(attachment_capacity)
-            .map_err(|_| ApiError::SnapshotAllocationFailed)?;
+            .map_err(|_| Error::SnapshotAllocationFailed)?;
 
         if let (Some(version), Some(entry)) = (manifest.world, self.world.as_ref())
             && let Some(pointer) = entry.pointer_if_version(version)?
@@ -362,11 +413,11 @@ impl UserDataStore {
             .checked_add(self.bodies.len())
             .and_then(|count| count.checked_add(self.shapes.len()))
             .and_then(|count| count.checked_add(self.joints.len()))
-            .ok_or(ApiError::SnapshotAllocationFailed)?;
+            .ok_or(Error::SnapshotAllocationFailed)?;
         let mut retired = Vec::new();
         retired
             .try_reserve_exact(retired_capacity)
-            .map_err(|_| ApiError::SnapshotAllocationFailed)?;
+            .map_err(|_| Error::SnapshotAllocationFailed)?;
 
         Ok(PreparedUserDataRestore {
             base_revision: self.revision,
@@ -419,12 +470,9 @@ pub(crate) struct PreparedUserDataRestore {
 }
 
 impl PreparedUserDataRestore {
-    pub(crate) fn commit(
-        mut self,
-        store: &mut UserDataStore,
-    ) -> ApiResult<CommittedUserDataRestore> {
+    pub(crate) fn commit(mut self, store: &mut UserDataStore) -> Result<CommittedUserDataRestore> {
         if store.revision != self.base_revision {
-            return Err(ApiError::WorldBusy);
+            return Err(Error::WorldBusy);
         }
         let mut old = core::mem::replace(store, self.target);
 
@@ -448,17 +496,48 @@ impl PreparedUserDataRestore {
 }
 
 pub(crate) struct CommittedUserDataRestore {
-    pub(crate) attachments: Vec<UserDataAttachment>,
-    pub(crate) retired: Vec<UserDataEntryRef>,
+    attachments: Vec<UserDataAttachment>,
+    retired: Vec<UserDataEntryRef>,
+}
+
+impl CommittedUserDataRestore {
+    pub(crate) fn attachments(&self) -> &[UserDataAttachment] {
+        &self.attachments
+    }
+
+    pub(crate) fn drop_retired(&mut self) -> std::thread::Result<()> {
+        cleanup_retired_user_data(core::mem::take(&mut self.retired)).into_result(())
+    }
+}
+
+impl Drop for CommittedUserDataRestore {
+    fn drop(&mut self) {
+        cleanup_retired_user_data(core::mem::take(&mut self.retired)).resume_or_forget();
+    }
+}
+
+fn cleanup_retired_user_data(
+    retired: Vec<UserDataEntryRef>,
+) -> crate::core::callback_state::PanicSlot {
+    let mut panic = crate::core::callback_state::PanicSlot::default();
+    for entry in retired {
+        panic.run_cleanup(|| {
+            let value = entry
+                .take_erased()
+                .expect("snapshot prepare checked user-data mutability");
+            drop(value);
+        });
+    }
+    panic
 }
 
 fn snapshot_entries<Id: Copy + Eq + std::hash::Hash>(
     entries: &HashMap<Id, UserDataEntryRef>,
-) -> ApiResult<Vec<(Id, UserDataVersion)>> {
+) -> Result<Vec<(Id, UserDataVersion)>> {
     let mut snapshot = Vec::new();
     snapshot
         .try_reserve_exact(entries.len())
-        .map_err(|_| ApiError::SnapshotAllocationFailed)?;
+        .map_err(|_| Error::SnapshotAllocationFailed)?;
     for (&id, entry) in entries {
         if let Some(version) = entry.version_if_present()? {
             snapshot.push((id, version));

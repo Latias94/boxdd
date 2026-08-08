@@ -30,13 +30,20 @@ impl WorkerCount {
     pub const MAX: u8 = B2_MAX_WORKERS;
 
     /// Construct a worker count after checking the native range and target capabilities.
-    pub fn new(value: u32) -> crate::error::ApiResult<Self> {
-        let value_u8 = u8::try_from(value).map_err(|_| crate::error::ApiError::InvalidArgument)?;
+    pub fn new(value: u32) -> crate::error::Result<Self> {
+        let invalid = || {
+            crate::error::Error::invalid_argument(
+                "WorkerCount::new",
+                "value",
+                "an integer in 1..=32",
+            )
+        };
+        let value_u8 = u8::try_from(value).map_err(|_| invalid())?;
         if !(Self::MIN..=Self::MAX).contains(&value_u8) {
-            return Err(crate::error::ApiError::InvalidArgument);
+            return Err(invalid());
         }
         if !Self::supports(value_u8) {
-            return Err(crate::error::ApiError::UnsupportedWorkerCount { requested: value });
+            return Err(crate::error::Error::UnsupportedWorkerCount { requested: value });
         }
         // The range check above proves this conversion cannot be zero.
         Ok(Self(
@@ -62,13 +69,20 @@ impl WorkerCount {
             && (value == Self::MIN || target_supports_multiple_workers())
     }
 
-    pub(crate) fn from_native(value: i32) -> crate::error::ApiResult<Self> {
-        Self::new(u32::try_from(value).map_err(|_| crate::error::ApiError::InvalidArgument)?)
+    pub(crate) fn from_native(value: i32) -> crate::error::Result<Self> {
+        let value_u8 = u8::try_from(value)
+            .map_err(|_| crate::error::Error::InvalidNativeWorkerCount { value })?;
+        if !Self::supports(value_u8) {
+            return Err(crate::error::Error::InvalidNativeWorkerCount { value });
+        }
+        Ok(Self(
+            NonZeroU8::new(value_u8).expect("validated native worker count is non-zero"),
+        ))
     }
 }
 
 impl TryFrom<u32> for WorkerCount {
-    type Error = crate::error::ApiError;
+    type Error = crate::error::Error;
 
     fn try_from(value: u32) -> Result<Self, Self::Error> {
         Self::new(value)
@@ -76,10 +90,24 @@ impl TryFrom<u32> for WorkerCount {
 }
 
 impl TryFrom<i32> for WorkerCount {
-    type Error = crate::error::ApiError;
+    type Error = crate::error::Error;
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
-        Self::new(u32::try_from(value).map_err(|_| crate::error::ApiError::InvalidArgument)?)
+        let value = u32::try_from(value).map_err(|_| {
+            crate::error::Error::invalid_argument(
+                "WorkerCount::try_from",
+                "value",
+                "an integer in 1..=32",
+            )
+        })?;
+        Self::new(value).map_err(|error| match error {
+            crate::error::Error::InvalidArgument { .. } => crate::error::Error::invalid_argument(
+                "WorkerCount::try_from",
+                "value",
+                "an integer in 1..=32",
+            ),
+            error => error,
+        })
     }
 }
 
@@ -188,31 +216,76 @@ impl WorldCapacity {
         static_body_count: u64,
         dynamic_body_count: u64,
         contact_count: u64,
-    ) -> crate::error::ApiResult<Self> {
-        if static_shape_count > Self::MAX_SHAPE_COUNT
-            || dynamic_shape_count > Self::MAX_SHAPE_COUNT
-            || contact_count > Self::MAX_CONTACT_COUNT
-            || !Self::sum_fits_native(static_shape_count, dynamic_shape_count)
-            || !Self::sum_fits_native(static_body_count, dynamic_body_count)
-        {
-            return Err(crate::error::ApiError::InvalidArgument);
+    ) -> crate::error::Result<Self> {
+        Self::check_input_field(
+            "static_shape_count",
+            static_shape_count,
+            Self::MAX_SHAPE_COUNT,
+            "a count supported by Box2D dynamic-tree sizing",
+        )?;
+        Self::check_input_field(
+            "dynamic_shape_count",
+            dynamic_shape_count,
+            Self::MAX_SHAPE_COUNT,
+            "a count supported by Box2D dynamic-tree sizing",
+        )?;
+        Self::check_input_field(
+            "static_body_count",
+            static_body_count,
+            Self::MAX_NATIVE,
+            "a count representable by a non-negative native int",
+        )?;
+        Self::check_input_field(
+            "dynamic_body_count",
+            dynamic_body_count,
+            Self::MAX_NATIVE,
+            "a count representable by a non-negative native int",
+        )?;
+        Self::check_input_field(
+            "contact_count",
+            contact_count,
+            Self::MAX_CONTACT_COUNT,
+            "a count supported by Box2D contact-table sizing",
+        )?;
+        if !Self::sum_fits_native(static_shape_count, dynamic_shape_count) {
+            return Err(crate::error::Error::invalid_argument(
+                "WorldCapacity::new",
+                "static_shape_count + dynamic_shape_count",
+                "a sum representable by a non-negative native int",
+            ));
+        }
+        if !Self::sum_fits_native(static_body_count, dynamic_body_count) {
+            return Err(crate::error::Error::invalid_argument(
+                "WorldCapacity::new",
+                "static_body_count + dynamic_body_count",
+                "a sum representable by a non-negative native int",
+            ));
         }
 
         Ok(Self {
-            static_shape_count: Self::to_native(static_shape_count)?,
-            dynamic_shape_count: Self::to_native(dynamic_shape_count)?,
-            static_body_count: Self::to_native(static_body_count)?,
-            dynamic_body_count: Self::to_native(dynamic_body_count)?,
-            contact_count: Self::to_native(contact_count)?,
+            static_shape_count: static_shape_count as i32,
+            dynamic_shape_count: dynamic_shape_count as i32,
+            static_body_count: static_body_count as i32,
+            dynamic_body_count: dynamic_body_count as i32,
+            contact_count: contact_count as i32,
         })
     }
 
     #[inline]
-    fn to_native(value: u64) -> crate::error::ApiResult<i32> {
-        if value <= Self::MAX_NATIVE {
-            Ok(value as i32)
+    fn check_input_field(
+        argument: &'static str,
+        value: u64,
+        maximum: u64,
+        constraint: &'static str,
+    ) -> crate::error::Result<()> {
+        if value > maximum {
+            Err(crate::error::Error::invalid_argument(
+                "WorldCapacity::new",
+                argument,
+                constraint,
+            ))
         } else {
-            Err(crate::error::ApiError::InvalidArgument)
+            Ok(())
         }
     }
 
@@ -222,19 +295,91 @@ impl WorldCapacity {
             .is_some_and(|sum| sum <= Self::MAX_NATIVE)
     }
 
-    /// Parse a capacity returned by Box2D, rejecting an invalid negative field.
-    pub fn try_from_raw(raw: ffi::b2Capacity) -> crate::error::ApiResult<Self> {
-        Self::new(
-            u64::try_from(raw.staticShapeCount)
-                .map_err(|_| crate::error::ApiError::InvalidArgument)?,
-            u64::try_from(raw.dynamicShapeCount)
-                .map_err(|_| crate::error::ApiError::InvalidArgument)?,
-            u64::try_from(raw.staticBodyCount)
-                .map_err(|_| crate::error::ApiError::InvalidArgument)?,
-            u64::try_from(raw.dynamicBodyCount)
-                .map_err(|_| crate::error::ApiError::InvalidArgument)?,
-            u64::try_from(raw.contactCount).map_err(|_| crate::error::ApiError::InvalidArgument)?,
-        )
+    /// Parse a capacity returned by Box2D, rejecting invalid provider counts and sums.
+    pub fn from_raw(raw: ffi::b2Capacity) -> crate::error::Result<Self> {
+        let static_shape_count = Self::native_count("staticShapeCount", raw.staticShapeCount)?;
+        let dynamic_shape_count = Self::native_count("dynamicShapeCount", raw.dynamicShapeCount)?;
+        let static_body_count = Self::native_count("staticBodyCount", raw.staticBodyCount)?;
+        let dynamic_body_count = Self::native_count("dynamicBodyCount", raw.dynamicBodyCount)?;
+        let contact_count = Self::native_count("contactCount", raw.contactCount)?;
+
+        Self::check_native_maximum(
+            "staticShapeCount",
+            static_shape_count,
+            Self::MAX_SHAPE_COUNT,
+            "a count supported by Box2D dynamic-tree sizing",
+        )?;
+        Self::check_native_maximum(
+            "dynamicShapeCount",
+            dynamic_shape_count,
+            Self::MAX_SHAPE_COUNT,
+            "a count supported by Box2D dynamic-tree sizing",
+        )?;
+        Self::check_native_maximum(
+            "contactCount",
+            contact_count,
+            Self::MAX_CONTACT_COUNT,
+            "a count supported by Box2D contact-table sizing",
+        )?;
+        Self::check_native_sum(
+            "staticShapeCount + dynamicShapeCount",
+            static_shape_count,
+            dynamic_shape_count,
+        )?;
+        Self::check_native_sum(
+            "staticBodyCount + dynamicBodyCount",
+            static_body_count,
+            dynamic_body_count,
+        )?;
+
+        Ok(Self {
+            static_shape_count: raw.staticShapeCount,
+            dynamic_shape_count: raw.dynamicShapeCount,
+            static_body_count: raw.staticBodyCount,
+            dynamic_body_count: raw.dynamicBodyCount,
+            contact_count: raw.contactCount,
+        })
+    }
+
+    #[inline]
+    fn native_count(field: &'static str, value: i32) -> crate::error::Result<u64> {
+        u64::try_from(value).map_err(|_| crate::error::Error::InvalidNativeWorldCapacity {
+            field,
+            value: i64::from(value),
+            constraint: "a non-negative native int",
+        })
+    }
+
+    #[inline]
+    fn check_native_maximum(
+        field: &'static str,
+        value: u64,
+        maximum: u64,
+        constraint: &'static str,
+    ) -> crate::error::Result<()> {
+        if value > maximum {
+            Err(crate::error::Error::InvalidNativeWorldCapacity {
+                field,
+                value: value as i64,
+                constraint,
+            })
+        } else {
+            Ok(())
+        }
+    }
+
+    #[inline]
+    fn check_native_sum(field: &'static str, left: u64, right: u64) -> crate::error::Result<()> {
+        let sum = left + right;
+        if sum > Self::MAX_NATIVE {
+            Err(crate::error::Error::InvalidNativeWorldCapacity {
+                field,
+                value: sum as i64,
+                constraint: "a sum representable by a non-negative native int",
+            })
+        } else {
+            Ok(())
+        }
     }
 
     #[inline]
@@ -274,14 +419,6 @@ impl WorldCapacity {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
-pub struct OwnedHandleCounts {
-    pub bodies: usize,
-    pub shapes: usize,
-    pub joints: usize,
-    pub chains: usize,
-}
-
 /// Simulation counters providing size and internal stats.
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct Counters {
@@ -305,8 +442,8 @@ pub struct Counters {
 
 impl Counters {
     #[inline]
-    pub fn from_raw(raw: ffi::b2Counters) -> Self {
-        Self {
+    pub fn from_raw(raw: ffi::b2Counters) -> crate::error::Result<Self> {
+        let counters = Self {
             byte_count: raw.byteCount,
             body_count: raw.bodyCount,
             shape_count: raw.shapeCount,
@@ -320,7 +457,100 @@ impl Counters {
             color_counts: raw.colorCounts,
             awake_contact_count: raw.awakeContactCount,
             recycled_contact_count: raw.recycledContactCount,
+        };
+        counters.validate_for("Counters::from_raw")?;
+        Ok(counters)
+    }
+
+    pub(crate) fn from_native(
+        operation: &'static str,
+        raw: ffi::b2Counters,
+    ) -> crate::error::Result<Self> {
+        Self::from_raw(raw).map_err(|_| crate::Error::InvalidNativeOutput {
+            operation,
+            output: "counters",
+            constraint: "non-negative internally consistent world counters",
+        })
+    }
+
+    /// Validate all counter ranges and relationships.
+    pub fn validate(&self) -> crate::error::Result<()> {
+        self.validate_for("Counters::validate")
+    }
+
+    fn validate_for(&self, operation: &'static str) -> crate::error::Result<()> {
+        macro_rules! non_negative {
+            ($field:ident) => {
+                if self.$field < 0 {
+                    return Err(crate::Error::invalid_argument(
+                        operation,
+                        stringify!($field),
+                        "a non-negative count",
+                    ));
+                }
+            };
         }
+
+        non_negative!(byte_count);
+        non_negative!(body_count);
+        non_negative!(shape_count);
+        non_negative!(contact_count);
+        non_negative!(joint_count);
+        non_negative!(island_count);
+        non_negative!(stack_used);
+        non_negative!(static_tree_height);
+        non_negative!(tree_height);
+        non_negative!(task_count);
+        non_negative!(awake_contact_count);
+        non_negative!(recycled_contact_count);
+        if self.color_counts.iter().any(|count| *count < 0) {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "color_counts",
+                "non-negative counts",
+            ));
+        }
+        if self.island_count > self.body_count {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "island_count",
+                "a count no greater than body_count",
+            ));
+        }
+        if self.static_tree_height > self.shape_count || self.tree_height > self.shape_count {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "static_tree_height/tree_height",
+                "heights no greater than shape_count",
+            ));
+        }
+        if self.awake_contact_count > self.contact_count {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "awake_contact_count",
+                "a count no greater than contact_count",
+            ));
+        }
+        let graph_constraint_count = self
+            .color_counts
+            .iter()
+            .try_fold(0_i64, |total, count| total.checked_add(i64::from(*count)))
+            .ok_or_else(|| {
+                crate::Error::invalid_argument(
+                    operation,
+                    "color_counts",
+                    "a sum no greater than contact_count + joint_count",
+                )
+            })?;
+        let live_constraint_count = i64::from(self.contact_count) + i64::from(self.joint_count);
+        if graph_constraint_count > live_constraint_count {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "color_counts",
+                "a sum no greater than contact_count + joint_count",
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -354,8 +584,8 @@ pub struct Profile {
 
 impl Profile {
     #[inline]
-    pub fn from_raw(raw: ffi::b2Profile) -> Self {
-        Self {
+    pub fn from_raw(raw: ffi::b2Profile) -> crate::error::Result<Self> {
+        let profile = Self {
             step: raw.step,
             pairs: raw.pairs,
             collide: raw.collide,
@@ -379,7 +609,62 @@ impl Profile {
             bullets: raw.bullets,
             sleep_islands: raw.sleepIslands,
             sensors: raw.sensors,
+        };
+        profile.validate_for("Profile::from_raw")?;
+        Ok(profile)
+    }
+
+    pub(crate) fn from_native(
+        operation: &'static str,
+        raw: ffi::b2Profile,
+    ) -> crate::error::Result<Self> {
+        Self::from_raw(raw).map_err(|_| crate::Error::InvalidNativeOutput {
+            operation,
+            output: "profile",
+            constraint: "finite non-negative timing values",
+        })
+    }
+
+    /// Validate every profile timing before publication.
+    pub fn validate(&self) -> crate::error::Result<()> {
+        self.validate_for("Profile::validate")
+    }
+
+    fn validate_for(&self, operation: &'static str) -> crate::error::Result<()> {
+        for (field, value) in [
+            ("step", self.step),
+            ("pairs", self.pairs),
+            ("collide", self.collide),
+            ("solve", self.solve),
+            ("solver_setup", self.solver_setup),
+            ("constraints", self.constraints),
+            ("prepare_constraints", self.prepare_constraints),
+            ("integrate_velocities", self.integrate_velocities),
+            ("warm_start", self.warm_start),
+            ("solve_impulses", self.solve_impulses),
+            ("integrate_positions", self.integrate_positions),
+            ("relax_impulses", self.relax_impulses),
+            ("apply_restitution", self.apply_restitution),
+            ("store_impulses", self.store_impulses),
+            ("split_islands", self.split_islands),
+            ("transforms", self.transforms),
+            ("sensor_hits", self.sensor_hits),
+            ("joint_events", self.joint_events),
+            ("hit_events", self.hit_events),
+            ("refit", self.refit),
+            ("bullets", self.bullets),
+            ("sleep_islands", self.sleep_islands),
+            ("sensors", self.sensors),
+        ] {
+            if !value.is_finite() || value < 0.0 {
+                return Err(crate::Error::invalid_argument(
+                    operation,
+                    field,
+                    "a finite value greater than or equal to zero",
+                ));
+            }
         }
+        Ok(())
     }
 
     #[inline]
@@ -424,26 +709,44 @@ mod tests {
         assert!(!WorkerCount::supports(2));
         #[cfg(not(target_family = "wasm"))]
         assert!(WorkerCount::supports(2));
-        assert_eq!(WorkerCount::new(0), Err(crate::ApiError::InvalidArgument));
+        let invalid_worker =
+            crate::Error::invalid_argument("WorkerCount::new", "value", "an integer in 1..=32");
+        assert_eq!(WorkerCount::new(0), Err(invalid_worker));
         assert_eq!(
             WorkerCount::new(u32::from(B2_MAX_WORKERS) + 1),
-            Err(crate::ApiError::InvalidArgument)
+            Err(invalid_worker)
         );
         assert_eq!(
             WorldCapacity::new(u64::from(i32::MAX as u32) + 1, 0, 0, 0, 0),
-            Err(crate::ApiError::InvalidArgument)
+            Err(crate::Error::invalid_argument(
+                "WorldCapacity::new",
+                "static_shape_count",
+                "a count supported by Box2D dynamic-tree sizing",
+            ))
         );
         assert_eq!(
             WorldCapacity::new(0, 0, i32::MAX as u64, 1, 0),
-            Err(crate::ApiError::InvalidArgument)
+            Err(crate::Error::invalid_argument(
+                "WorldCapacity::new",
+                "static_body_count + dynamic_body_count",
+                "a sum representable by a non-negative native int",
+            ))
         );
         assert_eq!(
             WorldCapacity::new(WorldCapacity::MAX_SHAPE_COUNT + 1, 0, 0, 0, 0),
-            Err(crate::ApiError::InvalidArgument)
+            Err(crate::Error::invalid_argument(
+                "WorldCapacity::new",
+                "static_shape_count",
+                "a count supported by Box2D dynamic-tree sizing",
+            ))
         );
         assert_eq!(
             WorldCapacity::new(0, 0, 0, 0, WorldCapacity::MAX_CONTACT_COUNT + 1),
-            Err(crate::ApiError::InvalidArgument)
+            Err(crate::Error::invalid_argument(
+                "WorldCapacity::new",
+                "contact_count",
+                "a count supported by Box2D contact-table sizing",
+            ))
         );
         assert!(
             WorldCapacity::new(
@@ -456,14 +759,18 @@ mod tests {
             .is_ok()
         );
         assert_eq!(
-            WorldCapacity::try_from_raw(ffi::b2Capacity {
+            WorldCapacity::from_raw(ffi::b2Capacity {
                 staticShapeCount: -1,
                 dynamicShapeCount: 0,
                 staticBodyCount: 0,
                 dynamicBodyCount: 0,
                 contactCount: 0,
             }),
-            Err(crate::ApiError::InvalidArgument)
+            Err(crate::Error::InvalidNativeWorldCapacity {
+                field: "staticShapeCount",
+                value: -1,
+                constraint: "a non-negative native int",
+            })
         );
     }
 
@@ -471,7 +778,7 @@ mod tests {
     fn capacity_round_trips_all_fields_without_signed_aliasing() {
         let capacity = WorldCapacity::new(1, 2, 3, 4, 5).unwrap();
         let raw = capacity.into_raw();
-        assert_eq!(WorldCapacity::try_from_raw(raw), Ok(capacity));
+        assert_eq!(WorldCapacity::from_raw(raw), Ok(capacity));
         assert_eq!(capacity.static_shape_count(), 1);
         assert_eq!(capacity.dynamic_shape_count(), 2);
         assert_eq!(capacity.static_body_count(), 3);
@@ -488,10 +795,10 @@ mod tests {
 
         let raw = ffi::b2Counters {
             byteCount: i64::from(i32::MAX) + 123,
-            bodyCount: 1,
-            shapeCount: 2,
-            contactCount: 3,
-            jointCount: 4,
+            bodyCount: 5,
+            shapeCount: 8,
+            contactCount: 3_000,
+            jointCount: 3_000,
             islandCount: 5,
             stackUsed: 6,
             staticTreeHeight: 7,
@@ -502,12 +809,12 @@ mod tests {
             recycledContactCount: 11,
         };
 
-        let counters = Counters::from_raw(raw);
+        let counters = Counters::from_raw(raw).unwrap();
         assert_eq!(counters.byte_count, i64::from(i32::MAX) + 123);
-        assert_eq!(counters.body_count, 1);
-        assert_eq!(counters.shape_count, 2);
-        assert_eq!(counters.contact_count, 3);
-        assert_eq!(counters.joint_count, 4);
+        assert_eq!(counters.body_count, 5);
+        assert_eq!(counters.shape_count, 8);
+        assert_eq!(counters.contact_count, 3_000);
+        assert_eq!(counters.joint_count, 3_000);
         assert_eq!(counters.island_count, 5);
         assert_eq!(counters.stack_used, 6);
         assert_eq!(counters.static_tree_height, 7);
@@ -546,6 +853,67 @@ mod tests {
             sensors: 23.0,
         };
 
-        assert_eq!(Profile::from_raw(profile.into_raw()), profile);
+        assert_eq!(Profile::from_raw(profile.into_raw()), Ok(profile));
+    }
+
+    #[test]
+    fn counters_and_profiles_reject_invalid_native_ranges() {
+        let valid = ffi::b2Counters {
+            byteCount: 0,
+            bodyCount: 2,
+            shapeCount: 2,
+            contactCount: 2,
+            jointCount: 2,
+            islandCount: 1,
+            stackUsed: 0,
+            staticTreeHeight: 1,
+            treeHeight: 1,
+            taskCount: 0,
+            colorCounts: [0; 24],
+            awakeContactCount: 1,
+            recycledContactCount: 0,
+        };
+        let mut invalid = valid;
+        invalid.bodyCount = -1;
+        assert!(matches!(
+            Counters::from_raw(invalid),
+            Err(crate::Error::InvalidArgument {
+                operation: "Counters::from_raw",
+                argument: "body_count",
+                ..
+            })
+        ));
+        let mut invalid = valid;
+        invalid.islandCount = 3;
+        assert!(matches!(
+            Counters::from_raw(invalid),
+            Err(crate::Error::InvalidArgument {
+                argument: "island_count",
+                ..
+            })
+        ));
+        let mut invalid = valid;
+        invalid.colorCounts[0] = 5;
+        assert!(matches!(
+            Counters::from_raw(invalid),
+            Err(crate::Error::InvalidArgument {
+                argument: "color_counts",
+                ..
+            })
+        ));
+
+        let mut raw = Profile::default().into_raw();
+        raw.solve = f32::NAN;
+        assert!(matches!(
+            Profile::from_raw(raw),
+            Err(crate::Error::InvalidArgument {
+                operation: "Profile::from_raw",
+                argument: "solve",
+                ..
+            })
+        ));
+        let mut raw = Profile::default().into_raw();
+        raw.step = f32::INFINITY;
+        assert!(Profile::from_native("World::profile", raw).is_err());
     }
 }

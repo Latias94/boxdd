@@ -1,9 +1,7 @@
-use crate::{
-    core::foundation::{assert_transient_native_lease, transient_native_lease},
-    error::{ApiError, ApiResult},
-    types::Vec2,
-};
+use crate::{core::foundation::transient_native_lease, error::Error, types::Vec2};
 use boxdd_sys::ffi;
+
+type Result<T, E = Error> = core::result::Result<T, E>;
 
 /// Box2D runtime version.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -36,9 +34,9 @@ impl Version {
 
 /// Get the linked Box2D version.
 #[inline]
-pub fn version() -> Version {
-    let _lease = assert_transient_native_lease();
-    Version::from_raw(unsafe { ffi::b2GetVersion() })
+pub fn version() -> Result<Version> {
+    let _lease = transient_native_lease()?;
+    Ok(Version::from_raw(unsafe { ffi::b2GetVersion() }))
 }
 
 /// Initial seed used by Box2D's deterministic djb2 hash helper.
@@ -55,72 +53,116 @@ pub fn is_valid_float(value: f32) -> bool {
 /// The return type is fixed-width to match upstream `int64_t`, independent of
 /// the host pointer width. Box2D reports a non-negative allocation count.
 #[inline]
-pub fn allocated_byte_count() -> i64 {
-    let _lease = assert_transient_native_lease();
+pub fn allocated_byte_count() -> Result<i64> {
+    let _lease = transient_native_lease()?;
     let count = unsafe { ffi::b2GetByteCount() };
-    (count >= 0)
-        .then_some(count)
-        .expect("Box2D reported a negative allocated byte count")
+    if count < 0 {
+        Err(Error::NegativeAllocatedByteCount { count })
+    } else {
+        Ok(count)
+    }
 }
 
 /// Get the absolute number of platform-specific system ticks.
 #[inline]
-pub fn ticks() -> u64 {
-    let _lease = assert_transient_native_lease();
-    unsafe { ffi::b2GetTicks() }
+pub fn ticks() -> Result<u64> {
+    let _lease = transient_native_lease()?;
+    Ok(unsafe { ffi::b2GetTicks() })
 }
 
 /// Get the elapsed milliseconds since `start_ticks`.
 #[inline]
-pub fn milliseconds_since(start_ticks: u64) -> f32 {
-    let _lease = assert_transient_native_lease();
-    unsafe { ffi::b2GetMilliseconds(start_ticks) }
+pub fn milliseconds_since(start_ticks: u64) -> Result<f32> {
+    let _lease = transient_native_lease()?;
+    let milliseconds = unsafe { ffi::b2GetMilliseconds(start_ticks) };
+    if milliseconds.is_finite() && milliseconds >= 0.0 {
+        Ok(milliseconds)
+    } else {
+        Err(Error::InvalidNativeElapsedMilliseconds)
+    }
 }
 
 /// Get the elapsed milliseconds since `start_ticks` and reset it to the current tick value.
 #[inline]
-pub fn milliseconds_and_reset(start_ticks: &mut u64) -> f32 {
-    let _lease = assert_transient_native_lease();
-    unsafe { ffi::b2GetMillisecondsAndReset(start_ticks) }
+pub fn milliseconds_and_reset(start_ticks: &mut u64) -> Result<f32> {
+    let _lease = transient_native_lease()?;
+    let mut staged_ticks = *start_ticks;
+    let milliseconds = unsafe { ffi::b2GetMillisecondsAndReset(&mut staged_ticks) };
+    if milliseconds.is_finite() && milliseconds >= 0.0 {
+        *start_ticks = staged_ticks;
+        Ok(milliseconds)
+    } else {
+        Err(Error::InvalidNativeElapsedMilliseconds)
+    }
 }
 
 /// Yield the current thread, matching Box2D's busy-loop helper.
 #[inline]
-pub fn yield_now() {
-    let _lease = assert_transient_native_lease();
-    unsafe { ffi::b2Yield() }
+pub fn yield_now() -> Result<()> {
+    let _lease = transient_native_lease()?;
+    unsafe { ffi::b2Yield() };
+    Ok(())
 }
 
 /// Hash bytes with Box2D's deterministic djb2 helper.
 #[inline]
-pub fn hash_bytes(hash: u32, data: &[u8]) -> u32 {
-    let count = i32::try_from(data.len()).expect("hash input length exceeds Box2D limits");
-    let _lease = assert_transient_native_lease();
-    unsafe { ffi::b2Hash(hash, data.as_ptr(), count) }
+pub fn hash_bytes(hash: u32, data: &[u8]) -> Result<u32> {
+    let _lease = transient_native_lease()?;
+    let count = i32::try_from(data.len()).map_err(|_| {
+        Error::invalid_argument(
+            "hash_bytes",
+            "data",
+            "a byte slice whose length is representable by a native int",
+        )
+    })?;
+    Ok(unsafe { ffi::b2Hash(hash, data.as_ptr(), count) })
 }
 
 /// Cross-platform deterministic `atan2` in the range `[-pi, pi]`.
 #[inline]
-pub fn atan2(y: f32, x: f32) -> f32 {
-    let _lease = assert_transient_native_lease();
-    unsafe { ffi::b2Atan2(y, x) }
+pub fn atan2(y: f32, x: f32) -> Result<f32> {
+    let _lease = transient_native_lease()?;
+    if !y.is_finite() {
+        return Err(Error::invalid_argument("atan2", "y", "a finite value"));
+    }
+    if !x.is_finite() {
+        return Err(Error::invalid_argument("atan2", "x", "a finite value"));
+    }
+    let angle = unsafe { ffi::b2Atan2(y, x) };
+    if angle.is_finite() {
+        Ok(angle)
+    } else {
+        Err(Error::InvalidNativeAngle)
+    }
 }
 
 /// Cross-platform deterministic cosine/sine pair as a rotation value.
 #[inline]
-pub fn compute_cos_sin(radians: f32) -> Rot {
-    let _lease = assert_transient_native_lease();
+pub fn compute_cos_sin(radians: f32) -> Result<Rot> {
+    let _lease = transient_native_lease()?;
+    if !radians.is_finite() {
+        return Err(Error::invalid_argument(
+            "compute_cos_sin",
+            "radians",
+            "a finite value",
+        ));
+    }
     let raw: ffi::b2CosSin = unsafe { ffi::b2ComputeCosSin(radians) };
-    Rot {
+    let rotation = Rot {
         c: raw.cosine,
         s: raw.sine,
+    };
+    if rotation.is_valid() {
+        Ok(rotation)
+    } else {
+        Err(Error::InvalidNativeRotation)
     }
 }
 
 const UNIT_VECTOR_LENGTH_TOLERANCE: f32 = 100.0 * f32::EPSILON;
 
 #[inline]
-fn check_unit_vector(vector: Vec2) -> ApiResult<()> {
+fn check_unit_vector(argument: &'static str, vector: Vec2) -> Result<()> {
     let length = (vector.x * vector.x + vector.y * vector.y).sqrt();
     if vector.is_valid()
         && length.is_finite()
@@ -128,46 +170,36 @@ fn check_unit_vector(vector: Vec2) -> ApiResult<()> {
     {
         Ok(())
     } else {
-        Err(ApiError::InvalidArgument)
+        Err(Error::invalid_argument(
+            "rotation_between_unit_vectors",
+            argument,
+            "a finite unit vector within Box2D's length tolerance",
+        ))
     }
 }
 
-/// Compute the rotation between two unit vectors.
-///
-/// # Panics
-///
-/// Panics before entering Box2D when either vector is non-finite or is not unit length. Use
-/// [`try_rotation_between_unit_vectors`] to handle invalid input without panicking.
-#[inline]
-pub fn rotation_between_unit_vectors<V1: Into<Vec2>, V2: Into<Vec2>>(v1: V1, v2: V2) -> Rot {
-    try_rotation_between_unit_vectors(v1, v2).expect("rotation inputs must be finite unit vectors")
-}
-
-/// Try to compute the rotation between two finite unit vectors.
+/// Compute the rotation between two finite unit vectors.
 ///
 /// The unit-length tolerance exactly matches the pinned Box2D precondition, so invalid input is
 /// rejected in Rust instead of reaching a native assertion.
 #[inline]
-pub fn try_rotation_between_unit_vectors<V1: Into<Vec2>, V2: Into<Vec2>>(
+pub fn rotation_between_unit_vectors<V1: Into<Vec2>, V2: Into<Vec2>>(
     v1: V1,
     v2: V2,
-) -> ApiResult<Rot> {
+) -> Result<Rot> {
     let v1 = v1.into();
     let v2 = v2.into();
-    check_unit_vector(v1)?;
-    check_unit_vector(v2)?;
+    check_unit_vector("v1", v1)?;
+    check_unit_vector("v2", v2)?;
     let _lease = transient_native_lease()?;
-    Ok(Rot::from_raw(unsafe {
+    let rotation = Rot::from_raw_unvalidated(unsafe {
         ffi::b2ComputeRotationBetweenUnitVectors(v1.into_raw(), v2.into_raw())
-    }))
-}
-
-/// Get the current global Box2D length-units scale.
-#[inline]
-pub fn length_units_per_meter() -> f32 {
-    crate::core::foundation::foundation()
-        .config()
-        .length_units_per_meter()
+    });
+    if rotation.is_valid() {
+        Ok(rotation)
+    } else {
+        Err(Error::InvalidNativeRotation)
+    }
 }
 
 #[repr(C)]
@@ -181,7 +213,21 @@ impl Rot {
     pub const IDENTITY: Self = Self { c: 1.0, s: 0.0 };
 
     #[inline]
-    pub const fn from_raw(raw: ffi::b2Rot) -> Self {
+    pub fn from_raw(raw: ffi::b2Rot) -> Result<Self> {
+        let rotation = Self::from_raw_unvalidated(raw);
+        if rotation.is_valid() {
+            Ok(rotation)
+        } else {
+            Err(Error::invalid_argument(
+                "Rot::from_raw",
+                "raw",
+                "a normalized finite rotation",
+            ))
+        }
+    }
+
+    #[inline]
+    pub(crate) const fn from_raw_unvalidated(raw: ffi::b2Rot) -> Self {
         Self { c: raw.c, s: raw.s }
     }
 
@@ -194,7 +240,19 @@ impl Rot {
     }
 
     #[inline]
-    pub fn from_radians(rad: f32) -> Self {
+    pub fn from_radians(rad: f32) -> Result<Self> {
+        if !rad.is_finite() {
+            return Err(Error::invalid_argument(
+                "Rot::from_radians",
+                "rad",
+                "a finite angle",
+            ));
+        }
+        Ok(Self::from_radians_unvalidated(rad))
+    }
+
+    #[inline]
+    pub(crate) fn from_radians_unvalidated(rad: f32) -> Self {
         let (s, c) = rad.sin_cos();
         Self { c, s }
     }
@@ -207,8 +265,15 @@ impl Rot {
         self.s
     }
     #[inline]
-    pub fn from_degrees(deg: f32) -> Self {
-        Self::from_radians(deg.to_radians())
+    pub fn from_degrees(deg: f32) -> Result<Self> {
+        if !deg.is_finite() {
+            return Err(Error::invalid_argument(
+                "Rot::from_degrees",
+                "deg",
+                "a finite angle",
+            ));
+        }
+        Ok(Self::from_radians_unvalidated(deg.to_radians()))
     }
     #[inline]
     pub fn angle(self) -> f32 {
@@ -224,16 +289,8 @@ impl Rot {
         1.0 - 0.0006 < magnitude_squared && magnitude_squared < 1.0 + 0.0006
     }
     #[inline]
-    pub fn from_unit_vectors<V1: Into<Vec2>, V2: Into<Vec2>>(v1: V1, v2: V2) -> Self {
+    pub fn from_unit_vectors<V1: Into<Vec2>, V2: Into<Vec2>>(v1: V1, v2: V2) -> Result<Self> {
         rotation_between_unit_vectors(v1, v2)
-    }
-    /// Try to construct a rotation between two finite unit vectors.
-    #[inline]
-    pub fn try_from_unit_vectors<V1: Into<Vec2>, V2: Into<Vec2>>(
-        v1: V1,
-        v2: V2,
-    ) -> ApiResult<Self> {
-        try_rotation_between_unit_vectors(v1, v2)
     }
     #[inline]
     pub fn rotate_vec(self, v: Vec2) -> Vec2 {
@@ -258,7 +315,7 @@ impl Rot {
 // serde support for Rot as angle (radians)
 #[cfg(feature = "serde")]
 impl serde::Serialize for Rot {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> core::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
@@ -268,12 +325,12 @@ impl serde::Serialize for Rot {
 
 #[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for Rot {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> core::result::Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        let angle = f32::deserialize(deserializer)?;
-        Ok(Rot::from_radians(angle))
+        let angle = <f32 as serde::Deserialize>::deserialize(deserializer)?;
+        Rot::from_radians(angle).map_err(serde::de::Error::custom)
     }
 }
 
@@ -382,9 +439,11 @@ impl From<Rot> for nalgebra::UnitComplex<f32> {
 }
 
 #[cfg(feature = "nalgebra")]
-impl<'a> From<&'a nalgebra::UnitComplex<f32>> for Rot {
+impl<'a> TryFrom<&'a nalgebra::UnitComplex<f32>> for Rot {
+    type Error = Error;
+
     #[inline]
-    fn from(r: &'a nalgebra::UnitComplex<f32>) -> Self {
+    fn try_from(r: &'a nalgebra::UnitComplex<f32>) -> Result<Self> {
         Rot::from_radians(r.angle())
     }
 }
@@ -403,10 +462,24 @@ impl Transform {
     };
 
     #[inline]
-    pub const fn from_raw(raw: ffi::b2Transform) -> Self {
+    pub fn from_raw(raw: ffi::b2Transform) -> Result<Self> {
+        let transform = Self::from_raw_unvalidated(raw);
+        if transform.is_valid() {
+            Ok(transform)
+        } else {
+            Err(Error::invalid_argument(
+                "Transform::from_raw",
+                "raw",
+                "a finite rigid transform",
+            ))
+        }
+    }
+
+    #[inline]
+    pub(crate) const fn from_raw_unvalidated(raw: ffi::b2Transform) -> Self {
         Self {
             p: Vec2::from_raw(raw.p),
-            q: Rot::from_raw(raw.q),
+            q: Rot::from_raw_unvalidated(raw.q),
         }
     }
 
@@ -419,12 +492,21 @@ impl Transform {
     }
 
     #[inline]
-    pub fn from_pos_angle<P: Into<Vec2>>(p: P, angle_radians: f32) -> Self {
-        Self {
-            p: p.into(),
-            q: Rot::from_radians(angle_radians),
+    pub fn from_pos_angle<P: Into<Vec2>>(p: P, angle_radians: f32) -> Result<Self> {
+        let position = p.into();
+        if !position.is_valid() {
+            return Err(Error::invalid_argument(
+                "Transform::from_pos_angle",
+                "position",
+                "a finite vector",
+            ));
         }
+        Ok(Self {
+            p: position,
+            q: Rot::from_radians(angle_radians)?,
+        })
     }
+
     #[inline]
     pub fn position(self) -> Vec2 {
         self.p
@@ -452,15 +534,6 @@ impl Transform {
         self.q.inv_rotate_vec(Vec2 { x: dx, y: dy })
     }
 }
-
-#[cfg(feature = "bytemuck")]
-unsafe impl bytemuck::Zeroable for Rot {}
-#[cfg(feature = "bytemuck")]
-unsafe impl bytemuck::Pod for Rot {}
-#[cfg(feature = "bytemuck")]
-unsafe impl bytemuck::Zeroable for Transform {}
-#[cfg(feature = "bytemuck")]
-unsafe impl bytemuck::Pod for Transform {}
 
 #[cfg(feature = "bytemuck")]
 const _: () = {
@@ -825,7 +898,7 @@ impl From<Transform> for mint::ColumnMatrix2x3<f32> {
 // serde support for Transform as { pos, angle } (radians)
 #[cfg(feature = "serde")]
 impl serde::Serialize for Transform {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> core::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
@@ -844,7 +917,7 @@ impl serde::Serialize for Transform {
 
 #[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for Transform {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> core::result::Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
@@ -853,8 +926,8 @@ impl<'de> serde::Deserialize<'de> for Transform {
             pos: super::super::types::Vec2,
             angle: f32,
         }
-        let r = Repr::deserialize(deserializer)?;
-        Ok(Transform::from_pos_angle(r.pos, r.angle))
+        let r = <Repr as serde::Deserialize>::deserialize(deserializer)?;
+        Transform::from_pos_angle(r.pos, r.angle).map_err(serde::de::Error::custom)
     }
 }
 
@@ -870,9 +943,11 @@ impl<'a> From<&'a Transform> for nalgebra::Isometry2<f32> {
 }
 
 #[cfg(feature = "nalgebra")]
-impl<'a> From<&'a nalgebra::Isometry2<f32>> for Transform {
+impl<'a> TryFrom<&'a nalgebra::Isometry2<f32>> for Transform {
+    type Error = Error;
+
     #[inline]
-    fn from(i: &'a nalgebra::Isometry2<f32>) -> Self {
+    fn try_from(i: &'a nalgebra::Isometry2<f32>) -> Result<Self> {
         let v = i.translation.vector;
         let angle = i.rotation.angle();
         Transform::from_pos_angle(Vec2 { x: v.x, y: v.y }, angle)
@@ -909,15 +984,15 @@ mod tests {
     }
 
     #[test]
-    fn native_math_helpers_reject_callback_reentry() {
+    fn native_math_helpers_return_callback_reentry_errors() {
         let _callback_guard = crate::core::callback_state::CallbackGuard::enter();
 
-        assert!(std::panic::catch_unwind(version).is_err());
-        assert!(std::panic::catch_unwind(|| atan2(1.0, 1.0)).is_err());
-        assert!(std::panic::catch_unwind(|| hash_bytes(HASH_INIT, b"boxdd")).is_err());
+        assert_eq!(version(), Err(Error::InCallback));
+        assert_eq!(atan2(1.0, 1.0), Err(Error::InCallback));
+        assert_eq!(hash_bytes(HASH_INIT, b"boxdd"), Err(Error::InCallback));
         assert!(matches!(
-            try_rotation_between_unit_vectors(Vec2::new(1.0, 0.0), Vec2::new(0.0, 1.0)),
-            Err(ApiError::InCallback)
+            rotation_between_unit_vectors(Vec2::new(1.0, 0.0), Vec2::new(0.0, 1.0)),
+            Err(Error::InCallback)
         ));
     }
 }

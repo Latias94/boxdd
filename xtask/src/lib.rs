@@ -1,9 +1,20 @@
-pub mod abi_contract;
-pub mod abi_probe;
-pub mod c_api;
+// Cross-package source links are restricted to contracts that must execute identically in the
+// published `boxdd-sys` build script and repository tooling. General I/O, process, path, and
+// temporary-file helpers belong to xtask itself.
+#[path = "../../boxdd-sys/src/adapter_contract.rs"]
+pub(crate) mod adapter_contract;
+#[allow(dead_code)]
+#[path = "../../boxdd-sys/src/bindgen_contract.rs"]
+pub(crate) mod bindgen_contract;
+// The consumer parses this shared protocol; rendering is exercised by its contract tests.
+#[allow(dead_code)]
+#[path = "../../boxdd-sys/src/build_identity.rs"]
+pub(crate) mod build_identity;
+pub(crate) mod build_support;
 pub mod config;
 pub(crate) mod emscripten_sdk;
 pub mod error;
+pub(crate) mod isolated_git;
 pub mod paths;
 #[allow(dead_code)]
 #[path = "../../boxdd-sys/src/prebuilt_provenance.rs"]
@@ -14,19 +25,22 @@ pub(crate) mod provenance_policy;
 #[path = "../../boxdd-sys/src/provider_archive.rs"]
 pub(crate) mod provider_archive;
 #[allow(dead_code)]
+#[path = "../../boxdd-sys/src/provider_catalog.rs"]
+pub(crate) mod provider_catalog;
+#[allow(dead_code)]
 #[path = "../../boxdd-sys/src/provider_manifest.rs"]
 pub(crate) mod provider_manifest;
-pub(crate) mod qualified_git;
 pub mod recording_ops;
 pub mod recording_wire;
-pub mod rust_index;
 #[path = "../../boxdd-sys/src/source_overlay.rs"]
 pub mod source_overlay;
-pub mod sys_abi_index;
-pub mod toolchains;
+pub(crate) mod subprocess_policy;
 pub(crate) mod wasm_identity;
 #[path = "../../boxdd-sys/src/wasm_provider_contract.rs"]
 pub(crate) mod wasm_provider_contract;
+mod wasm_provider_gate;
+#[path = "../../boxdd-sys/src/wasm_provider_memory.rs"]
+pub(crate) mod wasm_provider_memory;
 pub(crate) mod wasm_release_provenance;
 
 pub mod commands;
@@ -51,45 +65,14 @@ pub fn run_in(paths: &WorkspacePaths, args: impl IntoIterator<Item = String>) ->
             print_help();
             Ok(())
         }
-        [command, rest @ ..] if command == "api-coverage" => {
-            commands::api_coverage::run(paths, rest)
+        [command, rest @ ..] if command == "api-inventory" => {
+            commands::api_inventory::run(paths, rest)
         }
         [command, rest @ ..] if command == "recording-wire-codegen" => {
             commands::recording_codegen::run(paths, rest)
         }
-        [command, rest @ ..] if command == "build-policy-sources" => {
-            commands::build_policy_sources::run(paths.root(), rest)
-        }
         [command, rest @ ..] if command == "upstream-sync" => {
             commands::upstream_sync::run(paths, rest)
-        }
-        [command, rest @ ..] if command == "sample-parity" => {
-            commands::sample_parity::run(paths.root(), rest)
-        }
-        [command] if command == "verify-toolchains" => {
-            toolchains::verify_configuration(paths.root())
-                .map(|verification| println!("{verification}"))
-                .map_err(|error| Error::message(error.to_string()))
-        }
-        [command, option, root] if command == "provision-emsdk" && option == "--root" => {
-            emscripten_sdk::provision_emscripten_sdk(
-                &paths.root().join("xtask"),
-                std::path::Path::new(root),
-                false,
-            )
-            .map_err(Error::message)
-        }
-        [command, option, root, github_actions]
-            if command == "provision-emsdk"
-                && option == "--root"
-                && github_actions == "--github-actions" =>
-        {
-            emscripten_sdk::provision_emscripten_sdk(
-                &paths.root().join("xtask"),
-                std::path::Path::new(root),
-                true,
-            )
-            .map_err(Error::message)
         }
         [command] if command == "provider-smoke-app" => {
             commands::provider::provider_smoke_app(paths.root())
@@ -109,12 +92,6 @@ pub fn run_in(paths: &WorkspacePaths, args: impl IntoIterator<Item = String>) ->
         [command, rest @ ..] if command == "verify-precision-contract" => {
             commands::precision_contract::run(paths.root(), rest)
         }
-        [command, rest @ ..] if command == "verify-feature-matrix" => {
-            commands::verification::verify_feature_matrix(paths.root(), rest)
-        }
-        [command, rest @ ..] if command == "verify-compile-fail" => {
-            commands::verification::verify_compile_fail(paths.root(), rest)
-        }
         [command, rest @ ..] if command == "verify-wasm" => {
             commands::verification::verify_wasm(paths.root(), rest)
         }
@@ -124,14 +101,14 @@ pub fn run_in(paths: &WorkspacePaths, args: impl IntoIterator<Item = String>) ->
         [command, rest @ ..] if command == "verify-sanitizers" => {
             commands::verification::verify_sanitizers(paths.root(), rest)
         }
-        [command, rest @ ..] if command == "verify-semver" => {
-            commands::verification::verify_semver(paths.root(), rest)
-        }
         [command, rest @ ..] if command == "verify-packages" => {
             commands::package_registry::run(paths.root(), rest)
         }
         [command, rest @ ..] if command == "release-contract" => {
             commands::release_contract::run(paths.root(), rest)
+        }
+        [command, rest @ ..] if command == "native-package" => {
+            commands::native_package::run(paths.root(), rest)
         }
         [command, rest @ ..] if command == "qualify-native-provider" => {
             commands::native_provider::run(paths.root(), rest)
@@ -153,34 +130,21 @@ fn print_help() {
 boxdd xtask
 
 Usage:
-  cargo run -p xtask -- sample-parity --check
-  cargo run -p xtask -- sample-parity --write
-  cargo run -p xtask -- api-coverage --check
-  cargo run -p xtask -- api-coverage --write
-  cargo run -p xtask -- api-coverage --refresh-abi
+  cargo run -p xtask -- api-inventory --check
   cargo run -p xtask -- recording-wire-codegen --check
   cargo run -p xtask -- recording-wire-codegen --write
-  cargo run -p xtask -- build-policy-sources --check
-  cargo run -p xtask -- build-policy-sources --write
-  cargo run -p xtask -- api-coverage --audit-evidence
-  cargo run -p xtask -- api-coverage --audit-canonical-paths
-  cargo run -p xtask -- api-coverage --audit-reviewed-migration <40-hex-commit>
-  cargo run -p xtask -- api-coverage --migrate-reviewed-contract <40-hex-commit>
   cargo run -p xtask -- upstream-sync --check
-  cargo run -p xtask -- upstream-sync --prepare-next
   cargo run -p xtask -- upstream-sync --write
-  cargo run -p xtask -- verify-toolchains
-  cargo run -p xtask -- provision-emsdk --root <absolute-path> [--github-actions]
   cargo run -p xtask -- verify-precision-contract
-  cargo run -p xtask -- verify-feature-matrix
-  cargo run -p xtask -- verify-compile-fail
   cargo run -p xtask -- verify-wasm --compile-only
   cargo run -p xtask -- verify-wasm --runtime
   cargo run -p xtask -- verify-miri
   cargo run -p xtask -- verify-sanitizers --address|--undefined|--thread
-  cargo run -p xtask -- verify-semver
   cargo run -p xtask -- verify-packages
-  cargo run -p xtask -- release-contract --check
+  cargo run -p xtask -- release-contract --check --artifacts <directory>
+  cargo run -p xtask -- native-package build --sys-out <dir> --build-identity <file> --output <dir> --source-commit <sha> --release-tag <tag>
+  cargo run -p xtask -- native-package attest-local-system <build-identity> <archive> <header> <bindings> <output>
+  cargo run -p xtask -- native-package trust-local-system <input> <output>
   cargo run -p xtask -- qualify-native-provider --provider system ...
   cargo run -p xtask -- provider-smoke-app
   cargo run -p xtask -- provider-smoke
@@ -193,26 +157,20 @@ Usage:
   cargo run -p xtask -- validate-pages
 
 Commands:
-  api-coverage  Validate, regenerate, audit, or perform an explicitly reviewed structured API-contract migration
+  api-inventory  Check human-reviewed C function dispositions against headers and bindings
   recording-wire-codegen  Validate or regenerate the allocation-free runtime parser table
-  build-policy-sources  Validate or atomically refresh Rust build-policy source identities
-  upstream-sync  Validate, prepare, or apply the exact-SHA Box2D migration transaction
-  sample-parity  Validate or regenerate the upstream sample parity report
-  verify-toolchains  Validate workspace versions and pinned compiler configuration
-  provision-emsdk  Download, verify, extract, and qualify the pinned Emscripten SDK
+  upstream-sync  Validate or regenerate artifacts for the current exact-SHA Box2D checkout
   verify-precision-contract  Verify matching precision routes and deterministic mismatch failures
-  verify-feature-matrix  Check every supported feature, provider, and precision coordinate
-  verify-compile-fail  Run the ownership and lifetime compile-fail contract in both precisions
   verify-wasm  Run compile-only targets or Node + Chromium provider runtime in both precisions
   verify-miri  Run pure-Rust unsafe helper and state-machine tests under the pinned nightly
   verify-sanitizers  Run mixed C/Rust ASan, C UBSan, or targeted mixed TSan suites
-  verify-semver  Check the intentional 0.5-to-0.6 public break with pinned SemVer tooling
-  verify-packages  Package and consume all publishable crates through an isolated registry
+  verify-packages  Package, unpack, and consume all publishable crates through local patches
   release-contract  Validate tag, commit, upstream, changelog, artifacts, digests, and provenance
+  native-package  Package one explicit native build identity or attest a local system artifact
   qualify-native-provider  Qualify a packaged crate against one exact native provider coordinate
   provider-smoke-app  Build the Rust wasm provider-smoke app and export list
   provider-smoke  Build the Rust app, Box2D provider, and run Node smoke
-  wasm-provider-contract  Validate or atomically refresh both checked WASM provider ABI identities
+  wasm-provider-contract  Validate or refresh both checked WASM provider ABI identities
   build-wasm-provider-package  Build a deterministic official WASM provider package without executing it
   qualify-wasm-provider  Authenticate and execute an official WASM provider package in Node and Chromium
   build-pages-wasm  Build browser provider and Bevy testbed assets into docs/pages

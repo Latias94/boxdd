@@ -3,6 +3,7 @@
 mod lifecycle;
 mod semantic;
 
+use crate::core::length_scale::is_safe_length_units_per_meter;
 use boxdd_sys::{
     adapter::{self, AdapterIdentity, SnapshotLimits},
     ffi,
@@ -12,16 +13,10 @@ const RECORDING_HEADER_BYTES: usize = 32;
 const RECORDING_MAGIC: u32 = 0x4352_3242;
 const RECORDING_VERSION_MAJOR: u16 = 3;
 const RECORDING_VERSION_MINOR: u16 = 2;
-const MAX_RECORDING_BYTES: usize = 256 * 1024 * 1024;
+pub(crate) const MAX_RECORDING_BYTES: usize = 256 * 1024 * 1024;
 const MAX_RECORDS: usize = 1_000_000;
 const MAX_VALIDATION_WORK: u64 = 16_000_000;
 const FRAME_HEADER_BYTES: usize = 4;
-const PROGRAM_TAKE: u8 = 1;
-const PROGRAM_BOOL: u8 = 2;
-const PROGRAM_PRECISION: u8 = 3;
-const PROGRAM_STRING: u8 = 4;
-const PROGRAM_NATIVE_POD: u8 = 5;
-const PROGRAM_COUNTED: u8 = 6;
 const MAX_PROGRAM_DEPTH: usize = 16;
 const MAX_OPERATION_ARGUMENTS: usize = 16;
 
@@ -133,39 +128,74 @@ mod generated {
     ));
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum PreflightError {
+use generated::{
+    NATIVE_POD_CAPSULE, NATIVE_POD_CHAIN_SEGMENT, NATIVE_POD_CIRCLE, NATIVE_POD_POLYGON,
+    NATIVE_POD_SEGMENT, PROGRAM_BOOL, PROGRAM_COUNTED, PROGRAM_NATIVE_POD, PROGRAM_PRECISION,
+    PROGRAM_STRING, PROGRAM_TAKE,
+};
+
+/// A structural, semantic, or resource-bound failure found before native replay.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[non_exhaustive]
+pub(crate) enum NativeRecordingError {
+    #[error("recording exceeds the shared persistence size limit")]
     InputTooLarge,
+    #[error("recording is truncated")]
     Truncated,
+    #[error("recording header is incompatible")]
     HeaderMismatch,
+    #[error("recording contains a non-zero reserved field")]
     ReservedField,
+    #[error("recording length scale is invalid")]
     InvalidLengthScale,
+    #[error("the native adapter identity is unavailable")]
     AdapterUnavailable,
+    #[error("the recording does not match this native adapter")]
     AdapterMismatch,
+    #[error("recording snapshot length is invalid")]
     SnapshotLength,
+    #[error("native snapshot validation rejected the seed with status {0}")]
     SnapshotRejected(u32),
+    #[error("recording contract metadata is inconsistent")]
     ContractMismatch,
+    #[error("recording frame header is truncated")]
     FrameTruncated,
+    #[error("recording contains unknown opcode {0:#04x}")]
     UnknownOpcode(u8),
+    #[error("opcode {0:#04x} has a truncated payload")]
     PayloadTruncated(u8),
+    #[error("opcode {opcode:#04x} payload does not match operation {operation}")]
     PayloadMismatch { opcode: u8, operation: &'static str },
+    #[error("opcode {0:#04x} contains a non-canonical boolean")]
     InvalidBoolean(u8),
+    #[error("opcode {0:#04x} contains an invalid string")]
     InvalidString(u8),
+    #[error("opcode {0:#04x} contains an invalid element count")]
     InvalidCount(u8),
+    #[error("opcode {0:#04x} contains an invalid value")]
     InvalidValue(u8),
+    #[error("opcode {0:#04x} contains an unknown enum discriminant")]
     InvalidEnum(u8),
+    #[error("opcode {0:#04x} contains an out-of-range value")]
     InvalidRange(u8),
+    #[error("opcode {0:#04x} references an invalid native object")]
     InvalidReference(u8),
+    #[error("opcode {0:#04x} violates native object lifecycle ordering")]
     InvalidLifecycle(u8),
+    #[error("recording requires callbacks unsupported by replay")]
     UnsupportedCallbacks,
+    #[error("recording stream grammar is invalid")]
     StreamGrammar,
+    #[error("generated recording contract is inconsistent with the parser")]
     GeneratedContract,
+    #[error("recording validation exceeded its bounded work limit")]
     WorkLimit,
+    #[error("recording validation storage could not be allocated")]
     AllocationFailed,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct PreflightInfo {
+pub(crate) struct PreflightInfo {
     pub(super) length_units_per_meter: f32,
     pub(super) snapshot_offset: usize,
     pub(super) snapshot_bytes: usize,
@@ -174,25 +204,9 @@ pub(super) struct PreflightInfo {
     pub(super) queries: usize,
 }
 
-#[derive(Debug)]
-pub(super) struct ValidatedRecording {
-    bytes: Box<[u8]>,
-    info: PreflightInfo,
-}
-
-impl ValidatedRecording {
-    pub(super) fn bytes(&self) -> &[u8] {
-        &self.bytes
-    }
-
-    pub(super) const fn info(&self) -> PreflightInfo {
-        self.info
-    }
-}
-
-pub(super) fn preflight_recording(bytes: &[u8]) -> Result<ValidatedRecording, PreflightError> {
+pub(crate) fn validate_recording(bytes: &[u8]) -> Result<PreflightInfo, NativeRecordingError> {
     if bytes.len() > MAX_RECORDING_BYTES {
-        return Err(PreflightError::InputTooLarge);
+        return Err(NativeRecordingError::InputTooLarge);
     }
     let identity = adapter::verify_runtime_identity().map_err(map_adapter_identity_error)?;
     validate_generated_identity()?;
@@ -200,14 +214,14 @@ pub(super) fn preflight_recording(bytes: &[u8]) -> Result<ValidatedRecording, Pr
     let snapshot_end = header
         .snapshot_offset
         .checked_add(header.snapshot_bytes)
-        .ok_or(PreflightError::SnapshotLength)?;
+        .ok_or(NativeRecordingError::SnapshotLength)?;
     let snapshot_bytes = bytes
         .get(header.snapshot_offset..snapshot_end)
-        .ok_or(PreflightError::SnapshotLength)?;
+        .ok_or(NativeRecordingError::SnapshotLength)?;
     let snapshot = adapter::validate_snapshot(snapshot_bytes, &SnapshotLimits::default())
         .map_err(map_snapshot_validation_error)?;
     if snapshot.facts.requires_custom_filter != 0 || snapshot.facts.requires_pre_solve != 0 {
-        return Err(PreflightError::UnsupportedCallbacks);
+        return Err(NativeRecordingError::UnsupportedCallbacks);
     }
     let mut lifecycle = lifecycle::Lifecycle::from_snapshot(&snapshot)?;
     let stream = validate_stream(
@@ -218,48 +232,40 @@ pub(super) fn preflight_recording(bytes: &[u8]) -> Result<ValidatedRecording, Pr
         &mut lifecycle,
     )?;
 
-    let mut owned = Vec::new();
-    owned
-        .try_reserve_exact(bytes.len())
-        .map_err(|_| PreflightError::AllocationFailed)?;
-    owned.extend_from_slice(bytes);
-    Ok(ValidatedRecording {
-        bytes: owned.into_boxed_slice(),
-        info: PreflightInfo {
-            records: stream.records,
-            steps: stream.steps,
-            queries: stream.queries,
-            ..header
-        },
+    Ok(PreflightInfo {
+        records: stream.records,
+        steps: stream.steps,
+        queries: stream.queries,
+        ..header
     })
 }
 
-fn map_snapshot_validation_error(error: adapter::SnapshotValidationError) -> PreflightError {
+fn map_snapshot_validation_error(error: adapter::SnapshotValidationError) -> NativeRecordingError {
     match error {
         adapter::SnapshotValidationError::AdapterIdentity(error) => {
             map_adapter_identity_error(error)
         }
         adapter::SnapshotValidationError::Status(status) => {
-            PreflightError::SnapshotRejected(status)
+            NativeRecordingError::SnapshotRejected(status)
         }
-        _ => PreflightError::AdapterMismatch,
+        _ => NativeRecordingError::AdapterMismatch,
     }
 }
 
-fn map_adapter_identity_error(error: adapter::AdapterIdentityError) -> PreflightError {
+fn map_adapter_identity_error(error: adapter::AdapterIdentityError) -> NativeRecordingError {
     match error {
-        adapter::AdapterIdentityError::Unavailable => PreflightError::AdapterUnavailable,
-        adapter::AdapterIdentityError::Mismatch(_) => PreflightError::AdapterMismatch,
-        _ => PreflightError::AdapterMismatch,
+        adapter::AdapterIdentityError::Unavailable => NativeRecordingError::AdapterUnavailable,
+        adapter::AdapterIdentityError::Mismatch(_) => NativeRecordingError::AdapterMismatch,
+        _ => NativeRecordingError::AdapterMismatch,
     }
 }
 
-fn validate_generated_identity() -> Result<(), PreflightError> {
+fn validate_generated_identity() -> Result<(), NativeRecordingError> {
     if generated::UPSTREAM_SHA != boxdd_sys::UPSTREAM_SHA
         || generated::EFFECTIVE_SOURCE_SHA256 != boxdd_sys::EFFECTIVE_SOURCE_SHA256
         || generated::CONTRACT_BLAKE3 != boxdd_sys::RECORDING_CONTRACT_BLAKE3
     {
-        return Err(PreflightError::AdapterMismatch);
+        return Err(NativeRecordingError::AdapterMismatch);
     }
     Ok(())
 }
@@ -276,13 +282,13 @@ fn validate_stream(
     double_precision: bool,
     length_scale: f32,
     lifecycle: &mut lifecycle::Lifecycle,
-) -> Result<StreamFacts, PreflightError> {
+) -> Result<StreamFacts, NativeRecordingError> {
     if generated::OPERATIONS.is_empty()
         || generated::OPERATIONS
             .windows(2)
             .any(|pair| pair[0].opcode >= pair[1].opcode)
     {
-        return Err(PreflightError::ContractMismatch);
+        return Err(NativeRecordingError::ContractMismatch);
     }
 
     let mut cursor = stream_offset;
@@ -298,30 +304,30 @@ fn validate_stream(
 
     while cursor < bytes.len() {
         if records >= MAX_RECORDS {
-            return Err(PreflightError::WorkLimit);
+            return Err(NativeRecordingError::WorkLimit);
         }
-        work = work.checked_add(1).ok_or(PreflightError::WorkLimit)?;
+        work = work.checked_add(1).ok_or(NativeRecordingError::WorkLimit)?;
         if work > MAX_VALIDATION_WORK {
-            return Err(PreflightError::WorkLimit);
+            return Err(NativeRecordingError::WorkLimit);
         }
 
         let frame_header_end = cursor
             .checked_add(FRAME_HEADER_BYTES)
-            .ok_or(PreflightError::FrameTruncated)?;
+            .ok_or(NativeRecordingError::FrameTruncated)?;
         let frame_header = bytes
             .get(cursor..frame_header_end)
-            .ok_or(PreflightError::FrameTruncated)?;
+            .ok_or(NativeRecordingError::FrameTruncated)?;
         let opcode = frame_header[0];
-        let operation = operation(opcode).ok_or(PreflightError::UnknownOpcode(opcode))?;
+        let operation = operation(opcode).ok_or(NativeRecordingError::UnknownOpcode(opcode))?;
         let payload_size = usize::from(frame_header[1])
             | (usize::from(frame_header[2]) << 8)
             | (usize::from(frame_header[3]) << 16);
         let payload_end = frame_header_end
             .checked_add(payload_size)
-            .ok_or(PreflightError::PayloadTruncated(opcode))?;
+            .ok_or(NativeRecordingError::PayloadTruncated(opcode))?;
         let payload = bytes
             .get(frame_header_end..payload_end)
-            .ok_or(PreflightError::PayloadTruncated(opcode))?;
+            .ok_or(NativeRecordingError::PayloadTruncated(opcode))?;
         let mut interpreter = PayloadInterpreter {
             bytes: payload,
             cursor: 0,
@@ -330,7 +336,7 @@ fn validate_stream(
             work: &mut work,
         };
         if operation.arguments.len() > MAX_OPERATION_ARGUMENTS {
-            return Err(PreflightError::GeneratedContract);
+            return Err(NativeRecordingError::GeneratedContract);
         }
         let mut argument_ranges: [std::ops::Range<usize>; MAX_OPERATION_ARGUMENTS] =
             std::array::from_fn(|_| 0..0);
@@ -340,7 +346,7 @@ fn validate_stream(
             let argument_program = operation
                 .program
                 .get(program_start..program_end)
-                .ok_or(PreflightError::GeneratedContract)?;
+                .ok_or(NativeRecordingError::GeneratedContract)?;
             let argument_start = interpreter.cursor;
             interpreter.consume_program(argument_program, 0)?;
             let argument_end = interpreter.cursor;
@@ -349,7 +355,7 @@ fn validate_stream(
                 argument.tag,
                 payload
                     .get(argument_start..argument_end)
-                    .ok_or(PreflightError::GeneratedContract)?,
+                    .ok_or(NativeRecordingError::GeneratedContract)?,
                 double_precision,
                 length_scale,
                 opcode,
@@ -359,11 +365,11 @@ fn validate_stream(
         let tail_program = operation
             .program
             .get(program_start..)
-            .ok_or(PreflightError::GeneratedContract)?;
+            .ok_or(NativeRecordingError::GeneratedContract)?;
         let tail_start = interpreter.cursor;
         interpreter.consume_program(tail_program, 0)?;
         if interpreter.cursor != payload.len() {
-            return Err(PreflightError::PayloadMismatch {
+            return Err(NativeRecordingError::PayloadMismatch {
                 opcode,
                 operation: operation.name,
             });
@@ -380,7 +386,7 @@ fn validate_stream(
             operation.return_kind,
             payload
                 .get(tail_start..)
-                .ok_or(PreflightError::GeneratedContract)?,
+                .ok_or(NativeRecordingError::GeneratedContract)?,
             double_precision,
             opcode,
         )?;
@@ -393,34 +399,38 @@ fn validate_stream(
             arguments: &argument_ranges[..operation.arguments.len()],
             tail: payload
                 .get(tail_start..)
-                .ok_or(PreflightError::GeneratedContract)?,
+                .ok_or(NativeRecordingError::GeneratedContract)?,
             double_precision,
             opcode,
         })?;
 
         if records == 0 && operation.role != StreamRole::Initial {
-            return Err(PreflightError::StreamGrammar);
+            return Err(NativeRecordingError::StreamGrammar);
         }
         if records != 0 {
             if state_hash_required {
                 if operation.semantic != SemanticClass::StateHash {
-                    return Err(PreflightError::StreamGrammar);
+                    return Err(NativeRecordingError::StreamGrammar);
                 }
                 state_hash_required = false;
             } else if operation.semantic == SemanticClass::StateHash {
-                return Err(PreflightError::StreamGrammar);
+                return Err(NativeRecordingError::StreamGrammar);
             }
         }
         if operation.role == StreamRole::Terminal && payload_end != bytes.len() {
-            return Err(PreflightError::StreamGrammar);
+            return Err(NativeRecordingError::StreamGrammar);
         }
         match operation.semantic {
             SemanticClass::Step => {
-                steps = steps.checked_add(1).ok_or(PreflightError::WorkLimit)?;
+                steps = steps
+                    .checked_add(1)
+                    .ok_or(NativeRecordingError::WorkLimit)?;
                 state_hash_required = true;
             }
             SemanticClass::Query => {
-                queries = queries.checked_add(1).ok_or(PreflightError::WorkLimit)?;
+                queries = queries
+                    .checked_add(1)
+                    .ok_or(NativeRecordingError::WorkLimit)?;
             }
             SemanticClass::Mutation
             | SemanticClass::StateHash
@@ -430,10 +440,12 @@ fn validate_stream(
         if operation.role == StreamRole::FinalMetadata {
             final_metadata = final_metadata
                 .checked_add(1)
-                .ok_or(PreflightError::WorkLimit)?;
+                .ok_or(NativeRecordingError::WorkLimit)?;
         }
         if operation.role == StreamRole::Terminal {
-            terminals = terminals.checked_add(1).ok_or(PreflightError::WorkLimit)?;
+            terminals = terminals
+                .checked_add(1)
+                .ok_or(NativeRecordingError::WorkLimit)?;
         }
         records += 1;
         previous_role = last_role;
@@ -449,7 +461,7 @@ fn validate_stream(
         || terminals != 1
         || state_hash_required
     {
-        return Err(PreflightError::StreamGrammar);
+        return Err(NativeRecordingError::StreamGrammar);
     }
     lifecycle.finish()?;
     Ok(StreamFacts {
@@ -475,9 +487,13 @@ struct PayloadInterpreter<'payload, 'work> {
 }
 
 impl PayloadInterpreter<'_, '_> {
-    fn consume_program(&mut self, program: &[u8], depth: usize) -> Result<(), PreflightError> {
+    fn consume_program(
+        &mut self,
+        program: &[u8],
+        depth: usize,
+    ) -> Result<(), NativeRecordingError> {
         if depth > MAX_PROGRAM_DEPTH {
-            return Err(PreflightError::GeneratedContract);
+            return Err(NativeRecordingError::GeneratedContract);
         }
         let mut program_cursor = 0usize;
         while program_cursor < program.len() {
@@ -491,7 +507,7 @@ impl PayloadInterpreter<'_, '_> {
                 PROGRAM_BOOL => {
                     let value = self.take(1)?[0];
                     if value > 1 {
-                        return Err(PreflightError::InvalidBoolean(self.opcode));
+                        return Err(NativeRecordingError::InvalidBoolean(self.opcode));
                     }
                 }
                 PROGRAM_PRECISION => {
@@ -510,7 +526,7 @@ impl PayloadInterpreter<'_, '_> {
                     if encoded_length != null_sentinel {
                         let length = usize::from(encoded_length);
                         if length > max_bytes {
-                            return Err(PreflightError::InvalidString(self.opcode));
+                            return Err(NativeRecordingError::InvalidString(self.opcode));
                         }
                         self.take(length)?;
                     }
@@ -522,67 +538,69 @@ impl PayloadInterpreter<'_, '_> {
                 PROGRAM_COUNTED => {
                     let signed = program_byte(program, &mut program_cursor)?;
                     if signed > 1 {
-                        return Err(PreflightError::GeneratedContract);
+                        return Err(NativeRecordingError::GeneratedContract);
                     }
                     let max_count = program_usize(program, &mut program_cursor)?;
                     let body_bytes = program_usize(program, &mut program_cursor)?;
                     let body_end = program_cursor
                         .checked_add(body_bytes)
-                        .ok_or(PreflightError::GeneratedContract)?;
+                        .ok_or(NativeRecordingError::GeneratedContract)?;
                     let body = program
                         .get(program_cursor..body_end)
-                        .ok_or(PreflightError::GeneratedContract)?;
+                        .ok_or(NativeRecordingError::GeneratedContract)?;
                     program_cursor = body_end;
 
                     let raw_count = self.read_u32()?;
                     if (signed != 0 && (raw_count as i32) < 0) || raw_count > i32::MAX as u32 {
-                        return Err(PreflightError::InvalidCount(self.opcode));
+                        return Err(NativeRecordingError::InvalidCount(self.opcode));
                     }
                     let count = usize::try_from(raw_count)
-                        .map_err(|_| PreflightError::InvalidCount(self.opcode))?;
+                        .map_err(|_| NativeRecordingError::InvalidCount(self.opcode))?;
                     if count > max_count {
-                        return Err(PreflightError::InvalidCount(self.opcode));
+                        return Err(NativeRecordingError::InvalidCount(self.opcode));
                     }
                     let minimum = minimum_program_width(body, self.double_precision, depth + 1)?;
                     let required = count
                         .checked_mul(minimum)
-                        .ok_or(PreflightError::InvalidCount(self.opcode))?;
+                        .ok_or(NativeRecordingError::InvalidCount(self.opcode))?;
                     if required > self.remaining() {
-                        return Err(PreflightError::PayloadTruncated(self.opcode));
+                        return Err(NativeRecordingError::PayloadTruncated(self.opcode));
                     }
-                    self.charge(u64::try_from(count).map_err(|_| PreflightError::WorkLimit)?)?;
+                    self.charge(
+                        u64::try_from(count).map_err(|_| NativeRecordingError::WorkLimit)?,
+                    )?;
                     for _ in 0..count {
                         self.consume_program(body, depth + 1)?;
                     }
                 }
-                _ => return Err(PreflightError::GeneratedContract),
+                _ => return Err(NativeRecordingError::GeneratedContract),
             }
         }
         Ok(())
     }
 
-    fn take(&mut self, width: usize) -> Result<&[u8], PreflightError> {
+    fn take(&mut self, width: usize) -> Result<&[u8], NativeRecordingError> {
         let end = self
             .cursor
             .checked_add(width)
-            .ok_or(PreflightError::PayloadTruncated(self.opcode))?;
+            .ok_or(NativeRecordingError::PayloadTruncated(self.opcode))?;
         let value = self
             .bytes
             .get(self.cursor..end)
-            .ok_or(PreflightError::PayloadTruncated(self.opcode))?;
+            .ok_or(NativeRecordingError::PayloadTruncated(self.opcode))?;
         self.cursor = end;
         Ok(value)
     }
 
-    fn read_u16(&mut self) -> Result<u16, PreflightError> {
+    fn read_u16(&mut self) -> Result<u16, NativeRecordingError> {
         let value = self.take(2)?;
         Ok(u16::from_le_bytes([value[0], value[1]]))
     }
 
-    fn read_u32(&mut self) -> Result<u32, PreflightError> {
+    fn read_u32(&mut self) -> Result<u32, NativeRecordingError> {
         let value = self.take(4)?;
         Ok(u32::from_le_bytes(value.try_into().map_err(|_| {
-            PreflightError::PayloadTruncated(self.opcode)
+            NativeRecordingError::PayloadTruncated(self.opcode)
         })?))
     }
 
@@ -590,13 +608,13 @@ impl PayloadInterpreter<'_, '_> {
         self.bytes.len().saturating_sub(self.cursor)
     }
 
-    fn charge(&mut self, amount: u64) -> Result<(), PreflightError> {
+    fn charge(&mut self, amount: u64) -> Result<(), NativeRecordingError> {
         *self.work = self
             .work
             .checked_add(amount)
-            .ok_or(PreflightError::WorkLimit)?;
+            .ok_or(NativeRecordingError::WorkLimit)?;
         if *self.work > MAX_VALIDATION_WORK {
-            return Err(PreflightError::WorkLimit);
+            return Err(NativeRecordingError::WorkLimit);
         }
         Ok(())
     }
@@ -606,9 +624,9 @@ fn minimum_program_width(
     program: &[u8],
     double_precision: bool,
     depth: usize,
-) -> Result<usize, PreflightError> {
+) -> Result<usize, NativeRecordingError> {
     if depth > MAX_PROGRAM_DEPTH {
-        return Err(PreflightError::GeneratedContract);
+        return Err(NativeRecordingError::GeneratedContract);
     }
     let mut cursor = 0usize;
     let mut total = 0usize;
@@ -631,94 +649,97 @@ fn minimum_program_width(
             PROGRAM_COUNTED => {
                 let signed = program_byte(program, &mut cursor)?;
                 if signed > 1 {
-                    return Err(PreflightError::GeneratedContract);
+                    return Err(NativeRecordingError::GeneratedContract);
                 }
                 let _ = program_usize(program, &mut cursor)?;
                 let body_bytes = program_usize(program, &mut cursor)?;
                 let body_end = cursor
                     .checked_add(body_bytes)
-                    .ok_or(PreflightError::GeneratedContract)?;
+                    .ok_or(NativeRecordingError::GeneratedContract)?;
                 let body = program
                     .get(cursor..body_end)
-                    .ok_or(PreflightError::GeneratedContract)?;
+                    .ok_or(NativeRecordingError::GeneratedContract)?;
                 let _ = minimum_program_width(body, double_precision, depth + 1)?;
                 cursor = body_end;
                 4
             }
-            _ => return Err(PreflightError::GeneratedContract),
+            _ => return Err(NativeRecordingError::GeneratedContract),
         };
         total = total
             .checked_add(width)
-            .ok_or(PreflightError::GeneratedContract)?;
+            .ok_or(NativeRecordingError::GeneratedContract)?;
     }
     Ok(total)
 }
 
-fn native_pod_size(pod: u8) -> Result<usize, PreflightError> {
+fn native_pod_size(pod: u8) -> Result<usize, NativeRecordingError> {
     match pod {
-        1 => Ok(size_of::<ffi::b2Circle>()),
-        2 => Ok(size_of::<ffi::b2Capsule>()),
-        3 => Ok(size_of::<ffi::b2Segment>()),
-        4 => Ok(size_of::<ffi::b2Polygon>()),
-        5 => Ok(size_of::<ffi::b2ChainSegment>()),
-        _ => Err(PreflightError::GeneratedContract),
+        NATIVE_POD_CIRCLE => Ok(size_of::<ffi::b2Circle>()),
+        NATIVE_POD_CAPSULE => Ok(size_of::<ffi::b2Capsule>()),
+        NATIVE_POD_SEGMENT => Ok(size_of::<ffi::b2Segment>()),
+        NATIVE_POD_POLYGON => Ok(size_of::<ffi::b2Polygon>()),
+        NATIVE_POD_CHAIN_SEGMENT => Ok(size_of::<ffi::b2ChainSegment>()),
+        _ => Err(NativeRecordingError::GeneratedContract),
     }
 }
 
-fn program_byte(program: &[u8], cursor: &mut usize) -> Result<u8, PreflightError> {
+fn program_byte(program: &[u8], cursor: &mut usize) -> Result<u8, NativeRecordingError> {
     let byte = program
         .get(*cursor)
         .copied()
-        .ok_or(PreflightError::GeneratedContract)?;
+        .ok_or(NativeRecordingError::GeneratedContract)?;
     *cursor = cursor
         .checked_add(1)
-        .ok_or(PreflightError::GeneratedContract)?;
+        .ok_or(NativeRecordingError::GeneratedContract)?;
     Ok(byte)
 }
 
-fn program_u16(program: &[u8], cursor: &mut usize) -> Result<u16, PreflightError> {
+fn program_u16(program: &[u8], cursor: &mut usize) -> Result<u16, NativeRecordingError> {
     let end = cursor
         .checked_add(2)
-        .ok_or(PreflightError::GeneratedContract)?;
+        .ok_or(NativeRecordingError::GeneratedContract)?;
     let value = program
         .get(*cursor..end)
-        .ok_or(PreflightError::GeneratedContract)?;
+        .ok_or(NativeRecordingError::GeneratedContract)?;
     *cursor = end;
     Ok(u16::from_le_bytes([value[0], value[1]]))
 }
 
-fn program_usize(program: &[u8], cursor: &mut usize) -> Result<usize, PreflightError> {
+fn program_usize(program: &[u8], cursor: &mut usize) -> Result<usize, NativeRecordingError> {
     let end = cursor
         .checked_add(4)
-        .ok_or(PreflightError::GeneratedContract)?;
+        .ok_or(NativeRecordingError::GeneratedContract)?;
     let value = program
         .get(*cursor..end)
-        .ok_or(PreflightError::GeneratedContract)?;
+        .ok_or(NativeRecordingError::GeneratedContract)?;
     *cursor = end;
     let value = u32::from_le_bytes(
         value
             .try_into()
-            .map_err(|_| PreflightError::GeneratedContract)?,
+            .map_err(|_| NativeRecordingError::GeneratedContract)?,
     );
-    usize::try_from(value).map_err(|_| PreflightError::GeneratedContract)
+    usize::try_from(value).map_err(|_| NativeRecordingError::GeneratedContract)
 }
 
-fn parse_header(bytes: &[u8], identity: &AdapterIdentity) -> Result<PreflightInfo, PreflightError> {
+fn parse_header(
+    bytes: &[u8],
+    identity: &AdapterIdentity,
+) -> Result<PreflightInfo, NativeRecordingError> {
     let header = bytes
         .get(..RECORDING_HEADER_BYTES)
-        .ok_or(PreflightError::Truncated)?;
+        .ok_or(NativeRecordingError::Truncated)?;
     if read_u32(header, 0)? != RECORDING_MAGIC
         || read_u16(header, 4)? != RECORDING_VERSION_MAJOR
         || read_u16(header, 6)? != RECORDING_VERSION_MINOR
     {
-        return Err(PreflightError::HeaderMismatch);
+        return Err(NativeRecordingError::HeaderMismatch);
     }
     if read_u32(header, 8)? != 0 || header[16] != 0 || read_u32(header, 20)? != 0 {
-        return Err(PreflightError::ReservedField);
+        return Err(NativeRecordingError::ReservedField);
     }
     let length_units_per_meter = f32::from_bits(read_u32(header, 12)?);
-    if !length_units_per_meter.is_finite() || length_units_per_meter <= 0.0 {
-        return Err(PreflightError::InvalidLengthScale);
+    if !is_safe_length_units_per_meter(length_units_per_meter) {
+        return Err(NativeRecordingError::InvalidLengthScale);
     }
     let validation = header[19];
     if header[17] != identity.pointer_width
@@ -726,12 +747,12 @@ fn parse_header(bytes: &[u8], identity: &AdapterIdentity) -> Result<PreflightInf
         || validation > 1
         || (validation != 0) != (identity.validation_enabled != 0)
     {
-        return Err(PreflightError::AdapterMismatch);
+        return Err(NativeRecordingError::AdapterMismatch);
     }
     let snapshot_bytes =
-        usize::try_from(read_u64(header, 24)?).map_err(|_| PreflightError::SnapshotLength)?;
+        usize::try_from(read_u64(header, 24)?).map_err(|_| NativeRecordingError::SnapshotLength)?;
     if snapshot_bytes < 16 {
-        return Err(PreflightError::SnapshotLength);
+        return Err(NativeRecordingError::SnapshotLength);
     }
     Ok(PreflightInfo {
         length_units_per_meter,
@@ -743,28 +764,47 @@ fn parse_header(bytes: &[u8], identity: &AdapterIdentity) -> Result<PreflightInf
     })
 }
 
-fn read_u16(bytes: &[u8], offset: usize) -> Result<u16, PreflightError> {
+fn read_u16(bytes: &[u8], offset: usize) -> Result<u16, NativeRecordingError> {
     let value = bytes
-        .get(offset..offset.checked_add(2).ok_or(PreflightError::Truncated)?)
-        .ok_or(PreflightError::Truncated)?;
+        .get(
+            offset
+                ..offset
+                    .checked_add(2)
+                    .ok_or(NativeRecordingError::Truncated)?,
+        )
+        .ok_or(NativeRecordingError::Truncated)?;
     Ok(u16::from_le_bytes([value[0], value[1]]))
 }
 
-fn read_u32(bytes: &[u8], offset: usize) -> Result<u32, PreflightError> {
+fn read_u32(bytes: &[u8], offset: usize) -> Result<u32, NativeRecordingError> {
     let value = bytes
-        .get(offset..offset.checked_add(4).ok_or(PreflightError::Truncated)?)
-        .ok_or(PreflightError::Truncated)?;
+        .get(
+            offset
+                ..offset
+                    .checked_add(4)
+                    .ok_or(NativeRecordingError::Truncated)?,
+        )
+        .ok_or(NativeRecordingError::Truncated)?;
     Ok(u32::from_le_bytes(
-        value.try_into().map_err(|_| PreflightError::Truncated)?,
+        value
+            .try_into()
+            .map_err(|_| NativeRecordingError::Truncated)?,
     ))
 }
 
-fn read_u64(bytes: &[u8], offset: usize) -> Result<u64, PreflightError> {
+fn read_u64(bytes: &[u8], offset: usize) -> Result<u64, NativeRecordingError> {
     let value = bytes
-        .get(offset..offset.checked_add(8).ok_or(PreflightError::Truncated)?)
-        .ok_or(PreflightError::Truncated)?;
+        .get(
+            offset
+                ..offset
+                    .checked_add(8)
+                    .ok_or(NativeRecordingError::Truncated)?,
+        )
+        .ok_or(NativeRecordingError::Truncated)?;
     Ok(u64::from_le_bytes(
-        value.try_into().map_err(|_| PreflightError::Truncated)?,
+        value
+            .try_into()
+            .map_err(|_| NativeRecordingError::Truncated)?,
     ))
 }
 
@@ -775,8 +815,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        Aabb, BodyBuilder, BodyType, DistanceJointDef, JointBase, Position, QueryFilter,
-        RecordingCapacity, ShapeDef, Transform, Vec2, World, WorldDef, shapes,
+        Aabb, BodyType, DistanceJointDef, Position, QueryFilter, RecordingLimits, ShapeDef,
+        Transform, Vec2, shapes,
     };
 
     #[derive(Debug)]
@@ -794,74 +834,132 @@ mod tests {
     }
 
     fn lifecycle_recording() -> LifecycleFixture {
-        let mut world =
-            World::new(WorldDef::builder().gravity(Vec2::ZERO).build()).expect("test world");
-        let body = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
-        let other = world.create_body_id(
-            BodyBuilder::new()
-                .body_type(BodyType::Dynamic)
-                .position([4.0_f32, 0.0])
-                .build(),
-        );
-        let shape = world.create_circle_shape_for(
-            body,
-            &ShapeDef::builder().density(1.0).build(),
-            &shapes::circle(Vec2::ZERO, 0.5),
-        );
-        let chain = world.create_chain_for_id(
-            body,
-            &shapes::chain::ChainDef::builder()
-                .points([
-                    [-3.0_f32, 0.0],
-                    [-2.0_f32, 0.0],
-                    [-1.0_f32, 0.0],
-                    [0.0_f32, 0.0],
-                    [1.0_f32, 0.0],
-                    [2.0_f32, 0.0],
-                ])
-                .build(),
-        );
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_builder()
+                    .gravity(Vec2::ZERO)
+                    .build()
+                    .unwrap(),
+            )
+            .expect("test world");
+        let body = world
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_builder()
+                    .body_type(BodyType::Dynamic)
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        let other = world
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_builder()
+                    .body_type(BodyType::Dynamic)
+                    .position([4.0_f32, 0.0])
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        let shape = world
+            .body(body)
+            .unwrap()
+            .create_circle(
+                &ShapeDef::builder().density(1.0).build().unwrap(),
+                &shapes::circle(Vec2::ZERO, 0.5).unwrap(),
+            )
+            .unwrap();
+        let chain = world
+            .body(body)
+            .unwrap()
+            .create_chain(
+                &shapes::chain::ChainDef::builder()
+                    .points([
+                        [-3.0_f32, 0.0],
+                        [-2.0_f32, 0.0],
+                        [-1.0_f32, 0.0],
+                        [0.0_f32, 0.0],
+                        [1.0_f32, 0.0],
+                        [2.0_f32, 0.0],
+                    ])
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
         let segment = {
             let chain = world.chain(chain).expect("live test chain");
-            *chain.segments().last().expect("test chain segment")
+            *chain
+                .segments()
+                .unwrap()
+                .last()
+                .expect("test chain segment")
         };
-        let joint = world.create_distance_joint_id(
-            &DistanceJointDef::new(JointBase::new(body, other)).length(4.0),
-        );
+        let joint = world
+            .create_distance_joint(
+                &DistanceJointDef::new(world.joint_base(body, other).unwrap()).length(4.0),
+            )
+            .unwrap();
 
-        let shape_raw = shape.unbind();
-        let chain_raw = chain.unbind();
-        let segment_raw = segment.unbind();
-        let joint_raw = joint.unbind();
+        let shape_raw = shape.into_raw();
+        let chain_raw = chain.into_raw();
+        let segment_raw = segment.into_raw();
+        let joint_raw = joint.into_raw();
 
         let mut session = world
-            .try_start_recording(RecordingCapacity::DEFAULT)
+            .start_recording(RecordingLimits::DEFAULT)
             .expect("recording session");
-        session.shape_set_density(shape, 2.0, true);
-        let _ = session.shape_test_point(segment, Position::ZERO);
-        session.destroy_body(body);
-        let replacement_body =
-            session.create_body(BodyBuilder::new().body_type(BodyType::Dynamic).build());
-        let replacement_shape = session.create_circle_shape(
-            replacement_body,
-            &ShapeDef::builder().density(1.0).build(),
-            &shapes::circle(Vec2::ZERO, 0.25),
-        );
         session
-            .try_step(1.0 / 60.0, 2)
-            .expect("recorded world step");
+            .shape(shape)
+            .unwrap()
+            .set_density(2.0, true)
+            .unwrap();
+        let _ = session
+            .shape(segment)
+            .unwrap()
+            .test_point(Position::ZERO)
+            .unwrap();
+        session.body(body).unwrap().destroy().unwrap();
+        let replacement_body = session
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_builder()
+                    .body_type(BodyType::Dynamic)
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        let replacement_shape = session
+            .body(replacement_body)
+            .unwrap()
+            .create_circle(
+                &ShapeDef::builder().density(1.0).build().unwrap(),
+                &shapes::circle(Vec2::ZERO, 0.25).unwrap(),
+            )
+            .unwrap();
+        drop(session.step(1.0 / 60.0, 2).expect("recorded world step"));
         assert_eq!(
-            session.overlap_aabb(
-                Position::ZERO,
-                Aabb::new([-1.0_f32, -1.0], [1.0_f32, 1.0]),
-                QueryFilter::default(),
-            ),
+            session
+                .query()
+                .expect("recording query capability")
+                .overlap_aabb(
+                    Position::ZERO,
+                    Aabb::new([-1.0_f32, -1.0], [1.0_f32, 1.0]).unwrap(),
+                    QueryFilter::default(),
+                )
+                .expect("recorded overlap query"),
             vec![replacement_shape]
         );
         let bytes = session
-            .try_finish()
+            .finish()
             .expect("finished recording")
-            .into_bytes();
+            .native_stream()
+            .to_vec();
 
         LifecycleFixture {
             bytes,
@@ -877,53 +975,107 @@ mod tests {
     }
 
     fn allocator_recording() -> Vec<u8> {
-        let mut world = World::new(WorldDef::default()).expect("test world");
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .expect("test world");
         let mut session = world
-            .try_start_recording(RecordingCapacity::DEFAULT)
+            .start_recording(RecordingLimits::DEFAULT)
             .expect("recording session");
-        let first = session.create_body(BodyBuilder::new().build());
-        let second = session.create_body(BodyBuilder::new().build());
-        session.destroy_body(first);
-        session.destroy_body(second);
-        let _replacement = session.create_body(BodyBuilder::new().build());
+        let first = session
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_builder()
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        let second = session
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_builder()
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        session.body(first).unwrap().destroy().unwrap();
+        session.body(second).unwrap().destroy().unwrap();
+        let _replacement = session
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_builder()
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        drop(session.step(1.0 / 60.0, 1).expect("recorded world step"));
         session
-            .try_step(1.0 / 60.0, 1)
-            .expect("recorded world step");
-        session
-            .try_finish()
+            .finish()
             .expect("finished recording")
-            .into_bytes()
+            .native_stream()
+            .to_vec()
     }
 
     fn valid_recording() -> Vec<u8> {
-        let mut world = World::new(WorldDef::default()).expect("test world");
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .expect("test world");
         let mut session = world
-            .try_start_recording(RecordingCapacity::DEFAULT)
+            .start_recording(RecordingLimits::DEFAULT)
             .expect("recording session");
+        drop(session.step(1.0 / 60.0, 4).expect("recorded world step"));
         session
-            .try_step(1.0 / 60.0, 4)
-            .expect("recorded world step");
-        session
-            .try_finish()
+            .finish()
             .expect("finished recording")
-            .into_bytes()
+            .native_stream()
+            .to_vec()
     }
 
     fn polygon_recording(polygon: crate::Polygon) -> Vec<u8> {
-        let mut world = World::new(WorldDef::default()).expect("test world");
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .expect("test world");
         let mut session = world
-            .try_start_recording(RecordingCapacity::DEFAULT)
+            .start_recording(RecordingLimits::DEFAULT)
             .expect("recording session");
-        let body = session.create_body(BodyBuilder::new().body_type(BodyType::Dynamic).build());
-        let _shape =
-            session.create_polygon_shape(body, &ShapeDef::builder().density(1.0).build(), &polygon);
+        let body = session
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_builder()
+                    .body_type(BodyType::Dynamic)
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        let _shape = session
+            .body(body)
+            .unwrap()
+            .create_polygon(&ShapeDef::builder().density(1.0).build().unwrap(), &polygon)
+            .unwrap();
+        drop(session.step(1.0 / 60.0, 1).expect("recorded world step"));
         session
-            .try_step(1.0 / 60.0, 1)
-            .expect("recorded world step");
-        session
-            .try_finish()
+            .finish()
             .expect("finished recording")
-            .into_bytes()
+            .native_stream()
+            .to_vec()
     }
 
     fn stream_offset(bytes: &[u8]) -> usize {
@@ -1012,8 +1164,8 @@ mod tests {
         bytes.splice(insertion..insertion, record);
     }
 
-    fn assert_rejected(bytes: &[u8], expected: PreflightError) {
-        let actual = preflight_recording(bytes).expect_err("malicious recording must fail");
+    fn assert_rejected(bytes: &[u8], expected: NativeRecordingError) {
+        let actual = validate_recording(bytes).expect_err("malicious recording must fail");
         assert_eq!(actual, expected);
     }
 
@@ -1048,19 +1200,19 @@ mod tests {
     fn adapter_identity_and_snapshot_status_errors_map_precisely() {
         assert_eq!(
             map_adapter_identity_error(adapter::AdapterIdentityError::Unavailable),
-            PreflightError::AdapterUnavailable
+            NativeRecordingError::AdapterUnavailable
         );
         assert_eq!(
             map_adapter_identity_error(adapter::AdapterIdentityError::Mismatch(
                 adapter::AdapterIdentityField::Precision,
             )),
-            PreflightError::AdapterMismatch
+            NativeRecordingError::AdapterMismatch
         );
         assert_eq!(
             map_snapshot_validation_error(adapter::SnapshotValidationError::AdapterIdentity(
                 adapter::AdapterIdentityError::Unavailable,
             )),
-            PreflightError::AdapterUnavailable
+            NativeRecordingError::AdapterUnavailable
         );
         assert_eq!(
             map_snapshot_validation_error(adapter::SnapshotValidationError::AdapterIdentity(
@@ -1068,62 +1220,58 @@ mod tests {
                     adapter::AdapterIdentityField::SnapshotLayout,
                 ),
             )),
-            PreflightError::AdapterMismatch
+            NativeRecordingError::AdapterMismatch
         );
         assert_eq!(
             map_snapshot_validation_error(adapter::SnapshotValidationError::Status(
                 adapter::SNAPSHOT_BAD_HEADER,
             )),
-            PreflightError::SnapshotRejected(adapter::SNAPSHOT_BAD_HEADER)
+            NativeRecordingError::SnapshotRejected(adapter::SNAPSHOT_BAD_HEADER)
         );
     }
 
     #[test]
-    fn actual_native_recording_passes_complete_preflight_and_is_owned() {
-        let mut source = valid_recording();
-        let expected = source.clone();
-        let validated = preflight_recording(&source).expect("complete preflight");
-        assert_eq!(validated.bytes(), expected);
-        assert!(validated.info().records >= 4);
-        assert_eq!(validated.info().steps, 1);
-        assert_eq!(validated.info().queries, 0);
-        source.fill(0);
-        assert_eq!(validated.bytes(), expected);
+    fn actual_native_recording_passes_complete_bounded_preflight() {
+        let source = valid_recording();
+        let info = validate_recording(&source).expect("complete preflight");
+        assert!(info.records >= 4);
+        assert_eq!(info.steps, 1);
+        assert_eq!(info.queries, 0);
     }
 
     #[test]
     fn malicious_frame_corpus_is_rejected_before_native_dispatch() {
         let valid = valid_recording();
-        preflight_recording(&valid).expect("baseline must be valid");
+        validate_recording(&valid).expect("baseline must be valid");
 
         let mut unknown = valid.clone();
         let first_opcode = stream_offset(&unknown);
         unknown[first_opcode] = 0xFF;
         assert!(matches!(
-            preflight_recording(&unknown),
-            Err(PreflightError::UnknownOpcode(0xFF))
+            validate_recording(&unknown),
+            Err(NativeRecordingError::UnknownOpcode(0xFF))
         ));
 
         let mut truncated_payload = valid.clone();
         let first = stream_offset(&truncated_payload);
         truncated_payload[first + 1..first + 4].copy_from_slice(&[0xFF, 0xFF, 0x7F]);
         assert!(matches!(
-            preflight_recording(&truncated_payload),
-            Err(PreflightError::PayloadTruncated(_))
+            validate_recording(&truncated_payload),
+            Err(NativeRecordingError::PayloadTruncated(_))
         ));
 
         let mut extra_payload_byte = valid.clone();
         insert_before_final_metadata(&mut extra_payload_byte, 0x0C, &[0; 5]);
         assert!(matches!(
-            preflight_recording(&extra_payload_byte),
-            Err(PreflightError::PayloadMismatch { opcode: 0x0C, .. })
+            validate_recording(&extra_payload_byte),
+            Err(NativeRecordingError::PayloadMismatch { opcode: 0x0C, .. })
         ));
 
         let mut non_canonical_bool = valid.clone();
         insert_before_final_metadata(&mut non_canonical_bool, 0x02, &[0, 0, 0, 0, 2]);
         assert!(matches!(
-            preflight_recording(&non_canonical_bool),
-            Err(PreflightError::InvalidBoolean(0x02))
+            validate_recording(&non_canonical_bool),
+            Err(NativeRecordingError::InvalidBoolean(0x02))
         ));
 
         let position_bytes = if cfg!(feature = "double-precision") {
@@ -1137,8 +1285,8 @@ mod tests {
         let mut excessive_count = valid.clone();
         insert_before_final_metadata(&mut excessive_count, 0xE1, &excessive_count_payload);
         assert!(matches!(
-            preflight_recording(&excessive_count),
-            Err(PreflightError::InvalidCount(0xE1))
+            validate_recording(&excessive_count),
+            Err(NativeRecordingError::InvalidCount(0xE1))
         ));
 
         let mut missing_count_elements_payload = vec![0; count_offset + 4];
@@ -1150,15 +1298,15 @@ mod tests {
             &missing_count_elements_payload,
         );
         assert!(matches!(
-            preflight_recording(&missing_count_elements),
-            Err(PreflightError::PayloadTruncated(0xE1))
+            validate_recording(&missing_count_elements),
+            Err(NativeRecordingError::PayloadTruncated(0xE1))
         ));
 
         let mut bytes_after_terminal = valid.clone();
         bytes_after_terminal.extend_from_slice(&[0x0C, 4, 0, 0, 0, 0, 0, 0]);
         assert!(matches!(
-            preflight_recording(&bytes_after_terminal),
-            Err(PreflightError::StreamGrammar)
+            validate_recording(&bytes_after_terminal),
+            Err(NativeRecordingError::StreamGrammar)
         ));
 
         let mut missing_metadata = valid;
@@ -1166,8 +1314,8 @@ mod tests {
         let metadata = records[records.len() - 2];
         missing_metadata.drain(metadata.0..metadata.1);
         assert!(matches!(
-            preflight_recording(&missing_metadata),
-            Err(PreflightError::StreamGrammar)
+            validate_recording(&missing_metadata),
+            Err(NativeRecordingError::StreamGrammar)
         ));
     }
 
@@ -1184,7 +1332,7 @@ mod tests {
         ] {
             assert_eq!(
                 semantic::validate_argument(ArgumentTag::ExplosionDef, &invalid, true, 1.0, OPCODE,),
-                Err(PreflightError::InvalidValue(OPCODE))
+                Err(NativeRecordingError::InvalidValue(OPCODE))
             );
         }
     }
@@ -1201,7 +1349,7 @@ mod tests {
         const SHAPE_TEST_POINT: u8 = 0xE7;
 
         let fixture = lifecycle_recording();
-        preflight_recording(&fixture.bytes).expect("lifecycle baseline must be valid");
+        validate_recording(&fixture.bytes).expect("lifecycle baseline must be valid");
 
         let mut wrong_world = fixture.bytes.clone();
         let destroy = frame(&wrong_world, DESTROY_BODY);
@@ -1213,7 +1361,10 @@ mod tests {
         );
         wrong_world[world_offset..world_offset + 2]
             .copy_from_slice(&world0.wrapping_add(1).to_le_bytes());
-        assert_rejected(&wrong_world, PreflightError::InvalidReference(DESTROY_BODY));
+        assert_rejected(
+            &wrong_world,
+            NativeRecordingError::InvalidReference(DESTROY_BODY),
+        );
 
         let mut wrong_generation = fixture.bytes.clone();
         let destroy = frame(&wrong_generation, DESTROY_BODY);
@@ -1227,20 +1378,26 @@ mod tests {
             .copy_from_slice(&generation.wrapping_add(1).to_le_bytes());
         assert_rejected(
             &wrong_generation,
-            PreflightError::InvalidReference(DESTROY_BODY),
+            NativeRecordingError::InvalidReference(DESTROY_BODY),
         );
 
         let mut wrong_kind = fixture.bytes.clone();
         let destroy = frame(&wrong_kind, DESTROY_BODY);
         wrong_kind[destroy.0 + FRAME_HEADER_BYTES..destroy.0 + FRAME_HEADER_BYTES + 8]
             .copy_from_slice(&fixture.segment);
-        assert_rejected(&wrong_kind, PreflightError::InvalidReference(DESTROY_BODY));
+        assert_rejected(
+            &wrong_kind,
+            NativeRecordingError::InvalidReference(DESTROY_BODY),
+        );
 
         let mut stale_body = fixture.bytes.clone();
         let destroy = frame(&stale_body, DESTROY_BODY);
         let duplicate = stale_body[destroy.0..destroy.1].to_vec();
         stale_body.splice(destroy.1..destroy.1, duplicate);
-        assert_rejected(&stale_body, PreflightError::InvalidReference(DESTROY_BODY));
+        assert_rejected(
+            &stale_body,
+            NativeRecordingError::InvalidReference(DESTROY_BODY),
+        );
 
         let mut stale_shape = fixture.bytes.clone();
         let destroy = frame(&stale_shape, DESTROY_BODY);
@@ -1249,7 +1406,7 @@ mod tests {
         stale_shape.splice(destroy.1..destroy.1, duplicate);
         assert_rejected(
             &stale_shape,
-            PreflightError::InvalidReference(SHAPE_SET_DENSITY),
+            NativeRecordingError::InvalidReference(SHAPE_SET_DENSITY),
         );
 
         let mut stale_chain = fixture.bytes.clone();
@@ -1257,7 +1414,7 @@ mod tests {
         insert_frame_at(&mut stale_chain, destroy.1, DESTROY_CHAIN, &fixture.chain);
         assert_rejected(
             &stale_chain,
-            PreflightError::InvalidReference(DESTROY_CHAIN),
+            NativeRecordingError::InvalidReference(DESTROY_CHAIN),
         );
 
         let mut stale_joint = fixture.bytes.clone();
@@ -1272,7 +1429,7 @@ mod tests {
         );
         assert_rejected(
             &stale_joint,
-            PreflightError::InvalidReference(DISTANCE_ENABLE_SPRING),
+            NativeRecordingError::InvalidReference(DISTANCE_ENABLE_SPRING),
         );
 
         let mut wrong_joint_subtype = fixture.bytes.clone();
@@ -1287,7 +1444,7 @@ mod tests {
         );
         assert_rejected(
             &wrong_joint_subtype,
-            PreflightError::InvalidLifecycle(PRISMATIC_ENABLE_SPRING),
+            NativeRecordingError::InvalidLifecycle(PRISMATIC_ENABLE_SPRING),
         );
 
         let mut invalid_joint_tuning = fixture.bytes.clone();
@@ -1303,7 +1460,7 @@ mod tests {
         );
         assert_rejected(
             &invalid_joint_tuning,
-            PreflightError::InvalidRange(JOINT_SET_CONSTRAINT_TUNING),
+            NativeRecordingError::InvalidRange(JOINT_SET_CONSTRAINT_TUNING),
         );
 
         let mut stale_chain_segment = fixture.bytes.clone();
@@ -1316,7 +1473,7 @@ mod tests {
         );
         assert_rejected(
             &stale_chain_segment,
-            PreflightError::InvalidReference(SHAPE_TEST_POINT),
+            NativeRecordingError::InvalidReference(SHAPE_TEST_POINT),
         );
 
         let mut bad_query_tail = fixture.bytes.clone();
@@ -1338,7 +1495,7 @@ mod tests {
         bad_query_tail[tail_offset + 4..tail_offset + 12].copy_from_slice(&fixture.shape);
         assert_rejected(
             &bad_query_tail,
-            PreflightError::InvalidReference(OVERLAP_AABB),
+            NativeRecordingError::InvalidReference(OVERLAP_AABB),
         );
     }
 
@@ -1347,7 +1504,7 @@ mod tests {
         const CREATE_BODY: u8 = 0x10;
 
         let valid = allocator_recording();
-        preflight_recording(&valid).expect("allocator baseline must be valid");
+        validate_recording(&valid).expect("allocator baseline must be valid");
         let creates: Vec<_> = frames(&valid)
             .into_iter()
             .filter(|(_, _, opcode)| *opcode == CREATE_BODY)
@@ -1361,7 +1518,7 @@ mod tests {
         wrong_lifo_id[..2].copy_from_slice(&generation.wrapping_add(1).to_le_bytes());
         let final_return = creates[2].1 - 8;
         forged[final_return..final_return + 8].copy_from_slice(&wrong_lifo_id);
-        assert_rejected(&forged, PreflightError::InvalidLifecycle(CREATE_BODY));
+        assert_rejected(&forged, NativeRecordingError::InvalidLifecycle(CREATE_BODY));
     }
 
     #[test]
@@ -1381,13 +1538,11 @@ mod tests {
             .copy_from_slice(&generation.wrapping_add(1).to_le_bytes());
 
         super::super::REPLAY_CREATE_CALLS.with(|calls| calls.set(0));
-        let error = crate::ReplayPlayer::open_bytes(
-            &malformed,
-            crate::MixerRequirements::default(),
-            crate::ReplayConfig::default(),
-        )
-        .expect_err("malformed recording must fail before native creation");
-        assert!(matches!(error, crate::ReplayError::Malformed(_)));
+        assert!(matches!(
+            validate_recording(&malformed),
+            Err(NativeRecordingError::InvalidReference(DESTROY_BODY))
+                | Err(NativeRecordingError::InvalidLifecycle(DESTROY_BODY))
+        ));
         assert_eq!(
             super::super::REPLAY_CREATE_CALLS.with(|calls| calls.get()),
             0
@@ -1398,15 +1553,18 @@ mod tests {
     fn malformed_polygon_semantics_never_reach_native_player_creation() {
         const CREATE_POLYGON_SHAPE: u8 = 0x43;
 
-        let valid = polygon_recording(shapes::box_polygon(1.0, 1.0));
+        crate::Foundation::initialize_default().unwrap();
+        let valid = polygon_recording(shapes::box_polygon(1.0, 1.0).unwrap());
         let polygon = frame_argument_range(&valid, CREATE_POLYGON_SHAPE, ArgumentTag::Polygon);
         assert_eq!(polygon.len(), size_of::<ffi::b2Polygon>());
-        preflight_recording(&valid).expect("canonical polygon recording must pass preflight");
+        validate_recording(&valid).expect("canonical polygon recording must pass preflight");
 
         super::super::REPLAY_CREATE_CALLS.with(|calls| calls.set(0));
-        let player = crate::ReplayPlayer::open_bytes(
+        let info = validate_recording(&valid).unwrap();
+        let player = crate::ReplayPlayer::open_preflighted(
+            crate::Foundation::initialize_default().unwrap(),
             &valid,
-            crate::MixerRequirements::default(),
+            info,
             crate::ReplayConfig::default(),
         )
         .expect("canonical polygon recording must reach native player creation");
@@ -1463,13 +1621,8 @@ mod tests {
             negative_radius,
         ] {
             super::super::REPLAY_CREATE_CALLS.with(|calls| calls.set(0));
-            let error = crate::ReplayPlayer::open_bytes(
-                &malformed,
-                crate::MixerRequirements::default(),
-                crate::ReplayConfig::default(),
-            )
-            .expect_err("malformed polygon must fail before native creation");
-            assert!(matches!(error, crate::ReplayError::Malformed(_)));
+            validate_recording(&malformed)
+                .expect_err("malformed polygon must fail before native creation");
             assert_eq!(
                 super::super::REPLAY_CREATE_CALLS.with(|calls| calls.get()),
                 0
@@ -1479,17 +1632,23 @@ mod tests {
 
     #[test]
     fn large_offset_native_polygon_reaches_native_player_creation() {
-        let valid = polygon_recording(shapes::offset_box_polygon(
-            1.5,
-            0.625,
-            Transform::from_pos_angle([1_000.25_f32, -750.5], 0.37),
-        ));
-        preflight_recording(&valid).expect("large-offset native polygon must pass preflight");
+        crate::Foundation::initialize_default().unwrap();
+        let valid = polygon_recording(
+            shapes::offset_box_polygon(
+                1.5,
+                0.625,
+                Transform::from_pos_angle([1_000.25_f32, -750.5], 0.37).unwrap(),
+            )
+            .unwrap(),
+        );
+        validate_recording(&valid).expect("large-offset native polygon must pass preflight");
 
         super::super::REPLAY_CREATE_CALLS.with(|calls| calls.set(0));
-        let player = crate::ReplayPlayer::open_bytes(
+        let info = validate_recording(&valid).unwrap();
+        let player = crate::ReplayPlayer::open_preflighted(
+            crate::Foundation::initialize_default().unwrap(),
             &valid,
-            crate::MixerRequirements::default(),
+            info,
             crate::ReplayConfig::default(),
         )
         .expect("large-offset native polygon must reach native player creation");
@@ -1505,8 +1664,8 @@ mod tests {
         let valid = valid_recording();
         for length in 0..RECORDING_HEADER_BYTES {
             assert!(matches!(
-                preflight_recording(&valid[..length]),
-                Err(PreflightError::Truncated)
+                validate_recording(&valid[..length]),
+                Err(NativeRecordingError::Truncated)
             ));
         }
     }

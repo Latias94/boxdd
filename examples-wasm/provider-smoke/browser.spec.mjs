@@ -5,7 +5,7 @@ import { dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const precision = process.env.BOXDD_WASM_PRECISION === 'double' ? 'double' : 'single';
-const providerModule = `box2d-sys-v1-${precision}`;
+const providerModule = `box2d-sys-v2-${precision}`;
 const artifactRoot = resolve(process.env.CARGO_TARGET_DIR || 'target', 'boxdd-provider-smoke');
 const providerScript = `${providerModule}.js`;
 const providerWasm = `${providerModule}.wasm`;
@@ -23,7 +23,8 @@ const browserPage = `<!doctype html>
 async function runBrowserSmoke() {
 const params = new URL(import.meta.url).searchParams;
 const precision = params.get('precision') === 'double' ? 'double' : 'single';
-const providerModule = `box2d-sys-v1-${precision}`;
+const providerModule = `box2d-sys-v2-${precision}`;
+const providerHeapLimitBytes = 64 * 1024 * 1024;
 const artifact = (name) => `/artifacts/${name}`;
 
 function setResult(status, value) {
@@ -48,7 +49,6 @@ try {
   if (provider.wasmMemory && provider.wasmMemory !== memory) {
     throw new Error('provider did not use the shared WebAssembly.Memory');
   }
-
   const appModule = await WebAssembly.compile(appBytes);
   const providerContract = inspectProviderContract(appModule, providerModule);
   const providerFunctions = resolveProviderFunctions(provider, providerContract.names);
@@ -56,6 +56,7 @@ try {
     appModule,
     memory,
     provider,
+    providerHeapLimitBytes,
     contract: providerContract,
     functions: providerFunctions,
   });
@@ -161,10 +162,23 @@ test(`browser provider smoke (${precision})`, async ({ page }) => {
     providerGlueCallsAfterGrowth: expect.any(Number),
   });
   expect(result.memoryProof.providerGlueCallsAfterGrowth).toBeGreaterThan(0);
+  expect(result.providerHeapBoundary).toEqual({
+    limitBytes: 64 * 1024 * 1024,
+    overflowRejected: true,
+  });
+  expect(result.allocatorProof.released).toBe(true);
+  expect(result.allocatorProof.pressureAllocations).toBe(6);
+  expect(result.allocatorProof.pressureBytes).toBe(81 * 1024 * 1024);
+  expect(result.allocatorProof.alignmentVerified).toBe(true);
+  expect(result.allocatorProof.alignedAllocationBytes).toBe(1024 * 1024);
+  expect(result.allocatorProof.alignedAllocationAlignment).toBe(64 * 1024);
+  expect(result.allocatorProof.activeBox2dBytes).toBeGreaterThan(
+    result.allocatorProof.idleBox2dBytes,
+  );
+  expect(result.allocatorProof.releasedBox2dBytes).toBe(result.allocatorProof.idleBox2dBytes);
   expect(result.linkFailures).toEqual({
     oldProviderAbi: true,
     wrongPrecision: true,
-    wrongFunctionType: true,
     providerCallsBeforePhysics: 0,
   });
   expect(result.runtimeBodies).toBeGreaterThan(0);

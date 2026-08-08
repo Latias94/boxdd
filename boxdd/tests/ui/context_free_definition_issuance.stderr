@@ -1,0 +1,53 @@
+error[E0599]: no associated function or constant named `default` found for struct `WorldDef` in the current scope
+ --> tests/ui/context_free_definition_issuance.rs:8:23
+  |
+8 |     let _ = WorldDef::default();
+  |                       ^^^^^^^ associated function or constant not found in `WorldDef`
+
+error[E0599]: no associated function or constant named `builder` found for struct `WorldDef` in the current scope
+ --> tests/ui/context_free_definition_issuance.rs:9:23
+  |
+9 |     let _ = WorldDef::builder();
+  |                       ^^^^^^^ associated function or constant not found in `WorldDef`
+
+error[E0599]: no associated function or constant named `default` found for struct `BodyDef` in the current scope
+  --> tests/ui/context_free_definition_issuance.rs:10:22
+   |
+10 |     let _ = BodyDef::default();
+   |                      ^^^^^^^ associated function or constant not found in `BodyDef`
+
+error[E0599]: no associated function or constant named `builder` found for struct `BodyDef` in the current scope
+  --> tests/ui/context_free_definition_issuance.rs:11:22
+   |
+11 |     let _ = BodyDef::builder();
+   |                      ^^^^^^^ associated function or constant not found in `BodyDef`
+
+error[E0599]: no associated function or constant named `new` found for struct `BodyBuilder` in the current scope
+  --> tests/ui/context_free_definition_issuance.rs:12:26
+   |
+12 |     let _ = BodyBuilder::new();
+   |                          ^^^ associated function or constant not found in `BodyBuilder`
+
+error[E0277]: the trait bound `BodyBuilder: std::default::Default` is not satisfied
+  --> tests/ui/context_free_definition_issuance.rs:13:26
+   |
+13 |     let _: BodyBuilder = Default::default();
+   |                          ^^^^^^^^^^^^^^^^^^ the trait `std::default::Default` is not implemented for `BodyBuilder`
+
+error[E0599]: no associated function or constant named `new` found for struct `JointBase` in the current scope
+  --> tests/ui/context_free_definition_issuance.rs:14:24
+   |
+14 |     let _ = JointBase::new(body_a, body_b);
+   |                        ^^^ associated function or constant not found in `JointBase`
+
+error[E0599]: no method named `joint_base` found for reference `&'static Foundation` in the current scope
+  --> tests/ui/context_free_definition_issuance.rs:15:24
+   |
+15 |     let _ = foundation.joint_base(body_a, body_b);
+   |                        ^^^^^^^^^^ method not found in `&'static Foundation`
+
+error[E0599]: no associated function or constant named `new` found for struct `World` in the current scope
+  --> tests/ui/context_free_definition_issuance.rs:16:20
+   |
+16 |     let _ = World::new(foundation.world_def());
+   |                    ^^^ associated function or constant not found in `World`

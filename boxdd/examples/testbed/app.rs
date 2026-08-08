@@ -20,20 +20,7 @@ use winit::{
     window::{Window, WindowId},
 };
 
-mod debug_draw {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/examples/testbed/debug_draw.rs"
-    ));
-}
-mod scenes {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/examples/testbed/scenes/mod.rs"
-    ));
-}
-use debug_draw::ImguiDebugDraw;
-use scenes::PhysicsApp;
+use crate::{debug_draw::ImguiDebugDraw, scenes::PhysicsApp};
 
 pub fn run() {
     env_logger::init();
@@ -143,7 +130,7 @@ impl ApplicationHandler for App {
 }
 
 impl TestbedWindow {
-    fn new(event_loop: &ActiveEventLoop) -> Result<Self, Box<dyn std::error::Error>> {
+    fn new(event_loop: &ActiveEventLoop) -> std::result::Result<Self, Box<dyn std::error::Error>> {
         let window_attrs = winit::window::Window::default_attributes()
             .with_title("boxdd testbed")
             .with_inner_size(LogicalSize::new(1024.0, 720.0));
@@ -212,7 +199,7 @@ impl TestbedWindow {
         })
     }
 
-    fn render(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn render(&mut self) -> std::result::Result<(), Box<dyn std::error::Error>> {
         // Delta time + physics step
         let now = Instant::now();
         let dt = now - self.imgui.last_frame;
@@ -233,7 +220,7 @@ impl TestbedWindow {
             pixels_per_meter: self.physics.pixels_per_meter,
         };
         let opts = self.physics.debug_draw_options();
-        self.physics.world.debug_draw(&mut dd, opts);
+        self.physics.world.debug_draw(&mut dd, opts)?;
 
         // Scene-specific overlays (drawn after debug draw so they stay on top)
         self.physics.debug_overlay(ui);

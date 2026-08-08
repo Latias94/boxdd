@@ -1,46 +1,16 @@
-error[E0277]: `Rc<core::world_core::WorldCore>` cannot be sent between threads safely
+error[E0277]: `Cell<events::PublicationPhase>` cannot be shared between threads safely
  --> tests/ui/owner_state_send.rs:6:25
   |
 6 |     require_send_sync::<World>();
-  |                         ^^^^^ `Rc<core::world_core::WorldCore>` cannot be sent between threads safely
+  |                         ^^^^^ `Cell<events::PublicationPhase>` cannot be shared between threads safely
   |
-  = help: within `World`, the trait `Send` is not implemented for `Rc<core::world_core::WorldCore>`
-note: required because it appears within the type `World`
- --> src/world.rs
+  = help: within `World`, the trait `Sync` is not implemented for `Cell<events::PublicationPhase>`
+  = note: if you want to do aliasing and mutation between multiple threads, use `std::sync::RwLock`
+note: required because it appears within the type `events::CompletedStepState`
+ --> src/events/mod.rs
   |
-  | pub struct World {
-  |            ^^^^^
-note: required by a bound in `require_send_sync`
- --> tests/ui/owner_state_send.rs:3:25
-  |
-3 | fn require_send_sync<T: Send + Sync>() {}
-  |                         ^^^^ required by this bound in `require_send_sync`
-
-error[E0277]: `Rc<events::EventCache>` cannot be sent between threads safely
- --> tests/ui/owner_state_send.rs:6:25
-  |
-6 |     require_send_sync::<World>();
-  |                         ^^^^^ `Rc<events::EventCache>` cannot be sent between threads safely
-  |
-  = help: within `World`, the trait `Send` is not implemented for `Rc<events::EventCache>`
-note: required because it appears within the type `World`
- --> src/world.rs
-  |
-  | pub struct World {
-  |            ^^^^^
-note: required by a bound in `require_send_sync`
- --> tests/ui/owner_state_send.rs:3:25
-  |
-3 | fn require_send_sync<T: Send + Sync>() {}
-  |                         ^^^^ required by this bound in `require_send_sync`
-
-error[E0277]: `Rc<core::world_core::WorldCore>` cannot be shared between threads safely
- --> tests/ui/owner_state_send.rs:6:25
-  |
-6 |     require_send_sync::<World>();
-  |                         ^^^^^ `Rc<core::world_core::WorldCore>` cannot be shared between threads safely
-  |
-  = help: within `World`, the trait `Sync` is not implemented for `Rc<core::world_core::WorldCore>`
+  | pub(crate) struct CompletedStepState {
+  |                   ^^^^^^^^^^^^^^^^^^
 note: required because it appears within the type `World`
  --> src/world.rs
   |
@@ -52,13 +22,29 @@ note: required by a bound in `require_send_sync`
 3 | fn require_send_sync<T: Send + Sync>() {}
   |                                ^^^^ required by this bound in `require_send_sync`
 
-error[E0277]: `Rc<events::EventCache>` cannot be shared between threads safely
+error[E0277]: `Cell<events::Materialization>` cannot be shared between threads safely
  --> tests/ui/owner_state_send.rs:6:25
   |
 6 |     require_send_sync::<World>();
-  |                         ^^^^^ `Rc<events::EventCache>` cannot be shared between threads safely
+  |                         ^^^^^ `Cell<events::Materialization>` cannot be shared between threads safely
   |
-  = help: within `World`, the trait `Sync` is not implemented for `Rc<events::EventCache>`
+  = help: within `World`, the trait `Sync` is not implemented for `Cell<events::Materialization>`
+  = note: if you want to do aliasing and mutation between multiple threads, use `std::sync::RwLock`
+note: required because it appears within the type `events::LazyEventSlot<Vec<BodyMoveEvent>>`
+ --> src/events/mod.rs
+  |
+  | struct LazyEventSlot<T> {
+  |        ^^^^^^^^^^^^^
+note: required because it appears within the type `events::EventStorage`
+ --> src/events/mod.rs
+  |
+  | pub(crate) struct EventStorage {
+  |                   ^^^^^^^^^^^^
+note: required because it appears within the type `events::CompletedStepState`
+ --> src/events/mod.rs
+  |
+  | pub(crate) struct CompletedStepState {
+  |                   ^^^^^^^^^^^^^^^^^^
 note: required because it appears within the type `World`
  --> src/world.rs
   |
@@ -69,3 +55,503 @@ note: required by a bound in `require_send_sync`
   |
 3 | fn require_send_sync<T: Send + Sync>() {}
   |                                ^^^^ required by this bound in `require_send_sync`
+
+error[E0277]: `UnsafeCell<Vec<BodyMoveEvent>>` cannot be shared between threads safely
+ --> tests/ui/owner_state_send.rs:6:25
+  |
+6 |     require_send_sync::<World>();
+  |                         ^^^^^ `UnsafeCell<Vec<BodyMoveEvent>>` cannot be shared between threads safely
+  |
+  = help: within `World`, the trait `Sync` is not implemented for `UnsafeCell<Vec<BodyMoveEvent>>`
+note: required because it appears within the type `events::LazyEventSlot<Vec<BodyMoveEvent>>`
+ --> src/events/mod.rs
+  |
+  | struct LazyEventSlot<T> {
+  |        ^^^^^^^^^^^^^
+note: required because it appears within the type `events::EventStorage`
+ --> src/events/mod.rs
+  |
+  | pub(crate) struct EventStorage {
+  |                   ^^^^^^^^^^^^
+note: required because it appears within the type `events::CompletedStepState`
+ --> src/events/mod.rs
+  |
+  | pub(crate) struct CompletedStepState {
+  |                   ^^^^^^^^^^^^^^^^^^
+note: required because it appears within the type `World`
+ --> src/world.rs
+  |
+  | pub struct World {
+  |            ^^^^^
+note: required by a bound in `require_send_sync`
+ --> tests/ui/owner_state_send.rs:3:32
+  |
+3 | fn require_send_sync<T: Send + Sync>() {}
+  |                                ^^^^ required by this bound in `require_send_sync`
+
+error[E0277]: `UnsafeCell<ContactEvents>` cannot be shared between threads safely
+ --> tests/ui/owner_state_send.rs:6:25
+  |
+6 |     require_send_sync::<World>();
+  |                         ^^^^^ `UnsafeCell<ContactEvents>` cannot be shared between threads safely
+  |
+  = help: within `World`, the trait `Sync` is not implemented for `UnsafeCell<ContactEvents>`
+note: required because it appears within the type `events::LazyEventSlot<ContactEvents>`
+ --> src/events/mod.rs
+  |
+  | struct LazyEventSlot<T> {
+  |        ^^^^^^^^^^^^^
+note: required because it appears within the type `events::EventStorage`
+ --> src/events/mod.rs
+  |
+  | pub(crate) struct EventStorage {
+  |                   ^^^^^^^^^^^^
+note: required because it appears within the type `events::CompletedStepState`
+ --> src/events/mod.rs
+  |
+  | pub(crate) struct CompletedStepState {
+  |                   ^^^^^^^^^^^^^^^^^^
+note: required because it appears within the type `World`
+ --> src/world.rs
+  |
+  | pub struct World {
+  |            ^^^^^
+note: required by a bound in `require_send_sync`
+ --> tests/ui/owner_state_send.rs:3:32
+  |
+3 | fn require_send_sync<T: Send + Sync>() {}
+  |                                ^^^^ required by this bound in `require_send_sync`
+
+error[E0277]: `UnsafeCell<Vec<JointEvent>>` cannot be shared between threads safely
+ --> tests/ui/owner_state_send.rs:6:25
+  |
+6 |     require_send_sync::<World>();
+  |                         ^^^^^ `UnsafeCell<Vec<JointEvent>>` cannot be shared between threads safely
+  |
+  = help: within `World`, the trait `Sync` is not implemented for `UnsafeCell<Vec<JointEvent>>`
+note: required because it appears within the type `events::LazyEventSlot<Vec<JointEvent>>`
+ --> src/events/mod.rs
+  |
+  | struct LazyEventSlot<T> {
+  |        ^^^^^^^^^^^^^
+note: required because it appears within the type `events::EventStorage`
+ --> src/events/mod.rs
+  |
+  | pub(crate) struct EventStorage {
+  |                   ^^^^^^^^^^^^
+note: required because it appears within the type `events::CompletedStepState`
+ --> src/events/mod.rs
+  |
+  | pub(crate) struct CompletedStepState {
+  |                   ^^^^^^^^^^^^^^^^^^
+note: required because it appears within the type `World`
+ --> src/world.rs
+  |
+  | pub struct World {
+  |            ^^^^^
+note: required by a bound in `require_send_sync`
+ --> tests/ui/owner_state_send.rs:3:32
+  |
+3 | fn require_send_sync<T: Send + Sync>() {}
+  |                                ^^^^ required by this bound in `require_send_sync`
+
+error[E0277]: `UnsafeCell<SensorEvents>` cannot be shared between threads safely
+ --> tests/ui/owner_state_send.rs:6:25
+  |
+6 |     require_send_sync::<World>();
+  |                         ^^^^^ `UnsafeCell<SensorEvents>` cannot be shared between threads safely
+  |
+  = help: within `World`, the trait `Sync` is not implemented for `UnsafeCell<SensorEvents>`
+note: required because it appears within the type `events::LazyEventSlot<SensorEvents>`
+ --> src/events/mod.rs
+  |
+  | struct LazyEventSlot<T> {
+  |        ^^^^^^^^^^^^^
+note: required because it appears within the type `events::EventStorage`
+ --> src/events/mod.rs
+  |
+  | pub(crate) struct EventStorage {
+  |                   ^^^^^^^^^^^^
+note: required because it appears within the type `events::CompletedStepState`
+ --> src/events/mod.rs
+  |
+  | pub(crate) struct CompletedStepState {
+  |                   ^^^^^^^^^^^^^^^^^^
+note: required because it appears within the type `World`
+ --> src/world.rs
+  |
+  | pub struct World {
+  |            ^^^^^
+note: required by a bound in `require_send_sync`
+ --> tests/ui/owner_state_send.rs:3:32
+  |
+3 | fn require_send_sync<T: Send + Sync>() {}
+  |                                ^^^^ required by this bound in `require_send_sync`
+
+error[E0277]: `Rc<Cell<core::world_core::ActivityState>>` cannot be sent between threads safely
+ --> tests/ui/owner_state_send.rs:6:25
+  |
+6 |     require_send_sync::<World>();
+  |                         ^^^^^ `Rc<Cell<core::world_core::ActivityState>>` cannot be sent between threads safely
+  |
+  = help: within `core::world_core::WorldCore`, the trait `Send` is not implemented for `Rc<Cell<core::world_core::ActivityState>>`
+note: required because it appears within the type `core::world_core::WorldCore`
+ --> src/core/world_core.rs
+  |
+  | pub(crate) struct WorldCore {
+  |                   ^^^^^^^^^
+  = note: required for `std::ptr::Unique<core::world_core::WorldCore>` to implement `Send`
+note: required because it appears within the type `Box<core::world_core::WorldCore>`
+ --> $RUST/alloc/src/boxed.rs
+  |
+  | pub struct Box<
+  |            ^^^
+note: required because it appears within the type `Pin<Box<core::world_core::WorldCore>>`
+ --> $RUST/core/src/pin.rs
+  |
+  | pub struct Pin<Ptr> {
+  |            ^^^
+note: required because it appears within the type `Option<Pin<Box<core::world_core::WorldCore>>>`
+ --> $RUST/core/src/option.rs
+  |
+  | pub enum Option<T> {
+  |          ^^^^^^
+note: required because it appears within the type `world::WorldOwner`
+ --> src/world.rs
+  |
+  | struct WorldOwner(Option<Pin<Box<WorldCore>>>);
+  |        ^^^^^^^^^^
+note: required because it appears within the type `World`
+ --> src/world.rs
+  |
+  | pub struct World {
+  |            ^^^^^
+note: required by a bound in `require_send_sync`
+ --> tests/ui/owner_state_send.rs:3:25
+  |
+3 | fn require_send_sync<T: Send + Sync>() {}
+  |                         ^^^^ required by this bound in `require_send_sync`
+
+error[E0277]: `Cell<core::world_core::LifecycleState>` cannot be shared between threads safely
+ --> tests/ui/owner_state_send.rs:6:25
+  |
+6 |     require_send_sync::<World>();
+  |                         ^^^^^ `Cell<core::world_core::LifecycleState>` cannot be shared between threads safely
+  |
+  = help: within `core::world_core::WorldCore`, the trait `Sync` is not implemented for `Cell<core::world_core::LifecycleState>`
+  = note: if you want to do aliasing and mutation between multiple threads, use `std::sync::RwLock`
+note: required because it appears within the type `core::world_core::WorldCore`
+ --> src/core/world_core.rs
+  |
+  | pub(crate) struct WorldCore {
+  |                   ^^^^^^^^^
+  = note: required for `std::ptr::Unique<core::world_core::WorldCore>` to implement `Sync`
+note: required because it appears within the type `Box<core::world_core::WorldCore>`
+ --> $RUST/alloc/src/boxed.rs
+  |
+  | pub struct Box<
+  |            ^^^
+note: required because it appears within the type `Pin<Box<core::world_core::WorldCore>>`
+ --> $RUST/core/src/pin.rs
+  |
+  | pub struct Pin<Ptr> {
+  |            ^^^
+note: required because it appears within the type `Option<Pin<Box<core::world_core::WorldCore>>>`
+ --> $RUST/core/src/option.rs
+  |
+  | pub enum Option<T> {
+  |          ^^^^^^
+note: required because it appears within the type `world::WorldOwner`
+ --> src/world.rs
+  |
+  | struct WorldOwner(Option<Pin<Box<WorldCore>>>);
+  |        ^^^^^^^^^^
+note: required because it appears within the type `World`
+ --> src/world.rs
+  |
+  | pub struct World {
+  |            ^^^^^
+note: required by a bound in `require_send_sync`
+ --> tests/ui/owner_state_send.rs:3:32
+  |
+3 | fn require_send_sync<T: Send + Sync>() {}
+  |                                ^^^^ required by this bound in `require_send_sync`
+
+error[E0277]: `Rc<Cell<core::world_core::ActivityState>>` cannot be shared between threads safely
+ --> tests/ui/owner_state_send.rs:6:25
+  |
+6 |     require_send_sync::<World>();
+  |                         ^^^^^ `Rc<Cell<core::world_core::ActivityState>>` cannot be shared between threads safely
+  |
+  = help: within `core::world_core::WorldCore`, the trait `Sync` is not implemented for `Rc<Cell<core::world_core::ActivityState>>`
+note: required because it appears within the type `core::world_core::WorldCore`
+ --> src/core/world_core.rs
+  |
+  | pub(crate) struct WorldCore {
+  |                   ^^^^^^^^^
+  = note: required for `std::ptr::Unique<core::world_core::WorldCore>` to implement `Sync`
+note: required because it appears within the type `Box<core::world_core::WorldCore>`
+ --> $RUST/alloc/src/boxed.rs
+  |
+  | pub struct Box<
+  |            ^^^
+note: required because it appears within the type `Pin<Box<core::world_core::WorldCore>>`
+ --> $RUST/core/src/pin.rs
+  |
+  | pub struct Pin<Ptr> {
+  |            ^^^
+note: required because it appears within the type `Option<Pin<Box<core::world_core::WorldCore>>>`
+ --> $RUST/core/src/option.rs
+  |
+  | pub enum Option<T> {
+  |          ^^^^^^
+note: required because it appears within the type `world::WorldOwner`
+ --> src/world.rs
+  |
+  | struct WorldOwner(Option<Pin<Box<WorldCore>>>);
+  |        ^^^^^^^^^^
+note: required because it appears within the type `World`
+ --> src/world.rs
+  |
+  | pub struct World {
+  |            ^^^^^
+note: required by a bound in `require_send_sync`
+ --> tests/ui/owner_state_send.rs:3:32
+  |
+3 | fn require_send_sync<T: Send + Sync>() {}
+  |                                ^^^^ required by this bound in `require_send_sync`
+
+error[E0277]: `Cell<bool>` cannot be shared between threads safely
+ --> tests/ui/owner_state_send.rs:6:25
+  |
+6 |     require_send_sync::<World>();
+  |                         ^^^^^ `Cell<bool>` cannot be shared between threads safely
+  |
+  = help: within `core::world_core::WorldCore`, the trait `Sync` is not implemented for `Cell<bool>`
+  = note: if you want to do aliasing and mutation between multiple threads, use `std::sync::RwLock` or `std::sync::atomic::AtomicBool` instead
+note: required because it appears within the type `core::world_core::WorldCore`
+ --> src/core/world_core.rs
+  |
+  | pub(crate) struct WorldCore {
+  |                   ^^^^^^^^^
+  = note: required for `std::ptr::Unique<core::world_core::WorldCore>` to implement `Sync`
+note: required because it appears within the type `Box<core::world_core::WorldCore>`
+ --> $RUST/alloc/src/boxed.rs
+  |
+  | pub struct Box<
+  |            ^^^
+note: required because it appears within the type `Pin<Box<core::world_core::WorldCore>>`
+ --> $RUST/core/src/pin.rs
+  |
+  | pub struct Pin<Ptr> {
+  |            ^^^
+note: required because it appears within the type `Option<Pin<Box<core::world_core::WorldCore>>>`
+ --> $RUST/core/src/option.rs
+  |
+  | pub enum Option<T> {
+  |          ^^^^^^
+note: required because it appears within the type `world::WorldOwner`
+ --> src/world.rs
+  |
+  | struct WorldOwner(Option<Pin<Box<WorldCore>>>);
+  |        ^^^^^^^^^^
+note: required because it appears within the type `World`
+ --> src/world.rs
+  |
+  | pub struct World {
+  |            ^^^^^
+note: required by a bound in `require_send_sync`
+ --> tests/ui/owner_state_send.rs:3:32
+  |
+3 | fn require_send_sync<T: Send + Sync>() {}
+  |                                ^^^^ required by this bound in `require_send_sync`
+
+error[E0277]: `Cell<id::ContactEpoch>` cannot be shared between threads safely
+ --> tests/ui/owner_state_send.rs:6:25
+  |
+6 |     require_send_sync::<World>();
+  |                         ^^^^^ `Cell<id::ContactEpoch>` cannot be shared between threads safely
+  |
+  = help: within `core::world_core::WorldCore`, the trait `Sync` is not implemented for `Cell<id::ContactEpoch>`
+  = note: if you want to do aliasing and mutation between multiple threads, use `std::sync::RwLock`
+note: required because it appears within the type `core::world_core::WorldCore`
+ --> src/core/world_core.rs
+  |
+  | pub(crate) struct WorldCore {
+  |                   ^^^^^^^^^
+  = note: required for `std::ptr::Unique<core::world_core::WorldCore>` to implement `Sync`
+note: required because it appears within the type `Box<core::world_core::WorldCore>`
+ --> $RUST/alloc/src/boxed.rs
+  |
+  | pub struct Box<
+  |            ^^^
+note: required because it appears within the type `Pin<Box<core::world_core::WorldCore>>`
+ --> $RUST/core/src/pin.rs
+  |
+  | pub struct Pin<Ptr> {
+  |            ^^^
+note: required because it appears within the type `Option<Pin<Box<core::world_core::WorldCore>>>`
+ --> $RUST/core/src/option.rs
+  |
+  | pub enum Option<T> {
+  |          ^^^^^^
+note: required because it appears within the type `world::WorldOwner`
+ --> src/world.rs
+  |
+  | struct WorldOwner(Option<Pin<Box<WorldCore>>>);
+  |        ^^^^^^^^^^
+note: required because it appears within the type `World`
+ --> src/world.rs
+  |
+  | pub struct World {
+  |            ^^^^^
+note: required by a bound in `require_send_sync`
+ --> tests/ui/owner_state_send.rs:3:32
+  |
+3 | fn require_send_sync<T: Send + Sync>() {}
+  |                                ^^^^ required by this bound in `require_send_sync`
+
+error[E0277]: `RefCell<core::user_data::UserDataStore>` cannot be shared between threads safely
+ --> tests/ui/owner_state_send.rs:6:25
+  |
+6 |     require_send_sync::<World>();
+  |                         ^^^^^ `RefCell<core::user_data::UserDataStore>` cannot be shared between threads safely
+  |
+  = help: within `core::world_core::WorldCore`, the trait `Sync` is not implemented for `RefCell<core::user_data::UserDataStore>`
+  = note: if you want to do aliasing and mutation between multiple threads, use `std::sync::RwLock` instead
+note: required because it appears within the type `core::world_core::WorldCore`
+ --> src/core/world_core.rs
+  |
+  | pub(crate) struct WorldCore {
+  |                   ^^^^^^^^^
+  = note: required for `std::ptr::Unique<core::world_core::WorldCore>` to implement `Sync`
+note: required because it appears within the type `Box<core::world_core::WorldCore>`
+ --> $RUST/alloc/src/boxed.rs
+  |
+  | pub struct Box<
+  |            ^^^
+note: required because it appears within the type `Pin<Box<core::world_core::WorldCore>>`
+ --> $RUST/core/src/pin.rs
+  |
+  | pub struct Pin<Ptr> {
+  |            ^^^
+note: required because it appears within the type `Option<Pin<Box<core::world_core::WorldCore>>>`
+ --> $RUST/core/src/option.rs
+  |
+  | pub enum Option<T> {
+  |          ^^^^^^
+note: required because it appears within the type `world::WorldOwner`
+ --> src/world.rs
+  |
+  | struct WorldOwner(Option<Pin<Box<WorldCore>>>);
+  |        ^^^^^^^^^^
+note: required because it appears within the type `World`
+ --> src/world.rs
+  |
+  | pub struct World {
+  |            ^^^^^
+note: required by a bound in `require_send_sync`
+ --> tests/ui/owner_state_send.rs:3:32
+  |
+3 | fn require_send_sync<T: Send + Sync>() {}
+  |                                ^^^^ required by this bound in `require_send_sync`
+
+error[E0277]: `Cell<Option<foundation::OrdinaryWorldLease>>` cannot be shared between threads safely
+ --> tests/ui/owner_state_send.rs:6:25
+  |
+6 |     require_send_sync::<World>();
+  |                         ^^^^^ `Cell<Option<foundation::OrdinaryWorldLease>>` cannot be shared between threads safely
+  |
+  = help: within `core::world_core::WorldCore`, the trait `Sync` is not implemented for `Cell<Option<foundation::OrdinaryWorldLease>>`
+  = note: if you want to do aliasing and mutation between multiple threads, use `std::sync::RwLock`
+note: required because it appears within the type `core::world_core::WorldCore`
+ --> src/core/world_core.rs
+  |
+  | pub(crate) struct WorldCore {
+  |                   ^^^^^^^^^
+  = note: required for `std::ptr::Unique<core::world_core::WorldCore>` to implement `Sync`
+note: required because it appears within the type `Box<core::world_core::WorldCore>`
+ --> $RUST/alloc/src/boxed.rs
+  |
+  | pub struct Box<
+  |            ^^^
+note: required because it appears within the type `Pin<Box<core::world_core::WorldCore>>`
+ --> $RUST/core/src/pin.rs
+  |
+  | pub struct Pin<Ptr> {
+  |            ^^^
+note: required because it appears within the type `Option<Pin<Box<core::world_core::WorldCore>>>`
+ --> $RUST/core/src/option.rs
+  |
+  | pub enum Option<T> {
+  |          ^^^^^^
+note: required because it appears within the type `world::WorldOwner`
+ --> src/world.rs
+  |
+  | struct WorldOwner(Option<Pin<Box<WorldCore>>>);
+  |        ^^^^^^^^^^
+note: required because it appears within the type `World`
+ --> src/world.rs
+  |
+  | pub struct World {
+  |            ^^^^^
+note: required by a bound in `require_send_sync`
+ --> tests/ui/owner_state_send.rs:3:32
+  |
+3 | fn require_send_sync<T: Send + Sync>() {}
+  |                                ^^^^ required by this bound in `require_send_sync`
+
+error[E0277]: `Rc<core::user_data::UserDataEntry>` cannot be sent between threads safely
+ --> tests/ui/owner_state_send.rs:6:25
+  |
+6 |     require_send_sync::<World>();
+  |                         ^^^^^ `Rc<core::user_data::UserDataEntry>` cannot be sent between threads safely
+  |
+  = help: within `core::user_data::UserDataStore`, the trait `Send` is not implemented for `Rc<core::user_data::UserDataEntry>`
+note: required because it appears within the type `Option<Rc<core::user_data::UserDataEntry>>`
+ --> $RUST/core/src/option.rs
+  |
+  | pub enum Option<T> {
+  |          ^^^^^^
+note: required because it appears within the type `core::user_data::UserDataStore`
+ --> src/core/user_data.rs
+  |
+  | pub(crate) struct UserDataStore {
+  |                   ^^^^^^^^^^^^^
+  = note: required for `RefCell<core::user_data::UserDataStore>` to implement `Send`
+note: required because it appears within the type `core::world_core::WorldCore`
+ --> src/core/world_core.rs
+  |
+  | pub(crate) struct WorldCore {
+  |                   ^^^^^^^^^
+  = note: required for `std::ptr::Unique<core::world_core::WorldCore>` to implement `Send`
+note: required because it appears within the type `Box<core::world_core::WorldCore>`
+ --> $RUST/alloc/src/boxed.rs
+  |
+  | pub struct Box<
+  |            ^^^
+note: required because it appears within the type `Pin<Box<core::world_core::WorldCore>>`
+ --> $RUST/core/src/pin.rs
+  |
+  | pub struct Pin<Ptr> {
+  |            ^^^
+note: required because it appears within the type `Option<Pin<Box<core::world_core::WorldCore>>>`
+ --> $RUST/core/src/option.rs
+  |
+  | pub enum Option<T> {
+  |          ^^^^^^
+note: required because it appears within the type `world::WorldOwner`
+ --> src/world.rs
+  |
+  | struct WorldOwner(Option<Pin<Box<WorldCore>>>);
+  |        ^^^^^^^^^^
+note: required because it appears within the type `World`
+ --> src/world.rs
+  |
+  | pub struct World {
+  |            ^^^^^
+note: required by a bound in `require_send_sync`
+ --> tests/ui/owner_state_send.rs:3:25
+  |
+3 | fn require_send_sync<T: Send + Sync>() {}
+  |                         ^^^^ required by this bound in `require_send_sync`

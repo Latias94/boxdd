@@ -4,9 +4,14 @@ use bevy::prelude::*;
 use bevy_boxdd::prelude::*;
 
 fn main() {
+    let foundation =
+        boxdd::Foundation::initialize_default().expect("Box2D foundation should initialize");
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(BoxddPhysicsPlugin::default())
+        .add_plugins(BoxddPhysicsPlugin::new(
+            foundation,
+            BoxddPhysicsSettings::default(),
+        ))
         .add_systems(Startup, setup)
         .add_systems(Update, report_first_ray_hit)
         .run();
@@ -39,7 +44,7 @@ fn report_first_ray_hit(
         warn!("ray origin is outside the active world-origin frame");
         return;
     };
-    let Ok(Some(hit)) = context.try_cast_ray_closest_entity(
+    let Ok(Some(hit)) = context.cast_ray_closest_entity(
         ray_origin,
         Vec2::new(0.0, -6.0),
         boxdd::QueryFilter::default(),
