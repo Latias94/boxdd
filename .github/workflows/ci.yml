@@ -255,8 +255,8 @@ jobs:
 
       - name: Native source tests (single and double precision)
         run: |
-          cargo nextest run --locked -p boxdd -p boxdd-sys
-          cargo nextest run --locked --target-dir target/core-double -p boxdd -p boxdd-sys --features boxdd/double-precision
+          cargo nextest run --locked -p boxdd -p boxdd-sys --no-fail-fast
+          cargo nextest run --locked --target-dir target/core-double -p boxdd -p boxdd-sys --features boxdd/double-precision --no-fail-fast
 
       - name: C ABI probes (single and double precision)
         run: |

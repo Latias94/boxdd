@@ -1966,8 +1966,7 @@ mod tests {
     #[test]
     fn crlf_checkout_preserves_canonical_source_identities_and_materialized_bytes() {
         fn rewrite_with_crlf(path: &Path) {
-            let source = fs::read(path).unwrap();
-            assert!(!source.contains(&b'\r'), "fixture already contains CR");
+            let source = canonical_reviewed_text(&fs::read(path).unwrap(), path).unwrap();
             let mut crlf = Vec::with_capacity(source.len() + source.len() / 20);
             for byte in source {
                 if byte == b'\n' {
