@@ -1946,7 +1946,8 @@ mod tests {
     fn build_input_capture_materializes_one_canonical_effective_manifest() {
         let directory = build_input_fixture();
         let output = tempfile::tempdir().unwrap();
-        let expected = fs::read(directory.path().join(EFFECTIVE_SOURCE_MANIFEST)).unwrap();
+        let manifest = directory.path().join(EFFECTIVE_SOURCE_MANIFEST);
+        let expected = canonical_reviewed_text(&fs::read(&manifest).unwrap(), &manifest).unwrap();
         let inputs = materialize_build_inputs(directory.path(), output.path()).unwrap();
 
         let materialized_manifest =
