@@ -131,10 +131,24 @@ struct IntentionalLeakTest {
     filter: &'static str,
 }
 
-const ASAN_INTENTIONAL_LEAK_TESTS: &[IntentionalLeakTest] = &[IntentionalLeakTest {
-    target: "replay",
-    filter: "replay_mixer_drop_panics_run_all_cleanup_before_resuming",
-}];
+const ASAN_INTENTIONAL_LEAK_TESTS: &[IntentionalLeakTest] = &[
+    IntentionalLeakTest {
+        target: "material_mix_callbacks",
+        filter: "outer_unwind_subprocess::material_mix_cleanup_during_outer_unwind_does_not_abort",
+    },
+    IntentionalLeakTest {
+        target: "panic_across_ffi_is_caught",
+        filter: "outer_unwind_subprocess::callback_panics_during_outer_unwind_do_not_abort",
+    },
+    IntentionalLeakTest {
+        target: "replay",
+        filter: "replay_mixer_drop_panics_run_all_cleanup_before_resuming",
+    },
+    IntentionalLeakTest {
+        target: "user_data",
+        filter: "outer_unwind_subprocess::user_data_destructors_during_outer_unwind_do_not_abort",
+    },
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct MiriTest {
@@ -980,13 +994,29 @@ mod tests {
 
     #[test]
     fn address_sanitizer_leak_allowlist_is_exact_and_narrow() {
-        assert_eq!(
-            ASAN_INTENTIONAL_LEAK_TESTS,
-            [IntentionalLeakTest {
+        let expected = [
+            IntentionalLeakTest {
+                target: "material_mix_callbacks",
+                filter: "outer_unwind_subprocess::material_mix_cleanup_during_outer_unwind_does_not_abort",
+            },
+            IntentionalLeakTest {
+                target: "panic_across_ffi_is_caught",
+                filter: "outer_unwind_subprocess::callback_panics_during_outer_unwind_do_not_abort",
+            },
+            IntentionalLeakTest {
                 target: "replay",
                 filter: "replay_mixer_drop_panics_run_all_cleanup_before_resuming",
-            }]
-        );
+            },
+            IntentionalLeakTest {
+                target: "user_data",
+                filter: "outer_unwind_subprocess::user_data_destructors_during_outer_unwind_do_not_abort",
+            },
+        ];
+        assert_eq!(ASAN_INTENTIONAL_LEAK_TESTS.len(), expected.len());
+        for (actual, expected) in ASAN_INTENTIONAL_LEAK_TESTS.iter().zip(expected) {
+            assert_eq!(actual.target, expected.target);
+            assert_eq!(actual.filter, expected.filter);
+        }
     }
 
     #[test]

@@ -97,13 +97,10 @@ jobs:
           identity="${identities[0]}"
           archive="$(dirname "$identity")/libbox2d.a"
           test -f "$archive"
-          mapfile -t effective_headers < <(find "$(dirname "$identity")/boxdd-effective-source" -path '*/include/box2d/box2d.h' -type f -print)
-          test "${#effective_headers[@]}" -eq 1
 
           SYS_DIR="${RUNNER_TEMP}/boxdd-system-artifact"
           mkdir "$SYS_DIR"
           cp "$archive" "$SYS_DIR/libbox2d.a"
-          cp "${effective_headers[0]}" "$SYS_DIR/box2d.h"
           bindings="${{ matrix.precision == 'double' && 'boxdd-sys/src/bindings_double.rs' || 'boxdd-sys/src/bindings_pregenerated.rs' }}"
           cp "$bindings" "$SYS_DIR/bindings.rs"
           cargo +${{ matrix.toolchain }} run --locked -p xtask -- native-package attest-local-system "$identity" "$SYS_DIR/libbox2d.a" "$SYS_DIR/box2d.h" "$SYS_DIR/bindings.rs" "$SYS_DIR/manifest.toml"
@@ -136,11 +133,19 @@ jobs:
           toolchain: 1.97.1
           components: rustfmt, clippy
 
-      - name: Install test and workflow tools
+      - name: Install test tools
         uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
         with:
-          tool: nextest,actionlint@1.7.12
+          tool: nextest
           fallback: none
+
+      - name: Install actionlint
+        env:
+          GOBIN: ${{ runner.temp }}/actionlint/bin
+        run: |
+          mkdir -p "${GOBIN}"
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          printf '%s\n' "${GOBIN}" >> "${GITHUB_PATH}"
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -345,8 +350,10 @@ jobs:
           source "${sdk_root}/emsdk_env.sh"
           {
             printf 'EMSDK=%s\n' "${EMSDK}"
-            printf 'EM_CONFIG=%s\n' "${EM_CONFIG}"
             printf 'EMSDK_NODE=%s\n' "${EMSDK_NODE}"
+            if [[ -n "${EM_CONFIG:-}" ]]; then
+              printf 'EM_CONFIG=%s\n' "${EM_CONFIG}"
+            fi
           } >> "${GITHUB_ENV}"
           {
             dirname "$(command -v emcc)"
@@ -408,9 +415,9 @@ jobs:
 
       - name: Check public API compatibility
         run: |
-          cargo semver-checks check-release --manifest-path boxdd-sys/Cargo.toml --baseline-rev a3d1e2a660abb2c930ecaad4afb46b22d062fa67 --color never
-          cargo semver-checks check-release --manifest-path boxdd/Cargo.toml --baseline-rev a3d1e2a660abb2c930ecaad4afb46b22d062fa67 --color never
-          cargo semver-checks check-release --manifest-path bevy_boxdd/Cargo.toml --baseline-rev a3d1e2a660abb2c930ecaad4afb46b22d062fa67 --color never
+          cargo semver-checks check-release --manifest-path boxdd-sys/Cargo.toml --baseline-rev a3d1e2a660abb2c930ecaad4afb46b22d062fa67 --default-features --color never
+          cargo semver-checks check-release --manifest-path boxdd/Cargo.toml --baseline-rev a3d1e2a660abb2c930ecaad4afb46b22d062fa67 --default-features --color never
+          cargo semver-checks check-release --manifest-path bevy_boxdd/Cargo.toml --baseline-rev a3d1e2a660abb2c930ecaad4afb46b22d062fa67 --default-features --color never
 
       - name: Reject the breaking API cohort as a patch release
         shell: bash
@@ -419,7 +426,7 @@ jobs:
           for manifest in boxdd-sys/Cargo.toml boxdd/Cargo.toml bevy_boxdd/Cargo.toml; do
             crate="$(basename "$(dirname "${manifest}")")"
             log="${RUNNER_TEMP}/${crate}-semver-patch.log"
-            if cargo semver-checks check-release --manifest-path "${manifest}" --baseline-rev a3d1e2a660abb2c930ecaad4afb46b22d062fa67 --release-type patch --color never >"${log}" 2>&1; then
+            if cargo semver-checks check-release --manifest-path "${manifest}" --baseline-rev a3d1e2a660abb2c930ecaad4afb46b22d062fa67 --default-features --release-type patch --color never >"${log}" 2>&1; then
               cat "${log}"
               echo "${crate}: the 0.5-to-0.6 API break was incorrectly accepted as a patch release" >&2
               exit 1

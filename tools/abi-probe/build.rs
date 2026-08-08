@@ -164,6 +164,11 @@ fn generate_ctest(
     if double_precision {
         generator.define("BOX2D_DOUBLE_PRECISION", Some("1"));
     }
+    if env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+        // Box2D intentionally uses anonymous unions in its public C API. MSVC accepts them but
+        // reports C4201 under /Wall, while ctest promotes every remaining warning to an error.
+        generator.flag("/wd4201");
+    }
     ctest::generate_test(&mut generator, &bindings, "abi_ctest.rs")
         .map(|_| ())
         .map_err(|error| format!("generate compiler-backed ABI conformance tests: {error}"))

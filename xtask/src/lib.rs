@@ -143,7 +143,7 @@ Usage:
   cargo run -p xtask -- verify-packages
   cargo run -p xtask -- release-contract --check --artifacts <directory>
   cargo run -p xtask -- native-package build --sys-out <dir> --build-identity <file> --output <dir> --source-commit <sha> --release-tag <tag>
-  cargo run -p xtask -- native-package attest-local-system <build-identity> <archive> <header> <bindings> <output>
+  cargo run -p xtask -- native-package attest-local-system <build-identity> <archive> <header-output> <bindings> <output>
   cargo run -p xtask -- native-package trust-local-system <input> <output>
   cargo run -p xtask -- qualify-native-provider --provider system ...
   cargo run -p xtask -- provider-smoke-app

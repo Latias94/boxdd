@@ -56,8 +56,7 @@ The Sigstore trust anchor is shipped in the crate and pinned by SHA-256. The opt
 `BOXDD_SYS_PREBUILT_TRUSTED_ROOT` override is accepted only when its contents have the exact same
 digest as the crate-owned anchor, so callers cannot replace the publisher trust policy.
 
-Generate a caller-trusted manifest directly from a compatible local archive, header, and binding
-file with:
+Generate a caller-trusted artifact cohort from a compatible local archive and binding file with:
 
 ```text
 cargo run -p xtask -- native-package attest-local-system \
@@ -68,13 +67,15 @@ cargo run -p xtask -- native-package attest-local-system \
   /provider-root/manifest.toml
 ```
 
-The build identity must be the explicit schema-v3 marker emitted by `boxdd-sys/build.rs`, and its
+The third argument is an output path: the command materializes the repository's reviewed effective
+`box2d.h` there instead of trusting a header recovered from Cargo's private build directories. The
+build identity must be the explicit schema-v3 marker emitted by `boxdd-sys/build.rs`, and its
 adjacent adapter identity must match. Native markers bind the full static-archive SHA-256, so the
 attestation command rejects a different archive even when its embedded ABI identity is compatible.
-All three provider inputs must be regular files below the output manifest's directory. The command
-creates the manifest without overwriting an existing file. It proves exact compatibility with this
-crate; it does not authenticate who produced the archive. `trust-local-system` performs the same
-explicit trust conversion for an already verified prebuilt package manifest.
+The archive and bindings must be regular files below the output manifest's directory. The command
+creates the header and manifest without overwriting existing files. It proves exact compatibility
+with this crate; it does not authenticate who produced the archive. `trust-local-system` performs
+the same explicit trust conversion for an already verified prebuilt package manifest.
 
 Release packaging is repository tooling, not part of the published FFI crate. It requires explicit
 `--sys-out`, `--build-identity`, `--output`, `--source-commit`, and `--release-tag` arguments to

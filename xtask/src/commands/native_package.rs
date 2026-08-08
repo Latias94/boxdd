@@ -6,7 +6,9 @@
 use crate::build_identity::{
     BUILD_IDENTITY_FILE, BuildIdentity, validate_sha256, validate_source_commit,
 };
-use crate::build_support::{VerifiedFileSnapshot, generate_file_create_new};
+use crate::build_support::{
+    VerifiedFileSnapshot, generate_file_create_new, snapshot_file_create_new,
+};
 use crate::prebuilt_provenance;
 use crate::provenance_policy::release_tag_matches_version;
 use crate::provider_archive::{ArchiveExpectation, verify_provider_archive};
@@ -554,7 +556,7 @@ fn attest_local_system(
     workspace_root: &Path,
     build_identity: &ExplicitBuildIdentity,
     archive: &Path,
-    header: &Path,
+    header_output: &Path,
     bindings: &Path,
     output: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -580,28 +582,7 @@ fn attest_local_system(
         },
     )?;
     let archive_path = artifact_relative_path(output_root, archive, "archive")?;
-    let header_path = artifact_relative_path(output_root, header, "header")?;
     let bindings_path = artifact_relative_path(output_root, bindings, "bindings")?;
-    let header_snapshot = VerifiedFileSnapshot::read(
-        header,
-        MAX_PROVIDER_HEADER_BYTES,
-        "caller-trusted provider header",
-    )?;
-    let materialization = tempfile::tempdir()?;
-    let effective_sources = materialize_effective_box2d_sources(
-        &workspace_root.join("boxdd-sys"),
-        materialization.path(),
-    )?;
-    let expected_header = VerifiedFileSnapshot::read(
-        &effective_sources.public_include.join("box2d/box2d.h"),
-        MAX_PROVIDER_HEADER_BYTES,
-        "effective public Box2D header",
-    )?;
-    header_snapshot.verify_exact(
-        expected_header.bytes(),
-        expected_header.sha256(),
-        "caller-trusted header",
-    )?;
     let bindings_snapshot = VerifiedFileSnapshot::read(
         bindings,
         MAX_PROVIDER_BINDINGS_BYTES,
@@ -610,57 +591,88 @@ fn attest_local_system(
     if bindings_snapshot.sha256() != identity.bindings_sha256 {
         return Err("caller-trusted bindings do not match the explicit build identity".into());
     }
-    let manifest = ArtifactManifest {
-        schema_version: provider_manifest::SCHEMA_VERSION,
-        schema: provider_manifest::SCHEMA_NAME.to_owned(),
-        provider: ProviderCapability::System.as_str().to_owned(),
-        crate_version: identity.crate_version.clone(),
-        source_commit: None,
-        release_tag: None,
-        upstream_sha: identity.upstream_sha.clone(),
-        effective_source_sha256: identity.effective_source_sha256.clone(),
-        precision: identity.precision.clone(),
-        target: identity.target.clone(),
-        link: "static".to_owned(),
-        crt: identity.crt.clone(),
-        simd: identity.simd.clone(),
-        validate: identity.validate,
-        adapter_abi_version: ADAPTER_ABI_VERSION,
-        adapter_source_sha256: identity.adapter_source_sha256.clone(),
-        private_abi_hash: identity.private_abi_hash.clone(),
-        snapshot_layout_hash: u64::from(identity.snapshot_layout_hash),
-        recording_contract_blake3: RECORDING_CONTRACT_BLAKE3.to_owned(),
-        required_adapter_symbols_sha256: required_adapter_symbols_sha256(),
-        required_adapter_symbols: REQUIRED_ADAPTER_SYMBOLS
-            .iter()
-            .map(|symbol| (*symbol).to_owned())
-            .collect(),
-        archive: archive_path,
-        archive_sha256: verified_archive.archive_sha256,
-        header: header_path,
-        header_sha256: header_snapshot.sha256().to_owned(),
-        bindings: bindings_path,
-        bindings_sha256: bindings_snapshot.sha256().to_owned(),
-    };
-    manifest.validate_identity(&ArtifactIdentityExpectation {
-        provider: ProviderCapability::System.as_str(),
-        crate_version: &manifest.crate_version,
-        upstream_sha: &manifest.upstream_sha,
-        effective_source_sha256: &identity.effective_source_sha256,
-        precision: &manifest.precision,
-        target: &manifest.target,
-        crt: &manifest.crt,
-        simd: &manifest.simd,
-        validate: manifest.validate,
-        adapter_source_sha256: &manifest.adapter_source_sha256,
-        private_abi_hash: &identity.private_abi_hash,
-        snapshot_layout_hash: identity.snapshot_layout_hash,
-    })?;
     archive_snapshot.revalidate("caller-trusted archive attestation cohort")?;
-    header_snapshot.revalidate("caller-trusted header attestation cohort")?;
     bindings_snapshot.revalidate("caller-trusted bindings attestation cohort")?;
     build_identity.revalidate()?;
-    write_new_manifest(output, &manifest.render())?;
+
+    let materialization = tempfile::tempdir()?;
+    let effective_sources = materialize_effective_box2d_sources(
+        &workspace_root.join("boxdd-sys"),
+        materialization.path(),
+    )?;
+    let header_snapshot = snapshot_file_create_new(
+        &effective_sources.public_include.join("box2d/box2d.h"),
+        header_output,
+        MAX_PROVIDER_HEADER_BYTES,
+        "effective public Box2D header",
+    )?;
+
+    let publication = (|| -> Result<(), Box<dyn std::error::Error>> {
+        let header_path = artifact_relative_path(output_root, header_output, "header")?;
+        let manifest = ArtifactManifest {
+            schema_version: provider_manifest::SCHEMA_VERSION,
+            schema: provider_manifest::SCHEMA_NAME.to_owned(),
+            provider: ProviderCapability::System.as_str().to_owned(),
+            crate_version: identity.crate_version.clone(),
+            source_commit: None,
+            release_tag: None,
+            upstream_sha: identity.upstream_sha.clone(),
+            effective_source_sha256: identity.effective_source_sha256.clone(),
+            precision: identity.precision.clone(),
+            target: identity.target.clone(),
+            link: "static".to_owned(),
+            crt: identity.crt.clone(),
+            simd: identity.simd.clone(),
+            validate: identity.validate,
+            adapter_abi_version: ADAPTER_ABI_VERSION,
+            adapter_source_sha256: identity.adapter_source_sha256.clone(),
+            private_abi_hash: identity.private_abi_hash.clone(),
+            snapshot_layout_hash: u64::from(identity.snapshot_layout_hash),
+            recording_contract_blake3: RECORDING_CONTRACT_BLAKE3.to_owned(),
+            required_adapter_symbols_sha256: required_adapter_symbols_sha256(),
+            required_adapter_symbols: REQUIRED_ADAPTER_SYMBOLS
+                .iter()
+                .map(|symbol| (*symbol).to_owned())
+                .collect(),
+            archive: archive_path,
+            archive_sha256: verified_archive.archive_sha256,
+            header: header_path,
+            header_sha256: header_snapshot.sha256().to_owned(),
+            bindings: bindings_path,
+            bindings_sha256: bindings_snapshot.sha256().to_owned(),
+        };
+        manifest.validate_identity(&ArtifactIdentityExpectation {
+            provider: ProviderCapability::System.as_str(),
+            crate_version: &manifest.crate_version,
+            upstream_sha: &manifest.upstream_sha,
+            effective_source_sha256: &identity.effective_source_sha256,
+            precision: &manifest.precision,
+            target: &manifest.target,
+            crt: &manifest.crt,
+            simd: &manifest.simd,
+            validate: manifest.validate,
+            adapter_source_sha256: &manifest.adapter_source_sha256,
+            private_abi_hash: &identity.private_abi_hash,
+            snapshot_layout_hash: identity.snapshot_layout_hash,
+        })?;
+        archive_snapshot.revalidate("caller-trusted archive attestation cohort")?;
+        header_snapshot.revalidate("effective header attestation cohort")?;
+        bindings_snapshot.revalidate("caller-trusted bindings attestation cohort")?;
+        build_identity.revalidate()?;
+        write_new_manifest(output, &manifest.render())?;
+        Ok(())
+    })();
+
+    if let Err(error) = publication {
+        return match fs::remove_file(header_output) {
+            Ok(()) => Err(error),
+            Err(cleanup_error) => Err(format!(
+                "{error}; failed to remove generated header {}: {cleanup_error}",
+                header_output.display()
+            )
+            .into()),
+        };
+    }
     Ok(())
 }
 
@@ -991,7 +1003,7 @@ fn run_command(workspace_root: &Path, args: &[String]) -> Result<(), Box<dyn std
             println!("Caller-trusted system manifest created: {output}");
             Ok(())
         }
-        [command, identity, archive, header, bindings, output]
+        [command, identity, archive, header_output, bindings, output]
             if command == "attest-local-system" =>
         {
             let identity = ExplicitBuildIdentity::load(Path::new(identity))?;
@@ -999,7 +1011,7 @@ fn run_command(workspace_root: &Path, args: &[String]) -> Result<(), Box<dyn std
                 workspace_root,
                 &identity,
                 Path::new(archive),
-                Path::new(header),
+                Path::new(header_output),
                 Path::new(bindings),
                 Path::new(output),
             )?;
@@ -1007,7 +1019,7 @@ fn run_command(workspace_root: &Path, args: &[String]) -> Result<(), Box<dyn std
             Ok(())
         }
         _ => Err(
-            "native-package expects `build --sys-out <dir> --build-identity <file> --output <dir> --source-commit <sha> --release-tag <tag>`, `attest-local-system <build-identity> <archive> <header> <bindings> <output>`, or `trust-local-system <input> <output>`"
+            "native-package expects `build --sys-out <dir> --build-identity <file> --output <dir> --source-commit <sha> --release-tag <tag>`, `attest-local-system <build-identity> <archive> <header-output> <bindings> <output>`, or `trust-local-system <input> <output>`"
                 .into(),
         ),
     }
