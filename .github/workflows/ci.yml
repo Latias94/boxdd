@@ -414,6 +414,8 @@ jobs:
         run: cargo run --locked -p xtask -- verify-packages
 
       - name: Check public API compatibility
+        env:
+          DOCS_RS: "1"
         run: |
           cargo semver-checks check-release --manifest-path boxdd-sys/Cargo.toml --baseline-rev a3d1e2a660abb2c930ecaad4afb46b22d062fa67 --default-features --color never
           cargo semver-checks check-release --manifest-path boxdd/Cargo.toml --baseline-rev a3d1e2a660abb2c930ecaad4afb46b22d062fa67 --default-features --color never
@@ -421,6 +423,8 @@ jobs:
 
       - name: Reject the breaking API cohort as a patch release
         shell: bash
+        env:
+          DOCS_RS: "1"
         run: |
           set -euo pipefail
           for manifest in boxdd-sys/Cargo.toml boxdd/Cargo.toml bevy_boxdd/Cargo.toml; do

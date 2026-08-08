@@ -12,6 +12,8 @@ use std::{
 
 use super::verified_snapshot::{VerifiedFileSnapshot, is_canonical_sha256, verify_exact_file};
 
+const MAX_ATOMIC_PUBLISH_ATTEMPTS: usize = 32;
+
 pub(crate) fn snapshot_file_create_new(
     source: &Path,
     destination: &Path,
@@ -93,14 +95,40 @@ pub(crate) fn publish_verified_file(
             temporary.path().display()
         )
     })?;
-    temporary.persist(destination).map_err(|error| {
-        format!(
-            "failed to atomically publish verified {label} {}: {}",
-            destination.display(),
-            error.error
-        )
-    })?;
-    verify_exact_file(destination, expected_sha256, bytes, label)
+    let mut last_error = None;
+    for _ in 0..MAX_ATOMIC_PUBLISH_ATTEMPTS {
+        match temporary.persist(destination) {
+            Ok(_) => return verify_exact_file(destination, expected_sha256, bytes, label),
+            Err(error) => {
+                last_error = Some(error.error.to_string());
+                temporary = error.file;
+            }
+        }
+
+        // Windows may temporarily reject replacement while another publisher is validating the
+        // destination. An exact winner is success; an incomplete destination is retried without
+        // ever exposing the temporary file's partial bytes.
+        if verify_exact_file(destination, expected_sha256, bytes, label).is_ok() {
+            return Ok(());
+        }
+
+        match fs::remove_file(destination) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                last_error = Some(format!(
+                    "could not remove an incomplete destination before retrying: {error}"
+                ));
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+
+    Err(format!(
+        "failed to atomically publish verified {label} {} after {MAX_ATOMIC_PUBLISH_ATTEMPTS} attempts: {}",
+        destination.display(),
+        last_error.as_deref().unwrap_or("unknown publication error")
+    ))
 }
 
 fn write_create_new<F>(destination: &Path, label: &str, writer: F) -> Result<(), String>
