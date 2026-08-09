@@ -1,6 +1,8 @@
 boxdd-sys/build.rs text eol=lf
 *.patch text eol=lf -whitespace
+boxdd-sys/effective-source.toml text eol=lf
 boxdd-sys/upstream.toml text eol=lf
+boxdd-sys/abi/*.toml text eol=lf
 boxdd-sys/src/bindgen_contract.rs text eol=lf
 boxdd-sys/src/build_support.rs text eol=lf
 boxdd-sys/src/prebuilt_provenance.rs text eol=lf
