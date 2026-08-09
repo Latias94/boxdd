@@ -491,6 +491,38 @@ fn verified_file_publication_recovers_from_an_incomplete_destination() {
     assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
 }
 
+#[cfg(windows)]
+#[test]
+fn verified_file_publication_keeps_windows_temporary_paths_short() {
+    use std::os::windows::ffi::OsStrExt as _;
+
+    fn wide_len(path: &Path) -> usize {
+        path.as_os_str().encode_wide().count()
+    }
+
+    let directory = tempfile::tempdir().unwrap();
+    let mut parent = directory.path().to_path_buf();
+    let target_parent_len = 165;
+    let component_len = target_parent_len
+        .checked_sub(wide_len(&parent) + 1)
+        .expect("Windows temporary root is too long for the MAX_PATH regression fixture");
+    parent.push("x".repeat(component_len));
+    fs::create_dir(&parent).unwrap();
+
+    let bytes = b"complete authenticated bytes";
+    let digest = format!("{:x}", Sha256::digest(bytes));
+    let destination = parent.join(format!("boxdd-bindings-{digest}.rs"));
+    let legacy_temporary = parent.join(format!(
+        ".{}.boxdd-tmp-XXXXXX",
+        destination.file_name().unwrap().to_string_lossy()
+    ));
+    assert!(wide_len(&destination) < 260);
+    assert!(wide_len(&legacy_temporary) >= 260);
+
+    publish_verified_file(&destination, &digest, bytes, "test bindings").unwrap();
+    assert_eq!(fs::read(destination).unwrap(), bytes);
+}
+
 #[test]
 fn concurrent_verified_file_publishers_converge_on_complete_bytes() {
     let directory = tempfile::tempdir().unwrap();
