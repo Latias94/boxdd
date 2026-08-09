@@ -106,20 +106,11 @@ pub(crate) fn publish_verified_file(
         }
 
         // Windows may temporarily reject replacement while another publisher is validating the
-        // destination. An exact winner is success; an incomplete destination is retried without
-        // ever exposing the temporary file's partial bytes.
+        // destination. An exact winner is success; otherwise retry the atomic replacement. Never
+        // remove the destination here: another publisher may have replaced the incomplete file
+        // after our failed validation, and deleting that winner creates a transient missing path.
         if verify_exact_file(destination, expected_sha256, bytes, label).is_ok() {
             return Ok(());
-        }
-
-        match fs::remove_file(destination) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => {
-                last_error = Some(format!(
-                    "could not remove an incomplete destination before retrying: {error}"
-                ));
-            }
         }
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
