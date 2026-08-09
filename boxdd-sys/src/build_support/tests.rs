@@ -515,13 +515,11 @@ fn verified_file_publication_keeps_windows_temporary_paths_short() {
         .checked_sub(wide_len(Path::new(&destination_name)) + 1)
         .unwrap();
     let base_parent_len = wide_len(&parent);
-    if base_parent_len > maximum_parent_len {
-        eprintln!(
-            "skipping MAX_PATH regression fixture because the Windows temporary root is already \
-             {base_parent_len} UTF-16 code units"
-        );
-        return;
-    }
+    assert!(
+        base_parent_len <= maximum_parent_len,
+        "Windows temporary root is {base_parent_len} UTF-16 code units, too long to construct the \
+         MAX_PATH regression fixture"
+    );
     if base_parent_len < minimum_parent_len {
         let component_len = (minimum_parent_len - base_parent_len - 1).max(1);
         parent.push("x".repeat(component_len));
