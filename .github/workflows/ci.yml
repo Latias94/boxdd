@@ -258,6 +258,41 @@ jobs:
           cargo nextest run --locked -p boxdd -p boxdd-sys --no-fail-fast
           cargo nextest run --locked --target-dir target/core-double -p boxdd -p boxdd-sys --features boxdd/double-precision --no-fail-fast
 
+      - name: Packaged Windows system-provider qualification
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sourceTarget = Join-Path $env:RUNNER_TEMP 'system-source'
+          cargo +1.97.1 build --locked -p boxdd-sys --target-dir $sourceTarget
+          if ($LASTEXITCODE -ne 0) { throw "boxdd-sys system source build failed with exit code $LASTEXITCODE" }
+
+          $identityRoot = Join-Path $sourceTarget 'debug/build'
+          $identities = @(Get-ChildItem -LiteralPath $identityRoot -Filter 'boxdd-build-identity.toml' -File -Recurse)
+          if ($identities.Count -ne 1) {
+            throw "Expected exactly one boxdd build identity, found $($identities.Count)"
+          }
+          $identity = $identities[0].FullName
+          $archive = Join-Path $identities[0].Directory.FullName 'box2d.lib'
+          if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
+            throw "Missing Windows system archive: $archive"
+          }
+
+          $systemRoot = Join-Path $env:RUNNER_TEMP 'boxdd-system-artifact'
+          New-Item -ItemType Directory -Force -Path $systemRoot | Out-Null
+          $archiveInput = Join-Path $systemRoot 'box2d.lib'
+          $bindingsInput = Join-Path $systemRoot 'bindings.rs'
+          $header = Join-Path $systemRoot 'box2d.h'
+          $manifest = Join-Path $systemRoot 'manifest.toml'
+          $bindings = Join-Path $env:GITHUB_WORKSPACE 'boxdd-sys/src/bindings_pregenerated.rs'
+          Copy-Item -LiteralPath $archive -Destination $archiveInput
+          Copy-Item -LiteralPath $bindings -Destination $bindingsInput
+          cargo +1.97.1 run --locked -p xtask -- native-package attest-local-system $identity $archiveInput $header $bindingsInput $manifest
+          if ($LASTEXITCODE -ne 0) { throw "system artifact attestation failed with exit code $LASTEXITCODE" }
+
+          cargo +1.97.1 run --locked -p xtask -- qualify-native-provider --provider system --toolchain 1.97.1 --precision single --target x86_64-pc-windows-msvc --crt md --artifacts $systemRoot
+          if ($LASTEXITCODE -ne 0) { throw "packaged Windows system-provider qualification failed with exit code $LASTEXITCODE" }
+
       - name: C ABI probes (single and double precision)
         run: |
           cargo run --locked -p boxdd-abi-probe --bin abi-ctest --no-default-features
@@ -408,7 +443,7 @@ jobs:
         run: cargo install cargo-semver-checks --version 0.48.0 --locked
 
       - name: Audit dependencies
-        run: cargo audit --deny unsound --file Cargo.lock
+        run: cargo audit --db "$RUNNER_TEMP/rustsec-advisory-db" --deny unsound --file Cargo.lock
 
       - name: Verify packaged-source consumers
         run: cargo run --locked -p xtask -- verify-packages

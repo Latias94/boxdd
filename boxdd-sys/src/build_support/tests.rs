@@ -491,6 +491,50 @@ fn verified_file_publication_recovers_from_an_incomplete_destination() {
     assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
 }
 
+#[cfg(windows)]
+#[test]
+fn verified_file_publication_keeps_windows_temporary_paths_short() {
+    use std::os::windows::ffi::OsStrExt as _;
+
+    fn wide_len(path: &Path) -> usize {
+        path.as_os_str().encode_wide().count()
+    }
+
+    const MAX_PATH_UTF16_LEN: usize = 260;
+
+    let directory = tempfile::tempdir().unwrap();
+    let mut parent = directory.path().to_path_buf();
+    let bytes = b"complete authenticated bytes";
+    let digest = format!("{:x}", Sha256::digest(bytes));
+    let destination_name = format!("boxdd-bindings-{digest}.rs");
+    let legacy_temporary_name = format!(".{destination_name}.boxdd-tmp-XXXXXX");
+    let minimum_parent_len = MAX_PATH_UTF16_LEN
+        .checked_sub(wide_len(Path::new(&legacy_temporary_name)) + 1)
+        .unwrap();
+    let maximum_parent_len = (MAX_PATH_UTF16_LEN - 1)
+        .checked_sub(wide_len(Path::new(&destination_name)) + 1)
+        .unwrap();
+    let base_parent_len = wide_len(&parent);
+    assert!(
+        base_parent_len <= maximum_parent_len,
+        "Windows temporary root is {base_parent_len} UTF-16 code units, too long to construct the \
+         MAX_PATH regression fixture"
+    );
+    if base_parent_len < minimum_parent_len {
+        let component_len = (minimum_parent_len - base_parent_len - 1).max(1);
+        parent.push("x".repeat(component_len));
+        fs::create_dir(&parent).unwrap();
+    }
+
+    let destination = parent.join(destination_name);
+    let legacy_temporary = parent.join(legacy_temporary_name);
+    assert!(wide_len(&destination) < MAX_PATH_UTF16_LEN);
+    assert!(wide_len(&legacy_temporary) >= MAX_PATH_UTF16_LEN);
+
+    publish_verified_file(&destination, &digest, bytes, "test bindings").unwrap();
+    assert_eq!(fs::read(destination).unwrap(), bytes);
+}
+
 #[test]
 fn concurrent_verified_file_publishers_converge_on_complete_bytes() {
     let directory = tempfile::tempdir().unwrap();

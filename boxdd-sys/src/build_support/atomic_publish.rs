@@ -73,15 +73,17 @@ pub(crate) fn publish_verified_file(
     }
 
     let parent = destination.parent().expect("validated parent above");
-    let file_name = destination.file_name().ok_or_else(|| {
-        format!(
+    if destination.file_name().is_none() {
+        return Err(format!(
             "verified {label} destination {} has no file name",
             destination.display()
-        )
-    })?;
-    let prefix = format!(".{}.boxdd-tmp-", file_name.to_string_lossy());
+        ));
+    }
     let mut temporary = tempfile::Builder::new()
-        .prefix(&prefix)
+        // Keep the temporary name independent of the destination name. On Windows, tempfile's
+        // persist implementation passes this path directly to MoveFileExW, where a long bindings
+        // digest name can otherwise push the temporary source beyond MAX_PATH.
+        .prefix(".boxdd-tmp-")
         .tempfile_in(parent)
         .map_err(|error| {
             format!(
