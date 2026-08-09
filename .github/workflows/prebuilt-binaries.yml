@@ -1289,11 +1289,19 @@ jobs:
             assert_local_asset_matches_inventory "${asset_path}"
           done < <(jq -r '.[].path' "${expected_inventory}")
 
-          tag_name_uri="$(jq -rn --arg value "${GITHUB_REF_NAME}" '$value | @uri')"
-          release_endpoint="repos/${GITHUB_REPOSITORY}/releases/tags/${tag_name_uri}"
           release_id=""
           read_release() {
-            gh api --method GET "${release_endpoint}"
+            # GitHub's release-by-tag endpoint does not return drafts. List the
+            # authenticated repository releases so a rerun can resume its draft.
+            gh api --paginate --slurp \
+              "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              | jq -cer --arg tag "${GITHUB_REF_NAME}" '
+                  [.[][] | select(.tag_name == $tag)]
+                  | if length == 1 then .[0]
+                    elif length == 0 then empty
+                    else error("release tag is not unique")
+                    end
+                '
           }
           read_release_by_id() {
             gh api --method GET "repos/${GITHUB_REPOSITORY}/releases/${release_id}"
@@ -1364,8 +1372,12 @@ jobs:
               --arg marker "${owner_marker}" \
               '{tag_name: $tag, target_commitish: $sha, name: ("boxdd " + $tag), body: $marker, draft: true, generate_release_notes: true}' \
               > "${release_payload}"
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/releases" --input "${release_payload}" >/dev/null || true
-            release_json="$(read_release)"
+            if ! release_json="$(
+              gh api --method POST "repos/${GITHUB_REPOSITORY}/releases" \
+                --input "${release_payload}" 2>/dev/null
+            )"; then
+              release_json="$(read_release)"
+            fi
           fi
 
           # Only the run which created this exact draft may resume it. The marker does
