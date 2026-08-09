@@ -308,13 +308,7 @@ fn qualify(root: &Path, options: &Options) -> Result<()> {
     // `fs::canonicalize` adds a verbatim path prefix on Windows. MSVC rejects that spelling when
     // cc probes the compiler, so keep the TempDir spelling at this subprocess boundary. The
     // resulting executable is canonicalized and checked against `scratch_root` below.
-    let target_dir = scratch.path().join(format!(
-        "target-{}-{}-{}-{}",
-        options.provider.as_str(),
-        options.toolchain,
-        options.precision.as_str(),
-        options.crt
-    ));
+    let target_dir = scratch.path().join("target");
     let environment = prepared.command_environment(options, &target_dir, &cargo_home);
 
     let lock_args = vec![

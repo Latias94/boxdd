@@ -500,24 +500,38 @@ fn verified_file_publication_keeps_windows_temporary_paths_short() {
         path.as_os_str().encode_wide().count()
     }
 
+    const MAX_PATH_UTF16_LEN: usize = 260;
+
     let directory = tempfile::tempdir().unwrap();
     let mut parent = directory.path().to_path_buf();
-    let target_parent_len: usize = 165;
-    let component_len = target_parent_len
-        .checked_sub(wide_len(&parent) + 1)
-        .expect("Windows temporary root is too long for the MAX_PATH regression fixture");
-    parent.push("x".repeat(component_len));
-    fs::create_dir(&parent).unwrap();
-
     let bytes = b"complete authenticated bytes";
     let digest = format!("{:x}", Sha256::digest(bytes));
-    let destination = parent.join(format!("boxdd-bindings-{digest}.rs"));
-    let legacy_temporary = parent.join(format!(
-        ".{}.boxdd-tmp-XXXXXX",
-        destination.file_name().unwrap().to_string_lossy()
-    ));
-    assert!(wide_len(&destination) < 260);
-    assert!(wide_len(&legacy_temporary) >= 260);
+    let destination_name = format!("boxdd-bindings-{digest}.rs");
+    let legacy_temporary_name = format!(".{destination_name}.boxdd-tmp-XXXXXX");
+    let minimum_parent_len = MAX_PATH_UTF16_LEN
+        .checked_sub(wide_len(Path::new(&legacy_temporary_name)) + 1)
+        .unwrap();
+    let maximum_parent_len = (MAX_PATH_UTF16_LEN - 1)
+        .checked_sub(wide_len(Path::new(&destination_name)) + 1)
+        .unwrap();
+    let base_parent_len = wide_len(&parent);
+    if base_parent_len > maximum_parent_len {
+        eprintln!(
+            "skipping MAX_PATH regression fixture because the Windows temporary root is already \
+             {base_parent_len} UTF-16 code units"
+        );
+        return;
+    }
+    if base_parent_len < minimum_parent_len {
+        let component_len = (minimum_parent_len - base_parent_len - 1).max(1);
+        parent.push("x".repeat(component_len));
+        fs::create_dir(&parent).unwrap();
+    }
+
+    let destination = parent.join(destination_name);
+    let legacy_temporary = parent.join(legacy_temporary_name);
+    assert!(wide_len(&destination) < MAX_PATH_UTF16_LEN);
+    assert!(wide_len(&legacy_temporary) >= MAX_PATH_UTF16_LEN);
 
     publish_verified_file(&destination, &digest, bytes, "test bindings").unwrap();
     assert_eq!(fs::read(destination).unwrap(), bytes);
