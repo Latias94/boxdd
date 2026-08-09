@@ -1306,7 +1306,11 @@ jobs:
               --arg tag "${GITHUB_REF_NAME}" \
               --arg sha "${GITHUB_SHA}" \
               --arg marker "${owner_marker}" \
-              'if .tag_name == $tag and .target_commitish == $sha and .draft == true and ((.body // "" | split($marker) | length) == 2)
+              'if .tag_name == $tag
+                  and .target_commitish == $sha
+                  and .draft == true
+                  and ((.body // "" | split($marker) | length) == 2)
+                  and ((.body // "") == $marker or (.body // "" | startswith($marker + "\n")))
                then .id
                else error("release is not the draft owned by this tag, commit, and workflow run")
                end'
