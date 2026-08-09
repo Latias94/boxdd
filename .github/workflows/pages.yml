@@ -50,8 +50,10 @@ jobs:
           source "${sdk_root}/emsdk_env.sh"
           {
             printf 'EMSDK=%s\n' "${EMSDK}"
-            printf 'EM_CONFIG=%s\n' "${EM_CONFIG}"
             printf 'EMSDK_NODE=%s\n' "${EMSDK_NODE}"
+            if [[ -n "${EM_CONFIG:-}" ]]; then
+              printf 'EM_CONFIG=%s\n' "${EM_CONFIG}"
+            fi
           } >> "${GITHUB_ENV}"
           {
             dirname "$(command -v emcc)"
