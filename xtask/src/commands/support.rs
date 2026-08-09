@@ -191,6 +191,21 @@ pub(super) fn normalize_newlines(value: &str) -> String {
     value.replace("\r\n", "\n")
 }
 
+pub(super) fn normalize_crlf(mut bytes: Vec<u8>) -> Vec<u8> {
+    let mut read = 0;
+    let mut write = 0;
+    while read < bytes.len() {
+        if bytes[read] == b'\r' && bytes.get(read + 1) == Some(&b'\n') {
+            read += 1;
+        }
+        bytes[write] = bytes[read];
+        write += 1;
+        read += 1;
+    }
+    bytes.truncate(write);
+    bytes
+}
+
 #[derive(Clone, Debug)]
 pub(super) struct QualifiedCargo {
     workspace_root: PathBuf,
@@ -626,5 +641,13 @@ mod tests {
         let error = bounded.read_to_end(&mut bytes).unwrap_err();
         assert_eq!(bytes, [1, 2]);
         assert_eq!(error.to_string(), "domain-specific stream limit");
+    }
+
+    #[test]
+    fn crlf_normalization_preserves_lf_and_lone_carriage_returns() {
+        assert_eq!(
+            normalize_crlf(b"first\r\nsecond\rthird\nfourth\r\n".to_vec()),
+            b"first\nsecond\rthird\nfourth\n"
+        );
     }
 }

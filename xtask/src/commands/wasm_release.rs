@@ -38,7 +38,7 @@ use crate::{
 use super::{
     provider::{self, ProviderPrecision},
     set_once,
-    support::cosign_command,
+    support::{cosign_command, normalize_crlf},
     verification,
 };
 
@@ -636,23 +636,27 @@ fn package_files(root: &Path, inputs: PackageInputs<'_>) -> Result<BTreeMap<Stri
         (RUNTIME_MANIFEST.to_owned(), manifest.render().into_bytes()),
         (
             PROJECT_MIT.to_owned(),
-            read_bounded_regular_file(&root.join("LICENSE-MIT"), MAX_MEMBER_BYTES, "MIT license")?,
+            normalize_crlf(read_bounded_regular_file(
+                &root.join("LICENSE-MIT"),
+                MAX_MEMBER_BYTES,
+                "MIT license",
+            )?),
         ),
         (
             PROJECT_APACHE.to_owned(),
-            read_bounded_regular_file(
+            normalize_crlf(read_bounded_regular_file(
                 &root.join("LICENSE-APACHE"),
                 MAX_MEMBER_BYTES,
                 "Apache license",
-            )?,
+            )?),
         ),
         (
             BOX2D_LICENSE.to_owned(),
-            read_bounded_regular_file(
+            normalize_crlf(read_bounded_regular_file(
                 &root.join("boxdd-sys/third-party/box2d/LICENSE"),
                 MAX_MEMBER_BYTES,
                 "Box2D license",
-            )?,
+            )?),
         ),
     ]);
     files.insert(
@@ -1056,10 +1060,10 @@ fn validate_package_files(
             "Box2D license",
         ),
     ] {
-        let expected = read_bounded_regular_file(&source, MAX_MEMBER_BYTES, label)?;
+        let expected = normalize_crlf(read_bounded_regular_file(&source, MAX_MEMBER_BYTES, label)?);
         if files[member] != expected {
             return Err(Error::message(format!(
-                "WASM package member {member:?} does not match the repository source"
+                "WASM package member {member:?} does not match canonical LF content from the repository source"
             )));
         }
     }
