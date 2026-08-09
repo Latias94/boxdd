@@ -9,6 +9,8 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-09
+
 This coordinated `boxdd`, `boxdd-sys`, and `bevy_boxdd` release targets the pinned Box2D 3.2.0
 development snapshot at
 `56edae79f2949d86142b03450d5d60f63bcf5a6f`.
