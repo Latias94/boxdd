@@ -502,7 +502,7 @@ fn verified_file_publication_keeps_windows_temporary_paths_short() {
 
     let directory = tempfile::tempdir().unwrap();
     let mut parent = directory.path().to_path_buf();
-    let target_parent_len = 165;
+    let target_parent_len: usize = 165;
     let component_len = target_parent_len
         .checked_sub(wide_len(&parent) + 1)
         .expect("Windows temporary root is too long for the MAX_PATH regression fixture");
