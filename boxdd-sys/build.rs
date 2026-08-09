@@ -1200,17 +1200,9 @@ fn generate_bindings(
 }
 
 fn configure_msvc_language(build: &mut cc::Build) {
-    match build.is_flag_supported("/std:c17") {
-        Ok(true) => {
-            build.flag("/std:c17");
-        }
-        Ok(false) => {
-            panic!("the selected MSVC C compiler does not support the C17 mode required by Box2D");
-        }
-        Err(error) => {
-            panic!("failed to verify MSVC C17 support required by Box2D: {error}");
-        }
-    }
+    // C17 is a hard Box2D requirement. Let the real compilation report an unsupported compiler;
+    // `is_flag_supported` cannot distinguish a rejected flag from an unrelated probe failure.
+    build.flag("/std:c17");
     if build.get_compiler().is_like_clang_cl() {
         build.flag("/clang:-ffp-contract=off");
     }
