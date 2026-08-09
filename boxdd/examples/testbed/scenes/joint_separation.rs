@@ -3,18 +3,34 @@ use dear_imgui_rs as imgui;
 
 pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
     // Create a small chain of wheel joints between ground and boxes
-    let sdef = bd::ShapeDef::builder().density(1.0).build();
+    let sdef = bd::ShapeDef::builder()
+        .density(1.0)
+        .build()
+        .expect("valid testbed definition");
     let mut prev = ground;
     app.js_joint_ids.clear();
     for i in 0..app.js_count.max(1) {
         let x = -5.0 + (i as f32) * 1.5;
         let b = app
             .world
-            .create_body_id(bd::BodyBuilder::new().body_type(bd::BodyType::Dynamic).position([x, 3.0]).build());
+            .create_body(
+                bd::BodyBuilder::from(app.foundation.body_def())
+                    .body_type(bd::BodyType::Dynamic)
+                    .position([x, 3.0])
+                    .build()
+                    .expect("valid testbed definition"),
+            )
+            .expect("valid testbed operation");
         app.created_bodies += 1;
         let _ = app
             .world
-            .create_polygon_shape_for(b, &sdef, &bd::shapes::box_polygon(0.5, 0.3));
+            .body(b)
+            .expect("valid testbed operation")
+            .create_polygon(
+                &sdef,
+                &bd::shapes::box_polygon(0.5, 0.3).expect("valid polygon geometry"),
+            )
+            .expect("valid testbed operation");
         app.created_shapes += 1;
         let j = app
             .world
@@ -22,23 +38,34 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
             .anchors_world([x - 0.75, 3.0], [x, 3.0])
             .axis_world([1.0_f32, 0.0])
             .spring(4.0, 0.7)
-            .build();
+            .build()
+            .expect("valid testbed wheel joint");
         app.created_joints += 1;
-        app.js_joint_ids.push(j.id());
+        app.js_joint_ids.push(j);
         prev = b;
     }
 }
 
 #[allow(dead_code)]
-pub fn tick(app: &mut super::PhysicsApp) {
+pub fn tick(app: &mut super::PhysicsApp, _events: Option<&bd::StepEventsSnapshot>) {
     // Compute min/max separation across joints each frame
     let mut min_lin = f32::MAX;
     let mut max_lin = f32::MIN;
     let mut min_ang = f32::MAX;
     let mut max_ang = f32::MIN;
     for &jid in &app.js_joint_ids {
-        let lin = app.world.joint_linear_separation(jid);
-        let ang = app.world.joint_angular_separation(jid);
+        let lin = app
+            .world
+            .joint(jid)
+            .expect("valid testbed operation")
+            .linear_separation()
+            .expect("valid testbed operation");
+        let ang = app
+            .world
+            .joint(jid)
+            .expect("valid testbed operation")
+            .angular_separation()
+            .expect("valid testbed operation");
         min_lin = min_lin.min(lin);
         max_lin = max_lin.max(lin);
         min_ang = min_ang.min(ang);

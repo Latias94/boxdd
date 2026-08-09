@@ -1,0 +1,13 @@
+[package]
+name = "boxdd-package-consumer-core"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+boxdd = { version = "0" }
+
+[features]
+double-precision = ["boxdd/double-precision"]
+
+[workspace]

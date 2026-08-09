@@ -2,6 +2,7 @@
 name = "bevy_boxdd"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Bevy integration for the boxdd Rust bindings to Box2D"
 license.workspace = true
 repository.workspace = true
@@ -11,8 +12,18 @@ readme = "README.md"
 keywords = ["box2d", "bevy", "physics", "game", "simulation"]
 categories = ["game-engines", "api-bindings"]
 
+include = [
+    "Cargo.toml",
+    "MIGRATION.md",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+    "src/**",
+]
+
 [features]
 default = []
+double-precision = ["boxdd/double-precision"]
 
 [dependencies]
 boxdd.workspace = true
@@ -21,13 +32,15 @@ bevy_ecs.workspace = true
 bevy_math.workspace = true
 bevy_time.workspace = true
 bevy_transform.workspace = true
+event-listener.workspace = true
 log.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
 bevy = "0.19.0"
-bevy_egui = "0.41.0"
+bevy_egui = "0.41.1"
 static_assertions = { workspace = true }
+trybuild = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 web-sys = { version = "0.3.103", features = ["Location", "Window"] }

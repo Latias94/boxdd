@@ -5,25 +5,43 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     // Ground + a step obstacle
     let step = app
         .world
-        .create_body_id(bd::BodyBuilder::new().position([1.0_f32, 0.5]).build());
+        .create_body(
+            bd::BodyBuilder::from(app.foundation.body_def())
+                .position([1.0_f32, 0.5])
+                .build()
+                .expect("valid testbed definition"),
+        )
+        .expect("character-mover step body must be valid");
     app.created_bodies += 1;
-    let _ = app.world.create_polygon_shape_for(
-        step,
-        &bd::ShapeDef::builder().density(0.0).build(),
-        &bd::shapes::box_polygon(0.5, 0.5),
-    );
+    let _ = app
+        .world
+        .body(step)
+        .expect("character-mover step body must stay live")
+        .create_polygon(
+            &bd::ShapeDef::builder()
+                .density(0.0)
+                .build()
+                .expect("valid testbed definition"),
+            &bd::shapes::box_polygon(0.5, 0.5)
+                .expect("character-mover step geometry must be valid"),
+        )
+        .expect("character-mover step shape must be valid");
     app.created_shapes += 1;
 }
 
-pub fn tick(app: &mut super::PhysicsApp) {
-    let frac = app.world.cast_mover(
-        [0.0_f32, app.cm_c1_y],
-        [0.0, app.cm_c2_y],
-        app.cm_radius,
-        [app.cm_move_x, 0.0_f32],
-        bd::QueryFilter::default(),
-    );
-    app.cm_fraction = frac;
+pub fn tick(app: &mut super::PhysicsApp, _events: Option<&bd::StepEventsSnapshot>) {
+    if let Ok(query) = app.world.query()
+        && let Ok(fraction) = query.cast_mover(
+            bd::Position::ZERO,
+            [0.0_f32, app.cm_c1_y],
+            [0.0, app.cm_c2_y],
+            app.cm_radius,
+            [app.cm_move_x, 0.0_f32],
+            bd::QueryFilter::default(),
+        )
+    {
+        app.cm_fraction = fraction;
+    }
 }
 
 pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {

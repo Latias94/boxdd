@@ -1,149 +1,183 @@
-#![allow(rustdoc::broken_intra_doc_links)]
-use crate::types::BodyId;
+use crate::types::{JointId, Position};
 use crate::world::World;
 use boxdd_sys::ffi;
 
-use super::{Joint, JointBase, OwnedJoint, raw_body_id};
-use crate::error::ApiResult;
+use super::JointBase;
+use crate::error::Result;
 
 // Revolute joint
 #[derive(Clone, Debug)]
 /// Revolute (hinge) joint definition (maps to `b2RevoluteJointDef`).
 ///
 /// Allows rotation around an anchor with optional angular limits, motor, and
-/// spring (stiffness/damping). Use with `World::create_revolute_joint(_id)` or
-/// `World::revolute(...).build()`.
-pub struct RevoluteJointDef(pub(crate) ffi::b2RevoluteJointDef);
+/// spring (stiffness/damping). Use with [`World::create_revolute_joint`] or
+/// [`World::revolute`].
+pub struct RevoluteJointDef {
+    base: JointBase,
+    target_angle: f32,
+    enable_spring: bool,
+    hertz: f32,
+    damping_ratio: f32,
+    enable_limit: bool,
+    lower_angle: f32,
+    upper_angle: f32,
+    enable_motor: bool,
+    max_motor_torque: f32,
+    motor_speed: f32,
+}
 
 impl RevoluteJointDef {
     pub fn new(base: JointBase) -> Self {
-        let mut def: ffi::b2RevoluteJointDef = unsafe { ffi::b2DefaultRevoluteJointDef() };
-        def.base = base.0;
-        Self(def)
+        let raw: ffi::b2RevoluteJointDef =
+            crate::core::native_defaults::revolute_joint_def(base.to_raw());
+        Self {
+            base,
+            target_angle: raw.targetAngle,
+            enable_spring: raw.enableSpring,
+            hertz: raw.hertz,
+            damping_ratio: raw.dampingRatio,
+            enable_limit: raw.enableLimit,
+            lower_angle: raw.lowerAngle,
+            upper_angle: raw.upperAngle,
+            enable_motor: raw.enableMotor,
+            max_motor_torque: raw.maxMotorTorque,
+            motor_speed: raw.motorSpeed,
+        }
     }
 
     #[inline]
-    pub fn from_raw(raw: ffi::b2RevoluteJointDef) -> Self {
-        Self(raw)
+    pub fn base(&self) -> &JointBase {
+        &self.base
     }
 
     #[inline]
-    pub fn base(&self) -> JointBase {
-        JointBase(self.0.base)
+    pub(crate) fn base_mut(&mut self) -> &mut JointBase {
+        &mut self.base
     }
 
     #[inline]
     pub fn target_angle_value(&self) -> f32 {
-        self.0.targetAngle
+        self.target_angle
     }
 
     #[inline]
     pub fn spring_enabled(&self) -> bool {
-        self.0.enableSpring
+        self.enable_spring
     }
 
     #[inline]
     pub fn spring_hertz(&self) -> f32 {
-        self.0.hertz
+        self.hertz
     }
 
     #[inline]
     pub fn spring_damping_ratio(&self) -> f32 {
-        self.0.dampingRatio
+        self.damping_ratio
     }
 
     #[inline]
     pub fn limit_enabled(&self) -> bool {
-        self.0.enableLimit
+        self.enable_limit
     }
 
     #[inline]
     pub fn minimum_angle(&self) -> f32 {
-        self.0.lowerAngle
+        self.lower_angle
     }
 
     #[inline]
     pub fn maximum_angle(&self) -> f32 {
-        self.0.upperAngle
+        self.upper_angle
     }
 
     #[inline]
     pub fn motor_enabled(&self) -> bool {
-        self.0.enableMotor
+        self.enable_motor
     }
 
     #[inline]
     pub fn maximum_motor_torque(&self) -> f32 {
-        self.0.maxMotorTorque
+        self.max_motor_torque
     }
 
     #[inline]
     pub fn target_motor_speed(&self) -> f32 {
-        self.0.motorSpeed
+        self.motor_speed
+    }
+
+    pub(crate) fn to_raw(&self) -> ffi::b2RevoluteJointDef {
+        let mut raw: ffi::b2RevoluteJointDef =
+            crate::core::native_defaults::revolute_joint_def(self.base.to_raw());
+        raw.targetAngle = self.target_angle;
+        raw.enableSpring = self.enable_spring;
+        raw.hertz = self.hertz;
+        raw.dampingRatio = self.damping_ratio;
+        raw.enableLimit = self.enable_limit;
+        raw.lowerAngle = self.lower_angle;
+        raw.upperAngle = self.upper_angle;
+        raw.enableMotor = self.enable_motor;
+        raw.maxMotorTorque = self.max_motor_torque;
+        raw.motorSpeed = self.motor_speed;
+        raw
     }
 
     #[inline]
-    pub fn into_raw(self) -> ffi::b2RevoluteJointDef {
-        self.0
-    }
-
-    #[inline]
-    pub fn validate(&self) -> ApiResult<()> {
+    pub fn validate(&self) -> Result<()> {
         super::check_revolute_joint_def_valid(self)
     }
 
     pub fn target_angle(mut self, v: f32) -> Self {
-        self.0.targetAngle = v;
+        self.target_angle = v;
         self
     }
     pub fn enable_spring(mut self, flag: bool) -> Self {
-        self.0.enableSpring = flag;
+        self.enable_spring = flag;
         self
     }
     pub fn hertz(mut self, v: f32) -> Self {
-        self.0.hertz = v;
+        self.hertz = v;
         self
     }
     pub fn damping_ratio(mut self, v: f32) -> Self {
-        self.0.dampingRatio = v;
+        self.damping_ratio = v;
         self
     }
     pub fn enable_limit(mut self, flag: bool) -> Self {
-        self.0.enableLimit = flag;
+        self.enable_limit = flag;
         self
     }
     pub fn lower_angle(mut self, v: f32) -> Self {
-        self.0.lowerAngle = v;
+        self.lower_angle = v;
         self
     }
     pub fn upper_angle(mut self, v: f32) -> Self {
-        self.0.upperAngle = v;
+        self.upper_angle = v;
         self
     }
     pub fn enable_motor(mut self, flag: bool) -> Self {
-        self.0.enableMotor = flag;
+        self.enable_motor = flag;
         self
     }
     pub fn max_motor_torque(mut self, v: f32) -> Self {
-        self.0.maxMotorTorque = v;
+        self.max_motor_torque = v;
         self
     }
     pub fn motor_speed(mut self, v: f32) -> Self {
-        self.0.motorSpeed = v;
+        self.motor_speed = v;
         self
     }
 
     /// Convenience: set angular limits in degrees.
     pub fn limit_deg(mut self, lower_deg: f32, upper_deg: f32) -> Self {
         let to_rad = core::f32::consts::PI / 180.0;
-        self.0.lowerAngle = lower_deg * to_rad;
-        self.0.upperAngle = upper_deg * to_rad;
-        self.0.enableLimit = true;
+        self.lower_angle = lower_deg * to_rad;
+        self.upper_angle = upper_deg * to_rad;
+        self.enable_limit = true;
         self
     }
     /// Convenience: motor speed in degrees/sec.
     pub fn motor_speed_deg(mut self, speed_deg_per_s: f32) -> Self {
-        self.0.motorSpeed = speed_deg_per_s * (core::f32::consts::PI / 180.0);
+        self.motor_speed = speed_deg_per_s * (core::f32::consts::PI / 180.0);
         self
     }
 }
@@ -152,16 +186,14 @@ impl RevoluteJointDef {
 /// Fluent builder for revolute joints using a world anchor.
 pub struct RevoluteJointBuilder<'w> {
     pub(crate) world: &'w mut World,
-    pub(crate) body_a: BodyId,
-    pub(crate) body_b: BodyId,
-    pub(crate) anchor_world: Option<ffi::b2Vec2>,
+    pub(crate) anchor_world: Option<Position>,
     pub(crate) def: RevoluteJointDef,
 }
 
 impl<'w> RevoluteJointBuilder<'w> {
     /// Set world anchor (defaults to body A position).
-    pub fn anchor_world<V: Into<crate::types::Vec2>>(mut self, a: V) -> Self {
-        self.anchor_world = Some(a.into().into_raw());
+    pub fn anchor_world<V: Into<Position>>(mut self, a: V) -> Self {
+        self.anchor_world = Some(a.into());
         self
     }
     /// Limit angles in radians.
@@ -206,7 +238,7 @@ impl<'w> RevoluteJointBuilder<'w> {
         self
     }
     pub fn collide_connected(mut self, flag: bool) -> Self {
-        self.def.0.base.collideConnected = flag;
+        self.def.base = self.def.base.with_collide_connected(flag);
         self
     }
 
@@ -313,89 +345,54 @@ impl<'w> RevoluteJointBuilder<'w> {
         self
     }
 
-    #[must_use]
-    pub fn build(mut self) -> Joint<'w> {
-        crate::core::debug_checks::assert_body_valid(self.body_a);
-        crate::core::debug_checks::assert_body_valid(self.body_b);
-        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
-        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
-        let aw = self.anchor_world.unwrap_or(ta.p);
-        let la = crate::core::math::world_to_local_point(ta, aw);
-        let lb = crate::core::math::world_to_local_point(tb, aw);
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.def.0.base.localFrameA = ffi::b2Transform {
-            p: la,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
-        self.def.0.base.localFrameB = ffi::b2Transform {
-            p: lb,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
+    fn configure_local_frames(&mut self) -> Result<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        super::creation::check_joint_target_identity(self.world, self.def.base())?;
+        self.def.validate()?;
+        if let Some(anchor) = self.anchor_world {
+            super::validation::check_joint_position(
+                anchor,
+                "RevoluteJointBuilder::build",
+                "anchor_world",
+            )?;
+        }
+        super::creation::check_joint_target_native(self.world, self.def.base())?;
+
+        let body_a = self.def.base().body_a_id();
+        let body_b = self.def.base().body_b_id();
+
+        let ta = super::read_native_body_world_transform(
+            "RevoluteJointBuilder::build",
+            "body_a_transform",
+            body_a,
+        )?;
+        let tb = super::read_native_body_world_transform(
+            "RevoluteJointBuilder::build",
+            "body_b_transform",
+            body_b,
+        )?;
+        let anchor = self.anchor_world.unwrap_or_else(|| ta.position());
+        let la = super::base_def::checked_world_to_local_point(
+            "RevoluteJointBuilder::build",
+            "anchor_world",
+            ta,
+            anchor,
+        )?;
+        let lb = super::base_def::checked_world_to_local_point(
+            "RevoluteJointBuilder::build",
+            "anchor_world",
+            tb,
+            anchor,
+        )?;
+        self.def.base_mut().set_local_frames(
+            crate::Transform::from_pos_angle(la, 0.0)?,
+            crate::Transform::from_pos_angle(lb, 0.0)?,
+        );
+        Ok(())
+    }
+
+    pub fn build(mut self) -> Result<JointId> {
+        self.configure_local_frames()?;
         self.world.create_revolute_joint(&self.def)
-    }
-
-    pub fn try_build(mut self) -> ApiResult<Joint<'w>> {
-        crate::core::debug_checks::check_body_valid(self.body_a)?;
-        crate::core::debug_checks::check_body_valid(self.body_b)?;
-        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
-        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
-        let aw = self.anchor_world.unwrap_or(ta.p);
-        let la = crate::core::math::world_to_local_point(ta, aw);
-        let lb = crate::core::math::world_to_local_point(tb, aw);
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.def.0.base.localFrameA = ffi::b2Transform {
-            p: la,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
-        self.def.0.base.localFrameB = ffi::b2Transform {
-            p: lb,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
-        self.world.try_create_revolute_joint(&self.def)
-    }
-
-    #[must_use]
-    pub fn build_owned(mut self) -> OwnedJoint {
-        crate::core::debug_checks::assert_body_valid(self.body_a);
-        crate::core::debug_checks::assert_body_valid(self.body_b);
-        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
-        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
-        let aw = self.anchor_world.unwrap_or(ta.p);
-        let la = crate::core::math::world_to_local_point(ta, aw);
-        let lb = crate::core::math::world_to_local_point(tb, aw);
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.def.0.base.localFrameA = ffi::b2Transform {
-            p: la,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
-        self.def.0.base.localFrameB = ffi::b2Transform {
-            p: lb,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
-        self.world.create_revolute_joint_owned(&self.def)
-    }
-
-    pub fn try_build_owned(mut self) -> ApiResult<OwnedJoint> {
-        crate::core::debug_checks::check_body_valid(self.body_a)?;
-        crate::core::debug_checks::check_body_valid(self.body_b)?;
-        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
-        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
-        let aw = self.anchor_world.unwrap_or(ta.p);
-        let la = crate::core::math::world_to_local_point(ta, aw);
-        let lb = crate::core::math::world_to_local_point(tb, aw);
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.def.0.base.localFrameA = ffi::b2Transform {
-            p: la,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
-        self.def.0.base.localFrameB = ffi::b2Transform {
-            p: lb,
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
-        self.world.try_create_revolute_joint_owned(&self.def)
     }
 }

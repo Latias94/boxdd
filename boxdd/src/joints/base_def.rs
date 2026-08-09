@@ -1,263 +1,321 @@
-use crate::body::Body;
-use crate::error::ApiResult;
-use crate::types::BodyId;
+use crate::core::math::Rot;
+use crate::error::{Error, Result};
+use crate::types::{BodyId, Position, Vec2, WorldTransform};
 use boxdd_sys::ffi;
 
 use super::base::ConstraintTuning;
 
-/// Base joint definition builder for common properties.
-///
-/// This configures `b2JointDef` fields shared by all joint types. Typically
-/// you construct a specific joint def (e.g. `RevoluteJointDef`) with this as
-/// its `base`.
-#[derive(Clone, Debug)]
-pub struct JointBase(pub(crate) ffi::b2JointDef);
-
-impl Default for JointBase {
-    fn default() -> Self {
-        // Box2D does not export a b2DefaultJointDef helper, so mirror the upstream defaults here.
-        let mut base: ffi::b2JointDef = unsafe { core::mem::zeroed() };
-        base.forceThreshold = f32::MAX;
-        base.torqueThreshold = f32::MAX;
-        base.constraintHertz = 60.0;
-        base.constraintDampingRatio = 2.0;
-        base.drawScale = crate::length_units_per_meter();
-        base.localFrameA = ffi::b2Transform {
-            p: ffi::b2Vec2 { x: 0.0, y: 0.0 },
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
-        base.localFrameB = ffi::b2Transform {
-            p: ffi::b2Vec2 { x: 0.0, y: 0.0 },
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
-        Self(base)
+/// Convert an absolute world point into a body's local `f32` coordinates.
+pub(crate) fn checked_world_to_local_point(
+    operation: &'static str,
+    argument: &'static str,
+    body_transform: WorldTransform,
+    world_point: Position,
+) -> Result<Vec2> {
+    let rotation = body_transform.rotation();
+    if !body_transform.position().is_valid() || !rotation.is_valid() {
+        return Err(Error::InvalidNativeOutput {
+            operation,
+            output: "body_transform",
+            constraint: "a valid finite transform",
+        });
     }
+    super::validation::check_joint_position(world_point, operation, argument)?;
+
+    let relative = world_point
+        .checked_relative_to(body_transform.position())
+        .map_err(|_| {
+            Error::invalid_argument(
+                operation,
+                argument,
+                "a point whose delta from the body origin fits in f32 coordinates",
+            )
+        })?;
+    let local = rotation.inv_rotate_vec(relative);
+    if !local.x.is_finite() || !local.y.is_finite() {
+        return Err(Error::invalid_argument(
+            operation,
+            argument,
+            "a point that produces finite local coordinates",
+        ));
+    }
+
+    Ok(local)
+}
+
+/// Convert a world-space direction into the local rotation for a joint frame.
+pub(crate) fn checked_world_axis_to_local_rotation(
+    operation: &'static str,
+    argument: &'static str,
+    body_transform: WorldTransform,
+    world_axis: Vec2,
+) -> Result<Rot> {
+    let rotation = body_transform.rotation();
+    super::validation::check_joint_axis(world_axis, operation, argument)?;
+    if !body_transform.position().is_valid() || !rotation.is_valid() {
+        return Err(Error::InvalidNativeOutput {
+            operation,
+            output: "body_transform",
+            constraint: "a valid finite transform",
+        });
+    }
+
+    let local_axis = rotation.inv_rotate_vec(world_axis);
+    if !local_axis.x.is_finite() || !local_axis.y.is_finite() {
+        return Err(Error::invalid_argument(
+            operation,
+            argument,
+            "a direction that produces finite local coordinates",
+        ));
+    }
+
+    Rot::from_radians(local_axis.y.atan2(local_axis.x))
+}
+
+/// Common joint configuration that retains the provenance of both attached bodies.
+///
+/// The native `b2JointDef` is encoded only after a target [`crate::World`] validates both body
+/// ids. Construct it through [`crate::World::joint_base`] or
+/// [`crate::RecordingSession::joint_base`], which authenticate both ids under the same owner
+/// before returning it. This prevents a definition from laundering a body id through its FFI
+/// representation.
+#[derive(Copy, Clone, Debug)]
+pub struct JointBase {
+    body_a: BodyId,
+    body_b: BodyId,
+    local_frame_a: crate::Transform,
+    local_frame_b: crate::Transform,
+    collide_connected: bool,
+    force_threshold: f32,
+    torque_threshold: f32,
+    constraint_tuning: ConstraintTuning,
+    draw_scale: f32,
+    length_scale: crate::core::length_scale::LengthScale,
 }
 
 impl JointBase {
-    /// Start building a new `JointBase` from defaults.
-    pub fn builder() -> JointBaseBuilder {
-        JointBaseBuilder::new()
-    }
-
-    /// Construct from the raw Box2D joint base definition value.
-    #[inline]
-    pub fn from_raw(raw: ffi::b2JointDef) -> Self {
-        Self(raw)
-    }
-
-    /// Attached body A id.
-    #[inline]
-    pub fn body_a_id(&self) -> BodyId {
-        BodyId::from_raw(self.0.bodyIdA)
-    }
-
-    /// Attached body B id.
-    #[inline]
-    pub fn body_b_id(&self) -> BodyId {
-        BodyId::from_raw(self.0.bodyIdB)
-    }
-
-    /// Local frame on body A.
-    #[inline]
-    pub fn local_frame_a(&self) -> crate::Transform {
-        crate::Transform::from_raw(self.0.localFrameA)
-    }
-
-    /// Local frame on body B.
-    #[inline]
-    pub fn local_frame_b(&self) -> crate::Transform {
-        crate::Transform::from_raw(self.0.localFrameB)
-    }
-
-    /// Whether the connected bodies should collide with each other.
-    #[inline]
-    pub fn collide_connected(&self) -> bool {
-        self.0.collideConnected
-    }
-
-    /// Force threshold used for joint events.
-    #[inline]
-    pub fn force_threshold(&self) -> f32 {
-        self.0.forceThreshold
-    }
-
-    /// Torque threshold used for joint events.
-    #[inline]
-    pub fn torque_threshold(&self) -> f32 {
-        self.0.torqueThreshold
-    }
-
-    /// Shared constraint tuning on the base definition.
-    #[inline]
-    pub fn constraint_tuning(&self) -> ConstraintTuning {
-        ConstraintTuning::new(self.0.constraintHertz, self.0.constraintDampingRatio)
-    }
-
-    /// Debug draw scale.
-    #[inline]
-    pub fn draw_scale(&self) -> f32 {
-        self.0.drawScale
-    }
-
-    /// Convert into the raw Box2D joint base definition value.
-    #[inline]
-    pub fn into_raw(self) -> ffi::b2JointDef {
-        self.0
-    }
-
-    #[inline]
-    pub fn validate(&self) -> ApiResult<()> {
-        super::check_joint_base_valid(self)
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct JointBaseBuilder {
-    base: JointBase,
-}
-
-impl JointBaseBuilder {
-    /// Create a new base with identity local frames.
-    pub fn new() -> Self {
+    pub(crate) fn with_length_scale(
+        body_a: BodyId,
+        body_b: BodyId,
+        length_scale: crate::core::length_scale::LengthScale,
+    ) -> Self {
         Self {
-            base: JointBase::default(),
+            body_a,
+            body_b,
+            local_frame_a: crate::Transform::IDENTITY,
+            local_frame_b: crate::Transform::IDENTITY,
+            collide_connected: false,
+            force_threshold: f32::MAX,
+            torque_threshold: f32::MAX,
+            constraint_tuning: ConstraintTuning::new(60.0, 2.0)
+                .expect("Box2D's default joint tuning is valid"),
+            draw_scale: length_scale.units_per_meter(),
+            length_scale,
         }
     }
-    /// Attach two bodies using scoped body handles.
-    pub fn bodies<'w>(mut self, a: &Body<'w>, b: &Body<'w>) -> Self {
-        self.base.0.bodyIdA = a.id.into_raw();
-        self.base.0.bodyIdB = b.id.into_raw();
-        self
+
+    #[inline]
+    pub fn body_a_id(&self) -> BodyId {
+        self.body_a
     }
-    /// Attach two bodies by raw ids.
-    pub fn bodies_by_id(mut self, a: BodyId, b: BodyId) -> Self {
-        self.base.0.bodyIdA = a.into_raw();
-        self.base.0.bodyIdB = b.into_raw();
-        self
+
+    #[inline]
+    pub fn body_b_id(&self) -> BodyId {
+        self.body_b
     }
-    /// Set local frames from positions and angles (radians).
-    pub fn local_frames<VA: Into<crate::types::Vec2>, VB: Into<crate::types::Vec2>>(
+
+    #[inline]
+    pub fn local_frame_a(&self) -> crate::Transform {
+        self.local_frame_a
+    }
+
+    #[inline]
+    pub fn local_frame_b(&self) -> crate::Transform {
+        self.local_frame_b
+    }
+
+    #[inline]
+    pub fn collide_connected(&self) -> bool {
+        self.collide_connected
+    }
+
+    #[inline]
+    pub fn force_threshold(&self) -> f32 {
+        self.force_threshold
+    }
+
+    #[inline]
+    pub fn torque_threshold(&self) -> f32 {
+        self.torque_threshold
+    }
+
+    #[inline]
+    pub fn constraint_tuning(&self) -> ConstraintTuning {
+        self.constraint_tuning
+    }
+
+    #[inline]
+    pub fn draw_scale(&self) -> f32 {
+        self.draw_scale
+    }
+
+    #[inline]
+    pub(crate) fn length_scale(&self) -> crate::core::length_scale::LengthScale {
+        self.length_scale
+    }
+
+    #[inline]
+    pub fn with_local_frames(
         mut self,
-        pos_a: VA,
+        local_frame_a: crate::Transform,
+        local_frame_b: crate::Transform,
+    ) -> Self {
+        self.local_frame_a = local_frame_a;
+        self.local_frame_b = local_frame_b;
+        self
+    }
+
+    /// Set local frames from positions and angles in radians.
+    pub fn with_local_frame_components<VA: Into<Vec2>, VB: Into<Vec2>>(
+        self,
+        position_a: VA,
         angle_a: f32,
-        pos_b: VB,
+        position_b: VB,
         angle_b: f32,
-    ) -> Self {
-        let (sa, ca) = angle_a.sin_cos();
-        let (sb, cb) = angle_b.sin_cos();
-        self.base.0.localFrameA = ffi::b2Transform {
-            p: pos_a.into().into_raw(),
-            q: ffi::b2Rot { c: ca, s: sa },
-        };
-        self.base.0.localFrameB = ffi::b2Transform {
-            p: pos_b.into().into_raw(),
-            q: ffi::b2Rot { c: cb, s: sb },
-        };
+    ) -> Result<Self> {
+        Ok(self.with_local_frames(
+            crate::Transform::from_pos_angle(position_a.into(), angle_a)?,
+            crate::Transform::from_pos_angle(position_b.into(), angle_b)?,
+        ))
+    }
+
+    #[inline]
+    pub fn with_collide_connected(mut self, collide_connected: bool) -> Self {
+        self.collide_connected = collide_connected;
         self
     }
-    pub fn collide_connected(mut self, flag: bool) -> Self {
-        self.base.0.collideConnected = flag;
+
+    #[inline]
+    pub fn with_force_threshold(mut self, force_threshold: f32) -> Result<Self> {
+        super::check_joint_non_negative(
+            force_threshold,
+            "JointBase::with_force_threshold",
+            "force_threshold",
+        )?;
+        self.force_threshold = force_threshold;
+        Ok(self)
+    }
+
+    #[inline]
+    pub fn with_torque_threshold(mut self, torque_threshold: f32) -> Result<Self> {
+        super::check_joint_non_negative(
+            torque_threshold,
+            "JointBase::with_torque_threshold",
+            "torque_threshold",
+        )?;
+        self.torque_threshold = torque_threshold;
+        Ok(self)
+    }
+
+    #[inline]
+    pub fn with_constraint_tuning(mut self, constraint_tuning: ConstraintTuning) -> Self {
+        self.constraint_tuning = constraint_tuning;
         self
     }
-    /// Force threshold for joint events.
-    pub fn force_threshold(mut self, v: f32) -> Self {
-        self.base.0.forceThreshold = v;
-        self
+
+    #[inline]
+    pub fn with_draw_scale(mut self, draw_scale: f32) -> Result<Self> {
+        super::check_joint_non_negative(draw_scale, "JointBase::with_draw_scale", "draw_scale")?;
+        self.draw_scale = draw_scale;
+        Ok(self)
     }
-    /// Torque threshold for joint events.
-    pub fn torque_threshold(mut self, v: f32) -> Self {
-        self.base.0.torqueThreshold = v;
-        self
+
+    #[inline]
+    pub fn validate(&self) -> Result<()> {
+        super::check_joint_base_valid(self)
     }
-    /// Advanced constraint tuning frequency in Hertz.
-    pub fn constraint_hertz(mut self, v: f32) -> Self {
-        self.base.0.constraintHertz = v;
-        self
+
+    pub(crate) fn set_local_frames(
+        &mut self,
+        local_frame_a: crate::Transform,
+        local_frame_b: crate::Transform,
+    ) {
+        self.local_frame_a = local_frame_a;
+        self.local_frame_b = local_frame_b;
     }
-    /// Advanced constraint damping ratio.
-    pub fn constraint_damping_ratio(mut self, v: f32) -> Self {
-        self.base.0.constraintDampingRatio = v;
-        self
-    }
-    pub fn draw_scale(mut self, v: f32) -> Self {
-        self.base.0.drawScale = v;
-        self
-    }
-    pub fn local_frames_raw(mut self, a: ffi::b2Transform, b: ffi::b2Transform) -> Self {
-        self.base.0.localFrameA = a;
-        self.base.0.localFrameB = b;
-        self
-    }
-    /// Set local anchor positions from world points (rotation remains identity).
-    pub fn local_points_from_world<'w, V: Into<crate::types::Vec2>>(
-        mut self,
-        body_a: &Body<'w>,
-        world_a: V,
-        body_b: &Body<'w>,
-        world_b: V,
-    ) -> Self {
-        let ta = body_a.transform_raw();
-        let tb = body_b.transform_raw();
-        let wa: ffi::b2Vec2 = world_a.into().into_raw();
-        let wb: ffi::b2Vec2 = world_b.into().into_raw();
-        let la = crate::core::math::world_to_local_point(ta, wa);
-        let lb = crate::core::math::world_to_local_point(tb, wb);
-        let ident = ffi::b2Transform {
-            p: ffi::b2Vec2 { x: 0.0, y: 0.0 },
-            q: ffi::b2Rot { c: 1.0, s: 0.0 },
-        };
-        let mut fa = ident;
-        let mut fb = ident;
-        fa.p = la;
-        fb.p = lb;
-        self.base.0.localFrameA = fa;
-        self.base.0.localFrameB = fb;
-        self
-    }
-    pub fn build(self) -> JointBase {
-        self.base
-    }
-    /// Set local frames using world anchors and a shared world axis (X-axis of joint frame).
-    /// This computes localFrameA/B.rotation so that their X-axis aligns with the given world axis,
-    /// and localFrameA/B.position to the given world anchor points.
-    pub fn frames_from_world_with_axis<'w, VA, VB, AX>(
-        mut self,
-        body_a: &Body<'w>,
-        anchor_a_world: VA,
-        axis_world: AX,
-        body_b: &Body<'w>,
-        anchor_b_world: VB,
-    ) -> Self
-    where
-        VA: Into<crate::types::Vec2>,
-        VB: Into<crate::types::Vec2>,
-        AX: Into<crate::types::Vec2>,
-    {
-        let ta = body_a.transform_raw();
-        let tb = body_b.transform_raw();
-        let wa: ffi::b2Vec2 = anchor_a_world.into().into_raw();
-        let wb: ffi::b2Vec2 = anchor_b_world.into().into_raw();
-        let axis_w: ffi::b2Vec2 = axis_world.into().into_raw();
-        // Local frames: positions from anchors, rotations from world axis
-        let la = crate::core::math::world_to_local_point(ta, wa);
-        let lb = crate::core::math::world_to_local_point(tb, wb);
-        let ra = crate::core::math::world_axis_to_local_rot(ta, axis_w);
-        let rb = crate::core::math::world_axis_to_local_rot(tb, axis_w);
-        self.base.0.localFrameA = ffi::b2Transform { p: la, q: ra };
-        self.base.0.localFrameB = ffi::b2Transform { p: lb, q: rb };
-        self
+
+    pub(crate) fn to_raw(self) -> ffi::b2JointDef {
+        ffi::b2JointDef {
+            userData: core::ptr::null_mut(),
+            bodyIdA: self.body_a.into_raw(),
+            bodyIdB: self.body_b.into_raw(),
+            localFrameA: self.local_frame_a.into_raw(),
+            localFrameB: self.local_frame_b.into_raw(),
+            forceThreshold: self.force_threshold,
+            torqueThreshold: self.torque_threshold,
+            constraintHertz: self.constraint_tuning.hertz(),
+            constraintDampingRatio: self.constraint_tuning.damping_ratio(),
+            drawScale: self.draw_scale,
+            collideConnected: self.collide_connected,
+        }
     }
 }
 
-impl Default for JointBaseBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-impl From<JointBase> for JointBaseBuilder {
-    fn from(base: JointBase) -> Self {
-        Self { base }
+    #[test]
+    fn checked_world_to_local_point_applies_inverse_body_rotation() {
+        let transform =
+            WorldTransform::from_pos_angle(Position::new(1000.0, -2000.0), 0.5).unwrap();
+        let world_point = transform.position().offset(Vec2::new(3.0, -2.0));
+
+        let local = checked_world_to_local_point(
+            "test_checked_world_to_local_point",
+            "world_point",
+            transform,
+            world_point,
+        )
+        .unwrap();
+        let expected = Rot::from_radians(0.5)
+            .unwrap()
+            .inv_rotate_vec(Vec2::new(3.0, -2.0));
+        assert!((local.x - expected.x).abs() < 1.0e-5);
+        assert!((local.y - expected.y).abs() < 1.0e-5);
+    }
+
+    #[cfg(feature = "double-precision")]
+    #[test]
+    fn checked_world_to_local_point_rejects_out_of_range_double_delta() {
+        let transform = WorldTransform::IDENTITY;
+        let world_point = Position::new(f64::from(f32::MAX) * 2.0, 0.0);
+
+        assert_eq!(
+            checked_world_to_local_point(
+                "test_checked_world_to_local_point",
+                "world_point",
+                transform,
+                world_point,
+            ),
+            Err(Error::invalid_argument(
+                "test_checked_world_to_local_point",
+                "world_point",
+                "a point whose delta from the body origin fits in f32 coordinates",
+            ))
+        );
+    }
+
+    #[test]
+    fn checked_world_axis_rejects_zero_direction() {
+        assert!(matches!(
+            checked_world_axis_to_local_rotation(
+                "test_checked_world_axis_to_local_rotation",
+                "world_axis",
+                WorldTransform::IDENTITY,
+                Vec2::ZERO,
+            ),
+            Err(Error::InvalidArgument { .. })
+        ));
     }
 }

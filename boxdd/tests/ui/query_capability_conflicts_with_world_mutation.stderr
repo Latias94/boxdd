@@ -1,0 +1,9 @@
+error[E0502]: cannot borrow `world` as mutable because it is also borrowed as immutable
+  --> tests/ui/query_capability_conflicts_with_world_mutation.rs:9:17
+   |
+ 8 |     let query = world.query().unwrap();
+   |                 ----- immutable borrow occurs here
+ 9 |     let _next = world.create_body(world.body_builder().build().unwrap());
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ mutable borrow occurs here
+10 |     drop(query);
+   |          ----- immutable borrow later used here

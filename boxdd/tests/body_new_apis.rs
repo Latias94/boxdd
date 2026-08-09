@@ -1,20 +1,14 @@
 use boxdd::{prelude::*, shapes};
 
-fn approx_eq(a: f32, b: f32, eps: f32) -> bool {
-    (a - b).abs() <= eps
-}
-
-fn same_shape_id(a: ShapeId, b: ShapeId) -> bool {
-    a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
-}
-
-fn same_joint_id(a: JointId, b: JointId) -> bool {
-    a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
+fn approx_eq(a: f32, b: f32, epsilon: f32) -> bool {
+    (a - b).abs() <= epsilon
 }
 
 #[test]
 fn body_def_is_a_readable_value_type_and_can_seed_a_builder() {
-    let def = BodyDef::builder()
+    let foundation = boxdd::Foundation::initialize_default().unwrap();
+    let def = foundation
+        .body_builder()
         .body_type(BodyType::Dynamic)
         .position([1.5_f32, -2.25])
         .angle(0.75)
@@ -22,23 +16,29 @@ fn body_def_is_a_readable_value_type_and_can_seed_a_builder() {
         .angular_velocity(1.25)
         .linear_damping(0.2)
         .angular_damping(0.4)
+        .sleep_threshold(0.3)
         .gravity_scale(1.75)
+        .name("dynamic")
+        .unwrap()
         .enable_sleep(false)
         .awake(false)
         .bullet(true)
         .allow_fast_rotation(true)
         .enabled(false)
-        .build();
+        .build()
+        .unwrap();
 
     assert_eq!(def.body_type(), BodyType::Dynamic);
-    assert_eq!(def.position(), Vec2::new(1.5, -2.25));
+    assert_eq!(def.position(), Position::new(1.5, -2.25));
     assert!(approx_eq(def.angle(), 0.75, 1.0e-6));
     assert!(approx_eq(def.rotation().angle(), 0.75, 1.0e-6));
     assert_eq!(def.linear_velocity(), Vec2::new(-3.0, 4.5));
     assert!(approx_eq(def.angular_velocity(), 1.25, 1.0e-6));
     assert!(approx_eq(def.linear_damping(), 0.2, 1.0e-6));
     assert!(approx_eq(def.angular_damping(), 0.4, 1.0e-6));
+    assert!(approx_eq(def.sleep_threshold(), 0.3, 1.0e-6));
     assert!(approx_eq(def.gravity_scale(), 1.75, 1.0e-6));
+    assert_eq!(def.name(), Some(c"dynamic"));
     assert!(!def.is_sleep_enabled());
     assert!(!def.is_awake());
     assert!(def.is_bullet());
@@ -48,556 +48,344 @@ fn body_def_is_a_readable_value_type_and_can_seed_a_builder() {
     let rebuilt = BodyBuilder::from(def.clone())
         .position([0.0_f32, 2.0])
         .enabled(true)
-        .build();
+        .build()
+        .unwrap();
     assert_eq!(rebuilt.body_type(), BodyType::Dynamic);
-    assert_eq!(rebuilt.position(), Vec2::new(0.0, 2.0));
+    assert_eq!(rebuilt.position(), Position::new(0.0, 2.0));
     assert!(approx_eq(rebuilt.angle(), 0.75, 1.0e-6));
     assert_eq!(rebuilt.linear_velocity(), Vec2::new(-3.0, 4.5));
     assert!(rebuilt.is_enabled());
-    assert!(rebuilt.is_bullet());
-    assert!(rebuilt.is_fast_rotation_allowed());
-
-    let roundtrip = unsafe { BodyDef::from_raw(def.into_raw()) };
-    assert_eq!(roundtrip.body_type(), BodyType::Dynamic);
-    assert_eq!(roundtrip.position(), Vec2::new(1.5, -2.25));
-    assert!(approx_eq(roundtrip.angle(), 0.75, 1.0e-6));
-    assert_eq!(roundtrip.linear_velocity(), Vec2::new(-3.0, 4.5));
+    assert_eq!(rebuilt.name(), Some(c"dynamic"));
 }
 
 #[test]
-fn body_runtime_controls_and_enumeration_are_available_across_handle_and_world_apis() {
-    let mut world = World::new(WorldDef::default()).unwrap();
+fn body_def_owns_names_across_clone_and_creation() {
+    let foundation = boxdd::Foundation::initialize_default().unwrap();
+    let definition = foundation
+        .body_builder()
+        .name("owned")
+        .unwrap()
+        .build()
+        .unwrap();
+    let cloned = definition.clone();
+    assert_ne!(
+        definition.name().unwrap().as_ptr(),
+        cloned.name().unwrap().as_ptr()
+    );
+    assert_eq!(definition.name(), Some(c"owned"));
 
-    let body_id = world.create_body_id(
-        BodyBuilder::new()
-            .body_type(BodyType::Dynamic)
-            .position([0.0_f32, 1.0])
-            .angle(0.5)
-            .enable_sleep(true)
-            .build(),
+    let mut world = foundation.create_world(foundation.world_def()).unwrap();
+    let body_id = world
+        .create_body(
+            foundation
+                .body_builder()
+                .name("created")
+                .unwrap()
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(
+        world.body(body_id).unwrap().name().unwrap().as_deref(),
+        Some("created")
     );
-    let other_body_id = world.create_body_id(
-        BodyBuilder::new()
-            .body_type(BodyType::Dynamic)
-            .position([1.0_f32, 1.0])
-            .build(),
-    );
+}
 
-    let shape_a = world.create_circle_shape_for(
-        body_id,
-        &ShapeDef::builder().density(1.0).build(),
-        &shapes::circle([0.0_f32, 0.0], 0.5),
+#[test]
+fn invalid_body_names_are_recoverable_errors() {
+    let foundation = boxdd::Foundation::initialize_default().unwrap();
+    assert_eq!(
+        foundation.body_builder().name("nul\0byte").unwrap_err(),
+        Error::NulByteInString
     );
-    let shape_b = world.create_polygon_shape_for(
-        body_id,
-        &ShapeDef::builder().density(1.0).build(),
-        &shapes::box_polygon(0.25, 0.75),
+    assert_eq!(
+        foundation.body_builder().name("12345678901").unwrap_err(),
+        Error::invalid_argument("BodyBuilder::name", "name", "at most 10 UTF-8 bytes")
     );
+}
+
+#[test]
+fn body_capability_controls_runtime_state_and_enumerates_attachments() {
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let body_id = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_builder()
+                .body_type(BodyType::Dynamic)
+                .position([0.0_f32, 1.0])
+                .angle(0.5)
+                .enable_sleep(true)
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    let other_body_id = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_builder()
+                .body_type(BodyType::Dynamic)
+                .position([1.0_f32, 1.0])
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+
+    let (shape_a, shape_b) = {
+        let mut body = world.body(body_id).unwrap();
+        let shape_a = body
+            .create_centered_circle(&ShapeDef::builder().density(1.0).build().unwrap(), 0.5)
+            .unwrap();
+        let shape_b = body
+            .create_box(
+                &ShapeDef::builder().density(1.0).build().unwrap(),
+                0.25,
+                0.75,
+            )
+            .unwrap();
+        (shape_a, shape_b)
+    };
+    let joint_id = world
+        .create_distance_joint(&DistanceJointDef::new(
+            world.joint_base(body_id, other_body_id).unwrap(),
+        ))
+        .unwrap();
+
+    let mut body = world.body(body_id).unwrap();
+    assert!(approx_eq(body.rotation().unwrap().angle(), 0.5, 1.0e-6));
+    assert_eq!(body.linear_velocity().unwrap(), Vec2::ZERO);
+    body.set_linear_velocity([2.5_f32, -1.25]).unwrap();
+    body.set_angular_velocity(1.5).unwrap();
+    assert_eq!(body.linear_velocity().unwrap(), Vec2::new(2.5, -1.25));
+    assert!(approx_eq(body.angular_velocity().unwrap(), 1.5, 1.0e-6));
+
+    assert!(body.is_sleep_enabled().unwrap());
+    body.enable_sleep(false).unwrap();
+    assert!(!body.is_sleep_enabled().unwrap());
+    body.enable_sleep(true).unwrap();
+    body.set_sleep_threshold(0.5).unwrap();
+    assert!(approx_eq(body.sleep_threshold().unwrap(), 0.5, 1.0e-6));
+
+    assert!(body.is_enabled().unwrap());
+    body.disable().unwrap();
+    assert!(!body.is_enabled().unwrap());
+    body.enable().unwrap();
+    body.set_bullet(true).unwrap();
+    assert!(body.is_bullet().unwrap());
+
+    body.set_name("runtime").unwrap();
+    assert_eq!(body.name().unwrap().as_deref(), Some("runtime"));
+    body.enable_contact_events(true).unwrap();
+    body.enable_hit_events(true).unwrap();
+
+    assert_eq!(body.shape_count().unwrap(), 2);
+    let shapes = body.shapes().unwrap();
+    assert_eq!(shapes.len(), 2);
+    assert!(shapes.contains(&shape_a));
+    assert!(shapes.contains(&shape_b));
+    assert_eq!(body.joint_count().unwrap(), 1);
+    assert_eq!(body.joints().unwrap(), vec![joint_id]);
+}
+
+#[test]
+fn body_and_shape_capabilities_agree_on_bounds() {
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let body_id = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_builder()
+                .body_type(BodyType::Dynamic)
+                .position([2.0_f32, 3.0])
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    let shape_id = world
+        .body(body_id)
+        .unwrap()
+        .create_centered_circle(&ShapeDef::builder().density(1.0).build().unwrap(), 0.5)
+        .unwrap();
+
+    let shape_bounds = world.shape(shape_id).unwrap().aabb().unwrap();
+    let body_bounds = world.body(body_id).unwrap().aabb().unwrap();
+    assert_eq!(body_bounds, shape_bounds);
+}
+
+#[test]
+fn body_capability_enforces_world_provenance_and_liveness() {
+    let mut source = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let source_body = source
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_def(),
+        )
+        .unwrap();
+    let mut target = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+
+    assert_eq!(target.body(source_body).err().unwrap(), Error::WrongWorld);
+    source.body(source_body).unwrap().destroy().unwrap();
+    assert_eq!(
+        source.body(source_body).err().unwrap(),
+        Error::InvalidBodyId
+    );
+}
+
+#[test]
+fn body_user_data_is_owned_by_the_world_registry() {
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let body_id = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_def(),
+        )
+        .unwrap();
+    let mut body = world.body(body_id).unwrap();
+
+    body.set_user_data(String::from("payload")).unwrap();
+    assert_eq!(
+        body.with_user_data::<String, _>(Clone::clone)
+            .unwrap()
+            .as_deref(),
+        Some("payload")
+    );
+    assert_eq!(
+        body.take_user_data::<String>().unwrap().as_deref(),
+        Some("payload")
+    );
+    assert!(
+        body.with_user_data::<String, _>(Clone::clone)
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn body_shape_convenience_constructors_validate_before_native_creation() {
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let body_id = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_def(),
+        )
+        .unwrap();
+    let mut body = world.body(body_id).unwrap();
+
+    assert_eq!(
+        body.create_centered_circle(&ShapeDef::default(), f32::NAN),
+        Err(Error::invalid_argument(
+            "Circle::new",
+            "circle",
+            "finite center coordinates and a finite non-negative radius",
+        ))
+    );
+    assert_eq!(
+        body.create_box(&ShapeDef::default(), -1.0, 1.0),
+        Err(Error::invalid_argument(
+            "Polygon::box_polygon",
+            "half_width",
+            "a finite value greater than zero",
+        ))
+    );
+    assert_eq!(body.shape_count().unwrap(), 0);
+
+    let shape = body
+        .create_polygon_from_points(
+            &ShapeDef::default(),
+            [[-1.0_f32, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]],
+            0.0,
+        )
+        .unwrap();
+    assert_eq!(body.shapes().unwrap(), vec![shape]);
+}
+
+#[test]
+fn body_attachment_ids_remain_typed_values() {
+    fn assert_shape(_: ShapeId) {}
+    fn assert_joint(_: JointId) {}
+
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let body_a = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_def(),
+        )
+        .unwrap();
+    let body_b = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_def(),
+        )
+        .unwrap();
+    let shape = world
+        .body(body_a)
+        .unwrap()
+        .create_circle(
+            &ShapeDef::default(),
+            &shapes::circle(Vec2::ZERO, 0.5).unwrap(),
+        )
+        .unwrap();
     let joint = world
-        .revolute(body_id, other_body_id)
-        .anchor_world([0.5_f32, 1.0])
-        .build_owned();
-    let joint_id = joint.id();
-
-    {
-        let mut body = world.body(body_id).expect("body should still be valid");
-
-        let rotation = body.rotation();
-        assert!(approx_eq(rotation.angle(), 0.5, 1.0e-6));
-        assert!(approx_eq(body.try_rotation().unwrap().angle(), 0.5, 1.0e-6));
-        assert!(approx_eq(
-            Rot::from_raw(body.rotation_raw()).angle(),
-            rotation.angle(),
-            1.0e-6
-        ));
-        assert!(approx_eq(
-            Rot::from_raw(body.try_rotation_raw().unwrap()).angle(),
-            rotation.angle(),
-            1.0e-6
-        ));
-
-        assert_eq!(body.linear_velocity(), Vec2::ZERO);
-        assert_eq!(body.try_linear_velocity().unwrap(), Vec2::ZERO);
-        assert!(approx_eq(body.angular_velocity(), 0.0, 1.0e-6));
-        assert!(approx_eq(body.try_angular_velocity().unwrap(), 0.0, 1.0e-6));
-        body.set_linear_velocity([2.5_f32, -1.25]);
-        body.try_set_angular_velocity(1.5).unwrap();
-        assert_eq!(body.linear_velocity(), Vec2::new(2.5, -1.25));
-        assert_eq!(body.try_linear_velocity().unwrap(), Vec2::new(2.5, -1.25));
-        assert!(approx_eq(body.angular_velocity(), 1.5, 1.0e-6));
-        assert!(approx_eq(body.try_angular_velocity().unwrap(), 1.5, 1.0e-6));
-    }
-
-    assert_eq!(world.body_linear_velocity(body_id), Vec2::new(2.5, -1.25));
-    assert_eq!(
-        world.try_body_linear_velocity(body_id).unwrap(),
-        Vec2::new(2.5, -1.25)
-    );
-    assert!(approx_eq(world.body_angular_velocity(body_id), 1.5, 1.0e-6));
-    assert!(approx_eq(
-        world.try_body_angular_velocity(body_id).unwrap(),
-        1.5,
-        1.0e-6
-    ));
-
-    {
-        let mut body = world.body(body_id).expect("body should still be valid");
-
-        assert!(body.is_sleep_enabled());
-        assert!(body.try_is_sleep_enabled().unwrap());
-        body.enable_sleep(false);
-        assert!(!body.is_sleep_enabled());
-        body.try_enable_sleep(true).unwrap();
-        assert!(body.is_sleep_enabled());
-
-        body.set_sleep_threshold(0.25);
-        assert!(approx_eq(body.sleep_threshold(), 0.25, 1.0e-6));
-        body.try_set_sleep_threshold(0.5).unwrap();
-        assert!(approx_eq(body.try_sleep_threshold().unwrap(), 0.5, 1.0e-6));
-
-        assert!(body.is_awake());
-        assert!(body.try_is_awake().unwrap());
-        body.set_awake(false);
-        assert!(!body.is_awake());
-        body.try_set_awake(true).unwrap();
-        assert!(body.is_awake());
-
-        assert!(body.is_enabled());
-        assert!(body.try_is_enabled().unwrap());
-        body.disable();
-        assert!(!body.is_enabled());
-        body.try_enable().unwrap();
-        assert!(body.is_enabled());
-
-        assert!(!body.is_bullet());
-        assert!(!body.try_is_bullet().unwrap());
-        body.set_bullet(true);
-        assert!(body.is_bullet());
-        body.try_set_bullet(false).unwrap();
-        assert!(!body.is_bullet());
-
-        assert_eq!(body.name().as_deref(), Some(""));
-        body.set_name("runtime-body");
-        assert_eq!(body.name().as_deref(), Some("runtime-body"));
-        assert_eq!(body.try_name().unwrap().as_deref(), Some("runtime-body"));
-
-        body.enable_contact_events(true);
-        body.try_enable_contact_events(true).unwrap();
-        body.enable_hit_events(true);
-        body.try_enable_hit_events(true).unwrap();
-
-        assert_eq!(body.shape_count(), 2);
-        assert_eq!(body.try_shape_count().unwrap(), 2);
-        let body_shapes = body.shapes();
-        assert_eq!(body_shapes.len(), 2);
-        assert!(
-            body_shapes
-                .iter()
-                .copied()
-                .any(|id| same_shape_id(id, shape_a))
-        );
-        assert!(
-            body_shapes
-                .iter()
-                .copied()
-                .any(|id| same_shape_id(id, shape_b))
-        );
-
-        let mut shape_buf = Vec::with_capacity(4);
-        let shape_buf_ptr = shape_buf.as_ptr();
-        body.shapes_into(&mut shape_buf);
-        assert_eq!(shape_buf.as_ptr(), shape_buf_ptr);
-        assert_eq!(shape_buf.len(), 2);
-        body.try_shapes_into(&mut shape_buf).unwrap();
-        assert_eq!(shape_buf.as_ptr(), shape_buf_ptr);
-        assert_eq!(shape_buf.len(), 2);
-
-        assert_eq!(body.joint_count(), 1);
-        assert_eq!(body.try_joint_count().unwrap(), 1);
-        let body_joints = body.joints();
-        assert_eq!(body_joints.len(), 1);
-        assert!(same_joint_id(body_joints[0], joint_id));
-
-        let mut joint_buf = Vec::with_capacity(4);
-        let joint_buf_ptr = joint_buf.as_ptr();
-        body.joints_into(&mut joint_buf);
-        assert_eq!(joint_buf.as_ptr(), joint_buf_ptr);
-        assert_eq!(joint_buf.len(), 1);
-        body.try_joints_into(&mut joint_buf).unwrap();
-        assert_eq!(joint_buf.as_ptr(), joint_buf_ptr);
-        assert_eq!(joint_buf.len(), 1);
-    }
-
-    assert!(approx_eq(world.body_rotation(body_id).angle(), 0.5, 1.0e-6));
-    assert!(approx_eq(
-        world.try_body_rotation(body_id).unwrap().angle(),
-        0.5,
-        1.0e-6
-    ));
-
-    assert!(world.body_is_sleep_enabled(body_id));
-    assert!(world.try_body_is_sleep_enabled(body_id).unwrap());
-    world.body_enable_sleep(body_id, false);
-    assert!(!world.body_is_sleep_enabled(body_id));
-    world.try_body_enable_sleep(body_id, true).unwrap();
-    assert!(world.body_is_sleep_enabled(body_id));
-
-    assert!(approx_eq(world.body_sleep_threshold(body_id), 0.5, 1.0e-6));
-    world.set_body_sleep_threshold(body_id, 0.75);
-    assert!(approx_eq(
-        world.try_body_sleep_threshold(body_id).unwrap(),
-        0.75,
-        1.0e-6
-    ));
-
-    assert!(world.body_is_awake(body_id));
-    assert!(world.try_body_is_awake(body_id).unwrap());
-    world.set_body_awake(body_id, false);
-    assert!(!world.body_is_awake(body_id));
-    world.try_set_body_awake(body_id, true).unwrap();
-    assert!(world.body_is_awake(body_id));
-
-    assert!(world.body_is_enabled(body_id));
-    assert!(world.try_body_is_enabled(body_id).unwrap());
-    world.disable_body(body_id);
-    assert!(!world.body_is_enabled(body_id));
-    world.try_enable_body(body_id).unwrap();
-    assert!(world.body_is_enabled(body_id));
-
-    assert!(!world.body_is_bullet(body_id));
-    assert!(!world.try_body_is_bullet(body_id).unwrap());
-    world.set_body_bullet(body_id, true);
-    assert!(world.body_is_bullet(body_id));
-    world.try_set_body_bullet(body_id, false).unwrap();
-    assert!(!world.body_is_bullet(body_id));
-
-    assert_eq!(world.body_name(body_id).as_deref(), Some("runtime-body"));
-    assert_eq!(
-        world.try_body_name(body_id).unwrap().as_deref(),
-        Some("runtime-body")
-    );
-
-    world.body_enable_contact_events(body_id, true);
-    world.try_body_enable_contact_events(body_id, true).unwrap();
-    world.body_enable_hit_events(body_id, true);
-    world.try_body_enable_hit_events(body_id, true).unwrap();
-
-    assert_eq!(world.body_shape_count(body_id), 2);
-    assert_eq!(world.try_body_shape_count(body_id).unwrap(), 2);
-    let world_shapes = world.body_shapes(body_id);
-    assert_eq!(world_shapes.len(), 2);
-    assert!(
-        world_shapes
-            .iter()
-            .copied()
-            .any(|id| same_shape_id(id, shape_a))
-    );
-    assert!(
-        world_shapes
-            .iter()
-            .copied()
-            .any(|id| same_shape_id(id, shape_b))
-    );
-
-    let mut world_shape_buf = Vec::with_capacity(4);
-    let world_shape_buf_ptr = world_shape_buf.as_ptr();
-    world.body_shapes_into(body_id, &mut world_shape_buf);
-    assert_eq!(world_shape_buf.as_ptr(), world_shape_buf_ptr);
-    assert_eq!(world_shape_buf.len(), 2);
-    world
-        .try_body_shapes_into(body_id, &mut world_shape_buf)
+        .create_distance_joint(&DistanceJointDef::new(
+            world.joint_base(body_a, body_b).unwrap(),
+        ))
         .unwrap();
-    assert_eq!(world_shape_buf.as_ptr(), world_shape_buf_ptr);
-    assert_eq!(world_shape_buf.len(), 2);
 
-    assert_eq!(world.body_joint_count(body_id), 1);
-    assert_eq!(world.try_body_joint_count(body_id).unwrap(), 1);
-    let world_joints = world.body_joints(body_id);
-    assert_eq!(world_joints.len(), 1);
-    assert!(same_joint_id(world_joints[0], joint_id));
-
-    let mut world_joint_buf = Vec::with_capacity(4);
-    let world_joint_buf_ptr = world_joint_buf.as_ptr();
-    world.body_joints_into(body_id, &mut world_joint_buf);
-    assert_eq!(world_joint_buf.as_ptr(), world_joint_buf_ptr);
-    assert_eq!(world_joint_buf.len(), 1);
-    world
-        .try_body_joints_into(body_id, &mut world_joint_buf)
-        .unwrap();
-    assert_eq!(world_joint_buf.as_ptr(), world_joint_buf_ptr);
-    assert_eq!(world_joint_buf.len(), 1);
-}
-
-#[test]
-fn body_aabb_helpers_match_owned_scoped_and_world_views() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let owned_body = world.create_body_owned(
-        BodyBuilder::new()
-            .body_type(BodyType::Dynamic)
-            .position([2.0_f32, 3.0])
-            .build(),
-    );
-    let body_id = owned_body.id();
-
-    let shape_id = world.create_circle_shape_for(
-        body_id,
-        &ShapeDef::builder().density(1.0).build(),
-        &shapes::circle([0.0_f32, 0.0], 0.5),
-    );
-
-    let expected = world.shape_aabb(shape_id);
-
-    assert_eq!(owned_body.aabb(), expected);
-    assert_eq!(owned_body.try_aabb().unwrap(), expected);
-
-    {
-        let body = world.body(body_id).expect("body should still be valid");
-        assert_eq!(body.aabb(), expected);
-        assert_eq!(body.try_aabb().unwrap(), expected);
-    }
-
-    assert_eq!(world.body_aabb(body_id), expected);
-    assert_eq!(world.try_body_aabb(body_id).unwrap(), expected);
-}
-
-#[test]
-fn world_handle_body_runtime_queries_match_world_queries() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-
-    let body_id = world.create_body_id(
-        BodyBuilder::new()
-            .body_type(BodyType::Dynamic)
-            .position([1.0_f32, 2.0])
-            .angle(0.25)
-            .build(),
-    );
-    let other_body_id = world.create_body_id(
-        BodyBuilder::new()
-            .body_type(BodyType::Dynamic)
-            .position([2.0_f32, 2.0])
-            .build(),
-    );
-
-    let shape_a = world.create_circle_shape_for(
-        body_id,
-        &ShapeDef::builder().density(1.0).build(),
-        &shapes::circle([0.0_f32, 0.0], 0.5),
-    );
-    let shape_b = world.create_polygon_shape_for(
-        body_id,
-        &ShapeDef::builder().density(1.0).build(),
-        &shapes::box_polygon(0.25, 0.75),
-    );
-    let joint = world
-        .revolute(body_id, other_body_id)
-        .anchor_world([1.5_f32, 2.0])
-        .build_owned();
-    let joint_id = joint.id();
-
-    world.set_body_linear_velocity(body_id, [2.0_f32, -1.0]);
-    world.set_body_angular_velocity(body_id, 1.25);
-    world.set_body_sleep_threshold(body_id, 0.4);
-    let locks = MotionLocks::new(true, false, true);
-    world.set_body_motion_locks(body_id, locks);
-    world.set_body_bullet(body_id, true);
-    world.set_body_name(body_id, "handle-body");
-    {
-        let mut body = world.body(body_id).expect("body should still be valid");
-        body.set_gravity_scale(1.5);
-        body.set_linear_damping(0.2);
-        body.set_angular_damping(0.3);
-    }
-
-    let handle = world.handle();
-
-    let transform = world.body_transform(body_id);
-    let handle_transform = handle.body_transform(body_id);
-    assert_eq!(handle_transform.position(), transform.position());
-    assert!(approx_eq(
-        handle_transform.rotation().angle(),
-        transform.rotation().angle(),
-        1.0e-6
-    ));
-    let handle_try_transform = handle.try_body_transform(body_id).unwrap();
-    assert_eq!(handle_try_transform.position(), transform.position());
-    assert!(approx_eq(
-        handle_try_transform.rotation().angle(),
-        transform.rotation().angle(),
-        1.0e-6
-    ));
-    assert_eq!(handle.body_position(body_id), world.body_position(body_id));
-    assert_eq!(
-        handle.try_body_position(body_id).unwrap(),
-        world.body_position(body_id)
-    );
-    assert_eq!(
-        handle.body_linear_velocity(body_id),
-        world.body_linear_velocity(body_id)
-    );
-    assert_eq!(
-        handle.try_body_linear_velocity(body_id).unwrap(),
-        world.body_linear_velocity(body_id)
-    );
-    assert!(approx_eq(
-        handle.body_angular_velocity(body_id),
-        world.body_angular_velocity(body_id),
-        1.0e-6
-    ));
-    assert!(approx_eq(
-        handle.try_body_angular_velocity(body_id).unwrap(),
-        world.body_angular_velocity(body_id),
-        1.0e-6
-    ));
-    assert!(approx_eq(
-        handle.body_rotation(body_id).angle(),
-        world.body_rotation(body_id).angle(),
-        1.0e-6
-    ));
-    assert_eq!(handle.body_aabb(body_id), world.body_aabb(body_id));
-    assert_eq!(
-        handle.try_body_aabb(body_id).unwrap(),
-        world.body_aabb(body_id)
-    );
-
-    assert_eq!(
-        handle.body_local_point(body_id, [2.0_f32, 3.0]),
-        world.body_local_point(body_id, [2.0_f32, 3.0])
-    );
-    assert_eq!(
-        handle.body_world_point(body_id, [0.25_f32, -0.5]),
-        world.body_world_point(body_id, [0.25_f32, -0.5])
-    );
-    assert_eq!(
-        handle.body_local_vector(body_id, [1.0_f32, 0.0]),
-        world.body_local_vector(body_id, [1.0_f32, 0.0])
-    );
-    assert_eq!(
-        handle.body_world_vector(body_id, [0.0_f32, 1.0]),
-        world.body_world_vector(body_id, [0.0_f32, 1.0])
-    );
-    assert_eq!(
-        handle.body_local_point_velocity(body_id, [0.5_f32, 0.0]),
-        world.body_local_point_velocity(body_id, [0.5_f32, 0.0])
-    );
-    assert_eq!(
-        handle.body_world_point_velocity(body_id, [1.5_f32, 2.25]),
-        world.body_world_point_velocity(body_id, [1.5_f32, 2.25])
-    );
-
-    assert!(approx_eq(
-        handle.body_mass(body_id),
-        world.body_mass(body_id),
-        1.0e-6
-    ));
-    assert!(approx_eq(
-        handle.try_body_mass(body_id).unwrap(),
-        world.body_mass(body_id),
-        1.0e-6
-    ));
-    assert!(approx_eq(
-        handle.body_rotational_inertia(body_id),
-        world.body_rotational_inertia(body_id),
-        1.0e-6
-    ));
-    assert_eq!(
-        handle.body_local_center_of_mass(body_id),
-        world.body_local_center_of_mass(body_id)
-    );
-    assert_eq!(
-        handle.body_world_center_of_mass(body_id),
-        world.body_world_center_of_mass(body_id)
-    );
-    assert_eq!(
-        handle.body_mass_data(body_id),
-        world.body_mass_data(body_id)
-    );
-    assert_eq!(
-        handle.try_body_mass_data(body_id).unwrap(),
-        world.body_mass_data(body_id)
-    );
-
-    assert_eq!(handle.body_shape_count(body_id), 2);
-    assert_eq!(handle.try_body_shape_count(body_id).unwrap(), 2);
-    let handle_shapes = handle.body_shapes(body_id);
-    assert_eq!(handle_shapes.len(), 2);
-    assert!(
-        handle_shapes
-            .iter()
-            .copied()
-            .any(|id| same_shape_id(id, shape_a))
-    );
-    assert!(
-        handle_shapes
-            .iter()
-            .copied()
-            .any(|id| same_shape_id(id, shape_b))
-    );
-    let mut handle_shape_buf = Vec::with_capacity(4);
-    let handle_shape_buf_ptr = handle_shape_buf.as_ptr();
-    handle.body_shapes_into(body_id, &mut handle_shape_buf);
-    assert_eq!(handle_shape_buf.as_ptr(), handle_shape_buf_ptr);
-    assert_eq!(handle_shape_buf.len(), 2);
-    handle
-        .try_body_shapes_into(body_id, &mut handle_shape_buf)
-        .unwrap();
-    assert_eq!(handle_shape_buf.as_ptr(), handle_shape_buf_ptr);
-    assert_eq!(handle_shape_buf.len(), 2);
-
-    assert_eq!(handle.body_joint_count(body_id), 1);
-    assert_eq!(handle.try_body_joint_count(body_id).unwrap(), 1);
-    let handle_joints = handle.body_joints(body_id);
-    assert_eq!(handle_joints.len(), 1);
-    assert!(same_joint_id(handle_joints[0], joint_id));
-    let mut handle_joint_buf = Vec::with_capacity(4);
-    let handle_joint_buf_ptr = handle_joint_buf.as_ptr();
-    handle.body_joints_into(body_id, &mut handle_joint_buf);
-    assert_eq!(handle_joint_buf.as_ptr(), handle_joint_buf_ptr);
-    assert_eq!(handle_joint_buf.len(), 1);
-    handle
-        .try_body_joints_into(body_id, &mut handle_joint_buf)
-        .unwrap();
-    assert_eq!(handle_joint_buf.as_ptr(), handle_joint_buf_ptr);
-    assert_eq!(handle_joint_buf.len(), 1);
-
-    assert_eq!(handle.body_type(body_id), BodyType::Dynamic);
-    assert_eq!(handle.try_body_type(body_id).unwrap(), BodyType::Dynamic);
-    assert!(approx_eq(handle.body_gravity_scale(body_id), 1.5, 1.0e-6));
-    assert!(approx_eq(
-        handle.try_body_gravity_scale(body_id).unwrap(),
-        1.5,
-        1.0e-6
-    ));
-    assert!(approx_eq(handle.body_linear_damping(body_id), 0.2, 1.0e-6));
-    assert!(approx_eq(
-        handle.try_body_linear_damping(body_id).unwrap(),
-        0.2,
-        1.0e-6
-    ));
-    assert!(approx_eq(handle.body_angular_damping(body_id), 0.3, 1.0e-6));
-    assert!(approx_eq(
-        handle.try_body_angular_damping(body_id).unwrap(),
-        0.3,
-        1.0e-6
-    ));
-    assert!(handle.body_is_sleep_enabled(body_id));
-    assert!(handle.try_body_is_sleep_enabled(body_id).unwrap());
-    assert!(approx_eq(handle.body_sleep_threshold(body_id), 0.4, 1.0e-6));
-    assert!(approx_eq(
-        handle.try_body_sleep_threshold(body_id).unwrap(),
-        0.4,
-        1.0e-6
-    ));
-    assert!(handle.body_is_awake(body_id));
-    assert!(handle.try_body_is_awake(body_id).unwrap());
-    assert!(handle.body_is_enabled(body_id));
-    assert!(handle.try_body_is_enabled(body_id).unwrap());
-    assert_eq!(handle.body_motion_locks(body_id), locks);
-    assert_eq!(handle.try_body_motion_locks(body_id).unwrap(), locks);
-    assert!(handle.body_is_bullet(body_id));
-    assert!(handle.try_body_is_bullet(body_id).unwrap());
-    assert_eq!(handle.body_name(body_id).as_deref(), Some("handle-body"));
-    assert_eq!(
-        handle.try_body_name(body_id).unwrap().as_deref(),
-        Some("handle-body")
-    );
+    assert_shape(shape);
+    assert_joint(joint);
 }

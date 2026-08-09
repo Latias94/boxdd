@@ -1,6 +1,8 @@
 use bevy::prelude::*;
 use bevy_boxdd::prelude::*;
 
+pub use crate::scene_catalog::{SCENE_REGISTRY, TestbedScene, TestbedSceneMetadata};
+
 #[derive(Component, Copy, Clone, Debug, Eq, PartialEq)]
 pub struct TestbedEntity;
 
@@ -16,300 +18,35 @@ pub struct Spinner {
     speed: f32,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum TestbedScene {
-    SingleBox,
-    TiltedStack,
-    CircleStack,
-    Pyramid,
-    BodyType,
-    KinematicPlatform,
-    ContinuousBullet,
-    Restitution,
-    Friction,
-    ShapeFilter,
-    SensorFunnel,
-    ContactEvents,
-    DistanceBridge,
-    RevolutePendulum,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum ParityMode {
-    TeachingAdaptation,
-}
-
-impl ParityMode {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::TeachingAdaptation => "TeachingAdaptation",
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub struct UpstreamSampleRef {
-    pub category: &'static str,
-    pub name: &'static str,
-    pub mode: ParityMode,
-}
-
-#[derive(Copy, Clone)]
-pub struct TestbedSceneMetadata {
-    pub scene: TestbedScene,
-    pub id: &'static str,
-    pub category: &'static str,
-    pub name: &'static str,
-    pub description: &'static str,
-    pub upstream: &'static [UpstreamSampleRef],
-    spawn: fn(&mut Commands, &mut Assets<Mesh>, &mut Assets<ColorMaterial>),
-}
-
-impl TestbedSceneMetadata {
-    pub const fn source_label(self) -> &'static str {
-        "official Box2D sample"
-    }
-}
-
-impl TestbedScene {
-    pub fn metadata(self) -> &'static TestbedSceneMetadata {
-        SCENE_REGISTRY
-            .iter()
-            .find(|metadata| metadata.scene == self)
-            .expect("testbed scene metadata missing")
-    }
-
-    pub fn from_id(id: &str) -> Option<Self> {
-        SCENE_REGISTRY
-            .iter()
-            .find(|metadata| metadata.id == id)
-            .map(|metadata| metadata.scene)
-    }
-
-    pub fn index(self) -> usize {
-        ALL_SCENES
-            .iter()
-            .position(|scene| *scene == self)
-            .expect("testbed scene missing from ALL_SCENES")
-    }
-}
-
-pub const ALL_SCENES: [TestbedScene; 14] = [
-    TestbedScene::SingleBox,
-    TestbedScene::TiltedStack,
-    TestbedScene::CircleStack,
-    TestbedScene::Pyramid,
-    TestbedScene::BodyType,
-    TestbedScene::KinematicPlatform,
-    TestbedScene::ContinuousBullet,
-    TestbedScene::Restitution,
-    TestbedScene::Friction,
-    TestbedScene::ShapeFilter,
-    TestbedScene::SensorFunnel,
-    TestbedScene::ContactEvents,
-    TestbedScene::DistanceBridge,
-    TestbedScene::RevolutePendulum,
-];
-
-pub const SCENE_REGISTRY: [TestbedSceneMetadata; 14] = [
-    TestbedSceneMetadata {
-        scene: TestbedScene::SingleBox,
-        id: "single-box",
-        category: "Stacking",
-        name: "Single Box",
-        description: "A dynamic box starts with horizontal velocity and settles on a long static segment.",
-        upstream: &[UpstreamSampleRef {
-            category: "Stacking",
-            name: "Single Box",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_single_box,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::TiltedStack,
-        id: "tilted-stack",
-        category: "Stacking",
-        name: "Tilted Stack",
-        description: "Offset columns of rounded boxes show solver stability under uneven stacking pressure.",
-        upstream: &[UpstreamSampleRef {
-            category: "Stacking",
-            name: "Tilted Stack",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_tilted_stack,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::CircleStack,
-        id: "circle-stack",
-        category: "Stacking",
-        name: "Circle Stack",
-        description: "Dynamic circles stack and roll through the same contact solver path as the official sample.",
-        upstream: &[UpstreamSampleRef {
-            category: "Stacking",
-            name: "Circle Stack",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_circle_stack,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::Pyramid,
-        id: "pyramid",
-        category: "Benchmark",
-        name: "Large Pyramid",
-        description: "A browser-sized version of the classic Box2D pyramid solver stress sample.",
-        upstream: &[UpstreamSampleRef {
-            category: "Benchmark",
-            name: "Large Pyramid",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_pyramid,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::BodyType,
-        id: "body-type",
-        category: "Bodies",
-        name: "Body Type",
-        description: "Static, kinematic, and dynamic bodies share one scene so body behavior is visible.",
-        upstream: &[UpstreamSampleRef {
-            category: "Bodies",
-            name: "Body Type",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_body_type,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::KinematicPlatform,
-        id: "kinematic-platform",
-        category: "Bodies",
-        name: "Kinematic",
-        description: "An app-controlled platform drives dynamic boxes through Bevy-to-Box2D transform sync.",
-        upstream: &[UpstreamSampleRef {
-            category: "Bodies",
-            name: "Kinematic",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_kinematic_platform,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::ContinuousBullet,
-        id: "continuous-bullet",
-        category: "Continuous",
-        name: "Skinny Box",
-        description: "A fast bullet body targets a thin wall with continuous collision enabled.",
-        upstream: &[UpstreamSampleRef {
-            category: "Continuous",
-            name: "Skinny Box",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_continuous_bullet,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::Restitution,
-        id: "restitution",
-        category: "Shapes",
-        name: "Restitution",
-        description: "Identical circles fall onto pads with increasing restitution values.",
-        upstream: &[UpstreamSampleRef {
-            category: "Shapes",
-            name: "Restitution",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_restitution,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::Friction,
-        id: "friction",
-        category: "Shapes",
-        name: "Friction",
-        description: "Boxes slide across ramps and floors with different friction coefficients.",
-        upstream: &[UpstreamSampleRef {
-            category: "Shapes",
-            name: "Friction",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_friction,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::ShapeFilter,
-        id: "shape-filter",
-        category: "Shapes",
-        name: "Filter",
-        description: "Category and mask bits split bodies into groups that collide or pass through each other.",
-        upstream: &[UpstreamSampleRef {
-            category: "Shapes",
-            name: "Filter",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_shape_filter,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::SensorFunnel,
-        id: "sensor-funnel",
-        category: "Events",
-        name: "Sensor Funnel",
-        description: "Falling visitors pass through a transparent sensor and update the egui counters.",
-        upstream: &[UpstreamSampleRef {
-            category: "Events",
-            name: "Sensor Funnel",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_sensor_funnel,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::ContactEvents,
-        id: "contact-event",
-        category: "Events",
-        name: "Contact",
-        description: "Contact begin, end, and hit events are enabled on dynamic bodies and reflected in the panel.",
-        upstream: &[UpstreamSampleRef {
-            category: "Events",
-            name: "Contact",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_contact_events,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::DistanceBridge,
-        id: "bridge",
-        category: "Joints",
-        name: "Bridge",
-        description: "Distance joints connect planks into a bridge and a dropped weight disturbs the chain.",
-        upstream: &[
-            UpstreamSampleRef {
-                category: "Joints",
-                name: "Distance Joint",
-                mode: ParityMode::TeachingAdaptation,
-            },
-            UpstreamSampleRef {
-                category: "Joints",
-                name: "Bridge",
-                mode: ParityMode::TeachingAdaptation,
-            },
-        ],
-        spawn: spawn_distance_bridge,
-    },
-    TestbedSceneMetadata {
-        scene: TestbedScene::RevolutePendulum,
-        id: "revolute",
-        category: "Joints",
-        name: "Revolute",
-        description: "A revolute joint creates a pendulum that strikes a small stack.",
-        upstream: &[UpstreamSampleRef {
-            category: "Joints",
-            name: "Revolute",
-            mode: ParityMode::TeachingAdaptation,
-        }],
-        spawn: spawn_revolute_pendulum,
-    },
-];
-
 pub fn spawn_scene(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
-    scene: TestbedScene,
+    origin: &BoxddWorldOrigin,
+    metadata: &TestbedSceneMetadata,
 ) {
-    (scene.metadata().spawn)(commands, meshes, materials);
+    match metadata.scene {
+        TestbedScene::SingleBox => spawn_single_box(commands, meshes, materials, origin),
+        TestbedScene::TiltedStack => spawn_tilted_stack(commands, meshes, materials, origin),
+        TestbedScene::CircleStack => spawn_circle_stack(commands, meshes, materials, origin),
+        TestbedScene::Pyramid => spawn_pyramid(commands, meshes, materials, origin),
+        TestbedScene::BodyType => spawn_body_type(commands, meshes, materials, origin),
+        TestbedScene::KinematicPlatform => {
+            spawn_kinematic_platform(commands, meshes, materials, origin);
+        }
+        TestbedScene::ContinuousBullet => {
+            spawn_continuous_bullet(commands, meshes, materials, origin);
+        }
+        TestbedScene::Restitution => spawn_restitution(commands, meshes, materials, origin),
+        TestbedScene::Friction => spawn_friction(commands, meshes, materials, origin),
+        TestbedScene::ShapeFilter => spawn_shape_filter(commands, meshes, materials, origin),
+        TestbedScene::SensorFunnel => spawn_sensor_funnel(commands, meshes, materials, origin),
+        TestbedScene::ContactEvents => spawn_contact_events(commands, meshes, materials, origin),
+        TestbedScene::DistanceBridge => spawn_distance_bridge(commands, meshes, materials, origin),
+        TestbedScene::RevolutePendulum => {
+            spawn_revolute_pendulum(commands, meshes, materials, origin);
+        }
+    }
 }
 
 pub fn animate_kinematic_platforms(
@@ -331,6 +68,7 @@ pub fn animate_spinners(time: Res<Time>, mut spinners: Query<(&Spinner, &mut Tra
 
 pub fn draw_scene_overlays(
     state: Res<crate::control::TestbedState>,
+    origin: Res<BoxddWorldOrigin>,
     joints: Query<&JointDescriptor>,
     transforms: Query<&Transform>,
     mut gizmos: Gizmos,
@@ -342,17 +80,22 @@ pub fn draw_scene_overlays(
     for descriptor in &joints {
         match descriptor.kind {
             JointKind::Distance(distance) => {
-                gizmos.line_2d(
-                    distance.anchor_a,
-                    distance.anchor_b,
-                    Color::srgb(0.75, 0.82, 0.9),
-                );
+                let (Ok(anchor_a), Ok(anchor_b)) = (
+                    origin.checked_absolute_to_local(distance.anchor_a),
+                    origin.checked_absolute_to_local(distance.anchor_b),
+                ) else {
+                    continue;
+                };
+                gizmos.line_2d(anchor_a, anchor_b, Color::srgb(0.75, 0.82, 0.9));
             }
             JointKind::Revolute(revolute) => {
-                gizmos.circle_2d(revolute.anchor, 0.16, Color::srgb(0.95, 0.68, 0.25));
+                let Ok(anchor) = origin.checked_absolute_to_local(revolute.anchor) else {
+                    continue;
+                };
+                gizmos.circle_2d(anchor, 0.16, Color::srgb(0.95, 0.68, 0.25));
                 if let Ok(transform) = transforms.get(descriptor.entity_b) {
                     gizmos.line_2d(
-                        revolute.anchor,
+                        anchor,
                         transform.translation.truncate(),
                         Color::srgb(0.95, 0.68, 0.25),
                     );
@@ -366,6 +109,7 @@ fn spawn_single_box(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     spawn_floor(commands, meshes, materials, 16.0, -3.0);
     spawn_box(
@@ -384,6 +128,7 @@ fn spawn_tilted_stack(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     spawn_floor(commands, meshes, materials, 18.0, -3.5);
     for column in 0..5 {
@@ -410,6 +155,7 @@ fn spawn_circle_stack(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     spawn_floor(commands, meshes, materials, 18.0, -3.5);
     for column in 0..4 {
@@ -431,6 +177,7 @@ fn spawn_pyramid(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     spawn_floor(commands, meshes, materials, 18.0, -3.5);
     let rows = 10;
@@ -456,6 +203,7 @@ fn spawn_body_type(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     spawn_floor(commands, meshes, materials, 16.0, -3.4);
     spawn_box(
@@ -502,6 +250,7 @@ fn spawn_kinematic_platform(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     spawn_floor(commands, meshes, materials, 16.0, -3.5);
     spawn_box(
@@ -544,6 +293,7 @@ fn spawn_continuous_bullet(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     spawn_floor(commands, meshes, materials, 16.0, -3.5);
     spawn_box(
@@ -579,6 +329,7 @@ fn spawn_restitution(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     for (index, restitution) in [0.0, 0.2, 0.4, 0.6, 0.8, 1.0].into_iter().enumerate() {
         let x = -4.2 + index as f32 * 1.65;
@@ -610,6 +361,7 @@ fn spawn_friction(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     for (index, friction) in [0.0, 0.2, 0.45, 0.75, 1.0].into_iter().enumerate() {
         let y = 0.8 - index as f32 * 1.0;
@@ -642,6 +394,7 @@ fn spawn_shape_filter(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     spawn_floor(commands, meshes, materials, 16.0, -3.4);
     let red_filter = filter(0x0002, 0x0004 | 0x0008);
@@ -682,6 +435,7 @@ fn spawn_sensor_funnel(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     spawn_floor(commands, meshes, materials, 16.0, -3.5);
     spawn_box(
@@ -737,6 +491,7 @@ fn spawn_contact_events(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    _origin: &BoxddWorldOrigin,
 ) {
     spawn_box(
         commands,
@@ -774,6 +529,7 @@ fn spawn_distance_bridge(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    origin: &BoxddWorldOrigin,
 ) {
     spawn_floor(commands, meshes, materials, 16.0, -3.7);
     let plank_count = 12;
@@ -785,7 +541,7 @@ fn spawn_distance_bridge(
     let right_anchor = spawn_anchor(commands, meshes, materials, right_x, y);
 
     let mut previous = left_anchor;
-    let mut previous_anchor = Vec2::new(left_x, y);
+    let mut previous_anchor = world_position(origin, left_x, y);
     for index in 0..plank_count {
         let x = left_x + (index as f32 + 1.0) * spacing;
         let plank = spawn_box(
@@ -798,7 +554,7 @@ fn spawn_distance_bridge(
             Color::srgb(0.53, 0.42, 0.31),
         )
         .id();
-        let anchor = Vec2::new(x, y);
+        let anchor = world_position(origin, x, y);
         commands.spawn((
             TestbedEntity,
             JointDescriptor::distance(previous, plank, previous_anchor, anchor)
@@ -813,7 +569,7 @@ fn spawn_distance_bridge(
             previous,
             right_anchor,
             previous_anchor,
-            Vec2::new(right_x, y),
+            world_position(origin, right_x, y),
         )
         .with_constraint_tuning(4.0, 0.75),
     ));
@@ -833,6 +589,7 @@ fn spawn_revolute_pendulum(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
+    origin: &BoxddWorldOrigin,
 ) {
     spawn_floor(commands, meshes, materials, 16.0, -3.5);
     let hinge = spawn_anchor(commands, meshes, materials, -2.4, 1.7);
@@ -849,7 +606,7 @@ fn spawn_revolute_pendulum(
     .id();
     commands.spawn((
         TestbedEntity,
-        JointDescriptor::revolute(hinge, pendulum, Vec2::new(-2.4, 1.7)),
+        JointDescriptor::revolute(hinge, pendulum, world_position(origin, -2.4, 1.7)),
     ));
     for row in 0..5 {
         for column in 0..4 {
@@ -882,6 +639,12 @@ fn spawn_floor(
         static_material(),
         Color::srgb(0.2, 0.31, 0.32),
     );
+}
+
+fn world_position(origin: &BoxddWorldOrigin, x: f32, y: f32) -> boxdd::Position {
+    origin
+        .checked_local_to_absolute(Vec2::new(x, y))
+        .expect("testbed joint anchor must be representable")
 }
 
 fn spawn_anchor(

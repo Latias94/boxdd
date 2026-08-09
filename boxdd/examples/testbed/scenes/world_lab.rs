@@ -1,5 +1,5 @@
-use boxdd as bd;
 use bd::world_extras::ExplosionDef;
+use boxdd as bd;
 use dear_imgui_rs as imgui;
 
 // World Lab: Tuning + Explosion
@@ -8,21 +8,33 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     match app.world_lab.mode {
         0 => {
             // small pile to observe tuning effects
-            let sdef = bd::ShapeDef::builder().density(1.0).build();
+            let sdef = bd::ShapeDef::builder()
+                .density(1.0)
+                .build()
+                .expect("valid testbed definition");
             for i in 0..4 {
                 for j in 0..4 {
                     let x = -4.0 + i as f32 * 1.2;
                     let y = 0.6 + j as f32 * 1.2;
                     let b = app
                         .world
-                        .create_body_id(
-                            bd::BodyBuilder::new()
+                        .create_body(
+                            bd::BodyBuilder::from(app.foundation.body_def())
                                 .body_type(bd::BodyType::Dynamic)
                                 .position([x, y + 4.0])
-                                .build(),
-                        );
+                                .build()
+                                .expect("valid testbed definition"),
+                        )
+                        .expect("valid testbed operation");
                     app.created_bodies += 1;
-                    app.world.create_polygon_shape_for(b, &sdef, &bd::shapes::box_polygon(0.5, 0.5));
+                    app.world
+                        .body(b)
+                        .expect("valid testbed operation")
+                        .create_polygon(
+                            &sdef,
+                            &bd::shapes::box_polygon(0.5, 0.5).expect("valid polygon geometry"),
+                        )
+                        .expect("valid testbed operation");
                     app.created_shapes += 1;
                 }
             }
@@ -63,11 +75,15 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
             let mut reset_needed = false;
             if changed_sleep {
                 app.world_lab.sleeping = sl;
-                app.world.enable_sleeping(sl);
+                app.world
+                    .enable_sleeping(sl)
+                    .expect("valid testbed operation");
             }
             if changed_cont {
                 app.world_lab.continuous = cc;
-                app.world.enable_continuous(cc);
+                app.world
+                    .enable_continuous(cc)
+                    .expect("valid testbed operation");
             }
             if changed_soft {
                 app.world_lab.contact_softening = cs;
@@ -75,19 +91,27 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
             }
             if changed_warm {
                 app.world_lab.warm_starting = ws;
-                app.world.enable_warm_starting(ws);
+                app.world
+                    .enable_warm_starting(ws)
+                    .expect("valid testbed operation");
             }
             if changed_rt {
                 app.world_lab.restitution_threshold = rt;
-                app.world.set_restitution_threshold(rt);
+                app.world
+                    .set_restitution_threshold(rt)
+                    .expect("valid testbed operation");
             }
             if changed_ht {
                 app.world_lab.hit_event_threshold = ht;
-                app.world.set_hit_event_threshold(ht);
+                app.world
+                    .set_hit_event_threshold(ht)
+                    .expect("valid testbed operation");
             }
             if changed_maxv {
                 app.world_lab.maximum_linear_speed = max_v;
-                app.world.set_maximum_linear_speed(max_v);
+                app.world
+                    .set_maximum_linear_speed(max_v)
+                    .expect("valid testbed operation");
             }
             if changed_push {
                 app.world_lab.contact_speed = push;
@@ -124,10 +148,9 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
                     .radius(app.world_lab.explosion_radius)
                     .falloff(app.world_lab.explosion_falloff)
                     .impulse_per_length(app.world_lab.explosion_impulse);
-                app.world.explode(&def);
+                app.world.explode(&def).expect("valid testbed operation");
             }
         }
         _ => {}
     }
 }
-

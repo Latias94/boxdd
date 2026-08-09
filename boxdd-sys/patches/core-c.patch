@@ -1,0 +1,35 @@
+--- src/core.c
++++ src/core.c
+@@ -142,11 +142,20 @@
+
+ 	// Allocation must be a multiple of 32 or risk a seg fault
+ 	// https://en.cppreference.com/w/c/memory/aligned_alloc
++	if ( size > SIZE_MAX - ( B2_ALIGNMENT - 1 ) )
++	{
++		abort();
++	}
+ 	size_t size32 = ( ( size - 1 ) | 0x1F ) + 1;
+
+ 	if ( b2_allocFcn != NULL )
+ 	{
+ 		void* ptr = b2_allocFcn( size32, B2_ALIGNMENT );
++		if ( ptr == NULL || ( (uintptr_t)ptr & 0x1F ) != 0 )
++		{
++			abort();
++		}
++
+ 		b2TracyCAlloc( ptr, size );
+
+ 		B2_ASSERT( ptr != NULL );
+@@ -168,6 +177,11 @@
+ 	void* ptr = aligned_alloc( B2_ALIGNMENT, size32 );
+ #endif
+
++	if ( ptr == NULL || ( (uintptr_t)ptr & 0x1F ) != 0 )
++	{
++		abort();
++	}
++
+ 	b2TracyCAlloc( ptr, size );
+
+ 	B2_ASSERT( ptr != NULL );

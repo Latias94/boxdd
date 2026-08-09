@@ -8,12 +8,18 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
     let sensor_def = bd::ShapeDef::builder()
         .sensor(true)
         .enable_sensor_events(true)
-        .build();
-    let _ = app.world.create_segment_shape_for(
-        ground,
-        &sensor_def,
-        &bd::shapes::segment([-3.0_f32, app.sensor_band_y], [3.0, app.sensor_band_y]),
-    );
+        .build()
+        .expect("valid testbed definition");
+    let _ = app
+        .world
+        .body(ground)
+        .expect("valid testbed operation")
+        .create_segment(
+            &sensor_def,
+            &bd::shapes::segment([-3.0_f32, app.sensor_band_y], [3.0, app.sensor_band_y])
+                .expect("issue sensor segment must be valid"),
+        )
+        .expect("valid testbed operation");
     app.created_shapes += 1;
 
     // Dynamic visitors
@@ -21,30 +27,37 @@ pub fn build(app: &mut super::PhysicsApp, ground: bd::types::BodyId) {
         let x = -3.0 + i as f32 * 0.6;
         let id = app
             .world
-            .create_body_id(
-                bd::BodyBuilder::new()
+            .create_body(
+                bd::BodyBuilder::from(app.foundation.body_def())
                     .body_type(bd::BodyType::Dynamic)
                     .position([x, app.sensor_band_y])
-                    .build(),
-            );
+                    .build()
+                    .expect("valid testbed definition"),
+            )
+            .expect("valid testbed operation");
         app.created_bodies += 1;
-        let _ = app.world.create_circle_shape_for(
-            id,
-            &bd::ShapeDef::builder().density(1.0).build(),
-            &bd::shapes::circle([0.0_f32, 0.0], app.sensor_radius.max(0.01)),
-        );
+        let _ = app
+            .world
+            .body(id)
+            .expect("valid testbed operation")
+            .create_circle(
+                &bd::ShapeDef::builder()
+                    .density(1.0)
+                    .build()
+                    .expect("valid testbed definition"),
+                &bd::shapes::circle([0.0_f32, 0.0], app.sensor_radius.max(0.01))
+                    .expect("issue sensor circle must be valid"),
+            )
+            .expect("valid testbed operation");
         app.created_shapes += 1;
     }
 }
 
-pub fn tick(app: &mut super::PhysicsApp) {
-    // Reuse the shared scratch buffers so the issue repro scene does not
-    // allocate fresh sensor snapshots every frame.
-    let world = &app.world;
-    let scratch = &mut app.scratch;
-    world.sensor_events_into(&mut scratch.sensor_events);
-    app.ev_sens_beg += scratch.sensor_events.begin.len();
-    app.ev_sens_end += scratch.sensor_events.end.len();
+pub fn tick(app: &mut super::PhysicsApp, events: Option<&bd::StepEventsSnapshot>) {
+    if let Some(events) = events {
+        app.ev_sens_beg += events.sensor.begin.len();
+        app.ev_sens_end += events.sensor.end.len();
+    }
 }
 
 pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {

@@ -1,0 +1,12 @@
+error[E0502]: cannot borrow `world` as mutable because it is also borrowed as immutable
+  --> tests/ui/recording_conflicts_with_preexisting_capability.rs:9:20
+   |
+ 8 |       let query = world.query().unwrap();
+   |                   ----- immutable borrow occurs here
+ 9 |       let _session = world
+   |  ____________________^
+10 | |         .start_recording(RecordingLimits::default())
+   | |____________________________________________________^ mutable borrow occurs here
+11 |           .unwrap();
+12 |       drop(query);
+   |            ----- immutable borrow later used here

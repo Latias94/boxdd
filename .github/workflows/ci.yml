@@ -5,16 +5,122 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
+  workflow_call:
+    inputs:
+      expected-sha:
+        description: Immutable commit expected to pass every qualification job
+        required: true
+        type: string
+    outputs:
+      qualified-sha:
+        description: Immutable commit that passed every qualification job
+        value: ${{ jobs.qualification-receipt.outputs['qualified-sha'] }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
+  compiler-baseline:
+    name: Compiler Baseline (Rust 1.95)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+
+      - name: Install Rust MSRV
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: 1.95.0
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: Check workspace at MSRV
+        run: |
+          cargo +1.95.0 check --locked --workspace --all-targets
+          cargo +1.95.0 check --locked -p boxdd --all-targets --features "double-precision serde mint nalgebra glam bytemuck validate disable-simd"
+          cargo +1.95.0 check --locked -p bevy_boxdd --all-targets --features double-precision
+
+      - name: Check optional features independently at MSRV
+        run: |
+          for feature in serde mint nalgebra glam bytemuck; do
+            cargo +1.95.0 check --locked -p boxdd --all-targets --features "${feature}"
+          done
+
+  system-provider:
+    name: System Provider (Rust ${{ matrix.toolchain }}, ${{ matrix.precision }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: ["1.95.0", "1.97.1"]
+        precision: [single, double]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+
+      - name: Prepare caller-attested system artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_target="${RUNNER_TEMP}/system-source"
+          CARGO_TARGET_DIR="$source_target" cargo +${{ matrix.toolchain }} build --locked -p boxdd-sys --features "${{ matrix.precision == 'double' && 'double-precision' || '' }}" --quiet
+          mapfile -t identities < <(find "$source_target/debug/build" -path '*/boxdd-sys-*/out/boxdd-build-identity.toml' -type f -print)
+          test "${#identities[@]}" -eq 1
+          identity="${identities[0]}"
+          archive="$(dirname "$identity")/libbox2d.a"
+          test -f "$archive"
+
+          SYS_DIR="${RUNNER_TEMP}/boxdd-system-artifact"
+          mkdir "$SYS_DIR"
+          cp "$archive" "$SYS_DIR/libbox2d.a"
+          bindings="${{ matrix.precision == 'double' && 'boxdd-sys/src/bindings_double.rs' || 'boxdd-sys/src/bindings_pregenerated.rs' }}"
+          cp "$bindings" "$SYS_DIR/bindings.rs"
+          cargo +${{ matrix.toolchain }} run --locked -p xtask -- native-package attest-local-system "$identity" "$SYS_DIR/libbox2d.a" "$SYS_DIR/box2d.h" "$SYS_DIR/bindings.rs" "$SYS_DIR/manifest.toml"
+
+      - name: Qualify the freshly packaged crate against the system artifact
+        run: cargo +${{ matrix.toolchain }} run --locked -p xtask -- qualify-native-provider --provider system --toolchain ${{ matrix.toolchain }} --precision ${{ matrix.precision }} --target x86_64-unknown-linux-gnu --crt none --artifacts "${{ runner.temp }}/boxdd-system-artifact"
+
   lint:
     name: Lint + Test (ubuntu-latest)
     runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ github.sha }}
           submodules: recursive
+          persist-credentials: false
 
       - name: Install Linux system dependencies
         run: |
@@ -22,207 +128,426 @@ jobs:
           sudo apt-get install -y libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
         with:
+          toolchain: 1.97.1
           components: rustfmt, clippy
 
-      - name: Install nextest
-        uses: taiki-e/install-action@nextest
+      - name: Install test tools
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        with:
+          tool: nextest
+          fallback: none
+
+      - name: Install actionlint
+        env:
+          GOBIN: ${{ runner.temp }}/actionlint/bin
+        run: |
+          mkdir -p "${GOBIN}"
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          printf '%s\n' "${GOBIN}" >> "${GITHUB_PATH}"
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
       - name: rustfmt
         run: cargo fmt --all -- --check
 
+      - name: actionlint
+        run: actionlint
+
       - name: clippy
         run: |
-          # `boxdd-sys` keeps `bindgen` behind an optional feature to avoid requiring libclang.
-          cargo clippy -p boxdd-sys --all-targets -- -D warnings
-          cargo clippy -p boxdd --all-targets --all-features -- -D warnings
-          cargo clippy -p bevy_boxdd --all-targets --no-default-features -- -D warnings
+          cargo clippy --locked -p boxdd-sys -p boxdd -p bevy_boxdd --all-targets -- -D warnings
+          cargo clippy --locked -p boxdd-sys --all-targets --features "double-precision validate disable-simd" -- -D warnings
+          cargo clippy --locked -p boxdd --all-targets --features "double-precision serde mint nalgebra glam bytemuck validate disable-simd" -- -D warnings
+          cargo clippy --locked -p bevy_boxdd --all-targets --features double-precision -- -D warnings
+          cargo clippy --locked -p xtask --all-targets -- -D warnings
 
-      - name: upstream accounting checks
+      - name: Native AVX2 compile contract (Linux)
         run: |
-          cargo run -p xtask -- api-coverage --check
-          cargo run -p xtask -- sample-parity --check
-          cargo run -p xtask -- validate-pages
+          cargo check --locked -p boxdd --all-targets --features simd-avx2
+          cargo check --locked -p boxdd --all-targets --features "double-precision simd-avx2"
 
-      - name: tests (core)
+      - name: upstream and architecture gates
         run: |
-          cargo nextest run -p boxdd
-          cargo nextest run -p boxdd-sys --test layout
-          cargo nextest run -p bevy_boxdd --test plugin
-          cargo nextest run -p boxdd --features serialize
-          cargo nextest run -p boxdd --features unchecked
-          cargo nextest run -p boxdd --features mint
-          cargo nextest run -p boxdd --features bytemuck
-          cargo nextest run -p boxdd --features cgmath
-          cargo nextest run -p boxdd --features nalgebra
-          cargo nextest run -p boxdd --features glam
-          cargo nextest run -p boxdd --features "bytemuck glam"
+          cargo run --locked -p xtask -- verify-precision-contract
+          cargo run --locked -p xtask -- upstream-sync --check
+          cargo run --locked -p xtask -- recording-wire-codegen --check
+          cargo run --locked -p xtask -- api-inventory --check
+          cargo run --locked -p xtask -- validate-pages
 
-      - name: examples smoke
+      - name: Workspace tests
+        run: cargo nextest run --locked --workspace
+
+      - name: Optional features and double precision
         run: |
-          cargo run -p boxdd --example dynamic_tree
+          cargo nextest run --locked -p boxdd --features "serde mint nalgebra glam bytemuck"
+          cargo nextest run --locked -p boxdd -p boxdd-sys --features "boxdd/double-precision boxdd/serde boxdd/mint boxdd/nalgebra boxdd/glam boxdd/bytemuck"
+          cargo nextest run --locked -p bevy_boxdd --features double-precision
 
-      - name: system-link smoke (BOX2D_LIB_DIR)
-        shell: bash
+      - name: ImGui testbed
         run: |
-          set -euxo pipefail
-          # Build from source once to get a libbox2d.a, then rebuild in "system link" mode.
-          cargo build -p boxdd-sys --quiet
-          LIB="$(ls target/debug/build/boxdd-sys-*/out/libbox2d.a | head -n 1)"
-          SYS_DIR="$(mktemp -d)"
-          cp "$LIB" "$SYS_DIR/"
-          cargo clean -p boxdd-sys
-          BOX2D_LIB_DIR="$SYS_DIR" BOXDD_SYS_LINK_KIND=static cargo test -p boxdd --quiet
+          cargo check --locked -p boxdd --example testbed_imgui_glow --features imgui-glow-testbed
+          cargo check --locked -p boxdd --example testbed_imgui_glow --features "imgui-glow-testbed double-precision"
 
-  build:
-    name: Build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install Linux system dependencies
-        if: runner.os == 'Linux'
+      - name: C ABI probes
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-
-      - name: Build
-        run: cargo build --workspace --all-targets --verbose
+          cargo run --locked -p boxdd-abi-probe --bin abi-ctest --no-default-features
+          cargo test --locked -p boxdd-abi-probe --test abi --no-default-features
+          cargo run --locked -p boxdd-abi-probe --bin abi-ctest --no-default-features --features double-precision
+          cargo test --locked -p boxdd-abi-probe --test abi --no-default-features --features double-precision
 
       - name: Docs
         env:
           RUSTDOCFLAGS: -D warnings --cfg docsrs
-        run: cargo doc --no-deps --workspace
+        run: |
+          cargo test --locked -p boxdd --doc
+          cargo test --locked -p bevy_boxdd --doc
+          cargo doc --locked --no-deps --workspace
+          cargo doc --locked --no-deps -p boxdd --features double-precision
+          cargo doc --locked --no-deps -p bevy_boxdd --features double-precision
 
-      - name: Docs (docs.rs offline mode)
+      - name: boxdd-sys docs.rs mode
         env:
           DOCS_RS: "1"
-        run: |
-          # Verify docs build path that skips native C build and uses pregenerated bindings
-          cargo doc -p boxdd-sys --no-deps
+        run: cargo doc --locked -p boxdd-sys --no-deps
 
-  features:
-    name: Feature Matrix (ubuntu-latest)
-    runs-on: ubuntu-latest
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
-        features: [
-          "",
-          "serde",
-          "serialize",
-          "cgmath",
-          "nalgebra",
-          "glam",
-          "bytemuck",
-          "bytemuck glam",
-          "serde cgmath nalgebra",
-          "serde glam",
-          "serde bytemuck",
-          "serde bytemuck glam",
-          "serialize glam",
-          "serialize bytemuck",
-          "serialize bytemuck glam",
-          "serialize cgmath nalgebra",
-        ]
-
+        os: [macos-latest, windows-latest]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ github.sha }}
           submodules: recursive
+          persist-credentials: false
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: 1.97.1
+
+      - name: Install nextest
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        with:
+          tool: nextest
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
-      - name: cargo check (boxdd with features="${{ matrix.features }}")
-        shell: bash
+      - name: Workspace target check
+        run: cargo check --locked --workspace --all-targets
+
+      - name: Native AVX2 compile contract (Windows)
+        if: matrix.os == 'windows-latest'
         run: |
-          set -euxo pipefail
-          FEATS='${{ matrix.features }}'
-          if [ -z "$FEATS" ]; then
-            cargo check -p boxdd --quiet
-          else
-            cargo check -p boxdd --features "$FEATS" --quiet
-          fi
+          cargo check --locked -p boxdd --all-targets --features simd-avx2
+          cargo check --locked -p boxdd --all-targets --features "double-precision simd-avx2"
+
+      - name: Native source tests (single and double precision)
+        run: |
+          cargo nextest run --locked -p boxdd -p boxdd-sys --no-fail-fast
+          cargo nextest run --locked --target-dir target/core-double -p boxdd -p boxdd-sys --features boxdd/double-precision --no-fail-fast
+
+      - name: C ABI probes (single and double precision)
+        run: |
+          cargo run --locked -p boxdd-abi-probe --bin abi-ctest --no-default-features
+          cargo test --locked -p boxdd-abi-probe --test abi --no-default-features
+          cargo run --locked --target-dir target/abi-probe-double -p boxdd-abi-probe --bin abi-ctest --no-default-features --features double-precision
+          cargo test --locked --target-dir target/abi-probe-double -p boxdd-abi-probe --test abi --no-default-features --features double-precision
 
   wasm:
-    name: WASM Checks (ubuntu-latest)
+    name: WASM Compile Contracts (Rust ${{ matrix.toolchain }})
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: ["1.95.0", "1.97.1"]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ github.sha }}
           submodules: recursive
+          persist-credentials: false
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Add wasm targets
-        run: |
-          rustup target add wasm32-unknown-unknown
-          rustup target add wasm32-wasip1
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          targets: wasm32-unknown-unknown,wasm32-wasip1
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
-      - name: cargo check (boxdd-sys, wasm32-unknown-unknown)
-        run: |
-          cargo check -p boxdd-sys --target wasm32-unknown-unknown --quiet
+      - name: Verify WASM compile-only coordinates
+        run: cargo +${{ matrix.toolchain }} run --locked -p xtask -- verify-wasm --compile-only
 
-      - name: cargo check (boxdd-sys, wasm32-wasip1)
-        run: |
-          cargo check -p boxdd-sys --target wasm32-wasip1 --quiet
-
-  wasm-strict:
-    name: WASM Strict Bindings (conditional)
-    runs-on: ubuntu-latest
+  provider-runtime:
+    name: WASM Provider Runtime (Node + Chromium, single + double)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      CARGO_TARGET_DIR: target
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ github.sha }}
           submodules: recursive
+          persist-credentials: false
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: 1.97.1
+          targets: wasm32-unknown-unknown
 
-      - name: Add wasm targets
+      - name: Install Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: "22.16.0"
+          cache: npm
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: provider-runtime
+
+      - name: Install browser test dependencies
         run: |
-          rustup target add wasm32-unknown-unknown
-          rustup target add wasm32-wasip1
+          npm ci --ignore-scripts
+          npx playwright install --with-deps chromium
 
-      - name: Strict check (only if pregenerated or sysroot present)
-        env:
-          BOXDD_SYS_STRICT_WASM_BINDINGS: "1"
+      - name: Install Emscripten
         shell: bash
+        env:
+          EMSCRIPTEN_VERSION: "6.0.4"
+          EMSDK_REVISION: 224ec5f9f2f72f09f9ce0e26d66bae7dbd8b692f
         run: |
           set -euo pipefail
-          has_pregen="$(test -f boxdd-sys/src/wasm_bindings_pregenerated.rs && echo yes || echo no)"
-          if [ "$has_pregen" = "yes" ] || [ -n "${WASI_SDK_PATH:-}" ] || [ -n "${EMSDK:-}" ]; then
-            echo "Strict mode enabled with available wasm bindings/sysroot; running checks."
-            cargo check -p boxdd-sys --target wasm32-unknown-unknown --quiet || exit 1
-            cargo check -p boxdd-sys --target wasm32-wasip1 --quiet || exit 1
-          else
-            echo "Skipping strict wasm checks (no pregenerated bindings and no sysroot configured)."
-          fi
+          sdk_root="${RUNNER_TEMP}/emsdk"
+          git init "${sdk_root}"
+          git -C "${sdk_root}" remote add origin https://github.com/emscripten-core/emsdk.git
+          git -C "${sdk_root}" fetch --depth 1 origin "${EMSDK_REVISION}"
+          git -C "${sdk_root}" checkout --detach FETCH_HEAD
+          "${sdk_root}/emsdk" install "${EMSCRIPTEN_VERSION}"
+          "${sdk_root}/emsdk" activate "${EMSCRIPTEN_VERSION}"
+          source "${sdk_root}/emsdk_env.sh"
+          {
+            printf 'EMSDK=%s\n' "${EMSDK}"
+            printf 'EMSDK_NODE=%s\n' "${EMSDK_NODE}"
+            if [[ -n "${EM_CONFIG:-}" ]]; then
+              printf 'EM_CONFIG=%s\n' "${EM_CONFIG}"
+            fi
+          } >> "${GITHUB_ENV}"
+          {
+            dirname "$(command -v emcc)"
+            dirname "$(command -v node)"
+            dirname "$(command -v npm)"
+            dirname "$(command -v wasm-opt)"
+          } >> "${GITHUB_PATH}"
+
+      - name: Verify checked WASM provider identities
+        run: cargo run --locked -p xtask -- wasm-provider-contract --check
+
+      - name: Run provider runtime contract
+        run: cargo run --locked -p xtask -- verify-wasm --runtime
+
+      - name: Build Pages WASM assets
+        run: cargo run --locked -p xtask -- build-pages-wasm
+
+      - name: Prove Pages runtime in Chromium
+        run: npm run test:pages-browser
+
+      - name: Validate commit-bound Pages content and runtime manifest
+        run: cargo run --locked -p xtask -- validate-pages
+
+  security:
+    name: Supply-chain and release gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: 1.97.1
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: Install pinned cargo-audit
+        run: cargo install cargo-audit --version 0.22.2 --locked
+
+      - name: Install pinned cargo-semver-checks
+        run: cargo install cargo-semver-checks --version 0.48.0 --locked
+
+      - name: Audit dependencies
+        run: cargo audit --deny unsound --file Cargo.lock
+
+      - name: Verify packaged-source consumers
+        run: cargo run --locked -p xtask -- verify-packages
+
+      - name: Check public API compatibility
+        env:
+          DOCS_RS: "1"
+        run: |
+          cargo semver-checks check-release --manifest-path boxdd-sys/Cargo.toml --baseline-rev a3d1e2a660abb2c930ecaad4afb46b22d062fa67 --default-features --color never
+          cargo semver-checks check-release --manifest-path boxdd/Cargo.toml --baseline-rev a3d1e2a660abb2c930ecaad4afb46b22d062fa67 --default-features --color never
+          cargo semver-checks check-release --manifest-path bevy_boxdd/Cargo.toml --baseline-rev a3d1e2a660abb2c930ecaad4afb46b22d062fa67 --default-features --color never
+
+      - name: Reject the breaking API cohort as a patch release
+        shell: bash
+        env:
+          DOCS_RS: "1"
+        run: |
+          set -euo pipefail
+          for manifest in boxdd-sys/Cargo.toml boxdd/Cargo.toml bevy_boxdd/Cargo.toml; do
+            crate="$(basename "$(dirname "${manifest}")")"
+            log="${RUNNER_TEMP}/${crate}-semver-patch.log"
+            if cargo semver-checks check-release --manifest-path "${manifest}" --baseline-rev a3d1e2a660abb2c930ecaad4afb46b22d062fa67 --default-features --release-type patch --color never >"${log}" 2>&1; then
+              cat "${log}"
+              echo "${crate}: the 0.5-to-0.6 API break was incorrectly accepted as a patch release" >&2
+              exit 1
+            fi
+            if ! grep -Eq 'Summary semver requires new (major|minor) version: ([1-9][0-9]* major and [0-9]+ minor|[0-9]+ major and [1-9][0-9]* minor) checks failed' "${log}"; then
+              cat "${log}"
+              echo "${crate}: patch rejection did not contain a semantic-version violation summary" >&2
+              exit 1
+            fi
+            grep -E 'Summary semver requires new (major|minor) version:' "${log}"
+          done
+
+  miri:
+    name: Miri (pinned nightly)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install verification nightly
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: nightly-2026-05-27
+          components: miri, rust-src
+
+      - name: Run pinned Miri suites
+        run: cargo +nightly-2026-05-27 run --locked -p xtask -- verify-miri
+
+  sanitizers:
+    name: ${{ matrix.sanitizer }} sanitizer
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address, undefined, thread]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install verification nightly
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: nightly-2026-05-27
+          components: rust-src
+
+      - name: Install nextest
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        with:
+          tool: nextest
+
+      - name: Run mixed C/Rust sanitizer suite
+        run: cargo +nightly-2026-05-27 run --locked -p xtask -- verify-sanitizers --${{ matrix.sanitizer }}
+
+  qualification-receipt:
+    name: Full qualification receipt
+    if: ${{ always() }}
+    needs:
+      - compiler-baseline
+      - system-provider
+      - lint
+      - build
+      - wasm
+      - provider-runtime
+      - security
+      - miri
+      - sanitizers
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      qualified-sha: ${{ steps.qualify.outputs['qualified-sha'] }}
+    steps:
+      - name: Checkout exact qualification commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Bind successful qualification to exact commit
+        id: qualify
+        shell: bash
+        env:
+          EXPECTED_SHA_INPUT: ${{ inputs['expected-sha'] }}
+          QUALIFICATION_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          case "${GITHUB_WORKFLOW_REF}" in
+            "${GITHUB_REPOSITORY}/.github/workflows/prebuilt-binaries.yml@"*)
+              test -n "${EXPECTED_SHA_INPUT}"
+              expected_sha="${EXPECTED_SHA_INPUT}"
+              ;;
+            "${GITHUB_REPOSITORY}/.github/workflows/ci.yml@"*)
+              test -z "${EXPECTED_SHA_INPUT}"
+              expected_sha="${GITHUB_SHA}"
+              ;;
+            *)
+              exit 1
+              ;;
+          esac
+          [[ "${expected_sha}" =~ ^[0-9a-f]{40}$ ]]
+          test "${GITHUB_REPOSITORY}" = "Latias94/boxdd"
+          test "${expected_sha}" = "${GITHUB_SHA}"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          jq -e 'length > 0 and all(.[]; .result == "success")' <<<"${QUALIFICATION_RESULTS}" >/dev/null
+          printf 'qualified-sha=%s\n' "${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"

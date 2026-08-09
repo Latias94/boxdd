@@ -1,0 +1,19 @@
+error[E0499]: cannot borrow `world` as mutable more than once at a time
+  --> tests/ui/body_capability_conflicts_with_world_mutation.rs:12:17
+   |
+11 |     let body = world.body(body_id).unwrap();
+   |                ----- first mutable borrow occurs here
+12 |     let _next = world.create_body(world.body_builder().build().unwrap());
+   |                 ^^^^^ second mutable borrow occurs here
+13 |     drop(body);
+   |          ---- first borrow later used here
+
+error[E0502]: cannot borrow `world` as immutable because it is also borrowed as mutable
+  --> tests/ui/body_capability_conflicts_with_world_mutation.rs:12:35
+   |
+11 |     let body = world.body(body_id).unwrap();
+   |                ----- mutable borrow occurs here
+12 |     let _next = world.create_body(world.body_builder().build().unwrap());
+   |                                   ^^^^^ immutable borrow occurs here
+13 |     drop(body);
+   |          ---- mutable borrow later used here

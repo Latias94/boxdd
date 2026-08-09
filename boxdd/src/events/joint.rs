@@ -1,5 +1,7 @@
+use crate::core::identity_registry::OutputIdentityResolver;
+use crate::core::world_core::WorldCore;
+use crate::error::Result;
 use crate::types::JointId;
-use crate::world::{World, WorldHandle};
 use boxdd_sys::ffi;
 
 #[derive(Clone, Debug)]
@@ -7,182 +9,67 @@ pub struct JointEvent {
     pub joint_id: JointId,
 }
 
-/// Zero-copy view wrapper for a joint event.
-/// Borrowed data is valid only within the closure passed to
-/// `with_joint_events_view`.
-#[derive(Copy, Clone)]
-pub struct JointEventView<'a>(&'a ffi::b2JointEvent);
-impl<'a> JointEventView<'a> {
-    pub fn joint_id(&self) -> JointId {
-        JointId::from_raw(self.0.jointId)
+impl JointEvent {
+    fn from_raw(identities: &OutputIdentityResolver<'_>, raw: ffi::b2JointEvent) -> Result<Self> {
+        Ok(Self {
+            joint_id: identities.joint(raw.jointId)?,
+        })
     }
 }
 
-pub struct JointEventIter<'a>(core::slice::Iter<'a, ffi::b2JointEvent>);
-impl<'a> Iterator for JointEventIter<'a> {
-    type Item = JointEventView<'a>;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(JointEventView)
+/// A borrowed view of joint events from one completed step.
+pub struct JointEvents<'step> {
+    events: &'step [JointEvent],
+}
+
+impl<'step> JointEvents<'step> {
+    pub(super) fn new(events: &'step [JointEvent]) -> Self {
+        Self { events }
     }
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
+
+    pub fn iter(&self) -> core::slice::Iter<'_, JointEvent> {
+        self.events.iter()
+    }
+
+    pub fn len(&self) -> usize {
+        self.events.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.events.is_empty()
+    }
+
+    pub fn to_owned(&self) -> Result<Vec<JointEvent>> {
+        super::to_owned(self.events)
+    }
+
+    pub fn clone_into(&self, out: &mut Vec<JointEvent>) -> Result<()> {
+        super::clone_into(self.events, out)
     }
 }
 
-fn joint_events_into_impl(world: ffi::b2WorldId, out: &mut Vec<JointEvent>) {
-    let raw = unsafe { ffi::b2World_GetJointEvents(world) };
-    let slice = if raw.count > 0 && !raw.jointEvents.is_null() {
-        unsafe { core::slice::from_raw_parts(raw.jointEvents, raw.count as usize) }
-    } else {
-        &[][..]
-    };
-    super::map_snapshot_into(out, slice, |e| JointEvent {
-        joint_id: JointId::from_raw(e.jointId),
-    });
+impl<'view, 'step> IntoIterator for &'view JointEvents<'step> {
+    type Item = &'view JointEvent;
+    type IntoIter = core::slice::Iter<'view, JointEvent>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
 }
 
-fn joint_events_snapshot_impl(world: ffi::b2WorldId) -> Vec<JointEvent> {
-    let mut out = Vec::new();
-    joint_events_into_impl(world, &mut out);
-    out
-}
-
-fn joint_events_checked_impl(world: ffi::b2WorldId) -> Vec<JointEvent> {
-    crate::core::callback_state::assert_not_in_callback();
-    joint_events_snapshot_impl(world)
-}
-
-fn joint_events_into_checked_impl(world: ffi::b2WorldId, out: &mut Vec<JointEvent>) {
-    crate::core::callback_state::assert_not_in_callback();
-    joint_events_into_impl(world, out);
-}
-
-fn try_joint_events_impl(world: ffi::b2WorldId) -> crate::error::ApiResult<Vec<JointEvent>> {
-    crate::core::callback_state::check_not_in_callback()?;
-    Ok(joint_events_snapshot_impl(world))
-}
-
-fn try_joint_events_into_impl(
-    world: ffi::b2WorldId,
+pub(super) fn capture(
     out: &mut Vec<JointEvent>,
-) -> crate::error::ApiResult<()> {
-    crate::core::callback_state::check_not_in_callback()?;
-    joint_events_into_impl(world, out);
-    Ok(())
-}
-
-impl World {
-    pub fn joint_events(&self) -> Vec<JointEvent> {
-        joint_events_checked_impl(self.raw())
+    raw: ffi::b2JointEvents,
+    core: &WorldCore,
+) -> Result<()> {
+    // SAFETY: The completed-step capability prevents mutation while the returned slice is mapped.
+    let raw = unsafe { super::ffi_slice(raw.jointEvents, raw.count) }?;
+    if raw.is_empty() {
+        out.clear();
+        return Ok(());
     }
-
-    pub fn joint_events_into(&self, out: &mut Vec<JointEvent>) {
-        joint_events_into_checked_impl(self.raw(), out);
-    }
-
-    pub fn try_joint_events(&self) -> crate::error::ApiResult<Vec<JointEvent>> {
-        try_joint_events_impl(self.raw())
-    }
-
-    pub fn try_joint_events_into(&self, out: &mut Vec<JointEvent>) -> crate::error::ApiResult<()> {
-        try_joint_events_into_impl(self.raw(), out)
-    }
-}
-
-impl WorldHandle {
-    pub fn joint_events(&self) -> Vec<JointEvent> {
-        joint_events_checked_impl(self.raw())
-    }
-
-    pub fn joint_events_into(&self, out: &mut Vec<JointEvent>) {
-        joint_events_into_checked_impl(self.raw(), out);
-    }
-
-    pub fn try_joint_events(&self) -> crate::error::ApiResult<Vec<JointEvent>> {
-        try_joint_events_impl(self.raw())
-    }
-
-    pub fn try_joint_events_into(&self, out: &mut Vec<JointEvent>) -> crate::error::ApiResult<()> {
-        try_joint_events_into_impl(self.raw(), out)
-    }
-}
-
-impl World {
-    /// Low-level raw view over joint events (borrows Box2D's internal buffers).
-    ///
-    /// # Safety
-    /// The returned slice borrows internal Box2D buffers. While `f` runs, you must not perform
-    /// any operation that can mutate those buffers (e.g. stepping the world or destroying joints).
-    ///
-    /// Dropping `Owned*` handles inside `f` is OK; destruction is deferred until after this call.
-    pub unsafe fn with_joint_events_raw<T>(&self, f: impl FnOnce(&[ffi::b2JointEvent]) -> T) -> T {
-        self.with_borrowed_event_buffers(|| {
-            let raw = unsafe { ffi::b2World_GetJointEvents(self.raw()) };
-            let slice = if raw.count > 0 && !raw.jointEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.jointEvents, raw.count as usize) }
-            } else {
-                &[][..]
-            };
-            f(slice)
-        })
-    }
-
-    /// Low-level raw view over joint events with recoverable callback-lock checking.
-    ///
-    /// # Safety
-    /// Same safety contract as `with_joint_events_raw`.
-    pub unsafe fn try_with_joint_events_raw<T>(
-        &self,
-        f: impl FnOnce(&[ffi::b2JointEvent]) -> T,
-    ) -> crate::error::ApiResult<T> {
-        self.try_with_borrowed_event_buffers(|| {
-            let raw = unsafe { ffi::b2World_GetJointEvents(self.raw()) };
-            let slice = if raw.count > 0 && !raw.jointEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.jointEvents, raw.count as usize) }
-            } else {
-                &[][..]
-            };
-            f(slice)
-        })
-    }
-
-    /// Zero-copy view over joint events without exposing raw FFI types.
-    ///
-    /// While `f` runs, dropping `Owned*` handles does not destroy bodies/shapes/joints immediately;
-    /// the destruction is deferred until after the view ends to keep the borrowed buffers valid.
-    ///
-    /// Example
-    /// ```rust
-    /// use boxdd::prelude::*;
-    /// let mut world = World::new(WorldDef::default()).unwrap();
-    /// world.with_joint_events_view(|it| { let _ = it.count(); });
-    /// ```
-    ///
-    pub fn with_joint_events_view<T>(&self, f: impl FnOnce(JointEventIter<'_>) -> T) -> T {
-        self.with_borrowed_event_buffers(|| {
-            let raw = unsafe { ffi::b2World_GetJointEvents(self.raw()) };
-            let slice = if raw.count > 0 && !raw.jointEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.jointEvents, raw.count as usize) }
-            } else {
-                &[][..]
-            };
-            f(JointEventIter(slice.iter()))
-        })
-    }
-
-    /// Zero-copy view over joint events with recoverable callback-lock checking.
-    pub fn try_with_joint_events_view<T>(
-        &self,
-        f: impl FnOnce(JointEventIter<'_>) -> T,
-    ) -> crate::error::ApiResult<T> {
-        self.try_with_borrowed_event_buffers(|| {
-            let raw = unsafe { ffi::b2World_GetJointEvents(self.raw()) };
-            let slice = if raw.count > 0 && !raw.jointEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.jointEvents, raw.count as usize) }
-            } else {
-                &[][..]
-            };
-            f(JointEventIter(slice.iter()))
-        })
-    }
+    super::prepare_mapped(out, raw.len())?;
+    core.with_output_identity_resolver(|identities| {
+        super::extend_mapped(out, raw, |event| JointEvent::from_raw(identities, *event))
+    })
 }

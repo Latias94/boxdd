@@ -1,0 +1,23 @@
+error[E0277]: `BoxddPhysicsContext` is not a `Resource`
+ --> tests/ui/context_resource_mut.rs:4:39
+  |
+4 | fn ordinary_resource_access(_context: ResMut<BoxddPhysicsContext>) {}
+  |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^ invalid `Resource`
+  |
+  = help: the trait `Resource` is not implemented for `BoxddPhysicsContext`
+  = note: consider annotating `BoxddPhysicsContext` with `#[derive(Resource)]`
+  = help: the following other types implement trait `Resource`:
+            AccessibilityRequested
+            AccumulatedMouseMotion
+            AccumulatedMouseScroll
+            AppTypeRegistry
+            AreaLightLuts
+            AssetProcessor
+            AssetServer
+            AssetSourceBuilders
+          and $N others
+note: required by a bound in `ResMut`
+ --> $CARGO/bevy_ecs-$VERSION/src/change_detection/params.rs
+  |
+  | pub struct ResMut<'w, T: ?Sized + Resource<Mutability = Mutable>> {
+  |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `ResMut`

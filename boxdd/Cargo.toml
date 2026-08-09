@@ -2,6 +2,7 @@
 name = "boxdd"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Safe, ergonomic Rust bindings for Box2D v3"
 license.workspace = true
 repository.workspace = true
@@ -11,8 +12,13 @@ documentation = "https://docs.rs/boxdd"
 keywords = ["box2d", "physics", "game", "simulation"]
 categories = ["game-engines"]
 
-# Keep the crate size reasonable; exclude examples and tests from the crate package
-exclude = ["examples/**", "tests/**"]
+include = [
+    "Cargo.toml",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+    "src/**",
+]
 
 [dependencies]
 boxdd-sys = { workspace = true }
@@ -20,7 +26,6 @@ thiserror = { workspace = true }
 mint = { workspace = true, optional = true }
 smallvec = { workspace = true }
 serde = { workspace = true, optional = true }
-cgmath = { workspace = true, optional = true }
 nalgebra = { workspace = true, optional = true }
 glam = { workspace = true, optional = true }
 bytemuck = { workspace = true, optional = true }
@@ -30,27 +35,21 @@ default = []
 # Build the ImGui + Glow testbed example when this feature is enabled
 imgui-glow-testbed = []
 
-# Expose additional `unsafe` unchecked APIs for hot paths.
-unchecked = []
-
 # Optional integration features
 # Enable serde for basic value/config types (Vec2, Rot, Transform, etc.)
 serde = ["dep:serde"]
-# Alias to match prior art naming
-serialize = ["serde"]
 # Lightweight math interop types
 mint = ["dep:mint"]
 # Interop with common math libraries
-cgmath = ["dep:cgmath"]
 nalgebra = ["dep:nalgebra"]
 glam = ["dep:glam"]
 bytemuck = ["dep:bytemuck"]
 
 # Performance / debug features (forwarded to sys)
+double-precision = ["boxdd-sys/double-precision"]
 simd-avx2 = ["boxdd-sys/simd-avx2"]
 disable-simd = ["boxdd-sys/disable-simd"]
 validate = ["boxdd-sys/validate"]
-pkg-config = ["boxdd-sys/pkg-config"]
 
 [package.metadata.docs.rs]
 all-features = false
@@ -66,21 +65,17 @@ winit = "0.30"
 glow = "0.17"
 glutin = "0.32"
 glutin-winit = "0.5"
-env_logger = "0.11"
+env_logger = "0.11.11"
 
 [dev-dependencies]
 serde_json = { workspace = true }
 static_assertions = { workspace = true }
+trybuild = { workspace = true }
 
 [[example]]
 name = "testbed_imgui_glow"
-path = "examples/testbed_imgui_glow.rs"
+path = "examples/testbed/main.rs"
 required-features = ["imgui-glow-testbed"]
-
-[[example]]
-name = "scene_serialize"
-path = "examples/scene_serialize.rs"
-required-features = ["serialize"]
 
 [[example]]
 name = "mint_interop"

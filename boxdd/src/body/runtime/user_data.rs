@@ -1,168 +1,69 @@
 use super::*;
-use crate::core::world_core::WorldCore;
-use crate::error::ApiResult;
+use crate::error::Result;
+use crate::world::BodyCall;
 use boxdd_sys::ffi;
 use std::os::raw::c_void;
 
-unsafe fn body_set_user_data_ptr_impl(world_core: &WorldCore, id: BodyId, user_data: *mut c_void) {
-    let _ = world_core.clear_body_user_data(id);
-    unsafe { ffi::b2Body_SetUserData(raw_body_id(id), user_data) }
+pub(crate) fn body_set_user_data_ptr_impl(
+    body: BodyCall<'_>,
+    user_data: *mut c_void,
+) -> Result<()> {
+    let retired = body.clear_user_data()?;
+    unsafe { ffi::b2Body_SetUserData(raw_body_id(body.id()), user_data) };
+    retired.resume_drop_panic();
+    Ok(())
 }
 
 #[inline]
-fn body_user_data_ptr_impl(id: BodyId) -> *mut c_void {
+pub(crate) fn body_user_data_ptr_impl(id: BodyId) -> *mut c_void {
     unsafe { ffi::b2Body_GetUserData(raw_body_id(id)) }
 }
 
-fn body_set_user_data_impl<T: 'static>(world_core: &WorldCore, id: BodyId, value: T) {
-    let user_data = world_core.set_body_user_data(id, value);
-    unsafe { ffi::b2Body_SetUserData(raw_body_id(id), user_data) };
+pub(crate) fn body_set_user_data_impl<T: 'static>(
+    body: BodyCall<'_>,
+    value: crate::core::callback_state::PendingUserValue<T>,
+) -> Result<()> {
+    let update = body.set_user_data(value)?;
+    let (pointer, retired) = update.into_parts();
+    unsafe { ffi::b2Body_SetUserData(raw_body_id(body.id()), pointer) };
+    retired.resume_drop_panic();
+    Ok(())
 }
 
-fn body_clear_user_data_impl(world_core: &WorldCore, id: BodyId) -> bool {
-    let had = world_core.clear_body_user_data(id);
+pub(crate) fn body_clear_user_data_impl(body: BodyCall<'_>) -> Result<bool> {
+    let retired = body.clear_user_data()?;
+    let had = retired.is_some() || !body_user_data_ptr_impl(body.id()).is_null();
     if had {
-        unsafe { ffi::b2Body_SetUserData(raw_body_id(id), core::ptr::null_mut()) };
+        unsafe { ffi::b2Body_SetUserData(raw_body_id(body.id()), core::ptr::null_mut()) };
     }
-    had
+    retired.resume_drop_panic();
+    Ok(had)
 }
 
-fn body_with_user_data_impl<T: 'static, R>(
-    world_core: &WorldCore,
-    id: BodyId,
-    f: impl FnOnce(&T) -> R,
-) -> ApiResult<Option<R>> {
-    world_core.try_with_body_user_data(id, f)
+pub(crate) fn body_with_user_data_impl<T: 'static, R, F>(
+    body: BodyCall<'_>,
+    f: crate::core::callback_state::PendingUserValue<F>,
+) -> Result<Option<R>>
+where
+    F: FnOnce(&T) -> R,
+{
+    body.with_user_data(f)
 }
 
-fn body_with_user_data_mut_impl<T: 'static, R>(
-    world_core: &WorldCore,
-    id: BodyId,
-    f: impl FnOnce(&mut T) -> R,
-) -> ApiResult<Option<R>> {
-    world_core.try_with_body_user_data_mut(id, f)
+pub(crate) fn body_with_user_data_mut_impl<T: 'static, R, F>(
+    body: BodyCall<'_>,
+    f: crate::core::callback_state::PendingUserValue<F>,
+) -> Result<Option<R>>
+where
+    F: FnOnce(&mut T) -> R,
+{
+    body.with_user_data_mut(f)
 }
 
-fn body_take_user_data_impl<T: 'static>(
-    world_core: &WorldCore,
-    id: BodyId,
-) -> ApiResult<Option<T>> {
-    let value = world_core.take_body_user_data::<T>(id)?;
+pub(crate) fn body_take_user_data_impl<T: 'static>(body: BodyCall<'_>) -> Result<Option<T>> {
+    let value = body.take_user_data::<T>()?;
     if value.is_some() {
-        unsafe { ffi::b2Body_SetUserData(raw_body_id(id), core::ptr::null_mut()) };
+        unsafe { ffi::b2Body_SetUserData(raw_body_id(body.id()), core::ptr::null_mut()) };
     }
     Ok(value)
-}
-
-pub(crate) unsafe fn body_set_user_data_ptr_raw_checked_impl(
-    world_core: &WorldCore,
-    id: BodyId,
-    p: *mut c_void,
-) {
-    crate::core::debug_checks::assert_body_valid(id);
-    unsafe { body_set_user_data_ptr_impl(world_core, id, p) }
-}
-
-pub(crate) unsafe fn try_body_set_user_data_ptr_raw_impl(
-    world_core: &WorldCore,
-    id: BodyId,
-    p: *mut c_void,
-) -> ApiResult<()> {
-    crate::core::debug_checks::check_body_valid(id)?;
-    unsafe { body_set_user_data_ptr_impl(world_core, id, p) }
-    Ok(())
-}
-
-pub(crate) fn body_user_data_ptr_raw_checked_impl(id: BodyId) -> *mut c_void {
-    crate::core::debug_checks::assert_body_valid(id);
-    body_user_data_ptr_impl(id)
-}
-
-pub(crate) fn try_body_user_data_ptr_raw_impl(id: BodyId) -> ApiResult<*mut c_void> {
-    crate::core::debug_checks::check_body_valid(id)?;
-    Ok(body_user_data_ptr_impl(id))
-}
-
-pub(crate) fn body_set_user_data_checked_impl<T: 'static>(
-    world_core: &WorldCore,
-    id: BodyId,
-    value: T,
-) {
-    crate::core::debug_checks::assert_body_valid(id);
-    body_set_user_data_impl(world_core, id, value);
-}
-
-pub(crate) fn try_body_set_user_data_checked_impl<T: 'static>(
-    world_core: &WorldCore,
-    id: BodyId,
-    value: T,
-) -> ApiResult<()> {
-    crate::core::debug_checks::check_body_valid(id)?;
-    body_set_user_data_impl(world_core, id, value);
-    Ok(())
-}
-
-pub(crate) fn body_clear_user_data_checked_impl(world_core: &WorldCore, id: BodyId) -> bool {
-    crate::core::debug_checks::assert_body_valid(id);
-    body_clear_user_data_impl(world_core, id)
-}
-
-pub(crate) fn try_body_clear_user_data_checked_impl(
-    world_core: &WorldCore,
-    id: BodyId,
-) -> ApiResult<bool> {
-    crate::core::debug_checks::check_body_valid(id)?;
-    Ok(body_clear_user_data_impl(world_core, id))
-}
-
-pub(crate) fn body_with_user_data_checked_impl<T: 'static, R>(
-    world_core: &WorldCore,
-    id: BodyId,
-    f: impl FnOnce(&T) -> R,
-) -> Option<R> {
-    crate::core::debug_checks::assert_body_valid(id);
-    body_with_user_data_impl(world_core, id, f).expect("user data type mismatch")
-}
-
-pub(crate) fn try_body_with_user_data_checked_impl<T: 'static, R>(
-    world_core: &WorldCore,
-    id: BodyId,
-    f: impl FnOnce(&T) -> R,
-) -> ApiResult<Option<R>> {
-    crate::core::debug_checks::check_body_valid(id)?;
-    body_with_user_data_impl(world_core, id, f)
-}
-
-pub(crate) fn body_with_user_data_mut_checked_impl<T: 'static, R>(
-    world_core: &WorldCore,
-    id: BodyId,
-    f: impl FnOnce(&mut T) -> R,
-) -> Option<R> {
-    crate::core::debug_checks::assert_body_valid(id);
-    body_with_user_data_mut_impl(world_core, id, f).expect("user data type mismatch")
-}
-
-pub(crate) fn try_body_with_user_data_mut_checked_impl<T: 'static, R>(
-    world_core: &WorldCore,
-    id: BodyId,
-    f: impl FnOnce(&mut T) -> R,
-) -> ApiResult<Option<R>> {
-    crate::core::debug_checks::check_body_valid(id)?;
-    body_with_user_data_mut_impl(world_core, id, f)
-}
-
-pub(crate) fn body_take_user_data_checked_impl<T: 'static>(
-    world_core: &WorldCore,
-    id: BodyId,
-) -> Option<T> {
-    crate::core::debug_checks::assert_body_valid(id);
-    body_take_user_data_impl(world_core, id).expect("user data type mismatch")
-}
-
-pub(crate) fn try_body_take_user_data_checked_impl<T: 'static>(
-    world_core: &WorldCore,
-    id: BodyId,
-) -> ApiResult<Option<T>> {
-    crate::core::debug_checks::check_body_valid(id)?;
-    body_take_user_data_impl(world_core, id)
 }

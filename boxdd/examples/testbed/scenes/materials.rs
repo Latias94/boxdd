@@ -8,34 +8,53 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     // Two conveyors (static bodies) left/right with opposite tangent speeds
     let conv_mat_l = bd::shapes::SurfaceMaterial::default()
         .with_friction(0.9)
+        .expect("conveyor friction must be valid")
         .with_restitution(0.0)
-        .with_tangent_speed(state.conveyor_speed);
+        .expect("conveyor restitution must be valid")
+        .with_tangent_speed(state.conveyor_speed)
+        .expect("conveyor speed must be finite");
     let conv_mat_r = bd::shapes::SurfaceMaterial::default()
         .with_friction(0.9)
+        .expect("conveyor friction must be valid")
         .with_restitution(0.0)
-        .with_tangent_speed(-state.conveyor_speed);
+        .expect("conveyor restitution must be valid")
+        .with_tangent_speed(-state.conveyor_speed)
+        .expect("conveyor speed must be finite");
 
-    let sdef_l = bd::ShapeDef::builder().density(0.0).material(conv_mat_l).build();
-    let sdef_r = bd::ShapeDef::builder().density(0.0).material(conv_mat_r).build();
+    let sdef_l = bd::ShapeDef::builder()
+        .density(0.0)
+        .material(conv_mat_l)
+        .build()
+        .expect("valid testbed definition");
+    let sdef_r = bd::ShapeDef::builder()
+        .density(0.0)
+        .material(conv_mat_r)
+        .build()
+        .expect("valid testbed definition");
 
     // Left belt body at y ~ 0.5
     let left = app
         .world
-        .create_body_id(
-            bd::BodyBuilder::new()
+        .create_body(
+            bd::BodyBuilder::from(app.foundation.body_def())
                 .body_type(bd::BodyType::Static)
                 .position([state.left_belt_x, state.left_belt_y])
                 .angle(state.left_belt_angle_deg * std::f32::consts::PI / 180.0)
-                .build(),
-        );
+                .build()
+                .expect("valid testbed definition"),
+        )
+        .expect("valid testbed operation");
     app.created_bodies += 1;
     let sid_l = app
         .world
-        .create_polygon_shape_for(
-            left,
+        .body(left)
+        .expect("valid testbed operation")
+        .create_polygon(
             &sdef_l,
-            &bd::shapes::box_polygon(state.belt_half_len, state.belt_thickness),
-        );
+            &bd::shapes::box_polygon(state.belt_half_len, state.belt_thickness)
+                .expect("valid polygon geometry"),
+        )
+        .expect("valid testbed operation");
     app.created_shapes += 1;
     state.left_belt_body = Some(left);
     state.left_belt_shape = Some(sid_l);
@@ -43,21 +62,26 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     // Right belt body at y ~ 2.5
     let right = app
         .world
-        .create_body_id(
-            bd::BodyBuilder::new()
+        .create_body(
+            bd::BodyBuilder::from(app.foundation.body_def())
                 .body_type(bd::BodyType::Static)
                 .position([state.right_belt_x, state.right_belt_y])
                 .angle(state.right_belt_angle_deg * std::f32::consts::PI / 180.0)
-                .build(),
-        );
+                .build()
+                .expect("valid testbed definition"),
+        )
+        .expect("valid testbed operation");
     app.created_bodies += 1;
     let sid_r = app
         .world
-        .create_polygon_shape_for(
-            right,
+        .body(right)
+        .expect("valid testbed operation")
+        .create_polygon(
             &sdef_r,
-            &bd::shapes::box_polygon(state.belt_half_len, state.belt_thickness),
-        );
+            &bd::shapes::box_polygon(state.belt_half_len, state.belt_thickness)
+                .expect("valid polygon geometry"),
+        )
+        .expect("valid testbed operation");
     app.created_shapes += 1;
     state.right_belt_body = Some(right);
     state.right_belt_shape = Some(sid_r);
@@ -69,16 +93,36 @@ fn spawn_box(app: &mut super::PhysicsApp, x: f32, y: f32) {
     let state = &mut app.materials;
     let b = app
         .world
-        .create_body_id(bd::BodyBuilder::new().body_type(bd::BodyType::Dynamic).position([x, y]).build());
+        .create_body(
+            bd::BodyBuilder::from(app.foundation.body_def())
+                .body_type(bd::BodyType::Dynamic)
+                .position([x, y])
+                .build()
+                .expect("valid testbed definition"),
+        )
+        .expect("valid testbed operation");
     app.created_bodies += 1;
     let mat = bd::shapes::SurfaceMaterial::default()
         .with_friction(0.8)
+        .expect("sample friction must be valid")
         .with_restitution(0.1)
-        .with_rolling_resistance(state.rolling_resistance);
-    let sdef = bd::ShapeDef::builder().density(1.0).material(mat).build();
+        .expect("sample restitution must be valid")
+        .with_rolling_resistance(state.rolling_resistance)
+        .expect("sample rolling resistance must be valid");
+    let sdef = bd::ShapeDef::builder()
+        .density(1.0)
+        .material(mat)
+        .build()
+        .expect("valid testbed definition");
     let sid = app
         .world
-        .create_polygon_shape_for(b, &sdef, &bd::shapes::box_polygon(0.4, 0.25));
+        .body(b)
+        .expect("valid testbed operation")
+        .create_polygon(
+            &sdef,
+            &bd::shapes::box_polygon(0.4, 0.25).expect("valid polygon geometry"),
+        )
+        .expect("valid testbed operation");
     app.created_shapes += 1;
     state.spawned_shapes.push(sid);
     state.spawned_count += 1;
@@ -88,16 +132,36 @@ fn spawn_ball(app: &mut super::PhysicsApp, x: f32, y: f32) {
     let state = &mut app.materials;
     let b = app
         .world
-        .create_body_id(bd::BodyBuilder::new().body_type(bd::BodyType::Dynamic).position([x, y]).build());
+        .create_body(
+            bd::BodyBuilder::from(app.foundation.body_def())
+                .body_type(bd::BodyType::Dynamic)
+                .position([x, y])
+                .build()
+                .expect("valid testbed definition"),
+        )
+        .expect("valid testbed operation");
     app.created_bodies += 1;
     let mat = bd::shapes::SurfaceMaterial::default()
         .with_friction(0.4)
+        .expect("sample friction must be valid")
         .with_restitution(0.2)
-        .with_rolling_resistance(state.rolling_resistance);
-    let sdef = bd::ShapeDef::builder().density(1.0).material(mat).build();
+        .expect("sample restitution must be valid")
+        .with_rolling_resistance(state.rolling_resistance)
+        .expect("sample rolling resistance must be valid");
+    let sdef = bd::ShapeDef::builder()
+        .density(1.0)
+        .material(mat)
+        .build()
+        .expect("valid testbed definition");
     let sid = app
         .world
-        .create_circle_shape_for(b, &sdef, &bd::shapes::circle([0.0, 0.0], 0.25));
+        .body(b)
+        .expect("valid testbed operation")
+        .create_circle(
+            &sdef,
+            &bd::shapes::circle([0.0, 0.0], 0.25).expect("material sample circle must be valid"),
+        )
+        .expect("valid testbed operation");
     app.created_shapes += 1;
     state.spawned_shapes.push(sid);
     state.spawned_count += 1;
@@ -212,58 +276,97 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
                 if let Some(sid) = state.left_belt_shape {
                     let m = app
                         .world
-                        .shape_surface_material(sid)
+                        .shape(sid)
+                        .expect("valid testbed operation")
+                        .surface_material()
+                        .expect("valid testbed operation")
                         .with_tangent_speed(state.conveyor_speed)
+                        .expect("conveyor speed must be finite")
                         .with_friction(state.belt_friction)
-                        .with_restitution(state.belt_restitution);
-                    app.world.shape_set_surface_material(sid, &m);
+                        .expect("belt friction must be valid")
+                        .with_restitution(state.belt_restitution)
+                        .expect("belt restitution must be valid");
+                    app.world
+                        .shape(sid)
+                        .expect("valid testbed operation")
+                        .set_surface_material(&m)
+                        .expect("valid testbed operation");
                 }
                 if let Some(sid) = state.right_belt_shape {
                     let m = app
                         .world
-                        .shape_surface_material(sid)
+                        .shape(sid)
+                        .expect("valid testbed operation")
+                        .surface_material()
+                        .expect("valid testbed operation")
                         .with_tangent_speed(-state.conveyor_speed)
+                        .expect("conveyor speed must be finite")
                         .with_friction(state.belt_friction)
-                        .with_restitution(state.belt_restitution);
-                    app.world.shape_set_surface_material(sid, &m);
+                        .expect("belt friction must be valid")
+                        .with_restitution(state.belt_restitution)
+                        .expect("belt restitution must be valid");
+                    app.world
+                        .shape(sid)
+                        .expect("valid testbed operation")
+                        .set_surface_material(&m)
+                        .expect("valid testbed operation");
                 }
             }
             if belt_pos_changed || belt_ang_changed {
                 if let Some(bid) = state.left_belt_body {
                     let ang = state.left_belt_angle_deg * std::f32::consts::PI / 180.0;
-                    app.world.set_body_position_and_rotation(
-                        bid,
-                        [state.left_belt_x, state.left_belt_y],
-                        ang,
-                    );
+                    app.world
+                        .body(bid)
+                        .expect("valid testbed operation")
+                        .set_position_and_rotation([state.left_belt_x, state.left_belt_y], ang)
+                        .expect("valid testbed operation");
                 }
                 if let Some(bid) = state.right_belt_body {
                     let ang = state.right_belt_angle_deg * std::f32::consts::PI / 180.0;
-                    app.world.set_body_position_and_rotation(
-                        bid,
-                        [state.right_belt_x, state.right_belt_y],
-                        ang,
-                    );
+                    app.world
+                        .body(bid)
+                        .expect("valid testbed operation")
+                        .set_position_and_rotation([state.right_belt_x, state.right_belt_y], ang)
+                        .expect("valid testbed operation");
                 }
             }
             if rr_changed || shp_mu_changed || shp_re_changed {
                 for &sid in &state.spawned_shapes {
-                    if let Ok(m0) = app.world.try_shape_surface_material(sid) {
-                        let m = m0
-                            .with_rolling_resistance(state.rolling_resistance)
-                            .with_friction(state.shape_friction)
-                            .with_restitution(state.shape_restitution);
-                        let _ = app.world.try_shape_set_surface_material(sid, &m);
-                    }
+                    let material = app
+                        .world
+                        .shape(sid)
+                        .expect("valid testbed shape")
+                        .surface_material()
+                        .expect("valid testbed material")
+                        .with_rolling_resistance(state.rolling_resistance)
+                        .expect("rolling resistance must be valid")
+                        .with_friction(state.shape_friction)
+                        .expect("shape friction must be valid")
+                        .with_restitution(state.shape_restitution)
+                        .expect("shape restitution must be valid");
+                    app.world
+                        .shape(sid)
+                        .expect("valid testbed shape")
+                        .set_surface_material(&material)
+                        .expect("valid testbed material");
                 }
             }
             if belt_geo_changed {
-                let poly = bd::shapes::box_polygon(state.belt_half_len, state.belt_thickness);
+                let poly = bd::shapes::box_polygon(state.belt_half_len, state.belt_thickness)
+                    .expect("valid polygon geometry");
                 if let Some(sid) = state.left_belt_shape {
-                    app.world.shape_set_polygon(sid, &poly);
+                    app.world
+                        .shape(sid)
+                        .expect("valid testbed operation")
+                        .set_polygon(&poly)
+                        .expect("valid testbed operation");
                 }
                 if let Some(sid) = state.right_belt_shape {
-                    app.world.shape_set_polygon(sid, &poly);
+                    app.world
+                        .shape(sid)
+                        .expect("valid testbed operation")
+                        .set_polygon(&poly)
+                        .expect("valid testbed operation");
                 }
             }
         }
@@ -288,7 +391,7 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
     ));
 }
 
-pub fn tick(app: &mut super::PhysicsApp) {
+pub fn tick(app: &mut super::PhysicsApp, _events: Option<&bd::StepEventsSnapshot>) {
     let state = &app.materials;
     if state.spawned_shapes.is_empty() {
         return;
@@ -298,6 +401,10 @@ pub fn tick(app: &mut super::PhysicsApp) {
     let lift = state.lift;
     let wake = state.wake_on_wind;
     for &sid in &state.spawned_shapes {
-        app.world.shape_apply_wind(sid, wind, drag, lift, wake);
+        app.world
+            .shape(sid)
+            .expect("valid testbed operation")
+            .apply_wind(wind, drag, lift, wake)
+            .expect("valid testbed operation");
     }
 }

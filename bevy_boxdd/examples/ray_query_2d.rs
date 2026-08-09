@@ -1,12 +1,17 @@
 use bevy::ecs::system::NonSend;
-use bevy::log::info;
+use bevy::log::{info, warn};
 use bevy::prelude::*;
 use bevy_boxdd::prelude::*;
 
 fn main() {
+    let foundation =
+        boxdd::Foundation::initialize_default().expect("Box2D foundation should initialize");
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(BoxddPhysicsPlugin::default())
+        .add_plugins(BoxddPhysicsPlugin::new(
+            foundation,
+            BoxddPhysicsSettings::default(),
+        ))
         .add_systems(Startup, setup)
         .add_systems(Update, report_first_ray_hit)
         .run();
@@ -26,13 +31,21 @@ fn setup(mut commands: Commands) {
     ));
 }
 
-fn report_first_ray_hit(context: NonSend<BoxddPhysicsContext>, mut reported: Local<bool>) {
+fn report_first_ray_hit(
+    context: NonSend<BoxddPhysicsContext>,
+    origin: Res<BoxddWorldOrigin>,
+    mut reported: Local<bool>,
+) {
     if *reported {
         return;
     }
 
-    let Ok(Some(hit)) = context.try_cast_ray_closest_entity(
-        Vec2::new(0.0, 3.0),
+    let Ok(ray_origin) = origin.checked_local_to_absolute(Vec2::new(0.0, 3.0)) else {
+        warn!("ray origin is outside the active world-origin frame");
+        return;
+    };
+    let Ok(Some(hit)) = context.cast_ray_closest_entity(
+        ray_origin,
         Vec2::new(0.0, -6.0),
         boxdd::QueryFilter::default(),
     ) else {

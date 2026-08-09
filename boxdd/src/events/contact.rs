@@ -1,88 +1,9 @@
-use crate::types::{ContactId, ShapeId, Vec2};
-use crate::world::{World, WorldHandle};
+use crate::core::identity_registry::OutputIdentityResolver;
+use crate::core::world_core::WorldCore;
+use crate::error::Result;
+use crate::id::ContactEpoch;
+use crate::types::{ContactId, Position, ShapeId, Vec2};
 use boxdd_sys::ffi;
-
-/// Zero-copy view wrappers for contact events.
-/// These types borrow the underlying FFI events but expose a safe Rust API.
-/// The borrowed data is only valid for the duration of the closure passed
-/// to `with_contact_events_view`.
-#[derive(Copy, Clone)]
-pub struct ContactBeginTouch<'a>(&'a ffi::b2ContactBeginTouchEvent);
-impl<'a> ContactBeginTouch<'a> {
-    pub fn shape_a(&self) -> ShapeId {
-        ShapeId::from_raw(self.0.shapeIdA)
-    }
-    pub fn shape_b(&self) -> ShapeId {
-        ShapeId::from_raw(self.0.shapeIdB)
-    }
-    pub fn contact_id(&self) -> ContactId {
-        ContactId::from_raw(self.0.contactId)
-    }
-}
-
-#[derive(Copy, Clone)]
-pub struct ContactEndTouch<'a>(&'a ffi::b2ContactEndTouchEvent);
-impl<'a> ContactEndTouch<'a> {
-    pub fn shape_a(&self) -> ShapeId {
-        ShapeId::from_raw(self.0.shapeIdA)
-    }
-    pub fn shape_b(&self) -> ShapeId {
-        ShapeId::from_raw(self.0.shapeIdB)
-    }
-}
-
-#[derive(Copy, Clone)]
-pub struct ContactHit<'a>(&'a ffi::b2ContactHitEvent);
-impl<'a> ContactHit<'a> {
-    pub fn shape_a(&self) -> ShapeId {
-        ShapeId::from_raw(self.0.shapeIdA)
-    }
-    pub fn shape_b(&self) -> ShapeId {
-        ShapeId::from_raw(self.0.shapeIdB)
-    }
-    pub fn point(&self) -> Vec2 {
-        Vec2::from_raw(self.0.point)
-    }
-    pub fn normal(&self) -> Vec2 {
-        Vec2::from_raw(self.0.normal)
-    }
-    pub fn approach_speed(&self) -> f32 {
-        self.0.approachSpeed
-    }
-}
-
-pub struct BeginIter<'a>(core::slice::Iter<'a, ffi::b2ContactBeginTouchEvent>);
-impl<'a> Iterator for BeginIter<'a> {
-    type Item = ContactBeginTouch<'a>;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(ContactBeginTouch)
-    }
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
-    }
-}
-
-pub struct EndIter<'a>(core::slice::Iter<'a, ffi::b2ContactEndTouchEvent>);
-impl<'a> Iterator for EndIter<'a> {
-    type Item = ContactEndTouch<'a>;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(ContactEndTouch)
-    }
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
-    }
-}
-
-pub struct HitIter<'a>(core::slice::Iter<'a, ffi::b2ContactHitEvent>);
-impl<'a> Iterator for HitIter<'a> {
-    type Item = ContactHit<'a>;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(ContactHit)
-    }
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct ContactBeginTouchEvent {
@@ -91,19 +12,102 @@ pub struct ContactBeginTouchEvent {
     pub contact_id: ContactId,
 }
 
+impl ContactBeginTouchEvent {
+    fn from_raw(
+        identities: &OutputIdentityResolver<'_>,
+        contact_epoch: ContactEpoch,
+        raw: ffi::b2ContactBeginTouchEvent,
+    ) -> Result<Self> {
+        Ok(Self {
+            shape_a: identities.shape(raw.shapeIdA)?,
+            shape_b: identities.shape(raw.shapeIdB)?,
+            contact_id: identities.contact(raw.contactId, contact_epoch)?,
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ContactEndTouchEvent {
     pub shape_a: ShapeId,
     pub shape_b: ShapeId,
+    pub contact_id: ContactId,
+}
+
+impl ContactEndTouchEvent {
+    fn from_raw(
+        identities: &OutputIdentityResolver<'_>,
+        contact_epoch: ContactEpoch,
+        raw: ffi::b2ContactEndTouchEvent,
+    ) -> Result<Self> {
+        Ok(Self {
+            shape_a: identities.shape(raw.shapeIdA)?,
+            shape_b: identities.shape(raw.shapeIdB)?,
+            contact_id: identities.contact(raw.contactId, contact_epoch)?,
+        })
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct ContactHitEvent {
     pub shape_a: ShapeId,
     pub shape_b: ShapeId,
-    pub point: Vec2,
+    pub contact_id: ContactId,
+    pub point: Position,
     pub normal: Vec2,
     pub approach_speed: f32,
+}
+
+impl ContactHitEvent {
+    fn from_raw(
+        identities: &OutputIdentityResolver<'_>,
+        contact_epoch: ContactEpoch,
+        raw: ffi::b2ContactHitEvent,
+    ) -> Result<Self> {
+        let (point, normal, approach_speed) = validate_native_hit_geometry(raw)?;
+        Ok(Self {
+            shape_a: identities.shape(raw.shapeIdA)?,
+            shape_b: identities.shape(raw.shapeIdB)?,
+            contact_id: identities.contact(raw.contactId, contact_epoch)?,
+            point,
+            normal,
+            approach_speed,
+        })
+    }
+}
+
+fn validate_native_hit_geometry(raw: ffi::b2ContactHitEvent) -> Result<(Position, Vec2, f32)> {
+    const OPERATION: &str = "CompletedStep::contact_events";
+    let point = Position::from_raw(raw.point);
+    if !point.is_valid() {
+        return Err(crate::Error::InvalidNativeOutput {
+            operation: OPERATION,
+            output: "hit.point",
+            constraint: "a finite world position",
+        });
+    }
+
+    let normal = Vec2::from_raw(raw.normal);
+    let normal_length_squared = normal.x * normal.x + normal.y * normal.y;
+    if !normal.is_valid()
+        || !normal_length_squared.is_finite()
+        || (1.0 - normal_length_squared).abs() >= 100.0 * f32::EPSILON
+    {
+        return Err(crate::Error::InvalidNativeOutput {
+            operation: OPERATION,
+            output: "hit.normal",
+            constraint: "a finite unit vector",
+        });
+    }
+
+    if !raw.approachSpeed.is_finite() || raw.approachSpeed <= 0.0 {
+        return Err(crate::Error::InvalidNativeOutput {
+            operation: OPERATION,
+            output: "hit.approach_speed",
+            constraint: "a finite positive value",
+        });
+    }
+
+    Ok((point, normal, raw.approachSpeed))
 }
 
 #[derive(Clone, Debug, Default)]
@@ -113,253 +117,157 @@ pub struct ContactEvents {
     pub hit: Vec<ContactHitEvent>,
 }
 
-fn contact_events_into_impl(world: ffi::b2WorldId, out: &mut ContactEvents) {
-    let raw = unsafe { ffi::b2World_GetContactEvents(world) };
-    let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
-        unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
-    } else {
-        &[][..]
-    };
-    let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
-        unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
-    } else {
-        &[][..]
-    };
-    let hit = if raw.hitCount > 0 && !raw.hitEvents.is_null() {
-        unsafe { core::slice::from_raw_parts(raw.hitEvents, raw.hitCount as usize) }
-    } else {
-        &[][..]
-    };
-
-    super::map_snapshot_into(&mut out.begin, begin, |e| ContactBeginTouchEvent {
-        shape_a: ShapeId::from_raw(e.shapeIdA),
-        shape_b: ShapeId::from_raw(e.shapeIdB),
-        contact_id: ContactId::from_raw(e.contactId),
-    });
-    super::map_snapshot_into(&mut out.end, end, |e| ContactEndTouchEvent {
-        shape_a: ShapeId::from_raw(e.shapeIdA),
-        shape_b: ShapeId::from_raw(e.shapeIdB),
-    });
-    super::map_snapshot_into(&mut out.hit, hit, |e| ContactHitEvent {
-        shape_a: ShapeId::from_raw(e.shapeIdA),
-        shape_b: ShapeId::from_raw(e.shapeIdB),
-        point: Vec2::from_raw(e.point),
-        normal: Vec2::from_raw(e.normal),
-        approach_speed: e.approachSpeed,
-    });
+/// A borrowed view of contact events from one completed step.
+pub struct ContactEventsView<'step> {
+    events: &'step ContactEvents,
 }
 
-fn contact_events_snapshot_impl(world: ffi::b2WorldId) -> ContactEvents {
-    let mut out = ContactEvents::default();
-    contact_events_into_impl(world, &mut out);
-    out
+impl<'step> ContactEventsView<'step> {
+    pub(super) fn new(events: &'step ContactEvents) -> Self {
+        Self { events }
+    }
+
+    pub fn begin(&self) -> &[ContactBeginTouchEvent] {
+        &self.events.begin
+    }
+
+    pub fn end(&self) -> &[ContactEndTouchEvent] {
+        &self.events.end
+    }
+
+    pub fn hit(&self) -> &[ContactHitEvent] {
+        &self.events.hit
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.events.begin.is_empty() && self.events.end.is_empty() && self.events.hit.is_empty()
+    }
+
+    pub fn to_owned(&self) -> Result<ContactEvents> {
+        let mut out = ContactEvents::default();
+        self.clone_into(&mut out)?;
+        Ok(out)
+    }
+
+    pub fn clone_into(&self, out: &mut ContactEvents) -> Result<()> {
+        let result = (|| {
+            super::clone_into(&self.events.begin, &mut out.begin)?;
+            super::clone_into(&self.events.end, &mut out.end)?;
+            super::clone_into(&self.events.hit, &mut out.hit)
+        })();
+        if result.is_err() {
+            out.begin.clear();
+            out.end.clear();
+            out.hit.clear();
+        }
+        result
+    }
 }
 
-fn contact_events_checked_impl(world: ffi::b2WorldId) -> ContactEvents {
-    crate::core::callback_state::assert_not_in_callback();
-    contact_events_snapshot_impl(world)
-}
-
-fn contact_events_into_checked_impl(world: ffi::b2WorldId, out: &mut ContactEvents) {
-    crate::core::callback_state::assert_not_in_callback();
-    contact_events_into_impl(world, out);
-}
-
-fn try_contact_events_impl(world: ffi::b2WorldId) -> crate::error::ApiResult<ContactEvents> {
-    crate::core::callback_state::check_not_in_callback()?;
-    Ok(contact_events_snapshot_impl(world))
-}
-
-fn try_contact_events_into_impl(
-    world: ffi::b2WorldId,
+pub(super) fn capture(
     out: &mut ContactEvents,
-) -> crate::error::ApiResult<()> {
-    crate::core::callback_state::check_not_in_callback()?;
-    contact_events_into_impl(world, out);
-    Ok(())
+    raw: ffi::b2ContactEvents,
+    core: &WorldCore,
+    contact_epoch: ContactEpoch,
+) -> Result<()> {
+    // SAFETY: The completed-step capability prevents mutation while these slices are mapped.
+    let begin = unsafe { super::ffi_slice(raw.beginEvents, raw.beginCount) }?;
+    // SAFETY: Same completed-step lifetime as `begin`.
+    let end = unsafe { super::ffi_slice(raw.endEvents, raw.endCount) }?;
+    // SAFETY: Same completed-step lifetime as `begin`.
+    let hit = unsafe { super::ffi_slice(raw.hitEvents, raw.hitCount) }?;
+
+    if begin.is_empty() && end.is_empty() && hit.is_empty() {
+        out.begin.clear();
+        out.end.clear();
+        out.hit.clear();
+        return Ok(());
+    }
+
+    let result = (|| {
+        super::prepare_mapped(&mut out.begin, begin.len())?;
+        super::prepare_mapped(&mut out.end, end.len())?;
+        super::prepare_mapped(&mut out.hit, hit.len())?;
+        core.with_output_identity_resolver(|identities| {
+            super::extend_mapped(&mut out.begin, begin, |event| {
+                ContactBeginTouchEvent::from_raw(identities, contact_epoch, *event)
+            })?;
+            super::extend_mapped(&mut out.end, end, |event| {
+                ContactEndTouchEvent::from_raw(identities, contact_epoch, *event)
+            })?;
+            super::extend_mapped(&mut out.hit, hit, |event| {
+                ContactHitEvent::from_raw(identities, contact_epoch, *event)
+            })
+        })
+    })();
+    if result.is_err() {
+        out.begin.clear();
+        out.end.clear();
+        out.hit.clear();
+    }
+    result
 }
 
-impl World {
-    pub fn contact_events(&self) -> ContactEvents {
-        contact_events_checked_impl(self.raw())
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn valid_hit() -> ffi::b2ContactHitEvent {
+        ffi::b2ContactHitEvent {
+            shapeIdA: ffi::b2ShapeId {
+                index1: 0,
+                world0: 0,
+                generation: 0,
+            },
+            shapeIdB: ffi::b2ShapeId {
+                index1: 0,
+                world0: 0,
+                generation: 0,
+            },
+            contactId: ffi::b2ContactId {
+                index1: 0,
+                world0: 0,
+                padding: 0,
+                generation: 0,
+            },
+            point: Position::ZERO.into_raw(),
+            normal: ffi::b2Vec2 { x: 1.0, y: 0.0 },
+            approachSpeed: 1.0,
+        }
     }
 
-    pub fn contact_events_into(&self, out: &mut ContactEvents) {
-        contact_events_into_checked_impl(self.raw(), out);
-    }
+    #[test]
+    fn native_hit_geometry_fails_closed() {
+        assert!(validate_native_hit_geometry(valid_hit()).is_ok());
 
-    pub fn try_contact_events(&self) -> crate::error::ApiResult<ContactEvents> {
-        try_contact_events_impl(self.raw())
-    }
+        let mut invalid_point = valid_hit();
+        invalid_point.point.x = crate::WorldScalar::NAN;
+        assert!(matches!(
+            validate_native_hit_geometry(invalid_point),
+            Err(crate::Error::InvalidNativeOutput {
+                output: "hit.point",
+                ..
+            })
+        ));
 
-    pub fn try_contact_events_into(&self, out: &mut ContactEvents) -> crate::error::ApiResult<()> {
-        try_contact_events_into_impl(self.raw(), out)
-    }
-}
+        let mut invalid_normal = valid_hit();
+        invalid_normal.normal.x = 2.0;
+        assert!(matches!(
+            validate_native_hit_geometry(invalid_normal),
+            Err(crate::Error::InvalidNativeOutput {
+                output: "hit.normal",
+                ..
+            })
+        ));
 
-impl WorldHandle {
-    pub fn contact_events(&self) -> ContactEvents {
-        contact_events_checked_impl(self.raw())
-    }
-
-    pub fn contact_events_into(&self, out: &mut ContactEvents) {
-        contact_events_into_checked_impl(self.raw(), out);
-    }
-
-    pub fn try_contact_events(&self) -> crate::error::ApiResult<ContactEvents> {
-        try_contact_events_impl(self.raw())
-    }
-
-    pub fn try_contact_events_into(&self, out: &mut ContactEvents) -> crate::error::ApiResult<()> {
-        try_contact_events_into_impl(self.raw(), out)
-    }
-}
-
-impl World {
-    /// Low-level raw view over contact events (borrows Box2D's internal buffers).
-    ///
-    /// # Safety
-    /// The returned slices borrow internal Box2D buffers. While `f` runs, you must not perform
-    /// any operation that can mutate those buffers (e.g. stepping the world or destroying bodies).
-    ///
-    /// Dropping `Owned*` handles inside `f` is OK; destruction is deferred until after this call.
-    pub unsafe fn with_contact_events_raw<T>(
-        &self,
-        f: impl FnOnce(
-            &[ffi::b2ContactBeginTouchEvent],
-            &[ffi::b2ContactEndTouchEvent],
-            &[ffi::b2ContactHitEvent],
-        ) -> T,
-    ) -> T {
-        self.with_borrowed_event_buffers(|| {
-            // Low-level raw view over contact events.
-            // Exposes FFI slices directly; they are only valid within this call.
-            // Prefer `with_contact_events_view` for a safe, FFI-opaque interface.
-            let raw = unsafe { ffi::b2World_GetContactEvents(self.raw()) };
-            let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
-            } else {
-                &[][..]
-            };
-            let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
-            } else {
-                &[][..]
-            };
-            let hit = if raw.hitCount > 0 && !raw.hitEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.hitEvents, raw.hitCount as usize) }
-            } else {
-                &[][..]
-            };
-            f(begin, end, hit)
-        })
-    }
-
-    /// Low-level raw view over contact events with recoverable callback-lock checking.
-    ///
-    /// # Safety
-    /// Same safety contract as `with_contact_events_raw`.
-    pub unsafe fn try_with_contact_events_raw<T>(
-        &self,
-        f: impl FnOnce(
-            &[ffi::b2ContactBeginTouchEvent],
-            &[ffi::b2ContactEndTouchEvent],
-            &[ffi::b2ContactHitEvent],
-        ) -> T,
-    ) -> crate::error::ApiResult<T> {
-        self.try_with_borrowed_event_buffers(|| {
-            let raw = unsafe { ffi::b2World_GetContactEvents(self.raw()) };
-            let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
-            } else {
-                &[][..]
-            };
-            let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
-            } else {
-                &[][..]
-            };
-            let hit = if raw.hitCount > 0 && !raw.hitEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.hitEvents, raw.hitCount as usize) }
-            } else {
-                &[][..]
-            };
-            f(begin, end, hit)
-        })
-    }
-
-    /// Zero-copy view over contact events without exposing raw FFI types.
-    ///
-    /// While `f` runs, dropping `Owned*` handles does not destroy bodies/shapes immediately; the
-    /// destruction is deferred until after the view ends to keep the borrowed buffers valid.
-    ///
-    /// Example
-    /// ```rust
-    /// use boxdd::prelude::*;
-    /// let mut world = World::new(WorldDef::default()).unwrap();
-    /// world.with_contact_events_view(|begin, end, hit| {
-    ///     let nb = begin.count();
-    ///     let ne = end.count();
-    ///     let nh = hit.count();
-    ///     assert!(nb + ne + nh >= 0);
-    /// });
-    /// ```
-    pub fn with_contact_events_view<T>(
-        &self,
-        f: impl FnOnce(BeginIter<'_>, EndIter<'_>, HitIter<'_>) -> T,
-    ) -> T {
-        self.with_borrowed_event_buffers(|| {
-            let raw = unsafe { ffi::b2World_GetContactEvents(self.raw()) };
-            let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
-            } else {
-                &[][..]
-            };
-            let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
-            } else {
-                &[][..]
-            };
-            let hit = if raw.hitCount > 0 && !raw.hitEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.hitEvents, raw.hitCount as usize) }
-            } else {
-                &[][..]
-            };
-            f(
-                BeginIter(begin.iter()),
-                EndIter(end.iter()),
-                HitIter(hit.iter()),
-            )
-        })
-    }
-
-    /// Zero-copy view over contact events with recoverable callback-lock checking.
-    pub fn try_with_contact_events_view<T>(
-        &self,
-        f: impl FnOnce(BeginIter<'_>, EndIter<'_>, HitIter<'_>) -> T,
-    ) -> crate::error::ApiResult<T> {
-        self.try_with_borrowed_event_buffers(|| {
-            let raw = unsafe { ffi::b2World_GetContactEvents(self.raw()) };
-            let begin = if raw.beginCount > 0 && !raw.beginEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.beginEvents, raw.beginCount as usize) }
-            } else {
-                &[][..]
-            };
-            let end = if raw.endCount > 0 && !raw.endEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.endEvents, raw.endCount as usize) }
-            } else {
-                &[][..]
-            };
-            let hit = if raw.hitCount > 0 && !raw.hitEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.hitEvents, raw.hitCount as usize) }
-            } else {
-                &[][..]
-            };
-            f(
-                BeginIter(begin.iter()),
-                EndIter(end.iter()),
-                HitIter(hit.iter()),
-            )
-        })
+        let mut invalid_speed = valid_hit();
+        invalid_speed.approachSpeed = 0.0;
+        assert!(matches!(
+            validate_native_hit_geometry(invalid_speed),
+            Err(crate::Error::InvalidNativeOutput {
+                output: "hit.approach_speed",
+                ..
+            })
+        ));
     }
 }

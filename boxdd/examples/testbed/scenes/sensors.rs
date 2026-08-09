@@ -3,34 +3,56 @@ use boxdd as bd;
 pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     let sensor_body = app
         .world
-        .create_body_id(bd::BodyBuilder::new().position([0.0_f32, app.sensor_band_y]).build());
+        .create_body(
+            bd::BodyBuilder::from(app.foundation.body_def())
+                .position([0.0_f32, app.sensor_band_y])
+                .build()
+                .expect("valid testbed definition"),
+        )
+        .expect("valid testbed operation");
     app.created_bodies += 1;
     let sensor_def = bd::ShapeDef::builder()
         .density(0.0)
         .sensor(true)
         .enable_sensor_events(true)
-        .build();
-    let _ = app.world.create_polygon_shape_for(
-        sensor_body,
-        &sensor_def,
-        &bd::shapes::box_polygon(4.0, app.sensor_half_thickness),
-    );
+        .build()
+        .expect("valid testbed definition");
+    let _ = app
+        .world
+        .body(sensor_body)
+        .expect("valid testbed operation")
+        .create_polygon(
+            &sensor_def,
+            &bd::shapes::box_polygon(4.0, app.sensor_half_thickness)
+                .expect("valid polygon geometry"),
+        )
+        .expect("valid testbed operation");
     app.created_shapes += 1;
-    let mover = app.world.create_body_id(
-        bd::BodyBuilder::new()
-            .body_type(bd::BodyType::Dynamic)
-            .position([0.0_f32, app.sensor_mover_start_y])
-            .build(),
-    );
+    let mover = app
+        .world
+        .create_body(
+            bd::BodyBuilder::from(app.foundation.body_def())
+                .body_type(bd::BodyType::Dynamic)
+                .position([0.0_f32, app.sensor_mover_start_y])
+                .build()
+                .expect("valid testbed definition"),
+        )
+        .expect("valid testbed operation");
     app.created_bodies += 1;
-    let _ = app.world.create_circle_shape_for(
-        mover,
-        &bd::ShapeDef::builder()
-            .density(1.0)
-            .enable_sensor_events(true)
-            .build(),
-        &bd::shapes::circle([0.0_f32, 0.0], app.sensor_radius),
-    );
+    let _ = app
+        .world
+        .body(mover)
+        .expect("valid testbed operation")
+        .create_circle(
+            &bd::ShapeDef::builder()
+                .density(1.0)
+                .enable_sensor_events(true)
+                .build()
+                .expect("valid testbed definition"),
+            &bd::shapes::circle([0.0_f32, 0.0], app.sensor_radius)
+                .expect("sensor circle must be valid"),
+        )
+        .expect("valid testbed operation");
     app.created_shapes += 1;
 }
 

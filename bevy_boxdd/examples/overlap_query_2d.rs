@@ -14,12 +14,17 @@ struct Pickup;
 struct Probe;
 
 fn main() {
+    let foundation =
+        boxdd::Foundation::initialize_default().expect("Box2D foundation should initialize");
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(BoxddPhysicsPlugin::new(BoxddPhysicsSettings {
-            gravity: Vec2::ZERO,
-            ..Default::default()
-        }))
+        .add_plugins(BoxddPhysicsPlugin::new(
+            foundation,
+            BoxddPhysicsSettings {
+                gravity: Vec2::ZERO,
+                ..Default::default()
+            },
+        ))
         .add_systems(Startup, setup)
         .add_systems(Update, (move_probe, highlight_pickups).chain())
         .run();
@@ -56,18 +61,24 @@ fn move_probe(time: Res<Time>, mut probe: Single<&mut Transform, With<Probe>>) {
 
 fn highlight_pickups(
     mut context: NonSendMut<BoxddPhysicsContext>,
+    world_origin: Res<BoxddWorldOrigin>,
     probe: Single<&Transform, With<Probe>>,
     mut hits: Local<Vec<BoxddShapeHit>>,
     mut pickups: Query<(Entity, &mut Sprite), With<Pickup>>,
 ) {
     let center = probe.translation.truncate();
+    let Ok(origin) = world_origin.checked_local_to_absolute(center) else {
+        warn!("overlap probe is outside the active world-origin frame");
+        return;
+    };
     let aabb = boxdd::Aabb::from_center_half_extents(
-        center.to_boxdd_vec2(),
+        boxdd::Vec2::ZERO,
         PROBE_HALF_EXTENTS.to_boxdd_vec2(),
-    );
+    )
+    .expect("probe half-extents are positive and finite");
 
     if let Err(error) =
-        context.try_overlap_aabb_entities_into(aabb, boxdd::QueryFilter::default(), &mut hits)
+        context.overlap_aabb_entities_into(origin, aabb, boxdd::QueryFilter::default(), &mut hits)
     {
         warn!(?error, "overlap query failed");
         return;

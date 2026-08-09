@@ -4,33 +4,37 @@ members = [
     "boxdd",
     "boxdd-sys",
     "examples-wasm/provider-smoke",
+    "tools/abi-probe",
+    "tools/panic-abort-probe",
     "xtask",
 ]
 resolver = "3"
 
 [workspace.package]
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
+rust-version = "1.95"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Latias94/boxdd"
 homepage = "https://frankorz.com/boxdd/"
 documentation = "https://docs.rs/boxdd"
 
 [workspace.dependencies]
-boxdd = { version = "0.5.0", path = "boxdd" }
-boxdd-sys = { version = "0.5.0", path = "boxdd-sys" }
+boxdd = { version = "0.6.0", path = "boxdd" }
+boxdd-sys = { version = "0.6.0", path = "boxdd-sys" }
 thiserror = "2"
 mint = "0.5"
 smallvec = "1"
 serde = { version = "1", features = ["derive"] }
-cgmath = "0.18"
+toml = "0.9"
 nalgebra = "0.35"
 glam = "0.33"
 bytemuck = "1.25"
 serde_json = "1"
+semver = "1"
 cc = "1"
+ctest = "0.5.1"
 bindgen = "0.72"
-pkg-config = "0.3"
 flate2 = "1"
 tar = "0.4"
 bevy_app = "0.19.0"
@@ -38,8 +42,19 @@ bevy_ecs = "0.19.0"
 bevy_math = "0.19.0"
 bevy_time = "0.19.0"
 bevy_transform = "0.19.0"
+# Keep Bevy's transitive listener implementation above RUSTSEC-2026-0221.
+event-listener = "5.4.2"
 log = "0.4"
+libc = "0.2"
 static_assertions = "1"
+tempfile = "3"
+blake3 = "1"
+sha2 = "0.10"
+diffy = "0.5.1"
+object = { version = "0.37", default-features = false, features = ["read", "std"] }
+wasmparser = { version = "0.254", default-features = false }
+wasm-bindgen-cli-support = "=0.2.126"
+trybuild = "1.0.118"
 
 [profile.wasm-release]
 inherits = "release"
@@ -48,3 +63,11 @@ lto = "thin"
 codegen-units = 1
 panic = "abort"
 strip = "debuginfo"
+
+# Keep the abort-only callback probe isolated from the normal test profile. The probe is launched
+# by `boxdd`'s integration test and must compile both the binding and its callback closure with
+# `panic=abort` so a panic cannot be caught and resumed across the native C boundary.
+[profile.panic-abort-probe]
+inherits = "dev"
+panic = "abort"
+incremental = false

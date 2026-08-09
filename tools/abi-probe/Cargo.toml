@@ -1,0 +1,29 @@
+[package]
+name = "boxdd-abi-probe"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+license.workspace = true
+
+[features]
+default = []
+double-precision = ["boxdd-sys/double-precision"]
+
+[dependencies]
+# Workspace inheritance cannot disable dependency default features for this qualification fixture.
+boxdd-sys = { path = "../../boxdd-sys", default-features = false, features = ["build-from-source"] }
+
+[build-dependencies]
+cc.workspace = true
+ctest.workspace = true
+diffy.workspace = true
+sha2.workspace = true
+toml.workspace = true
+tempfile.workspace = true
+
+[[bin]]
+name = "abi-ctest"
+path = "src/bin/abi_ctest.rs"
+test = false
+doc = false

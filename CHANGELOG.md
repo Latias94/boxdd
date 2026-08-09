@@ -9,8 +9,174 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+This coordinated `boxdd`, `boxdd-sys`, and `bevy_boxdd` release targets the pinned Box2D 3.2.0
+development snapshot at
+`56edae79f2949d86142b03450d5d60f63bcf5a6f`.
+
+### Breaking Changes
+
+- `World` is now the only Safe Rust owner of a simulation. `WorldHandle`, `OwnedBody`,
+  `OwnedShape`, `OwnedJoint`, and `OwnedChain` were removed. Creation returns world-bound IDs;
+  `World::body`, `shape`, `joint`, `chain`, and `query` acquire borrow-scoped capabilities, and
+  destruction is explicit.
+- The duplicate panic/`try_*` surface was removed. Public operations that can fail use one
+  canonical `Result` API.
+- `RawBodyId`, `RawShapeId`, `RawJointId`, `RawChainId`, `RawContactId`, bind/unbind methods, and
+  raw live-ID getters were removed. Live IDs are opaque world-registration capabilities and are
+  neither raw interop values nor persistence keys.
+- Absolute world coordinates now use precision-aware `Position` and `WorldTransform`; `Vec2` and
+  `Transform` remain local `f32` values. Enabling `double-precision` changes the complete native
+  ABI and must be selected consistently across crates and providers.
+- World queries are exposed through a borrow-scoped `Query` capability. Overlap, ray, shape-cast,
+  and mover operations take an explicit absolute query origin; query hits and debug-draw points
+  use `Position`.
+- Standalone collision helpers now accept shape B relative to shape A and return `LocalManifold`.
+  Runtime `ManifoldPoint` values expose local anchors instead of an implicitly narrowed absolute
+  point.
+- `World::new`, the free `initialize_foundation` function, and the process-global
+  `set_length_units_per_meter` setter were removed. Call `Foundation::initialize` (or
+  `initialize_default`) before the first safe native use, then create worlds through the returned
+  root's `create_world` method.
+- `CallbackWorld` and the `_with_ctx` callback APIs were removed. Worker callbacks receive only
+  thread-safe IDs and values and cannot access owner-thread world state or typed user data.
+- `WorldDef` is a Rust-owned Safe configuration value. Raw native construction, raw task-system
+  callback setters, and retained task-system pointers were removed. `worker_count` uses validated
+  `WorkerCount`; native builds use Box2D's qualified built-in scheduler and current WASM adapters
+  support one worker.
+- The `serialize` feature, `serialize` module, registry-backed scene format, and
+  `scene_serialize` example were removed. They have no compatibility shim.
+- `SnapshotImage`, `SnapshotLoad`, `RecordingArtifact`, and all snapshot/recording byte import or
+  export methods were removed. Box2D v3 stores raw native object representations; Safe Rust now
+  exposes only same-world `Snapshot` restore and opaque process-local `Recording` replay.
+- `NativeRecordingError`, `Recording::native_stream_len`, and
+  `ReplayPlayer::native_stream_len` were removed. Native stream parsing and byte counts are private
+  implementation details rather than a public Box2D v3 wire-format contract.
+- `RecordingSession::set_custom_filter` and `RecordingSession::set_pre_solve` were removed because
+  recording cannot support those callbacks; callback wiring must be cleared before recording starts.
+- Body, shape, chain, and joint definitions no longer expose raw native definition storage or
+  public raw lowering guards. Derive scale-aware `WorldDef`, `BodyDef`, and `JointBase` values from
+  the initialized `Foundation`; use `boxdd-sys` directly when raw definition interop is required.
+- The permissive `pkg-config`, dynamic/name-only, and implicit system-library routes were removed.
+  Non-vendored providers are explicit, static, exact-manifest adapters.
+- Bevy transforms are local to a required `BoxddWorldOrigin` resource. Absolute queries, events,
+  debug draw data, and joint anchors use `boxdd::Position`.
+- `BoxddPhysicsPlugin` no longer has an implicit/default Foundation constructor. Initialize the
+  core Foundation first and pass it to `BoxddPhysicsPlugin::new(foundation, settings)`.
+- The optional `cgmath` feature and its conversion/error APIs were removed because `cgmath 0.18`
+  is unmaintained and affected by RustSec advisories RUSTSEC-2026-0196 and RUSTSEC-2026-0197.
+  Migrate interop code to `glam`, `nalgebra`, or `mint`.
+- `boxdd_sys::adapter::validate_snapshot` now returns `SnapshotValidationError`, separating a
+  rejected adapter identity from a native snapshot status. Match `SnapshotValidationError::Status`
+  when migrating code that previously compared the returned error directly with `SNAPSHOT_*`.
+- Native body and shape type getters return structured `Error::InvalidNativeBodyType { raw }` or
+  `Error::InvalidNativeShapeType { raw }` and terminalize the world before later native use. Joint
+  capabilities cache their authenticated type at acquisition; typed conversion returns
+  `Error::WrongJointType { expected, actual }` without another native kind query.
+- The public unchecked Safe-wrapper feature and module were removed. Integrations that need to
+  bypass Safe Rust invariants must use `boxdd-sys` and own the complete unsafe contract.
+- `Error::ReplayMixerIdentityMismatch` is now fieldless so the common `Result` representation does
+  not inline two rare, 64-byte diagnostic values. Inspect `Recording::mixer_identities()` and
+  `ReplayConfig::mixer_identities()` when reporting the expected and provided identities.
+
+### Added
+
+- Single- and double-precision generated bindings, ABI probes, world-space value types, and
+  scalar-correct `mint`, `nalgebra`, `glam`, and `bytemuck` interop.
+- `Foundation`, `FoundationConfig`, panic-contained process hooks, frozen initialization,
+  scale-aware world/body/joint defaults, activity diagnostics, and coordinated
+  ordinary/transient/exclusive-replay leases.
+- Validated `WorkerCount`, `WorldCapacity`, world bounds/capacity inspection, runtime worker-count
+  changes, contact recycling controls, orphan chain-segment handles, and zero-time-step behavior.
+- Borrow-scoped `Body`, `Shape`, `Joint`, `Chain`, and `Query` capabilities with one-time identity
+  validation, typed joint conversion, explicit destruction, and reusable query buffers.
+- `CompletedStep`, which keeps the world borrowed while lazily fetching and mapping each requested
+  event family at most once, plus explicit owned event snapshots for retention.
+- Transactional same-world `Snapshot` restore, RAII `RecordingSession`, opaque process-local
+  `Recording`, full-stream replay preflight, and epoch-bound `ReplayPlayer` views opened through
+  the explicit `Foundation`. Safe Rust does not expose Box2D v3 snapshot or recording bytes as a
+  persistence format.
+- `ReplayBodyView::body_type`, which reports an unknown native body type precisely and
+  terminalizes the replay before any later native operation.
+- Safe shape ray casts and standalone dynamic-tree AABB box casts through `TreeBoxCastInput`.
+- Owned `BodyDef` names and creation-time sleep-threshold access through `BodyBuilder` and
+  `BodyDef` getters.
+- `Query::cast_ray_closest_with_stats`, which retains broad-phase node/leaf visits on misses while
+  `Query::cast_ray_closest` returns `Option<RayResult>`. Bevy exposes the corresponding
+  entity-mapped result through `BoxddPhysicsContext::cast_ray_closest_entity_with_stats`.
+- `BoxddWorldOrigin`, checked local/absolute conversions, atomic origin rebasing, and origin-aware
+  Bevy transform, query, event, debug draw, and joint flows.
+- Cancellable queued Bevy snapshot restores that return their owned snapshot when an unsettled
+  origin or context binding would otherwise keep the request pending.
+- A structured conformance contract for pinned exported functions, ABI-bearing fields, and
+  callback capabilities.
+
+### Changed
+
+- Repository WASM provider tooling now pins Emscripten 6.0.4, including the upstream musl `qsort`
+  security backport. `boxdd-sys` consumers still use checked-in provider contracts and do not
+  download, discover, or execute the SDK.
+- `World`, borrow-scoped capabilities, callback owner state, snapshots, recording sessions, and
+  replay players are explicitly owner-thread-only. Worker callback state is a separate `Send +
+  Sync` capability with no world ownership.
+- All C-to-Rust callbacks share panic containment, callback-depth tracking, conservative fallback,
+  deferred destruction, and owner-boundary panic resumption.
+- Snapshots and recordings are opaque capabilities: snapshots restore only their originating
+  world, and recordings replay only inside the current process. Safe Rust exposes neither as
+  bytes or as a persistence format.
+- Output identity mapping now uses owner-local immutable snapshots, so worker callbacks resolve
+  object identities without accessing owner-thread state or contending on the mutable registry.
+- Vendored source is the default provider; attested system, authenticated prebuilt, WASM provider,
+  and compile-only WASM are distinct fail-closed adapters with no silent fallback.
+- Native package generation and local attestation moved from the published `boxdd-sys` crate to
+  `xtask`. Schema-v3 packages contain the materialized effective public headers used by the native
+  build, and build identity binds the exact static-archive SHA-256. Package bytes intentionally
+  differ from the old helper, which packaged unpatched submodule headers.
+- The workspace, package metadata, examples, interop features, and Bevy adapter target version
+  `0.6.0` together with Rust 1.95 MSRV.
+
 ### Fixed
+
+- Safe native output buffers reserve and validate actual capacity before C writes and publish only
+  initialized elements.
+- Wrong-world, recycled-slot, stale-generation, wrong-kind, and stale IDs are rejected before
+  native access or registry mutation.
+- Typed user-data closures no longer run under the global registry lock; conflicting reentry is
+  reported and closure panics do not poison later access.
+- Callback panics cannot unwind through C, and cleanup/drop panics are aggregated only after native
+  teardown and lease release.
+- Snapshot restore reconciles Safe IDs and typed user data transactionally; any failure after the
+  native restore begins leaves a terminal world instead of a partially live one.
+- Joint construction and runtime mutation validate finiteness, normalized axes, ordered limits,
+  same-world bodies, and joint-family invariants before Box2D assertions can fire.
+- Windows and Apple timer source overlays no longer use unsynchronized mutable function-local
+  caches; concurrent safe worlds and built-in scheduler workers cannot race those globals.
 - Windows prebuilt release artifacts now use explicit `md` / `mt` CRT suffixes, and CI fails if a release build produces an ambiguous package name.
+
+### Security
+
+- Runtime-capable adapters verify exact upstream SHA, precision, target, CRT/SIMD/validation
+  identity, source/archive digests, private ABI, snapshot layout, and recording contract before
+  Safe Rust creates native state.
+- Official native prebuilt and precision-specific WASM runtime packages require canonical,
+  repository/workflow/commit/tag/run-bound signed provenance statements covering the exact outer
+  archives and complete member inventories. Qualification verifies each statement and archive
+  before extraction. `boxdd-sys` then re-verifies native inputs before linking, while WASM
+  qualification verifies the extracted identity before loading JavaScript or instantiating a
+  module under Node and Chromium. Caller-generated system manifests are explicitly local trust
+  statements, not project authentication.
+- Opaque captured snapshot payloads and native recording-writer output are structurally and
+  semantically preflighted before native restore or replay allocation; Safe Rust accepts no
+  external snapshot or recording bytes.
+- The private snapshot validator authorizes the linked runtime adapter before passing Rust-owned
+  `SnapshotFacts` or `SnapshotEntry` output storage across the FFI boundary.
+- The unmaintained, unsound optional `cgmath` integration was removed, and the yanked transitive
+  `spin 0.10.0` package was advanced exactly to `0.10.1`; no general lockfile update was performed.
+
+### Migration Notes
+
+- This release intentionally provides no compatibility shims for obsolete 0.5 semantics.
+- Follow [`bevy_boxdd/MIGRATION.md`](bevy_boxdd/MIGRATION.md) for API-by-API replacements,
+  unsupported boundaries, provider selection, persistence, and Bevy world-origin migration.
 
 ## [0.5.0] - 2026-07-06
 

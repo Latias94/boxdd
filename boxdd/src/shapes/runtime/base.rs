@@ -1,8 +1,5 @@
 use super::*;
-
-fn shape_type_from_ffi(raw: ffi::b2ShapeType) -> ShapeType {
-    ShapeType::from_raw(raw).expect("Box2D returned an unknown shape type")
-}
+use crate::types::{Position, WorldCastOutput};
 
 #[inline]
 pub(crate) fn raw_shape_id(id: ShapeId) -> ffi::b2ShapeId {
@@ -10,118 +7,151 @@ pub(crate) fn raw_shape_id(id: ShapeId) -> ffi::b2ShapeId {
 }
 
 #[inline]
-pub(crate) fn raw_chain_id(id: ChainId) -> ffi::b2ChainId {
-    id.into_raw()
-}
-
-#[inline]
-pub(crate) fn shape_world_id_impl(id: ShapeId) -> ffi::b2WorldId {
-    unsafe { ffi::b2Shape_GetWorld(raw_shape_id(id)) }
-}
-
-#[inline]
-pub(crate) fn shape_parent_chain_id_impl(id: ShapeId) -> Option<ChainId> {
-    let chain_id = ChainId::from_raw(unsafe { ffi::b2Shape_GetParentChain(raw_shape_id(id)) });
-    if unsafe { ffi::b2Chain_IsValid(raw_chain_id(chain_id)) } {
-        Some(chain_id)
-    } else {
-        None
+fn bind_shape_parent_chain_output(
+    resolver: &crate::core::identity_registry::OutputIdentityResolver<'_>,
+    raw: ffi::b2ChainId,
+) -> Result<Option<ChainId>> {
+    if raw.index1 == 0 {
+        return Ok(None);
     }
+    resolver.active_chain(raw).map(Some)
 }
 
 #[inline]
-pub(crate) fn shape_is_valid_impl(id: ShapeId) -> bool {
-    unsafe { ffi::b2Shape_IsValid(raw_shape_id(id)) }
+pub(crate) fn shape_parent_chain_id_in_impl(
+    shape: crate::world::ShapeCall<'_>,
+) -> Result<Option<ChainId>> {
+    let raw = unsafe { ffi::b2Shape_GetParentChain(raw_shape_id(shape.id())) };
+    shape.with_output_identity_resolver(|resolver| bind_shape_parent_chain_output(resolver, raw))
 }
 
 #[inline]
 pub(crate) fn shape_type_raw_impl(id: ShapeId) -> ffi::b2ShapeType {
+    #[cfg(test)]
+    {
+        SHAPE_GET_TYPE_CALLS.with(|calls| calls.set(calls.get().saturating_add(1)));
+        if let Some(raw) = SHAPE_GET_TYPE_OVERRIDE.with(core::cell::Cell::get) {
+            return raw;
+        }
+    }
     unsafe { ffi::b2Shape_GetType(raw_shape_id(id)) }
 }
 
-#[inline]
-pub(crate) fn shape_type_impl(id: ShapeId) -> ShapeType {
-    shape_type_from_ffi(shape_type_raw_impl(id))
+#[cfg(test)]
+thread_local! {
+    static SHAPE_GET_TYPE_OVERRIDE: core::cell::Cell<Option<ffi::b2ShapeType>> = const {
+        core::cell::Cell::new(None)
+    };
+    static SHAPE_GET_TYPE_CALLS: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
 }
 
 #[inline]
-pub(crate) fn shape_body_id_impl(id: ShapeId) -> BodyId {
-    BodyId::from_raw(unsafe { ffi::b2Shape_GetBody(raw_shape_id(id)) })
+pub(crate) fn shape_body_id_in_impl(shape: crate::world::ShapeCall<'_>) -> Result<BodyId> {
+    let raw = unsafe { ffi::b2Shape_GetBody(raw_shape_id(shape.id())) };
+    shape.with_output_identity_resolver(|resolver| resolver.active_body(raw))
 }
 
 #[inline]
-pub(crate) fn shape_circle_impl(id: ShapeId) -> Circle {
-    Circle::from_raw(unsafe { ffi::b2Shape_GetCircle(raw_shape_id(id)) })
+pub(crate) fn shape_circle_impl(id: ShapeId) -> Result<Circle> {
+    Circle::from_raw(unsafe { ffi::b2Shape_GetCircle(raw_shape_id(id)) }).map_err(|_| {
+        Error::InvalidNativeOutput {
+            operation: "Shape::circle",
+            output: "circle",
+            constraint: "valid circle geometry",
+        }
+    })
 }
 
 #[inline]
-pub(crate) fn shape_segment_impl(id: ShapeId) -> Segment {
-    Segment::from_raw(unsafe { ffi::b2Shape_GetSegment(raw_shape_id(id)) })
+pub(crate) fn shape_segment_impl(id: ShapeId) -> Result<Segment> {
+    Segment::from_raw(unsafe { ffi::b2Shape_GetSegment(raw_shape_id(id)) }).map_err(|_| {
+        Error::InvalidNativeOutput {
+            operation: "Shape::segment",
+            output: "segment",
+            constraint: "valid non-degenerate segment geometry",
+        }
+    })
 }
 
 #[inline]
-pub(crate) fn shape_chain_segment_impl(id: ShapeId) -> ChainSegment {
-    ChainSegment::from_raw(unsafe { ffi::b2Shape_GetChainSegment(raw_shape_id(id)) })
+pub(crate) fn shape_chain_segment_impl(id: ShapeId) -> Result<ChainSegment> {
+    ChainSegment::from_raw(unsafe { ffi::b2Shape_GetChainSegment(raw_shape_id(id)) }).map_err(
+        |_| Error::InvalidNativeOutput {
+            operation: "Shape::chain_segment",
+            output: "chain_segment",
+            constraint: "valid chain-segment geometry",
+        },
+    )
 }
 
 #[inline]
-pub(crate) fn shape_capsule_impl(id: ShapeId) -> Capsule {
-    Capsule::from_raw(unsafe { ffi::b2Shape_GetCapsule(raw_shape_id(id)) })
+pub(crate) fn shape_capsule_impl(id: ShapeId) -> Result<Capsule> {
+    Capsule::from_raw(unsafe { ffi::b2Shape_GetCapsule(raw_shape_id(id)) }).map_err(|_| {
+        Error::InvalidNativeOutput {
+            operation: "Shape::capsule",
+            output: "capsule",
+            constraint: "valid capsule geometry",
+        }
+    })
 }
 
 #[inline]
-pub(crate) fn shape_polygon_impl(id: ShapeId) -> Polygon {
-    Polygon::from_raw(unsafe { ffi::b2Shape_GetPolygon(raw_shape_id(id)) })
+pub(crate) fn shape_polygon_impl(id: ShapeId) -> Result<Polygon> {
+    Polygon::from_raw(unsafe { ffi::b2Shape_GetPolygon(raw_shape_id(id)) }).map_err(|_| {
+        Error::InvalidNativeOutput {
+            operation: "Shape::polygon",
+            output: "polygon",
+            constraint: "valid convex polygon geometry",
+        }
+    })
 }
 
 #[inline]
-pub(crate) fn shape_closest_point_impl<V: Into<Vec2>>(id: ShapeId, target: V) -> Vec2 {
-    let target: ffi::b2Vec2 = target.into().into_raw();
-    Vec2::from_raw(unsafe { ffi::b2Shape_GetClosestPoint(raw_shape_id(id), target) })
+pub(crate) fn shape_closest_point_impl<P: Into<Position>>(
+    id: ShapeId,
+    target: P,
+) -> Result<Position> {
+    let target: ffi::b2Pos = target.into().into_raw();
+    crate::body::check_valid_native_body_position(
+        "Shape::closest_point",
+        "closest_point",
+        Position::from_raw(unsafe { ffi::b2Shape_GetClosestPoint(raw_shape_id(id), target) }),
+    )
 }
 
 #[inline]
-pub(crate) fn shape_aabb_impl(id: ShapeId) -> Aabb {
-    Aabb::from_raw(unsafe { ffi::b2Shape_GetAABB(raw_shape_id(id)) })
+pub(crate) fn shape_aabb_impl(id: ShapeId) -> Result<Aabb> {
+    Aabb::from_raw(unsafe { ffi::b2Shape_GetAABB(raw_shape_id(id)) }).map_err(|_| {
+        Error::InvalidNativeOutput {
+            operation: "Shape::aabb",
+            output: "aabb",
+            constraint: "finite ordered lower and upper bounds",
+        }
+    })
 }
 
 #[inline]
-pub(crate) fn shape_test_point_impl<V: Into<Vec2>>(id: ShapeId, point: V) -> bool {
-    let point: ffi::b2Vec2 = point.into().into_raw();
+pub(crate) fn shape_test_point_impl<P: Into<Position>>(id: ShapeId, point: P) -> bool {
+    let point: ffi::b2Pos = point.into().into_raw();
     unsafe { ffi::b2Shape_TestPoint(raw_shape_id(id), point) }
 }
 
 #[inline]
-fn make_shape_ray_input<VO: Into<Vec2>, VT: Into<Vec2>>(
-    origin: VO,
-    translation: VT,
-) -> ffi::b2RayCastInput {
-    ffi::b2RayCastInput {
-        origin: origin.into().into_raw(),
-        translation: translation.into().into_raw(),
-        maxFraction: 1.0,
-    }
+pub(crate) fn shape_ray_cast_impl(
+    id: ShapeId,
+    origin: Position,
+    translation: Vec2,
+) -> Result<WorldCastOutput> {
+    let origin = origin.into_raw();
+    let translation = translation.into_raw();
+    WorldCastOutput::from_native("Shape::ray_cast", unsafe {
+        ffi::b2Shape_RayCast(raw_shape_id(id), origin, translation)
+    })
 }
 
 #[inline]
-pub(crate) fn shape_ray_cast_impl<VO: Into<Vec2>, VT: Into<Vec2>>(
-    id: ShapeId,
-    origin: VO,
-    translation: VT,
-) -> CastOutput {
-    let input = make_shape_ray_input(origin, translation);
-    CastOutput::from_raw(unsafe { ffi::b2Shape_RayCast(raw_shape_id(id), &input) })
-}
-
-#[inline]
-pub(crate) fn shape_apply_wind_impl<V: Into<Vec2>>(
-    id: ShapeId,
-    wind: V,
-    drag: f32,
-    lift: f32,
-    wake: bool,
-) {
-    let wind: ffi::b2Vec2 = wind.into().into_raw();
+pub(crate) fn shape_apply_wind_impl(id: ShapeId, wind: Vec2, drag: f32, lift: f32, wake: bool) {
+    let wind: ffi::b2Vec2 = wind.into_raw();
     unsafe { ffi::b2Shape_ApplyWind(raw_shape_id(id), wind, drag, lift, wake) }
 }
 
@@ -165,8 +195,10 @@ pub(crate) fn shape_is_sensor_impl(id: ShapeId) -> bool {
 }
 
 #[inline]
-pub(crate) fn shape_mass_data_impl(id: ShapeId) -> MassData {
-    MassData::from_raw(unsafe { ffi::b2Shape_ComputeMassData(raw_shape_id(id)) })
+pub(crate) fn shape_mass_data_impl(id: ShapeId) -> Result<MassData> {
+    MassData::from_native("Shape::mass_data", unsafe {
+        ffi::b2Shape_ComputeMassData(raw_shape_id(id))
+    })
 }
 
 #[inline]
@@ -215,8 +247,10 @@ pub(crate) fn shape_set_density_impl(id: ShapeId, density: f32, update_body_mass
 }
 
 #[inline]
-pub(crate) fn shape_density_impl(id: ShapeId) -> f32 {
-    unsafe { ffi::b2Shape_GetDensity(raw_shape_id(id)) }
+pub(crate) fn shape_density_impl(id: ShapeId) -> Result<f32> {
+    check_native_shape_non_negative_scalar("Shape::density", "density", unsafe {
+        ffi::b2Shape_GetDensity(raw_shape_id(id))
+    })
 }
 
 #[inline]
@@ -225,8 +259,10 @@ pub(crate) fn shape_set_friction_impl(id: ShapeId, friction: f32) {
 }
 
 #[inline]
-pub(crate) fn shape_friction_impl(id: ShapeId) -> f32 {
-    unsafe { ffi::b2Shape_GetFriction(raw_shape_id(id)) }
+pub(crate) fn shape_friction_impl(id: ShapeId) -> Result<f32> {
+    check_native_shape_non_negative_scalar("Shape::friction", "friction", unsafe {
+        ffi::b2Shape_GetFriction(raw_shape_id(id))
+    })
 }
 
 #[inline]
@@ -235,8 +271,10 @@ pub(crate) fn shape_set_restitution_impl(id: ShapeId, restitution: f32) {
 }
 
 #[inline]
-pub(crate) fn shape_restitution_impl(id: ShapeId) -> f32 {
-    unsafe { ffi::b2Shape_GetRestitution(raw_shape_id(id)) }
+pub(crate) fn shape_restitution_impl(id: ShapeId) -> Result<f32> {
+    check_native_shape_non_negative_scalar("Shape::restitution", "restitution", unsafe {
+        ffi::b2Shape_GetRestitution(raw_shape_id(id))
+    })
 }
 
 #[inline]
@@ -255,6 +293,229 @@ pub(crate) fn shape_set_surface_material_impl(id: ShapeId, material: &SurfaceMat
 }
 
 #[inline]
-pub(crate) fn shape_surface_material_impl(id: ShapeId) -> SurfaceMaterial {
-    SurfaceMaterial::from_raw(unsafe { ffi::b2Shape_GetSurfaceMaterial(raw_shape_id(id)) })
+pub(crate) fn shape_surface_material_impl(id: ShapeId) -> Result<SurfaceMaterial> {
+    SurfaceMaterial::from_raw(unsafe { ffi::b2Shape_GetSurfaceMaterial(raw_shape_id(id)) }).map_err(
+        |_| Error::InvalidNativeOutput {
+            operation: "Shape::surface_material",
+            output: "surface_material",
+            constraint: "a valid finite surface material",
+        },
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct ShapeGetTypeOverride;
+
+    impl ShapeGetTypeOverride {
+        fn install(raw: ffi::b2ShapeType) -> Self {
+            SHAPE_GET_TYPE_OVERRIDE.with(|current| {
+                assert_eq!(current.replace(Some(raw)), None);
+            });
+            SHAPE_GET_TYPE_CALLS.with(|calls| calls.set(0));
+            Self
+        }
+
+        fn calls(&self) -> usize {
+            SHAPE_GET_TYPE_CALLS.with(core::cell::Cell::get)
+        }
+    }
+
+    impl Drop for ShapeGetTypeOverride {
+        fn drop(&mut self) {
+            SHAPE_GET_TYPE_OVERRIDE.with(|current| current.set(None));
+            SHAPE_GET_TYPE_CALLS.with(|calls| calls.set(0));
+        }
+    }
+
+    #[test]
+    fn shape_type_native_decoder_preserves_known_values_and_reports_the_raw_unknown() {
+        for expected in [
+            ShapeType::Circle,
+            ShapeType::Capsule,
+            ShapeType::Segment,
+            ShapeType::Polygon,
+            ShapeType::ChainSegment,
+        ] {
+            assert_eq!(ShapeType::decode_native(expected.into_raw()), Ok(expected));
+        }
+
+        let raw = ffi::b2ShapeType_b2_shapeTypeCount;
+        assert_eq!(
+            ShapeType::decode_native(raw),
+            Err(Error::InvalidNativeShapeType { raw })
+        );
+    }
+
+    #[test]
+    fn shape_acquisition_reports_unknown_type_once_then_stops_before_get_type() {
+        let raw = ffi::b2ShapeType_b2_shapeTypeCount;
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let body = world
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_builder()
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        let shape = world
+            .body(body)
+            .unwrap()
+            .create_centered_circle(&ShapeDef::default(), 0.5)
+            .unwrap();
+        let get_type = ShapeGetTypeOverride::install(raw);
+
+        assert_eq!(
+            world.shape(shape).err(),
+            Some(Error::InvalidNativeShapeType { raw })
+        );
+        assert_eq!(get_type.calls(), 1);
+        assert_eq!(world.shape(shape).err(), Some(Error::WorldPoisoned));
+        assert_eq!(get_type.calls(), 1);
+    }
+
+    #[test]
+    fn shape_type_is_authenticated_once_per_capability() {
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let body = world
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_builder()
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        let shape = world
+            .body(body)
+            .unwrap()
+            .create_centered_circle(&ShapeDef::default(), 0.5)
+            .unwrap();
+        let get_type = ShapeGetTypeOverride::install(ShapeType::Circle.into_raw());
+        let shape = world.shape(shape).unwrap();
+
+        assert_eq!(get_type.calls(), 1);
+        assert_eq!(shape.shape_type(), Ok(ShapeType::Circle));
+        assert_eq!(
+            shape.circle(),
+            Ok(crate::shapes::circle([0.0, 0.0], 0.5).unwrap())
+        );
+        assert_eq!(get_type.calls(), 1);
+    }
+
+    #[test]
+    fn shape_world_queries_match_box2d_32_signatures() {
+        type PointQuery = unsafe extern "C" fn(ffi::b2ShapeId, ffi::b2Pos) -> bool;
+        type ClosestPoint = unsafe extern "C" fn(ffi::b2ShapeId, ffi::b2Pos) -> ffi::b2Pos;
+        type RayCast =
+            unsafe extern "C" fn(ffi::b2ShapeId, ffi::b2Pos, ffi::b2Vec2) -> ffi::b2WorldCastOutput;
+
+        let _: PointQuery = ffi::b2Shape_TestPoint;
+        let _: ClosestPoint = ffi::b2Shape_GetClosestPoint;
+        let _: RayCast = ffi::b2Shape_RayCast;
+    }
+
+    #[test]
+    fn shape_body_output_rejects_null_and_foreign_native_ids() {
+        let world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let world0 = world.core().brand().world0();
+
+        assert_eq!(
+            world
+                .core()
+                .with_output_identity_resolver(|resolver| {
+                    resolver.active_body(ffi::b2BodyId {
+                        index1: 0,
+                        world0,
+                        generation: 0,
+                    })
+                })
+                .unwrap_err(),
+            Error::InvalidBodyId
+        );
+        assert_eq!(
+            world
+                .core()
+                .with_output_identity_resolver(|resolver| {
+                    resolver.active_body(ffi::b2BodyId {
+                        index1: 1,
+                        world0: world0.wrapping_add(1),
+                        generation: 0,
+                    })
+                })
+                .unwrap_err(),
+            Error::WrongWorld
+        );
+    }
+
+    #[test]
+    fn shape_parent_chain_output_distinguishes_absent_and_foreign_ids() {
+        let world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let world0 = world.core().brand().world0();
+
+        assert_eq!(
+            world
+                .core()
+                .with_output_identity_resolver(|resolver| {
+                    bind_shape_parent_chain_output(
+                        resolver,
+                        ffi::b2ChainId {
+                            index1: 0,
+                            world0: 0,
+                            generation: 0,
+                        },
+                    )
+                })
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            world
+                .core()
+                .with_output_identity_resolver(|resolver| {
+                    bind_shape_parent_chain_output(
+                        resolver,
+                        ffi::b2ChainId {
+                            index1: 1,
+                            world0: world0.wrapping_add(1),
+                            generation: 0,
+                        },
+                    )
+                })
+                .unwrap_err(),
+            Error::WrongWorld
+        );
+    }
 }

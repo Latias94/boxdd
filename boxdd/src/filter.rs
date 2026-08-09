@@ -10,11 +10,17 @@ pub struct Filter {
 
 impl Default for Filter {
     fn default() -> Self {
-        Self::from_raw(unsafe { ffi::b2DefaultFilter() })
+        Self::from_raw(crate::core::native_defaults::filter())
     }
 }
 
 impl Filter {
+    /// Create a collision filter using Box2D's defaults.
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     #[inline]
     /// Construct from the raw Box2D filter value.
     pub const fn from_raw(raw: ffi::b2Filter) -> Self {

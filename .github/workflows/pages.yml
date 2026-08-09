@@ -2,13 +2,11 @@ name: Pages
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: github-pages
@@ -17,61 +15,94 @@ concurrency:
 jobs:
   build:
     name: Build and upload static site
-    runs-on: ubuntu-latest
-    env:
-      EMSDK_VERSION: "6.0.2"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           submodules: recursive
+          persist-credentials: false
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
         with:
+          toolchain: 1.97.1
           targets: wasm32-unknown-unknown
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
-      - name: Install wasm-bindgen CLI
-        run: cargo install wasm-bindgen-cli --version 0.2.126 --locked
-
-      - name: Install Emscripten SDK
+      - name: Install Emscripten
         shell: bash
+        env:
+          EMSCRIPTEN_VERSION: "6.0.4"
+          EMSDK_REVISION: 224ec5f9f2f72f09f9ce0e26d66bae7dbd8b692f
         run: |
           set -euo pipefail
-          git clone --depth 1 --branch "${EMSDK_VERSION}" https://github.com/emscripten-core/emsdk.git "${RUNNER_TEMP}/emsdk"
-          "${RUNNER_TEMP}/emsdk/emsdk" install "${EMSDK_VERSION}"
-          "${RUNNER_TEMP}/emsdk/emsdk" activate "${EMSDK_VERSION}"
-          echo "EMSDK=${RUNNER_TEMP}/emsdk" >> "$GITHUB_ENV"
-          echo "${RUNNER_TEMP}/emsdk" >> "$GITHUB_PATH"
-          echo "${RUNNER_TEMP}/emsdk/upstream/emscripten" >> "$GITHUB_PATH"
-          echo "${RUNNER_TEMP}/emsdk/upstream/bin" >> "$GITHUB_PATH"
+          sdk_root="${RUNNER_TEMP}/emsdk"
+          git init "${sdk_root}"
+          git -C "${sdk_root}" remote add origin https://github.com/emscripten-core/emsdk.git
+          git -C "${sdk_root}" fetch --depth 1 origin "${EMSDK_REVISION}"
+          git -C "${sdk_root}" checkout --detach FETCH_HEAD
+          "${sdk_root}/emsdk" install "${EMSCRIPTEN_VERSION}"
+          "${sdk_root}/emsdk" activate "${EMSCRIPTEN_VERSION}"
+          source "${sdk_root}/emsdk_env.sh"
+          {
+            printf 'EMSDK=%s\n' "${EMSDK}"
+            printf 'EM_CONFIG=%s\n' "${EM_CONFIG}"
+            printf 'EMSDK_NODE=%s\n' "${EMSDK_NODE}"
+          } >> "${GITHUB_ENV}"
+          {
+            dirname "$(command -v emcc)"
+            dirname "$(command -v node)"
+            dirname "$(command -v npm)"
+            dirname "$(command -v wasm-opt)"
+          } >> "${GITHUB_PATH}"
 
       - name: Build Pages WASM assets
-        run: cargo run -p xtask -- build-pages-wasm
+        run: cargo run --locked -p xtask -- build-pages-wasm
 
-      - name: Validate Pages content
-        run: cargo run -p xtask -- validate-pages
+      - name: Install Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: "22.16.0"
+          cache: npm
+
+      - name: Install browser test dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Prove published Pages runtime in Chromium
+        run: npm run test:pages-browser
+
+      - name: Validate commit-bound Pages content and runtime manifest
+        run: cargo run --locked -p xtask -- validate-pages
 
       - name: Configure Pages
-        uses: actions/configure-pages@v6
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v5
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: docs/pages
 
   deploy:
     name: Deploy
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/main' && github.ref_protected == true
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Deploy Pages
         id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5

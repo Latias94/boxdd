@@ -1,242 +1,214 @@
-use boxdd::{ContactEvents, SensorEvents, prelude::*, shapes};
+use boxdd::{prelude::*, shapes};
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
-fn body_and_shape_contact_data_into_reuses_buffer() {
-    let mut world = World::new(WorldDef::builder().gravity([0.0_f32, -10.0]).build()).unwrap();
-
-    let ground = world.create_body_id(BodyBuilder::new().build());
-    let _ground_shape = world.create_polygon_shape_for(
-        ground,
-        &ShapeDef::builder().density(0.0).build(),
-        &shapes::box_polygon(20.0, 0.5),
-    );
-
-    let body = world.create_body_owned(
-        BodyBuilder::new()
-            .body_type(BodyType::Dynamic)
-            .position([0.0_f32, 3.0])
-            .build(),
-    );
-    let shape = world.create_polygon_shape_for_owned(
-        body.id(),
-        &ShapeDef::builder().density(1.0).build(),
-        &shapes::box_polygon(0.5, 0.5),
-    );
-
-    let mut body_contacts = Vec::with_capacity(8);
-    let body_contacts_ptr = body_contacts.as_ptr();
-    body.contact_data_into(&mut body_contacts);
-    assert!(body_contacts.is_empty());
-    assert_eq!(body_contacts.as_ptr(), body_contacts_ptr);
-
-    let mut body_contacts_raw = Vec::with_capacity(8);
-    let body_contacts_raw_ptr = body_contacts_raw.as_ptr();
-    body.contact_data_raw_into(&mut body_contacts_raw);
-    assert!(body_contacts_raw.is_empty());
-    assert_eq!(body_contacts_raw.as_ptr(), body_contacts_raw_ptr);
-
-    let mut shape_contacts = Vec::with_capacity(8);
-    let shape_contacts_ptr = shape_contacts.as_ptr();
-    shape.contact_data_into(&mut shape_contacts);
-    assert!(shape_contacts.is_empty());
-    assert_eq!(shape_contacts.as_ptr(), shape_contacts_ptr);
-
-    let mut shape_contacts_raw = Vec::with_capacity(8);
-    let shape_contacts_raw_ptr = shape_contacts_raw.as_ptr();
-    shape.contact_data_raw_into(&mut shape_contacts_raw);
-    assert!(shape_contacts_raw.is_empty());
-    assert_eq!(shape_contacts_raw.as_ptr(), shape_contacts_raw_ptr);
-
-    for _ in 0..240 {
-        world.step(1.0 / 60.0, 4);
-        if !body.contact_data().is_empty() && !shape.contact_data().is_empty() {
-            break;
-        }
+fn shape_query_buffer_reuses_raw_and_mapped_storage_transactionally() {
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let mut expected = Vec::new();
+    for index in 0..12 {
+        let body = world
+            .create_body(
+                boxdd::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_builder()
+                    .position([index as f32 - 6.0, 0.0])
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        expected.push(
+            world
+                .body(body)
+                .unwrap()
+                .create_centered_circle(&ShapeDef::default(), 0.25)
+                .unwrap(),
+        );
     }
 
-    body.contact_data_into(&mut body_contacts);
-    assert!(!body_contacts.is_empty());
-    assert_eq!(body_contacts.as_ptr(), body_contacts_ptr);
-    assert!(body_contacts[0].manifold.points().len() <= 2);
-    body.try_contact_data_into(&mut body_contacts).unwrap();
-    assert!(!body_contacts.is_empty());
-
-    body.contact_data_raw_into(&mut body_contacts_raw);
-    assert!(!body_contacts_raw.is_empty());
-    assert_eq!(body_contacts_raw.as_ptr(), body_contacts_raw_ptr);
-    body.try_contact_data_raw_into(&mut body_contacts_raw)
+    let query = world.query().unwrap();
+    let mut buffer = ShapeQueryBuffer::with_capacity(16).unwrap();
+    let capacity = buffer.capacity();
+    query
+        .overlap_aabb_into(
+            Position::ZERO,
+            Aabb::new([-10.0_f32, -2.0], [10.0, 2.0]).unwrap(),
+            QueryFilter::default(),
+            &mut buffer,
+        )
         .unwrap();
-    assert!(!body_contacts_raw.is_empty());
+    assert_eq!(buffer.len(), expected.len());
+    assert!(expected.iter().all(|id| buffer.as_slice().contains(id)));
+    assert_eq!(buffer.capacity(), capacity);
+    let mapped_ptr = buffer.as_slice().as_ptr();
 
-    let converted_body_contact = ContactData::from_raw(body_contacts_raw[0]);
-    assert_eq!(converted_body_contact.manifold, body_contacts[0].manifold);
-    let converted_body_contact_raw = converted_body_contact.into_raw();
-    assert_eq!(
-        converted_body_contact_raw.contactId.index1,
-        body_contacts_raw[0].contactId.index1
-    );
-    assert_eq!(
-        converted_body_contact_raw.contactId.generation,
-        body_contacts_raw[0].contactId.generation
-    );
-    assert_eq!(
-        converted_body_contact_raw.shapeIdA.index1,
-        body_contacts_raw[0].shapeIdA.index1
-    );
-    assert_eq!(
-        converted_body_contact_raw.shapeIdB.index1,
-        body_contacts_raw[0].shapeIdB.index1
-    );
-    assert_eq!(
-        converted_body_contact_raw.manifold.pointCount,
-        body_contacts_raw[0].manifold.pointCount
-    );
-
-    shape.contact_data_into(&mut shape_contacts);
-    assert!(!shape_contacts.is_empty());
-    assert_eq!(shape_contacts.as_ptr(), shape_contacts_ptr);
-    assert!(shape_contacts[0].manifold.points().len() <= 2);
-    shape.try_contact_data_into(&mut shape_contacts).unwrap();
-    assert!(!shape_contacts.is_empty());
-
-    shape.contact_data_raw_into(&mut shape_contacts_raw);
-    assert!(!shape_contacts_raw.is_empty());
-    assert_eq!(shape_contacts_raw.as_ptr(), shape_contacts_raw_ptr);
-    shape
-        .try_contact_data_raw_into(&mut shape_contacts_raw)
+    query
+        .overlap_aabb_into(
+            Position::ZERO,
+            Aabb::new([-10.0_f32, -2.0], [10.0, 2.0]).unwrap(),
+            QueryFilter::default(),
+            &mut buffer,
+        )
         .unwrap();
-    assert!(!shape_contacts_raw.is_empty());
+    assert_eq!(buffer.capacity(), capacity);
+    assert_eq!(buffer.as_slice().as_ptr(), mapped_ptr);
 
-    let converted_shape_contact = ContactData::from_raw(shape_contacts_raw[0]);
-    assert_eq!(converted_shape_contact.manifold, shape_contacts[0].manifold);
+    assert_eq!(
+        Aabb::new([1.0_f32, 1.0], [-1.0, -1.0]).unwrap_err(),
+        Error::invalid_argument("Aabb::new", "aabb", "finite ordered lower and upper bounds",)
+    );
+    assert_eq!(buffer.len(), expected.len());
+    assert_eq!(buffer.capacity(), capacity);
+    assert_eq!(buffer.as_slice().as_ptr(), mapped_ptr);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
-fn sensor_overlap_into_reuses_buffer() {
-    let mut world = World::new(WorldDef::builder().gravity([0.0_f32, -10.0]).build()).unwrap();
-
-    let sensor_body = world.create_body_id(BodyBuilder::new().position([0.0_f32, 1.5]).build());
-    let sensor_shape = world.create_polygon_shape_for_owned(
-        sensor_body,
-        &ShapeDef::builder()
-            .density(0.0)
-            .sensor(true)
-            .enable_sensor_events(true)
-            .build(),
-        &shapes::box_polygon(2.0, 0.3),
-    );
-
-    let visitor_body = world.create_body_id(
-        BodyBuilder::new()
-            .body_type(BodyType::Dynamic)
-            .position([0.0_f32, 3.0])
-            .build(),
-    );
-    let _visitor_shape = world.create_circle_shape_for(
-        visitor_body,
-        &ShapeDef::builder()
-            .density(1.0)
-            .enable_sensor_events(true)
-            .build(),
-        &shapes::circle([0.0_f32, 0.0], 0.25),
-    );
-
-    let mut shape_overlaps = Vec::with_capacity(8);
-    let shape_overlaps_ptr = shape_overlaps.as_ptr();
-    sensor_shape.sensor_overlaps_into(&mut shape_overlaps);
-    assert!(shape_overlaps.is_empty());
-    assert_eq!(shape_overlaps.as_ptr(), shape_overlaps_ptr);
-
-    let mut world_overlaps = Vec::with_capacity(8);
-    let world_overlaps_ptr = world_overlaps.as_ptr();
-    world.shape_sensor_overlaps_into(sensor_shape.id(), &mut world_overlaps);
-    assert!(world_overlaps.is_empty());
-    assert_eq!(world_overlaps.as_ptr(), world_overlaps_ptr);
-
-    for _ in 0..240 {
-        world.step(1.0 / 120.0, 8);
-        if !world.shape_sensor_overlaps(sensor_shape.id()).is_empty() {
-            break;
-        }
+fn ray_query_buffer_reuses_storage_for_repeated_casts() {
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    for index in 0..8 {
+        let body = world
+            .create_body(
+                boxdd::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_builder()
+                    .position([index as f32 * 1.5, 0.0])
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        world
+            .body(body)
+            .unwrap()
+            .create_box(&ShapeDef::default(), 0.4, 0.4)
+            .unwrap();
     }
 
-    sensor_shape.sensor_overlaps_into(&mut shape_overlaps);
-    assert!(!shape_overlaps.is_empty());
-    assert_eq!(shape_overlaps.as_ptr(), shape_overlaps_ptr);
-    sensor_shape
-        .try_sensor_overlaps_into(&mut shape_overlaps)
+    let query = world.query().unwrap();
+    let mut buffer = RayQueryBuffer::with_capacity(16).unwrap();
+    let capacity = buffer.capacity();
+    query
+        .cast_ray_all_into(
+            Position::new(-2.0, 0.0),
+            [16.0_f32, 0.0],
+            QueryFilter::default(),
+            &mut buffer,
+        )
         .unwrap();
-    assert!(!shape_overlaps.is_empty());
+    assert_eq!(buffer.len(), 8);
+    assert_eq!(buffer.capacity(), capacity);
+    let mapped_ptr = buffer.as_slice().as_ptr();
 
-    let mut shape_overlaps_valid = Vec::with_capacity(8);
-    let shape_overlaps_valid_ptr = shape_overlaps_valid.as_ptr();
-    sensor_shape.sensor_overlaps_valid_into(&mut shape_overlaps_valid);
-    assert!(!shape_overlaps_valid.is_empty());
-    assert!(shape_overlaps_valid.len() <= shape_overlaps.len());
-    assert_eq!(shape_overlaps_valid.as_ptr(), shape_overlaps_valid_ptr);
-    sensor_shape
-        .try_sensor_overlaps_valid_into(&mut shape_overlaps_valid)
+    query
+        .cast_ray_all_into(
+            Position::new(-2.0, 0.0),
+            [16.0_f32, 0.0],
+            QueryFilter::default(),
+            &mut buffer,
+        )
         .unwrap();
-
-    world.shape_sensor_overlaps_into(sensor_shape.id(), &mut world_overlaps);
-    assert!(!world_overlaps.is_empty());
-    assert_eq!(world_overlaps.as_ptr(), world_overlaps_ptr);
-    world
-        .try_shape_sensor_overlaps_into(sensor_shape.id(), &mut world_overlaps)
-        .unwrap();
-
-    let mut world_overlaps_valid = Vec::with_capacity(8);
-    let world_overlaps_valid_ptr = world_overlaps_valid.as_ptr();
-    world.shape_sensor_overlaps_valid_into(sensor_shape.id(), &mut world_overlaps_valid);
-    assert!(!world_overlaps_valid.is_empty());
-    assert!(world_overlaps_valid.len() <= world_overlaps.len());
-    assert_eq!(world_overlaps_valid.as_ptr(), world_overlaps_valid_ptr);
-    world
-        .try_shape_sensor_overlaps_valid_into(sensor_shape.id(), &mut world_overlaps_valid)
-        .unwrap();
+    assert_eq!(buffer.len(), 8);
+    assert_eq!(buffer.capacity(), capacity);
+    assert_eq!(buffer.as_slice().as_ptr(), mapped_ptr);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
-fn chain_segments_into_reuses_buffer() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let body = world.create_body_id(BodyBuilder::new().build());
-    let chain = world.create_chain_for_owned(
-        body,
-        &boxdd::shapes::chain::ChainDef::builder()
-            .points([
-                Vec2::new(-2.0, 0.0),
-                Vec2::new(-1.0, 0.0),
-                Vec2::new(1.0, 0.0),
-                Vec2::new(2.0, 0.0),
-            ])
-            .build(),
-    );
+fn mover_query_buffer_reuses_storage_for_collision_planes() {
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let ground = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_def(),
+        )
+        .unwrap();
+    world
+        .body(ground)
+        .unwrap()
+        .create_polygon(
+            &ShapeDef::default(),
+            &shapes::box_polygon(20.0, 0.5).unwrap(),
+        )
+        .unwrap();
 
-    let baseline = chain.segments();
-    assert!(!baseline.is_empty());
+    let query = world.query().unwrap();
+    let mut buffer = MoverQueryBuffer::with_capacity(8).unwrap();
+    let capacity = buffer.capacity();
+    query
+        .collide_mover_into(
+            Position::ZERO,
+            [0.0_f32, 0.7],
+            [0.0_f32, 1.5],
+            0.25,
+            QueryFilter::default(),
+            &mut buffer,
+        )
+        .unwrap();
+    assert!(!buffer.is_empty());
+    assert_eq!(buffer.capacity(), capacity);
+    let mapped_ptr = buffer.as_slice().as_ptr();
 
-    let mut segments = Vec::with_capacity(8);
-    let segments_ptr = segments.as_ptr();
-    chain.segments_into(&mut segments);
-    assert_eq!(segments.len(), baseline.len());
-    assert_eq!(segments.as_ptr(), segments_ptr);
-
-    chain.try_segments_into(&mut segments).unwrap();
-    assert_eq!(segments.len(), baseline.len());
-    assert_eq!(segments.as_ptr(), segments_ptr);
+    query
+        .collide_mover_into(
+            Position::ZERO,
+            [0.0_f32, 0.7],
+            [0.0_f32, 1.5],
+            0.25,
+            QueryFilter::default(),
+            &mut buffer,
+        )
+        .unwrap();
+    assert!(!buffer.is_empty());
+    assert_eq!(buffer.capacity(), capacity);
+    assert_eq!(buffer.as_slice().as_ptr(), mapped_ptr);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn debug_draw_collect_into_reuses_command_and_vertex_buffers() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let body = world.create_body_id(BodyBuilder::new().build());
-    let _shape = world.create_polygon_shape_for_owned(
-        body,
-        &ShapeDef::default(),
-        &shapes::box_polygon(0.75, 0.5),
-    );
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let body = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_def(),
+        )
+        .unwrap();
+    world
+        .body(body)
+        .unwrap()
+        .create_box(&ShapeDef::default(), 0.75, 0.5)
+        .unwrap();
 
-    let opts = DebugDrawOptions {
+    let options = DebugDrawOptions {
         draw_joints: false,
         draw_joint_extras: false,
         draw_bounds: false,
@@ -252,274 +224,79 @@ fn debug_draw_collect_into_reuses_command_and_vertex_buffers() {
         ..DebugDrawOptions::default()
     };
 
-    let baseline = world.debug_draw_collect(opts);
+    let baseline = world.debug_draw_collect(options).unwrap();
     assert!(!baseline.is_empty());
+    let mut commands = Vec::with_capacity(baseline.len() + 4);
+    let commands_ptr = commands.as_ptr();
+    world
+        .debug_draw_collect_into(&mut commands, options)
+        .unwrap();
+    assert_eq!(commands.len(), baseline.len());
+    assert_eq!(commands.as_ptr(), commands_ptr);
 
-    let mut cmds = Vec::with_capacity(baseline.len() + 4);
-    let cmds_ptr = cmds.as_ptr();
-    world.debug_draw_collect_into(&mut cmds, opts);
-    assert_eq!(cmds.len(), baseline.len());
-    assert_eq!(cmds.as_ptr(), cmds_ptr);
-
-    let vertices_ptr = cmds
+    let vertices_ptr = commands
         .iter()
-        .find_map(|cmd| match cmd {
+        .find_map(|command| match command {
             DebugDrawCmd::Polygon { vertices, .. }
             | DebugDrawCmd::SolidPolygon { vertices, .. } => Some(vertices.as_ptr()),
             _ => None,
         })
         .expect("expected a polygon debug draw command");
 
-    world.debug_draw_collect_into(&mut cmds, opts);
-    assert_eq!(cmds.len(), baseline.len());
-    assert_eq!(cmds.as_ptr(), cmds_ptr);
-
-    let reused_vertices_ptr = cmds
+    world
+        .debug_draw_collect_into(&mut commands, options)
+        .unwrap();
+    let reused_vertices_ptr = commands
         .iter()
-        .find_map(|cmd| match cmd {
+        .find_map(|command| match command {
             DebugDrawCmd::Polygon { vertices, .. }
             | DebugDrawCmd::SolidPolygon { vertices, .. } => Some(vertices.as_ptr()),
             _ => None,
         })
         .expect("expected a polygon debug draw command");
-
+    assert_eq!(commands.as_ptr(), commands_ptr);
     assert_eq!(reused_vertices_ptr, vertices_ptr);
 }
 
 #[test]
-fn world_event_snapshots_into_reuse_buffers() {
-    {
-        let mut world = World::new(WorldDef::builder().gravity([0.0_f32, -10.0]).build()).unwrap();
-        let handle = world.handle();
-        let moving_body = world.create_body_id(
-            BodyBuilder::new()
+fn completed_step_event_views_clone_into_caller_owned_storage() {
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let moving_body = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_builder()
                 .body_type(BodyType::Dynamic)
                 .position([0.0_f32, 4.0])
                 .linear_velocity([1.0_f32, 0.0])
-                .build(),
-        );
-        let _moving_shape = world.create_circle_shape_for(
-            moving_body,
-            &ShapeDef::builder().density(1.0).build(),
-            &shapes::circle([0.0_f32, 0.0], 0.35),
-        );
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    world
+        .body(moving_body)
+        .unwrap()
+        .create_centered_circle(&ShapeDef::builder().density(1.0).build().unwrap(), 0.35)
+        .unwrap();
 
-        let mut body_events = Vec::with_capacity(8);
-        let body_events_ptr = body_events.as_ptr();
+    let completed = world.step(1.0 / 60.0, 4).unwrap();
+    let events = completed.body_events().unwrap();
+    assert!(!events.is_empty());
 
-        let body_baseline = loop {
-            world.step(1.0 / 60.0, 4);
-            let baseline = world.body_events();
-            if !baseline.is_empty() {
-                break baseline;
-            }
-        };
+    let mut owned = Vec::with_capacity(events.len() + 4);
+    let owned_ptr = owned.as_ptr();
+    events.clone_into(&mut owned).unwrap();
+    assert_eq!(owned.len(), events.len());
+    assert_eq!(owned.as_ptr(), owned_ptr);
 
-        world.body_events_into(&mut body_events);
-        assert_eq!(body_events.len(), body_baseline.len());
-        assert_eq!(body_events.as_ptr(), body_events_ptr);
-        world.try_body_events_into(&mut body_events).unwrap();
-        assert_eq!(body_events.len(), body_baseline.len());
-
-        handle.body_events_into(&mut body_events);
-        assert_eq!(body_events.len(), body_baseline.len());
-        assert_eq!(body_events.as_ptr(), body_events_ptr);
-        handle.try_body_events_into(&mut body_events).unwrap();
-        assert_eq!(body_events.len(), body_baseline.len());
-    }
-
-    {
-        let mut world = World::new(WorldDef::builder().gravity([0.0_f32, -10.0]).build()).unwrap();
-        let handle = world.handle();
-        let b1 = world.create_body_id(
-            BodyBuilder::new()
-                .body_type(BodyType::Dynamic)
-                .position([0.0_f32, 2.0])
-                .build(),
-        );
-        let b2 = world.create_body_id(
-            BodyBuilder::new()
-                .body_type(BodyType::Dynamic)
-                .position([0.0_f32, 3.5])
-                .build(),
-        );
-        let sdef = ShapeDef::builder()
-            .density(1.0)
-            .enable_contact_events(true)
-            .enable_hit_events(true)
-            .build();
-        let _s1 = world.create_polygon_shape_for(b1, &sdef, &shapes::box_polygon(0.5, 0.5));
-        let _s2 = world.create_polygon_shape_for(b2, &sdef, &shapes::box_polygon(0.5, 0.5));
-        world.set_body_linear_velocity(b1, [0.0_f32, 2.0]);
-        world.set_body_linear_velocity(b2, [0.0_f32, -2.0]);
-
-        let mut contact_events = ContactEvents {
-            begin: Vec::with_capacity(8),
-            end: Vec::with_capacity(8),
-            hit: Vec::with_capacity(8),
-        };
-        let contact_begin_ptr = contact_events.begin.as_ptr();
-        let contact_end_ptr = contact_events.end.as_ptr();
-        let contact_hit_ptr = contact_events.hit.as_ptr();
-
-        let contact_baseline = loop {
-            world.step(1.0 / 60.0, 4);
-            let baseline = world.contact_events();
-            if !baseline.begin.is_empty() {
-                break baseline;
-            }
-        };
-
-        world.contact_events_into(&mut contact_events);
-        assert_eq!(contact_events.begin.len(), contact_baseline.begin.len());
-        assert_eq!(contact_events.end.len(), contact_baseline.end.len());
-        assert_eq!(contact_events.hit.len(), contact_baseline.hit.len());
-        assert_eq!(contact_events.begin.as_ptr(), contact_begin_ptr);
-        assert_eq!(contact_events.end.as_ptr(), contact_end_ptr);
-        assert_eq!(contact_events.hit.as_ptr(), contact_hit_ptr);
-        world.try_contact_events_into(&mut contact_events).unwrap();
-        assert_eq!(contact_events.begin.len(), contact_baseline.begin.len());
-
-        handle.contact_events_into(&mut contact_events);
-        assert_eq!(contact_events.begin.len(), contact_baseline.begin.len());
-        assert_eq!(contact_events.end.len(), contact_baseline.end.len());
-        assert_eq!(contact_events.hit.len(), contact_baseline.hit.len());
-        assert_eq!(contact_events.begin.as_ptr(), contact_begin_ptr);
-        assert_eq!(contact_events.end.as_ptr(), contact_end_ptr);
-        assert_eq!(contact_events.hit.as_ptr(), contact_hit_ptr);
-        handle.try_contact_events_into(&mut contact_events).unwrap();
-        assert_eq!(contact_events.begin.len(), contact_baseline.begin.len());
-    }
-
-    {
-        let mut world = World::new(WorldDef::builder().build()).unwrap();
-        let handle = world.handle();
-        let wall = world.create_body_id(
-            BodyBuilder::new()
-                .body_type(BodyType::Static)
-                .position([1.5_f32, 11.0])
-                .build(),
-        );
-        let wall_shape_def = ShapeDef::builder().enable_sensor_events(true).build();
-        let _wall_shape =
-            world.create_polygon_shape_for(wall, &wall_shape_def, &shapes::box_polygon(0.5, 10.0));
-
-        let bullet = world.create_body_id(
-            BodyBuilder::new()
-                .body_type(BodyType::Dynamic)
-                .bullet(true)
-                .gravity_scale(0.0)
-                .position([7.39814_f32, 4.0])
-                .linear_velocity([-20.0_f32, 0.0])
-                .build(),
-        );
-        let bullet_shape_def = ShapeDef::builder()
-            .sensor(true)
-            .enable_sensor_events(true)
-            .build();
-        let circle = shapes::circle([0.0_f32, 0.0], 0.1);
-        let _bullet_shape = world.create_circle_shape_for(bullet, &bullet_shape_def, &circle);
-
-        let mut sensor_events = SensorEvents {
-            begin: Vec::with_capacity(8),
-            end: Vec::with_capacity(8),
-        };
-        let sensor_begin_ptr = sensor_events.begin.as_ptr();
-        let sensor_end_ptr = sensor_events.end.as_ptr();
-
-        let sensor_baseline = loop {
-            world.step(1.0 / 60.0, 4);
-            let baseline = world.sensor_events();
-            if !baseline.begin.is_empty() {
-                break baseline;
-            }
-        };
-
-        world.sensor_events_into(&mut sensor_events);
-        assert_eq!(sensor_events.begin.len(), sensor_baseline.begin.len());
-        assert_eq!(sensor_events.end.len(), sensor_baseline.end.len());
-        assert_eq!(sensor_events.begin.as_ptr(), sensor_begin_ptr);
-        assert_eq!(sensor_events.end.as_ptr(), sensor_end_ptr);
-        world.try_sensor_events_into(&mut sensor_events).unwrap();
-        assert_eq!(sensor_events.begin.len(), sensor_baseline.begin.len());
-
-        handle.sensor_events_into(&mut sensor_events);
-        assert_eq!(sensor_events.begin.len(), sensor_baseline.begin.len());
-        assert_eq!(sensor_events.end.len(), sensor_baseline.end.len());
-        assert_eq!(sensor_events.begin.as_ptr(), sensor_begin_ptr);
-        assert_eq!(sensor_events.end.as_ptr(), sensor_end_ptr);
-        handle.try_sensor_events_into(&mut sensor_events).unwrap();
-        assert_eq!(sensor_events.begin.len(), sensor_baseline.begin.len());
-    }
-
-    {
-        let mut world = World::new(WorldDef::builder().gravity([0.0_f32, -10.0]).build()).unwrap();
-        let handle = world.handle();
-        let joint_body_a = world.create_body_id(
-            BodyBuilder::new()
-                .body_type(BodyType::Dynamic)
-                .position([3.0_f32, 2.0])
-                .build(),
-        );
-        let joint_body_b = world.create_body_id(
-            BodyBuilder::new()
-                .body_type(BodyType::Dynamic)
-                .position([5.0_f32, 2.0])
-                .build(),
-        );
-        let mut joint = world
-            .distance(joint_body_a, joint_body_b)
-            .length(0.5)
-            .spring(8.0, 0.25)
-            .build_owned();
-        joint.set_force_threshold(0.0);
-
-        let mut joint_events = Vec::with_capacity(8);
-        let joint_events_ptr = joint_events.as_ptr();
-        let mut joint_baseline = Vec::new();
-        for _ in 0..240 {
-            world.step(1.0 / 60.0, 4);
-            joint_baseline = world.joint_events();
-            if !joint_baseline.is_empty() {
-                break;
-            }
-        }
-
-        world.joint_events_into(&mut joint_events);
-        assert_eq!(joint_events.len(), joint_baseline.len());
-        assert_eq!(joint_events.as_ptr(), joint_events_ptr);
-        world.try_joint_events_into(&mut joint_events).unwrap();
-        assert_eq!(joint_events.len(), joint_baseline.len());
-
-        handle.joint_events_into(&mut joint_events);
-        assert_eq!(joint_events.len(), joint_baseline.len());
-        assert_eq!(joint_events.as_ptr(), joint_events_ptr);
-        handle.try_joint_events_into(&mut joint_events).unwrap();
-        assert_eq!(joint_events.len(), joint_baseline.len());
-    }
-}
-
-#[test]
-fn shape_type_uses_safe_enum_and_explicit_raw_escape_hatch() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let body = world.create_body_id(BodyBuilder::new().build());
-    let circle = world.create_circle_shape_for_owned(
-        body,
-        &ShapeDef::default(),
-        &shapes::circle([0.0_f32, 0.0], 0.5),
-    );
-
-    assert_eq!(circle.shape_type(), ShapeType::Circle);
-    assert_eq!(
-        ShapeType::from_raw(boxdd_sys::ffi::b2ShapeType_b2_circleShape),
-        Some(ShapeType::Circle)
-    );
-    assert_eq!(
-        ShapeType::Circle.into_raw(),
-        boxdd_sys::ffi::b2ShapeType_b2_circleShape
-    );
-    assert_eq!(
-        circle.shape_type_raw(),
-        boxdd_sys::ffi::b2ShapeType_b2_circleShape
-    );
+    events.clone_into(&mut owned).unwrap();
+    assert_eq!(owned.len(), events.len());
+    assert_eq!(owned.as_ptr(), owned_ptr);
 }

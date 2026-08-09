@@ -4,9 +4,14 @@ use bevy::prelude::*;
 use bevy_boxdd::prelude::*;
 
 fn main() {
+    let foundation =
+        boxdd::Foundation::initialize_default().expect("Box2D foundation should initialize");
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(BoxddPhysicsPlugin::default())
+        .add_plugins(BoxddPhysicsPlugin::new(
+            foundation,
+            BoxddPhysicsSettings::default(),
+        ))
         .add_systems(Startup, setup)
         .add_systems(Update, report_debug_draw_commands)
         .run();
@@ -36,7 +41,7 @@ fn report_debug_draw_commands(
     }
 
     if let Err(error) =
-        context.try_debug_draw_collect_into(&mut commands, boxdd::DebugDrawOptions::default())
+        context.debug_draw_collect_into(&mut commands, boxdd::DebugDrawOptions::default())
     {
         warn!(?error, "debug draw collection failed");
         return;
@@ -63,7 +68,8 @@ fn report_debug_draw_commands(
             boxdd::DebugDrawCmd::SolidCapsule { .. }
             | boxdd::DebugDrawCmd::Transform(_)
             | boxdd::DebugDrawCmd::Point { .. }
-            | boxdd::DebugDrawCmd::String { .. } => {}
+            | boxdd::DebugDrawCmd::String { .. }
+            | boxdd::DebugDrawCmd::Bounds { .. } => {}
         }
     }
 

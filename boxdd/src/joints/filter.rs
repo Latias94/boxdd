@@ -1,40 +1,39 @@
-use crate::types::BodyId;
+use crate::JointId;
 use crate::world::World;
 use boxdd_sys::ffi;
 
-use super::{Joint, JointBase, OwnedJoint, raw_body_id};
-use crate::error::ApiResult;
+use super::JointBase;
+use crate::error::Result;
 
 // Filter joint (no params beyond base)
 #[derive(Clone, Debug)]
 /// Filter joint definition (maps to `b2FilterJointDef`). A lightweight joint
 /// used primarily for contact filtering scenarios.
-pub struct FilterJointDef(pub(crate) ffi::b2FilterJointDef);
+pub struct FilterJointDef {
+    base: JointBase,
+}
 
 impl FilterJointDef {
     pub fn new(base: JointBase) -> Self {
-        let mut def: ffi::b2FilterJointDef = unsafe { ffi::b2DefaultFilterJointDef() };
-        def.base = base.0;
-        Self(def)
+        Self { base }
     }
 
     #[inline]
-    pub fn from_raw(raw: ffi::b2FilterJointDef) -> Self {
-        Self(raw)
+    pub fn base(&self) -> &JointBase {
+        &self.base
     }
 
     #[inline]
-    pub fn base(&self) -> JointBase {
-        JointBase(self.0.base)
+    pub(crate) fn base_mut(&mut self) -> &mut JointBase {
+        &mut self.base
+    }
+
+    pub(crate) fn to_raw(&self) -> ffi::b2FilterJointDef {
+        crate::core::native_defaults::filter_joint_def(self.base.to_raw())
     }
 
     #[inline]
-    pub fn into_raw(self) -> ffi::b2FilterJointDef {
-        self.0
-    }
-
-    #[inline]
-    pub fn validate(&self) -> ApiResult<()> {
+    pub fn validate(&self) -> Result<()> {
         super::check_filter_joint_def_valid(self)
     }
 }
@@ -43,48 +42,17 @@ impl FilterJointDef {
 /// Fluent builder for filter joints.
 pub struct FilterJointBuilder<'w> {
     pub(crate) world: &'w mut World,
-    pub(crate) body_a: BodyId,
-    pub(crate) body_b: BodyId,
     pub(crate) def: FilterJointDef,
 }
 
 impl<'w> FilterJointBuilder<'w> {
     /// Whether the attached bodies should collide with each other.
     pub fn collide_connected(mut self, flag: bool) -> Self {
-        self.def.0.base.collideConnected = flag;
+        let base = *self.def.base();
+        *self.def.base_mut() = base.with_collide_connected(flag);
         self
     }
-    #[must_use]
-    pub fn build(mut self) -> Joint<'w> {
-        crate::core::debug_checks::assert_body_valid(self.body_a);
-        crate::core::debug_checks::assert_body_valid(self.body_b);
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
+    pub fn build(self) -> Result<JointId> {
         self.world.create_filter_joint(&self.def)
-    }
-
-    pub fn try_build(mut self) -> ApiResult<Joint<'w>> {
-        crate::core::debug_checks::check_body_valid(self.body_a)?;
-        crate::core::debug_checks::check_body_valid(self.body_b)?;
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.world.try_create_filter_joint(&self.def)
-    }
-
-    #[must_use]
-    pub fn build_owned(mut self) -> OwnedJoint {
-        crate::core::debug_checks::assert_body_valid(self.body_a);
-        crate::core::debug_checks::assert_body_valid(self.body_b);
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.world.create_filter_joint_owned(&self.def)
-    }
-
-    pub fn try_build_owned(mut self) -> ApiResult<OwnedJoint> {
-        crate::core::debug_checks::check_body_valid(self.body_a)?;
-        crate::core::debug_checks::check_body_valid(self.body_b)?;
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.world.try_create_filter_joint_owned(&self.def)
     }
 }

@@ -2,109 +2,43 @@
 use boxdd as bd;
 use dear_imgui_rs as imgui;
 
-// Re-export per-scene modules for callers
-pub mod shapes {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/shapes.rs"));
-}
-pub mod events {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/events.rs"));
-}
-pub mod robustness {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/robustness.rs"));
-}
-pub mod benchmark {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/benchmark.rs"));
-}
-pub mod determinism {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/determinism.rs"));
-}
-pub mod overlap_queries {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/examples/testbed/scenes/overlap_queries.rs"
-    ));
-}
-pub mod character_mover {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/character_mover.rs"));
-}
+// Re-export per-scene modules for callers.
+pub mod benchmark;
+pub mod character_mover;
+pub mod determinism;
+pub mod events;
+pub mod overlap_queries;
+pub mod robustness;
+pub mod shapes;
 // Unified labs and tools
-pub mod shape_distance {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/shape_distance.rs"));
-}
-pub mod joint_separation {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/joint_separation.rs"));
-}
-pub mod pyramid {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/pyramid.rs"));
-}
-pub mod stacking {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/stacking.rs"));
-}
-pub mod bridge {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/bridge.rs"));
-}
-pub mod car {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/car.rs"));
-}
-pub mod chain_walkway {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/chain_walkway.rs"));
-}
-pub mod sensors {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/sensors.rs"));
-}
-pub mod contacts {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/contacts.rs"));
-}
+pub mod bridge;
+pub mod car;
+pub mod chain_walkway;
+pub mod contacts;
+pub mod joint_separation;
+pub mod pyramid;
+pub mod sensors;
+pub mod shape_distance;
+pub mod stacking;
 // Continuous lab combines bullet/ghost/restitution/pinball/segment slide
-pub mod continuous_lab {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/continuous_lab.rs"));
-}
-pub mod joints_lab {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/joints_lab.rs"));
-}
-pub mod soft_body {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/soft_body.rs"));
-}
-pub mod convex_hull {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/convex_hull.rs"));
-}
+pub mod continuous_lab;
+pub mod convex_hull;
+pub mod joints_lab;
+pub mod soft_body;
 // Bodies lab combines set velocity / kinematic / wake touching
-pub mod bodies_lab {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/bodies_lab.rs"));
-}
-pub mod manifold {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/manifold.rs"));
-}
+pub mod bodies_lab;
+pub mod manifold;
 // World lab combines tuning + explosion
-pub mod world_lab {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/world_lab.rs"));
-}
-pub mod motion_locks {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/motion_locks.rs"));
-}
-pub mod breakable_joint {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/breakable_joint.rs"));
-}
+pub mod breakable_joint;
+pub mod motion_locks;
+pub mod world_lab;
 // world_tuning module replaced by world_lab routing
-pub mod materials {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/materials.rs"));
-}
-pub mod shape_editing {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/shape_editing.rs"));
-}
-pub mod query_casts {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/examples/testbed/scenes/query_casts.rs"
-    ));
-}
+pub mod materials;
+pub mod query_casts;
+pub mod shape_editing;
 // Extra samples ported from top-level examples
-pub mod doohickey {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/doohickey.rs"));
-}
-pub mod issues {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/testbed/scenes/issues.rs"));
-}
+pub mod doohickey;
+pub mod issues;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Scene {
@@ -150,7 +84,7 @@ pub struct OverlapQueryState {
     pub visit_hits: usize,
     pub polygon_hits: usize,
     pub visit_stopped_early: bool,
-    pub reused_hit_buffer: Vec<bd::types::ShapeId>,
+    pub reused_hit_buffer: bd::ShapeQueryBuffer,
 }
 
 impl Default for OverlapQueryState {
@@ -165,7 +99,7 @@ impl Default for OverlapQueryState {
             visit_hits: 0,
             polygon_hits: 0,
             visit_stopped_early: false,
-            reused_hit_buffer: Vec::new(),
+            reused_hit_buffer: bd::ShapeQueryBuffer::new(),
         }
     }
 }
@@ -188,7 +122,7 @@ pub struct QueryCastState {
     pub ray_dx: f32,
     pub ray_dy: f32,
     pub ray_hits: usize,
-    pub ray_hit_buffer: Vec<bd::RayResult>,
+    pub ray_hit_buffer: bd::RayQueryBuffer,
     pub shape_pos_y: f32,
     pub shape_angle: f32,
     pub shape_tx: f32,
@@ -196,7 +130,7 @@ pub struct QueryCastState {
     pub shape_radius: f32,
     pub shape_hits: usize,
     pub shape_min_fraction: f32,
-    pub shape_hit_buffer: Vec<bd::RayResult>,
+    pub shape_hit_buffer: bd::RayQueryBuffer,
     pub toi_start_x: f32,
     pub toi_start_y: f32,
     pub toi_angle: f32,
@@ -216,7 +150,7 @@ impl Default for QueryCastState {
             ray_dx: 25.0,
             ray_dy: -12.0,
             ray_hits: 0,
-            ray_hit_buffer: Vec::new(),
+            ray_hit_buffer: bd::RayQueryBuffer::new(),
             shape_pos_y: 6.0,
             shape_angle: 0.0,
             shape_tx: 0.0,
@@ -224,7 +158,7 @@ impl Default for QueryCastState {
             shape_radius: 0.02,
             shape_hits: 0,
             shape_min_fraction: 1.0,
-            shape_hit_buffer: Vec::new(),
+            shape_hit_buffer: bd::RayQueryBuffer::new(),
             toi_start_x: -2.0,
             toi_start_y: 6.0,
             toi_angle: 0.0,
@@ -479,27 +413,17 @@ impl MaterialsState {
 // reflects the same hot-path guidance as the public examples and docs.
 #[derive(Default)]
 pub struct TestbedScratch {
-    pub body_events: Vec<bd::BodyMoveEvent>,
-    pub sensor_events: bd::SensorEvents,
-    pub contact_events: bd::ContactEvents,
-    pub joint_events: Vec<bd::JointEvent>,
-    pub ray_hits: Vec<bd::RayResult>,
+    pub ray_hits: bd::RayQueryBuffer,
 }
 
 impl TestbedScratch {
     fn reset_runtime(&mut self) {
-        self.body_events.clear();
-        self.sensor_events.begin.clear();
-        self.sensor_events.end.clear();
-        self.contact_events.begin.clear();
-        self.contact_events.end.clear();
-        self.contact_events.hit.clear();
-        self.joint_events.clear();
         self.ray_hits.clear();
     }
 }
 
 pub struct PhysicsApp {
+    foundation: &'static bd::Foundation,
     pub world: bd::World,
     pub scene: Scene,
     pub gravity_y: f32,
@@ -711,7 +635,7 @@ pub struct PhysicsApp {
 }
 
 type SceneBuildFn = fn(&mut PhysicsApp, bd::types::BodyId);
-type SceneTickFn = fn(&mut PhysicsApp);
+type SceneTickFn = fn(&mut PhysicsApp, Option<&bd::StepEventsSnapshot>);
 type SceneUiFn = fn(&mut PhysicsApp, &imgui::Ui);
 type SceneOverlayFn = fn(&PhysicsApp, &imgui::Ui);
 
@@ -975,11 +899,18 @@ fn scene_spec(scene: Scene) -> &'static SceneSpec {
 }
 
 impl PhysicsApp {
-    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new() -> std::result::Result<Self, Box<dyn std::error::Error>> {
         let gravity_y = -9.8;
         let scene = Scene::Pyramid;
+        let foundation = bd::Foundation::initialize_default()?;
         let mut app = Self {
-            world: bd::World::new(bd::WorldDef::builder().gravity([0.0, gravity_y]).build())?,
+            foundation,
+            world: foundation.create_world(
+                bd::WorldBuilder::from(foundation.world_def())
+                    .gravity([0.0, gravity_y])
+                    .build()
+                    .expect("valid testbed definition"),
+            )?,
             scene,
             gravity_y,
             sub_steps: 4,
@@ -1161,11 +1092,14 @@ impl PhysicsApp {
         Ok(app)
     }
 
-    pub fn reset(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let mut b = bd::WorldDef::builder().gravity([0.0, self.gravity_y]);
+    pub fn reset(&mut self) -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let mut b =
+            bd::WorldBuilder::from(self.foundation.world_def()).gravity([0.0, self.gravity_y]);
         match self.scene {
             Scene::Events => {
-                b = b.enable_continuous(true).hit_event_threshold(self.events_threshold);
+                b = b
+                    .enable_continuous(true)
+                    .hit_event_threshold(self.events_threshold);
             }
             Scene::Determinism => {
                 b = b.enable_continuous(true);
@@ -1182,9 +1116,11 @@ impl PhysicsApp {
             }
             _ => {}
         }
-        self.world = bd::World::new(b.build())?;
+        self.world = self.foundation.create_world(b.build()?)?;
         if matches!(self.scene, Scene::WorldTuning) {
-            self.world.enable_warm_starting(self.world_lab.warm_starting);
+            self.world
+                .enable_warm_starting(self.world_lab.warm_starting)
+                .expect("valid testbed operation");
         }
         self.ev_moves = 0;
         self.ev_sens_beg = 0;
@@ -1210,25 +1146,36 @@ impl PhysicsApp {
     }
 
     pub fn update(&mut self) {
-        if self.running {
+        let step_events = if self.running {
             let t0 = std::time::Instant::now();
             let (base_dt, sub) = match self.scene {
                 Scene::ContinuousLab if self.cl_mode == 0 => (self.bullet_dt, self.bullet_substeps),
                 _ => (1.0 / 60.0, self.sub_steps),
             };
             let dt = (base_dt * self.time_scale.max(0.0)).max(0.0);
-            self.world.step(dt, sub);
+            let events = self
+                .world
+                .step(dt, sub)
+                .expect("valid testbed step")
+                .to_owned()
+                .expect("valid testbed events");
             self.step_ms = t0.elapsed().as_secs_f32() * 1000.0;
-            let c = self.world.counters();
+            let c = self.world.counters().expect("available testbed world");
             self.cnt_bodies = c.body_count;
             self.cnt_shapes = c.shape_count;
             self.cnt_contacts = c.contact_count;
             self.cnt_joints = c.joint_count;
             self.cnt_islands = c.island_count;
-            self.cnt_awake = self.world.awake_body_count();
-        }
+            self.cnt_awake = self
+                .world
+                .awake_body_count()
+                .expect("available testbed world");
+            Some(events)
+        } else {
+            None
+        };
         if let Some(tick) = scene_spec(self.scene).tick {
-            tick(self);
+            tick(self, step_events.as_ref());
         }
     }
 
@@ -1357,7 +1304,7 @@ impl PhysicsApp {
             return;
         }
 
-        let c = self.world.counters();
+        let c = self.world.counters().expect("available testbed world");
         ui.text(format!(
             "Live: bodies={} shapes={} contacts={} joints={}",
             c.body_count, c.shape_count, c.contact_count, c.joint_count
@@ -1382,13 +1329,27 @@ impl PhysicsApp {
         self.created_bodies = 0;
         self.created_shapes = 0;
         self.created_joints = 0;
-        let ground = self.world.create_body_id(bd::BodyBuilder::new().build());
+        let ground = self
+            .world
+            .create_body(
+                bd::BodyBuilder::from(self.foundation.body_def())
+                    .build()
+                    .expect("valid testbed definition"),
+            )
+            .expect("valid testbed operation");
         self.created_bodies += 1;
-        let _g = self.world.create_polygon_shape_for(
-            ground,
-            &bd::ShapeDef::builder().density(0.0).build(),
-            &bd::shapes::box_polygon(50.0, 1.0),
-        );
+        let _g = self
+            .world
+            .body(ground)
+            .expect("valid testbed operation")
+            .create_polygon(
+                &bd::ShapeDef::builder()
+                    .density(0.0)
+                    .build()
+                    .expect("valid testbed definition"),
+                &bd::shapes::box_polygon(50.0, 1.0).expect("valid ground geometry"),
+            )
+            .expect("valid testbed operation");
         self.created_shapes += 1;
         (scene_spec(self.scene).build)(self, ground);
     }
@@ -1399,7 +1360,7 @@ impl PhysicsApp {
             _ => (1.0 / 60.0, self.sub_steps),
         };
         let dt = (base_dt * self.time_scale.max(0.0)).max(0.0);
-        self.world.step(dt, sub);
+        drop(self.world.step(dt, sub).expect("valid testbed step"));
     }
 
     pub fn scene_index(&self) -> usize {

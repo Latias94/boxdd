@@ -1,15 +1,14 @@
-//! Joint builders and creation helpers (modularized).
+//! Joint definitions, creation helpers, and borrow-scoped runtime capabilities.
 //!
-//! Two creation styles are available:
-//! - Scoped handles: `World::create_*_joint(&def) -> Joint` returning a scoped handle for immediate
-//!   configuration/queries. Dropping the handle does **not** destroy the joint.
-//! - Owned handles: `World::create_*_joint_owned(&def) -> OwnedJoint` or `World::*().build_owned() -> OwnedJoint`
-//!   returning a RAII handle that destroys the joint on drop.
-//! - ID style: `World::create_*_joint_id(&def) -> b2JointId` returning the raw id for storage.
+//! Creation methods such as [`World::create_distance_joint`] return a world-bound [`JointId`]
+//! suitable for application storage. Acquire a [`Joint`] with [`World::joint`] when reading,
+//! mutating, converting to a typed joint capability, or explicitly destroying it. Dropping a
+//! capability releases its world borrow and does not destroy the native joint.
 //!
 //! The `World` convenience builders (`revolute`, `prismatic`, `wheel`, `distance`, `weld`,
 //! `motor_joint`, `filter_joint`) help compose joints in world space and build local frames
-//! from world anchors/axes.
+//! from absolute anchors and local axes. All public creation and runtime operations are fallible;
+//! definitions are validated before Box2D assertions can be reached.
 
 mod base;
 mod base_def;
@@ -20,35 +19,37 @@ mod motor;
 mod prismatic;
 mod revolute;
 mod runtime;
-mod runtime_typed_distance;
-mod runtime_typed_motor;
-mod runtime_typed_prismatic;
-mod runtime_typed_revolute;
-mod runtime_typed_weld;
-mod runtime_typed_wheel;
+mod typed;
+mod validation;
 mod weld;
 mod wheel;
 
-pub use base::{ConstraintTuning, Joint, JointType, OwnedJoint};
-pub use base_def::{JointBase, JointBaseBuilder};
+pub use base::{ConstraintTuning, Joint, JointType};
+pub use base_def::JointBase;
+pub(crate) use base_def::{checked_world_axis_to_local_rotation, checked_world_to_local_point};
 pub use distance::{DistanceJointBuilder, DistanceJointDef};
 pub use filter::{FilterJointBuilder, FilterJointDef};
 pub use motor::{MotorJointBuilder, MotorJointDef};
 pub use prismatic::{PrismaticJointBuilder, PrismaticJointDef};
 pub use revolute::{RevoluteJointBuilder, RevoluteJointDef};
+pub use typed::{
+    DistanceJoint, FilterJoint, MotorJoint, PrismaticJoint, RevoluteJoint, WeldJoint, WheelJoint,
+};
 pub use weld::{WeldJointBuilder, WeldJointDef};
 pub use wheel::{WheelJointBuilder, WheelJointDef};
 
-use crate::error::ApiResult;
-use crate::types::{BodyId, JointId, Vec2};
-use crate::world::{World, WorldHandle};
+use crate::error::Result;
+use crate::types::{BodyId, JointId};
+use crate::world::World;
 use boxdd_sys::ffi;
-use runtime::*;
+pub(crate) use validation::*;
 
 pub(crate) use creation::{
     check_distance_joint_def_valid, check_filter_joint_def_valid, check_joint_base_valid,
     check_motor_joint_def_valid, check_prismatic_joint_def_valid, check_revolute_joint_def_valid,
-    check_weld_joint_def_valid, check_wheel_joint_def_valid,
+    check_weld_joint_def_valid, check_wheel_joint_def_valid, create_distance_joint_id,
+    create_filter_joint_id, create_motor_joint_id, create_prismatic_joint_id,
+    create_revolute_joint_id, create_weld_joint_id, create_wheel_joint_id,
 };
 
 #[inline]
@@ -61,61 +62,94 @@ fn raw_joint_id(id: JointId) -> ffi::b2JointId {
     id.into_raw()
 }
 
-#[inline]
-fn assert_joint_valid(id: JointId) {
-    crate::core::debug_checks::assert_joint_valid(id);
-}
-
-#[inline]
-fn check_joint_valid(id: JointId) -> ApiResult<()> {
-    crate::core::debug_checks::check_joint_valid(id)
-}
-
-#[inline]
-fn joint_read_checked_impl<R>(id: JointId, f: impl FnOnce(JointId) -> R) -> R {
-    assert_joint_valid(id);
-    f(id)
-}
-
-#[inline]
-fn try_joint_read_checked_impl<R>(id: JointId, f: impl FnOnce(JointId) -> R) -> ApiResult<R> {
-    check_joint_valid(id)?;
-    Ok(f(id))
-}
-
-#[inline]
-#[cfg_attr(not(feature = "serialize"), allow(dead_code))]
-pub(crate) fn joint_is_valid_impl(id: JointId) -> bool {
-    base::joint_is_valid_impl(id)
-}
-
 #[cfg(test)]
 mod tests {
     #[test]
-    fn try_joint_apis_return_in_callback() {
-        let mut world = crate::World::new(crate::WorldDef::default()).unwrap();
-        let a = world.create_body_id(crate::BodyBuilder::new().build());
-        let b = world.create_body_id(crate::BodyBuilder::new().build());
+    fn joint_apis_return_in_callback() {
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let a = world
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_builder()
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        let b = world
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_builder()
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
 
         let def = crate::DistanceJointDef::new(
-            crate::JointBaseBuilder::new()
-                .bodies_by_id(a, b)
-                .collide_connected(false)
-                .build(),
+            world
+                .joint_base(a, b)
+                .unwrap()
+                .with_collide_connected(false),
         );
 
-        let _g = crate::core::callback_state::CallbackGuard::enter();
-        assert_eq!(
-            world.try_create_distance_joint_id(&def).unwrap_err(),
-            crate::ApiError::InCallback
-        );
-        assert_eq!(
-            world
-                .revolute(a, b)
-                .anchor_world([0.0, 0.0])
-                .try_build()
-                .unwrap_err(),
-            crate::ApiError::InCallback
-        );
+        {
+            let _guard = crate::core::callback_state::CallbackGuard::enter();
+            assert_eq!(
+                world.create_distance_joint(&def).unwrap_err(),
+                crate::Error::InCallback
+            );
+        }
+
+        let builder = world.revolute(a, b).anchor_world([0.0, 0.0]);
+        let _guard = crate::core::callback_state::CallbackGuard::enter();
+        assert_eq!(builder.build().unwrap_err(), crate::Error::InCallback);
+    }
+
+    #[test]
+    fn cached_joint_defaults_are_callback_safe() {
+        let mut world = crate::Foundation::initialize_default()
+            .unwrap()
+            .create_world(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a WorldDef")
+                    .world_def(),
+            )
+            .unwrap();
+        let a = world
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_builder()
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        let b = world
+            .create_body(
+                crate::Foundation::get()
+                    .expect("Foundation must be initialized before constructing a BodyDef")
+                    .body_builder()
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        let base = world.joint_base(a, b).unwrap();
+
+        let _guard = crate::core::callback_state::CallbackGuard::enter();
+        let _ = crate::DistanceJointDef::new(base);
+        let _ = crate::FilterJointDef::new(base);
+        let _ = crate::MotorJointDef::new(base);
+        let _ = crate::PrismaticJointDef::new(base);
+        let _ = crate::RevoluteJointDef::new(base);
+        let _ = crate::WeldJointDef::new(base);
+        let _ = crate::WheelJointDef::new(base);
     }
 }

@@ -1,71 +1,128 @@
 # FFI Lifetime Audit
 
-This document records the lifetime rules that keep the safe wrapper from turning Box2D's C API into unsound Rust APIs. Treat it as a release checklist for new wrappers: if a wrapper touches a row in the matrix, add or extend executable evidence before exposing a convenience API.
+This document records the ownership and callback rules for the 0.6 Safe Rust layer over the pinned
+Box2D 3.2.0 development snapshot
+`56edae79f2949d86142b03450d5d60f63bcf5a6f`. A new wrapper is not complete until its applicable
+row has executable evidence.
 
-## Stable Principles
+## Ownership Domains
 
-- `boxdd-sys` exposes raw bindings and does not promise safety.
-- `boxdd` owns safe ids and value wrappers. Raw conversion methods are explicit: `from_raw`, `into_raw`, and `*_raw`.
-- `World`, `WorldHandle`, owned handles, and `bevy_boxdd::BoxddPhysicsContext` are public `!Send`/`!Sync` surfaces unless a future audit proves otherwise.
-- `WorldCore` is an internal `Send`/`Sync` lifetime anchor guarded by mutexes and atomics. That does not make Box2D's public world API thread-safe.
-- Definition objects are copied into Box2D at creation time. Raw pointer-bearing definition constructors stay explicit and unsafe where needed.
-- Event buffers produced by Box2D are transient after `World::step`. Safe snapshot methods copy; zero-copy view methods borrow only within a closure and defer destructive operations until borrowed views exit.
-- Query, dynamic-tree, custom filter, pre-solve, material-mix, and debug-draw callbacks catch panics before crossing C callback boundaries and resume unwinding after Box2D returns to Rust.
+- `boxdd-sys` is raw FFI and makes no Safe Rust guarantees.
+- `WorldCore`, `World`, and every borrow-scoped object/query capability are `!Send` and `!Sync`.
+  Arbitrary typed user data, callback owners, explicit destruction, native world destruction, and
+  the ordinary-world foundation lease stay on the owner thread.
+- `WorkerCallbackState` is a separate `Send + Sync` panic latch. Step-local callback contexts carry
+  an immutable shape resolver where needed; neither object owns or upgrades to `WorldCore`.
+- Live object IDs are opaque world-bound registration capabilities. Safe Rust exposes no raw-ID
+  conversion, bind/unbind, or persistence seam.
+- `Snapshot` is an opaque capability bound to one live origin world. `RecordingSession` exclusively
+  borrows one live owner world, and `Recording` owns a private process-local stream. `ReplayPlayer`
+  owns its native player/world and holds the process-exclusive foundation lease.
+- `DynamicTree` is an independent owner-thread native allocation with a transient foundation lease.
+  Its proxy IDs contain a process-unique tree token and a per-registration nonce; native integer
+  slot reuse cannot rebind a stale or foreign proxy capability.
+
+## Callback Policy
+
+Every C-to-Rust trampoline uses the same policy:
+
+1. Enter callback depth before user code.
+2. Run the closure without holding an owner-state registry lock.
+3. Catch unwind-capable panics before returning to C.
+4. Return a conservative callback-specific sentinel after a panic.
+5. Never drop an arbitrary panic payload on a callback stack; queue competing worker payloads.
+6. Leave C, join workers where applicable, dispose suppressed payloads behind isolated panic
+   boundaries, perform allowed deferred cleanup, then resume the primary panic.
+
+With `panic=abort`, a callback panic aborts as configured; the library does not claim recovery.
+
+| Callback class | Execution and access contract |
+| --- | --- |
+| Custom filter, pre-solve, friction mix, restitution mix | Native only. May run concurrently on Box2D workers. Closure is `Send + Sync + 'static`; inputs are branded IDs and copyable values; no world or typed user-data access. |
+| World query, dynamic-tree query/cast, direct debug draw | Native only. Synchronous and closure-scoped on the calling owner thread. The closure cannot escape and callback depth rejects incompatible native reentry. |
+| Post-native query visitor | Ordinary Rust iteration over a fully mapped result batch. No callback guard remains active, so independent safe Box2D owners may be used. |
+| Completed-step event view | Owner-thread and borrow-scoped; each family view borrows reusable mapped owner storage and installs no Rust function pointer in the provider. |
+| Foundation assert/log hooks | Native only. Process-global and potentially entered from any native thread. Hooks are `Send + Sync`, recursion-suppressed, and panic-contained. Assertions always end in the configured native trap path. |
+| Replay mixers and debug draw | Native only. Owned by the replay player and routed through replay liveness/panic state. Read views remain closure-scoped and epoch-bound. |
+
+There is no `CallbackWorld` and no callback-time path to owner-thread world state.
+
+Current WASM adapters have not proven cross-module Rust function-pointer transport. Safe callback
+tables are therefore removed with target `cfg` boundaries instead of relying on an unverified ABI.
+Compile-fail probes cover every public callback family, while runtime smoke covers the remaining
+callback-free world, query, shape, joint, memory, and identity paths.
 
 ## Risk Matrix
 
-| Hazard | Public Boundary | Guard | Executable Evidence | Rule For New Wrappers |
-|---|---|---|---|---|
-| Rust panic crosses an `extern "C"` callback | World callbacks, material mix callbacks, query visitors, dynamic tree visitors, debug draw | Callback trampolines wrap Rust closures with panic capture and resume unwinding after the FFI call returns | `boxdd/tests/panic_across_ffi_is_caught.rs`, `boxdd/tests/material_mix_callbacks.rs`, `boxdd/tests/world_and_queries.rs`, `boxdd/tests/dynamic_tree.rs` | Any new C-to-Rust callback must capture panics before returning to C and prove post-panic cleanup or reuse behavior. |
-| Box2D world is reentered while locked by a callback | `try_*` APIs, convenience APIs, event views, debug draw, query callbacks | `CallbackGuard` tracks callback depth; `try_*` returns `ApiError::InCallback`, convenience paths panic on misuse | `boxdd/tests/try_api.rs`, `boxdd/tests/panic_across_ffi_is_caught.rs`, `boxdd/src/world/tests.rs` | Decide whether the API is callback-safe. If not, add `check_not_in_callback` and a focused `try_*` test. |
-| Stale ids reach native code after destroy | Body, shape, joint, chain, and contact id APIs | Safe paths validate ids before native calls; `try_*` returns `ApiError::Invalid*Id`; convenience paths panic instead of permitting UB | `boxdd/tests/handle_validity_panics.rs`, `boxdd/tests/try_api.rs`, `boxdd/tests/world_destroy_and_recycle.rs`, `boxdd/tests/ffi_lifecycle.rs` | Any id-taking API must validate the id before crossing FFI unless it is explicitly under `unchecked`. |
-| Typed user data leaks or double-drops | World, body, shape, and joint typed user data | `UserDataStore` owns typed boxes; replacement, clear, explicit destroy, and owned-handle drop remove and drop stored values | `boxdd/tests/user_data.rs`, `boxdd/tests/ffi_lifecycle.rs` | Every new owner/destroy path must clear typed user data before invalidating the native object. |
-| Raw user-data pointers imply Rust ownership | `*_user_data_ptr_raw` setters and getters | Raw pointer APIs are unsafe, explicitly named, and clear any previously owned typed data before installing caller memory | `boxdd/tests/user_data.rs`, `boxdd/tests/ffi_lifecycle.rs` | Keep raw pointer APIs unsafe and named with `_raw`; never drop caller-owned memory. |
-| Borrowed event buffers outlive Box2D's event storage | `with_*_events_view`, `with_*_events_raw` | Owned snapshots copy; borrowed/raw views are closure-scoped; `borrowed_event_buffers` defers destroys until the outermost view exits | `boxdd/tests/events_and_sensors.rs`, `boxdd/tests/user_data.rs`, `boxdd/tests/buffer_reuse.rs` | APIs returning or exposing native slices must be closure-scoped or copied into owned Rust values. |
-| Debug draw callbacks borrow temporary vertex/string memory | `DebugDraw`, `RawDebugDraw`, `DebugDrawCmd` collection | Direct callbacks are closure-scoped and panic-contained; collected commands copy vertices and strings into owned Rust data | `boxdd/tests/panic_across_ffi_is_caught.rs`, `boxdd/tests/buffer_reuse.rs`, `boxdd/tests/debug_draw_colors.rs` | Direct draw callbacks must not store borrowed slices; collected commands must own copied data. |
-| Public world/handle types become sendable by accident | `World`, `WorldHandle`, owned handles, Bevy physics context | Public types carry non-send markers or are stored as Bevy non-send resources | `boxdd/tests/ffi_lifecycle.rs`, `bevy_boxdd/tests/plugin.rs` | Do not remove non-send markers without a dedicated Box2D thread-safety audit and replacement tests. |
-| Raw unchecked APIs bypass validation | `unchecked` feature | APIs are gated behind `unchecked` and unsafe contracts | `boxdd/tests/unchecked_api.rs`, API coverage fixture rationale | Any unchecked addition must be unsafe, feature-gated, and documented as caller-validated. |
+| Hazard | Public boundary | Guard | Executable evidence |
+| --- | --- | --- | --- |
+| Native writes beyond a Rust allocation or exposes uninitialized elements | Event, object, contact, sensor, joint, and query output buffers | Shared `MaybeUninit`/capacity helper proves actual capacity, validates returned counts, and sets length only after initialization | `boxdd/src/core/ffi_vec.rs`, `boxdd/tests/buffer_reuse.rs`, sanitizer gates |
+| Wrong-world/tree, recycled, wrong-kind, or stale IDs reach C | All safe ID-taking APIs and event/contact/tree outputs | World or tree token plus a registration nonce; native generations, kind authentication, and contact epochs where applicable | `boxdd/tests/world_ownership.rs`, `boxdd/tests/dynamic_tree.rs`, `boxdd/tests/compile_fail.rs` |
+| Owner state moves to another thread | `World`, borrow-scoped capabilities, snapshots, recording, replay, Bevy context | `Rc`/owner markers and no broad unsafe `Send`/`Sync`; Bevy stores the world as a non-send resource | `boxdd/src/core/world_core.rs` unit assertions, `boxdd/tests/ffi_lifecycle.rs`, `boxdd/tests/ui/owner_state_send.rs`, `bevy_boxdd/tests/plugin.rs` |
+| Worker callback owns or reaches owner state | Custom filter, pre-solve, material mixers | Worker contexts contain only the panic latch, immutable step-local resolver, and `Send + Sync` closure; publication requires a generic `Send + Sync` proof | `boxdd/src/core/callback_state.rs`, `boxdd/tests/worker_callbacks_multithread.rs`, `boxdd/tests/ui/callback_world_removed.rs` |
+| Rust panic crosses C | Every callback trampoline | Shared catch/arbitrate/fallback/resume policy | `boxdd/tests/panic_across_ffi_is_caught.rs`, `boxdd/tests/panic_abort.rs`, `boxdd/tests/worker_callbacks_multithread.rs`, `boxdd/tests/material_mix_callbacks.rs`, `boxdd/tests/dynamic_tree.rs`, `boxdd/tests/replay.rs` |
+| World or native owner is reentered during callback | Canonical world operations, queries, tree callbacks, debug draw, views | Callback depth plus owner native-call frame; fallible operations return `Error::InCallback` | `boxdd/src/world/tests.rs`, `boxdd/src/query/availability_tests.rs`, callback-focused integration tests |
+| User closure runs while a registry lock is held | Typed user data and callbacks | Lease/borrow state is acquired under lock, closure runs after unlock, and unwind cleanup restores state | `boxdd/tests/user_data.rs`, `boxdd/tests/foundation_world_activity.rs` |
+| Typed user data leaks, aliases a restored object, or double-drops | Explicit object/world destruction, replacement, snapshot restore, world teardown | Owner-thread erased boxes, registration nonces, transactional restore manifests, isolated cleanup panic aggregation | `boxdd/tests/user_data.rs`, `boxdd/tests/snapshot.rs`, `boxdd/tests/foundation_world_activity.rs` |
+| Borrowed native or mapped memory escapes | Completed-step event families, debug-draw vertices/strings, replay views/query hits | Owner-borrowed capabilities or higher-ranked closures; owned event/command alternatives; mutation epochs for replay | `boxdd/tests/events_and_sensors.rs`, `boxdd/tests/buffer_reuse.rs`, `boxdd/tests/ui/event_view_escape.rs`, `boxdd/tests/ui/replay_view_escape.rs` |
+| Drop or explicit destroy calls C while still on a callback stack | World, object capabilities, dynamic tree, recording, replay | Owner native-call frames plus boundary cleanup; terminalize/defer when an owner frame exists and retain inert resources when no safe boundary exists | `boxdd/src/core/callback_state.rs` tests, `boxdd/tests/dynamic_tree.rs`, `boxdd/tests/recording.rs`, `boxdd/tests/replay.rs`, `boxdd/tests/foundation_world_activity.rs` |
+| Global foundation state changes during native activity | World creation, worldless helpers, dynamic tree, replay | Frozen configuration plus counted ordinary/transient leases and one exclusive replay lease | `boxdd/tests/foundation_runtime.rs`, `boxdd/tests/foundation_world_activity.rs`, `boxdd/tests/replay.rs` |
+| Private snapshot validation reaches mutable native state | `World::snapshot`, `World::prepare_restore` | The dedicated adapter accepts only immutable bytes and limits, returns caller-owned facts and entries, and has no world handle in its interface | `boxdd-sys/native/boxdd_snapshot_validate.c`, `boxdd-sys/tests/adapter.rs` |
+| Snapshot rejection partially mutates a world | `World::prepare_restore`, `World::restore` | Full metadata/native preflight before C; prepared host transaction; any post-native failure terminalizes and destroys the world | `boxdd/tests/snapshot.rs` |
+| Recording buffer dies while native world still records | `RecordingSession` | RAII session owns the native allocation, exclusively borrows the world, and stops before copying/destroying the buffer | `boxdd/tests/recording.rs` |
+| Invalid native writer output reaches replay parsing or a stale view observes mutation | `RecordingSession::finish`, `ReplayPlayer` | Complete Rust preflight before publishing an opaque recording, copied private input, exclusive lease, lifecycle state, monotonically advancing view epoch | `boxdd/src/replay/preflight.rs`, `boxdd/tests/replay.rs`, `boxdd/tests/ui/replay_view_escape.rs`, `xtask` recording-wire tests |
+| Caller-owned pointer is mistaken for Rust ownership | `*_user_data_ptr_raw` | Explicit `_raw` naming; Rust never drops caller memory | `boxdd/tests/ffi_lifecycle.rs` |
 
-## Callback-Sensitive APIs
+## Event and View Rules
 
-Box2D locks world mutation during callbacks. Keep callback guards on:
+- `World::step` returns a `CompletedStep` capability that keeps the owner borrowed until event
+  inspection is complete.
+- Each requested event family is fetched and mapped into reusable owner storage at most once.
+  Family views borrow that storage; `to_owned` detaches data that may outlive the step.
+- On native targets, direct debug draw borrows vertex/string memory only during a callback.
+  `DebugDrawCmd` collection copies all data. Both callback entry points are compile-time unavailable
+  on current WASM adapters; the command value type remains portable.
+- Replay views borrow the player for the closure. Argument, callback, lifecycle, and native-health
+  gates reject without changing the epoch. Once those gates pass, the epoch advances immediately
+  before native mutation, so a post-FFI failure cannot make a previous observation current again.
 
-- world events and borrowed raw event views
-- overlap, ray-cast, shape-cast, and mover query callbacks
-- custom filter and pre-solve callbacks
-- material mixing callbacks
-- dynamic tree query, ray-cast, and shape-cast callbacks
-- debug draw callbacks
+## Snapshot, Recording, and Replay
 
-## Executable Coverage
+- An in-process `Snapshot` is an unforgeable origin-world capability. In-place restore requires
+  matching host callback/mixer wiring and reconciles ID/user-data manifests. Its native payload is
+  private, immutable, and cannot create a fresh world through Safe Rust.
+- The runtime identity handshake must succeed before the native snapshot validator receives any
+  Rust-owned `SnapshotFacts` or `SnapshotEntry` output pointer. The validator may inspect only the
+  private captured payload and compile-time ABI constants and may query only
+  `b2IsDoublePrecision`. Its narrow C interface and focused corruption tests are the review seam;
+  repository tooling does not implement a second C parser or call-graph engine.
+- `RecordingSession` exposes only operations that Box2D records. Ordinary world methods remain
+  unavailable through the exclusive mutable borrow; custom-filter/pre-solve installation is not
+  part of the session API.
+- `RecordingSession::finish` validates and privately owns the native writer output together with
+  material mixer identities. Safe Rust exposes neither byte import nor byte export. Replay installs
+  exactly the matching deterministic mixers before stepping.
+- Recording validation does not set exclusive replay state. A valid player excludes ordinary
+  worlds, transient calls, and other players until shutdown restores the previous length scale and
+  releases its lease.
 
-Default-running lifecycle coverage includes:
+Native snapshot and recording bytes are deliberately outside the Safe Rust contract.
 
-- `panic_across_ffi_is_caught.rs` for custom filter, pre-solve, debug draw, raw debug draw, reentry errors, and post-callback-panic world reuse.
-- `try_api.rs` for callback-lock behavior across body, query, shape, chain, and debug draw APIs.
-- `material_mix_callbacks.rs` for material mixing callback behavior and panic capture.
-- `world_and_queries.rs` for world and handle overlap-query callback panic capture and post-panic world reuse.
-- `dynamic_tree.rs` for query, ray-cast, and shape-cast callback panic capture with post-panic tree reuse.
-- `events_and_sensors.rs` for contact/sensor event views matching owned snapshots, owned snapshots surviving later steps, and owned-handle drops being deferred until event-view closures exit.
-- `user_data.rs` for typed user data through callback contexts plus nested raw event views and deferred destruction.
-- `ffi_lifecycle.rs` for public non-send/non-sync assertions, explicit destroy user-data cleanup, and raw pointer replacement semantics.
-- `buffer_reuse.rs` for reusable owned snapshot buffers for body, contact, sensor, joint events, and debug draw commands.
-- `world_destroy_and_recycle.rs` for repeated explicit destruction and world recycling as normal, non-ignored tests.
+## Audit Checklist for New Wrappers
 
-Do not add a lifecycle exemption by marking a test ignored. If a callback or event-buffer test is unstable, replace it with a deterministic setup or document why the behavior must remain manual-only.
+- Does native code retain caller memory or a callback context after return?
+- Can the call happen during a callback, restore, recording, replay, borrowed view, or terminal state?
+- Does the call require a world-bound ID, active contact epoch, definition cookie, normalized value,
+  finite coordinate, bounded capacity, or exact object kind?
+- Is each coordinate explicitly absolute (`Position`/`WorldTransform`) or local
+  (`Vec2`/`Transform`)?
+- Can a returned pointer, count, or union field be absent, negative, too large, or uninitialized?
+- Can the operation destroy objects or recycle native identities?
+- Can a user closure panic or drop arbitrary state while a lock/C frame is active?
+- Which foundation lease protects the call, and can replay exclude it?
+- Does failure occur before native mutation, or must the owner become terminal afterward?
+- Is the C disposition recorded in `xtask/api-inventory.toml`, and is the corresponding behavior
+  covered by an ordinary compiler or runtime test gate?
 
-## Bevy Adapter Boundary
-
-`bevy_boxdd` stores `boxdd::World` in `BoxddPhysicsContext` as a non-send Bevy resource. Systems publish plain ids, values, and Bevy entities through messages; they do not move the native world across threads.
-
-## Audit Checklist For New Wrappers
-
-- Does the upstream function borrow caller memory after return?
-- Can it be called while Box2D is inside a callback?
-- Does it require a valid id, valid definition cookie, finite numeric input, or non-empty geometry?
-- Does it return pointers into Box2D-owned memory?
-- Can it destroy objects that invalidate ids stored elsewhere?
-- Does it invoke a Rust closure from C?
-- Does it install caller-owned raw memory into Box2D?
-
-If any answer is yes, add a focused test before exposing a convenience API.
+Any affirmative answer requires a focused test or an explicit raw/omitted rationale before the API
+is classified as safe.

@@ -2,9 +2,11 @@ use crate::control::{EventStats, TestbedState};
 use crate::scenes::{SCENE_REGISTRY, TestbedEntity};
 use crate::switch_scene;
 use bevy::prelude::*;
+use bevy_boxdd::BoxddWorldOrigin;
 use bevy_egui::egui::{LayerId, Ui, UiBuilder};
 use bevy_egui::{EguiContexts, egui};
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_testbed_ui(
     mut contexts: EguiContexts,
     mut state: ResMut<TestbedState>,
@@ -13,6 +15,7 @@ pub(crate) fn draw_testbed_ui(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut stats: ResMut<EventStats>,
+    origin: Res<BoxddWorldOrigin>,
 ) -> Result {
     let mut requested_scene = None;
 
@@ -33,7 +36,7 @@ pub(crate) fn draw_testbed_ui(
             ui.heading(if state.scene_switching_enabled {
                 "boxdd Testbed"
             } else {
-                SCENE_REGISTRY[state.scene_index].name
+                state.scene_metadata().name
             });
             ui.separator();
 
@@ -89,15 +92,17 @@ pub(crate) fn draw_testbed_ui(
                 stats.contact_begin_total, stats.contact_end_total
             ));
             ui.label(format!("Contact hits: {}", stats.contact_hit_total));
+            ui.label(format!("Joint thresholds: {}", stats.joint_total));
             ui.label(format!(
                 "Sensor begin/end: {} / {}",
                 stats.sensor_begin_total, stats.sensor_end_total
             ));
             ui.label(format!(
-                "This frame: C {} E {} H {} S {} X {}",
+                "This frame: C {} E {} H {} J {} S {} X {}",
                 stats.contact_begin_frame,
                 stats.contact_end_frame,
                 stats.contact_hit_frame,
+                stats.joint_frame,
                 stats.sensor_begin_frame,
                 stats.sensor_end_frame
             ));
@@ -116,6 +121,7 @@ pub(crate) fn draw_testbed_ui(
             &mut meshes,
             &mut materials,
             &mut stats,
+            &origin,
         );
     }
 
@@ -153,7 +159,7 @@ fn draw_scene_list(ui: &mut Ui, state: &mut TestbedState, requested_scene: &mut 
                 }
             });
     } else {
-        draw_scene_metadata(ui, &SCENE_REGISTRY[state.scene_index]);
+        draw_scene_metadata(ui, state.scene_metadata());
     }
 }
 
@@ -170,7 +176,7 @@ fn draw_scene_metadata(ui: &mut Ui, metadata: &crate::scenes::TestbedSceneMetada
                 "{} / {} ({})",
                 upstream.category,
                 upstream.name,
-                upstream.mode.as_str()
+                upstream.style.as_str()
             ))
             .small()
             .color(egui::Color32::GRAY),

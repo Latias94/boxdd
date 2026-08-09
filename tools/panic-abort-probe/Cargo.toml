@@ -1,0 +1,13 @@
+[package]
+name = "boxdd-panic-abort-probe"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+boxdd = { workspace = true }
+
+[features]
+default = []
+double-precision = ["boxdd/double-precision"]

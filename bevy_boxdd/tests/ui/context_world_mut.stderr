@@ -1,0 +1,11 @@
+error[E0599]: no method named `world_mut` found for mutable reference `&mut BoxddPhysicsContext` in the current scope
+ --> tests/ui/context_world_mut.rs:4:26
+  |
+4 |     let _world = context.world_mut();
+  |                          ^^^^^^^^^
+  |
+help: there is a method `world` with a similar name
+  |
+4 -     let _world = context.world_mut();
+4 +     let _world = context.world();
+  |

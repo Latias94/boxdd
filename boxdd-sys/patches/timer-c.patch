@@ -1,0 +1,158 @@
+--- src/timer.c
++++ src/timer.c
+@@ -23,7 +23,16 @@
+ #include <Windows.h>
+ #include <limits.h>
+
+-static double s_invFrequency = 0.0;
++static double b2GetMillisecondsPerTick( void )
++{
++	LARGE_INTEGER frequency;
++	if ( QueryPerformanceFrequency( &frequency ) == 0 || frequency.QuadPart <= 0 )
++	{
++		return 0.0;
++	}
++
++	return 1000.0 / (double)frequency.QuadPart;
++}
+
+ uint64_t b2GetTicks( void )
+ {
+@@ -34,38 +43,16 @@
+
+ float b2GetMilliseconds( uint64_t ticks )
+ {
+-	if ( s_invFrequency == 0.0 )
+-	{
+-		LARGE_INTEGER frequency;
+-		QueryPerformanceFrequency( &frequency );
+-
+-		s_invFrequency = (double)frequency.QuadPart;
+-		if ( s_invFrequency > 0.0 )
+-		{
+-			s_invFrequency = 1000.0 / s_invFrequency;
+-		}
+-	}
+-
+ 	uint64_t ticksNow = b2GetTicks();
+-	return (float)( s_invFrequency * ( ticksNow - ticks ) );
++	double millisecondsPerTick = b2GetMillisecondsPerTick();
++	return (float)( millisecondsPerTick * ( ticksNow - ticks ) );
+ }
+
+ float b2GetMillisecondsAndReset( uint64_t* ticks )
+ {
+-	if ( s_invFrequency == 0.0 )
+-	{
+-		LARGE_INTEGER frequency;
+-		QueryPerformanceFrequency( &frequency );
+-
+-		s_invFrequency = (double)frequency.QuadPart;
+-		if ( s_invFrequency > 0.0 )
+-		{
+-			s_invFrequency = 1000.0 / s_invFrequency;
+-		}
+-	}
+-
+ 	uint64_t ticksNow = b2GetTicks();
+-	float ms = (float)( s_invFrequency * ( ticksNow - *ticks ) );
++	double millisecondsPerTick = b2GetMillisecondsPerTick();
++	float ms = (float)( millisecondsPerTick * ( ticksNow - *ticks ) );
+ 	*ticks = ticksNow;
+ 	return ms;
+ }
+@@ -152,17 +139,13 @@
+ 		return;
+ 	}
+
+-	static b2SetThreadDescriptionFn pfn = NULL;
+-	static int resolved = 0;
+-
+-	if ( resolved == 0 )
++	b2SetThreadDescriptionFn pfn = NULL;
++	HMODULE kernel = GetModuleHandleW( L"kernel32.dll" );
++	if ( kernel != NULL )
+ 	{
+-		HMODULE kernel = GetModuleHandleW( L"kernel32.dll" );
+-		if ( kernel != NULL )
+-		{
+-			// MSVC /Wall warns C4191 and GCC/Clang -Wcast-function-type
+-			// warns on every FARPROC function-pointer cast. This is the
+-			// intended use of GetProcAddress, so suppress locally.
++		// MSVC /Wall warns C4191 and GCC/Clang -Wcast-function-type
++		// warns on every FARPROC function-pointer cast. This is the
++		// intended use of GetProcAddress, so suppress locally.
+ #if defined( __clang__ )
+ #pragma clang diagnostic push
+ #pragma clang diagnostic ignored "-Wcast-function-type"
+@@ -173,7 +156,7 @@
+ #pragma GCC diagnostic push
+ #pragma GCC diagnostic ignored "-Wcast-function-type"
+ #endif
+-			pfn = (b2SetThreadDescriptionFn)GetProcAddress( kernel, "SetThreadDescription" );
++		pfn = (b2SetThreadDescriptionFn)GetProcAddress( kernel, "SetThreadDescription" );
+ #if defined( __clang__ )
+ #pragma clang diagnostic pop
+ #elif defined( _MSC_VER )
+@@ -181,8 +164,6 @@
+ #elif defined( __GNUC__ )
+ #pragma GCC diagnostic pop
+ #endif
+-		}
+-		resolved = 1;
+ 	}
+
+ 	if ( pfn == NULL )
+@@ -388,7 +369,14 @@
+ #include <sched.h>
+ #include <sys/time.h>
+
+-static double s_invFrequency = 0.0;
++static double b2GetMillisecondsPerTick( void )
++{
++	mach_timebase_info_data_t timebase;
++	mach_timebase_info( &timebase );
++
++	// convert to ns then to ms
++	return 1e-6 * (double)timebase.numer / (double)timebase.denom;
++}
+
+ uint64_t b2GetTicks( void )
+ {
+@@ -397,32 +385,16 @@
+
+ float b2GetMilliseconds( uint64_t ticks )
+ {
+-	if ( s_invFrequency == 0 )
+-	{
+-		mach_timebase_info_data_t timebase;
+-		mach_timebase_info( &timebase );
+-
+-		// convert to ns then to ms
+-		s_invFrequency = 1e-6 * (double)timebase.numer / (double)timebase.denom;
+-	}
+-
+ 	uint64_t ticksNow = b2GetTicks();
+-	return (float)( s_invFrequency * ( ticksNow - ticks ) );
++	double millisecondsPerTick = b2GetMillisecondsPerTick();
++	return (float)( millisecondsPerTick * ( ticksNow - ticks ) );
+ }
+
+ float b2GetMillisecondsAndReset( uint64_t* ticks )
+ {
+-	if ( s_invFrequency == 0 )
+-	{
+-		mach_timebase_info_data_t timebase;
+-		mach_timebase_info( &timebase );
+-
+-		// convert to ns then to ms
+-		s_invFrequency = 1e-6 * (double)timebase.numer / (double)timebase.denom;
+-	}
+-
+ 	uint64_t ticksNow = b2GetTicks();
+-	float ms = (float)( s_invFrequency * ( ticksNow - *ticks ) );
++	double millisecondsPerTick = b2GetMillisecondsPerTick();
++	float ms = (float)( millisecondsPerTick * ( ticksNow - *ticks ) );
+ 	*ticks = ticksNow;
+ 	return ms;
+ }

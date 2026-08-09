@@ -1,1168 +1,702 @@
-use boxdd::prelude::*;
-use boxdd::shapes;
-use boxdd::{ApiError, Filter};
+use boxdd::{prelude::*, shapes};
+use boxdd_sys::ffi;
 
-fn approx_eq(a: f32, b: f32, eps: f32) -> bool {
-    (a - b).abs() <= eps
+fn approx_eq(a: f32, b: f32, epsilon: f32) -> bool {
+    (a - b).abs() <= epsilon
 }
 
-fn approx_vec2(a: Vec2, b: Vec2, eps: f32) -> bool {
-    approx_eq(a.x, b.x, eps) && approx_eq(a.y, b.y, eps)
+fn approx_vec2(a: Vec2, b: Vec2, epsilon: f32) -> bool {
+    approx_eq(a.x, b.x, epsilon) && approx_eq(a.y, b.y, epsilon)
 }
 
-fn approx_mass_data(a: MassData, b: MassData, eps: f32) -> bool {
-    approx_eq(a.mass, b.mass, eps)
-        && approx_vec2(a.center, b.center, eps)
-        && approx_eq(a.rotational_inertia, b.rotational_inertia, eps)
+fn approx_position(a: Position, b: Position, epsilon: WorldScalar) -> bool {
+    (a.x - b.x).abs() <= epsilon && (a.y - b.y).abs() <= epsilon
 }
 
-fn approx_polygon(a: &Polygon, b: &Polygon, eps: f32) -> bool {
-    a.count() == b.count()
-        && approx_vec2(a.centroid(), b.centroid(), eps)
-        && approx_eq(a.radius(), b.radius(), eps)
-        && a.vertices()
-            .iter()
-            .zip(b.vertices())
-            .all(|(lhs, rhs)| approx_vec2(*lhs, *rhs, eps))
-        && a.normals()
-            .iter()
-            .zip(b.normals())
-            .all(|(lhs, rhs)| approx_vec2(*lhs, *rhs, eps))
-}
-
-fn same_chain_id(a: ChainId, b: ChainId) -> bool {
-    a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
-}
-
-fn same_shape_id(a: ShapeId, b: ShapeId) -> bool {
-    a.index1 == b.index1 && a.world0 == b.world0 && a.generation == b.generation
-}
-
-fn same_world_id(a: boxdd_sys::ffi::b2WorldId, b: boxdd_sys::ffi::b2WorldId) -> bool {
-    a.index1 == b.index1 && a.generation == b.generation
+fn initialize_foundation() {
+    boxdd::Foundation::initialize_default().expect("default foundation should initialize");
 }
 
 #[test]
-fn shape_closest_point_and_apply_wind_smoke() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let body = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
-    let sdef = ShapeDef::builder().density(1.0).build();
-    let poly = shapes::box_polygon(0.5, 0.5);
-    let mut shape = world.create_polygon_shape_for_owned(body, &sdef, &poly);
-
-    let target = Vec2::new(10.0, 0.0);
-    let cp1 = shape.closest_point(target);
-    let cp2 = world.shape_closest_point(shape.id(), target);
-    assert!(approx_eq(cp1.x, cp2.x, 1e-6) && approx_eq(cp1.y, cp2.y, 1e-6));
-    assert!(approx_eq(cp1.x, 0.5, 1e-3) && approx_eq(cp1.y, 0.0, 1e-3));
-
-    let cp3 = shape.try_closest_point(target).unwrap();
-    assert!(approx_eq(cp1.x, cp3.x, 1e-6) && approx_eq(cp1.y, cp3.y, 1e-6));
-
-    world
-        .try_shape_closest_point(shape.id(), target)
-        .expect("try_shape_closest_point should succeed");
-
-    shape.apply_wind(Vec2::new(5.0, 0.0), 1.0, 0.5, true);
-    shape
-        .try_apply_wind(Vec2::new(5.0, 0.0), 1.0, 0.5, true)
-        .unwrap();
-    world.shape_apply_wind(shape.id(), Vec2::new(5.0, 0.0), 1.0, 0.5, true);
-    world
-        .try_shape_apply_wind(shape.id(), Vec2::new(5.0, 0.0), 1.0, 0.5, true)
-        .unwrap();
-}
-
-#[test]
-fn shape_geometry_roundtrip_uses_safe_value_types() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let body = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
-    let sdef = ShapeDef::builder()
-        .density(1.0)
-        .filter(Filter::default())
-        .build();
-
-    let circle = shapes::circle([0.0_f32, 0.0], 0.5);
-    let mut circle_shape = world.create_circle_shape_for_owned(body, &sdef, &circle);
-    assert_eq!(circle_shape.circle(), circle);
-
-    let updated_circle = shapes::circle([0.0_f32, 0.0], 0.25);
-    circle_shape.set_circle(&updated_circle);
-    assert_eq!(circle_shape.circle(), updated_circle);
-
-    let poly = shapes::box_polygon(0.5, 0.5);
-    let poly_shape = world.create_polygon_shape_for_owned(body, &sdef, &poly);
-    assert_eq!(poly_shape.polygon().count(), 4);
-    assert!(approx_eq(
-        poly_shape.polygon().radius(),
-        poly.radius(),
-        f32::EPSILON
-    ));
-
-    let wider = shapes::box_polygon(1.0, 0.25);
-    world.shape_set_polygon(poly_shape.id(), &wider);
-    let updated = poly_shape.polygon();
-    assert_eq!(updated.count(), 4);
-    assert!(approx_eq(updated.vertices()[0].x.abs(), 1.0, 1.0e-6));
-
-    let chain = world.create_chain_for_owned(
-        body,
-        &boxdd::shapes::chain::ChainDef::builder()
-            .points([
-                Vec2::new(-2.0, 0.0),
-                Vec2::new(-1.0, 0.0),
-                Vec2::new(1.0, 0.0),
-                Vec2::new(2.0, 0.0),
-            ])
-            .build(),
-    );
-    let segment_shape_id = chain.segments()[0];
-    let segment_shape = world
-        .shape(segment_shape_id)
-        .expect("chain segment shape should exist");
-    assert_eq!(segment_shape.shape_type(), ShapeType::ChainSegment);
-    assert!(
-        segment_shape
-            .parent_chain_id()
-            .is_some_and(|parent| same_chain_id(parent, chain.id()))
-    );
-
-    let chain_segment = segment_shape.chain_segment();
-    assert!(chain_segment.ghost1.x <= chain_segment.segment.point1.x);
-    assert!(chain_segment.segment.point1.x < chain_segment.segment.point2.x);
-    assert!(chain_segment.segment.point2.x <= chain_segment.ghost2.x);
-}
-
-#[test]
-fn geometry_value_types_round_trip_through_explicit_raw_conversions() {
-    let circle = shapes::circle([1.0_f32, -2.0], 0.5);
-    assert_eq!(Circle::from_raw(circle.into_raw()), circle);
-
-    let segment = shapes::segment([-1.0_f32, 2.0], [3.0, 4.0]);
-    assert_eq!(Segment::from_raw(segment.into_raw()), segment);
-
-    let chain_segment = shapes::chain_segment([-3.0_f32, 0.0], [-1.0, 0.0], [2.0, 0.0], [4.0, 0.0]);
-    assert_eq!(
-        ChainSegment::from_raw(chain_segment.into_raw()),
-        chain_segment
-    );
-
-    let capsule = shapes::capsule([-1.0_f32, -1.0], [1.0, 1.0], 0.25);
-    assert_eq!(Capsule::from_raw(capsule.into_raw()), capsule);
-
-    let polygon = shapes::box_polygon(1.5, 0.75);
-    let polygon_roundtrip = Polygon::from_raw(polygon.into_raw());
-    assert_eq!(polygon_roundtrip.count(), polygon.count());
-    assert!(approx_eq(
-        polygon_roundtrip.radius(),
-        polygon.radius(),
-        f32::EPSILON
-    ));
-    assert!(approx_eq(
-        polygon_roundtrip.centroid().x,
-        polygon.centroid().x,
-        f32::EPSILON
-    ));
-    assert!(approx_eq(
-        polygon_roundtrip.centroid().y,
-        polygon.centroid().y,
-        f32::EPSILON
-    ));
-    for (lhs, rhs) in polygon_roundtrip.vertices().iter().zip(polygon.vertices()) {
-        assert!(approx_eq(lhs.x, rhs.x, f32::EPSILON));
-        assert!(approx_eq(lhs.y, rhs.y, f32::EPSILON));
-    }
-
-    let rounded = shapes::rounded_box_polygon(1.5, 0.75, 0.2);
-    let rounded_roundtrip = Polygon::from_raw(rounded.into_raw());
-    assert_eq!(rounded_roundtrip.count(), 4);
-    assert!(approx_eq(rounded_roundtrip.radius(), 0.2, f32::EPSILON));
-    for (lhs, rhs) in rounded_roundtrip.vertices().iter().zip(rounded.vertices()) {
-        assert!(approx_eq(lhs.x, rhs.x, f32::EPSILON));
-        assert!(approx_eq(lhs.y, rhs.y, f32::EPSILON));
-    }
-}
-
-#[test]
-fn polygon_helpers_cover_square_offset_and_hull_workflows() {
-    let square = shapes::square_polygon(1.25);
-    let square_by_method = Polygon::square_polygon(1.25);
-    let same_box = shapes::box_polygon(1.25, 1.25);
-    assert!(approx_polygon(&square, &square_by_method, 1.0e-6));
-    assert!(approx_polygon(&square, &same_box, 1.0e-6));
-
-    let transform = Transform::from_pos_angle([2.5_f32, -1.25], 0.35);
-    let offset_box = shapes::offset_box_polygon(1.5, 0.75, transform);
-    let expected_box = shapes::box_polygon(1.5, 0.75).transformed(transform);
-    assert!(approx_polygon(&offset_box, &expected_box, 1.0e-5));
-
-    let offset_rounded = shapes::offset_rounded_box_polygon(1.5, 0.75, 0.2, transform);
-    let expected_rounded = shapes::rounded_box_polygon(1.5, 0.75, 0.2).transformed(transform);
-    assert!(approx_polygon(&offset_rounded, &expected_rounded, 1.0e-5));
-
-    let hull_points = [
-        Vec2::new(-1.0, 0.0),
-        Vec2::new(0.0, 1.0),
-        Vec2::new(1.0, 0.0),
-        Vec2::new(0.0, -1.0),
-    ];
-    assert!(shapes::polygon_hull_is_valid(hull_points));
-
-    let offset_hull = shapes::offset_polygon_from_points(hull_points, 0.15, transform)
-        .expect("valid hull should build an offset polygon");
-    let expected_hull = shapes::polygon_from_points(hull_points, 0.15)
-        .expect("valid hull should build a polygon")
-        .transformed(transform);
-    assert!(approx_polygon(&offset_hull, &expected_hull, 1.0e-5));
-
-    let collinear = [
-        Vec2::new(-1.0, 0.0),
-        Vec2::new(0.0, 0.0),
-        Vec2::new(1.0, 0.0),
-    ];
-    assert!(!shapes::polygon_hull_is_valid(collinear));
-    assert!(shapes::polygon_from_points(collinear, 0.0).is_none());
-    assert!(shapes::offset_polygon_from_points(collinear, 0.0, transform).is_none());
-
-    let too_many_points: Vec<Vec2> = (0..=MAX_POLYGON_VERTICES)
-        .map(|i| Vec2::new(i as f32, (i % 2) as f32))
-        .collect();
-    assert!(!shapes::polygon_hull_is_valid(
-        too_many_points.iter().copied()
-    ));
-    assert!(
-        shapes::offset_polygon_from_points(too_many_points.iter().copied(), 0.0, transform)
-            .is_none()
-    );
-}
-
-#[test]
-fn polygon_try_helpers_match_safe_helpers_and_reject_invalid_inputs() {
-    let transform = Transform::from_pos_angle([2.5_f32, -1.25], 0.35);
-
-    let square = shapes::try_square_polygon(1.25).unwrap();
-    assert!(approx_polygon(
-        &square,
-        &shapes::square_polygon(1.25),
-        1.0e-6
-    ));
-
-    let box_poly = shapes::try_box_polygon(1.5, 0.75).unwrap();
-    assert!(approx_polygon(
-        &box_poly,
-        &shapes::box_polygon(1.5, 0.75),
-        1.0e-6
-    ));
-
-    let rounded = shapes::try_rounded_box_polygon(1.5, 0.75, 0.2).unwrap();
-    assert!(approx_polygon(
-        &rounded,
-        &shapes::rounded_box_polygon(1.5, 0.75, 0.2),
-        1.0e-6
-    ));
-
-    let offset_box = shapes::try_offset_box_polygon(1.5, 0.75, transform).unwrap();
-    assert!(approx_polygon(
-        &offset_box,
-        &shapes::offset_box_polygon(1.5, 0.75, transform),
-        1.0e-6
-    ));
-
-    let offset_rounded = shapes::try_offset_rounded_box_polygon(1.5, 0.75, 0.2, transform).unwrap();
-    assert!(approx_polygon(
-        &offset_rounded,
-        &shapes::offset_rounded_box_polygon(1.5, 0.75, 0.2, transform),
-        1.0e-6
-    ));
-
-    let hull_points = [
-        Vec2::new(-1.0, 0.0),
-        Vec2::new(0.0, 1.0),
-        Vec2::new(1.0, 0.0),
-        Vec2::new(0.0, -1.0),
-    ];
-    let hull = shapes::try_polygon_from_points(hull_points, 0.15).unwrap();
-    let offset_hull = shapes::try_offset_polygon_from_points(hull_points, 0.15, transform).unwrap();
-    assert!(approx_polygon(
-        &hull,
-        &shapes::polygon_from_points(hull_points, 0.15).unwrap(),
-        1.0e-6
-    ));
-    assert!(approx_polygon(
-        &offset_hull,
-        &shapes::offset_polygon_from_points(hull_points, 0.15, transform).unwrap(),
-        1.0e-6
-    ));
-
-    let invalid_transform = Transform::from_pos_angle([f32::NAN, 0.0], 0.0);
-    let collinear = [
-        Vec2::new(-1.0, 0.0),
-        Vec2::new(0.0, 0.0),
-        Vec2::new(1.0, 0.0),
-    ];
-
-    assert_eq!(
-        shapes::try_square_polygon(f32::NAN).unwrap_err(),
-        ApiError::InvalidArgument
-    );
-    assert_eq!(
-        shapes::try_box_polygon(0.0, 1.0).unwrap_err(),
-        ApiError::InvalidArgument
-    );
-    assert_eq!(
-        shapes::try_rounded_box_polygon(1.0, 1.0, -0.1).unwrap_err(),
-        ApiError::InvalidArgument
-    );
-    assert_eq!(
-        shapes::try_offset_box_polygon(1.0, 1.0, invalid_transform).unwrap_err(),
-        ApiError::InvalidArgument
-    );
-    assert_eq!(
-        shapes::try_offset_rounded_box_polygon(1.0, 1.0, 0.1, invalid_transform).unwrap_err(),
-        ApiError::InvalidArgument
-    );
-    assert_eq!(
-        shapes::try_polygon_from_points(collinear, 0.0).unwrap_err(),
-        ApiError::InvalidArgument
-    );
-    assert_eq!(
-        shapes::try_offset_polygon_from_points(collinear, 0.0, transform).unwrap_err(),
-        ApiError::InvalidArgument
-    );
-    assert_eq!(
-        shapes::try_offset_polygon_from_points(hull_points, 0.0, invalid_transform).unwrap_err(),
-        ApiError::InvalidArgument
-    );
-}
-
-#[test]
-fn body_try_create_polygon_from_points_returns_recoverable_error() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let mut body = world.create_body(BodyBuilder::new().build());
-    let def = ShapeDef::default();
-
-    let shape = body
-        .try_create_polygon_from_points(
-            &def,
-            [
-                Vec2::new(-1.0, 0.0),
-                Vec2::new(0.0, 1.0),
-                Vec2::new(1.0, 0.0),
-                Vec2::new(0.0, -1.0),
-            ],
-            0.1,
+fn shape_spatial_queries_and_wind_use_one_borrow_scoped_capability() {
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
         )
         .unwrap();
-    assert_eq!(shape.shape_type(), ShapeType::Polygon);
-
-    let err = body
-        .try_create_polygon_from_points(
-            &def,
-            [
-                Vec2::new(-1.0, 0.0),
-                Vec2::new(0.0, 0.0),
-                Vec2::new(1.0, 0.0),
-            ],
-            0.0,
+    let body_id = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_builder()
+                .body_type(BodyType::Dynamic)
+                .position([2.0_f32, 3.0])
+                .build()
+                .unwrap(),
         )
-        .err()
         .unwrap();
-    assert_eq!(err, ApiError::InvalidArgument);
+    let shape_id = world
+        .body(body_id)
+        .unwrap()
+        .create_centered_circle(&ShapeDef::builder().density(1.0).build().unwrap(), 1.0)
+        .unwrap();
+
+    let mut shape = world.shape(shape_id).unwrap();
+    assert_eq!(shape.body_id().unwrap(), body_id);
+    assert_eq!(shape.shape_type().unwrap(), ShapeType::Circle);
+    assert!(shape.test_point(Position::new(2.25, 3.0)).unwrap());
+    assert!(!shape.test_point(Position::new(4.0, 3.0)).unwrap());
+
+    let closest = shape.closest_point(Position::new(4.0, 3.0)).unwrap();
+    assert!(approx_position(closest, Position::new(3.0, 3.0), 1.0e-5));
+
+    let cast = shape
+        .ray_cast(Position::new(0.0, 3.0), [4.0_f32, 0.0])
+        .unwrap();
+    assert!(cast.hit);
+    assert!(approx_position(cast.point, Position::new(1.0, 3.0), 1.0e-5));
+    assert!(approx_vec2(cast.normal, Vec2::new(-1.0, 0.0), 1.0e-5));
+
+    shape.apply_wind([3.0_f32, 0.0], 1.0, 0.25, true).unwrap();
 }
 
 #[test]
-fn body_try_create_shape_helpers_return_recoverable_errors() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let mut body = world.create_body(BodyBuilder::new().build());
-    let def = ShapeDef::default();
-
-    let circle = body
-        .try_create_circle_shape(&def, &shapes::circle([0.0_f32, 0.0], 0.5))
+fn typed_geometry_getters_reject_wrong_kinds_and_follow_every_setter_transition() {
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
         .unwrap();
-    assert_eq!(circle.shape_type(), ShapeType::Circle);
-
-    let polygon = body.try_create_box(&def, 0.5, 0.25).unwrap();
-    assert_eq!(polygon.shape_type(), ShapeType::Polygon);
-
-    let capsule = body
-        .try_create_capsule_simple(&def, [-0.5_f32, 0.0], [0.5_f32, 0.0], 0.25)
+    let body = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_def(),
+        )
         .unwrap();
-    assert_eq!(capsule.shape_type(), ShapeType::Capsule);
-
-    let err = body.try_create_box(&def, 0.0, 0.25).err().unwrap();
-    assert_eq!(err, ApiError::InvalidArgument);
-
-    let err = body.try_create_circle_simple(&def, -0.5).err().unwrap();
-    assert_eq!(err, ApiError::InvalidArgument);
-
-    let err = body
-        .try_create_segment_simple(&def, [0.0_f32, 0.0], [0.0_f32, 0.0])
-        .err()
+    let shape_id = world
+        .body(body)
+        .unwrap()
+        .create_centered_circle(&ShapeDef::default(), 0.5)
         .unwrap();
-    assert_eq!(err, ApiError::InvalidArgument);
+    let mut shape = world.shape(shape_id).unwrap();
 
-    let err = body
-        .try_create_capsule_shape(&def, &shapes::capsule([0.0_f32, 0.0], [0.0_f32, 0.0], 0.25))
-        .err()
-        .unwrap();
-    assert_eq!(err, ApiError::InvalidArgument);
-
-    let invalid_def = ShapeDef::builder().density(f32::NAN).build();
-    let err = body
-        .try_create_polygon_shape(&invalid_def, &shapes::box_polygon(0.5, 0.5))
-        .err()
-        .unwrap();
-    assert_eq!(err, ApiError::InvalidArgument);
-}
-
-#[test]
-fn owned_body_shape_creation_helpers_return_owned_shapes_and_recoverable_errors() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let mut body = world.create_body_owned(BodyBuilder::new().build());
-    let def = ShapeDef::default();
-
-    let circle = body
-        .try_create_circle_shape(&def, &shapes::circle([0.0_f32, 0.0], 0.5))
-        .unwrap();
-    assert_eq!(circle.shape_type(), ShapeType::Circle);
-
-    let polygon = body.create_box(&def, 0.5, 0.25);
-    assert_eq!(polygon.shape_type(), ShapeType::Polygon);
-
-    let capsule = body
-        .try_create_capsule_simple(&def, [-0.5_f32, 0.0], [0.5_f32, 0.0], 0.25)
-        .unwrap();
-    assert_eq!(capsule.shape_type(), ShapeType::Capsule);
-
-    let from_points = body
-        .create_polygon_from_points(&def, [[-0.5_f32, 0.0], [0.5_f32, 0.0], [0.0_f32, 1.0]], 0.0)
-        .unwrap();
-    assert_eq!(from_points.shape_type(), ShapeType::Polygon);
-
-    let err = body.try_create_box(&def, 0.0, 0.25).err().unwrap();
-    assert_eq!(err, ApiError::InvalidArgument);
-
-    let err = body.try_create_circle_simple(&def, -0.5).err().unwrap();
-    assert_eq!(err, ApiError::InvalidArgument);
-
-    let err = body
-        .try_create_segment_simple(&def, [0.0_f32, 0.0], [0.0_f32, 0.0])
-        .err()
-        .unwrap();
-    assert_eq!(err, ApiError::InvalidArgument);
-
-    let err = body
-        .try_create_capsule_shape(&def, &shapes::capsule([0.0_f32, 0.0], [0.0_f32, 0.0], 0.25))
-        .err()
-        .unwrap();
-    assert_eq!(err, ApiError::InvalidArgument);
-
-    let err = body
-        .try_create_polygon_from_points(&def, [[0.0_f32, 0.0], [0.0_f32, 0.0]], 0.0)
-        .err()
-        .unwrap();
-    assert_eq!(err, ApiError::InvalidArgument);
-
-    let invalid_def = ShapeDef::builder().density(f32::NAN).build();
-    let err = body
-        .try_create_polygon_shape(&invalid_def, &shapes::box_polygon(0.5, 0.5))
-        .err()
-        .unwrap();
-    assert_eq!(err, ApiError::InvalidArgument);
-}
-
-#[test]
-fn surface_material_is_a_readable_value_type_with_explicit_raw_conversions() {
-    let material = SurfaceMaterial::default()
-        .with_friction(0.35)
-        .with_restitution(0.6)
-        .with_rolling_resistance(0.15)
-        .with_tangent_speed(-2.5)
-        .with_user_material_id(99)
-        .with_custom_color(HexColor::from_rgb(0xAA, 0xBB, 0xCC));
-
-    let copy = material;
-    assert_eq!(copy, material);
-    assert!(approx_eq(material.friction(), 0.35, f32::EPSILON));
-    assert!(approx_eq(material.restitution(), 0.6, f32::EPSILON));
-    assert!(approx_eq(material.rolling_resistance(), 0.15, f32::EPSILON));
-    assert!(approx_eq(material.tangent_speed(), -2.5, f32::EPSILON));
-    assert_eq!(material.user_material_id(), 99);
     assert_eq!(
-        material.custom_color(),
-        HexColor::from_rgb(0xAA, 0xBB, 0xCC)
+        shape.segment(),
+        Err(Error::WrongShapeType {
+            expected: ShapeType::Segment,
+            actual: ShapeType::Circle,
+        })
     );
-    assert_eq!(SurfaceMaterial::from_raw(material.into_raw()), material);
+
+    let segment = shapes::segment([-1.0_f32, 0.0], [1.0, 0.0]).unwrap();
+    shape.set_segment(&segment).unwrap();
+    assert_eq!(shape.shape_type(), Ok(ShapeType::Segment));
+    assert_eq!(shape.segment(), Ok(segment));
+    assert_eq!(
+        shape.chain_segment(),
+        Err(Error::WrongShapeType {
+            expected: ShapeType::ChainSegment,
+            actual: ShapeType::Segment,
+        })
+    );
+
+    let chain_segment =
+        shapes::chain_segment([-2.0_f32, 0.0], [-1.0, 0.0], [1.0, 0.0], [2.0, 0.0]).unwrap();
+    shape.set_chain_segment(&chain_segment).unwrap();
+    assert_eq!(shape.shape_type(), Ok(ShapeType::ChainSegment));
+    assert_eq!(shape.chain_segment(), Ok(chain_segment));
+    assert_eq!(
+        shape.capsule(),
+        Err(Error::WrongShapeType {
+            expected: ShapeType::Capsule,
+            actual: ShapeType::ChainSegment,
+        })
+    );
+
+    let capsule = shapes::capsule([-1.0_f32, 0.0], [1.0, 0.0], 0.25).unwrap();
+    shape.set_capsule(&capsule).unwrap();
+    assert_eq!(shape.shape_type(), Ok(ShapeType::Capsule));
+    assert_eq!(shape.capsule(), Ok(capsule));
+    assert!(matches!(
+        shape.polygon(),
+        Err(Error::WrongShapeType {
+            expected: ShapeType::Polygon,
+            actual: ShapeType::Capsule,
+        })
+    ));
+
+    let polygon = shapes::square_polygon(0.75).unwrap();
+    shape.set_polygon(&polygon).unwrap();
+    assert_eq!(shape.shape_type(), Ok(ShapeType::Polygon));
+    let actual_polygon = shape.polygon().unwrap();
+    assert_eq!(actual_polygon.vertices(), polygon.vertices());
+    assert_eq!(actual_polygon.normals(), polygon.normals());
+    assert_eq!(actual_polygon.centroid(), polygon.centroid());
+    assert_eq!(actual_polygon.radius(), polygon.radius());
+    assert_eq!(
+        shape.circle(),
+        Err(Error::WrongShapeType {
+            expected: ShapeType::Circle,
+            actual: ShapeType::Polygon,
+        })
+    );
+
+    let circle = shapes::circle([0.25_f32, 0.0], 0.5).unwrap();
+    shape.set_circle(&circle).unwrap();
+    assert_eq!(shape.shape_type(), Ok(ShapeType::Circle));
+    assert_eq!(shape.circle(), Ok(circle));
 }
 
 #[test]
-fn shape_def_is_a_readable_value_type_and_can_seed_a_builder() {
+fn shape_spatial_queries_reject_invalid_world_inputs_before_ffi() {
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let body_id = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_def(),
+        )
+        .unwrap();
+    let shape_id = world
+        .body(body_id)
+        .unwrap()
+        .create_centered_circle(&ShapeDef::default(), 1.0)
+        .unwrap();
+    let mut shape = world.shape(shape_id).unwrap();
+
+    assert_eq!(
+        shape.closest_point(Position::new(WorldScalar::NAN, 0.0)),
+        Err(Error::invalid_argument(
+            "Shape::closest_point",
+            "target",
+            "an offset from the body representable by a finite local vector",
+        ))
+    );
+    assert_eq!(
+        shape.test_point(Position::new(0.0, WorldScalar::INFINITY)),
+        Err(Error::invalid_argument(
+            "Shape::test_point",
+            "point",
+            "an offset from the body representable by a finite local vector",
+        ))
+    );
+    assert_eq!(
+        shape.ray_cast(Position::ZERO, [f32::NAN, 0.0]),
+        Err(Error::invalid_argument(
+            "Shape::ray_cast",
+            "translation",
+            "a finite vector",
+        ))
+    );
+    assert_eq!(
+        shape.apply_wind([f32::NAN, 0.0], 1.0, 0.0, true),
+        Err(Error::invalid_argument(
+            "Shape::apply_wind",
+            "wind",
+            "a finite vector",
+        ))
+    );
+    assert_eq!(
+        shape.apply_wind(Vec2::ZERO, -1.0, 0.0, true),
+        Err(Error::invalid_argument(
+            "Shape::apply_wind",
+            "drag",
+            "a finite value greater than or equal to zero",
+        ))
+    );
+}
+
+#[test]
+fn geometry_values_round_trip_through_explicit_raw_conversions() {
+    initialize_foundation();
+
+    let circle = shapes::circle([1.0_f32, -2.0], 0.75).unwrap();
+    assert_eq!(shapes::Circle::from_raw(circle.into_raw()).unwrap(), circle);
+
+    let segment = shapes::segment([-1.0_f32, 0.0], [2.0, 3.0]).unwrap();
+    assert_eq!(
+        shapes::Segment::from_raw(segment.into_raw()).unwrap(),
+        segment
+    );
+
+    let capsule = shapes::capsule([-1.0_f32, 0.0], [1.0, 0.0], 0.4).unwrap();
+    assert_eq!(
+        shapes::Capsule::from_raw(capsule.into_raw()).unwrap(),
+        capsule
+    );
+
+    let chain_segment =
+        shapes::chain_segment([-2.0_f32, 0.0], [-1.0, 0.0], [1.0, 0.0], [2.0, 0.0]).unwrap();
+    let copied_chain_segment = shapes::ChainSegment::from_raw(chain_segment.into_raw()).unwrap();
+    assert_eq!(copied_chain_segment.ghost1(), chain_segment.ghost1());
+    assert_eq!(copied_chain_segment.segment(), chain_segment.segment());
+    assert_eq!(copied_chain_segment.ghost2(), chain_segment.ghost2());
+
+    let polygon = shapes::box_polygon(1.5, 0.75).unwrap();
+    let raw = polygon.into_raw();
+    let copied_polygon = shapes::Polygon::from_raw(raw).unwrap();
+    assert_eq!(copied_polygon.vertices(), polygon.vertices());
+    assert_eq!(copied_polygon.normals(), polygon.normals());
+    assert_eq!(copied_polygon.centroid(), polygon.centroid());
+    assert_eq!(copied_polygon.radius(), polygon.radius());
+}
+
+#[test]
+fn safe_geometry_helpers_compute_mass_bounds_and_casts() {
+    initialize_foundation();
+
+    let transform = WorldTransform::new(Position::new(3.0, -2.0), Rot::IDENTITY).unwrap();
+    let circle = shapes::circle([0.0_f32, 0.0], 1.0).unwrap();
+    let mass = circle.mass_data(2.0).unwrap();
+    assert!(mass.mass() > 0.0);
+    let bounds = circle.aabb(transform).unwrap();
+    assert!(bounds.lower().x <= 2.0 && bounds.upper().x >= 4.0);
+    assert!(bounds.lower().y <= -3.0 && bounds.upper().y >= -1.0);
+    assert!(circle.contains_point([0.25_f32, 0.0]).unwrap());
+    assert!(circle.ray_cast([-2.0_f32, 0.0], [4.0, 0.0]).unwrap().hit);
+
+    let capsule = shapes::capsule([-1.0_f32, 0.0], [1.0, 0.0], 0.5).unwrap();
+    assert!(capsule.mass_data(1.0).unwrap().mass() > 0.0);
+    assert!(capsule.contains_point([0.0_f32, 0.25]).unwrap());
+
+    let polygon = shapes::box_polygon(1.0, 0.5).unwrap();
+    assert!(polygon.mass_data(1.0).unwrap().mass() > 0.0);
+    assert!(polygon.contains_point([0.0_f32, 0.0]).unwrap());
+}
+
+#[test]
+fn polygon_helpers_validate_dimensions_points_and_transforms() {
+    initialize_foundation();
+
+    let square = shapes::square_polygon(2.0).unwrap();
+    assert_eq!(square.count(), 4);
+    assert!(approx_eq(square.radius(), 0.0, 1.0e-6));
+
+    let points = [[-1.0_f32, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
+    assert!(shapes::polygon_hull_is_valid(points).unwrap());
+    let hull = shapes::polygon_from_points(points, 0.1).unwrap();
+    assert_eq!(hull.count(), 4);
+    assert!(approx_eq(hull.radius(), 0.1, 1.0e-6));
+
+    let offset = shapes::offset_box_polygon(
+        1.0,
+        0.5,
+        Transform::from_pos_angle([2.0_f32, 3.0], 0.25).unwrap(),
+    )
+    .unwrap();
+    assert!(approx_vec2(offset.centroid(), Vec2::new(2.0, 3.0), 1.0e-5));
+
+    assert_eq!(
+        shapes::box_polygon(0.0, 1.0).unwrap_err(),
+        Error::invalid_argument(
+            "Polygon::box_polygon",
+            "half_width",
+            "a finite value greater than zero",
+        )
+    );
+    assert_eq!(
+        shapes::rounded_box_polygon(1.0, 1.0, -0.1).unwrap_err(),
+        Error::invalid_argument(
+            "Polygon::rounded_box_polygon",
+            "radius",
+            "a finite value greater than or equal to zero",
+        )
+    );
+    assert_eq!(
+        shapes::polygon_from_points([[0.0_f32, 0.0], [1.0, 0.0]], 0.0).unwrap_err(),
+        Error::invalid_argument(
+            "Polygon::from_points",
+            "points",
+            "points that form a non-degenerate convex hull",
+        )
+    );
+    assert_eq!(
+        shapes::polygon_from_points(points, f32::NAN).unwrap_err(),
+        Error::invalid_argument(
+            "Polygon::from_points",
+            "radius",
+            "a finite value greater than or equal to zero",
+        )
+    );
+}
+
+#[test]
+fn body_shape_constructors_return_typed_ids_or_recoverable_errors() {
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let body_id = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_def(),
+        )
+        .unwrap();
+    let mut body = world.body(body_id).unwrap();
+
+    let circle = body
+        .create_circle(
+            &ShapeDef::default(),
+            &shapes::circle([0.0_f32, 0.0], 0.5).unwrap(),
+        )
+        .unwrap();
+    let box_shape = body.create_box(&ShapeDef::default(), 1.0, 0.5).unwrap();
+    let capsule = body
+        .create_capsule_between(&ShapeDef::default(), [-1.0_f32, 0.0], [1.0, 0.0], 0.25)
+        .unwrap();
+    assert_eq!(body.shapes().unwrap().len(), 3);
+    assert!(body.shapes().unwrap().contains(&circle));
+    assert!(body.shapes().unwrap().contains(&box_shape));
+    assert!(body.shapes().unwrap().contains(&capsule));
+
+    assert_eq!(
+        body.create_polygon_from_points(&ShapeDef::default(), [[0.0_f32, 0.0], [1.0, 0.0]], 0.0,),
+        Err(Error::invalid_argument(
+            "Polygon::from_points",
+            "points",
+            "points that form a non-degenerate convex hull",
+        ))
+    );
+    assert_eq!(
+        body.create_capsule_between(&ShapeDef::default(), Vec2::ZERO, Vec2::ZERO, f32::NAN,),
+        Err(Error::invalid_argument(
+            "Capsule::new",
+            "capsule",
+            "finite geometry with endpoints separated by Box2D's minimum length and a non-negative radius",
+        ))
+    );
+    assert_eq!(body.shape_count().unwrap(), 3);
+}
+
+#[test]
+fn surface_material_and_shape_def_are_readable_value_types() {
     let material = SurfaceMaterial::default()
-        .with_friction(0.45)
-        .with_restitution(0.2)
-        .with_user_material_id(7);
+        .with_friction(0.25)
+        .unwrap()
+        .with_restitution(0.5)
+        .unwrap()
+        .with_rolling_resistance(0.125)
+        .unwrap()
+        .with_tangent_speed(2.0)
+        .unwrap()
+        .with_user_material_id(41)
+        .with_custom_color(HexColor::from_rgb_u32(0x123456));
+    assert_eq!(
+        SurfaceMaterial::from_raw(material.into_raw()).unwrap(),
+        material
+    );
+    assert_eq!(material.friction(), 0.25);
+    assert_eq!(material.restitution(), 0.5);
+    assert_eq!(material.rolling_resistance(), 0.125);
+    assert_eq!(material.tangent_speed(), 2.0);
+    assert_eq!(material.user_material_id(), 41);
+    assert_eq!(material.custom_color().rgb_u32(), 0x123456);
+
     let filter = Filter {
-        category_bits: 0x0010,
-        mask_bits: 0x0020,
-        group_index: -5,
+        category_bits: 0x02,
+        mask_bits: 0x04,
+        group_index: -3,
     };
-
-    let sdef = ShapeDef::builder()
+    let def = ShapeDef::builder()
         .material(material)
-        .density(2.5)
+        .density(2.0)
         .filter(filter)
-        .enable_custom_filtering(true)
         .sensor(true)
         .enable_sensor_events(true)
         .enable_contact_events(true)
         .enable_hit_events(true)
         .enable_pre_solve_events(true)
-        .invoke_contact_creation(true)
-        .update_body_mass(false)
-        .build();
-
-    assert_eq!(sdef.material(), material);
-    assert!(approx_eq(sdef.density(), 2.5, f32::EPSILON));
-    assert_eq!(sdef.filter(), filter);
-    assert!(sdef.is_sensor());
-    assert!(sdef.custom_filtering_enabled());
-    assert!(sdef.sensor_events_enabled());
-    assert!(sdef.contact_events_enabled());
-    assert!(sdef.hit_events_enabled());
-    assert!(sdef.pre_solve_events_enabled());
-    assert!(sdef.invokes_contact_creation());
-    assert!(!sdef.updates_body_mass());
-
-    let rebuilt = ShapeDefBuilder::from(sdef.clone())
-        .density(4.0)
-        .sensor(false)
-        .build();
-    assert_eq!(rebuilt.material(), material);
-    assert!(approx_eq(rebuilt.density(), 4.0, f32::EPSILON));
-    assert!(!rebuilt.is_sensor());
-    assert_eq!(rebuilt.filter(), filter);
-
-    let roundtrip = ShapeDef::from_raw(sdef.into_raw());
-    assert_eq!(roundtrip.material(), material);
-    assert!(approx_eq(roundtrip.density(), 2.5, f32::EPSILON));
-    assert_eq!(roundtrip.filter(), filter);
-    assert!(roundtrip.is_sensor());
-}
-
-#[test]
-fn defs_expose_validation_for_invalid_numeric_inputs() {
-    assert!(BodyDef::default().validate().is_ok());
-    assert!(SurfaceMaterial::default().validate().is_ok());
-    assert!(ShapeDef::default().validate().is_ok());
-
-    let invalid_body = BodyBuilder::new().linear_damping(f32::NAN).build();
-    assert_eq!(
-        invalid_body.validate().unwrap_err(),
-        ApiError::InvalidArgument
-    );
-
-    let invalid_material = SurfaceMaterial::default().with_friction(-1.0);
-    assert_eq!(
-        invalid_material.validate().unwrap_err(),
-        ApiError::InvalidArgument
-    );
-
-    let invalid_shape = ShapeDef::builder().density(-1.0).build();
-    assert_eq!(
-        invalid_shape.validate().unwrap_err(),
-        ApiError::InvalidArgument
-    );
-}
-
-#[test]
-fn chain_def_exposes_points_flags_and_material_layout() {
-    let points = [
-        Vec2::new(-2.0, 0.0),
-        Vec2::new(-1.0, 0.0),
-        Vec2::new(1.0, 0.0),
-        Vec2::new(2.0, 0.0),
-    ];
-    let filter = Filter {
-        category_bits: 0x0008,
-        mask_bits: 0x0010,
-        group_index: 3,
-    };
-
-    let default_def = boxdd::shapes::chain::ChainDef::builder()
-        .points(points)
-        .filter(filter)
-        .enable_sensor_events(true)
-        .build();
-    assert_eq!(default_def.points(), points.as_slice());
-    assert!(!default_def.is_loop());
-    assert_eq!(default_def.filter(), filter);
-    assert!(default_def.sensor_events_enabled());
-    assert_eq!(default_def.material_count(), 1);
-    match default_def.material_layout() {
-        ChainDefMaterialLayout::Default(material) => {
-            assert_eq!(material, SurfaceMaterial::default());
-        }
-        other => panic!("expected default material layout, got {other:?}"),
-    }
-
-    let single_material = SurfaceMaterial::default()
-        .with_friction(0.3)
-        .with_restitution(0.1);
-    let single_def = boxdd::shapes::chain::ChainDef::builder()
-        .points(points)
-        .single_material(&single_material)
-        .build();
-    assert_eq!(single_def.material_count(), 1);
-    match single_def.material_layout() {
-        ChainDefMaterialLayout::Single(material) => {
-            assert_eq!(material, single_material);
-        }
-        other => panic!("expected single material layout, got {other:?}"),
-    }
-
-    let multiple_materials = [
-        SurfaceMaterial::default().with_friction(0.1),
-        SurfaceMaterial::default().with_friction(0.2),
-        SurfaceMaterial::default().with_friction(0.3),
-        SurfaceMaterial::default().with_friction(0.4),
-    ];
-    let multiple_def = ChainDefBuilder::from(
-        boxdd::shapes::chain::ChainDef::builder()
-            .points(points)
-            .materials(&multiple_materials)
-            .build(),
-    )
-    .is_loop(true)
-    .build();
-    assert!(multiple_def.is_loop());
-    assert_eq!(multiple_def.points(), points.as_slice());
-    assert_eq!(multiple_def.material_count(), multiple_materials.len());
-    match multiple_def.material_layout() {
-        ChainDefMaterialLayout::Multiple(materials) => {
-            assert_eq!(materials, multiple_materials.as_slice());
-        }
-        other => panic!("expected multiple material layout, got {other:?}"),
-    }
-}
-
-#[test]
-fn chain_runtime_queries_and_material_mutation_are_available_across_owned_and_scoped_handles() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let body = world.create_body_id(BodyBuilder::new().build());
-    let materials = [
-        SurfaceMaterial::default().with_friction(0.05),
-        SurfaceMaterial::default().with_friction(0.10),
-        SurfaceMaterial::default().with_friction(0.20),
-        SurfaceMaterial::default().with_friction(0.30),
-        SurfaceMaterial::default().with_friction(0.40),
-        SurfaceMaterial::default().with_friction(0.50),
-        SurfaceMaterial::default().with_friction(0.60),
-    ];
-    let mut chain = world.create_chain_for_owned(
-        body,
-        &ChainDef::builder()
-            .points([
-                [-3.0_f32, 0.0],
-                [-2.0, 0.0],
-                [-1.0, 0.0],
-                [0.0, 0.0],
-                [1.0, 0.0],
-                [2.0, 0.0],
-                [3.0, 0.0],
-            ])
-            .materials(&materials)
-            .build(),
-    );
-    let chain_id = chain.id();
-    let world_id = world.world_id_raw();
-
-    assert!(same_world_id(chain.world_id_raw(), world_id));
-    assert!(same_world_id(chain.try_world_id_raw().unwrap(), world_id));
-    assert!(chain.is_valid());
-    assert!(chain.try_is_valid().unwrap());
-
-    let baseline_segments = chain.segments();
-    assert_eq!(chain.segment_count() as usize, baseline_segments.len());
-    assert_eq!(
-        chain.try_segment_count().unwrap() as usize,
-        baseline_segments.len()
-    );
-    assert_eq!(baseline_segments.len(), 4);
-
-    let mut segments = Vec::with_capacity(8);
-    let segments_ptr = segments.as_ptr();
-    chain.segments_into(&mut segments);
-    assert_eq!(segments, baseline_segments);
-    assert_eq!(segments.as_ptr(), segments_ptr);
-    chain.try_segments_into(&mut segments).unwrap();
-    assert_eq!(segments, baseline_segments);
-
-    let visible_materials = [materials[1], materials[2], materials[3], materials[4]];
-
-    assert_eq!(
-        chain.surface_material_count() as usize,
-        visible_materials.len()
-    );
-    assert_eq!(
-        chain.try_surface_material_count().unwrap() as usize,
-        visible_materials.len()
-    );
-    assert_eq!(chain.surface_material(0), visible_materials[0]);
-    assert_eq!(chain.try_surface_material(2).unwrap(), visible_materials[2]);
-
-    let updated_owned = SurfaceMaterial::default()
-        .with_friction(0.85)
-        .with_restitution(0.15);
-    let updated_scoped = SurfaceMaterial::default()
-        .with_friction(0.95)
-        .with_restitution(0.25);
-    let updated_scoped_try = SurfaceMaterial::default()
-        .with_friction(0.75)
-        .with_restitution(0.35);
-
-    chain.set_surface_material(1, &updated_owned);
-    assert_eq!(chain.surface_material(1), updated_owned);
-    chain
-        .try_set_surface_material(2, &updated_scoped_try)
+        .update_body_mass(true)
+        .build()
         .unwrap();
-    assert_eq!(chain.surface_material(2), updated_scoped_try);
-
-    {
-        let mut scoped = world.chain(chain_id).expect("chain should still be valid");
-        assert!(same_world_id(scoped.world_id_raw(), world_id));
-        assert!(same_world_id(scoped.try_world_id_raw().unwrap(), world_id));
-        assert!(scoped.is_valid());
-        assert!(scoped.try_is_valid().unwrap());
-        assert_eq!(scoped.segment_count() as usize, baseline_segments.len());
-        assert_eq!(
-            scoped.try_segment_count().unwrap() as usize,
-            baseline_segments.len()
-        );
-
-        let mut scoped_segments = Vec::with_capacity(8);
-        let scoped_segments_ptr = scoped_segments.as_ptr();
-        scoped.segments_into(&mut scoped_segments);
-        assert_eq!(scoped_segments, baseline_segments);
-        assert_eq!(scoped_segments.as_ptr(), scoped_segments_ptr);
-        scoped.try_segments_into(&mut scoped_segments).unwrap();
-        assert_eq!(scoped_segments, baseline_segments);
-
-        assert_eq!(
-            scoped.surface_material_count() as usize,
-            visible_materials.len()
-        );
-        assert_eq!(
-            scoped.try_surface_material_count().unwrap() as usize,
-            visible_materials.len()
-        );
-        assert_eq!(scoped.surface_material(1), updated_owned);
-        assert_eq!(scoped.try_surface_material(2).unwrap(), updated_scoped_try);
-
-        scoped.set_surface_material(0, &updated_scoped);
-        assert_eq!(scoped.surface_material(0), updated_scoped);
-        scoped
-            .try_set_surface_material(3, &updated_scoped_try)
-            .unwrap();
-        assert_eq!(scoped.surface_material(3), updated_scoped_try);
-    }
-
-    assert_eq!(chain.surface_material(0), updated_scoped);
-    assert_eq!(chain.surface_material(1), updated_owned);
-    assert_eq!(chain.surface_material(2), updated_scoped_try);
-    assert_eq!(chain.surface_material(3), updated_scoped_try);
+    assert_eq!(def.material(), material);
+    assert_eq!(def.density(), 2.0);
+    assert_eq!(def.filter(), filter);
+    assert!(def.is_sensor());
+    assert!(def.sensor_events_enabled());
+    assert!(def.contact_events_enabled());
+    assert!(def.hit_events_enabled());
+    assert!(def.pre_solve_events_enabled());
+    assert!(def.updates_body_mass());
 }
 
 #[test]
-fn body_and_owned_body_chain_creation_helpers_are_available() {
-    let mut world = World::new(WorldDef::default()).unwrap();
+fn definitions_reject_invalid_numeric_and_layout_inputs() {
+    assert_eq!(
+        SurfaceMaterial::default()
+            .with_friction(f32::NAN)
+            .unwrap_err(),
+        Error::invalid_argument(
+            "SurfaceMaterial::with_friction",
+            "friction",
+            "a finite value greater than or equal to zero",
+        )
+    );
+
+    let mut raw_material = SurfaceMaterial::default().into_raw();
+    raw_material.rollingResistance = -1.0;
+    assert_eq!(
+        SurfaceMaterial::from_raw(raw_material).unwrap_err(),
+        Error::invalid_argument(
+            "SurfaceMaterial::from_raw",
+            "rolling_resistance",
+            "a finite value greater than or equal to zero",
+        )
+    );
+
+    let mut raw_material = SurfaceMaterial::default().into_raw();
+    raw_material.customColor = u32::MAX;
+    assert_eq!(
+        SurfaceMaterial::from_raw(raw_material).unwrap_err(),
+        Error::invalid_argument(
+            "SurfaceMaterial::from_raw",
+            "custom_color",
+            "an RGB value in the inclusive range 0x000000..=0xFFFFFF",
+        )
+    );
+    assert_eq!(
+        ShapeDef::builder().density(-1.0).build().unwrap_err(),
+        Error::invalid_argument(
+            "ShapeDef::validate",
+            "density",
+            "a finite value greater than or equal to zero",
+        )
+    );
+    assert_eq!(
+        ChainDef::builder()
+            .points([[0.0_f32, 0.0], [1.0, 0.0], [2.0, 0.0]])
+            .build()
+            .unwrap_err(),
+        Error::InvalidChainDef
+    );
+}
+
+#[test]
+fn chain_definition_and_runtime_use_one_borrow_scoped_capability() {
+    initialize_foundation();
+    let initial = SurfaceMaterial::default()
+        .with_friction(0.2)
+        .unwrap()
+        .with_user_material_id(7);
+    let updated = SurfaceMaterial::default()
+        .with_friction(0.8)
+        .unwrap()
+        .with_user_material_id(9);
+    let points = [[-2.0_f32, 0.0], [-1.0, 0.0], [1.0, 0.0], [2.0, 0.0]];
     let def = ChainDef::builder()
-        .points([
-            [-2.0_f32, 0.0],
-            [-1.0, 0.0],
-            [0.0, 0.0],
-            [1.0, 0.0],
-            [2.0, 0.0],
-        ])
-        .build();
+        .points(points)
+        .single_material(&initial)
+        .enable_sensor_events(true)
+        .build()
+        .unwrap();
+    assert_eq!(def.points(), points.map(Vec2::from).as_slice());
+    assert!(def.sensor_events_enabled());
+    assert_eq!(def.material_count(), 1);
+    assert!(matches!(
+        def.material_layout(),
+        ChainDefMaterialLayout::Single(material) if material == initial
+    ));
 
-    let body_id = world.create_body_id(BodyBuilder::new().build());
-    {
-        let mut body = world.body(body_id).unwrap();
-        let chain = body.try_create_chain(&def).unwrap();
-        assert_eq!(chain.segment_count(), 2);
-    }
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let body_id = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_def(),
+        )
+        .unwrap();
+    let chain_id = world.body(body_id).unwrap().create_chain(&def).unwrap();
 
-    let mut owned_body = world.create_body_owned(BodyBuilder::new().build());
-    let owned_chain = owned_body.create_chain(&def);
-    assert_eq!(owned_chain.segment_count(), 2);
+    let segments = {
+        let mut chain = world.chain(chain_id).unwrap();
+        assert!(chain.segment_count().unwrap() > 0);
+        assert_eq!(chain.surface_material_count().unwrap(), 1);
+        assert_eq!(chain.surface_material(0).unwrap(), initial);
+        chain.set_surface_material(0, &updated).unwrap();
+        assert_eq!(chain.surface_material(0).unwrap(), updated);
+        chain.segments().unwrap()
+    };
+    assert!(!segments.is_empty());
+    assert_eq!(
+        world.shape(segments[0]).unwrap().parent_chain_id().unwrap(),
+        Some(chain_id)
+    );
 }
 
 #[test]
-fn shape_filters_use_safe_values_with_explicit_raw_escape_hatch() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let body = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
-    let filter = Filter {
-        category_bits: 0x0002,
-        mask_bits: 0x0004,
+fn shape_runtime_properties_filters_and_events_are_canonical_results() {
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let body_id = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_builder()
+                .body_type(BodyType::Dynamic)
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    let original_filter = Filter {
+        category_bits: 0x02,
+        mask_bits: 0x04,
         group_index: -3,
     };
-    assert_eq!(Filter::from_raw(filter.into_raw()), filter);
+    let material = SurfaceMaterial::default()
+        .with_friction(0.25)
+        .unwrap()
+        .with_restitution(0.1)
+        .unwrap()
+        .with_user_material_id(41);
+    let shape_id = world
+        .body(body_id)
+        .unwrap()
+        .create_centered_circle(
+            &ShapeDef::builder()
+                .density(2.0)
+                .filter(original_filter)
+                .material(material)
+                .build()
+                .unwrap(),
+            1.0,
+        )
+        .unwrap();
 
-    let sdef = ShapeDef::builder().density(1.0).filter(filter).build();
-    let mut shape =
-        world.create_circle_shape_for_owned(body, &sdef, &shapes::circle([0.0_f32, 0.0], 0.5));
-    assert_eq!(shape.filter(), filter);
-    assert_eq!(shape.try_filter().unwrap(), filter);
-
+    let mut shape = world.shape(shape_id).unwrap();
+    assert_eq!(shape.filter().unwrap(), original_filter);
     let updated_filter = Filter {
-        category_bits: 0x0010,
-        mask_bits: 0x0020,
+        category_bits: 0x10,
+        mask_bits: 0x20,
         group_index: 7,
     };
-    shape.set_filter(updated_filter);
-    assert_eq!(shape.filter(), updated_filter);
+    shape.set_filter(updated_filter).unwrap();
+    assert_eq!(shape.filter().unwrap(), updated_filter);
 
-    shape.try_set_filter(filter).unwrap();
-    assert_eq!(shape.filter(), filter);
+    assert_eq!(shape.surface_material().unwrap(), material);
+    assert_eq!(shape.density().unwrap(), 2.0);
+    assert!(shape.mass_data().unwrap().mass() > 0.0);
+    shape.set_density(3.0, true).unwrap();
+    shape.set_friction(0.75).unwrap();
+    shape.set_restitution(0.5).unwrap();
+    shape.set_user_material(99).unwrap();
+    assert_eq!(shape.density().unwrap(), 3.0);
+    assert_eq!(shape.friction().unwrap(), 0.75);
+    assert_eq!(shape.restitution().unwrap(), 0.5);
+    assert_eq!(shape.user_material().unwrap(), 99);
+
+    assert!(!shape.sensor_events_enabled().unwrap());
+    assert!(!shape.contact_events_enabled().unwrap());
+    assert!(!shape.pre_solve_events_enabled().unwrap());
+    assert!(!shape.hit_events_enabled().unwrap());
+    shape.enable_sensor_events(true).unwrap();
+    shape.enable_contact_events(true).unwrap();
+    shape.enable_pre_solve_events(true).unwrap();
+    shape.enable_hit_events(true).unwrap();
+    assert!(shape.sensor_events_enabled().unwrap());
+    assert!(shape.contact_events_enabled().unwrap());
+    assert!(shape.pre_solve_events_enabled().unwrap());
+    assert!(shape.hit_events_enabled().unwrap());
 }
 
 #[test]
-fn shape_runtime_queries_and_mass_data_match_safe_geometry_helpers() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let body = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
-    let sdef = ShapeDef::builder().density(2.0).build();
-    let circle = shapes::circle([0.0_f32, 0.0], 1.0);
-    let shape_id = world.create_circle_shape_for(body, &sdef, &circle);
+fn shape_capability_enforces_world_provenance_and_liveness() {
+    let mut source = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
+    let body = source
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_def(),
+        )
+        .unwrap();
+    let shape_id = source
+        .body(body)
+        .unwrap()
+        .create_centered_circle(&ShapeDef::default(), 0.5)
+        .unwrap();
+    let mut target = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
+        .unwrap();
 
-    let expected_aabb = circle.aabb(Transform::IDENTITY);
-    let expected_mass_data = circle.mass_data(2.0);
-    let expected_cast = circle.ray_cast([-2.0_f32, 0.0], [4.0, 0.0]);
-
-    {
-        let shape = world.shape(shape_id).expect("shape should still be valid");
-
-        let aabb = shape.aabb();
-        assert!(aabb.lower.x <= expected_aabb.lower.x);
-        assert!(aabb.lower.y <= expected_aabb.lower.y);
-        assert!(aabb.upper.x >= expected_aabb.upper.x);
-        assert!(aabb.upper.y >= expected_aabb.upper.y);
-        assert_eq!(shape.try_aabb().unwrap(), aabb);
-
-        assert!(shape.test_point([0.25_f32, 0.0]));
-        assert!(shape.try_test_point([0.25_f32, 0.0]).unwrap());
-        assert!(!shape.test_point([1.5_f32, 0.0]));
-
-        let cast = shape.ray_cast([-2.0_f32, 0.0], [4.0, 0.0]);
-        assert_eq!(cast.hit, expected_cast.hit);
-        assert!(approx_eq(cast.fraction, expected_cast.fraction, 1.0e-6));
-        assert!(approx_vec2(cast.point, expected_cast.point, 1.0e-6));
-        assert!(approx_vec2(cast.normal, expected_cast.normal, 1.0e-6));
-        let try_cast = shape.try_ray_cast([-2.0_f32, 0.0], [4.0, 0.0]).unwrap();
-        assert_eq!(try_cast.hit, cast.hit);
-        assert!(approx_eq(try_cast.fraction, cast.fraction, 1.0e-6));
-        assert!(approx_vec2(try_cast.point, cast.point, 1.0e-6));
-        assert!(approx_vec2(try_cast.normal, cast.normal, 1.0e-6));
-
-        let mass_data = shape.mass_data();
-        assert!(approx_mass_data(mass_data, expected_mass_data, 1.0e-5));
-        assert!(approx_mass_data(
-            shape.try_mass_data().unwrap(),
-            expected_mass_data,
-            1.0e-5
-        ));
-    }
-
-    let world_aabb = world.shape_aabb(shape_id);
-    assert_eq!(world_aabb, world.try_shape_aabb(shape_id).unwrap());
-    assert!(world_aabb.lower.x <= expected_aabb.lower.x);
-    assert!(world_aabb.lower.y <= expected_aabb.lower.y);
-    assert!(world_aabb.upper.x >= expected_aabb.upper.x);
-    assert!(world_aabb.upper.y >= expected_aabb.upper.y);
-    assert!(world.shape_test_point(shape_id, [0.25_f32, 0.0]));
-    assert!(!world.shape_test_point(shape_id, [1.5_f32, 0.0]));
-
-    let world_cast = world.shape_ray_cast(shape_id, [-2.0_f32, 0.0], [4.0, 0.0]);
-    assert_eq!(world_cast.hit, expected_cast.hit);
-    assert!(approx_eq(
-        world_cast.fraction,
-        expected_cast.fraction,
-        1.0e-6
-    ));
-    assert!(approx_vec2(world_cast.point, expected_cast.point, 1.0e-6));
-    assert!(approx_vec2(world_cast.normal, expected_cast.normal, 1.0e-6));
-
-    let world_mass_data = world.shape_mass_data(shape_id);
-    assert!(approx_mass_data(
-        world_mass_data,
-        expected_mass_data,
-        1.0e-5
-    ));
+    assert_eq!(target.shape(shape_id).err().unwrap(), Error::WrongWorld);
+    source.shape(shape_id).unwrap().destroy(true).unwrap();
+    assert_eq!(source.shape(shape_id).err().unwrap(), Error::InvalidShapeId);
 }
 
 #[test]
-fn world_handle_shape_runtime_queries_match_world_queries() {
-    let mut world = World::new(WorldDef::builder().gravity([0.0_f32, -10.0]).build()).unwrap();
-
-    let sensor_body = world.create_body_id(BodyBuilder::new().position([0.0_f32, 1.5]).build());
-    let sensor_material = SurfaceMaterial::default()
-        .with_friction(0.25)
-        .with_restitution(0.1)
-        .with_user_material_id(41);
-    let sensor_shape_id = world.create_polygon_shape_for(
-        sensor_body,
-        &ShapeDef::builder()
-            .density(1.0)
-            .sensor(true)
-            .enable_sensor_events(true)
-            .material(sensor_material)
-            .build(),
-        &shapes::box_polygon(2.0, 0.3),
-    );
-
-    let visitor_body = world.create_body_id(
-        BodyBuilder::new()
-            .body_type(BodyType::Dynamic)
-            .position([0.0_f32, 3.0])
-            .build(),
-    );
-    let visitor_shape_id = world.create_circle_shape_for(
-        visitor_body,
-        &ShapeDef::builder()
-            .density(1.0)
-            .enable_sensor_events(true)
-            .build(),
-        &shapes::circle([0.0_f32, 0.0], 0.25),
-    );
-
-    world.shape_enable_contact_events(sensor_shape_id, true);
-    world.shape_enable_pre_solve_events(sensor_shape_id, true);
-    world.shape_enable_hit_events(sensor_shape_id, true);
-
-    for _ in 0..240 {
-        world.step(1.0 / 120.0, 8);
-        if !world.shape_sensor_overlaps(sensor_shape_id).is_empty() {
-            break;
-        }
-    }
-
-    let handle = world.handle();
-
-    assert_eq!(
-        handle.shape_surface_material(sensor_shape_id),
-        sensor_material
-    );
-    assert_eq!(
-        handle.try_shape_surface_material(sensor_shape_id).unwrap(),
-        sensor_material
-    );
-    assert_eq!(handle.shape_body_id(sensor_shape_id), sensor_body);
-    assert_eq!(
-        handle.try_shape_body_id(sensor_shape_id).unwrap(),
-        sensor_body
-    );
-
-    let world_aabb = world.shape_aabb(sensor_shape_id);
-    assert_eq!(handle.shape_aabb(sensor_shape_id), world_aabb);
-    assert_eq!(handle.try_shape_aabb(sensor_shape_id).unwrap(), world_aabb);
-
-    assert_eq!(
-        handle.shape_test_point(sensor_shape_id, [0.0_f32, 1.5]),
-        world.shape_test_point(sensor_shape_id, [0.0_f32, 1.5])
-    );
-    assert_eq!(
-        handle
-            .try_shape_test_point(sensor_shape_id, [3.0_f32, 1.5])
-            .unwrap(),
-        world.shape_test_point(sensor_shape_id, [3.0_f32, 1.5])
-    );
-
-    let world_cast = world.shape_ray_cast(sensor_shape_id, [-3.0_f32, 1.5], [6.0_f32, 0.0]);
-    let handle_cast = handle.shape_ray_cast(sensor_shape_id, [-3.0_f32, 1.5], [6.0_f32, 0.0]);
-    assert_eq!(handle_cast.hit, world_cast.hit);
-    assert!(approx_eq(handle_cast.fraction, world_cast.fraction, 1.0e-6));
-    assert!(approx_vec2(handle_cast.point, world_cast.point, 1.0e-6));
-    assert!(approx_vec2(handle_cast.normal, world_cast.normal, 1.0e-6));
-    let handle_try_cast = handle
-        .try_shape_ray_cast(sensor_shape_id, [-3.0_f32, 1.5], [6.0_f32, 0.0])
+fn shape_type_value_round_trips_through_the_sys_discriminant() {
+    let mut world = boxdd::Foundation::initialize_default()
+        .unwrap()
+        .create_world(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a WorldDef")
+                .world_def(),
+        )
         .unwrap();
-    assert_eq!(handle_try_cast.hit, world_cast.hit);
-    assert!(approx_eq(
-        handle_try_cast.fraction,
-        world_cast.fraction,
-        1.0e-6
-    ));
-    assert!(approx_vec2(handle_try_cast.point, world_cast.point, 1.0e-6));
-    assert!(approx_vec2(
-        handle_try_cast.normal,
-        world_cast.normal,
-        1.0e-6
-    ));
-
-    let world_closest_point = world.shape_closest_point(sensor_shape_id, [3.5_f32, 1.5]);
-    assert_eq!(
-        handle.shape_closest_point(sensor_shape_id, [3.5_f32, 1.5]),
-        world_closest_point
-    );
-    assert_eq!(
-        handle
-            .try_shape_closest_point(sensor_shape_id, [3.5_f32, 1.5])
-            .unwrap(),
-        world_closest_point
-    );
-
-    assert!(approx_mass_data(
-        handle.shape_mass_data(sensor_shape_id),
-        world.shape_mass_data(sensor_shape_id),
-        1.0e-6
-    ));
-    assert!(approx_mass_data(
-        handle.try_shape_mass_data(sensor_shape_id).unwrap(),
-        world.shape_mass_data(sensor_shape_id),
-        1.0e-6
-    ));
-
-    assert!(handle.shape_sensor_events_enabled(sensor_shape_id));
-    assert!(
-        handle
-            .try_shape_sensor_events_enabled(sensor_shape_id)
-            .unwrap()
-    );
-    assert!(handle.shape_contact_events_enabled(sensor_shape_id));
-    assert!(
-        handle
-            .try_shape_contact_events_enabled(sensor_shape_id)
-            .unwrap()
-    );
-    assert!(handle.shape_pre_solve_events_enabled(sensor_shape_id));
-    assert!(
-        handle
-            .try_shape_pre_solve_events_enabled(sensor_shape_id)
-            .unwrap()
-    );
-    assert!(handle.shape_hit_events_enabled(sensor_shape_id));
-    assert!(
-        handle
-            .try_shape_hit_events_enabled(sensor_shape_id)
-            .unwrap()
-    );
-
-    let sensor_capacity = world.shape_sensor_capacity(sensor_shape_id);
-    assert_eq!(
-        handle.shape_sensor_capacity(sensor_shape_id),
-        sensor_capacity
-    );
-    assert_eq!(
-        handle.try_shape_sensor_capacity(sensor_shape_id).unwrap(),
-        sensor_capacity
-    );
-
-    let world_overlaps = world.shape_sensor_overlaps(sensor_shape_id);
-    assert!(!world_overlaps.is_empty());
-    assert!(
-        world_overlaps
-            .iter()
-            .copied()
-            .any(|id| same_shape_id(id, visitor_shape_id))
-    );
-    let handle_overlaps = handle.shape_sensor_overlaps(sensor_shape_id);
-    assert_eq!(handle_overlaps.len(), world_overlaps.len());
-    assert!(
-        handle_overlaps
-            .iter()
-            .copied()
-            .any(|id| same_shape_id(id, visitor_shape_id))
-    );
-    let mut overlap_buf = Vec::with_capacity(8);
-    let overlap_buf_ptr = overlap_buf.as_ptr();
-    handle.shape_sensor_overlaps_into(sensor_shape_id, &mut overlap_buf);
-    assert_eq!(overlap_buf.as_ptr(), overlap_buf_ptr);
-    assert_eq!(overlap_buf.len(), world_overlaps.len());
-    handle
-        .try_shape_sensor_overlaps_into(sensor_shape_id, &mut overlap_buf)
+    let body = world
+        .create_body(
+            boxdd::Foundation::get()
+                .expect("Foundation must be initialized before constructing a BodyDef")
+                .body_def(),
+        )
         .unwrap();
-    assert_eq!(overlap_buf.as_ptr(), overlap_buf_ptr);
-    assert_eq!(overlap_buf.len(), world_overlaps.len());
-
-    let world_overlaps_valid = world.shape_sensor_overlaps_valid(sensor_shape_id);
-    assert!(!world_overlaps_valid.is_empty());
-    assert!(
-        world_overlaps_valid
-            .iter()
-            .copied()
-            .any(|id| same_shape_id(id, visitor_shape_id))
-    );
-    let handle_overlaps_valid = handle.shape_sensor_overlaps_valid(sensor_shape_id);
-    assert_eq!(handle_overlaps_valid.len(), world_overlaps_valid.len());
-    assert!(
-        handle_overlaps_valid
-            .iter()
-            .copied()
-            .any(|id| same_shape_id(id, visitor_shape_id))
-    );
-    let mut overlap_valid_buf = Vec::with_capacity(8);
-    let overlap_valid_buf_ptr = overlap_valid_buf.as_ptr();
-    handle.shape_sensor_overlaps_valid_into(sensor_shape_id, &mut overlap_valid_buf);
-    assert_eq!(overlap_valid_buf.as_ptr(), overlap_valid_buf_ptr);
-    assert_eq!(overlap_valid_buf.len(), world_overlaps_valid.len());
-    handle
-        .try_shape_sensor_overlaps_valid_into(sensor_shape_id, &mut overlap_valid_buf)
+    let shape_id = world
+        .body(body)
+        .unwrap()
+        .create_centered_circle(&ShapeDef::default(), 0.5)
         .unwrap();
-    assert_eq!(overlap_valid_buf.as_ptr(), overlap_valid_buf_ptr);
-    assert_eq!(overlap_valid_buf.len(), world_overlaps_valid.len());
-}
+    let shape = world.shape(shape_id).unwrap();
 
-#[test]
-fn shape_runtime_event_toggles_are_visible_across_owned_scoped_and_world_apis() {
-    let mut world = World::new(WorldDef::default()).unwrap();
-    let body = world.create_body_id(BodyBuilder::new().body_type(BodyType::Dynamic).build());
-
-    let sensor_shape_id = world.create_circle_shape_for(
-        body,
-        &ShapeDef::builder().sensor(true).build(),
-        &shapes::circle([0.0_f32, 0.0], 0.5),
+    assert_eq!(shape.shape_type().unwrap(), ShapeType::Circle);
+    assert_eq!(
+        ShapeType::from_raw(ffi::b2ShapeType_b2_circleShape),
+        Some(ShapeType::Circle)
     );
-    let mut owned = world.create_polygon_shape_for_owned(
-        body,
-        &ShapeDef::builder().density(1.0).build(),
-        &shapes::box_polygon(0.5, 0.5),
+    assert_eq!(
+        ShapeType::Circle.into_raw(),
+        ffi::b2ShapeType_b2_circleShape
     );
-    let contact_shape_id = owned.id();
-
-    {
-        let mut sensor_shape = world
-            .shape(sensor_shape_id)
-            .expect("sensor shape should still be valid");
-        assert!(!sensor_shape.sensor_events_enabled());
-        sensor_shape.enable_sensor_events(true);
-        assert!(sensor_shape.sensor_events_enabled());
-    }
-    assert!(world.shape_sensor_events_enabled(sensor_shape_id));
-    world.shape_enable_sensor_events(sensor_shape_id, false);
-    assert!(!world.shape_sensor_events_enabled(sensor_shape_id));
-
-    assert!(!owned.contact_events_enabled());
-    assert!(!owned.pre_solve_events_enabled());
-    assert!(!owned.hit_events_enabled());
-
-    owned.enable_contact_events(true);
-    owned.enable_pre_solve_events(true);
-    owned.enable_hit_events(true);
-    assert!(owned.contact_events_enabled());
-    assert!(owned.pre_solve_events_enabled());
-    assert!(owned.hit_events_enabled());
-    assert!(owned.try_contact_events_enabled().unwrap());
-    assert!(owned.try_pre_solve_events_enabled().unwrap());
-    assert!(owned.try_hit_events_enabled().unwrap());
-
-    assert!(world.shape_contact_events_enabled(contact_shape_id));
-    assert!(world.shape_pre_solve_events_enabled(contact_shape_id));
-    assert!(world.shape_hit_events_enabled(contact_shape_id));
-
-    world.shape_enable_contact_events(contact_shape_id, false);
-    world.shape_enable_pre_solve_events(contact_shape_id, false);
-    world.shape_enable_hit_events(contact_shape_id, false);
-
-    assert!(!world.shape_contact_events_enabled(contact_shape_id));
-    assert!(!world.shape_pre_solve_events_enabled(contact_shape_id));
-    assert!(!world.shape_hit_events_enabled(contact_shape_id));
 }

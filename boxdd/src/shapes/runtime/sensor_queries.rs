@@ -1,99 +1,110 @@
 use super::*;
 
-fn retain_valid_shape_ids(ids: &mut Vec<ShapeId>) {
-    ids.retain(|sid| unsafe { ffi::b2Shape_IsValid(raw_shape_id(*sid)) });
-}
-
-pub(crate) fn shape_sensor_capacity_checked_impl(id: ShapeId) -> i32 {
-    crate::core::debug_checks::assert_shape_valid(id);
-    shape_sensor_capacity_impl(id)
-}
-
-pub(crate) fn try_shape_sensor_capacity_impl(id: ShapeId) -> ApiResult<i32> {
-    crate::core::debug_checks::check_shape_valid(id)?;
-    Ok(shape_sensor_capacity_impl(id))
-}
-
-pub(crate) fn shape_sensor_overlaps_checked_impl(id: ShapeId) -> Vec<ShapeId> {
-    crate::core::debug_checks::assert_shape_valid(id);
-    shape_sensor_overlaps_impl(id)
-}
-
-pub(crate) fn shape_sensor_overlaps_into_checked_impl(id: ShapeId, out: &mut Vec<ShapeId>) {
-    crate::core::debug_checks::assert_shape_valid(id);
-    shape_sensor_overlaps_into_impl(id, out);
-}
-
-pub(crate) fn try_shape_sensor_overlaps_impl(id: ShapeId) -> ApiResult<Vec<ShapeId>> {
-    crate::core::debug_checks::check_shape_valid(id)?;
-    Ok(shape_sensor_overlaps_impl(id))
-}
-
-pub(crate) fn try_shape_sensor_overlaps_into_impl(
-    id: ShapeId,
-    out: &mut Vec<ShapeId>,
-) -> ApiResult<()> {
-    crate::core::debug_checks::check_shape_valid(id)?;
-    shape_sensor_overlaps_into_impl(id, out);
-    Ok(())
-}
-
-pub(crate) fn shape_sensor_overlaps_valid_checked_impl(id: ShapeId) -> Vec<ShapeId> {
-    crate::core::debug_checks::assert_shape_valid(id);
-    shape_sensor_overlaps_valid_impl(id)
-}
-
-pub(crate) fn try_shape_sensor_overlaps_valid_impl(id: ShapeId) -> ApiResult<Vec<ShapeId>> {
-    crate::core::debug_checks::check_shape_valid(id)?;
-    Ok(shape_sensor_overlaps_valid_impl(id))
-}
-
-pub(crate) fn shape_sensor_overlaps_valid_into_checked_impl(id: ShapeId, out: &mut Vec<ShapeId>) {
-    crate::core::debug_checks::assert_shape_valid(id);
-    shape_sensor_overlaps_valid_into_impl(id, out);
-}
-
-pub(crate) fn try_shape_sensor_overlaps_valid_into_impl(
-    id: ShapeId,
-    out: &mut Vec<ShapeId>,
-) -> ApiResult<()> {
-    crate::core::debug_checks::check_shape_valid(id)?;
-    shape_sensor_overlaps_valid_into_impl(id, out);
-    Ok(())
-}
-
-pub(crate) fn shape_sensor_overlaps_into_impl(id: ShapeId, out: &mut Vec<ShapeId>) {
-    let id = raw_shape_id(id);
-    let cap = unsafe { ffi::b2Shape_GetSensorCapacity(id) }.max(0) as usize;
+unsafe fn try_read_sensor_output(
+    resolver: &crate::core::identity_registry::OutputIdentityResolver<'_>,
+    requested: i32,
+    fill: impl FnOnce(*mut ffi::b2ShapeId, i32) -> i32,
+) -> Result<Vec<ShapeId>> {
     unsafe {
-        crate::core::ffi_vec::fill_from_ffi(out, cap, |ptr, cap| {
-            ffi::b2Shape_GetSensorData(id, ptr.cast(), cap)
-        });
+        crate::core::ffi_vec::try_read_mapped_from_ffi(requested, fill, |raw| resolver.shape(raw))
     }
 }
 
-pub(crate) fn shape_sensor_overlaps_impl(id: ShapeId) -> Vec<ShapeId> {
-    let id = raw_shape_id(id);
-    let cap = unsafe { ffi::b2Shape_GetSensorCapacity(id) }.max(0) as usize;
-    unsafe {
-        crate::core::ffi_vec::read_from_ffi(cap, |ptr: *mut ShapeId, cap| {
-            ffi::b2Shape_GetSensorData(id, ptr.cast(), cap)
+pub(crate) fn shape_sensor_overlaps_in_impl(
+    shape: crate::world::ShapeCall<'_>,
+) -> Result<Vec<ShapeId>> {
+    let id = raw_shape_id(shape.id());
+    let cap = shape_sensor_capacity_impl("Shape::sensor_overlaps", shape.id())?;
+    shape.with_output_identity_resolver(|resolver| unsafe {
+        try_read_sensor_output(resolver, cap, |ptr, cap| {
+            ffi::b2Shape_GetSensorData(id, ptr, cap)
         })
-    }
-}
-
-pub(crate) fn shape_sensor_overlaps_valid_into_impl(id: ShapeId, out: &mut Vec<ShapeId>) {
-    shape_sensor_overlaps_into_impl(id, out);
-    retain_valid_shape_ids(out);
-}
-
-pub(crate) fn shape_sensor_overlaps_valid_impl(id: ShapeId) -> Vec<ShapeId> {
-    let mut ids = shape_sensor_overlaps_impl(id);
-    retain_valid_shape_ids(&mut ids);
-    ids
+    })
 }
 
 #[inline]
-pub(crate) fn shape_sensor_capacity_impl(id: ShapeId) -> i32 {
-    unsafe { ffi::b2Shape_GetSensorCapacity(raw_shape_id(id)) }
+pub(crate) fn shape_sensor_capacity_impl(operation: &'static str, id: ShapeId) -> Result<i32> {
+    check_native_shape_sensor_capacity(
+        operation,
+        unsafe { ffi::b2Shape_GetSensorCapacity(raw_shape_id(id)) },
+        shape_is_sensor_impl(id),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_registry() -> (
+        crate::id::IdBrand,
+        std::sync::Arc<crate::core::identity_registry::ActiveIdentityRegistry>,
+    ) {
+        let brand = crate::id::IdBrand::new(
+            ffi::b2WorldId {
+                index1: 4,
+                generation: 7,
+            },
+            crate::id::WorldToken::allocate().unwrap(),
+        )
+        .unwrap();
+        let registry = crate::core::identity_registry::ActiveIdentityRegistry::new(brand);
+        let body = registry
+            .register_body(ffi::b2BodyId {
+                index1: 1,
+                world0: brand.world0(),
+                generation: 1,
+            })
+            .unwrap();
+        for index1 in [2, 9] {
+            registry
+                .register_shape(raw_shape(index1, brand.world0()), body)
+                .unwrap();
+        }
+        (brand, registry)
+    }
+
+    fn raw_shape(index1: i32, world0: u16) -> ffi::b2ShapeId {
+        ffi::b2ShapeId {
+            index1,
+            world0,
+            generation: 1,
+        }
+    }
+
+    #[test]
+    fn sensor_output_rejects_invalid_ids() {
+        let (brand, registry) = test_registry();
+        let error = registry
+            .with_output_resolver(|resolver| unsafe {
+                try_read_sensor_output(resolver, 1, |ptr, _capacity| {
+                    ptr.write(raw_shape(1, brand.world0().wrapping_add(1)));
+                    1
+                })
+            })
+            .unwrap_err();
+        assert_eq!(error, Error::WrongWorld);
+
+        let error = registry
+            .with_output_resolver(|resolver| unsafe {
+                try_read_sensor_output(resolver, 1, |ptr, _capacity| {
+                    ptr.write(raw_shape(0, brand.world0()));
+                    1
+                })
+            })
+            .unwrap_err();
+        assert_eq!(error, Error::InvalidShapeId);
+
+        let out = registry
+            .with_output_resolver(|resolver| unsafe {
+                try_read_sensor_output(resolver, 1, |ptr, _capacity| {
+                    ptr.write(raw_shape(2, brand.world0()));
+                    1
+                })
+            })
+            .unwrap();
+        let raw = out[0].into_raw();
+        assert_eq!(raw.index1, 2);
+        assert_eq!(raw.world0, brand.world0());
+        assert_eq!(raw.generation, 1);
+    }
 }

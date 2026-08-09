@@ -7,12 +7,20 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     let scale = 1.0_f32;
 
     // Common builders
-    let bdef_dyn = bd::BodyBuilder::new().body_type(bd::BodyType::Dynamic);
-    let mat = bd::shapes::SurfaceMaterial::default().with_rolling_resistance(0.1);
-    let sdef_rr = bd::ShapeDef::builder().material(mat).build();
+    let bdef_dyn =
+        bd::BodyBuilder::from(app.foundation.body_def()).body_type(bd::BodyType::Dynamic);
+    let mat = bd::shapes::SurfaceMaterial::default()
+        .with_rolling_resistance(0.1)
+        .expect("doohickey rolling resistance must be valid");
+    let sdef_rr = bd::ShapeDef::builder()
+        .material(mat)
+        .build()
+        .expect("valid testbed definition");
 
-    let circle = bd::shapes::circle([0.0_f32, 0.0], 1.0 * scale);
-    let bar = bd::shapes::capsule([-3.5 * scale, 0.0], [3.5 * scale, 0.0], 0.15 * scale);
+    let circle = bd::shapes::circle([0.0_f32, 0.0], 1.0 * scale)
+        .expect("doohickey wheel circle must be valid");
+    let bar = bd::shapes::capsule([-3.5 * scale, 0.0], [3.5 * scale, 0.0], 0.15 * scale)
+        .expect("doohickey bar capsule must be valid");
 
     // Body positions
     let p_w1 = [-5.0 * scale, 3.0 * scale];
@@ -21,22 +29,74 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     let p_b2 = [1.5 * scale, 3.0 * scale];
 
     // Wheels
-    let w1 = app.world.create_body_id(bdef_dyn.clone().position(p_w1).build());
-    app.world.create_circle_shape_for(w1, &sdef_rr, &circle);
+    let w1 = app
+        .world
+        .create_body(
+            bdef_dyn
+                .clone()
+                .position(p_w1)
+                .build()
+                .expect("valid testbed body definition"),
+        )
+        .expect("valid testbed operation");
+    app.world
+        .body(w1)
+        .expect("valid testbed operation")
+        .create_circle(&sdef_rr, &circle)
+        .expect("valid testbed operation");
     app.created_bodies += 1;
     app.created_shapes += 1;
-    let w2 = app.world.create_body_id(bdef_dyn.clone().position(p_w2).build());
-    app.world.create_circle_shape_for(w2, &sdef_rr, &circle);
+    let w2 = app
+        .world
+        .create_body(
+            bdef_dyn
+                .clone()
+                .position(p_w2)
+                .build()
+                .expect("valid testbed body definition"),
+        )
+        .expect("valid testbed operation");
+    app.world
+        .body(w2)
+        .expect("valid testbed operation")
+        .create_circle(&sdef_rr, &circle)
+        .expect("valid testbed operation");
     app.created_bodies += 1;
     app.created_shapes += 1;
 
     // Bars
-    let b1 = app.world.create_body_id(bdef_dyn.clone().position(p_b1).build());
-    app.world.create_capsule_shape_for(b1, &sdef_rr, &bar);
+    let b1 = app
+        .world
+        .create_body(
+            bdef_dyn
+                .clone()
+                .position(p_b1)
+                .build()
+                .expect("valid testbed body definition"),
+        )
+        .expect("valid testbed operation");
+    app.world
+        .body(b1)
+        .expect("valid testbed operation")
+        .create_capsule(&sdef_rr, &bar)
+        .expect("valid testbed operation");
     app.created_bodies += 1;
     app.created_shapes += 1;
-    let b2 = app.world.create_body_id(bdef_dyn.clone().position(p_b2).build());
-    app.world.create_capsule_shape_for(b2, &sdef_rr, &bar);
+    let b2 = app
+        .world
+        .create_body(
+            bdef_dyn
+                .clone()
+                .position(p_b2)
+                .build()
+                .expect("valid testbed body definition"),
+        )
+        .expect("valid testbed operation");
+    app.world
+        .body(b2)
+        .expect("valid testbed operation")
+        .create_capsule(&sdef_rr, &bar)
+        .expect("valid testbed operation");
     app.created_bodies += 1;
     app.created_shapes += 1;
 
@@ -44,23 +104,31 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     {
         let base = app
             .world
-            .joint_base_from_world_points(w1, b1, p_w1, p_w1);
+            .joint_base_from_world_points(w1, b1, p_w1, p_w1)
+            .expect("valid testbed operation");
         let rdef = bd::RevoluteJointDef::new(base)
             .enable_motor(true)
             .max_motor_torque(app.revolute_torque)
             .motor_speed(app.revolute_speed);
-        let _ = app.world.create_revolute_joint_id(&rdef);
+        let _ = app
+            .world
+            .create_revolute_joint(&rdef)
+            .expect("valid testbed operation");
         app.created_joints += 1;
     }
     {
         let base = app
             .world
-            .joint_base_from_world_points(w2, b2, p_w2, p_w2);
+            .joint_base_from_world_points(w2, b2, p_w2, p_w2)
+            .expect("valid testbed operation");
         let rdef = bd::RevoluteJointDef::new(base)
             .enable_motor(true)
             .max_motor_torque(app.revolute_torque)
             .motor_speed(app.revolute_speed);
-        let _ = app.world.create_revolute_joint_id(&rdef);
+        let _ = app
+            .world
+            .create_revolute_joint(&rdef)
+            .expect("valid testbed operation");
         app.created_joints += 1;
     }
 
@@ -70,7 +138,8 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     let axis = [1.0_f32, 0.0];
     let base = app
         .world
-        .joint_base_from_world_with_axis(b1, b2, anchor_a, anchor_b, axis);
+        .joint_base_from_world_with_axis(b1, b2, anchor_a, anchor_b, axis)
+        .expect("valid testbed operation");
     let pdef = bd::PrismaticJointDef::new(base)
         .enable_limit(true)
         .lower_translation(app.prism_lower)
@@ -81,12 +150,15 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
         .enable_spring(true)
         .hertz(1.0)
         .damping_ratio(0.5);
-    let _ = app.world.create_prismatic_joint_id(&pdef);
+    let _ = app
+        .world
+        .create_prismatic_joint(&pdef)
+        .expect("valid testbed operation");
     app.created_joints += 1;
 }
 
 #[allow(dead_code)]
-pub fn tick(_app: &mut super::PhysicsApp) {}
+pub fn tick(_app: &mut super::PhysicsApp, _events: Option<&bd::StepEventsSnapshot>) {}
 
 pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
     ui.text("Doohickey: wheels + bars with motors and prismatic slider");
@@ -106,7 +178,9 @@ pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
     if changed {
         app.revolute_speed = rs;
         app.revolute_torque = rt.max(0.0);
-        if pl > pu { std::mem::swap(&mut pl, &mut pu); }
+        if pl > pu {
+            std::mem::swap(&mut pl, &mut pu);
+        }
         app.prism_lower = pl;
         app.prism_upper = pu;
         app.prism_speed = ps;

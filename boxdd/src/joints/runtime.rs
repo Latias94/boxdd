@@ -1,535 +1,333 @@
-use super::*;
+use boxdd_sys::ffi;
 
-// Runtime joint control APIs (by joint type)
-impl World {
-    pub fn joint_type(&self, id: JointId) -> JointType {
-        joint_read_checked_impl(id, base::joint_type_impl)
-    }
+use super::validation::{
+    check_joint_finite, check_joint_non_negative, check_joint_non_negative_range,
+    check_joint_ordered_range, check_joint_positive, check_joint_transform, check_joint_tuning,
+    check_joint_vec2, check_revolute_joint_range,
+};
+use super::{ConstraintTuning, raw_joint_id};
+use crate::Transform;
+use crate::error::Result;
+use crate::types::{JointId, Vec2};
 
-    pub fn try_joint_type(&self, id: JointId) -> ApiResult<JointType> {
-        try_joint_read_checked_impl(id, base::joint_type_impl)
-    }
+pub(in crate::joints) enum JointWrite {
+    SetCollideConnected(bool),
+    SetConstraintTuning(ConstraintTuning),
+    SetLocalFrameA(Transform),
+    SetLocalFrameB(Transform),
+    WakeBodies,
+    SetForceThreshold(f32),
+    SetTorqueThreshold(f32),
+    DistanceSetLength(f32),
+    DistanceEnableSpring(bool),
+    DistanceSetSpringForceRange(f32, f32),
+    DistanceSetSpringHertz(f32),
+    DistanceSetSpringDampingRatio(f32),
+    DistanceEnableLimit(bool),
+    DistanceSetLengthRange(f32, f32),
+    DistanceEnableMotor(bool),
+    DistanceSetMotorSpeed(f32),
+    DistanceSetMaxMotorForce(f32),
+    MotorSetLinearVelocity(Vec2),
+    MotorSetAngularVelocity(f32),
+    MotorSetMaxVelocityForce(f32),
+    MotorSetMaxVelocityTorque(f32),
+    MotorSetLinearHertz(f32),
+    MotorSetLinearDampingRatio(f32),
+    MotorSetAngularHertz(f32),
+    MotorSetAngularDampingRatio(f32),
+    MotorSetMaxSpringForce(f32),
+    MotorSetMaxSpringTorque(f32),
+    PrismaticEnableSpring(bool),
+    PrismaticSetSpringHertz(f32),
+    PrismaticSetSpringDampingRatio(f32),
+    PrismaticSetTargetTranslation(f32),
+    PrismaticEnableLimit(bool),
+    PrismaticSetLimits(f32, f32),
+    PrismaticEnableMotor(bool),
+    PrismaticSetMotorSpeed(f32),
+    PrismaticSetMaxMotorForce(f32),
+    RevoluteEnableSpring(bool),
+    RevoluteSetSpringHertz(f32),
+    RevoluteSetSpringDampingRatio(f32),
+    RevoluteSetTargetAngle(f32),
+    RevoluteEnableLimit(bool),
+    RevoluteSetLimits(f32, f32),
+    RevoluteEnableMotor(bool),
+    RevoluteSetMotorSpeed(f32),
+    RevoluteSetMaxMotorTorque(f32),
+    WeldSetLinearHertz(f32),
+    WeldSetLinearDampingRatio(f32),
+    WeldSetAngularHertz(f32),
+    WeldSetAngularDampingRatio(f32),
+    WheelEnableSpring(bool),
+    WheelSetSpringHertz(f32),
+    WheelSetSpringDampingRatio(f32),
+    WheelEnableLimit(bool),
+    WheelSetLimits(f32, f32),
+    WheelEnableMotor(bool),
+    WheelSetMotorSpeed(f32),
+    WheelSetMaxMotorTorque(f32),
+}
 
-    pub fn joint_type_raw(&self, id: JointId) -> ffi::b2JointType {
-        joint_read_checked_impl(id, base::joint_type_raw_impl)
-    }
-
-    pub fn try_joint_type_raw(&self, id: JointId) -> ApiResult<ffi::b2JointType> {
-        try_joint_read_checked_impl(id, base::joint_type_raw_impl)
-    }
-
-    pub fn joint_body_a_id(&self, id: JointId) -> BodyId {
-        joint_read_checked_impl(id, base::joint_body_a_id_impl)
-    }
-
-    pub fn try_joint_body_a_id(&self, id: JointId) -> ApiResult<BodyId> {
-        try_joint_read_checked_impl(id, base::joint_body_a_id_impl)
-    }
-
-    pub fn joint_body_b_id(&self, id: JointId) -> BodyId {
-        joint_read_checked_impl(id, base::joint_body_b_id_impl)
-    }
-
-    pub fn try_joint_body_b_id(&self, id: JointId) -> ApiResult<BodyId> {
-        try_joint_read_checked_impl(id, base::joint_body_b_id_impl)
-    }
-
-    pub fn joint_world_id_raw(&self, id: JointId) -> ffi::b2WorldId {
-        joint_read_checked_impl(id, base::joint_world_id_raw_impl)
-    }
-
-    pub fn try_joint_world_id_raw(&self, id: JointId) -> ApiResult<ffi::b2WorldId> {
-        try_joint_read_checked_impl(id, base::joint_world_id_raw_impl)
-    }
-
-    pub fn joint_collide_connected(&self, id: JointId) -> bool {
-        joint_read_checked_impl(id, base::joint_collide_connected_impl)
-    }
-
-    pub fn try_joint_collide_connected(&self, id: JointId) -> ApiResult<bool> {
-        try_joint_read_checked_impl(id, base::joint_collide_connected_impl)
-    }
-
-    pub fn set_joint_collide_connected(&mut self, id: JointId, flag: bool) {
-        assert_joint_valid(id);
-        base::joint_set_collide_connected_impl(id, flag)
-    }
-
-    pub fn try_set_joint_collide_connected(&mut self, id: JointId, flag: bool) -> ApiResult<()> {
-        check_joint_valid(id)?;
-        base::joint_set_collide_connected_impl(id, flag);
+impl JointWrite {
+    pub(in crate::joints) fn apply(self, id: JointId) -> Result<()> {
+        match self {
+            Self::SetCollideConnected(value) => unsafe {
+                ffi::b2Joint_SetCollideConnected(raw_joint_id(id), value)
+            },
+            Self::SetConstraintTuning(value) => {
+                check_joint_tuning(value, "Joint::set_constraint_tuning", "tuning")?;
+                unsafe {
+                    ffi::b2Joint_SetConstraintTuning(
+                        raw_joint_id(id),
+                        value.hertz(),
+                        value.damping_ratio(),
+                    )
+                }
+            }
+            Self::SetLocalFrameA(value) => {
+                check_joint_transform(value, "Joint::set_local_frame_a", "frame")?;
+                unsafe { ffi::b2Joint_SetLocalFrameA(raw_joint_id(id), value.into_raw()) }
+            }
+            Self::SetLocalFrameB(value) => {
+                check_joint_transform(value, "Joint::set_local_frame_b", "frame")?;
+                unsafe { ffi::b2Joint_SetLocalFrameB(raw_joint_id(id), value.into_raw()) }
+            }
+            Self::WakeBodies => unsafe { ffi::b2Joint_WakeBodies(raw_joint_id(id)) },
+            Self::SetForceThreshold(value) => {
+                check_joint_non_negative(value, "Joint::set_force_threshold", "threshold")?;
+                unsafe { ffi::b2Joint_SetForceThreshold(raw_joint_id(id), value) }
+            }
+            Self::SetTorqueThreshold(value) => {
+                check_joint_non_negative(value, "Joint::set_torque_threshold", "threshold")?;
+                unsafe { ffi::b2Joint_SetTorqueThreshold(raw_joint_id(id), value) }
+            }
+            Self::DistanceSetLength(value) => {
+                check_joint_positive(value, "DistanceJoint::set_length", "length")?;
+                unsafe { ffi::b2DistanceJoint_SetLength(raw_joint_id(id), value) }
+            }
+            Self::DistanceEnableSpring(value) => unsafe {
+                ffi::b2DistanceJoint_EnableSpring(raw_joint_id(id), value)
+            },
+            Self::DistanceSetSpringForceRange(lower, upper) => {
+                check_joint_ordered_range(
+                    lower,
+                    upper,
+                    "DistanceJoint::set_spring_force_range",
+                    "lower/upper",
+                )?;
+                unsafe { ffi::b2DistanceJoint_SetSpringForceRange(raw_joint_id(id), lower, upper) }
+            }
+            Self::DistanceSetSpringHertz(value) => {
+                check_joint_non_negative(value, "DistanceJoint::set_spring_hertz", "hertz")?;
+                unsafe { ffi::b2DistanceJoint_SetSpringHertz(raw_joint_id(id), value) }
+            }
+            Self::DistanceSetSpringDampingRatio(value) => {
+                check_joint_non_negative(
+                    value,
+                    "DistanceJoint::set_spring_damping_ratio",
+                    "ratio",
+                )?;
+                unsafe { ffi::b2DistanceJoint_SetSpringDampingRatio(raw_joint_id(id), value) }
+            }
+            Self::DistanceEnableLimit(value) => unsafe {
+                ffi::b2DistanceJoint_EnableLimit(raw_joint_id(id), value)
+            },
+            Self::DistanceSetLengthRange(lower, upper) => {
+                check_joint_non_negative_range(
+                    lower,
+                    upper,
+                    "DistanceJoint::set_length_range",
+                    "min/max",
+                )?;
+                unsafe { ffi::b2DistanceJoint_SetLengthRange(raw_joint_id(id), lower, upper) }
+            }
+            Self::DistanceEnableMotor(value) => unsafe {
+                ffi::b2DistanceJoint_EnableMotor(raw_joint_id(id), value)
+            },
+            Self::DistanceSetMotorSpeed(value) => {
+                check_joint_finite(value, "DistanceJoint::set_motor_speed", "speed")?;
+                unsafe { ffi::b2DistanceJoint_SetMotorSpeed(raw_joint_id(id), value) }
+            }
+            Self::DistanceSetMaxMotorForce(value) => {
+                check_joint_non_negative(value, "DistanceJoint::set_max_motor_force", "force")?;
+                unsafe { ffi::b2DistanceJoint_SetMaxMotorForce(raw_joint_id(id), value) }
+            }
+            Self::MotorSetLinearVelocity(value) => {
+                check_joint_vec2(value, "MotorJoint::set_linear_velocity", "velocity")?;
+                unsafe { ffi::b2MotorJoint_SetLinearVelocity(raw_joint_id(id), value.into_raw()) }
+            }
+            Self::MotorSetAngularVelocity(value) => {
+                check_joint_finite(value, "MotorJoint::set_angular_velocity", "velocity")?;
+                unsafe { ffi::b2MotorJoint_SetAngularVelocity(raw_joint_id(id), value) }
+            }
+            Self::MotorSetMaxVelocityForce(value) => {
+                check_joint_non_negative(value, "MotorJoint::set_max_velocity_force", "force")?;
+                unsafe { ffi::b2MotorJoint_SetMaxVelocityForce(raw_joint_id(id), value) }
+            }
+            Self::MotorSetMaxVelocityTorque(value) => {
+                check_joint_non_negative(value, "MotorJoint::set_max_velocity_torque", "torque")?;
+                unsafe { ffi::b2MotorJoint_SetMaxVelocityTorque(raw_joint_id(id), value) }
+            }
+            Self::MotorSetLinearHertz(value) => {
+                check_joint_non_negative(value, "MotorJoint::set_linear_hertz", "hertz")?;
+                unsafe { ffi::b2MotorJoint_SetLinearHertz(raw_joint_id(id), value) }
+            }
+            Self::MotorSetLinearDampingRatio(value) => {
+                check_joint_non_negative(value, "MotorJoint::set_linear_damping_ratio", "ratio")?;
+                unsafe { ffi::b2MotorJoint_SetLinearDampingRatio(raw_joint_id(id), value) }
+            }
+            Self::MotorSetAngularHertz(value) => {
+                check_joint_non_negative(value, "MotorJoint::set_angular_hertz", "hertz")?;
+                unsafe { ffi::b2MotorJoint_SetAngularHertz(raw_joint_id(id), value) }
+            }
+            Self::MotorSetAngularDampingRatio(value) => {
+                check_joint_non_negative(value, "MotorJoint::set_angular_damping_ratio", "ratio")?;
+                unsafe { ffi::b2MotorJoint_SetAngularDampingRatio(raw_joint_id(id), value) }
+            }
+            Self::MotorSetMaxSpringForce(value) => {
+                check_joint_non_negative(value, "MotorJoint::set_max_spring_force", "force")?;
+                unsafe { ffi::b2MotorJoint_SetMaxSpringForce(raw_joint_id(id), value) }
+            }
+            Self::MotorSetMaxSpringTorque(value) => {
+                check_joint_non_negative(value, "MotorJoint::set_max_spring_torque", "torque")?;
+                unsafe { ffi::b2MotorJoint_SetMaxSpringTorque(raw_joint_id(id), value) }
+            }
+            Self::PrismaticEnableSpring(value) => unsafe {
+                ffi::b2PrismaticJoint_EnableSpring(raw_joint_id(id), value)
+            },
+            Self::PrismaticSetSpringHertz(value) => {
+                check_joint_non_negative(value, "PrismaticJoint::set_spring_hertz", "hertz")?;
+                unsafe { ffi::b2PrismaticJoint_SetSpringHertz(raw_joint_id(id), value) }
+            }
+            Self::PrismaticSetSpringDampingRatio(value) => {
+                check_joint_non_negative(
+                    value,
+                    "PrismaticJoint::set_spring_damping_ratio",
+                    "ratio",
+                )?;
+                unsafe { ffi::b2PrismaticJoint_SetSpringDampingRatio(raw_joint_id(id), value) }
+            }
+            Self::PrismaticSetTargetTranslation(value) => {
+                check_joint_finite(
+                    value,
+                    "PrismaticJoint::set_target_translation",
+                    "translation",
+                )?;
+                unsafe { ffi::b2PrismaticJoint_SetTargetTranslation(raw_joint_id(id), value) }
+            }
+            Self::PrismaticEnableLimit(value) => unsafe {
+                ffi::b2PrismaticJoint_EnableLimit(raw_joint_id(id), value)
+            },
+            Self::PrismaticSetLimits(lower, upper) => {
+                check_joint_ordered_range(
+                    lower,
+                    upper,
+                    "PrismaticJoint::set_limits",
+                    "lower/upper",
+                )?;
+                unsafe { ffi::b2PrismaticJoint_SetLimits(raw_joint_id(id), lower, upper) }
+            }
+            Self::PrismaticEnableMotor(value) => unsafe {
+                ffi::b2PrismaticJoint_EnableMotor(raw_joint_id(id), value)
+            },
+            Self::PrismaticSetMotorSpeed(value) => {
+                check_joint_finite(value, "PrismaticJoint::set_motor_speed", "speed")?;
+                unsafe { ffi::b2PrismaticJoint_SetMotorSpeed(raw_joint_id(id), value) }
+            }
+            Self::PrismaticSetMaxMotorForce(value) => {
+                check_joint_non_negative(value, "PrismaticJoint::set_max_motor_force", "force")?;
+                unsafe { ffi::b2PrismaticJoint_SetMaxMotorForce(raw_joint_id(id), value) }
+            }
+            Self::RevoluteEnableSpring(value) => unsafe {
+                ffi::b2RevoluteJoint_EnableSpring(raw_joint_id(id), value)
+            },
+            Self::RevoluteSetSpringHertz(value) => {
+                check_joint_non_negative(value, "RevoluteJoint::set_spring_hertz", "hertz")?;
+                unsafe { ffi::b2RevoluteJoint_SetSpringHertz(raw_joint_id(id), value) }
+            }
+            Self::RevoluteSetSpringDampingRatio(value) => {
+                check_joint_non_negative(
+                    value,
+                    "RevoluteJoint::set_spring_damping_ratio",
+                    "ratio",
+                )?;
+                unsafe { ffi::b2RevoluteJoint_SetSpringDampingRatio(raw_joint_id(id), value) }
+            }
+            Self::RevoluteSetTargetAngle(value) => {
+                check_joint_finite(value, "RevoluteJoint::set_target_angle", "angle")?;
+                unsafe { ffi::b2RevoluteJoint_SetTargetAngle(raw_joint_id(id), value) }
+            }
+            Self::RevoluteEnableLimit(value) => unsafe {
+                ffi::b2RevoluteJoint_EnableLimit(raw_joint_id(id), value)
+            },
+            Self::RevoluteSetLimits(lower, upper) => {
+                check_revolute_joint_range(
+                    lower,
+                    upper,
+                    "RevoluteJoint::set_limits",
+                    "lower/upper",
+                )?;
+                unsafe { ffi::b2RevoluteJoint_SetLimits(raw_joint_id(id), lower, upper) }
+            }
+            Self::RevoluteEnableMotor(value) => unsafe {
+                ffi::b2RevoluteJoint_EnableMotor(raw_joint_id(id), value)
+            },
+            Self::RevoluteSetMotorSpeed(value) => {
+                check_joint_finite(value, "RevoluteJoint::set_motor_speed", "speed")?;
+                unsafe { ffi::b2RevoluteJoint_SetMotorSpeed(raw_joint_id(id), value) }
+            }
+            Self::RevoluteSetMaxMotorTorque(value) => {
+                check_joint_non_negative(value, "RevoluteJoint::set_max_motor_torque", "torque")?;
+                unsafe { ffi::b2RevoluteJoint_SetMaxMotorTorque(raw_joint_id(id), value) }
+            }
+            Self::WeldSetLinearHertz(value) => {
+                check_joint_non_negative(value, "WeldJoint::set_linear_hertz", "hertz")?;
+                unsafe { ffi::b2WeldJoint_SetLinearHertz(raw_joint_id(id), value) }
+            }
+            Self::WeldSetLinearDampingRatio(value) => {
+                check_joint_non_negative(value, "WeldJoint::set_linear_damping_ratio", "ratio")?;
+                unsafe { ffi::b2WeldJoint_SetLinearDampingRatio(raw_joint_id(id), value) }
+            }
+            Self::WeldSetAngularHertz(value) => {
+                check_joint_non_negative(value, "WeldJoint::set_angular_hertz", "hertz")?;
+                unsafe { ffi::b2WeldJoint_SetAngularHertz(raw_joint_id(id), value) }
+            }
+            Self::WeldSetAngularDampingRatio(value) => {
+                check_joint_non_negative(value, "WeldJoint::set_angular_damping_ratio", "ratio")?;
+                unsafe { ffi::b2WeldJoint_SetAngularDampingRatio(raw_joint_id(id), value) }
+            }
+            Self::WheelEnableSpring(value) => unsafe {
+                ffi::b2WheelJoint_EnableSpring(raw_joint_id(id), value)
+            },
+            Self::WheelSetSpringHertz(value) => {
+                check_joint_non_negative(value, "WheelJoint::set_spring_hertz", "hertz")?;
+                unsafe { ffi::b2WheelJoint_SetSpringHertz(raw_joint_id(id), value) }
+            }
+            Self::WheelSetSpringDampingRatio(value) => {
+                check_joint_non_negative(value, "WheelJoint::set_spring_damping_ratio", "ratio")?;
+                unsafe { ffi::b2WheelJoint_SetSpringDampingRatio(raw_joint_id(id), value) }
+            }
+            Self::WheelEnableLimit(value) => unsafe {
+                ffi::b2WheelJoint_EnableLimit(raw_joint_id(id), value)
+            },
+            Self::WheelSetLimits(lower, upper) => {
+                check_joint_ordered_range(lower, upper, "WheelJoint::set_limits", "lower/upper")?;
+                unsafe { ffi::b2WheelJoint_SetLimits(raw_joint_id(id), lower, upper) }
+            }
+            Self::WheelEnableMotor(value) => unsafe {
+                ffi::b2WheelJoint_EnableMotor(raw_joint_id(id), value)
+            },
+            Self::WheelSetMotorSpeed(value) => {
+                check_joint_finite(value, "WheelJoint::set_motor_speed", "speed")?;
+                unsafe { ffi::b2WheelJoint_SetMotorSpeed(raw_joint_id(id), value) }
+            }
+            Self::WheelSetMaxMotorTorque(value) => {
+                check_joint_non_negative(value, "WheelJoint::set_max_motor_torque", "torque")?;
+                unsafe { ffi::b2WheelJoint_SetMaxMotorTorque(raw_joint_id(id), value) }
+            }
+        }
         Ok(())
     }
-
-    pub fn joint_constraint_tuning(&self, id: JointId) -> ConstraintTuning {
-        joint_read_checked_impl(id, base::joint_constraint_tuning_impl)
-    }
-
-    pub fn try_joint_constraint_tuning(&self, id: JointId) -> ApiResult<ConstraintTuning> {
-        try_joint_read_checked_impl(id, base::joint_constraint_tuning_impl)
-    }
-
-    pub fn set_joint_constraint_tuning(&mut self, id: JointId, tuning: ConstraintTuning) {
-        assert_joint_valid(id);
-        base::joint_set_constraint_tuning_impl(id, tuning)
-    }
-
-    pub fn try_set_joint_constraint_tuning(
-        &mut self,
-        id: JointId,
-        tuning: ConstraintTuning,
-    ) -> ApiResult<()> {
-        check_joint_valid(id)?;
-        base::joint_set_constraint_tuning_impl(id, tuning);
-        Ok(())
-    }
-
-    pub fn joint_local_frame_a(&self, id: JointId) -> crate::Transform {
-        joint_read_checked_impl(id, base::joint_local_frame_a_impl)
-    }
-
-    pub fn try_joint_local_frame_a(&self, id: JointId) -> ApiResult<crate::Transform> {
-        try_joint_read_checked_impl(id, base::joint_local_frame_a_impl)
-    }
-
-    pub fn set_joint_local_frame_a(&mut self, id: JointId, frame: crate::Transform) {
-        assert_joint_valid(id);
-        base::assert_joint_local_frame_valid(frame);
-        base::joint_set_local_frame_a_impl(id, frame)
-    }
-
-    pub fn try_set_joint_local_frame_a(
-        &mut self,
-        id: JointId,
-        frame: crate::Transform,
-    ) -> ApiResult<()> {
-        check_joint_valid(id)?;
-        base::check_joint_local_frame_valid(frame)?;
-        base::joint_set_local_frame_a_impl(id, frame);
-        Ok(())
-    }
-
-    pub fn joint_local_frame_b(&self, id: JointId) -> crate::Transform {
-        joint_read_checked_impl(id, base::joint_local_frame_b_impl)
-    }
-
-    pub fn try_joint_local_frame_b(&self, id: JointId) -> ApiResult<crate::Transform> {
-        try_joint_read_checked_impl(id, base::joint_local_frame_b_impl)
-    }
-
-    pub fn set_joint_local_frame_b(&mut self, id: JointId, frame: crate::Transform) {
-        assert_joint_valid(id);
-        base::assert_joint_local_frame_valid(frame);
-        base::joint_set_local_frame_b_impl(id, frame)
-    }
-
-    pub fn try_set_joint_local_frame_b(
-        &mut self,
-        id: JointId,
-        frame: crate::Transform,
-    ) -> ApiResult<()> {
-        check_joint_valid(id)?;
-        base::check_joint_local_frame_valid(frame)?;
-        base::joint_set_local_frame_b_impl(id, frame);
-        Ok(())
-    }
-
-    pub fn joint_wake_bodies(&mut self, id: JointId) {
-        assert_joint_valid(id);
-        base::joint_wake_bodies_impl(id)
-    }
-
-    pub fn try_joint_wake_bodies(&mut self, id: JointId) -> ApiResult<()> {
-        check_joint_valid(id)?;
-        base::joint_wake_bodies_impl(id);
-        Ok(())
-    }
-
-    pub fn joint_linear_separation(&self, id: JointId) -> f32 {
-        joint_read_checked_impl(id, base::joint_linear_separation_impl)
-    }
-
-    pub fn try_joint_linear_separation(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_read_checked_impl(id, base::joint_linear_separation_impl)
-    }
-
-    pub fn joint_angular_separation(&self, id: JointId) -> f32 {
-        joint_read_checked_impl(id, base::joint_angular_separation_impl)
-    }
-
-    pub fn try_joint_angular_separation(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_read_checked_impl(id, base::joint_angular_separation_impl)
-    }
-
-    pub fn joint_constraint_force(&self, id: JointId) -> Vec2 {
-        joint_read_checked_impl(id, base::joint_constraint_force_impl)
-    }
-
-    pub fn try_joint_constraint_force(&self, id: JointId) -> ApiResult<Vec2> {
-        try_joint_read_checked_impl(id, base::joint_constraint_force_impl)
-    }
-
-    pub fn joint_constraint_torque(&self, id: JointId) -> f32 {
-        joint_read_checked_impl(id, base::joint_constraint_torque_impl)
-    }
-
-    pub fn try_joint_constraint_torque(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_read_checked_impl(id, base::joint_constraint_torque_impl)
-    }
-
-    pub fn joint_force_threshold(&self, id: JointId) -> f32 {
-        joint_read_checked_impl(id, base::joint_force_threshold_impl)
-    }
-
-    pub fn try_joint_force_threshold(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_read_checked_impl(id, base::joint_force_threshold_impl)
-    }
-
-    pub fn set_joint_force_threshold(&mut self, id: JointId, threshold: f32) {
-        assert_joint_valid(id);
-        base::joint_set_force_threshold_impl(id, threshold)
-    }
-
-    pub fn try_set_joint_force_threshold(&mut self, id: JointId, threshold: f32) -> ApiResult<()> {
-        check_joint_valid(id)?;
-        base::joint_set_force_threshold_impl(id, threshold);
-        Ok(())
-    }
-
-    pub fn joint_torque_threshold(&self, id: JointId) -> f32 {
-        joint_read_checked_impl(id, base::joint_torque_threshold_impl)
-    }
-
-    pub fn try_joint_torque_threshold(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_read_checked_impl(id, base::joint_torque_threshold_impl)
-    }
-
-    pub fn set_joint_torque_threshold(&mut self, id: JointId, threshold: f32) {
-        assert_joint_valid(id);
-        base::joint_set_torque_threshold_impl(id, threshold)
-    }
-
-    pub fn try_set_joint_torque_threshold(&mut self, id: JointId, threshold: f32) -> ApiResult<()> {
-        check_joint_valid(id)?;
-        base::joint_set_torque_threshold_impl(id, threshold);
-        Ok(())
-    }
-}
-
-impl WorldHandle {
-    pub fn joint_type(&self, id: JointId) -> JointType {
-        joint_read_checked_impl(id, base::joint_type_impl)
-    }
-
-    pub fn try_joint_type(&self, id: JointId) -> ApiResult<JointType> {
-        try_joint_read_checked_impl(id, base::joint_type_impl)
-    }
-
-    pub fn joint_body_a_id(&self, id: JointId) -> BodyId {
-        joint_read_checked_impl(id, base::joint_body_a_id_impl)
-    }
-
-    pub fn try_joint_body_a_id(&self, id: JointId) -> ApiResult<BodyId> {
-        try_joint_read_checked_impl(id, base::joint_body_a_id_impl)
-    }
-
-    pub fn joint_body_b_id(&self, id: JointId) -> BodyId {
-        joint_read_checked_impl(id, base::joint_body_b_id_impl)
-    }
-
-    pub fn try_joint_body_b_id(&self, id: JointId) -> ApiResult<BodyId> {
-        try_joint_read_checked_impl(id, base::joint_body_b_id_impl)
-    }
-
-    pub fn joint_world_id_raw(&self, id: JointId) -> ffi::b2WorldId {
-        joint_read_checked_impl(id, base::joint_world_id_raw_impl)
-    }
-
-    pub fn try_joint_world_id_raw(&self, id: JointId) -> ApiResult<ffi::b2WorldId> {
-        try_joint_read_checked_impl(id, base::joint_world_id_raw_impl)
-    }
-
-    pub fn joint_collide_connected(&self, id: JointId) -> bool {
-        joint_read_checked_impl(id, base::joint_collide_connected_impl)
-    }
-
-    pub fn try_joint_collide_connected(&self, id: JointId) -> ApiResult<bool> {
-        try_joint_read_checked_impl(id, base::joint_collide_connected_impl)
-    }
-
-    pub fn joint_constraint_tuning(&self, id: JointId) -> ConstraintTuning {
-        joint_read_checked_impl(id, base::joint_constraint_tuning_impl)
-    }
-
-    pub fn try_joint_constraint_tuning(&self, id: JointId) -> ApiResult<ConstraintTuning> {
-        try_joint_read_checked_impl(id, base::joint_constraint_tuning_impl)
-    }
-
-    pub fn joint_local_frame_a(&self, id: JointId) -> crate::Transform {
-        joint_read_checked_impl(id, base::joint_local_frame_a_impl)
-    }
-
-    pub fn try_joint_local_frame_a(&self, id: JointId) -> ApiResult<crate::Transform> {
-        try_joint_read_checked_impl(id, base::joint_local_frame_a_impl)
-    }
-
-    pub fn joint_local_frame_b(&self, id: JointId) -> crate::Transform {
-        joint_read_checked_impl(id, base::joint_local_frame_b_impl)
-    }
-
-    pub fn try_joint_local_frame_b(&self, id: JointId) -> ApiResult<crate::Transform> {
-        try_joint_read_checked_impl(id, base::joint_local_frame_b_impl)
-    }
-
-    pub fn joint_linear_separation(&self, id: JointId) -> f32 {
-        joint_read_checked_impl(id, base::joint_linear_separation_impl)
-    }
-
-    pub fn try_joint_linear_separation(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_read_checked_impl(id, base::joint_linear_separation_impl)
-    }
-
-    pub fn joint_angular_separation(&self, id: JointId) -> f32 {
-        joint_read_checked_impl(id, base::joint_angular_separation_impl)
-    }
-
-    pub fn try_joint_angular_separation(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_read_checked_impl(id, base::joint_angular_separation_impl)
-    }
-
-    pub fn joint_constraint_force(&self, id: JointId) -> Vec2 {
-        joint_read_checked_impl(id, base::joint_constraint_force_impl)
-    }
-
-    pub fn try_joint_constraint_force(&self, id: JointId) -> ApiResult<Vec2> {
-        try_joint_read_checked_impl(id, base::joint_constraint_force_impl)
-    }
-
-    pub fn joint_constraint_torque(&self, id: JointId) -> f32 {
-        joint_read_checked_impl(id, base::joint_constraint_torque_impl)
-    }
-
-    pub fn try_joint_constraint_torque(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_read_checked_impl(id, base::joint_constraint_torque_impl)
-    }
-
-    pub fn joint_force_threshold(&self, id: JointId) -> f32 {
-        joint_read_checked_impl(id, base::joint_force_threshold_impl)
-    }
-
-    pub fn try_joint_force_threshold(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_read_checked_impl(id, base::joint_force_threshold_impl)
-    }
-
-    pub fn joint_torque_threshold(&self, id: JointId) -> f32 {
-        joint_read_checked_impl(id, base::joint_torque_threshold_impl)
-    }
-
-    pub fn try_joint_torque_threshold(&self, id: JointId) -> ApiResult<f32> {
-        try_joint_read_checked_impl(id, base::joint_torque_threshold_impl)
-    }
-}
-
-#[inline]
-pub(super) fn assert_joint_kind(id: JointId, expected: JointType) {
-    assert_joint_valid(id);
-    let actual = base::joint_type_impl(id);
-    assert!(
-        actual == expected,
-        "joint type mismatch: expected {:?}, got {:?}",
-        expected,
-        actual
-    );
-}
-
-#[inline]
-pub(super) fn check_joint_kind(id: JointId, expected: JointType) -> ApiResult<()> {
-    check_joint_valid(id)?;
-    if base::joint_type_impl(id) != expected {
-        return Err(crate::error::ApiError::InvalidJointType);
-    }
-    Ok(())
-}
-
-const REVOLUTE_LIMIT_ABS_MAX: f32 = 0.99 * core::f32::consts::PI;
-
-#[track_caller]
-fn assert_ordered_joint_range(name: &str, lower: f32, upper: f32) {
-    assert!(
-        lower <= upper,
-        "{name} requires lower <= upper, got lower={lower}, upper={upper}"
-    );
-}
-
-fn check_ordered_joint_range(lower: f32, upper: f32) -> ApiResult<()> {
-    if lower <= upper {
-        Ok(())
-    } else {
-        Err(crate::error::ApiError::InvalidArgument)
-    }
-}
-
-pub(super) fn assert_distance_spring_force_range_valid(lower: &f32, upper: &f32) {
-    assert_ordered_joint_range("distance spring force range", *lower, *upper);
-}
-
-pub(super) fn check_distance_spring_force_range_valid(lower: &f32, upper: &f32) -> ApiResult<()> {
-    check_ordered_joint_range(*lower, *upper)
-}
-
-pub(super) fn assert_prismatic_limits_valid(lower: &f32, upper: &f32) {
-    assert_ordered_joint_range("prismatic limits", *lower, *upper);
-}
-
-pub(super) fn check_prismatic_limits_valid(lower: &f32, upper: &f32) -> ApiResult<()> {
-    check_ordered_joint_range(*lower, *upper)
-}
-
-#[track_caller]
-pub(super) fn assert_revolute_limits_valid(lower: &f32, upper: &f32) {
-    assert_ordered_joint_range("revolute limits", *lower, *upper);
-    assert!(
-        *lower >= -REVOLUTE_LIMIT_ABS_MAX,
-        "revolute lower limit must be >= {}, got {}",
-        -REVOLUTE_LIMIT_ABS_MAX,
-        *lower
-    );
-    assert!(
-        *upper <= REVOLUTE_LIMIT_ABS_MAX,
-        "revolute upper limit must be <= {}, got {}",
-        REVOLUTE_LIMIT_ABS_MAX,
-        *upper
-    );
-}
-
-pub(super) fn check_revolute_limits_valid(lower: &f32, upper: &f32) -> ApiResult<()> {
-    if *lower <= *upper && *lower >= -REVOLUTE_LIMIT_ABS_MAX && *upper <= REVOLUTE_LIMIT_ABS_MAX {
-        Ok(())
-    } else {
-        Err(crate::error::ApiError::InvalidArgument)
-    }
-}
-
-pub(super) fn assert_wheel_limits_valid(lower: &f32, upper: &f32) {
-    assert_ordered_joint_range("wheel limits", *lower, *upper);
-}
-
-pub(super) fn check_wheel_limits_valid(lower: &f32, upper: &f32) -> ApiResult<()> {
-    check_ordered_joint_range(*lower, *upper)
-}
-
-#[inline]
-pub(super) fn joint_kind_get_checked_impl<T>(
-    id: JointId,
-    expected: JointType,
-    f: impl FnOnce(JointId) -> T,
-) -> T {
-    assert_joint_kind(id, expected);
-    f(id)
-}
-
-#[inline]
-pub(super) fn try_joint_kind_get_checked_impl<T>(
-    id: JointId,
-    expected: JointType,
-    f: impl FnOnce(JointId) -> T,
-) -> ApiResult<T> {
-    check_joint_kind(id, expected)?;
-    Ok(f(id))
-}
-
-#[inline]
-pub(super) fn joint_kind_set_checked_impl<T>(
-    id: JointId,
-    expected: JointType,
-    value: T,
-    f: impl FnOnce(JointId, T),
-) {
-    assert_joint_kind(id, expected);
-    f(id, value)
-}
-
-#[inline]
-pub(super) fn try_joint_kind_set_checked_impl<T>(
-    id: JointId,
-    expected: JointType,
-    value: T,
-    f: impl FnOnce(JointId, T),
-) -> ApiResult<()> {
-    check_joint_kind(id, expected)?;
-    f(id, value);
-    Ok(())
-}
-
-#[inline]
-pub(super) fn joint_kind_set2_checked_impl<A, B>(
-    id: JointId,
-    expected: JointType,
-    a: A,
-    b: B,
-    f: impl FnOnce(JointId, A, B),
-) {
-    assert_joint_kind(id, expected);
-    f(id, a, b)
-}
-
-#[inline]
-pub(super) fn joint_kind_set2_checked_validated_impl<A, B>(
-    id: JointId,
-    expected: JointType,
-    a: A,
-    b: B,
-    validate: impl FnOnce(&A, &B),
-    f: impl FnOnce(JointId, A, B),
-) {
-    assert_joint_kind(id, expected);
-    validate(&a, &b);
-    f(id, a, b)
-}
-
-#[inline]
-pub(super) fn try_joint_kind_set2_checked_impl<A, B>(
-    id: JointId,
-    expected: JointType,
-    a: A,
-    b: B,
-    f: impl FnOnce(JointId, A, B),
-) -> ApiResult<()> {
-    check_joint_kind(id, expected)?;
-    f(id, a, b);
-    Ok(())
-}
-
-#[inline]
-pub(super) fn try_joint_kind_set2_checked_validated_impl<A, B>(
-    id: JointId,
-    expected: JointType,
-    a: A,
-    b: B,
-    validate: impl FnOnce(&A, &B) -> ApiResult<()>,
-    f: impl FnOnce(JointId, A, B),
-) -> ApiResult<()> {
-    check_joint_kind(id, expected)?;
-    validate(&a, &b)?;
-    f(id, a, b);
-    Ok(())
-}
-
-type JointScalarReadFn<T> = unsafe extern "C" fn(ffi::b2JointId) -> T;
-type JointScalarWriteFn<T> = unsafe extern "C" fn(ffi::b2JointId, T);
-type JointVec2ReadFn = unsafe extern "C" fn(ffi::b2JointId) -> ffi::b2Vec2;
-
-#[inline]
-pub(super) fn joint_scalar_read_impl<T>(id: JointId, read: JointScalarReadFn<T>) -> T {
-    unsafe { read(raw_joint_id(id)) }
-}
-
-#[inline]
-pub(super) fn joint_scalar_write_impl<T>(id: JointId, value: T, write: JointScalarWriteFn<T>) {
-    unsafe { write(raw_joint_id(id), value) }
-}
-
-#[inline]
-pub(super) fn joint_vec2_read_impl(id: JointId, read: JointVec2ReadFn) -> Vec2 {
-    Vec2::from_raw(unsafe { read(raw_joint_id(id)) })
 }

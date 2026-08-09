@@ -18,23 +18,36 @@ pub fn build(app: &mut super::PhysicsApp, _ground: bd::types::BodyId) {
     // Spawn a dynamic convex hull built from N points
     let n = app.hull_points.clamp(3, 32) as usize;
     let pts = gen_points(n, 1.2);
-    if let Some(poly) = bd::shapes::polygon_from_points(pts.iter().copied(), 0.02) {
-        let body = app.world.create_body_id(
-            bd::BodyBuilder::new()
-                .body_type(bd::BodyType::Dynamic)
-                .position([0.0_f32, 6.0])
-                .build(),
-        );
+    if let Ok(poly) = bd::shapes::polygon_from_points(pts.iter().copied(), 0.02) {
+        let body = app
+            .world
+            .create_body(
+                bd::BodyBuilder::from(app.foundation.body_def())
+                    .body_type(bd::BodyType::Dynamic)
+                    .position([0.0_f32, 6.0])
+                    .build()
+                    .expect("valid testbed definition"),
+            )
+            .expect("valid testbed operation");
         app.created_bodies += 1;
         let _ = app
             .world
-            .create_polygon_shape_for(body, &bd::ShapeDef::builder().density(1.0).build(), &poly);
+            .body(body)
+            .expect("valid testbed operation")
+            .create_polygon(
+                &bd::ShapeDef::builder()
+                    .density(1.0)
+                    .build()
+                    .expect("valid testbed definition"),
+                &poly,
+            )
+            .expect("valid testbed operation");
         app.created_shapes += 1;
     }
 }
 
 #[allow(dead_code)]
-pub fn tick(_app: &mut super::PhysicsApp) {}
+pub fn tick(_app: &mut super::PhysicsApp, _events: Option<&bd::StepEventsSnapshot>) {}
 
 pub fn ui_params(app: &mut super::PhysicsApp, ui: &imgui::Ui) {
     let mut n = app.hull_points;

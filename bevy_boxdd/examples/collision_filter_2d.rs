@@ -8,9 +8,17 @@ const TERRAIN: u64 = 0x0004;
 const GHOST: u64 = 0x0008;
 
 fn main() {
+    let foundation =
+        boxdd::Foundation::initialize_default().expect("Box2D foundation should initialize");
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(BoxddPhysicsPlugin::default())
+        .add_plugins(BoxddPhysicsPlugin::new(
+            foundation,
+            BoxddPhysicsSettings {
+                event_interests: BoxddEventInterests::NONE.with_contacts(true),
+                ..Default::default()
+            },
+        ))
         .add_systems(Startup, setup)
         .add_systems(Update, log_contacts)
         .run();

@@ -1,0 +1,18 @@
+[package]
+name = "boxdd-precision-contract"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+
+[workspace]
+
+[dependencies]
+boxdd = { path = "../../boxdd", default-features = false, optional = true }
+boxdd-sys = { path = "../../boxdd-sys", default-features = false, features = ["build-from-source"], optional = true }
+
+[features]
+default = []
+single = ["dep:boxdd-sys"]
+double = ["single", "boxdd-sys/double-precision"]
+mixed-dependency = ["dep:boxdd", "double"]

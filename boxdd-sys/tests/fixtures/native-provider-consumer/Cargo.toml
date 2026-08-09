@@ -1,0 +1,16 @@
+[package]
+name = "boxdd-native-provider-consumer"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+
+[workspace]
+
+[features]
+single = []
+double = ["boxdd-sys/double-precision"]
+vendored = ["boxdd-sys/build-from-source"]
+
+[dependencies]
+boxdd-sys = { path = "../../..", default-features = false }

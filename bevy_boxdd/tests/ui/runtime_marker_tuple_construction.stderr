@@ -1,0 +1,47 @@
+error[E0423]: cannot initialize a tuple struct which contains private fields
+ --> tests/ui/runtime_marker_tuple_construction.rs:7:13
+  |
+7 |     let _ = BoxddBody(id);
+  |             ^^^^^^^^^
+  |
+note: constructor is not visible here due to private fields
+ --> src/components.rs
+  |
+  | pub struct BoxddBody(BodyId);
+  |                      ^^^^^^ private field
+help: you might have meant to use the `new` associated function
+  |
+7 |     let _ = BoxddBody::new(id);
+  |                      +++++
+
+error[E0423]: cannot initialize a tuple struct which contains private fields
+  --> tests/ui/runtime_marker_tuple_construction.rs:11:13
+   |
+11 |     let _ = BoxddShape(id);
+   |             ^^^^^^^^^^
+   |
+note: constructor is not visible here due to private fields
+  --> src/components.rs
+   |
+   | pub struct BoxddShape(ShapeId);
+   |                       ^^^^^^^ private field
+help: you might have meant to use the `new` associated function
+   |
+11 |     let _ = BoxddShape::new(id);
+   |                       +++++
+
+error[E0423]: cannot initialize a tuple struct which contains private fields
+  --> tests/ui/runtime_marker_tuple_construction.rs:15:13
+   |
+15 |     let _ = BoxddJoint(id);
+   |             ^^^^^^^^^^
+   |
+note: constructor is not visible here due to private fields
+  --> src/components.rs
+   |
+   | pub struct BoxddJoint(JointId);
+   |                       ^^^^^^^ private field
+help: you might have meant to use the `new` associated function
+   |
+15 |     let _ = BoxddJoint::new(id);
+   |                       +++++

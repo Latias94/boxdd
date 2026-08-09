@@ -1,0 +1,14 @@
+[package]
+name = "boxdd-package-consumer-bevy"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bevy_boxdd = { version = "0" }
+bevy_app = "=0.19.0"
+
+[features]
+double-precision = ["bevy_boxdd/double-precision"]
+
+[workspace]

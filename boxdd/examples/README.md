@@ -2,15 +2,20 @@
 
 This catalog groups the examples by the workflow they are meant to teach.
 
-Official Box2D sample parity is tracked in `../../docs/upstream-parity/box2d-sample-matrix.md`.
-`cargo run -p xtask -- sample-parity --check` requires every non-benchmark upstream sample row to map to a Rust example, test, or testbed scene.
-
 If you are new to `boxdd`, start with the first section instead of scanning file names alphabetically.
+
+Every example that reaches native Box2D initializes one `Foundation` before its first safe native
+call. Worlds and scale-sensitive `WorldDef`, `BodyDef`, and `JointBase` defaults are derived from
+that same root; worldless collision helpers and `DynamicTree` still require the root to be
+initialized even though they do not create a `World`.
 
 ## Recommended First Examples
 
-- `world_basics.rs`: minimal world, body, shape creation, and stepping
+- `world_basics.rs`: one `World`, stored world-bound IDs, borrow-scoped body/shape capabilities,
+  explicit destruction, and stepping
 - `basic.rs`: slightly broader foundation sample after `world_basics`
+- `foundation_scheduler.rs`: one-time length configuration, validated native worker count, and
+  runtime scheduler diagnostics
 - `shapes_variety.rs`: safe shape geometry creation across the common built-in shape types
 - `joints.rs` and `joints_presets.rs`: common joint setup paths
 
@@ -20,20 +25,23 @@ If you are new to `boxdd`, start with the first section instead of scanning file
 
 ## Queries and Hot Paths
 
-- `buffer_reuse.rs`: focused `*_into` and `visit_*` hot-path reuse patterns
-- `queries.rs`: overlap query styles (`overlap_aabb`, `*_into`, `visit_*`, polygon overlap helpers)
+- `buffer_reuse.rs`: reusable query buffers and visitor-based hot paths through one `Query`
+  capability
+- `queries.rs`: borrow-scoped `Query` acquisition, overlap collections, reusable buffers, visitors,
+  and polygon overlap helpers
 - `query_casts.rs`: ray-cast and shape-cast overview using reusable cast-hit buffers without mover overlap
-- `dynamic_tree.rs`: standalone Box2D broad-phase tree ownership, query, ray-cast, and shape-cast helpers
+- `dynamic_tree.rs`: standalone Box2D broad-phase tree ownership, query, ray-cast, and AABB box-cast
+  helpers
 - `raycast.rs`: focused ray-cast sample
 - `shapecast.rs`: focused shape-cast sample
 - `character_mover.rs`: the full safe mover pipeline (`cast_mover`, `collide_mover`, `solve_planes`, `clip_vector`)
-- `collision_basics.rs`: standalone low-level collision geometry (`segment_distance`, `shape_distance`, `shape_cast`, TOI, manifolds, `Aabb::ray_cast`) without a live world
+- `collision_basics.rs`: standalone low-level collision geometry (`segment_distance`, `shape_distance`, `shape_cast`, TOI, shape-A local manifolds, explicit world reconstruction, `Aabb::ray_cast`) without a live world
 - `debug_draw.rs`: collected/safe debug draw flows
 
 ## Events and Contacts
 
-- `events_summary.rs`: owned event snapshots with reusable `*_events_into(...)` buffers
-- `events_view.rs`: borrowed zero-copy event views
+- `events_summary.rs`: materializing an owned event snapshot from `CompletedStep`
+- `events_view.rs`: lazy borrowed event-family views scoped to `CompletedStep`
 - `sensors.rs`: sensor events and overlap behavior
 - `contacts.rs`: contact behavior and inspection
 
@@ -51,10 +59,11 @@ If you are new to `boxdd`, start with the first section instead of scanning file
 
 ## Integration and Ownership Models
 
-- `scene_serialize.rs`: scene snapshot round-trip (`--features serialize`)
+- `snapshot_replay.rs`: transactional same-world snapshot restore, opaque process-local recording,
+  and exclusive epoch-bound replay without native byte import/export
 - `physics_thread.rs`: dedicated-thread ownership model for apps that are otherwise multi-threaded or async-driven
-- `world_handle_reads.rs`: stored read-only `WorldHandle` queries, including reusable-buffer overlap reads and follow-up body/shape inspection
-- `wasm_wasi_smoke.rs`: minimal WASM/WASI-oriented smoke example
+- `world_basics.rs`: the canonical stored-ID and borrow-scoped capability flow; there is no separate
+  world-handle or owning-object-handle model
 - `../../bevy_boxdd/examples/falling_box_2d.rs`: Bevy ECS adapter smoke example for body/shape creation and transform sync
 - `../../bevy_boxdd/examples/ray_query_2d.rs` and `../../bevy_boxdd/examples/overlap_query_2d.rs`: Bevy entity-mapped query helpers for rays and AABB overlaps
 - `../../bevy_boxdd/examples/joint_bridge_2d.rs`: Bevy ECS distance/revolute joint authoring
@@ -64,6 +73,9 @@ If you are new to `boxdd`, start with the first section instead of scanning file
 
 ## Interactive Testbed
 
-- `testbed_imgui_glow.rs`: optional interactive testbed using the current `dear-imgui-rs` + `dear-imgui-winit` + `dear-imgui-glow` stack
+- `testbed/main.rs`: optional interactive testbed using the current `dear-imgui-rs` + `dear-imgui-winit` + `dear-imgui-glow` stack
 
 The testbed scene router lives under `examples/testbed/` and intentionally groups many focused physics demos behind one UI instead of exposing each scene as a separate top-level Cargo example.
+
+WASM runtime qualification is intentionally separate from core examples. See
+`../../docs/platforms/wasm.md`; `wasm32-wasip1` is compile-only and has no runtime example.

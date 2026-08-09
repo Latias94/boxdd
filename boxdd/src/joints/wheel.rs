@@ -1,140 +1,171 @@
-#![allow(rustdoc::broken_intra_doc_links)]
-use crate::types::BodyId;
+use crate::types::{JointId, Position, Vec2};
 use crate::world::World;
 use boxdd_sys::ffi;
 
-use super::{Joint, JointBase, OwnedJoint, raw_body_id};
-use crate::error::ApiResult;
+use super::JointBase;
+use crate::error::Result;
 
 // Wheel joint
 #[derive(Clone, Debug)]
 /// Wheel (suspension) joint definition (maps to `b2WheelJointDef`).
 ///
 /// Constrains motion along an axis with suspension (spring + damping) and
-/// optional motor around the wheel axis. Use with `World::create_wheel_joint(_id)`
-/// or `World::wheel(...).build()`.
-pub struct WheelJointDef(pub(crate) ffi::b2WheelJointDef);
+/// optional motor around the wheel axis. Use with [`World::create_wheel_joint`]
+/// or [`World::wheel`].
+pub struct WheelJointDef {
+    base: JointBase,
+    enable_spring: bool,
+    hertz: f32,
+    damping_ratio: f32,
+    enable_limit: bool,
+    lower_translation: f32,
+    upper_translation: f32,
+    enable_motor: bool,
+    max_motor_torque: f32,
+    motor_speed: f32,
+}
 
 impl WheelJointDef {
     pub fn new(base: JointBase) -> Self {
-        let mut def: ffi::b2WheelJointDef = unsafe { ffi::b2DefaultWheelJointDef() };
-        def.base = base.0;
-        Self(def)
+        let raw: ffi::b2WheelJointDef =
+            crate::core::native_defaults::wheel_joint_def(base.to_raw());
+        Self {
+            base,
+            enable_spring: raw.enableSpring,
+            hertz: raw.hertz,
+            damping_ratio: raw.dampingRatio,
+            enable_limit: raw.enableLimit,
+            lower_translation: raw.lowerTranslation,
+            upper_translation: raw.upperTranslation,
+            enable_motor: raw.enableMotor,
+            max_motor_torque: raw.maxMotorTorque,
+            motor_speed: raw.motorSpeed,
+        }
     }
 
     #[inline]
-    pub fn from_raw(raw: ffi::b2WheelJointDef) -> Self {
-        Self(raw)
+    pub fn base(&self) -> &JointBase {
+        &self.base
     }
 
     #[inline]
-    pub fn base(&self) -> JointBase {
-        JointBase(self.0.base)
+    pub fn base_mut(&mut self) -> &mut JointBase {
+        &mut self.base
     }
 
     #[inline]
     pub fn spring_enabled(&self) -> bool {
-        self.0.enableSpring
+        self.enable_spring
     }
 
     #[inline]
     pub fn spring_hertz(&self) -> f32 {
-        self.0.hertz
+        self.hertz
     }
 
     #[inline]
     pub fn spring_damping_ratio(&self) -> f32 {
-        self.0.dampingRatio
+        self.damping_ratio
     }
 
     #[inline]
     pub fn limit_enabled(&self) -> bool {
-        self.0.enableLimit
+        self.enable_limit
     }
 
     #[inline]
     pub fn minimum_translation(&self) -> f32 {
-        self.0.lowerTranslation
+        self.lower_translation
     }
 
     #[inline]
     pub fn maximum_translation(&self) -> f32 {
-        self.0.upperTranslation
+        self.upper_translation
     }
 
     #[inline]
     pub fn motor_enabled(&self) -> bool {
-        self.0.enableMotor
+        self.enable_motor
     }
 
     #[inline]
     pub fn maximum_motor_torque(&self) -> f32 {
-        self.0.maxMotorTorque
+        self.max_motor_torque
     }
 
     #[inline]
     pub fn target_motor_speed(&self) -> f32 {
-        self.0.motorSpeed
+        self.motor_speed
+    }
+
+    pub(crate) fn to_raw(&self) -> ffi::b2WheelJointDef {
+        let mut raw: ffi::b2WheelJointDef =
+            crate::core::native_defaults::wheel_joint_def(self.base.to_raw());
+        raw.enableSpring = self.enable_spring;
+        raw.hertz = self.hertz;
+        raw.dampingRatio = self.damping_ratio;
+        raw.enableLimit = self.enable_limit;
+        raw.lowerTranslation = self.lower_translation;
+        raw.upperTranslation = self.upper_translation;
+        raw.enableMotor = self.enable_motor;
+        raw.maxMotorTorque = self.max_motor_torque;
+        raw.motorSpeed = self.motor_speed;
+        raw
     }
 
     #[inline]
-    pub fn into_raw(self) -> ffi::b2WheelJointDef {
-        self.0
-    }
-
-    #[inline]
-    pub fn validate(&self) -> ApiResult<()> {
+    pub fn validate(&self) -> Result<()> {
         super::check_wheel_joint_def_valid(self)
     }
 
     /// Enable/disable suspension spring.
     pub fn enable_spring(mut self, flag: bool) -> Self {
-        self.0.enableSpring = flag;
+        self.enable_spring = flag;
         self
     }
     /// Spring stiffness in Hertz.
     pub fn hertz(mut self, v: f32) -> Self {
-        self.0.hertz = v;
+        self.hertz = v;
         self
     }
     /// Spring damping ratio \[0,1].
     pub fn damping_ratio(mut self, v: f32) -> Self {
-        self.0.dampingRatio = v;
+        self.damping_ratio = v;
         self
     }
     /// Enable/disable translation limits.
     pub fn enable_limit(mut self, flag: bool) -> Self {
-        self.0.enableLimit = flag;
+        self.enable_limit = flag;
         self
     }
     /// Lower translation limit (meters).
     pub fn lower_translation(mut self, v: f32) -> Self {
-        self.0.lowerTranslation = v;
+        self.lower_translation = v;
         self
     }
     /// Upper translation limit (meters).
     pub fn upper_translation(mut self, v: f32) -> Self {
-        self.0.upperTranslation = v;
+        self.upper_translation = v;
         self
     }
     /// Enable/disable wheel motor.
     pub fn enable_motor(mut self, flag: bool) -> Self {
-        self.0.enableMotor = flag;
+        self.enable_motor = flag;
         self
     }
     /// Maximum motor torque (N·m).
     pub fn max_motor_torque(mut self, v: f32) -> Self {
-        self.0.maxMotorTorque = v;
+        self.max_motor_torque = v;
         self
     }
     /// Motor speed (rad/s).
     pub fn motor_speed(mut self, v: f32) -> Self {
-        self.0.motorSpeed = v;
+        self.motor_speed = v;
         self
     }
     /// Convenience: motor speed in degrees/sec.
     pub fn motor_speed_deg(mut self, speed_deg_per_s: f32) -> Self {
-        self.0.motorSpeed = speed_deg_per_s * (core::f32::consts::PI / 180.0);
+        self.motor_speed = speed_deg_per_s * (core::f32::consts::PI / 180.0);
         self
     }
 }
@@ -142,28 +173,22 @@ impl WheelJointDef {
 /// Fluent builder for wheel joints using world anchors and axis.
 pub struct WheelJointBuilder<'w> {
     pub(crate) world: &'w mut World,
-    pub(crate) body_a: BodyId,
-    pub(crate) body_b: BodyId,
-    pub(crate) anchor_a_world: Option<ffi::b2Vec2>,
-    pub(crate) anchor_b_world: Option<ffi::b2Vec2>,
-    pub(crate) axis_world: Option<ffi::b2Vec2>,
+    pub(crate) anchor_a_world: Option<Position>,
+    pub(crate) anchor_b_world: Option<Position>,
+    pub(crate) axis_world: Option<Vec2>,
     pub(crate) def: WheelJointDef,
 }
 
 impl<'w> WheelJointBuilder<'w> {
     /// Set world-space anchors for A and B.
-    pub fn anchors_world<VA: Into<crate::types::Vec2>, VB: Into<crate::types::Vec2>>(
-        mut self,
-        a: VA,
-        b: VB,
-    ) -> Self {
-        self.anchor_a_world = Some(a.into().into_raw());
-        self.anchor_b_world = Some(b.into().into_raw());
+    pub fn anchors_world<VA: Into<Position>, VB: Into<Position>>(mut self, a: VA, b: VB) -> Self {
+        self.anchor_a_world = Some(a.into());
+        self.anchor_b_world = Some(b.into());
         self
     }
     /// Set wheel axis in world space.
-    pub fn axis_world<V: Into<crate::types::Vec2>>(mut self, axis: V) -> Self {
-        self.axis_world = Some(axis.into().into_raw());
+    pub fn axis_world<V: Into<Vec2>>(mut self, axis: V) -> Self {
+        self.axis_world = Some(axis.into());
         self
     }
     pub fn limit(mut self, lower: f32, upper: f32) -> Self {
@@ -199,7 +224,7 @@ impl<'w> WheelJointBuilder<'w> {
         self
     }
     pub fn collide_connected(mut self, flag: bool) -> Self {
-        self.def.0.base.collideConnected = flag;
+        self.def.base = self.def.base.with_collide_connected(flag);
         self
     }
 
@@ -306,83 +331,75 @@ impl<'w> WheelJointBuilder<'w> {
         self
     }
 
-    #[must_use]
-    pub fn build(mut self) -> Joint<'w> {
-        crate::core::debug_checks::assert_body_valid(self.body_a);
-        crate::core::debug_checks::assert_body_valid(self.body_b);
-        // Defaults: anchors = body positions, axis = x
-        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
-        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
-        let aw = self.anchor_a_world.unwrap_or(ta.p);
-        let bw = self.anchor_b_world.unwrap_or(tb.p);
-        let axis = self.axis_world.unwrap_or(ffi::b2Vec2 { x: 1.0, y: 0.0 });
-        let la = crate::core::math::world_to_local_point(ta, aw);
-        let lb = crate::core::math::world_to_local_point(tb, bw);
-        let ra = crate::core::math::world_axis_to_local_rot(ta, axis);
-        let rb = crate::core::math::world_axis_to_local_rot(tb, axis);
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.def.0.base.localFrameA = ffi::b2Transform { p: la, q: ra };
-        self.def.0.base.localFrameB = ffi::b2Transform { p: lb, q: rb };
+    fn configure_local_frames(&mut self) -> Result<()> {
+        crate::core::callback_state::check_not_in_callback()?;
+        super::creation::check_joint_target_identity(self.world, self.def.base())?;
+        self.def.validate()?;
+        if let Some(anchor) = self.anchor_a_world {
+            super::validation::check_joint_position(
+                anchor,
+                "WheelJointBuilder::build",
+                "anchor_a_world",
+            )?;
+        }
+        if let Some(anchor) = self.anchor_b_world {
+            super::validation::check_joint_position(
+                anchor,
+                "WheelJointBuilder::build",
+                "anchor_b_world",
+            )?;
+        }
+        let axis = self.axis_world.unwrap_or(Vec2::new(1.0, 0.0));
+        super::validation::check_joint_axis(axis, "WheelJointBuilder::build", "axis_world")?;
+        super::creation::check_joint_target_native(self.world, self.def.base())?;
+
+        let body_a = self.def.base().body_a_id();
+        let body_b = self.def.base().body_b_id();
+        let ta = super::read_native_body_world_transform(
+            "WheelJointBuilder::build",
+            "body_a_transform",
+            body_a,
+        )?;
+        let tb = super::read_native_body_world_transform(
+            "WheelJointBuilder::build",
+            "body_b_transform",
+            body_b,
+        )?;
+        let aw = self.anchor_a_world.unwrap_or_else(|| ta.position());
+        let bw = self.anchor_b_world.unwrap_or_else(|| tb.position());
+        let la = super::base_def::checked_world_to_local_point(
+            "WheelJointBuilder::build",
+            "anchor_a_world",
+            ta,
+            aw,
+        )?;
+        let lb = super::base_def::checked_world_to_local_point(
+            "WheelJointBuilder::build",
+            "anchor_b_world",
+            tb,
+            bw,
+        )?;
+        let ra = super::base_def::checked_world_axis_to_local_rotation(
+            "WheelJointBuilder::build",
+            "axis_world",
+            ta,
+            axis,
+        )?;
+        let rb = super::base_def::checked_world_axis_to_local_rotation(
+            "WheelJointBuilder::build",
+            "axis_world",
+            tb,
+            axis,
+        )?;
+        self.def.base_mut().set_local_frames(
+            crate::Transform::from_pos_angle(la, ra.angle())?,
+            crate::Transform::from_pos_angle(lb, rb.angle())?,
+        );
+        Ok(())
+    }
+
+    pub fn build(mut self) -> Result<JointId> {
+        self.configure_local_frames()?;
         self.world.create_wheel_joint(&self.def)
-    }
-
-    pub fn try_build(mut self) -> ApiResult<Joint<'w>> {
-        crate::core::debug_checks::check_body_valid(self.body_a)?;
-        crate::core::debug_checks::check_body_valid(self.body_b)?;
-        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
-        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
-        let aw = self.anchor_a_world.unwrap_or(ta.p);
-        let bw = self.anchor_b_world.unwrap_or(tb.p);
-        let axis = self.axis_world.unwrap_or(ffi::b2Vec2 { x: 1.0, y: 0.0 });
-        let la = crate::core::math::world_to_local_point(ta, aw);
-        let lb = crate::core::math::world_to_local_point(tb, bw);
-        let ra = crate::core::math::world_axis_to_local_rot(ta, axis);
-        let rb = crate::core::math::world_axis_to_local_rot(tb, axis);
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.def.0.base.localFrameA = ffi::b2Transform { p: la, q: ra };
-        self.def.0.base.localFrameB = ffi::b2Transform { p: lb, q: rb };
-        self.world.try_create_wheel_joint(&self.def)
-    }
-
-    #[must_use]
-    pub fn build_owned(mut self) -> OwnedJoint {
-        crate::core::debug_checks::assert_body_valid(self.body_a);
-        crate::core::debug_checks::assert_body_valid(self.body_b);
-        // Defaults: anchors = body positions, axis = x
-        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
-        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
-        let aw = self.anchor_a_world.unwrap_or(ta.p);
-        let bw = self.anchor_b_world.unwrap_or(tb.p);
-        let axis = self.axis_world.unwrap_or(ffi::b2Vec2 { x: 1.0, y: 0.0 });
-        let la = crate::core::math::world_to_local_point(ta, aw);
-        let lb = crate::core::math::world_to_local_point(tb, bw);
-        let ra = crate::core::math::world_axis_to_local_rot(ta, axis);
-        let rb = crate::core::math::world_axis_to_local_rot(tb, axis);
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.def.0.base.localFrameA = ffi::b2Transform { p: la, q: ra };
-        self.def.0.base.localFrameB = ffi::b2Transform { p: lb, q: rb };
-        self.world.create_wheel_joint_owned(&self.def)
-    }
-
-    pub fn try_build_owned(mut self) -> ApiResult<OwnedJoint> {
-        crate::core::debug_checks::check_body_valid(self.body_a)?;
-        crate::core::debug_checks::check_body_valid(self.body_b)?;
-        let ta = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_a)) };
-        let tb = unsafe { ffi::b2Body_GetTransform(raw_body_id(self.body_b)) };
-        let aw = self.anchor_a_world.unwrap_or(ta.p);
-        let bw = self.anchor_b_world.unwrap_or(tb.p);
-        let axis = self.axis_world.unwrap_or(ffi::b2Vec2 { x: 1.0, y: 0.0 });
-        let la = crate::core::math::world_to_local_point(ta, aw);
-        let lb = crate::core::math::world_to_local_point(tb, bw);
-        let ra = crate::core::math::world_axis_to_local_rot(ta, axis);
-        let rb = crate::core::math::world_axis_to_local_rot(tb, axis);
-        self.def.0.base.bodyIdA = raw_body_id(self.body_a);
-        self.def.0.base.bodyIdB = raw_body_id(self.body_b);
-        self.def.0.base.localFrameA = ffi::b2Transform { p: la, q: ra };
-        self.def.0.base.localFrameB = ffi::b2Transform { p: lb, q: rb };
-        self.world.try_create_wheel_joint_owned(&self.def)
     }
 }

@@ -1,15 +1,26 @@
 #![allow(clippy::approx_constant)]
-#![allow(rustdoc::bare_urls)]
-#![allow(rustdoc::broken_intra_doc_links)]
-
-#[cfg(boxdd_sys_wasm_provider)]
-include!(concat!(env!("OUT_DIR"), "/wasm_provider_bindings.rs"));
-
-#[cfg(all(not(boxdd_sys_wasm_provider), has_pregenerated, not(force_bindgen)))]
-include!("bindings_pregenerated.rs");
 
 #[cfg(all(
-    not(boxdd_sys_wasm_provider),
-    any(force_bindgen, not(has_pregenerated))
+    target_family = "wasm",
+    not(any(
+        all(target_arch = "wasm32", target_os = "unknown", target_env = ""),
+        all(target_arch = "wasm32", target_os = "wasi", target_env = "p1")
+    ))
 ))]
-include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+compile_error!("boxdd-sys supports WASM targets only for wasm32-unknown-unknown and wasm32-wasip1");
+
+include!(env!("BOXDD_SYS_BINDINGS_FILE"));
+
+/// Default collision mask exported by Box2D's public C API.
+pub const B2_DEFAULT_MASK_BITS: u64 = u64::MAX;
+
+/// Whether the linked Box2D library was compiled with validation enabled.
+#[cfg(feature = "validate")]
+pub const B2_ENABLE_VALIDATION: u32 = 1;
+
+/// Whether the linked Box2D library was compiled with validation enabled.
+#[cfg(not(feature = "validate"))]
+pub const B2_ENABLE_VALIDATION: u32 = 0;
+
+#[cfg(feature = "double-precision")]
+pub use b2CreateWorldDoublePrecision as b2CreateWorld;

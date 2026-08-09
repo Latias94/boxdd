@@ -1,3 +1,4 @@
+use crate::core::math::Rot;
 use boxdd_sys::ffi;
 
 /// A simple 2D vector in meters.
@@ -41,8 +42,13 @@ impl Vec2 {
 
     #[inline]
     pub fn is_valid(self) -> bool {
-        unsafe { ffi::b2IsValidVec2(self.into_raw()) }
+        self.x.is_finite() && self.y.is_finite()
     }
+}
+
+#[inline]
+fn is_valid_unit_vec2(value: Vec2) -> bool {
+    value.is_valid() && (1.0 - (value.x * value.x + value.y * value.y)).abs() < 100.0 * f32::EPSILON
 }
 
 // Conversions from common 2D types to Vec2 for ergonomic APIs
@@ -90,36 +96,6 @@ impl From<Vec2> for mint::Point2<f32> {
     }
 }
 
-// Optional conversions with common math libraries
-#[cfg(feature = "cgmath")]
-impl From<cgmath::Vector2<f32>> for Vec2 {
-    #[inline]
-    fn from(v: cgmath::Vector2<f32>) -> Self {
-        Self { x: v.x, y: v.y }
-    }
-}
-#[cfg(feature = "cgmath")]
-impl From<Vec2> for cgmath::Vector2<f32> {
-    #[inline]
-    fn from(v: Vec2) -> Self {
-        cgmath::Vector2 { x: v.x, y: v.y }
-    }
-}
-#[cfg(feature = "cgmath")]
-impl From<cgmath::Point2<f32>> for Vec2 {
-    #[inline]
-    fn from(p: cgmath::Point2<f32>) -> Self {
-        Self { x: p.x, y: p.y }
-    }
-}
-#[cfg(feature = "cgmath")]
-impl From<Vec2> for cgmath::Point2<f32> {
-    #[inline]
-    fn from(v: Vec2) -> Self {
-        cgmath::Point2 { x: v.x, y: v.y }
-    }
-}
-
 #[cfg(feature = "nalgebra")]
 impl From<nalgebra::Vector2<f32>> for Vec2 {
     #[inline]
@@ -164,215 +140,1020 @@ impl From<Vec2> for glam::Vec2 {
     }
 }
 
-/// Opaque Box2D body identifier.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct BodyId {
-    pub index1: i32,
-    pub world0: u16,
-    pub generation: u16,
-}
+/// Scalar used for absolute world coordinates in the active Box2D precision mode.
+#[cfg(not(feature = "double-precision"))]
+pub type WorldScalar = f32;
 
-impl BodyId {
-    #[inline]
-    pub const fn from_raw(raw: ffi::b2BodyId) -> Self {
-        Self {
-            index1: raw.index1,
-            world0: raw.world0,
-            generation: raw.generation,
-        }
+/// Scalar used for absolute world coordinates in the active Box2D precision mode.
+#[cfg(feature = "double-precision")]
+pub type WorldScalar = f64;
+
+#[inline]
+fn world_scalar_to_f32_lossy(value: WorldScalar) -> f32 {
+    #[cfg(not(feature = "double-precision"))]
+    {
+        value
     }
 
-    #[inline]
-    pub const fn into_raw(self) -> ffi::b2BodyId {
-        ffi::b2BodyId {
-            index1: self.index1,
-            world0: self.world0,
-            generation: self.generation,
-        }
+    #[cfg(feature = "double-precision")]
+    {
+        value as f32
     }
 }
 
-const _: () = {
-    assert!(core::mem::size_of::<BodyId>() == core::mem::size_of::<ffi::b2BodyId>());
-    assert!(core::mem::align_of::<BodyId>() == core::mem::align_of::<ffi::b2BodyId>());
-};
-
-/// Opaque Box2D shape identifier.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ShapeId {
-    pub index1: i32,
-    pub world0: u16,
-    pub generation: u16,
-}
-
-impl ShapeId {
-    #[inline]
-    pub const fn from_raw(raw: ffi::b2ShapeId) -> Self {
-        Self {
-            index1: raw.index1,
-            world0: raw.world0,
-            generation: raw.generation,
-        }
-    }
-
-    #[inline]
-    pub const fn into_raw(self) -> ffi::b2ShapeId {
-        ffi::b2ShapeId {
-            index1: self.index1,
-            world0: self.world0,
-            generation: self.generation,
-        }
-    }
-}
-
-const _: () = {
-    assert!(core::mem::size_of::<ShapeId>() == core::mem::size_of::<ffi::b2ShapeId>());
-    assert!(core::mem::align_of::<ShapeId>() == core::mem::align_of::<ffi::b2ShapeId>());
-};
-
-/// Opaque Box2D joint identifier.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct JointId {
-    pub index1: i32,
-    pub world0: u16,
-    pub generation: u16,
-}
-
-impl JointId {
-    #[inline]
-    pub const fn from_raw(raw: ffi::b2JointId) -> Self {
-        Self {
-            index1: raw.index1,
-            world0: raw.world0,
-            generation: raw.generation,
-        }
-    }
-
-    #[inline]
-    pub const fn into_raw(self) -> ffi::b2JointId {
-        ffi::b2JointId {
-            index1: self.index1,
-            world0: self.world0,
-            generation: self.generation,
-        }
-    }
-}
-
-const _: () = {
-    assert!(core::mem::size_of::<JointId>() == core::mem::size_of::<ffi::b2JointId>());
-    assert!(core::mem::align_of::<JointId>() == core::mem::align_of::<ffi::b2JointId>());
-};
-
-/// Opaque Box2D chain identifier.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ChainId {
-    pub index1: i32,
-    pub world0: u16,
-    pub generation: u16,
-}
-
-impl ChainId {
-    #[inline]
-    pub const fn from_raw(raw: ffi::b2ChainId) -> Self {
-        Self {
-            index1: raw.index1,
-            world0: raw.world0,
-            generation: raw.generation,
-        }
-    }
-
-    #[inline]
-    pub const fn into_raw(self) -> ffi::b2ChainId {
-        ffi::b2ChainId {
-            index1: self.index1,
-            world0: self.world0,
-            generation: self.generation,
-        }
-    }
-}
-
-const _: () = {
-    assert!(core::mem::size_of::<ChainId>() == core::mem::size_of::<ffi::b2ChainId>());
-    assert!(core::mem::align_of::<ChainId>() == core::mem::align_of::<ffi::b2ChainId>());
-};
-
-/// Opaque Box2D contact identifier.
+/// An absolute position in a Box2D world.
 ///
-/// `ContactId` values commonly come from contact events or contact-data snapshots and expose
-/// direct validity checks plus crate-owned/raw contact-data reads as inherent methods.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ContactId {
-    pub index1: i32,
-    pub world0: u16,
-    pub padding: i16,
-    pub generation: u32,
-}
-
-impl ContactId {
-    #[inline]
-    pub const fn from_raw(raw: ffi::b2ContactId) -> Self {
-        Self {
-            index1: raw.index1,
-            world0: raw.world0,
-            padding: raw.padding,
-            generation: raw.generation,
-        }
-    }
-
-    #[inline]
-    pub const fn into_raw(self) -> ffi::b2ContactId {
-        ffi::b2ContactId {
-            index1: self.index1,
-            world0: self.world0,
-            padding: self.padding,
-            generation: self.generation,
-        }
-    }
-}
-
-const _: () = {
-    assert!(core::mem::size_of::<ContactId>() == core::mem::size_of::<ffi::b2ContactId>());
-    assert!(core::mem::align_of::<ContactId>() == core::mem::align_of::<ffi::b2ContactId>());
-};
-
-/// Mass properties (mass, center, inertia) used by Box2D.
+/// World positions use `f64` when the `double-precision` feature is enabled. Local offsets,
+/// directions, extents, and relative geometry continue to use [`Vec2`] and `f32`.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
+pub struct Position {
+    pub x: WorldScalar,
+    pub y: WorldScalar,
+}
+
+/// Failure while converting the difference between two world positions to a local [`Vec2`].
+#[derive(Copy, Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum PositionToLocalError {
+    /// At least one coordinate or the computed difference was NaN or infinite.
+    #[error("world-position difference is not finite")]
+    NonFinite,
+    /// The finite difference cannot be represented by an `f32` local coordinate.
+    #[error("world-position difference exceeds the local f32 range")]
+    OutOfRange,
+}
+
+impl Position {
+    pub const ZERO: Self = Self::new(0.0, 0.0);
+
+    #[inline]
+    pub const fn new(x: WorldScalar, y: WorldScalar) -> Self {
+        Self { x, y }
+    }
+
+    #[inline]
+    pub const fn from_raw(raw: ffi::b2Pos) -> Self {
+        Self { x: raw.x, y: raw.y }
+    }
+
+    #[inline]
+    pub const fn into_raw(self) -> ffi::b2Pos {
+        #[cfg(not(feature = "double-precision"))]
+        {
+            ffi::b2Vec2 {
+                x: self.x,
+                y: self.y,
+            }
+        }
+
+        #[cfg(feature = "double-precision")]
+        {
+            ffi::b2Pos {
+                x: self.x,
+                y: self.y,
+            }
+        }
+    }
+
+    /// Returns whether both coordinates are finite and valid for Box2D.
+    #[inline]
+    pub fn is_valid(self) -> bool {
+        self.x.is_finite() && self.y.is_finite()
+    }
+
+    /// Offsets this world position by a local `f32` vector without narrowing coordinates.
+    #[inline]
+    pub fn offset(self, offset: Vec2) -> Self {
+        Self {
+            x: self.x + WorldScalar::from(offset.x),
+            y: self.y + WorldScalar::from(offset.y),
+        }
+    }
+
+    /// Computes this position relative to `origin`, rejecting invalid or out-of-range results.
+    ///
+    /// The returned local vector uses `f32`, so a finite in-range double-precision difference
+    /// is rounded to the nearest representable `f32` value.
+    #[inline]
+    pub fn checked_relative_to(self, origin: Self) -> Result<Vec2, PositionToLocalError> {
+        if !self.x.is_finite()
+            || !self.y.is_finite()
+            || !origin.x.is_finite()
+            || !origin.y.is_finite()
+        {
+            return Err(PositionToLocalError::NonFinite);
+        }
+
+        let x = self.x - origin.x;
+        let y = self.y - origin.y;
+        if !x.is_finite() || !y.is_finite() {
+            return Err(PositionToLocalError::NonFinite);
+        }
+
+        let local_max = WorldScalar::from(f32::MAX);
+        if x < -local_max || x > local_max || y < -local_max || y > local_max {
+            return Err(PositionToLocalError::OutOfRange);
+        }
+
+        Ok(Vec2::new(
+            world_scalar_to_f32_lossy(x),
+            world_scalar_to_f32_lossy(y),
+        ))
+    }
+
+    /// Computes this position relative to `origin` with unchecked, potentially lossy narrowing.
+    ///
+    /// NaN, infinity, overflow, and precision loss are preserved according to Rust's float-cast
+    /// rules. Prefer [`Self::checked_relative_to`] at Safe Rust world/local boundaries.
+    #[inline]
+    pub fn relative_to_lossy(self, origin: Self) -> Vec2 {
+        Vec2::new(
+            world_scalar_to_f32_lossy(self.x - origin.x),
+            world_scalar_to_f32_lossy(self.y - origin.y),
+        )
+    }
+}
+
+impl From<Vec2> for Position {
+    #[inline]
+    fn from(value: Vec2) -> Self {
+        Self::new(WorldScalar::from(value.x), WorldScalar::from(value.y))
+    }
+}
+
+impl From<[WorldScalar; 2]> for Position {
+    #[inline]
+    fn from(value: [WorldScalar; 2]) -> Self {
+        Self::new(value[0], value[1])
+    }
+}
+
+#[cfg(feature = "double-precision")]
+impl From<[f32; 2]> for Position {
+    #[inline]
+    fn from(value: [f32; 2]) -> Self {
+        Self::new(f64::from(value[0]), f64::from(value[1]))
+    }
+}
+
+impl From<(WorldScalar, WorldScalar)> for Position {
+    #[inline]
+    fn from(value: (WorldScalar, WorldScalar)) -> Self {
+        Self::new(value.0, value.1)
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<mint::Point2<WorldScalar>> for Position {
+    #[inline]
+    fn from(value: mint::Point2<WorldScalar>) -> Self {
+        Self::new(value.x, value.y)
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<Position> for mint::Point2<WorldScalar> {
+    #[inline]
+    fn from(value: Position) -> Self {
+        Self {
+            x: value.x,
+            y: value.y,
+        }
+    }
+}
+
+#[cfg(feature = "nalgebra")]
+impl From<nalgebra::Point2<WorldScalar>> for Position {
+    #[inline]
+    fn from(value: nalgebra::Point2<WorldScalar>) -> Self {
+        Self::new(value.x, value.y)
+    }
+}
+
+#[cfg(feature = "nalgebra")]
+impl From<Position> for nalgebra::Point2<WorldScalar> {
+    #[inline]
+    fn from(value: Position) -> Self {
+        Self::new(value.x, value.y)
+    }
+}
+
+#[cfg(all(feature = "glam", not(feature = "double-precision")))]
+impl From<glam::Vec2> for Position {
+    #[inline]
+    fn from(value: glam::Vec2) -> Self {
+        Self::new(value.x, value.y)
+    }
+}
+
+#[cfg(all(feature = "glam", not(feature = "double-precision")))]
+impl From<Position> for glam::Vec2 {
+    #[inline]
+    fn from(value: Position) -> Self {
+        Self::new(value.x, value.y)
+    }
+}
+
+#[cfg(all(feature = "glam", feature = "double-precision"))]
+impl From<glam::DVec2> for Position {
+    #[inline]
+    fn from(value: glam::DVec2) -> Self {
+        Self::new(value.x, value.y)
+    }
+}
+
+#[cfg(all(feature = "glam", feature = "double-precision"))]
+impl From<Position> for glam::DVec2 {
+    #[inline]
+    fn from(value: Position) -> Self {
+        Self::new(value.x, value.y)
+    }
+}
+
+#[cfg(feature = "bytemuck")]
+unsafe impl bytemuck::Zeroable for Position {}
+#[cfg(feature = "bytemuck")]
+unsafe impl bytemuck::Pod for Position {}
+
+/// Failure while converting an external world-space transform into a [`WorldTransform`].
+///
+/// External translations use [`WorldScalar`] and are never narrowed. Rotations remain `f32`
+/// internally, so conversion into Box2D is explicit and rejects values that cannot form a finite
+/// rigid rotation.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum WorldTransformFromInteropError {
+    /// At least one matrix, rotation, or translation component is NaN or infinite.
+    #[error("external world transform contains a non-finite value")]
+    NonFinite,
+    /// The linear part contains scale, shear, or reflection instead of a pure rotation.
+    #[error("external world transform is not a pure rotation + translation")]
+    NotPureRotation,
+    /// The external rotation cannot be represented by Box2D's local `f32` rotation scalar.
+    #[error("external world transform rotation exceeds the f32 range")]
+    RotationOutOfRange,
+}
+
+#[cfg(any(feature = "mint", feature = "nalgebra", feature = "glam"))]
+#[inline]
+fn checked_world_scalar_to_f32(value: WorldScalar) -> Result<f32, WorldTransformFromInteropError> {
+    if !value.is_finite() {
+        return Err(WorldTransformFromInteropError::NonFinite);
+    }
+
+    #[cfg(not(feature = "double-precision"))]
+    {
+        Ok(value)
+    }
+
+    #[cfg(feature = "double-precision")]
+    {
+        if value < f64::from(f32::MIN) || value > f64::from(f32::MAX) {
+            return Err(WorldTransformFromInteropError::RotationOutOfRange);
+        }
+        Ok(value as f32)
+    }
+}
+
+#[cfg(any(feature = "mint", feature = "nalgebra", feature = "glam"))]
+#[inline]
+fn world_transform_from_affine_components(
+    x_axis_x: WorldScalar,
+    x_axis_y: WorldScalar,
+    y_axis_x: WorldScalar,
+    y_axis_y: WorldScalar,
+    translation_x: WorldScalar,
+    translation_y: WorldScalar,
+) -> Result<WorldTransform, WorldTransformFromInteropError> {
+    if !(x_axis_x.is_finite()
+        && x_axis_y.is_finite()
+        && y_axis_x.is_finite()
+        && y_axis_y.is_finite()
+        && translation_x.is_finite()
+        && translation_y.is_finite())
+    {
+        return Err(WorldTransformFromInteropError::NonFinite);
+    }
+
+    let one = WorldScalar::from(1.0_f32);
+    let epsilon = WorldScalar::from(1.0e-4_f32);
+    let determinant_epsilon = WorldScalar::from(5.0e-4_f32);
+    let x_length_squared = x_axis_x * x_axis_x + x_axis_y * x_axis_y;
+    let y_length_squared = y_axis_x * y_axis_x + y_axis_y * y_axis_y;
+    let dot = x_axis_x * y_axis_x + x_axis_y * y_axis_y;
+    let determinant = x_axis_x * y_axis_y - x_axis_y * y_axis_x;
+
+    if (x_length_squared - one).abs() > epsilon
+        || (y_length_squared - one).abs() > epsilon
+        || dot.abs() > epsilon
+        || (determinant - one).abs() > determinant_epsilon
+        || (y_axis_x + x_axis_y).abs() > epsilon
+        || (y_axis_y - x_axis_x).abs() > epsilon
+    {
+        return Err(WorldTransformFromInteropError::NotPureRotation);
+    }
+
+    let rotation = Rot {
+        c: checked_world_scalar_to_f32(x_axis_x)?,
+        s: checked_world_scalar_to_f32(x_axis_y)?,
+    };
+    Ok(WorldTransform {
+        p: Position::new(translation_x, translation_y),
+        q: rotation,
+    })
+}
+
+/// A rigid transform whose translation is an absolute world [`Position`].
+///
+/// Rotation remains an `f32` [`Rot`] in both precision modes, matching Box2D's ABI.
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct WorldTransform {
+    p: Position,
+    q: Rot,
+}
+
+impl WorldTransform {
+    pub const IDENTITY: Self = Self {
+        p: Position::ZERO,
+        q: Rot::IDENTITY,
+    };
+
+    #[inline]
+    pub fn new(position: Position, rotation: Rot) -> crate::Result<Self> {
+        let transform = Self {
+            p: position,
+            q: rotation,
+        };
+        if transform.is_valid() {
+            Ok(transform)
+        } else {
+            Err(crate::Error::invalid_argument(
+                "WorldTransform::new",
+                "position/rotation",
+                "a finite rigid world transform",
+            ))
+        }
+    }
+
+    #[inline]
+    pub fn from_raw(raw: ffi::b2WorldTransform) -> crate::Result<Self> {
+        let transform = Self::from_raw_unvalidated(raw);
+        if transform.is_valid() {
+            Ok(transform)
+        } else {
+            Err(crate::Error::invalid_argument(
+                "WorldTransform::from_raw",
+                "raw",
+                "a finite rigid world transform",
+            ))
+        }
+    }
+
+    #[inline]
+    pub(crate) const fn from_raw_unvalidated(raw: ffi::b2WorldTransform) -> Self {
+        Self {
+            p: Position::from_raw(raw.p),
+            q: Rot::from_raw_unvalidated(raw.q),
+        }
+    }
+
+    #[inline]
+    pub const fn into_raw(self) -> ffi::b2WorldTransform {
+        #[cfg(not(feature = "double-precision"))]
+        {
+            ffi::b2Transform {
+                p: self.p.into_raw(),
+                q: self.q.into_raw(),
+            }
+        }
+
+        #[cfg(feature = "double-precision")]
+        {
+            ffi::b2WorldTransform {
+                p: self.p.into_raw(),
+                q: self.q.into_raw(),
+            }
+        }
+    }
+
+    #[inline]
+    pub fn from_pos_angle<P: Into<Position>>(
+        position: P,
+        angle_radians: f32,
+    ) -> crate::Result<Self> {
+        Self::new(position.into(), Rot::from_radians(angle_radians)?)
+    }
+
+    #[inline]
+    pub const fn position(self) -> Position {
+        self.p
+    }
+
+    #[inline]
+    pub const fn rotation(self) -> Rot {
+        self.q
+    }
+
+    /// Returns whether the position and rotation are valid for Box2D.
+    #[inline]
+    pub fn is_valid(self) -> bool {
+        self.p.is_valid() && self.q.is_valid()
+    }
+
+    /// Transforms a local point into an absolute world position.
+    #[inline]
+    pub fn transform_point(self, point: Vec2) -> Position {
+        self.p.offset(self.q.rotate_vec(point))
+    }
+}
+
+impl Default for WorldTransform {
+    fn default() -> Self {
+        Self::IDENTITY
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<WorldTransform> for mint::RowMatrix3x2<WorldScalar> {
+    #[inline]
+    fn from(value: WorldTransform) -> Self {
+        let position = value.position();
+        let rotation = value.rotation();
+        let c = WorldScalar::from(rotation.c);
+        let s = WorldScalar::from(rotation.s);
+        Self {
+            x: mint::Vector2 { x: c, y: -s },
+            y: mint::Vector2 { x: s, y: c },
+            z: mint::Vector2 {
+                x: position.x,
+                y: position.y,
+            },
+        }
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<&WorldTransform> for mint::RowMatrix3x2<WorldScalar> {
+    #[inline]
+    fn from(value: &WorldTransform) -> Self {
+        (*value).into()
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<mint::RowMatrix3x2<WorldScalar>> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: mint::RowMatrix3x2<WorldScalar>) -> Result<Self, Self::Error> {
+        world_transform_from_affine_components(
+            value.x.x, value.y.x, value.x.y, value.y.y, value.z.x, value.z.y,
+        )
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<&mint::RowMatrix3x2<WorldScalar>> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: &mint::RowMatrix3x2<WorldScalar>) -> Result<Self, Self::Error> {
+        Self::try_from(*value)
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<WorldTransform> for mint::ColumnMatrix3x2<WorldScalar> {
+    #[inline]
+    fn from(value: WorldTransform) -> Self {
+        mint::RowMatrix3x2::from(value).into()
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<&WorldTransform> for mint::ColumnMatrix3x2<WorldScalar> {
+    #[inline]
+    fn from(value: &WorldTransform) -> Self {
+        (*value).into()
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<mint::ColumnMatrix3x2<WorldScalar>> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: mint::ColumnMatrix3x2<WorldScalar>) -> Result<Self, Self::Error> {
+        Self::try_from(mint::RowMatrix3x2::from(value))
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<&mint::ColumnMatrix3x2<WorldScalar>> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: &mint::ColumnMatrix3x2<WorldScalar>) -> Result<Self, Self::Error> {
+        Self::try_from(*value)
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<WorldTransform> for mint::RowMatrix2x3<WorldScalar> {
+    #[inline]
+    fn from(value: WorldTransform) -> Self {
+        let position = value.position();
+        let rotation = value.rotation();
+        let c = WorldScalar::from(rotation.c);
+        let s = WorldScalar::from(rotation.s);
+        Self {
+            x: mint::Vector3 {
+                x: c,
+                y: -s,
+                z: position.x,
+            },
+            y: mint::Vector3 {
+                x: s,
+                y: c,
+                z: position.y,
+            },
+        }
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<&WorldTransform> for mint::RowMatrix2x3<WorldScalar> {
+    #[inline]
+    fn from(value: &WorldTransform) -> Self {
+        (*value).into()
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<mint::RowMatrix2x3<WorldScalar>> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: mint::RowMatrix2x3<WorldScalar>) -> Result<Self, Self::Error> {
+        world_transform_from_affine_components(
+            value.x.x, value.y.x, value.x.y, value.y.y, value.x.z, value.y.z,
+        )
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<&mint::RowMatrix2x3<WorldScalar>> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: &mint::RowMatrix2x3<WorldScalar>) -> Result<Self, Self::Error> {
+        Self::try_from(*value)
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<WorldTransform> for mint::ColumnMatrix2x3<WorldScalar> {
+    #[inline]
+    fn from(value: WorldTransform) -> Self {
+        mint::RowMatrix2x3::from(value).into()
+    }
+}
+
+#[cfg(feature = "mint")]
+impl From<&WorldTransform> for mint::ColumnMatrix2x3<WorldScalar> {
+    #[inline]
+    fn from(value: &WorldTransform) -> Self {
+        (*value).into()
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<mint::ColumnMatrix2x3<WorldScalar>> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: mint::ColumnMatrix2x3<WorldScalar>) -> Result<Self, Self::Error> {
+        Self::try_from(mint::RowMatrix2x3::from(value))
+    }
+}
+
+#[cfg(feature = "mint")]
+impl TryFrom<&mint::ColumnMatrix2x3<WorldScalar>> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: &mint::ColumnMatrix2x3<WorldScalar>) -> Result<Self, Self::Error> {
+        Self::try_from(*value)
+    }
+}
+
+#[cfg(feature = "nalgebra")]
+impl From<WorldTransform> for nalgebra::Isometry2<WorldScalar> {
+    #[inline]
+    fn from(value: WorldTransform) -> Self {
+        let position = value.position();
+        let rotation = value.rotation();
+        let rotation = nalgebra::UnitComplex::from_cos_sin_unchecked(
+            WorldScalar::from(rotation.c),
+            WorldScalar::from(rotation.s),
+        );
+        Self::from_parts(
+            nalgebra::Translation2::new(position.x, position.y),
+            rotation,
+        )
+    }
+}
+
+#[cfg(feature = "nalgebra")]
+impl From<&WorldTransform> for nalgebra::Isometry2<WorldScalar> {
+    #[inline]
+    fn from(value: &WorldTransform) -> Self {
+        (*value).into()
+    }
+}
+
+#[cfg(feature = "nalgebra")]
+impl TryFrom<nalgebra::Isometry2<WorldScalar>> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: nalgebra::Isometry2<WorldScalar>) -> Result<Self, Self::Error> {
+        Self::try_from(&value)
+    }
+}
+
+#[cfg(feature = "nalgebra")]
+impl TryFrom<&nalgebra::Isometry2<WorldScalar>> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: &nalgebra::Isometry2<WorldScalar>) -> Result<Self, Self::Error> {
+        let c = value.rotation.cos_angle();
+        let s = value.rotation.sin_angle();
+        let position = &value.translation.vector;
+        world_transform_from_affine_components(c, s, -s, c, position.x, position.y)
+    }
+}
+
+#[cfg(all(feature = "glam", not(feature = "double-precision")))]
+impl From<WorldTransform> for glam::Affine2 {
+    #[inline]
+    fn from(value: WorldTransform) -> Self {
+        let position = value.position();
+        let rotation = value.rotation();
+        glam::Affine2::from_mat2_translation(
+            glam::Mat2::from_cols(
+                glam::Vec2::new(rotation.c, rotation.s),
+                glam::Vec2::new(-rotation.s, rotation.c),
+            ),
+            glam::Vec2::new(position.x, position.y),
+        )
+    }
+}
+
+#[cfg(all(feature = "glam", not(feature = "double-precision")))]
+impl From<&WorldTransform> for glam::Affine2 {
+    #[inline]
+    fn from(value: &WorldTransform) -> Self {
+        (*value).into()
+    }
+}
+
+#[cfg(all(feature = "glam", not(feature = "double-precision")))]
+impl TryFrom<glam::Affine2> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: glam::Affine2) -> Result<Self, Self::Error> {
+        let x = value.matrix2.x_axis;
+        let y = value.matrix2.y_axis;
+        let translation = value.translation;
+        world_transform_from_affine_components(x.x, x.y, y.x, y.y, translation.x, translation.y)
+    }
+}
+
+#[cfg(all(feature = "glam", not(feature = "double-precision")))]
+impl TryFrom<&glam::Affine2> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: &glam::Affine2) -> Result<Self, Self::Error> {
+        Self::try_from(*value)
+    }
+}
+
+#[cfg(all(feature = "glam", feature = "double-precision"))]
+impl From<WorldTransform> for glam::DAffine2 {
+    #[inline]
+    fn from(value: WorldTransform) -> Self {
+        let position = value.position();
+        let rotation = value.rotation();
+        let c = f64::from(rotation.c);
+        let s = f64::from(rotation.s);
+        glam::DAffine2::from_mat2_translation(
+            glam::DMat2::from_cols(glam::DVec2::new(c, s), glam::DVec2::new(-s, c)),
+            glam::DVec2::new(position.x, position.y),
+        )
+    }
+}
+
+#[cfg(all(feature = "glam", feature = "double-precision"))]
+impl From<&WorldTransform> for glam::DAffine2 {
+    #[inline]
+    fn from(value: &WorldTransform) -> Self {
+        (*value).into()
+    }
+}
+
+#[cfg(all(feature = "glam", feature = "double-precision"))]
+impl TryFrom<glam::DAffine2> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: glam::DAffine2) -> Result<Self, Self::Error> {
+        let x = value.matrix2.x_axis;
+        let y = value.matrix2.y_axis;
+        let translation = value.translation;
+        world_transform_from_affine_components(x.x, x.y, y.x, y.y, translation.x, translation.y)
+    }
+}
+
+#[cfg(all(feature = "glam", feature = "double-precision"))]
+impl TryFrom<&glam::DAffine2> for WorldTransform {
+    type Error = WorldTransformFromInteropError;
+
+    #[inline]
+    fn try_from(value: &glam::DAffine2) -> Result<Self, Self::Error> {
+        Self::try_from(*value)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for WorldTransform {
+    fn serialize<S>(&self, serializer: S) -> core::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(serde::Serialize)]
+        struct Repr {
+            position: Position,
+            angle: f32,
+        }
+
+        Repr {
+            position: self.position(),
+            angle: self.rotation().angle(),
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for WorldTransform {
+    fn deserialize<D>(deserializer: D) -> core::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct Repr {
+            position: Position,
+            angle: f32,
+        }
+
+        let repr = <Repr as serde::Deserialize>::deserialize(deserializer)?;
+        Self::from_pos_angle(repr.position, repr.angle).map_err(serde::de::Error::custom)
+    }
+}
+
+#[cfg(feature = "bytemuck")]
+const _: () = {
+    assert!(core::mem::size_of::<Position>() == 2 * core::mem::size_of::<WorldScalar>());
+    assert!(core::mem::align_of::<Position>() == core::mem::align_of::<WorldScalar>());
+    assert!(core::mem::offset_of!(Position, x) == 0);
+    assert!(core::mem::offset_of!(Position, y) == core::mem::size_of::<WorldScalar>());
+
+    assert!(core::mem::size_of::<Rot>() == 2 * core::mem::size_of::<f32>());
+    assert!(core::mem::align_of::<Rot>() == core::mem::align_of::<f32>());
+    assert!(core::mem::offset_of!(WorldTransform, p) == 0);
+    assert!(core::mem::offset_of!(WorldTransform, q) == core::mem::size_of::<Position>());
+    assert!(
+        core::mem::size_of::<WorldTransform>()
+            == core::mem::size_of::<Position>() + core::mem::size_of::<Rot>()
+    );
+    assert!(core::mem::align_of::<WorldTransform>() == core::mem::align_of::<Position>());
+
+    #[cfg(not(feature = "double-precision"))]
+    assert!(core::mem::size_of::<WorldTransform>() == 16);
+
+    #[cfg(feature = "double-precision")]
+    assert!(core::mem::size_of::<WorldTransform>() == 24);
+};
+
+/// Result of a cast whose hit point is an absolute world position.
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+pub struct WorldCastOutput {
+    /// Unit surface normal in world orientation.
+    pub normal: Vec2,
+    /// Absolute world-space hit position.
+    pub point: Position,
+    /// Fraction of the cast translation at which the hit occurred.
+    pub fraction: f32,
+    pub iterations: i32,
+    pub hit: bool,
+}
+
+impl WorldCastOutput {
+    pub const MISS: Self = Self {
+        normal: Vec2::ZERO,
+        point: Position::ZERO,
+        fraction: 0.0,
+        iterations: 0,
+        hit: false,
+    };
+
+    #[inline]
+    pub fn from_raw(raw: ffi::b2WorldCastOutput) -> crate::Result<Self> {
+        let output = Self::from_raw_unvalidated(raw);
+        output.validate_for("WorldCastOutput::from_raw")?;
+        Ok(output)
+    }
+
+    #[inline]
+    fn from_raw_unvalidated(raw: ffi::b2WorldCastOutput) -> Self {
+        Self {
+            normal: Vec2::from_raw(raw.normal),
+            point: Position::from_raw(raw.point),
+            fraction: raw.fraction,
+            iterations: raw.iterations,
+            hit: raw.hit,
+        }
+    }
+
+    pub(crate) fn from_native(
+        operation: &'static str,
+        raw: ffi::b2WorldCastOutput,
+    ) -> crate::Result<Self> {
+        let output = Self::from_raw_unvalidated(raw);
+        output
+            .validate_for(operation)
+            .map_err(|_| crate::Error::InvalidNativeOutput {
+                operation,
+                output: "world_cast_output",
+                constraint: "finite cast data, a unit-interval fraction, and non-negative iterations",
+            })?;
+        Ok(output)
+    }
+
+    pub fn validate(&self) -> crate::Result<()> {
+        self.validate_for("WorldCastOutput::validate")
+    }
+
+    fn validate_for(&self, operation: &'static str) -> crate::Result<()> {
+        if !self.normal.is_valid() {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "normal",
+                "a finite vector",
+            ));
+        }
+        if !self.point.is_valid() {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "point",
+                "a finite world position",
+            ));
+        }
+        if !self.fraction.is_finite() || !(0.0..=1.0).contains(&self.fraction) {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "fraction",
+                "a finite value in 0.0..=1.0",
+            ));
+        }
+        if self.iterations < 0 {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "iterations",
+                "a non-negative native int",
+            ));
+        }
+        if self.hit && self.fraction > 0.0 && !is_valid_unit_vec2(self.normal) {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "normal",
+                "a finite unit vector for a non-overlap hit",
+            ));
+        }
+        if self.hit
+            && self.fraction == 0.0
+            && self.normal != Vec2::ZERO
+            && !is_valid_unit_vec2(self.normal)
+        {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "normal",
+                "a finite unit vector, or zero for an initial overlap",
+            ));
+        }
+        Ok(())
+    }
+
+    #[inline]
+    pub const fn into_raw(self) -> ffi::b2WorldCastOutput {
+        #[cfg(not(feature = "double-precision"))]
+        {
+            ffi::b2CastOutput {
+                normal: self.normal.into_raw(),
+                point: self.point.into_raw(),
+                fraction: self.fraction,
+                iterations: self.iterations,
+                hit: self.hit,
+            }
+        }
+
+        #[cfg(feature = "double-precision")]
+        {
+            ffi::b2WorldCastOutput {
+                normal: self.normal.into_raw(),
+                point: self.point.into_raw(),
+                fraction: self.fraction,
+                iterations: self.iterations,
+                hit: self.hit,
+            }
+        }
+    }
+}
+
+pub use crate::id::{BodyId, ChainId, ContactId, JointId, ShapeId};
+
+/// Mass properties (mass, center, inertia) used by Box2D.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct MassData {
-    pub mass: f32,
-    pub center: Vec2,
-    pub rotational_inertia: f32,
+    pub(crate) mass: f32,
+    pub(crate) center: Vec2,
+    pub(crate) rotational_inertia: f32,
 }
 
 impl MassData {
     #[inline]
-    pub const fn new(mass: f32, center: Vec2, rotational_inertia: f32) -> Self {
-        Self {
+    pub fn new(mass: f32, center: Vec2, rotational_inertia: f32) -> crate::Result<Self> {
+        let mass_data = Self {
             mass,
             center,
             rotational_inertia,
-        }
+        };
+        mass_data.validate("MassData::new")?;
+        Ok(mass_data)
     }
 
     #[inline]
-    /// Construct from the raw Box2D value.
-    pub fn from_raw(raw: ffi::b2MassData) -> Self {
+    /// Construct from a raw Box2D value after validating its invariants.
+    pub fn from_raw(raw: ffi::b2MassData) -> crate::Result<Self> {
+        let mass_data = Self::from_raw_unvalidated(raw);
+        mass_data.validate("MassData::from_raw")?;
+        Ok(mass_data)
+    }
+
+    #[inline]
+    pub(crate) fn from_raw_unvalidated(raw: ffi::b2MassData) -> Self {
         Self {
             mass: raw.mass,
             center: Vec2::from_raw(raw.center),
             rotational_inertia: raw.rotationalInertia,
         }
+    }
+
+    pub(crate) fn from_native(
+        operation: &'static str,
+        raw: ffi::b2MassData,
+    ) -> crate::Result<Self> {
+        let mass_data = Self::from_raw_unvalidated(raw);
+        mass_data
+            .validate(operation)
+            .map_err(|_| crate::Error::InvalidNativeOutput {
+                operation,
+                output: "mass_data",
+                constraint: "finite non-negative mass and inertia with a finite center",
+            })?;
+        Ok(mass_data)
+    }
+
+    #[inline]
+    pub const fn mass(self) -> f32 {
+        self.mass
+    }
+
+    #[inline]
+    pub const fn center(self) -> Vec2 {
+        self.center
+    }
+
+    #[inline]
+    pub const fn rotational_inertia(self) -> f32 {
+        self.rotational_inertia
     }
 
     #[inline]
@@ -383,6 +1164,49 @@ impl MassData {
             center: self.center.into_raw(),
             rotationalInertia: self.rotational_inertia,
         }
+    }
+
+    fn validate(self, operation: &'static str) -> crate::Result<()> {
+        if !self.mass.is_finite() || self.mass < 0.0 {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "mass",
+                "a finite value greater than or equal to zero",
+            ));
+        }
+        if !self.center.is_valid() {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "center",
+                "a finite vector",
+            ));
+        }
+        if !self.rotational_inertia.is_finite() || self.rotational_inertia < 0.0 {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "rotational_inertia",
+                "a finite value greater than or equal to zero",
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for MassData {
+    fn deserialize<D>(deserializer: D) -> core::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct Repr {
+            mass: f32,
+            center: Vec2,
+            rotational_inertia: f32,
+        }
+
+        let repr = <Repr as serde::Deserialize>::deserialize(deserializer)?;
+        Self::new(repr.mass, repr.center, repr.rotational_inertia).map_err(serde::de::Error::custom)
     }
 }
 
@@ -430,31 +1254,63 @@ impl MotionLocks {
 /// Maximum number of contact points supported by a Box2D manifold in 2D.
 pub const MAX_MANIFOLD_POINTS: usize = 2;
 
-/// A single contact point inside a contact manifold.
+/// A solver contact point inside a runtime world manifold.
+///
+/// The anchors are `f32` offsets from each body's center of mass, not absolute world
+/// positions. Reconstruct an absolute contact position by offsetting the corresponding
+/// body's world center [`Position`].
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[repr(C)]
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct ManifoldPoint {
-    pub point: Vec2,
+    /// Contact point relative to body A's center of mass in world axes.
     pub anchor_a: Vec2,
+    /// Contact point relative to body B's center of mass in world axes.
     pub anchor_b: Vec2,
+    /// Signed separation; negative values indicate penetration.
     pub separation: f32,
+    /// Cached separation used by Box2D when recycling contacts.
+    pub base_separation: f32,
+    /// Impulse along the manifold normal.
     pub normal_impulse: f32,
+    /// Friction impulse along the tangent.
     pub tangent_impulse: f32,
+    /// Total normal impulse accumulated across substeps and restitution.
     pub total_normal_impulse: f32,
+    /// Relative normal velocity before solving; negative values are approaching.
     pub normal_velocity: f32,
+    /// Stable feature-pair identifier supplied by Box2D.
     pub id: u16,
+    /// Whether this point existed during the previous step.
     pub persisted: bool,
 }
 
 impl ManifoldPoint {
+    /// Reconstructs this contact point from body A's absolute world center.
     #[inline]
-    pub fn from_raw(raw: ffi::b2ManifoldPoint) -> Self {
+    pub fn world_point_a(self, body_a_world_center: Position) -> Position {
+        body_a_world_center.offset(self.anchor_a)
+    }
+
+    /// Reconstructs this contact point from body B's absolute world center.
+    #[inline]
+    pub fn world_point_b(self, body_b_world_center: Position) -> Position {
+        body_b_world_center.offset(self.anchor_b)
+    }
+
+    #[inline]
+    pub fn from_raw(raw: ffi::b2ManifoldPoint) -> crate::Result<Self> {
+        let point = Self::from_raw_unvalidated(raw);
+        point.validate_for("ManifoldPoint::from_raw")?;
+        Ok(point)
+    }
+
+    #[inline]
+    fn from_raw_unvalidated(raw: ffi::b2ManifoldPoint) -> Self {
         Self {
-            point: Vec2::from_raw(raw.point),
             anchor_a: Vec2::from_raw(raw.anchorA),
             anchor_b: Vec2::from_raw(raw.anchorB),
             separation: raw.separation,
+            base_separation: raw.baseSeparation,
             normal_impulse: raw.normalImpulse,
             tangent_impulse: raw.tangentImpulse,
             total_normal_impulse: raw.totalNormalImpulse,
@@ -464,13 +1320,51 @@ impl ManifoldPoint {
         }
     }
 
+    pub fn validate(&self) -> crate::Result<()> {
+        self.validate_for("ManifoldPoint::validate")
+    }
+
+    fn validate_for(&self, operation: &'static str) -> crate::Result<()> {
+        if !self.anchor_a.is_valid() {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "anchor_a",
+                "a finite vector",
+            ));
+        }
+        if !self.anchor_b.is_valid() {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "anchor_b",
+                "a finite vector",
+            ));
+        }
+        for (argument, value) in [
+            ("separation", self.separation),
+            ("base_separation", self.base_separation),
+            ("normal_impulse", self.normal_impulse),
+            ("tangent_impulse", self.tangent_impulse),
+            ("total_normal_impulse", self.total_normal_impulse),
+            ("normal_velocity", self.normal_velocity),
+        ] {
+            if !value.is_finite() {
+                return Err(crate::Error::invalid_argument(
+                    operation,
+                    argument,
+                    "a finite value",
+                ));
+            }
+        }
+        Ok(())
+    }
+
     #[inline]
     pub fn into_raw(self) -> ffi::b2ManifoldPoint {
         ffi::b2ManifoldPoint {
-            point: self.point.into_raw(),
             anchorA: self.anchor_a.into_raw(),
             anchorB: self.anchor_b.into_raw(),
             separation: self.separation,
+            baseSeparation: self.base_separation,
             normalImpulse: self.normal_impulse,
             tangentImpulse: self.tangent_impulse,
             totalNormalImpulse: self.total_normal_impulse,
@@ -481,9 +1375,11 @@ impl ManifoldPoint {
     }
 }
 
-/// Contact manifold data between two colliding shapes.
+/// Runtime solver manifold between two shapes in a Box2D world.
+///
+/// The normal is a world-space direction. Contact positions remain relative `f32` anchors in
+/// [`ManifoldPoint`] so double-precision builds do not silently narrow absolute positions.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[repr(C)]
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct Manifold {
     pub normal: Vec2,
@@ -493,20 +1389,93 @@ pub struct Manifold {
 }
 
 impl Manifold {
+    /// The initialized contact points in this manifold.
     #[inline]
     pub fn points(&self) -> &[ManifoldPoint] {
-        let count = self.point_count.clamp(0, MAX_MANIFOLD_POINTS as i32) as usize;
-        &self.contact_points[..count]
+        &self.contact_points[..self.point_count()]
+    }
+
+    /// The number of initialized contact points.
+    #[inline]
+    pub fn point_count(&self) -> usize {
+        self.point_count.clamp(0, MAX_MANIFOLD_POINTS as i32) as usize
+    }
+
+    /// Whether this manifold contains no initialized contact points.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.point_count() == 0
     }
 
     #[inline]
-    pub fn from_raw(raw: ffi::b2Manifold) -> Self {
+    pub fn from_raw(raw: ffi::b2Manifold) -> crate::Result<Self> {
+        let manifold = Self::from_raw_unvalidated(raw);
+        manifold.validate_for("Manifold::from_raw")?;
+        Ok(manifold)
+    }
+
+    #[inline]
+    fn from_raw_unvalidated(raw: ffi::b2Manifold) -> Self {
         Self {
             normal: Vec2::from_raw(raw.normal),
             rolling_impulse: raw.rollingImpulse,
-            contact_points: raw.points.map(ManifoldPoint::from_raw),
-            point_count: raw.pointCount.clamp(0, MAX_MANIFOLD_POINTS as i32),
+            contact_points: raw.points.map(ManifoldPoint::from_raw_unvalidated),
+            point_count: raw.pointCount,
         }
+    }
+
+    pub(crate) fn from_native(
+        operation: &'static str,
+        raw: ffi::b2Manifold,
+    ) -> crate::Result<Self> {
+        let manifold = Self::from_raw_unvalidated(raw);
+        manifold
+            .validate_for(operation)
+            .map_err(|_| crate::Error::InvalidNativeOutput {
+                operation,
+                output: "manifold",
+                constraint: "zero to two finite contact points and a unit normal when non-empty",
+            })?;
+        Ok(manifold)
+    }
+
+    pub fn validate(&self) -> crate::Result<()> {
+        self.validate_for("Manifold::validate")
+    }
+
+    fn validate_for(&self, operation: &'static str) -> crate::Result<()> {
+        if !(0..=MAX_MANIFOLD_POINTS as i32).contains(&self.point_count) {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "point_count",
+                "a contact point count in 0..=2",
+            ));
+        }
+        if !self.normal.is_valid() {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "normal",
+                "a finite vector",
+            ));
+        }
+        if self.point_count > 0 && !is_valid_unit_vec2(self.normal) {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "normal",
+                "a finite unit vector when the manifold is non-empty",
+            ));
+        }
+        if !self.rolling_impulse.is_finite() {
+            return Err(crate::Error::invalid_argument(
+                operation,
+                "rolling_impulse",
+                "a finite value",
+            ));
+        }
+        for point in self.points() {
+            point.validate_for(operation)?;
+        }
+        Ok(())
     }
 
     #[inline]
@@ -515,13 +1484,14 @@ impl Manifold {
             normal: self.normal.into_raw(),
             rollingImpulse: self.rolling_impulse,
             points: self.contact_points.map(ManifoldPoint::into_raw),
-            pointCount: self.point_count.clamp(0, MAX_MANIFOLD_POINTS as i32),
+            pointCount: self.point_count,
         }
     }
 }
 
-/// Contact data for a single contact touching two shapes.
-#[repr(C)]
+/// Contact data for a single contact touching two shapes in one completed-step epoch.
+///
+/// Its [`ContactId`] expires before the next valid world step enters Box2D.
 #[derive(Copy, Clone, Debug)]
 pub struct ContactData {
     pub contact_id: ContactId,
@@ -532,23 +1502,20 @@ pub struct ContactData {
 
 impl ContactData {
     #[inline]
-    pub fn from_raw(raw: ffi::b2ContactData) -> Self {
-        Self {
-            contact_id: ContactId::from_raw(raw.contactId),
-            shape_id_a: ShapeId::from_raw(raw.shapeIdA),
-            shape_id_b: ShapeId::from_raw(raw.shapeIdB),
-            manifold: Manifold::from_raw(raw.manifold),
-        }
-    }
-
-    #[inline]
-    pub fn into_raw(self) -> ffi::b2ContactData {
-        ffi::b2ContactData {
-            contactId: self.contact_id.into_raw(),
-            shapeIdA: self.shape_id_a.into_raw(),
-            shapeIdB: self.shape_id_b.into_raw(),
-            manifold: self.manifold.into_raw(),
-        }
+    pub(crate) fn from_raw_in(
+        resolver: &crate::core::identity_registry::OutputIdentityResolver<'_>,
+        contact_epoch: crate::id::ContactEpoch,
+        raw: ffi::b2ContactData,
+    ) -> crate::error::Result<Self> {
+        let contact_id = resolver.contact(raw.contactId, contact_epoch)?;
+        let shape_id_a = resolver.active_shape(raw.shapeIdA)?;
+        let shape_id_b = resolver.active_shape(raw.shapeIdB)?;
+        Ok(Self {
+            contact_id,
+            shape_id_a,
+            shape_id_b,
+            manifold: Manifold::from_native("ContactData::from_raw_in", raw.manifold)?,
+        })
     }
 }
 
@@ -557,12 +1524,314 @@ const _: () = {
     assert!(core::mem::align_of::<MassData>() == core::mem::align_of::<ffi::b2MassData>());
     assert!(core::mem::size_of::<MotionLocks>() == core::mem::size_of::<ffi::b2MotionLocks>());
     assert!(core::mem::align_of::<MotionLocks>() == core::mem::align_of::<ffi::b2MotionLocks>());
-    assert!(core::mem::size_of::<ManifoldPoint>() == core::mem::size_of::<ffi::b2ManifoldPoint>());
-    assert!(
-        core::mem::align_of::<ManifoldPoint>() == core::mem::align_of::<ffi::b2ManifoldPoint>()
-    );
-    assert!(core::mem::size_of::<Manifold>() == core::mem::size_of::<ffi::b2Manifold>());
-    assert!(core::mem::align_of::<Manifold>() == core::mem::align_of::<ffi::b2Manifold>());
-    assert!(core::mem::size_of::<ContactData>() == core::mem::size_of::<ffi::b2ContactData>());
-    assert!(core::mem::align_of::<ContactData>() == core::mem::align_of::<ffi::b2ContactData>());
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn contact_data_raw(brand: crate::id::IdBrand) -> ffi::b2ContactData {
+        // All-zero manifold fields represent an empty contact manifold.
+        let mut raw: ffi::b2ContactData = unsafe { core::mem::zeroed() };
+        raw.contactId = ffi::b2ContactId {
+            index1: 1,
+            world0: brand.world0(),
+            padding: 0,
+            generation: 1,
+        };
+        raw.shapeIdA = ffi::b2ShapeId {
+            index1: 1,
+            world0: brand.world0(),
+            generation: 1,
+        };
+        raw.shapeIdB = ffi::b2ShapeId {
+            index1: 2,
+            world0: brand.world0(),
+            generation: 1,
+        };
+        raw
+    }
+
+    #[test]
+    fn contact_data_binding_rejects_null_and_foreign_native_ids() {
+        let brand = crate::id::IdBrand::new(
+            ffi::b2WorldId {
+                index1: 4,
+                generation: 7,
+            },
+            crate::id::WorldToken::allocate().unwrap(),
+        )
+        .unwrap();
+        let identities = crate::core::identity_registry::ActiveIdentityRegistry::new(brand);
+        let body = identities
+            .register_body(ffi::b2BodyId {
+                index1: 1,
+                world0: brand.world0(),
+                generation: 1,
+            })
+            .unwrap();
+        let valid = contact_data_raw(brand);
+        identities.register_shape(valid.shapeIdA, body).unwrap();
+        identities.register_shape(valid.shapeIdB, body).unwrap();
+
+        let mut raw = contact_data_raw(brand);
+        raw.contactId.index1 = 0;
+        assert_eq!(
+            identities
+                .with_output_resolver(|resolver| {
+                    ContactData::from_raw_in(resolver, crate::id::ContactEpoch::INITIAL, raw)
+                })
+                .unwrap_err(),
+            crate::Error::InvalidContactId
+        );
+
+        let mut raw = contact_data_raw(brand);
+        raw.shapeIdA.index1 = 0;
+        assert_eq!(
+            identities
+                .with_output_resolver(|resolver| {
+                    ContactData::from_raw_in(resolver, crate::id::ContactEpoch::INITIAL, raw)
+                })
+                .unwrap_err(),
+            crate::Error::InvalidShapeId
+        );
+
+        let mut raw = contact_data_raw(brand);
+        raw.shapeIdB.world0 = brand.world0().wrapping_add(1);
+        assert_eq!(
+            identities
+                .with_output_resolver(|resolver| {
+                    ContactData::from_raw_in(resolver, crate::id::ContactEpoch::INITIAL, raw)
+                })
+                .unwrap_err(),
+            crate::Error::WrongWorld
+        );
+
+        let mut raw = contact_data_raw(brand);
+        raw.manifold.pointCount = 3;
+        assert_eq!(
+            identities
+                .with_output_resolver(|resolver| {
+                    ContactData::from_raw_in(resolver, crate::id::ContactEpoch::INITIAL, raw)
+                })
+                .unwrap_err(),
+            crate::Error::InvalidNativeOutput {
+                operation: "ContactData::from_raw_in",
+                output: "manifold",
+                constraint: "zero to two finite contact points and a unit normal when non-empty",
+            }
+        );
+    }
+
+    #[cfg(not(feature = "double-precision"))]
+    const TEST_WORLD_X: WorldScalar = 16_384.25;
+    #[cfg(feature = "double-precision")]
+    const TEST_WORLD_X: WorldScalar = 10_000_000_000.25;
+
+    #[test]
+    fn world_value_layout_matches_the_active_precision_abi() {
+        assert_eq!(
+            core::mem::size_of::<Position>(),
+            core::mem::size_of::<ffi::b2Pos>()
+        );
+        assert_eq!(
+            core::mem::align_of::<Position>(),
+            core::mem::align_of::<ffi::b2Pos>()
+        );
+        assert_eq!(
+            core::mem::size_of::<WorldTransform>(),
+            core::mem::size_of::<ffi::b2WorldTransform>()
+        );
+        assert_eq!(
+            core::mem::align_of::<WorldTransform>(),
+            core::mem::align_of::<ffi::b2WorldTransform>()
+        );
+    }
+
+    #[test]
+    fn world_position_and_transform_round_trip_fieldwise() {
+        assert_eq!(
+            Position::from(Vec2::new(1.25, -2.5)),
+            Position::new(1.25, -2.5)
+        );
+        assert_eq!(
+            Position::from([3.5_f32, -4.75_f32]),
+            Position::new(3.5, -4.75)
+        );
+
+        let position = Position::new(TEST_WORLD_X, -TEST_WORLD_X);
+        let position_round_trip = Position::from_raw(position.into_raw());
+        assert_eq!(position_round_trip, position);
+
+        let transform = WorldTransform::new(position, Rot::from_radians(0.375).unwrap()).unwrap();
+        let transform_round_trip = WorldTransform::from_raw(transform.into_raw()).unwrap();
+        assert_eq!(transform_round_trip.position(), position);
+        assert_eq!(
+            transform_round_trip.rotation().cosine(),
+            transform.rotation().cosine()
+        );
+        assert_eq!(
+            transform_round_trip.rotation().sine(),
+            transform.rotation().sine()
+        );
+
+        let transformed = transform.transform_point(Vec2::new(0.5, -0.25));
+        assert!(transformed.is_valid());
+    }
+
+    #[test]
+    fn checked_world_to_local_conversion_rejects_invalid_values() {
+        let origin = Position::ZERO;
+        assert_eq!(
+            Position::new(WorldScalar::NAN, 0.0).checked_relative_to(origin),
+            Err(PositionToLocalError::NonFinite)
+        );
+
+        #[cfg(feature = "double-precision")]
+        assert_eq!(
+            Position::new(f64::from(f32::MAX) * 2.0, 0.0).checked_relative_to(origin),
+            Err(PositionToLocalError::OutOfRange)
+        );
+    }
+
+    #[cfg(feature = "double-precision")]
+    #[test]
+    fn double_precision_preserves_millimeters_at_ten_million_meters() {
+        let origin = Position::new(10_000_000.0, -10_000_000.0);
+        let point = Position::new(10_000_000.001, -9_999_999.999);
+
+        assert_eq!(Position::from_raw(point.into_raw()), point);
+        let local = point
+            .checked_relative_to(origin)
+            .expect("millimeter delta should fit in local coordinates");
+        assert!((local.x - 0.001).abs() < 1.0e-8);
+        assert!((local.y - 0.001).abs() < 1.0e-8);
+        assert_eq!(point.relative_to_lossy(origin), local);
+    }
+
+    #[test]
+    fn world_cast_output_preserves_absolute_hit_point() {
+        let output = WorldCastOutput {
+            normal: Vec2::new(0.0, 1.0),
+            point: Position::new(TEST_WORLD_X, TEST_WORLD_X + 0.5),
+            fraction: 0.625,
+            iterations: 7,
+            hit: true,
+        };
+
+        assert_eq!(WorldCastOutput::from_raw(output.into_raw()), Ok(output));
+
+        assert!(
+            WorldCastOutput::from_raw(ffi::b2WorldCastOutput {
+                normal: ffi::b2Vec2 { x: 2.0, y: 0.0 },
+                ..output.into_raw()
+            })
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn runtime_manifold_point_maps_anchors_and_base_separation() {
+        let raw = ffi::b2ManifoldPoint {
+            anchorA: ffi::b2Vec2 { x: 1.0, y: 2.0 },
+            anchorB: ffi::b2Vec2 { x: 3.0, y: 4.0 },
+            separation: -0.25,
+            baseSeparation: -0.125,
+            normalImpulse: 5.0,
+            tangentImpulse: 6.0,
+            totalNormalImpulse: 7.0,
+            normalVelocity: -8.0,
+            id: 9,
+            persisted: true,
+        };
+
+        let point = ManifoldPoint::from_raw(raw).unwrap();
+        assert_eq!(point.anchor_a, Vec2::new(1.0, 2.0));
+        assert_eq!(point.anchor_b, Vec2::new(3.0, 4.0));
+        assert_eq!(point.separation, -0.25);
+        assert_eq!(point.base_separation, -0.125);
+        assert_eq!(point.normal_impulse, 5.0);
+        assert_eq!(point.tangent_impulse, 6.0);
+        assert_eq!(point.total_normal_impulse, 7.0);
+        assert_eq!(point.normal_velocity, -8.0);
+        assert_eq!(point.id, 9);
+        assert!(point.persisted);
+        assert_eq!(
+            point.world_point_a(Position::new(TEST_WORLD_X, TEST_WORLD_X)),
+            Position::new(TEST_WORLD_X + 1.0, TEST_WORLD_X + 2.0)
+        );
+        assert_eq!(
+            point.world_point_b(Position::new(TEST_WORLD_X, TEST_WORLD_X)),
+            Position::new(TEST_WORLD_X + 3.0, TEST_WORLD_X + 4.0)
+        );
+
+        let round_trip = ManifoldPoint::from_raw(point.into_raw()).unwrap();
+        assert_eq!(round_trip, point);
+    }
+
+    #[test]
+    fn runtime_manifold_round_trip_uses_only_initialized_points() {
+        let point = ManifoldPoint {
+            anchor_a: Vec2::new(1.0, 2.0),
+            anchor_b: Vec2::new(3.0, 4.0),
+            separation: -0.25,
+            base_separation: -0.125,
+            normal_impulse: 5.0,
+            tangent_impulse: 6.0,
+            total_normal_impulse: 7.0,
+            normal_velocity: -8.0,
+            id: 9,
+            persisted: true,
+        };
+        let manifold = Manifold {
+            normal: Vec2::new(0.0, 1.0),
+            rolling_impulse: 0.75,
+            contact_points: [point, ManifoldPoint::default()],
+            point_count: 1,
+        };
+
+        assert_eq!(manifold.point_count(), 1);
+        assert_eq!(manifold.points(), &[point]);
+        assert!(!manifold.is_empty());
+        assert_eq!(Manifold::from_raw(manifold.into_raw()), Ok(manifold));
+
+        let raw = ffi::b2Manifold {
+            pointCount: 3,
+            ..manifold.into_raw()
+        };
+        assert!(Manifold::from_raw(raw).is_err());
+
+        let raw = ffi::b2Manifold {
+            points: [
+                ffi::b2ManifoldPoint {
+                    separation: f32::NAN,
+                    ..point.into_raw()
+                },
+                ManifoldPoint::default().into_raw(),
+            ],
+            ..manifold.into_raw()
+        };
+        assert!(Manifold::from_raw(raw).is_err());
+    }
+
+    #[cfg(feature = "bytemuck")]
+    #[test]
+    fn world_value_layouts_have_no_padding() {
+        assert_eq!(
+            bytemuck::bytes_of(&Position::ZERO).len(),
+            2 * core::mem::size_of::<WorldScalar>()
+        );
+    }
+
+    #[test]
+    fn vector_position_and_world_transform_validation_are_pure_rust() {
+        let _callback_guard = crate::core::callback_state::CallbackGuard::enter();
+
+        assert!(Vec2::new(1.0, -2.0).is_valid());
+        assert!(!Vec2::new(f32::INFINITY, 0.0).is_valid());
+        assert!(Position::new(1.0, -2.0).is_valid());
+        assert!(!Position::new(WorldScalar::NEG_INFINITY, 0.0).is_valid());
+        assert!(WorldTransform::IDENTITY.is_valid());
+        assert!(WorldTransform::new(Position::new(WorldScalar::NAN, 0.0), Rot::IDENTITY).is_err());
+    }
+}

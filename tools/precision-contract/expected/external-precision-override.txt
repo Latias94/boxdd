@@ -1,0 +1,1 @@
+must not override BOX2D_DOUBLE_PRECISION; use the `double-precision` Cargo feature so C and Rust select one ABI

@@ -1,0 +1,5 @@
+error[E0599]: no method named `set_target_angle` found for struct `DistanceJoint<'_>` in the current scope
+  --> tests/ui/typed_joint_family_boundary.rs:17:22
+   |
+17 |     let _ = distance.set_target_angle(0.25);
+   |                      ^^^^^^^^^^^^^^^^ method not found in `DistanceJoint<'_>`

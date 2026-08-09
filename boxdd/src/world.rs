@@ -1,132 +1,179 @@
-use crate::Transform;
-use crate::body::{Body, BodyDef, BodyType};
-use crate::collision::CastOutput;
-use crate::core::world_core::{CustomFilterCtx, MaterialMixCtx, PreSolveCtx, WorldCore};
+use crate::body::{Body, BodyDef};
+use crate::core::world_core::WorldCore;
+use crate::id::{IdBrand, WorldToken};
 use crate::query::Aabb;
-use crate::shapes::{ShapeDef, SurfaceMaterial};
-use crate::types::{BodyId, ChainId, JointId, MassData, MotionLocks, ShapeId, Vec2};
+use crate::types::{BodyId, ChainId, JointId, Position, ShapeId, Vec2};
 use boxdd_sys::ffi;
-use std::ffi::CString;
-use std::rc::Rc;
-use std::sync::Arc;
+use std::ops::Deref;
+use std::pin::Pin;
 
-mod body_api;
 mod borrow;
+mod capability;
 mod creation;
 mod definition;
-mod handle;
 mod metrics;
 mod runtime;
-mod shape_api;
 
-pub use definition::{Error, WorldBuilder, WorldDef};
-pub(crate) use definition::{
-    assert_non_negative_finite_world_scalar, assert_positive_finite_world_scalar,
-    assert_world_gravity_valid, check_non_negative_finite_world_scalar,
-    check_positive_finite_world_scalar, check_world_gravity_valid,
+pub(crate) use capability::{
+    BodyCall, BodyProof, ChainCall, ChainProof, JointCall, JointProof, OwnerAdapter, OwnerCreation,
+    QueryCall, QueryCallGuard, QueryProof, ShapeCall, ShapeProof, WorldCall, joint_base_for_owner,
+    run_owner_call,
 };
-pub use handle::{CallbackWorld, WorldHandle};
-pub use metrics::{Counters, OutstandingOwnedHandles, OwnedHandleCounts, Profile};
+
+pub(crate) use creation::create_body_id;
+
+pub use definition::{WorldBuilder, WorldDef};
+pub(crate) use definition::{
+    check_non_negative_finite_world_scalar, check_positive_finite_world_linear_speed,
+    check_world_gravity_valid,
+};
+pub use metrics::{B2_MAX_WORKERS, Counters, Profile, WorkerCount, WorldCapacity};
 pub use runtime::MaterialMixInput;
 pub(crate) use runtime::{
-    try_world_awake_body_count_impl, try_world_counters_impl, try_world_gravity_impl,
-    try_world_hit_event_threshold_impl, try_world_is_continuous_enabled_impl,
-    try_world_is_sleeping_enabled_impl, try_world_is_warm_starting_enabled_impl,
-    try_world_maximum_linear_speed_impl, try_world_profile_impl,
-    try_world_restitution_threshold_impl, world_awake_body_count_checked_impl,
-    world_counters_checked_impl, world_gravity_checked_impl,
-    world_hit_event_threshold_checked_impl, world_is_continuous_enabled_checked_impl,
-    world_is_sleeping_enabled_checked_impl, world_is_warm_starting_enabled_checked_impl,
-    world_maximum_linear_speed_checked_impl, world_profile_checked_impl,
-    world_restitution_threshold_checked_impl,
+    world_enable_continuous, world_enable_sleeping, world_enable_warm_starting,
+    world_set_contact_recycle_distance, world_set_contact_tuning, world_set_gravity,
+    world_set_hit_event_threshold, world_set_maximum_linear_speed, world_set_restitution_threshold,
 };
 
 #[inline]
-fn raw_body_id(id: BodyId) -> ffi::b2BodyId {
-    id.into_raw()
+pub(crate) fn check_world_available(world: &World) -> crate::error::Result<()> {
+    crate::core::callback_state::check_not_in_callback()?;
+    world.retire_completed_step();
+    world.core.check_available()
 }
 
 #[inline]
-fn raw_shape_id(id: ShapeId) -> ffi::b2ShapeId {
-    id.into_raw()
-}
-
-#[inline]
-fn raw_joint_id(id: JointId) -> ffi::b2JointId {
-    id.into_raw()
-}
-
-#[inline]
-fn raw_chain_id(id: ChainId) -> ffi::b2ChainId {
-    id.into_raw()
+pub(crate) fn check_recording_world_available(world: &World) -> crate::error::Result<()> {
+    crate::core::callback_state::check_not_in_callback()?;
+    world.retire_completed_step();
+    world.core.check_recording_available()
 }
 
 /// A simulation world.
 ///
-/// Note: the underlying Box2D world is owned by an internal reference-counted core, so it will
-/// be destroyed when the last owned handle (`OwnedBody`/`OwnedShape`/`OwnedJoint`/`OwnedChain`)
-/// is dropped.
+/// Dropping `World` ends the underlying Box2D world's lifetime. If it is dropped from a native
+/// callback, teardown is transferred to that call's outermost owner boundary so Box2D is never
+/// re-entered while the world is locked. A callback with no such Rust boundary retains the native
+/// owner instead of risking use-after-free.
 pub struct World {
-    core: Arc<WorldCore>,
-    // Box2D's external API is not thread-safe; prevent `World: Send/Sync`.
-    _not_send_sync: core::marker::PhantomData<Rc<()>>,
+    core: WorldOwner,
+    completed_step: crate::events::CompletedStepState,
 }
-#[cfg(feature = "serialize")]
-pub use crate::core::serialize_registry::{
-    ChainCreateRecord, ChainMaterialsRecord, ShapeFlagsRecord,
-};
+
+struct WorldOwner(Option<Pin<Box<WorldCore>>>);
+
+impl WorldOwner {
+    fn new(core: Pin<Box<WorldCore>>) -> Self {
+        Self(Some(core))
+    }
+
+    fn take(&mut self) -> Pin<Box<WorldCore>> {
+        self.0
+            .take()
+            .expect("a live World owns exactly one WorldCore")
+    }
+}
+
+impl Deref for WorldOwner {
+    type Target = WorldCore;
+
+    fn deref(&self) -> &Self::Target {
+        self.0
+            .as_deref()
+            .expect("WorldCore remains present until World::drop")
+    }
+}
 
 impl World {
-    /// Create a world from a definition.
-    pub fn new(def: WorldDef) -> Result<Self, Error> {
+    pub(crate) fn create(
+        foundation: &'static crate::Foundation,
+        def: WorldDef,
+    ) -> crate::error::Result<Self> {
+        crate::core::callback_state::check_not_in_callback()?;
         def.validate()?;
-        let _guard = crate::core::box2d_lock::lock();
+        let length_scale = foundation.length_scale();
+        length_scale.check_definition("Foundation::create_world", def.length_scale())?;
+        let token = WorldToken::allocate().map_err(|_| crate::Error::WorldIdentityExhausted)?;
+        let foundation_lease = foundation.acquire_ordinary_world_lease()?;
+        let world_slot_guard = crate::core::foundation::lock_world_slot_mutation();
         let raw = def.into_raw();
-        // SAFETY: FFI call to create a world; returns an id handle
+        // SAFETY: the definition was validated and the process-global world slot is serialized.
         let world_id = unsafe { ffi::b2CreateWorld(&raw) };
         let ok = unsafe { ffi::b2World_IsValid(world_id) };
         if ok {
+            let brand = IdBrand::new(world_id, token).map_err(|_| {
+                unsafe { ffi::b2DestroyWorld(world_id) };
+                crate::Error::WorldCreationFailed
+            })?;
+            drop(world_slot_guard);
             Ok(Self {
-                core: WorldCore::new(world_id),
-                _not_send_sync: core::marker::PhantomData,
+                core: WorldOwner::new(WorldCore::new(
+                    world_id,
+                    brand,
+                    length_scale,
+                    foundation_lease,
+                )),
+                completed_step: crate::events::CompletedStepState::default(),
             })
         } else {
-            Err(Error::CreateFailed)
+            drop(world_slot_guard);
+            Err(crate::Error::WorldCreationFailed)
         }
     }
 
-    /// Expose the raw Box2D world id for advanced use-cases.
-    pub fn world_id_raw(&self) -> ffi::b2WorldId {
+    pub(crate) fn raw(&self) -> ffi::b2WorldId {
         self.core.id
     }
 
-    pub(crate) fn raw(&self) -> ffi::b2WorldId {
-        self.world_id_raw()
+    pub(crate) fn brand(&self) -> IdBrand {
+        WorldCore::brand(&self.core)
     }
 
-    pub(crate) fn core_arc(&self) -> Arc<WorldCore> {
-        Arc::clone(&self.core)
+    pub(crate) fn core(&self) -> &WorldCore {
+        &self.core
     }
 
-    pub(crate) fn with_borrowed_event_buffers<T>(&self, f: impl FnOnce() -> T) -> T {
-        crate::core::callback_state::assert_not_in_callback();
-        let core = self.core_arc();
-        let out = {
-            let _borrow = core.borrow_event_buffers();
-            f()
-        };
-        // Nested raw/view event borrows are allowed. Deferred destroys must wait until the
-        // outermost borrow ends so previously returned event slices cannot be invalidated early.
-        core.process_deferred_destroys();
-        out
+    /// Construct body defaults carrying this world's length-scale provenance.
+    #[must_use]
+    pub fn body_def(&self) -> BodyDef {
+        BodyDef::with_length_scale(self.core.length_scale())
     }
 
-    pub(crate) fn try_with_borrowed_event_buffers<T>(
+    /// Start a body builder carrying this world's length-scale provenance.
+    #[must_use]
+    pub fn body_builder(&self) -> crate::BodyBuilder {
+        self.body_def().into()
+    }
+
+    /// Construct a joint base after proving that both body ids belong to this live world.
+    pub fn joint_base(
         &self,
-        f: impl FnOnce() -> T,
-    ) -> crate::error::ApiResult<T> {
-        crate::core::callback_state::check_not_in_callback()?;
-        Ok(self.with_borrowed_event_buffers(f))
+        body_a: BodyId,
+        body_b: BodyId,
+    ) -> crate::error::Result<crate::JointBase> {
+        joint_base_for_owner(self, body_a, body_b)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn event_storage(&self) -> &crate::events::EventStorage {
+        self.completed_step.storage()
+    }
+
+    pub(crate) fn completed_step_state(&self) -> &crate::events::CompletedStepState {
+        &self.completed_step
+    }
+
+    pub(crate) fn retire_completed_step(&self) {
+        self.completed_step.retire(&self.core);
+    }
+
+    pub(crate) fn invalidate_completed_step(&self) {
+        self.completed_step.invalidate(&self.core);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn completed_step_active_for_test(&self) -> bool {
+        self.completed_step.is_active_for_test()
     }
 
     // --- Typed user data ---------------------------------------------------------
@@ -134,214 +181,70 @@ impl World {
     ///
     /// This stores a `Box<T>` internally and sets Box2D's user data pointer to it. The allocation
     /// is automatically freed when cleared or when the world is dropped.
-    pub fn set_user_data<T: 'static>(&mut self, value: T) {
-        crate::core::callback_state::assert_not_in_callback();
-        let p = self.core.set_world_user_data(value);
-        unsafe { ffi::b2World_SetUserData(self.raw(), p) };
-    }
-
-    pub fn try_set_user_data<T: 'static>(&mut self, value: T) -> crate::error::ApiResult<()> {
-        crate::core::callback_state::check_not_in_callback()?;
-        let p = self.core.set_world_user_data(value);
-        unsafe { ffi::b2World_SetUserData(self.raw(), p) };
+    pub fn set_user_data<T: 'static>(&mut self, value: T) -> crate::error::Result<()> {
+        let value = crate::core::callback_state::PendingUserValue::new(value);
+        check_world_available(self)?;
+        let update = self.core.set_world_user_data(value)?;
+        let (pointer, retired) = update.into_parts();
+        unsafe { ffi::b2World_SetUserData(self.raw(), pointer) };
+        retired.resume_drop_panic();
         Ok(())
     }
 
-    /// Clear typed user data on this world. Returns whether any data was present.
-    pub fn clear_user_data(&mut self) -> bool {
-        crate::core::callback_state::assert_not_in_callback();
-        let had = unsafe { !ffi::b2World_GetUserData(self.raw()).is_null() };
-        unsafe { ffi::b2World_SetUserData(self.raw(), core::ptr::null_mut()) };
-        self.core.clear_world_user_data();
-        had
+    /// Return whether the world currently has a native user-data pointer.
+    pub fn has_user_data(&self) -> crate::error::Result<bool> {
+        check_world_available(self)?;
+        Ok(unsafe { !ffi::b2World_GetUserData(self.raw()).is_null() })
     }
 
-    pub fn try_clear_user_data(&mut self) -> crate::error::ApiResult<bool> {
-        crate::core::callback_state::check_not_in_callback()?;
-        let had = unsafe { !ffi::b2World_GetUserData(self.raw()).is_null() };
-        unsafe { ffi::b2World_SetUserData(self.raw(), core::ptr::null_mut()) };
-        self.core.clear_world_user_data();
+    /// Clear typed user data on this world. Returns whether any data was present.
+    pub fn clear_user_data(&mut self) -> crate::error::Result<bool> {
+        check_world_available(self)?;
+        let retired = self.core.clear_world_user_data()?;
+        let had = retired.is_some() || unsafe { !ffi::b2World_GetUserData(self.raw()).is_null() };
+        if had {
+            unsafe { ffi::b2World_SetUserData(self.raw(), core::ptr::null_mut()) };
+        }
+        retired.resume_drop_panic();
         Ok(had)
     }
 
-    pub fn with_user_data<T: 'static, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
-        crate::core::callback_state::assert_not_in_callback();
-        self.core
-            .try_with_world_user_data(f)
-            .expect("user data type mismatch")
-    }
-
-    pub fn try_with_user_data<T: 'static, R>(
+    pub fn with_user_data<T: 'static, R>(
         &self,
         f: impl FnOnce(&T) -> R,
-    ) -> crate::error::ApiResult<Option<R>> {
-        crate::core::callback_state::check_not_in_callback()?;
+    ) -> crate::error::Result<Option<R>> {
+        let f = crate::core::callback_state::PendingUserValue::new(f);
+        check_world_available(self)?;
         self.core.try_with_world_user_data(f)
     }
 
-    pub fn take_user_data<T: 'static>(&mut self) -> Option<T> {
-        crate::core::callback_state::assert_not_in_callback();
-        let v = self
-            .core
-            .take_world_user_data::<T>()
-            .expect("user data type mismatch");
-        if v.is_some() {
-            unsafe { ffi::b2World_SetUserData(self.raw(), core::ptr::null_mut()) };
-        }
-        v
-    }
-
-    pub fn try_take_user_data<T: 'static>(&mut self) -> crate::error::ApiResult<Option<T>> {
-        crate::core::callback_state::check_not_in_callback()?;
+    pub fn take_user_data<T: 'static>(&mut self) -> crate::error::Result<Option<T>> {
+        check_world_available(self)?;
         let v = self.core.take_world_user_data::<T>()?;
         if v.is_some() {
             unsafe { ffi::b2World_SetUserData(self.raw(), core::ptr::null_mut()) };
         }
         Ok(v)
     }
+}
 
-    /// Create a cheap, cloneable handle to this world.
-    pub fn handle(&self) -> WorldHandle {
-        WorldHandle::new(Arc::clone(&self.core))
-    }
-
-    /// Number of outstanding owned handles (`OwnedBody`/`OwnedShape`/`OwnedJoint`/`OwnedChain`).
-    pub fn owned_handle_count(&self) -> usize {
-        Arc::strong_count(&self.core).saturating_sub(1)
-    }
-
-    pub fn owned_handle_counts(&self) -> OwnedHandleCounts {
-        let (bodies, shapes, joints, chains) = self.core.owned_counts();
-        OwnedHandleCounts {
-            bodies,
-            shapes,
-            joints,
-            chains,
-        }
-    }
-
-    /// Attempt to destroy the world by consuming `self`.
-    ///
-    /// This returns an error if there are still owned handles alive, because they keep the world
-    /// core reference-counted and prevent destruction.
-    pub fn shutdown(self) -> Result<(), (Self, OutstandingOwnedHandles)> {
-        let strong = Arc::strong_count(&self.core);
-        if strong == 1 {
-            Ok(())
+impl Drop for World {
+    fn drop(&mut self) {
+        let core = self.core.take();
+        // Box2D detaches an active recording as part of b2DestroyWorld. Only a callback stack makes
+        // immediate native teardown unsafe; an active owner frame then performs every explicit
+        // detach cleanup before destroying this transferred owner.
+        if crate::core::callback_state::in_callback() {
+            crate::core::callback_state::defer_world_owner_or_forget(core);
         } else {
-            let (bodies, shapes, joints, chains) = self.core.owned_counts();
-            Err((
-                self,
-                OutstandingOwnedHandles {
-                    strong_count: strong,
-                    counts: OwnedHandleCounts {
-                        bodies,
-                        shapes,
-                        joints,
-                        chains,
-                    },
-                },
-            ))
+            core.shutdown_native();
+            drop(core);
         }
-    }
-
-    /// Enumerate known body ids created via this wrapper. Invalid/destroyed ids are filtered out.
-    #[cfg(feature = "serialize")]
-    pub fn body_ids(&self) -> Vec<BodyId> {
-        crate::core::callback_state::assert_not_in_callback();
-        self.core
-            .registries
-            .lock()
-            .expect("registries mutex poisoned")
-            .body_ids()
-    }
-
-    /// Enumerate known body ids created via this wrapper into a caller-owned buffer.
-    #[cfg(feature = "serialize")]
-    pub fn body_ids_into(&self, out: &mut Vec<BodyId>) {
-        crate::core::callback_state::assert_not_in_callback();
-        self.core
-            .registries
-            .lock()
-            .expect("registries mutex poisoned")
-            .body_ids_into(out);
-    }
-
-    /// Enumerate known body ids created via this wrapper. Invalid/destroyed ids are filtered out.
-    #[cfg(feature = "serialize")]
-    pub fn try_body_ids(&self) -> crate::error::ApiResult<Vec<BodyId>> {
-        crate::core::callback_state::check_not_in_callback()?;
-        let mut out = Vec::new();
-        self.core
-            .registries
-            .lock()
-            .expect("registries mutex poisoned")
-            .body_ids_into(&mut out);
-        Ok(out)
-    }
-
-    /// Enumerate known body ids created via this wrapper into a caller-owned buffer.
-    #[cfg(feature = "serialize")]
-    pub fn try_body_ids_into(&self, out: &mut Vec<BodyId>) -> crate::error::ApiResult<()> {
-        crate::core::callback_state::check_not_in_callback()?;
-        self.core
-            .registries
-            .lock()
-            .expect("registries mutex poisoned")
-            .body_ids_into(out);
-        Ok(())
-    }
-
-    /// Return chain creation records captured at creation time using crate-owned value types.
-    #[cfg(feature = "serialize")]
-    pub fn chain_records(&self) -> Vec<ChainCreateRecord> {
-        crate::core::callback_state::assert_not_in_callback();
-        self.core
-            .registries
-            .lock()
-            .expect("registries mutex poisoned")
-            .chain_records()
-    }
-
-    /// Return chain creation records captured at creation time into a caller-owned buffer.
-    #[cfg(feature = "serialize")]
-    pub fn chain_records_into(&self, out: &mut Vec<ChainCreateRecord>) {
-        crate::core::callback_state::assert_not_in_callback();
-        self.core
-            .registries
-            .lock()
-            .expect("registries mutex poisoned")
-            .chain_records_into(out);
-    }
-
-    /// Return chain creation records captured at creation time using crate-owned value types.
-    #[cfg(feature = "serialize")]
-    pub fn try_chain_records(&self) -> crate::error::ApiResult<Vec<ChainCreateRecord>> {
-        crate::core::callback_state::check_not_in_callback()?;
-        let mut out = Vec::new();
-        self.core
-            .registries
-            .lock()
-            .expect("registries mutex poisoned")
-            .chain_records_into(&mut out);
-        Ok(out)
-    }
-
-    /// Return chain creation records captured at creation time into a caller-owned buffer.
-    #[cfg(feature = "serialize")]
-    pub fn try_chain_records_into(
-        &self,
-        out: &mut Vec<ChainCreateRecord>,
-    ) -> crate::error::ApiResult<()> {
-        crate::core::callback_state::check_not_in_callback()?;
-        self.core
-            .registries
-            .lock()
-            .expect("registries mutex poisoned")
-            .chain_records_into(out);
-        Ok(())
     }
 }
+
+#[cfg(test)]
+mod availability_tests;
 
 #[cfg(test)]
 mod tests;

@@ -1,211 +1,91 @@
-use crate::Transform;
-use crate::types::BodyId;
-use crate::world::{World, WorldHandle};
+use crate::core::identity_registry::OutputIdentityResolver;
+use crate::core::world_core::WorldCore;
+use crate::error::Result;
+use crate::types::{BodyId, WorldTransform};
 use boxdd_sys::ffi;
 
 #[derive(Clone, Debug)]
 pub struct BodyMoveEvent {
     pub body_id: BodyId,
-    pub transform: Transform,
+    pub transform: WorldTransform,
     pub fell_asleep: bool,
 }
 
-/// Zero-copy view wrapper for a body move event.
-/// Borrowed data is valid only within the closure passed to
-/// `with_body_events_view`.
-#[derive(Copy, Clone)]
-pub struct BodyMove<'a>(&'a ffi::b2BodyMoveEvent);
-impl<'a> BodyMove<'a> {
-    pub fn body_id(&self) -> BodyId {
-        BodyId::from_raw(self.0.bodyId)
-    }
-    pub fn transform(&self) -> Transform {
-        Transform::from_raw(self.0.transform)
-    }
-    pub fn fell_asleep(&self) -> bool {
-        self.0.fellAsleep
-    }
-}
-
-pub struct BodyMoveIter<'a>(core::slice::Iter<'a, ffi::b2BodyMoveEvent>);
-impl<'a> Iterator for BodyMoveIter<'a> {
-    type Item = BodyMove<'a>;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(BodyMove)
-    }
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
+impl BodyMoveEvent {
+    fn from_raw(
+        identities: &OutputIdentityResolver<'_>,
+        raw: ffi::b2BodyMoveEvent,
+    ) -> Result<Self> {
+        let transform = WorldTransform::from_raw(raw.transform).map_err(|_| {
+            crate::Error::InvalidNativeOutput {
+                operation: "CompletedStep::body_events",
+                output: "transform",
+                constraint: "a finite rigid world transform",
+            }
+        })?;
+        Ok(Self {
+            body_id: identities.body(raw.bodyId)?,
+            transform,
+            fell_asleep: raw.fellAsleep,
+        })
     }
 }
 
-fn body_events_into_impl(world: ffi::b2WorldId, out: &mut Vec<BodyMoveEvent>) {
-    let raw = unsafe { ffi::b2World_GetBodyEvents(world) };
-    let slice = if raw.moveCount > 0 && !raw.moveEvents.is_null() {
-        unsafe { core::slice::from_raw_parts(raw.moveEvents, raw.moveCount as usize) }
-    } else {
-        &[][..]
-    };
-    super::map_snapshot_into(out, slice, |e| BodyMoveEvent {
-        body_id: BodyId::from_raw(e.bodyId),
-        transform: Transform::from_raw(e.transform),
-        fell_asleep: e.fellAsleep,
-    });
+/// A borrowed view of body-move events from one completed step.
+pub struct BodyEvents<'step> {
+    events: &'step [BodyMoveEvent],
 }
 
-fn body_events_snapshot_impl(world: ffi::b2WorldId) -> Vec<BodyMoveEvent> {
-    let mut out = Vec::new();
-    body_events_into_impl(world, &mut out);
-    out
+impl<'step> BodyEvents<'step> {
+    pub(super) fn new(events: &'step [BodyMoveEvent]) -> Self {
+        Self { events }
+    }
+
+    pub fn iter(&self) -> core::slice::Iter<'_, BodyMoveEvent> {
+        self.events.iter()
+    }
+
+    pub fn len(&self) -> usize {
+        self.events.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.events.is_empty()
+    }
+
+    pub fn to_owned(&self) -> Result<Vec<BodyMoveEvent>> {
+        super::to_owned(self.events)
+    }
+
+    pub fn clone_into(&self, out: &mut Vec<BodyMoveEvent>) -> Result<()> {
+        super::clone_into(self.events, out)
+    }
 }
 
-fn body_events_checked_impl(world: ffi::b2WorldId) -> Vec<BodyMoveEvent> {
-    crate::core::callback_state::assert_not_in_callback();
-    body_events_snapshot_impl(world)
+impl<'view, 'step> IntoIterator for &'view BodyEvents<'step> {
+    type Item = &'view BodyMoveEvent;
+    type IntoIter = core::slice::Iter<'view, BodyMoveEvent>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
 }
 
-fn body_events_into_checked_impl(world: ffi::b2WorldId, out: &mut Vec<BodyMoveEvent>) {
-    crate::core::callback_state::assert_not_in_callback();
-    body_events_into_impl(world, out);
-}
-
-fn try_body_events_impl(world: ffi::b2WorldId) -> crate::error::ApiResult<Vec<BodyMoveEvent>> {
-    crate::core::callback_state::check_not_in_callback()?;
-    Ok(body_events_snapshot_impl(world))
-}
-
-fn try_body_events_into_impl(
-    world: ffi::b2WorldId,
+pub(super) fn capture(
     out: &mut Vec<BodyMoveEvent>,
-) -> crate::error::ApiResult<()> {
-    crate::core::callback_state::check_not_in_callback()?;
-    body_events_into_impl(world, out);
-    Ok(())
-}
-
-impl World {
-    pub fn body_events(&self) -> Vec<BodyMoveEvent> {
-        body_events_checked_impl(self.raw())
+    raw: ffi::b2BodyEvents,
+    core: &WorldCore,
+) -> Result<()> {
+    // SAFETY: The completed-step capability prevents mutation while the returned slice is mapped.
+    let raw = unsafe { super::ffi_slice(raw.moveEvents, raw.moveCount) }?;
+    if raw.is_empty() {
+        out.clear();
+        return Ok(());
     }
-
-    pub fn body_events_into(&self, out: &mut Vec<BodyMoveEvent>) {
-        body_events_into_checked_impl(self.raw(), out);
-    }
-
-    pub fn try_body_events(&self) -> crate::error::ApiResult<Vec<BodyMoveEvent>> {
-        try_body_events_impl(self.raw())
-    }
-
-    pub fn try_body_events_into(
-        &self,
-        out: &mut Vec<BodyMoveEvent>,
-    ) -> crate::error::ApiResult<()> {
-        try_body_events_into_impl(self.raw(), out)
-    }
-}
-
-impl WorldHandle {
-    pub fn body_events(&self) -> Vec<BodyMoveEvent> {
-        body_events_checked_impl(self.raw())
-    }
-
-    pub fn body_events_into(&self, out: &mut Vec<BodyMoveEvent>) {
-        body_events_into_checked_impl(self.raw(), out);
-    }
-
-    pub fn try_body_events(&self) -> crate::error::ApiResult<Vec<BodyMoveEvent>> {
-        try_body_events_impl(self.raw())
-    }
-
-    pub fn try_body_events_into(
-        &self,
-        out: &mut Vec<BodyMoveEvent>,
-    ) -> crate::error::ApiResult<()> {
-        try_body_events_into_impl(self.raw(), out)
-    }
-}
-
-impl World {
-    // Zero-copy visitor (closure style). Data is only valid within the call.
-    /// Low-level raw view over body events (borrows Box2D's internal buffers).
-    ///
-    /// # Safety
-    /// The returned slice borrows internal Box2D buffers. While `f` runs, you must not perform
-    /// any operation that can mutate those buffers (e.g. stepping the world or destroying bodies).
-    ///
-    /// Dropping `Owned*` handles inside `f` is OK; destruction is deferred until after this call.
-    pub unsafe fn with_body_events_raw<T>(
-        &self,
-        f: impl FnOnce(&[ffi::b2BodyMoveEvent]) -> T,
-    ) -> T {
-        self.with_borrowed_event_buffers(|| {
-            let raw = unsafe { ffi::b2World_GetBodyEvents(self.raw()) };
-            let slice = if raw.moveCount > 0 && !raw.moveEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.moveEvents, raw.moveCount as usize) }
-            } else {
-                &[][..]
-            };
-            f(slice)
+    super::prepare_mapped(out, raw.len())?;
+    core.with_output_identity_resolver(|identities| {
+        super::extend_mapped(out, raw, |event| {
+            BodyMoveEvent::from_raw(identities, *event)
         })
-    }
-
-    /// Low-level raw view over body events with recoverable callback-lock checking.
-    ///
-    /// # Safety
-    /// Same safety contract as `with_body_events_raw`.
-    pub unsafe fn try_with_body_events_raw<T>(
-        &self,
-        f: impl FnOnce(&[ffi::b2BodyMoveEvent]) -> T,
-    ) -> crate::error::ApiResult<T> {
-        self.try_with_borrowed_event_buffers(|| {
-            let raw = unsafe { ffi::b2World_GetBodyEvents(self.raw()) };
-            let slice = if raw.moveCount > 0 && !raw.moveEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.moveEvents, raw.moveCount as usize) }
-            } else {
-                &[][..]
-            };
-            f(slice)
-        })
-    }
-
-    /// Zero-copy view over body move events without exposing raw FFI types.
-    ///
-    /// While `f` runs, dropping `Owned*` handles does not destroy bodies/shapes/joints immediately;
-    /// the destruction is deferred until after the view ends to keep the borrowed buffers valid.
-    ///
-    /// Example
-    /// ```rust
-    /// use boxdd::prelude::*;
-    /// let mut world = World::new(WorldDef::default()).unwrap();
-    /// world.with_body_events_view(|it| {
-    ///     for e in it { let _ = (e.body_id(), e.fell_asleep()); }
-    /// });
-    /// ```
-    ///
-    pub fn with_body_events_view<T>(&self, f: impl FnOnce(BodyMoveIter<'_>) -> T) -> T {
-        self.with_borrowed_event_buffers(|| {
-            let raw = unsafe { ffi::b2World_GetBodyEvents(self.raw()) };
-            let slice = if raw.moveCount > 0 && !raw.moveEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.moveEvents, raw.moveCount as usize) }
-            } else {
-                &[][..]
-            };
-            f(BodyMoveIter(slice.iter()))
-        })
-    }
-
-    /// Zero-copy view over body move events with recoverable callback-lock checking.
-    pub fn try_with_body_events_view<T>(
-        &self,
-        f: impl FnOnce(BodyMoveIter<'_>) -> T,
-    ) -> crate::error::ApiResult<T> {
-        self.try_with_borrowed_event_buffers(|| {
-            let raw = unsafe { ffi::b2World_GetBodyEvents(self.raw()) };
-            let slice = if raw.moveCount > 0 && !raw.moveEvents.is_null() {
-                unsafe { core::slice::from_raw_parts(raw.moveEvents, raw.moveCount as usize) }
-            } else {
-                &[][..]
-            };
-            f(BodyMoveIter(slice.iter()))
-        })
-    }
+    })
 }

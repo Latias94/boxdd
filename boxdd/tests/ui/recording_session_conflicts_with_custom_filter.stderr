@@ -1,0 +1,10 @@
+error[E0499]: cannot borrow `world` as mutable more than once at a time
+  --> tests/ui/recording_session_conflicts_with_custom_filter.rs:11:5
+   |
+ 8 |     let session = world
+   |                   ----- first mutable borrow occurs here
+...
+11 |     world.set_custom_filter(|_, _| true).unwrap();
+   |     ^^^^^ second mutable borrow occurs here
+12 |     drop(session);
+   |          ------- first borrow later used here

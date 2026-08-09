@@ -4,9 +4,17 @@ use bevy::prelude::*;
 use bevy_boxdd::prelude::*;
 
 fn main() {
+    let foundation =
+        boxdd::Foundation::initialize_default().expect("Box2D foundation should initialize");
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(BoxddPhysicsPlugin::default())
+        .add_plugins(BoxddPhysicsPlugin::new(
+            foundation,
+            BoxddPhysicsSettings {
+                event_interests: BoxddEventInterests::NONE.with_contacts(true),
+                ..Default::default()
+            },
+        ))
         .add_systems(Startup, setup)
         .add_systems(Update, log_contact_events)
         .run();
@@ -42,17 +50,18 @@ fn log_contact_events(
     mut hit: MessageReader<BoxddContactHitMessage>,
 ) {
     for message in begin.read() {
-        info!(?message.entity_a, ?message.entity_b, "contact began");
+        info!(?message.contact_id, ?message.entity_a, ?message.entity_b, "contact began");
     }
 
     for message in end.read() {
-        info!(?message.entity_a, ?message.entity_b, "contact ended");
+        info!(?message.contact_id, ?message.entity_a, ?message.entity_b, "contact ended");
     }
 
     for message in hit.read() {
         info!(
             ?message.entity_a,
             ?message.entity_b,
+            ?message.contact_id,
             approach_speed = message.approach_speed,
             "contact hit"
         );
