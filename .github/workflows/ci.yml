@@ -443,7 +443,7 @@ jobs:
         run: cargo install cargo-semver-checks --version 0.48.0 --locked
 
       - name: Audit dependencies
-        run: cargo audit --deny unsound --file Cargo.lock
+        run: cargo audit --db "$RUNNER_TEMP/rustsec-advisory-db" --deny unsound --file Cargo.lock
 
       - name: Verify packaged-source consumers
         run: cargo run --locked -p xtask -- verify-packages
