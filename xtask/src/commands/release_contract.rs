@@ -32,7 +32,7 @@ use crate::{Error, Result};
 
 use super::{
     effective_source_snapshot::EffectiveHeaderSnapshot,
-    support::{BoundedReader, cosign_command},
+    support::{BoundedReader, cosign_command, normalize_crlf},
     wasm_release::{self, UnsignedReleaseContext},
 };
 
@@ -1570,6 +1570,11 @@ fn verify_repository_owned_files(
             "boxdd-sys/effective-source.toml",
         ),
         ("metadata/upstream.toml", "boxdd-sys/upstream.toml"),
+    ];
+    for (packaged, source) in fixed {
+        require_packaged_bytes(files, packaged, &repository_root.join(source))?;
+    }
+    let licenses = [
         ("licenses/PROJECT-LICENSE-MIT", "LICENSE-MIT"),
         ("licenses/PROJECT-LICENSE-APACHE", "LICENSE-APACHE"),
         (
@@ -1577,8 +1582,8 @@ fn verify_repository_owned_files(
             "boxdd-sys/third-party/box2d/LICENSE",
         ),
     ];
-    for (packaged, source) in fixed {
-        require_packaged_bytes(files, packaged, &repository_root.join(source))?;
+    for (packaged, source) in licenses {
+        require_packaged_text_bytes(files, packaged, &repository_root.join(source))?;
     }
     verify_packaged_effective_headers(files, effective_headers)?;
     let bindings = expected_bindings_path(spec);
@@ -1614,6 +1619,23 @@ fn require_packaged_bytes(
     if files.get(packaged).map(Vec::as_slice) != Some(expected.bytes()) {
         return Err(Error::message(format!(
             "packaged {packaged} does not exactly match {}",
+            source.display()
+        )));
+    }
+    Ok(())
+}
+
+fn require_packaged_text_bytes(
+    files: &BTreeMap<String, Vec<u8>>,
+    packaged: &str,
+    source: &Path,
+) -> Result<()> {
+    let expected = VerifiedFileSnapshot::read(source, MAX_ARCHIVE_ENTRY_BYTES, "package source")
+        .map_err(Error::message)?;
+    let expected = normalize_crlf(expected.into_bytes());
+    if files.get(packaged).map(Vec::as_slice) != Some(expected.as_slice()) {
+        return Err(Error::message(format!(
+            "packaged {packaged} does not match canonical LF content from {}",
             source.display()
         )));
     }
@@ -1865,6 +1887,20 @@ mod tests {
             .append_data(&mut file, "a", b"one".as_slice())
             .unwrap();
         archive.finish().unwrap();
+    }
+
+    #[test]
+    fn repository_text_comparison_accepts_crlf_source_for_canonical_lf_member() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("LICENSE");
+        fs::write(&source, b"first\r\nsecond\r\n").unwrap();
+        let files = BTreeMap::from([(
+            "licenses/PROJECT-LICENSE-MIT".to_owned(),
+            b"first\nsecond\n".to_vec(),
+        )]);
+
+        require_packaged_text_bytes(&files, "licenses/PROJECT-LICENSE-MIT", &source).unwrap();
+        assert!(require_packaged_bytes(&files, "licenses/PROJECT-LICENSE-MIT", &source).is_err());
     }
 
     fn write_symlink_tar_fixture(path: &Path) {

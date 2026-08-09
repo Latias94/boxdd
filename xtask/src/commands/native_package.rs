@@ -29,6 +29,8 @@ use std::fs;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
+use super::support::normalize_crlf;
+
 const ADAPTER_IDENTITY_FILE: &str = "adapter_identity.rs";
 const MAX_PACKAGE_METADATA_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_PACKAGE_PUBLIC_HEADERS: usize = 64;
@@ -777,27 +779,27 @@ fn build_package_files(
     );
     files.insert(
         "licenses/PROJECT-LICENSE-MIT".to_owned(),
-        read_required(
+        normalize_crlf(read_required(
             &manifest_dir.join("../LICENSE-MIT"),
             "MIT license",
             MAX_PACKAGE_METADATA_BYTES,
-        )?,
+        )?),
     );
     files.insert(
         "licenses/PROJECT-LICENSE-APACHE".to_owned(),
-        read_required(
+        normalize_crlf(read_required(
             &manifest_dir.join("../LICENSE-APACHE"),
             "Apache license",
             MAX_PACKAGE_METADATA_BYTES,
-        )?,
+        )?),
     );
     files.insert(
         "licenses/BOX2D-LICENSE".to_owned(),
-        read_required(
+        normalize_crlf(read_required(
             &manifest_dir.join("third-party/box2d/LICENSE"),
             "upstream Box2D license",
             MAX_PACKAGE_METADATA_BYTES,
-        )?,
+        )?),
     );
 
     let manifest = ArtifactManifest {
